@@ -1,0 +1,171 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+
+  --color-surface-lowest: #0e0e0e;
+  --color-surface-base: #131313;
+  --color-surface-low: #1c1b1b;
+  --color-surface-container: #201f1f;
+  --color-surface-high: #353534;
+  --color-surface-bright: #393939;
+  --color-outline-ghost: #3b494c;
+  --color-primary-glow: #00e5ff;
+  --color-primary-soft: #c3f5ff;
+  --color-primary-deep: #11505a;
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-muted: #9b9b98;
+  --color-on-surface-dim: #6d6d69;
+  --color-success: #2bd978;
+  --color-danger: #ff6b7a;
+}
+
+:root {
+  color: var(--color-on-surface);
+  background:
+    radial-gradient(circle at top center, rgba(0, 229, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, #181818 0%, #0d0d0d 100%);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --cad-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body {
+  min-height: 100vh;
+  background: transparent;
+  color: var(--color-on-surface);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+@layer components {
+  .cad-shell {
+    @apply min-h-screen overflow-hidden bg-surface-lowest text-on-surface;
+    background:
+      radial-gradient(circle at top center, rgba(0, 229, 255, 0.06), transparent 28%),
+      linear-gradient(180deg, rgba(15, 15, 15, 0.9) 0%, rgba(8, 8, 8, 1) 100%);
+  }
+
+  .cad-panel {
+    @apply rounded-[22px] border border-[rgba(59,73,76,0.15)] bg-[rgba(32,31,31,0.8)] text-on-surface backdrop-blur-xl;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.02),
+      0 20px 40px rgba(0, 0, 0, 0.24);
+  }
+
+  .cad-panel-soft {
+    @apply rounded-[18px] border border-[rgba(59,73,76,0.12)] bg-[rgba(28,27,27,0.85)] backdrop-blur-md;
+  }
+
+  .cad-kicker {
+    @apply font-display text-[11px] uppercase tracking-[0.22em] text-primary-glow;
+  }
+
+  .cad-title {
+    @apply font-display text-lg tracking-[0.08em] text-on-surface;
+  }
+
+  .cad-action-primary {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-medium text-[#001f24] transition-all duration-300;
+    background: linear-gradient(135deg, #c3f5ff 0%, #00daf3 100%);
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.18);
+    transition-timing-function: var(--cad-ease);
+  }
+
+  .cad-action-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 28px rgba(0, 229, 255, 0.24);
+  }
+
+  .cad-action-ghost {
+    @apply inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-medium text-on-surface transition-all duration-300;
+    background: rgba(53, 53, 52, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(59, 73, 76, 0.2);
+    transition-timing-function: var(--cad-ease);
+  }
+
+  .cad-action-ghost:hover {
+    @apply bg-surface-bright;
+  }
+
+  .cad-action-ghost:disabled,
+  .cad-action-primary:disabled {
+    @apply cursor-not-allowed opacity-45;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .cad-tab {
+    @apply relative pb-3 font-display text-sm uppercase tracking-[0.18em] text-on-surface-muted transition-colors duration-300;
+  }
+
+  .cad-tab-active {
+    @apply text-primary-glow;
+  }
+
+  .cad-tab-active::after {
+    content: "";
+    @apply absolute left-0 right-0 bottom-0 h-0.5 rounded-full bg-primary-glow;
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.45);
+  }
+
+  .cad-input {
+    @apply w-full border-b border-[rgba(59,73,76,0.4)] bg-transparent px-0 pb-2 pt-1 text-sm text-on-surface outline-none transition-all duration-300;
+    transition-timing-function: var(--cad-ease);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cad-input:focus {
+    border-color: var(--color-primary-soft);
+    box-shadow: 0 2px 0 rgba(195, 245, 255, 0.45);
+  }
+
+  .cad-metric {
+    @apply font-medium tracking-[0.04em] text-primary-soft;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cad-grid-stage {
+    background:
+      linear-gradient(rgba(0, 229, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 229, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: 124px 124px, 124px 124px, 24px 24px, 24px 24px;
+    background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
+  }
+
+  .cad-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 229, 255, 0.35) transparent;
+  }
+
+  .cad-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .cad-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0, 229, 255, 0.2);
+    border-radius: 999px;
+  }
+}

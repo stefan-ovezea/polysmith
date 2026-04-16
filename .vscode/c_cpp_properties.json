@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "name": "macOS",
+      "compilerPath": "/usr/bin/c++",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "macos-clang-x64",
+      "includePath": [
+        "${workspaceFolder}/native/cad-core/src",
+        "${workspaceFolder}/native/cad-core/src/**",
+        "${workspaceFolder}/third_party",
+        "${workspaceFolder}/third_party/nlohmann",
+        "${workspaceFolder}/third_party/occt-install/include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/native/cad-core/src",
+          "${workspaceFolder}/third_party"
+        ]
+      },
+      "compileCommands": "${workspaceFolder}/native/cad-core/build/compile_commands.json"
+    }
+  ],
+  "version": 4
+}

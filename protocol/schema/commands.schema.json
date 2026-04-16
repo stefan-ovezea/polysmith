@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CAD Core Commands",
+  "type": "object",
+  "required": ["id", "type"],
+  "properties": {
+    "id": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": ["ping", "shutdown", "create_document", "get_document_state", "get_session_state", "get_viewport_state", "add_box_feature", "update_box_feature", "rename_feature", "delete_feature", "undo", "redo", "select_feature", "clear_selection"]
+    },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

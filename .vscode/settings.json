@@ -1,0 +1,7 @@
+{
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/native/cad-core/build/compile_commands.json",
+  "C_Cpp.errorSquiggles": "enabled",
+  "cmake.sourceDirectory": "${workspaceFolder}/native/cad-core",
+  "cmake.buildDirectory": "${workspaceFolder}/native/cad-core/build"
+}

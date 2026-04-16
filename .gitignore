@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+target/
+
+apps/desktop-ui/node_modules/
+apps/desktop-ui/dist/
+apps/desktop-ui/src-tauri/target/
+
+native/cad-core/build/
+
+.DS_Store
+*.log
+
+third_party/occt-build/
+third_party/occt-install/
