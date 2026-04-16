@@ -3,6 +3,7 @@ import type { FeatureEntry } from "../types/ipc";
 
 interface SelectedBoxEditorProps {
   feature: FeatureEntry | null;
+  selectedSketchEntityId?: string | null;
   disabled: boolean;
   onSubmit: (featureId: string, width: number, height: number, depth: number) => Promise<void>;
   onRename: (featureId: string, name: string) => Promise<void>;
@@ -11,6 +12,7 @@ interface SelectedBoxEditorProps {
 
 export function SelectedBoxEditor({
   feature,
+  selectedSketchEntityId,
   disabled,
   onSubmit,
   onRename,
@@ -38,7 +40,7 @@ export function SelectedBoxEditor({
 
   if (!feature) {
     return (
-      <section className="cad-panel px-5 py-5">
+      <section className="pointer-events-auto cad-floating-panel px-5 py-5">
         <p className="cad-kicker">Inspector</p>
         <h2 className="cad-title mt-2">Selected Feature</h2>
         <p className="mt-4 text-sm text-on-surface-muted">
@@ -49,14 +51,45 @@ export function SelectedBoxEditor({
   }
 
   if (!feature.box_parameters) {
+    const selectedSketchLine = feature.sketch_parameters?.lines.find(
+      (line) => line.line_id === selectedSketchEntityId,
+    );
+    const selectedSketchCircle = feature.sketch_parameters?.circles.find(
+      (circle) => circle.circle_id === selectedSketchEntityId,
+    );
     return (
-      <section className="cad-panel px-5 py-5">
+      <section className="pointer-events-auto cad-floating-panel px-5 py-5">
         <p className="cad-kicker">Inspector</p>
         <h2 className="cad-title mt-2">Selected Feature</h2>
         <div className="mt-4 space-y-3 text-sm">
           <p className="text-on-surface-muted">
-            The selected feature is not editable as a box.
+            {feature.sketch_parameters
+              ? `Sketch on ${feature.sketch_parameters.plane_id} with ${feature.sketch_parameters.lines.length} line${feature.sketch_parameters.lines.length === 1 ? "" : "s"} and ${feature.sketch_parameters.circles.length} circle${feature.sketch_parameters.circles.length === 1 ? "" : "s"}`
+              : feature.cylinder_parameters
+              ? `Cylinder: r ${feature.cylinder_parameters.radius} x h ${feature.cylinder_parameters.height} mm`
+              : "The selected feature is not editable as a box."}
           </p>
+          {feature.sketch_parameters ? (
+            <>
+              <p className="text-on-surface-muted">
+                Active tool: {feature.sketch_parameters.active_tool}
+              </p>
+              {selectedSketchLine ? (
+                <p className="text-on-surface-muted">
+                  Selected line {selectedSketchLine.line_id}
+                  {selectedSketchLine.constraint_hint
+                    ? ` · ${selectedSketchLine.constraint_hint}`
+                    : ""}
+                </p>
+              ) : null}
+              {selectedSketchCircle ? (
+                <p className="text-on-surface-muted">
+                  Selected circle {selectedSketchCircle.circle_id} · r{" "}
+                  {selectedSketchCircle.radius}
+                </p>
+              ) : null}
+            </>
+          ) : null}
           <button
             className="cad-action-ghost"
             onClick={() => {
@@ -72,7 +105,7 @@ export function SelectedBoxEditor({
   }
 
   return (
-    <section className="cad-panel px-5 py-5">
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="cad-kicker">Inspector</p>

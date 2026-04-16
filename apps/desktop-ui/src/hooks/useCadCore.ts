@@ -10,15 +10,24 @@ import {
 import {
   makeCreateDocumentCommand,
   makeAddBoxFeatureCommand,
+  makeAddCylinderFeatureCommand,
+  makeAddSketchCircleCommand,
+  makeAddSketchLineCommand,
+  makeAddSketchRectangleCommand,
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
+  makeFinishSketchCommand,
   makeGetDocumentStateCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
   makePingCommand,
   makeRedoCommand,
+  makeSelectSketchEntityCommand,
   makeRenameFeatureCommand,
   makeSelectFeatureCommand,
+  makeSelectReferenceCommand,
+  makeSetSketchToolCommand,
+  makeStartSketchOnPlaneCommand,
   makeUndoCommand,
   makeUpdateBoxFeatureCommand,
   parseCoreMessage,
@@ -108,6 +117,12 @@ export function useCadCore() {
     },
     addBoxFeature: async (width: number, height: number, depth: number) => {
       await sendCoreCommand(makeAddBoxFeatureCommand(width, height, depth));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addCylinderFeature: async (radius: number, height: number) => {
+      await sendCoreCommand(makeAddCylinderFeatureCommand(radius, height));
+      await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateBoxFeature: async (
@@ -144,6 +159,56 @@ export function useCadCore() {
     },
     selectFeature: async (featureId: string) => {
       await sendCoreCommand(makeSelectFeatureCommand(featureId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectReference: async (referenceId: string) => {
+      await sendCoreCommand(makeSelectReferenceCommand(referenceId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    startSketchOnPlane: async (referenceId: string) => {
+      await sendCoreCommand(makeStartSketchOnPlaneCommand(referenceId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchTool: async (
+      tool: "select" | "line" | "rectangle" | "circle",
+    ) => {
+      await sendCoreCommand(makeSetSketchToolCommand(tool));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchLine: async (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+    ) => {
+      await sendCoreCommand(makeAddSketchLineCommand(startX, startY, endX, endY));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchRectangle: async (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchRectangleCommand(startX, startY, endX, endY),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchCircle: async (
+      centerX: number,
+      centerY: number,
+      radius: number,
+    ) => {
+      await sendCoreCommand(makeAddSketchCircleCommand(centerX, centerY, radius));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectSketchEntity: async (entityId: string) => {
+      await sendCoreCommand(makeSelectSketchEntityCommand(entityId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    finishSketch: async () => {
+      await sendCoreCommand(makeFinishSketchCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     clearSelection: async () => {

@@ -13,7 +13,9 @@ find_package(OpenCASCADE REQUIRED)
 add_executable(cad_core
   src/app.cpp
   src/core/box_feature.cpp
+  src/core/cylinder_feature.cpp
   src/core/document.cpp
+  src/core/sketch_feature.cpp
   src/core/viewport.cpp
   src/protocol/ipc.cpp
   src/protocol/serialization.cpp

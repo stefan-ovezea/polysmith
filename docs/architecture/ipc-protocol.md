@@ -186,6 +186,18 @@ The current implementation may extend beyond that minimum slice as small feature
 
 A viewport snapshot follows the same rule set. The core decides what renderable scene data exists, and the UI only visualizes that snapshot.
 
+For renderer-oriented viewport data, the same ownership rule still applies:
+
+- the core may provide primitive placement, centers, and scene bounds when that helps visualization
+- the core may provide reference geometry such as origin planes and axes when those are selectable CAD targets
+- the core may provide active sketch state and renderable sketch entities when sketching is in progress
+- the UI may adapt that snapshot for a renderer, but it must not invent CAD state or modeling behavior
+
+Sketch commands follow the same ownership boundary:
+
+- the UI may send sketch intent such as `start_sketch_on_plane`, `set_sketch_tool`, `add_sketch_line`, `add_sketch_rectangle`, `add_sketch_circle`, `select_sketch_entity`, or `finish_sketch`
+- the core owns the active sketch, active sketch tool including non-drawing selection mode, selected sketch entity, stored sketch entities, and their serialized viewport representation
+
 ## Versioning
 
 - protocol versioning must be tracked deliberately

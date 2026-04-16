@@ -50,6 +50,8 @@ FeatureEntry create_box_feature(int feature_index,
       .status = "healthy",
       .parameters_summary = make_parameters_summary(parameters),
       .box_parameters = parameters,
+      .cylinder_parameters = std::nullopt,
+      .sketch_parameters = std::nullopt,
   };
 }
 

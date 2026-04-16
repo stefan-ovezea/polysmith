@@ -3,6 +3,19 @@
 #include <algorithm>
 
 namespace polysmith::core {
+namespace {
+
+bool is_origin_plane_reference(const std::string& reference_id) {
+  return reference_id == "ref-plane-xy" || reference_id == "ref-plane-yz" ||
+         reference_id == "ref-plane-xz";
+}
+
+bool is_supported_sketch_tool(const std::string& tool) {
+  return tool == "select" || tool == "line" || tool == "rectangle" ||
+         tool == "circle";
+}
+
+}  // namespace
 
 void DocumentManager::require_document() const {
   if (!document_.has_value()) {
@@ -27,6 +40,8 @@ FeatureEntry DocumentManager::make_root_feature() {
       .status = "healthy",
       .parameters_summary = "Document root",
       .box_parameters = std::nullopt,
+      .cylinder_parameters = std::nullopt,
+      .sketch_parameters = std::nullopt,
   };
 }
 
@@ -37,6 +52,11 @@ DocumentState DocumentManager::create_document() {
       .units = "mm",
       .revision = 1,
       .selected_feature_id = std::nullopt,
+      .selected_reference_id = std::nullopt,
+      .active_sketch_plane_id = std::nullopt,
+      .active_sketch_feature_id = std::nullopt,
+      .active_sketch_tool = std::nullopt,
+      .selected_sketch_entity_id = std::nullopt,
       .feature_history = {make_root_feature()},
   };
 
@@ -55,6 +75,18 @@ DocumentState DocumentManager::add_box_feature(
 
   document_->feature_history.push_back(
       create_box_feature(next_feature_id_++, parameters));
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_cylinder_feature(
+    const CylinderFeatureParameters& parameters) {
+  require_document();
+  push_undo_state();
+  clear_redo_stack();
+
+  document_->feature_history.push_back(
+      create_cylinder_feature(next_feature_id_++, parameters));
   document_->revision += 1;
   return document_.value();
 }
@@ -173,6 +205,239 @@ DocumentState DocumentManager::select_feature(const std::string& feature_id) {
   }
 
   document_->selected_feature_id = feature_id;
+  document_->selected_reference_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
+  return document_.value();
+}
+
+DocumentState DocumentManager::select_reference(const std::string& reference_id) {
+  require_document();
+
+  if (!is_origin_plane_reference(reference_id)) {
+    throw std::runtime_error("Reference not found: " + reference_id);
+  }
+
+  document_->selected_feature_id = std::nullopt;
+  document_->selected_reference_id = reference_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  return document_.value();
+}
+
+DocumentState DocumentManager::start_sketch_on_plane(
+    const std::string& reference_id) {
+  require_document();
+
+  if (!is_origin_plane_reference(reference_id)) {
+    throw std::runtime_error("Sketch plane not found: " + reference_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+
+  document_->feature_history.push_back(
+      create_sketch_feature(next_feature_id_++, reference_id));
+  const std::string sketch_feature_id = document_->feature_history.back().id;
+  document_->selected_feature_id = std::nullopt;
+  document_->selected_reference_id = reference_id;
+  document_->active_sketch_plane_id = reference_id;
+  document_->active_sketch_feature_id = sketch_feature_id;
+  document_->active_sketch_tool = "select";
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::set_sketch_tool(const std::string& tool) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  if (!is_supported_sketch_tool(tool)) {
+    throw std::runtime_error("Unsupported sketch tool: " + tool);
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  polysmith::core::set_sketch_tool(*feature_it, tool);
+  document_->active_sketch_tool = tool;
+  document_->selected_sketch_entity_id = std::nullopt;
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_sketch_line(double start_x,
+                                               double start_y,
+                                               double end_x,
+                                               double end_y) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_line(
+      *feature_it, next_sketch_line_id_++, start_x, start_y, end_x, end_y);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->lines.back().id;
+  document_->active_sketch_tool = "line";
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_sketch_rectangle(double start_x,
+                                                    double start_y,
+                                                    double end_x,
+                                                    double end_y) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_rectangle(
+      *feature_it, next_sketch_line_id_, start_x, start_y, end_x, end_y);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->lines.back().id;
+  document_->active_sketch_tool = "rectangle";
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_sketch_circle(double center_x,
+                                                 double center_y,
+                                                 double radius) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_circle(
+      *feature_it, next_sketch_circle_id_++, center_x, center_y, radius);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->circles.back().id;
+  document_->active_sketch_tool = "circle";
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::select_sketch_entity(const std::string& entity_id) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end() ||
+      !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  const bool has_line = std::any_of(
+      feature_it->sketch_parameters->lines.begin(),
+      feature_it->sketch_parameters->lines.end(),
+      [&](const SketchLine& line) { return line.id == entity_id; });
+  const bool has_circle = std::any_of(
+      feature_it->sketch_parameters->circles.begin(),
+      feature_it->sketch_parameters->circles.end(),
+      [&](const SketchCircle& circle) { return circle.id == entity_id; });
+
+  if (!has_line && !has_circle) {
+    throw std::runtime_error("Sketch entity not found: " + entity_id);
+  }
+
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_entity_id = entity_id;
+  return document_.value();
+}
+
+DocumentState DocumentManager::finish_sketch() {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch to finish");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  feature_it->status = "healthy";
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_reference_id = std::nullopt;
+  document_->active_sketch_plane_id = std::nullopt;
+  document_->active_sketch_feature_id = std::nullopt;
+  document_->active_sketch_tool = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->revision += 1;
   return document_.value();
 }
 
@@ -180,6 +445,8 @@ DocumentState DocumentManager::clear_selection() {
   require_document();
 
   document_->selected_feature_id = std::nullopt;
+  document_->selected_reference_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
   return document_.value();
 }
 

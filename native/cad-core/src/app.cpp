@@ -16,6 +16,7 @@ namespace {
 
 using polysmith::core::DocumentManager;
 using polysmith::core::BoxFeatureParameters;
+using polysmith::core::CylinderFeatureParameters;
 using polysmith::protocol::CommandMessage;
 
 DocumentManager& document_manager() {
@@ -121,6 +122,19 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "add_cylinder_feature") {
+    const auto document =
+        document_manager().add_cylinder_feature(CylinderFeatureParameters{
+            .radius = read_dimension(command.payload, "radius"),
+            .height = read_dimension(command.payload, "height"),
+        });
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "update_box_feature") {
     const auto document = document_manager().update_box_feature(
         read_string(command.payload, "feature_id"),
@@ -178,6 +192,93 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   if (command.type == "select_feature") {
     const auto document =
         document_manager().select_feature(read_string(command.payload, "feature_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "select_reference") {
+    const auto document = document_manager().select_reference(
+        read_string(command.payload, "reference_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "start_sketch_on_plane") {
+    const auto document = document_manager().start_sketch_on_plane(
+        read_string(command.payload, "reference_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "set_sketch_tool") {
+    const auto document =
+        document_manager().set_sketch_tool(read_string(command.payload, "tool"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "add_sketch_line") {
+    const auto document = document_manager().add_sketch_line(
+        read_dimension(command.payload, "start_x"),
+        read_dimension(command.payload, "start_y"),
+        read_dimension(command.payload, "end_x"),
+        read_dimension(command.payload, "end_y"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "add_sketch_rectangle") {
+    const auto document = document_manager().add_sketch_rectangle(
+        read_dimension(command.payload, "start_x"),
+        read_dimension(command.payload, "start_y"),
+        read_dimension(command.payload, "end_x"),
+        read_dimension(command.payload, "end_y"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "add_sketch_circle") {
+    const auto document = document_manager().add_sketch_circle(
+        read_dimension(command.payload, "center_x"),
+        read_dimension(command.payload, "center_y"),
+        read_dimension(command.payload, "radius"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "select_sketch_entity") {
+    const auto document = document_manager().select_sketch_entity(
+        read_string(command.payload, "entity_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "finish_sketch") {
+    const auto document = document_manager().finish_sketch();
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

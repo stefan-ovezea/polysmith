@@ -19,11 +19,31 @@
   --color-primary-glow: #00e5ff;
   --color-primary-soft: #c3f5ff;
   --color-primary-deep: #11505a;
+  --color-primary-bright: #4be7ff;
+  --color-primary-hover: #86f4ff;
+  --color-primary-edge: #91f2ff;
+  --color-primary-edge-hover: #b8fbff;
+  --color-primary-edge-active: #c3f5ff;
+  --color-primary-emissive: #042329;
+  --color-primary-emissive-hover: #0a4149;
+  --color-primary-emissive-active: #0b5963;
+  --color-primary-fixed-dim: #00daf3;
+  --color-primary-on: #001f24;
   --color-on-surface: #e5e2e1;
   --color-on-surface-muted: #9b9b98;
   --color-on-surface-dim: #6d6d69;
   --color-success: #2bd978;
   --color-danger: #ff6b7a;
+  --color-axis-x: #ff6b7a;
+  --color-axis-y: #2bd978;
+  --color-axis-z: #6db4ff;
+  --color-tertiary-plane-fill: #fff7c0;
+  --color-tertiary-plane-edge: #ffe784;
+  --color-tertiary-plane-selected: #f7e38a;
+  --color-tertiary-plane-hover: #fff0aa;
+  --color-tertiary-plane-edge-active: #fff4b8;
+  --color-tertiary-plane-edge-selected: #ffe99a;
+  --color-tertiary-plane-edge-hover: #fff2b2;
 }
 
 :root {
@@ -37,16 +57,75 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --cad-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --cad-shell-radial: rgba(0, 229, 255, 0.12);
+  --cad-shell-radial-soft: rgba(0, 229, 255, 0.06);
+  --cad-shell-start: #181818;
+  --cad-shell-end: #0d0d0d;
+  --cad-shell-panel-start: rgba(15, 15, 15, 0.9);
+  --cad-shell-panel-end: rgba(8, 8, 8, 1);
+  --cad-panel-border: rgba(59, 73, 76, 0.15);
+  --cad-panel-soft-border: rgba(59, 73, 76, 0.12);
+  --cad-panel-bg: rgba(32, 31, 31, 0.8);
+  --cad-panel-soft-bg: rgba(28, 27, 27, 0.85);
+  --cad-panel-floating-bg: rgba(32, 31, 31, 0.76);
+  --cad-panel-popover-bg: rgba(32, 31, 31, 0.92);
+  --cad-glass-highlight: rgba(255, 255, 255, 0.02);
+  --cad-shadow-strong: rgba(0, 0, 0, 0.24);
+  --cad-shadow-medium: rgba(0, 0, 0, 0.2);
+  --cad-shadow-popover: rgba(0, 0, 0, 0.28);
+  --cad-outline-soft: rgba(59, 73, 76, 0.18);
+  --cad-outline-input: rgba(59, 73, 76, 0.4);
+  --cad-ghost-bg: rgba(53, 53, 52, 0.35);
+  --cad-subtle-surface: rgba(255, 255, 255, 0.025);
+  --cad-subtle-surface-strong: rgba(255, 255, 255, 0.03);
+  --cad-subtle-surface-dim: rgba(255, 255, 255, 0.02);
+  --cad-subtle-surface-chip: rgba(255, 255, 255, 0.04);
+  --cad-sidebar-bg: rgba(14, 14, 14, 0.72);
+  --cad-timeline-bg: rgba(19, 19, 19, 0.88);
+  --cad-ribbon-bg: rgba(19, 19, 19, 0.9);
+  --cad-ribbon-gradient-start: rgba(0, 229, 255, 0.05);
+  --cad-ribbon-gradient-end: rgba(53, 53, 52, 0.2);
+  --cad-accent-surface: rgba(17, 80, 90, 0.55);
+  --cad-accent-surface-strong: rgba(17, 80, 90, 0.62);
+  --cad-accent-outline: rgba(0, 229, 255, 0.2);
+  --cad-accent-outline-strong: rgba(0, 229, 255, 0.24);
+  --cad-accent-glow-soft: rgba(0, 229, 255, 0.1);
+  --cad-accent-glow: rgba(0, 229, 255, 0.18);
+  --cad-accent-glow-strong: rgba(0, 229, 255, 0.24);
+  --cad-accent-glow-selection: rgba(0, 229, 255, 0.12);
+  --cad-accent-glow-dot: rgba(0, 229, 255, 0.4);
+  --cad-tab-underline-glow: rgba(0, 229, 255, 0.45);
+  --cad-scrollbar-thumb: rgba(0, 229, 255, 0.2);
+  --cad-scrollbar-track: rgba(0, 229, 255, 0.35);
+  --cad-input-focus: rgba(195, 245, 255, 0.45);
+  --cad-viewport-radial: rgba(0, 229, 255, 0.08);
+  --cad-viewport-bg-top: rgba(13, 20, 23, 0.9);
+  --cad-viewport-bg-bottom: rgba(5, 8, 10, 0.95);
+  --cad-grid-major: rgba(0, 229, 255, 0.06);
+  --cad-grid-minor: rgba(255, 255, 255, 0.015);
+  --cad-loader-ring: rgba(195, 245, 255, 0.2);
+  --cad-loader-glow: rgba(0, 229, 255, 0.18);
+  --cad-status-online-glow: rgba(43, 217, 120, 0.45);
+  --cad-status-offline-glow: rgba(255, 107, 122, 0.25);
+  --cad-overlay-strong: rgba(5, 8, 10, 0.62);
+  --cad-overlay-soft: rgba(5, 8, 10, 0.34);
+  --cad-context-bg: rgba(24, 24, 24, 0.96);
+  --cad-context-hover: rgba(255, 255, 255, 0.05);
+  --cad-context-shadow: rgba(0, 0, 0, 0.32);
+  --cad-cursor-sketch: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="2.4" stroke="%23c3f5ff" stroke-width="1.2"/><path d="M12 1.5V6.5" stroke="%23c3f5ff" stroke-width="1.2" stroke-linecap="round"/><path d="M12 17.5V22.5" stroke="%23c3f5ff" stroke-width="1.2" stroke-linecap="round"/><path d="M1.5 12H6.5" stroke="%23c3f5ff" stroke-width="1.2" stroke-linecap="round"/><path d="M17.5 12H22.5" stroke="%23c3f5ff" stroke-width="1.2" stroke-linecap="round"/></svg>') 12 12, crosshair;
 }
 
 body {
-  min-height: 100vh;
+  height: 100vh;
+  margin: 0;
   background: transparent;
   color: var(--color-on-surface);
+  overflow: hidden;
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 * {
@@ -58,23 +137,124 @@ input {
   font: inherit;
 }
 
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}
+
 @layer components {
   .cad-shell {
-    @apply min-h-screen overflow-hidden bg-surface-lowest text-on-surface;
+    @apply overflow-hidden bg-surface-lowest text-on-surface;
     background:
-      radial-gradient(circle at top center, rgba(0, 229, 255, 0.06), transparent 28%),
-      linear-gradient(180deg, rgba(15, 15, 15, 0.9) 0%, rgba(8, 8, 8, 1) 100%);
+      radial-gradient(circle at top center, var(--cad-shell-radial-soft), transparent 28%),
+      linear-gradient(180deg, var(--cad-shell-panel-start) 0%, var(--cad-shell-panel-end) 100%);
   }
 
   .cad-panel {
-    @apply rounded-[22px] border border-[rgba(59,73,76,0.15)] bg-[rgba(32,31,31,0.8)] text-on-surface backdrop-blur-xl;
+    @apply rounded-[22px] text-on-surface backdrop-blur-xl;
+    border: 1px solid var(--cad-panel-border);
+    background: var(--cad-panel-bg);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.02),
-      0 20px 40px rgba(0, 0, 0, 0.24);
+      inset 0 1px 0 var(--cad-glass-highlight),
+      0 20px 40px var(--cad-shadow-strong);
   }
 
   .cad-panel-soft {
-    @apply rounded-[18px] border border-[rgba(59,73,76,0.12)] bg-[rgba(28,27,27,0.85)] backdrop-blur-md;
+    @apply rounded-[18px] backdrop-blur-md;
+    border: 1px solid var(--cad-panel-soft-border);
+    background: var(--cad-panel-soft-bg);
+  }
+
+  .cad-floating-panel {
+    @apply rounded-[18px] text-on-surface backdrop-blur-xl;
+    border: 1px solid var(--cad-panel-border);
+    background: var(--cad-panel-floating-bg);
+    box-shadow:
+      inset 0 1px 0 var(--cad-glass-highlight),
+      0 20px 40px var(--cad-shadow-medium);
+  }
+
+  .cad-ribbon {
+    @apply backdrop-blur-xl;
+    border-bottom: 1px solid var(--cad-panel-soft-border);
+    background:
+      linear-gradient(180deg, var(--cad-ribbon-gradient-start) 0%, var(--cad-ribbon-gradient-end) 100%),
+      var(--cad-ribbon-bg);
+  }
+
+  .cad-ribbon-tab {
+    @apply rounded-full px-3 py-1.5 font-display text-[13px] uppercase tracking-[0.14em] text-on-surface-muted transition-all duration-300;
+    transition-timing-function: var(--cad-ease);
+  }
+
+  .cad-ribbon-tab-active {
+    @apply text-primary-soft;
+    background: var(--cad-accent-surface);
+    box-shadow: inset 0 0 0 1px var(--cad-accent-outline), 0 0 18px var(--cad-accent-glow-soft);
+  }
+
+  .cad-ribbon-action {
+    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-on-surface transition-all duration-300;
+    background: var(--cad-subtle-surface-strong);
+    box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
+    transition-timing-function: var(--cad-ease);
+  }
+
+  .cad-ribbon-action:hover {
+    @apply bg-surface-bright;
+  }
+
+  .cad-ribbon-action-primary {
+    color: var(--color-primary-on);
+    background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-primary-fixed-dim) 100%);
+    box-shadow: 0 0 20px var(--cad-accent-glow);
+  }
+
+  .cad-tool-button {
+    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-on-surface transition-all duration-300;
+    background: var(--cad-subtle-surface);
+    box-shadow: inset 0 0 0 1px var(--cad-panel-soft-border);
+    transition-timing-function: var(--cad-ease);
+  }
+
+  .cad-tool-button:hover {
+    @apply bg-surface-bright;
+  }
+
+  .cad-tool-button-active {
+    background: var(--cad-accent-surface-strong);
+    box-shadow: inset 0 0 0 1px var(--cad-accent-outline-strong), 0 0 18px var(--cad-accent-glow-selection);
+  }
+
+  .cad-tool-group-label {
+    @apply text-[10px] uppercase tracking-[0.18em] text-on-surface-dim;
+  }
+
+  .cad-toolbar-popover {
+    @apply rounded-[20px] backdrop-blur-xl;
+    border: 1px solid var(--cad-panel-border);
+    background: var(--cad-panel-popover-bg);
+    box-shadow:
+      inset 0 1px 0 var(--cad-glass-highlight),
+      0 24px 48px var(--cad-shadow-popover);
+  }
+
+  .cad-status-pill {
+    @apply inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] uppercase tracking-[0.12em] text-on-surface-muted;
+    background: var(--cad-subtle-surface-strong);
+    box-shadow: inset 0 0 0 1px var(--cad-panel-soft-border);
+  }
+
+  .cad-sidebar {
+    @apply backdrop-blur-lg;
+    border-right: 1px solid var(--cad-panel-soft-border);
+    background: var(--cad-sidebar-bg);
+  }
+
+  .cad-timeline {
+    @apply backdrop-blur-xl;
+    border-top: 1px solid var(--cad-panel-soft-border);
+    background: var(--cad-timeline-bg);
   }
 
   .cad-kicker {
@@ -86,21 +266,22 @@ input {
   }
 
   .cad-action-primary {
-    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-medium text-[#001f24] transition-all duration-300;
-    background: linear-gradient(135deg, #c3f5ff 0%, #00daf3 100%);
-    box-shadow: 0 0 20px rgba(0, 229, 255, 0.18);
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-medium transition-all duration-300;
+    color: var(--color-primary-on);
+    background: linear-gradient(135deg, var(--color-primary-soft) 0%, var(--color-primary-fixed-dim) 100%);
+    box-shadow: 0 0 20px var(--cad-accent-glow);
     transition-timing-function: var(--cad-ease);
   }
 
   .cad-action-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 0 28px rgba(0, 229, 255, 0.24);
+    box-shadow: 0 0 28px var(--cad-accent-glow-strong);
   }
 
   .cad-action-ghost {
     @apply inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-medium text-on-surface transition-all duration-300;
-    background: rgba(53, 53, 52, 0.35);
-    box-shadow: inset 0 0 0 1px rgba(59, 73, 76, 0.2);
+    background: var(--cad-ghost-bg);
+    box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
     transition-timing-function: var(--cad-ease);
   }
 
@@ -109,7 +290,9 @@ input {
   }
 
   .cad-action-ghost:disabled,
-  .cad-action-primary:disabled {
+  .cad-action-primary:disabled,
+  .cad-ribbon-action:disabled,
+  .cad-tool-button:disabled {
     @apply cursor-not-allowed opacity-45;
     transform: none;
     box-shadow: none;
@@ -126,18 +309,19 @@ input {
   .cad-tab-active::after {
     content: "";
     @apply absolute left-0 right-0 bottom-0 h-0.5 rounded-full bg-primary-glow;
-    box-shadow: 0 0 18px rgba(0, 229, 255, 0.45);
+    box-shadow: 0 0 18px var(--cad-tab-underline-glow);
   }
 
   .cad-input {
-    @apply w-full border-b border-[rgba(59,73,76,0.4)] bg-transparent px-0 pb-2 pt-1 text-sm text-on-surface outline-none transition-all duration-300;
+    @apply w-full border-b bg-transparent px-0 pb-2 pt-1 text-sm text-on-surface outline-none transition-all duration-300;
+    border-bottom-color: var(--cad-outline-input);
     transition-timing-function: var(--cad-ease);
     font-variant-numeric: tabular-nums;
   }
 
   .cad-input:focus {
     border-color: var(--color-primary-soft);
-    box-shadow: 0 2px 0 rgba(195, 245, 255, 0.45);
+    box-shadow: 0 2px 0 var(--cad-input-focus);
   }
 
   .cad-metric {
@@ -147,17 +331,17 @@ input {
 
   .cad-grid-stage {
     background:
-      linear-gradient(rgba(0, 229, 255, 0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 229, 255, 0.06) 1px, transparent 1px),
-      linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      linear-gradient(var(--cad-grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--cad-grid-major) 1px, transparent 1px),
+      linear-gradient(var(--cad-grid-minor) 1px, transparent 1px),
+      linear-gradient(90deg, var(--cad-grid-minor) 1px, transparent 1px);
     background-size: 124px 124px, 124px 124px, 24px 24px, 24px 24px;
     background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
   }
 
   .cad-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 229, 255, 0.35) transparent;
+    scrollbar-color: var(--cad-scrollbar-track) transparent;
   }
 
   .cad-scrollbar::-webkit-scrollbar {
@@ -165,7 +349,107 @@ input {
   }
 
   .cad-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(0, 229, 255, 0.2);
+    background: var(--cad-scrollbar-thumb);
     border-radius: 999px;
+  }
+
+  .cad-viewport-canvas {
+    display: block;
+    cursor: grab;
+    background:
+      radial-gradient(circle at top center, var(--cad-viewport-radial), transparent 38%),
+      linear-gradient(180deg, var(--cad-viewport-bg-top) 0%, var(--cad-viewport-bg-bottom) 100%);
+  }
+
+  .cad-viewport-canvas-drawing {
+    cursor: var(--cad-cursor-sketch);
+  }
+
+  .cad-viewport-canvas:active,
+  .cad-viewport-canvas-dragging {
+    cursor: grabbing;
+  }
+
+  .cad-viewport-canvas-drawing:active {
+    cursor: var(--cad-cursor-sketch);
+  }
+
+  .cad-viewport-canvas-drawing.cad-viewport-canvas-dragging {
+    cursor: grabbing;
+  }
+
+  .cad-loader-spinner {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    border: 2px solid var(--cad-loader-ring);
+    border-top-color: var(--color-primary-glow);
+    box-shadow: 0 0 16px var(--cad-loader-glow);
+    animation: cad-spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .cad-subtle-block {
+    background: var(--cad-subtle-surface);
+  }
+
+  .cad-session-chip-active {
+    background: var(--cad-accent-surface);
+  }
+
+  .cad-session-chip-idle {
+    background: var(--cad-subtle-surface-chip);
+  }
+
+  .cad-status-dot-online {
+    box-shadow: 0 0 12px var(--cad-status-online-glow);
+  }
+
+  .cad-status-dot-offline {
+    box-shadow: 0 0 12px var(--cad-status-offline-glow);
+  }
+
+  .cad-hierarchy-item {
+    background: var(--cad-subtle-surface-dim);
+    box-shadow: inset 0 0 0 1px var(--cad-subtle-surface-dim);
+  }
+
+  .cad-hierarchy-item-active {
+    background: var(--cad-accent-surface);
+    box-shadow: inset 0 0 0 1px var(--cad-accent-outline-strong), 0 0 18px var(--cad-accent-glow-selection);
+  }
+
+  .cad-hierarchy-status-dot {
+    box-shadow: 0 0 14px var(--cad-accent-glow-dot);
+  }
+
+  .cad-timeline-node {
+    background: rgba(229, 226, 225, 0.24);
+  }
+
+  .cad-timeline-node-active {
+    background: var(--color-primary-glow);
+    box-shadow: 0 0 16px var(--cad-accent-glow-dot);
+    transform: scale(1.25);
+  }
+
+  .cad-context-menu {
+    border: 1px solid var(--cad-outline-soft);
+    background: var(--cad-context-bg);
+    box-shadow: 0 24px 48px var(--cad-context-shadow);
+  }
+
+  .cad-context-menu-item:hover {
+    background: var(--cad-context-hover);
+  }
+}
+
+@keyframes cad-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }

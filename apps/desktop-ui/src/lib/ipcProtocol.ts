@@ -13,6 +13,13 @@ const documentStateSchema = z.object({
   units: z.string(),
   revision: z.number(),
   selected_feature_id: z.string().nullable(),
+  selected_reference_id: z.string().nullable(),
+  active_sketch_plane_id: z.string().nullable(),
+  active_sketch_feature_id: z.string().nullable(),
+  active_sketch_tool: z
+    .enum(["select", "line", "rectangle", "circle"])
+    .nullable(),
+  selected_sketch_entity_id: z.string().nullable(),
   feature_history: z.array(
     z.object({
       feature_id: z.string(),
@@ -25,6 +32,36 @@ const documentStateSchema = z.object({
           width: z.number(),
           height: z.number(),
           depth: z.number(),
+        })
+        .nullable(),
+      cylinder_parameters: z
+        .object({
+          radius: z.number(),
+          height: z.number(),
+        })
+        .nullable(),
+      sketch_parameters: z
+        .object({
+          plane_id: z.string(),
+          active_tool: z.enum(["select", "line", "rectangle", "circle"]),
+          lines: z.array(
+            z.object({
+              line_id: z.string(),
+              start_x: z.number(),
+              start_y: z.number(),
+              end_x: z.number(),
+              end_y: z.number(),
+              constraint_hint: z.enum(["horizontal", "vertical"]).nullable(),
+            }),
+          ),
+          circles: z.array(
+            z.object({
+              circle_id: z.string(),
+              center_x: z.number(),
+              center_y: z.number(),
+              radius: z.number(),
+            }),
+          ),
         })
         .nullable(),
     }),
@@ -49,12 +86,111 @@ const viewportStateSchema = z.object({
       height: z.number(),
       depth: z.number(),
       x_offset: z.number(),
+      center: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      is_selected: z.boolean(),
+    }),
+  ),
+  cylinders: z.array(
+    z.object({
+      primitive_id: z.string(),
+      label: z.string(),
+      radius: z.number(),
+      height: z.number(),
+      x_offset: z.number(),
+      center: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      is_selected: z.boolean(),
+    }),
+  ),
+  reference_planes: z.array(
+    z.object({
+      reference_id: z.string(),
+      label: z.string(),
+      orientation: z.enum(["xy", "yz", "xz"]),
+      center: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      size: z.object({
+        width: z.number(),
+        height: z.number(),
+      }),
+      is_selected: z.boolean(),
+      is_active_sketch_plane: z.boolean(),
+    }),
+  ),
+  reference_axes: z.array(
+    z.object({
+      reference_id: z.string(),
+      label: z.string(),
+      axis: z.enum(["x", "y", "z"]),
+      start: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      end: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+    }),
+  ),
+  sketch_lines: z.array(
+    z.object({
+      line_id: z.string(),
+      plane_id: z.string(),
+      start: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      end: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      is_selected: z.boolean(),
+      constraint_hint: z.enum(["horizontal", "vertical"]).nullable(),
+    }),
+  ),
+  sketch_circles: z.array(
+    z.object({
+      circle_id: z.string(),
+      plane_id: z.string(),
+      center: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      radius: z.number(),
       is_selected: z.boolean(),
     }),
   ),
   scene_width: z.number(),
   scene_height: z.number(),
   scene_depth: z.number(),
+  scene_bounds: z.object({
+    center: z.object({
+      x: z.number(),
+      y: z.number(),
+      z: z.number(),
+    }),
+    size: z.object({
+      x: z.number(),
+      y: z.number(),
+      z: z.number(),
+    }),
+    max_dimension: z.number(),
+  }),
 });
 
 const helloEventSchema = z.object({
@@ -176,6 +312,20 @@ export function makeAddBoxFeatureCommand(
   };
 }
 
+export function makeAddCylinderFeatureCommand(
+  radius: number,
+  height: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_cylinder_feature",
+    payload: {
+      radius,
+      height,
+    },
+  };
+}
+
 export function makeUpdateBoxFeatureCommand(
   featureId: string,
   width: number,
@@ -241,6 +391,108 @@ export function makeSelectFeatureCommand(featureId: string): CoreCommand {
     payload: {
       feature_id: featureId,
     },
+  };
+}
+
+export function makeSelectReferenceCommand(referenceId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_reference",
+    payload: {
+      reference_id: referenceId,
+    },
+  };
+}
+
+export function makeStartSketchOnPlaneCommand(referenceId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "start_sketch_on_plane",
+    payload: {
+      reference_id: referenceId,
+    },
+  };
+}
+
+export function makeSetSketchToolCommand(
+  tool: "select" | "line" | "rectangle" | "circle",
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_tool",
+    payload: {
+      tool,
+    },
+  };
+}
+
+export function makeAddSketchLineCommand(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_line",
+    payload: {
+      start_x: startX,
+      start_y: startY,
+      end_x: endX,
+      end_y: endY,
+    },
+  };
+}
+
+export function makeAddSketchRectangleCommand(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_rectangle",
+    payload: {
+      start_x: startX,
+      start_y: startY,
+      end_x: endX,
+      end_y: endY,
+    },
+  };
+}
+
+export function makeAddSketchCircleCommand(
+  centerX: number,
+  centerY: number,
+  radius: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_circle",
+    payload: {
+      center_x: centerX,
+      center_y: centerY,
+      radius,
+    },
+  };
+}
+
+export function makeSelectSketchEntityCommand(entityId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_entity",
+    payload: {
+      entity_id: entityId,
+    },
+  };
+}
+
+export function makeFinishSketchCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "finish_sketch",
+    payload: {},
   };
 }
 
