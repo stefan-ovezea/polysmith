@@ -184,19 +184,38 @@ The current implementation may extend beyond that minimum slice as small feature
 - update schema and code together
 - keep modeling behavior in the native core
 
+The current implementation now also includes a focused export spike:
+
+- the UI may send `export_document` with a destination file path
+- the CAD core rebuilds exportable solids from core-owned feature history and writes the file
+- the core replies with `document_exported` when the export succeeds
+- the UI must not reconstruct geometry or write CAD files itself
+
+For the current spike, export is intentionally narrow:
+
+- format: STEP
+- exported content: all solid-producing document features that can be rebuilt from feature parameters
+- skipped content: non-solid sketch-only features
+- viewport-only presentation data such as primitive spacing is not part of the export contract
+
 A viewport snapshot follows the same rule set. The core decides what renderable scene data exists, and the UI only visualizes that snapshot.
 
 For renderer-oriented viewport data, the same ownership rule still applies:
 
 - the core may provide primitive placement, centers, and scene bounds when that helps visualization
+- the core may provide renderer-facing polygon footprint data for sketch profiles or profile-driven solids when the viewport needs to render them
 - the core may provide reference geometry such as origin planes and axes when those are selectable CAD targets
-- the core may provide active sketch state and renderable sketch entities when sketching is in progress
+- the core may provide lightweight solid-face metadata for picking and highlighting when a face is a selectable CAD target
+- the core may provide active sketch state, renderable sketch entities, derived sketch dimensions, and renderable sketch constraint markers when sketching is in progress
 - the UI may adapt that snapshot for a renderer, but it must not invent CAD state or modeling behavior
 
 Sketch commands follow the same ownership boundary:
 
-- the UI may send sketch intent such as `start_sketch_on_plane`, `set_sketch_tool`, `add_sketch_line`, `add_sketch_rectangle`, `add_sketch_circle`, `select_sketch_entity`, or `finish_sketch`
-- the core owns the active sketch, active sketch tool including non-drawing selection mode, selected sketch entity, stored sketch entities, and their serialized viewport representation
+- the UI may send selection or sketch intent such as `select_face`, `start_sketch_on_face`, `start_sketch_on_plane`, `set_sketch_tool`, `update_sketch_line`, `set_sketch_line_constraint`, `set_sketch_equal_length_constraint`, `set_sketch_coincident_constraint`, `set_sketch_perpendicular_constraint`, `set_sketch_parallel_constraint`, `update_sketch_circle`, `update_sketch_dimension`, `add_sketch_line`, `add_sketch_rectangle`, `add_sketch_circle`, `select_sketch_entity`, `select_sketch_dimension`, `select_sketch_profile`, `extrude_profile`, or `finish_sketch`
+- `select_face` is selection only; `start_sketch_on_face` must be driven by a core-provided face id together with the matching core-emitted face plane frame from the viewport snapshot
+- the core keeps the sketch plane frame with detected sketch profiles and generated extrusions so face-based loops continue to render and extrude on the selected face rather than being remapped to a perpendicular origin plane
+- the core owns the active sketch, active sketch tool including non-drawing selection mode, selected sketch entity, selected sketch dimension, selected sketch profile, stored sketch entities, stored sketch dimensions, stored sketch line relations, derived closed profiles including arbitrary closed line loops, and their serialized viewport representation
+- the core owns selected solid-face ids, the meaning of those ids, and the sketch plane/frame derived from a chosen face
 
 ## Versioning
 

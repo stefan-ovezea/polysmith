@@ -27,6 +27,8 @@ pub fn run() {
         .manage(CadCoreState {
             child: Mutex::new(None),
         })
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             start_cad_core,
             send_core_command

@@ -15,7 +15,10 @@ add_executable(cad_core
   src/core/box_feature.cpp
   src/core/cylinder_feature.cpp
   src/core/document.cpp
+  src/core/export.cpp
+  src/core/extrude_feature.cpp
   src/core/sketch_feature.cpp
+  src/core/sketch_profile.cpp
   src/core/viewport.cpp
   src/protocol/ipc.cpp
   src/protocol/serialization.cpp

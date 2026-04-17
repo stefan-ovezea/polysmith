@@ -442,6 +442,40 @@ button:not(:disabled),
   .cad-context-menu-item:hover {
     background: var(--cad-context-hover);
   }
+
+  .cad-icon-button {
+    position: relative;
+  }
+
+  .cad-icon-button::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.45rem);
+    transform: translateX(-50%) translateY(4px);
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.5rem;
+    background: var(--cad-context-bg);
+    border: 1px solid var(--cad-outline-soft);
+    box-shadow: 0 12px 24px var(--cad-context-shadow);
+    color: var(--color-on-surface);
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 140ms var(--cad-ease),
+      transform 140ms var(--cad-ease);
+  }
+
+  .cad-icon-button:hover::after,
+  .cad-icon-button:focus-visible::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 @keyframes cad-spin {

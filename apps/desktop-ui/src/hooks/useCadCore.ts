@@ -16,19 +16,33 @@ import {
   makeAddSketchRectangleCommand,
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
+  makeExportDocumentCommand,
   makeFinishSketchCommand,
   makeGetDocumentStateCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
   makePingCommand,
   makeRedoCommand,
+  makeSelectSketchProfileCommand,
+  makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
   makeRenameFeatureCommand,
   makeSelectFeatureCommand,
   makeSelectReferenceCommand,
+  makeSelectFaceCommand,
+  makeSetSketchCoincidentConstraintCommand,
+  makeSetSketchEqualLengthConstraintCommand,
+  makeSetSketchParallelConstraintCommand,
+  makeSetSketchPerpendicularConstraintCommand,
+  makeExtrudeProfileCommand,
+  makeSetSketchLineConstraintCommand,
   makeSetSketchToolCommand,
   makeStartSketchOnPlaneCommand,
+  makeStartSketchOnFaceCommand,
   makeUndoCommand,
+  makeUpdateSketchCircleCommand,
+  makeUpdateSketchDimensionCommand,
+  makeUpdateSketchLineCommand,
   makeUpdateBoxFeatureCommand,
   parseCoreMessage,
 } from "../lib/ipcProtocol";
@@ -115,6 +129,9 @@ export function useCadCore() {
     refreshViewport: async () => {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    exportDocument: async (filePath: string) => {
+      await sendCoreCommand(makeExportDocumentCommand(filePath));
+    },
     addBoxFeature: async (width: number, height: number, depth: number) => {
       await sendCoreCommand(makeAddBoxFeatureCommand(width, height, depth));
       await sendCoreCommand(makeGetSessionStateCommand());
@@ -165,14 +182,102 @@ export function useCadCore() {
       await sendCoreCommand(makeSelectReferenceCommand(referenceId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    selectFace: async (faceId: string) => {
+      await sendCoreCommand(makeSelectFaceCommand(faceId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     startSketchOnPlane: async (referenceId: string) => {
       await sendCoreCommand(makeStartSketchOnPlaneCommand(referenceId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    startSketchOnFace: async (
+      faceId: string,
+      planeFrame: {
+        origin: { x: number; y: number; z: number };
+        x_axis: { x: number; y: number; z: number };
+        y_axis: { x: number; y: number; z: number };
+        normal: { x: number; y: number; z: number };
+      },
+    ) => {
+      await sendCoreCommand(makeStartSketchOnFaceCommand(faceId, planeFrame));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     setSketchTool: async (
       tool: "select" | "line" | "rectangle" | "circle",
     ) => {
       await sendCoreCommand(makeSetSketchToolCommand(tool));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchLine: async (
+      lineId: string,
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchLineCommand(lineId, startX, startY, endX, endY),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchLineConstraint: async (
+      lineId: string,
+      constraint: "none" | "horizontal" | "vertical",
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchLineConstraintCommand(lineId, constraint),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchEqualLengthConstraint: async (
+      lineId: string,
+      otherLineId: string | null,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchEqualLengthConstraintCommand(lineId, otherLineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchPerpendicularConstraint: async (
+      lineId: string,
+      otherLineId: string | null,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchPerpendicularConstraintCommand(lineId, otherLineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchParallelConstraint: async (
+      lineId: string,
+      otherLineId: string | null,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchParallelConstraintCommand(lineId, otherLineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchCoincidentConstraint: async (
+      pointId: string,
+      otherPointId: string,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchCoincidentConstraintCommand(pointId, otherPointId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchCircle: async (
+      circleId: string,
+      centerX: number,
+      centerY: number,
+      radius: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchCircleCommand(circleId, centerX, centerY, radius),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchDimension: async (dimensionId: string, value: number) => {
+      await sendCoreCommand(makeUpdateSketchDimensionCommand(dimensionId, value));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchLine: async (
@@ -205,6 +310,19 @@ export function useCadCore() {
     },
     selectSketchEntity: async (entityId: string) => {
       await sendCoreCommand(makeSelectSketchEntityCommand(entityId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectSketchDimension: async (dimensionId: string) => {
+      await sendCoreCommand(makeSelectSketchDimensionCommand(dimensionId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectSketchProfile: async (profileId: string) => {
+      await sendCoreCommand(makeSelectSketchProfileCommand(profileId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    extrudeProfile: async (profileId: string, depth: number) => {
+      await sendCoreCommand(makeExtrudeProfileCommand(profileId, depth));
+      await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     finishSketch: async () => {

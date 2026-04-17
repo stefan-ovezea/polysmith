@@ -51,6 +51,7 @@ FeatureEntry create_box_feature(int feature_index,
       .parameters_summary = make_parameters_summary(parameters),
       .box_parameters = parameters,
       .cylinder_parameters = std::nullopt,
+      .extrude_parameters = std::nullopt,
       .sketch_parameters = std::nullopt,
   };
 }
@@ -66,6 +67,7 @@ void update_box_feature(FeatureEntry& feature,
 
   feature.parameters_summary = make_parameters_summary(parameters);
   feature.box_parameters = parameters;
+  feature.extrude_parameters = std::nullopt;
 }
 
 }  // namespace polysmith::core

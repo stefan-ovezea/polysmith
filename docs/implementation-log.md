@@ -52,7 +52,37 @@ This document tracks concrete implementation milestones as they land in the code
 - added a first sketch entity, `line`, created from two viewport clicks and rendered back from the core snapshot
 - extended sketching with core-owned tool state, viewport snapping, rectangle and circle creation, and selectable sketch entities
 - added minimal inferred horizontal and vertical line hints in the core as a lightweight first step toward sketch constraints
-- split sketch mode into explicit drawing and selection behavior, including chained line creation and `Space` to return to selection mode
+- split sketch mode into explicit drawing and selection behavior, including chained line creation and `Escape` to return to selection mode
+- added editable sketch lines and circles in the inspector, visible sketch points in the viewport, and first explicit horizontal/vertical line constraints
+- added derived closed sketch profile detection in the core plus selectable profile overlays in the viewport
+- added a first `extrude_profile` command that turns rectangular profiles into box-like extrudes and XY circular profiles into cylinders
+- widened closed-profile detection from rectangle-only cases to arbitrary clean closed line loops and rendered those extrudes as polygonal prisms in the viewport
+- added core-derived sketch dimensions to the viewport so active sketches now show line lengths and circle radii directly in the 3D sketch view
+- promoted sketch dimensions into core-owned sketch data and added a first `update_sketch_dimension` IPC command for driving line length and circle radius
+- kept the viewport on core-owned dimension snapshots while adding a minimal inspector path to edit those driving values from the UI
+- added explicit core-owned sketch dimension selection plus a `select_sketch_dimension` IPC path so viewport overlays can be selected directly and highlighted
+- added a first in-viewport dimension editor with autofocus and keyboard-friendly editing while reducing duplicate inspector dimension controls during viewport editing
+- added a first solver-lite propagation pass for connected sketch lines so moving or redimensioning a shared endpoint also updates coincident neighbors and re-applies horizontal/vertical line constraints through that chain
+- stabilized shared sketch corners further by snapping added, edited, constrained, and dimension-driven line endpoints onto existing coincident endpoints in the core before propagation runs
+- promoted sketch line endpoint connectivity from coordinate-only inference to explicit internal point ids so connected redimensioning and constraint propagation can follow stable shared topology
+- added a first cross-line `equal_length` sketch relation in the core and re-applied it through the existing line edit, constraint, and dimension-driving flows
+- moved sketch line constraints into the top ribbon with a dedicated sketch constraints section, keeping the UI as intent-only while the core owns constraint and relation state
+- shifted sketch constraints to an armed click flow in the UI so horizontal, vertical, clear, and equal-length constraints are chosen from the ribbon and then applied by clicking one or two sketch lines in the viewport
+- added core-owned viewport constraint markers for sketch lines and equal-length relations, including direct badge-click clearing through the existing constraint commands
+- tightened equal-length propagation so relation-driven updates also re-propagate shared start-point changes caused by snapping or connected geometry
+- added a first solver-lite `perpendicular` sketch relation with the same armed two-line workflow as equal length and core-owned perpendicular viewport markers
+- kept perpendicular behavior intentionally narrow by preserving the driven line start point and length while rejecting setups that conflict with direct horizontal or vertical axis constraints
+- added a first solver-lite `parallel` sketch relation with the same armed two-line workflow and core-owned parallel viewport markers
+- kept parallel behavior intentionally narrow by preserving the driven line start point and length while rejecting setups that conflict with direct horizontal or vertical axis constraints
+- added an explicit endpoint-only `coincident` sketch tool so the UI can pick real core-owned endpoint ids and ask the native sketch core to merge those points through IPC
+- kept coincidence solver-lite by making it a direct point-id merge in the native core, which now preserves connected redimensioning behavior without introducing a separate removable point-constraint model yet
+- added a focused `export_document` IPC spike that writes a real STEP file from core-owned feature history
+- kept export in the native core by rebuilding solid-producing OCCT shapes there and returning a `document_exported` event to the UI
 - generalize the selected-feature inspector beyond box-only editing
 - keep viewport data derived from the native core
 - continue expanding the design system while preserving architecture boundaries
+- added core-owned planar solid-face snapshots for primitive picking in the viewport
+- added `select_face` and `start_sketch_on_face` IPC commands so the UI can select a face and start a sketch from core-owned face identity
+- kept face-to-sketch placement in the native core by deriving a sketch plane frame from the selected face before creating the sketch feature
+- fixed the face-sketch relay so the UI now passes the core-emitted face plane frame back into `start_sketch_on_face`, which keeps sketch clicks and dimension labels on the chosen face
+- preserved the sketch plane frame through closed-profile detection and extrusion so face-based profile overlays and extruded bodies stay on the selected face instead of snapping to a perpendicular origin plane

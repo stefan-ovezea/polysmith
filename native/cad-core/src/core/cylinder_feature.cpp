@@ -46,6 +46,7 @@ FeatureEntry create_cylinder_feature(
       .parameters_summary = make_parameters_summary(parameters),
       .box_parameters = std::nullopt,
       .cylinder_parameters = parameters,
+      .extrude_parameters = std::nullopt,
       .sketch_parameters = std::nullopt,
   };
 }
