@@ -41,12 +41,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
     set((state) => {
       const nextState: Partial<CadCoreStoreState> = {
         lastEvent: message,
-        status:
-          message.type === "error"
-            ? "error"
-            : message.type === "hello" || message.type === "pong" || message.type === "document_created" || message.type === "document_state" || message.type === "viewport_state" || message.type === "document_exported"
-              ? "connected"
-              : state.status,
+        status: getStatusFromMessage(message, state.status),
       };
 
       const document = getDocumentFromMessage(message);
@@ -74,7 +69,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
           ? `error: ${error?.payload.code} - ${error?.payload.message}`
           : message.type === "document_exported"
             ? `event: document_exported - ${message.payload.file_path}`
-          : `event: ${message.type}`;
+            : `event: ${message.type}`;
 
       return {
         ...nextState,
@@ -82,3 +77,23 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       } as CadCoreStoreState;
     }),
 }));
+
+function getStatusFromMessage(
+  message: CoreMessage,
+  prevStatus: CadCoreStoreState["status"],
+): CadCoreStoreState["status"] {
+  if (message.type === "error") {
+    return "error";
+  }
+  if (
+    message.type === "hello" ||
+    message.type === "pong" ||
+    message.type === "document_created" ||
+    message.type === "document_state" ||
+    message.type === "viewport_state" ||
+    message.type === "document_exported"
+  ) {
+    return "connected";
+  }
+  return prevStatus;
+}

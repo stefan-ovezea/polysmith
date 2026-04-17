@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { FeatureEntry } from "../types/ipc";
+import type { FeatureEntry } from "@/types";
 
 interface SelectedBoxEditorProps {
   feature: FeatureEntry | null;
@@ -78,8 +78,12 @@ export function SelectedBoxEditor({
       setWidth("");
       setHeight("");
       setDepth("");
-      setLineStartX(selectedSketchLine ? String(selectedSketchLine.start_x) : "");
-      setLineStartY(selectedSketchLine ? String(selectedSketchLine.start_y) : "");
+      setLineStartX(
+        selectedSketchLine ? String(selectedSketchLine.start_x) : "",
+      );
+      setLineStartY(
+        selectedSketchLine ? String(selectedSketchLine.start_y) : "",
+      );
       setLineEndX(selectedSketchLine ? String(selectedSketchLine.end_x) : "");
       setLineEndY(selectedSketchLine ? String(selectedSketchLine.end_y) : "");
       setCircleCenterX(
@@ -110,7 +114,8 @@ export function SelectedBoxEditor({
         <p className="cad-kicker">Inspector</p>
         <h2 className="cad-title mt-2">Selected Feature</h2>
         <p className="mt-4 text-sm text-on-surface-muted">
-          Select a feature from the browser, viewport, or timeline to inspect it.
+          Select a feature from the browser, viewport, or timeline to inspect
+          it.
         </p>
       </section>
     );
@@ -142,10 +147,10 @@ export function SelectedBoxEditor({
             {feature.sketch_parameters
               ? `Sketch on ${feature.sketch_parameters.plane_id} with ${feature.sketch_parameters.lines.length} line${feature.sketch_parameters.lines.length === 1 ? "" : "s"} and ${feature.sketch_parameters.circles.length} circle${feature.sketch_parameters.circles.length === 1 ? "" : "s"}`
               : feature.extrude_parameters
-              ? `Extrude from ${feature.extrude_parameters.profile_id} · depth ${feature.extrude_parameters.depth} mm`
-              : feature.cylinder_parameters
-              ? `Cylinder: r ${feature.cylinder_parameters.radius} x h ${feature.cylinder_parameters.height} mm`
-              : "The selected feature is not editable as a box."}
+                ? `Extrude from ${feature.extrude_parameters.profile_id} · depth ${feature.extrude_parameters.depth} mm`
+                : feature.cylinder_parameters
+                  ? `Cylinder: r ${feature.cylinder_parameters.radius} x h ${feature.cylinder_parameters.height} mm`
+                  : "The selected feature is not editable as a box."}
           </p>
           {feature.sketch_parameters ? (
             <>
@@ -438,7 +443,12 @@ export function SelectedBoxEditor({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void onSubmit(feature.feature_id, Number(width), Number(height), Number(depth));
+          void onSubmit(
+            feature.feature_id,
+            Number(width),
+            Number(height),
+            Number(depth),
+          );
         }}
         className="mt-5 flex flex-wrap items-end gap-4"
       >
@@ -484,7 +494,11 @@ export function SelectedBoxEditor({
             disabled={disabled}
           />
         </label>
-        <button className="cad-action-primary min-w-[140px]" type="submit" disabled={disabled}>
+        <button
+          className="cad-action-primary min-w-[140px]"
+          type="submit"
+          disabled={disabled}
+        >
           Update Box
         </button>
       </form>

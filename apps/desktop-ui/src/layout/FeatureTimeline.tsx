@@ -1,4 +1,4 @@
-import type { DocumentState } from "../types/ipc";
+import type { DocumentState } from "@/types";
 
 interface FeatureTimelineProps {
   document: DocumentState | null;
@@ -19,7 +19,10 @@ export function FeatureTimeline({
         {document.feature_history.map((feature, index) => {
           const active = feature.feature_id === document.selected_feature_id;
           return (
-            <div key={feature.feature_id} className="flex min-w-max items-center gap-2">
+            <div
+              key={feature.feature_id}
+              className="flex min-w-max items-center gap-2"
+            >
               <button
                 onClick={() => {
                   void onSelectFeature(feature.feature_id);

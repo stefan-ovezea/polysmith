@@ -1,4 +1,4 @@
-import type { SessionState } from "../types/ipc";
+import type { SessionState } from "@/types";
 
 interface SessionPanelProps {
   session: SessionState | null;
@@ -38,14 +38,18 @@ export function SessionPanel({ session }: SessionPanelProps) {
       <div className="mt-4 flex gap-2 text-xs uppercase tracking-[0.14em]">
         <span
           className={`rounded-full px-2 py-1 ${
-            session.can_undo ? "cad-session-chip-active text-primary-soft" : "cad-session-chip-idle text-on-surface-dim"
+            session.can_undo
+              ? "cad-session-chip-active text-primary-soft"
+              : "cad-session-chip-idle text-on-surface-dim"
           }`}
         >
           Undo {session.can_undo ? "Ready" : "Empty"}
         </span>
         <span
           className={`rounded-full px-2 py-1 ${
-            session.can_redo ? "cad-session-chip-active text-primary-soft" : "cad-session-chip-idle text-on-surface-dim"
+            session.can_redo
+              ? "cad-session-chip-active text-primary-soft"
+              : "cad-session-chip-idle text-on-surface-dim"
           }`}
         >
           Redo {session.can_redo ? "Ready" : "Empty"}

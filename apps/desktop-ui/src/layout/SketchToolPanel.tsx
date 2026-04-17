@@ -1,8 +1,9 @@
+import { SketchTool } from "@/types";
 import { useState } from "react";
 
 interface SketchToolPanelProps {
   activeSketchPlaneId: string;
-  activeSketchTool: "select" | "line" | "rectangle" | "circle";
+  activeSketchTool: SketchTool | null;
   selectedSketchEntityId: string | null;
   selectedSketchProfileId: string | null;
   onExtrudeProfile: (depth: number) => Promise<void>;

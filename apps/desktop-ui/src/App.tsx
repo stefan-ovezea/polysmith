@@ -1,30 +1,21 @@
 import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { AppHeader } from "./components/AppHeader";
-import { DocumentPanel } from "./components/DocumentPanel";
-import { FeatureTimeline } from "./components/FeatureTimeline";
-import { MessageLog } from "./components/MessageLog";
-import { SelectedBoxEditor } from "./components/SelectedBoxEditor";
-import { SketchToolPanel } from "./components/SketchToolPanel";
-import { ViewportPanel } from "./components/ViewportPanel";
-import { useCadCore } from "./hooks/useCadCore";
-import { useCadCoreStore } from "./state/cadCoreStore";
+import { useCadCoreStore } from "./state";
+import { useCadCore } from "./hooks";
+import {
+  AppHeader,
+  DocumentPanel,
+  FeatureTimeline,
+  MessageLog,
+  SelectedBoxEditor,
+  SketchToolPanel,
+  ViewportPanel,
+} from "./layout";
+import { ArmedSketchConstraint } from "./types";
 
 function App() {
-  const [armedSketchConstraint, setArmedSketchConstraint] = useState<
-    | null
-    | {
-        kind: "horizontal" | "vertical" | "clear";
-      }
-    | {
-        kind: "equal_length" | "perpendicular" | "parallel";
-        firstLineId: string | null;
-      }
-    | {
-        kind: "coincident";
-        firstPointId: string | null;
-      }
-  >(null);
+  const [armedSketchConstraint, setArmedSketchConstraint] =
+    useState<ArmedSketchConstraint>(null);
   const status = useCadCoreStore((state) => state.status);
   const messages = useCadCoreStore((state) => state.messages);
   const document = useCadCoreStore((state) => state.document);
@@ -47,7 +38,8 @@ function App() {
     document?.feature_history.find(
       (feature) => feature.feature_id === document.active_sketch_feature_id,
     ) ?? null;
-  const sketchLineCount = activeSketchFeature?.sketch_parameters?.lines.length ?? 0;
+  const sketchLineCount =
+    activeSketchFeature?.sketch_parameters?.lines.length ?? 0;
   const sketchCircleCount =
     activeSketchFeature?.sketch_parameters?.circles.length ?? 0;
 
@@ -210,7 +202,10 @@ function App() {
       return;
     }
 
-    await setSketchCoincidentConstraint(pointId, armedSketchConstraint.firstPointId);
+    await setSketchCoincidentConstraint(
+      pointId,
+      armedSketchConstraint.firstPointId,
+    );
     clearArmedSketchConstraint();
   }
 
@@ -330,9 +325,9 @@ function App() {
                 current &&
                 current.kind === constraint &&
                 (constraint !== "equal_length" &&
-                  constraint !== "coincident" &&
-                  constraint !== "perpendicular" &&
-                  constraint !== "parallel"
+                constraint !== "coincident" &&
+                constraint !== "perpendicular" &&
+                constraint !== "parallel"
                   ? true
                   : current.kind === constraint);
 
@@ -348,7 +343,7 @@ function App() {
                 ? constraint === "coincident"
                   ? { kind: constraint, firstPointId: null }
                   : { kind: constraint, firstLineId: null }
-                : { kind: constraint };
+                : ({ kind: constraint } as ArmedSketchConstraint);
             });
 
             if (shouldArm && activeSketchTool !== "select") {
@@ -431,7 +426,11 @@ function App() {
               }}
               onPickSketchPoint={async (pointId, entityId, kind) => {
                 await runAction(async () => {
-                  await handleSketchConstraintPointPick(pointId, entityId, kind);
+                  await handleSketchConstraintPointPick(
+                    pointId,
+                    entityId,
+                    kind,
+                  );
                 });
               }}
               armedSketchConstraint={armedSketchConstraint}
@@ -493,9 +492,9 @@ function App() {
                 <SketchToolPanel
                   activeSketchPlaneId={activeSketchPlaneId}
                   activeSketchTool={activeSketchTool}
-              selectedSketchEntityId={
-                  document?.selected_sketch_entity_id ?? null
-                }
+                  selectedSketchEntityId={
+                    document?.selected_sketch_entity_id ?? null
+                  }
                   selectedSketchProfileId={
                     document?.selected_sketch_profile_id ?? null
                   }
@@ -505,7 +504,10 @@ function App() {
                     }
 
                     await runAction(async () => {
-                      await extrudeProfile(selectedSketchProfile.profile_id, depth);
+                      await extrudeProfile(
+                        selectedSketchProfile.profile_id,
+                        depth,
+                      );
                     });
                   }}
                 />

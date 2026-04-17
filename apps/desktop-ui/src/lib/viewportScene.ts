@@ -10,182 +10,19 @@ import type {
   ViewportSketchDimension,
   ViewportSketchProfile,
   ViewportState,
-} from "../types/ipc";
-
-export interface SceneBounds {
-  center: [number, number, number];
-  size: [number, number, number];
-  maxDimension: number;
-}
-
-export interface BoxScenePrimitive {
-  kind: "box";
-  primitiveId: string;
-  label: string;
-  size: [number, number, number];
-  position: [number, number, number];
-  isSelected: boolean;
-}
-
-export interface CylinderScenePrimitive {
-  kind: "cylinder";
-  primitiveId: string;
-  label: string;
-  radius: number;
-  height: number;
-  position: [number, number, number];
-  isSelected: boolean;
-}
-
-export interface PolygonExtrudeScenePrimitive {
-  kind: "polygon_extrude";
-  primitiveId: string;
-  label: string;
-  planeId: string;
-  planeFrame: {
-    origin: [number, number, number];
-    xAxis: [number, number, number];
-    yAxis: [number, number, number];
-    normal: [number, number, number];
-  } | null;
-  profilePoints: [number, number][];
-  depth: number;
-  isSelected: boolean;
-}
-
-export type ScenePrimitive =
-  | BoxScenePrimitive
-  | CylinderScenePrimitive
-  | PolygonExtrudeScenePrimitive;
-
-export interface ReferencePlaneScene {
-  kind: "reference_plane";
-  referenceId: string;
-  label: string;
-  orientation: "xy" | "yz" | "xz";
-  position: [number, number, number];
-  size: [number, number];
-  isSelected: boolean;
-  isActiveSketchPlane: boolean;
-}
-
-export interface ReferenceAxisScene {
-  kind: "reference_axis";
-  referenceId: string;
-  label: string;
-  axis: "x" | "y" | "z";
-  start: [number, number, number];
-  end: [number, number, number];
-}
-
-export type SceneReference = ReferencePlaneScene | ReferenceAxisScene;
-
-export interface SketchLineScene {
-  lineId: string;
-  startPointId: string;
-  endPointId: string;
-  planeId: string;
-  start: [number, number, number];
-  end: [number, number, number];
-  isSelected: boolean;
-  constraint: "horizontal" | "vertical" | null;
-}
-
-export interface SketchCircleScene {
-  circleId: string;
-  planeId: string;
-  center: [number, number, number];
-  radius: number;
-  isSelected: boolean;
-}
-
-export interface SketchPointScene {
-  pointId: string;
-  entityId: string;
-  kind: "endpoint" | "center";
-  position: [number, number, number];
-  isSelected: boolean;
-}
-
-export interface SketchDimensionScene {
-  dimensionId: string;
-  planeId: string;
-  kind: "line_length" | "circle_radius";
-  entityId: string;
-  label: string;
-  isSelected: boolean;
-  anchorStart: [number, number, number];
-  anchorEnd: [number, number, number];
-  dimensionStart: [number, number, number];
-  dimensionEnd: [number, number, number];
-  labelPosition: [number, number, number];
-}
-
-export interface SketchConstraintScene {
-  constraintId: string;
-  planeId: string;
-  kind:
-    | "horizontal"
-    | "vertical"
-    | "equal_length"
-    | "perpendicular"
-    | "parallel";
-  entityId: string;
-  relatedEntityId: string | null;
-  label: string;
-  isSelected: boolean;
-  position: [number, number, number];
-}
-
-export interface SketchProfileScene {
-  profileId: string;
-  planeId: string;
-  planeFrame: {
-    origin: [number, number, number];
-    xAxis: [number, number, number];
-    yAxis: [number, number, number];
-    normal: [number, number, number];
-  } | null;
-  profileKind: "polygon" | "circle";
-  profilePoints: [number, number][];
-  start: [number, number];
-  width: number;
-  height: number;
-  radius: number;
-  isSelected: boolean;
-}
-
-export interface SolidFaceScene {
-  faceId: string;
-  ownerId: string;
-  ownerKind: string;
-  label: string;
-  sketchability: string;
-  center: [number, number, number];
-  normal: [number, number, number];
-  planeFrame: {
-    origin: [number, number, number];
-    xAxis: [number, number, number];
-    yAxis: [number, number, number];
-    normal: [number, number, number];
-  };
-  size: { width: number; height: number; radius: number };
-  isSelected: boolean;
-}
-
-export interface ViewportScene {
-  bounds: SceneBounds;
-  primitives: ScenePrimitive[];
-  solidFaces: SolidFaceScene[];
-  references: SceneReference[];
-  sketchLines: SketchLineScene[];
-  sketchCircles: SketchCircleScene[];
-  sketchDimensions: SketchDimensionScene[];
-  sketchConstraints: SketchConstraintScene[];
-  sketchPoints: SketchPointScene[];
-  sketchProfiles: SketchProfileScene[];
-  geometryKey: string;
-}
+  BoxScenePrimitive,
+  CylinderScenePrimitive,
+  PolygonExtrudeScenePrimitive,
+  ReferencePlaneScene,
+  ReferenceAxisScene,
+  SketchCircleScene,
+  SketchConstraintScene,
+  SketchDimensionScene,
+  SketchPointScene,
+  SketchProfileScene,
+  SolidFaceScene,
+  ViewportScene,
+} from "@/types";
 
 function clampDimension(value: number) {
   return Math.max(value, 1);
@@ -202,7 +39,9 @@ function makeBoxPrimitive(box: ViewportBoxPrimitive): BoxScenePrimitive {
   };
 }
 
-function makeCylinderPrimitive(cylinder: ViewportCylinderPrimitive): CylinderScenePrimitive {
+function makeCylinderPrimitive(
+  cylinder: ViewportCylinderPrimitive,
+): CylinderScenePrimitive {
   return {
     kind: "cylinder",
     primitiveId: cylinder.primitive_id,
@@ -254,7 +93,9 @@ function makePolygonExtrudePrimitive(
   };
 }
 
-function makeReferencePlane(plane: ViewportReferencePlane): ReferencePlaneScene {
+function makeReferencePlane(
+  plane: ViewportReferencePlane,
+): ReferencePlaneScene {
   return {
     kind: "reference_plane",
     referenceId: plane.reference_id,
@@ -436,14 +277,19 @@ export function createViewportScene(viewport: ViewportState): ViewportScene {
     startPointId: line.start_point_id,
     endPointId: line.end_point_id,
     planeId: line.plane_id,
-    start: [line.start.x, line.start.y, line.start.z] as [number, number, number],
+    start: [line.start.x, line.start.y, line.start.z] as [
+      number,
+      number,
+      number,
+    ],
     end: [line.end.x, line.end.y, line.end.z] as [number, number, number],
     isSelected: line.is_selected,
     constraint: line.constraint,
   }));
   const sketchCircles = viewport.sketch_circles.map(makeSketchCircle);
   const sketchDimensions = viewport.sketch_dimensions.map(makeSketchDimension);
-  const sketchConstraints = viewport.sketch_constraints.map(makeSketchConstraint);
+  const sketchConstraints =
+    viewport.sketch_constraints.map(makeSketchConstraint);
   const sketchProfiles = viewport.sketch_profiles.map(makeSketchProfile);
   const solidFaces = viewport.solid_faces.map(makeSolidFace);
   const sketchPoints: SketchPointScene[] = [

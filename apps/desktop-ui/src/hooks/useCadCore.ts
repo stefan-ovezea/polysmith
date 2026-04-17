@@ -6,8 +6,6 @@ import {
   onCadCoreLog,
   sendCoreCommand,
   startCadCore,
-} from "../lib/cadCoreClient";
-import {
   makeCreateDocumentCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
@@ -45,8 +43,10 @@ import {
   makeUpdateSketchLineCommand,
   makeUpdateBoxFeatureCommand,
   parseCoreMessage,
-} from "../lib/ipcProtocol";
-import { useCadCoreStore } from "../state/cadCoreStore";
+} from "@/lib";
+
+import { useCadCoreStore } from "@/state";
+import { SketchTool } from "@/types";
 
 export function useCadCore() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
@@ -202,9 +202,7 @@ export function useCadCore() {
       await sendCoreCommand(makeStartSketchOnFaceCommand(faceId, planeFrame));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    setSketchTool: async (
-      tool: "select" | "line" | "rectangle" | "circle",
-    ) => {
+    setSketchTool: async (tool: SketchTool) => {
       await sendCoreCommand(makeSetSketchToolCommand(tool));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -277,7 +275,9 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchDimension: async (dimensionId: string, value: number) => {
-      await sendCoreCommand(makeUpdateSketchDimensionCommand(dimensionId, value));
+      await sendCoreCommand(
+        makeUpdateSketchDimensionCommand(dimensionId, value),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchLine: async (
@@ -286,7 +286,9 @@ export function useCadCore() {
       endX: number,
       endY: number,
     ) => {
-      await sendCoreCommand(makeAddSketchLineCommand(startX, startY, endX, endY));
+      await sendCoreCommand(
+        makeAddSketchLineCommand(startX, startY, endX, endY),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchRectangle: async (
@@ -305,7 +307,9 @@ export function useCadCore() {
       centerY: number,
       radius: number,
     ) => {
-      await sendCoreCommand(makeAddSketchCircleCommand(centerX, centerY, radius));
+      await sendCoreCommand(
+        makeAddSketchCircleCommand(centerX, centerY, radius),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchEntity: async (entityId: string) => {

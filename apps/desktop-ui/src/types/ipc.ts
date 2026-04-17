@@ -1,253 +1,20 @@
-export interface BoxFeatureParameters {
-  width: number;
-  height: number;
-  depth: number;
-}
-
-export interface CylinderFeatureParameters {
-  radius: number;
-  height: number;
-}
-
-export interface SketchProfilePoint {
-  x: number;
-  y: number;
-}
-
-export interface ExtrudeFeatureParameters {
-  sketch_feature_id: string;
-  profile_id: string;
-  plane_id: string;
-  plane_frame: {
-    origin: ViewportVector3;
-    x_axis: ViewportVector3;
-    y_axis: ViewportVector3;
-    normal: ViewportVector3;
-  } | null;
-  profile_kind: "rectangle" | "circle" | "polygon";
-  start_x: number;
-  start_y: number;
-  width: number;
-  height: number;
-  radius: number;
-  profile_points: SketchProfilePoint[];
-  depth: number;
-}
-
-export interface SketchLineEntry {
-  line_id: string;
-  start_point_id: string;
-  end_point_id: string;
-  start_x: number;
-  start_y: number;
-  end_x: number;
-  end_y: number;
-  constraint: "horizontal" | "vertical" | null;
-}
-
-export interface SketchCircleEntry {
-  circle_id: string;
-  center_x: number;
-  center_y: number;
-  radius: number;
-}
-
-export interface SketchDimensionEntry {
-  dimension_id: string;
-  kind: "line_length" | "circle_radius";
-  entity_id: string;
-  value: number;
-}
-
-export interface SketchLineRelationEntry {
-  relation_id: string;
-  kind: "equal_length" | "perpendicular" | "parallel";
-  first_line_id: string;
-  second_line_id: string;
-}
-
-export interface SketchFeatureParameters {
-  plane_id: string;
-  plane_frame: {
-    origin: ViewportVector3;
-    x_axis: ViewportVector3;
-    y_axis: ViewportVector3;
-    normal: ViewportVector3;
-  } | null;
-  active_tool: "select" | "line" | "rectangle" | "circle";
-  lines: SketchLineEntry[];
-  circles: SketchCircleEntry[];
-  dimensions: SketchDimensionEntry[];
-  line_relations: SketchLineRelationEntry[];
-}
-
-export interface ViewportVector3 {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface FeatureEntry {
-  feature_id: string;
-  kind: string;
-  name: string;
-  status: string;
-  parameters_summary: string;
-  box_parameters: BoxFeatureParameters | null;
-  cylinder_parameters: CylinderFeatureParameters | null;
-  extrude_parameters: ExtrudeFeatureParameters | null;
-  sketch_parameters: SketchFeatureParameters | null;
-}
-
-export interface ViewportPlaneSize {
-  width: number;
-  height: number;
-}
-
-export interface ViewportBoxPrimitive {
-  primitive_id: string;
-  label: string;
-  width: number;
-  height: number;
-  depth: number;
-  x_offset: number;
-  center: ViewportVector3;
-  is_selected: boolean;
-}
-
-export interface ViewportCylinderPrimitive {
-  primitive_id: string;
-  label: string;
-  radius: number;
-  height: number;
-  x_offset: number;
-  center: ViewportVector3;
-  is_selected: boolean;
-}
-
-export interface ViewportPolygonExtrudePrimitive {
-  primitive_id: string;
-  label: string;
-  plane_id: string;
-  plane_frame: {
-    origin: ViewportVector3;
-    x_axis: ViewportVector3;
-    y_axis: ViewportVector3;
-    normal: ViewportVector3;
-  } | null;
-  profile_points: SketchProfilePoint[];
-  depth: number;
-  is_selected: boolean;
-}
-
-export interface ViewportSolidFace {
-  face_id: string;
-  owner_id: string;
-  owner_kind: string;
-  label: string;
-  sketchability: string;
-  center: ViewportVector3;
-  normal: ViewportVector3;
-  plane_frame: {
-    origin: ViewportVector3;
-    x_axis: ViewportVector3;
-    y_axis: ViewportVector3;
-    normal: ViewportVector3;
-  };
-  size: {
-    width: number;
-    height: number;
-    radius: number;
-  };
-  is_selected: boolean;
-}
-
-export interface ViewportReferencePlane {
-  reference_id: string;
-  label: string;
-  orientation: "xy" | "yz" | "xz";
-  center: ViewportVector3;
-  size: ViewportPlaneSize;
-  is_selected: boolean;
-  is_active_sketch_plane: boolean;
-}
-
-export interface ViewportReferenceAxis {
-  reference_id: string;
-  label: string;
-  axis: "x" | "y" | "z";
-  start: ViewportVector3;
-  end: ViewportVector3;
-}
-
-export interface ViewportSketchLine {
-  line_id: string;
-  start_point_id: string;
-  end_point_id: string;
-  plane_id: string;
-  start: ViewportVector3;
-  end: ViewportVector3;
-  is_selected: boolean;
-  constraint: "horizontal" | "vertical" | null;
-}
-
-export interface ViewportSketchCircle {
-  circle_id: string;
-  plane_id: string;
-  center: ViewportVector3;
-  radius: number;
-  is_selected: boolean;
-}
-
-export interface ViewportSketchDimension {
-  dimension_id: string;
-  plane_id: string;
-  kind: "line_length" | "circle_radius";
-  entity_id: string;
-  label: string;
-  is_selected: boolean;
-  anchor_start: ViewportVector3;
-  anchor_end: ViewportVector3;
-  dimension_start: ViewportVector3;
-  dimension_end: ViewportVector3;
-  label_position: ViewportVector3;
-}
-
-export interface ViewportSketchConstraint {
-  constraint_id: string;
-  plane_id: string;
-  kind: "horizontal" | "vertical" | "equal_length" | "perpendicular" | "parallel";
-  entity_id: string;
-  related_entity_id: string | null;
-  label: string;
-  is_selected: boolean;
-  position: ViewportVector3;
-}
-
-export interface ViewportSketchProfile {
-  profile_id: string;
-  plane_id: string;
-  plane_frame: {
-    origin: ViewportVector3;
-    x_axis: ViewportVector3;
-    y_axis: ViewportVector3;
-    normal: ViewportVector3;
-  } | null;
-  profile_kind: "polygon" | "circle";
-  profile_points: SketchProfilePoint[];
-  start_x: number;
-  start_y: number;
-  width: number;
-  height: number;
-  radius: number;
-  is_selected: boolean;
-}
-
-export interface ViewportSceneBounds {
-  center: ViewportVector3;
-  size: ViewportVector3;
-  max_dimension: number;
-}
+import {
+  FeatureEntry,
+  ViewportBoxPrimitive,
+  ViewportCylinderPrimitive,
+  ViewportPolygonExtrudePrimitive,
+  ViewportReferenceAxis,
+  ViewportReferencePlane,
+  ViewportSceneBounds,
+  ViewportSketchCircle,
+  ViewportSketchConstraint,
+  ViewportSketchDimension,
+  ViewportSketchLine,
+  ViewportSketchProfile,
+  ViewportSolidFace,
+  SketchTool,
+  PlaneFrame,
+} from "@/types";
 
 export interface DocumentState {
   document_id: string;
@@ -260,7 +27,7 @@ export interface DocumentState {
   active_sketch_plane_id: string | null;
   active_sketch_face_id: string | null;
   active_sketch_feature_id: string | null;
-  active_sketch_tool: "select" | "line" | "rectangle" | "circle" | null;
+  active_sketch_tool: SketchTool | null;
   selected_sketch_entity_id: string | null;
   selected_sketch_dimension_id: string | null;
   selected_sketch_profile_id: string | null;
@@ -505,12 +272,7 @@ export interface StartSketchOnFaceCommand {
   type: "start_sketch_on_face";
   payload: {
     face_id: string;
-    plane_frame: {
-      origin: ViewportVector3;
-      x_axis: ViewportVector3;
-      y_axis: ViewportVector3;
-      normal: ViewportVector3;
-    };
+    plane_frame: PlaneFrame;
   };
 }
 
@@ -550,7 +312,7 @@ export interface SetSketchToolCommand {
   id: string;
   type: "set_sketch_tool";
   payload: {
-    tool: "select" | "line" | "rectangle" | "circle";
+    tool: SketchTool;
   };
 }
 

@@ -1,4 +1,4 @@
-import type { DocumentState } from "../types/ipc";
+import type { DocumentState } from "@/types";
 
 interface DocumentPanelProps {
   document: DocumentState | null;
@@ -16,7 +16,9 @@ export function DocumentPanel({
       <section className="flex h-full flex-col overflow-hidden px-4 py-4">
         <p className="cad-kicker">Browser</p>
         <h2 className="cad-title mt-2">Document</h2>
-        <p className="mt-4 text-sm text-on-surface-muted">No active document.</p>
+        <p className="mt-4 text-sm text-on-surface-muted">
+          No active document.
+        </p>
       </section>
     );
   }
