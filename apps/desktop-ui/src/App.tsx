@@ -97,6 +97,7 @@ function App() {
     exportDocumentStl,
     saveDocument,
     loadDocument,
+    projectFaceIntoSketch,
     addBoxFeature,
     addCylinderFeature,
     updateExtrudeDepth,
@@ -811,6 +812,16 @@ function App() {
                   selectedSketchProfileId={
                     document?.selected_sketch_profile_id ?? null
                   }
+                  selectedFaceId={document?.selected_face_id ?? null}
+                  onProjectFace={async () => {
+                    const faceId = document?.selected_face_id ?? null;
+                    if (!faceId) {
+                      return;
+                    }
+                    await runAction(async () => {
+                      await projectFaceIntoSketch(faceId);
+                    });
+                  }}
                 />
               ) : null}
               {extrudeAction ? (

@@ -17,6 +17,7 @@ import {
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
   makeLoadDocumentCommand,
+  makeProjectFaceIntoSketchCommand,
   makeSaveDocumentCommand,
   makeFinishSketchCommand,
   makeReenterSketchCommand,
@@ -151,6 +152,11 @@ export function useCadCore() {
       // The load command replies with `document_state`. Refresh session
       // (undo/redo flags) and viewport so the UI reflects the loaded
       // document end-to-end.
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    projectFaceIntoSketch: async (faceId: string) => {
+      await sendCoreCommand(makeProjectFaceIntoSketchCommand(faceId));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },

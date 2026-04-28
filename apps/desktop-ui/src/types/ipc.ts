@@ -212,6 +212,14 @@ export interface LoadDocumentCommand {
   };
 }
 
+export interface ProjectFaceIntoSketchCommand {
+  id: string;
+  type: "project_face_into_sketch";
+  payload: {
+    face_id: string;
+  };
+}
+
 export interface AddBoxFeatureCommand {
   id: string;
   type: "add_box_feature";
@@ -533,6 +541,7 @@ export type CoreCommand =
   | ExportDocumentStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
+  | ProjectFaceIntoSketchCommand
   | AddBoxFeatureCommand
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand

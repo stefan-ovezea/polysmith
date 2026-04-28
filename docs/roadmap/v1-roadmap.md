@@ -69,12 +69,13 @@ single profile" into "model a printable part you'd actually want to print".
 These three close the gap between fancy demo and real workflow:
 
 - **Cut / subtract extrude.** Add `New Body | Join | Cut` modes to the
-  Extrude action. Single largest UX unlock.
-- **Save / load `.polysmith` document.** A core-owned JSON document
-  format, plus File → Open / Save / Save As. Required for any real
-  iteration.
-- **STL export.** Sibling of the existing STEP export, targeted at
-  3D-printing slicers.
+  Extrude action. Single largest UX unlock. Depends on a new viewport
+  mesh primitive type (the boolean'd body cannot be visualised by the
+  existing per-feature primitive types).
+- ✅ **Save / load `.polysmith` document** — shipped. Core-owned JSON
+  document format with a `document_from_payload` deserializer mirroring
+  `to_payload`, plus File → Open / Save buttons.
+- ✅ **STL export** — shipped alongside STEP export.
 
 ### Tier 2 — the obvious next features
 
@@ -93,12 +94,16 @@ These three close the gap between fancy demo and real workflow:
   reference plane.
 - **Sketch arcs, slots, polygons, and offset-curve.**
 - **Construction axes** through edges and through two points.
+- ✅ **Project sketch tool** — shipped. Projects extrude faces (rectangle
+  and circle profiles) onto the active sketch as fixed-endpoint lines or
+  a circle. Polygon-extrude sides and legacy box/cylinder features remain
+  to be added.
 
 ### Cross-cutting polish
 
 Small individually but they shape day-to-day usability:
 
-- **Undo / redo hotkeys** (`⌘Z` / `⌘⇧Z` and Ctrl equivalents).
+- ✅ **Undo / redo hotkeys** (`⌘Z` / `⌘⇧Z` and Ctrl equivalents) — shipped.
 - **Measure tool** (point-to-point, edge length, face area).
 - **Named user parameters** that drive sketch dimensions and feature
   depths.
@@ -107,11 +112,13 @@ Small individually but they shape day-to-day usability:
 
 ## Suggested Order
 
-1. Cut extrude → save/load → STL export.
-2. Edge & vertex selection plumbing → fillet & chamfer.
-3. Pattern + mirror.
-4. Hole feature.
-5. Polish: undo/redo hotkeys, measure tool, named parameters, view cube.
+1. ✅ Save/load + STL export + undo/redo hotkeys + Project — shipped.
+2. **Viewport mesh primitive + cut extrude** (next big slice; the mesh
+   primitive unlocks every boolean-producing feature below).
+3. **Edge & vertex selection** plumbing → **fillet & chamfer**.
+4. **Pattern + mirror**.
+5. **Hole feature** (cut-extrude variant on a selected face).
+6. Polish: measure tool, named parameters, view cube, active sketch panel.
 
 Each row above maps cleanly onto the existing Fusion-style action pattern
 (select inputs → invoke action → floating panel → live preview →

@@ -590,6 +590,16 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "project_face_into_sketch") {
+    const auto document = document_manager().project_face_into_sketch(
+        read_string(command.payload, "face_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "clear_selection") {
     const auto document = document_manager().clear_selection();
 

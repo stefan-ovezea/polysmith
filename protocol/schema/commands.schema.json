@@ -18,6 +18,7 @@
         "export_document_stl",
         "save_document",
         "load_document",
+        "project_face_into_sketch",
         "add_box_feature",
         "add_cylinder_feature",
         "update_box_feature",

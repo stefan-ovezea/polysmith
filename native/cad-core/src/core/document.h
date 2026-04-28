@@ -110,6 +110,7 @@ class DocumentManager {
   DocumentState select_sketch_dimension(const std::string& dimension_id);
   DocumentState finish_sketch();
   DocumentState reenter_sketch(const std::string& feature_id);
+  DocumentState project_face_into_sketch(const std::string& face_id);
   DocumentState clear_selection();
   ExportResult export_document_as_step(const std::string& file_path) const;
   ExportResult export_document_as_stl(const std::string& file_path) const;

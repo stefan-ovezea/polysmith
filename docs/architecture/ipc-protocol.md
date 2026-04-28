@@ -192,6 +192,13 @@ The current implementation now also includes a focused export spike:
 - the core replies with `document_exported` when the export succeeds; the payload's `format` field reflects the writer that ran (`step` or `stl`)
 - the UI must not reconstruct geometry or write CAD files itself
 
+The protocol also covers native document persistence and the Project sketch
+tool:
+
+- `save_document` writes the live document state as a JSON `.polysmith` file at the supplied `file_path`; the core replies with `document_saved`
+- `load_document` parses a `.polysmith` file, replaces the live document, restores ID counters by scanning the loaded ids, clears undo/redo stacks, and replies with `document_state`
+- `project_face_into_sketch` projects the outline of a selected solid face onto the active sketch's plane, creating fixed-endpoint sketch lines (or a sketch circle for circular caps); supports extrude features that carry a `plane_frame` (rectangle and circle profiles, base/top/side faces). Polygon profile sides and legacy box/cylinder features are not yet supported by the projection helper and produce a structured error.
+
 For the current spike, export is intentionally narrow:
 
 - format: STEP

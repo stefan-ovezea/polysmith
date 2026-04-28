@@ -1,14 +1,17 @@
 #include "core/document.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
+#include "core/face_geometry.h"
 #include "protocol/serialization.h"
 
 namespace polysmith::core {
@@ -1334,6 +1337,132 @@ DocumentState DocumentManager::reenter_sketch(const std::string& feature_id) {
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::project_face_into_sketch(
+    const std::string& face_id) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto sketch_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (sketch_it == document_->feature_history.end() ||
+      !sketch_it->sketch_parameters.has_value() ||
+      !sketch_it->sketch_parameters->plane_frame.has_value()) {
+    throw std::runtime_error(
+        "Active sketch does not have a plane frame for projection");
+  }
+
+  // Don't project a face onto its own owning sketch — the sketch is on the
+  // base plane of the extrude, so projecting the base back onto it would
+  // overlay the original profile.
+  const std::string separator = ":face:";
+  const auto sep_pos = face_id.find(separator);
+  if (sep_pos == std::string::npos) {
+    throw std::runtime_error("Invalid face id: " + face_id);
+  }
+  const std::string face_owner_id = face_id.substr(0, sep_pos);
+
+  // Walk extrude features that point at this sketch — projecting one of
+  // their faces back onto the sketch is almost always a user mistake.
+  for (const auto& feature : document_->feature_history) {
+    if (feature.kind != "extrude" || !feature.extrude_parameters.has_value()) {
+      continue;
+    }
+    if (feature.extrude_parameters->sketch_feature_id == sketch_it->id &&
+        feature.id == face_owner_id) {
+      throw std::runtime_error(
+          "Cannot project a face from an extrude back onto its own source "
+          "sketch");
+    }
+  }
+
+  const auto outline = compute_face_outline(*document_, face_id);
+  if (!outline.has_value()) {
+    throw std::runtime_error(
+        "Face is not supported by the projection helper: " + face_id);
+  }
+
+  const auto& sketch_frame = sketch_it->sketch_parameters->plane_frame.value();
+
+  auto project_to_sketch_local =
+      [&sketch_frame](const FaceOutlinePoint& world) -> std::pair<double, double> {
+    const double dx = world.x - sketch_frame.origin_x;
+    const double dy = world.y - sketch_frame.origin_y;
+    const double dz = world.z - sketch_frame.origin_z;
+    const double sx = dx * sketch_frame.x_axis_x + dy * sketch_frame.x_axis_y +
+                      dz * sketch_frame.x_axis_z;
+    const double sy = dx * sketch_frame.y_axis_x + dy * sketch_frame.y_axis_y +
+                      dz * sketch_frame.y_axis_z;
+    return {sx, sy};
+  };
+
+  push_undo_state();
+  clear_redo_stack();
+
+  if (outline->kind == "rectangle") {
+    if (outline->rectangle_corners.size() != 4) {
+      throw std::runtime_error("Rectangle outline must have four corners");
+    }
+
+    std::array<std::pair<double, double>, 4> local{};
+    for (size_t i = 0; i < 4; ++i) {
+      local[i] = project_to_sketch_local(outline->rectangle_corners[i]);
+    }
+
+    const size_t lines_before = sketch_it->sketch_parameters->lines.size();
+    for (size_t i = 0; i < 4; ++i) {
+      const auto& a = local[i];
+      const auto& b = local[(i + 1) % 4];
+      polysmith::core::add_sketch_line(*sketch_it,
+                                       next_sketch_line_id_++,
+                                       a.first,
+                                       a.second,
+                                       b.first,
+                                       b.second);
+    }
+
+    // Lock every endpoint of the four projected lines so the user cannot
+    // drag them away from their projected location. This mirrors Fusion's
+    // "Project" behaviour where projected entities are derived geometry.
+    for (size_t i = lines_before; i < sketch_it->sketch_parameters->lines.size();
+         ++i) {
+      const auto& line = sketch_it->sketch_parameters->lines[i];
+      polysmith::core::set_sketch_point_fixed(*sketch_it,
+                                              line.start_point_id,
+                                              true);
+      polysmith::core::set_sketch_point_fixed(*sketch_it,
+                                              line.end_point_id,
+                                              true);
+    }
+  } else if (outline->kind == "circle") {
+    const auto center_local = project_to_sketch_local(outline->circle_center);
+    polysmith::core::add_sketch_circle(*sketch_it,
+                                       next_sketch_circle_id_++,
+                                       center_local.first,
+                                       center_local.second,
+                                       outline->circle_radius);
+  } else {
+    throw std::runtime_error("Unsupported projected face kind: " + outline->kind);
+  }
+
+  refresh_linked_extrudes(*document_, *sketch_it);
+  document_->selected_feature_id = sketch_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->revision += 1;
+
   return document_.value();
 }
 

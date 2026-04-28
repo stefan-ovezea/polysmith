@@ -94,6 +94,16 @@ export function makeLoadDocumentCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeProjectFaceIntoSketchCommand(faceId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "project_face_into_sketch",
+    payload: {
+      face_id: faceId,
+    },
+  };
+}
+
 export function makeAddBoxFeatureCommand(
   width: number,
   height: number,
