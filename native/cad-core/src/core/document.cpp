@@ -2,6 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+
+#include <nlohmann/json.hpp>
+
+#include "protocol/serialization.h"
 
 namespace polysmith::core {
 namespace {
@@ -1352,6 +1360,110 @@ ExportResult DocumentManager::export_document_as_stl(
     const std::string& file_path) const {
   require_document();
   return polysmith::core::export_document_as_stl(document_.value(), file_path);
+}
+
+namespace {
+
+// Extract the trailing positive integer from id strings like "feature-12",
+// "doc-3", "line-7". Returns 0 if no trailing integer is present.
+int trailing_integer(const std::string& id) {
+  size_t i = id.size();
+  while (i > 0 && id[i - 1] >= '0' && id[i - 1] <= '9') {
+    --i;
+  }
+  if (i == id.size()) {
+    return 0;
+  }
+  try {
+    return std::stoi(id.substr(i));
+  } catch (...) {
+    return 0;
+  }
+}
+
+}  // namespace
+
+void DocumentManager::save_document_to_path(const std::string& file_path) const {
+  require_document();
+  if (file_path.empty()) {
+    throw std::runtime_error("Save path cannot be empty");
+  }
+
+  const nlohmann::json payload = polysmith::protocol::to_payload(document_.value());
+
+  std::ofstream stream(file_path);
+  if (!stream.is_open()) {
+    throw std::runtime_error("Failed to open file for writing: " + file_path);
+  }
+  stream << payload.dump(2);
+  if (!stream.good()) {
+    throw std::runtime_error("Failed to write document to: " + file_path);
+  }
+}
+
+DocumentState DocumentManager::load_document_from_path(
+    const std::string& file_path) {
+  if (file_path.empty()) {
+    throw std::runtime_error("Load path cannot be empty");
+  }
+
+  std::ifstream stream(file_path);
+  if (!stream.is_open()) {
+    throw std::runtime_error("Failed to open file for reading: " + file_path);
+  }
+  std::stringstream buffer;
+  buffer << stream.rdbuf();
+  if (!stream.good() && !stream.eof()) {
+    throw std::runtime_error("Failed to read document from: " + file_path);
+  }
+
+  nlohmann::json payload;
+  try {
+    payload = nlohmann::json::parse(buffer.str());
+  } catch (const std::exception& error) {
+    throw std::runtime_error(std::string("Document parse error: ") +
+                             error.what());
+  }
+
+  DocumentState loaded = polysmith::protocol::document_from_payload(payload);
+
+  // Replace the live document with the loaded one. Clear undo/redo, since
+  // their previous contents reference a different document timeline.
+  document_ = loaded;
+  undo_stack_.clear();
+  redo_stack_.clear();
+  if (document_count_ == 0) {
+    document_count_ = 1;
+  }
+
+  // Restore id counters so subsequent feature/sketch additions don't
+  // collide with ids already present in the loaded document. Walk the
+  // feature history and bump every counter to one past the highest seen
+  // value.
+  next_document_id_ = std::max(next_document_id_, trailing_integer(loaded.id) + 1);
+
+  for (const auto& feature : loaded.feature_history) {
+    next_feature_id_ = std::max(next_feature_id_, trailing_integer(feature.id) + 1);
+
+    if (!feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    const auto& sketch = feature.sketch_parameters.value();
+    for (const auto& line : sketch.lines) {
+      next_sketch_line_id_ =
+          std::max(next_sketch_line_id_, trailing_integer(line.id) + 1);
+    }
+    for (const auto& circle : sketch.circles) {
+      next_sketch_circle_id_ =
+          std::max(next_sketch_circle_id_, trailing_integer(circle.id) + 1);
+    }
+  }
+
+  if (document_) {
+    document_->revision += 1;
+  }
+
+  return document_.value();
 }
 
 std::optional<DocumentState> DocumentManager::get_document() const {

@@ -100,6 +100,18 @@ json make_document_exported_event(const std::string& id,
   };
 }
 
+json make_document_saved_event(const std::string& id,
+                               const std::string& file_path) {
+  return {
+      {"id", id},
+      {"type", "document_saved"},
+      {"payload",
+       {
+           {"file_path", file_path},
+       }},
+  };
+}
+
 json make_error_event(const std::string& id,
                       const std::string& code,
                       const std::string& message) {

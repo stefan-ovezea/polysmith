@@ -186,9 +186,10 @@ The current implementation may extend beyond that minimum slice as small feature
 
 The current implementation now also includes a focused export spike:
 
-- the UI may send `export_document` with a destination file path
+- the UI may send `export_document` (STEP) or `export_document_stl` (binary STL) with a destination file path
 - the CAD core rebuilds exportable solids from core-owned feature history and writes the file
-- the core replies with `document_exported` when the export succeeds
+- the STL exporter triangulates the compound with a fixed linear/angular deflection before writing; the UI does not generate any tessellation itself
+- the core replies with `document_exported` when the export succeeds; the payload's `format` field reflects the writer that ran (`step` or `stl`)
 - the UI must not reconstruct geometry or write CAD files itself
 
 For the current spike, export is intentionally narrow:

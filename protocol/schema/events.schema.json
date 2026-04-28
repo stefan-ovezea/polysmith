@@ -6,7 +6,17 @@
   "properties": {
     "type": {
       "type": "string",
-      "enum": ["hello", "pong", "document_created", "document_state", "session_state", "viewport_state", "document_exported", "error"]
+      "enum": [
+        "hello",
+        "pong",
+        "document_created",
+        "document_state",
+        "session_state",
+        "viewport_state",
+        "document_exported",
+        "document_saved",
+        "error"
+      ]
     },
     "id": { "type": "string" },
     "payload": { "type": "object" }

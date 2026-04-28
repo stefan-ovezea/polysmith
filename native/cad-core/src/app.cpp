@@ -183,6 +183,26 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "save_document") {
+    const std::string file_path = read_string(command.payload, "file_path");
+    document_manager().save_document_to_path(file_path);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_saved_event(command.id, file_path));
+    return;
+  }
+
+  if (command.type == "load_document") {
+    const std::string file_path = read_string(command.payload, "file_path");
+    const auto document =
+        document_manager().load_document_from_path(file_path);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "add_box_feature") {
     const auto document = document_manager().add_box_feature(BoxFeatureParameters{
         .width = read_dimension(command.payload, "width"),

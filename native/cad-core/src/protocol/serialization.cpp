@@ -1,6 +1,225 @@
 #include "protocol/serialization.h"
 
+#include <stdexcept>
+
 namespace polysmith::protocol {
+
+namespace {
+
+const json& require(const json& payload, const char* key) {
+  if (!payload.is_object() || !payload.contains(key)) {
+    throw std::runtime_error(std::string("Missing field: ") + key);
+  }
+  return payload.at(key);
+}
+
+std::string read_string(const json& payload, const char* key) {
+  const json& value = require(payload, key);
+  if (!value.is_string()) {
+    throw std::runtime_error(std::string("Field is not a string: ") + key);
+  }
+  return value.get<std::string>();
+}
+
+double read_number(const json& payload, const char* key) {
+  const json& value = require(payload, key);
+  if (!value.is_number()) {
+    throw std::runtime_error(std::string("Field is not a number: ") + key);
+  }
+  return value.get<double>();
+}
+
+int read_int(const json& payload, const char* key) {
+  const json& value = require(payload, key);
+  if (!value.is_number_integer() && !value.is_number()) {
+    throw std::runtime_error(std::string("Field is not an integer: ") + key);
+  }
+  return value.get<int>();
+}
+
+bool read_bool(const json& payload, const char* key) {
+  const json& value = require(payload, key);
+  if (!value.is_boolean()) {
+    throw std::runtime_error(std::string("Field is not a bool: ") + key);
+  }
+  return value.get<bool>();
+}
+
+std::optional<std::string> read_optional_string(const json& payload,
+                                                const char* key) {
+  if (!payload.is_object() || !payload.contains(key) || payload.at(key).is_null()) {
+    return std::nullopt;
+  }
+  return payload.at(key).get<std::string>();
+}
+
+polysmith::core::PlaneFrame plane_frame_from_payload(const json& payload) {
+  polysmith::core::PlaneFrame frame{};
+  frame.origin_x = require(payload, "origin").at("x").get<double>();
+  frame.origin_y = require(payload, "origin").at("y").get<double>();
+  frame.origin_z = require(payload, "origin").at("z").get<double>();
+  frame.x_axis_x = require(payload, "x_axis").at("x").get<double>();
+  frame.x_axis_y = require(payload, "x_axis").at("y").get<double>();
+  frame.x_axis_z = require(payload, "x_axis").at("z").get<double>();
+  frame.y_axis_x = require(payload, "y_axis").at("x").get<double>();
+  frame.y_axis_y = require(payload, "y_axis").at("y").get<double>();
+  frame.y_axis_z = require(payload, "y_axis").at("z").get<double>();
+  frame.normal_x = require(payload, "normal").at("x").get<double>();
+  frame.normal_y = require(payload, "normal").at("y").get<double>();
+  frame.normal_z = require(payload, "normal").at("z").get<double>();
+  return frame;
+}
+
+polysmith::core::SketchFeatureParameters::SketchPlaneFrame
+sketch_plane_frame_from_payload(const json& payload) {
+  polysmith::core::SketchFeatureParameters::SketchPlaneFrame frame{};
+  const polysmith::core::PlaneFrame base = plane_frame_from_payload(payload);
+  frame.origin_x = base.origin_x;
+  frame.origin_y = base.origin_y;
+  frame.origin_z = base.origin_z;
+  frame.x_axis_x = base.x_axis_x;
+  frame.x_axis_y = base.x_axis_y;
+  frame.x_axis_z = base.x_axis_z;
+  frame.y_axis_x = base.y_axis_x;
+  frame.y_axis_y = base.y_axis_y;
+  frame.y_axis_z = base.y_axis_z;
+  frame.normal_x = base.normal_x;
+  frame.normal_y = base.normal_y;
+  frame.normal_z = base.normal_z;
+  return frame;
+}
+
+polysmith::core::ExtrudeFeatureParameters
+extrude_parameters_from_payload(const json& payload) {
+  polysmith::core::ExtrudeFeatureParameters params{};
+  params.sketch_feature_id = read_string(payload, "sketch_feature_id");
+  params.profile_id = read_string(payload, "profile_id");
+  params.plane_id = read_string(payload, "plane_id");
+  if (payload.contains("plane_frame") && !payload.at("plane_frame").is_null()) {
+    params.plane_frame = plane_frame_from_payload(payload.at("plane_frame"));
+  }
+  params.profile_kind = read_string(payload, "profile_kind");
+  params.start_x = read_number(payload, "start_x");
+  params.start_y = read_number(payload, "start_y");
+  params.width = read_number(payload, "width");
+  params.height = read_number(payload, "height");
+  params.radius = read_number(payload, "radius");
+  if (payload.contains("profile_points") && payload.at("profile_points").is_array()) {
+    for (const auto& point_payload : payload.at("profile_points")) {
+      params.profile_points.push_back(polysmith::core::SketchProfilePoint{
+          .x = point_payload.at("x").get<double>(),
+          .y = point_payload.at("y").get<double>(),
+      });
+    }
+  }
+  params.depth = read_number(payload, "depth");
+  return params;
+}
+
+polysmith::core::SketchFeatureParameters
+sketch_parameters_from_payload(const json& payload) {
+  polysmith::core::SketchFeatureParameters params{};
+  params.plane_id = read_string(payload, "plane_id");
+  if (payload.contains("plane_frame") && !payload.at("plane_frame").is_null()) {
+    params.plane_frame = sketch_plane_frame_from_payload(payload.at("plane_frame"));
+  }
+  params.active_tool = payload.contains("active_tool") &&
+                               payload.at("active_tool").is_string()
+                           ? payload.at("active_tool").get<std::string>()
+                           : std::string{};
+  if (payload.contains("lines") && payload.at("lines").is_array()) {
+    for (const auto& line_payload : payload.at("lines")) {
+      polysmith::core::SketchLine line{};
+      line.id = read_string(line_payload, "line_id");
+      line.start_point_id = read_string(line_payload, "start_point_id");
+      line.end_point_id = read_string(line_payload, "end_point_id");
+      line.start_x = read_number(line_payload, "start_x");
+      line.start_y = read_number(line_payload, "start_y");
+      line.end_x = read_number(line_payload, "end_x");
+      line.end_y = read_number(line_payload, "end_y");
+      line.constraint = read_optional_string(line_payload, "constraint");
+      params.lines.push_back(line);
+    }
+  }
+  if (payload.contains("circles") && payload.at("circles").is_array()) {
+    for (const auto& circle_payload : payload.at("circles")) {
+      polysmith::core::SketchCircle circle{};
+      circle.id = read_string(circle_payload, "circle_id");
+      circle.center_x = read_number(circle_payload, "center_x");
+      circle.center_y = read_number(circle_payload, "center_y");
+      circle.radius = read_number(circle_payload, "radius");
+      params.circles.push_back(circle);
+    }
+  }
+  if (payload.contains("points") && payload.at("points").is_array()) {
+    for (const auto& point_payload : payload.at("points")) {
+      polysmith::core::SketchPoint point{};
+      point.id = read_string(point_payload, "point_id");
+      point.kind = read_string(point_payload, "kind");
+      point.x = read_number(point_payload, "x");
+      point.y = read_number(point_payload, "y");
+      point.is_fixed = read_bool(point_payload, "is_fixed");
+      params.points.push_back(point);
+    }
+  }
+  if (payload.contains("dimensions") && payload.at("dimensions").is_array()) {
+    for (const auto& dim_payload : payload.at("dimensions")) {
+      polysmith::core::SketchDimension dimension{};
+      dimension.id = read_string(dim_payload, "dimension_id");
+      dimension.kind = read_string(dim_payload, "kind");
+      dimension.entity_id = read_string(dim_payload, "entity_id");
+      dimension.value = read_number(dim_payload, "value");
+      params.dimensions.push_back(dimension);
+    }
+  }
+  if (payload.contains("line_relations") && payload.at("line_relations").is_array()) {
+    for (const auto& relation_payload : payload.at("line_relations")) {
+      polysmith::core::SketchLineRelation relation{};
+      relation.id = read_string(relation_payload, "relation_id");
+      relation.kind = read_string(relation_payload, "kind");
+      relation.first_line_id = read_string(relation_payload, "first_line_id");
+      relation.second_line_id = read_string(relation_payload, "second_line_id");
+      params.line_relations.push_back(relation);
+    }
+  }
+  if (payload.contains("profiles") && payload.at("profiles").is_array()) {
+    for (const auto& profile_payload : payload.at("profiles")) {
+      polysmith::core::SketchProfileRegion profile{};
+      profile.id = read_string(profile_payload, "profile_id");
+      profile.kind = read_string(profile_payload, "kind");
+      if (profile_payload.contains("point_ids") &&
+          profile_payload.at("point_ids").is_array()) {
+        for (const auto& id_value : profile_payload.at("point_ids")) {
+          profile.point_ids.push_back(id_value.get<std::string>());
+        }
+      }
+      if (profile_payload.contains("line_ids") &&
+          profile_payload.at("line_ids").is_array()) {
+        for (const auto& id_value : profile_payload.at("line_ids")) {
+          profile.line_ids.push_back(id_value.get<std::string>());
+        }
+      }
+      if (profile_payload.contains("points") &&
+          profile_payload.at("points").is_array()) {
+        for (const auto& pt_payload : profile_payload.at("points")) {
+          profile.points.push_back(polysmith::core::SketchProfilePoint{
+              .x = pt_payload.at("x").get<double>(),
+              .y = pt_payload.at("y").get<double>(),
+          });
+        }
+      }
+      profile.source_circle_id =
+          read_optional_string(profile_payload, "source_circle_id");
+      profile.center_x = read_number(profile_payload, "center_x");
+      profile.center_y = read_number(profile_payload, "center_y");
+      profile.radius = read_number(profile_payload, "radius");
+      params.profiles.push_back(profile);
+    }
+  }
+  return params;
+}
+
+}  // namespace
 
 json to_payload(const polysmith::core::FeatureEntry& feature) {
   return {
@@ -755,6 +974,87 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
            {"max_dimension", viewport.scene_bounds.max_dimension},
        }},
   };
+}
+
+polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
+  polysmith::core::FeatureEntry feature{};
+  feature.id = read_string(payload, "feature_id");
+  feature.kind = read_string(payload, "kind");
+  feature.name = read_string(payload, "name");
+  feature.status = read_string(payload, "status");
+  feature.parameters_summary = read_string(payload, "parameters_summary");
+
+  if (payload.contains("box_parameters") &&
+      !payload.at("box_parameters").is_null()) {
+    const json& box_payload = payload.at("box_parameters");
+    polysmith::core::BoxFeatureParameters box{};
+    box.width = read_number(box_payload, "width");
+    box.height = read_number(box_payload, "height");
+    box.depth = read_number(box_payload, "depth");
+    feature.box_parameters = box;
+  }
+
+  if (payload.contains("cylinder_parameters") &&
+      !payload.at("cylinder_parameters").is_null()) {
+    const json& cyl_payload = payload.at("cylinder_parameters");
+    polysmith::core::CylinderFeatureParameters cylinder{};
+    cylinder.radius = read_number(cyl_payload, "radius");
+    cylinder.height = read_number(cyl_payload, "height");
+    feature.cylinder_parameters = cylinder;
+  }
+
+  if (payload.contains("extrude_parameters") &&
+      !payload.at("extrude_parameters").is_null()) {
+    feature.extrude_parameters =
+        extrude_parameters_from_payload(payload.at("extrude_parameters"));
+  }
+
+  if (payload.contains("sketch_parameters") &&
+      !payload.at("sketch_parameters").is_null()) {
+    feature.sketch_parameters =
+        sketch_parameters_from_payload(payload.at("sketch_parameters"));
+  }
+
+  return feature;
+}
+
+polysmith::core::DocumentState document_from_payload(const json& payload) {
+  polysmith::core::DocumentState document{};
+  document.id = read_string(payload, "document_id");
+  document.name = read_string(payload, "name");
+  document.units = read_string(payload, "units");
+  document.revision = read_int(payload, "revision");
+  document.selected_feature_id =
+      read_optional_string(payload, "selected_feature_id");
+  document.selected_reference_id =
+      read_optional_string(payload, "selected_reference_id");
+  document.selected_face_id = read_optional_string(payload, "selected_face_id");
+  document.active_sketch_plane_id =
+      read_optional_string(payload, "active_sketch_plane_id");
+  document.active_sketch_face_id =
+      read_optional_string(payload, "active_sketch_face_id");
+  document.active_sketch_feature_id =
+      read_optional_string(payload, "active_sketch_feature_id");
+  document.active_sketch_tool =
+      read_optional_string(payload, "active_sketch_tool");
+  document.selected_sketch_point_id =
+      read_optional_string(payload, "selected_sketch_point_id");
+  document.selected_sketch_entity_id =
+      read_optional_string(payload, "selected_sketch_entity_id");
+  document.selected_sketch_dimension_id =
+      read_optional_string(payload, "selected_sketch_dimension_id");
+  document.selected_sketch_profile_id =
+      read_optional_string(payload, "selected_sketch_profile_id");
+
+  if (payload.contains("feature_history") &&
+      payload.at("feature_history").is_array()) {
+    for (const auto& feature_payload : payload.at("feature_history")) {
+      document.feature_history.push_back(
+          feature_entry_from_payload(feature_payload));
+    }
+  }
+
+  return document;
 }
 
 }  // namespace polysmith::protocol

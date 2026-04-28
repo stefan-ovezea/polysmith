@@ -74,6 +74,26 @@ export function makeExportDocumentStlCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeSaveDocumentCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "save_document",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
+export function makeLoadDocumentCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "load_document",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
 export function makeAddBoxFeatureCommand(
   width: number,
   height: number,

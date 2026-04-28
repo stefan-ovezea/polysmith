@@ -121,7 +121,8 @@ function getStatusFromMessage(
     message.type === "document_created" ||
     message.type === "document_state" ||
     message.type === "viewport_state" ||
-    message.type === "document_exported"
+    message.type === "document_exported" ||
+    message.type === "document_saved"
   ) {
     return "connected";
   }

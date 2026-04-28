@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { awaitDocumentChange, useCadCoreStore } from "./state";
 import { useCadCore } from "./hooks";
 import {
@@ -95,6 +95,8 @@ function App() {
     createDocument,
     exportDocument,
     exportDocumentStl,
+    saveDocument,
+    loadDocument,
     addBoxFeature,
     addCylinderFeature,
     updateExtrudeDepth,
@@ -443,6 +445,45 @@ function App() {
     return filePath;
   }
 
+  async function pickSaveDocumentPath() {
+    const filePath = await save({
+      title: "Save PolySmith document",
+      defaultPath: `${makeDefaultExportBaseName()}.polysmith`,
+      filters: [
+        {
+          name: "PolySmith document",
+          extensions: ["polysmith", "json"],
+        },
+      ],
+    });
+
+    if (filePath === null) {
+      addMessage("save canceled");
+      return null;
+    }
+    return filePath;
+  }
+
+  async function pickLoadDocumentPath() {
+    const result = await open({
+      title: "Open PolySmith document",
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: "PolySmith document",
+          extensions: ["polysmith", "json"],
+        },
+      ],
+    });
+
+    if (result === null || Array.isArray(result)) {
+      addMessage("open canceled");
+      return null;
+    }
+    return result;
+  }
+
   async function runAction(action: () => Promise<void>) {
     try {
       await action();
@@ -492,6 +533,28 @@ function App() {
             await runAction(async () => {
               await exportDocumentStl(filePath);
               addMessage(`stl export requested: ${filePath}`);
+            });
+          }}
+          onSaveDocument={async () => {
+            const filePath = await pickSaveDocumentPath();
+            if (!filePath) {
+              return;
+            }
+
+            await runAction(async () => {
+              await saveDocument(filePath);
+              addMessage(`saved: ${filePath}`);
+            });
+          }}
+          onLoadDocument={async () => {
+            const filePath = await pickLoadDocumentPath();
+            if (!filePath) {
+              return;
+            }
+
+            await runAction(async () => {
+              await loadDocument(filePath);
+              addMessage(`loaded: ${filePath}`);
             });
           }}
           onUndo={async () => {

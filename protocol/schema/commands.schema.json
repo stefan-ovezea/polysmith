@@ -16,6 +16,8 @@
         "get_viewport_state",
         "export_document",
         "export_document_stl",
+        "save_document",
+        "load_document",
         "add_box_feature",
         "add_cylinder_feature",
         "update_box_feature",

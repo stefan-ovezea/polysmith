@@ -24,4 +24,10 @@ json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primit
 json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive);
 json to_payload(const polysmith::core::ViewportState& viewport);
 
+// Inverse of `to_payload(DocumentState)`. Used when loading a saved
+// `.polysmith` document back into the core. Throws std::runtime_error on
+// malformed payloads.
+polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload);
+polysmith::core::DocumentState document_from_payload(const json& payload);
+
 }  // namespace polysmith::protocol

@@ -16,6 +16,8 @@ import {
   makeDeleteFeatureCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
+  makeLoadDocumentCommand,
+  makeSaveDocumentCommand,
   makeFinishSketchCommand,
   makeReenterSketchCommand,
   makeGetDocumentStateCommand,
@@ -140,6 +142,17 @@ export function useCadCore() {
     },
     exportDocumentStl: async (filePath: string) => {
       await sendCoreCommand(makeExportDocumentStlCommand(filePath));
+    },
+    saveDocument: async (filePath: string) => {
+      await sendCoreCommand(makeSaveDocumentCommand(filePath));
+    },
+    loadDocument: async (filePath: string) => {
+      await sendCoreCommand(makeLoadDocumentCommand(filePath));
+      // The load command replies with `document_state`. Refresh session
+      // (undo/redo flags) and viewport so the UI reflects the loaded
+      // document end-to-end.
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
     },
     addBoxFeature: async (width: number, height: number, depth: number) => {
       await sendCoreCommand(makeAddBoxFeatureCommand(width, height, depth));

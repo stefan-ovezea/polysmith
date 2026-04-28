@@ -24,6 +24,8 @@ json make_session_state_event(const std::string& id, const json& session);
 json make_viewport_state_event(const std::string& id, const json& viewport);
 json make_document_exported_event(const std::string& id,
                                   const json& export_result);
+json make_document_saved_event(const std::string& id,
+                               const std::string& file_path);
 json make_error_event(const std::string& id,
                       const std::string& code,
                       const std::string& message);

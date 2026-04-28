@@ -122,6 +122,14 @@ export interface DocumentExportedEvent extends BaseMessage {
   payload: DocumentExportResult;
 }
 
+export interface DocumentSavedEvent extends BaseMessage {
+  type: "document_saved";
+  id: string;
+  payload: {
+    file_path: string;
+  };
+}
+
 export interface ErrorEvent extends BaseMessage {
   type: "error";
   id?: string;
@@ -139,6 +147,7 @@ export type CoreMessage =
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent
+  | DocumentSavedEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -182,6 +191,22 @@ export interface ExportDocumentCommand {
 export interface ExportDocumentStlCommand {
   id: string;
   type: "export_document_stl";
+  payload: {
+    file_path: string;
+  };
+}
+
+export interface SaveDocumentCommand {
+  id: string;
+  type: "save_document";
+  payload: {
+    file_path: string;
+  };
+}
+
+export interface LoadDocumentCommand {
+  id: string;
+  type: "load_document";
   payload: {
     file_path: string;
   };
@@ -506,6 +531,8 @@ export type CoreCommand =
   | GetViewportStateCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
+  | SaveDocumentCommand
+  | LoadDocumentCommand
   | AddBoxFeatureCommand
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand

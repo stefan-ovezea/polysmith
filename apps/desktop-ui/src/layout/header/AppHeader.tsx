@@ -23,6 +23,8 @@ interface AppHeaderProps {
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
   onExportDocumentStl: () => Promise<void>;
+  onSaveDocument: () => Promise<void>;
+  onLoadDocument: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   onAddBoxFeature: (
@@ -54,6 +56,8 @@ export function AppHeader({
   onCreateDocument,
   onExportDocument,
   onExportDocumentStl,
+  onSaveDocument,
+  onLoadDocument,
   onUndo,
   onRedo,
   onAddBoxFeature,
@@ -121,6 +125,20 @@ export function AppHeader({
             disabled={disabled}
           >
             New
+          </button>
+          <button
+            className="cad-ribbon-action"
+            onClick={() => void onLoadDocument()}
+            disabled={disabled}
+          >
+            Open
+          </button>
+          <button
+            className="cad-ribbon-action"
+            onClick={() => void onSaveDocument()}
+            disabled={disabled}
+          >
+            Save
           </button>
           <button
             className="cad-ribbon-action"

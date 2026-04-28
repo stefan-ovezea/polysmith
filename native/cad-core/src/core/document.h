@@ -113,6 +113,8 @@ class DocumentManager {
   DocumentState clear_selection();
   ExportResult export_document_as_step(const std::string& file_path) const;
   ExportResult export_document_as_stl(const std::string& file_path) const;
+  void save_document_to_path(const std::string& file_path) const;
+  DocumentState load_document_from_path(const std::string& file_path);
   std::optional<DocumentState> get_document() const;
   SessionState get_session_state() const;
 
