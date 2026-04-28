@@ -28,6 +28,8 @@ struct DetectedSketchProfiles {
   std::vector<CircleSketchProfile> circles;
 };
 
+std::vector<SketchProfileRegion> build_sketch_profile_regions(
+    const SketchFeatureParameters& parameters);
 DetectedSketchProfiles detect_sketch_profiles(const FeatureEntry& feature);
 
 }  // namespace polysmith::core

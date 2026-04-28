@@ -328,6 +328,24 @@ ViewportSketchCirclePrimitive make_sketch_circle_primitive(
   };
 }
 
+ViewportSketchPointPrimitive make_sketch_point_primitive(
+    const SketchPoint& point,
+    const SketchFeatureParameters& parameters,
+    bool is_selected) {
+  const WorldPoint world = to_world_point(parameters, point.x, point.y);
+
+  return ViewportSketchPointPrimitive{
+      .point_id = point.id,
+      .plane_id = parameters.plane_id,
+      .kind = point.kind,
+      .position_x = world.x,
+      .position_y = world.y,
+      .position_z = world.z,
+      .is_fixed = point.is_fixed,
+      .is_selected = is_selected,
+  };
+}
+
 ViewportSketchDimensionPrimitive make_line_dimension_primitive(
     const SketchLine& line,
     const SketchDimension& dimension,
@@ -447,6 +465,27 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
       .entity_id = line.id,
       .related_entity_id = related_entity_id,
       .label = label,
+      .is_selected = is_selected,
+      .position_x = position.x,
+      .position_y = position.y,
+      .position_z = position.z,
+  };
+}
+
+ViewportSketchConstraintPrimitive make_point_constraint_primitive(
+    const SketchPoint& point,
+    const SketchFeatureParameters& parameters,
+    bool is_selected) {
+  const WorldPoint position = to_world_point(
+      parameters, point.x, point.y, kSketchPlaneOffset + kConstraintBadgeOffset);
+
+  return ViewportSketchConstraintPrimitive{
+      .constraint_id = "constraint-fixed-" + point.id,
+      .plane_id = parameters.plane_id,
+      .kind = "fixed",
+      .entity_id = point.id,
+      .related_entity_id = std::nullopt,
+      .label = "FIX",
       .is_selected = is_selected,
       .position_x = position.x,
       .position_y = position.y,
@@ -582,6 +621,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
         .reference_axes = {},
         .sketch_lines = {},
         .sketch_circles = {},
+        .sketch_points = {},
         .sketch_dimensions = {},
         .sketch_constraints = {},
         .sketch_profiles = {},
@@ -609,6 +649,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
   std::vector<ViewportReferenceAxis> reference_axes;
   std::vector<ViewportSketchLinePrimitive> sketch_lines;
   std::vector<ViewportSketchCirclePrimitive> sketch_circles;
+  std::vector<ViewportSketchPointPrimitive> sketch_points;
   std::vector<ViewportSketchDimensionPrimitive> sketch_dimensions;
   std::vector<ViewportSketchConstraintPrimitive> sketch_constraints;
   std::vector<ViewportSketchProfilePrimitive> sketch_profiles;
@@ -1632,6 +1673,21 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
         }
       }
 
+      if (document->active_sketch_feature_id.has_value() &&
+          document->active_sketch_feature_id.value() == feature.id) {
+        for (const auto& point : feature.sketch_parameters->points) {
+          const bool is_selected_point =
+              document->selected_sketch_point_id.has_value() &&
+              document->selected_sketch_point_id.value() == point.id;
+          sketch_points.push_back(make_sketch_point_primitive(
+              point, *feature.sketch_parameters, is_selected_point));
+          if (point.is_fixed) {
+            sketch_constraints.push_back(make_point_constraint_primitive(
+                point, *feature.sketch_parameters, is_selected_point));
+          }
+        }
+      }
+
       for (const auto& rectangle : profiles.polygons) {
         const bool is_selected_profile =
             document->selected_sketch_profile_id.has_value() &&
@@ -1761,6 +1817,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
       .reference_axes = reference_axes,
       .sketch_lines = sketch_lines,
       .sketch_circles = sketch_circles,
+      .sketch_points = sketch_points,
       .sketch_dimensions = sketch_dimensions,
       .sketch_constraints = sketch_constraints,
       .sketch_profiles = sketch_profiles,

@@ -209,6 +209,17 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "update_extrude_depth") {
+    const auto document = document_manager().update_extrude_depth(
+        read_string(command.payload, "feature_id"),
+        read_dimension(command.payload, "depth"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "rename_feature") {
     const auto document = document_manager().rename_feature(
         read_string(command.payload, "feature_id"),
@@ -316,6 +327,18 @@ void CadCoreApp::handle_command_line(const std::string& line) {
         read_dimension(command.payload, "start_y"),
         read_dimension(command.payload, "end_x"),
         read_dimension(command.payload, "end_y"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "update_sketch_point") {
+    const auto document = document_manager().update_sketch_point(
+        read_string(command.payload, "point_id"),
+        read_dimension(command.payload, "x"),
+        read_dimension(command.payload, "y"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
@@ -472,6 +495,27 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "select_sketch_point") {
+    const auto document = document_manager().select_sketch_point(
+        read_string(command.payload, "point_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "set_sketch_point_fixed") {
+    const auto document = document_manager().set_sketch_point_fixed(
+        read_string(command.payload, "point_id"),
+        command.payload.at("is_fixed").get<bool>());
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "select_sketch_entity") {
     const auto document = document_manager().select_sketch_entity(
         read_string(command.payload, "entity_id"));
@@ -494,6 +538,16 @@ void CadCoreApp::handle_command_line(const std::string& line) {
 
   if (command.type == "finish_sketch") {
     const auto document = document_manager().finish_sketch();
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "reenter_sketch") {
+    const auto document = document_manager().reenter_sketch(
+        read_string(command.payload, "feature_id"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

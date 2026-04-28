@@ -10,6 +10,7 @@ import {
   ViewportSketchConstraint,
   ViewportSketchDimension,
   ViewportSketchLine,
+  ViewportSketchPoint,
   ViewportSketchProfile,
   ViewportSolidFace,
   SketchTool,
@@ -28,6 +29,7 @@ export interface DocumentState {
   active_sketch_face_id: string | null;
   active_sketch_feature_id: string | null;
   active_sketch_tool: SketchTool | null;
+  selected_sketch_point_id: string | null;
   selected_sketch_entity_id: string | null;
   selected_sketch_dimension_id: string | null;
   selected_sketch_profile_id: string | null;
@@ -52,6 +54,7 @@ export interface ViewportState {
   reference_axes: ViewportReferenceAxis[];
   sketch_lines: ViewportSketchLine[];
   sketch_circles: ViewportSketchCircle[];
+  sketch_points: ViewportSketchPoint[];
   sketch_dimensions: ViewportSketchDimension[];
   sketch_constraints: ViewportSketchConstraint[];
   sketch_profiles: ViewportSketchProfile[];
@@ -206,6 +209,15 @@ export interface UpdateBoxFeatureCommand {
   };
 }
 
+export interface UpdateExtrudeDepthCommand {
+  id: string;
+  type: "update_extrude_depth";
+  payload: {
+    feature_id: string;
+    depth: number;
+  };
+}
+
 export interface RenameFeatureCommand {
   id: string;
   type: "rename_feature";
@@ -328,6 +340,16 @@ export interface UpdateSketchLineCommand {
   };
 }
 
+export interface UpdateSketchPointCommand {
+  id: string;
+  type: "update_sketch_point";
+  payload: {
+    point_id: string;
+    x: number;
+    y: number;
+  };
+}
+
 export interface SetSketchLineConstraintCommand {
   id: string;
   type: "set_sketch_line_constraint";
@@ -370,6 +392,15 @@ export interface SetSketchCoincidentConstraintCommand {
   payload: {
     point_id: string;
     other_point_id: string;
+  };
+}
+
+export interface SetSketchPointFixedCommand {
+  id: string;
+  type: "set_sketch_point_fixed";
+  payload: {
+    point_id: string;
+    is_fixed: boolean;
   };
 }
 
@@ -418,6 +449,14 @@ export interface SelectSketchEntityCommand {
   };
 }
 
+export interface SelectSketchPointCommand {
+  id: string;
+  type: "select_sketch_point";
+  payload: {
+    point_id: string;
+  };
+}
+
 export interface SelectSketchDimensionCommand {
   id: string;
   type: "select_sketch_dimension";
@@ -430,6 +469,14 @@ export interface FinishSketchCommand {
   id: string;
   type: "finish_sketch";
   payload: Record<string, never>;
+}
+
+export interface ReenterSketchCommand {
+  id: string;
+  type: "reenter_sketch";
+  payload: {
+    feature_id: string;
+  };
 }
 
 export interface ClearSelectionCommand {
@@ -453,6 +500,7 @@ export type CoreCommand =
   | AddBoxFeatureCommand
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand
+  | UpdateExtrudeDepthCommand
   | RenameFeatureCommand
   | DeleteFeatureCommand
   | UndoCommand
@@ -464,11 +512,13 @@ export type CoreCommand =
   | StartSketchOnFaceCommand
   | SetSketchToolCommand
   | UpdateSketchLineCommand
+  | UpdateSketchPointCommand
   | SetSketchLineConstraintCommand
   | SetSketchEqualLengthConstraintCommand
   | SetSketchPerpendicularConstraintCommand
   | SetSketchParallelConstraintCommand
   | SetSketchCoincidentConstraintCommand
+  | SetSketchPointFixedCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
   | SelectSketchProfileCommand
@@ -476,8 +526,10 @@ export type CoreCommand =
   | AddSketchLineCommand
   | AddSketchRectangleCommand
   | AddSketchCircleCommand
+  | SelectSketchPointCommand
   | SelectSketchEntityCommand
   | SelectSketchDimensionCommand
   | FinishSketchCommand
+  | ReenterSketchCommand
   | ClearSelectionCommand
   | ShutdownCommand;

@@ -112,6 +112,20 @@ export function makeUpdateBoxFeatureCommand(
   };
 }
 
+export function makeUpdateExtrudeDepthCommand(
+  featureId: string,
+  depth: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_extrude_depth",
+    payload: {
+      feature_id: featureId,
+      depth,
+    },
+  };
+}
+
 export function makeRenameFeatureCommand(
   featureId: string,
   name: string,
@@ -243,6 +257,22 @@ export function makeUpdateSketchLineCommand(
   };
 }
 
+export function makeUpdateSketchPointCommand(
+  pointId: string,
+  x: number,
+  y: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_point",
+    payload: {
+      point_id: pointId,
+      x,
+      y,
+    },
+  };
+}
+
 export function makeSetSketchLineConstraintCommand(
   lineId: string,
   constraint: "none" | "horizontal" | "vertical",
@@ -309,6 +339,20 @@ export function makeSetSketchCoincidentConstraintCommand(
     payload: {
       point_id: pointId,
       other_point_id: otherPointId,
+    },
+  };
+}
+
+export function makeSetSketchPointFixedCommand(
+  pointId: string,
+  isFixed: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_point_fixed",
+    payload: {
+      point_id: pointId,
+      is_fixed: isFixed,
     },
   };
 }
@@ -421,6 +465,16 @@ export function makeAddSketchCircleCommand(
   };
 }
 
+export function makeSelectSketchPointCommand(pointId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_point",
+    payload: {
+      point_id: pointId,
+    },
+  };
+}
+
 export function makeSelectSketchEntityCommand(entityId: string): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -448,6 +502,16 @@ export function makeFinishSketchCommand(): CoreCommand {
     id: crypto.randomUUID(),
     type: "finish_sketch",
     payload: {},
+  };
+}
+
+export function makeReenterSketchCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "reenter_sketch",
+    payload: {
+      feature_id: featureId,
+    },
   };
 }
 

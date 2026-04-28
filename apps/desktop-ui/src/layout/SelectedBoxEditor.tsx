@@ -3,6 +3,7 @@ import type { FeatureEntry } from "@/types";
 
 interface SelectedBoxEditorProps {
   feature: FeatureEntry | null;
+  selectedSketchPointId?: string | null;
   selectedSketchEntityId?: string | null;
   selectedSketchDimensionId?: string | null;
   disabled: boolean;
@@ -31,10 +32,13 @@ interface SelectedBoxEditorProps {
     dimensionId: string,
     value: number,
   ) => Promise<void>;
+  onUpdateSketchPoint: (pointId: string, x: number, y: number) => Promise<void>;
+  onSetSketchPointFixed: (pointId: string, isFixed: boolean) => Promise<void>;
 }
 
 export function SelectedBoxEditor({
   feature,
+  selectedSketchPointId,
   selectedSketchEntityId,
   selectedSketchDimensionId,
   disabled,
@@ -44,6 +48,8 @@ export function SelectedBoxEditor({
   onUpdateSketchLine,
   onUpdateSketchCircle,
   onUpdateSketchDimension,
+  onUpdateSketchPoint,
+  onSetSketchPointFixed,
 }: SelectedBoxEditorProps) {
   const [name, setName] = useState("");
   const [width, setWidth] = useState("");
@@ -57,6 +63,8 @@ export function SelectedBoxEditor({
   const [circleCenterY, setCircleCenterY] = useState("");
   const [circleRadius, setCircleRadius] = useState("");
   const [dimensionValue, setDimensionValue] = useState("");
+  const [pointX, setPointX] = useState("");
+  const [pointY, setPointY] = useState("");
 
   useEffect(() => {
     const selectedSketchLine = feature?.sketch_parameters?.lines.find(
@@ -64,6 +72,9 @@ export function SelectedBoxEditor({
     );
     const selectedSketchCircle = feature?.sketch_parameters?.circles.find(
       (circle) => circle.circle_id === selectedSketchEntityId,
+    );
+    const selectedSketchPoint = feature?.sketch_parameters?.points.find(
+      (point) => point.point_id === selectedSketchPointId,
     );
     const selectedSketchDimension =
       feature?.sketch_parameters?.dimensions.find(
@@ -98,6 +109,17 @@ export function SelectedBoxEditor({
       setDimensionValue(
         selectedSketchDimension ? String(selectedSketchDimension.value) : "",
       );
+      setPointX(selectedSketchPoint ? String(selectedSketchPoint.x) : "");
+      setPointY(selectedSketchPoint ? String(selectedSketchPoint.y) : "");
+      if (selectedSketchPoint) {
+        setLineStartX("");
+        setLineStartY("");
+        setLineEndX("");
+        setLineEndY("");
+        setCircleCenterX("");
+        setCircleCenterY("");
+        setCircleRadius("");
+      }
       return;
     }
 
@@ -106,7 +128,14 @@ export function SelectedBoxEditor({
     setHeight(String(feature.box_parameters.height));
     setDepth(String(feature.box_parameters.depth));
     setDimensionValue("");
-  }, [feature, selectedSketchEntityId]);
+    setPointX("");
+    setPointY("");
+  }, [
+    feature,
+    selectedSketchEntityId,
+    selectedSketchDimensionId,
+    selectedSketchPointId,
+  ]);
 
   if (!feature) {
     return (
@@ -127,6 +156,9 @@ export function SelectedBoxEditor({
     );
     const selectedSketchCircle = feature.sketch_parameters?.circles.find(
       (circle) => circle.circle_id === selectedSketchEntityId,
+    );
+    const selectedSketchPoint = feature.sketch_parameters?.points.find(
+      (point) => point.point_id === selectedSketchPointId,
     );
     const selectedSketchDimension =
       feature.sketch_parameters?.dimensions.find(
@@ -157,6 +189,82 @@ export function SelectedBoxEditor({
               <p className="text-on-surface-muted">
                 Active tool: {feature.sketch_parameters.active_tool}
               </p>
+              {selectedSketchPoint ? (
+                <form
+                  className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void onUpdateSketchPoint(
+                      selectedSketchPoint.point_id,
+                      Number(pointX),
+                      Number(pointY),
+                    );
+                  }}
+                >
+                  <p className="text-on-surface-muted">
+                    Selected point {selectedSketchPoint.point_id} ·{" "}
+                    {selectedSketchPoint.kind}
+                    {selectedSketchPoint.is_fixed ? " · fixed" : ""}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
+                        X
+                      </p>
+                      <input
+                        className="cad-input mt-1"
+                        type="number"
+                        step="0.01"
+                        value={pointX}
+                        onChange={(event) => {
+                          setPointX(event.target.value);
+                        }}
+                        disabled={disabled || selectedSketchPoint.is_fixed}
+                      />
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
+                        Y
+                      </p>
+                      <input
+                        className="cad-input mt-1"
+                        type="number"
+                        step="0.01"
+                        value={pointY}
+                        onChange={(event) => {
+                          setPointY(event.target.value);
+                        }}
+                        disabled={disabled || selectedSketchPoint.is_fixed}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    className="cad-action-primary min-w-[140px]"
+                    type="submit"
+                    disabled={
+                      disabled ||
+                      selectedSketchPoint.is_fixed ||
+                      !Number.isFinite(Number(pointX)) ||
+                      !Number.isFinite(Number(pointY))
+                    }
+                  >
+                    Move Point
+                  </button>
+                  <button
+                    className="cad-action-primary min-w-[140px]"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      void onSetSketchPointFixed(
+                        selectedSketchPoint.point_id,
+                        !selectedSketchPoint.is_fixed,
+                      );
+                    }}
+                  >
+                    {selectedSketchPoint.is_fixed ? "Unfix Point" : "Fix Point"}
+                  </button>
+                </form>
+              ) : null}
               {selectedSketchLine ? (
                 <form
                   className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-3"
@@ -381,6 +489,12 @@ export function SelectedBoxEditor({
                 </form>
               ) : null}
             </>
+          ) : null}
+          {feature.extrude_parameters ? (
+            <p className="text-on-surface-muted">
+              Extrude from {feature.extrude_parameters.profile_id} · depth{" "}
+              {feature.extrude_parameters.depth} mm
+            </p>
           ) : null}
           <button
             className="cad-action-ghost"

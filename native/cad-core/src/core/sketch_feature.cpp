@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <tuple>
 
+#include "core/sketch_profile.h"
+
 namespace polysmith::core {
 namespace {
 
@@ -56,6 +58,30 @@ bool points_match(double left_x,
   return nearly_equal(left_x, right_x) && nearly_equal(left_y, right_y);
 }
 
+SketchPoint* find_sketch_point(SketchFeatureParameters& parameters,
+                               const std::string& point_id) {
+  const auto point_it = std::find_if(
+      parameters.points.begin(),
+      parameters.points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  return point_it == parameters.points.end() ? nullptr : &(*point_it);
+}
+
+const SketchPoint* find_sketch_point(const SketchFeatureParameters& parameters,
+                                     const std::string& point_id) {
+  const auto point_it = std::find_if(
+      parameters.points.begin(),
+      parameters.points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  return point_it == parameters.points.end() ? nullptr : &(*point_it);
+}
+
+bool point_is_fixed(const SketchFeatureParameters& parameters,
+                    const std::string& point_id) {
+  const SketchPoint* point = find_sketch_point(parameters, point_id);
+  return point != nullptr && point->is_fixed;
+}
+
 std::optional<std::string> infer_constraint_hint(double start_x,
                                                  double start_y,
                                                  double end_x,
@@ -87,6 +113,42 @@ void apply_line_constraint(SketchLine& line) {
 
   if (line.constraint.value() == "vertical") {
     line.end_x = line.start_x;
+  }
+}
+
+void apply_line_constraint_respecting_fixed_points(
+    const SketchFeatureParameters& parameters,
+    SketchLine& line) {
+  if (!line.constraint.has_value()) {
+    return;
+  }
+
+  const bool start_fixed = point_is_fixed(parameters, line.start_point_id);
+  const bool end_fixed = point_is_fixed(parameters, line.end_point_id);
+
+  if (line.constraint.value() == "horizontal") {
+    if (start_fixed && end_fixed && !nearly_equal(line.start_y, line.end_y)) {
+      throw std::runtime_error(
+          "Cannot make a line horizontal when both endpoints are fixed");
+    }
+    if (end_fixed) {
+      line.start_y = line.end_y;
+    } else {
+      line.end_y = line.start_y;
+    }
+    return;
+  }
+
+  if (line.constraint.value() == "vertical") {
+    if (start_fixed && end_fixed && !nearly_equal(line.start_x, line.end_x)) {
+      throw std::runtime_error(
+          "Cannot make a line vertical when both endpoints are fixed");
+    }
+    if (end_fixed) {
+      line.start_x = line.end_x;
+    } else {
+      line.end_x = line.start_x;
+    }
   }
 }
 
@@ -191,6 +253,58 @@ void drive_line_length(SketchLine& line, double value) {
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 }
 
+void drive_line_length_from_fixed_end(SketchLine& line, double value) {
+  const double dx = line.start_x - line.end_x;
+  const double dy = line.start_y - line.end_y;
+  const double current_length = std::sqrt(dx * dx + dy * dy);
+
+  if (current_length <= kMinimumSketchDimensionValue) {
+    throw std::runtime_error("Cannot drive a zero-length sketch line");
+  }
+
+  double direction_x = dx / current_length;
+  double direction_y = dy / current_length;
+
+  if (line.constraint.has_value()) {
+    if (line.constraint.value() == "horizontal") {
+      direction_x = dx >= 0.0 ? 1.0 : -1.0;
+      direction_y = 0.0;
+    } else if (line.constraint.value() == "vertical") {
+      direction_x = 0.0;
+      direction_y = dy >= 0.0 ? 1.0 : -1.0;
+    }
+  }
+
+  line.start_x = line.end_x + direction_x * value;
+  line.start_y = line.end_y + direction_y * value;
+  if (line.constraint == "horizontal") {
+    line.start_y = line.end_y;
+  } else if (line.constraint == "vertical") {
+    line.start_x = line.end_x;
+  }
+  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+}
+
+void drive_line_length_respecting_fixed_points(
+    SketchFeatureParameters& parameters,
+    SketchLine& line,
+    double value) {
+  const bool start_fixed = point_is_fixed(parameters, line.start_point_id);
+  const bool end_fixed = point_is_fixed(parameters, line.end_point_id);
+
+  if (start_fixed && end_fixed) {
+    throw std::runtime_error(
+        "Cannot drive a line length when both endpoints are fixed");
+  }
+
+  if (end_fixed) {
+    drive_line_length_from_fixed_end(line, value);
+    return;
+  }
+
+  drive_line_length(line, value);
+}
+
 struct LineEndpointRef {
   size_t line_index;
   bool is_start;
@@ -252,6 +366,14 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
 std::optional<std::tuple<double, double>> find_point_position(
     const SketchFeatureParameters& parameters,
     const std::string& point_id) {
+  const auto point_it = std::find_if(
+      parameters.points.begin(),
+      parameters.points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  if (point_it != parameters.points.end()) {
+    return std::tuple<double, double>{point_it->x, point_it->y};
+  }
+
   for (const auto& line : parameters.lines) {
     if (line.start_point_id == point_id) {
       return std::tuple<double, double>{line.start_x, line.start_y};
@@ -263,6 +385,70 @@ std::optional<std::tuple<double, double>> find_point_position(
   }
 
   return std::nullopt;
+}
+
+void rebuild_sketch_points(SketchFeatureParameters& parameters) {
+  parameters.points.clear();
+
+  const auto append_point = [&](const std::string& point_id,
+                                const std::string& kind,
+                                double x,
+                                double y) {
+    const auto existing_it = std::find_if(
+        parameters.points.begin(),
+        parameters.points.end(),
+        [&](const SketchPoint& point) { return point.id == point_id; });
+    if (existing_it != parameters.points.end()) {
+      return;
+    }
+
+    parameters.points.push_back(SketchPoint{
+        .id = point_id,
+        .kind = kind,
+        .x = x,
+        .y = y,
+        .is_fixed = false,
+    });
+  };
+
+  for (const auto& line : parameters.lines) {
+    append_point(line.start_point_id, "endpoint", line.start_x, line.start_y);
+    append_point(line.end_point_id, "endpoint", line.end_x, line.end_y);
+  }
+
+  for (const auto& circle : parameters.circles) {
+    append_point(
+        "point-circle-" + circle.id + "-center", "center", circle.center_x, circle.center_y);
+  }
+}
+
+void sync_fixed_point_flags(SketchFeatureParameters& parameters,
+                            const std::vector<SketchPoint>& previous_points) {
+  for (auto& point : parameters.points) {
+    const auto previous_it = std::find_if(
+        previous_points.begin(),
+        previous_points.end(),
+        [&](const SketchPoint& previous) { return previous.id == point.id; });
+    if (previous_it != previous_points.end()) {
+      point.is_fixed = previous_it->is_fixed;
+    }
+  }
+}
+
+void rebuild_sketch_profiles(SketchFeatureParameters& parameters) {
+  parameters.profiles = build_sketch_profile_regions(parameters);
+}
+
+void refresh_sketch_derived_state(FeatureEntry& feature) {
+  if (!feature.sketch_parameters.has_value()) {
+    return;
+  }
+
+  const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
+  rebuild_sketch_points(*feature.sketch_parameters);
+  sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
+  rebuild_sketch_profiles(*feature.sketch_parameters);
+  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
 }
 
 std::vector<std::string> collect_line_ids_for_point(
@@ -286,6 +472,9 @@ void replace_point_id_references(SketchFeatureParameters& parameters,
     return;
   }
 
+  const bool merged_fixed =
+      point_is_fixed(parameters, from_point_id) || point_is_fixed(parameters, to_point_id);
+
   for (auto& line : parameters.lines) {
     if (line.start_point_id == from_point_id) {
       line.start_point_id = to_point_id;
@@ -293,6 +482,10 @@ void replace_point_id_references(SketchFeatureParameters& parameters,
     if (line.end_point_id == from_point_id) {
       line.end_point_id = to_point_id;
     }
+  }
+
+  if (SketchPoint* target_point = find_sketch_point(parameters, to_point_id)) {
+    target_point->is_fixed = merged_fixed;
   }
 }
 
@@ -331,37 +524,74 @@ void set_endpoint_with_constraint(SketchLine& line,
   }
 }
 
+void restore_fixed_line_endpoints(SketchFeatureParameters& parameters,
+                                  SketchLine& line,
+                                  double previous_start_x,
+                                  double previous_start_y,
+                                  double previous_end_x,
+                                  double previous_end_y) {
+  if (point_is_fixed(parameters, line.start_point_id)) {
+    line.start_x = previous_start_x;
+    line.start_y = previous_start_y;
+  }
+
+  if (point_is_fixed(parameters, line.end_point_id)) {
+    line.end_x = previous_end_x;
+    line.end_y = previous_end_y;
+  }
+}
+
 void snap_line_endpoints_to_coincident_geometry(
     SketchFeatureParameters& parameters,
     SketchLine& line) {
   const auto snapped_start =
       find_coincident_endpoint(parameters, line.id, line.start_x, line.start_y);
-  if (snapped_start.has_value()) {
-    const std::string& snapped_point_id = std::get<0>(snapped_start.value());
-    const std::string current_point_id = line.start_point_id;
-    if (!current_point_id.empty() && current_point_id != snapped_point_id) {
-      replace_point_id_references(parameters, current_point_id, snapped_point_id);
+  if (snapped_start.has_value() &&
+      !point_is_fixed(parameters, line.start_point_id)) {
+    const bool can_snap_start =
+        !((line.constraint == "horizontal" &&
+           point_is_fixed(parameters, line.end_point_id) &&
+           !nearly_equal(std::get<2>(snapped_start.value()), line.end_y)) ||
+          (line.constraint == "vertical" &&
+           point_is_fixed(parameters, line.end_point_id) &&
+           !nearly_equal(std::get<1>(snapped_start.value()), line.end_x)));
+    if (can_snap_start) {
+      const std::string& snapped_point_id = std::get<0>(snapped_start.value());
+      const std::string current_point_id = line.start_point_id;
+      if (!current_point_id.empty() && current_point_id != snapped_point_id) {
+        replace_point_id_references(parameters, current_point_id, snapped_point_id);
+      }
+      line.start_point_id = snapped_point_id;
+      set_endpoint_with_constraint(line,
+                                   true,
+                                   std::get<1>(snapped_start.value()),
+                                   std::get<2>(snapped_start.value()));
     }
-    line.start_point_id = snapped_point_id;
-    set_endpoint_with_constraint(line,
-                                 true,
-                                 std::get<1>(snapped_start.value()),
-                                 std::get<2>(snapped_start.value()));
   }
 
   const auto snapped_end =
       find_coincident_endpoint(parameters, line.id, line.end_x, line.end_y);
-  if (snapped_end.has_value()) {
-    const std::string& snapped_point_id = std::get<0>(snapped_end.value());
-    const std::string current_point_id = line.end_point_id;
-    if (!current_point_id.empty() && current_point_id != snapped_point_id) {
-      replace_point_id_references(parameters, current_point_id, snapped_point_id);
+  if (snapped_end.has_value() &&
+      !point_is_fixed(parameters, line.end_point_id)) {
+    const bool can_snap_end =
+        !((line.constraint == "horizontal" &&
+           point_is_fixed(parameters, line.start_point_id) &&
+           !nearly_equal(std::get<2>(snapped_end.value()), line.start_y)) ||
+          (line.constraint == "vertical" &&
+           point_is_fixed(parameters, line.start_point_id) &&
+           !nearly_equal(std::get<1>(snapped_end.value()), line.start_x)));
+    if (can_snap_end) {
+      const std::string& snapped_point_id = std::get<0>(snapped_end.value());
+      const std::string current_point_id = line.end_point_id;
+      if (!current_point_id.empty() && current_point_id != snapped_point_id) {
+        replace_point_id_references(parameters, current_point_id, snapped_point_id);
+      }
+      line.end_point_id = snapped_point_id;
+      set_endpoint_with_constraint(line,
+                                   false,
+                                   std::get<1>(snapped_end.value()),
+                                   std::get<2>(snapped_end.value()));
     }
-    line.end_point_id = snapped_point_id;
-    set_endpoint_with_constraint(line,
-                                 false,
-                                 std::get<1>(snapped_end.value()),
-                                 std::get<2>(snapped_end.value()));
   }
 }
 
@@ -385,6 +615,16 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
   while (!frontier.empty()) {
     const auto move = frontier.front();
     frontier.pop_front();
+
+    const auto current_point_position = find_point_position(parameters, move.point_id);
+    if (point_is_fixed(parameters, move.point_id) &&
+        current_point_position.has_value() &&
+        !points_match(std::get<0>(current_point_position.value()),
+                      std::get<1>(current_point_position.value()),
+                      move.to_x,
+                      move.to_y)) {
+      continue;
+    }
 
     const bool already_visited = std::any_of(
         visited_points.begin(),
@@ -524,7 +764,8 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
       const double previous_end_x = driven_line.end_x;
       const double previous_end_y = driven_line.end_y;
 
-      drive_line_length(driven_line, target_length);
+      drive_line_length_respecting_fixed_points(
+          parameters, driven_line, target_length);
       snap_line_endpoints_to_coincident_geometry(parameters, driven_line);
       validate_line(driven_line.start_x,
                     driven_line.start_y,
@@ -558,7 +799,8 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
 }
 
 void drive_line_perpendicular_to_reference(SketchLine& driven_line,
-                                           const SketchLine& reference_line) {
+                                           const SketchLine& reference_line,
+                                           const SketchFeatureParameters& parameters) {
   if (driven_line.constraint.has_value() || reference_line.constraint.has_value()) {
     throw std::runtime_error(
         "Perpendicular relations do not support horizontal or vertical constrained lines");
@@ -586,14 +828,27 @@ void drive_line_perpendicular_to_reference(SketchLine& driven_line,
   const double direction_x = dot_a >= dot_b ? candidate_a_x : candidate_b_x;
   const double direction_y = dot_a >= dot_b ? candidate_a_y : candidate_b_y;
 
-  driven_line.end_x = driven_line.start_x + direction_x * driven_length;
-  driven_line.end_y = driven_line.start_y + direction_y * driven_length;
+  const bool start_fixed = point_is_fixed(parameters, driven_line.start_point_id);
+  const bool end_fixed = point_is_fixed(parameters, driven_line.end_point_id);
+  if (start_fixed && end_fixed) {
+    throw std::runtime_error(
+        "Cannot drive a perpendicular relation when both endpoints are fixed");
+  }
+
+  if (end_fixed) {
+    driven_line.start_x = driven_line.end_x - direction_x * driven_length;
+    driven_line.start_y = driven_line.end_y - direction_y * driven_length;
+  } else {
+    driven_line.end_x = driven_line.start_x + direction_x * driven_length;
+    driven_line.end_y = driven_line.start_y + direction_y * driven_length;
+  }
   validate_line(
       driven_line.start_x, driven_line.start_y, driven_line.end_x, driven_line.end_y);
 }
 
 void drive_line_parallel_to_reference(SketchLine& driven_line,
-                                      const SketchLine& reference_line) {
+                                      const SketchLine& reference_line,
+                                      const SketchFeatureParameters& parameters) {
   if (driven_line.constraint.has_value() || reference_line.constraint.has_value()) {
     throw std::runtime_error(
         "Parallel relations do not support horizontal or vertical constrained lines");
@@ -621,8 +876,20 @@ void drive_line_parallel_to_reference(SketchLine& driven_line,
   const double direction_x = dot_a >= dot_b ? candidate_a_x : candidate_b_x;
   const double direction_y = dot_a >= dot_b ? candidate_a_y : candidate_b_y;
 
-  driven_line.end_x = driven_line.start_x + direction_x * driven_length;
-  driven_line.end_y = driven_line.start_y + direction_y * driven_length;
+  const bool start_fixed = point_is_fixed(parameters, driven_line.start_point_id);
+  const bool end_fixed = point_is_fixed(parameters, driven_line.end_point_id);
+  if (start_fixed && end_fixed) {
+    throw std::runtime_error(
+        "Cannot drive a parallel relation when both endpoints are fixed");
+  }
+
+  if (end_fixed) {
+    driven_line.start_x = driven_line.end_x - direction_x * driven_length;
+    driven_line.start_y = driven_line.end_y - direction_y * driven_length;
+  } else {
+    driven_line.end_x = driven_line.start_x + direction_x * driven_length;
+    driven_line.end_y = driven_line.start_y + direction_y * driven_length;
+  }
   validate_line(
       driven_line.start_x, driven_line.start_y, driven_line.end_x, driven_line.end_y);
 }
@@ -664,7 +931,8 @@ void enforce_perpendicular_relations(SketchFeatureParameters& parameters,
       const double previous_end_x = driven_line.end_x;
       const double previous_end_y = driven_line.end_y;
 
-      drive_line_perpendicular_to_reference(driven_line, reference_line);
+      drive_line_perpendicular_to_reference(
+          driven_line, reference_line, parameters);
       snap_line_endpoints_to_coincident_geometry(parameters, driven_line);
       validate_line(driven_line.start_x,
                     driven_line.start_y,
@@ -734,7 +1002,7 @@ void enforce_parallel_relations(SketchFeatureParameters& parameters,
       const double previous_end_x = driven_line.end_x;
       const double previous_end_y = driven_line.end_y;
 
-      drive_line_parallel_to_reference(driven_line, reference_line);
+      drive_line_parallel_to_reference(driven_line, reference_line, parameters);
       snap_line_endpoints_to_coincident_geometry(parameters, driven_line);
       validate_line(driven_line.start_x,
                     driven_line.start_y,
@@ -779,11 +1047,13 @@ FeatureEntry create_sketch_feature(
       .active_tool = "select",
       .lines = {},
       .circles = {},
+      .points = {},
       .dimensions = {},
       .line_relations = {},
+      .profiles = {},
   };
 
-  return FeatureEntry{
+  FeatureEntry feature{
       .id = "feature-" + std::to_string(feature_index),
       .kind = "sketch",
       .name = "Sketch",
@@ -794,6 +1064,9 @@ FeatureEntry create_sketch_feature(
       .extrude_parameters = std::nullopt,
       .sketch_parameters = parameters,
   };
+
+  refresh_sketch_derived_state(feature);
+  return feature;
 }
 
 void set_sketch_tool(FeatureEntry& feature, const std::string& tool) {
@@ -833,8 +1106,23 @@ void update_sketch_line(FeatureEntry& feature,
   line_it->start_y = start_y;
   line_it->end_x = end_x;
   line_it->end_y = end_y;
-  apply_line_constraint(*line_it);
+  restore_fixed_line_endpoints(*feature.sketch_parameters,
+                               *line_it,
+                               previous_start_x,
+                               previous_start_y,
+                               previous_end_x,
+                               previous_end_y);
+  apply_line_constraint_respecting_fixed_points(
+      *feature.sketch_parameters, *line_it);
+  restore_fixed_line_endpoints(*feature.sketch_parameters,
+                               *line_it,
+                               previous_start_x,
+                               previous_start_y,
+                               previous_end_x,
+                               previous_end_y);
   snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, *line_it);
+  apply_line_constraint_respecting_fixed_points(
+      *feature.sketch_parameters, *line_it);
   validate_line(line_it->start_x, line_it->start_y, line_it->end_x, line_it->end_y);
 
   if (!points_match(previous_start_x,
@@ -860,7 +1148,67 @@ void update_sketch_line(FeatureEntry& feature,
   enforce_perpendicular_relations(*feature.sketch_parameters, line_it->id);
   enforce_parallel_relations(*feature.sketch_parameters, line_it->id);
   sync_all_line_dimensions(*feature.sketch_parameters);
-  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+  refresh_sketch_derived_state(feature);
+}
+
+void update_sketch_point(FeatureEntry& feature,
+                         const std::string& point_id,
+                         double x,
+                         double y) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can update sketch points");
+  }
+
+  auto& parameters = feature.sketch_parameters.value();
+  const SketchPoint* point = find_sketch_point(parameters, point_id);
+  if (point == nullptr) {
+    throw std::runtime_error("Sketch point not found: " + point_id);
+  }
+
+  if (point->is_fixed && !points_match(point->x, point->y, x, y)) {
+    throw std::runtime_error("Cannot move a fixed sketch point");
+  }
+
+  const std::vector<std::string> affected_line_ids =
+      collect_line_ids_for_point(parameters, point_id);
+
+  if (point->kind == "center") {
+    const std::string prefix = "point-circle-";
+    const std::string suffix = "-center";
+    if (point_id.rfind(prefix, 0) != 0 ||
+        point_id.size() <= prefix.size() + suffix.size() ||
+        point_id.substr(point_id.size() - suffix.size()) != suffix) {
+      throw std::runtime_error("Unsupported sketch center point: " + point_id);
+    }
+
+    const std::string circle_id =
+        point_id.substr(prefix.size(),
+                        point_id.size() - prefix.size() - suffix.size());
+    const auto circle_it = std::find_if(
+        parameters.circles.begin(),
+        parameters.circles.end(),
+        [&](const SketchCircle& circle) { return circle.id == circle_id; });
+    if (circle_it == parameters.circles.end()) {
+      throw std::runtime_error("Sketch circle not found for point: " + point_id);
+    }
+
+    circle_it->center_x = x;
+    circle_it->center_y = y;
+    refresh_sketch_derived_state(feature);
+    return;
+  }
+
+  propagate_connected_point_move(parameters, point_id, x, y);
+  sync_all_line_dimensions(parameters);
+
+  for (const auto& line_id : affected_line_ids) {
+    enforce_equal_length_relations(parameters, line_id);
+    enforce_perpendicular_relations(parameters, line_id);
+    enforce_parallel_relations(parameters, line_id);
+  }
+
+  sync_all_line_dimensions(parameters);
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_line_constraint(FeatureEntry& feature,
@@ -886,8 +1234,11 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   const double previous_end_x = line_it->end_x;
   const double previous_end_y = line_it->end_y;
   line_it->constraint = constraint;
-  apply_line_constraint(*line_it);
+  apply_line_constraint_respecting_fixed_points(
+      *feature.sketch_parameters, *line_it);
   snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, *line_it);
+  apply_line_constraint_respecting_fixed_points(
+      *feature.sketch_parameters, *line_it);
   validate_line(line_it->start_x, line_it->start_y, line_it->end_x, line_it->end_y);
 
   if (!points_match(previous_start_x,
@@ -913,7 +1264,7 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   enforce_perpendicular_relations(*feature.sketch_parameters, line_it->id);
   enforce_parallel_relations(*feature.sketch_parameters, line_it->id);
   sync_all_line_dimensions(*feature.sketch_parameters);
-  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_equal_length_constraint(
@@ -930,7 +1281,7 @@ void set_sketch_equal_length_constraint(
   remove_line_relations_for_line(parameters, "equal_length", line_id);
 
   if (!other_line_id.has_value()) {
-    feature.parameters_summary = make_parameters_summary(parameters);
+    refresh_sketch_derived_state(feature);
     return;
   }
 
@@ -949,7 +1300,7 @@ void set_sketch_equal_length_constraint(
   const double target_length = measure_line_length(other_line);
   const double previous_end_x = line.end_x;
   const double previous_end_y = line.end_y;
-  drive_line_length(line, target_length);
+  drive_line_length_respecting_fixed_points(parameters, line, target_length);
   snap_line_endpoints_to_coincident_geometry(parameters, line);
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 
@@ -963,7 +1314,7 @@ void set_sketch_equal_length_constraint(
   enforce_perpendicular_relations(parameters, line_id);
   enforce_parallel_relations(parameters, line_id);
   sync_all_line_dimensions(parameters);
-  feature.parameters_summary = make_parameters_summary(parameters);
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_perpendicular_constraint(
@@ -980,7 +1331,7 @@ void set_sketch_perpendicular_constraint(
   remove_line_relations_for_line(parameters, "perpendicular", line_id);
 
   if (!other_line_id.has_value()) {
-    feature.parameters_summary = make_parameters_summary(parameters);
+    refresh_sketch_derived_state(feature);
     return;
   }
 
@@ -1005,7 +1356,7 @@ void set_sketch_perpendicular_constraint(
   const double previous_start_y = line.start_y;
   const double previous_end_x = line.end_x;
   const double previous_end_y = line.end_y;
-  drive_line_perpendicular_to_reference(line, other_line);
+  drive_line_perpendicular_to_reference(line, other_line, parameters);
   snap_line_endpoints_to_coincident_geometry(parameters, line);
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 
@@ -1024,7 +1375,7 @@ void set_sketch_perpendicular_constraint(
   enforce_perpendicular_relations(parameters, line_id);
   enforce_parallel_relations(parameters, line_id);
   sync_all_line_dimensions(parameters);
-  feature.parameters_summary = make_parameters_summary(parameters);
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_parallel_constraint(
@@ -1041,7 +1392,7 @@ void set_sketch_parallel_constraint(
   remove_line_relations_for_line(parameters, "parallel", line_id);
 
   if (!other_line_id.has_value()) {
-    feature.parameters_summary = make_parameters_summary(parameters);
+    refresh_sketch_derived_state(feature);
     return;
   }
 
@@ -1066,7 +1417,7 @@ void set_sketch_parallel_constraint(
   const double previous_start_y = line.start_y;
   const double previous_end_x = line.end_x;
   const double previous_end_y = line.end_y;
-  drive_line_parallel_to_reference(line, other_line);
+  drive_line_parallel_to_reference(line, other_line, parameters);
   snap_line_endpoints_to_coincident_geometry(parameters, line);
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 
@@ -1085,7 +1436,7 @@ void set_sketch_parallel_constraint(
   enforce_perpendicular_relations(parameters, line_id);
   enforce_parallel_relations(parameters, line_id);
   sync_all_line_dimensions(parameters);
-  feature.parameters_summary = make_parameters_summary(parameters);
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_coincident_constraint(FeatureEntry& feature,
@@ -1144,7 +1495,24 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
   }
 
   sync_all_line_dimensions(parameters);
-  feature.parameters_summary = make_parameters_summary(parameters);
+  refresh_sketch_derived_state(feature);
+}
+
+void set_sketch_point_fixed(FeatureEntry& feature,
+                            const std::string& point_id,
+                            bool is_fixed) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can set fixed point state");
+  }
+
+  auto& parameters = feature.sketch_parameters.value();
+  SketchPoint* point = find_sketch_point(parameters, point_id);
+  if (point == nullptr) {
+    throw std::runtime_error("Sketch point not found: " + point_id);
+  }
+
+  point->is_fixed = is_fixed;
+  refresh_sketch_derived_state(feature);
 }
 
 void update_sketch_circle(FeatureEntry& feature,
@@ -1169,11 +1537,14 @@ void update_sketch_circle(FeatureEntry& feature,
     throw std::runtime_error("Sketch circle not found: " + circle_id);
   }
 
-  circle_it->center_x = center_x;
-  circle_it->center_y = center_y;
+  const std::string center_point_id = "point-circle-" + circle_it->id + "-center";
+  if (!point_is_fixed(*feature.sketch_parameters, center_point_id)) {
+    circle_it->center_x = center_x;
+    circle_it->center_y = center_y;
+  }
   circle_it->radius = radius;
   sync_circle_dimension(*feature.sketch_parameters, *circle_it);
-  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+  refresh_sketch_derived_state(feature);
 }
 
 void update_sketch_dimension(FeatureEntry& feature,
@@ -1200,10 +1571,22 @@ void update_sketch_dimension(FeatureEntry& feature,
       throw std::runtime_error("Sketch line not found for dimension: " + dimension_id);
     }
 
+    const double previous_start_x = line_it->start_x;
+    const double previous_start_y = line_it->start_y;
     const double previous_end_x = line_it->end_x;
     const double previous_end_y = line_it->end_y;
-    drive_line_length(*line_it, value);
+
+    drive_line_length_respecting_fixed_points(parameters, *line_it, value);
     snap_line_endpoints_to_coincident_geometry(parameters, *line_it);
+    if (!points_match(previous_start_x,
+                      previous_start_y,
+                      line_it->start_x,
+                      line_it->start_y)) {
+      propagate_connected_point_move(parameters,
+                                     line_it->start_point_id,
+                                     line_it->start_x,
+                                     line_it->start_y);
+    }
     if (!points_match(previous_end_x,
                       previous_end_y,
                       line_it->end_x,
@@ -1218,7 +1601,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     enforce_perpendicular_relations(parameters, line_it->id);
     enforce_parallel_relations(parameters, line_it->id);
     sync_all_line_dimensions(parameters);
-    feature.parameters_summary = make_parameters_summary(parameters);
+    refresh_sketch_derived_state(feature);
     return;
   }
 
@@ -1236,7 +1619,7 @@ void update_sketch_dimension(FeatureEntry& feature,
 
     circle_it->radius = value;
     sync_circle_dimension(parameters, *circle_it);
-    feature.parameters_summary = make_parameters_summary(parameters);
+    refresh_sketch_derived_state(feature);
     return;
   }
 
@@ -1284,7 +1667,7 @@ void add_sketch_line(FeatureEntry& feature,
       .entity_id = line.id,
       .value = measure_line_length(line),
   });
-  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+  refresh_sketch_derived_state(feature);
 }
 
 void add_sketch_rectangle(FeatureEntry& feature,
@@ -1325,7 +1708,7 @@ void add_sketch_circle(FeatureEntry& feature,
       .entity_id = circle.id,
       .value = circle.radius,
   });
-  feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+  refresh_sketch_derived_state(feature);
 }
 
 }  // namespace polysmith::core

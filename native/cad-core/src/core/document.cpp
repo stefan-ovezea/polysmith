@@ -60,6 +60,101 @@ PlaneFrame make_plane_frame(
   };
 }
 
+std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
+    const FeatureEntry& sketch_feature,
+    const SketchProfileRegion& profile,
+    double depth) {
+  if (!sketch_feature.sketch_parameters.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto& sketch = sketch_feature.sketch_parameters.value();
+  const std::string plane_id = sketch.plane_frame.has_value()
+                                   ? plane_id_from_frame(sketch.plane_frame.value())
+                                   : sketch.plane_id;
+  const std::optional<PlaneFrame> plane_frame =
+      sketch.plane_frame.has_value()
+          ? std::optional<PlaneFrame>(make_plane_frame(sketch.plane_frame.value()))
+          : std::nullopt;
+
+  if (profile.kind == "polygon") {
+    return ExtrudeFeatureParameters{
+        .sketch_feature_id = sketch_feature.id,
+        .profile_id = profile.id,
+        .plane_id = plane_id,
+        .plane_frame = plane_frame,
+        .profile_kind = "polygon",
+        .start_x = 0.0,
+        .start_y = 0.0,
+        .width = 0.0,
+        .height = 0.0,
+        .radius = 0.0,
+        .profile_points = profile.points,
+        .depth = depth,
+    };
+  }
+
+  if (profile.kind == "circle") {
+    return ExtrudeFeatureParameters{
+        .sketch_feature_id = sketch_feature.id,
+        .profile_id = profile.id,
+        .plane_id = plane_id,
+        .plane_frame = plane_frame,
+        .profile_kind = "circle",
+        .start_x = profile.center_x,
+        .start_y = profile.center_y,
+        .width = 0.0,
+        .height = 0.0,
+        .radius = profile.radius,
+        .profile_points = {},
+        .depth = depth,
+    };
+  }
+
+  return std::nullopt;
+}
+
+void refresh_linked_extrudes(DocumentState& document,
+                             const FeatureEntry& sketch_feature) {
+  if (!sketch_feature.sketch_parameters.has_value()) {
+    return;
+  }
+
+  for (auto& feature : document.feature_history) {
+    if (feature.kind != "extrude" || !feature.extrude_parameters.has_value() ||
+        feature.extrude_parameters->sketch_feature_id != sketch_feature.id) {
+      continue;
+    }
+
+    const auto profile_it = std::find_if(
+        sketch_feature.sketch_parameters->profiles.begin(),
+        sketch_feature.sketch_parameters->profiles.end(),
+        [&](const SketchProfileRegion& profile) {
+          return profile.id == feature.extrude_parameters->profile_id;
+        });
+    if (profile_it == sketch_feature.sketch_parameters->profiles.end()) {
+      feature.status = "warning";
+      feature.parameters_summary = "Source profile unavailable";
+      continue;
+    }
+
+    const double depth = feature.extrude_parameters->depth;
+    const auto next_parameters =
+        make_extrude_parameters_for_profile(sketch_feature, *profile_it, depth);
+    if (!next_parameters.has_value()) {
+      feature.status = "warning";
+      feature.parameters_summary = "Source profile unsupported";
+      continue;
+    }
+
+    feature.extrude_parameters = next_parameters.value();
+    feature.status = "healthy";
+    feature.parameters_summary =
+        feature.extrude_parameters->profile_id + " · " +
+        std::to_string(feature.extrude_parameters->depth) + " mm";
+  }
+}
+
 }  // namespace
 
 void DocumentManager::require_document() const {
@@ -104,6 +199,7 @@ DocumentState DocumentManager::create_document() {
       .active_sketch_face_id = std::nullopt,
       .active_sketch_feature_id = std::nullopt,
       .active_sketch_tool = std::nullopt,
+      .selected_sketch_point_id = std::nullopt,
       .selected_sketch_entity_id = std::nullopt,
       .selected_sketch_dimension_id = std::nullopt,
       .selected_sketch_profile_id = std::nullopt,
@@ -157,6 +253,26 @@ DocumentState DocumentManager::update_box_feature(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::update_box_feature(*feature_it, parameters);
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::update_extrude_depth(
+    const std::string& feature_id, double depth) {
+  require_document();
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) { return feature.id == feature_id; });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Feature not found: " + feature_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::update_extrude_depth(*feature_it, depth);
   document_->revision += 1;
   return document_.value();
 }
@@ -257,6 +373,7 @@ DocumentState DocumentManager::select_feature(const std::string& feature_id) {
   document_->selected_feature_id = feature_id;
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -273,6 +390,7 @@ DocumentState DocumentManager::select_reference(const std::string& reference_id)
   document_->selected_feature_id = std::nullopt;
   document_->selected_reference_id = reference_id;
   document_->selected_face_id = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -300,6 +418,7 @@ DocumentState DocumentManager::start_sketch_on_plane(
   document_->active_sketch_face_id = std::nullopt;
   document_->active_sketch_feature_id = sketch_feature_id;
   document_->active_sketch_tool = "select";
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -326,6 +445,7 @@ DocumentState DocumentManager::select_face(const std::string& face_id) {
   document_->selected_feature_id = feature_it->id;
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = face_id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -363,6 +483,7 @@ DocumentState DocumentManager::start_sketch_on_face(
   document_->active_sketch_face_id = face_id;
   document_->active_sketch_feature_id = sketch_feature_id;
   document_->active_sketch_tool = "select";
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -394,6 +515,7 @@ DocumentState DocumentManager::set_sketch_tool(const std::string& tool) {
 
   polysmith::core::set_sketch_tool(*feature_it, tool);
   document_->active_sketch_tool = tool;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -426,9 +548,44 @@ DocumentState DocumentManager::update_sketch_line(const std::string& line_id,
   clear_redo_stack();
   polysmith::core::update_sketch_line(
       *feature_it, line_id, start_x, start_y, end_x, end_y);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
+                                                   double x,
+                                                   double y) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::update_sketch_point(*feature_it, point_id, x, y);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->revision += 1;
   return document_.value();
@@ -457,7 +614,9 @@ DocumentState DocumentManager::set_sketch_line_constraint(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::set_sketch_line_constraint(*feature_it, line_id, constraint);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -489,7 +648,9 @@ DocumentState DocumentManager::set_sketch_equal_length_constraint(
   clear_redo_stack();
   polysmith::core::set_sketch_equal_length_constraint(
       *feature_it, line_id, other_line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -521,7 +682,9 @@ DocumentState DocumentManager::set_sketch_perpendicular_constraint(
   clear_redo_stack();
   polysmith::core::set_sketch_perpendicular_constraint(
       *feature_it, line_id, other_line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -553,7 +716,9 @@ DocumentState DocumentManager::set_sketch_parallel_constraint(
   clear_redo_stack();
   polysmith::core::set_sketch_parallel_constraint(
       *feature_it, line_id, other_line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -584,7 +749,42 @@ DocumentState DocumentManager::set_sketch_coincident_constraint(
   clear_redo_stack();
   polysmith::core::set_sketch_coincident_constraint(
       *feature_it, point_id, other_point_id);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = other_point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::set_sketch_point_fixed(const std::string& point_id,
+                                                      bool is_fixed) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::set_sketch_point_fixed(*feature_it, point_id, is_fixed);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->revision += 1;
@@ -616,7 +816,9 @@ DocumentState DocumentManager::update_sketch_circle(const std::string& circle_id
   clear_redo_stack();
   polysmith::core::update_sketch_circle(
       *feature_it, circle_id, center_x, center_y, radius);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = circle_id;
   document_->selected_sketch_dimension_id = "dim-circle-" + circle_id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -646,7 +848,10 @@ DocumentState DocumentManager::update_sketch_dimension(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::update_sketch_dimension(*feature_it, dimension_id, value);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   if (feature_it->sketch_parameters.has_value()) {
@@ -666,39 +871,49 @@ DocumentState DocumentManager::update_sketch_dimension(
   return document_.value();
 }
 
+namespace {
+
+std::vector<FeatureEntry>::iterator find_sketch_feature_owning_profile(
+    std::vector<FeatureEntry>& features, const std::string& profile_id) {
+  return std::find_if(
+      features.begin(), features.end(), [&](const FeatureEntry& feature) {
+        if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+          return false;
+        }
+        const auto& profiles = feature.sketch_parameters->profiles;
+        return std::any_of(
+            profiles.begin(), profiles.end(),
+            [&](const SketchProfileRegion& profile) {
+              return profile.id == profile_id;
+            });
+      });
+}
+
+}  // namespace
+
 DocumentState DocumentManager::select_sketch_profile(const std::string& profile_id) {
   require_document();
 
-  if (!document_->active_sketch_feature_id.has_value()) {
-    throw std::runtime_error("No active sketch");
-  }
-
-  const auto feature_it = std::find_if(
-      document_->feature_history.begin(),
-      document_->feature_history.end(),
-      [&](const FeatureEntry& feature) {
-        return feature.id == document_->active_sketch_feature_id.value();
-      });
+  // Selection of profiles is allowed both inside and outside an active sketch.
+  // The owning sketch feature is located by scanning the feature history.
+  const auto feature_it = find_sketch_feature_owning_profile(
+      document_->feature_history, profile_id);
 
   if (feature_it == document_->feature_history.end()) {
-    throw std::runtime_error("Active sketch feature not found");
+    throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
 
-  const auto profiles = polysmith::core::detect_sketch_profiles(*feature_it);
-  const bool has_polygon = std::any_of(
-      profiles.polygons.begin(),
-      profiles.polygons.end(),
-      [&](const PolygonSketchProfile& profile) { return profile.id == profile_id; });
-  const bool has_circle = std::any_of(
-      profiles.circles.begin(),
-      profiles.circles.end(),
-      [&](const CircleSketchProfile& profile) { return profile.id == profile_id; });
+  const auto profile_it = std::find_if(
+      feature_it->sketch_parameters->profiles.begin(),
+      feature_it->sketch_parameters->profiles.end(),
+      [&](const SketchProfileRegion& profile) { return profile.id == profile_id; });
 
-  if (!has_polygon && !has_circle) {
+  if (profile_it == feature_it->sketch_parameters->profiles.end()) {
     throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
 
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = profile_id;
@@ -709,26 +924,19 @@ DocumentState DocumentManager::extrude_profile(const std::string& profile_id,
                                                double depth) {
   require_document();
 
-  if (!document_->active_sketch_feature_id.has_value()) {
-    throw std::runtime_error("No active sketch");
-  }
-
-  const auto feature_it = std::find_if(
-      document_->feature_history.begin(),
-      document_->feature_history.end(),
-      [&](const FeatureEntry& feature) {
-        return feature.id == document_->active_sketch_feature_id.value();
-      });
+  // Extrusion runs on any sketch profile in the document, even if its parent
+  // sketch is finished (i.e. not the active sketch).
+  const auto feature_it = find_sketch_feature_owning_profile(
+      document_->feature_history, profile_id);
 
   if (feature_it == document_->feature_history.end()) {
-    throw std::runtime_error("Active sketch feature not found");
+    throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
 
-  const auto profiles = polysmith::core::detect_sketch_profiles(*feature_it);
   std::optional<ExtrudeFeatureParameters> extrude_parameters;
 
-  for (const auto& polygon : profiles.polygons) {
-    if (polygon.id != profile_id) {
+  for (const auto& profile : feature_it->sketch_parameters->profiles) {
+    if (profile.id != profile_id || profile.kind != "polygon") {
       continue;
     }
 
@@ -738,10 +946,11 @@ DocumentState DocumentManager::extrude_profile(const std::string& profile_id,
         .plane_id = feature_it->sketch_parameters->plane_frame.has_value()
                         ? plane_id_from_frame(
                               feature_it->sketch_parameters->plane_frame.value())
-                        : polygon.plane_id,
-        .plane_frame = polygon.plane_frame.has_value()
+                        : feature_it->sketch_parameters->plane_id,
+        .plane_frame = feature_it->sketch_parameters->plane_frame.has_value()
                            ? std::optional<PlaneFrame>(
-                                 make_plane_frame(polygon.plane_frame.value()))
+                                 make_plane_frame(
+                                     feature_it->sketch_parameters->plane_frame.value()))
                            : std::nullopt,
         .profile_kind = "polygon",
         .start_x = 0.0,
@@ -749,15 +958,15 @@ DocumentState DocumentManager::extrude_profile(const std::string& profile_id,
         .width = 0.0,
         .height = 0.0,
         .radius = 0.0,
-        .profile_points = polygon.points,
+        .profile_points = profile.points,
         .depth = depth,
     };
     break;
   }
 
   if (!extrude_parameters.has_value()) {
-    for (const auto& circle : profiles.circles) {
-      if (circle.id != profile_id) {
+    for (const auto& profile : feature_it->sketch_parameters->profiles) {
+      if (profile.id != profile_id || profile.kind != "circle") {
         continue;
       }
 
@@ -767,22 +976,23 @@ DocumentState DocumentManager::extrude_profile(const std::string& profile_id,
           .plane_id = feature_it->sketch_parameters->plane_frame.has_value()
                           ? plane_id_from_frame(
                                 feature_it->sketch_parameters->plane_frame.value())
-                          : circle.plane_id,
-          .plane_frame = circle.plane_frame.has_value()
+                          : feature_it->sketch_parameters->plane_id,
+          .plane_frame = feature_it->sketch_parameters->plane_frame.has_value()
                              ? std::optional<PlaneFrame>(
-                                   make_plane_frame(circle.plane_frame.value()))
+                                   make_plane_frame(
+                                       feature_it->sketch_parameters->plane_frame.value()))
                              : std::nullopt,
           .profile_kind = "circle",
-          .start_x = circle.center_x,
-          .start_y = circle.center_y,
+          .start_x = profile.center_x,
+          .start_y = profile.center_y,
           .width = 0.0,
           .height = 0.0,
-          .radius = circle.radius,
+          .radius = profile.radius,
           .profile_points = {},
           .depth = depth,
       };
 
-      if (circle.plane_id != "ref-plane-xy") {
+      if (feature_it->sketch_parameters->plane_id != "ref-plane-xy") {
         throw std::runtime_error(
             "Circle extrude currently supports the XY plane only");
       }
@@ -803,6 +1013,7 @@ DocumentState DocumentManager::extrude_profile(const std::string& profile_id,
   document_->active_sketch_plane_id = std::nullopt;
   document_->active_sketch_feature_id = std::nullopt;
   document_->active_sketch_tool = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -835,7 +1046,9 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
   clear_redo_stack();
   polysmith::core::add_sketch_line(
       *feature_it, next_sketch_line_id_++, start_x, start_y, end_x, end_y);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->lines.back().id;
   document_->selected_sketch_dimension_id =
@@ -871,7 +1084,9 @@ DocumentState DocumentManager::add_sketch_rectangle(double start_x,
   clear_redo_stack();
   polysmith::core::add_sketch_rectangle(
       *feature_it, next_sketch_line_id_, start_x, start_y, end_x, end_y);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->lines.back().id;
   document_->selected_sketch_dimension_id =
@@ -906,7 +1121,9 @@ DocumentState DocumentManager::add_sketch_circle(double center_x,
   clear_redo_stack();
   polysmith::core::add_sketch_circle(
       *feature_it, next_sketch_circle_id_++, center_x, center_y, radius);
+  refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->circles.back().id;
   document_->selected_sketch_dimension_id =
@@ -914,6 +1131,41 @@ DocumentState DocumentManager::add_sketch_circle(double center_x,
   document_->selected_sketch_profile_id = std::nullopt;
   document_->active_sketch_tool = "circle";
   document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::select_sketch_point(const std::string& point_id) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end() ||
+      !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  const auto point_it = std::find_if(
+      feature_it->sketch_parameters->points.begin(),
+      feature_it->sketch_parameters->points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  if (point_it == feature_it->sketch_parameters->points.end()) {
+    throw std::runtime_error("Sketch point not found: " + point_id);
+  }
+
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
   return document_.value();
 }
 
@@ -950,6 +1202,7 @@ DocumentState DocumentManager::select_sketch_entity(const std::string& entity_id
   }
 
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = entity_id;
   const auto dimension_it = std::find_if(
       feature_it->sketch_parameters->dimensions.begin(),
@@ -995,6 +1248,7 @@ DocumentState DocumentManager::select_sketch_dimension(
   }
 
   document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = dimension_it->entity_id;
   document_->selected_sketch_dimension_id = dimension_it->id;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -1027,6 +1281,47 @@ DocumentState DocumentManager::finish_sketch() {
   document_->active_sketch_plane_id = std::nullopt;
   document_->active_sketch_feature_id = std::nullopt;
   document_->active_sketch_tool = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->revision += 1;
+  return document_.value();
+}
+
+DocumentState DocumentManager::reenter_sketch(const std::string& feature_id) {
+  require_document();
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) { return feature.id == feature_id; });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Sketch feature not found: " + feature_id);
+  }
+
+  if (feature_it->kind != "sketch" || !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error("Feature is not a sketch: " + feature_id);
+  }
+
+  // Re-entering does not push to undo: it only flips active flags, so undo
+  // continues to refer to real geometry edits.
+  document_->selected_feature_id = std::nullopt;
+  document_->selected_reference_id = std::nullopt;
+  document_->selected_face_id = std::nullopt;
+  document_->active_sketch_plane_id = feature_it->sketch_parameters->plane_id;
+  // Face id information is not preserved separately in sketch_parameters; the
+  // plane_id matches the face id when the sketch was created on a face, which
+  // is sufficient for downstream consumers (viewport hides the sketch face,
+  // raycasting is plane-frame based).
+  document_->active_sketch_face_id =
+      feature_it->sketch_parameters->plane_frame.has_value()
+          ? std::optional<std::string>(feature_it->sketch_parameters->plane_id)
+          : std::nullopt;
+  document_->active_sketch_feature_id = feature_it->id;
+  document_->active_sketch_tool = "select";
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -1040,6 +1335,7 @@ DocumentState DocumentManager::clear_selection() {
   document_->selected_feature_id = std::nullopt;
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;

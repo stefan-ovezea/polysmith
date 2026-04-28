@@ -89,9 +89,9 @@ export interface SketchCircleScene {
 
 export interface SketchPointScene {
   pointId: string;
-  entityId: string;
   kind: "endpoint" | "center";
   position: [number, number, number];
+  isFixed: boolean;
   isSelected: boolean;
 }
 

@@ -14,6 +14,7 @@ const documentStateSchema = z.object({
   active_sketch_tool: z
     .enum(["select", "line", "rectangle", "circle"])
     .nullable(),
+  selected_sketch_point_id: z.string().nullable(),
   selected_sketch_entity_id: z.string().nullable(),
   selected_sketch_dimension_id: z.string().nullable(),
   selected_sketch_profile_id: z.string().nullable(),
@@ -97,6 +98,15 @@ const documentStateSchema = z.object({
               radius: z.number(),
             }),
           ),
+          points: z.array(
+            z.object({
+              point_id: z.string(),
+              kind: z.enum(["endpoint", "center"]),
+              x: z.number(),
+              y: z.number(),
+              is_fixed: z.boolean(),
+            }),
+          ),
           dimensions: z.array(
             z.object({
               dimension_id: z.string(),
@@ -111,6 +121,24 @@ const documentStateSchema = z.object({
               kind: z.enum(["equal_length", "perpendicular", "parallel"]),
               first_line_id: z.string(),
               second_line_id: z.string(),
+            }),
+          ),
+          profiles: z.array(
+            z.object({
+              profile_id: z.string(),
+              kind: z.enum(["polygon", "circle"]),
+              point_ids: z.array(z.string()),
+              line_ids: z.array(z.string()),
+              points: z.array(
+                z.object({
+                  x: z.number(),
+                  y: z.number(),
+                }),
+              ),
+              source_circle_id: z.string().nullable(),
+              center_x: z.number(),
+              center_y: z.number(),
+              radius: z.number(),
             }),
           ),
         })
@@ -282,6 +310,20 @@ const viewportStateSchema = z.object({
       is_selected: z.boolean(),
     }),
   ),
+  sketch_points: z.array(
+    z.object({
+      point_id: z.string(),
+      plane_id: z.string(),
+      kind: z.enum(["endpoint", "center"]),
+      position: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      }),
+      is_fixed: z.boolean(),
+      is_selected: z.boolean(),
+    }),
+  ),
   sketch_dimensions: z.array(
     z.object({
       dimension_id: z.string(),
@@ -327,6 +369,7 @@ const viewportStateSchema = z.object({
         "equal_length",
         "perpendicular",
         "parallel",
+        "fixed",
       ]),
       entity_id: z.string(),
       related_entity_id: z.string().nullable(),

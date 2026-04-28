@@ -51,6 +51,15 @@ When implementing a task:
 - No mixing UI logic with CAD logic
 - No bypassing architecture for speed
 
+## UX Pattern
+
+PolySmith follows a **Fusion 360-style behavior pattern** for all modeling
+features: select inputs → invoke action → floating context panel with real
+geometry preview → confirm or cancel.
+
+This pattern is documented in `docs/architecture/fusion-style-behavior.md`
+and is binding for new features.
+
 ## Philosophy
 
 PolySmith is built to be **understandable and maintainable by humans first**.

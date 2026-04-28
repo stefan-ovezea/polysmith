@@ -3,6 +3,7 @@ export type ConstraintType =
   | "vertical"
   | "parallel"
   | "perpendicular"
+  | "fixed"
   | "clear"
   | "coincident"
   | "tangent"

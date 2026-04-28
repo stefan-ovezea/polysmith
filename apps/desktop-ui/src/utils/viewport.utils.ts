@@ -6,6 +6,8 @@ import {
   ReferencePlaneScene,
   ReferencePlaneVisual,
   ScenePrimitive,
+  SolidFaceInteractionState,
+  SolidFaceVisual,
   SketchCircleScene,
   SketchConstraintScene,
   SketchDimensionScene,
@@ -469,12 +471,10 @@ export function orientFaceMesh(mesh: THREE.Object3D, face: SolidFaceScene) {
 }
 
 export function buildSolidFaceObject(face: SolidFaceScene) {
-  const material = new THREE.MeshBasicMaterial({
-    color: face.isSelected
-      ? themeColor("--color-primary-soft", "#c3f5ff")
-      : themeColor("--color-primary-fixed-dim", "#00daf3"),
+  const fillMaterial = new THREE.MeshBasicMaterial({
+    color: themeColor("--color-primary-fixed-dim", "#00daf3"),
     transparent: true,
-    opacity: face.isSelected ? 0.3 : 0.12,
+    opacity: 0,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -482,10 +482,42 @@ export function buildSolidFaceObject(face: SolidFaceScene) {
     Math.max(face.size.width || face.size.radius * 2 || 1, 1),
     Math.max(face.size.height || face.size.radius * 2 || 1, 1),
   );
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(geometry, fillMaterial);
   mesh.applyMatrix4(makePlaneTransformMatrixFromFrame(face.planeFrame));
   mesh.userData.faceId = face.faceId;
-  return mesh;
+  mesh.renderOrder = 4;
+  return {
+    mesh,
+    visual: {
+      fillMaterial,
+    } satisfies SolidFaceVisual,
+  };
+}
+
+export function applySolidFaceVisualState(
+  visual: SolidFaceVisual,
+  state: SolidFaceInteractionState,
+) {
+  if (state.isSelected) {
+    visual.fillMaterial.color.set(
+      themeColor("--color-primary-soft", "#c3f5ff"),
+    );
+    visual.fillMaterial.opacity = 0.32;
+    return;
+  }
+
+  if (state.isHovered) {
+    visual.fillMaterial.color.set(
+      themeColor("--color-primary-hover", "#86f4ff"),
+    );
+    visual.fillMaterial.opacity = 0.22;
+    return;
+  }
+
+  visual.fillMaterial.color.set(
+    themeColor("--color-primary-fixed-dim", "#00daf3"),
+  );
+  visual.fillMaterial.opacity = 0;
 }
 
 export function buildSketchLineObject(line: SketchLineScene) {
@@ -572,7 +604,6 @@ export function buildSketchPointObject(point: SketchPointScene) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...point.position);
   mesh.userData.sketchPointId = point.pointId;
-  mesh.userData.sketchPointEntityId = point.entityId;
   mesh.userData.sketchPointKind = point.kind;
   return mesh;
 }
@@ -794,12 +825,16 @@ export function frameCameraToSketchPlane(
       planeFrame.normal.x,
       planeFrame.normal.y,
       planeFrame.normal.z,
-    );
-    const up = new THREE.Vector3(
-      planeFrame.y_axis.x,
-      planeFrame.y_axis.y,
-      planeFrame.y_axis.z,
-    );
+    ).normalize();
+
+    // Fusion-like up: prefer world Y; if the face normal is vertical, fall
+    // back to world -Z so the sketch reads top-down without rolling.
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const up =
+      Math.abs(normal.dot(worldUp)) > 0.95
+        ? new THREE.Vector3(0, 0, -1)
+        : worldUp.clone();
+
     camera.position.copy(origin.clone().add(normal.multiplyScalar(distance)));
     camera.up.copy(up);
     controls.target.copy(origin);

@@ -262,61 +262,85 @@ function makeSolidFace(face: ViewportSolidFace): SolidFaceScene {
   };
 }
 
-export function createViewportScene(viewport: ViewportState): ViewportScene {
+export interface ViewportSceneOptions {
+  // Feature ids whose primitives must be filtered out of the rendered scene.
+  // Maps 1:1 to feature.id (and therefore to primitive ids emitted by the
+  // core, which use the feature id as the primitive id).
+  hiddenFeatureIds?: ReadonlySet<string>;
+  // Sketch plane ids whose sketch entities (lines, circles, points,
+  // dimensions, constraints, profiles) must be filtered out.
+  hiddenSketchPlaneIds?: ReadonlySet<string>;
+  // Hide all reference planes and axes.
+  hideReferences?: boolean;
+}
+
+export function createViewportScene(
+  viewport: ViewportState,
+  options: ViewportSceneOptions = {},
+): ViewportScene {
+  const hiddenFeatureIds = options.hiddenFeatureIds ?? new Set<string>();
+  const hiddenSketchPlaneIds =
+    options.hiddenSketchPlaneIds ?? new Set<string>();
+  const hideReferences = options.hideReferences ?? false;
+
   const primitives = [
     ...viewport.boxes.map(makeBoxPrimitive),
     ...viewport.cylinders.map(makeCylinderPrimitive),
     ...viewport.polygon_extrudes.map(makePolygonExtrudePrimitive),
-  ];
-  const references = [
-    ...viewport.reference_planes.map(makeReferencePlane),
-    ...viewport.reference_axes.map(makeReferenceAxis),
-  ];
-  const sketchLines = viewport.sketch_lines.map((line) => ({
-    lineId: line.line_id,
-    startPointId: line.start_point_id,
-    endPointId: line.end_point_id,
-    planeId: line.plane_id,
-    start: [line.start.x, line.start.y, line.start.z] as [
-      number,
-      number,
-      number,
-    ],
-    end: [line.end.x, line.end.y, line.end.z] as [number, number, number],
-    isSelected: line.is_selected,
-    constraint: line.constraint,
-  }));
-  const sketchCircles = viewport.sketch_circles.map(makeSketchCircle);
-  const sketchDimensions = viewport.sketch_dimensions.map(makeSketchDimension);
-  const sketchConstraints =
-    viewport.sketch_constraints.map(makeSketchConstraint);
-  const sketchProfiles = viewport.sketch_profiles.map(makeSketchProfile);
-  const solidFaces = viewport.solid_faces.map(makeSolidFace);
-  const sketchPoints: SketchPointScene[] = [
-    ...sketchLines.flatMap((line) => [
-      {
-        pointId: line.startPointId,
-        entityId: line.lineId,
-        kind: "endpoint" as const,
-        position: line.start,
-        isSelected: line.isSelected,
-      },
-      {
-        pointId: line.endPointId,
-        entityId: line.lineId,
-        kind: "endpoint" as const,
-        position: line.end,
-        isSelected: line.isSelected,
-      },
-    ]),
-    ...sketchCircles.map((circle) => ({
-      pointId: `${circle.circleId}:center`,
-      entityId: circle.circleId,
-      kind: "center" as const,
-      position: circle.center,
-      isSelected: circle.isSelected,
-    })),
-  ];
+  ].filter((primitive) => !hiddenFeatureIds.has(primitive.primitiveId));
+  const references = hideReferences
+    ? []
+    : [
+        ...viewport.reference_planes.map(makeReferencePlane),
+        ...viewport.reference_axes.map(makeReferenceAxis),
+      ];
+  const isSketchPlaneVisible = (planeId: string) =>
+    !hiddenSketchPlaneIds.has(planeId);
+
+  const sketchLines = viewport.sketch_lines
+    .filter((line) => isSketchPlaneVisible(line.plane_id))
+    .map((line) => ({
+      lineId: line.line_id,
+      startPointId: line.start_point_id,
+      endPointId: line.end_point_id,
+      planeId: line.plane_id,
+      start: [line.start.x, line.start.y, line.start.z] as [
+        number,
+        number,
+        number,
+      ],
+      end: [line.end.x, line.end.y, line.end.z] as [number, number, number],
+      isSelected: line.is_selected,
+      constraint: line.constraint,
+    }));
+  const sketchCircles = viewport.sketch_circles
+    .filter((circle) => isSketchPlaneVisible(circle.plane_id))
+    .map(makeSketchCircle);
+  const sketchPoints: SketchPointScene[] = viewport.sketch_points
+    .filter((point) => isSketchPlaneVisible(point.plane_id))
+    .map((point) => ({
+      pointId: point.point_id,
+      kind: point.kind,
+      position: [point.position.x, point.position.y, point.position.z] as [
+        number,
+        number,
+        number,
+      ],
+      isFixed: point.is_fixed,
+      isSelected: point.is_selected,
+    }));
+  const sketchDimensions = viewport.sketch_dimensions
+    .filter((dimension) => isSketchPlaneVisible(dimension.plane_id))
+    .map(makeSketchDimension);
+  const sketchConstraints = viewport.sketch_constraints
+    .filter((constraint) => isSketchPlaneVisible(constraint.plane_id))
+    .map(makeSketchConstraint);
+  const sketchProfiles = viewport.sketch_profiles
+    .filter((profile) => isSketchPlaneVisible(profile.plane_id))
+    .map(makeSketchProfile);
+  const solidFaces = viewport.solid_faces
+    .filter((face) => !hiddenFeatureIds.has(face.owner_id))
+    .map(makeSolidFace);
 
   return {
     bounds: {

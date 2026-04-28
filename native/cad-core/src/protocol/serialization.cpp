@@ -147,6 +147,20 @@ json to_payload(const polysmith::core::FeatureEntry& feature) {
                     }
                     return circles;
                   }()},
+                 {"points",
+                  [&feature]() {
+                    json points = json::array();
+                    for (const auto& point : feature.sketch_parameters->points) {
+                      points.push_back({
+                          {"point_id", point.id},
+                          {"kind", point.kind},
+                          {"x", point.x},
+                          {"y", point.y},
+                          {"is_fixed", point.is_fixed},
+                      });
+                    }
+                    return points;
+                  }()},
                  {"dimensions",
                   [&feature]() {
                     json dimensions = json::array();
@@ -171,9 +185,48 @@ json to_payload(const polysmith::core::FeatureEntry& feature) {
                           {"kind", relation.kind},
                           {"first_line_id", relation.first_line_id},
                           {"second_line_id", relation.second_line_id},
-                      });
+                        });
                     }
                     return relations;
+                  }()},
+                 {"profiles",
+                  [&feature]() {
+                    json profiles = json::array();
+                    for (const auto& profile : feature.sketch_parameters->profiles) {
+                      json point_ids = json::array();
+                      for (const auto& point_id : profile.point_ids) {
+                        point_ids.push_back(point_id);
+                      }
+
+                      json line_ids = json::array();
+                      for (const auto& line_id : profile.line_ids) {
+                        line_ids.push_back(line_id);
+                      }
+
+                      json points = json::array();
+                      for (const auto& point : profile.points) {
+                        points.push_back({
+                            {"x", point.x},
+                            {"y", point.y},
+                        });
+                      }
+
+                      profiles.push_back({
+                          {"profile_id", profile.id},
+                          {"kind", profile.kind},
+                          {"point_ids", point_ids},
+                          {"line_ids", line_ids},
+                          {"points", points},
+                          {"source_circle_id",
+                           profile.source_circle_id.has_value()
+                               ? json(profile.source_circle_id.value())
+                               : json(nullptr)},
+                          {"center_x", profile.center_x},
+                          {"center_y", profile.center_y},
+                          {"radius", profile.radius},
+                      });
+                    }
+                    return profiles;
                   }()},
                  {"active_tool", feature.sketch_parameters->active_tool},
              }
@@ -219,6 +272,10 @@ json to_payload(const polysmith::core::DocumentState& document) {
       {"active_sketch_tool",
        document.active_sketch_tool.has_value()
            ? json(document.active_sketch_tool.value())
+           : json(nullptr)},
+      {"selected_sketch_point_id",
+       document.selected_sketch_point_id.has_value()
+           ? json(document.selected_sketch_point_id.value())
            : json(nullptr)},
       {"selected_sketch_entity_id",
        document.selected_sketch_entity_id.has_value()
@@ -474,6 +531,22 @@ json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive)
   };
 }
 
+json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive) {
+  return {
+      {"point_id", primitive.point_id},
+      {"plane_id", primitive.plane_id},
+      {"kind", primitive.kind},
+      {"position",
+       {
+           {"x", primitive.position_x},
+           {"y", primitive.position_y},
+           {"z", primitive.position_z},
+       }},
+      {"is_fixed", primitive.is_fixed},
+      {"is_selected", primitive.is_selected},
+  };
+}
+
 json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primitive) {
   return {
       {"dimension_id", primitive.dimension_id},
@@ -628,6 +701,11 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
     sketch_circles.push_back(to_payload(circle));
   }
 
+  json sketch_points = json::array();
+  for (const auto& point : viewport.sketch_points) {
+    sketch_points.push_back(to_payload(point));
+  }
+
   json sketch_dimensions = json::array();
   for (const auto& dimension : viewport.sketch_dimensions) {
     sketch_dimensions.push_back(to_payload(dimension));
@@ -653,6 +731,7 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
       {"reference_axes", reference_axes},
       {"sketch_lines", sketch_lines},
       {"sketch_circles", sketch_circles},
+      {"sketch_points", sketch_points},
       {"sketch_dimensions", sketch_dimensions},
       {"sketch_constraints", sketch_constraints},
       {"sketch_profiles", sketch_profiles},

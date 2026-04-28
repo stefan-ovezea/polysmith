@@ -15,6 +15,10 @@ void update_sketch_line(FeatureEntry& feature,
                         double start_y,
                         double end_x,
                         double end_y);
+void update_sketch_point(FeatureEntry& feature,
+                         const std::string& point_id,
+                         double x,
+                         double y);
 void set_sketch_line_constraint(FeatureEntry& feature,
                                 const std::string& line_id,
                                 const std::optional<std::string>& constraint);
@@ -34,6 +38,9 @@ void set_sketch_coincident_constraint(
     FeatureEntry& feature,
     const std::string& point_id,
     const std::string& other_point_id);
+void set_sketch_point_fixed(FeatureEntry& feature,
+                            const std::string& point_id,
+                            bool is_fixed);
 void update_sketch_circle(FeatureEntry& feature,
                           const std::string& circle_id,
                           double center_x,

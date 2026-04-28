@@ -7,28 +7,21 @@ import type {
   DocumentState,
   SketchTool,
   ViewportState,
-  ReferenceAxisScene,
-  ReferencePlaneScene,
-  ScenePrimitive,
-  SolidFaceScene,
-  SketchCircleScene,
-  SketchConstraintScene,
   SketchDimensionScene,
-  SketchLineScene,
-  SketchPointScene,
-  SketchProfileScene,
   SolidFacePlaneFrame,
   PrimitiveVisual,
   PrimitiveInteractionState,
   ReferencePlaneVisual,
   ReferencePlaneInteractionState,
-  SketchPlaneFrame,
+  SolidFaceVisual,
+  SolidFaceInteractionState,
   ViewportContextMenuState,
   SketchPreviewPoint,
 } from "@/types";
 import {
   applyPrimitiveVisualState,
   applyReferencePlaneVisualState,
+  applySolidFaceVisualState,
   buildPrimitiveObject,
   buildReferenceAxisObject,
   buildReferencePlaneObject,
@@ -83,7 +76,6 @@ interface ViewportPanelProps {
   onSelectSketchEntity: (entityId: string) => Promise<void>;
   onPickSketchPoint: (
     pointId: string,
-    entityId: string,
     kind: "endpoint" | "center",
   ) => Promise<void>;
   armedSketchConstraint:
@@ -107,7 +99,9 @@ interface ViewportPanelProps {
   ) => Promise<void>;
   onSelectSketchProfile: (profileId: string) => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
-  onFinishSketch: () => Promise<void>;
+  hiddenFeatureIds?: ReadonlySet<string>;
+  hiddenSketchPlaneIds?: ReadonlySet<string>;
+  hideReferences?: boolean;
 }
 
 export function ViewportPanel({
@@ -131,13 +125,16 @@ export function ViewportPanel({
   onUpdateSketchDimension,
   onSelectSketchProfile,
   onSetSketchTool,
-  onFinishSketch,
+  hiddenFeatureIds,
+  hiddenSketchPlaneIds,
+  hideReferences,
 }: ViewportPanelProps) {
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const [contextMenu, setContextMenu] =
     useState<ViewportContextMenuState | null>(null);
   const [sketchSnapLabel, setSketchSnapLabel] = useState<string | null>(null);
   const [dimensionDraftValue, setDimensionDraftValue] = useState("");
+  const [isDimensionEditorOpen, setIsDimensionEditorOpen] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dimensionEditorRef = useRef<HTMLFormElement | null>(null);
@@ -163,6 +160,10 @@ export function ViewportPanel({
   const referencePlaneStatesRef = useRef(
     new Map<string, ReferencePlaneInteractionState>(),
   );
+  const solidFaceVisualsRef = useRef(new Map<string, SolidFaceVisual>());
+  const solidFaceStatesRef = useRef(
+    new Map<string, SolidFaceInteractionState>(),
+  );
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const meshesRef = useRef<THREE.Mesh[]>([]);
   const referencePlaneMeshesRef = useRef<THREE.Mesh[]>([]);
@@ -187,8 +188,11 @@ export function ViewportPanel({
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
   const selectSketchProfileRef = useRef(onSelectSketchProfile);
   const selectedSketchDimensionRef = useRef<SketchDimensionScene | null>(null);
+  const isDimensionEditorOpenRef = useRef(false);
+  useEffect(() => {
+    isDimensionEditorOpenRef.current = isDimensionEditorOpen;
+  }, [isDimensionEditorOpen]);
   const setSketchToolRef = useRef(onSetSketchTool);
-  const finishSketchRef = useRef(onFinishSketch);
   const armedSketchConstraintRef = useRef(armedSketchConstraint);
   const cancelSketchConstraintRef = useRef(onCancelSketchConstraint);
   const clearSketchConstraintRef = useRef(onClearSketchConstraint);
@@ -198,9 +202,19 @@ export function ViewportPanel({
   >([]);
   const sceneData = useMemo(
     () =>
-      viewport?.has_active_document ? createViewportScene(viewport) : null,
-    [viewport],
+      viewport?.has_active_document
+        ? createViewportScene(viewport, {
+            hiddenFeatureIds,
+            hiddenSketchPlaneIds,
+            hideReferences,
+          })
+        : null,
+    [viewport, hiddenFeatureIds, hiddenSketchPlaneIds, hideReferences],
   );
+  const sceneDataRef = useRef(sceneData);
+  useEffect(() => {
+    sceneDataRef.current = sceneData;
+  }, [sceneData]);
   const hasActiveDocument = Boolean(viewport?.has_active_document);
   const activeSketchPlaneId = document?.active_sketch_plane_id ?? null;
   const activeSketchTool = document?.active_sketch_tool ?? "select";
@@ -234,11 +248,6 @@ export function ViewportPanel({
       viewport?.reference_planes.find(
         (referencePlane) => referencePlane.is_selected,
       ) ?? null,
-    [viewport],
-  );
-  const selectedSketchProfile = useMemo(
-    () =>
-      viewport?.sketch_profiles.find((profile) => profile.is_selected) ?? null,
     [viewport],
   );
   const selectedSketchDimension = useMemo(
@@ -379,6 +388,36 @@ export function ViewportPanel({
     }
   }
 
+  function syncSolidFaceVisuals() {
+    for (const [faceId, visual] of solidFaceVisualsRef.current.entries()) {
+      const state = solidFaceStatesRef.current.get(faceId);
+      if (!state) {
+        continue;
+      }
+
+      applySolidFaceVisualState(visual, state);
+    }
+  }
+
+  function setHoveredFace(faceId: string | null) {
+    let changed = false;
+
+    for (const [id, state] of solidFaceStatesRef.current.entries()) {
+      const nextHovered = id === faceId;
+      if (state.isHovered !== nextHovered) {
+        solidFaceStatesRef.current.set(id, {
+          ...state,
+          isHovered: nextHovered,
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      syncSolidFaceVisuals();
+    }
+  }
+
   function setHoveredPrimitive(primitiveId: string | null) {
     let changed = false;
 
@@ -432,7 +471,6 @@ export function ViewportPanel({
     updateSketchDimensionRef.current = onUpdateSketchDimension;
     selectSketchProfileRef.current = onSelectSketchProfile;
     setSketchToolRef.current = onSetSketchTool;
-    finishSketchRef.current = onFinishSketch;
     armedSketchConstraintRef.current = armedSketchConstraint;
     cancelSketchConstraintRef.current = onCancelSketchConstraint;
     clearSketchConstraintRef.current = onClearSketchConstraint;
@@ -451,7 +489,6 @@ export function ViewportPanel({
     onUpdateSketchDimension,
     onSelectSketchProfile,
     onSetSketchTool,
-    onFinishSketch,
     armedSketchConstraint,
     onCancelSketchConstraint,
     onClearSketchConstraint,
@@ -477,6 +514,15 @@ export function ViewportPanel({
 
   useEffect(() => {
     if (!selectedSketchDimension) {
+      setIsDimensionEditorOpen(false);
+      return;
+    }
+
+    setIsDimensionEditorOpen(true);
+  }, [selectedSketchDimension?.dimensionId]);
+
+  useEffect(() => {
+    if (!isDimensionEditorOpen || !selectedSketchDimension) {
       return;
     }
 
@@ -487,7 +533,7 @@ export function ViewportPanel({
 
     input.focus();
     input.select();
-  }, [selectedSketchDimension?.dimensionId]);
+  }, [isDimensionEditorOpen, selectedSketchDimension?.dimensionId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -575,7 +621,8 @@ export function ViewportPanel({
 
       const editor = dimensionEditorRef.current;
       const dimension = selectedSketchDimensionRef.current;
-      if (!editor || !dimension) {
+      const isOpen = isDimensionEditorOpenRef.current;
+      if (!editor || !dimension || !isOpen) {
         if (editor) {
           editor.style.opacity = "0";
         }
@@ -636,20 +683,17 @@ export function ViewportPanel({
           };
         }
 
-        if (armedSketchConstraintRef.current?.kind === "coincident") {
-          const [sketchPointHit] = raycaster.intersectObjects(
-            sketchPointObjectsRef.current,
-            false,
-          );
-          const sketchPointId = sketchPointHit?.object.userData.sketchPointId;
-          if (typeof sketchPointId === "string") {
-            return {
-              kind: "sketch_point" as const,
-              id: sketchPointId,
-              entityId: sketchPointHit.object.userData.sketchPointEntityId,
-              pointKind: sketchPointHit.object.userData.sketchPointKind,
-            };
-          }
+        const [sketchPointHit] = raycaster.intersectObjects(
+          sketchPointObjectsRef.current,
+          false,
+        );
+        const sketchPointId = sketchPointHit?.object.userData.sketchPointId;
+        if (typeof sketchPointId === "string") {
+          return {
+            kind: "sketch_point" as const,
+            id: sketchPointId,
+            pointKind: sketchPointHit.object.userData.sketchPointKind,
+          };
         }
 
         const [sketchEntityHit] = raycaster.intersectObjects(
@@ -748,7 +792,6 @@ export function ViewportPanel({
         setSketchSnapLabel(sketchPoint.snapLabel);
 
         if (!draftStart) {
-          const hit = intersectSceneTargets(event);
           setHoveredPrimitive(null);
           setHoveredReference(null);
           return;
@@ -806,10 +849,15 @@ export function ViewportPanel({
       if (hit?.kind === "sketch_dimension" || hit?.kind === "sketch_entity") {
         setHoveredReference(null);
         setHoveredPrimitive(null);
+        setHoveredFace(null);
         return;
       }
       setHoveredReference(hit?.kind === "reference" ? hit.id : null);
-      setHoveredPrimitive(hit?.kind === "primitive" ? hit.id : null);
+      setHoveredFace(hit?.kind === "face" ? hit.id : null);
+      // Suppress primitive hover while a face under the same primitive is
+      // hovered so the visual highlight reads as a face hover, not a body
+      // hover.
+      setHoveredPrimitive(hit?.kind === "primitive" && hit.id ? hit.id : null);
     }
 
     function handlePointerLeave() {
@@ -818,6 +866,7 @@ export function ViewportPanel({
       if (!activeSketchPlaneId) {
         setHoveredReference(null);
         setHoveredPrimitive(null);
+        setHoveredFace(null);
       }
     }
 
@@ -858,11 +907,7 @@ export function ViewportPanel({
           }
 
           if (hit?.kind === "sketch_point") {
-            void pickSketchPointRef.current(
-              hit.id,
-              hit.entityId,
-              hit.pointKind,
-            );
+            void pickSketchPointRef.current(hit.id, hit.pointKind);
             return;
           }
 
@@ -998,11 +1043,33 @@ export function ViewportPanel({
     });
 
     resizeObserver.observe(host);
+    function handleDoubleClick(event: MouseEvent) {
+      if (activeSketchPlaneId) {
+        return;
+      }
+
+      const hit = intersectSceneTargets(event as PointerEvent);
+      if (hit?.kind !== "face") {
+        return;
+      }
+
+      const solidFace = sceneDataRef.current?.solidFaces.find(
+        (face) => face.faceId === hit.id,
+      );
+      if (!solidFace) {
+        return;
+      }
+
+      void selectFaceRef.current(solidFace.faceId);
+      void startSketchOnFaceRef.current(solidFace.faceId, solidFace.planeFrame);
+    }
+
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
+    renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     resizeRenderer();
 
     const animate = () => {
@@ -1023,6 +1090,7 @@ export function ViewportPanel({
       );
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
+      renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);
@@ -1041,6 +1109,8 @@ export function ViewportPanel({
       primitiveStatesRef.current.clear();
       referencePlaneVisualsRef.current.clear();
       referencePlaneStatesRef.current.clear();
+      solidFaceVisualsRef.current.clear();
+      solidFaceStatesRef.current.clear();
       referencePlaneMeshesRef.current = [];
       sketchEntityObjectsRef.current = [];
       sketchDimensionObjectsRef.current = [];
@@ -1083,6 +1153,8 @@ export function ViewportPanel({
     primitiveStatesRef.current.clear();
     referencePlaneVisualsRef.current.clear();
     referencePlaneStatesRef.current.clear();
+    solidFaceVisualsRef.current.clear();
+    solidFaceStatesRef.current.clear();
     referencePlaneMeshesRef.current = [];
     sketchEntityObjectsRef.current = [];
     sketchDimensionObjectsRef.current = [];
@@ -1161,8 +1233,13 @@ export function ViewportPanel({
 
     for (const face of sceneData.solidFaces) {
       const faceObject = buildSolidFaceObject(face);
-      faceMeshesRef.current.push(faceObject);
-      contentGroup.add(faceObject);
+      faceMeshesRef.current.push(faceObject.mesh);
+      solidFaceVisualsRef.current.set(face.faceId, faceObject.visual);
+      solidFaceStatesRef.current.set(face.faceId, {
+        isSelected: face.isSelected,
+        isHovered: false,
+      });
+      contentGroup.add(faceObject.mesh);
     }
 
     for (const sketchLine of sceneData.sketchLines) {
@@ -1206,6 +1283,7 @@ export function ViewportPanel({
 
     syncPrimitiveVisuals();
     syncReferencePlaneVisuals();
+    syncSolidFaceVisuals();
 
     if (sceneData.geometryKey !== lastGeometryKeyRef.current) {
       if (!activeSketchPlaneId) {
@@ -1304,13 +1382,29 @@ export function ViewportPanel({
     }
   }, [activeSketchPlaneId, showReferencePlanes]);
 
+  const lastFramedSketchPlaneRef = useRef<string | null>(null);
   useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
 
-    if (!camera || !controls || !sceneData || !activeSketchPlaneId) {
+    if (!camera || !controls) {
       return;
     }
+
+    if (!activeSketchPlaneId) {
+      lastFramedSketchPlaneRef.current = null;
+      return;
+    }
+
+    if (lastFramedSketchPlaneRef.current === activeSketchPlaneId) {
+      return;
+    }
+
+    if (!sceneData) {
+      return;
+    }
+
+    lastFramedSketchPlaneRef.current = activeSketchPlaneId;
 
     frameCameraToSketchPlane(
       camera,
@@ -1320,13 +1414,6 @@ export function ViewportPanel({
       sceneData.bounds.maxDimension,
     );
   }, [activeSketchPlaneId, activeSketchPlaneFrame, sceneData]);
-
-  function handleFinishSketch() {
-    lineDraftStartRef.current = null;
-    clearPreviewLine();
-    clearPreviewCircle();
-    void finishSketchRef.current();
-  }
 
   async function handleCreateSketchFromContextMenu() {
     if (contextMenu?.referenceId) {
@@ -1358,11 +1445,13 @@ export function ViewportPanel({
 
   async function handleSubmitDimensionEdit() {
     if (!selectedSketchDimension) {
+      setIsDimensionEditorOpen(false);
       return;
     }
 
     const nextValue = Number(dimensionDraftValue);
     if (!Number.isFinite(nextValue) || nextValue <= 0) {
+      setIsDimensionEditorOpen(false);
       return;
     }
 
@@ -1370,13 +1459,8 @@ export function ViewportPanel({
       selectedSketchDimension.dimensionId,
       nextValue,
     );
+    setIsDimensionEditorOpen(false);
   }
-
-  const selectedSketchDimensionTitle = selectedSketchDimension
-    ? selectedSketchDimension.kind === "line_length"
-      ? "Length"
-      : "Radius"
-    : null;
 
   return (
     <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
@@ -1426,10 +1510,12 @@ export function ViewportPanel({
               : ""
           }`}
         />
-        {selectedSketchDimension && activeSketchPlaneId ? (
+        {selectedSketchDimension &&
+        activeSketchPlaneId &&
+        isDimensionEditorOpen ? (
           <form
             ref={dimensionEditorRef}
-            className="pointer-events-auto absolute z-20 flex min-w-[188px] items-center gap-2 rounded-2xl border border-white/15 bg-black/75 px-3 py-2 backdrop-blur-xl"
+            className="pointer-events-auto absolute z-20 flex w-[88px] items-center rounded-md bg-black/65 px-2 py-1 shadow-[0_4px_12px_rgba(0,0,0,0.45)] backdrop-blur-md"
             style={{
               left: 0,
               top: 0,
@@ -1440,12 +1526,9 @@ export function ViewportPanel({
               void handleSubmitDimensionEdit();
             }}
           >
-            <span className="shrink-0 text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
-              {selectedSketchDimensionTitle}
-            </span>
             <input
               ref={dimensionInputRef}
-              className="cad-input h-9 min-w-0 flex-1"
+              className="h-6 w-full bg-transparent text-center text-sm font-medium text-on-surface tabular-nums outline-none"
               type="number"
               min="0.01"
               step="0.01"
@@ -1457,29 +1540,17 @@ export function ViewportPanel({
                 event.currentTarget.select();
               }}
               onKeyDown={(event) => {
-                if (event.key !== "Escape") {
-                  return;
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setDimensionDraftValue(
+                    selectedSketchDimensionValue !== null
+                      ? String(selectedSketchDimensionValue)
+                      : "",
+                  );
+                  setIsDimensionEditorOpen(false);
                 }
-
-                event.preventDefault();
-                setDimensionDraftValue(
-                  selectedSketchDimensionValue !== null
-                    ? String(selectedSketchDimensionValue)
-                    : "",
-                );
-                event.currentTarget.blur();
               }}
             />
-            <span className="shrink-0 text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
-              mm
-            </span>
-            <button
-              type="submit"
-              className="cad-action-primary shrink-0"
-              disabled={Number(dimensionDraftValue) <= 0}
-            >
-              Set
-            </button>
           </form>
         ) : null}
         {!hasActiveDocument ? (
@@ -1545,16 +1616,18 @@ export function ViewportPanel({
                       ? document?.selected_sketch_dimension_id
                         ? `Dimension: ${document.selected_sketch_dimension_id} · Entity: ${document.selected_sketch_entity_id}`
                         : `Entity: ${document.selected_sketch_entity_id}`
-                      : document?.selected_sketch_profile_id
-                        ? `Profile: ${document.selected_sketch_profile_id}`
-                        : sketchSnapLabel
-                          ? `Snap: ${sketchSnapLabel}`
-                          : activeSketchTool === "select"
-                            ? "Selection mode · press a sketch tool to draw"
-                            : activeSketchTool === "line" &&
-                                lineDraftStartRef.current
-                              ? "Line chain active · click to continue or press Escape"
-                              : "Click to place geometry"}
+                      : document?.selected_sketch_point_id
+                        ? `Point: ${document.selected_sketch_point_id}`
+                        : document?.selected_sketch_profile_id
+                          ? `Profile: ${document.selected_sketch_profile_id}`
+                          : sketchSnapLabel
+                            ? `Snap: ${sketchSnapLabel}`
+                            : activeSketchTool === "select"
+                              ? "Selection mode · press a sketch tool to draw"
+                              : activeSketchTool === "line" &&
+                                  lineDraftStartRef.current
+                                ? "Line chain active · click to continue or press Escape"
+                                : "Click to place geometry"}
                 </p>
               ) : null}
             </div>

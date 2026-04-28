@@ -1,21 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useCadCoreStore } from "./state";
 import { useCadCore } from "./hooks";
 import {
   AppHeader,
-  DocumentPanel,
+  DocumentHierarchyPanel,
+  ExtrudePreviewPanel,
   FeatureTimeline,
   MessageLog,
   SelectedBoxEditor,
   SketchToolPanel,
   ViewportPanel,
 } from "./layout";
+import type { CategoryId } from "./layout";
 import { ArmedSketchConstraint } from "./types";
+
+const DEFAULT_EXTRUDE_DEPTH = 20;
+
+interface ActiveExtrudeAction {
+  featureId: string;
+  initialDepth: number;
+}
 
 function App() {
   const [armedSketchConstraint, setArmedSketchConstraint] =
     useState<ArmedSketchConstraint>(null);
+  const [extrudeAction, setExtrudeAction] =
+    useState<ActiveExtrudeAction | null>(null);
+  const [hiddenFeatureIds, setHiddenFeatureIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+  const [hiddenCategories, setHiddenCategories] = useState<Set<CategoryId>>(
+    () => new Set<CategoryId>(),
+  );
   const status = useCadCoreStore((state) => state.status);
   const messages = useCadCoreStore((state) => state.messages);
   const document = useCadCoreStore((state) => state.document);
@@ -79,6 +96,7 @@ function App() {
     addBoxFeature,
     addCylinderFeature,
     updateBoxFeature,
+    updateExtrudeDepth,
     renameFeature,
     deleteFeature,
     undo,
@@ -95,17 +113,20 @@ function App() {
     setSketchCoincidentConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
+    setSketchPointFixed,
     updateSketchCircle,
     updateSketchDimension,
+    updateSketchPoint,
     selectSketchProfile,
     extrudeProfile,
     addSketchLine,
     addSketchRectangle,
     addSketchCircle,
+    selectSketchPoint,
     selectSketchEntity,
     selectSketchDimension,
     finishSketch,
-    clearSelection,
+    reenterSketch,
   } = useCadCore();
 
   useEffect(() => {
@@ -113,6 +134,115 @@ function App() {
       setArmedSketchConstraint(null);
     }
   }, [activeSketchPlaneId]);
+
+  // UI-only visibility: combine per-feature hides with category hides into
+  // sets the viewport can use to filter primitives, sketch entities, and
+  // reference geometry. Sketch entities are filtered by plane id since the
+  // viewport snapshot does not carry the owning sketch feature id on each
+  // sketch primitive.
+  const BODY_KINDS = new Set(["box", "cylinder", "polygon_extrude", "extrude"]);
+  const effectiveHiddenFeatureIds = useMemo(() => {
+    const set = new Set<string>(hiddenFeatureIds);
+    if (!document) {
+      return set;
+    }
+    for (const feature of document.feature_history) {
+      if (hiddenCategories.has("sketches") && feature.kind === "sketch") {
+        set.add(feature.feature_id);
+      }
+      if (hiddenCategories.has("bodies") && BODY_KINDS.has(feature.kind)) {
+        set.add(feature.feature_id);
+      }
+    }
+    return set;
+  }, [document, hiddenFeatureIds, hiddenCategories]);
+
+  const hiddenSketchPlaneIds = useMemo(() => {
+    const result = new Set<string>();
+    if (!document) {
+      return result;
+    }
+    // Group sketch features by plane id so we only hide a plane when every
+    // sketch attached to it is hidden.
+    const planeToSketches = new Map<string, string[]>();
+    for (const feature of document.feature_history) {
+      if (feature.kind !== "sketch" || !feature.sketch_parameters) {
+        continue;
+      }
+      const planeId = feature.sketch_parameters.plane_id;
+      const list = planeToSketches.get(planeId) ?? [];
+      list.push(feature.feature_id);
+      planeToSketches.set(planeId, list);
+    }
+    for (const [planeId, sketchIds] of planeToSketches) {
+      if (sketchIds.every((id) => effectiveHiddenFeatureIds.has(id))) {
+        result.add(planeId);
+      }
+    }
+    return result;
+  }, [document, effectiveHiddenFeatureIds]);
+
+  async function triggerExtrudeAction() {
+    if (extrudeAction) {
+      return;
+    }
+
+    if (!selectedSketchProfile) {
+      return;
+    }
+
+    const profileId = selectedSketchProfile.profile_id;
+    await runAction(async () => {
+      await extrudeProfile(profileId, DEFAULT_EXTRUDE_DEPTH);
+    });
+
+    // The core selects the new extrude feature on success. Read the latest
+    // selection from the store so the preview panel can drive depth updates.
+    const currentDocument = useCadCoreStore.getState().document;
+    const newFeatureId = currentDocument?.selected_feature_id ?? null;
+    if (!newFeatureId) {
+      return;
+    }
+
+    setExtrudeAction({
+      featureId: newFeatureId,
+      initialDepth: DEFAULT_EXTRUDE_DEPTH,
+    });
+  }
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        return;
+      }
+
+      if (event.code !== "KeyE") {
+        return;
+      }
+
+      if (!selectedSketchProfile) {
+        return;
+      }
+
+      event.preventDefault();
+      void triggerExtrudeAction();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedSketchProfile, extrudeAction]);
 
   function clearArmedSketchConstraint() {
     setArmedSketchConstraint(null);
@@ -177,20 +307,20 @@ function App() {
 
   async function handleSketchConstraintPointPick(
     pointId: string,
-    entityId: string,
     kind: "endpoint" | "center",
   ) {
     if (!armedSketchConstraint || armedSketchConstraint.kind !== "coincident") {
-      await selectSketchEntity(entityId);
+      await selectSketchPoint(pointId);
       return;
     }
 
     if (kind !== "endpoint") {
+      await selectSketchPoint(pointId);
       return;
     }
 
     if (!armedSketchConstraint.firstPointId) {
-      await selectSketchEntity(entityId);
+      await selectSketchPoint(pointId);
       setArmedSketchConstraint({
         kind: "coincident",
         firstPointId: pointId,
@@ -358,16 +488,40 @@ function App() {
         <div className="grid min-h-0 min-w-0 grid-cols-[320px_minmax(0,1fr)]">
           <aside className="cad-sidebar min-h-0">
             <div className="flex h-full min-h-0 flex-col">
-              <DocumentPanel
+              <DocumentHierarchyPanel
                 document={document}
+                hiddenFeatureIds={hiddenFeatureIds}
+                hiddenCategories={hiddenCategories}
+                onToggleFeatureVisibility={(featureId) => {
+                  setHiddenFeatureIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(featureId)) {
+                      next.delete(featureId);
+                    } else {
+                      next.add(featureId);
+                    }
+                    return next;
+                  });
+                }}
+                onToggleCategoryVisibility={(category) => {
+                  setHiddenCategories((current) => {
+                    const next = new Set(current);
+                    if (next.has(category)) {
+                      next.delete(category);
+                    } else {
+                      next.add(category);
+                    }
+                    return next;
+                  });
+                }}
                 onSelectFeature={async (featureId) => {
                   await runAction(async () => {
                     await selectFeature(featureId);
                   });
                 }}
-                onClearSelection={async () => {
+                onReenterSketch={async (featureId) => {
                   await runAction(async () => {
-                    await clearSelection();
+                    await reenterSketch(featureId);
                   });
                 }}
               />
@@ -424,13 +578,9 @@ function App() {
                   await handleSketchConstraintLinePick(entityId);
                 });
               }}
-              onPickSketchPoint={async (pointId, entityId, kind) => {
+              onPickSketchPoint={async (pointId, kind) => {
                 await runAction(async () => {
-                  await handleSketchConstraintPointPick(
-                    pointId,
-                    entityId,
-                    kind,
-                  );
+                  await handleSketchConstraintPointPick(pointId, kind);
                 });
               }}
               armedSketchConstraint={armedSketchConstraint}
@@ -441,6 +591,11 @@ function App() {
                 _relatedEntityId,
               ) => {
                 await runAction(async () => {
+                  if (kind === "fixed") {
+                    await setSketchPointFixed(entityId, false);
+                    return;
+                  }
+
                   if (kind === "equal_length") {
                     await setSketchEqualLengthConstraint(entityId, null);
                     return;
@@ -480,11 +635,9 @@ function App() {
                   await setSketchTool(tool);
                 });
               }}
-              onFinishSketch={async () => {
-                await runAction(async () => {
-                  await finishSketch();
-                });
-              }}
+              hiddenFeatureIds={effectiveHiddenFeatureIds}
+              hiddenSketchPlaneIds={hiddenSketchPlaneIds}
+              hideReferences={hiddenCategories.has("origin")}
             />
 
             <div className="pointer-events-none absolute right-4 top-4 z-10 flex max-h-[calc(100%-1rem)] w-[340px] flex-col gap-3">
@@ -492,28 +645,42 @@ function App() {
                 <SketchToolPanel
                   activeSketchPlaneId={activeSketchPlaneId}
                   activeSketchTool={activeSketchTool}
+                  selectedSketchPointId={
+                    document?.selected_sketch_point_id ?? null
+                  }
                   selectedSketchEntityId={
                     document?.selected_sketch_entity_id ?? null
                   }
                   selectedSketchProfileId={
                     document?.selected_sketch_profile_id ?? null
                   }
-                  onExtrudeProfile={async (depth) => {
-                    if (!selectedSketchProfile) {
-                      return;
-                    }
-
+                />
+              ) : null}
+              {extrudeAction ? (
+                <ExtrudePreviewPanel
+                  initialDepth={extrudeAction.initialDepth}
+                  disabled={status !== "connected"}
+                  onPreviewDepth={async (depth) => {
                     await runAction(async () => {
-                      await extrudeProfile(
-                        selectedSketchProfile.profile_id,
-                        depth,
-                      );
+                      await updateExtrudeDepth(extrudeAction.featureId, depth);
                     });
+                  }}
+                  onConfirm={() => {
+                    setExtrudeAction(null);
+                  }}
+                  onCancel={async () => {
+                    await runAction(async () => {
+                      await undo();
+                    });
+                    setExtrudeAction(null);
                   }}
                 />
               ) : null}
               <SelectedBoxEditor
                 feature={selectedFeature}
+                selectedSketchPointId={
+                  document?.selected_sketch_point_id ?? null
+                }
                 selectedSketchEntityId={
                   document?.selected_sketch_entity_id ?? null
                 }
@@ -565,6 +732,16 @@ function App() {
                 onUpdateSketchDimension={async (dimensionId, value) => {
                   await runAction(async () => {
                     await updateSketchDimension(dimensionId, value);
+                  });
+                }}
+                onUpdateSketchPoint={async (pointId, x, y) => {
+                  await runAction(async () => {
+                    await updateSketchPoint(pointId, x, y);
+                  });
+                }}
+                onSetSketchPointFixed={async (pointId, isFixed) => {
+                  await runAction(async () => {
+                    await setSketchPointFixed(pointId, isFixed);
                   });
                 }}
               />

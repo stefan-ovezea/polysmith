@@ -29,6 +29,14 @@ export interface SketchCircleEntry {
   radius: number;
 }
 
+export interface SketchPointEntry {
+  point_id: string;
+  kind: "endpoint" | "center";
+  x: number;
+  y: number;
+  is_fixed: boolean;
+}
+
 export interface SketchDimensionEntry {
   dimension_id: string;
   kind: "line_length" | "circle_radius";
@@ -43,6 +51,18 @@ export interface SketchLineRelationEntry {
   second_line_id: string;
 }
 
+export interface SketchProfileRegionEntry {
+  profile_id: string;
+  kind: "polygon" | "circle";
+  point_ids: string[];
+  line_ids: string[];
+  points: SketchProfilePoint[];
+  source_circle_id: string | null;
+  center_x: number;
+  center_y: number;
+  radius: number;
+}
+
 export interface SketchFeatureParameters {
   plane_id: string;
   plane_frame: {
@@ -54,8 +74,10 @@ export interface SketchFeatureParameters {
   active_tool: SketchTool;
   lines: SketchLineEntry[];
   circles: SketchCircleEntry[];
+  points: SketchPointEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];
+  profiles: SketchProfileRegionEntry[];
 }
 
 export interface FeatureEntry {

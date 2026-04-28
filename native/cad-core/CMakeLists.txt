@@ -32,3 +32,14 @@ target_include_directories(cad_core PRIVATE
 )
 
 target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES})
+
+add_executable(cad_core_sketch_profile_test
+  src/core/sketch_feature.cpp
+  src/core/sketch_profile.cpp
+  tests/sketch_profile_test.cpp
+)
+
+target_include_directories(cad_core_sketch_profile_test PRIVATE
+  include
+  src
+)

@@ -110,6 +110,15 @@ export interface ViewportSketchCircle {
   is_selected: boolean;
 }
 
+export interface ViewportSketchPoint {
+  point_id: string;
+  plane_id: string;
+  kind: "endpoint" | "center";
+  position: Vector3;
+  is_fixed: boolean;
+  is_selected: boolean;
+}
+
 export interface ViewportSketchDimension {
   dimension_id: string;
   plane_id: string;
@@ -188,6 +197,15 @@ export interface ReferencePlaneInteractionState {
   isSelected: boolean;
   isHovered: boolean;
   isActiveSketchPlane: boolean;
+}
+
+export interface SolidFaceVisual {
+  fillMaterial: THREE.MeshBasicMaterial;
+}
+
+export interface SolidFaceInteractionState {
+  isSelected: boolean;
+  isHovered: boolean;
 }
 
 export interface ViewportContextMenuState {

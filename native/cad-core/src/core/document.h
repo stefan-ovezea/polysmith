@@ -26,6 +26,7 @@ struct DocumentState {
   std::optional<std::string> active_sketch_face_id;
   std::optional<std::string> active_sketch_feature_id;
   std::optional<std::string> active_sketch_tool;
+  std::optional<std::string> selected_sketch_point_id;
   std::optional<std::string> selected_sketch_entity_id;
   std::optional<std::string> selected_sketch_dimension_id;
   std::optional<std::string> selected_sketch_profile_id;
@@ -46,6 +47,8 @@ class DocumentManager {
   DocumentState add_cylinder_feature(const CylinderFeatureParameters& parameters);
   DocumentState update_box_feature(const std::string& feature_id,
                                    const BoxFeatureParameters& parameters);
+  DocumentState update_extrude_depth(const std::string& feature_id,
+                                     double depth);
   DocumentState rename_feature(const std::string& feature_id,
                                const std::string& name);
   DocumentState delete_feature(const std::string& feature_id);
@@ -64,6 +67,9 @@ class DocumentManager {
                                    double start_y,
                                    double end_x,
                                    double end_y);
+  DocumentState update_sketch_point(const std::string& point_id,
+                                    double x,
+                                    double y);
   DocumentState set_sketch_line_constraint(
       const std::string& line_id,
       const std::optional<std::string>& constraint);
@@ -78,6 +84,8 @@ class DocumentManager {
       const std::optional<std::string>& other_line_id);
   DocumentState set_sketch_coincident_constraint(const std::string& point_id,
                                                  const std::string& other_point_id);
+  DocumentState set_sketch_point_fixed(const std::string& point_id,
+                                       bool is_fixed);
   DocumentState update_sketch_circle(const std::string& circle_id,
                                      double center_x,
                                      double center_y,
@@ -97,9 +105,11 @@ class DocumentManager {
   DocumentState add_sketch_circle(double center_x,
                                   double center_y,
                                   double radius);
+  DocumentState select_sketch_point(const std::string& point_id);
   DocumentState select_sketch_entity(const std::string& entity_id);
   DocumentState select_sketch_dimension(const std::string& dimension_id);
   DocumentState finish_sketch();
+  DocumentState reenter_sketch(const std::string& feature_id);
   DocumentState clear_selection();
   ExportResult export_document_as_step(const std::string& file_path) const;
   std::optional<DocumentState> get_document() const;

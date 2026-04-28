@@ -70,6 +70,14 @@ struct SketchCircle {
   double radius;
 };
 
+struct SketchPoint {
+  std::string id;
+  std::string kind;
+  double x;
+  double y;
+  bool is_fixed;
+};
+
 struct SketchDimension {
   std::string id;
   std::string kind;
@@ -82,6 +90,18 @@ struct SketchLineRelation {
   std::string kind;
   std::string first_line_id;
   std::string second_line_id;
+};
+
+struct SketchProfileRegion {
+  std::string id;
+  std::string kind;
+  std::vector<std::string> point_ids;
+  std::vector<std::string> line_ids;
+  std::vector<SketchProfilePoint> points;
+  std::optional<std::string> source_circle_id;
+  double center_x;
+  double center_y;
+  double radius;
 };
 
 struct SketchFeatureParameters {
@@ -105,8 +125,10 @@ struct SketchFeatureParameters {
   std::string active_tool;
   std::vector<SketchLine> lines;
   std::vector<SketchCircle> circles;
+  std::vector<SketchPoint> points;
   std::vector<SketchDimension> dimensions;
   std::vector<SketchLineRelation> line_relations;
+  std::vector<SketchProfileRegion> profiles;
 };
 
 struct FeatureEntry {

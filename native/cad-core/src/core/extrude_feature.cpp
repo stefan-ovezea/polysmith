@@ -99,4 +99,24 @@ FeatureEntry create_extrude_feature(int feature_index,
   };
 }
 
+void update_extrude_depth(FeatureEntry& feature, double depth) {
+  if (feature.kind != "extrude") {
+    throw std::runtime_error(
+        "Only extrude features can be updated with extrude depth");
+  }
+
+  if (!feature.extrude_parameters.has_value()) {
+    throw std::runtime_error("Extrude feature is missing parameters");
+  }
+
+  ExtrudeFeatureParameters next = feature.extrude_parameters.value();
+  next.depth = depth;
+
+  validate_parameters(next);
+  validate_occt_shape(next);
+
+  feature.parameters_summary = make_parameters_summary(next);
+  feature.extrude_parameters = next;
+}
+
 }  // namespace polysmith::core

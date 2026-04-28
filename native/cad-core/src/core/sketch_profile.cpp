@@ -60,8 +60,21 @@ std::string make_polygon_profile_id(const std::vector<std::string>& line_ids) {
 
 struct LineLoopCandidate {
   std::vector<SketchProfilePoint> points;
+  std::vector<std::string> point_ids;
   std::vector<std::string> line_ids;
 };
+
+std::string line_node_id(const SketchLine& line, bool is_start) {
+  const std::string& point_id = is_start ? line.start_point_id : line.end_point_id;
+  if (!point_id.empty()) {
+    return point_id;
+  }
+
+  return make_node_key({
+      .x = is_start ? line.start_x : line.end_x,
+      .y = is_start ? line.start_y : line.end_y,
+  });
+}
 
 std::optional<LineLoopCandidate> detect_line_loop(
     const std::vector<SketchLine>& lines) {
@@ -82,10 +95,18 @@ std::optional<LineLoopCandidate> detect_line_loop(
       return std::nullopt;
     }
 
-    const std::string start_key = make_node_key(start);
-    const std::string end_key = make_node_key(end);
-    nodes.emplace(start_key, start);
-    nodes.emplace(end_key, end);
+    const std::string start_key = line_node_id(line, true);
+    const std::string end_key = line_node_id(line, false);
+    const auto [start_it, inserted_start] = nodes.emplace(start_key, start);
+    const auto [end_it, inserted_end] = nodes.emplace(end_key, end);
+    const bool start_uses_fallback_key = line.start_point_id.empty();
+    const bool end_uses_fallback_key = line.end_point_id.empty();
+    if ((!inserted_start && start_uses_fallback_key &&
+         !points_match(start_it->second, start)) ||
+        (!inserted_end && end_uses_fallback_key &&
+         !points_match(end_it->second, end))) {
+      return std::nullopt;
+    }
     adjacency[start_key].push_back(index);
     adjacency[end_key].push_back(index);
     line_nodes.push_back({start_key, end_key});
@@ -102,6 +123,7 @@ std::optional<LineLoopCandidate> detect_line_loop(
   }
 
   std::vector<SketchProfilePoint> ordered_points;
+  std::vector<std::string> ordered_point_ids;
   std::vector<std::string> ordered_line_ids;
   std::set<size_t> visited_lines;
 
@@ -125,6 +147,7 @@ std::optional<LineLoopCandidate> detect_line_loop(
     const size_t line_index = *next_line_it;
     visited_lines.insert(line_index);
     ordered_points.push_back(nodes.at(current_node));
+    ordered_point_ids.push_back(current_node);
     ordered_line_ids.push_back(lines[line_index].id);
 
     const auto& [start_key, end_key] = line_nodes[line_index];
@@ -146,6 +169,7 @@ std::optional<LineLoopCandidate> detect_line_loop(
 
   return LineLoopCandidate{
       .points = ordered_points,
+      .point_ids = ordered_point_ids,
       .line_ids = ordered_line_ids,
   };
 }
@@ -157,14 +181,8 @@ std::vector<std::vector<SketchLine>> split_line_components(
 
   for (size_t index = 0; index < lines.size(); ++index) {
     const auto& line = lines[index];
-    const std::string start_key = make_node_key({
-        .x = line.start_x,
-        .y = line.start_y,
-    });
-    const std::string end_key = make_node_key({
-        .x = line.end_x,
-        .y = line.end_y,
-    });
+    const std::string start_key = line_node_id(line, true);
+    const std::string end_key = line_node_id(line, false);
     node_to_lines[start_key].push_back(index);
     node_to_lines[end_key].push_back(index);
     line_nodes.push_back({start_key, end_key});
@@ -215,6 +233,43 @@ std::vector<std::vector<SketchLine>> split_line_components(
 
 }  // namespace
 
+std::vector<SketchProfileRegion> build_sketch_profile_regions(
+    const SketchFeatureParameters& parameters) {
+  std::vector<SketchProfileRegion> profiles;
+
+  for (const auto& component : split_line_components(parameters.lines)) {
+    if (const auto loop = detect_line_loop(component); loop.has_value()) {
+      profiles.push_back(SketchProfileRegion{
+          .id = make_polygon_profile_id(loop->line_ids),
+          .kind = "polygon",
+          .point_ids = loop->point_ids,
+          .line_ids = loop->line_ids,
+          .points = loop->points,
+          .source_circle_id = std::nullopt,
+          .center_x = 0.0,
+          .center_y = 0.0,
+          .radius = 0.0,
+      });
+    }
+  }
+
+  for (const auto& circle : parameters.circles) {
+    profiles.push_back(SketchProfileRegion{
+        .id = "profile-circle-" + circle.id,
+        .kind = "circle",
+        .point_ids = {"point-circle-" + circle.id + "-center"},
+        .line_ids = {},
+        .points = {},
+        .source_circle_id = circle.id,
+        .center_x = circle.center_x,
+        .center_y = circle.center_y,
+        .radius = circle.radius,
+    });
+  }
+
+  return profiles;
+}
+
 DetectedSketchProfiles detect_sketch_profiles(const FeatureEntry& feature) {
   DetectedSketchProfiles profiles;
 
@@ -224,26 +279,27 @@ DetectedSketchProfiles detect_sketch_profiles(const FeatureEntry& feature) {
 
   const auto& sketch = feature.sketch_parameters.value();
 
-  for (const auto& component : split_line_components(sketch.lines)) {
-    if (const auto loop = detect_line_loop(component); loop.has_value()) {
+  for (const auto& profile : sketch.profiles) {
+    if (profile.kind == "polygon") {
       profiles.polygons.push_back(PolygonSketchProfile{
-          .id = make_polygon_profile_id(loop->line_ids),
+          .id = profile.id,
           .plane_id = sketch.plane_id,
           .plane_frame = sketch.plane_frame,
-          .points = loop->points,
+          .points = profile.points,
+      });
+      continue;
+    }
+
+    if (profile.kind == "circle") {
+      profiles.circles.push_back(CircleSketchProfile{
+          .id = profile.id,
+          .plane_id = sketch.plane_id,
+          .plane_frame = sketch.plane_frame,
+          .center_x = profile.center_x,
+          .center_y = profile.center_y,
+          .radius = profile.radius,
       });
     }
-  }
-
-  for (const auto& circle : sketch.circles) {
-    profiles.circles.push_back(CircleSketchProfile{
-        .id = "profile-circle-" + circle.id,
-        .plane_id = sketch.plane_id,
-        .plane_frame = sketch.plane_frame,
-        .center_x = circle.center_x,
-        .center_y = circle.center_y,
-        .radius = circle.radius,
-    });
   }
 
   return profiles;

@@ -141,6 +141,17 @@ struct ViewportSketchCirclePrimitive {
   bool is_selected;
 };
 
+struct ViewportSketchPointPrimitive {
+  std::string point_id;
+  std::string plane_id;
+  std::string kind;
+  double position_x;
+  double position_y;
+  double position_z;
+  bool is_fixed;
+  bool is_selected;
+};
+
 struct ViewportSketchDimensionPrimitive {
   std::string dimension_id;
   std::string plane_id;
@@ -212,6 +223,7 @@ struct ViewportState {
   std::vector<ViewportReferenceAxis> reference_axes;
   std::vector<ViewportSketchLinePrimitive> sketch_lines;
   std::vector<ViewportSketchCirclePrimitive> sketch_circles;
+  std::vector<ViewportSketchPointPrimitive> sketch_points;
   std::vector<ViewportSketchDimensionPrimitive> sketch_dimensions;
   std::vector<ViewportSketchConstraintPrimitive> sketch_constraints;
   std::vector<ViewportSketchProfilePrimitive> sketch_profiles;
