@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { useCadCoreStore } from "./state";
+import { awaitDocumentChange, useCadCoreStore } from "./state";
 import { useCadCore } from "./hooks";
 import {
   AppHeader,
@@ -8,7 +8,6 @@ import {
   ExtrudePreviewPanel,
   FeatureTimeline,
   MessageLog,
-  SelectedBoxEditor,
   SketchToolPanel,
   ViewportPanel,
 } from "./layout";
@@ -16,6 +15,12 @@ import type { CategoryId } from "./layout";
 import { ArmedSketchConstraint } from "./types";
 
 const DEFAULT_EXTRUDE_DEPTH = 20;
+
+// The Core Messages debug panel is hidden by default. Set
+// `VITE_SHOW_DEBUG_MESSAGE_LOG=true` in `.env.local` (or your shell when
+// running `pnpm dev`) to surface it again while debugging the IPC bridge.
+const SHOW_DEBUG_MESSAGE_LOG =
+  import.meta.env.VITE_SHOW_DEBUG_MESSAGE_LOG === "true";
 
 interface ActiveExtrudeAction {
   featureId: string;
@@ -39,10 +44,6 @@ function App() {
   const session = useCadCoreStore((state) => state.session);
   const viewport = useCadCoreStore((state) => state.viewport);
   const addMessage = useCadCoreStore((state) => state.addMessage);
-  const selectedFeature =
-    document?.feature_history.find(
-      (feature) => feature.feature_id === document.selected_feature_id,
-    ) ?? null;
   const selectedReference =
     viewport?.reference_planes.find(
       (referencePlane) => referencePlane.is_selected,
@@ -93,9 +94,9 @@ function App() {
     start,
     createDocument,
     exportDocument,
+    exportDocumentStl,
     addBoxFeature,
     addCylinderFeature,
-    updateBoxFeature,
     updateExtrudeDepth,
     renameFeature,
     deleteFeature,
@@ -107,16 +108,13 @@ function App() {
     startSketchOnPlane,
     startSketchOnFace,
     setSketchTool,
-    updateSketchLine,
     setSketchLineConstraint,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
     setSketchPointFixed,
-    updateSketchCircle,
     updateSketchDimension,
-    updateSketchPoint,
     selectSketchProfile,
     extrudeProfile,
     addSketchLine,
@@ -192,36 +190,87 @@ function App() {
     }
 
     const profileId = selectedSketchProfile.profile_id;
-    await runAction(async () => {
-      await extrudeProfile(profileId, DEFAULT_EXTRUDE_DEPTH);
+
+    // The IPC bridge is fire-and-forget: `extrudeProfile` returns as soon as
+    // the command is written to cad_core stdin, before the core has emitted
+    // the `document_state` event with the new feature. To capture the real
+    // new feature id we subscribe to the next document update that contains
+    // a freshly created extrude feature.
+    const documentPromise = awaitDocumentChange((next, previous) => {
+      if (!next.selected_feature_id) {
+        return false;
+      }
+      const previousLength = previous?.feature_history.length ?? 0;
+      if (next.feature_history.length <= previousLength) {
+        return false;
+      }
+      const lastFeature = next.feature_history[next.feature_history.length - 1];
+      return (
+        lastFeature.feature_id === next.selected_feature_id &&
+        lastFeature.kind === "extrude"
+      );
     });
 
-    // The core selects the new extrude feature on success. Read the latest
-    // selection from the store so the preview panel can drive depth updates.
-    const currentDocument = useCadCoreStore.getState().document;
-    const newFeatureId = currentDocument?.selected_feature_id ?? null;
-    if (!newFeatureId) {
-      return;
-    }
-
-    setExtrudeAction({
-      featureId: newFeatureId,
-      initialDepth: DEFAULT_EXTRUDE_DEPTH,
+    await runAction(async () => {
+      await extrudeProfile(profileId, DEFAULT_EXTRUDE_DEPTH);
+      try {
+        const nextDocument = await documentPromise;
+        const newFeatureId = nextDocument.selected_feature_id ?? null;
+        if (!newFeatureId) {
+          return;
+        }
+        setExtrudeAction({
+          featureId: newFeatureId,
+          initialDepth: DEFAULT_EXTRUDE_DEPTH,
+        });
+      } catch (error) {
+        addMessage(`extrude action error: ${String(error)}`);
+      }
     });
   }
 
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const target = event.target;
-      if (
+    function isTypingTarget(target: EventTarget | null) {
+      return (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement ||
         (target instanceof HTMLElement && target.isContentEditable)
-      ) {
+      );
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (isTypingTarget(target)) {
         return;
       }
 
+      const isMod = event.metaKey || event.ctrlKey;
+
+      // Undo: Cmd/Ctrl+Z (no Shift). Redo: Cmd/Ctrl+Shift+Z, or Cmd/Ctrl+Y.
+      if (isMod && !event.altKey && event.code === "KeyZ") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          if (session?.can_redo) {
+            void runAction(redo);
+          }
+        } else {
+          if (session?.can_undo) {
+            void runAction(undo);
+          }
+        }
+        return;
+      }
+
+      if (isMod && !event.altKey && !event.shiftKey && event.code === "KeyY") {
+        event.preventDefault();
+        if (session?.can_redo) {
+          void runAction(redo);
+        }
+        return;
+      }
+
+      // E: trigger extrude action (no modifiers).
       if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
         return;
       }
@@ -242,7 +291,12 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedSketchProfile, extrudeAction]);
+  }, [
+    selectedSketchProfile,
+    extrudeAction,
+    session?.can_undo,
+    session?.can_redo,
+  ]);
 
   function clearArmedSketchConstraint() {
     setArmedSketchConstraint(null);
@@ -339,25 +393,44 @@ function App() {
     clearArmedSketchConstraint();
   }
 
-  function makeDefaultExportPath() {
-    const baseName =
+  function makeDefaultExportBaseName() {
+    return (
       (document?.name ?? "polysmith-part")
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "polysmith-part";
-
-    return `${baseName}.step`;
+        .replace(/^-+|-+$/g, "") || "polysmith-part"
+    );
   }
 
   async function pickExportPath() {
     const filePath = await save({
       title: "Export STEP",
-      defaultPath: makeDefaultExportPath(),
+      defaultPath: `${makeDefaultExportBaseName()}.step`,
       filters: [
         {
           name: "STEP",
           extensions: ["step", "stp"],
+        },
+      ],
+    });
+
+    if (filePath === null) {
+      addMessage("export canceled");
+      return null;
+    }
+
+    return filePath;
+  }
+
+  async function pickExportStlPath() {
+    const filePath = await save({
+      title: "Export STL",
+      defaultPath: `${makeDefaultExportBaseName()}.stl`,
+      filters: [
+        {
+          name: "STL",
+          extensions: ["stl"],
         },
       ],
     });
@@ -408,6 +481,17 @@ function App() {
             await runAction(async () => {
               await exportDocument(filePath);
               addMessage(`export requested: ${filePath}`);
+            });
+          }}
+          onExportDocumentStl={async () => {
+            const filePath = await pickExportStlPath();
+            if (!filePath) {
+              return;
+            }
+
+            await runAction(async () => {
+              await exportDocumentStl(filePath);
+              addMessage(`stl export requested: ${filePath}`);
             });
           }}
           onUndo={async () => {
@@ -522,6 +606,16 @@ function App() {
                 onReenterSketch={async (featureId) => {
                   await runAction(async () => {
                     await reenterSketch(featureId);
+                  });
+                }}
+                onRenameFeature={async (featureId, name) => {
+                  await runAction(async () => {
+                    await renameFeature(featureId, name);
+                  });
+                }}
+                onDeleteFeature={async (featureId) => {
+                  await runAction(async () => {
+                    await deleteFeature(featureId);
                   });
                 }}
               />
@@ -676,76 +770,9 @@ function App() {
                   }}
                 />
               ) : null}
-              <SelectedBoxEditor
-                feature={selectedFeature}
-                selectedSketchPointId={
-                  document?.selected_sketch_point_id ?? null
-                }
-                selectedSketchEntityId={
-                  document?.selected_sketch_entity_id ?? null
-                }
-                selectedSketchDimensionId={
-                  document?.selected_sketch_dimension_id ?? null
-                }
-                disabled={status !== "connected"}
-                onSubmit={async (featureId, width, height, depth) => {
-                  await runAction(async () => {
-                    await updateBoxFeature(featureId, width, height, depth);
-                  });
-                }}
-                onRename={async (featureId, name) => {
-                  await runAction(async () => {
-                    await renameFeature(featureId, name);
-                  });
-                }}
-                onDelete={async (featureId) => {
-                  await runAction(async () => {
-                    await deleteFeature(featureId);
-                  });
-                }}
-                onUpdateSketchLine={async (
-                  lineId,
-                  startX,
-                  startY,
-                  endX,
-                  endY,
-                ) => {
-                  await runAction(async () => {
-                    await updateSketchLine(lineId, startX, startY, endX, endY);
-                  });
-                }}
-                onUpdateSketchCircle={async (
-                  circleId,
-                  centerX,
-                  centerY,
-                  radius,
-                ) => {
-                  await runAction(async () => {
-                    await updateSketchCircle(
-                      circleId,
-                      centerX,
-                      centerY,
-                      radius,
-                    );
-                  });
-                }}
-                onUpdateSketchDimension={async (dimensionId, value) => {
-                  await runAction(async () => {
-                    await updateSketchDimension(dimensionId, value);
-                  });
-                }}
-                onUpdateSketchPoint={async (pointId, x, y) => {
-                  await runAction(async () => {
-                    await updateSketchPoint(pointId, x, y);
-                  });
-                }}
-                onSetSketchPointFixed={async (pointId, isFixed) => {
-                  await runAction(async () => {
-                    await setSketchPointFixed(pointId, isFixed);
-                  });
-                }}
-              />
-              <MessageLog messages={messages} />
+              {SHOW_DEBUG_MESSAGE_LOG ? (
+                <MessageLog messages={messages} />
+              ) : null}
             </div>
           </section>
         </div>

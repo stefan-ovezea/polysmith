@@ -15,6 +15,7 @@ import {
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
   makeExportDocumentCommand,
+  makeExportDocumentStlCommand,
   makeFinishSketchCommand,
   makeReenterSketchCommand,
   makeGetDocumentStateCommand,
@@ -136,6 +137,9 @@ export function useCadCore() {
     },
     exportDocument: async (filePath: string) => {
       await sendCoreCommand(makeExportDocumentCommand(filePath));
+    },
+    exportDocumentStl: async (filePath: string) => {
+      await sendCoreCommand(makeExportDocumentStlCommand(filePath));
     },
     addBoxFeature: async (width: number, height: number, depth: number) => {
       await sendCoreCommand(makeAddBoxFeatureCommand(width, height, depth));

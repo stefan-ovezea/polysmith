@@ -22,6 +22,7 @@ interface AppHeaderProps {
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
+  onExportDocumentStl: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   onAddBoxFeature: (
@@ -52,6 +53,7 @@ export function AppHeader({
   onStart,
   onCreateDocument,
   onExportDocument,
+  onExportDocumentStl,
   onUndo,
   onRedo,
   onAddBoxFeature,
@@ -126,6 +128,13 @@ export function AppHeader({
             disabled={disabled}
           >
             Export STEP
+          </button>
+          <button
+            className="cad-ribbon-action"
+            onClick={() => void onExportDocumentStl()}
+            disabled={disabled}
+          >
+            Export STL
           </button>
           <button
             className="cad-ribbon-action"

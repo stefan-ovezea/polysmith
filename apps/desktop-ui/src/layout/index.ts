@@ -6,6 +6,5 @@ export * from "./DocumentHierarchyPanel";
 export * from "./FeatureTimeline";
 export * from "./MessageLog";
 export * from "./ExtrudePreviewPanel";
-export * from "./SelectedBoxEditor";
 export * from "./SketchToolPanel";
 export * from "./ViewportPanel";

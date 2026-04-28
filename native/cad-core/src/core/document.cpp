@@ -1348,6 +1348,12 @@ ExportResult DocumentManager::export_document_as_step(
   return polysmith::core::export_document_as_step(document_.value(), file_path);
 }
 
+ExportResult DocumentManager::export_document_as_stl(
+    const std::string& file_path) const {
+  require_document();
+  return polysmith::core::export_document_as_stl(document_.value(), file_path);
+}
+
 std::optional<DocumentState> DocumentManager::get_document() const {
   return document_;
 }

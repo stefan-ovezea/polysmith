@@ -63,6 +63,33 @@ export function ExtrudePreviewPanel({
     }, PREVIEW_DEBOUNCE_MS);
   }
 
+  // Force-commit the current input value to the core. Used on Confirm so
+  // pressing Enter while the debounce timer is still pending does not close
+  // the panel before the typed depth has reached the core.
+  async function flushPendingDepth() {
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+
+    const parsed = Number(depth);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    if (parsed === lastPreviewedRef.current) {
+      return;
+    }
+
+    lastPreviewedRef.current = parsed;
+    await onPreviewDepthRef.current(parsed);
+  }
+
+  async function handleConfirm() {
+    await flushPendingDepth();
+    onConfirm();
+  }
+
   return (
     <section className="pointer-events-auto cad-floating-panel px-5 py-5">
       <p className="cad-kicker">Action</p>
@@ -71,7 +98,7 @@ export function ExtrudePreviewPanel({
         className="mt-4 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          onConfirm();
+          void handleConfirm();
         }}
       >
         <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">

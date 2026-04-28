@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentState } from "@/types";
 
 export type CategoryId = "origin" | "sketches" | "bodies";
@@ -11,6 +11,16 @@ interface DocumentHierarchyPanelProps {
   onToggleCategoryVisibility: (category: CategoryId) => void;
   onSelectFeature: (featureId: string) => Promise<void>;
   onReenterSketch: (featureId: string) => Promise<void>;
+  onRenameFeature: (featureId: string, name: string) => Promise<void>;
+  onDeleteFeature: (featureId: string) => Promise<void>;
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  featureId: string;
+  featureName: string;
+  isHidden: boolean;
 }
 
 const BODY_KINDS = new Set(["box", "cylinder", "polygon_extrude", "extrude"]);
@@ -156,9 +166,13 @@ interface RowProps {
   label: string;
   isSelected?: boolean;
   isHidden?: boolean;
+  isRenaming?: boolean;
   onSelect?: () => void;
   onActivate?: () => void;
   onToggleVisibility?: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
+  onRenameSubmit?: (nextName: string) => void;
+  onRenameCancel?: () => void;
   rightContent?: React.ReactNode;
 }
 
@@ -167,11 +181,32 @@ function Row({
   label,
   isSelected,
   isHidden,
+  isRenaming,
   onSelect,
   onActivate,
   onToggleVisibility,
+  onContextMenu,
+  onRenameSubmit,
+  onRenameCancel,
   rightContent,
 }: RowProps) {
+  const [draft, setDraft] = useState(label);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (isRenaming) {
+      setDraft(label);
+      // Defer focus until after the input has rendered so click events do
+      // not steal focus back to the row.
+      const id = window.setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 0);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [isRenaming, label]);
+
   return (
     <div
       className={`group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm transition-colors ${
@@ -179,15 +214,47 @@ function Row({
           ? "bg-white/10 text-on-surface"
           : "text-on-surface-muted hover:bg-white/[0.04]"
       } ${isHidden ? "opacity-50" : ""}`}
-      onClick={onSelect}
-      onDoubleClick={onActivate}
+      onClick={isRenaming ? undefined : onSelect}
+      onDoubleClick={isRenaming ? undefined : onActivate}
+      onContextMenu={onContextMenu}
       role="button"
       tabIndex={0}
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center text-on-surface-dim">
         {icon}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {isRenaming ? (
+        <input
+          ref={inputRef}
+          className="min-w-0 flex-1 rounded bg-black/40 px-1 text-sm text-on-surface outline-none ring-1 ring-white/15 focus:ring-white/40"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              const trimmed = draft.trim();
+              if (trimmed.length === 0 || trimmed === label) {
+                onRenameCancel?.();
+                return;
+              }
+              onRenameSubmit?.(trimmed);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onRenameCancel?.();
+            }
+          }}
+          onBlur={() => {
+            onRenameCancel?.();
+          }}
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      )}
       {rightContent}
       {onToggleVisibility ? (
         <button
@@ -260,7 +327,9 @@ function Category({
         <div className="ml-4 border-l border-white/5 pl-2">
           {children ?? null}
           {emptyHint ? (
-            <p className="px-1.5 py-1 text-xs text-on-surface-dim">{emptyHint}</p>
+            <p className="px-1.5 py-1 text-xs text-on-surface-dim">
+              {emptyHint}
+            </p>
           ) : null}
         </div>
       ) : null}
@@ -291,10 +360,35 @@ export function DocumentHierarchyPanel({
   onToggleCategoryVisibility,
   onSelectFeature,
   onReenterSketch,
+  onRenameFeature,
+  onDeleteFeature,
 }: DocumentHierarchyPanelProps) {
   const [openCategories, setOpenCategories] = useState<Set<CategoryId>>(
     () => new Set<CategoryId>(["origin", "sketches", "bodies"]),
   );
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingFeatureId, setRenamingFeatureId] = useState<string | null>(
+    null,
+  );
+
+  // Dismiss the context menu on any outside click or Escape key.
+  useEffect(() => {
+    if (!contextMenu) {
+      return undefined;
+    }
+    const dismiss = () => setContextMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener("click", dismiss);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", dismiss);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
 
   const features = document?.feature_history ?? [];
   const sketches = useMemo(
@@ -310,7 +404,9 @@ export function DocumentHierarchyPanel({
     return (
       <section className="flex h-full flex-col overflow-hidden px-3 py-3">
         <p className="cad-kicker">Browser</p>
-        <p className="mt-3 text-sm text-on-surface-muted">No active document.</p>
+        <p className="mt-3 text-sm text-on-surface-muted">
+          No active document.
+        </p>
       </section>
     );
   }
@@ -327,8 +423,36 @@ export function DocumentHierarchyPanel({
     });
   };
 
+  const openContextMenu =
+    (featureId: string, featureName: string, isHidden: boolean) =>
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        featureId,
+        featureName,
+        isHidden,
+      });
+    };
+
+  const startRename = (featureId: string) => {
+    setRenamingFeatureId(featureId);
+    setContextMenu(null);
+  };
+
+  const submitRename = async (featureId: string, nextName: string) => {
+    setRenamingFeatureId(null);
+    await onRenameFeature(featureId, nextName);
+  };
+
+  const cancelRename = () => {
+    setRenamingFeatureId(null);
+  };
+
   return (
-    <section className="cad-scrollbar flex h-full min-h-0 flex-col overflow-y-auto px-2 py-2">
+    <section className="cad-scrollbar relative flex h-full min-h-0 flex-col overflow-y-auto px-2 py-2">
       <Category
         id="origin"
         label="Origin"
@@ -359,24 +483,37 @@ export function DocumentHierarchyPanel({
         onToggleVisibility={() => onToggleCategoryVisibility("sketches")}
         emptyHint={sketches.length === 0 ? "No sketches yet" : undefined}
       >
-        {sketches.map((sketch) => (
-          <Row
-            key={sketch.feature_id}
-            icon={<SketchIcon />}
-            label={sketch.name}
-            isSelected={document.selected_feature_id === sketch.feature_id}
-            isHidden={hiddenFeatureIds.has(sketch.feature_id)}
-            onSelect={() => {
-              void onSelectFeature(sketch.feature_id);
-            }}
-            onActivate={() => {
-              void onReenterSketch(sketch.feature_id);
-            }}
-            onToggleVisibility={() => {
-              onToggleFeatureVisibility(sketch.feature_id);
-            }}
-          />
-        ))}
+        {sketches.map((sketch) => {
+          const isHidden = hiddenFeatureIds.has(sketch.feature_id);
+          return (
+            <Row
+              key={sketch.feature_id}
+              icon={<SketchIcon />}
+              label={sketch.name}
+              isSelected={document.selected_feature_id === sketch.feature_id}
+              isHidden={isHidden}
+              isRenaming={renamingFeatureId === sketch.feature_id}
+              onSelect={() => {
+                void onSelectFeature(sketch.feature_id);
+              }}
+              onActivate={() => {
+                void onReenterSketch(sketch.feature_id);
+              }}
+              onToggleVisibility={() => {
+                onToggleFeatureVisibility(sketch.feature_id);
+              }}
+              onContextMenu={openContextMenu(
+                sketch.feature_id,
+                sketch.name,
+                isHidden,
+              )}
+              onRenameSubmit={(nextName) => {
+                void submitRename(sketch.feature_id, nextName);
+              }}
+              onRenameCancel={cancelRename}
+            />
+          );
+        })}
       </Category>
 
       <Category
@@ -388,22 +525,76 @@ export function DocumentHierarchyPanel({
         onToggleVisibility={() => onToggleCategoryVisibility("bodies")}
         emptyHint={bodies.length === 0 ? "No bodies yet" : undefined}
       >
-        {bodies.map((body) => (
-          <Row
-            key={body.feature_id}
-            icon={<BodyIcon />}
-            label={body.name}
-            isSelected={document.selected_feature_id === body.feature_id}
-            isHidden={hiddenFeatureIds.has(body.feature_id)}
-            onSelect={() => {
-              void onSelectFeature(body.feature_id);
-            }}
-            onToggleVisibility={() => {
-              onToggleFeatureVisibility(body.feature_id);
-            }}
-          />
-        ))}
+        {bodies.map((body) => {
+          const isHidden = hiddenFeatureIds.has(body.feature_id);
+          return (
+            <Row
+              key={body.feature_id}
+              icon={<BodyIcon />}
+              label={body.name}
+              isSelected={document.selected_feature_id === body.feature_id}
+              isHidden={isHidden}
+              isRenaming={renamingFeatureId === body.feature_id}
+              onSelect={() => {
+                void onSelectFeature(body.feature_id);
+              }}
+              onToggleVisibility={() => {
+                onToggleFeatureVisibility(body.feature_id);
+              }}
+              onContextMenu={openContextMenu(
+                body.feature_id,
+                body.name,
+                isHidden,
+              )}
+              onRenameSubmit={(nextName) => {
+                void submitRename(body.feature_id, nextName);
+              }}
+              onRenameCancel={cancelRename}
+            />
+          );
+        })}
       </Category>
+
+      {contextMenu ? (
+        <div
+          className="cad-context-menu fixed z-30 min-w-[140px] rounded-xl p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          // Stop propagation so the global dismiss listener does not close
+          // the menu before the click on a button is handled.
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+            onClick={() => {
+              startRename(contextMenu.featureId);
+            }}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+            onClick={() => {
+              onToggleFeatureVisibility(contextMenu.featureId);
+              setContextMenu(null);
+            }}
+          >
+            {contextMenu.isHidden ? "Show" : "Hide"}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-red-300 transition-colors hover:bg-red-500/15"
+            onClick={() => {
+              const id = contextMenu.featureId;
+              setContextMenu(null);
+              void onDeleteFeature(id);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -15,4 +15,7 @@ struct ExportResult {
 ExportResult export_document_as_step(const DocumentState& document,
                                      const std::string& file_path);
 
+ExportResult export_document_as_stl(const DocumentState& document,
+                                    const std::string& file_path);
+
 }  // namespace polysmith::core

@@ -179,6 +179,14 @@ export interface ExportDocumentCommand {
   };
 }
 
+export interface ExportDocumentStlCommand {
+  id: string;
+  type: "export_document_stl";
+  payload: {
+    file_path: string;
+  };
+}
+
 export interface AddBoxFeatureCommand {
   id: string;
   type: "add_box_feature";
@@ -497,6 +505,7 @@ export type CoreCommand =
   | GetSessionStateCommand
   | GetViewportStateCommand
   | ExportDocumentCommand
+  | ExportDocumentStlCommand
   | AddBoxFeatureCommand
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand

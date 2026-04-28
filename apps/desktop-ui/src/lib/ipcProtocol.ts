@@ -64,6 +64,16 @@ export function makeExportDocumentCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeExportDocumentStlCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "export_document_stl",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
 export function makeAddBoxFeatureCommand(
   width: number,
   height: number,

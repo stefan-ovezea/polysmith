@@ -112,6 +112,7 @@ class DocumentManager {
   DocumentState reenter_sketch(const std::string& feature_id);
   DocumentState clear_selection();
   ExportResult export_document_as_step(const std::string& file_path) const;
+  ExportResult export_document_as_stl(const std::string& file_path) const;
   std::optional<DocumentState> get_document() const;
   SessionState get_session_state() const;
 

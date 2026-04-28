@@ -1465,21 +1465,6 @@ export function ViewportPanel({
   return (
     <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <div className="pointer-events-none absolute inset-0 cad-grid-stage opacity-70" />
-      <div className="pointer-events-none absolute left-4 top-4 z-10">
-        <button
-          type="button"
-          className={
-            showReferencePlanes
-              ? "pointer-events-auto cad-tool-button cad-tool-button-active"
-              : "pointer-events-auto cad-tool-button"
-          }
-          onClick={() => {
-            setShowReferencePlanes((current) => !current);
-          }}
-        >
-          {showReferencePlanes ? "Hide Origin Planes" : "Show Origin Planes"}
-        </button>
-      </div>
       <div
         ref={hostRef}
         className="absolute inset-0 min-h-0 min-w-0 overflow-hidden rounded-[18px]"

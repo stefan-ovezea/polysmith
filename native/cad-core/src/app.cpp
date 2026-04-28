@@ -168,6 +168,21 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "export_document_stl") {
+    const auto export_result = document_manager().export_document_as_stl(
+        read_string(command.payload, "file_path"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_exported_event(
+            command.id,
+            polysmith::protocol::json{
+                {"file_path", export_result.file_path},
+                {"format", export_result.format},
+                {"exported_feature_count", export_result.exported_feature_count},
+            }));
+    return;
+  }
+
   if (command.type == "add_box_feature") {
     const auto document = document_manager().add_box_feature(BoxFeatureParameters{
         .width = read_dimension(command.payload, "width"),

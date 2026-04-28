@@ -26,6 +26,36 @@ interface CadCoreStoreState {
   handleCoreMessage: (message: CoreMessage) => void;
 }
 
+// Wait until the store receives a new `document` snapshot that satisfies a
+// predicate. The IPC bridge is fire-and-forget (commands write to cad_core
+// stdin and return synchronously, while responses arrive later through the
+// `cad-core-event` Tauri event). Callers that need to read post-command
+// state from the store must wait for the next event instead of reading the
+// store immediately after `await sendCoreCommand(...)`.
+export function awaitDocumentChange(
+  predicate: (next: DocumentState, previous: DocumentState | null) => boolean,
+  timeoutMs = 4000,
+): Promise<DocumentState> {
+  return new Promise((resolve, reject) => {
+    const initial = useCadCoreStore.getState().document;
+    const timer = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error("awaitDocumentChange: timed out"));
+    }, timeoutMs);
+    const unsubscribe = useCadCoreStore.subscribe((state) => {
+      const doc = state.document;
+      if (!doc || doc === initial) {
+        return;
+      }
+      if (predicate(doc, initial)) {
+        window.clearTimeout(timer);
+        unsubscribe();
+        resolve(doc);
+      }
+    });
+  });
+}
+
 export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   status: "idle",
   messages: [],

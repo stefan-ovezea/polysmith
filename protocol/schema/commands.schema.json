@@ -15,6 +15,7 @@
         "get_session_state",
         "get_viewport_state",
         "export_document",
+        "export_document_stl",
         "add_box_feature",
         "add_cylinder_feature",
         "update_box_feature",
