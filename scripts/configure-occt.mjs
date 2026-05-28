@@ -153,7 +153,7 @@ if (systemFreetypeAvailable()) {
 
   if (!existsSync(freetypeSrc)) {
     console.error("❌  Vendored FreeType not found at", freetypeSrc);
-    console.error("    Run `pnpm deps:sync` first to pull the OCCT submodule.");
+    console.error("    Run `pnpm deps:sync` first to pull the FreeType submodule.");
     process.exit(1);
   }
 
