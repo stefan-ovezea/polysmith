@@ -15,7 +15,7 @@ understand the system. They are the canonical documentation.
 - **[Repository Map](wiki/Repository-Map.md)** — directory layout
 - **[AI CAD Command Language](wiki/AI-CAD-Command-Language.md)** — IPC command reference for agents
 - **[V1 Roadmap](wiki/V1-Roadmap.md)** — current priorities
-- **[Implementation Log](wiki/Implementation-Log.md)** — what's shipped
+- **[Implementation Log](wiki/Implementation-Log.md)** — what's shipped, including platform-specific build fixes
 
 ## Wiki Mirroring
 

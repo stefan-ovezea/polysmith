@@ -14,7 +14,7 @@ fn main() {
     let path_kind =
         env::var("POLYSMITH_CAD_CORE_PATH_KIND").unwrap_or_else(|_| "workspace".to_string());
     let workspace_path = env::var("POLYSMITH_CAD_CORE_WORKSPACE_PATH")
-        .unwrap_or_else(|_| "../../../native/cad-core/build/cad_core".to_string());
+        .unwrap_or_else(|_| "../../../native/cad-core/build/Debug/cad_core".to_string());
     let resource_path = env::var("POLYSMITH_CAD_CORE_RESOURCE_PATH")
         .unwrap_or_else(|_| "resources/cad_core".to_string());
 

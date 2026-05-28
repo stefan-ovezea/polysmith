@@ -18,6 +18,31 @@ understand the system:
 When adding new documentation, create the file in `wiki/` and
 add a link from `wiki/Home.md`.
 
+## Cross-Platform
+
+PolySmith must compile and run on **Windows (MSVC)** and **POSIX (Linux / macOS, GCC / Clang)**.
+Every change must work on both families or be guarded with `#ifdef` / `#[cfg]`.
+
+When writing C++:
+- Prefer standard C++ over platform-specific APIs. Use `<cmath>` not `<math.h>`.
+- `M_PI` is not standard — define `_USE_MATH_DEFINES` before including `<cmath>` on MSVC,
+  or use a project-wide constant.
+- MSVC treats `const char*` ↔ `unsigned char*` as an error (not a warning). Match types exactly.
+
+When writing Rust:
+- Test with `cargo check` (not just `cargo build`) — it catches platform-gated issues faster.
+- `windows-sys` crate types may move between minor versions; prefer `core::` paths when available.
+
+When touching the build:
+- OCCT DLLs live at `third_party/occt-install/win64/vc14/bin` on Windows. The Tauri spawn code
+  prepends this to `PATH` automatically. If you change how the core is launched, preserve this.
+- FreeType is a git submodule at `third_party/freetype`. The configure script builds it.
+  Do not add freetype sources inside the OCCT tree.
+- `CMAKE_RUNTIME_OUTPUT_DIRECTORY` behaves differently with multi-config generators (MSBuild).
+  Prefer per-config output paths or keep the default and update `build.rs` to match.
+
+Reference: `wiki/Implementation-Log.md` (see "Windows Build Fixes" under 2026-05-28).
+
 ## Core Principles
 
 - Do not make architectural changes without explicit approval.

@@ -15,6 +15,8 @@ native/cad-core/build-release/
 
 third_party/occt-build/
 third_party/occt-install/
+third_party/freetype-build/
+third_party/freetype-install/
 
 .env
 claude-ds.sh

@@ -5,6 +5,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# MSVC needs _USE_MATH_DEFINES for M_PI
+if(MSVC)
+  add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
+# Place binaries directly in build/ (not build/Debug/) so Tauri finds them
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
 # Tell CMake where OCCT is installed
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/../../third_party/occt-install")
 

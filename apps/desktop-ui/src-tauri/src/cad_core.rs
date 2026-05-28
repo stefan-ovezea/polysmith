@@ -85,11 +85,24 @@ pub fn start_cad_core_process(
     let core_path = cad_core_path(&app)?;
     eprintln!("Starting cad_core from {}", core_path.display());
 
-    let mut child = Command::new(&core_path)
-        .stdin(Stdio::piped())
+    let mut cmd = Command::new(&core_path);
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+
+    // Prepend OCCT DLL directory to PATH so the child process finds TKernel.dll etc.
+    #[cfg(target_os = "windows")]
+    {
+        let occt_bin = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../third_party/occt-install/win64/vc14/bin");
+        if occt_bin.exists() {
+            let separator = if cfg!(windows) { ";" } else { ":" };
+            let existing_path = std::env::var("PATH").unwrap_or_default();
+            cmd.env("PATH", format!("{}{}{}", occt_bin.display(), separator, existing_path));
+        }
+    }
+
+    let mut child = cmd.spawn()
         .map_err(|e| format!("failed to start cad_core at {}: {e}", core_path.display()))?;
 
     let stdin = child
