@@ -39,6 +39,37 @@ This document tracks concrete implementation milestones as they land in the code
 - Created `polysmith/help/dimension.md` — full reference for the Dimension tool (single-entity, two-entity, placement, editing, expressions).
 - Updated `apps/desktop-ui/src/lib/help-index.ts` dimension entry with correct shortcuts and sections.
 
+### Windows Build Fixes
+
+The project was bootstrapped and built successfully on Windows (MSVC 14.44, NMake).
+Several cross-platform issues were fixed:
+
+**FreeType submodule** — FreeType 2.14.3 is now a first-class git submodule at
+`third_party/freetype` (pinned to tag `VER-2-14-3` from `gitlab.freedesktop.org`).
+The configure script (`scripts/configure-occt.mjs`) builds it into `third_party/freetype-build`
+and installs to `third_party/freetype-install`, then links OCCT against it via
+`-D3RDPARTY_FREETYPE_DIR`. The old manually-placed `third_party/occt/freetype-2.14.3/`
+was removed. Run `pnpm deps:sync` to initialize the submodule.
+
+**OCCT `const char*` → `const unsigned char*`** (`third_party/occt/src/StdPrs/StdPrs_BRepFont.cxx:460`) —
+FreeType 2.14.3 declares `FT_Outline::tags` as `unsigned char*`, but OCCT 7.8 assigned it to
+`const char*`. MSVC rejects the implicit conversion. Fixed to match the actual type.
+Upstream OCCT fixed this in commit `7236e83d` (landed on `master`/`OCCT-7.9+` but not `OCCT-7.8`).
+
+**`M_PI` undeclared** (`native/cad-core/CMakeLists.txt`) — MSVC doesn't define `M_PI` in `<cmath>`
+without `_USE_MATH_DEFINES`. Added `add_compile_definitions(_USE_MATH_DEFINES)` for MSVC builds.
+
+**Binary output path** (`native/cad-core/CMakeLists.txt`) — MSBuild places binaries in
+`build/Debug/` by default. Added `CMAKE_RUNTIME_OUTPUT_DIRECTORY` to put them directly
+in `build/`, and updated `build.rs` default path to `build/Debug/cad_core`.
+
+**OCCT DLL PATH** (`apps/desktop-ui/src-tauri/src/cad_core.rs`) — At runtime, `cad_core.exe`
+needs OCCT DLLs from `third_party/occt-install/win64/vc14/bin`. The Tauri spawn code now
+prepends this directory to `PATH` for the child process on Windows.
+
+**`windows_sys::BOOL`** (`apps/desktop-ui/src-tauri/src/orca_slicer.rs`) — In `windows-sys` 0.61.x,
+`BOOL` moved from `Win32::Foundation` to `core::BOOL`. Updated the import.
+
 ## 2026-05-27
 
 ### 3D Move Timeline Feature

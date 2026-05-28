@@ -15,37 +15,32 @@ understand the system. They are the canonical documentation.
 - **[Repository Map](wiki/Repository-Map.md)** — directory layout
 - **[AI CAD Command Language](wiki/AI-CAD-Command-Language.md)** — IPC command reference for agents
 - **[V1 Roadmap](wiki/V1-Roadmap.md)** — current priorities
-- **[Implementation Log](wiki/Implementation-Log.md)** — what's shipped
+- **[Implementation Log](wiki/Implementation-Log.md)** — what's shipped, including platform-specific build fixes
 
 ## Wiki Mirroring
 
-The PolySmith wiki is mirrored across two locations that must stay in sync
-with the canonical source:
+The PolySmith wiki is mirrored to the GitHub wiki repository:
 
 | Location | Description |
 |---|---|
 | `wiki/` | Canonical source — edit here first |
-| `felix/polysmith.wiki/` | felix's personal mirror (separate git repo) |
-| `stefan/polysmith.wiki/` | stefan's personal mirror (separate git repo) |
+| `polysmith.wiki/` | GitHub wiki mirror (git submodule) |
 
-The normal flow is **canonical → mirrors**: changes originate in `wiki/` and
-are propagated outward. Seldom, changes may originate in a mirror and need to
-flow back to canonical. In either case, all three locations must stay consistent.
+The normal flow is **canonical → mirror**: changes originate in `wiki/` and
+are propagated outward. Seldom, changes may originate in the mirror and need to
+flow back to canonical. In either case, both locations must stay consistent.
 
 ### When editing wiki documentation
 
 1. Make the change in `wiki/<file>.md` first.
-2. Mirror the identical change to both mirrors — if a mirror directory
-   (`felix/polysmith.wiki/` or `stefan/polysmith.wiki/`) does not exist,
-   print a warning and skip it; do not fail.
-3. Verify the copies that exist match after the edit.
+2. Mirror the identical change to `polysmith.wiki/`.
+3. Verify the mirror copy matches after the edit.
 
 ### When adding new wiki pages
 
 1. Create the file in `wiki/<New-Page>.md`.
 2. Add a link from `wiki/Home.md`.
-3. Copy the new file and mirror the `Home.md` link update to both mirrors —
-   if a mirror directory does not exist, warn and skip it.
+3. Copy the new file to `polysmith.wiki/` and mirror the `Home.md` link update.
 
 ## Rules
 

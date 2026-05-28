@@ -17,7 +17,7 @@
     "core:build": "cmake --build native/cad-core/build",
     "core:rebuild": "pnpm core:configure && pnpm core:build",
     "deps:sync": "git submodule update --init --recursive",
-    "occt:configure": "cmake -S third_party/occt -B third_party/occt-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/third_party/occt-install",
+    "occt:configure": "node scripts/configure-occt.mjs",
     "occt:build": "cmake --build third_party/occt-build --config Release",
     "occt:install": "cmake --install third_party/occt-build --config Release",
     "occt:rebuild": "pnpm deps:sync && pnpm occt:configure && pnpm occt:build && pnpm occt:install",

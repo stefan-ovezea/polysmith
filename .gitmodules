@@ -2,3 +2,10 @@
 	path = third_party/occt
 	url = https://github.com/Open-Cascade-SAS/OCCT.git
 	branch = OCCT-7.8
+	ignore = dirty
+[submodule "third_party/freetype"]
+	path = third_party/freetype
+	url = https://gitlab.freedesktop.org/freetype/freetype.git
+[submodule "polysmith.wiki"]
+	path = polysmith.wiki
+	url = https://github.com/stefan-ovezea/polysmith.wiki.git

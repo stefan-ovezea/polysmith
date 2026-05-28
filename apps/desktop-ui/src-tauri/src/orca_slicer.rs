@@ -1399,13 +1399,16 @@ mod windows_impl {
     use std::{thread, time::Duration};
 
     use super::{PlatformWindowResult, SlicerViewportBounds};
-    use windows_sys::Win32::{
-        Foundation::{BOOL, HWND, LPARAM},
-        UI::WindowsAndMessaging::{
+    use windows_sys::{
+        core::BOOL,
+        Win32::{
+            Foundation::{HWND, LPARAM},
+            UI::WindowsAndMessaging::{
             EnumWindows, GetWindowLongPtrW, GetWindowThreadProcessId, IsWindowVisible, SetParent,
             SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOZORDER,
             SW_HIDE, SW_SHOW, WS_CAPTION, WS_CHILD, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
+             WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
+            },
         },
     };
 
