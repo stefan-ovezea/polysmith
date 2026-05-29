@@ -8173,16 +8173,17 @@ const currentGridSpacingRef = useRef(10);
             }
           }
 
-          // Find the line that owns this point and update its geometry
-          // so it rubber-bands during the drag.
+          // A single point ID may be shared by multiple lines (e.g. a
+          // rectangle corner).  Update every line that references the
+          // dragged point so all connected geometry rubber-bands together.
           const params = sketchLinesRef.current;
           if (params) {
-            const ownerLine = params.lines.find(
+            const connectedLines = params.lines.filter(
               (l) =>
                 l.start_point_id === endpointDrag.pointId ||
                 l.end_point_id === endpointDrag.pointId,
             );
-            if (ownerLine) {
+            for (const ownerLine of connectedLines) {
               const isStart =
                 ownerLine.start_point_id === endpointDrag.pointId;
               const fixedLocal: [number, number] = isStart

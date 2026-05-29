@@ -479,14 +479,13 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
 std::optional<std::tuple<double, double>> find_point_position(
     const SketchFeatureParameters& parameters,
     const std::string& point_id) {
-  const auto point_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  if (point_it != parameters.points.end()) {
-    return std::tuple<double, double>{point_it->x, point_it->y};
-  }
-
+  // Lines are the authoritative source for endpoint coordinates — they
+  // carry the live position after constraint enforcement.  The points
+  // list (`parameters.points`) is a deduplicated view rebuilt by
+  // `rebuild_sketch_points`; when two lines share a point ID but
+  // constraints have temporarily pulled them apart, the points list may
+  // hold a stale coordinate from whichever line was encountered first.
+  // Search lines first so callers always get the live, per-line position.
   for (const auto& line : parameters.lines) {
     if (line.start_point_id == point_id) {
       return std::tuple<double, double>{line.start_x, line.start_y};
@@ -495,6 +494,17 @@ std::optional<std::tuple<double, double>> find_point_position(
     if (line.end_point_id == point_id) {
       return std::tuple<double, double>{line.end_x, line.end_y};
     }
+  }
+
+  // Fall back to the points list for point kinds that are not line
+  // endpoints: circle centers, quadrant points, fillet corners, and
+  // projected points.
+  const auto point_it = std::find_if(
+      parameters.points.begin(),
+      parameters.points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  if (point_it != parameters.points.end()) {
+    return std::tuple<double, double>{point_it->x, point_it->y};
   }
 
   return std::nullopt;
@@ -1656,6 +1666,53 @@ void enforce_parallel_relations(SketchFeatureParameters& parameters,
   }
 }
 
+// After constraint enforcement, multiple lines that share a point ID may
+// have been driven to different (x, y) coordinates for that shared point.
+// `rebuild_sketch_points` deduplicates by point ID and renders a single
+// sphere at whichever line's coordinates it encounters first — leaving the
+// other line's endpoint visually orphaned.  This pass forces every shared
+// point to a single canonical position before the rebuild so the sphere
+// matches all lines that reference it.
+void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
+  // Build a map from point_id → list of (line_index, is_start_endpoint)
+  struct Reference { size_t line_index; bool is_start; };
+  std::unordered_map<std::string, std::vector<Reference>> shared;
+
+  for (size_t i = 0; i < parameters.lines.size(); ++i) {
+    const auto& line = parameters.lines[i];
+    shared[line.start_point_id].push_back({i, true});
+    shared[line.end_point_id].push_back({i, false});
+  }
+
+  for (const auto& [point_id, refs] : shared) {
+    if (refs.size() <= 1) continue;
+
+    // Pick the canonical position: prefer the line that already has
+    // an endpoint at this point_id.  Use the first reference's coords.
+    const auto& canonical_line = parameters.lines[refs[0].line_index];
+    const double canonical_x = refs[0].is_start
+        ? canonical_line.start_x : canonical_line.end_x;
+    const double canonical_y = refs[0].is_start
+        ? canonical_line.start_y : canonical_line.end_y;
+
+    for (size_t r = 1; r < refs.size(); ++r) {
+      auto& line = parameters.lines[refs[r].line_index];
+      const double current_x = refs[r].is_start ? line.start_x : line.end_x;
+      const double current_y = refs[r].is_start ? line.start_y : line.end_y;
+
+      if (!points_match(canonical_x, canonical_y, current_x, current_y)) {
+        if (refs[r].is_start) {
+          line.start_x = canonical_x;
+          line.start_y = canonical_y;
+        } else {
+          line.end_x = canonical_x;
+          line.end_y = canonical_y;
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 
 void refresh_sketch_derived_state(FeatureEntry& feature) {
@@ -1680,6 +1737,13 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.
   sync_driven_dimensions(*feature.sketch_parameters);
+
+  // Force all lines sharing a point ID to agree on its position before
+  // we rebuild the deduplicated points list.  Without this pass,
+  // constraint enforcement (H/V, relations) can leave two lines with
+  // different coords for the same shared endpoint, causing orphaned
+  // spheres and visual divergence.
+  reconcile_shared_point_positions(*feature.sketch_parameters);
 
   const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
   rebuild_sketch_points(*feature.sketch_parameters);
@@ -2162,7 +2226,8 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
     return;
   }
 
-  if (!find_point_position(parameters, point_id).has_value()) {
+  const auto point_position = find_point_position(parameters, point_id);
+  if (!point_position.has_value()) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
 
@@ -2191,10 +2256,19 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
     }
   }
 
-  propagate_connected_point_move(parameters,
-                                 point_id,
-                                 std::get<0>(other_point_position.value()),
-                                 std::get<1>(other_point_position.value()));
+  // Only move the point if the two points are not already coincident.
+  // When the user bonds two points that already sit at the same position
+  // (e.g. two lines drawn end-to-end without a constraint), we skip the
+  // move and just merge the point IDs.
+  if (!points_match(std::get<0>(point_position.value()),
+                    std::get<1>(point_position.value()),
+                    std::get<0>(other_point_position.value()),
+                    std::get<1>(other_point_position.value()))) {
+    propagate_connected_point_move(parameters,
+                                   point_id,
+                                   std::get<0>(other_point_position.value()),
+                                   std::get<1>(other_point_position.value()));
+  }
   replace_point_id_references(parameters, point_id, other_point_id);
   sync_all_line_dimensions(parameters);
 
