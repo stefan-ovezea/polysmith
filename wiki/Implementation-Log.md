@@ -29,7 +29,7 @@ This document tracks concrete implementation milestones as they land in the code
 | Point-on-object | ✓ | — | — | Via midpoint/point-line anchors only |
 | Concentric | — | — | — | Not yet implemented |
 
-**Decision:** Line-drag development paused. Constraint-system work will resume in a dedicated branch (`constraints`). The constraint-interop bugs directly affect drag behaviour (what constraints are active determines which axis movement is allowed), so fixing them first avoids drag regressions.
+**Decision:** Line-drag development paused. Constraint-system work will resume in a dedicated branch (`constraints`). The constraint-interop bugs directly affect drag behaviour (what constraints are active determines which axis movement is allowed), so fixing them first avoids drag regressions. Once constraints are stable, line-drag will expand to **Point Drag** — dragging any sketch point (endpoints, shared coincident points at geometry intersections, circle centers, construction points).
 
 ## 2026-05-28
 

@@ -1,7 +1,11 @@
 # Sketch Endpoint Drag
 
 > **Status as of 2026-05-29:** Basic endpoint drag shipped. Development paused
-> in favour of a dedicated constraint-system branch. Line rubber-bands during
+> in favour of a dedicated constraint-system branch. After constraint fixes
+> land, this will expand to **Point Drag** — the ability to drag any sketch
+> point, not just line endpoints. That includes intersection points, shared
+> coincident points between geometries, circle centers, and construction
+> points. Line rubber-bands during
 > drag with snap resolution. H/V constraints enforce axis-aligned stretch
 > (industry-standard). Constraint relaxation (auto-delete conflicting
 > constraints on coincident snap) is planned but not yet implemented. Several
