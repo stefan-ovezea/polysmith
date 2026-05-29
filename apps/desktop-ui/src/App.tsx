@@ -844,6 +844,7 @@ function App() {
     commitMirrorPreview,
     cancelMirrorPreview,
     setSketchPointFixed,
+    updateSketchPoint,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
     selectSketchProfile,
@@ -6135,6 +6136,11 @@ function App() {
                 await runAction(async () => {
                   clearArmedSketchConstraint();
                   await setSketchTool(tool);
+                });
+              }}
+              onUpdateSketchPoint={async (pointId, x, y) => {
+                await runAction(async () => {
+                  await updateSketchPoint(pointId, x, y);
                 });
               }}
               hiddenFeatureIds={effectiveHiddenFeatureIds}

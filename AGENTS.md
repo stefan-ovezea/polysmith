@@ -87,6 +87,12 @@ When implementing a task:
 
 PolySmith uses a feature-branch workflow:
 
+- **Git commands require permission.** Never run `git push`, `git pull`,
+  `git fetch`, `git branch -D`, or any other git command that may need
+  authentication or alter the remote without asking the user first. These
+  operations can hang waiting for credentials or leave stuck background
+  tasks. Commit and describe what to do; let the user run the command.
+
 - `dev` is the default development branch and the base for everyday work.
 - `main` is the production/stable release branch. Do not use it for feature
   work unless explicitly asked to prepare a release or hotfix.

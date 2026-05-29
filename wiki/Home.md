@@ -57,6 +57,7 @@
 | 🔤 **[Text Tool — Implementation Plan](Text-Tool-Implementation-Plan)** | Text as sketch entities: font-to-BRep, extrusion, emboss/deboss on surfaces |
 | 📏 **[Draft Dimension Visualization](Draft-Dimension-Visualization)** | Scene-rendered dimension lines and arcs for sketch draft tools |
 | 🔧 **[Sketch Tool Implementation](Sketch-Tool-Implementation)** | Guide for adding new drawable sketch shapes |
+| ↕️ **[Sketch Endpoint Drag](Sketch-Endpoint-Drag)** | Endpoint drag with constraint behaviour and rubber-band preview |
 
 ### 📖 Help (User Documentation)
 

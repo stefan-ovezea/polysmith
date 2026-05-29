@@ -2,6 +2,35 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-05-29
+
+### Endpoint drag — constraint investigation & development pause
+
+**Perpendicular + H/V partial-failure bug discovered:**
+- `set_sketch_perpendicular_constraint` (`sketch_feature.cpp:1975`) commits the perpendicular relation to `line_relations` (line 2004) and clears the driven line's H/V constraint (line 2002) **before** calling `enforce_perpendicular_relations` (line 2031).
+- `enforce_perpendicular_relations` then tries to drive **both** lines in the relation pair. The reference line still holds its H/V constraint, so `drive_line_perpendicular_to_reference` (line 1300) throws: *"Cannot drive a perpendicular relation on a line that still has an axis constraint."*
+- The error propagates to the UI, but the relation record is already persisted — the constraint partially applies. The viewport badge swaps from H/V to perpendicular because `relation_constraint_line_ids` (`viewport.cpp:3399`) suppresses H/V badges for lines in any relation.
+- Fix target: make the relation commit and enforcement atomic (roll back on failure). Also, when a vertical and horizontal line share a coincident endpoint (rectangle corner), the 90° angle is implicit — the perpendicular relation should be recognized as redundant rather than throwing.
+
+**Badge stacking issue:**
+- When a line carries both an H/V constraint and a relation (perpendicular, equal-length, parallel, tangent), only the relation badge is rendered. The constraint-badge layout should show all active constraints.
+
+**Constraint status audit (full pipeline check):**
+
+| Constraint | C++ core | IPC | UI toolbar | Notes |
+|---|---|---|---|---|
+| Horizontal | ✓ | ✓ | ✓ | Auto-inferred at creation |
+| Vertical | ✓ | ✓ | ✓ | Auto-inferred at creation |
+| Coincident | ✓ | ✓ | ✓ | Two-pick flow, merges point IDs |
+| Equal-length | ✓ | ✓ | ✓ | |
+| Perpendicular | ✓ | ✓ | ✓ | Bug: partial-failure on H/V lines |
+| Parallel | ✓ | ✓ | ✓ | |
+| Tangent | ✓ | ✓ | — | Via snap at creation time only |
+| Point-on-object | ✓ | — | — | Via midpoint/point-line anchors only |
+| Concentric | — | — | — | Not yet implemented |
+
+**Decision:** Line-drag development paused. Constraint-system work will resume in a dedicated branch (`constraints`). The constraint-interop bugs directly affect drag behaviour (what constraints are active determines which axis movement is allowed), so fixing them first avoids drag regressions. Once constraints are stable, line-drag will expand to **Point Drag** — dragging any sketch point (endpoints, shared coincident points at geometry intersections, circle centers, construction points).
+
 ## 2026-05-28
 
 ### Dimension Tool — Placement, Angle, and Drag Fixes
