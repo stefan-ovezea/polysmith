@@ -469,6 +469,11 @@ interface ViewportPanelProps {
     displayAs: string,
   ) => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
+  onUpdateSketchPoint: (
+    pointId: string,
+    x: number,
+    y: number,
+  ) => Promise<void>;
   onFinishSketch: () => Promise<void>;
   moveGizmo?: MoveGizmoDescriptor | null;
   onMoveGizmoChange?: (parameters: MoveFeatureParameters) => Promise<void> | void;
@@ -1222,6 +1227,7 @@ export function ViewportPanel({
   onAddSketchPointDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
+  onUpdateSketchPoint,
   onFinishSketch,
   moveGizmo = null,
   onMoveGizmoChange,
@@ -1471,6 +1477,19 @@ const currentGridSpacingRef = useRef(10);
     active: boolean;
   }
   const selectionDragRef = useRef<SelectionDrag | null>(null);
+
+  // Endpoint drag state — active when the user grabs a sketch
+  // line endpoint in Select mode and drags it to a new position.
+  interface EndpointDrag {
+    pointId: string;
+    startClientX: number;
+    startClientY: number;
+    startLocalX: number;
+    startLocalY: number;
+    hasMoved: boolean;
+  }
+  const endpointDragRef = useRef<EndpointDrag | null>(null);
+
   const [selectionRect, setSelectionRect] = useState<{
     left: number; top: number; width: number; height: number;
     visible: boolean;
@@ -1499,6 +1518,7 @@ const currentGridSpacingRef = useRef(10);
     inactiveSketchEntityPickEnabled,
   );
   const pickSketchPointRef = useRef(onPickSketchPoint);
+  const updateSketchPointRef = useRef(onUpdateSketchPoint);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
   const updateSketchDimensionLabelPositionRef = useRef(
@@ -5569,6 +5589,7 @@ const currentGridSpacingRef = useRef(10);
     inactiveSketchEntityPickEnabledRef.current =
       inactiveSketchEntityPickEnabled;
     pickSketchPointRef.current = onPickSketchPoint;
+    updateSketchPointRef.current = onUpdateSketchPoint;
     selectSketchDimensionRef.current = onSelectSketchDimension;
     updateSketchDimensionRef.current = onUpdateSketchDimension;
     updateSketchDimensionLabelPositionRef.current =
@@ -5620,6 +5641,7 @@ const currentGridSpacingRef = useRef(10);
     onSelectSketchProfile,
     onDeleteSketchSelection,
     onSetSketchTool,
+    onUpdateSketchPoint,
     armedSketchConstraint,
     mirrorFocusedSlot,
     onMirrorEntityPick,
@@ -7732,9 +7754,61 @@ const currentGridSpacingRef = useRef(10);
       }
 
       pointerDown = { x: event.clientX, y: event.clientY };
-      // --- Rectangular selection drag start (select tool, empty space) ---
+      // --- Select mode: endpoint drag OR rectangle selection ---
       if (activeSketchToolRef.current === "select") {
         const selHit = intersectSceneTargets(event);
+
+        // Endpoint drag on sketch points (non-fixed endpoints only).
+        if (
+          selHit?.kind === "sketch_point" &&
+          activeSketchPlaneIdRef.current
+        ) {
+          const params = sketchLinesRef.current;
+          if (params) {
+            const point = params.points?.find((p) => p.point_id === selHit.id);
+            console.warn(
+              "[endpoint-drag] pointerDown hit sketch_point:",
+              selHit.id,
+              "kind:",
+              selHit.pointKind,
+              "is_fixed:",
+              point?.is_fixed,
+            );
+            if (point && !point.is_fixed) {
+              const rawPoint = resolveSketchPlanePoint(
+                event,
+                renderer,
+                camera,
+                activeSketchPlaneIdRef.current,
+                activeSketchPlaneFrameRef.current,
+              );
+              if (rawPoint) {
+                console.warn(
+                  "[endpoint-drag] starting drag for point:",
+                  selHit.id,
+                  "at local:",
+                  rawPoint.local,
+                );
+                endpointDragRef.current = {
+                  pointId: selHit.id,
+                  startClientX: event.clientX,
+                  startClientY: event.clientY,
+                  startLocalX: rawPoint.local[0],
+                  startLocalY: rawPoint.local[1],
+                  hasMoved: false,
+                };
+                controls.enabled = false;
+                renderer.domElement.setPointerCapture(event.pointerId);
+                (renderer.domElement as HTMLCanvasElement).style.cursor =
+                  "grabbing";
+                pointerDown = null;
+                return;
+              }
+            }
+          }
+        }
+
+        // Rectangle selection on empty space.
         if (
           !selHit &&
           selHit?.kind !== "sketch_dimension"
@@ -8041,6 +8115,118 @@ const currentGridSpacingRef = useRef(10);
           nextPositionVector.z,
         ];
         setDimensionLabelPosition(dimensionDrag.dimensionId, nextPosition);
+        return;
+      }
+
+      // --- Endpoint drag tracking ---
+      const endpointDrag = endpointDragRef.current;
+      if (endpointDrag && activeSketchPlaneIdRef.current) {
+        const rawPoint = resolveSketchPlanePoint(
+          event,
+          renderer,
+          camera,
+          activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrameRef.current,
+        );
+        if (rawPoint) {
+          const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+          const dx = event.clientX - endpointDrag.startClientX;
+          const dy = event.clientY - endpointDrag.startClientY;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+            endpointDrag.hasMoved = true;
+          }
+          setSketchSnapLabel(sketchPoint.snapLabel);
+
+          // Convert sketch-local position to world space.
+          const frame = activeSketchPlaneFrameRef.current;
+          const toWorld = (lx: number, ly: number): THREE.Vector3 => {
+            if (frame) {
+              const origin = new THREE.Vector3(
+                frame.origin.x, frame.origin.y, frame.origin.z,
+              );
+              const xAxis = new THREE.Vector3(
+                frame.x_axis.x, frame.x_axis.y, frame.x_axis.z,
+              );
+              const yAxis = new THREE.Vector3(
+                frame.y_axis.x, frame.y_axis.y, frame.y_axis.z,
+              );
+              return origin
+                .clone()
+                .addScaledVector(xAxis, lx)
+                .addScaledVector(yAxis, ly);
+            }
+            // Fallback for ref-plane sketches (e.g. ref-plane-xy).
+            return new THREE.Vector3(lx, 0, ly);
+          };
+
+          const draggedWorld = toWorld(
+            sketchPoint.local[0],
+            sketchPoint.local[1],
+          );
+
+          // Move the dragged point mesh.
+          const pointObjects = sketchPointObjectsRef.current;
+          for (const obj of pointObjects) {
+            if (obj.userData.sketchPointId === endpointDrag.pointId) {
+              obj.position.copy(draggedWorld);
+              break;
+            }
+          }
+
+          // Find the line that owns this point and update its geometry
+          // so it rubber-bands during the drag.
+          const params = sketchLinesRef.current;
+          if (params) {
+            const ownerLine = params.lines.find(
+              (l) =>
+                l.start_point_id === endpointDrag.pointId ||
+                l.end_point_id === endpointDrag.pointId,
+            );
+            if (ownerLine) {
+              const isStart =
+                ownerLine.start_point_id === endpointDrag.pointId;
+              const fixedLocal: [number, number] = isStart
+                ? [ownerLine.end_x, ownerLine.end_y]
+                : [ownerLine.start_x, ownerLine.start_y];
+              const fixedWorld = toWorld(fixedLocal[0], fixedLocal[1]);
+
+              const lineObj = sketchEntityObjectByIdRef.current.get(
+                ownerLine.line_id,
+              );
+              if (
+                lineObj &&
+                lineObj instanceof THREE.Line &&
+                lineObj.geometry.attributes.position
+              ) {
+                const pos = lineObj.geometry.attributes.position
+                  .array as Float32Array;
+                if (isStart) {
+                  pos[0] = draggedWorld.x;
+                  pos[1] = draggedWorld.y;
+                  pos[2] = draggedWorld.z;
+                  pos[3] = fixedWorld.x;
+                  pos[4] = fixedWorld.y;
+                  pos[5] = fixedWorld.z;
+                } else {
+                  pos[0] = fixedWorld.x;
+                  pos[1] = fixedWorld.y;
+                  pos[2] = fixedWorld.z;
+                  pos[3] = draggedWorld.x;
+                  pos[4] = draggedWorld.y;
+                  pos[5] = draggedWorld.z;
+                }
+                lineObj.geometry.attributes.position.needsUpdate = true;
+                // Dashed lines need per-vertex distances recomputed.
+                if (
+                  lineObj.material instanceof
+                  THREE.LineDashedMaterial
+                ) {
+                  lineObj.computeLineDistances();
+                }
+              }
+            }
+          }
+        }
         return;
       }
 
@@ -9197,6 +9383,116 @@ const currentGridSpacingRef = useRef(10);
           }
           return;
         }
+      }
+
+      // --- Endpoint drag finalize ---
+      if (endpointDragRef.current) {
+        const drag = endpointDragRef.current;
+        const dx = event.clientX - drag.startClientX;
+        const dy = event.clientY - drag.startClientY;
+
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          // Committed drag — resolve final snapped position and update.
+          const rawPoint = resolveSketchPlanePoint(
+            event,
+            renderer,
+            camera,
+            activeSketchPlaneIdRef.current,
+            activeSketchPlaneFrameRef.current,
+          );
+          if (rawPoint) {
+            const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+            // Diagnostic: log the owning line's data before commit.
+            const params = sketchLinesRef.current;
+            if (params) {
+              const ownerLine = params.lines.find(
+                (l) =>
+                  l.start_point_id === drag.pointId ||
+                  l.end_point_id === drag.pointId,
+              );
+              if (ownerLine) {
+                const isStart =
+                  ownerLine.start_point_id === drag.pointId;
+                console.warn(
+                  "[endpoint-drag] dragging",
+                  isStart ? "start" : "end",
+                  "of line",
+                  ownerLine.line_id,
+                );
+                console.warn(
+                  "[endpoint-drag]   fixed endpoint:",
+                  isStart
+                    ? [ownerLine.end_x, ownerLine.end_y]
+                    : [ownerLine.start_x, ownerLine.start_y],
+                );
+                console.warn(
+                  "[endpoint-drag]   dragged to:",
+                  sketchPoint.local,
+                );
+                // Check for constraints / relations on this line.
+                if (ownerLine.constraint) {
+                  console.warn(
+                    "[endpoint-drag]   line constraint:",
+                    ownerLine.constraint,
+                  );
+                }
+                if (params.line_relations) {
+                  const rels = params.line_relations.filter(
+                    (r) =>
+                      r.first_line_id === ownerLine.line_id ||
+                      r.second_line_id === ownerLine.line_id,
+                  );
+                  if (rels.length > 0) {
+                    console.warn(
+                      "[endpoint-drag]   line relations:",
+                      rels.map((r) => r.kind),
+                    );
+                  }
+                }
+                // Check for dimensions on this line.
+                if (params.dimensions) {
+                  const dims = params.dimensions.filter(
+                    (d) => d.entity_id === ownerLine.line_id,
+                  );
+                  if (dims.length > 0) {
+                    console.warn(
+                      "[endpoint-drag]   dimensions:",
+                      dims.map(
+                        (d) =>
+                          `${d.kind}=${d.value} driven=${d.driven}`,
+                      ),
+                    );
+                  }
+                }
+              }
+            }
+            void updateSketchPointRef.current(
+              drag.pointId,
+              sketchPoint.local[0],
+              sketchPoint.local[1],
+            );
+          }
+        } else {
+          // Click (no significant movement) — fall through to the
+          // existing click-to-select logic so the user can still
+          // select the point normally.
+          console.warn(
+            "[endpoint-drag] no movement, falling through to click select:",
+            drag.pointId,
+          );
+        }
+
+        endpointDragRef.current = null;
+        controls.enabled = true;
+        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+        setSketchSnapLabel(null);
+
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          // Drag was committed — consume the event.
+          pointerDown = null;
+          return;
+        }
+        // Fall through: treat as a click.
       }
 
       // -- cube-area click ---------------------------------------------

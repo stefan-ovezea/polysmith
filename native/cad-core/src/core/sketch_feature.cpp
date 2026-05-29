@@ -1047,27 +1047,14 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
           moved_start ? line.end_x : line.start_x;
       const double previous_other_y =
           moved_start ? line.end_y : line.start_y;
-      const double previous_length = measure_line_length(line);
-      const double direction_sign =
-          line.constraint == "horizontal"
-              ? ((line.end_x - line.start_x) >= 0.0 ? 1.0 : -1.0)
-              : line.constraint == "vertical"
-                    ? ((line.end_y - line.start_y) >= 0.0 ? 1.0 : -1.0)
-                    : 0.0;
 
       set_endpoint(line, endpoint_ref.is_start, move.to_x, move.to_y);
 
-      // The H/V branches below preserve the line's length by rigidly
-      // translating the *other* endpoint. That's the right thing for
-      // a single-endpoint move (e.g. dragging a corner), but it
-      // breaks the case where the other endpoint is itself anchored
-      // to some host geometry: the rigid translation runs first,
-      // then the anchor pass tries to pull that endpoint to its
-      // target, and they fight depending on iteration order — the
-      // user-visible symptom is a midpoint-anchored line that keeps
-      // its old length and pokes outside the rectangle when the
-      // rectangle shrinks. When the other endpoint is anchored, skip
-      // the rigid step and let the anchor pass set its position.
+      // When a line has a horizontal or vertical constraint and only
+      // one endpoint is being dragged, keep the other endpoint anchored
+      // and snap the dragged endpoint along the constraint axis.  This
+      // lets the line stretch / shorten while staying aligned, rather
+      // than rigidly translating the whole line (the old behaviour).
       const std::string other_endpoint_point_id =
           endpoint_point_id(line, !endpoint_ref.is_start);
       const bool other_endpoint_anchored =
@@ -1075,19 +1062,15 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
 
       if (line.constraint == "horizontal" && !other_endpoint_anchored) {
         if (moved_start) {
-          line.end_y = move.to_y;
-          line.end_x = move.to_x + direction_sign * previous_length;
+          line.start_y = line.end_y;
         } else if (moved_end) {
-          line.start_y = move.to_y;
-          line.start_x = move.to_x - direction_sign * previous_length;
+          line.end_y = line.start_y;
         }
       } else if (line.constraint == "vertical" && !other_endpoint_anchored) {
         if (moved_start) {
-          line.end_x = move.to_x;
-          line.end_y = move.to_y + direction_sign * previous_length;
+          line.start_x = line.end_x;
         } else if (moved_end) {
-          line.start_x = move.to_x;
-          line.start_y = move.to_y - direction_sign * previous_length;
+          line.end_x = line.start_x;
         }
       }
 
