@@ -6,6 +6,7 @@
 
 <p align="center" style="font-size: 1.1em; font-weight: 600; letter-spacing: 0.03em;">Local-first desktop CAD for hobbyist 3D-printing workflows</p>
 
+
 ---
 
 ## 📖 Pages
