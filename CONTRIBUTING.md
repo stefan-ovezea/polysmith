@@ -18,22 +18,33 @@ Please read:
 
 - `README.md`
 - `AGENTS.md`
-- `wiki/polysmith.wiki/Architecture-Overview.md`
-- `wiki/polysmith.wiki/IPC-Protocol.md`
-- `wiki/polysmith.wiki/ADR-0001-Tech-Stack.md`
+- `.deepseek/instructions.md`
+- `wiki/Architecture-Overview.md`
+- `wiki/Contextual-Modeling-Workflow.md`
+- `wiki/IPC-Protocol.md`
+- `wiki/Topological-Naming-Problem.md`
+
+## Branch Workflow
+
+- `dev` is the default development branch and the base for feature work.
+- `main` is production/stable release code. Do not target feature PRs at
+  `main`.
+- Before starting work, sync the latest `dev`.
+- Create a dedicated feature branch from `dev` for each implementation or fix.
+- Keep branches narrow and delete them after their PR is merged.
 
 ## Development Workflow
 
 ### Run the desktop app
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ### Build the CAD core
 
 ```bash
-npm run core:rebuild
+pnpm core:rebuild
 ```
 
 ## Change Scope
@@ -86,7 +97,8 @@ Communication must go through the protocol layer.
 
 If you change message shapes or behavior, also update:
 
-- `wiki/polysmith.wiki/IPC-Protocol.md`
+- `wiki/IPC-Protocol.md`
+- `wiki/AI-CAD-Command-Language.md`
 - `protocol/schema/*`
 
 ## AI-Assisted Development
@@ -94,9 +106,9 @@ If you change message shapes or behavior, also update:
 If using Codex or other AI tools:
 
 - follow `AGENTS.md`
-- follow `wiki/polysmith.wiki/Codex-Rules.md`
 - keep tasks narrow
 - avoid broad autonomous refactors
+- check the branch and working tree state before editing
 
 ## Testing
 
@@ -107,12 +119,13 @@ For non-trivial changes:
 
 ## Pull Requests
 
-Prefer PRs that are:
-
-- small
-- understandable
-- single-purpose
-- documented when architecture changes
+- Use GitHub pull requests to merge feature branches into `dev`.
+- Prefer the GitHub CLI (`gh`) when it is available and authenticated.
+- Open implementation PRs as draft until the change has been tested.
+- Include a concise summary, test notes, and known risks or follow-up work.
+- Sync with the latest `dev` before review or merge.
+- Use squash-merge after approval and passing checks.
+- Delete the remote and local feature branch after merge.
 
 ## Philosophy
 

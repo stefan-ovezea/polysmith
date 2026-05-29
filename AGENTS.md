@@ -83,6 +83,40 @@ When implementing a task:
 4. Avoid unrelated refactors
 5. Add comments where intent is not obvious
 
+## Branch Workflow
+
+PolySmith uses a feature-branch workflow:
+
+- `dev` is the default development branch and the base for everyday work.
+- `main` is the production/stable release branch. Do not use it for feature
+  work unless explicitly asked to prepare a release or hotfix.
+- At the start of every prompt that may change files, check the current branch
+  and working tree state before editing.
+- Start each implementation from the latest `dev`: fetch/sync `dev`, then
+  create a new feature branch from it.
+- Keep feature branches scoped to one implementation or fix.
+- Merge feature branches back into `dev` through a pull request.
+- Use squash-merge for feature PRs so `dev` keeps a readable history.
+- After a PR is approved and merged, delete the merged feature branch locally
+  and on the remote.
+
+### GitHub PR Flow
+
+- Prefer the GitHub CLI (`gh`) for pull request work when it is available and
+  authenticated.
+- Before opening a PR, push the feature branch and confirm the PR base is
+  `dev`, not `main`.
+- Open implementation PRs as draft until the change has been tested and is
+  ready for review.
+- Include a concise PR summary, test notes, and any known risks or follow-up
+  work in the PR description.
+- Before review or merge, sync the feature branch with the latest `dev` and
+  resolve conflicts on the feature branch.
+- After approval and passing checks, squash-merge the PR into `dev`.
+- Confirm GitHub deleted the remote feature branch after merge, or delete it
+  with `gh pr merge --delete-branch` / `git push origin --delete <branch>`.
+- Delete the local feature branch after returning to an updated `dev`.
+
 ## Topological Naming Problem (TNP)
 
 **This is the project's mantra.** Never introduce a feature that stores a
