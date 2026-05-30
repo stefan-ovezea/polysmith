@@ -26,6 +26,7 @@ interface DocumentHierarchyPanelProps {
     bodyId: string,
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
+  onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
   // Optional toggle for the persisted suppressed flag (Phase B). When
   // omitted (e.g. read-only previews) the menu just hides the entry.
@@ -470,6 +471,7 @@ export function DocumentHierarchyPanel({
   onDeleteFeature,
   onMoveBody,
   onCopyBody,
+  onExportBodyMesh,
   onUnlinkBodyCopy,
   onSetFeatureSuppressed,
 }: DocumentHierarchyPanelProps) {
@@ -911,6 +913,17 @@ export function DocumentHierarchyPanel({
                       {t("common.unlink")}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                    onClick={() => {
+                      const id = contextMenu.featureId;
+                      setContextMenu(null);
+                      void onExportBodyMesh?.(id);
+                    }}
+                  >
+                    {t("common.exportAsMesh")}
+                  </button>
                 </>
               ) : null}
               <button

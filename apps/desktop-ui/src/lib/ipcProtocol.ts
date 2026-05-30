@@ -82,6 +82,20 @@ export function makeExportDocumentStlCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeExportBodyStlCommand(
+  filePath: string,
+  bodyId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "export_body_stl",
+    payload: {
+      file_path: filePath,
+      body_id: bodyId,
+    },
+  };
+}
+
 export function makeSaveDocumentCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

@@ -281,7 +281,7 @@ Response to `save_document`.
 
 ### `document_exported`
 
-Response to `export_document` and `export_document_stl`.
+Response to `export_document`, `export_document_stl`, and `export_body_stl`.
 
 ```ts
 {
@@ -442,6 +442,21 @@ Payload:
 ```ts
 {
   file_path: string;
+}
+```
+
+Returns `document_exported` with `format: "stl"`.
+
+#### `export_body_stl`
+
+Exports one compiled body as binary STL. Use this for user-facing mesh export.
+
+Payload:
+
+```ts
+{
+  file_path: string;
+  body_id: string;
 }
 ```
 

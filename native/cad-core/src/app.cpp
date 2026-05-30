@@ -460,6 +460,22 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "export_body_stl") {
+    const auto export_result = document_manager().export_body_as_stl(
+        read_string(command.payload, "file_path"),
+        read_string(command.payload, "body_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_exported_event(
+            command.id,
+            polysmith::protocol::json{
+                {"file_path", export_result.file_path},
+                {"format", export_result.format},
+                {"exported_feature_count", export_result.exported_feature_count},
+            }));
+    return;
+  }
+
   if (command.type == "save_document") {
     const std::string file_path = read_string(command.payload, "file_path");
     document_manager().save_document_to_path(file_path);

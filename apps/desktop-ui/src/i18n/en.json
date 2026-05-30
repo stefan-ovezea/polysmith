@@ -21,6 +21,7 @@
     "edit": "Edit",
     "empty": "Empty",
     "entries": "{{count}} entries",
+    "exportAsMesh": "Export as Mesh",
     "hide": "Hide",
     "move": "Move",
     "needsAttention": "Needs attention",
@@ -632,6 +633,7 @@
   },
   "dialogs": {
     "exportStepTitle": "Export STEP",
+    "exportMeshTitle": "Export Mesh",
     "exportStlTitle": "Export STL",
     "openDocumentTitle": "Open PolySmith document",
     "polysmithDocumentType": "PolySmith document",

@@ -768,6 +768,7 @@ function App() {
     createDocument,
     exportDocument,
     exportDocumentStl,
+    exportBodyStl,
     saveDocument,
     loadDocument,
     projectFaceIntoSketch,
@@ -2673,6 +2674,21 @@ function App() {
     await createMoveFeature(bodyId, defaultMoveParameters(bodyId));
   }
 
+  async function exportBodyAsMesh(bodyId: string) {
+    const bodyName =
+      document?.feature_history.find((feature) => feature.feature_id === bodyId)
+        ?.name ?? document?.name;
+    const filePath = await pickExportStlPath(bodyName);
+    if (!filePath) {
+      return;
+    }
+
+    await runAction(async () => {
+      await exportBodyStl(filePath, bodyId);
+      addMessage(`mesh export requested: ${filePath}`);
+    });
+  }
+
   async function copyBodyAndMove(
     sourceBodyId: string,
     copyMode: "linked" | "standalone",
@@ -3578,9 +3594,9 @@ function App() {
     clearArmedSketchConstraint();
   }
 
-  function makeDefaultExportBaseName() {
+  function makeDefaultExportBaseName(name?: string | null) {
     return (
-      (document?.name ?? "polysmith-part")
+      (name ?? document?.name ?? "polysmith-part")
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
@@ -3608,10 +3624,10 @@ function App() {
     return filePath;
   }
 
-  async function pickExportStlPath() {
+  async function pickExportStlPath(baseName?: string | null) {
     const filePath = await save({
-      title: t("dialogs.exportStlTitle"),
-      defaultPath: `${makeDefaultExportBaseName()}.stl`,
+      title: t("dialogs.exportMeshTitle"),
+      defaultPath: `${makeDefaultExportBaseName(baseName)}.stl`,
       filters: [
         {
           name: t("dialogs.stlFileType"),
@@ -4467,17 +4483,6 @@ function App() {
               addMessage(`export requested: ${filePath}`);
             });
           }}
-          onExportDocumentStl={async () => {
-            const filePath = await pickExportStlPath();
-            if (!filePath) {
-              return;
-            }
-
-            await runAction(async () => {
-              await exportDocumentStl(filePath);
-              addMessage(`stl export requested: ${filePath}`);
-            });
-          }}
           onSaveDocument={async () => {
             await runAction(async () => {
               await saveCurrentDocument();
@@ -5102,6 +5107,9 @@ function App() {
                     onCopyBody={async (bodyId, copyMode) => {
                       await copyBodyAndMove(bodyId, copyMode);
                     }}
+                    onExportBodyMesh={async (bodyId) => {
+                      await exportBodyAsMesh(bodyId);
+                    }}
                     onUnlinkBodyCopy={(featureId) => {
                       confirmAndUnlinkBodyCopy(featureId);
                     }}
@@ -5230,6 +5238,9 @@ function App() {
               }}
               onCopyBody={async (bodyId, copyMode) => {
                 await copyBodyAndMove(bodyId, copyMode);
+              }}
+              onExportBodyMesh={async (bodyId) => {
+                await exportBodyAsMesh(bodyId);
               }}
               onUnlinkBodyCopy={(featureId) => {
                 confirmAndUnlinkBodyCopy(featureId);

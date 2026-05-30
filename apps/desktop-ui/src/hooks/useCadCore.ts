@@ -37,6 +37,7 @@ import {
   makeAddSketchRectangleCommand,
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
+  makeExportBodyStlCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
   makeLoadDocumentCommand,
@@ -283,6 +284,9 @@ export function useCadCore() {
     },
     exportDocumentStl: async (filePath: string) => {
       await sendCoreCommand(makeExportDocumentStlCommand(filePath));
+    },
+    exportBodyStl: async (filePath: string, bodyId: string) => {
+      await sendCoreCommand(makeExportBodyStlCommand(filePath, bodyId));
     },
     saveDocument: async (filePath: string) => {
       await sendCoreCommand(makeSaveDocumentCommand(filePath));
