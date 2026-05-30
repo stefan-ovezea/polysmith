@@ -1920,6 +1920,11 @@ Rules:
 - Prefer `profile_ids` even for one profile.
 - `profile_id` is kept for legacy single-profile callers.
 - Multiple profiles must belong to the same sketch plane.
+- With `mode: "new_body"`, each selected profile creates its own body.
+- With untargeted `mode: "join"`, touching profiles are grouped into one body
+  while separated profile groups become separate bodies.
+- With `mode: "cut"`, `mode: "intersect"`, or a targeted `join`, the selected
+  profiles stay in one feature so the boolean target remains explicit.
 - `mode` defaults to `new_body`; `parameters.operation: "auto"` lets the
   core infer New Body / Join / Cut while previewing.
 - `open_entity_ids` requires `parameters.thin.enabled = true` and currently

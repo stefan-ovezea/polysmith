@@ -192,6 +192,7 @@ function defaultHiddenSketchIdsForLoadedDocument(documentState: DocumentState) {
 interface ActiveExtrudeAction {
   phase: "pending" | "active";
   featureId: string | null;
+  featureIds: string[];
   initialDepth: number;
   initialMode: ExtrudeMode;
   initialParameters: ExtrudeFeatureParameters | null;
@@ -1206,6 +1207,7 @@ function App() {
     setExtrudeAction({
       phase: "pending",
       featureId: null,
+      featureIds: [],
       initialDepth: DEFAULT_EXTRUDE_DEPTH,
       initialMode: defaultSettings.mode,
       initialParameters: null,
@@ -1285,6 +1287,7 @@ function App() {
     // the `document_state` event with the new feature. To capture the real
     // new feature id we subscribe to the next document update that contains
     // a freshly created extrude feature.
+    let createdFeatureIds: string[] = [];
     const documentPromise = awaitDocumentChange((next, previous) => {
       if (!next.selected_feature_id) {
         return false;
@@ -1293,11 +1296,18 @@ function App() {
       if (next.feature_history.length <= previousLength) {
         return false;
       }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "extrude"
-      );
+      const createdFeatures = next.feature_history
+        .slice(previousLength)
+        .filter((feature) => feature.kind === "extrude");
+      if (createdFeatures.length === 0) {
+        return false;
+      }
+      const lastFeature = createdFeatures[createdFeatures.length - 1];
+      if (lastFeature.feature_id !== next.selected_feature_id) {
+        return false;
+      }
+      createdFeatureIds = createdFeatures.map((feature) => feature.feature_id);
+      return true;
     });
 
     await runAction(async () => {
@@ -1316,6 +1326,7 @@ function App() {
         setExtrudeAction({
           phase: "active",
           featureId: newFeatureId,
+          featureIds: createdFeatureIds.length > 0 ? createdFeatureIds : [newFeatureId],
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -1382,6 +1393,7 @@ function App() {
         setExtrudeAction({
           phase: "active",
           featureId: newFeatureId,
+          featureIds: [newFeatureId],
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -1447,6 +1459,7 @@ function App() {
         setExtrudeAction({
           phase: "active",
           featureId: newFeatureId,
+          featureIds: [newFeatureId],
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -6296,6 +6309,10 @@ function App() {
                     if (!activeExtrudeFeatureId) {
                       return null;
                     }
+                    const activeExtrudeFeatureIds =
+                      extrudeAction.featureIds.length > 0
+                        ? extrudeAction.featureIds
+                        : [activeExtrudeFeatureId];
                     // Bodies that the in-progress extrude can target. We
                     // exclude the extrude itself: at this point the core
                     // already created the feature in `new_body` mode and
@@ -6304,7 +6321,7 @@ function App() {
                     // for cut). Filtering it out keeps the picker honest.
                     const availableTargetBodies = (
                       viewport?.bodies ?? []
-                    ).filter((body) => body.id !== extrudeAction.featureId);
+                    ).filter((body) => !activeExtrudeFeatureIds.includes(body.id));
                     const activeExtrudeFeature =
                       document?.feature_history.find(
                         (entry) =>
@@ -6331,26 +6348,23 @@ function App() {
                         disabled={status !== "connected"}
                         onPreviewDepth={async (depth) => {
                           await runAction(async () => {
-                            await updateExtrudeDepth(
-                              activeExtrudeFeatureId,
-                              depth,
-                            );
+                            for (const featureId of activeExtrudeFeatureIds) {
+                              await updateExtrudeDepth(featureId, depth);
+                            }
                           });
                         }}
                         onPreviewMode={async (mode) => {
                           await runAction(async () => {
-                            await updateExtrudeMode(
-                              activeExtrudeFeatureId,
-                              mode,
-                            );
+                            for (const featureId of activeExtrudeFeatureIds) {
+                              await updateExtrudeMode(featureId, mode);
+                            }
                           });
                         }}
                         onPreviewTargetBody={async (targetBodyId) => {
                           await runAction(async () => {
-                            await updateExtrudeTargetBody(
-                              activeExtrudeFeatureId,
-                              targetBodyId,
-                            );
+                            for (const featureId of activeExtrudeFeatureIds) {
+                              await updateExtrudeTargetBody(featureId, targetBodyId);
+                            }
                           });
                         }}
                         onPreviewParameters={async (parameters) => {
@@ -6358,10 +6372,9 @@ function App() {
                             return;
                           }
                           await runAction(async () => {
-                            await updateExtrudeParameters(
-                              activeExtrudeFeatureId,
-                              parameters,
-                            );
+                            for (const featureId of activeExtrudeFeatureIds) {
+                              await updateExtrudeParameters(featureId, parameters);
+                            }
                           });
                         }}
                         onConfirm={async () => {
@@ -8505,6 +8518,7 @@ function App() {
               setExtrudeAction({
                 phase: "active",
                 featureId,
+                featureIds: [featureId],
                 initialDepth: params.depth,
                 initialMode: params.mode,
                 initialParameters: params,

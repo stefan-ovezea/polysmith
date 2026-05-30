@@ -624,6 +624,204 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
   return std::nullopt;
 }
 
+std::vector<SketchProfilePoint> profile_boundary_points(
+    const SketchProfileRegion& profile) {
+  return profile.kind == "circle" ? sample_circle_profile_points(profile)
+                                  : profile.points;
+}
+
+double squared_distance(const SketchProfilePoint& a,
+                        const SketchProfilePoint& b) {
+  const double dx = a.x - b.x;
+  const double dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+double cross(const SketchProfilePoint& a,
+             const SketchProfilePoint& b,
+             const SketchProfilePoint& c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+bool point_on_segment(const SketchProfilePoint& point,
+                      const SketchProfilePoint& a,
+                      const SketchProfilePoint& b,
+                      double tolerance) {
+  if (std::abs(cross(a, b, point)) > tolerance) {
+    return false;
+  }
+  return point.x >= std::min(a.x, b.x) - tolerance &&
+         point.x <= std::max(a.x, b.x) + tolerance &&
+         point.y >= std::min(a.y, b.y) - tolerance &&
+         point.y <= std::max(a.y, b.y) + tolerance;
+}
+
+bool segments_touch(const SketchProfilePoint& a1,
+                    const SketchProfilePoint& a2,
+                    const SketchProfilePoint& b1,
+                    const SketchProfilePoint& b2,
+                    double tolerance) {
+  if (point_on_segment(a1, b1, b2, tolerance) ||
+      point_on_segment(a2, b1, b2, tolerance) ||
+      point_on_segment(b1, a1, a2, tolerance) ||
+      point_on_segment(b2, a1, a2, tolerance)) {
+    return true;
+  }
+
+  const double c1 = cross(a1, a2, b1);
+  const double c2 = cross(a1, a2, b2);
+  const double c3 = cross(b1, b2, a1);
+  const double c4 = cross(b1, b2, a2);
+  return ((c1 > tolerance && c2 < -tolerance) ||
+          (c1 < -tolerance && c2 > tolerance)) &&
+         ((c3 > tolerance && c4 < -tolerance) ||
+          (c3 < -tolerance && c4 > tolerance));
+}
+
+bool profile_regions_touch(const SketchProfileRegion& a,
+                           const SketchProfileRegion& b) {
+  constexpr double kTolerance = 1.0e-6;
+  constexpr double kToleranceSquared = kTolerance * kTolerance;
+  const std::vector<SketchProfilePoint> a_points = profile_boundary_points(a);
+  const std::vector<SketchProfilePoint> b_points = profile_boundary_points(b);
+  if (a_points.empty() || b_points.empty()) {
+    return false;
+  }
+
+  for (const auto& a_point : a_points) {
+    for (const auto& b_point : b_points) {
+      if (squared_distance(a_point, b_point) <= kToleranceSquared) {
+        return true;
+      }
+    }
+  }
+
+  for (size_t a_index = 0; a_index < a_points.size(); ++a_index) {
+    const auto& a1 = a_points[a_index];
+    const auto& a2 = a_points[(a_index + 1) % a_points.size()];
+    for (size_t b_index = 0; b_index < b_points.size(); ++b_index) {
+      const auto& b1 = b_points[b_index];
+      const auto& b2 = b_points[(b_index + 1) % b_points.size()];
+      if (segments_touch(a1, a2, b1, b2, kTolerance)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+std::vector<std::vector<SketchProfileRegion>> group_touching_profiles(
+    const std::vector<SketchProfileRegion>& profiles) {
+  std::vector<std::vector<SketchProfileRegion>> groups;
+  std::vector<bool> visited(profiles.size(), false);
+
+  for (size_t start = 0; start < profiles.size(); ++start) {
+    if (visited[start]) {
+      continue;
+    }
+
+    std::vector<size_t> stack{start};
+    visited[start] = true;
+    std::vector<SketchProfileRegion> group;
+
+    while (!stack.empty()) {
+      const size_t current = stack.back();
+      stack.pop_back();
+      group.push_back(profiles[current]);
+
+      for (size_t candidate = 0; candidate < profiles.size(); ++candidate) {
+        if (visited[candidate]) {
+          continue;
+        }
+        if (!profile_regions_touch(profiles[current], profiles[candidate])) {
+          continue;
+        }
+        visited[candidate] = true;
+        stack.push_back(candidate);
+      }
+    }
+
+    groups.push_back(std::move(group));
+  }
+
+  return groups;
+}
+
+std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
+    const FeatureEntry& sketch_feature,
+    const std::vector<SketchProfileRegion>& profiles,
+    double depth) {
+  if (profiles.empty() || !sketch_feature.sketch_parameters.has_value()) {
+    return std::nullopt;
+  }
+  if (profiles.size() == 1) {
+    return make_extrude_parameters_for_profile(sketch_feature,
+                                               profiles.front(),
+                                               depth);
+  }
+
+  const auto& sketch = sketch_feature.sketch_parameters.value();
+  const auto& first = profiles.front();
+  const std::string plane_id = sketch.plane_frame.has_value()
+                                   ? plane_id_from_frame(sketch.plane_frame.value())
+                                   : sketch.plane_id;
+  const std::optional<PlaneFrame> plane_frame =
+      sketch.plane_frame.has_value()
+          ? std::optional<PlaneFrame>(make_plane_frame(sketch.plane_frame.value()))
+          : std::nullopt;
+  std::vector<std::string> ids;
+  for (const auto& profile : profiles) {
+    ids.push_back(profile.id);
+  }
+
+  ExtrudeFeatureParameters parameters{
+      .sketch_feature_id = sketch_feature.id,
+      .profile_id = ids.front(),
+      .profile_ids = ids,
+      .plane_id = plane_id,
+      .plane_frame = plane_frame,
+      .profile_kind = "polygon",
+      .start_x = 0.0,
+      .start_y = 0.0,
+      .width = 0.0,
+      .height = 0.0,
+      .radius = 0.0,
+      .profile_points = profile_boundary_points(first),
+      .inner_loops = first.inner_loops,
+      .depth = depth,
+  };
+
+  for (size_t index = 1; index < profiles.size(); ++index) {
+    const auto& profile = profiles[index];
+    parameters.additional_profile_points.push_back(
+        profile_boundary_points(profile));
+    parameters.additional_inner_loops.push_back(profile.inner_loops);
+  }
+
+  return parameters;
+}
+
+void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
+                                      const ExtrudeFeatureParameters& source) {
+  target.sketch_feature_id = source.sketch_feature_id;
+  target.profile_id = source.profile_id;
+  target.profile_ids = source.profile_ids;
+  target.open_entity_ids = source.open_entity_ids;
+  target.plane_id = source.plane_id;
+  target.plane_frame = source.plane_frame;
+  target.profile_kind = source.profile_kind;
+  target.start_x = source.start_x;
+  target.start_y = source.start_y;
+  target.width = source.width;
+  target.height = source.height;
+  target.radius = source.radius;
+  target.profile_points = source.profile_points;
+  target.inner_loops = source.inner_loops;
+  target.additional_profile_points = source.additional_profile_points;
+  target.additional_inner_loops = source.additional_inner_loops;
+}
+
 std::optional<LoftSectionParameters> make_loft_section_for_profile(
     const FeatureEntry& sketch_feature,
     const SketchProfileRegion& profile) {
@@ -1515,6 +1713,7 @@ DocumentState DocumentManager::update_extrude_parameters(
   }
 
   ExtrudeFeatureParameters next = parameters;
+  preserve_extrude_source_geometry(next, feature_it->extrude_parameters.value());
   if (next.depth == 0.0 || next.side1.distance == 0.0 ||
       (next.side2.has_value() && next.side2->distance == 0.0)) {
     return document_.value();
@@ -4025,103 +4224,69 @@ DocumentState DocumentManager::extrude_profiles(
     selected_profiles.push_back(*profile_it);
   }
 
-  std::optional<ExtrudeFeatureParameters> extrude_parameters;
-  if (selected_profiles.size() == 1 && selected_profiles.front().kind == "circle") {
-    extrude_parameters =
-        make_extrude_parameters_for_profile(*feature_it,
-                                            selected_profiles.front(),
-                                            depth);
+  std::vector<std::vector<SketchProfileRegion>> profile_groups;
+  if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
+      (mode == "join" && target_body_id.has_value())) {
+    profile_groups.push_back(selected_profiles);
+  } else if (mode == "join") {
+    profile_groups = group_touching_profiles(selected_profiles);
   } else {
-    const auto& first = selected_profiles.front();
-    const std::string plane_id =
-        sketch.plane_frame.has_value() ? plane_id_from_frame(sketch.plane_frame.value())
-                                       : sketch.plane_id;
-    const std::optional<PlaneFrame> plane_frame =
-        sketch.plane_frame.has_value()
-            ? std::optional<PlaneFrame>(make_plane_frame(sketch.plane_frame.value()))
-            : std::nullopt;
-    std::vector<std::string> ids;
     for (const auto& profile : selected_profiles) {
-      ids.push_back(profile.id);
-    }
-    auto first_points = first.kind == "circle"
-                            ? sample_circle_profile_points(first)
-                            : first.points;
-    extrude_parameters = ExtrudeFeatureParameters{
-        .sketch_feature_id = feature_it->id,
-        .profile_id = ids.front(),
-        .profile_ids = ids,
-        .plane_id = plane_id,
-        .plane_frame = plane_frame,
-        .profile_kind = "polygon",
-        .start_x = 0.0,
-        .start_y = 0.0,
-        .width = 0.0,
-        .height = 0.0,
-        .radius = 0.0,
-        .profile_points = first_points,
-        .inner_loops = first.inner_loops,
-        .depth = depth,
-    };
-    for (size_t index = 1; index < selected_profiles.size(); ++index) {
-      const auto& profile = selected_profiles[index];
-      extrude_parameters->additional_profile_points.push_back(
-          profile.kind == "circle" ? sample_circle_profile_points(profile)
-                                   : profile.points);
-      extrude_parameters->additional_inner_loops.push_back(profile.inner_loops);
+      profile_groups.push_back({profile});
     }
   }
-  if (!extrude_parameters.has_value()) {
-    throw std::runtime_error("Sketch profile not found");
-  }
-  if (parameters.has_value()) {
-    const auto source = *extrude_parameters;
-    *extrude_parameters = parameters.value();
-    extrude_parameters->sketch_feature_id = source.sketch_feature_id;
-    extrude_parameters->profile_id = source.profile_id;
-    extrude_parameters->profile_ids = source.profile_ids;
-    extrude_parameters->plane_id = source.plane_id;
-    extrude_parameters->plane_frame = source.plane_frame;
-    extrude_parameters->profile_kind = source.profile_kind;
-    extrude_parameters->start_x = source.start_x;
-    extrude_parameters->start_y = source.start_y;
-    extrude_parameters->width = source.width;
-    extrude_parameters->height = source.height;
-    extrude_parameters->radius = source.radius;
-    extrude_parameters->profile_points = source.profile_points;
-    extrude_parameters->inner_loops = source.inner_loops;
-    extrude_parameters->additional_profile_points =
-        source.additional_profile_points;
-    extrude_parameters->additional_inner_loops = source.additional_inner_loops;
-  }
-  extrude_parameters->depth = depth;
-  extrude_parameters->mode = mode;
-  if (extrude_parameters->operation == "new_body" && mode != "new_body") {
-    extrude_parameters->operation = mode;
-  }
-  extrude_parameters->target_body_id = target_body_id;
-  normalize_extrude_parameters(*document_, extrude_parameters.value());
 
-  // Auto-cut detection (contextual modeling): when the user invokes a default
-  // new_body extrude on a profile whose swept volume overlaps an
-  // existing body, silently promote the feature to a cut against that
-  // body. Explicit modes (the user picked join/cut) are honored as-is.
-  if (extrude_parameters->operation != "auto" &&
-      extrude_parameters->mode == "new_body" &&
-      !extrude_parameters->target_body_id.has_value()) {
-    const auto intersected =
-        find_intersecting_body_for_extrude(*document_,
-                                           extrude_parameters.value());
-    if (intersected.has_value()) {
-      extrude_parameters->mode = "cut";
-      extrude_parameters->target_body_id = intersected;
+  std::vector<ExtrudeFeatureParameters> extrude_parameter_groups;
+  extrude_parameter_groups.reserve(profile_groups.size());
+  for (const auto& group : profile_groups) {
+    std::optional<ExtrudeFeatureParameters> extrude_parameters =
+        make_extrude_parameters_for_profiles(*feature_it, group, depth);
+    if (!extrude_parameters.has_value()) {
+      throw std::runtime_error("Sketch profile not found");
     }
+    if (parameters.has_value()) {
+      const auto source = *extrude_parameters;
+      *extrude_parameters = parameters.value();
+      preserve_extrude_source_geometry(*extrude_parameters, source);
+    }
+    extrude_parameters->depth = depth;
+    const bool split_join_without_target =
+        mode == "join" && !target_body_id.has_value();
+    extrude_parameters->mode = split_join_without_target ? "new_body" : mode;
+    if (split_join_without_target && extrude_parameters->operation != "auto") {
+      extrude_parameters->operation = "new_body";
+    }
+    if (extrude_parameters->operation == "new_body" &&
+        extrude_parameters->mode != "new_body") {
+      extrude_parameters->operation = extrude_parameters->mode;
+    }
+    extrude_parameters->target_body_id = target_body_id;
+    normalize_extrude_parameters(*document_, extrude_parameters.value());
+
+    // Auto-cut detection (contextual modeling): when the user invokes a
+    // default new_body extrude on a profile whose swept volume overlaps an
+    // existing body, silently promote the feature to a cut against that
+    // body. Explicit modes (the user picked join/cut) are honored as-is.
+    if (extrude_parameters->operation != "auto" &&
+        extrude_parameters->mode == "new_body" &&
+        !extrude_parameters->target_body_id.has_value()) {
+      const auto intersected =
+          find_intersecting_body_for_extrude(*document_,
+                                             extrude_parameters.value());
+      if (intersected.has_value()) {
+        extrude_parameters->mode = "cut";
+        extrude_parameters->target_body_id = intersected;
+      }
+    }
+    extrude_parameter_groups.push_back(extrude_parameters.value());
   }
 
   push_undo_state();
   clear_redo_stack();
-  document_->feature_history.push_back(
-      create_extrude_feature(next_feature_id_++, extrude_parameters.value()));
+  for (const auto& extrude_parameters : extrude_parameter_groups) {
+    document_->feature_history.push_back(
+        create_extrude_feature(next_feature_id_++, extrude_parameters));
+  }
   document_->selected_feature_id = document_->feature_history.back().id;
   document_->selected_reference_id = std::nullopt;
   document_->active_sketch_plane_id = std::nullopt;
