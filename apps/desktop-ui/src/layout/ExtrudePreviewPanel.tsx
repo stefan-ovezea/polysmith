@@ -8,7 +8,6 @@ import type {
   ExtrudeExtentType,
   ExtrudeFeatureParameters,
   ExtrudeMode,
-  ExtrudeOperation,
   ExtrudeSideParameters,
   ExtrudeThinPlacement,
 } from "@/types";
@@ -68,13 +67,9 @@ function advancedFromInitial(
       thickness: 1,
       placement: "center",
     },
-    operation: params?.operation ?? "auto",
+    operation: params?.operation ?? params?.mode ?? "new_body",
     intersect_result: params?.intersect_result ?? "replace_target",
   };
-}
-
-function effectiveMode(operation: ExtrudeOperation, fallback: ExtrudeMode) {
-  return operation === "auto" ? fallback : operation;
 }
 
 function normalizeNumberInputValue(value: string) {
@@ -193,7 +188,7 @@ export function ExtrudePreviewPanel({
       void onPreviewParameters({
         ...initialParameters,
         depth: parsedDepth,
-        mode: effectiveMode(next.operation, mode),
+        mode: next.operation,
         target_body_id: targetBodyId,
         ...next,
       });
@@ -249,7 +244,7 @@ export function ExtrudePreviewPanel({
     if (!Number.isFinite(parsed) || parsed === 0) {
       return;
     }
-    await onConfirm(parsed, effectiveMode(advanced.operation, mode), targetBodyId, advanced);
+    await onConfirm(parsed, advanced.operation, targetBodyId, advanced);
   }
 
   const side2 =
@@ -258,7 +253,7 @@ export function ExtrudePreviewPanel({
       ...advanced.side1,
       distance: advanced.side1.distance,
     } satisfies ExtrudeSideParameters);
-  const activeMode = effectiveMode(advanced.operation, mode);
+  const activeMode = advanced.operation;
   const canJoinSelectedProfiles = selectedProfileCount > 1;
   const needsTarget =
     activeMode !== "new_body" &&
@@ -268,8 +263,7 @@ export function ExtrudePreviewPanel({
     ? "cad-input cad-input-error mt-2"
     : "cad-input mt-2";
 
-  function canUseOperation(operation: ExtrudeOperation) {
-    const nextMode = effectiveMode(operation, mode);
+  function canUseOperation(nextMode: ExtrudeMode) {
     if (nextMode === "new_body") {
       return true;
     }
@@ -431,7 +425,6 @@ export function ExtrudePreviewPanel({
               value={advanced.operation}
               label={t("panels.extrude.operation")}
               options={[
-                { value: "auto", label: t("panels.extrude.auto") },
                 { value: "new_body", label: t("panels.extrude.newBody") },
                 { value: "join", label: t("panels.extrude.join") },
                 { value: "cut", label: t("panels.extrude.cut") },
@@ -439,13 +432,12 @@ export function ExtrudePreviewPanel({
               ]}
               disabled={disabled}
               onChange={(value) => {
-                const nextOperation = value as ExtrudeOperation;
-                const nextMode = effectiveMode(nextOperation, mode);
-                if (!canUseOperation(nextOperation)) {
+                const nextMode = value as ExtrudeMode;
+                if (!canUseOperation(nextMode)) {
                   return;
                 }
                 setMode(nextMode);
-                updateAdvanced({ ...advanced, operation: nextOperation });
+                updateAdvanced({ ...advanced, operation: nextMode });
                 void onPreviewMode(nextMode);
               }}
             />

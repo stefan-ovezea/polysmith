@@ -194,6 +194,7 @@ interface ActiveExtrudeAction {
   featureId: string | null;
   featureIds: string[];
   profileIds: string[];
+  automaticMode: boolean;
   initialDepth: number;
   initialMode: ExtrudeMode;
   initialParameters: ExtrudeFeatureParameters | null;
@@ -1210,6 +1211,7 @@ function App() {
       featureId: null,
       featureIds: [],
       profileIds: [...selectedSketchProfileIds],
+      automaticMode: true,
       initialDepth: DEFAULT_EXTRUDE_DEPTH,
       initialMode: defaultSettings.mode,
       initialParameters: null,
@@ -1271,7 +1273,7 @@ function App() {
 
   async function createExtrudeFromSelectedProfiles(
     depth: number,
-    mode: ExtrudeMode,
+    mode: ExtrudeMode | null,
     targetBodyId: string | null,
     parameters: ExtrudeAdvancedParameters | null = null,
   ) {
@@ -1287,7 +1289,7 @@ function App() {
   async function createExtrudeFromProfiles(
     profileIds: string[],
     depth: number,
-    mode: ExtrudeMode,
+    mode: ExtrudeMode | null,
     targetBodyId: string | null,
     parameters: ExtrudeAdvancedParameters | null = null,
     canCombineWithExistingBodyOverride: boolean | null = null,
@@ -1346,8 +1348,9 @@ function App() {
           featureId: newFeatureId,
           featureIds: createdFeatureIds.length > 0 ? createdFeatureIds : [newFeatureId],
           profileIds,
+          automaticMode: false,
           initialDepth: depth,
-          initialMode: createdParams?.mode ?? mode,
+          initialMode: createdParams?.mode ?? mode ?? "new_body",
           initialParameters: createdParams ?? null,
           initialTargetBodyId:
             createdParams?.target_body_id ?? targetBodyId ?? null,
@@ -1371,63 +1374,10 @@ function App() {
     });
   }
 
-  function activeExtrudeAdvancedParameters(
-    params: ExtrudeFeatureParameters | null | undefined,
-    operation: ExtrudeMode,
-  ): ExtrudeAdvancedParameters | null {
-    if (!params) {
-      return null;
-    }
-    return {
-      extent_mode: params.extent_mode,
-      side1: params.side1,
-      side2: params.side2,
-      thin: params.thin,
-      operation,
-      intersect_result: params.intersect_result,
-    };
-  }
-
-  async function recreateActiveExtrudeAsUntargetedJoin(
-    action: ActiveExtrudeAction,
-    depth: number,
-    parameters: ExtrudeAdvancedParameters | null,
-  ) {
-    if (
-      action.originalSnapshot ||
-      action.profileIds.length < 2 ||
-      action.featureIds.length < 2
-    ) {
-      return false;
-    }
-
-    const featureIds = new Set(action.featureIds);
-    const undoDocumentPromise = awaitDocumentChange((next) =>
-      next.feature_history.every(
-        (feature) => !featureIds.has(feature.feature_id),
-      ),
-    );
-
-    setExtrudeAction(null);
-    await runAction(async () => {
-      await undo();
-    });
-    await undoDocumentPromise;
-    await createExtrudeFromProfiles(
-      [...action.profileIds],
-      depth,
-      "join",
-      null,
-      parameters,
-      action.canCombineWithExistingBody,
-    );
-    return true;
-  }
-
   async function createExtrudeFromSelectedFace(
     faceId: string,
     depth: number,
-    mode: ExtrudeMode,
+    mode: ExtrudeMode | null,
     targetBodyId: string | null,
     parameters: ExtrudeAdvancedParameters | null = null,
   ) {
@@ -1468,8 +1418,9 @@ function App() {
           featureId: newFeatureId,
           featureIds: [newFeatureId],
           profileIds: [],
+          automaticMode: false,
           initialDepth: depth,
-          initialMode: createdParams?.mode ?? mode,
+          initialMode: createdParams?.mode ?? mode ?? "new_body",
           initialParameters: createdParams ?? null,
           initialTargetBodyId:
             createdParams?.target_body_id ?? targetBodyId ?? null,
@@ -1493,7 +1444,7 @@ function App() {
 
   async function createThinExtrudeFromSelectedEntities(
     depth: number,
-    mode: ExtrudeMode,
+    mode: ExtrudeMode | null,
     targetBodyId: string | null,
     parameters: ExtrudeAdvancedParameters,
   ) {
@@ -1535,8 +1486,9 @@ function App() {
           featureId: newFeatureId,
           featureIds: [newFeatureId],
           profileIds: [],
+          automaticMode: false,
           initialDepth: depth,
-          initialMode: createdParams?.mode ?? mode,
+          initialMode: createdParams?.mode ?? mode ?? "new_body",
           initialParameters: createdParams ?? null,
           initialTargetBodyId:
             createdParams?.target_body_id ?? targetBodyId ?? null,
@@ -1580,8 +1532,8 @@ function App() {
         void createExtrudeFromSelectedFace(
           selectedExtrudableFaceId,
           extrudeAction.initialDepth,
-          mode,
-          targetBodyId,
+          extrudeAction.automaticMode ? null : mode,
+          extrudeAction.automaticMode ? null : targetBodyId,
         );
       }
       return;
@@ -1599,8 +1551,8 @@ function App() {
           : extrudeAction.initialTargetBodyId ?? defaultSettings.targetBodyId;
       void createExtrudeFromSelectedProfiles(
         extrudeAction.initialDepth,
-        mode,
-        targetBodyId,
+        extrudeAction.automaticMode ? null : mode,
+        extrudeAction.automaticMode ? null : targetBodyId,
       );
       return;
     }
@@ -6311,6 +6263,7 @@ function App() {
                       current?.phase === "pending"
                         ? {
                             ...current,
+                            automaticMode: false,
                             initialMode: mode,
                             initialTargetBodyId:
                               mode === "new_body"
@@ -6338,6 +6291,7 @@ function App() {
                       current?.phase === "pending"
                         ? {
                             ...current,
+                            automaticMode: false,
                             initialParameters: null,
                           }
                         : current,
@@ -6433,24 +6387,6 @@ function App() {
                           });
                         }}
                         onPreviewMode={async (mode) => {
-                          if (
-                            mode === "join" &&
-                            !extrudeAction.canCombineWithExistingBody
-                          ) {
-                            const recreated =
-                              await recreateActiveExtrudeAsUntargetedJoin(
-                                extrudeAction,
-                                activeExtrudeFeature?.extrude_parameters
-                                  ?.depth ?? extrudeAction.initialDepth,
-                                activeExtrudeAdvancedParameters(
-                                  activeExtrudeFeature?.extrude_parameters,
-                                  "join",
-                                ),
-                              );
-                            if (recreated) {
-                              return;
-                            }
-                          }
                           await runAction(async () => {
                             for (const featureId of activeExtrudeFeatureIds) {
                               await updateExtrudeMode(featureId, mode);
@@ -8617,6 +8553,7 @@ function App() {
                 featureId,
                 featureIds: [featureId],
                 profileIds: [...(params.profile_ids ?? [])],
+                automaticMode: false,
                 initialDepth: params.depth,
                 initialMode: params.mode,
                 initialParameters: params,

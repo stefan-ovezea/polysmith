@@ -215,7 +215,6 @@
       "edgePicker": "{{count}} edge{{plural}} · click an edge to add / remove"
     },
     "extrude": {
-      "auto": "Auto",
       "center": "Center",
       "combineNeedsBody": "Cut and Intersect need an existing body. Join can combine selected touching profiles.",
       "cut": "Cut",

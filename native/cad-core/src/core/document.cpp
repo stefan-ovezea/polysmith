@@ -19,6 +19,7 @@
 #include <BRepBndLib.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRep_Builder.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepTools.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
@@ -227,6 +228,40 @@ bool shapes_intersect_with_volume(const TopoDS_Shape& a,
   }
 }
 
+bool shapes_touch_without_volume(const TopoDS_Shape& a,
+                                 const TopoDS_Shape& b) {
+  if (a.IsNull() || b.IsNull()) {
+    return false;
+  }
+  try {
+    BRepAlgoAPI_Common common(a, b);
+    common.Build();
+    if (!common.IsDone()) {
+      return false;
+    }
+    const TopoDS_Shape result = common.Shape();
+    if (result.IsNull()) {
+      return false;
+    }
+    if (TopExp_Explorer(result, TopAbs_SOLID).More()) {
+      return false;
+    }
+    if (TopExp_Explorer(result, TopAbs_FACE).More() ||
+        TopExp_Explorer(result, TopAbs_EDGE).More() ||
+        TopExp_Explorer(result, TopAbs_VERTEX).More()) {
+      return true;
+    }
+  } catch (const std::exception&) {
+  }
+  try {
+    BRepExtrema_DistShapeShape distance(a, b);
+    distance.Perform();
+    return distance.IsDone() && distance.Value() <= 1.0e-6;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 // Check whether a candidate extrude (built from `parameters`) would
 // overlap any existing body in `document`. Returns the body id of the
 // first such body, or nullopt when no intersection is found. Bodies
@@ -252,6 +287,31 @@ std::optional<std::string> find_intersecting_body_for_extrude(
       continue;
     }
     if (shapes_intersect_with_volume(body.shape, candidate)) {
+      return body.id;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> find_touching_body_for_extrude(
+    const DocumentState& document,
+    const ExtrudeFeatureParameters& parameters) {
+  TopoDS_Shape candidate;
+  try {
+    candidate = build_extrude_shape(parameters);
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+  if (candidate.IsNull()) {
+    return std::nullopt;
+  }
+
+  const CompiledBodies compiled = compile_bodies(document);
+  for (const auto& body : compiled.bodies) {
+    if (body.shape.IsNull()) {
+      continue;
+    }
+    if (shapes_touch_without_volume(body.shape, candidate)) {
       return body.id;
     }
   }
@@ -511,12 +571,10 @@ void normalize_extrude_parameters(const DocumentState& document,
   if (params.operation.empty()) {
     params.operation = params.mode.empty() ? "new_body" : params.mode;
   }
-  if (params.operation != "auto") {
-    if (params.operation == "join" && !params.target_body_id.has_value()) {
-      params.mode = "new_body";
-    } else {
-      params.mode = params.operation;
-    }
+  if (params.operation == "join" && !params.target_body_id.has_value()) {
+    params.mode = "new_body";
+  } else {
+    params.mode = params.operation;
   }
 
   if (params.extent_mode != "one_side" && params.extent_mode != "symmetric" &&
@@ -541,17 +599,6 @@ void normalize_extrude_parameters(const DocumentState& document,
     params.depth = (params.depth < 0.0 ? -1.0 : 1.0) * params.side1.distance;
   }
 
-  if (params.operation == "auto") {
-    params.mode = "new_body";
-    const auto intersected = find_intersecting_body_for_extrude(document, params);
-    if (intersected.has_value()) {
-      params.mode = "cut";
-      params.target_body_id = intersected;
-    } else if (params.target_body_id.has_value() ||
-               params.profile_id.rfind("face:", 0) == 0) {
-      params.mode = "join";
-    }
-  }
 }
 
 std::vector<SketchProfilePoint> sample_circle_profile_points(
@@ -827,14 +874,46 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
 }
 
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {
-  if (parameters.operation == "auto") {
-    return;
+  if (parameters.operation.empty()) {
+    parameters.operation =
+        parameters.mode.empty() ? std::string("new_body") : parameters.mode;
   }
   if (parameters.operation == "join" && !parameters.target_body_id.has_value()) {
     parameters.mode = "new_body";
     return;
   }
   parameters.mode = parameters.operation;
+}
+
+void apply_automatic_extrude_mode(const DocumentState& document,
+                                  ExtrudeFeatureParameters& parameters,
+                                  bool grouped_touching_profiles) {
+  parameters.operation = "new_body";
+  parameters.mode = "new_body";
+  parameters.target_body_id = std::nullopt;
+
+  if (const auto touching =
+          find_touching_body_for_extrude(document, parameters);
+      touching.has_value()) {
+    parameters.operation = "join";
+    parameters.mode = "join";
+    parameters.target_body_id = touching;
+    return;
+  }
+
+  if (const auto intersected =
+          find_intersecting_body_for_extrude(document, parameters);
+      intersected.has_value()) {
+    parameters.operation = "cut";
+    parameters.mode = "cut";
+    parameters.target_body_id = intersected;
+    return;
+  }
+
+  if (grouped_touching_profiles) {
+    parameters.operation = "join";
+    parameters.mode = "new_body";
+  }
 }
 
 std::optional<LoftSectionParameters> make_loft_section_for_profile(
@@ -4242,11 +4321,12 @@ DocumentState DocumentManager::extrude_profiles(
     selected_profiles.push_back(*profile_it);
   }
 
+  const bool automatic_mode = mode.empty();
   std::vector<std::vector<SketchProfileRegion>> profile_groups;
   if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
       (mode == "join" && target_body_id.has_value())) {
     profile_groups.push_back(selected_profiles);
-  } else if (mode == "join") {
+  } else if (automatic_mode || mode == "join") {
     profile_groups = group_touching_profiles(selected_profiles);
   } else {
     for (const auto& profile : selected_profiles) {
@@ -4268,32 +4348,22 @@ DocumentState DocumentManager::extrude_profiles(
       preserve_extrude_source_geometry(*extrude_parameters, source);
     }
     extrude_parameters->depth = depth;
-    const bool split_join_without_target =
-        mode == "join" && !target_body_id.has_value();
-    extrude_parameters->mode = split_join_without_target ? "new_body" : mode;
-    if (extrude_parameters->operation == "new_body" &&
-        mode != "new_body") {
-      extrude_parameters->operation = mode;
-    }
     extrude_parameters->target_body_id = target_body_id;
-    normalize_extrude_operation_mode(extrude_parameters.value());
-    normalize_extrude_parameters(*document_, extrude_parameters.value());
-
-    // Auto-cut detection (contextual modeling): when the user invokes a
-    // default new_body extrude on a profile whose swept volume overlaps an
-    // existing body, silently promote the feature to a cut against that
-    // body. Explicit modes (the user picked join/cut) are honored as-is.
-    if (extrude_parameters->operation != "auto" &&
-        extrude_parameters->mode == "new_body" &&
-        !extrude_parameters->target_body_id.has_value()) {
-      const auto intersected =
-          find_intersecting_body_for_extrude(*document_,
-                                             extrude_parameters.value());
-      if (intersected.has_value()) {
-        extrude_parameters->mode = "cut";
-        extrude_parameters->target_body_id = intersected;
+    if (automatic_mode) {
+      apply_automatic_extrude_mode(*document_,
+                                   extrude_parameters.value(),
+                                   group.size() > 1);
+    } else {
+      const bool split_join_without_target =
+          mode == "join" && !target_body_id.has_value();
+      extrude_parameters->mode = split_join_without_target ? "new_body" : mode;
+      if (extrude_parameters->operation == "new_body" &&
+          mode != "new_body") {
+        extrude_parameters->operation = mode;
       }
+      normalize_extrude_operation_mode(extrude_parameters.value());
     }
+    normalize_extrude_parameters(*document_, extrude_parameters.value());
     extrude_parameter_groups.push_back(extrude_parameters.value());
   }
 
@@ -4436,7 +4506,10 @@ DocumentState DocumentManager::extrude_open_entities(
   extrude_parameters.additional_inner_loops.clear();
   extrude_parameters.depth = depth;
   extrude_parameters.mode = mode;
-  if (extrude_parameters.operation == "new_body" && mode != "new_body") {
+  if (mode.empty()) {
+    extrude_parameters.mode = "new_body";
+    extrude_parameters.operation = "new_body";
+  } else if (extrude_parameters.operation == "new_body" && mode != "new_body") {
     extrude_parameters.operation = mode;
   }
   extrude_parameters.target_body_id = target_body_id;
@@ -4509,22 +4582,16 @@ DocumentState DocumentManager::extrude_face(
   }
   extrude_parameters.depth = depth;
   extrude_parameters.mode = mode;
-  if (extrude_parameters.operation == "new_body" && mode != "new_body") {
-    extrude_parameters.operation = mode;
-  }
   extrude_parameters.target_body_id = target_body_id;
-  normalize_extrude_parameters(*document_, extrude_parameters);
-
-  if (extrude_parameters.operation != "auto" &&
-      extrude_parameters.mode == "new_body" &&
-      !extrude_parameters.target_body_id.has_value()) {
-    const auto intersected =
-        find_intersecting_body_for_extrude(*document_, extrude_parameters);
-    if (intersected.has_value()) {
-      extrude_parameters.mode = "cut";
-      extrude_parameters.target_body_id = intersected;
+  if (mode.empty()) {
+    apply_automatic_extrude_mode(*document_, extrude_parameters, false);
+  } else {
+    if (extrude_parameters.operation == "new_body" && mode != "new_body") {
+      extrude_parameters.operation = mode;
     }
+    normalize_extrude_operation_mode(extrude_parameters);
   }
+  normalize_extrude_parameters(*document_, extrude_parameters);
 
   push_undo_state();
   clear_redo_stack();

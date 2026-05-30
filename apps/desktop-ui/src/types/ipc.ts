@@ -1362,7 +1362,7 @@ export interface SelectSketchProfileCommand {
 }
 
 export type ExtrudeMode = "new_body" | "join" | "cut" | "intersect";
-export type ExtrudeOperation = "auto" | ExtrudeMode;
+export type ExtrudeOperation = ExtrudeMode;
 export type ExtrudeExtentMode = "one_side" | "symmetric" | "two_sides";
 export type ExtrudeExtentType =
   | "distance"

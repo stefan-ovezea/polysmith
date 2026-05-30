@@ -1142,7 +1142,7 @@ export function makeSelectSketchProfileCommand(
 export function makeExtrudeProfileCommand(
   profileIds: string | readonly string[],
   depth: number,
-  mode: ExtrudeMode = "new_body",
+  mode: ExtrudeMode | null = null,
   targetBodyId: string | null = null,
   parameters: Partial<ExtrudeAdvancedParameters> | null = null,
 ): CoreCommand {
@@ -1154,7 +1154,7 @@ export function makeExtrudeProfileCommand(
       profile_id: ids[0],
       profile_ids: ids,
       depth,
-      mode,
+      ...(mode ? { mode } : {}),
       ...(targetBodyId ? { target_body_id: targetBodyId } : {}),
       ...(parameters ? { parameters } : {}),
     },
@@ -1164,7 +1164,7 @@ export function makeExtrudeProfileCommand(
 export function makeExtrudeOpenEntitiesCommand(
   entityIds: readonly string[],
   depth: number,
-  mode: ExtrudeMode = "new_body",
+  mode: ExtrudeMode | null = null,
   targetBodyId: string | null = null,
   parameters: Partial<ExtrudeAdvancedParameters> | null = null,
 ): CoreCommand {
@@ -1174,7 +1174,7 @@ export function makeExtrudeOpenEntitiesCommand(
     payload: {
       open_entity_ids: [...entityIds],
       depth,
-      mode,
+      ...(mode ? { mode } : {}),
       ...(targetBodyId ? { target_body_id: targetBodyId } : {}),
       ...(parameters ? { parameters } : {}),
     },
@@ -1184,7 +1184,7 @@ export function makeExtrudeOpenEntitiesCommand(
 export function makeExtrudeFaceCommand(
   faceId: string,
   depth: number,
-  mode: ExtrudeMode = "new_body",
+  mode: ExtrudeMode | null = null,
   targetBodyId: string | null = null,
   parameters: Partial<ExtrudeAdvancedParameters> | null = null,
 ): CoreCommand {
@@ -1194,7 +1194,7 @@ export function makeExtrudeFaceCommand(
     payload: {
       face_id: faceId,
       depth,
-      mode,
+      ...(mode ? { mode } : {}),
       ...(targetBodyId ? { target_body_id: targetBodyId } : {}),
       ...(parameters ? { parameters } : {}),
     },
