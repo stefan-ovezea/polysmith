@@ -259,11 +259,25 @@ export function ExtrudePreviewPanel({
       distance: advanced.side1.distance,
     } satisfies ExtrudeSideParameters);
   const activeMode = effectiveMode(advanced.operation, mode);
-  const needsTarget = activeMode !== "new_body";
+  const canJoinSelectedProfiles = selectedProfileCount > 1;
+  const needsTarget =
+    activeMode !== "new_body" &&
+    (activeMode !== "join" || canCombineWithExistingBody);
   const hasPreviewError = Boolean(previewError);
   const problemInputClass = hasPreviewError
     ? "cad-input cad-input-error mt-2"
     : "cad-input mt-2";
+
+  function canUseOperation(operation: ExtrudeOperation) {
+    const nextMode = effectiveMode(operation, mode);
+    if (nextMode === "new_body") {
+      return true;
+    }
+    if (nextMode === "join") {
+      return canCombineWithExistingBody || canJoinSelectedProfiles;
+    }
+    return canCombineWithExistingBody;
+  }
 
   function renderExtentTypeSelect(
     sideKey: "side1" | "side2",
@@ -427,7 +441,7 @@ export function ExtrudePreviewPanel({
               onChange={(value) => {
                 const nextOperation = value as ExtrudeOperation;
                 const nextMode = effectiveMode(nextOperation, mode);
-                if (nextMode !== "new_body" && !canCombineWithExistingBody) {
+                if (!canUseOperation(nextOperation)) {
                   return;
                 }
                 setMode(nextMode);
