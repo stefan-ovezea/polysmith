@@ -260,7 +260,6 @@ interface AppHeaderProps {
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
-  onExportDocumentStl: () => Promise<void>;
   onSaveDocument: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
   onUndo: () => Promise<void>;
@@ -382,7 +381,6 @@ export function AppHeader({
   onStart,
   onCreateDocument,
   onExportDocument,
-  onExportDocumentStl,
   onSaveDocument,
   onLoadDocument,
   onUndo,
@@ -599,10 +597,6 @@ export function AppHeader({
               {
                 label: t("header.exportStep"),
                 onSelect: () => void onExportDocument(),
-              },
-              {
-                label: t("header.exportStl"),
-                onSelect: () => void onExportDocumentStl(),
               },
             ]}
           />

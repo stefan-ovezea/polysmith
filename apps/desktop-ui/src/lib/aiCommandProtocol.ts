@@ -40,6 +40,9 @@ const commandPayloadSchemas = {
   get_viewport_state: emptyPayload,
   export_document: z.object({ file_path: stringField }).strict(),
   export_document_stl: z.object({ file_path: stringField }).strict(),
+  export_body_stl: z
+    .object({ file_path: stringField, body_id: stringField })
+    .strict(),
   save_document: z.object({ file_path: stringField }).strict(),
   load_document: z.object({ file_path: stringField }).strict(),
   project_face_into_sketch: z.object({ face_id: stringField }).strict(),
@@ -655,6 +658,14 @@ export function validateAiCommandBatchForState(
       if (!knownBodyIds.has(command.payload.target_body_id)) {
         throw new Error(
           `create_move references unknown body "${command.payload.target_body_id}". Use a body id from viewport state.`,
+        );
+      }
+    }
+
+    if (command.type === "export_body_stl") {
+      if (!knownBodyIds.has(command.payload.body_id)) {
+        throw new Error(
+          `export_body_stl references unknown body "${command.payload.body_id}". Use a body id from viewport state.`,
         );
       }
     }

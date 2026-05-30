@@ -91,8 +91,8 @@ struct ExtrudeFeatureParameters {
   // "cut":  subtracts the extrude from the same target choice as "join".
   // "intersect": keeps only the volume common to the target and extrusion.
   std::string mode = "new_body";
-  // "auto", "new_body", "join", "cut", or "intersect". `mode` stores the
-  // current effective operation so old consumers keep working.
+  // "new_body", "join", "cut", or "intersect". `mode` stores the current
+  // effective operation so old consumers keep working.
   std::string operation = "new_body";
   // "replace_target" or "new_body" for intersect mode.
   std::string intersect_result = "replace_target";

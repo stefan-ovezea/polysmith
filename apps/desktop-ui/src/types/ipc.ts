@@ -352,6 +352,15 @@ export interface ExportDocumentStlCommand {
   };
 }
 
+export interface ExportBodyStlCommand {
+  id: string;
+  type: "export_body_stl";
+  payload: {
+    file_path: string;
+    body_id: string;
+  };
+}
+
 export interface SaveDocumentCommand {
   id: string;
   type: "save_document";
@@ -1353,7 +1362,7 @@ export interface SelectSketchProfileCommand {
 }
 
 export type ExtrudeMode = "new_body" | "join" | "cut" | "intersect";
-export type ExtrudeOperation = "auto" | ExtrudeMode;
+export type ExtrudeOperation = ExtrudeMode;
 export type ExtrudeExtentMode = "one_side" | "symmetric" | "two_sides";
 export type ExtrudeExtentType =
   | "distance"
@@ -1599,6 +1608,7 @@ export type CoreCommand =
   | GetViewportStateCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
+  | ExportBodyStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
   | ProjectFaceIntoSketchCommand

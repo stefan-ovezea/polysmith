@@ -18,4 +18,8 @@ ExportResult export_document_as_step(const DocumentState& document,
 ExportResult export_document_as_stl(const DocumentState& document,
                                     const std::string& file_path);
 
+ExportResult export_body_as_stl(const DocumentState& document,
+                                const std::string& file_path,
+                                const std::string& body_id);
+
 }  // namespace polysmith::core

@@ -141,7 +141,8 @@ std::optional<ExtrudeFeatureParameters> read_optional_extrude_parameters(
   params.depth = depth;
   params.mode = mode;
   params.operation =
-      read_optional_string(parameter_payload, "operation").value_or(mode);
+      read_optional_string(parameter_payload, "operation")
+          .value_or(mode.empty() ? "new_body" : mode);
   params.target_body_id = target_body_id;
   params.extent_mode =
       read_optional_string(parameter_payload, "extent_mode").value_or("one_side");
@@ -448,6 +449,22 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   if (command.type == "export_document_stl") {
     const auto export_result = document_manager().export_document_as_stl(
         read_string(command.payload, "file_path"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_exported_event(
+            command.id,
+            polysmith::protocol::json{
+                {"file_path", export_result.file_path},
+                {"format", export_result.format},
+                {"exported_feature_count", export_result.exported_feature_count},
+            }));
+    return;
+  }
+
+  if (command.type == "export_body_stl") {
+    const auto export_result = document_manager().export_body_as_stl(
+        read_string(command.payload, "file_path"),
+        read_string(command.payload, "body_id"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_exported_event(
@@ -1555,11 +1572,11 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   }
 
   if (command.type == "extrude_profile") {
-    // Optional `mode` payload field selects boolean composition behavior;
-    // defaults to "new_body" when absent so existing UI flows keep working.
+    // Optional `mode` payload field selects boolean composition behavior.
+    // When absent, the core picks Join / Cut / New Body from geometry.
     // Optional `target_body_id` picks which existing body cut/join targets;
     // when absent the body compiler falls back to the most recent body.
-    std::string mode = "new_body";
+    std::string mode;
     if (command.payload.contains("mode") &&
         command.payload.at("mode").is_string()) {
       mode = command.payload.at("mode").get<std::string>();
@@ -1615,7 +1632,7 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   }
 
   if (command.type == "extrude_face") {
-    std::string mode = "new_body";
+    std::string mode;
     if (command.payload.contains("mode") &&
         command.payload.at("mode").is_string()) {
       mode = command.payload.at("mode").get<std::string>();

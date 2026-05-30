@@ -147,7 +147,7 @@ const documentStateSchema = z.object({
             .enum(["new_body", "join", "cut", "intersect"])
             .default("new_body"),
           operation: z
-            .enum(["auto", "new_body", "join", "cut", "intersect"])
+            .enum(["new_body", "join", "cut", "intersect"])
             .default("new_body"),
           intersect_result: z
             .enum(["replace_target", "new_body"])

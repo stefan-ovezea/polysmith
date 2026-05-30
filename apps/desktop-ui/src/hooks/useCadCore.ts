@@ -37,6 +37,7 @@ import {
   makeAddSketchRectangleCommand,
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
+  makeExportBodyStlCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
   makeLoadDocumentCommand,
@@ -283,6 +284,9 @@ export function useCadCore() {
     },
     exportDocumentStl: async (filePath: string) => {
       await sendCoreCommand(makeExportDocumentStlCommand(filePath));
+    },
+    exportBodyStl: async (filePath: string, bodyId: string) => {
+      await sendCoreCommand(makeExportBodyStlCommand(filePath, bodyId));
     },
     saveDocument: async (filePath: string) => {
       await sendCoreCommand(makeSaveDocumentCommand(filePath));
@@ -1050,7 +1054,7 @@ export function useCadCore() {
     extrudeProfile: async (
       profileIds: string | readonly string[],
       depth: number,
-      mode: ExtrudeMode = "new_body",
+      mode: ExtrudeMode | null = null,
       targetBodyId: string | null = null,
       parameters: Partial<ExtrudeAdvancedParameters> | null = null,
     ) => {
@@ -1069,7 +1073,7 @@ export function useCadCore() {
     extrudeOpenEntities: async (
       entityIds: readonly string[],
       depth: number,
-      mode: ExtrudeMode = "new_body",
+      mode: ExtrudeMode | null = null,
       targetBodyId: string | null = null,
       parameters: Partial<ExtrudeAdvancedParameters> | null = null,
     ) => {
@@ -1088,7 +1092,7 @@ export function useCadCore() {
     extrudeFace: async (
       faceId: string,
       depth: number,
-      mode: ExtrudeMode = "new_body",
+      mode: ExtrudeMode | null = null,
       targetBodyId: string | null = null,
       parameters: Partial<ExtrudeAdvancedParameters> | null = null,
     ) => {

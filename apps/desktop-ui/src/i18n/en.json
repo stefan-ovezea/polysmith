@@ -21,6 +21,7 @@
     "edit": "Edit",
     "empty": "Empty",
     "entries": "{{count}} entries",
+    "exportAsMesh": "Export as Mesh",
     "hide": "Hide",
     "move": "Move",
     "needsAttention": "Needs attention",
@@ -214,9 +215,8 @@
       "edgePicker": "{{count}} edge{{plural}} · click an edge to add / remove"
     },
     "extrude": {
-      "auto": "Auto",
       "center": "Center",
-      "combineNeedsBody": "Join & Cut need an existing body to combine with.",
+      "combineNeedsBody": "Cut and Intersect need an existing body. Join can combine selected touching profiles.",
       "cut": "Cut",
       "distance": "Distance",
       "extent": "Extent",
@@ -632,6 +632,7 @@
   },
   "dialogs": {
     "exportStepTitle": "Export STEP",
+    "exportMeshTitle": "Export Mesh",
     "exportStlTitle": "Export STL",
     "openDocumentTitle": "Open PolySmith document",
     "polysmithDocumentType": "PolySmith document",

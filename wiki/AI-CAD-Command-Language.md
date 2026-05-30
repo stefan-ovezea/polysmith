@@ -281,7 +281,7 @@ Response to `save_document`.
 
 ### `document_exported`
 
-Response to `export_document` and `export_document_stl`.
+Response to `export_document`, `export_document_stl`, and `export_body_stl`.
 
 ```ts
 {
@@ -442,6 +442,21 @@ Payload:
 ```ts
 {
   file_path: string;
+}
+```
+
+Returns `document_exported` with `format: "stl"`.
+
+#### `export_body_stl`
+
+Exports one compiled body as binary STL. Use this for user-facing mesh export.
+
+Payload:
+
+```ts
+{
+  file_path: string;
+  body_id: string;
 }
 ```
 
@@ -1890,7 +1905,7 @@ type ExtrudeSideParameters = {
   mode?: "new_body" | "join" | "cut" | "intersect";
   target_body_id?: string;
   parameters?: {
-    operation?: "auto" | "new_body" | "join" | "cut" | "intersect";
+    operation?: "new_body" | "join" | "cut" | "intersect";
     extent_mode?: "one_side" | "symmetric" | "two_sides";
     side1?: ExtrudeSideParameters;
     side2?: ExtrudeSideParameters;
@@ -1905,8 +1920,16 @@ Rules:
 - Prefer `profile_ids` even for one profile.
 - `profile_id` is kept for legacy single-profile callers.
 - Multiple profiles must belong to the same sketch plane.
-- `mode` defaults to `new_body`; `parameters.operation: "auto"` lets the
-  core infer New Body / Join / Cut while previewing.
+- With `mode: "new_body"`, each selected profile creates its own body.
+- With untargeted `mode: "join"`, touching profiles are grouped into one body
+  while separated profile groups become separate bodies. The feature keeps
+  `operation: "join"` for editing, but compiles as `mode: "new_body"` because
+  there is no existing target body.
+- With `mode: "cut"`, `mode: "intersect"`, or a targeted `join`, the selected
+  profiles stay in one feature so the boolean target remains explicit.
+- If `mode` is omitted, the core chooses automatically: Join when the
+  extrusion touches an existing body or selected profiles touch each other,
+  Cut when it overlaps an existing body, otherwise New Body.
 - `open_entity_ids` requires `parameters.thin.enabled = true` and currently
   accepts connected sketch line / arc chains.
 - For `join` and `cut`, `target_body_id` is optional. If omitted, the core

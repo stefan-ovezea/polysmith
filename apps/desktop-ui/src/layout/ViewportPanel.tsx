@@ -482,6 +482,7 @@ interface ViewportPanelProps {
     bodyId: string,
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
+  onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
   hiddenFeatureIds?: ReadonlySet<string>;
   hiddenSketchPlaneIds?: ReadonlySet<string>;
@@ -1233,6 +1234,7 @@ export function ViewportPanel({
   onMoveGizmoChange,
   onMoveBody,
   onCopyBody,
+  onExportBodyMesh,
   onUnlinkBodyCopy,
   hiddenFeatureIds,
   hiddenSketchPlaneIds,
@@ -1450,6 +1452,7 @@ const currentGridSpacingRef = useRef(10);
   const moveGizmoChangeRef = useRef(onMoveGizmoChange);
   const moveBodyRef = useRef(onMoveBody);
   const copyBodyRef = useRef(onCopyBody);
+  const exportBodyMeshRef = useRef(onExportBodyMesh);
   const unlinkBodyCopyRef = useRef(onUnlinkBodyCopy);
   const pendingMoveGizmoParametersRef = useRef<MoveFeatureParameters | null>(
     null,
@@ -5568,6 +5571,7 @@ const currentGridSpacingRef = useRef(10);
     selectFaceRef.current = onSelectFace;
     moveBodyRef.current = onMoveBody;
     copyBodyRef.current = onCopyBody;
+    exportBodyMeshRef.current = onExportBodyMesh;
     unlinkBodyCopyRef.current = onUnlinkBodyCopy;
     selectEdgeRef.current = onSelectEdge;
     selectVertexRef.current = onSelectVertex;
@@ -5611,6 +5615,7 @@ const currentGridSpacingRef = useRef(10);
     moveGizmoChangeRef.current = onMoveGizmoChange;
     moveBodyRef.current = onMoveBody;
     copyBodyRef.current = onCopyBody;
+    exportBodyMeshRef.current = onExportBodyMesh;
     unlinkBodyCopyRef.current = onUnlinkBodyCopy;
   }, [
     onSelectPrimitive,
@@ -5651,6 +5656,7 @@ const currentGridSpacingRef = useRef(10);
     onMoveGizmoChange,
     onMoveBody,
     onCopyBody,
+    onExportBodyMesh,
     onUnlinkBodyCopy,
   ]);
 
@@ -11573,6 +11579,15 @@ const currentGridSpacingRef = useRef(10);
     await copyBodyRef.current?.(bodyId, copyMode);
   }
 
+  async function handleExportBodyMeshFromContextMenu() {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await exportBodyMeshRef.current?.(bodyId);
+  }
+
   async function handleUnlinkBodyCopyFromContextMenu() {
     const bodyId = contextMenu?.bodyId;
     if (!bodyId) {
@@ -12181,6 +12196,13 @@ const currentGridSpacingRef = useRef(10);
                         {translate("common.unlink")}
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                      onClick={handleExportBodyMeshFromContextMenu}
+                    >
+                      {translate("common.exportAsMesh")}
+                    </button>
                   </>
                 ) : null}
                 {contextMenu.referenceId || contextMenu.faceId ? (
