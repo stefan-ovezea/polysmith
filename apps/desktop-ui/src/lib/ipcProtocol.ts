@@ -929,6 +929,18 @@ export function makeSetSketchLineConstraintCommand(
   };
 }
 
+export function makeClearSketchLineConstraintsCommand(
+  lineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "clear_sketch_line_constraints",
+    payload: {
+      line_id: lineId,
+    },
+  };
+}
+
 export function makeSetSketchEqualLengthConstraintCommand(
   lineId: string,
   otherLineId: string | null,

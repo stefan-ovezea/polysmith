@@ -1391,16 +1391,18 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
     const std::string& kind,
     const std::string& label,
     bool is_selected,
-    const std::optional<std::string>& related_entity_id = std::nullopt) {
+    const std::optional<std::string>& related_entity_id = std::nullopt,
+    double badge_offset_multiplier = 1.0) {
   const double dx = line.end_x - line.start_x;
   const double dy = line.end_y - line.start_y;
   const double length = std::sqrt(dx * dx + dy * dy);
   const double normal_x = length > 0.0 ? -dy / length : 0.0;
   const double normal_y = length > 0.0 ? dx / length : 1.0;
+  const double offset = kConstraintBadgeOffset * badge_offset_multiplier;
   const WorldPoint position = to_world_point(
       plane_id,
-      (line.start_x + line.end_x) / 2.0 + normal_x * kConstraintBadgeOffset,
-      (line.start_y + line.end_y) / 2.0 + normal_y * kConstraintBadgeOffset);
+      (line.start_x + line.end_x) / 2.0 + normal_x * offset,
+      (line.start_y + line.end_y) / 2.0 + normal_y * offset);
 
   return ViewportSketchConstraintPrimitive{
       .constraint_id =
@@ -3396,18 +3398,15 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
         return view->selected_sketch_point_id.has_value() &&
                view->selected_sketch_point_id.value() == id;
       };
-      std::unordered_set<std::string> relation_constraint_line_ids;
+      // Track which lines carry at least one relation badge so we
+      // can offset the H/V badge to avoid overlap.
+      std::unordered_set<std::string> lines_with_relation_badge;
       if (view->active_sketch_feature_id.has_value() &&
           view->active_sketch_feature_id.value() == feature.id) {
         for (const auto& relation : feature.sketch_parameters->line_relations) {
-          if (relation.kind == "equal_length" ||
-              relation.kind == "perpendicular" ||
-              relation.kind == "parallel" ||
-              relation.kind == "tangent_line_circle") {
-            relation_constraint_line_ids.insert(relation.first_line_id);
-            if (!relation.second_line_id.empty()) {
-              relation_constraint_line_ids.insert(relation.second_line_id);
-            }
+          lines_with_relation_badge.insert(relation.first_line_id);
+          if (!relation.second_line_id.empty()) {
+            lines_with_relation_badge.insert(relation.second_line_id);
           }
         }
       }
@@ -3458,15 +3457,18 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
                 is_selected_angle_dim));
           }
 
-          if (line.constraint.has_value() &&
-              relation_constraint_line_ids.find(line.id) ==
-                  relation_constraint_line_ids.end()) {
+          if (line.constraint.has_value()) {
+            const bool has_relation =
+                lines_with_relation_badge.find(line.id) !=
+                lines_with_relation_badge.end();
             sketch_constraints.push_back(make_line_constraint_primitive(
                 line,
                 feature.sketch_parameters->plane_id,
                 line.constraint.value(),
                 line.constraint.value() == "horizontal" ? "H" : "V",
-                is_selected_sketch_entity));
+                is_selected_sketch_entity,
+                /*related_entity_id=*/std::nullopt,
+                /*badge_offset_multiplier=*/has_relation ? 3.0 : 1.0));
           }
         }
       }

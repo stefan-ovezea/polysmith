@@ -2,6 +2,31 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-05-30
+
+### Constraint system fixes — atomic commit, badge stacking, clear-all, stay-armed
+
+See `constraints` branch.
+
+**Fixed:**
+- **`clear_sketch_line_constraints` IPC command** — clears H/V + equal-length + perpendicular + parallel + tangent + midpoint anchors + point-line anchors in one call
+- **Badge stacking** — H/V badges now render alongside relation badges (3× offset when line has relations) instead of being suppressed
+- **Atomic perpendicular/parallel commit** — both setters save/restore full line state on enforcement failure; `drive_line_perpendicular_to_reference` and `drive_line_parallel_to_reference` skip silently (instead of throwing) when the driven line still carries H/V, so the reference line keeps its axis constraint
+- **Stay-armed** — clear, coincident, equal-length, perpendicular, and parallel buttons all stay armed after a successful pick so the user can apply multiple constraints without re-clicking
+- **Coincident** — now accepts all point kinds (was `endpoint`-only); stays armed
+- **"/" (on‑line anchor) badge** — `clear_sketch_line_constraints` now removes `point_line_anchors` and `midpoint_anchors` referencing the cleared line
+
+**Fixed — inference engine start‑point auto‑merge removed:**
+`run_inference_on_new_line` no longer checks the start point for coincident proximity. The start point is a deliberate user placement and must not be auto‑merged with nearby geometry — merging it could pull the entire line onto an existing entity, making it invisible and creating a phantom point‑sink that collects future constraints. Only the *endpoint* of a newly drawn line is subject to coincident inference.
+
+**Safety net — orphan anchor cleanup in refresh:**
+`refresh_sketch_derived_state` now removes `midpoint_anchors` and `point_line_anchors` whose host line no longer exists, preventing stale viewport sprites after line deletion.
+
+**Selection improvements needed (from testing):**
+- Click-select on overlapping geometry is ambiguous — no way to cycle through stacked entities under the cursor
+- Multi-select (`Ctrl+click`) not implemented — only single-entity selection
+- Right-click context menu on selected entities has only "Delete" — missing common CAD operations (toggle construction, rename, isolate, etc.)
+
 ## 2026-05-29
 
 ### Endpoint drag — constraint investigation & development pause

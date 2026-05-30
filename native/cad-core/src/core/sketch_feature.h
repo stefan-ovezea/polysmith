@@ -42,6 +42,12 @@ void set_sketch_parallel_constraint(
     FeatureEntry& feature,
     const std::string& line_id,
     const std::optional<std::string>& other_line_id);
+// Clear all constraints on a sketch line: both the inline H/V
+// constraint and every line‑line relation (equal‑length,
+// perpendicular, parallel, tangent) that involves this line.
+// Dimensions and anchors are left untouched.
+void clear_sketch_line_constraints(FeatureEntry& feature,
+                                   const std::string& line_id);
 void set_sketch_coincident_constraint(
     FeatureEntry& feature,
     const std::string& point_id,
@@ -83,7 +89,8 @@ void add_sketch_line(FeatureEntry& feature,
                      double start_y,
                      double end_x,
                      double end_y,
-                     bool is_construction = false);
+                     bool is_construction = false,
+                     bool snap_start = true);
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,

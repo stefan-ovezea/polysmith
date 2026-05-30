@@ -1151,6 +1151,14 @@ export interface SetSketchLineConstraintCommand {
   };
 }
 
+export interface ClearSketchLineConstraintsCommand {
+  id: string;
+  type: "clear_sketch_line_constraints";
+  payload: {
+    line_id: string;
+  };
+}
+
 export interface SetSketchEqualLengthConstraintCommand {
   id: string;
   type: "set_sketch_equal_length_constraint";
@@ -1680,6 +1688,7 @@ export type CoreCommand =
   | UpdateSketchLineCommand
   | UpdateSketchPointCommand
   | SetSketchLineConstraintCommand
+  | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
   | SetSketchPerpendicularConstraintCommand
   | SetSketchTangentConstraintCommand

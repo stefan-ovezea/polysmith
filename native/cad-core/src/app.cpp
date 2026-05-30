@@ -1210,6 +1210,16 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "clear_sketch_line_constraints") {
+    const auto document = document_manager().clear_sketch_line_constraints(
+        read_string(command.payload, "line_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "set_sketch_equal_length_constraint") {
     const std::string other_line_id =
         read_string(command.payload, "other_line_id");

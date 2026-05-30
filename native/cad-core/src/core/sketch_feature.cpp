@@ -940,29 +940,32 @@ void restore_fixed_line_endpoints(SketchFeatureParameters& parameters,
 
 void snap_line_endpoints_to_coincident_geometry(
     SketchFeatureParameters& parameters,
-    SketchLine& line) {
-  const auto snapped_start =
-      find_coincident_endpoint(parameters, line.id, line.start_x, line.start_y);
-  if (snapped_start.has_value() &&
-      !point_is_fixed(parameters, line.start_point_id)) {
-    const bool can_snap_start =
-        !((line.constraint == "horizontal" &&
-           point_is_fixed(parameters, line.end_point_id) &&
-           !nearly_equal(std::get<2>(snapped_start.value()), line.end_y)) ||
-          (line.constraint == "vertical" &&
-           point_is_fixed(parameters, line.end_point_id) &&
-           !nearly_equal(std::get<1>(snapped_start.value()), line.end_x)));
-    if (can_snap_start) {
-      const std::string& snapped_point_id = std::get<0>(snapped_start.value());
-      const std::string current_point_id = line.start_point_id;
-      if (!current_point_id.empty() && current_point_id != snapped_point_id) {
-        replace_point_id_references(parameters, current_point_id, snapped_point_id);
+    SketchLine& line,
+    bool snap_start = true) {
+  if (snap_start) {
+    const auto snapped_start =
+        find_coincident_endpoint(parameters, line.id, line.start_x, line.start_y);
+    if (snapped_start.has_value() &&
+        !point_is_fixed(parameters, line.start_point_id)) {
+      const bool can_snap_start =
+          !((line.constraint == "horizontal" &&
+             point_is_fixed(parameters, line.end_point_id) &&
+             !nearly_equal(std::get<2>(snapped_start.value()), line.end_y)) ||
+            (line.constraint == "vertical" &&
+             point_is_fixed(parameters, line.end_point_id) &&
+             !nearly_equal(std::get<1>(snapped_start.value()), line.end_x)));
+      if (can_snap_start) {
+        const std::string& snapped_point_id = std::get<0>(snapped_start.value());
+        const std::string current_point_id = line.start_point_id;
+        if (!current_point_id.empty() && current_point_id != snapped_point_id) {
+          replace_point_id_references(parameters, current_point_id, snapped_point_id);
+        }
+        line.start_point_id = snapped_point_id;
+        set_endpoint_with_constraint(line,
+                                     true,
+                                     std::get<1>(snapped_start.value()),
+                                     std::get<2>(snapped_start.value()));
       }
-      line.start_point_id = snapped_point_id;
-      set_endpoint_with_constraint(line,
-                                   true,
-                                   std::get<1>(snapped_start.value()),
-                                   std::get<2>(snapped_start.value()));
     }
   }
 
@@ -1305,9 +1308,11 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
 void drive_line_perpendicular_to_reference(SketchLine& driven_line,
                                            const SketchLine& reference_line,
                                            const SketchFeatureParameters& parameters) {
+  // Skip silently when the driven line still carries an H/V
+  // constraint — its angle is already fully determined by the axis
+  // constraint, so there is nothing for the relation to drive.
   if (driven_line.constraint.has_value()) {
-    throw std::runtime_error(
-        "Cannot drive a perpendicular relation on a line that still has an axis constraint");
+    return;
   }
 
   const double reference_dx = reference_line.end_x - reference_line.start_x;
@@ -1353,9 +1358,11 @@ void drive_line_perpendicular_to_reference(SketchLine& driven_line,
 void drive_line_parallel_to_reference(SketchLine& driven_line,
                                       const SketchLine& reference_line,
                                       const SketchFeatureParameters& parameters) {
+  // Skip silently when the driven line still carries an H/V
+  // constraint — its angle is already fully determined by the axis
+  // constraint, so there is nothing for the relation to drive.
   if (driven_line.constraint.has_value()) {
-    throw std::runtime_error(
-        "Cannot drive a parallel relation on a line that still has an axis constraint");
+    return;
   }
 
   const double reference_dx = reference_line.end_x - reference_line.start_x;
@@ -1720,6 +1727,31 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     return;
   }
 
+  // Drop anchors whose host line has been deleted.  Anchors whose
+  // anchored point is no longer referenced by any live entity are
+  // harmless (they are a no‑op during enforcement and the point is
+  // dropped by `rebuild_sketch_points`), but cleaning them up here
+  // keeps the data model tidy and prevents stale viewport sprites.
+  auto& p = *feature.sketch_parameters;
+  p.midpoint_anchors.erase(
+      std::remove_if(p.midpoint_anchors.begin(),
+                     p.midpoint_anchors.end(),
+                     [&](const SketchMidpointAnchor& a) {
+                       return std::none_of(
+                           p.lines.begin(), p.lines.end(),
+                           [&](const SketchLine& l) { return l.id == a.line_id; });
+                     }),
+      p.midpoint_anchors.end());
+  p.point_line_anchors.erase(
+      std::remove_if(p.point_line_anchors.begin(),
+                     p.point_line_anchors.end(),
+                     [&](const SketchPointLineAnchor& a) {
+                       return std::none_of(
+                           p.lines.begin(), p.lines.end(),
+                           [&](const SketchLine& l) { return l.id == a.line_id; });
+                     }),
+      p.point_line_anchors.end());
+
   // Re-anchor midpoint-bound points to their host line's current
   // midpoint before rebuilding the points list. The cascade may
   // shift other line endpoints which `rebuild_sketch_points` then
@@ -2060,9 +2092,17 @@ void set_sketch_perpendicular_constraint(
 
   auto& other_line = require_line(parameters, other_line_id.value());
 
-  // Clear the driven line's axis constraint so the relation can
-  // reorient it. The reference line keeps whatever constraints it
-  // already has (they won't be disturbed).
+  // Save the driven line's full state so we can roll back completely
+  // if enforcement fails.
+  const auto saved_line_constraint = line.constraint;
+  const double saved_line_start_x = line.start_x;
+  const double saved_line_start_y = line.start_y;
+  const double saved_line_end_x = line.end_x;
+  const double saved_line_end_y = line.end_y;
+
+  // Clear the driven line's H/V constraint — it's incompatible with
+  // perpendicular. The reference line keeps its own constraints;
+  // enforcement will skip it silently (see drive_line_perpendicular_to_reference).
   line.constraint = std::nullopt;
 
   parameters.line_relations.push_back(SketchLineRelation{
@@ -2072,30 +2112,40 @@ void set_sketch_perpendicular_constraint(
       .second_line_id = other_line_id.value(),
   });
 
-  const double previous_start_x = line.start_x;
-  const double previous_start_y = line.start_y;
-  const double previous_end_x = line.end_x;
-  const double previous_end_y = line.end_y;
-  drive_line_perpendicular_to_reference(line, other_line, parameters);
-  snap_line_endpoints_to_coincident_geometry(parameters, line);
-  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+  try {
+    drive_line_perpendicular_to_reference(line, other_line, parameters);
+    snap_line_endpoints_to_coincident_geometry(parameters, line);
+    validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 
-  if (!points_match(previous_start_x, previous_start_y, line.start_x, line.start_y)) {
-    propagate_connected_point_move(
-        parameters, line.start_point_id, line.start_x, line.start_y);
+    if (!points_match(saved_line_start_x, saved_line_start_y,
+                      line.start_x, line.start_y)) {
+      propagate_connected_point_move(
+          parameters, line.start_point_id, line.start_x, line.start_y);
+    }
+
+    if (!points_match(saved_line_end_x, saved_line_end_y,
+                      line.end_x, line.end_y)) {
+      propagate_connected_point_move(
+          parameters, line.end_point_id, line.end_x, line.end_y);
+    }
+
+    sync_all_line_dimensions(parameters);
+    enforce_equal_length_relations(parameters, line_id);
+    enforce_perpendicular_relations(parameters, line_id);
+    enforce_parallel_relations(parameters, line_id);
+    sync_all_line_dimensions(parameters);
+    refresh_sketch_derived_state(feature);
+  } catch (...) {
+    // Roll back completely: remove the relation, restore the driven
+    // line's endpoints, and restore its original constraint.
+    remove_line_relations_for_line(parameters, "perpendicular", line_id);
+    line.start_x = saved_line_start_x;
+    line.start_y = saved_line_start_y;
+    line.end_x = saved_line_end_x;
+    line.end_y = saved_line_end_y;
+    line.constraint = saved_line_constraint;
+    throw;
   }
-
-  if (!points_match(previous_end_x, previous_end_y, line.end_x, line.end_y)) {
-    propagate_connected_point_move(
-        parameters, line.end_point_id, line.end_x, line.end_y);
-  }
-
-  sync_all_line_dimensions(parameters);
-  enforce_equal_length_relations(parameters, line_id);
-  enforce_perpendicular_relations(parameters, line_id);
-  enforce_parallel_relations(parameters, line_id);
-  sync_all_line_dimensions(parameters);
-  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_tangent_constraint(FeatureEntry& feature,
@@ -2175,9 +2225,17 @@ void set_sketch_parallel_constraint(
 
   auto& other_line = require_line(parameters, other_line_id.value());
 
-  // Clear the driven line's axis constraint so the relation can
-  // reorient it. The reference line keeps whatever constraints it
-  // already has (they won't be disturbed).
+  // Save the driven line's full state so we can roll back completely
+  // if enforcement fails.
+  const auto saved_line_constraint = line.constraint;
+  const double saved_line_start_x = line.start_x;
+  const double saved_line_start_y = line.start_y;
+  const double saved_line_end_x = line.end_x;
+  const double saved_line_end_y = line.end_y;
+
+  // Clear the driven line's H/V constraint — it's incompatible with
+  // parallel. The reference line keeps its own constraints;
+  // enforcement will skip it silently.
   line.constraint = std::nullopt;
 
   parameters.line_relations.push_back(SketchLineRelation{
@@ -2187,28 +2245,76 @@ void set_sketch_parallel_constraint(
       .second_line_id = other_line_id.value(),
   });
 
-  const double previous_start_x = line.start_x;
-  const double previous_start_y = line.start_y;
-  const double previous_end_x = line.end_x;
-  const double previous_end_y = line.end_y;
-  drive_line_parallel_to_reference(line, other_line, parameters);
-  snap_line_endpoints_to_coincident_geometry(parameters, line);
-  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+  try {
+    drive_line_parallel_to_reference(line, other_line, parameters);
+    snap_line_endpoints_to_coincident_geometry(parameters, line);
+    validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
 
-  if (!points_match(previous_start_x, previous_start_y, line.start_x, line.start_y)) {
-    propagate_connected_point_move(
-        parameters, line.start_point_id, line.start_x, line.start_y);
+    if (!points_match(saved_line_start_x, saved_line_start_y,
+                      line.start_x, line.start_y)) {
+      propagate_connected_point_move(
+          parameters, line.start_point_id, line.start_x, line.start_y);
+    }
+
+    if (!points_match(saved_line_end_x, saved_line_end_y,
+                      line.end_x, line.end_y)) {
+      propagate_connected_point_move(
+          parameters, line.end_point_id, line.end_x, line.end_y);
+    }
+
+    sync_all_line_dimensions(parameters);
+    enforce_equal_length_relations(parameters, line_id);
+    enforce_perpendicular_relations(parameters, line_id);
+    enforce_parallel_relations(parameters, line_id);
+    sync_all_line_dimensions(parameters);
+    refresh_sketch_derived_state(feature);
+  } catch (...) {
+    // Roll back completely: remove the relation, restore the driven
+    // line's endpoints, and restore its original constraint.
+    remove_line_relations_for_line(parameters, "parallel", line_id);
+    line.start_x = saved_line_start_x;
+    line.start_y = saved_line_start_y;
+    line.end_x = saved_line_end_x;
+    line.end_y = saved_line_end_y;
+    line.constraint = saved_line_constraint;
+    throw;
+  }
+}
+
+void clear_sketch_line_constraints(FeatureEntry& feature,
+                                   const std::string& line_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can clear line constraints");
   }
 
-  if (!points_match(previous_end_x, previous_end_y, line.end_x, line.end_y)) {
-    propagate_connected_point_move(
-        parameters, line.end_point_id, line.end_x, line.end_y);
-  }
+  auto& parameters = feature.sketch_parameters.value();
+  auto& line = require_line(parameters, line_id);
 
-  sync_all_line_dimensions(parameters);
-  enforce_equal_length_relations(parameters, line_id);
-  enforce_perpendicular_relations(parameters, line_id);
-  enforce_parallel_relations(parameters, line_id);
+  // Clear the inline H/V constraint.
+  line.constraint = std::nullopt;
+
+  // Clear every line‑line relation that involves this line.
+  remove_line_relations_for_line(parameters, "equal_length", line_id);
+  remove_line_relations_for_line(parameters, "perpendicular", line_id);
+  remove_line_relations_for_line(parameters, "parallel", line_id);
+  remove_line_relations_for_line(parameters, "tangent_line_circle", line_id);
+
+  // Clear midpoint and point‑line anchors that reference this line.
+  parameters.midpoint_anchors.erase(
+      std::remove_if(parameters.midpoint_anchors.begin(),
+                     parameters.midpoint_anchors.end(),
+                     [&](const SketchMidpointAnchor& a) {
+                       return a.line_id == line_id;
+                     }),
+      parameters.midpoint_anchors.end());
+  parameters.point_line_anchors.erase(
+      std::remove_if(parameters.point_line_anchors.begin(),
+                     parameters.point_line_anchors.end(),
+                     [&](const SketchPointLineAnchor& a) {
+                       return a.line_id == line_id;
+                     }),
+      parameters.point_line_anchors.end());
+
   sync_all_line_dimensions(parameters);
   refresh_sketch_derived_state(feature);
 }
@@ -2903,7 +3009,8 @@ void add_sketch_line(FeatureEntry& feature,
                      double start_y,
                      double end_x,
                      double end_y,
-                     bool is_construction) {
+                     bool is_construction,
+                     bool snap_start) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
@@ -2932,7 +3039,11 @@ void add_sketch_line(FeatureEntry& feature,
   });
   auto& line = feature.sketch_parameters->lines.back();
   apply_line_constraint(line);
-  snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, line);
+  // The start point of user‑drawn lines must not be auto‑merged with
+  // nearby geometry (see the phantom‑line bug in the impl log).
+  // Rectangle / polygon / mirror lines still merge corners by default.
+  snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, line,
+                                             snap_start);
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
   // Construction lines are reference geometry; they don't get a
   // driving length dimension automatically. The user can still apply
@@ -3063,8 +3174,9 @@ void set_sketch_midpoint_anchor(FeatureEntry& feature,
       parameters.lines.end(),
       [&](const SketchLine& line) { return line.id == host_line_id; });
   if (host_it == parameters.lines.end()) {
-    throw std::runtime_error(
-        "Midpoint anchor host line not found: " + host_line_id);
+    // The host line was deleted between snap-time and commit-time.
+    // Silently skip — there is nothing to anchor to.
+    return;
   }
 
   // Use a stable id derived from the bound point so the relation
@@ -3124,8 +3236,9 @@ void set_sketch_point_line_anchor(FeatureEntry& feature,
       parameters.lines.end(),
       [&](const SketchLine& line) { return line.id == host_line_id; });
   if (host_it == parameters.lines.end()) {
-    throw std::runtime_error(
-        "Point-line anchor host line not found: " + host_line_id);
+    // The host line was deleted between snap-time and commit-time.
+    // Silently skip — there is nothing to anchor to.
+    return;
   }
 
   // Clamp `t` so out-of-range UI input can never produce an anchor

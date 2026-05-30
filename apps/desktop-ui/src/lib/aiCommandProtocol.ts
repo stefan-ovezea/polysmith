@@ -328,6 +328,9 @@ const commandPayloadSchemas = {
       constraint: z.enum(["none", "horizontal", "vertical"]),
     })
     .strict(),
+  clear_sketch_line_constraints: z
+    .object({ line_id: stringField })
+    .strict(),
   set_sketch_equal_length_constraint: z
     .object({ line_id: stringField, other_line_id: stringField })
     .strict(),
@@ -554,6 +557,7 @@ const activeSketchRequiredCommands = new Set<string>([
   "update_sketch_line",
   "update_sketch_point",
   "set_sketch_line_constraint",
+  "clear_sketch_line_constraints",
   "set_sketch_equal_length_constraint",
   "set_sketch_perpendicular_constraint",
   "start_mirror_preview",

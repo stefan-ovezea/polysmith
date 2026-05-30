@@ -118,6 +118,7 @@ import {
   makeExtrudeOpenEntitiesCommand,
   makeExtrudeProfileCommand,
   makeSetSketchLineConstraintCommand,
+  makeClearSketchLineConstraintsCommand,
   makeSetSketchToolCommand,
   makeStartSketchOnPlaneCommand,
   makeStartSketchOnFaceCommand,
@@ -696,6 +697,12 @@ export function useCadCore() {
     ) => {
       await sendCoreCommand(
         makeSetSketchLineConstraintCommand(lineId, constraint),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    clearSketchLineConstraints: async (lineId: string) => {
+      await sendCoreCommand(
+        makeClearSketchLineConstraintsCommand(lineId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
