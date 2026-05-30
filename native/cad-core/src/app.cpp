@@ -2410,7 +2410,8 @@ void CadCoreApp::handle_command_line(const std::string& line) {
                 { "snap_kind", snap->kind },
                 { "snap_label", snap->label },
                 { "host_entity_id", snap->entity_id },
-                { "host_point_id", snap->point_id } } } });
+                { "host_point_id", snap->point_id },
+                { "host_param_t", snap->param_t } } } });
     } else {
       polysmith::protocol::write_message(
           { { "id", command.id },

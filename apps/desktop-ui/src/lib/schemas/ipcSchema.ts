@@ -1329,6 +1329,7 @@ const draftSnapResolvedEventSchema = z.object({
       snap_label: z.string(),
       host_entity_id: z.string(),
       host_point_id: z.string(),
+      host_param_t: z.number().optional(),
     }),
     z.null(),
   ]),

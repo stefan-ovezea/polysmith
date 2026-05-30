@@ -1386,6 +1386,7 @@ export function ViewportPanel({
     snapKind: string;
     hostEntityId: string;
     hostPointId: string;
+    hostParamT: number | null;
     timestamp: number;
   } | null>(null);
   // Track click timing and position for double-click detection during
@@ -1632,10 +1633,10 @@ const currentGridSpacingRef = useRef(10);
     endHostLineId: string | null;
   } | null>(null);
   const draftStartMidpointHostRef = useRef<string | null>(null);
-  // Host line id under the *start* point of the active draft. When
-  // set, `resolveSnappedSketchPoint` enables perpendicular-foot snap
-  // — projecting the cursor onto the perpendicular ray from the
-  // start, in the direction normal to the host line.
+  // Host line id under the *start* point of the active draft. Stored
+  // on pointer-down when the start snaps to an existing line's endpoint,
+  // so the *next* click's commit logic can apply a perpendicular
+  // constraint between the new line and the host.
   const draftStartEndpointHostRef = useRef<string | null>(null);
   // Pending perpendicular-constraint state, keyed against the line
   // count baseline for the same reasons as the midpoint anchor
@@ -4727,19 +4728,33 @@ const currentGridSpacingRef = useRef(10);
       const d = Math.hypot(rawPoint.local[0] - cppSnap.local[0],
                            rawPoint.local[1] - cppSnap.local[1]);
       if (d <= SKETCH_SNAP_DISTANCE * 2) {
+        const snapshot = toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame);
+        const kind = cppSnap.snapKind;
+        const entityId = cppSnap.hostEntityId;
+        const paramT = cppSnap.hostParamT;
+        const isLineNearest = kind === "nearest" && paramT !== null && paramT >= 0;
+
         return {
           local: cppSnap.local,
-          world: toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame),
+          world: snapshot,
           snapLabel: cppSnap.snapLabel,
-          snapMidpointHostLineId: cppSnap.snapKind === "midpoint" ? cppSnap.hostEntityId : null,
-          snapPerpendicularHostLineId: cppSnap.snapKind === "perpendicular" ? cppSnap.hostEntityId : null,
-          snapEndpointHostLineId: cppSnap.snapKind === "endpoint" ? cppSnap.hostEntityId : null,
-          snapLineBodyHostLineId: null,
-          snapLineBodyT: null,
-          snapAxisLock: cppSnap.snapKind === "axis_lock"
+          snapMidpointHostLineId:
+            kind === "midpoint" ? entityId : null,
+          snapMidpointT:
+            kind === "midpoint" && paramT !== null ? paramT : null,
+          snapPerpendicularHostLineId:
+            kind === "perpendicular" ? entityId : null,
+          snapEndpointHostLineId:
+            kind === "endpoint" ? entityId : null,
+          snapLineBodyHostLineId:
+            isLineNearest ? entityId : null,
+          snapLineBodyT:
+            isLineNearest ? paramT : null,
+          snapAxisLock: kind === "axis_lock"
             ? (cppSnap.snapLabel === "Horizontal" ? "horizontal" as const : "vertical" as const)
             : null,
-          snapTangentCircleId: null,
+          snapTangentCircleId:
+            kind === "tangent" ? entityId : null,
         } satisfies SketchPreviewPoint;
       }
     }
@@ -4770,7 +4785,6 @@ const currentGridSpacingRef = useRef(10);
       : localFilter;
 
     const gridSnapEnabled = effectiveFilter ? effectiveFilter.snap_grid : true;
-    const perpEnabled = effectiveFilter ? effectiveFilter.snap_perpendicular : true;
 
     // Apply grid snap first — all subsequent geometric snaps resolve
     // against grid-aligned coordinates so the user gets both.
@@ -4813,8 +4827,10 @@ const currentGridSpacingRef = useRef(10);
     }
 
     // Endpoint / midpoint candidates win immediately (high priority).
-    // Center, quadrant, intersection, and unknown kinds yield to
-    // dynamic snaps (tangent, perpendicular, parallel) below.
+    // Center, quadrant, intersection, and other kinds fall through to
+    // the static-candidate fallback below. Dynamic snaps (tangent,
+    // perpendicular, parallel, axis-lock, line-body) are handled by
+    // the C++ snap engine via the cache check at the top.
     if (closestCandidate && closestDistance <= SKETCH_SNAP_DISTANCE) {
       if (closestCandidate.kind === "endpoint" ||
           closestCandidate.kind === "midpoint") {
@@ -4845,366 +4861,6 @@ const currentGridSpacingRef = useRef(10);
       // let dynamic snaps (tangent, perpendicular) compete.
     }
 
-    const startPoint = lineDraftStartRef.current;
-    const params = sketchLinesRef.current;
-
-    // General perpendicular-to-line snap — REMOVED. The on-line snap
-    // below handles line body placement correctly with a narrow
-    // activation window (like midpoint). The perpendicular-foot snap
-    // above handles the "start on host line" case. No separate
-    // general perpendicular needed.
-    if (false && localFilter?.snap_perpendicular && startPoint && params) {
-      let bestPerpSnap: {
-        local: [number, number];
-        distance: number;
-        lineId: string;
-      } | null = null;
-      for (const line of params.lines) {
-        if (line.is_construction) continue;
-        const dx = line.end_x - line.start_x;
-        const dy = line.end_y - line.start_y;
-        const lenSq = dx * dx + dy * dy;
-        if (lenSq < 1e-12) continue;
-        let t =
-          ((rawPoint.local[0] - line.start_x) * dx +
-           (rawPoint.local[1] - line.start_y) * dy) /
-          lenSq;
-        t = Math.max(0, Math.min(1, t));
-        const px = line.start_x + t * dx;
-        const py = line.start_y + t * dy;
-        const d = Math.hypot(rawPoint.local[0] - px, rawPoint.local[1] - py);
-        if (d > SKETCH_SNAP_DISTANCE) continue;
-        if (!bestPerpSnap || d < bestPerpSnap.distance) {
-          bestPerpSnap = { local: [px, py], distance: d, lineId: line.line_id };
-        }
-      }
-      if (bestPerpSnap) {
-        return {
-          local: bestPerpSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestPerpSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.perpendicular"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: bestPerpSnap.lineId,
-          snapEndpointHostLineId: null,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Dynamic perpendicular-foot snap. Active only on the second
-    // click of a line draft, when the start lay on an existing line
-    // (`draftStartEndpointHostRef` is set). Project the cursor onto
-    // the ray rooted at the start, normal to the host line. If the
-    // cursor is within snap distance of that ray, snap to the foot.
-    const perpHostId = draftStartEndpointHostRef.current;
-    if (effectiveFilter?.snap_perpendicular && startPoint && perpHostId && params) {
-      const hostLine = params.lines.find((line) => line.line_id === perpHostId);
-      if (hostLine) {
-        const dx = hostLine.end_x - hostLine.start_x;
-        const dy = hostLine.end_y - hostLine.start_y;
-        const lengthSquared = dx * dx + dy * dy;
-        if (lengthSquared > 1e-12) {
-          const length = Math.sqrt(lengthSquared);
-          // Perpendicular direction (rotate host line direction by
-          // +90°). Normalized so we can project cleanly.
-          const perpX = -dy / length;
-          const perpY = dx / length;
-          const dxFromStart = rawPoint.local[0] - startPoint[0];
-          const dyFromStart = rawPoint.local[1] - startPoint[1];
-          const t = dxFromStart * perpX + dyFromStart * perpY;
-          const footX = startPoint[0] + t * perpX;
-          const footY = startPoint[1] + t * perpY;
-          const distanceFromRay = Math.hypot(
-            rawPoint.local[0] - footX,
-            rawPoint.local[1] - footY,
-          );
-          if (distanceFromRay <= SKETCH_SNAP_DISTANCE) {
-            return {
-              local: [footX, footY] as [number, number],
-              world: toWorldPoint(
-                activeSketchPlaneId ?? "ref-plane-xy",
-                [footX, footY],
-                activeSketchPlaneFrame,
-              ),
-              snapLabel: translate("snap.perpendicular"),
-              snapMidpointHostLineId: null,
-              snapPerpendicularHostLineId: perpHostId,
-              snapEndpointHostLineId: null,
-            } satisfies SketchPreviewPoint;
-          }
-        }
-      }
-    }
-
-    // Tangent snap: while drafting a line from outside a circle, the
-    // cursor sticks to whichever of the two tangent points it's
-    // nearest. Given start S, center C, radius r and d = |C - S|,
-    // the tangent points sit at distance L = sqrt(d² - r²) from S
-    // along directions ±θ off S→C, where sin θ = r/d. Skipped when
-    // the start lies inside or on the circle (no real tangent
-    // exists). Higher priority than axis-lock so an explicit
-    // "draw to this circle" gesture wins over a passive axis hint.
-    if (effectiveFilter?.snap_tangent !== false && startPoint && params) {
-      let bestTangentSnap: {
-        local: [number, number];
-        distance: number;
-        circleId: string;
-      } | null = null;
-      for (const circle of params.circles) {
-        const dx = circle.center_x - startPoint[0];
-        const dy = circle.center_y - startPoint[1];
-        const dSquared = dx * dx + dy * dy;
-        const rSquared = circle.radius * circle.radius;
-        if (dSquared <= rSquared + 1e-9) {
-          continue;
-        }
-        const d = Math.sqrt(dSquared);
-        const tangentLength = Math.sqrt(dSquared - rSquared);
-        const ux = dx / d;
-        const uy = dy / d;
-        const vx = -uy;
-        const vy = ux;
-        const along = (tangentLength * tangentLength) / d;
-        const perp = (tangentLength * circle.radius) / d;
-        const candidates: Array<[number, number]> = [
-          [
-            startPoint[0] + along * ux + perp * vx,
-            startPoint[1] + along * uy + perp * vy,
-          ],
-          [
-            startPoint[0] + along * ux - perp * vx,
-            startPoint[1] + along * uy - perp * vy,
-          ],
-        ];
-        for (const [tx, ty] of candidates) {
-          const distance = Math.hypot(
-            rawPoint.local[0] - tx,
-            rawPoint.local[1] - ty,
-          );
-          if (distance > SKETCH_SNAP_DISTANCE) {
-            continue;
-          }
-          if (!bestTangentSnap || distance < bestTangentSnap.distance) {
-            bestTangentSnap = {
-              local: [tx, ty],
-              distance,
-              circleId: circle.circle_id,
-            };
-          }
-        }
-      }
-      if (bestTangentSnap) {
-        return {
-          local: bestTangentSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestTangentSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.tangent"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-          snapTangentCircleId: bestTangentSnap.circleId,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Axis lock: while a draft is in progress, if the segment from
-    // start → cursor lies within ~3° of the world horizontal or
-    // vertical axis, pull the off-axis coordinate onto the start so
-    // the line lands flat. We check H first (CAD convention),
-    // and gate on a minimum draft length so the lock doesn't fight
-    // the user during the first few pixels of motion. Threshold uses
-    // sin(3°) ≈ 0.0523 against `|orthogonal| / hypot`. Higher
-    // priority than line-body snap by default, but we co-snap to a
-    // crossed line when the locked position is within snap distance
-    // of one — that way an axis-locked stroke that meets a host
-    // line at right angles still gets a coincident anchor on commit
-    // (the user's "go straight down to the bottom side" gesture).
-    if (startPoint) {
-      const ax = rawPoint.local[0] - startPoint[0];
-      const ay = rawPoint.local[1] - startPoint[1];
-      const hypot = Math.hypot(ax, ay);
-      const minDraftLength = SKETCH_SNAP_DISTANCE * 1.5;
-      if (hypot >= minDraftLength) {
-        const sinThreshold = Math.sin((3 * Math.PI) / 180);
-        const horizontalRatio = Math.abs(ay) / hypot;
-        const verticalRatio = Math.abs(ax) / hypot;
-
-        const buildAxisLockSnap = (
-          axis: "horizontal" | "vertical",
-          lockedLocal: [number, number],
-        ): SketchPreviewPoint => {
-          // After the axis lock fixes the off-axis coordinate, look
-          // for a line the lock ray actually crosses (within the
-          // line's segment) and within snap distance of the locked
-          // position. We use a proper ray/segment intersection
-          // rather than perpendicular projection so a line parallel
-          // to the lock axis (e.g. the rectangle's other vertical
-          // side under a vertical lock) doesn't generate a phantom
-          // coincident anchor — those lines have no real crossing.
-          const linesParamsForLock = sketchLinesRef.current;
-          let crossedLine: {
-            intersectionLocal: [number, number];
-            lineId: string;
-            t: number;
-          } | null = null;
-          if (linesParamsForLock) {
-            let bestDistance = SKETCH_SNAP_DISTANCE;
-            for (const line of linesParamsForLock.lines) {
-              const dx = line.end_x - line.start_x;
-              const dy = line.end_y - line.start_y;
-              // Vertical lock crosses lines with non-zero dx;
-              // horizontal lock crosses lines with non-zero dy.
-              // Skip lines that are parallel to the lock axis
-              // because the ray either misses them entirely or
-              // overlaps them (no single intersection point).
-              const denom = axis === "vertical" ? dx : dy;
-              if (Math.abs(denom) <= 1e-9) {
-                continue;
-              }
-              const t =
-                axis === "vertical"
-                  ? (startPoint[0] - line.start_x) / dx
-                  : (startPoint[1] - line.start_y) / dy;
-              if (t < 0 || t > 1) {
-                continue;
-              }
-              const ix = line.start_x + t * dx;
-              const iy = line.start_y + t * dy;
-              // Distance is along the lock axis only — `lockedLocal`
-              // shares the off-axis coordinate with the crossing.
-              const distance =
-                axis === "vertical"
-                  ? Math.abs(iy - lockedLocal[1])
-                  : Math.abs(ix - lockedLocal[0]);
-              if (distance > bestDistance) {
-                continue;
-              }
-              bestDistance = distance;
-              crossedLine = {
-                intersectionLocal: [ix, iy],
-                lineId: line.line_id,
-                t,
-              };
-            }
-          }
-
-          if (crossedLine) {
-            return {
-              local: crossedLine.intersectionLocal,
-              world: toWorldPoint(
-                activeSketchPlaneId ?? "ref-plane-xy",
-                crossedLine.intersectionLocal,
-                activeSketchPlaneFrame,
-              ),
-              snapLabel:
-                axis === "horizontal"
-                  ? translate("toolbar.horizontal")
-                  : translate("toolbar.vertical"),
-              snapMidpointHostLineId: null,
-              snapPerpendicularHostLineId: null,
-              snapEndpointHostLineId: null,
-              snapLineBodyHostLineId: crossedLine.lineId,
-              snapLineBodyT: crossedLine.t,
-              snapAxisLock: axis,
-            } satisfies SketchPreviewPoint;
-          }
-
-          return {
-            local: lockedLocal,
-            world: toWorldPoint(
-              activeSketchPlaneId ?? "ref-plane-xy",
-              lockedLocal,
-              activeSketchPlaneFrame,
-            ),
-            snapLabel:
-              axis === "horizontal"
-                ? translate("toolbar.horizontal")
-                : translate("toolbar.vertical"),
-            snapMidpointHostLineId: null,
-            snapPerpendicularHostLineId: null,
-            snapEndpointHostLineId: null,
-            snapAxisLock: axis,
-          } satisfies SketchPreviewPoint;
-        };
-
-        if (horizontalRatio < sinThreshold) {
-          return buildAxisLockSnap("horizontal", [
-            rawPoint.local[0],
-            startPoint[1],
-          ]);
-        }
-        if (verticalRatio < sinThreshold) {
-          return buildAxisLockSnap("vertical", [
-            startPoint[0],
-            rawPoint.local[1],
-          ]);
-        }
-      }
-    }
-
-    // Parallel snap: when `snap_parallel` is on and a start point
-    // exists, lock the cursor to the nearest existing line's
-    // direction. Finds the line whose angle is closest to the
-    // cursor ray from the start, then projects the cursor onto
-    // that direction. Allows both forward and reverse parallel
-    // (0 and 180 degrees relative).
-    if (effectiveFilter?.snap_parallel && startPoint && params) {
-      const cursorDx = rawPoint.local[0] - startPoint[0];
-      const cursorDy = rawPoint.local[1] - startPoint[1];
-      const cursorDist = Math.hypot(cursorDx, cursorDy);
-      if (cursorDist > SKETCH_SNAP_DISTANCE * 1.5) {
-        const cursorAngle = Math.atan2(cursorDy, cursorDx);
-        const threshold = Math.PI / 18;
-        let bestParallel: {
-          local: [number, number];
-          distance: number;
-        } | null = null;
-        for (const line of params.lines) {
-          if (line.is_construction) continue;
-          const lineAngle = Math.atan2(
-            line.end_y - line.start_y,
-            line.end_x - line.start_x,
-          );
-          for (const dir of [lineAngle, lineAngle + Math.PI]) {
-            let angleDiff = Math.abs(cursorAngle - dir);
-            if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-            if (angleDiff > threshold) continue;
-            const cosA = Math.cos(dir);
-            const sinA = Math.sin(dir);
-            const t = cursorDx * cosA + cursorDy * sinA;
-            const px = startPoint[0] + t * cosA;
-            const py = startPoint[1] + t * sinA;
-            const d = Math.hypot(rawPoint.local[0] - px, rawPoint.local[1] - py);
-            if (d <= SKETCH_SNAP_DISTANCE) {
-              if (!bestParallel || d < bestParallel.distance) {
-                bestParallel = { local: [px, py], distance: d };
-              }
-            }
-          }
-        }
-        if (bestParallel) {
-          return {
-            local: bestParallel.local,
-            world: toWorldPoint(
-              activeSketchPlaneId ?? "ref-plane-xy",
-              bestParallel.local,
-              activeSketchPlaneFrame,
-            ),
-            snapLabel: translate("snap.parallel"),
-            snapMidpointHostLineId: null,
-            snapPerpendicularHostLineId: null,
-            snapEndpointHostLineId: null,
-          } satisfies SketchPreviewPoint;
-        }
-      }
-    }
-
     // Fallback: if a lower-priority static candidate (center, quadrant,
     // intersection, etc.) matched but dynamic snaps didn't fire, return
     // the static candidate now.
@@ -5221,114 +4877,6 @@ const currentGridSpacingRef = useRef(10);
         snapPerpendicularHostLineId: null,
         snapEndpointHostLineId: null,
       } satisfies SketchPreviewPoint;
-    }
-
-    // Line-body snap: when no point candidate matched, project the
-    // cursor onto the closest sketch line segment (clamped to the
-    // segment's interior). This lets the user start or end a draft
-    // anywhere on an existing line, not just at its endpoints or
-    // midpoint. Lower priority than every point candidate above
-    // because endpoint / midpoint snaps should win when the cursor
-    // is genuinely close to those features.
-    const linesParams = sketchLinesRef.current;
-    if (linesParams) {
-      let bestLineSnap: {
-        local: [number, number];
-        distance: number;
-        lineId: string;
-        t: number;
-      } | null = null;
-      for (const line of linesParams.lines) {
-        const dx = line.end_x - line.start_x;
-        const dy = line.end_y - line.start_y;
-        const lengthSquared = dx * dx + dy * dy;
-        if (lengthSquared <= 1e-12) {
-          continue;
-        }
-        // Parametric projection clamped to [0, 1] so we never snap
-        // past the segment's endpoints.
-        const t = Math.max(
-          0,
-          Math.min(
-            1,
-            ((rawPoint.local[0] - line.start_x) * dx +
-              (rawPoint.local[1] - line.start_y) * dy) /
-              lengthSquared,
-          ),
-        );
-        const px = line.start_x + t * dx;
-        const py = line.start_y + t * dy;
-        const distance = Math.hypot(
-          rawPoint.local[0] - px,
-          rawPoint.local[1] - py,
-        );
-        if (distance > SKETCH_SNAP_DISTANCE) {
-          continue;
-        }
-        if (!bestLineSnap || distance < bestLineSnap.distance) {
-          bestLineSnap = {
-            local: [px, py],
-            distance,
-            lineId: line.line_id,
-            t,
-          };
-        }
-      }
-      if (bestLineSnap) {
-        return {
-          local: bestLineSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestLineSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.onLine"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-          snapLineBodyHostLineId: bestLineSnap.lineId,
-          snapLineBodyT: bestLineSnap.t,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Circle-nearest snap: project cursor onto the nearest circle's
-    // circumference. The nearest point on the circle is the radial
-    // projection of the cursor onto the circle edge. Distance check:
-    // |dist(cursor, center) - radius| <= SKETCH_SNAP_DISTANCE.
-    if (effectiveFilter?.snap_nearest !== false && params) {
-      let bestCircleSnap: {
-        local: [number, number];
-        distance: number;
-        circleId: string;
-      } | null = null;
-      for (const circle of params.circles) {
-        const dx = rawPoint.local[0] - circle.center_x;
-        const dy = rawPoint.local[1] - circle.center_y;
-        const distToCenter = Math.hypot(dx, dy);
-        if (distToCenter < 1e-9) continue;
-        const nx = circle.center_x + (dx / distToCenter) * circle.radius;
-        const ny = circle.center_y + (dy / distToCenter) * circle.radius;
-        const d = Math.hypot(rawPoint.local[0] - nx, rawPoint.local[1] - ny);
-        if (d > SKETCH_SNAP_DISTANCE) continue;
-        if (!bestCircleSnap || d < bestCircleSnap.distance) {
-          bestCircleSnap = { local: [nx, ny], distance: d, circleId: circle.circle_id };
-        }
-      }
-      if (bestCircleSnap) {
-        return {
-          local: bestCircleSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestCircleSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.onCircle"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-        } satisfies SketchPreviewPoint;
-      }
     }
 
     return {
@@ -8158,7 +7706,38 @@ const currentGridSpacingRef = useRef(10);
           activeSketchPlaneFrameRef.current,
         );
         if (rawPoint) {
-          const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+          let sketchPoint = resolveSnappedSketchPoint(rawPoint);
+
+          // Apply line constraint during preview so the rubber-band
+          // matches what the commit will produce.  Same enforcement
+          // that refresh_sketch_derived_state applies on commit.
+          {
+            const params = sketchLinesRef.current;
+            if (params) {
+              const ownerLine = params.lines.find(
+                (l) =>
+                  l.start_point_id === endpointDrag.pointId ||
+                  l.end_point_id === endpointDrag.pointId,
+              );
+              if (ownerLine?.constraint) {
+                const isStart = ownerLine.start_point_id === endpointDrag.pointId;
+                const fixedY = isStart ? ownerLine.end_y : ownerLine.start_y;
+                const fixedX = isStart ? ownerLine.end_x : ownerLine.start_x;
+                if (ownerLine.constraint === "horizontal") {
+                  sketchPoint = {
+                    ...sketchPoint,
+                    local: [sketchPoint.local[0], fixedY] as [number, number],
+                  };
+                } else if (ownerLine.constraint === "vertical") {
+                  sketchPoint = {
+                    ...sketchPoint,
+                    local: [fixedX, sketchPoint.local[1]] as [number, number],
+                  };
+                }
+              }
+            }
+          }
+
           const dx = event.clientX - endpointDrag.startClientX;
           const dy = event.clientY - endpointDrag.startClientY;
           if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
@@ -8752,6 +8331,12 @@ const currentGridSpacingRef = useRef(10);
             Math.abs(sketchPoint.snapMidpointT - 0.5) < 1e-9;
           setConstraintPreview({
             kind: isWhole ? "midpoint" : "on_line",
+            x: previewX,
+            y: previewY,
+          });
+        } else if (sketchPoint.snapLineBodyHostLineId) {
+          setConstraintPreview({
+            kind: "on_line",
             x: previewX,
             y: previewY,
           });
@@ -9438,7 +9023,7 @@ const currentGridSpacingRef = useRef(10);
             activeSketchPlaneFrameRef.current,
           );
           if (rawPoint) {
-            const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+            let sketchPoint = resolveSnappedSketchPoint(rawPoint);
             // Diagnostic: log the owning line's data before commit.
             const params = sketchLinesRef.current;
             if (params) {
@@ -9450,6 +9035,25 @@ const currentGridSpacingRef = useRef(10);
               if (ownerLine) {
                 const isStart =
                   ownerLine.start_point_id === drag.pointId;
+
+                // Apply line constraint at commit so the position
+                // matches what the preview showed.
+                if (ownerLine.constraint) {
+                  const fixedY = isStart ? ownerLine.end_y : ownerLine.start_y;
+                  const fixedX = isStart ? ownerLine.end_x : ownerLine.start_x;
+                  if (ownerLine.constraint === "horizontal") {
+                    sketchPoint = {
+                      ...sketchPoint,
+                      local: [sketchPoint.local[0], fixedY] as [number, number],
+                    };
+                  } else if (ownerLine.constraint === "vertical") {
+                    sketchPoint = {
+                      ...sketchPoint,
+                      local: [fixedX, sketchPoint.local[1]] as [number, number],
+                    };
+                  }
+                }
+
                 console.warn(
                   "[endpoint-drag] dragging",
                   isStart ? "start" : "end",
@@ -10892,7 +10496,7 @@ const currentGridSpacingRef = useRef(10);
     const onCppSnap = (e: Event) => {
       const d = (e as CustomEvent).detail;
       cppSnapCacheRef.current = { local: d.local, snapLabel: d.snapLabel, snapKind: d.snapKind,
-        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, timestamp: performance.now() };
+        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, hostParamT: d.hostParamT ?? null, timestamp: performance.now() };
     };
     window.addEventListener("polysmith-cpp-snap", onCppSnap);
     resizeRenderer();

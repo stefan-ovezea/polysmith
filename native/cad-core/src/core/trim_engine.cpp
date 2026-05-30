@@ -285,6 +285,18 @@ std::vector<TrimIntersection> find_all_intersections(
             });
 
   deduplicate(results);
+
+  // Filter out intersections at the line's own endpoints — they
+  // produce zero-length segments and prevent meaningful trimming.
+  // Same protection the arc path already applies at line ~674.
+  results.erase(
+      std::remove_if(results.begin(), results.end(),
+                     [](const TrimIntersection& is) {
+                       return is.param_on_target < kTrimCoincidentTolerance ||
+                              is.param_on_target > 1.0 - kTrimCoincidentTolerance;
+                     }),
+      results.end());
+
   return results;
 }
 

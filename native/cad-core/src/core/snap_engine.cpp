@@ -127,6 +127,7 @@ void collect_line_midpoint_candidates(
           .local_y = my,
           .distance = d,
           .label = "Midpoint",
+          .param_t = 0.5,
       });
     }
   }
@@ -245,6 +246,7 @@ void collect_nearest_candidates(
           .local_y = py,
           .distance = d,
           .label = "Nearest",
+          .param_t = t,
       });
     }
   }

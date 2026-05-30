@@ -191,6 +191,7 @@ export function useCadCore() {
                   snapLabel: p.snap_label,
                   hostEntityId: p.host_entity_id,
                   hostPointId: p.host_point_id,
+                  hostParamT: p.host_param_t,
                 },
               }));
             }

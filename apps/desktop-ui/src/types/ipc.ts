@@ -297,6 +297,7 @@ export interface DraftSnapResolvedEvent {
     snap_label: string;
     host_entity_id: string;
     host_point_id: string;
+    host_param_t?: number;
   } | null;
 }
 
