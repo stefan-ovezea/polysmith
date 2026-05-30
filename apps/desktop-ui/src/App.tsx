@@ -193,6 +193,7 @@ interface ActiveExtrudeAction {
   phase: "pending" | "active";
   featureId: string | null;
   featureIds: string[];
+  profileIds: string[];
   initialDepth: number;
   initialMode: ExtrudeMode;
   initialParameters: ExtrudeFeatureParameters | null;
@@ -1208,6 +1209,7 @@ function App() {
       phase: "pending",
       featureId: null,
       featureIds: [],
+      profileIds: [...selectedSketchProfileIds],
       initialDepth: DEFAULT_EXTRUDE_DEPTH,
       initialMode: defaultSettings.mode,
       initialParameters: null,
@@ -1273,7 +1275,23 @@ function App() {
     targetBodyId: string | null,
     parameters: ExtrudeAdvancedParameters | null = null,
   ) {
-    const profileIds = [...selectedSketchProfileIds];
+    await createExtrudeFromProfiles(
+      [...selectedSketchProfileIds],
+      depth,
+      mode,
+      targetBodyId,
+      parameters,
+    );
+  }
+
+  async function createExtrudeFromProfiles(
+    profileIds: string[],
+    depth: number,
+    mode: ExtrudeMode,
+    targetBodyId: string | null,
+    parameters: ExtrudeAdvancedParameters | null = null,
+    canCombineWithExistingBodyOverride: boolean | null = null,
+  ) {
     if (profileIds.length === 0) {
       return;
     }
@@ -1327,6 +1345,7 @@ function App() {
           phase: "active",
           featureId: newFeatureId,
           featureIds: createdFeatureIds.length > 0 ? createdFeatureIds : [newFeatureId],
+          profileIds,
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -1336,12 +1355,13 @@ function App() {
           // Newly-created extrude: cancel = undo (handled below).
           originalSnapshot: null,
           canCombineWithExistingBody:
+            canCombineWithExistingBodyOverride ??
             (document?.feature_history ?? []).some(
               (entry) =>
                 entry.kind === "box" ||
                 entry.kind === "cylinder" ||
                 entry.kind === "extrude",
-            ) ?? false,
+            ),
         });
       } catch (error) {
         addMessage(`extrude action error: ${String(error)}`);
@@ -1349,6 +1369,59 @@ function App() {
         extrudeCreateInFlightRef.current = false;
       }
     });
+  }
+
+  function activeExtrudeAdvancedParameters(
+    params: ExtrudeFeatureParameters | null | undefined,
+    operation: ExtrudeMode,
+  ): ExtrudeAdvancedParameters | null {
+    if (!params) {
+      return null;
+    }
+    return {
+      extent_mode: params.extent_mode,
+      side1: params.side1,
+      side2: params.side2,
+      thin: params.thin,
+      operation,
+      intersect_result: params.intersect_result,
+    };
+  }
+
+  async function recreateActiveExtrudeAsUntargetedJoin(
+    action: ActiveExtrudeAction,
+    depth: number,
+    parameters: ExtrudeAdvancedParameters | null,
+  ) {
+    if (
+      action.originalSnapshot ||
+      action.profileIds.length < 2 ||
+      action.featureIds.length < 2
+    ) {
+      return false;
+    }
+
+    const featureIds = new Set(action.featureIds);
+    const undoDocumentPromise = awaitDocumentChange((next) =>
+      next.feature_history.every(
+        (feature) => !featureIds.has(feature.feature_id),
+      ),
+    );
+
+    setExtrudeAction(null);
+    await runAction(async () => {
+      await undo();
+    });
+    await undoDocumentPromise;
+    await createExtrudeFromProfiles(
+      [...action.profileIds],
+      depth,
+      "join",
+      null,
+      parameters,
+      action.canCombineWithExistingBody,
+    );
+    return true;
   }
 
   async function createExtrudeFromSelectedFace(
@@ -1394,6 +1467,7 @@ function App() {
           phase: "active",
           featureId: newFeatureId,
           featureIds: [newFeatureId],
+          profileIds: [],
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -1460,6 +1534,7 @@ function App() {
           phase: "active",
           featureId: newFeatureId,
           featureIds: [newFeatureId],
+          profileIds: [],
           initialDepth: depth,
           initialMode: createdParams?.mode ?? mode,
           initialParameters: createdParams ?? null,
@@ -1544,7 +1619,11 @@ function App() {
       await updateExtrudeProfiles(extrudeAction.featureId!, selectedSketchProfileIds);
       setExtrudeAction((current) =>
         current?.phase === "active" && current.featureId === extrudeAction.featureId
-          ? {...current, profileCount: nextCount}
+          ? {
+              ...current,
+              profileIds: [...selectedSketchProfileIds],
+              profileCount: nextCount,
+            }
           : current,
       );
     });
@@ -6354,6 +6433,24 @@ function App() {
                           });
                         }}
                         onPreviewMode={async (mode) => {
+                          if (
+                            mode === "join" &&
+                            !extrudeAction.canCombineWithExistingBody
+                          ) {
+                            const recreated =
+                              await recreateActiveExtrudeAsUntargetedJoin(
+                                extrudeAction,
+                                activeExtrudeFeature?.extrude_parameters
+                                  ?.depth ?? extrudeAction.initialDepth,
+                                activeExtrudeAdvancedParameters(
+                                  activeExtrudeFeature?.extrude_parameters,
+                                  "join",
+                                ),
+                              );
+                            if (recreated) {
+                              return;
+                            }
+                          }
                           await runAction(async () => {
                             for (const featureId of activeExtrudeFeatureIds) {
                               await updateExtrudeMode(featureId, mode);
@@ -8519,6 +8616,7 @@ function App() {
                 phase: "active",
                 featureId,
                 featureIds: [featureId],
+                profileIds: [...(params.profile_ids ?? [])],
                 initialDepth: params.depth,
                 initialMode: params.mode,
                 initialParameters: params,

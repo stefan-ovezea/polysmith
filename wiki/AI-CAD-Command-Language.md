@@ -1922,7 +1922,9 @@ Rules:
 - Multiple profiles must belong to the same sketch plane.
 - With `mode: "new_body"`, each selected profile creates its own body.
 - With untargeted `mode: "join"`, touching profiles are grouped into one body
-  while separated profile groups become separate bodies.
+  while separated profile groups become separate bodies. The feature keeps
+  `operation: "join"` for editing, but compiles as `mode: "new_body"` because
+  there is no existing target body.
 - With `mode: "cut"`, `mode: "intersect"`, or a targeted `join`, the selected
   profiles stay in one feature so the boolean target remains explicit.
 - `mode` defaults to `new_body`; `parameters.operation: "auto"` lets the

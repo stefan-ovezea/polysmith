@@ -512,7 +512,11 @@ void normalize_extrude_parameters(const DocumentState& document,
     params.operation = params.mode.empty() ? "new_body" : params.mode;
   }
   if (params.operation != "auto") {
-    params.mode = params.operation;
+    if (params.operation == "join" && !params.target_body_id.has_value()) {
+      params.mode = "new_body";
+    } else {
+      params.mode = params.operation;
+    }
   }
 
   if (params.extent_mode != "one_side" && params.extent_mode != "symmetric" &&
@@ -820,6 +824,17 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.inner_loops = source.inner_loops;
   target.additional_profile_points = source.additional_profile_points;
   target.additional_inner_loops = source.additional_inner_loops;
+}
+
+void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {
+  if (parameters.operation == "auto") {
+    return;
+  }
+  if (parameters.operation == "join" && !parameters.target_body_id.has_value()) {
+    parameters.mode = "new_body";
+    return;
+  }
+  parameters.mode = parameters.operation;
 }
 
 std::optional<LoftSectionParameters> make_loft_section_for_profile(
@@ -1631,6 +1646,7 @@ DocumentState DocumentManager::update_extrude_mode(
   clear_redo_stack();
   feature_it->extrude_parameters->mode = mode;
   feature_it->extrude_parameters->operation = mode;
+  normalize_extrude_operation_mode(feature_it->extrude_parameters.value());
   normalize_extrude_parameters(*document_, feature_it->extrude_parameters.value());
   apply_extrude_parameters_with_preview_validation(
       *feature_it, feature_it->extrude_parameters.value());
@@ -1686,6 +1702,7 @@ DocumentState DocumentManager::update_extrude_target_body(
   push_undo_state();
   clear_redo_stack();
   feature_it->extrude_parameters->target_body_id = resolved;
+  normalize_extrude_operation_mode(feature_it->extrude_parameters.value());
   normalize_extrude_parameters(*document_, feature_it->extrude_parameters.value());
   apply_extrude_parameters_with_preview_validation(
       *feature_it, feature_it->extrude_parameters.value());
@@ -1718,6 +1735,7 @@ DocumentState DocumentManager::update_extrude_parameters(
       (next.side2.has_value() && next.side2->distance == 0.0)) {
     return document_.value();
   }
+  normalize_extrude_operation_mode(next);
   normalize_extrude_parameters(*document_, next);
 
   push_undo_state();
@@ -4253,14 +4271,12 @@ DocumentState DocumentManager::extrude_profiles(
     const bool split_join_without_target =
         mode == "join" && !target_body_id.has_value();
     extrude_parameters->mode = split_join_without_target ? "new_body" : mode;
-    if (split_join_without_target && extrude_parameters->operation != "auto") {
-      extrude_parameters->operation = "new_body";
-    }
     if (extrude_parameters->operation == "new_body" &&
-        extrude_parameters->mode != "new_body") {
-      extrude_parameters->operation = extrude_parameters->mode;
+        mode != "new_body") {
+      extrude_parameters->operation = mode;
     }
     extrude_parameters->target_body_id = target_body_id;
+    normalize_extrude_operation_mode(extrude_parameters.value());
     normalize_extrude_parameters(*document_, extrude_parameters.value());
 
     // Auto-cut detection (contextual modeling): when the user invokes a

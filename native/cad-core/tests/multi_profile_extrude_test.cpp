@@ -90,6 +90,37 @@ bool test_join_groups_touching_profiles_without_merging_distant_profiles() {
                 "expected joined touching profiles plus distant profile to make two bodies");
 }
 
+bool test_join_adjacent_profiles_creates_one_body_feature() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_rectangle(10.0, 0.0, 20.0, 10.0);
+
+  const std::vector<std::string> ids = profile_ids(document);
+  if (!expect(ids.size() == 2,
+              "expected two sketch profiles before adjacent join")) {
+    return false;
+  }
+
+  document = manager.extrude_profiles(ids, 5.0, "join");
+  const auto compiled = compile_bodies(document);
+  const auto extrude_it = std::find_if(
+      document.feature_history.begin(),
+      document.feature_history.end(),
+      [](const FeatureEntry& feature) { return feature.kind == "extrude"; });
+  return expect(extrude_feature_count(document) == 1,
+                "expected adjacent joined profiles to share one feature") &&
+         expect(compiled.bodies.size() == 1,
+                "expected adjacent joined profiles to make one body") &&
+         expect(extrude_it != document.feature_history.end() &&
+                    extrude_it->extrude_parameters.has_value() &&
+                    extrude_it->extrude_parameters->mode == "new_body" &&
+                    extrude_it->extrude_parameters->operation == "join",
+                "expected untargeted join to remain a visible new body");
+}
+
 }  // namespace
 
 int main() {
@@ -97,6 +128,9 @@ int main() {
     return 1;
   }
   if (!test_join_groups_touching_profiles_without_merging_distant_profiles()) {
+    return 1;
+  }
+  if (!test_join_adjacent_profiles_creates_one_body_feature()) {
     return 1;
   }
 
