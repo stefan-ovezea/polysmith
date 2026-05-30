@@ -1752,6 +1752,15 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                      }),
       p.point_line_anchors.end());
 
+  // Log zero‑length lines — a symptom of a constraint‑resolver or trim bug.
+  for (const auto& line : feature.sketch_parameters->lines) {
+    if (points_match(line.start_x, line.start_y, line.end_x, line.end_y)) {
+      fprintf(stderr, "ERROR zero-length line %s at (%.3f,%.3f) constraint=%s\n",
+              line.id.c_str(), line.start_x, line.start_y,
+              line.constraint.has_value() ? line.constraint.value().c_str() : "none");
+    }
+  }
+
   // Re-anchor midpoint-bound points to their host line's current
   // midpoint before rebuilding the points list. The cascade may
   // shift other line endpoints which `rebuild_sketch_points` then
@@ -4317,16 +4326,6 @@ void trim_sketch_entity(FeatureEntry& feature,
     const int clicked_index = select_clicked_segment(
         segments, *line_it, click_x, click_y);
 
-    fprintf(stderr, "[trim_debug] line=(%.1f,%.1f)->(%.1f,%.1f) click=(%.1f,%.1f) n_isects=%zu n_segs=%zu clicked=%d\n",
-            line_it->start_x, line_it->start_y, line_it->end_x, line_it->end_y,
-            click_x, click_y, intersections.size(), segments.size(), clicked_index);
-    for (size_t si = 0; si < segments.size(); ++si) {
-      fprintf(stderr, "[trim_seg %zu] t=[%.4f,%.4f] (%.1f,%.1f)->(%.1f,%.1f)\n",
-              si, segments[si].param_start, segments[si].param_end,
-              segments[si].start_x, segments[si].start_y,
-              segments[si].end_x, segments[si].end_y);
-    }
-
     if (clicked_index < 0 || clicked_index >= static_cast<int>(segments.size())) {
       throw std::runtime_error(
           "Click position does not correspond to any segment on entity: " + entity_id);
@@ -4373,16 +4372,20 @@ void trim_sketch_entity(FeatureEntry& feature,
     const int last = static_cast<int>(segments.size()) - 1;
 
     if (clicked_index == 0) {
-      // First segment deleted — keep from first intersection to end.
       line_it->start_x = segments[1].start_x;
       line_it->start_y = segments[1].start_y;
-      // end unchanged
     } else if (clicked_index == last) {
-      // Last segment deleted — keep from start to last intersection.
       line_it->end_x = segments[clicked_index - 1].end_x;
       line_it->end_y = segments[clicked_index - 1].end_y;
-      // start unchanged
-    } else {
+    }
+    if (points_match(line_it->start_x, line_it->start_y,
+                     line_it->end_x, line_it->end_y)) {
+      fprintf(stderr, "ERROR trim produced zero-length line %s — deleting\n",
+              line_it->id.c_str());
+      params.lines.erase(line_it);
+      return;
+    }
+    if (clicked_index > 0 && clicked_index < last) {
       // Middle segment deleted — line splits into two.
       // Left portion: original line shortened to intersection before deleted segment.
       line_it->end_x = segments[clicked_index - 1].end_x;
@@ -4410,10 +4413,19 @@ void trim_sketch_entity(FeatureEntry& feature,
       auto& new_line = params.lines.back();
       new_line.constraint = std::nullopt;
 
-      fprintf(stderr, "[trim_split] new_line=%s (%.1f,%.1f)->(%.1f,%.1f)\n",
-              new_line.id.c_str(),
-              new_line.start_x, new_line.start_y,
-              new_line.end_x, new_line.end_y);
+      if (points_match(new_line.start_x, new_line.start_y,
+                       new_line.end_x, new_line.end_y)) {
+        fprintf(stderr, "ERROR trim split produced zero-length line %s — dropping\n",
+                new_line.id.c_str());
+        params.lines.pop_back();
+      }
+      if (points_match(line_it->start_x, line_it->start_y,
+                       line_it->end_x, line_it->end_y)) {
+        fprintf(stderr, "ERROR trim split collapsed left portion %s — deleting\n",
+                line_it->id.c_str());
+        params.lines.erase(line_it);
+        return;
+      }
     }
 
     // Trim breaks all existing constraints and dimensions on the entity.
@@ -4528,9 +4540,6 @@ void trim_sketch_entity(FeatureEntry& feature,
     // changed the direction enough to invalidate it.
     line_it->constraint = std::nullopt;
 
-    fprintf(stderr, "[trim_cleanup] remaining constraints=%zu relations=%zu dims=%zu\n",
-            params.constraints.size(), params.line_relations.size(),
-            params.dimensions.size());
     for (const auto& c : params.constraints) {
       std::string ids;
       for (const auto& tid : c.target_ids) ids += tid + " ";
@@ -4568,9 +4577,6 @@ void trim_sketch_entity(FeatureEntry& feature,
           params.constraints.end());
     }
 
-    fprintf(stderr, "[trim_result] line=(%.1f,%.1f)->(%.1f,%.1f)\n",
-            line_it->start_x, line_it->start_y,
-            line_it->end_x, line_it->end_y);
     return;
   }
 
@@ -4608,10 +4614,6 @@ void trim_sketch_entity(FeatureEntry& feature,
 
     const int clicked_index = select_clicked_segment(
         segments, *circle_it, click_x, click_y);
-
-    fprintf(stderr, "[trim_debug] circle=(%.1f,%.1f) r=%.1f click=(%.1f,%.1f) n_isects=%zu clicked=%d\n",
-            circle_it->center_x, circle_it->center_y, circle_it->radius,
-            click_x, click_y, intersections.size(), clicked_index);
 
     if (clicked_index < 0 || clicked_index >= static_cast<int>(segments.size())) {
       throw std::runtime_error(

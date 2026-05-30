@@ -1318,6 +1318,22 @@ const errorEventSchema = z.object({
   }),
 });
 
+const draftSnapResolvedEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("draft_snap_resolved"),
+  payload: z.union([
+    z.object({
+      snap_x: z.number(),
+      snap_y: z.number(),
+      snap_kind: z.string(),
+      snap_label: z.string(),
+      host_entity_id: z.string(),
+      host_point_id: z.string(),
+    }),
+    z.null(),
+  ]),
+});
+
 export const coreMessageSchema = z.union([
   helloEventSchema,
   pongEventSchema,
@@ -1328,5 +1344,7 @@ export const coreMessageSchema = z.union([
   documentExportedEventSchema,
   documentSavedEventSchema,
   logEventSchema,
+  draftSnapResolvedEventSchema,
   errorEventSchema,
 ]);
+

@@ -37,10 +37,16 @@ const inline std::vector<std::string> kDefaultSnapPriority = {
     "endpoint",
     "center",
     "midpoint",
+    "axis_lock",
     "intersection",
     "quadrant",
     "perpendicular",
+    "perpendicular_direction",
     "tangent",
+    "parallel",
+    "polar",
+    "grid",
+    "grid_line",
     "nearest",
 };
 

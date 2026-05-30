@@ -287,6 +287,19 @@ export interface LogEvent extends BaseMessage {
   payload: LogEntry;
 }
 
+export interface DraftSnapResolvedEvent {
+  id: string;
+  type: "draft_snap_resolved";
+  payload: {
+    snap_x: number;
+    snap_y: number;
+    snap_kind: string;
+    snap_label: string;
+    host_entity_id: string;
+    host_point_id: string;
+  } | null;
+}
+
 export interface LogEntry {
   level: LogLevel;
   source: string;
@@ -304,6 +317,7 @@ export type CoreMessage =
   | DocumentExportedEvent
   | DocumentSavedEvent
   | LogEvent
+  | DraftSnapResolvedEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -1300,6 +1314,17 @@ export interface DeleteParameterCommand {
   };
 }
 
+export interface ResolveDraftSnapCommand {
+  id: string;
+  type: "resolve_draft_snap";
+  payload: {
+    cursor_x: number;
+    cursor_y: number;
+    start_x: number;
+    start_y: number;
+  };
+}
+
 export interface UpdateSelectionFilterCommand {
   id: string;
   type: "update_selection_filter";
@@ -1737,4 +1762,5 @@ export type CoreCommand =
   | UpdateParameterCommand
   | DeleteParameterCommand
   | UpdateSelectionFilterCommand
+  | ResolveDraftSnapCommand
   | ShutdownCommand;

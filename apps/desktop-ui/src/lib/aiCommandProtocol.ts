@@ -558,6 +558,7 @@ const activeSketchRequiredCommands = new Set<string>([
   "update_sketch_point",
   "set_sketch_line_constraint",
   "clear_sketch_line_constraints",
+  "resolve_draft_snap",
   "set_sketch_equal_length_constraint",
   "set_sketch_perpendicular_constraint",
   "start_mirror_preview",

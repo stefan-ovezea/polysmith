@@ -1746,6 +1746,24 @@ export function makeUpdateSelectionFilterCommand(
   };
 }
 
+export function makeResolveDraftSnapCommand(
+  cursorX: number,
+  cursorY: number,
+  startX: number,
+  startY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "resolve_draft_snap",
+    payload: {
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+      start_x: startX,
+      start_y: startY,
+    },
+  };
+}
+
 export function makeAddParameterCommand(
   name: string,
   expression: string,

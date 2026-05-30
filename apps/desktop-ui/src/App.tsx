@@ -834,6 +834,7 @@ function App() {
     setSketchTool,
     setSketchLineConstraint,
     clearSketchLineConstraints,
+    resolveDraftSnap,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
     setSketchParallelConstraint,
@@ -5681,6 +5682,9 @@ function App() {
                 await runAction(async () => {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
+              }}
+              onResolveDraftSnap={async (cx, cy, sx, sy) => {
+                await resolveDraftSnap(cx, cy, sx, sy);
               }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
                 await runAction(async () => {

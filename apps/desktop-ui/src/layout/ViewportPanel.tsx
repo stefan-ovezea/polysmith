@@ -317,6 +317,12 @@ interface ViewportPanelProps {
     hostLineId: string,
     t: number,
   ) => Promise<void>;
+  onResolveDraftSnap: (
+    cursorX: number,
+    cursorY: number,
+    startX: number,
+    startY: number,
+  ) => Promise<void>;
   onAddSketchAngleDimension: (
     firstLineId: string,
     secondLineId: string,
@@ -1186,6 +1192,7 @@ export function ViewportPanel({
   onAddSketchLine,
   onSetSketchMidpointAnchor,
   onSetSketchPointLineAnchor,
+  onResolveDraftSnap,
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
@@ -1373,6 +1380,14 @@ export function ViewportPanel({
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
+  const cppSnapCacheRef = useRef<{
+    local: [number, number];
+    snapLabel: string | null;
+    snapKind: string;
+    hostEntityId: string;
+    hostPointId: string;
+    timestamp: number;
+  } | null>(null);
   // Track click timing and position for double-click detection during
   // line drafting. Two clicks <300ms apart at the same location break
   // the chain and start an independent line on the next click.
@@ -4705,6 +4720,30 @@ const currentGridSpacingRef = useRef(10);
     local: [number, number];
     world: [number, number, number];
   }) {
+    // C++ snap cache (Phase 3b): if a recent C++ result matches the
+    // cursor position, use it directly — no TS snap computation.
+    const cppSnap = cppSnapCacheRef.current;
+    if (cppSnap && performance.now() - cppSnap.timestamp < 200) {
+      const d = Math.hypot(rawPoint.local[0] - cppSnap.local[0],
+                           rawPoint.local[1] - cppSnap.local[1]);
+      if (d <= SKETCH_SNAP_DISTANCE * 2) {
+        return {
+          local: cppSnap.local,
+          world: toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame),
+          snapLabel: cppSnap.snapLabel,
+          snapMidpointHostLineId: cppSnap.snapKind === "midpoint" ? cppSnap.hostEntityId : null,
+          snapPerpendicularHostLineId: cppSnap.snapKind === "perpendicular" ? cppSnap.hostEntityId : null,
+          snapEndpointHostLineId: cppSnap.snapKind === "endpoint" ? cppSnap.hostEntityId : null,
+          snapLineBodyHostLineId: null,
+          snapLineBodyT: null,
+          snapAxisLock: cppSnap.snapKind === "axis_lock"
+            ? (cppSnap.snapLabel === "Horizontal" ? "horizontal" as const : "vertical" as const)
+            : null,
+          snapTangentCircleId: null,
+        } satisfies SketchPreviewPoint;
+      }
+    }
+
     // Read filter from localStorage (instant, no IPC round trip).
     const localFilter = readLocalFilter();
     const effectiveFilter: typeof localFilter = localFilter && altHeldRef.current
@@ -5862,12 +5901,8 @@ const currentGridSpacingRef = useRef(10);
     if (!newLine) {
       return;
     }
-    if (pending?.startHostLineId) {
-      void setSketchMidpointAnchorRef.current(
-        newLine.start_point_id,
-        pending.startHostLineId,
-      );
-    }
+    // Only the endpoint gets a midpoint anchor. The start point is
+    // a deliberate user placement — binding it would pull the line.
     if (pending?.endHostLineId) {
       void setSketchMidpointAnchorRef.current(
         newLine.end_point_id,
@@ -5883,13 +5918,7 @@ const currentGridSpacingRef = useRef(10);
     // Point-on-line anchors. Per side, only fire when that side
     // wasn't already claimed by a midpoint anchor — the midpoint
     // anchor is a more specific relation and should win.
-    if (pendingLine?.startHost && !pending?.startHostLineId) {
-      void setSketchPointLineAnchorRef.current(
-        newLine.start_point_id,
-        pendingLine.startHost.lineId,
-        pendingLine.startHost.t,
-      );
-    }
+    // Only the endpoint gets a point‑line anchor — same rationale.
     if (pendingLine?.endHost && !pending?.endHostLineId) {
       void setSketchPointLineAnchorRef.current(
         newLine.end_point_id,
@@ -8678,6 +8707,13 @@ const currentGridSpacingRef = useRef(10);
 
         const sketchPoint = resolveSnappedSketchPoint(rawPoint);
         setSketchSnapLabel(sketchPoint.snapLabel);
+
+        // Call C++ snap for next-frame cache.
+        if (activeSketchPlaneId && onResolveDraftSnap) {
+          const start = lineDraftStartRef.current ?? sketchPoint.local;
+          void onResolveDraftSnap(rawPoint.local[0], rawPoint.local[1], start[0], start[1]);
+        }
+
         if (
           isDraftDimensionTool(activeSketchToolRef.current) &&
           draftDimensionSessionRef.current
@@ -10852,9 +10888,13 @@ const currentGridSpacingRef = useRef(10);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
-    renderer.domElement.addEventListener("wheel", handleWheel, {
-      passive: false,
-    });
+    renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
+    const onCppSnap = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      cppSnapCacheRef.current = { local: d.local, snapLabel: d.snapLabel, snapKind: d.snapKind,
+        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, timestamp: performance.now() };
+    };
+    window.addEventListener("polysmith-cpp-snap", onCppSnap);
     resizeRenderer();
 
     const animate = () => {
@@ -10883,6 +10923,7 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("polysmith-cpp-snap", onCppSnap);
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);
@@ -11635,6 +11676,8 @@ const currentGridSpacingRef = useRef(10);
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
+  const pointCount = sketchFeature?.sketch_parameters?.points.length ?? 0;
+  const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   function isLinkedBodyCopy(bodyId: string | null | undefined) {
     if (!bodyId) {
@@ -12786,10 +12829,10 @@ const currentGridSpacingRef = useRef(10);
                 {activeSketchPlaneId
                   ? translate("viewport.sketchStatus", {
                       tool: activeSketchTool,
-                      lineCount,
-                      linePlural: lineCount === 1 ? "" : "s",
-                      circleCount,
-                      circlePlural: circleCount === 1 ? "" : "s",
+                      lineCount, linePlural: lineCount === 1 ? "" : "s",
+                      circleCount, circlePlural: circleCount === 1 ? "" : "s",
+                      pointCount, pointPlural: pointCount === 1 ? "" : "s",
+                      arcCount, arcPlural: arcCount === 1 ? "" : "s",
                     })
                   : translate("viewport.noActiveSketch")}
               </p>

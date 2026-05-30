@@ -124,7 +124,8 @@
         "update_parameter",
         "delete_parameter",
         "trim_sketch_entity",
-        "update_selection_filter"
+        "update_selection_filter",
+        "resolve_draft_snap"
       ]
     },
     "payload": { "type": "object" }

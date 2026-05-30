@@ -261,9 +261,6 @@ std::vector<TrimIntersection> find_all_intersections(
     if (isect.has_value()) { ++found; results.push_back(std::move(*isect)); }
   }
 
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d skipped_constr=%d raw_line=%d\n",
-          target.id.c_str(), total_lines, skipped_constr, found);
-
   for (const auto& circle : params.circles) {
     if (circle.is_construction) continue;
     auto isects = intersect_line_circle(target, circle);
@@ -329,9 +326,6 @@ std::vector<TrimIntersection> find_all_intersections(
       ++found;
     }
   }
-
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d n_circles=%d skipped_constr=%d found=%d\n",
-          target.id.c_str(), total_lines, total_circles, skipped_constr, found);
 
   if (results.empty()) return results;
 
@@ -676,9 +670,6 @@ std::vector<TrimIntersection> find_all_intersections(
     found += static_cast<int>(isects.size());
     for (auto& is : isects) results.push_back(std::move(is));
   }
-
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d n_circles=%d n_arcs=%d found=%d\n",
-          target.id.c_str(), total_lines, total_circles, total_arcs, found);
 
   // Filter out intersections at the arc's own endpoints — they
   // produce zero-length segments and prevent meaningful trimming.

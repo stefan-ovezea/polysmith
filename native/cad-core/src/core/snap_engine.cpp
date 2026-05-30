@@ -578,6 +578,129 @@ void collect_polar_candidates(
   }
 }
 
+void collect_parallel_candidates(
+    double cursor_x, double cursor_y,
+    double start_x, double start_y,
+    double tolerance,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    std::vector<SnapCandidate>& candidates) {
+  const double dx = cursor_x - start_x;
+  const double dy = cursor_y - start_y;
+  const double dist = std::hypot(dx, dy);
+  if (dist < 1e-9) return;
+  const double cursor_angle = std::atan2(dy, dx);
+  constexpr double kAngleThreshold = M_PI / 18.0;
+  double best_angle_diff = kAngleThreshold;
+  double best_angle = 0.0;
+  std::string best_line_id;
+  for (const auto& line : sketch.lines) {
+    if (line.is_construction) continue;
+    const double la = std::atan2(line.end_y - line.start_y, line.end_x - line.start_x);
+    for (double dir : {la, la + M_PI}) {
+      double ad = std::abs(cursor_angle - dir);
+      if (ad > M_PI) ad = 2.0 * M_PI - ad;
+      if (ad < best_angle_diff) { best_angle_diff = ad; best_angle = dir; best_line_id = line.id; }
+    }
+  }
+  if (best_line_id.empty()) return;
+  const double ca = std::cos(best_angle), sa = std::sin(best_angle);
+  const double t = dx * ca + dy * sa;
+  const double px = start_x + t * ca, py = start_y + t * sa;
+  const double d = std::hypot(cursor_x - px, cursor_y - py);
+  if (d <= tolerance) {
+    candidates.push_back(SnapCandidate{.kind="parallel",.entity_id=best_line_id,.point_id="",.local_x=px,.local_y=py,.distance=d,.label="Parallel"});
+  }
+}
+
+void collect_perpendicular_direction_candidates(
+    double cursor_x, double cursor_y,
+    double start_x, double start_y,
+    double tolerance,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    std::vector<SnapCandidate>& candidates) {
+  const double dx = cursor_x - start_x;
+  const double dy = cursor_y - start_y;
+  const double dist = std::hypot(dx, dy);
+  if (dist < 1e-9) return;
+  const double cursor_angle = std::atan2(dy, dx);
+  constexpr double kAngleThreshold = M_PI / 18.0;
+  double best_angle_diff = kAngleThreshold;
+  double best_angle = 0.0;
+  std::string best_line_id;
+  for (const auto& line : sketch.lines) {
+    if (line.is_construction) continue;
+    const double la = std::atan2(line.end_y - line.start_y, line.end_x - line.start_x);
+    for (double dir : {la + M_PI_2, la - M_PI_2, la + 3.0 * M_PI_2, la - 3.0 * M_PI_2}) {
+      double ad = std::abs(cursor_angle - dir);
+      if (ad > M_PI) ad = 2.0 * M_PI - ad;
+      if (ad < best_angle_diff) { best_angle_diff = ad; best_angle = dir; best_line_id = line.id; }
+    }
+  }
+  if (best_line_id.empty()) return;
+  const double ca = std::cos(best_angle), sa = std::sin(best_angle);
+  const double t = dx * ca + dy * sa;
+  const double px = start_x + t * ca, py = start_y + t * sa;
+  const double d = std::hypot(cursor_x - px, cursor_y - py);
+  if (d <= tolerance) {
+    candidates.push_back(SnapCandidate{.kind="perpendicular_direction",.entity_id=best_line_id,.point_id="",.local_x=px,.local_y=py,.distance=d,.label="Perpendicular"});
+  }
+}
+
+void collect_axis_lock_candidates(
+    double cursor_x, double cursor_y,
+    double start_x, double start_y,
+    double tolerance,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    std::vector<SnapCandidate>& candidates) {
+  const double dx = cursor_x - start_x;
+  const double dy = cursor_y - start_y;
+  const double dist = std::hypot(dx, dy);
+  if (dist < 1e-9) return;
+  constexpr double kSinThreshold = std::sin(3.0 * M_PI / 180.0);
+  const double hratio = std::abs(dy) / dist;
+  const double vratio = std::abs(dx) / dist;
+  if (hratio < kSinThreshold) {
+    const double ly = start_y;
+    double best_dist = tolerance; SnapCandidate best; bool found = false;
+    for (const auto& line : sketch.lines) {
+      double ldy = line.end_y - line.start_y;
+      if (std::abs(ldy) < 1e-9) continue;
+      double t = (ly - line.start_y) / ldy;
+      if (t < 0.0 || t > 1.0) continue;
+      double ix = line.start_x + t * (line.end_x - line.start_x);
+      double d = std::abs(ix - cursor_x);
+      if (d < best_dist) {
+        best_dist = d;
+        best = SnapCandidate{.kind="axis_lock",.entity_id=line.id,.point_id="",.local_x=ix,.local_y=ly,.distance=d,.label="Horizontal"};
+        found = true;
+      }
+    }
+    if (found) candidates.push_back(best);
+    else candidates.push_back(SnapCandidate{.kind="axis_lock",.entity_id="",.point_id="",.local_x=cursor_x,.local_y=ly,.distance=std::abs(cursor_y-ly),.label="Horizontal"});
+  } else if (vratio < kSinThreshold) {
+    const double lx = start_x;
+    double best_dist = tolerance; SnapCandidate best; bool found = false;
+    for (const auto& line : sketch.lines) {
+      double ldx = line.end_x - line.start_x;
+      if (std::abs(ldx) < 1e-9) continue;
+      double t = (lx - line.start_x) / ldx;
+      if (t < 0.0 || t > 1.0) continue;
+      double iy = line.start_y + t * (line.end_y - line.start_y);
+      double d = std::abs(iy - cursor_y);
+      if (d < best_dist) {
+        best_dist = d;
+        best = SnapCandidate{.kind="axis_lock",.entity_id=line.id,.point_id="",.local_x=lx,.local_y=iy,.distance=d,.label="Vertical"};
+        found = true;
+      }
+    }
+    if (found) candidates.push_back(best);
+    else candidates.push_back(SnapCandidate{.kind="axis_lock",.entity_id="",.point_id="",.local_x=lx,.local_y=cursor_y,.distance=std::abs(cursor_x-lx),.label="Vertical"});
+  }
+}
+
 } // namespace
 
 std::optional<SnapCandidate> resolve_snap(
@@ -628,6 +751,15 @@ std::optional<SnapCandidate> resolve_snap(
   }
   if (filter.snap_polar && start_x.has_value() && start_y.has_value()) {
     collect_polar_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, filter, candidates);
+  }
+  if (start_x.has_value() && start_y.has_value()) {
+    collect_axis_lock_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
+    if (filter.snap_parallel) {
+      collect_parallel_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
+    }
+    if (filter.snap_perpendicular) {
+      collect_perpendicular_direction_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
+    }
   }
 
   if (candidates.empty()) {

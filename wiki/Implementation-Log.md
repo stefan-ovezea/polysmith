@@ -4,6 +4,38 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-05-30
 
+### Snap system — C++ migration (Phase 1–3)
+
+See `constraints` branch and `wiki/Snap-System-CPP-Migration.md` for the full plan.
+
+- **New IPC**: `resolve_draft_snap` — C++ snap engine resolves all candidate types and returns the best match to the TS renderer
+- **Dynamic collectors added to C++**: parallel direction lock, perpendicular direction lock, H/V axis lock
+- **TS snap override**: `resolveSnappedSketchPoint` now reads a C++ snap cache (updated via custom event) before falling through to its local computation
+- **Snap priority**: endpoint > center > midpoint > axis_lock > intersection > quadrant > perpendicular > perp_direction > tangent > parallel > polar > grid > grid_line > nearest
+- **Remaining**: Phase 4 (remove dead TS snap code) and Phase 5 (constraint preview unification) deferred to a follow-up
+
+### Start-point anchoring — prevented at 3 layers
+
+The start point of a user-drawn line must never be auto‑merged with nearby geometry. Three independent code paths were creating anchors on the start point — all are now blocked:
+
+| Layer | Path | Fix |
+|---|---|---|
+| C++ inference | `run_inference_on_new_line` merging start | Removed start-point check |
+| C++ snap | `snap_line_endpoints_to_coincident_geometry` merging start | `snap_start=false` for user IPC path |
+| TS post-add | Midpoint/point‑line anchor dispatch on start | Endpoint-only |
+
+### Trim tool — known issues (revisit needed)
+
+Trim can produce zero‑length lines when an intersection splits a segment at the same point. Guards added in first/last/middle‑segment paths to detect and delete collapsed lines (logged as `ERROR`), but the root cause in `trim_engine.cpp` intersection/splitting logic needs a dedicated investigation.
+
+### Zero-length line detection
+
+`refresh_sketch_derived_state` logs any zero‑length line as `ERROR` with entity ID, position, and constraint. The TS stderr handler now classifies lines starting with `ERROR` as error level (red in the log panel), `WARN` as warning, and everything else as info.
+
+### Status line
+
+Bottom-right viewport status now shows `3L · 1C · 0A · 6P` (lines, circles, arcs, points) for quick entity inventory.
+
 ### Constraint system fixes — atomic commit, badge stacking, clear-all, stay-armed
 
 See `constraints` branch.
