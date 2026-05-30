@@ -1374,6 +1374,77 @@ function App() {
     });
   }
 
+  function extrudeFeatureIsPresent(featureIds: Set<string>) {
+    const currentDocument = useCadCoreStore.getState().document;
+    return (
+      currentDocument?.feature_history.some((feature) =>
+        featureIds.has(feature.feature_id),
+      ) ?? false
+    );
+  }
+
+  async function undoUntilExtrudePreviewRemoved(featureIds: readonly string[]) {
+    const pendingFeatureIds = new Set(featureIds);
+    if (pendingFeatureIds.size === 0) {
+      return;
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!extrudeFeatureIsPresent(pendingFeatureIds)) {
+        return;
+      }
+      const documentPromise = awaitDocumentChange(() => true);
+      await runAction(async () => {
+        await undo();
+      });
+      await documentPromise;
+    }
+  }
+
+  function activeExtrudeAdvancedParameters(
+    params: ExtrudeFeatureParameters | null | undefined,
+    operation: ExtrudeMode,
+  ): ExtrudeAdvancedParameters | null {
+    if (!params) {
+      return null;
+    }
+    return {
+      extent_mode: params.extent_mode,
+      side1: params.side1,
+      side2: params.side2,
+      thin: params.thin,
+      operation,
+      intersect_result: params.intersect_result,
+    };
+  }
+
+  async function recreateNewProfileExtrudePreview(
+    action: ActiveExtrudeAction,
+    depth: number,
+    mode: ExtrudeMode,
+    targetBodyId: string | null,
+    parameters: ExtrudeAdvancedParameters | null,
+  ) {
+    if (
+      action.originalSnapshot ||
+      action.profileIds.length === 0 ||
+      action.featureIds.length === 0
+    ) {
+      return false;
+    }
+
+    await undoUntilExtrudePreviewRemoved(action.featureIds);
+    await createExtrudeFromProfiles(
+      [...action.profileIds],
+      depth,
+      mode,
+      targetBodyId,
+      parameters,
+      action.canCombineWithExistingBody,
+    );
+    return true;
+  }
+
   async function createExtrudeFromSelectedFace(
     faceId: string,
     depth: number,
@@ -3123,9 +3194,11 @@ function App() {
             );
           });
         } else {
-          await runAction(async () => {
-            await undo();
-          });
+          await undoUntilExtrudePreviewRemoved(
+            extrudeAction.featureIds.length > 0
+              ? extrudeAction.featureIds
+              : [extrudeAction.featureId],
+          );
         }
       }
       setExtrudeAction(null);
@@ -6385,8 +6458,33 @@ function App() {
                               await updateExtrudeDepth(featureId, depth);
                             }
                           });
+                          setExtrudeAction((current) =>
+                            current?.phase === "active" &&
+                            current.featureId === activeExtrudeFeatureId
+                              ? {...current, initialDepth: depth}
+                              : current,
+                          );
                         }}
                         onPreviewMode={async (mode) => {
+                          const recreated =
+                            await recreateNewProfileExtrudePreview(
+                              extrudeAction,
+                              activeExtrudeFeature?.extrude_parameters?.depth ??
+                                extrudeAction.initialDepth,
+                              mode,
+                              mode === "new_body"
+                                ? null
+                                : activeExtrudeFeature?.extrude_parameters
+                                    ?.target_body_id ??
+                                  extrudeAction.initialTargetBodyId,
+                              activeExtrudeAdvancedParameters(
+                                activeExtrudeFeature?.extrude_parameters,
+                                mode,
+                              ),
+                            );
+                          if (recreated) {
+                            return;
+                          }
                           await runAction(async () => {
                             for (const featureId of activeExtrudeFeatureIds) {
                               await updateExtrudeMode(featureId, mode);
