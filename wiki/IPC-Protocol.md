@@ -267,6 +267,20 @@ tool:
 - `create_thread`, `update_thread_parameters`, and `confirm_thread` add the semantic thread feature contract for a target body plus a sketch-line / construction-axis / straight-edge axis source. Cosmetic representation emits a lightweight cosmetic helix through `viewport_state.helices[]`; modeled representation is experimental/known-buggy and should not be treated as reliable production geometry until the native thread path is reworked. Dependency refresh re-resolves both references and marks the feature `dependency_broken` when either target disappears.
 - `create_fastener` and `update_fastener_parameters` add the semantic fastener feature contract with standard, size, diameter, minor diameter, pitch, length, thread length, head type, drive type, and thread representation parameters. Cosmetic thread representation emits a lightweight viewport helix; modeled representation is experimental/known-buggy and can produce invalid or incomplete threaded shafts in viewport/export. Hex-socket and Phillips drive options cut simple recess geometry into the generated head.
 - `create_move { target_body_id, parameters? }`, `update_move_parameters { feature_id, parameters }`, and `confirm_move { feature_id }` add a core-owned `move` timeline feature for one body. Parameters round-trip on `feature_history[].move_parameters` with `target_body_id`, local-frame translation components, local-frame rotation components, and `is_pending`. The body compiler resolves the target body during replay, transforms that body in place around its current pre-move bounding-box center, preserves the body id, updates its emitted local frame, and marks the feature `dependency_broken` if the target body can no longer be resolved.
+- `create_image_import`, `update_image_import`, `confirm_image_import`, and
+  `cancel_image_import` add the reference-image import workflow. The shared
+  placement payload carries `plane_id`, `plane_frame`, `asset_id`,
+  plane-local offsets, in-plane rotation, width/height, `lock_aspect`, and
+  `is_pending`. Parameters round-trip on
+  `feature_history[].image_import_parameters`; render payloads appear in
+  `viewport_state.reference_images[]`.
+- `create_svg_import { source_path, ...placement }` imports an SVG directly as
+  one new sketch on the selected plane. SVG files are not kept as document
+  assets. The command applies the plane transform, flattens supported vector
+  geometry into sketch lines, selects the new sketch, and fails cleanly if no
+  usable vector geometry remains. `update_svg_import`, `confirm_svg_import`,
+  and `cancel_svg_import` remain compatibility commands for legacy pending SVG
+  preview features.
 - `create_body_copy { source_body_id, copy_mode? }` adds a core-owned `body_copy` timeline feature. `copy_mode: "linked"` (default) resolves the source body during replay, emits a new body under the copy feature id, preserves the source local frame, and marks the copy `dependency_broken` if the source body can no longer be resolved. `copy_mode: "standalone"` stores a frozen core shape snapshot and local frame so the copy survives later source edits independently.
 - `unlink_body_copy { feature_id }` converts a linked `body_copy` into a standalone copy by resolving the copy at its current feature-history position, storing that shape snapshot plus local frame, and flipping `copy_mode` to `"standalone"`. The change is undoable through the normal undo stack but intentionally removes the future source-body dependency.
 - `set_body_color { body_id, color }`, `set_face_color { face_id, color }`, `clear_body_color { body_id }`, `clear_face_color { face_id }`, and `clear_appearance_overrides {}` maintain document-scoped appearance overrides. Colors are opaque `#RRGGBB` strings stored under `document_state.appearance`. Body overrides are keyed by body/root feature id. Face overrides store the emitted `face_id`, owner body id, and a face geometry signature so the core only reapplies them when the face still resolves to the same topology; semantic legacy face ids use their stable face id as the signature.
@@ -276,6 +290,11 @@ tool:
 - `viewport_state.reference_axes[]` now also carries construction-axis features using `axis: "custom"` and explicit endpoints. `viewport_state.reference_points[]` carries construction-point features with a world-space position. `viewport_state.helices[]` carries sampled construction helix polylines.
 - `save_document` writes the live document state as a JSON `.polysmith` file at the supplied `file_path`; the core replies with `document_saved`
 - `load_document` parses a `.polysmith` file, replaces the live document, restores ID counters by scanning the loaded ids, clears undo/redo stacks, and replies with `document_state`
+- imported image/SVG assets are copied into document-managed storage. Unsaved
+  documents stage assets in an app temp folder; saving moves/copies them beside
+  the document as `<DocumentName>.assets/imports/<asset_id>.<ext>`. The document
+  stores relative asset references and resolves them on load. Missing assets
+  emit warnings/placeholders instead of crashing.
 - `set_timeline_cursor { included_action_count }` moves the core-owned parametric history cursor. The count is measured in non-root timeline actions; the core clamps it to the valid range, stores `null` when the cursor is at the end, and subsequent `get_viewport_state` calls rebuild the viewport from the feature-history prefix at that cursor without deleting later features.
 - `project_face_into_sketch` projects the outline of a selected solid face onto the active sketch's plane, creating fixed-endpoint sketch lines or sketch circles for circular caps and annular circular loops. Annular planar circular faces project as concentric sketch circles instead of sampled polygon segments. Legacy box/cylinder features are not yet supported by the projection helper and produce a structured error.
 - `project_profile_into_sketch` projects a sketch profile boundary into the active sketch, creating fixed-endpoint projected lines for polygon loops and projected circles for circular profiles; profile inner loops are included.
@@ -297,6 +316,10 @@ For renderer-oriented viewport data, the same ownership rule still applies:
 - the core may provide primitive placement, centers, and scene bounds when that helps visualization
 - the core may provide renderer-facing polygon footprint data for sketch profiles or profile-driven solids when the viewport needs to render them
 - the core may provide reference geometry such as origin planes and axes when those are selectable CAD targets
+- the core may provide imported reference assets through
+  `viewport_state.reference_images[]` and pending SVG placements through
+  `viewport_state.svg_import_previews[]`; the UI renders those assets but does
+  not turn them into CAD state
 - the core may provide lightweight solid-face metadata for picking and highlighting when a face is a selectable CAD target
 - the core may provide active sketch state, renderable sketch entities, derived sketch dimensions, and renderable sketch constraint markers when sketching is in progress
 - the UI may adapt that snapshot for a renderer, but it must not invent CAD state or modeling behavior

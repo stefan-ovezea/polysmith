@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <limits>
 #include <set>
 #include <string>
@@ -2237,6 +2238,8 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
         .sketch_profiles = {},
         .dof_statuses = {},
         .meshes = {},
+        .reference_images = {},
+        .svg_import_previews = {},
         .cut_previews = {},
         .bodies = {},
         .edges = {},
@@ -2279,6 +2282,8 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
   std::vector<ViewportSketchConstraintPrimitive> sketch_constraints;
   std::vector<ViewportSketchProfilePrimitive> sketch_profiles;
   std::vector<ViewportMeshPrimitive> meshes;
+  std::vector<ViewportImportPreview> reference_images;
+  std::vector<ViewportImportPreview> svg_import_previews;
   std::vector<ViewportCutPreview> cut_previews;
   std::vector<ViewportBodySummary> bodies;
   std::vector<ViewportEdgePrimitive> edges;
@@ -4334,6 +4339,50 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
     }
   }
 
+  auto make_import_preview = [&](const FeatureEntry& feature,
+                                 const ImportPlacementParameters& params,
+                                 const std::string& kind) {
+    if (!params.plane_frame.has_value()) {
+      return std::optional<ViewportImportPreview>{};
+    }
+    return std::make_optional(ViewportImportPreview{
+        .id = feature.id,
+        .kind = kind,
+        .label = feature.name,
+        .asset_path = params.asset_path,
+        .media_type = params.media_type,
+        .plane_frame = params.plane_frame.value(),
+        .offset_u_mm = params.offset_u_mm,
+        .offset_v_mm = params.offset_v_mm,
+        .rotation_degrees = params.rotation_degrees,
+        .width_mm = params.width_mm,
+        .height_mm = params.height_mm,
+        .is_pending = params.is_pending,
+        .is_selected = view->selected_feature_id.has_value() &&
+                       view->selected_feature_id.value() == feature.id,
+        .missing_asset = params.asset_path.empty() ||
+                         !std::filesystem::exists(params.asset_path),
+        .warnings = params.warnings,
+    });
+  };
+  for (const auto& feature : view->feature_history) {
+    if (feature.image_import_parameters.has_value()) {
+      const auto preview = make_import_preview(
+          feature, feature.image_import_parameters.value(), "image");
+      if (preview.has_value()) {
+        reference_images.push_back(preview.value());
+      }
+    }
+    if (feature.svg_import_parameters.has_value() &&
+        feature.svg_import_parameters->is_pending) {
+      const auto preview = make_import_preview(
+          feature, feature.svg_import_parameters.value(), "svg");
+      if (preview.has_value()) {
+        svg_import_previews.push_back(preview.value());
+      }
+    }
+  }
+
   return ViewportState{
       .has_active_document = true,
       .boxes = boxes,
@@ -4354,6 +4403,8 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
       .sketch_profiles = sketch_profiles,
       .dof_statuses = dof_statuses,
       .meshes = meshes,
+      .reference_images = reference_images,
+      .svg_import_previews = svg_import_previews,
       .cut_previews = cut_previews,
       .bodies = bodies,
       .edges = edges,

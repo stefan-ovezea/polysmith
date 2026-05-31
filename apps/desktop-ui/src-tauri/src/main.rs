@@ -8,6 +8,8 @@ mod project_metadata;
 mod protocol;
 
 use std::{
+    fs,
+    path::Path,
     sync::Mutex,
     thread,
     time::Duration,
@@ -15,6 +17,7 @@ use std::{
 
 use cad_core::{start_cad_core_process, CadCoreState};
 use orca_slicer::OrcaSlicerState;
+use serde::Serialize;
 use serde_json::Value;
 use tauri::Manager;
 
@@ -83,6 +86,38 @@ fn delete_project_file(file_path: String) -> Result<(), String> {
 #[tauri::command]
 fn project_file_exists(file_path: String) -> Result<bool, String> {
     project_metadata::project_file_exists(file_path)
+}
+
+#[derive(Serialize)]
+struct ImportAssetBytes {
+    mime_type: String,
+    bytes: Vec<u8>,
+}
+
+fn import_asset_mime_type(file_path: &str) -> &'static str {
+    match Path::new(file_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
+}
+
+#[tauri::command]
+fn read_import_asset(file_path: String) -> Result<ImportAssetBytes, String> {
+    let bytes = fs::read(&file_path)
+        .map_err(|error| format!("failed to read import asset {file_path}: {error}"))?;
+    Ok(ImportAssetBytes {
+        mime_type: import_asset_mime_type(&file_path).to_string(),
+        bytes,
+    })
 }
 
 fn center_window_over_window(
@@ -231,6 +266,7 @@ pub fn run() {
             write_project_thumbnail,
             delete_project_file,
             project_file_exists,
+            read_import_asset,
             show_main_window,
             prepare_orca_export_path,
             embed_orca_window,

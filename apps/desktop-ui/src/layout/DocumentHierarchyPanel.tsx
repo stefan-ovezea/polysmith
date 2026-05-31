@@ -4,7 +4,12 @@ import { useTranslation } from "react-i18next";
 import type { DocumentState } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
 
-export type CategoryId = "origin" | "construction" | "sketches" | "bodies";
+export type CategoryId =
+  | "origin"
+  | "construction"
+  | "assets"
+  | "sketches"
+  | "bodies";
 
 interface DocumentHierarchyPanelProps {
   document: DocumentState | null;
@@ -213,6 +218,26 @@ function PointIcon() {
       fill="currentColor"
     >
       <circle cx="8" cy="8" r="2.5" />
+    </svg>
+  );
+}
+
+function AssetIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 3.5h10v9H3Z" />
+      <path d="m4.5 10 2.2-2.4 1.8 1.8 1.2-1.2 1.8 1.8" />
+      <circle cx="10.8" cy="5.8" r="0.8" />
     </svg>
   );
 }
@@ -477,7 +502,14 @@ export function DocumentHierarchyPanel({
 }: DocumentHierarchyPanelProps) {
   const { t } = useTranslation();
   const [openCategories, setOpenCategories] = useState<Set<CategoryId>>(
-    () => new Set<CategoryId>(["origin", "construction", "sketches", "bodies"]),
+    () =>
+      new Set<CategoryId>([
+        "origin",
+        "construction",
+        "assets",
+        "sketches",
+        "bodies",
+      ]),
   );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingFeatureId, setRenamingFeatureId] = useState<string | null>(
@@ -532,9 +564,18 @@ export function DocumentHierarchyPanel({
   const constructionFeatures = useMemo(
     () =>
       features.filter((feature) =>
-        ["construction_plane", "construction_axis", "construction_point"].includes(
-          feature.kind,
-        ),
+        [
+          "construction_plane",
+          "construction_axis",
+          "construction_point",
+        ].includes(feature.kind),
+      ),
+    [features],
+  );
+  const assetFeatures = useMemo(
+    () =>
+      features.filter((feature) =>
+        ["image_import", "svg_import"].includes(feature.kind),
       ),
     [features],
   );
@@ -650,12 +691,62 @@ export function DocumentHierarchyPanel({
             icon={<PlaneIcon />}
             label={plane.label}
             isSelected={document.selected_reference_id === plane.id}
+            onSelect={() => {
+              void onSelectReference(plane.id);
+            }}
             {...rowLabels}
           />
         ))}
         {ORIGIN_AXES.map((axis) => (
           <Row key={axis.id} icon={<AxisIcon />} label={axis.label} {...rowLabels} />
         ))}
+      </Category>
+
+      <Category
+        id="assets"
+        label={t("document.assets")}
+        isOpen={openCategories.has("assets")}
+        onToggleOpen={() => toggleOpen("assets")}
+        isHidden={hiddenCategories.has("assets")}
+        onToggleVisibility={() => onToggleCategoryVisibility("assets")}
+        emptyHint={
+          assetFeatures.length === 0 ? t("document.noAssets") : undefined
+        }
+        {...categoryLabels}
+      >
+        {assetFeatures.map((feature) => {
+          const isHidden = hiddenFeatureIds.has(feature.feature_id);
+          return (
+            <Row
+              key={feature.feature_id}
+              icon={<AssetIcon />}
+              label={feature.name}
+              isSelected={document.selected_feature_id === feature.feature_id}
+              isHidden={isHidden}
+              hasWarning={feature.dependency_broken === true}
+              warningText={feature.dependency_warning}
+              isRenaming={renamingFeatureId === feature.feature_id}
+              onSelect={() => {
+                void onSelectFeature(feature.feature_id);
+              }}
+              onToggleVisibility={() => {
+                onToggleFeatureVisibility(feature.feature_id);
+              }}
+              onContextMenu={openContextMenu(
+                feature.feature_id,
+                feature.name,
+                isHidden,
+                feature.suppressed === true,
+                false,
+              )}
+              onRenameSubmit={(nextName) => {
+                void submitRename(feature.feature_id, nextName);
+              }}
+              onRenameCancel={cancelRename}
+              {...rowLabels}
+            />
+          );
+        })}
       </Category>
 
       <Category

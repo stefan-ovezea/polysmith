@@ -41,6 +41,14 @@ import {
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
   makeLoadDocumentCommand,
+  makeCreateImageImportCommand,
+  makeUpdateImageImportCommand,
+  makeConfirmImageImportCommand,
+  makeCancelImageImportCommand,
+  makeCreateSvgImportCommand,
+  makeUpdateSvgImportCommand,
+  makeConfirmSvgImportCommand,
+  makeCancelSvgImportCommand,
   makeProjectEdgeIntoSketchCommand,
   makeProjectFaceIntoSketchCommand,
   makeProjectProfileIntoSketchCommand,
@@ -155,6 +163,7 @@ import type {
   FastenerFeatureParameters,
   HelixFeatureParameters,
   HoleFeatureParameters,
+  ImportPlacementPayload,
   MoveFeatureParameters,
   ThreadFeatureParameters,
 } from "@/types";
@@ -296,6 +305,56 @@ export function useCadCore() {
       // The load command replies with `document_state`. Refresh session
       // (undo/redo flags) and viewport so the UI reflects the loaded
       // document end-to-end.
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createImageImport: async (
+      sourcePath: string,
+      placement: ImportPlacementPayload,
+    ) => {
+      await sendCoreCommand(makeCreateImageImportCommand(sourcePath, placement));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateImageImport: async (
+      featureId: string,
+      placement: ImportPlacementPayload,
+    ) => {
+      await sendCoreCommand(makeUpdateImageImportCommand(featureId, placement));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    confirmImageImport: async (featureId: string) => {
+      await sendCoreCommand(makeConfirmImageImportCommand(featureId));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    cancelImageImport: async (featureId: string) => {
+      await sendCoreCommand(makeCancelImageImportCommand(featureId));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createSvgImport: async (
+      sourcePath: string,
+      placement: ImportPlacementPayload,
+    ) => {
+      await sendCoreCommand(makeCreateSvgImportCommand(sourcePath, placement));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSvgImport: async (
+      featureId: string,
+      placement: ImportPlacementPayload,
+    ) => {
+      await sendCoreCommand(makeUpdateSvgImportCommand(featureId, placement));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    confirmSvgImport: async (featureId: string) => {
+      await sendCoreCommand(makeConfirmSvgImportCommand(featureId));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    cancelSvgImport: async (featureId: string) => {
+      await sendCoreCommand(makeCancelSvgImportCommand(featureId));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },

@@ -902,6 +902,40 @@ json profile_points_to_payload(
   return payload;
 }
 
+json import_warnings_to_payload(const std::vector<std::string>& warnings) {
+  json payload = json::array();
+  for (const auto& warning : warnings) {
+    payload.push_back(warning);
+  }
+  return payload;
+}
+
+json import_placement_to_payload(
+    const polysmith::core::ImportPlacementParameters& params) {
+  return {
+      {"plane_id", params.plane_id},
+      {"plane_frame",
+       params.plane_frame.has_value()
+           ? plane_frame_to_payload(params.plane_frame.value())
+           : json(nullptr)},
+      {"asset_id", params.asset_id},
+      {"asset_path", params.asset_path},
+      {"relative_asset_path", params.relative_asset_path},
+      {"file_name", params.file_name},
+      {"media_type", params.media_type},
+      {"source_width", params.source_width},
+      {"source_height", params.source_height},
+      {"offset_u_mm", params.offset_u_mm},
+      {"offset_v_mm", params.offset_v_mm},
+      {"rotation_degrees", params.rotation_degrees},
+      {"width_mm", params.width_mm},
+      {"height_mm", params.height_mm},
+      {"lock_aspect", params.lock_aspect},
+      {"is_pending", params.is_pending},
+      {"warnings", import_warnings_to_payload(params.warnings)},
+  };
+}
+
 json to_payload(const polysmith::core::FeatureEntry& feature) {
   return {
       {"feature_id", feature.id},
@@ -1694,6 +1728,14 @@ json to_payload(const polysmith::core::FeatureEntry& feature) {
                    {"y", feature.construction_point_parameters->y},
                    {"z", feature.construction_point_parameters->z}}},
              }
+           : json(nullptr)},
+      {"image_import_parameters",
+       feature.image_import_parameters.has_value()
+           ? import_placement_to_payload(feature.image_import_parameters.value())
+           : json(nullptr)},
+      {"svg_import_parameters",
+       feature.svg_import_parameters.has_value()
+           ? import_placement_to_payload(feature.svg_import_parameters.value())
            : json(nullptr)},
       {"hole_parameters",
        feature.hole_parameters.has_value()
@@ -2617,6 +2659,26 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
     });
   }
 
+  auto import_preview_payload = [](const polysmith::core::ViewportImportPreview& preview) {
+    return json{
+        {"id", preview.id},
+        {"kind", preview.kind},
+        {"label", preview.label},
+        {"asset_path", preview.asset_path},
+        {"media_type", preview.media_type},
+        {"plane_frame", plane_frame_to_payload(preview.plane_frame)},
+        {"offset_u_mm", preview.offset_u_mm},
+        {"offset_v_mm", preview.offset_v_mm},
+        {"rotation_degrees", preview.rotation_degrees},
+        {"width_mm", preview.width_mm},
+        {"height_mm", preview.height_mm},
+        {"is_pending", preview.is_pending},
+        {"is_selected", preview.is_selected},
+        {"missing_asset", preview.missing_asset},
+        {"warnings", import_warnings_to_payload(preview.warnings)},
+    };
+  };
+
   return {
       {"has_active_document", viewport.has_active_document},
       {"boxes", boxes},
@@ -2636,6 +2698,20 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
       {"sketch_constraints", sketch_constraints},
       {"sketch_profiles", sketch_profiles},
       {"meshes", meshes},
+      {"reference_images", [&viewport, &import_preview_payload]() {
+         json previews = json::array();
+         for (const auto& preview : viewport.reference_images) {
+           previews.push_back(import_preview_payload(preview));
+         }
+         return previews;
+       }()},
+      {"svg_import_previews", [&viewport, &import_preview_payload]() {
+         json previews = json::array();
+         for (const auto& preview : viewport.svg_import_previews) {
+           previews.push_back(import_preview_payload(preview));
+         }
+         return previews;
+       }()},
       {"cut_previews", [&viewport]() {
          json previews = json::array();
          for (const auto& preview : viewport.cut_previews) {
@@ -2791,6 +2867,48 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
           return statuses;
         }()},
   };
+}
+
+polysmith::core::ImportPlacementParameters import_placement_from_payload(
+    const json& payload) {
+  polysmith::core::ImportPlacementParameters params{};
+  params.plane_id = read_string(payload, "plane_id");
+  if (payload.contains("plane_frame") && !payload.at("plane_frame").is_null()) {
+    params.plane_frame = plane_frame_from_payload(payload.at("plane_frame"));
+  }
+  params.asset_id = read_optional_string_value(payload, "asset_id", "");
+  params.asset_path = read_optional_string_value(payload, "asset_path", "");
+  params.relative_asset_path =
+      read_optional_string_value(payload, "relative_asset_path", "");
+  params.file_name = read_optional_string_value(payload, "file_name", "");
+  params.media_type = read_optional_string_value(payload, "media_type", "");
+  params.source_width =
+      read_optional_number(payload, "source_width", params.source_width);
+  params.source_height =
+      read_optional_number(payload, "source_height", params.source_height);
+  params.offset_u_mm =
+      read_optional_number(payload, "offset_u_mm", params.offset_u_mm);
+  params.offset_v_mm =
+      read_optional_number(payload, "offset_v_mm", params.offset_v_mm);
+  params.rotation_degrees =
+      read_optional_number(payload, "rotation_degrees", params.rotation_degrees);
+  params.width_mm = read_optional_number(payload, "width_mm", params.width_mm);
+  params.height_mm =
+      read_optional_number(payload, "height_mm", params.height_mm);
+  if (payload.contains("lock_aspect") && payload.at("lock_aspect").is_boolean()) {
+    params.lock_aspect = payload.at("lock_aspect").get<bool>();
+  }
+  if (payload.contains("is_pending") && payload.at("is_pending").is_boolean()) {
+    params.is_pending = payload.at("is_pending").get<bool>();
+  }
+  if (payload.contains("warnings") && payload.at("warnings").is_array()) {
+    for (const auto& warning : payload.at("warnings")) {
+      if (warning.is_string()) {
+        params.warnings.push_back(warning.get<std::string>());
+      }
+    }
+  }
+  return params;
 }
 
 polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
@@ -2980,6 +3098,18 @@ polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
     params.y = require(cpp, "position").at("y").get<double>();
     params.z = require(cpp, "position").at("z").get<double>();
     feature.construction_point_parameters = params;
+  }
+
+  if (payload.contains("image_import_parameters") &&
+      !payload.at("image_import_parameters").is_null()) {
+    feature.image_import_parameters =
+        import_placement_from_payload(payload.at("image_import_parameters"));
+  }
+
+  if (payload.contains("svg_import_parameters") &&
+      !payload.at("svg_import_parameters").is_null()) {
+    feature.svg_import_parameters =
+        import_placement_from_payload(payload.at("svg_import_parameters"));
   }
 
   if (payload.contains("hole_parameters") &&

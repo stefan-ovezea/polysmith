@@ -377,6 +377,29 @@ struct ConstructionPointFeatureParameters {
   double z = 0.0;
 };
 
+struct ImportPlacementParameters {
+  std::string plane_id;
+  std::optional<PlaneFrame> plane_frame;
+  std::string asset_id;
+  std::string asset_path;
+  std::string relative_asset_path;
+  std::string file_name;
+  std::string media_type;
+  double source_width = 1.0;
+  double source_height = 1.0;
+  double offset_u_mm = 0.0;
+  double offset_v_mm = 0.0;
+  double rotation_degrees = 0.0;
+  double width_mm = 100.0;
+  double height_mm = 100.0;
+  bool lock_aspect = true;
+  bool is_pending = false;
+  std::vector<std::string> warnings;
+};
+
+using ImageImportFeatureParameters = ImportPlacementParameters;
+using SvgImportFeatureParameters = ImportPlacementParameters;
+
 struct SketchLine {
   std::string id;
   std::string start_point_id;
@@ -814,6 +837,8 @@ struct FeatureEntry {
   std::optional<FastenerFeatureParameters> fastener_parameters;
   std::optional<MoveFeatureParameters> move_parameters;
   std::optional<BodyCopyFeatureParameters> body_copy_parameters;
+  std::optional<ImageImportFeatureParameters> image_import_parameters;
+  std::optional<SvgImportFeatureParameters> svg_import_parameters;
 };
 
 }  // namespace polysmith::core

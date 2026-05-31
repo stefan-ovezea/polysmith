@@ -152,6 +152,25 @@ function EditMenuIcon() {
   );
 }
 
+function ImportMenuIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-[18px] w-[18px]"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3v11" />
+      <path d="m8 10 4 4 4-4" />
+      <path d="M5 17v3h14v-3" />
+    </svg>
+  );
+}
+
 function LogsMenuIcon() {
   return (
     <svg
@@ -262,6 +281,8 @@ interface AppHeaderProps {
   onExportDocument: () => Promise<void>;
   onSaveDocument: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
+  onImportImage: () => void;
+  onImportSvg: () => void;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   logCount: number;
@@ -383,6 +404,8 @@ export function AppHeader({
   onExportDocument,
   onSaveDocument,
   onLoadDocument,
+  onImportImage,
+  onImportSvg,
   onUndo,
   onRedo,
   logCount,
@@ -598,6 +621,15 @@ export function AppHeader({
                 label: t("header.exportStep"),
                 onSelect: () => void onExportDocument(),
               },
+            ]}
+          />
+          <MenuDropdown
+            label={t("header.import")}
+            icon={<ImportMenuIcon />}
+            disabled={disabled}
+            items={[
+              { label: t("header.importImage"), onSelect: onImportImage },
+              { label: t("header.importSvg"), onSelect: onImportSvg },
             ]}
           />
           <MenuDropdown

@@ -102,6 +102,8 @@ export interface ViewportState {
   sketch_constraints: ViewportSketchConstraint[];
   sketch_profiles: ViewportSketchProfile[];
   meshes: ViewportMeshPrimitive[];
+  reference_images: ViewportImportPreview[];
+  svg_import_previews: ViewportImportPreview[];
   cut_previews: ViewportCutPreview[];
   bodies: ViewportBodySummary[];
   edges: ViewportEdgePrimitive[];
@@ -139,6 +141,24 @@ export interface ViewportState {
     magnetic_pull: boolean;
     tolerance_px: number;
   };
+}
+
+export interface ViewportImportPreview {
+  id: string;
+  kind: string;
+  label: string;
+  asset_path: string;
+  media_type: string;
+  plane_frame: PlaneFrame;
+  offset_u_mm: number;
+  offset_v_mm: number;
+  rotation_degrees: number;
+  width_mm: number;
+  height_mm: number;
+  is_pending: boolean;
+  is_selected: boolean;
+  missing_asset: boolean;
+  warnings: string[];
 }
 
 export interface ViewportMeshPrimitive {
@@ -375,6 +395,73 @@ export interface LoadDocumentCommand {
   payload: {
     file_path: string;
   };
+}
+
+export interface ImportPlacementPayload {
+  plane_id: string;
+  plane_frame: PlaneFrame;
+  asset_id?: string;
+  asset_path?: string;
+  relative_asset_path?: string;
+  file_name?: string;
+  media_type?: string;
+  source_width?: number;
+  source_height?: number;
+  offset_u_mm: number;
+  offset_v_mm: number;
+  rotation_degrees: number;
+  width_mm: number;
+  height_mm: number;
+  lock_aspect: boolean;
+  is_pending: boolean;
+}
+
+export interface CreateImageImportCommand {
+  id: string;
+  type: "create_image_import";
+  payload: ImportPlacementPayload & { source_path: string };
+}
+
+export interface UpdateImageImportCommand {
+  id: string;
+  type: "update_image_import";
+  payload: ImportPlacementPayload & { feature_id: string };
+}
+
+export interface ConfirmImageImportCommand {
+  id: string;
+  type: "confirm_image_import";
+  payload: { feature_id: string };
+}
+
+export interface CancelImageImportCommand {
+  id: string;
+  type: "cancel_image_import";
+  payload: { feature_id: string };
+}
+
+export interface CreateSvgImportCommand {
+  id: string;
+  type: "create_svg_import";
+  payload: ImportPlacementPayload & { source_path: string };
+}
+
+export interface UpdateSvgImportCommand {
+  id: string;
+  type: "update_svg_import";
+  payload: ImportPlacementPayload & { feature_id: string };
+}
+
+export interface ConfirmSvgImportCommand {
+  id: string;
+  type: "confirm_svg_import";
+  payload: { feature_id: string };
+}
+
+export interface CancelSvgImportCommand {
+  id: string;
+  type: "cancel_svg_import";
+  payload: { feature_id: string };
 }
 
 export interface ProjectFaceIntoSketchCommand {
@@ -1611,6 +1698,14 @@ export type CoreCommand =
   | ExportBodyStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
+  | CreateImageImportCommand
+  | UpdateImageImportCommand
+  | ConfirmImageImportCommand
+  | CancelImageImportCommand
+  | CreateSvgImportCommand
+  | UpdateSvgImportCommand
+  | ConfirmSvgImportCommand
+  | CancelSvgImportCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand
   | ProjectEdgeIntoSketchCommand

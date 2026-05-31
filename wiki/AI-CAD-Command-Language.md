@@ -216,6 +216,7 @@ kinds currently include:
 - `fillet`
 - `chamfer`
 - `construction_plane`
+- `image_import`
 
 `timeline_cursor` is `null` when the history cursor is at the end. Otherwise it
 is the number of non-root timeline actions included in viewport rollback. A
@@ -252,6 +253,9 @@ geometry. Important arrays:
 - `bodies[]`: body IDs plus `center`, `size`, and `local_frame` for boolean target selection and body-local manipulators
 - `meshes[]`: triangulated body geometry
 - `cut_previews[]`: live cut preview geometry
+- `reference_images[]`: confirmed and pending image imports rendered on a plane
+- `svg_import_previews[]`: pending SVG imports rendered as placeable reference
+  assets before they become sketch geometry
 
 Body primitives, `solid_faces[]`, and `meshes[]` may include
 `appearance_color: "#RRGGBB" | null`. When present, the UI renders that custom
@@ -461,6 +465,159 @@ Payload:
 ```
 
 Returns `document_exported` with `format: "stl"`.
+
+### Import
+
+Image and SVG import commands follow the contextual modeling workflow. Choose a
+plane first, create the import from a source file, update placement while the
+panel is open, then confirm or cancel.
+
+Common placement payload:
+
+```ts
+{
+  plane_id: string;
+  plane_frame: PlaneFrame;
+  asset_id?: string;
+  offset_u_mm: number;
+  offset_v_mm: number;
+  rotation_degrees: number;
+  width_mm: number;
+  height_mm: number;
+  lock_aspect: boolean;
+  is_pending?: boolean;
+}
+```
+
+Use an origin plane id, a construction plane feature id, or a planar face id
+from `viewport_state.solid_faces[]`. For face imports, copy the exact
+core-emitted face `plane_frame`.
+
+#### `create_image_import`
+
+Creates a pending reference image on a selected plane and copies the source file
+into document-managed asset storage.
+
+Payload:
+
+```ts
+{
+  source_path: string;
+  parameters: ImportPlacementPayload;
+}
+```
+
+Returns `document_state`. The new feature is selected and stores
+`feature_history[].image_import_parameters`. Send `get_viewport_state` to render
+`viewport_state.reference_images[]`.
+
+#### `update_image_import`
+
+Updates image placement.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+  parameters: ImportPlacementPayload;
+}
+```
+
+Returns `document_state`.
+
+#### `confirm_image_import`
+
+Marks the image import non-pending.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+}
+```
+
+Returns `document_state`.
+
+#### `cancel_image_import`
+
+Removes the pending image import and deletes its staged asset if no remaining
+feature references it.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+}
+```
+
+Returns `document_state`.
+
+#### `create_svg_import`
+
+Imports an SVG directly as one new sketch on the selected plane. SVG files are
+not kept as document assets.
+
+Payload:
+
+```ts
+{
+  source_path: string;
+  parameters: ImportPlacementPayload;
+}
+```
+
+Returns `document_state`. The selected feature is the new `sketch`.
+
+#### `update_svg_import`
+
+Compatibility command for legacy pending SVG previews. Normal UI import does
+not create pending SVG asset features.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+  parameters: ImportPlacementPayload;
+}
+```
+
+Returns `document_state`.
+
+#### `confirm_svg_import`
+
+Compatibility command for legacy pending SVG previews. Normal SVG import
+already creates the sketch during `create_svg_import`.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+}
+```
+
+SVG curves are flattened into sketch line geometry for v1. Unsupported raster
+images, filters, masks, clipping, text/font cases, and other non-sketch-native
+effects are skipped. If no usable vector geometry remains, the command fails and
+creates no sketch.
+
+#### `cancel_svg_import`
+
+Compatibility command for legacy pending SVG previews.
+
+Payload:
+
+```ts
+{
+  feature_id: string;
+}
+```
+
+Returns `document_state`.
 
 ### Embedded Slicer Handoff
 

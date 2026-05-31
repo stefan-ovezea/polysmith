@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import {
   awaitDocumentChange,
@@ -63,6 +64,7 @@ import {
   MaterialsPanel,
   MessageLog,
   MovePreviewPanel,
+  ImportPreviewPanel,
   SettingsModal,
   ViewportPanel,
   ProjectsPanel,
@@ -79,6 +81,8 @@ import type {
   HoleFeatureParameters,
   HoleStandard,
   MoveFeatureParameters,
+  ImportPlacementPayload,
+  PlaneFrame,
   ThreadFeatureParameters,
 } from "./types";
 import type { DocumentState } from "./types/ipc";
@@ -262,6 +266,14 @@ type ActiveMoveAction =
       createdCopyFeatureId?: string | null;
     };
 
+type ActiveImportAction = {
+  kind: "image" | "svg";
+  featureId: string | null;
+  sourcePath: string | null;
+  fileName: string | null;
+  parameters: ImportPlacementPayload | null;
+};
+
 interface SketchDeleteSelection {
   entityIds: string[];
   pointIds: string[];
@@ -278,6 +290,20 @@ function bodyIdFromFaceId(faceId: string | null | undefined) {
     return null;
   }
   return faceId.slice(0, markerIndex);
+}
+
+async function readImageSize(filePath: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || 1,
+        height: image.naturalHeight || 1,
+      });
+    };
+    image.onerror = () => resolve({ width: 1, height: 1 });
+    image.src = convertFileSrc(filePath);
+  });
 }
 
 // In-progress fillet or chamfer feature. Two-phase contextual modeling flow:
@@ -340,6 +366,7 @@ function App() {
   const sweepCreateInFlightRef = useRef(false);
   const lastSweepInputsRef = useRef("");
   const [moveAction, setMoveAction] = useState<ActiveMoveAction | null>(null);
+  const [importAction, setImportAction] = useState<ActiveImportAction | null>(null);
   // Arc tool creation mode. Defaults to three-point (common CAD workflow's default
   // and the most ergonomic for shaping curves on the fly). The
   // SketchToolbar exposes a segmented control to toggle to
@@ -548,8 +575,13 @@ function App() {
     config.ai.model.trim().length > 0;
   const selectedReference =
     viewport?.reference_planes.find(
+      (referencePlane) =>
+        referencePlane.reference_id === document?.selected_reference_id,
+    ) ??
+    viewport?.reference_planes.find(
       (referencePlane) => referencePlane.is_selected,
-    ) ?? null;
+    ) ??
+    null;
   const selectedSketchableFace =
     document?.selected_face_id && viewport
       ? (viewport.solid_faces.find(
@@ -724,6 +756,195 @@ function App() {
     };
   }
 
+  function referencePlaneFrame(reference: NonNullable<typeof selectedReference>): PlaneFrame {
+    if (reference.plane_frame) {
+      return reference.plane_frame;
+    }
+    if (reference.orientation === "yz") {
+      return {
+        origin: { x: 0, y: 0, z: 0 },
+        x_axis: { x: 0, y: 1, z: 0 },
+        y_axis: { x: 0, y: 0, z: 1 },
+        normal: { x: 1, y: 0, z: 0 },
+      };
+    }
+    if (reference.orientation === "xz") {
+      return {
+        origin: { x: 0, y: 0, z: 0 },
+        x_axis: { x: 1, y: 0, z: 0 },
+        y_axis: { x: 0, y: 0, z: 1 },
+        normal: { x: 0, y: 1, z: 0 },
+      };
+    }
+    return {
+      origin: { x: 0, y: 0, z: 0 },
+      x_axis: { x: 1, y: 0, z: 0 },
+      y_axis: { x: 0, y: 0, z: 1 },
+      normal: { x: 0, y: 1, z: 0 },
+    };
+  }
+
+  function currentImportPlane():
+    | { planeId: string; planeFrame: PlaneFrame }
+    | null {
+    if (selectedReference) {
+      return {
+        planeId: selectedReference.reference_id,
+        planeFrame: referencePlaneFrame(selectedReference),
+      };
+    }
+    if (selectedSketchableFace) {
+      return {
+        planeId: selectedSketchableFace.face_id,
+        planeFrame: selectedSketchableFace.plane_frame,
+      };
+    }
+    return null;
+  }
+
+  function defaultImportPlacement(
+    planeId: string,
+    planeFrame: PlaneFrame,
+    width = 100,
+    height = 100,
+  ): ImportPlacementPayload {
+    return {
+      plane_id: planeId,
+      plane_frame: planeFrame,
+      offset_u_mm: 0,
+      offset_v_mm: 0,
+      rotation_degrees: 0,
+      width_mm: width,
+      height_mm: height,
+      lock_aspect: true,
+      is_pending: true,
+    };
+  }
+
+  function triggerImportAction(kind: "image" | "svg") {
+    if (
+      extrudeAction ||
+      loftAction ||
+      revolveAction ||
+      sweepAction ||
+      edgeOpAction ||
+      shellAction ||
+      holeAction ||
+      offsetPlaneAction ||
+      midplaneAction ||
+      tangentPlaneAction ||
+      anglePlaneAction ||
+      constructionAxisAction ||
+      constructionPointAction ||
+      helixAction ||
+      threadAction ||
+      fastenerAction ||
+      moveAction ||
+      importAction
+    ) {
+      return;
+    }
+    const plane = currentImportPlane();
+    setImportAction({
+      kind,
+      featureId: null,
+      sourcePath: null,
+      fileName: null,
+      parameters: plane
+        ? defaultImportPlacement(plane.planeId, plane.planeFrame)
+        : null,
+    });
+  }
+
+  async function pickImportFile() {
+    if (!importAction) {
+      return;
+    }
+    const plane = importAction.parameters
+      ? {
+          planeId: importAction.parameters.plane_id,
+          planeFrame: importAction.parameters.plane_frame,
+        }
+      : currentImportPlane();
+    if (!plane?.planeFrame) {
+      addMessage("Select a plane before importing");
+      return;
+    }
+    const result = await open({
+      multiple: false,
+      filters:
+        importAction.kind === "image"
+          ? [
+              {
+                name: "Images",
+                extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+              },
+            ]
+          : [{ name: "SVG", extensions: ["svg"] }],
+    });
+    if (typeof result !== "string") {
+      return;
+    }
+    const size =
+      importAction.kind === "image"
+        ? await readImageSize(result)
+        : { width: 100, height: 100 };
+    const width = 100;
+    const height = Math.max((size.height / Math.max(size.width, 1)) * width, 0.001);
+    const placement = defaultImportPlacement(
+      plane.planeId,
+      plane.planeFrame,
+      width,
+      height,
+    );
+    placement.source_width = size.width;
+    placement.source_height = size.height;
+    const expectedFeatureKind =
+      importAction.kind === "image" ? "image_import" : "sketch";
+    const documentPromise = awaitDocumentChange((next) => {
+      if (!next.selected_feature_id) {
+        return false;
+      }
+      const feature = next.feature_history.find(
+        (entry) => entry.feature_id === next.selected_feature_id,
+      );
+      return feature?.kind === expectedFeatureKind;
+    }, 8000);
+    try {
+      if (importAction.kind === "image") {
+        await createImageImport(result, placement);
+        const nextDocument = await documentPromise;
+        const featureId = nextDocument.selected_feature_id;
+        if (!featureId) {
+          throw new Error("Imported feature was not selected by the core");
+        }
+        setImportAction({
+          ...importAction,
+          featureId,
+          sourcePath: result,
+          fileName: result.split(/[\\/]/).pop() ?? result,
+          parameters: placement,
+        });
+      } else {
+        await createSvgImport(result, placement);
+        await documentPromise;
+        setImportAction(null);
+        await clearSelection();
+      }
+    } catch (error) {
+      void documentPromise.catch(() => undefined);
+      addMessage(`import error: ${String(error)}`);
+      setImportAction((current) =>
+        current
+          ? {
+              ...current,
+              parameters: placement,
+            }
+          : current,
+      );
+    }
+  }
+
   async function triggerCreateSketchAction() {
     if (activeSketchPlaneId) {
       return;
@@ -831,6 +1052,14 @@ function App() {
     unlinkBodyCopy,
     updateMoveParameters,
     confirmMove,
+    createImageImport,
+    updateImageImport,
+    confirmImageImport,
+    cancelImageImport,
+    createSvgImport,
+    updateSvgImport,
+    confirmSvgImport,
+    cancelSvgImport,
     updateOffsetPlane,
     updateAnglePlane,
     startSketchOnPlane,
@@ -948,6 +1177,26 @@ function App() {
       sketchFilletIdsRef.current = [];
     }
   }, [activeSketchPlaneId]);
+
+  useEffect(() => {
+    if (!importAction || importAction.featureId) {
+      return;
+    }
+    const plane = currentImportPlane();
+    if (!plane) {
+      return;
+    }
+    setImportAction((current) =>
+      current &&
+      !current.featureId &&
+      current.parameters?.plane_id !== plane.planeId
+        ? {
+            ...current,
+            parameters: defaultImportPlacement(plane.planeId, plane.planeFrame),
+          }
+        : current,
+    );
+  }, [document?.selected_reference_id, document?.selected_face_id, importAction]);
 
   // Open / close the Sketch Fillet panel in lockstep with the
   // active sketch tool. Activating the Fillet tool opens the panel
@@ -1126,6 +1375,12 @@ function App() {
         set.add(feature.feature_id);
       }
       if (hiddenCategories.has("bodies") && BODY_KINDS.has(feature.kind)) {
+        set.add(feature.feature_id);
+      }
+      if (
+        hiddenCategories.has("assets") &&
+        (feature.kind === "image_import" || feature.kind === "svg_import")
+      ) {
         set.add(feature.feature_id);
       }
       // Hiding the Construction category hides every parametric
@@ -3284,6 +3539,20 @@ function App() {
       return true;
     }
 
+    if (importAction) {
+      if (importAction.featureId) {
+        await runAction(async () => {
+          if (importAction.kind === "image") {
+            await cancelImageImport(importAction.featureId!);
+          } else {
+            await cancelSvgImport(importAction.featureId!);
+          }
+        });
+      }
+      setImportAction(null);
+      return true;
+    }
+
     if (edgeOpAction) {
       if (edgeOpAction.phase === "active") {
         await runAction(async () => {
@@ -3856,17 +4125,18 @@ function App() {
     project: RecentProject,
     shouldDeleteFile: boolean,
   ) {
+    const wasActiveProject = project.path === currentProjectPath;
     if (shouldDeleteFile) {
       await deleteProjectFile(project.path);
-      if (project.path === currentProjectPath) {
-        setCurrentProjectPath(null);
-        setSavedDocumentBaseline(null);
-      }
     }
     const baseDocument = recentProjectsDocumentRef.current;
     await updateRecentProjectsDocument(
       removeProjectFromRecentProjects(baseDocument, project.path),
     );
+    if (wasActiveProject) {
+      await performCreateDocument();
+      setSidebarTab("projects");
+    }
   }
 
   async function deleteRecentProjectFolder(folderId: string) {
@@ -4613,6 +4883,8 @@ function App() {
 
             requestUnsavedGate({ kind: "load", filePath });
           }}
+          onImportImage={() => triggerImportAction("image")}
+          onImportSvg={() => triggerImportAction("svg")}
           onUndo={async () => {
             await runAction(undo);
           }}
@@ -6936,6 +7208,51 @@ function App() {
                     }
                     setMoveAction(null);
                     await restoreTimelineCursorAfterEdit();
+                  }}
+                  onCancel={async () => {
+                    await cancelActiveTool();
+                  }}
+                />
+              ) : null}
+              {importAction ? (
+                <ImportPreviewPanel
+                  kind={importAction.kind}
+                  planeSelected={importAction.parameters !== null}
+                  fileSelected={importAction.featureId !== null}
+                  fileName={importAction.fileName}
+                  parameters={importAction.parameters}
+                  disabled={status !== "connected"}
+                  onPickFile={pickImportFile}
+                  onPreviewParameters={async (parameters) => {
+                    setImportAction((current) =>
+                      current ? { ...current, parameters } : current,
+                    );
+                    if (!importAction.featureId) {
+                      return;
+                    }
+                    await runAction(async () => {
+                      if (importAction.kind === "image") {
+                        await updateImageImport(importAction.featureId!, parameters);
+                      } else {
+                        await updateSvgImport(importAction.featureId!, parameters);
+                      }
+                    });
+                  }}
+                  onConfirm={async () => {
+                    if (!importAction.featureId) {
+                      return;
+                    }
+                    try {
+                      if (importAction.kind === "image") {
+                        await confirmImageImport(importAction.featureId!);
+                      } else {
+                        await confirmSvgImport(importAction.featureId!);
+                      }
+                      await clearSelection();
+                      setImportAction(null);
+                    } catch (error) {
+                      addMessage(`import confirm error: ${String(error)}`);
+                    }
                   }}
                   onCancel={async () => {
                     await cancelActiveTool();

@@ -45,6 +45,9 @@
     "exportStep": "Export STEP...",
     "exportStl": "Export STL...",
     "file": "File",
+    "import": "Import",
+    "importImage": "Image...",
+    "importSvg": "SVG...",
     "localSession": "Local Session",
     "logs": "Logs",
     "new": "New",
@@ -395,6 +398,19 @@
       "y": "Y",
       "z": "Z"
     },
+    "import": {
+      "chooseFile": "Choose file",
+      "choosePlane": "Choose a plane",
+      "height": "Height",
+      "imageTitle": "Import Image",
+      "lockAspect": "Lock aspect",
+      "offset": "Offset (mm)",
+      "planeReady": "Plane selected",
+      "rotation": "Rotation",
+      "size": "Size (mm)",
+      "svgTitle": "Import SVG",
+      "width": "Width"
+    },
     "offsetPlane": {
       "adjustOffset": "Adjust offset",
       "fromSource": "From {{source}}",
@@ -514,6 +530,7 @@
   },
   "document": {
     "activeSketchPlane": "No active sketch plane",
+    "assets": "Assets",
     "bodies": "Bodies",
     "clearSelection": "Clear Selection",
     "construction": "Construction",
@@ -526,6 +543,7 @@
     "noActiveDocument": "No active document.",
     "noBodies": "No bodies yet",
     "noConstructionGeometry": "No construction geometry",
+    "noAssets": "No assets",
     "noSelection": "Nothing selected",
     "noSketches": "No sketches yet",
     "origin": "Origin",

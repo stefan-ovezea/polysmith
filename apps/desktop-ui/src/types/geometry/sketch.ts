@@ -11,6 +11,7 @@ import type {
   RevolveFeatureParameters,
   SweepFeatureParameters,
   ThreadFeatureParameters,
+  PlaneFrame,
   Shape2D,
   Vector3,
 } from "@/types";
@@ -337,6 +338,26 @@ export interface ConstructionPointFeatureParameters {
   position: Vector3;
 }
 
+export interface ImportPlacementParameters {
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
+  asset_id: string;
+  asset_path: string;
+  relative_asset_path: string;
+  file_name: string;
+  media_type: string;
+  source_width: number;
+  source_height: number;
+  offset_u_mm: number;
+  offset_v_mm: number;
+  rotation_degrees: number;
+  width_mm: number;
+  height_mm: number;
+  lock_aspect: boolean;
+  is_pending: boolean;
+  warnings: string[];
+}
+
 export interface FeatureEntry {
   feature_id: string;
   kind: string;
@@ -367,6 +388,8 @@ export interface FeatureEntry {
   fastener_parameters: FastenerFeatureParameters | null;
   move_parameters: MoveFeatureParameters | null;
   body_copy_parameters: BodyCopyFeatureParameters | null;
+  image_import_parameters?: ImportPlacementParameters | null;
+  svg_import_parameters?: ImportPlacementParameters | null;
   sketch_parameters: SketchFeatureParameters | null;
   fillet_parameters: FilletFeatureParameters | null;
   chamfer_parameters: ChamferFeatureParameters | null;

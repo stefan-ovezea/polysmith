@@ -26,7 +26,10 @@ using polysmith::core::ExtrudeFeatureParameters;
 using polysmith::core::FastenerFeatureParameters;
 using polysmith::core::HelixFeatureParameters;
 using polysmith::core::HoleFeatureParameters;
+using polysmith::core::ImageImportFeatureParameters;
 using polysmith::core::MoveFeatureParameters;
+using polysmith::core::PlaneFrame;
+using polysmith::core::SvgImportFeatureParameters;
 using polysmith::core::ThreadFeatureParameters;
 using polysmith::protocol::CommandMessage;
 
@@ -167,6 +170,58 @@ std::optional<ExtrudeFeatureParameters> read_optional_extrude_parameters(
   params.intersect_result =
       read_optional_string(parameter_payload, "intersect_result")
           .value_or(params.intersect_result);
+  return params;
+}
+
+PlaneFrame read_plane_frame(const polysmith::protocol::json& payload) {
+  PlaneFrame frame{};
+  frame.origin_x = payload.at("origin").at("x").get<double>();
+  frame.origin_y = payload.at("origin").at("y").get<double>();
+  frame.origin_z = payload.at("origin").at("z").get<double>();
+  frame.x_axis_x = payload.at("x_axis").at("x").get<double>();
+  frame.x_axis_y = payload.at("x_axis").at("y").get<double>();
+  frame.x_axis_z = payload.at("x_axis").at("z").get<double>();
+  frame.y_axis_x = payload.at("y_axis").at("x").get<double>();
+  frame.y_axis_y = payload.at("y_axis").at("y").get<double>();
+  frame.y_axis_z = payload.at("y_axis").at("z").get<double>();
+  frame.normal_x = payload.at("normal").at("x").get<double>();
+  frame.normal_y = payload.at("normal").at("y").get<double>();
+  frame.normal_z = payload.at("normal").at("z").get<double>();
+  return frame;
+}
+
+ImageImportFeatureParameters read_import_placement(
+    const polysmith::protocol::json& payload) {
+  ImageImportFeatureParameters params{};
+  params.plane_id = read_string(payload, "plane_id");
+  if (payload.contains("plane_frame") && payload.at("plane_frame").is_object()) {
+    params.plane_frame = read_plane_frame(payload.at("plane_frame"));
+  }
+  params.asset_id = read_optional_string(payload, "asset_id").value_or("");
+  params.asset_path = read_optional_string(payload, "asset_path").value_or("");
+  params.relative_asset_path =
+      read_optional_string(payload, "relative_asset_path").value_or("");
+  params.file_name = read_optional_string(payload, "file_name").value_or("");
+  params.media_type = read_optional_string(payload, "media_type").value_or("");
+  params.source_width =
+      read_optional_dimension(payload, "source_width", params.source_width);
+  params.source_height =
+      read_optional_dimension(payload, "source_height", params.source_height);
+  params.offset_u_mm =
+      read_optional_dimension(payload, "offset_u_mm", params.offset_u_mm);
+  params.offset_v_mm =
+      read_optional_dimension(payload, "offset_v_mm", params.offset_v_mm);
+  params.rotation_degrees =
+      read_optional_dimension(payload, "rotation_degrees", params.rotation_degrees);
+  params.width_mm = read_optional_dimension(payload, "width_mm", params.width_mm);
+  params.height_mm =
+      read_optional_dimension(payload, "height_mm", params.height_mm);
+  if (payload.contains("lock_aspect") && payload.at("lock_aspect").is_boolean()) {
+    params.lock_aspect = payload.at("lock_aspect").get<bool>();
+  }
+  if (payload.contains("is_pending") && payload.at("is_pending").is_boolean()) {
+    params.is_pending = payload.at("is_pending").get<bool>();
+  }
   return params;
 }
 
@@ -491,6 +546,82 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     const auto document =
         document_manager().load_document_from_path(file_path);
 
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "create_image_import") {
+    const auto document = document_manager().create_image_import(
+        read_import_placement(command.payload),
+        read_string(command.payload, "source_path"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "update_image_import") {
+    const auto document = document_manager().update_image_import(
+        read_string(command.payload, "feature_id"),
+        read_import_placement(command.payload));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "confirm_image_import") {
+    const auto document = document_manager().confirm_image_import(
+        read_string(command.payload, "feature_id"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cancel_image_import") {
+    const auto document = document_manager().cancel_image_import(
+        read_string(command.payload, "feature_id"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "create_svg_import") {
+    const auto document = document_manager().create_svg_import(
+        read_import_placement(command.payload),
+        read_string(command.payload, "source_path"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "update_svg_import") {
+    const auto document = document_manager().update_svg_import(
+        read_string(command.payload, "feature_id"),
+        read_import_placement(command.payload));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "confirm_svg_import") {
+    const auto document = document_manager().confirm_svg_import(
+        read_string(command.payload, "feature_id"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cancel_svg_import") {
+    const auto document = document_manager().cancel_svg_import(
+        read_string(command.payload, "feature_id"));
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

@@ -21,6 +21,7 @@ export * from "./MirrorToolPanel";
 export * from "./ParametersPanel";
 export * from "./MaterialsPanel";
 export * from "./MovePreviewPanel";
+export * from "./ImportPreviewPanel";
 export * from "./ProjectsPanel";
 export * from "./SelectionFilterPanel";
 export * from "./ViewportPanel";

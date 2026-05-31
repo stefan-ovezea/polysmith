@@ -11,6 +11,7 @@ import type {
   FastenerFeatureParameters,
   HelixFeatureParameters,
   HoleFeatureParameters,
+  ImportPlacementPayload,
   MoveFeatureParameters,
   ThreadFeatureParameters,
   ViewportState,
@@ -113,6 +114,94 @@ export function makeLoadDocumentCommand(filePath: string): CoreCommand {
     payload: {
       file_path: filePath,
     },
+  };
+}
+
+export function makeCreateImageImportCommand(
+  sourcePath: string,
+  placement: ImportPlacementPayload,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_image_import",
+    payload: {
+      ...placement,
+      source_path: sourcePath,
+    },
+  };
+}
+
+export function makeUpdateImageImportCommand(
+  featureId: string,
+  placement: ImportPlacementPayload,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_image_import",
+    payload: {
+      ...placement,
+      feature_id: featureId,
+    },
+  };
+}
+
+export function makeConfirmImageImportCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "confirm_image_import",
+    payload: { feature_id: featureId },
+  };
+}
+
+export function makeCancelImageImportCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cancel_image_import",
+    payload: { feature_id: featureId },
+  };
+}
+
+export function makeCreateSvgImportCommand(
+  sourcePath: string,
+  placement: ImportPlacementPayload,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_svg_import",
+    payload: {
+      ...placement,
+      source_path: sourcePath,
+    },
+  };
+}
+
+export function makeUpdateSvgImportCommand(
+  featureId: string,
+  placement: ImportPlacementPayload,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_svg_import",
+    payload: {
+      ...placement,
+      feature_id: featureId,
+    },
+  };
+}
+
+export function makeConfirmSvgImportCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "confirm_svg_import",
+    payload: { feature_id: featureId },
+  };
+}
+
+export function makeCancelSvgImportCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cancel_svg_import",
+    payload: { feature_id: featureId },
   };
 }
 

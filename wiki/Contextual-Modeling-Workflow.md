@@ -90,6 +90,28 @@ click will read a stale list and clobber earlier picks. The active-phase
 state therefore mirrors `edge_ids` locally and updates it through a
 functional `setState` so toggles compound correctly.
 
+### Import Placement Specifics
+
+Image and SVG imports use the same contextual pattern, but their input sequence
+starts with a plane and a file instead of geometry selection alone:
+
+1. The user invokes **Import > Image** or **Import > SVG**.
+2. If a reference plane, construction plane, or planar face is already selected,
+   the panel uses it. Otherwise the panel opens in a choose-plane phase.
+3. File picking is disabled until the panel has a valid plane. Once the user
+   picks a file, the UI sends `create_image_import` or `create_svg_import`.
+4. For images, the core owns the pending feature, copied asset reference,
+   placement parameters, and viewport preview payload. The UI only renders that
+   payload and edits plane-local X/Y offset, in-plane rotation, width/height,
+   and aspect lock through the matching update command.
+5. For SVGs, file selection is the commit point: the core flattens supported
+   vector geometry directly into one new sketch on the selected plane. SVG files
+   are not kept as document assets or shown as pending asset previews.
+6. **Confirm** closes the image panel and marks the reference image
+   non-pending. **Cancel** calls the matching cancel command, removes the
+   pending image feature, and cleans its staged asset when no other feature
+   references it.
+
 ## Selection feedback rules
 
 - Hover targets must show a clear, non-permanent visual change.

@@ -458,11 +458,28 @@ class DocumentManager {
   // files, but in v1 it's also settable per-session from the UI.
   DocumentState update_selection_filter(const SelectionFilter& filter);
 
+  DocumentState create_image_import(
+      const ImageImportFeatureParameters& parameters,
+      const std::string& source_path);
+  DocumentState update_image_import(
+      const std::string& feature_id,
+      const ImageImportFeatureParameters& parameters);
+  DocumentState confirm_image_import(const std::string& feature_id);
+  DocumentState cancel_image_import(const std::string& feature_id);
+  DocumentState create_svg_import(
+      const SvgImportFeatureParameters& parameters,
+      const std::string& source_path);
+  DocumentState update_svg_import(
+      const std::string& feature_id,
+      const SvgImportFeatureParameters& parameters);
+  DocumentState confirm_svg_import(const std::string& feature_id);
+  DocumentState cancel_svg_import(const std::string& feature_id);
+
   ExportResult export_document_as_step(const std::string& file_path) const;
   ExportResult export_document_as_stl(const std::string& file_path) const;
   ExportResult export_body_as_stl(const std::string& file_path,
                                   const std::string& body_id) const;
-  void save_document_to_path(const std::string& file_path) const;
+  void save_document_to_path(const std::string& file_path);
   DocumentState load_document_from_path(const std::string& file_path);
   std::optional<DocumentState> get_document() const;
   SessionState get_session_state() const;
@@ -503,8 +520,10 @@ class DocumentManager {
   // a body source and the sketch entities it generated), but a
   // monotonic id keeps debugging and serialization predictable.
   int next_sketch_projection_id_ = 1;
+  int next_import_asset_id_ = 1;
   int document_count_ = 0;
   std::optional<DocumentState> document_;
+  std::optional<std::string> document_file_path_;
   std::vector<DocumentState> undo_stack_;
   std::vector<DocumentState> redo_stack_;
 };

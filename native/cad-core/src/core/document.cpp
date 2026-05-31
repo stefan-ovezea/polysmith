@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -39,12 +40,168 @@
 #include "core/feature_shape.h"
 #include "core/formula_eval.h"
 #include "core/refresh_dependents.h"
+#include "core/svg_import.h"
 #include "protocol/serialization.h"
 
 namespace polysmith::core {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+
+namespace fs = std::filesystem;
+
+std::string feature_id_from_index(int index) {
+  return "feature-" + std::to_string(index);
+}
+
+std::string import_asset_id_from_index(int index) {
+  return "asset-" + std::to_string(index);
+}
+
+std::string file_name_from_path(const std::string& path) {
+  return fs::path(path).filename().string();
+}
+
+std::string extension_from_path(const std::string& path) {
+  std::string ext = fs::path(path).extension().string();
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return ext.empty() ? ".dat" : ext;
+}
+
+std::string media_type_for_extension(const std::string& extension,
+                                     const std::string& fallback) {
+  if (extension == ".png") return "image/png";
+  if (extension == ".jpg" || extension == ".jpeg") return "image/jpeg";
+  if (extension == ".webp") return "image/webp";
+  if (extension == ".gif") return "image/gif";
+  if (extension == ".svg") return "image/svg+xml";
+  return fallback;
+}
+
+fs::path sidecar_assets_dir_for_document(const std::string& file_path) {
+  fs::path document_path(file_path);
+  return document_path.parent_path() /
+         (document_path.stem().string() + ".assets") / "imports";
+}
+
+fs::path temp_assets_dir_for_document(const std::string& document_id) {
+  return fs::temp_directory_path() / "polysmith-imports" / document_id /
+         "imports";
+}
+
+std::string relative_import_asset_path(const std::string& asset_id,
+                                       const std::string& extension) {
+  return (fs::path("imports") / (asset_id + extension)).generic_string();
+}
+
+fs::path resolve_asset_path(const std::string& document_file_path,
+                            const std::string& relative_asset_path) {
+  fs::path document_path(document_file_path);
+  return document_path.parent_path() /
+         (document_path.stem().string() + ".assets") / relative_asset_path;
+}
+
+std::string copy_import_asset(const std::string& source_path,
+                              const std::string& destination_dir,
+                              const std::string& asset_id) {
+  const std::string extension = extension_from_path(source_path);
+  fs::create_directories(destination_dir);
+  const fs::path destination = fs::path(destination_dir) / (asset_id + extension);
+  fs::copy_file(source_path,
+                destination,
+                fs::copy_options::overwrite_existing);
+  return destination.string();
+}
+
+std::string import_summary(const ImportPlacementParameters& params) {
+  std::ostringstream stream;
+  stream << params.file_name << " · " << params.width_mm << " x "
+         << params.height_mm << " mm";
+  return stream.str();
+}
+
+FeatureEntry* find_feature(DocumentState& document, const std::string& id) {
+  const auto it = std::find_if(document.feature_history.begin(),
+                               document.feature_history.end(),
+                               [&](const FeatureEntry& feature) {
+                                 return feature.id == id;
+                               });
+  return it == document.feature_history.end() ? nullptr : &(*it);
+}
+
+const FeatureEntry* find_feature(const DocumentState& document,
+                                 const std::string& id) {
+  const auto it = std::find_if(document.feature_history.begin(),
+                               document.feature_history.end(),
+                               [&](const FeatureEntry& feature) {
+                                 return feature.id == id;
+                               });
+  return it == document.feature_history.end() ? nullptr : &(*it);
+}
+
+void clear_import_selection(DocumentState& document) {
+  document.selected_reference_id = std::nullopt;
+  document.selected_face_id = std::nullopt;
+  document.selected_edge_ids.clear();
+  document.selected_vertex_ids.clear();
+  document.selected_sketch_point_id = std::nullopt;
+  document.selected_sketch_entity_id = std::nullopt;
+  document.selected_sketch_dimension_id = std::nullopt;
+  document.selected_sketch_profile_id = std::nullopt;
+  document.selected_sketch_profile_ids.clear();
+  document.selected_sketch_point_ids.clear();
+  document.selected_sketch_entity_ids.clear();
+}
+
+void remove_feature_by_id(DocumentState& document, const std::string& feature_id) {
+  document.feature_history.erase(
+      std::remove_if(document.feature_history.begin(),
+                     document.feature_history.end(),
+                     [&](const FeatureEntry& feature) { return feature.id == feature_id; }),
+      document.feature_history.end());
+  if (document.selected_feature_id == feature_id) {
+    document.selected_feature_id = std::nullopt;
+  }
+}
+
+void remove_import_asset_if_unreferenced(
+    const DocumentState& document,
+    const ImportPlacementParameters& params) {
+  if (params.asset_path.empty() || params.asset_id.empty()) {
+    return;
+  }
+  for (const auto& feature : document.feature_history) {
+    const ImportPlacementParameters* other = nullptr;
+    if (feature.image_import_parameters.has_value()) {
+      other = &feature.image_import_parameters.value();
+    } else if (feature.svg_import_parameters.has_value()) {
+      other = &feature.svg_import_parameters.value();
+    }
+    if (other != nullptr && other->asset_id == params.asset_id) {
+      return;
+    }
+  }
+  std::error_code ignored;
+  fs::remove(params.asset_path, ignored);
+}
+
+std::pair<double, double> transform_svg_point(
+    const SvgImportResult& svg,
+    const SvgImportFeatureParameters& params,
+    double x,
+    double y) {
+  const double scale_x = params.width_mm / std::max(svg.width, 0.001);
+  const double scale_y = params.height_mm / std::max(svg.height, 0.001);
+  double u = (x - svg.width * 0.5) * scale_x;
+  double v = (svg.height * 0.5 - y) * scale_y;
+  const double angle = params.rotation_degrees * kPi / 180.0;
+  const double ca = std::cos(angle);
+  const double sa = std::sin(angle);
+  return {params.offset_u_mm + u * ca - v * sa,
+          params.offset_v_mm + u * sa + v * ca};
+}
 
 bool is_origin_plane_reference(const std::string& reference_id) {
   return reference_id == "ref-plane-xy" || reference_id == "ref-plane-yz" ||
@@ -1594,6 +1751,7 @@ DocumentState DocumentManager::create_document() {
   };
 
   document_ = document;
+  document_file_path_ = std::nullopt;
   document_count_ = 1;
   undo_stack_.clear();
   redo_stack_.clear();
@@ -7846,6 +8004,271 @@ DocumentState DocumentManager::clear_selection() {
   return document_.value();
 }
 
+DocumentState DocumentManager::create_image_import(
+    const ImageImportFeatureParameters& parameters,
+    const std::string& source_path) {
+  require_document();
+  if (source_path.empty()) {
+    throw std::runtime_error("Image import source path cannot be empty");
+  }
+  push_undo_state();
+  clear_redo_stack();
+
+  const std::string asset_id = import_asset_id_from_index(next_import_asset_id_++);
+  const std::string extension = extension_from_path(source_path);
+  const std::string asset_dir = document_file_path_.has_value()
+                                    ? sidecar_assets_dir_for_document(
+                                          document_file_path_.value()).string()
+                                    : temp_assets_dir_for_document(document_->id).string();
+  ImageImportFeatureParameters params = parameters;
+  params.asset_id = asset_id;
+  params.file_name = file_name_from_path(source_path);
+  params.relative_asset_path = relative_import_asset_path(asset_id, extension);
+  params.asset_path = copy_import_asset(source_path, asset_dir, asset_id);
+  params.media_type = media_type_for_extension(extension, "image/*");
+  params.is_pending = true;
+
+  FeatureEntry feature;
+  feature.id = feature_id_from_index(next_feature_id_++);
+  feature.kind = "image_import";
+  feature.name = params.file_name.empty() ? "Reference Image" : params.file_name;
+  feature.status = "ok";
+  feature.parameters_summary = import_summary(params);
+  feature.image_import_parameters = params;
+  document_->feature_history.push_back(feature);
+  document_->selected_feature_id = feature.id;
+  clear_import_selection(*document_);
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::update_image_import(
+    const std::string& feature_id,
+    const ImageImportFeatureParameters& parameters) {
+  require_document();
+  FeatureEntry* feature = find_feature(*document_, feature_id);
+  if (feature == nullptr || feature->kind != "image_import" ||
+      !feature->image_import_parameters.has_value()) {
+    throw std::runtime_error("Image import feature not found: " + feature_id);
+  }
+  auto next = parameters;
+  next.asset_id = feature->image_import_parameters->asset_id;
+  next.asset_path = feature->image_import_parameters->asset_path;
+  next.relative_asset_path = feature->image_import_parameters->relative_asset_path;
+  next.file_name = feature->image_import_parameters->file_name;
+  next.media_type = feature->image_import_parameters->media_type;
+  next.source_width = feature->image_import_parameters->source_width;
+  next.source_height = feature->image_import_parameters->source_height;
+  next.warnings = feature->image_import_parameters->warnings;
+  feature->image_import_parameters = next;
+  feature->parameters_summary = import_summary(next);
+  document_->selected_feature_id = feature_id;
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::confirm_image_import(
+    const std::string& feature_id) {
+  require_document();
+  FeatureEntry* feature = find_feature(*document_, feature_id);
+  if (feature == nullptr || feature->kind != "image_import" ||
+      !feature->image_import_parameters.has_value()) {
+    throw std::runtime_error("Image import feature not found: " + feature_id);
+  }
+  feature->image_import_parameters->is_pending = false;
+  feature->parameters_summary = import_summary(*feature->image_import_parameters);
+  document_->selected_feature_id = feature_id;
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::cancel_image_import(
+    const std::string& feature_id) {
+  require_document();
+  const FeatureEntry* feature = find_feature(*document_, feature_id);
+  std::optional<ImageImportFeatureParameters> params;
+  if (feature != nullptr && feature->image_import_parameters.has_value()) {
+    params = feature->image_import_parameters.value();
+  }
+  remove_feature_by_id(*document_, feature_id);
+  if (params.has_value()) {
+    remove_import_asset_if_unreferenced(*document_, params.value());
+  }
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::create_svg_import(
+    const SvgImportFeatureParameters& parameters,
+    const std::string& source_path) {
+  require_document();
+  if (source_path.empty()) {
+    throw std::runtime_error("SVG import source path cannot be empty");
+  }
+
+  SvgImportFeatureParameters params = parameters;
+  params.file_name = file_name_from_path(source_path);
+  params.asset_path = source_path;
+  params.media_type = "image/svg+xml";
+  params.is_pending = false;
+  const auto svg = flatten_svg_file(source_path);
+  if (svg.segments.empty()) {
+    throw std::runtime_error("SVG did not contain usable vector geometry");
+  }
+  push_undo_state();
+  clear_redo_stack();
+
+  FeatureEntry sketch;
+  sketch.id = feature_id_from_index(next_feature_id_++);
+  sketch.kind = "sketch";
+  sketch.name = params.file_name.empty() ? "Imported SVG Sketch"
+                                         : params.file_name;
+  sketch.status = "ok";
+  SketchFeatureParameters sketch_params;
+  sketch_params.plane_id = params.plane_id;
+  if (params.plane_frame.has_value()) {
+    sketch_params.plane_frame = to_sketch_plane_frame(params.plane_frame.value());
+  }
+  sketch_params.active_tool = "select";
+  for (const auto& segment : svg.segments) {
+    const auto [sx, sy] = transform_svg_point(svg, params, segment.start_x, segment.start_y);
+    const auto [ex, ey] = transform_svg_point(svg, params, segment.end_x, segment.end_y);
+    const int line_index = next_sketch_line_id_++;
+    sketch_params.lines.push_back(SketchLine{
+        .id = "line-" + std::to_string(line_index),
+        .start_point_id = "point-line-" + std::to_string(line_index) + "-start",
+        .end_point_id = "point-line-" + std::to_string(line_index) + "-end",
+        .start_x = sx,
+        .start_y = sy,
+        .end_x = ex,
+        .end_y = ey,
+        .constraint = std::nullopt,
+        .is_construction = false,
+    });
+  }
+  sketch.sketch_parameters = sketch_params;
+  refresh_sketch_derived_state(sketch);
+  sketch.parameters_summary =
+      sketch_params.plane_id + " · " +
+      std::to_string(sketch.sketch_parameters->lines.size()) + " imported lines";
+
+  document_->feature_history.push_back(sketch);
+  document_->selected_feature_id = sketch.id;
+  clear_import_selection(*document_);
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::update_svg_import(
+    const std::string& feature_id,
+    const SvgImportFeatureParameters& parameters) {
+  require_document();
+  FeatureEntry* feature = find_feature(*document_, feature_id);
+  if (feature == nullptr || feature->kind != "svg_import" ||
+      !feature->svg_import_parameters.has_value()) {
+    throw std::runtime_error("SVG import feature not found: " + feature_id);
+  }
+  auto next = parameters;
+  next.asset_id = feature->svg_import_parameters->asset_id;
+  next.asset_path = feature->svg_import_parameters->asset_path;
+  next.relative_asset_path = feature->svg_import_parameters->relative_asset_path;
+  next.file_name = feature->svg_import_parameters->file_name;
+  next.media_type = feature->svg_import_parameters->media_type;
+  next.source_width = feature->svg_import_parameters->source_width;
+  next.source_height = feature->svg_import_parameters->source_height;
+  next.warnings = feature->svg_import_parameters->warnings;
+  feature->svg_import_parameters = next;
+  feature->parameters_summary = import_summary(next);
+  document_->selected_feature_id = feature_id;
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::confirm_svg_import(
+    const std::string& feature_id) {
+  require_document();
+  FeatureEntry* feature = find_feature(*document_, feature_id);
+  if (feature == nullptr || feature->kind != "svg_import" ||
+      !feature->svg_import_parameters.has_value()) {
+    throw std::runtime_error("SVG import feature not found: " + feature_id);
+  }
+  const SvgImportFeatureParameters params = *feature->svg_import_parameters;
+  const auto svg = flatten_svg_file(params.asset_path);
+  if (svg.segments.empty()) {
+    throw std::runtime_error("SVG did not contain usable vector geometry");
+  }
+
+  FeatureEntry sketch;
+  sketch.id = feature_id_from_index(next_feature_id_++);
+  sketch.kind = "sketch";
+  sketch.name = params.file_name.empty() ? "Imported SVG Sketch"
+                                         : params.file_name;
+  sketch.status = "ok";
+  SketchFeatureParameters sketch_params;
+  sketch_params.plane_id = params.plane_id;
+  if (params.plane_frame.has_value()) {
+    SketchFeatureParameters::SketchPlaneFrame frame{
+        .origin_x = params.plane_frame->origin_x,
+        .origin_y = params.plane_frame->origin_y,
+        .origin_z = params.plane_frame->origin_z,
+        .x_axis_x = params.plane_frame->x_axis_x,
+        .x_axis_y = params.plane_frame->x_axis_y,
+        .x_axis_z = params.plane_frame->x_axis_z,
+        .y_axis_x = params.plane_frame->y_axis_x,
+        .y_axis_y = params.plane_frame->y_axis_y,
+        .y_axis_z = params.plane_frame->y_axis_z,
+        .normal_x = params.plane_frame->normal_x,
+        .normal_y = params.plane_frame->normal_y,
+        .normal_z = params.plane_frame->normal_z,
+    };
+    sketch_params.plane_frame = frame;
+  }
+  sketch_params.active_tool = "select";
+  for (const auto& segment : svg.segments) {
+    const auto [sx, sy] = transform_svg_point(svg, params, segment.start_x, segment.start_y);
+    const auto [ex, ey] = transform_svg_point(svg, params, segment.end_x, segment.end_y);
+    const int line_index = next_sketch_line_id_++;
+    sketch_params.lines.push_back(SketchLine{
+        .id = "line-" + std::to_string(line_index),
+        .start_point_id = "point-line-" + std::to_string(line_index) + "-start",
+        .end_point_id = "point-line-" + std::to_string(line_index) + "-end",
+        .start_x = sx,
+        .start_y = sy,
+        .end_x = ex,
+        .end_y = ey,
+        .constraint = std::nullopt,
+        .is_construction = false,
+    });
+  }
+  sketch.sketch_parameters = sketch_params;
+  refresh_sketch_derived_state(sketch);
+  sketch.parameters_summary =
+      sketch_params.plane_id + " · " +
+      std::to_string(sketch.sketch_parameters->lines.size()) + " imported lines";
+
+  remove_feature_by_id(*document_, feature_id);
+  document_->feature_history.push_back(sketch);
+  document_->selected_feature_id = sketch.id;
+  document_->revision++;
+  return document_.value();
+}
+
+DocumentState DocumentManager::cancel_svg_import(
+    const std::string& feature_id) {
+  require_document();
+  const FeatureEntry* feature = find_feature(*document_, feature_id);
+  std::optional<SvgImportFeatureParameters> params;
+  if (feature != nullptr && feature->svg_import_parameters.has_value()) {
+    params = feature->svg_import_parameters.value();
+  }
+  remove_feature_by_id(*document_, feature_id);
+  if (params.has_value()) {
+    remove_import_asset_if_unreferenced(*document_, params.value());
+  }
+  document_->revision++;
+  return document_.value();
+}
+
 ExportResult DocumentManager::export_document_as_step(
     const std::string& file_path) const {
   require_document();
@@ -7888,11 +8311,41 @@ int trailing_integer(const std::string& id) {
 
 }  // namespace
 
-void DocumentManager::save_document_to_path(const std::string& file_path) const {
+void DocumentManager::save_document_to_path(const std::string& file_path) {
   require_document();
   if (file_path.empty()) {
     throw std::runtime_error("Save path cannot be empty");
   }
+
+  const fs::path asset_dir = sidecar_assets_dir_for_document(file_path);
+  fs::create_directories(asset_dir);
+  for (auto& feature : document_->feature_history) {
+    ImportPlacementParameters* params = nullptr;
+    if (feature.image_import_parameters.has_value()) {
+      params = &feature.image_import_parameters.value();
+    } else if (feature.svg_import_parameters.has_value()) {
+      params = &feature.svg_import_parameters.value();
+    }
+    if (params == nullptr || params->asset_path.empty()) {
+      continue;
+    }
+    const std::string extension = extension_from_path(params->asset_path);
+    if (params->relative_asset_path.empty()) {
+      params->relative_asset_path =
+          relative_import_asset_path(params->asset_id, extension);
+    }
+    const fs::path target = resolve_asset_path(file_path, params->relative_asset_path);
+    fs::create_directories(target.parent_path());
+    if (fs::exists(params->asset_path) &&
+        fs::weakly_canonical(fs::path(params->asset_path)) !=
+            fs::weakly_canonical(target)) {
+      fs::copy_file(params->asset_path,
+                    target,
+                    fs::copy_options::overwrite_existing);
+    }
+    params->asset_path = target.string();
+  }
+  document_file_path_ = file_path;
 
   const nlohmann::json payload = polysmith::protocol::to_payload(document_.value());
 
@@ -7931,6 +8384,32 @@ DocumentState DocumentManager::load_document_from_path(
   }
 
   DocumentState loaded = polysmith::protocol::document_from_payload(payload);
+  document_file_path_ = file_path;
+  for (auto& feature : loaded.feature_history) {
+    ImportPlacementParameters* params = nullptr;
+    if (feature.image_import_parameters.has_value()) {
+      params = &feature.image_import_parameters.value();
+    } else if (feature.svg_import_parameters.has_value()) {
+      params = &feature.svg_import_parameters.value();
+    }
+    if (params == nullptr) {
+      continue;
+    }
+    next_import_asset_id_ =
+        std::max(next_import_asset_id_, trailing_integer(params->asset_id) + 1);
+    if (!params->relative_asset_path.empty()) {
+      params->asset_path =
+          resolve_asset_path(file_path, params->relative_asset_path).string();
+    }
+    params->warnings.erase(
+        std::remove(params->warnings.begin(),
+                    params->warnings.end(),
+                    "Imported asset file is missing"),
+        params->warnings.end());
+    if (params->asset_path.empty() || !fs::exists(params->asset_path)) {
+      params->warnings.push_back("Imported asset file is missing");
+    }
+  }
 
   // Replace the live document with the loaded one. Clear undo/redo, since
   // their previous contents reference a different document timeline.

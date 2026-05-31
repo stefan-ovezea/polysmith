@@ -46,6 +46,7 @@ add_executable(cad_core
   src/core/sketch_profile.cpp
   src/core/snap_engine.cpp
   src/core/sweep_feature.cpp
+  src/core/svg_import.cpp
   src/core/trim_engine.cpp
   src/core/viewport.cpp
   src/protocol/ipc.cpp
@@ -98,6 +99,7 @@ add_executable(cad_core_multi_profile_extrude_test
   src/core/sketch_profile.cpp
   src/core/snap_engine.cpp
   src/core/sweep_feature.cpp
+  src/core/svg_import.cpp
   src/core/trim_engine.cpp
   src/core/viewport.cpp
   src/protocol/ipc.cpp
@@ -112,5 +114,45 @@ target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
 )
 
 target_link_libraries(cad_core_multi_profile_extrude_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+)
+
+add_executable(cad_core_import_test
+  src/core/body_compiler.cpp
+  src/core/box_feature.cpp
+  src/core/construction_plane_feature.cpp
+  src/core/cylinder_feature.cpp
+  src/core/dof_counter.cpp
+  src/core/document.cpp
+  src/core/edge_geometry.cpp
+  src/core/export.cpp
+  src/core/extrude_feature.cpp
+  src/core/face_geometry.cpp
+  src/core/feature_shape.cpp
+  src/core/formula_eval.cpp
+  src/core/inference_engine.cpp
+  src/core/loft_feature.cpp
+  src/core/logger.cpp
+  src/core/refresh_dependents.cpp
+  src/core/revolve_feature.cpp
+  src/core/sketch_feature.cpp
+  src/core/sketch_profile.cpp
+  src/core/snap_engine.cpp
+  src/core/sweep_feature.cpp
+  src/core/svg_import.cpp
+  src/core/trim_engine.cpp
+  src/core/viewport.cpp
+  src/protocol/ipc.cpp
+  src/protocol/serialization.cpp
+  tests/import_test.cpp
+)
+
+target_include_directories(cad_core_import_test PRIVATE
+  include
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+)
+
+target_link_libraries(cad_core_import_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
 )

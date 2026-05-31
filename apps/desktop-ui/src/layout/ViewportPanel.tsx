@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
@@ -40,6 +41,7 @@ import type {
   SketchLineEntry,
   SketchCircleEntry,
   MoveFeatureParameters,
+  ImportPreviewScene,
 } from "@/types";
 import type { SelectionFilter } from "./SelectionFilterPanel";
 import {
@@ -608,6 +610,118 @@ function orientObjectAlongAxis(object: THREE.Object3D, axis: THREE.Vector3) {
 
 function orientRingToAxis(object: THREE.Object3D, axis: THREE.Vector3) {
   object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis);
+}
+
+interface ImportAssetBytes {
+  mime_type: string;
+  bytes: number[];
+}
+
+async function loadImportPreviewTexture(
+  preview: ImportPreviewScene,
+  material: THREE.MeshBasicMaterial,
+) {
+  if (!preview.assetPath) {
+    return;
+  }
+  const asset = await invoke<ImportAssetBytes>("read_import_asset", {
+    filePath: preview.assetPath,
+  });
+  const blob = new Blob([new Uint8Array(asset.bytes)], {
+    type: asset.mime_type,
+  });
+  const url = URL.createObjectURL(blob);
+  new THREE.TextureLoader().load(
+    url,
+    (texture) => {
+      URL.revokeObjectURL(url);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      material.map = texture;
+      material.color.set(0xffffff);
+      material.opacity = preview.isPending ? 0.92 : 0.82;
+      material.needsUpdate = true;
+    },
+    undefined,
+    () => {
+      URL.revokeObjectURL(url);
+    },
+  );
+}
+
+function buildImportPreviewObject(preview: ImportPreviewScene) {
+  const group = new THREE.Group();
+  const geometry = new THREE.PlaneGeometry(preview.widthMm, preview.heightMm);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x8fa0c9,
+    map: null,
+    transparent: true,
+    opacity: 0.36,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  void loadImportPreviewTexture(preview, material);
+  const mesh = new THREE.Mesh(geometry, material);
+  const halfWidth = preview.widthMm * 0.5;
+  const halfHeight = preview.heightMm * 0.5;
+  const borderGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-halfWidth, -halfHeight, 0.02),
+    new THREE.Vector3(halfWidth, -halfHeight, 0.02),
+    new THREE.Vector3(halfWidth, halfHeight, 0.02),
+    new THREE.Vector3(-halfWidth, halfHeight, 0.02),
+    new THREE.Vector3(-halfWidth, -halfHeight, 0.02),
+  ]);
+  const border = new THREE.Line(
+    borderGeometry,
+    new THREE.LineBasicMaterial({
+      color: preview.kind === "svg" ? 0x9edcff : 0xffd58a,
+      transparent: true,
+      opacity: preview.isPending ? 0.95 : 0.72,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  group.add(mesh);
+  group.add(border);
+  const frame = preview.planeFrame;
+  const xAxis = new THREE.Vector3(
+    frame.x_axis.x,
+    frame.x_axis.y,
+    frame.x_axis.z,
+  ).normalize();
+  const yAxis = new THREE.Vector3(
+    frame.y_axis.x,
+    frame.y_axis.y,
+    frame.y_axis.z,
+  ).normalize();
+  const normal = new THREE.Vector3(
+    frame.normal.x,
+    frame.normal.y,
+    frame.normal.z,
+  ).normalize();
+  const angle = THREE.MathUtils.degToRad(preview.rotationDegrees);
+  const rotatedX = xAxis
+    .clone()
+    .multiplyScalar(Math.cos(angle))
+    .addScaledVector(yAxis, Math.sin(angle))
+    .normalize();
+  const rotatedY = yAxis
+    .clone()
+    .multiplyScalar(Math.cos(angle))
+    .addScaledVector(xAxis, -Math.sin(angle))
+    .normalize();
+  const basis = new THREE.Matrix4().makeBasis(rotatedX, rotatedY, normal);
+  group.quaternion.setFromRotationMatrix(basis);
+  group.position
+    .set(frame.origin.x, frame.origin.y, frame.origin.z)
+    .addScaledVector(xAxis, preview.offsetUMm)
+    .addScaledVector(yAxis, preview.offsetVMm)
+    .addScaledVector(normal, 0.05);
+  group.renderOrder = preview.isPending ? 28 : 18;
+  mesh.renderOrder = group.renderOrder;
+  border.renderOrder = group.renderOrder + 1;
+  group.userData.importPreviewId = preview.id;
+  return group;
 }
 
 function buildMoveGizmoObject(gizmo: MoveGizmoDescriptor) {
@@ -1446,6 +1560,7 @@ const currentGridSpacingRef = useRef(10);
   // Translucent red overlay meshes for in-progress cut extrudes. Built
   // from `cut_previews` and rendered without participating in raycasts.
   const cutPreviewObjectsRef = useRef<THREE.Mesh[]>([]);
+  const importPreviewObjectsRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoObjectsRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoDragRef = useRef<MoveGizmoDragState | null>(null);
   const moveGizmoRef = useRef<MoveGizmoDescriptor | null>(moveGizmo);
@@ -10930,6 +11045,7 @@ const currentGridSpacingRef = useRef(10);
       edgeLineObjectsRef.current = [];
       vertexObjectsRef.current = [];
       cutPreviewObjectsRef.current = [];
+      importPreviewObjectsRef.current = [];
       moveGizmoObjectsRef.current = [];
       moveGizmoDragRef.current = null;
       worldGridRef.current = null;
@@ -10983,6 +11099,7 @@ const currentGridSpacingRef = useRef(10);
     edgeLineObjectsRef.current = [];
     vertexObjectsRef.current = [];
     cutPreviewObjectsRef.current = [];
+    importPreviewObjectsRef.current = [];
     moveGizmoObjectsRef.current = [];
     // Hovered ids reference disposed THREE objects after a rebuild;
     // null them out so the next pointermove cleanly re-applies hover.
@@ -11066,6 +11183,12 @@ const currentGridSpacingRef = useRef(10);
       const cutPreviewMesh = buildCutPreviewObject(preview);
       cutPreviewObjectsRef.current.push(cutPreviewMesh);
       contentGroup.add(cutPreviewMesh);
+    }
+
+    for (const preview of sceneData.importPreviews) {
+      const importPreviewMesh = buildImportPreviewObject(preview);
+      importPreviewObjectsRef.current.push(importPreviewMesh);
+      referenceGroup.add(importPreviewMesh);
     }
 
     if (moveGizmo && !moveGizmo.disabled) {

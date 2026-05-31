@@ -48,11 +48,21 @@ pub fn save_recent_projects(document: Value) -> Result<(), String> {
 }
 
 pub fn delete_project_file(file_path: String) -> Result<(), String> {
-    let path = PathBuf::from(file_path);
-    if !path.exists() {
-        return Ok(());
+    let path = PathBuf::from(&file_path);
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| error.to_string())?;
     }
-    fs::remove_file(path).map_err(|error| error.to_string())
+
+    let asset_dir = path.with_file_name(format!(
+        "{}.assets",
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default()
+    ));
+    if asset_dir.exists() {
+        fs::remove_dir_all(asset_dir).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn project_file_exists(file_path: String) -> Result<bool, String> {

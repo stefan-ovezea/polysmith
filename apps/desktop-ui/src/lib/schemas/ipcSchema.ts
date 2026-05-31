@@ -7,6 +7,29 @@ const planeFrameSchema = z.object({
   normal: z.object({ x: z.number(), y: z.number(), z: z.number() }),
 });
 
+const importPlacementSchema = z
+  .object({
+    plane_id: z.string(),
+    plane_frame: planeFrameSchema.nullable(),
+    asset_id: z.string().default(""),
+    asset_path: z.string().default(""),
+    relative_asset_path: z.string().default(""),
+    file_name: z.string().default(""),
+    media_type: z.string().default(""),
+    source_width: z.number().default(1),
+    source_height: z.number().default(1),
+    offset_u_mm: z.number().default(0),
+    offset_v_mm: z.number().default(0),
+    rotation_degrees: z.number().default(0),
+    width_mm: z.number().default(100),
+    height_mm: z.number().default(100),
+    lock_aspect: z.boolean().default(true),
+    is_pending: z.boolean().default(false),
+    warnings: z.array(z.string()).default([]),
+  })
+  .nullable()
+  .default(null);
+
 const documentStateSchema = z.object({
   document_id: z.string(),
   name: z.string(),
@@ -423,6 +446,8 @@ const documentStateSchema = z.object({
         })
         .nullable()
         .default(null),
+      image_import_parameters: importPlacementSchema,
+      svg_import_parameters: importPlacementSchema,
       sketch_parameters: z
         .object({
           plane_id: z.string(),
@@ -1121,6 +1146,48 @@ const viewportStateSchema = z.object({
         indices: z.array(z.number()),
         is_selected: z.boolean(),
         appearance_color: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
+  reference_images: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.string(),
+        label: z.string(),
+        asset_path: z.string(),
+        media_type: z.string(),
+        plane_frame: planeFrameSchema,
+        offset_u_mm: z.number(),
+        offset_v_mm: z.number(),
+        rotation_degrees: z.number(),
+        width_mm: z.number(),
+        height_mm: z.number(),
+        is_pending: z.boolean(),
+        is_selected: z.boolean(),
+        missing_asset: z.boolean().default(false),
+        warnings: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
+  svg_import_previews: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.string(),
+        label: z.string(),
+        asset_path: z.string(),
+        media_type: z.string(),
+        plane_frame: planeFrameSchema,
+        offset_u_mm: z.number(),
+        offset_v_mm: z.number(),
+        rotation_degrees: z.number(),
+        width_mm: z.number(),
+        height_mm: z.number(),
+        is_pending: z.boolean(),
+        is_selected: z.boolean(),
+        missing_asset: z.boolean().default(false),
+        warnings: z.array(z.string()).default([]),
       }),
     )
     .default([]),

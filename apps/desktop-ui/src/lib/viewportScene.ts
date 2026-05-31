@@ -2,6 +2,7 @@ import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
   ViewportHelixPrimitive,
+  ViewportImportPreview,
   ViewportMeshPrimitive,
   ViewportPolygonExtrudePrimitive,
   ViewportSolidFace,
@@ -35,6 +36,7 @@ import type {
   SceneEdge,
   SceneVertex,
   CutPreviewScene,
+  ImportPreviewScene,
   ViewportScene,
   DocumentState,
   FeatureEntry,
@@ -141,6 +143,26 @@ function makePolygonExtrudePrimitive(
     depth: primitive.depth,
     isSelected: primitive.is_selected,
     appearanceColor: primitive.appearance_color ?? null,
+  };
+}
+
+function makeImportPreview(preview: ViewportImportPreview): ImportPreviewScene {
+  return {
+    id: preview.id,
+    kind: preview.kind,
+    label: preview.label,
+    assetPath: preview.asset_path,
+    mediaType: preview.media_type,
+    planeFrame: preview.plane_frame,
+    offsetUMm: preview.offset_u_mm,
+    offsetVMm: preview.offset_v_mm,
+    rotationDegrees: preview.rotation_degrees,
+    widthMm: preview.width_mm,
+    heightMm: preview.height_mm,
+    isPending: preview.is_pending,
+    isSelected: preview.is_selected,
+    missingAsset: preview.missing_asset,
+    warnings: preview.warnings,
   };
 }
 
@@ -984,6 +1006,12 @@ export function createViewportScene(
       indices: Uint32Array.from(preview.indices),
     }),
   );
+  const importPreviews: ImportPreviewScene[] = [
+    ...(viewport.reference_images ?? []),
+    ...(viewport.svg_import_previews ?? []),
+  ]
+    .filter((preview) => !hiddenFeatureIds.has(preview.id))
+    .map(makeImportPreview);
 
   return {
     bounds: {
@@ -1005,6 +1033,7 @@ export function createViewportScene(
     edges,
     vertices,
     cutPreviews,
+    importPreviews,
     sketchLines,
     sketchCircles,
     sketchPolygons,
@@ -1072,6 +1101,12 @@ export function createViewportScene(
           // tessellation keeps the same vertex/index counts.
           (preview) =>
             `cut-preview:${preview.id}:${numericBufferSignature(preview.positions)}:${numericBufferSignature(preview.indices)}`,
+        ),
+      )
+      .concat(
+        importPreviews.map(
+          (preview) =>
+            `import-preview:${preview.id}:${preview.assetPath}:${preview.offsetUMm}:${preview.offsetVMm}:${preview.rotationDegrees}:${preview.widthMm}:${preview.heightMm}:${preview.isSelected}`,
         ),
       )
       .concat(

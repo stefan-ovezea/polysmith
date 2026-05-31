@@ -406,6 +406,24 @@ struct ViewportMeshPrimitive {
   std::optional<std::string> appearance_color;
 };
 
+struct ViewportImportPreview {
+  std::string id;
+  std::string kind;
+  std::string label;
+  std::string asset_path;
+  std::string media_type;
+  PlaneFrame plane_frame;
+  double offset_u_mm = 0.0;
+  double offset_v_mm = 0.0;
+  double rotation_degrees = 0.0;
+  double width_mm = 100.0;
+  double height_mm = 100.0;
+  bool is_pending = false;
+  bool is_selected = false;
+  bool missing_asset = false;
+  std::vector<std::string> warnings;
+};
+
 // Translucent red preview of the cutter volume for an in-progress cut
 // extrude. Emitted only while the cut feature is the currently selected
 // feature (i.e. the user is editing it via the floating panel). The UI
@@ -454,6 +472,8 @@ struct ViewportState {
   // string ("under", "full", "over"). Empty vector when unknown.
   std::vector<EntityDofResult> dof_statuses;
   std::vector<ViewportMeshPrimitive> meshes;
+  std::vector<ViewportImportPreview> reference_images;
+  std::vector<ViewportImportPreview> svg_import_previews;
   std::vector<ViewportCutPreview> cut_previews;
   // Available bodies (in document order) that boolean-mode extrudes can
   // target. Each entry's `id` is the root feature id of the body, and

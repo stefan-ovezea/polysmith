@@ -261,6 +261,24 @@ export interface ViewportSketchProfile {
   is_selected: boolean;
 }
 
+export interface ImportPreviewScene {
+  id: string;
+  kind: string;
+  label: string;
+  assetPath: string;
+  mediaType: string;
+  planeFrame: PlaneFrame;
+  offsetUMm: number;
+  offsetVMm: number;
+  rotationDegrees: number;
+  widthMm: number;
+  heightMm: number;
+  isPending: boolean;
+  isSelected: boolean;
+  missingAsset: boolean;
+  warnings: string[];
+}
+
 export interface ViewportSceneBounds {
   center: Vector3;
   size: Vector3;
@@ -274,6 +292,7 @@ export interface ViewportScene {
   edges: SceneEdge[];
   vertices: SceneVertex[];
   cutPreviews: CutPreviewScene[];
+  importPreviews: ImportPreviewScene[];
   references: SceneReference[];
   sketchLines: SketchLineScene[];
   sketchCircles: SketchCircleScene[];
