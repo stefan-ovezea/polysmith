@@ -661,7 +661,7 @@ void collect_axis_lock_candidates(
   const double dy = cursor_y - start_y;
   const double dist = std::hypot(dx, dy);
   if (dist < 1e-9) return;
-  constexpr double kSinThreshold = std::sin(3.0 * M_PI / 180.0);
+  const double kSinThreshold = std::sin(3.0 * M_PI / 180.0);
   const double hratio = std::abs(dy) / dist;
   const double vratio = std::abs(dx) / dist;
   if (hratio < kSinThreshold) {
