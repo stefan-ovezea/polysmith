@@ -1217,11 +1217,30 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   }
 
   if (command.type == "drag_sketch_point") {
-    document_manager().drag_sketch_point(
+    const auto result = document_manager().drag_sketch_point(
         read_string(command.payload, "point_id"),
         read_dimension(command.payload, "cursor_x"),
         read_dimension(command.payload, "cursor_y"));
-    // No response — the next viewport state refresh picks up the change.
+
+    nlohmann::json payload;
+    payload["snap_x"] = result.x;
+    payload["snap_y"] = result.y;
+    if (result.snap_label.has_value()) {
+      payload["snap_label"] = result.snap_label.value();
+    } else {
+      payload["snap_label"] = nullptr;
+    }
+    payload["host_entity_id"] = result.host_entity_id.has_value()
+        ? nlohmann::json(result.host_entity_id.value())
+        : nlohmann::json(nullptr);
+    payload["host_point_id"] = result.host_point_id.has_value()
+        ? nlohmann::json(result.host_point_id.value())
+        : nlohmann::json(nullptr);
+
+    polysmith::protocol::write_message(
+        {{"id", command.id},
+         {"type", "drag_snap_result"},
+         {"payload", payload}});
     return;
   }
 

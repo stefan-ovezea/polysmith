@@ -198,6 +198,11 @@ export function useCadCore() {
               }));
             }
           }
+          if (message.type === "drag_snap_result") {
+            window.dispatchEvent(new CustomEvent("polysmith-drag-snap", {
+              detail: message.payload,
+            }));
+          }
           if (message.type === "trim_preview_result") {
             window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
               detail: message.payload,

@@ -1335,6 +1335,18 @@ const draftSnapResolvedEventSchema = z.object({
   ]),
 });
 
+const dragSnapResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drag_snap_result"),
+  payload: z.object({
+    snap_x: z.number(),
+    snap_y: z.number(),
+    snap_label: z.string().nullable(),
+    host_entity_id: z.string().nullable(),
+    host_point_id: z.string().nullable(),
+  }),
+});
+
 const trimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("trim_preview_result"),
@@ -1367,6 +1379,7 @@ export const coreMessageSchema = z.union([
   documentSavedEventSchema,
   logEventSchema,
   draftSnapResolvedEventSchema,
+  dragSnapResultEventSchema,
   trimPreviewResultEventSchema,
   errorEventSchema,
 ]);

@@ -2943,11 +2943,26 @@ DragPointResult DocumentManager::drag_sketch_point(
     }
   }
 
-  // Run snap resolution.
-  const double tolerance = 0.5;
-  const auto snap = polysmith::core::resolve_snap(
-      cursor_x, cursor_y, params, document_->selection_filter, tolerance,
-      start_x, start_y);
+  // Two-pass snap:
+  // Pass 1 (tight): only special points (endpoint, midpoint, center,
+  //   intersection, quadrant) — "nearest" and "grid" are excluded so
+  //   they don't steal the snap from special points.
+  // Pass 2 (wide): all snaps including nearest/grid — only runs if
+  //   pass 1 found nothing.
+  const double kTightTolerance = 2.0;
+  const double kWideTolerance = 4.0;
+  const std::vector<std::string> kSpecialPointPriority = {
+      "endpoint", "center", "midpoint", "intersection", "quadrant"};
+
+  auto snap = polysmith::core::resolve_snap(
+      cursor_x, cursor_y, params, document_->selection_filter,
+      kTightTolerance, start_x, start_y, kSpecialPointPriority);
+
+  if (!snap.has_value()) {
+    snap = polysmith::core::resolve_snap(
+        cursor_x, cursor_y, params, document_->selection_filter,
+        kWideTolerance, start_x, start_y);
+  }
 
   double target_x = cursor_x;
   double target_y = cursor_y;
@@ -2981,7 +2996,13 @@ DragPointResult DocumentManager::drag_sketch_point(
   document_->selected_sketch_point_ids.clear();
   document_->selected_sketch_entity_ids.clear();
 
-  return DragPointResult{result_x, result_y, snap_label};
+  return DragPointResult{result_x, result_y, snap_label,
+                          snap.has_value()
+                              ? std::make_optional(snap->entity_id)
+                              : std::nullopt,
+                          snap.has_value()
+                              ? std::make_optional(snap->point_id)
+                              : std::nullopt};
 }
 
 DocumentState DocumentManager::set_sketch_line_constraint(

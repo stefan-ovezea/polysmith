@@ -1529,6 +1529,18 @@ const currentGridSpacingRef = useRef(10);
     y: number;
   } | null>(null);
   const pendingDragFrameRef = useRef<number | null>(null);
+  // Latest snap result from the core — used on pointerup to avoid
+  // overriding the core's constrained position with raw mouse coords.
+  const dragSnapResultRef = useRef<{
+    snapX: number;
+    snapY: number;
+  } | null>(null);
+  // Snap target to highlight after the next scene rebuild.
+  const pendingSnapHighlightRef = useRef<{
+    entityId: string | null;
+    pointId: string | null;
+    label: string | null;
+  } | null>(null);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
@@ -4351,6 +4363,9 @@ const currentGridSpacingRef = useRef(10);
     clearDraftDimensionSession();
     setSketchSnapLabel(null);
     setConstraintPreview(null);
+    dragSnapResultRef.current = null;
+    setHoveredSketchEntity(null);
+    setHoveredSketchPoint(null);
     void setSketchToolRef.current("select");
   }
 
@@ -7488,7 +7503,7 @@ const currentGridSpacingRef = useRef(10);
                 controls.enabled = false;
                 renderer.domElement.setPointerCapture(event.pointerId);
                 (renderer.domElement as HTMLCanvasElement).style.cursor =
-                  "grabbing";
+                  "none";
                 pointerDown = null;
                 return;
               }
@@ -9028,19 +9043,30 @@ const currentGridSpacingRef = useRef(10);
         const dy = event.clientY - drag.startClientY;
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          const rawPoint = resolveSketchPlanePoint(
-            event,
-            renderer,
-            camera,
-            activeSketchPlaneIdRef.current,
-            activeSketchPlaneFrameRef.current,
-          );
-          if (rawPoint) {
+          // Use the core's snap result if available — avoids overriding
+          // the constrained position with raw mouse coords.
+          const snapResult = dragSnapResultRef.current;
+          if (snapResult) {
             void updateSketchPointRef.current(
               drag.pointId,
-              rawPoint.local[0],
-              rawPoint.local[1],
+              snapResult.snapX,
+              snapResult.snapY,
             );
+          } else {
+            const rawPoint = resolveSketchPlanePoint(
+              event,
+              renderer,
+              camera,
+              activeSketchPlaneIdRef.current,
+              activeSketchPlaneFrameRef.current,
+            );
+            if (rawPoint) {
+              void updateSketchPointRef.current(
+                drag.pointId,
+                rawPoint.local[0],
+                rawPoint.local[1],
+              );
+            }
           }
         }
 
@@ -9055,6 +9081,8 @@ const currentGridSpacingRef = useRef(10);
         controls.enabled = true;
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
         setSketchSnapLabel(null);
+        setHoveredSketchEntity(null);
+        setHoveredSketchPoint(null);
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
           // Drag was committed — consume the event.
@@ -10428,6 +10456,18 @@ const currentGridSpacingRef = useRef(10);
     };
     window.addEventListener("polysmith-cpp-snap", onCppSnap);
 
+    const onDragSnap = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      dragSnapResultRef.current = { snapX: d.snap_x, snapY: d.snap_y };
+      // Store for application after the next scene rebuild.
+      pendingSnapHighlightRef.current = {
+        entityId: d.host_entity_id,
+        pointId: d.host_point_id,
+        label: d.snap_label,
+      };
+    };
+    window.addEventListener("polysmith-drag-snap", onDragSnap);
+
     const onTrimPreview = (e: Event) => {
       trimPreviewResultRef.current = (e as CustomEvent).detail;
       // Render the highlight immediately from the core's data.
@@ -10464,6 +10504,7 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
       window.removeEventListener("polysmith-cpp-snap", onCppSnap);
+      window.removeEventListener("polysmith-drag-snap", onDragSnap);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
       controls.dispose();
       disposeGroup(contentGroup);
@@ -10631,6 +10672,18 @@ const currentGridSpacingRef = useRef(10);
       // was the final commit frame.
       if (hadPendingCommit) {
         endpointDragRef.current = null;
+      }
+
+      // Apply pending snap highlight even on incremental updates.
+      const pending = pendingSnapHighlightRef.current;
+      if (pending) {
+        pendingSnapHighlightRef.current = null;
+        setSketchSnapLabel(pending.label ?? "");
+        if (pending.entityId) {
+          setHoveredSketchEntity(pending.entityId);
+        } else if (pending.pointId) {
+          setHoveredSketchPoint(pending.pointId);
+        }
       }
 
       lastGeometryKeyRef.current = sceneData.geometryKey;
@@ -10898,6 +10951,20 @@ const currentGridSpacingRef = useRef(10);
     paintSketchEntityMaterials();
     paintSketchPointMaterials();
     paintDofStatusColors();
+
+    // Apply any pending snap highlight from a drag_snap_result event.
+    const pending = pendingSnapHighlightRef.current;
+    if (pending) {
+      pendingSnapHighlightRef.current = null;
+      // Always show a label — empty string when no snap ("dragging"),
+      // snap name when one is found.
+      setSketchSnapLabel(pending.label ?? "");
+      if (pending.entityId) {
+        setHoveredSketchEntity(pending.entityId);
+      } else if (pending.pointId) {
+        setHoveredSketchPoint(pending.pointId);
+      }
+    }
 
     if (sceneData.geometryKey !== lastGeometryKeyRef.current) {
       // Auto-frame the camera ONLY on the very first scene load (when
@@ -12554,15 +12621,15 @@ const currentGridSpacingRef = useRef(10);
                                         ? translate("viewport.dofFull") : "",
                                   })
                                 : translate("viewport.entitySelected"))))
-                        : document?.selected_sketch_point_id
-                          ? translate("viewport.pointSelected")
-                          : document?.selected_sketch_profile_id
-                            ? translate("viewport.profileSelected")
-                            : selectedConstraint
-                              ? translate("viewport.constraintSelected", { kind: selectedConstraint.kind })
-                              : sketchSnapLabel
-                              ? translate("viewport.snap", { label: sketchSnapLabel })
-                              : activeSketchTool === "select"
+                        : sketchSnapLabel
+                          ? `Snap: ${sketchSnapLabel}`
+                          : document?.selected_sketch_point_id
+                            ? translate("viewport.pointSelected")
+                            : document?.selected_sketch_profile_id
+                              ? translate("viewport.profileSelected")
+                              : selectedConstraint
+                                ? translate("viewport.constraintSelected", { kind: selectedConstraint.kind })
+                                : activeSketchTool === "select"
                                 ? translate("viewport.selectionMode")
                                 : activeSketchTool === "project"
                                   ? translate("viewport.projectPrompt")

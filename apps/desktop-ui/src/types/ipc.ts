@@ -301,6 +301,18 @@ export interface DraftSnapResolvedEvent {
   } | null;
 }
 
+export interface DragSnapResultEvent {
+  id: string;
+  type: "drag_snap_result";
+  payload: {
+    snap_x: number;
+    snap_y: number;
+    snap_label: string | null;
+    host_entity_id: string | null;
+    host_point_id: string | null;
+  };
+}
+
 export interface TrimPreviewResultEvent {
   id: string;
   type: "trim_preview_result";
@@ -337,6 +349,7 @@ export type CoreMessage =
   | DocumentSavedEvent
   | LogEvent
   | DraftSnapResolvedEvent
+  | DragSnapResultEvent
   | TrimPreviewResultEvent
   | ErrorEvent;
 
