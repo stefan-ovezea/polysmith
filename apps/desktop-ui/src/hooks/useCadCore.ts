@@ -119,6 +119,8 @@ import {
   makeExtrudeOpenEntitiesCommand,
   makeExtrudeProfileCommand,
   makeSetSketchLineConstraintCommand,
+  makeClearSketchLineConstraintsCommand,
+  makeResolveDraftSnapCommand,
   makeSetSketchToolCommand,
   makeStartSketchOnPlaneCommand,
   makeStartSketchOnFaceCommand,
@@ -180,6 +182,26 @@ export function useCadCore() {
           if (message.type === "log") {
             writeLogToConsole(message.payload);
           }
+          if (message.type === "draft_snap_resolved") {
+            const p = message.payload;
+            if (p) {
+              window.dispatchEvent(new CustomEvent("polysmith-cpp-snap", {
+                detail: {
+                  local: [p.snap_x, p.snap_y] as [number, number],
+                  snapKind: p.snap_kind,
+                  snapLabel: p.snap_label,
+                  hostEntityId: p.host_entity_id,
+                  hostPointId: p.host_point_id,
+                  hostParamT: p.host_param_t,
+                },
+              }));
+            }
+          }
+          if (message.type === "trim_preview_result") {
+            window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
+              detail: message.payload,
+            }));
+          }
           handleCoreMessage(message);
         } catch (error) {
           const entry = makeUiLogEntry(
@@ -195,7 +217,10 @@ export function useCadCore() {
       });
 
       const unlistenLog = await onCadCoreLog((line) => {
-        const entry = makeUiLogEntry("info", "cad_core_stderr", line);
+        const level = line.startsWith("ERROR") ? "error"
+                    : line.startsWith("WARN")  ? "warn"
+                    : "info";
+        const entry = makeUiLogEntry(level, "cad_core_stderr", line);
         writeLogToConsole(entry);
         addLogEntry(entry);
         addMessage(`log: ${line}`);
@@ -702,6 +727,22 @@ export function useCadCore() {
         makeSetSketchLineConstraintCommand(lineId, constraint),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    clearSketchLineConstraints: async (lineId: string) => {
+      await sendCoreCommand(
+        makeClearSketchLineConstraintsCommand(lineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    resolveDraftSnap: async (
+      cursorX: number,
+      cursorY: number,
+      startX: number,
+      startY: number,
+    ) => {
+      await sendCoreCommand(
+        makeResolveDraftSnapCommand(cursorX, cursorY, startX, startY),
+      );
     },
     setSketchEqualLengthConstraint: async (
       lineId: string,

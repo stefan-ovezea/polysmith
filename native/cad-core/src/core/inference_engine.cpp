@@ -60,19 +60,11 @@ int run_inference_on_new_line(SketchFeatureParameters& params,
                               SketchLine& line) {
   int count = 0;
 
-  auto start_near = find_nearest_existing_point(
-      params, line.start_x, line.start_y, line.start_point_id);
-  if (start_near.has_value() &&
-      !constraint_already_exists(params, "coincident",
-          {line.start_point_id, start_near->point_id})) {
-    params.constraints.push_back(SketchConstraint{
-        .constraint_id = "constraint-" +
-            std::to_string(params.constraints.size() + 1),
-        .kind = "coincident",
-        .target_ids = {line.start_point_id, start_near->point_id},
-    });
-    ++count;
-  }
+  // Only the *endpoint* of a newly drawn line is subject to inference.
+  // The start point is a deliberate user placement and must not be
+  // auto‑merged with nearby geometry — merging it can pull the entire
+  // line onto an existing entity, making it invisible and creating a
+  // phantom point sink that collects future constraints.
 
   auto end_near = find_nearest_existing_point(
       params, line.end_x, line.end_y, line.end_point_id);

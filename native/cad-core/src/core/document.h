@@ -275,6 +275,7 @@ class DocumentManager {
   DocumentState set_sketch_parallel_constraint(
       const std::string& line_id,
       const std::optional<std::string>& other_line_id);
+  DocumentState clear_sketch_line_constraints(const std::string& line_id);
   DocumentState set_sketch_coincident_constraint(const std::string& point_id,
                                                  const std::string& other_point_id);
   DocumentState set_sketch_point_fixed(const std::string& point_id,

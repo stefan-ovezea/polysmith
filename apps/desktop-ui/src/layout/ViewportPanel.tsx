@@ -95,6 +95,8 @@ import {
   lineLineIntersectionTrim,
   lineCircleIntersectionTrim,
 } from "@/utils";
+import { sendCoreCommand } from "@/lib/cadCoreClient";
+import { makeTrimPreviewCommand } from "@/lib/ipcProtocol";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
 import type { ViewCubeHit } from "@/utils";
 
@@ -316,6 +318,12 @@ interface ViewportPanelProps {
     pointId: string,
     hostLineId: string,
     t: number,
+  ) => Promise<void>;
+  onResolveDraftSnap: (
+    cursorX: number,
+    cursorY: number,
+    startX: number,
+    startY: number,
   ) => Promise<void>;
   onAddSketchAngleDimension: (
     firstLineId: string,
@@ -1187,6 +1195,7 @@ export function ViewportPanel({
   onAddSketchLine,
   onSetSketchMidpointAnchor,
   onSetSketchPointLineAnchor,
+  onResolveDraftSnap,
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
@@ -1350,6 +1359,10 @@ export function ViewportPanel({
   const previewArcRef = useRef<THREE.Line | null>(null);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
+  /** Latest trim_preview_result payload from the core (null when idle). */
+  const trimPreviewResultRef = useRef<any>(null);
+  /** Throttle: skip IPC send if the cursor hasn't moved enough. */
+  const trimPreviewLastSentRef = useRef<{ x: number; y: number } | null>(null);
   const draftDimGroupRef = useRef<THREE.Group | null>(null);
   /** Reusable scene object for draft dimension lines (create once, update positions in-place). */
   const draftDimSceneObjRef = useRef<{
@@ -1375,6 +1388,15 @@ export function ViewportPanel({
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
+  const cppSnapCacheRef = useRef<{
+    local: [number, number];
+    snapLabel: string | null;
+    snapKind: string;
+    hostEntityId: string;
+    hostPointId: string;
+    hostParamT: number | null;
+    timestamp: number;
+  } | null>(null);
   // Track click timing and position for double-click detection during
   // line drafting. Two clicks <300ms apart at the same location break
   // the chain and start an independent line on the next click.
@@ -1490,8 +1512,14 @@ const currentGridSpacingRef = useRef(10);
     startLocalX: number;
     startLocalY: number;
     hasMoved: boolean;
+    /** True while an IPC update is in flight — drop intermediate frames. */
+    inFlight: boolean;
   }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
+  // Set on mouse-up commit; cleared when the next viewport rebuild
+  // arrives.  Keeps the drag preview alive across the async IPC gap
+  // so the user doesn't see the entity snap back to its old position.
+  const pendingEndpointCommitRef = useRef(false);
 
   const [selectionRect, setSelectionRect] = useState<{
     left: number; top: number; width: number; height: number;
@@ -1620,10 +1648,10 @@ const currentGridSpacingRef = useRef(10);
     endHostLineId: string | null;
   } | null>(null);
   const draftStartMidpointHostRef = useRef<string | null>(null);
-  // Host line id under the *start* point of the active draft. When
-  // set, `resolveSnappedSketchPoint` enables perpendicular-foot snap
-  // — projecting the cursor onto the perpendicular ray from the
-  // start, in the direction normal to the host line.
+  // Host line id under the *start* point of the active draft. Stored
+  // on pointer-down when the start snaps to an existing line's endpoint,
+  // so the *next* click's commit logic can apply a perpendicular
+  // constraint between the new line and the host.
   const draftStartEndpointHostRef = useRef<string | null>(null);
   // Pending perpendicular-constraint state, keyed against the line
   // count baseline for the same reasons as the midpoint anchor
@@ -2816,6 +2844,82 @@ const currentGridSpacingRef = useRef(10);
     hl.renderOrder = 8;
     trimArcHighlightRef.current = hl;
     sketchGroup.add(hl);
+  }
+
+  /**
+   * Render the trim preview highlight from core-computed segment data.
+   * Called by the `polysmith-trim-preview` event listener.
+   */
+  function renderTrimPreviewHighlight() {
+    const data = trimPreviewResultRef.current;
+    if (!data) { clearTrimSegmentHighlight(); clearTrimArcHighlight(); return; }
+
+    const frame = activeSketchPlaneFrameRef.current;
+    const toWorld = (lx: number, ly: number): THREE.Vector3 => {
+      if (frame) {
+        const origin = new THREE.Vector3(frame.origin.x, frame.origin.y, frame.origin.z);
+        const xAxis = new THREE.Vector3(frame.x_axis.x, frame.x_axis.y, frame.x_axis.z);
+        const yAxis = new THREE.Vector3(frame.y_axis.x, frame.y_axis.y, frame.y_axis.z);
+        return origin.clone().addScaledVector(xAxis, lx).addScaledVector(yAxis, ly);
+      }
+      return new THREE.Vector3(lx, 0, ly);
+    };
+
+    const hoveredIdx = data.hovered_index;
+    if (hoveredIdx == null || hoveredIdx < 0) {
+      clearTrimSegmentHighlight(); clearTrimArcHighlight(); return;
+    }
+
+    if (data.entity_kind === "line" && data.segments) {
+      const seg = data.segments[hoveredIdx];
+      if (!seg) { clearTrimSegmentHighlight(); return; }
+      clearTrimArcHighlight();
+      updateTrimSegmentHighlight(data.entity_id, [{
+        sx: seg.start[0], sy: seg.start[1], sz: 0,
+        ex: seg.end[0],   ey: seg.end[1],   ez: 0,
+      }], 0);
+      return;
+    }
+
+    // Circle or arc: sample the arc segment at the plane frame.
+    const scn = sceneData;
+    if (!scn) return;
+    const r =
+      data.entity_kind === "circle"
+        ? scn.sketchCircles?.find((c: any) => c.circleId === data.entity_id)
+        : scn.sketchArcs?.find((a: any) => a.arcId === data.entity_id);
+    if (!r) { clearTrimArcHighlight(); return; }
+
+    const cx = r.center[0], cy = r.center[1], cz = r.center[2];
+    const radius = r.radius;
+    const full = data.full_circle || data.full_arc;
+
+    const pts: Array<[number, number, number]> = [];
+    if (full) {
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * 2 * Math.PI;
+        pts.push([
+          cx + Math.cos(a) * radius,
+          cy + Math.sin(a) * radius,
+          cz,
+        ]);
+      }
+    } else {
+      const seg = data.segments?.[hoveredIdx];
+      if (!seg) { clearTrimArcHighlight(); return; }
+      const s = seg.param_start, e = seg.param_end;
+      const ee = e <= s ? e + 2 * Math.PI : e;
+      for (let i = 0; i <= 48; i++) {
+        const a = s + (ee - s) * (i / 48);
+        pts.push([
+          cx + Math.cos(a) * radius,
+          cy + Math.sin(a) * radius,
+          cz,
+        ]);
+      }
+    }
+    clearTrimSegmentHighlight();
+    updateTrimArcHighlight(pts);
   }
 
   function clearPreviewDimension() {
@@ -4708,6 +4812,44 @@ const currentGridSpacingRef = useRef(10);
     local: [number, number];
     world: [number, number, number];
   }) {
+    // C++ snap cache (Phase 3b): if a recent C++ result matches the
+    // cursor position, use it directly — no TS snap computation.
+    const cppSnap = cppSnapCacheRef.current;
+    if (cppSnap && performance.now() - cppSnap.timestamp < 200) {
+      const d = Math.hypot(rawPoint.local[0] - cppSnap.local[0],
+                           rawPoint.local[1] - cppSnap.local[1]);
+      if (d <= SKETCH_SNAP_DISTANCE * 2) {
+        const snapshot = toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame);
+        const kind = cppSnap.snapKind;
+        const entityId = cppSnap.hostEntityId;
+        const paramT = cppSnap.hostParamT;
+        const isLineNearest = kind === "nearest" && paramT !== null && paramT >= 0;
+
+        return {
+          local: cppSnap.local,
+          world: snapshot,
+          snapLabel: cppSnap.snapLabel,
+          snapMidpointHostLineId:
+            kind === "midpoint" ? entityId : null,
+          snapMidpointT:
+            kind === "midpoint" && paramT !== null ? paramT : null,
+          snapPerpendicularHostLineId:
+            kind === "perpendicular" ? entityId : null,
+          snapEndpointHostLineId:
+            kind === "endpoint" ? entityId : null,
+          snapLineBodyHostLineId:
+            isLineNearest ? entityId : null,
+          snapLineBodyT:
+            isLineNearest ? paramT : null,
+          snapAxisLock: kind === "axis_lock"
+            ? (cppSnap.snapLabel === "Horizontal" ? "horizontal" as const : "vertical" as const)
+            : null,
+          snapTangentCircleId:
+            kind === "tangent" ? entityId : null,
+        } satisfies SketchPreviewPoint;
+      }
+    }
+
     // Read filter from localStorage (instant, no IPC round trip).
     const localFilter = readLocalFilter();
     const effectiveFilter: typeof localFilter = localFilter && altHeldRef.current
@@ -4734,7 +4876,6 @@ const currentGridSpacingRef = useRef(10);
       : localFilter;
 
     const gridSnapEnabled = effectiveFilter ? effectiveFilter.snap_grid : true;
-    const perpEnabled = effectiveFilter ? effectiveFilter.snap_perpendicular : true;
 
     // Apply grid snap first — all subsequent geometric snaps resolve
     // against grid-aligned coordinates so the user gets both.
@@ -4777,8 +4918,10 @@ const currentGridSpacingRef = useRef(10);
     }
 
     // Endpoint / midpoint candidates win immediately (high priority).
-    // Center, quadrant, intersection, and unknown kinds yield to
-    // dynamic snaps (tangent, perpendicular, parallel) below.
+    // Center, quadrant, intersection, and other kinds fall through to
+    // the static-candidate fallback below. Dynamic snaps (tangent,
+    // perpendicular, parallel, axis-lock, line-body) are handled by
+    // the C++ snap engine via the cache check at the top.
     if (closestCandidate && closestDistance <= SKETCH_SNAP_DISTANCE) {
       if (closestCandidate.kind === "endpoint" ||
           closestCandidate.kind === "midpoint") {
@@ -4809,366 +4952,6 @@ const currentGridSpacingRef = useRef(10);
       // let dynamic snaps (tangent, perpendicular) compete.
     }
 
-    const startPoint = lineDraftStartRef.current;
-    const params = sketchLinesRef.current;
-
-    // General perpendicular-to-line snap — REMOVED. The on-line snap
-    // below handles line body placement correctly with a narrow
-    // activation window (like midpoint). The perpendicular-foot snap
-    // above handles the "start on host line" case. No separate
-    // general perpendicular needed.
-    if (false && localFilter?.snap_perpendicular && startPoint && params) {
-      let bestPerpSnap: {
-        local: [number, number];
-        distance: number;
-        lineId: string;
-      } | null = null;
-      for (const line of params.lines) {
-        if (line.is_construction) continue;
-        const dx = line.end_x - line.start_x;
-        const dy = line.end_y - line.start_y;
-        const lenSq = dx * dx + dy * dy;
-        if (lenSq < 1e-12) continue;
-        let t =
-          ((rawPoint.local[0] - line.start_x) * dx +
-           (rawPoint.local[1] - line.start_y) * dy) /
-          lenSq;
-        t = Math.max(0, Math.min(1, t));
-        const px = line.start_x + t * dx;
-        const py = line.start_y + t * dy;
-        const d = Math.hypot(rawPoint.local[0] - px, rawPoint.local[1] - py);
-        if (d > SKETCH_SNAP_DISTANCE) continue;
-        if (!bestPerpSnap || d < bestPerpSnap.distance) {
-          bestPerpSnap = { local: [px, py], distance: d, lineId: line.line_id };
-        }
-      }
-      if (bestPerpSnap) {
-        return {
-          local: bestPerpSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestPerpSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.perpendicular"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: bestPerpSnap.lineId,
-          snapEndpointHostLineId: null,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Dynamic perpendicular-foot snap. Active only on the second
-    // click of a line draft, when the start lay on an existing line
-    // (`draftStartEndpointHostRef` is set). Project the cursor onto
-    // the ray rooted at the start, normal to the host line. If the
-    // cursor is within snap distance of that ray, snap to the foot.
-    const perpHostId = draftStartEndpointHostRef.current;
-    if (effectiveFilter?.snap_perpendicular && startPoint && perpHostId && params) {
-      const hostLine = params.lines.find((line) => line.line_id === perpHostId);
-      if (hostLine) {
-        const dx = hostLine.end_x - hostLine.start_x;
-        const dy = hostLine.end_y - hostLine.start_y;
-        const lengthSquared = dx * dx + dy * dy;
-        if (lengthSquared > 1e-12) {
-          const length = Math.sqrt(lengthSquared);
-          // Perpendicular direction (rotate host line direction by
-          // +90°). Normalized so we can project cleanly.
-          const perpX = -dy / length;
-          const perpY = dx / length;
-          const dxFromStart = rawPoint.local[0] - startPoint[0];
-          const dyFromStart = rawPoint.local[1] - startPoint[1];
-          const t = dxFromStart * perpX + dyFromStart * perpY;
-          const footX = startPoint[0] + t * perpX;
-          const footY = startPoint[1] + t * perpY;
-          const distanceFromRay = Math.hypot(
-            rawPoint.local[0] - footX,
-            rawPoint.local[1] - footY,
-          );
-          if (distanceFromRay <= SKETCH_SNAP_DISTANCE) {
-            return {
-              local: [footX, footY] as [number, number],
-              world: toWorldPoint(
-                activeSketchPlaneId ?? "ref-plane-xy",
-                [footX, footY],
-                activeSketchPlaneFrame,
-              ),
-              snapLabel: translate("snap.perpendicular"),
-              snapMidpointHostLineId: null,
-              snapPerpendicularHostLineId: perpHostId,
-              snapEndpointHostLineId: null,
-            } satisfies SketchPreviewPoint;
-          }
-        }
-      }
-    }
-
-    // Tangent snap: while drafting a line from outside a circle, the
-    // cursor sticks to whichever of the two tangent points it's
-    // nearest. Given start S, center C, radius r and d = |C - S|,
-    // the tangent points sit at distance L = sqrt(d² - r²) from S
-    // along directions ±θ off S→C, where sin θ = r/d. Skipped when
-    // the start lies inside or on the circle (no real tangent
-    // exists). Higher priority than axis-lock so an explicit
-    // "draw to this circle" gesture wins over a passive axis hint.
-    if (effectiveFilter?.snap_tangent !== false && startPoint && params) {
-      let bestTangentSnap: {
-        local: [number, number];
-        distance: number;
-        circleId: string;
-      } | null = null;
-      for (const circle of params.circles) {
-        const dx = circle.center_x - startPoint[0];
-        const dy = circle.center_y - startPoint[1];
-        const dSquared = dx * dx + dy * dy;
-        const rSquared = circle.radius * circle.radius;
-        if (dSquared <= rSquared + 1e-9) {
-          continue;
-        }
-        const d = Math.sqrt(dSquared);
-        const tangentLength = Math.sqrt(dSquared - rSquared);
-        const ux = dx / d;
-        const uy = dy / d;
-        const vx = -uy;
-        const vy = ux;
-        const along = (tangentLength * tangentLength) / d;
-        const perp = (tangentLength * circle.radius) / d;
-        const candidates: Array<[number, number]> = [
-          [
-            startPoint[0] + along * ux + perp * vx,
-            startPoint[1] + along * uy + perp * vy,
-          ],
-          [
-            startPoint[0] + along * ux - perp * vx,
-            startPoint[1] + along * uy - perp * vy,
-          ],
-        ];
-        for (const [tx, ty] of candidates) {
-          const distance = Math.hypot(
-            rawPoint.local[0] - tx,
-            rawPoint.local[1] - ty,
-          );
-          if (distance > SKETCH_SNAP_DISTANCE) {
-            continue;
-          }
-          if (!bestTangentSnap || distance < bestTangentSnap.distance) {
-            bestTangentSnap = {
-              local: [tx, ty],
-              distance,
-              circleId: circle.circle_id,
-            };
-          }
-        }
-      }
-      if (bestTangentSnap) {
-        return {
-          local: bestTangentSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestTangentSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.tangent"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-          snapTangentCircleId: bestTangentSnap.circleId,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Axis lock: while a draft is in progress, if the segment from
-    // start → cursor lies within ~3° of the world horizontal or
-    // vertical axis, pull the off-axis coordinate onto the start so
-    // the line lands flat. We check H first (CAD convention),
-    // and gate on a minimum draft length so the lock doesn't fight
-    // the user during the first few pixels of motion. Threshold uses
-    // sin(3°) ≈ 0.0523 against `|orthogonal| / hypot`. Higher
-    // priority than line-body snap by default, but we co-snap to a
-    // crossed line when the locked position is within snap distance
-    // of one — that way an axis-locked stroke that meets a host
-    // line at right angles still gets a coincident anchor on commit
-    // (the user's "go straight down to the bottom side" gesture).
-    if (startPoint) {
-      const ax = rawPoint.local[0] - startPoint[0];
-      const ay = rawPoint.local[1] - startPoint[1];
-      const hypot = Math.hypot(ax, ay);
-      const minDraftLength = SKETCH_SNAP_DISTANCE * 1.5;
-      if (hypot >= minDraftLength) {
-        const sinThreshold = Math.sin((3 * Math.PI) / 180);
-        const horizontalRatio = Math.abs(ay) / hypot;
-        const verticalRatio = Math.abs(ax) / hypot;
-
-        const buildAxisLockSnap = (
-          axis: "horizontal" | "vertical",
-          lockedLocal: [number, number],
-        ): SketchPreviewPoint => {
-          // After the axis lock fixes the off-axis coordinate, look
-          // for a line the lock ray actually crosses (within the
-          // line's segment) and within snap distance of the locked
-          // position. We use a proper ray/segment intersection
-          // rather than perpendicular projection so a line parallel
-          // to the lock axis (e.g. the rectangle's other vertical
-          // side under a vertical lock) doesn't generate a phantom
-          // coincident anchor — those lines have no real crossing.
-          const linesParamsForLock = sketchLinesRef.current;
-          let crossedLine: {
-            intersectionLocal: [number, number];
-            lineId: string;
-            t: number;
-          } | null = null;
-          if (linesParamsForLock) {
-            let bestDistance = SKETCH_SNAP_DISTANCE;
-            for (const line of linesParamsForLock.lines) {
-              const dx = line.end_x - line.start_x;
-              const dy = line.end_y - line.start_y;
-              // Vertical lock crosses lines with non-zero dx;
-              // horizontal lock crosses lines with non-zero dy.
-              // Skip lines that are parallel to the lock axis
-              // because the ray either misses them entirely or
-              // overlaps them (no single intersection point).
-              const denom = axis === "vertical" ? dx : dy;
-              if (Math.abs(denom) <= 1e-9) {
-                continue;
-              }
-              const t =
-                axis === "vertical"
-                  ? (startPoint[0] - line.start_x) / dx
-                  : (startPoint[1] - line.start_y) / dy;
-              if (t < 0 || t > 1) {
-                continue;
-              }
-              const ix = line.start_x + t * dx;
-              const iy = line.start_y + t * dy;
-              // Distance is along the lock axis only — `lockedLocal`
-              // shares the off-axis coordinate with the crossing.
-              const distance =
-                axis === "vertical"
-                  ? Math.abs(iy - lockedLocal[1])
-                  : Math.abs(ix - lockedLocal[0]);
-              if (distance > bestDistance) {
-                continue;
-              }
-              bestDistance = distance;
-              crossedLine = {
-                intersectionLocal: [ix, iy],
-                lineId: line.line_id,
-                t,
-              };
-            }
-          }
-
-          if (crossedLine) {
-            return {
-              local: crossedLine.intersectionLocal,
-              world: toWorldPoint(
-                activeSketchPlaneId ?? "ref-plane-xy",
-                crossedLine.intersectionLocal,
-                activeSketchPlaneFrame,
-              ),
-              snapLabel:
-                axis === "horizontal"
-                  ? translate("toolbar.horizontal")
-                  : translate("toolbar.vertical"),
-              snapMidpointHostLineId: null,
-              snapPerpendicularHostLineId: null,
-              snapEndpointHostLineId: null,
-              snapLineBodyHostLineId: crossedLine.lineId,
-              snapLineBodyT: crossedLine.t,
-              snapAxisLock: axis,
-            } satisfies SketchPreviewPoint;
-          }
-
-          return {
-            local: lockedLocal,
-            world: toWorldPoint(
-              activeSketchPlaneId ?? "ref-plane-xy",
-              lockedLocal,
-              activeSketchPlaneFrame,
-            ),
-            snapLabel:
-              axis === "horizontal"
-                ? translate("toolbar.horizontal")
-                : translate("toolbar.vertical"),
-            snapMidpointHostLineId: null,
-            snapPerpendicularHostLineId: null,
-            snapEndpointHostLineId: null,
-            snapAxisLock: axis,
-          } satisfies SketchPreviewPoint;
-        };
-
-        if (horizontalRatio < sinThreshold) {
-          return buildAxisLockSnap("horizontal", [
-            rawPoint.local[0],
-            startPoint[1],
-          ]);
-        }
-        if (verticalRatio < sinThreshold) {
-          return buildAxisLockSnap("vertical", [
-            startPoint[0],
-            rawPoint.local[1],
-          ]);
-        }
-      }
-    }
-
-    // Parallel snap: when `snap_parallel` is on and a start point
-    // exists, lock the cursor to the nearest existing line's
-    // direction. Finds the line whose angle is closest to the
-    // cursor ray from the start, then projects the cursor onto
-    // that direction. Allows both forward and reverse parallel
-    // (0 and 180 degrees relative).
-    if (effectiveFilter?.snap_parallel && startPoint && params) {
-      const cursorDx = rawPoint.local[0] - startPoint[0];
-      const cursorDy = rawPoint.local[1] - startPoint[1];
-      const cursorDist = Math.hypot(cursorDx, cursorDy);
-      if (cursorDist > SKETCH_SNAP_DISTANCE * 1.5) {
-        const cursorAngle = Math.atan2(cursorDy, cursorDx);
-        const threshold = Math.PI / 18;
-        let bestParallel: {
-          local: [number, number];
-          distance: number;
-        } | null = null;
-        for (const line of params.lines) {
-          if (line.is_construction) continue;
-          const lineAngle = Math.atan2(
-            line.end_y - line.start_y,
-            line.end_x - line.start_x,
-          );
-          for (const dir of [lineAngle, lineAngle + Math.PI]) {
-            let angleDiff = Math.abs(cursorAngle - dir);
-            if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-            if (angleDiff > threshold) continue;
-            const cosA = Math.cos(dir);
-            const sinA = Math.sin(dir);
-            const t = cursorDx * cosA + cursorDy * sinA;
-            const px = startPoint[0] + t * cosA;
-            const py = startPoint[1] + t * sinA;
-            const d = Math.hypot(rawPoint.local[0] - px, rawPoint.local[1] - py);
-            if (d <= SKETCH_SNAP_DISTANCE) {
-              if (!bestParallel || d < bestParallel.distance) {
-                bestParallel = { local: [px, py], distance: d };
-              }
-            }
-          }
-        }
-        if (bestParallel) {
-          return {
-            local: bestParallel.local,
-            world: toWorldPoint(
-              activeSketchPlaneId ?? "ref-plane-xy",
-              bestParallel.local,
-              activeSketchPlaneFrame,
-            ),
-            snapLabel: translate("snap.parallel"),
-            snapMidpointHostLineId: null,
-            snapPerpendicularHostLineId: null,
-            snapEndpointHostLineId: null,
-          } satisfies SketchPreviewPoint;
-        }
-      }
-    }
-
     // Fallback: if a lower-priority static candidate (center, quadrant,
     // intersection, etc.) matched but dynamic snaps didn't fire, return
     // the static candidate now.
@@ -5185,114 +4968,6 @@ const currentGridSpacingRef = useRef(10);
         snapPerpendicularHostLineId: null,
         snapEndpointHostLineId: null,
       } satisfies SketchPreviewPoint;
-    }
-
-    // Line-body snap: when no point candidate matched, project the
-    // cursor onto the closest sketch line segment (clamped to the
-    // segment's interior). This lets the user start or end a draft
-    // anywhere on an existing line, not just at its endpoints or
-    // midpoint. Lower priority than every point candidate above
-    // because endpoint / midpoint snaps should win when the cursor
-    // is genuinely close to those features.
-    const linesParams = sketchLinesRef.current;
-    if (linesParams) {
-      let bestLineSnap: {
-        local: [number, number];
-        distance: number;
-        lineId: string;
-        t: number;
-      } | null = null;
-      for (const line of linesParams.lines) {
-        const dx = line.end_x - line.start_x;
-        const dy = line.end_y - line.start_y;
-        const lengthSquared = dx * dx + dy * dy;
-        if (lengthSquared <= 1e-12) {
-          continue;
-        }
-        // Parametric projection clamped to [0, 1] so we never snap
-        // past the segment's endpoints.
-        const t = Math.max(
-          0,
-          Math.min(
-            1,
-            ((rawPoint.local[0] - line.start_x) * dx +
-              (rawPoint.local[1] - line.start_y) * dy) /
-              lengthSquared,
-          ),
-        );
-        const px = line.start_x + t * dx;
-        const py = line.start_y + t * dy;
-        const distance = Math.hypot(
-          rawPoint.local[0] - px,
-          rawPoint.local[1] - py,
-        );
-        if (distance > SKETCH_SNAP_DISTANCE) {
-          continue;
-        }
-        if (!bestLineSnap || distance < bestLineSnap.distance) {
-          bestLineSnap = {
-            local: [px, py],
-            distance,
-            lineId: line.line_id,
-            t,
-          };
-        }
-      }
-      if (bestLineSnap) {
-        return {
-          local: bestLineSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestLineSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.onLine"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-          snapLineBodyHostLineId: bestLineSnap.lineId,
-          snapLineBodyT: bestLineSnap.t,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
-    // Circle-nearest snap: project cursor onto the nearest circle's
-    // circumference. The nearest point on the circle is the radial
-    // projection of the cursor onto the circle edge. Distance check:
-    // |dist(cursor, center) - radius| <= SKETCH_SNAP_DISTANCE.
-    if (effectiveFilter?.snap_nearest !== false && params) {
-      let bestCircleSnap: {
-        local: [number, number];
-        distance: number;
-        circleId: string;
-      } | null = null;
-      for (const circle of params.circles) {
-        const dx = rawPoint.local[0] - circle.center_x;
-        const dy = rawPoint.local[1] - circle.center_y;
-        const distToCenter = Math.hypot(dx, dy);
-        if (distToCenter < 1e-9) continue;
-        const nx = circle.center_x + (dx / distToCenter) * circle.radius;
-        const ny = circle.center_y + (dy / distToCenter) * circle.radius;
-        const d = Math.hypot(rawPoint.local[0] - nx, rawPoint.local[1] - ny);
-        if (d > SKETCH_SNAP_DISTANCE) continue;
-        if (!bestCircleSnap || d < bestCircleSnap.distance) {
-          bestCircleSnap = { local: [nx, ny], distance: d, circleId: circle.circle_id };
-        }
-      }
-      if (bestCircleSnap) {
-        return {
-          local: bestCircleSnap.local,
-          world: toWorldPoint(
-            activeSketchPlaneId ?? "ref-plane-xy",
-            bestCircleSnap.local,
-            activeSketchPlaneFrame,
-          ),
-          snapLabel: translate("snap.onCircle"),
-          snapMidpointHostLineId: null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId: null,
-        } satisfies SketchPreviewPoint;
-      }
     }
 
     return {
@@ -5868,12 +5543,8 @@ const currentGridSpacingRef = useRef(10);
     if (!newLine) {
       return;
     }
-    if (pending?.startHostLineId) {
-      void setSketchMidpointAnchorRef.current(
-        newLine.start_point_id,
-        pending.startHostLineId,
-      );
-    }
+    // Only the endpoint gets a midpoint anchor. The start point is
+    // a deliberate user placement — binding it would pull the line.
     if (pending?.endHostLineId) {
       void setSketchMidpointAnchorRef.current(
         newLine.end_point_id,
@@ -5889,13 +5560,7 @@ const currentGridSpacingRef = useRef(10);
     // Point-on-line anchors. Per side, only fire when that side
     // wasn't already claimed by a midpoint anchor — the midpoint
     // anchor is a more specific relation and should win.
-    if (pendingLine?.startHost && !pending?.startHostLineId) {
-      void setSketchPointLineAnchorRef.current(
-        newLine.start_point_id,
-        pendingLine.startHost.lineId,
-        pendingLine.startHost.t,
-      );
-    }
+    // Only the endpoint gets a point‑line anchor — same rationale.
     if (pendingLine?.endHost && !pending?.endHostLineId) {
       void setSketchPointLineAnchorRef.current(
         newLine.end_point_id,
@@ -7802,6 +7467,7 @@ const currentGridSpacingRef = useRef(10);
                   startLocalX: rawPoint.local[0],
                   startLocalY: rawPoint.local[1],
                   hasMoved: false,
+                  inFlight: false,
                 };
                 controls.enabled = false;
                 renderer.domElement.setPointerCapture(event.pointerId);
@@ -8136,6 +7802,7 @@ const currentGridSpacingRef = useRef(10);
         );
         if (rawPoint) {
           const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+
           const dx = event.clientX - endpointDrag.startClientX;
           const dy = event.clientY - endpointDrag.startClientY;
           if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
@@ -8143,94 +7810,24 @@ const currentGridSpacingRef = useRef(10);
           }
           setSketchSnapLabel(sketchPoint.snapLabel);
 
-          // Convert sketch-local position to world space.
-          const frame = activeSketchPlaneFrameRef.current;
-          const toWorld = (lx: number, ly: number): THREE.Vector3 => {
-            if (frame) {
-              const origin = new THREE.Vector3(
-                frame.origin.x, frame.origin.y, frame.origin.z,
-              );
-              const xAxis = new THREE.Vector3(
-                frame.x_axis.x, frame.x_axis.y, frame.x_axis.z,
-              );
-              const yAxis = new THREE.Vector3(
-                frame.y_axis.x, frame.y_axis.y, frame.y_axis.z,
-              );
-              return origin
-                .clone()
-                .addScaledVector(xAxis, lx)
-                .addScaledVector(yAxis, ly);
-            }
-            // Fallback for ref-plane sketches (e.g. ref-plane-xy).
-            return new THREE.Vector3(lx, 0, ly);
-          };
-
-          const draggedWorld = toWorld(
-            sketchPoint.local[0],
-            sketchPoint.local[1],
-          );
-
-          // Move the dragged point mesh.
-          const pointObjects = sketchPointObjectsRef.current;
-          for (const obj of pointObjects) {
-            if (obj.userData.sketchPointId === endpointDrag.pointId) {
-              obj.position.copy(draggedWorld);
-              break;
-            }
-          }
-
-          // Find the line that owns this point and update its geometry
-          // so it rubber-bands during the drag.
-          const params = sketchLinesRef.current;
-          if (params) {
-            const ownerLine = params.lines.find(
-              (l) =>
-                l.start_point_id === endpointDrag.pointId ||
-                l.end_point_id === endpointDrag.pointId,
-            );
-            if (ownerLine) {
-              const isStart =
-                ownerLine.start_point_id === endpointDrag.pointId;
-              const fixedLocal: [number, number] = isStart
-                ? [ownerLine.end_x, ownerLine.end_y]
-                : [ownerLine.start_x, ownerLine.start_y];
-              const fixedWorld = toWorld(fixedLocal[0], fixedLocal[1]);
-
-              const lineObj = sketchEntityObjectByIdRef.current.get(
-                ownerLine.line_id,
-              );
-              if (
-                lineObj &&
-                lineObj instanceof THREE.Line &&
-                lineObj.geometry.attributes.position
-              ) {
-                const pos = lineObj.geometry.attributes.position
-                  .array as Float32Array;
-                if (isStart) {
-                  pos[0] = draggedWorld.x;
-                  pos[1] = draggedWorld.y;
-                  pos[2] = draggedWorld.z;
-                  pos[3] = fixedWorld.x;
-                  pos[4] = fixedWorld.y;
-                  pos[5] = fixedWorld.z;
-                } else {
-                  pos[0] = fixedWorld.x;
-                  pos[1] = fixedWorld.y;
-                  pos[2] = fixedWorld.z;
-                  pos[3] = draggedWorld.x;
-                  pos[4] = draggedWorld.y;
-                  pos[5] = draggedWorld.z;
-                }
-                lineObj.geometry.attributes.position.needsUpdate = true;
-                // Dashed lines need per-vertex distances recomputed.
-                if (
-                  lineObj.material instanceof
-                  THREE.LineDashedMaterial
-                ) {
-                  lineObj.computeLineDistances();
-                }
+          // Core-driven preview: send the cursor position to the core
+          // on every pointer-move.  The core computes the constrained
+          // position (H/V, relations, dimensions, snaps) and emits a
+          // viewport snapshot.  The existing scene-rebuild effect
+          // renders the result — no client-side mesh mutation needed.
+          // Throttle to one in-flight request so we don't queue IPC
+          // commands faster than the core can respond.
+          if (!endpointDrag.inFlight) {
+            endpointDrag.inFlight = true;
+            updateSketchPointRef.current(
+              endpointDrag.pointId,
+              sketchPoint.local[0],
+              sketchPoint.local[1],
+            ).finally(() => {
+              if (endpointDragRef.current) {
+                endpointDragRef.current.inFlight = false;
               }
-            }
+            });
           }
         }
         return;
@@ -8365,6 +7962,15 @@ const currentGridSpacingRef = useRef(10);
             if (pid === "ref-plane-yz") return [0, ux, uy];
             return [ux, uy, 0];
           };
+
+          // Core-driven trim preview: send cursor position to the core
+          // so the segment highlight is computed by the same math that
+          // `trim_sketch_entity` will use on click.  Throttle to 30 Hz.
+          const prev = trimPreviewLastSentRef.current;
+          if (!prev || Math.abs(mx - prev.x) > 0.5 || Math.abs(my - prev.y) > 0.5) {
+            trimPreviewLastSentRef.current = { x: mx, y: my };
+            void sendCoreCommand(makeTrimPreviewCommand(trimHit.id, mx, my));
+          }
 
           // Line hover
           if (trimHit.entityKind === "line") {
@@ -8683,6 +8289,13 @@ const currentGridSpacingRef = useRef(10);
 
         const sketchPoint = resolveSnappedSketchPoint(rawPoint);
         setSketchSnapLabel(sketchPoint.snapLabel);
+
+        // Call C++ snap for next-frame cache.
+        if (activeSketchPlaneId && onResolveDraftSnap) {
+          const start = lineDraftStartRef.current ?? sketchPoint.local;
+          void onResolveDraftSnap(rawPoint.local[0], rawPoint.local[1], start[0], start[1]);
+        }
+
         if (
           isDraftDimensionTool(activeSketchToolRef.current) &&
           draftDimensionSessionRef.current
@@ -8721,6 +8334,12 @@ const currentGridSpacingRef = useRef(10);
             Math.abs(sketchPoint.snapMidpointT - 0.5) < 1e-9;
           setConstraintPreview({
             kind: isWhole ? "midpoint" : "on_line",
+            x: previewX,
+            y: previewY,
+          });
+        } else if (sketchPoint.snapLineBodyHostLineId) {
+          setConstraintPreview({
+            kind: "on_line",
             x: previewX,
             y: previewY,
           });
@@ -9398,7 +9017,9 @@ const currentGridSpacingRef = useRef(10);
         const dy = event.clientY - drag.startClientY;
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Committed drag — resolve final snapped position and update.
+          // Committed drag — send the final cursor position to the
+          // core.  Constraints, snaps, and dimensions are all computed
+          // by the core; the UI just forwards the cursor position.
           const rawPoint = resolveSketchPlanePoint(
             event,
             renderer,
@@ -9408,87 +9029,22 @@ const currentGridSpacingRef = useRef(10);
           );
           if (rawPoint) {
             const sketchPoint = resolveSnappedSketchPoint(rawPoint);
-            // Diagnostic: log the owning line's data before commit.
-            const params = sketchLinesRef.current;
-            if (params) {
-              const ownerLine = params.lines.find(
-                (l) =>
-                  l.start_point_id === drag.pointId ||
-                  l.end_point_id === drag.pointId,
-              );
-              if (ownerLine) {
-                const isStart =
-                  ownerLine.start_point_id === drag.pointId;
-                console.warn(
-                  "[endpoint-drag] dragging",
-                  isStart ? "start" : "end",
-                  "of line",
-                  ownerLine.line_id,
-                );
-                console.warn(
-                  "[endpoint-drag]   fixed endpoint:",
-                  isStart
-                    ? [ownerLine.end_x, ownerLine.end_y]
-                    : [ownerLine.start_x, ownerLine.start_y],
-                );
-                console.warn(
-                  "[endpoint-drag]   dragged to:",
-                  sketchPoint.local,
-                );
-                // Check for constraints / relations on this line.
-                if (ownerLine.constraint) {
-                  console.warn(
-                    "[endpoint-drag]   line constraint:",
-                    ownerLine.constraint,
-                  );
-                }
-                if (params.line_relations) {
-                  const rels = params.line_relations.filter(
-                    (r) =>
-                      r.first_line_id === ownerLine.line_id ||
-                      r.second_line_id === ownerLine.line_id,
-                  );
-                  if (rels.length > 0) {
-                    console.warn(
-                      "[endpoint-drag]   line relations:",
-                      rels.map((r) => r.kind),
-                    );
-                  }
-                }
-                // Check for dimensions on this line.
-                if (params.dimensions) {
-                  const dims = params.dimensions.filter(
-                    (d) => d.entity_id === ownerLine.line_id,
-                  );
-                  if (dims.length > 0) {
-                    console.warn(
-                      "[endpoint-drag]   dimensions:",
-                      dims.map(
-                        (d) =>
-                          `${d.kind}=${d.value} driven=${d.driven}`,
-                      ),
-                    );
-                  }
-                }
-              }
-            }
             void updateSketchPointRef.current(
               drag.pointId,
               sketchPoint.local[0],
               sketchPoint.local[1],
             );
           }
-        } else {
-          // Click (no significant movement) — fall through to the
-          // existing click-to-select logic so the user can still
-          // select the point normally.
-          console.warn(
-            "[endpoint-drag] no movement, falling through to click select:",
-            drag.pointId,
-          );
         }
 
-        endpointDragRef.current = null;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          // Drag was committed — keep the preview alive until the next
+          // viewport rebuild arrives so the entity doesn't flicker back
+          // to its old position for one frame.
+          pendingEndpointCommitRef.current = true;
+        } else {
+          endpointDragRef.current = null;
+        }
         controls.enabled = true;
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
         setSketchSnapLabel(null);
@@ -10857,9 +10413,21 @@ const currentGridSpacingRef = useRef(10);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
-    renderer.domElement.addEventListener("wheel", handleWheel, {
-      passive: false,
-    });
+    renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
+    const onCppSnap = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      cppSnapCacheRef.current = { local: d.local, snapLabel: d.snapLabel, snapKind: d.snapKind,
+        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, hostParamT: d.hostParamT ?? null, timestamp: performance.now() };
+    };
+    window.addEventListener("polysmith-cpp-snap", onCppSnap);
+
+    const onTrimPreview = (e: Event) => {
+      trimPreviewResultRef.current = (e as CustomEvent).detail;
+      // Render the highlight immediately from the core's data.
+      renderTrimPreviewHighlight();
+    };
+    window.addEventListener("polysmith-trim-preview", onTrimPreview);
+
     resizeRenderer();
 
     const animate = () => {
@@ -10888,6 +10456,8 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("polysmith-cpp-snap", onCppSnap);
+      window.removeEventListener("polysmith-trim-preview", onTrimPreview);
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);
@@ -10961,6 +10531,106 @@ const currentGridSpacingRef = useRef(10);
       return;
     }
 
+    const hadPendingCommit = pendingEndpointCommitRef.current;
+    pendingEndpointCommitRef.current = false;
+
+    // During an active endpoint drag (pointer-move phase, not the
+    // final commit), skip the full dispose+rebuild.  Instead, update
+    // existing mesh geometry in-place from the new sceneData.  This
+    // avoids the 1-2 frame lag of destroying and recreating every
+    // Three.js object 60 times per second.
+    const isDragging =
+      endpointDragRef.current !== null && !hadPendingCommit;
+
+    if (isDragging && sceneData && sketchGroup.children.length > 0) {
+      // --- Incremental update (drag preview) ---
+      if (sceneData.sketchLines) {
+        for (const lineData of sceneData.sketchLines) {
+          const lineObj = sketchEntityObjectByIdRef.current.get(
+            lineData.lineId,
+          );
+          if (
+            lineObj instanceof THREE.Line &&
+            lineObj.geometry.attributes.position
+          ) {
+            const pos = lineObj.geometry.attributes.position
+              .array as Float32Array;
+            pos[0] = lineData.start[0];
+            pos[1] = lineData.start[1];
+            pos[2] = lineData.start[2];
+            pos[3] = lineData.end[0];
+            pos[4] = lineData.end[1];
+            pos[5] = lineData.end[2];
+            lineObj.geometry.attributes.position.needsUpdate = true;
+          }
+        }
+      }
+
+      if (sceneData.sketchCircles) {
+        const frame = activeSketchPlaneFrameRef.current;
+        let xa: [number, number, number];
+        let ya: [number, number, number];
+        if (frame) {
+          xa = [frame.x_axis.x, frame.x_axis.y, frame.x_axis.z];
+          ya = [frame.y_axis.x, frame.y_axis.y, frame.y_axis.z];
+        } else {
+          xa = [1, 0, 0];
+          ya = [0, 0, 1];
+        }
+        for (const circleData of sceneData.sketchCircles) {
+          const circleObj = sketchEntityObjectByIdRef.current.get(
+            circleData.circleId,
+          );
+          if (
+            circleObj instanceof THREE.LineLoop &&
+            circleObj.geometry.attributes.position
+          ) {
+            const pos = circleObj.geometry.attributes.position
+              .array as Float32Array;
+            const r = circleData.radius;
+            const cx = circleData.center[0];
+            const cy = circleData.center[1];
+            const cz = circleData.center[2];
+            const segments = (pos.length / 3) - 1;
+            for (let i = 0; i <= segments; i++) {
+              const angle = (i / segments) * Math.PI * 2;
+              const lx = Math.cos(angle) * r;
+              const ly = Math.sin(angle) * r;
+              pos[i * 3] = cx + xa[0] * lx + ya[0] * ly;
+              pos[i * 3 + 1] = cy + xa[1] * lx + ya[1] * ly;
+              pos[i * 3 + 2] = cz + xa[2] * lx + ya[2] * ly;
+            }
+            circleObj.geometry.attributes.position.needsUpdate = true;
+          }
+        }
+      }
+
+      if (sceneData.sketchPoints) {
+        for (const pointData of sceneData.sketchPoints) {
+          const pointObj = sketchPointObjectByIdRef.current.get(
+            pointData.pointId,
+          );
+          if (pointObj) {
+            pointObj.position.set(
+              pointData.position[0],
+              pointData.position[1],
+              pointData.position[2],
+            );
+          }
+        }
+      }
+
+      // After incremental update, release the drag preview if this
+      // was the final commit frame.
+      if (hadPendingCommit) {
+        endpointDragRef.current = null;
+      }
+
+      lastGeometryKeyRef.current = sceneData.geometryKey;
+      return;
+    }
+
+    // --- Full rebuild (normal operation or final commit) ---
     disposeGroup(contentGroup);
     disposeGroup(referenceGroup);
     disposeGroup(sketchGroup);
@@ -11205,6 +10875,13 @@ const currentGridSpacingRef = useRef(10);
         sketchPointObject,
       );
       sketchGroup.add(sketchPointObject);
+    }
+
+    // Now that every mesh is in the scene, release the drag preview.
+    // This ensures there is no frame where stale pre-drag geometry is
+    // visible without the preview override.
+    if (hadPendingCommit) {
+      endpointDragRef.current = null;
     }
 
     syncPrimitiveVisuals();
@@ -11649,6 +11326,8 @@ const currentGridSpacingRef = useRef(10);
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
+  const pointCount = sketchFeature?.sketch_parameters?.points.length ?? 0;
+  const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   function isLinkedBodyCopy(bodyId: string | null | undefined) {
     if (!bodyId) {
@@ -12807,10 +12486,10 @@ const currentGridSpacingRef = useRef(10);
                 {activeSketchPlaneId
                   ? translate("viewport.sketchStatus", {
                       tool: activeSketchTool,
-                      lineCount,
-                      linePlural: lineCount === 1 ? "" : "s",
-                      circleCount,
-                      circlePlural: circleCount === 1 ? "" : "s",
+                      lineCount, linePlural: lineCount === 1 ? "" : "s",
+                      circleCount, circlePlural: circleCount === 1 ? "" : "s",
+                      pointCount, pointPlural: pointCount === 1 ? "" : "s",
+                      arcCount, arcPlural: arcCount === 1 ? "" : "s",
                     })
                   : translate("viewport.noActiveSketch")}
               </p>
