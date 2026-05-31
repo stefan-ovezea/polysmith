@@ -99,3 +99,21 @@ client-side, then commit with the full pipeline.
 - **Higher IPC volume:** each pointer-move during a drag becomes an
   IPC round-trip.  For `stdin`/`stdout` IPC on the same machine,
   this is sub-millisecond and should not be a bottleneck.
+
+## Implementation Notes (2026-05-31)
+
+Implemented with the following additions beyond the original decision:
+
+- **Incremental scene update:** the viewport rebuild effect detects an
+  active drag (`endpointDragRef` set, no pending commit) and updates
+  existing Three.js meshes in-place from the new `sceneData` instead
+  of full dispose+rebuild.  Lines, circles, and points are patched by
+  entity id.  On pointer-up, the full rebuild runs to finalize.
+- **Throttle:** `inFlight` flag on `EndpointDrag` prevents queuing
+  IPC commands faster than the core can respond.
+- **Preview preview survives rebuild:** `endpointDragRef` is cleared
+  AFTER all new meshes are added, eliminating the 1-frame flash of
+  stale geometry.
+- Performance at 60 fps is adequate for typical parametric sketches
+  (tens of entities).  If profiling shows lag on larger sketches,
+  the incremental update can be extended to primitives and references.

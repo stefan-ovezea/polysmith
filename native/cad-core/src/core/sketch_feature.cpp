@@ -1155,7 +1155,11 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      line.end_y = line.start_y;
+      if (point_is_fixed(parameters, line.end_point_id)) {
+        line.start_y = line.end_y;
+      } else {
+        line.end_y = line.start_y;
+      }
     } else if (line.constraint.value() == "vertical") {
       if (nearly_equal(line.start_x, line.end_x)) continue;
       if (points_match(line.start_x, line.start_y, line.start_x, line.end_y)) {
@@ -1164,7 +1168,11 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      line.end_x = line.start_x;
+      if (point_is_fixed(parameters, line.end_point_id)) {
+        line.start_x = line.end_x;
+      } else {
+        line.end_x = line.start_x;
+      }
     }
   }
 }
@@ -1776,12 +1784,35 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
   for (const auto& [point_id, refs] : shared) {
     if (refs.size() <= 1) continue;
 
-    // Pick the canonical position: prefer the line that already has
-    // an endpoint at this point_id.  Use the first reference's coords.
-    const auto& canonical_line = parameters.lines[refs[0].line_index];
-    const double canonical_x = refs[0].is_start
+    // Pick the canonical position.  Priority:
+    //   1. A line with a fixed endpoint at this point (authoritative).
+    //   2. A line with an H/V constraint (angle is determined).
+    //   3. The first reference (fallback).
+    size_t canonical_ref = 0;
+    bool found_authoritative = false;
+    for (size_t r = 0; r < refs.size(); ++r) {
+      const auto& l = parameters.lines[refs[r].line_index];
+      const std::string& pt =
+          refs[r].is_start ? l.start_point_id : l.end_point_id;
+      if (point_is_fixed(parameters, pt)) {
+        canonical_ref = r;
+        found_authoritative = true;
+        break;
+      }
+    }
+    if (!found_authoritative) {
+      for (size_t r = 0; r < refs.size(); ++r) {
+        if (parameters.lines[refs[r].line_index].constraint.has_value()) {
+          canonical_ref = r;
+          break;
+        }
+      }
+    }
+
+    const auto& canonical_line = parameters.lines[refs[canonical_ref].line_index];
+    const double canonical_x = refs[canonical_ref].is_start
         ? canonical_line.start_x : canonical_line.end_x;
-    const double canonical_y = refs[0].is_start
+    const double canonical_y = refs[canonical_ref].is_start
         ? canonical_line.start_y : canonical_line.end_y;
 
     for (size_t r = 1; r < refs.size(); ++r) {
@@ -2222,8 +2253,18 @@ void set_sketch_equal_length_constraint(
   }
 
   auto& other_line = require_line(parameters, other_line_id.value());
+
+  // Canonical ID: sorted pair so the same two lines always get the
+  // same relation id regardless of which is passed as `line_id`.
+  const std::string el_a = std::min(line_id, other_line_id.value());
+  const std::string el_b = std::max(line_id, other_line_id.value());
+
+  // Remove any pre-existing relation between this pair (regardless of
+  // order or id) before inserting — guards against file-load duplicates.
+  remove_line_relations_for_line(parameters, "equal_length", other_line_id.value());
+
   parameters.line_relations.push_back(SketchLineRelation{
-      .id = "rel-equal-length-" + line_id,
+      .id = "rel-equal-length-" + el_a + "-" + el_b,
       .kind = "equal_length",
       .first_line_id = line_id,
       .second_line_id = other_line_id.value(),
@@ -2286,12 +2327,17 @@ void set_sketch_perpendicular_constraint(
   // enforcement will skip it silently (see drive_line_perpendicular_to_reference).
   line.constraint = std::nullopt;
 
-  parameters.line_relations.push_back(SketchLineRelation{
-      .id = "rel-perpendicular-" + line_id,
-      .kind = "perpendicular",
-      .first_line_id = line_id,
-      .second_line_id = other_line_id.value(),
-  });
+  {
+    const std::string pa = std::min(line_id, other_line_id.value());
+    const std::string pb = std::max(line_id, other_line_id.value());
+    remove_line_relations_for_line(parameters, "perpendicular", other_line_id.value());
+    parameters.line_relations.push_back(SketchLineRelation{
+        .id = "rel-perpendicular-" + pa + "-" + pb,
+        .kind = "perpendicular",
+        .first_line_id = line_id,
+        .second_line_id = other_line_id.value(),
+    });
+  }
 
   try {
     drive_line_perpendicular_to_reference(line, other_line, parameters);
@@ -2419,12 +2465,17 @@ void set_sketch_parallel_constraint(
   // enforcement will skip it silently.
   line.constraint = std::nullopt;
 
-  parameters.line_relations.push_back(SketchLineRelation{
-      .id = "rel-parallel-" + line_id,
-      .kind = "parallel",
-      .first_line_id = line_id,
-      .second_line_id = other_line_id.value(),
-  });
+  {
+    const std::string pa = std::min(line_id, other_line_id.value());
+    const std::string pb = std::max(line_id, other_line_id.value());
+    remove_line_relations_for_line(parameters, "parallel", other_line_id.value());
+    parameters.line_relations.push_back(SketchLineRelation{
+        .id = "rel-parallel-" + pa + "-" + pb,
+        .kind = "parallel",
+        .first_line_id = line_id,
+        .second_line_id = other_line_id.value(),
+    });
+  }
 
   try {
     drive_line_parallel_to_reference(line, other_line, parameters);

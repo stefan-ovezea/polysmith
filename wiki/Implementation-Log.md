@@ -1641,3 +1641,80 @@ Three bugs fixed after initial implementation:
   dimensions, have both ghost preview and committed rendering consume that same
   model, and remove the current after-the-fact inference from generic label
   placement.
+
+### 2026-05-31 — Constraint & Trim Stabilisation
+
+#### Core-Driven Drag Preview (ADR-0002)
+
+- Removed ~200 lines of client-side constraint math and Three.js mesh mutation
+  from `ViewportPanel.tsx` (`handlePointerMove` endpoint drag block).
+- Drag preview now sends `update_sketch_point` IPC on every pointer-move. The
+  core computes the constrained position (H/V, relations, dimensions, snaps)
+  and emits a viewport snapshot.  The existing scene-rebuild effect renders the
+  result.
+- Added `inFlight` throttle (one IPC request at a time) to prevent queue
+  buildup.
+- Added incremental scene update path in the viewport rebuild effect: during
+  active drag, existing Three.js meshes are updated in-place from the new
+  `sceneData` instead of full dispose+rebuild.  Lines, circles, and points are
+  patched by id.  On commit, the full rebuild runs.
+- `endpointDragRef` is now cleared AFTER all new meshes are in the scene,
+  eliminating the 1-frame flash of stale geometry.
+
+#### Trim — Share Point IDs at New Endpoints
+
+- `find_coincident_endpoint` now searches `params.arcs` in addition to
+  `params.lines`.  Previously, arc endpoints were invisible, so trimmed-circle
+  arcs got unique point IDs and profile loops broke.
+- **Line trim:** replaced the "break all shared points" block with
+  `find_coincident_endpoint` calls at new endpoint positions.  Endpoints match
+  existing geometry → share ID.  Other lines sharing old point IDs: if still
+  coincident → continue sharing; otherwise → orphan.  Mirrors the circle→arc
+  path.
+- **Arc trim:** new endpoints now use `find_coincident_endpoint` instead of
+  always-fresh IDs.  Applies to start-trim, end-trim, and middle-split cases.
+- **Circle & arc trim:** added orphaned coincident constraint safety net
+  (previously only the line trim path had it).
+
+#### Trim — Arc Deletion Bug
+
+- `find_all_intersections` for arcs: endpoint filter could remove ALL
+  intersections when they were all at the arc's own endpoints, causing the arc
+  to be fully deleted.  Now preserves intersections if filtering would
+  empty the results.
+
+#### Trim — Core-Driven Preview IPC
+
+- Added `trim_preview` IPC command (read-only query, no state mutation).
+  Takes `entity_id`, `cursor_x`, `cursor_y` and runs the exact same
+  `find_all_intersections` + `select_clicked_segment` math as
+  `trim_sketch_entity`.  Returns segment data + hovered index.
+- TS side: `trim_preview_result` dispatched as `polysmith-trim-preview`
+  custom event.  `renderTrimPreviewHighlight()` converts core data to
+  world-space Three.js geometry for lines, circles, and arcs.
+- Hover sends IPC with 0.5mm throttle.  Local intersection math still runs
+  for instant feedback; IPC response overrides.
+
+#### Constraint Bug Fixes
+
+- **Zero-length constraint flip guard:** `apply_line_constraint_respecting_fixed_points`
+  now detects and clears H/V constraints that would produce zero-length lines
+  (vertical→horizontal flip where X is already equal, and vice versa).
+  Previously, the setter path lacked this guard (only `enforce_line_HV_constraints`
+  had it), so a constraint flip could create a zero-length line that the
+  zero-length cleanup in `refresh_sketch_derived_state` would then delete.
+- **`enforce_line_HV_constraints` respects fixed endpoints:** now checks
+  `point_is_fixed` before snapping.  If the end is fixed, the start moves to
+  match, instead of always snapping end→start.  Matches the setter path
+  behavior in `apply_line_constraint_respecting_fixed_points`.
+- **`reconcile_shared_point_positions` canonical selection:** when multiple
+  lines share a point and constraint enforcement drives them to different
+  coordinates, the reconcile pass now picks the canonical position by priority:
+  1) line with a fixed endpoint, 2) line with H/V constraint, 3) first
+  reference (fallback).  Previously it always used the first reference,
+  which could be the wrong one.
+- **Canonical relation IDs:** `set_sketch_equal_length_constraint`,
+  `set_sketch_perpendicular_constraint`, and `set_sketch_parallel_constraint`
+  now use sorted-pair IDs (`rel-equal-length-A-B` where A < B).  Additionally,
+  `remove_line_relations_for_line` is called for BOTH lines before inserting,
+  guarding against file-load duplicates.
