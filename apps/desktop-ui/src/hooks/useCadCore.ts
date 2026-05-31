@@ -128,6 +128,7 @@ import {
   makeUpdateSketchCircleCommand,
   makeUpdateSketchDimensionCommand,
   makeUpdateSketchLineCommand,
+  makeDragSketchPointCommand,
   makeUpdateSketchPointCommand,
   makeUpdateBoxFeatureCommand,
   makeUpdateCylinderFeatureCommand,
@@ -718,6 +719,15 @@ export function useCadCore() {
       await sendCoreCommand(makeUpdateSketchPointCommand(pointId, x, y));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    dragSketchPoint: async (
+      pointId: string,
+      cursorX: number,
+      cursorY: number,
+    ) => {
+      await sendCoreCommand(
+        makeDragSketchPointCommand(pointId, cursorX, cursorY),
+      );
     },
     setSketchLineConstraint: async (
       lineId: string,

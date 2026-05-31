@@ -929,6 +929,22 @@ export function makeUpdateSketchPointCommand(
   };
 }
 
+export function makeDragSketchPointCommand(
+  pointId: string,
+  cursorX: number,
+  cursorY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drag_sketch_point",
+    payload: {
+      point_id: pointId,
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+    },
+  };
+}
+
 export function makeSetSketchLineConstraintCommand(
   lineId: string,
   constraint: "none" | "horizontal" | "vertical",

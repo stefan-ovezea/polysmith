@@ -96,7 +96,7 @@ import {
   lineCircleIntersectionTrim,
 } from "@/utils";
 import { sendCoreCommand } from "@/lib/cadCoreClient";
-import { makeTrimPreviewCommand } from "@/lib/ipcProtocol";
+import { makeGetViewportStateCommand, makeTrimPreviewCommand } from "@/lib/ipcProtocol";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
 import type { ViewCubeHit } from "@/utils";
 
@@ -481,6 +481,11 @@ interface ViewportPanelProps {
     pointId: string,
     x: number,
     y: number,
+  ) => Promise<void>;
+  onDragSketchPoint: (
+    pointId: string,
+    cursorX: number,
+    cursorY: number,
   ) => Promise<void>;
   onFinishSketch: () => Promise<void>;
   moveGizmo?: MoveGizmoDescriptor | null;
@@ -1238,6 +1243,7 @@ export function ViewportPanel({
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
   onUpdateSketchPoint,
+  onDragSketchPoint,
   onFinishSketch,
   moveGizmo = null,
   onMoveGizmoChange,
@@ -1516,6 +1522,13 @@ const currentGridSpacingRef = useRef(10);
     inFlight: boolean;
   }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
+  // rAF batching for endpoint drag — same pattern as flushMoveGizmoChange.
+  const pendingDragRef = useRef<{
+    pointId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const pendingDragFrameRef = useRef<number | null>(null);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
@@ -1550,6 +1563,7 @@ const currentGridSpacingRef = useRef(10);
   );
   const pickSketchPointRef = useRef(onPickSketchPoint);
   const updateSketchPointRef = useRef(onUpdateSketchPoint);
+  const dragSketchPointRef = useRef(onDragSketchPoint);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
   const updateSketchDimensionLabelPositionRef = useRef(
@@ -5269,6 +5283,7 @@ const currentGridSpacingRef = useRef(10);
       inactiveSketchEntityPickEnabled;
     pickSketchPointRef.current = onPickSketchPoint;
     updateSketchPointRef.current = onUpdateSketchPoint;
+    dragSketchPointRef.current = onDragSketchPoint;
     selectSketchDimensionRef.current = onSelectSketchDimension;
     updateSketchDimensionRef.current = onUpdateSketchDimension;
     updateSketchDimensionLabelPositionRef.current =
@@ -5322,6 +5337,7 @@ const currentGridSpacingRef = useRef(10);
     onDeleteSketchSelection,
     onSetSketchTool,
     onUpdateSketchPoint,
+    onDragSketchPoint,
     armedSketchConstraint,
     mirrorFocusedSlot,
     onMirrorEntityPick,
@@ -7790,7 +7806,7 @@ const currentGridSpacingRef = useRef(10);
         return;
       }
 
-      // --- Endpoint drag tracking ---
+      // --- Endpoint drag tracking (core-driven, rAF-batched) ---
       const endpointDrag = endpointDragRef.current;
       if (endpointDrag && activeSketchPlaneIdRef.current) {
         const rawPoint = resolveSketchPlanePoint(
@@ -7801,31 +7817,26 @@ const currentGridSpacingRef = useRef(10);
           activeSketchPlaneFrameRef.current,
         );
         if (rawPoint) {
-          const sketchPoint = resolveSnappedSketchPoint(rawPoint);
-
           const dx = event.clientX - endpointDrag.startClientX;
           const dy = event.clientY - endpointDrag.startClientY;
           if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
             endpointDrag.hasMoved = true;
           }
-          setSketchSnapLabel(sketchPoint.snapLabel);
 
-          // Core-driven preview: send the cursor position to the core
-          // on every pointer-move.  The core computes the constrained
-          // position (H/V, relations, dimensions, snaps) and emits a
-          // viewport snapshot.  The existing scene-rebuild effect
-          // renders the result — no client-side mesh mutation needed.
-          // Throttle to one in-flight request so we don't queue IPC
-          // commands faster than the core can respond.
-          if (!endpointDrag.inFlight) {
-            endpointDrag.inFlight = true;
-            updateSketchPointRef.current(
-              endpointDrag.pointId,
-              sketchPoint.local[0],
-              sketchPoint.local[1],
-            ).finally(() => {
-              if (endpointDragRef.current) {
-                endpointDragRef.current.inFlight = false;
+          // rAF-batched: send only the latest position each frame.
+          pendingDragRef.current = {
+            pointId: endpointDrag.pointId,
+            x: rawPoint.local[0],
+            y: rawPoint.local[1],
+          };
+          if (pendingDragFrameRef.current === null) {
+            pendingDragFrameRef.current = window.requestAnimationFrame(() => {
+              pendingDragFrameRef.current = null;
+              const next = pendingDragRef.current;
+              pendingDragRef.current = null;
+              if (next) {
+                void dragSketchPointRef.current(next.pointId, next.x, next.y);
+                void sendCoreCommand(makeGetViewportStateCommand());
               }
             });
           }
@@ -9017,9 +9028,6 @@ const currentGridSpacingRef = useRef(10);
         const dy = event.clientY - drag.startClientY;
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Committed drag — send the final cursor position to the
-          // core.  Constraints, snaps, and dimensions are all computed
-          // by the core; the UI just forwards the cursor position.
           const rawPoint = resolveSketchPlanePoint(
             event,
             renderer,
@@ -9028,11 +9036,10 @@ const currentGridSpacingRef = useRef(10);
             activeSketchPlaneFrameRef.current,
           );
           if (rawPoint) {
-            const sketchPoint = resolveSnappedSketchPoint(rawPoint);
             void updateSketchPointRef.current(
               drag.pointId,
-              sketchPoint.local[0],
-              sketchPoint.local[1],
+              rawPoint.local[0],
+              rawPoint.local[1],
             );
           }
         }

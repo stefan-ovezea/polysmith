@@ -1216,6 +1216,15 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "drag_sketch_point") {
+    document_manager().drag_sketch_point(
+        read_string(command.payload, "point_id"),
+        read_dimension(command.payload, "cursor_x"),
+        read_dimension(command.payload, "cursor_y"));
+    // No response — the next viewport state refresh picks up the change.
+    return;
+  }
+
   if (command.type == "set_sketch_line_constraint") {
     const std::string constraint = read_string(command.payload, "constraint");
     const auto document = document_manager().set_sketch_line_constraint(

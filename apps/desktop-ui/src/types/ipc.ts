@@ -1195,6 +1195,16 @@ export interface UpdateSketchPointCommand {
   };
 }
 
+export interface DragSketchPointCommand {
+  id: string;
+  type: "drag_sketch_point";
+  payload: {
+    point_id: string;
+    cursor_x: number;
+    cursor_y: number;
+  };
+}
+
 export interface SetSketchLineConstraintCommand {
   id: string;
   type: "set_sketch_line_constraint";
@@ -1752,6 +1762,7 @@ export type CoreCommand =
   | SetSketchToolCommand
   | UpdateSketchLineCommand
   | UpdateSketchPointCommand
+  | DragSketchPointCommand
   | SetSketchLineConstraintCommand
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand

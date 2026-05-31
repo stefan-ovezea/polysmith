@@ -19,6 +19,14 @@
 
 namespace polysmith::core {
 
+// Lightweight result for drag_sketch_point — avoids returning full
+// DocumentState on every pointer-move during an endpoint drag.
+struct DragPointResult {
+  double x;
+  double y;
+  std::optional<std::string> snap_label;
+};
+
 struct DocumentState {
   std::string id;
   std::string name;
@@ -248,6 +256,9 @@ class DocumentManager {
   DocumentState update_sketch_point(const std::string& point_id,
                                     double x,
                                     double y);
+  DragPointResult drag_sketch_point(const std::string& point_id,
+                                     double cursor_x,
+                                     double cursor_y);
   DocumentState set_sketch_line_constraint(
       const std::string& line_id,
       const std::optional<std::string>& constraint);

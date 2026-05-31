@@ -1,5 +1,6 @@
 #include "core/document.h"
 #include "core/sketch_feature.h"
+#include "core/snap_engine.h"
 
 #include <algorithm>
 #include <array>
@@ -2898,6 +2899,89 @@ DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
+}
+
+DragPointResult DocumentManager::drag_sketch_point(
+    const std::string& point_id,
+    double cursor_x,
+    double cursor_y) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  auto& params = feature_it->sketch_parameters.value();
+
+  // Find the anchored (other) endpoint for polar/axis-lock snap.
+  std::optional<double> start_x;
+  std::optional<double> start_y;
+  for (const auto& line : params.lines) {
+    if (line.start_point_id == point_id || line.end_point_id == point_id) {
+      const bool is_start = (line.start_point_id == point_id);
+      const std::string other_id =
+          is_start ? line.end_point_id : line.start_point_id;
+      const auto other_it =
+          std::find_if(params.points.begin(), params.points.end(),
+                       [&](const SketchPoint& p) { return p.id == other_id; });
+      if (other_it != params.points.end()) {
+        start_x = other_it->x;
+        start_y = other_it->y;
+      }
+      break;
+    }
+  }
+
+  // Run snap resolution.
+  const double tolerance = 0.5;
+  const auto snap = polysmith::core::resolve_snap(
+      cursor_x, cursor_y, params, document_->selection_filter, tolerance,
+      start_x, start_y);
+
+  double target_x = cursor_x;
+  double target_y = cursor_y;
+  std::optional<std::string> snap_label;
+
+  if (snap.has_value()) {
+    target_x = snap->local_x;
+    target_y = snap->local_y;
+    snap_label = snap->label;
+  }
+
+  // Apply constraint resolution without undo / linked-extrude refresh.
+  polysmith::core::update_sketch_point(*feature_it, point_id, target_x,
+                                       target_y);
+
+  // Read back the actual position after constraint resolution.
+  const auto point_it =
+      std::find_if(params.points.begin(), params.points.end(),
+                   [&](const SketchPoint& p) { return p.id == point_id; });
+
+  const double result_x = (point_it != params.points.end()) ? point_it->x : target_x;
+  const double result_y = (point_it != params.points.end()) ? point_it->y : target_y;
+
+  // Update selection state (same as update_sketch_point).
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_entity_ids.clear();
+
+  return DragPointResult{result_x, result_y, snap_label};
 }
 
 DocumentState DocumentManager::set_sketch_line_constraint(

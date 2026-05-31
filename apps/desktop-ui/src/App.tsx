@@ -851,6 +851,7 @@ function App() {
     cancelMirrorPreview,
     setSketchPointFixed,
     updateSketchPoint,
+    dragSketchPoint,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
     selectSketchProfile,
@@ -6283,6 +6284,9 @@ function App() {
                 await runAction(async () => {
                   await updateSketchPoint(pointId, x, y);
                 });
+              }}
+              onDragSketchPoint={async (pointId, cursorX, cursorY) => {
+                await dragSketchPoint(pointId, cursorX, cursorY);
               }}
               hiddenFeatureIds={effectiveHiddenFeatureIds}
               hiddenSketchPlaneIds={hiddenSketchPlaneIds}
