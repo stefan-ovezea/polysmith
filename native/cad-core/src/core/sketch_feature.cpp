@@ -188,6 +188,15 @@ void apply_line_constraint_respecting_fixed_points(
       throw std::runtime_error(
           "Cannot make a line horizontal when both endpoints are fixed");
     }
+    // Changing an already-vertical line to horizontal collapses it to
+    // zero length (X is already equal, now Y becomes equal too).  Clear
+    // the constraint instead — same safeguard as enforce_line_HV_constraints.
+    if (nearly_equal(line.start_x, line.end_x)) {
+      fprintf(stderr, "WARN cleared horizontal constraint on %s "
+              "(would create zero-length line)\n", line.id.c_str());
+      line.constraint = std::nullopt;
+      return;
+    }
     if (end_fixed) {
       line.start_y = line.end_y;
     } else {
@@ -200,6 +209,12 @@ void apply_line_constraint_respecting_fixed_points(
     if (start_fixed && end_fixed && !nearly_equal(line.start_x, line.end_x)) {
       throw std::runtime_error(
           "Cannot make a line vertical when both endpoints are fixed");
+    }
+    if (nearly_equal(line.start_y, line.end_y)) {
+      fprintf(stderr, "WARN cleared vertical constraint on %s "
+              "(would create zero-length line)\n", line.id.c_str());
+      line.constraint = std::nullopt;
+      return;
     }
     if (end_fixed) {
       line.start_x = line.end_x;
@@ -458,31 +473,34 @@ double endpoint_y(const SketchLine& line, bool is_start) {
 
 std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     const SketchFeatureParameters& parameters,
-    const std::string& ignored_line_id,
+    const std::string& ignored_entity_id,
     double x,
     double y) {
+  auto match_line = [&](const SketchLine& candidate) -> bool {
+    return candidate.id == ignored_entity_id;
+  };
+  auto match_arc = [&](const SketchArc& candidate) -> bool {
+    return candidate.id == ignored_entity_id;
+  };
+
   for (const auto& candidate : parameters.lines) {
-    if (candidate.id == ignored_line_id) {
-      continue;
-    }
-
-    if (points_match(candidate.start_x, candidate.start_y, x, y)) {
+    if (match_line(candidate)) continue;
+    if (points_match(candidate.start_x, candidate.start_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.start_point_id,
-          candidate.start_x,
-          candidate.start_y,
-      };
-    }
-
-    if (points_match(candidate.end_x, candidate.end_y, x, y)) {
+          candidate.start_point_id, candidate.start_x, candidate.start_y};
+    if (points_match(candidate.end_x, candidate.end_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.end_point_id,
-          candidate.end_x,
-          candidate.end_y,
-      };
-    }
+          candidate.end_point_id, candidate.end_x, candidate.end_y};
   }
-
+  for (const auto& candidate : parameters.arcs) {
+    if (match_arc(candidate)) continue;
+    if (points_match(candidate.start_x, candidate.start_y, x, y))
+      return std::tuple<std::string, double, double>{
+          candidate.start_point_id, candidate.start_x, candidate.start_y};
+    if (points_match(candidate.end_x, candidate.end_y, x, y))
+      return std::tuple<std::string, double, double>{
+          candidate.end_point_id, candidate.end_x, candidate.end_y};
+  }
   return std::nullopt;
 }
 

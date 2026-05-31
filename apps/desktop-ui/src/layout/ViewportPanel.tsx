@@ -1503,6 +1503,8 @@ const currentGridSpacingRef = useRef(10);
     startLocalX: number;
     startLocalY: number;
     hasMoved: boolean;
+    /** True while an IPC update is in flight — drop intermediate frames. */
+    inFlight: boolean;
   }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
   // Set on mouse-up commit; cleared when the next viewport rebuild
@@ -7377,6 +7379,7 @@ const currentGridSpacingRef = useRef(10);
                   startLocalX: rawPoint.local[0],
                   startLocalY: rawPoint.local[1],
                   hasMoved: false,
+                  inFlight: false,
                 };
                 controls.enabled = false;
                 renderer.domElement.setPointerCapture(event.pointerId);
@@ -7710,37 +7713,7 @@ const currentGridSpacingRef = useRef(10);
           activeSketchPlaneFrameRef.current,
         );
         if (rawPoint) {
-          let sketchPoint = resolveSnappedSketchPoint(rawPoint);
-
-          // Apply line constraint during preview so the rubber-band
-          // matches what the commit will produce.  Same enforcement
-          // that refresh_sketch_derived_state applies on commit.
-          {
-            const params = sketchLinesRef.current;
-            if (params) {
-              const ownerLine = params.lines.find(
-                (l) =>
-                  l.start_point_id === endpointDrag.pointId ||
-                  l.end_point_id === endpointDrag.pointId,
-              );
-              if (ownerLine?.constraint) {
-                const isStart = ownerLine.start_point_id === endpointDrag.pointId;
-                const fixedY = isStart ? ownerLine.end_y : ownerLine.start_y;
-                const fixedX = isStart ? ownerLine.end_x : ownerLine.start_x;
-                if (ownerLine.constraint === "horizontal") {
-                  sketchPoint = {
-                    ...sketchPoint,
-                    local: [sketchPoint.local[0], fixedY] as [number, number],
-                  };
-                } else if (ownerLine.constraint === "vertical") {
-                  sketchPoint = {
-                    ...sketchPoint,
-                    local: [fixedX, sketchPoint.local[1]] as [number, number],
-                  };
-                }
-              }
-            }
-          }
+          const sketchPoint = resolveSnappedSketchPoint(rawPoint);
 
           const dx = event.clientX - endpointDrag.startClientX;
           const dy = event.clientY - endpointDrag.startClientY;
@@ -7749,95 +7722,24 @@ const currentGridSpacingRef = useRef(10);
           }
           setSketchSnapLabel(sketchPoint.snapLabel);
 
-          // Convert sketch-local position to world space.
-          const frame = activeSketchPlaneFrameRef.current;
-          const toWorld = (lx: number, ly: number): THREE.Vector3 => {
-            if (frame) {
-              const origin = new THREE.Vector3(
-                frame.origin.x, frame.origin.y, frame.origin.z,
-              );
-              const xAxis = new THREE.Vector3(
-                frame.x_axis.x, frame.x_axis.y, frame.x_axis.z,
-              );
-              const yAxis = new THREE.Vector3(
-                frame.y_axis.x, frame.y_axis.y, frame.y_axis.z,
-              );
-              return origin
-                .clone()
-                .addScaledVector(xAxis, lx)
-                .addScaledVector(yAxis, ly);
-            }
-            // Fallback for ref-plane sketches (e.g. ref-plane-xy).
-            return new THREE.Vector3(lx, 0, ly);
-          };
-
-          const draggedWorld = toWorld(
-            sketchPoint.local[0],
-            sketchPoint.local[1],
-          );
-
-          // Move the dragged point mesh.
-          const pointObjects = sketchPointObjectsRef.current;
-          for (const obj of pointObjects) {
-            if (obj.userData.sketchPointId === endpointDrag.pointId) {
-              obj.position.copy(draggedWorld);
-              break;
-            }
-          }
-
-          // A single point ID may be shared by multiple lines (e.g. a
-          // rectangle corner).  Update every line that references the
-          // dragged point so all connected geometry rubber-bands together.
-          const params = sketchLinesRef.current;
-          if (params) {
-            const connectedLines = params.lines.filter(
-              (l) =>
-                l.start_point_id === endpointDrag.pointId ||
-                l.end_point_id === endpointDrag.pointId,
-            );
-            for (const ownerLine of connectedLines) {
-              const isStart =
-                ownerLine.start_point_id === endpointDrag.pointId;
-              const fixedLocal: [number, number] = isStart
-                ? [ownerLine.end_x, ownerLine.end_y]
-                : [ownerLine.start_x, ownerLine.start_y];
-              const fixedWorld = toWorld(fixedLocal[0], fixedLocal[1]);
-
-              const lineObj = sketchEntityObjectByIdRef.current.get(
-                ownerLine.line_id,
-              );
-              if (
-                lineObj &&
-                lineObj instanceof THREE.Line &&
-                lineObj.geometry.attributes.position
-              ) {
-                const pos = lineObj.geometry.attributes.position
-                  .array as Float32Array;
-                if (isStart) {
-                  pos[0] = draggedWorld.x;
-                  pos[1] = draggedWorld.y;
-                  pos[2] = draggedWorld.z;
-                  pos[3] = fixedWorld.x;
-                  pos[4] = fixedWorld.y;
-                  pos[5] = fixedWorld.z;
-                } else {
-                  pos[0] = fixedWorld.x;
-                  pos[1] = fixedWorld.y;
-                  pos[2] = fixedWorld.z;
-                  pos[3] = draggedWorld.x;
-                  pos[4] = draggedWorld.y;
-                  pos[5] = draggedWorld.z;
-                }
-                lineObj.geometry.attributes.position.needsUpdate = true;
-                // Dashed lines need per-vertex distances recomputed.
-                if (
-                  lineObj.material instanceof
-                  THREE.LineDashedMaterial
-                ) {
-                  lineObj.computeLineDistances();
-                }
+          // Core-driven preview: send the cursor position to the core
+          // on every pointer-move.  The core computes the constrained
+          // position (H/V, relations, dimensions, snaps) and emits a
+          // viewport snapshot.  The existing scene-rebuild effect
+          // renders the result — no client-side mesh mutation needed.
+          // Throttle to one in-flight request so we don't queue IPC
+          // commands faster than the core can respond.
+          if (!endpointDrag.inFlight) {
+            endpointDrag.inFlight = true;
+            updateSketchPointRef.current(
+              endpointDrag.pointId,
+              sketchPoint.local[0],
+              sketchPoint.local[1],
+            ).finally(() => {
+              if (endpointDragRef.current) {
+                endpointDragRef.current.inFlight = false;
               }
-            }
+            });
           }
         }
         return;
@@ -9018,7 +8920,9 @@ const currentGridSpacingRef = useRef(10);
         const dy = event.clientY - drag.startClientY;
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Committed drag — resolve final snapped position and update.
+          // Committed drag — send the final cursor position to the
+          // core.  Constraints, snaps, and dimensions are all computed
+          // by the core; the UI just forwards the cursor position.
           const rawPoint = resolveSketchPlanePoint(
             event,
             renderer,
@@ -9027,104 +8931,13 @@ const currentGridSpacingRef = useRef(10);
             activeSketchPlaneFrameRef.current,
           );
           if (rawPoint) {
-            let sketchPoint = resolveSnappedSketchPoint(rawPoint);
-            // Diagnostic: log the owning line's data before commit.
-            const params = sketchLinesRef.current;
-            if (params) {
-              const ownerLine = params.lines.find(
-                (l) =>
-                  l.start_point_id === drag.pointId ||
-                  l.end_point_id === drag.pointId,
-              );
-              if (ownerLine) {
-                const isStart =
-                  ownerLine.start_point_id === drag.pointId;
-
-                // Apply line constraint at commit so the position
-                // matches what the preview showed.
-                if (ownerLine.constraint) {
-                  const fixedY = isStart ? ownerLine.end_y : ownerLine.start_y;
-                  const fixedX = isStart ? ownerLine.end_x : ownerLine.start_x;
-                  if (ownerLine.constraint === "horizontal") {
-                    sketchPoint = {
-                      ...sketchPoint,
-                      local: [sketchPoint.local[0], fixedY] as [number, number],
-                    };
-                  } else if (ownerLine.constraint === "vertical") {
-                    sketchPoint = {
-                      ...sketchPoint,
-                      local: [fixedX, sketchPoint.local[1]] as [number, number],
-                    };
-                  }
-                }
-
-                console.warn(
-                  "[endpoint-drag] dragging",
-                  isStart ? "start" : "end",
-                  "of line",
-                  ownerLine.line_id,
-                );
-                console.warn(
-                  "[endpoint-drag]   fixed endpoint:",
-                  isStart
-                    ? [ownerLine.end_x, ownerLine.end_y]
-                    : [ownerLine.start_x, ownerLine.start_y],
-                );
-                console.warn(
-                  "[endpoint-drag]   dragged to:",
-                  sketchPoint.local,
-                );
-                // Check for constraints / relations on this line.
-                if (ownerLine.constraint) {
-                  console.warn(
-                    "[endpoint-drag]   line constraint:",
-                    ownerLine.constraint,
-                  );
-                }
-                if (params.line_relations) {
-                  const rels = params.line_relations.filter(
-                    (r) =>
-                      r.first_line_id === ownerLine.line_id ||
-                      r.second_line_id === ownerLine.line_id,
-                  );
-                  if (rels.length > 0) {
-                    console.warn(
-                      "[endpoint-drag]   line relations:",
-                      rels.map((r) => r.kind),
-                    );
-                  }
-                }
-                // Check for dimensions on this line.
-                if (params.dimensions) {
-                  const dims = params.dimensions.filter(
-                    (d) => d.entity_id === ownerLine.line_id,
-                  );
-                  if (dims.length > 0) {
-                    console.warn(
-                      "[endpoint-drag]   dimensions:",
-                      dims.map(
-                        (d) =>
-                          `${d.kind}=${d.value} driven=${d.driven}`,
-                      ),
-                    );
-                  }
-                }
-              }
-            }
+            const sketchPoint = resolveSnappedSketchPoint(rawPoint);
             void updateSketchPointRef.current(
               drag.pointId,
               sketchPoint.local[0],
               sketchPoint.local[1],
             );
           }
-        } else {
-          // Click (no significant movement) — fall through to the
-          // existing click-to-select logic so the user can still
-          // select the point normally.
-          console.warn(
-            "[endpoint-drag] no movement, falling through to click select:",
-            drag.pointId,
-          );
         }
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
@@ -10612,36 +10425,106 @@ const currentGridSpacingRef = useRef(10);
       return;
     }
 
-    // When a drag was just committed, skip the dispose + rebuild and
-    // instead patch the existing line / point objects' positions from
-    // the new sceneData.  This avoids the one-frame flicker caused by
-    // tearing down and recreating the sketch group.
-    const didPatch = pendingEndpointCommitRef.current && sceneData;
-    if (didPatch) {
-      for (const sl of sceneData.sketchLines) {
-        const obj = sketchEntityObjectByIdRef.current.get(sl.lineId);
-        if (obj && obj instanceof THREE.Line && obj.geometry.attributes.position) {
-          const pos = obj.geometry.attributes.position.array as Float32Array;
-          pos[0] = sl.start[0]; pos[1] = sl.start[1]; pos[2] = sl.start[2];
-          pos[3] = sl.end[0];   pos[4] = sl.end[1];   pos[5] = sl.end[2];
-          obj.geometry.attributes.position.needsUpdate = true;
+    const hadPendingCommit = pendingEndpointCommitRef.current;
+    pendingEndpointCommitRef.current = false;
+
+    // During an active endpoint drag (pointer-move phase, not the
+    // final commit), skip the full dispose+rebuild.  Instead, update
+    // existing mesh geometry in-place from the new sceneData.  This
+    // avoids the 1-2 frame lag of destroying and recreating every
+    // Three.js object 60 times per second.
+    const isDragging =
+      endpointDragRef.current !== null && !hadPendingCommit;
+
+    if (isDragging && sceneData && sketchGroup.children.length > 0) {
+      // --- Incremental update (drag preview) ---
+      if (sceneData.sketchLines) {
+        for (const lineData of sceneData.sketchLines) {
+          const lineObj = sketchEntityObjectByIdRef.current.get(
+            lineData.lineId,
+          );
+          if (
+            lineObj instanceof THREE.Line &&
+            lineObj.geometry.attributes.position
+          ) {
+            const pos = lineObj.geometry.attributes.position
+              .array as Float32Array;
+            pos[0] = lineData.start[0];
+            pos[1] = lineData.start[1];
+            pos[2] = lineData.start[2];
+            pos[3] = lineData.end[0];
+            pos[4] = lineData.end[1];
+            pos[5] = lineData.end[2];
+            lineObj.geometry.attributes.position.needsUpdate = true;
+          }
         }
       }
-      for (const sp of sceneData.sketchPoints) {
-        const obj = sketchPointObjectByIdRef.current.get(sp.pointId);
-        if (obj) {
-          obj.position.set(sp.position[0], sp.position[1], sp.position[2]);
+
+      if (sceneData.sketchCircles) {
+        const frame = activeSketchPlaneFrameRef.current;
+        let xa: [number, number, number];
+        let ya: [number, number, number];
+        if (frame) {
+          xa = [frame.x_axis.x, frame.x_axis.y, frame.x_axis.z];
+          ya = [frame.y_axis.x, frame.y_axis.y, frame.y_axis.z];
+        } else {
+          xa = [1, 0, 0];
+          ya = [0, 0, 1];
+        }
+        for (const circleData of sceneData.sketchCircles) {
+          const circleObj = sketchEntityObjectByIdRef.current.get(
+            circleData.circleId,
+          );
+          if (
+            circleObj instanceof THREE.LineLoop &&
+            circleObj.geometry.attributes.position
+          ) {
+            const pos = circleObj.geometry.attributes.position
+              .array as Float32Array;
+            const r = circleData.radius;
+            const cx = circleData.center[0];
+            const cy = circleData.center[1];
+            const cz = circleData.center[2];
+            const segments = (pos.length / 3) - 1;
+            for (let i = 0; i <= segments; i++) {
+              const angle = (i / segments) * Math.PI * 2;
+              const lx = Math.cos(angle) * r;
+              const ly = Math.sin(angle) * r;
+              pos[i * 3] = cx + xa[0] * lx + ya[0] * ly;
+              pos[i * 3 + 1] = cy + xa[1] * lx + ya[1] * ly;
+              pos[i * 3 + 2] = cz + xa[2] * lx + ya[2] * ly;
+            }
+            circleObj.geometry.attributes.position.needsUpdate = true;
+          }
         }
       }
-      // Re-paint materials in case selection / DOF state changed.
-      paintSketchEntityMaterials();
-      paintSketchPointMaterials();
-      paintDofStatusColors();
-      pendingEndpointCommitRef.current = false;
-      endpointDragRef.current = null;
+
+      if (sceneData.sketchPoints) {
+        for (const pointData of sceneData.sketchPoints) {
+          const pointObj = sketchPointObjectByIdRef.current.get(
+            pointData.pointId,
+          );
+          if (pointObj) {
+            pointObj.position.set(
+              pointData.position[0],
+              pointData.position[1],
+              pointData.position[2],
+            );
+          }
+        }
+      }
+
+      // After incremental update, release the drag preview if this
+      // was the final commit frame.
+      if (hadPendingCommit) {
+        endpointDragRef.current = null;
+      }
+
+      lastGeometryKeyRef.current = sceneData.geometryKey;
       return;
     }
 
+    // --- Full rebuild (normal operation or final commit) ---
     disposeGroup(contentGroup);
     disposeGroup(referenceGroup);
     disposeGroup(sketchGroup);
@@ -10886,6 +10769,13 @@ const currentGridSpacingRef = useRef(10);
         sketchPointObject,
       );
       sketchGroup.add(sketchPointObject);
+    }
+
+    // Now that every mesh is in the scene, release the drag preview.
+    // This ensures there is no frame where stale pre-drag geometry is
+    // visible without the preview override.
+    if (hadPendingCommit) {
+      endpointDragRef.current = null;
     }
 
     syncPrimitiveVisuals();
