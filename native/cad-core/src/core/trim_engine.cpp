@@ -261,9 +261,6 @@ std::vector<TrimIntersection> find_all_intersections(
     if (isect.has_value()) { ++found; results.push_back(std::move(*isect)); }
   }
 
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d skipped_constr=%d raw_line=%d\n",
-          target.id.c_str(), total_lines, skipped_constr, found);
-
   for (const auto& circle : params.circles) {
     if (circle.is_construction) continue;
     auto isects = intersect_line_circle(target, circle);
@@ -288,6 +285,18 @@ std::vector<TrimIntersection> find_all_intersections(
             });
 
   deduplicate(results);
+
+  // Filter out intersections at the line's own endpoints — they
+  // produce zero-length segments and prevent meaningful trimming.
+  // Same protection the arc path already applies at line ~674.
+  results.erase(
+      std::remove_if(results.begin(), results.end(),
+                     [](const TrimIntersection& is) {
+                       return is.param_on_target < kTrimCoincidentTolerance ||
+                              is.param_on_target > 1.0 - kTrimCoincidentTolerance;
+                     }),
+      results.end());
+
   return results;
 }
 
@@ -329,9 +338,6 @@ std::vector<TrimIntersection> find_all_intersections(
       ++found;
     }
   }
-
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d n_circles=%d skipped_constr=%d found=%d\n",
-          target.id.c_str(), total_lines, total_circles, skipped_constr, found);
 
   if (results.empty()) return results;
 
@@ -677,14 +683,15 @@ std::vector<TrimIntersection> find_all_intersections(
     for (auto& is : isects) results.push_back(std::move(is));
   }
 
-  fprintf(stderr, "[trim_isect] target=%s n_lines=%d n_circles=%d n_arcs=%d found=%d\n",
-          target.id.c_str(), total_lines, total_circles, total_arcs, found);
-
   // Filter out intersections at the arc's own endpoints — they
   // produce zero-length segments and prevent meaningful trimming.
+  // Keep them only if they're the *only* intersections, otherwise
+  // the arc would be fully deleted (the caller treats an empty
+  // result as "isolated entity → delete").
   {
     auto [as, ae] = arc_angles(target);
     const double kEpTol = 1e-6;
+    auto copy = results;
     results.erase(
         std::remove_if(results.begin(), results.end(),
                        [&](const TrimIntersection& is) {
@@ -695,6 +702,7 @@ std::vector<TrimIntersection> find_all_intersections(
                                  std::abs(std::cos(a - ae) - 1.0) < kEpTol);
                        }),
         results.end());
+    if (results.empty()) results = std::move(copy);
   }
 
   if (results.empty()) return results;

@@ -1032,6 +1032,18 @@ export function makeSetSketchLineConstraintCommand(
   };
 }
 
+export function makeClearSketchLineConstraintsCommand(
+  lineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "clear_sketch_line_constraints",
+    payload: {
+      line_id: lineId,
+    },
+  };
+}
+
 export function makeSetSketchEqualLengthConstraintCommand(
   lineId: string,
   otherLineId: string | null,
@@ -1837,6 +1849,24 @@ export function makeUpdateSelectionFilterCommand(
   };
 }
 
+export function makeResolveDraftSnapCommand(
+  cursorX: number,
+  cursorY: number,
+  startX: number,
+  startY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "resolve_draft_snap",
+    payload: {
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+      start_x: startX,
+      start_y: startY,
+    },
+  };
+}
+
 export function makeAddParameterCommand(
   name: string,
   expression: string,
@@ -1994,4 +2024,20 @@ export function getDocumentExportFromMessage(
   }
 
   return null;
+}
+
+export function makeTrimPreviewCommand(
+  entityId: string,
+  cursorX: number,
+  cursorY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "trim_preview",
+    payload: {
+      entity_id: entityId,
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+    },
+  };
 }

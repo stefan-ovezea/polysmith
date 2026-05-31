@@ -2,6 +2,63 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-05-30
+
+### Snap system — C++ migration (Phase 1–3)
+
+See `constraints` branch and `wiki/Snap-System-CPP-Migration.md` for the full plan.
+
+- **New IPC**: `resolve_draft_snap` — C++ snap engine resolves all candidate types and returns the best match to the TS renderer
+- **Dynamic collectors added to C++**: parallel direction lock, perpendicular direction lock, H/V axis lock
+- **TS snap override**: `resolveSnappedSketchPoint` now reads a C++ snap cache (updated via custom event) before falling through to its local computation
+- **Snap priority**: endpoint > center > midpoint > axis_lock > intersection > quadrant > perpendicular > perp_direction > tangent > parallel > polar > grid > grid_line > nearest
+- **Remaining**: Phase 4 (remove dead TS snap code) and Phase 5 (constraint preview unification) deferred to a follow-up
+
+### Start-point anchoring — prevented at 3 layers
+
+The start point of a user-drawn line must never be auto‑merged with nearby geometry. Three independent code paths were creating anchors on the start point — all are now blocked:
+
+| Layer | Path | Fix |
+|---|---|---|
+| C++ inference | `run_inference_on_new_line` merging start | Removed start-point check |
+| C++ snap | `snap_line_endpoints_to_coincident_geometry` merging start | `snap_start=false` for user IPC path |
+| TS post-add | Midpoint/point‑line anchor dispatch on start | Endpoint-only |
+
+### Trim tool — known issues (revisit needed)
+
+Trim can produce zero‑length lines when an intersection splits a segment at the same point. Guards added in first/last/middle‑segment paths to detect and delete collapsed lines (logged as `ERROR`), but the root cause in `trim_engine.cpp` intersection/splitting logic needs a dedicated investigation.
+
+### Zero-length line detection
+
+`refresh_sketch_derived_state` logs any zero‑length line as `ERROR` with entity ID, position, and constraint. The TS stderr handler now classifies lines starting with `ERROR` as error level (red in the log panel), `WARN` as warning, and everything else as info.
+
+### Status line
+
+Bottom-right viewport status now shows `3L · 1C · 0A · 6P` (lines, circles, arcs, points) for quick entity inventory.
+
+### Constraint system fixes — atomic commit, badge stacking, clear-all, stay-armed
+
+See `constraints` branch.
+
+**Fixed:**
+- **`clear_sketch_line_constraints` IPC command** — clears H/V + equal-length + perpendicular + parallel + tangent + midpoint anchors + point-line anchors in one call
+- **Badge stacking** — H/V badges now render alongside relation badges (3× offset when line has relations) instead of being suppressed
+- **Atomic perpendicular/parallel commit** — both setters save/restore full line state on enforcement failure; `drive_line_perpendicular_to_reference` and `drive_line_parallel_to_reference` skip silently (instead of throwing) when the driven line still carries H/V, so the reference line keeps its axis constraint
+- **Stay-armed** — clear, coincident, equal-length, perpendicular, and parallel buttons all stay armed after a successful pick so the user can apply multiple constraints without re-clicking
+- **Coincident** — now accepts all point kinds (was `endpoint`-only); stays armed
+- **"/" (on‑line anchor) badge** — `clear_sketch_line_constraints` now removes `point_line_anchors` and `midpoint_anchors` referencing the cleared line
+
+**Fixed — inference engine start‑point auto‑merge removed:**
+`run_inference_on_new_line` no longer checks the start point for coincident proximity. The start point is a deliberate user placement and must not be auto‑merged with nearby geometry — merging it could pull the entire line onto an existing entity, making it invisible and creating a phantom point‑sink that collects future constraints. Only the *endpoint* of a newly drawn line is subject to coincident inference.
+
+**Safety net — orphan anchor cleanup in refresh:**
+`refresh_sketch_derived_state` now removes `midpoint_anchors` and `point_line_anchors` whose host line no longer exists, preventing stale viewport sprites after line deletion.
+
+**Selection improvements needed (from testing):**
+- Click-select on overlapping geometry is ambiguous — no way to cycle through stacked entities under the cursor
+- Multi-select (`Ctrl+click`) not implemented — only single-entity selection
+- Right-click context menu on selected entities has only "Delete" — missing common CAD operations (toggle construction, rename, isolate, etc.)
+
 ## 2026-05-29
 
 ### Endpoint drag — constraint investigation & development pause
@@ -1584,3 +1641,80 @@ Three bugs fixed after initial implementation:
   dimensions, have both ghost preview and committed rendering consume that same
   model, and remove the current after-the-fact inference from generic label
   placement.
+
+### 2026-05-31 — Constraint & Trim Stabilisation
+
+#### Core-Driven Drag Preview (ADR-0002)
+
+- Removed ~200 lines of client-side constraint math and Three.js mesh mutation
+  from `ViewportPanel.tsx` (`handlePointerMove` endpoint drag block).
+- Drag preview now sends `update_sketch_point` IPC on every pointer-move. The
+  core computes the constrained position (H/V, relations, dimensions, snaps)
+  and emits a viewport snapshot.  The existing scene-rebuild effect renders the
+  result.
+- Added `inFlight` throttle (one IPC request at a time) to prevent queue
+  buildup.
+- Added incremental scene update path in the viewport rebuild effect: during
+  active drag, existing Three.js meshes are updated in-place from the new
+  `sceneData` instead of full dispose+rebuild.  Lines, circles, and points are
+  patched by id.  On commit, the full rebuild runs.
+- `endpointDragRef` is now cleared AFTER all new meshes are in the scene,
+  eliminating the 1-frame flash of stale geometry.
+
+#### Trim — Share Point IDs at New Endpoints
+
+- `find_coincident_endpoint` now searches `params.arcs` in addition to
+  `params.lines`.  Previously, arc endpoints were invisible, so trimmed-circle
+  arcs got unique point IDs and profile loops broke.
+- **Line trim:** replaced the "break all shared points" block with
+  `find_coincident_endpoint` calls at new endpoint positions.  Endpoints match
+  existing geometry → share ID.  Other lines sharing old point IDs: if still
+  coincident → continue sharing; otherwise → orphan.  Mirrors the circle→arc
+  path.
+- **Arc trim:** new endpoints now use `find_coincident_endpoint` instead of
+  always-fresh IDs.  Applies to start-trim, end-trim, and middle-split cases.
+- **Circle & arc trim:** added orphaned coincident constraint safety net
+  (previously only the line trim path had it).
+
+#### Trim — Arc Deletion Bug
+
+- `find_all_intersections` for arcs: endpoint filter could remove ALL
+  intersections when they were all at the arc's own endpoints, causing the arc
+  to be fully deleted.  Now preserves intersections if filtering would
+  empty the results.
+
+#### Trim — Core-Driven Preview IPC
+
+- Added `trim_preview` IPC command (read-only query, no state mutation).
+  Takes `entity_id`, `cursor_x`, `cursor_y` and runs the exact same
+  `find_all_intersections` + `select_clicked_segment` math as
+  `trim_sketch_entity`.  Returns segment data + hovered index.
+- TS side: `trim_preview_result` dispatched as `polysmith-trim-preview`
+  custom event.  `renderTrimPreviewHighlight()` converts core data to
+  world-space Three.js geometry for lines, circles, and arcs.
+- Hover sends IPC with 0.5mm throttle.  Local intersection math still runs
+  for instant feedback; IPC response overrides.
+
+#### Constraint Bug Fixes
+
+- **Zero-length constraint flip guard:** `apply_line_constraint_respecting_fixed_points`
+  now detects and clears H/V constraints that would produce zero-length lines
+  (vertical→horizontal flip where X is already equal, and vice versa).
+  Previously, the setter path lacked this guard (only `enforce_line_HV_constraints`
+  had it), so a constraint flip could create a zero-length line that the
+  zero-length cleanup in `refresh_sketch_derived_state` would then delete.
+- **`enforce_line_HV_constraints` respects fixed endpoints:** now checks
+  `point_is_fixed` before snapping.  If the end is fixed, the start moves to
+  match, instead of always snapping end→start.  Matches the setter path
+  behavior in `apply_line_constraint_respecting_fixed_points`.
+- **`reconcile_shared_point_positions` canonical selection:** when multiple
+  lines share a point and constraint enforcement drives them to different
+  coordinates, the reconcile pass now picks the canonical position by priority:
+  1) line with a fixed endpoint, 2) line with H/V constraint, 3) first
+  reference (fallback).  Previously it always used the first reference,
+  which could be the wrong one.
+- **Canonical relation IDs:** `set_sketch_equal_length_constraint`,
+  `set_sketch_perpendicular_constraint`, and `set_sketch_parallel_constraint`
+  now use sorted-pair IDs (`rel-equal-length-A-B` where A < B).  Additionally,
+  `remove_line_relations_for_line` is called for BOTH lines before inserting,
+  guarding against file-load duplicates.

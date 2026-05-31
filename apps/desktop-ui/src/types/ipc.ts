@@ -307,6 +307,38 @@ export interface LogEvent extends BaseMessage {
   payload: LogEntry;
 }
 
+export interface DraftSnapResolvedEvent {
+  id: string;
+  type: "draft_snap_resolved";
+  payload: {
+    snap_x: number;
+    snap_y: number;
+    snap_kind: string;
+    snap_label: string;
+    host_entity_id: string;
+    host_point_id: string;
+    host_param_t?: number;
+  } | null;
+}
+
+export interface TrimPreviewResultEvent {
+  id: string;
+  type: "trim_preview_result";
+  payload: {
+    entity_id: string;
+    entity_kind: "line" | "circle" | "arc";
+    hovered_index: number;
+    full_circle?: boolean;
+    full_arc?: boolean;
+    segments?: Array<{
+      start?: [number, number];
+      end?: [number, number];
+      param_start?: number;
+      param_end?: number;
+    }>;
+  } | null;
+}
+
 export interface LogEntry {
   level: LogLevel;
   source: string;
@@ -324,6 +356,8 @@ export type CoreMessage =
   | DocumentExportedEvent
   | DocumentSavedEvent
   | LogEvent
+  | DraftSnapResolvedEvent
+  | TrimPreviewResultEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -1198,6 +1232,16 @@ export interface TrimSketchEntityCommand {
   };
 }
 
+export interface TrimPreviewCommand {
+  id: string;
+  type: "trim_preview";
+  payload: {
+    entity_id: string;
+    cursor_x: number;
+    cursor_y: number;
+  };
+}
+
 export interface DeleteSketchSelectionCommand {
   id: string;
   type: "delete_sketch_selection";
@@ -1244,6 +1288,14 @@ export interface SetSketchLineConstraintCommand {
   payload: {
     line_id: string;
     constraint: "none" | "horizontal" | "vertical";
+  };
+}
+
+export interface ClearSketchLineConstraintsCommand {
+  id: string;
+  type: "clear_sketch_line_constraints";
+  payload: {
+    line_id: string;
   };
 }
 
@@ -1385,6 +1437,17 @@ export interface DeleteParameterCommand {
   type: "delete_parameter";
   payload: {
     name: string;
+  };
+}
+
+export interface ResolveDraftSnapCommand {
+  id: string;
+  type: "resolve_draft_snap";
+  payload: {
+    cursor_x: number;
+    cursor_y: number;
+    start_x: number;
+    start_y: number;
   };
 }
 
@@ -1785,6 +1848,7 @@ export type CoreCommand =
   | UpdateSketchLineCommand
   | UpdateSketchPointCommand
   | SetSketchLineConstraintCommand
+  | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
   | SetSketchPerpendicularConstraintCommand
   | SetSketchTangentConstraintCommand
@@ -1822,6 +1886,7 @@ export type CoreCommand =
   | DeleteSketchFilletCommand
   | DeleteSketchDimensionCommand
   | TrimSketchEntityCommand
+  | TrimPreviewCommand
   | DeleteSketchSelectionCommand
   | SelectSketchPointCommand
   | SelectSketchEntityCommand
@@ -1833,4 +1898,5 @@ export type CoreCommand =
   | UpdateParameterCommand
   | DeleteParameterCommand
   | UpdateSelectionFilterCommand
+  | ResolveDraftSnapCommand
   | ShutdownCommand;

@@ -9,6 +9,12 @@
 
 ---
 
+### 🏠 Getting Started
+
+| | |
+|---|---|
+| 📋 **[Project Summary](Project-Summary)** | High-level overview: architecture, shipped features, mantra, UX pattern, roadmap, and contribution rules |
+
 ## 📖 Pages
 
 ### 📖 Reference

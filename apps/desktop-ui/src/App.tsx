@@ -1066,6 +1066,8 @@ function App() {
     startSketchOnFace,
     setSketchTool,
     setSketchLineConstraint,
+    clearSketchLineConstraints,
+    resolveDraftSnap,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
     setSketchParallelConstraint,
@@ -3912,8 +3914,10 @@ function App() {
     }
 
     if (armedSketchConstraint.kind === "clear") {
-      await setSketchLineConstraint(lineId, "none");
-      clearArmedSketchConstraint();
+      await clearSketchLineConstraints(lineId);
+      // Stay armed so the user can clear multiple lines without
+      // re‑clicking the toolbar button. Escape or another button
+      // will un‑arm it.
       return;
     }
 
@@ -3942,7 +3946,13 @@ function App() {
     } else {
       await setSketchPerpendicularConstraint(lineId, firstLineId);
     }
-    clearArmedSketchConstraint();
+    // Keep the constraint armed so the user can immediately pick
+    // another pair without re‑clicking the toolbar button.
+    // Escape, another button, or a tool switch will un‑arm it.
+    setArmedSketchConstraint({
+      kind: armedSketchConstraint.kind,
+      firstLineId: null,
+    });
   }
 
   async function handleSketchConstraintPointPick(
@@ -3952,11 +3962,6 @@ function App() {
   ) {
     if (!armedSketchConstraint || armedSketchConstraint.kind !== "coincident") {
       await selectSketchPoint(pointId, additive);
-      return;
-    }
-
-    if (kind !== "endpoint") {
-      await selectSketchPoint(pointId);
       return;
     }
 
@@ -3977,7 +3982,12 @@ function App() {
       pointId,
       armedSketchConstraint.firstPointId,
     );
-    clearArmedSketchConstraint();
+    // Stay armed so the user can pick more point pairs without
+    // re‑clicking the toolbar button.
+    setArmedSketchConstraint({
+      kind: "coincident",
+      firstPointId: null,
+    });
   }
 
   function makeDefaultExportBaseName(name?: string | null) {
@@ -6073,6 +6083,9 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
+              onResolveDraftSnap={async (cx, cy, sx, sy) => {
+                await resolveDraftSnap(cx, cy, sx, sy);
+              }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
                 await runAction(async () => {
                   await addSketchAngleDimension(firstLineId, secondLineId);
@@ -6386,7 +6399,7 @@ function App() {
                     return;
                   }
 
-                  await setSketchLineConstraint(entityId, "none");
+                  await clearSketchLineConstraints(entityId);
                 });
               }}
               onSelectSketchDimension={async (dimensionId) => {

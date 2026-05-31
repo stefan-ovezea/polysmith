@@ -711,7 +711,7 @@
     "showGrid": "Show grid",
     "showSketchGrid": "Show sketch grid",
     "showViewportGrid": "Show viewport grid",
-    "sketchStatus": "Sketching · {{tool}} · {{lineCount}} line{{linePlural}} · {{circleCount}} circle{{circlePlural}}",
+    "sketchStatus": "Sketching · {{tool}} · {{lineCount}}L · {{circleCount}}C · {{arcCount}}A · {{pointCount}}P",
     "snap": "Snap: {{label}}",
     "startingCore": "Starting the native CAD core...",
     "title": "Viewport",

@@ -3083,9 +3083,48 @@ DocumentState DocumentManager::set_sketch_line_constraint(
   polysmith::core::set_sketch_line_constraint(*feature_it, line_id, constraint);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
   document_->selected_sketch_point_id = std::nullopt;
-  document_->selected_sketch_entity_id = line_id;
-  document_->selected_sketch_dimension_id = "dim-line-" + line_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_entity_ids.clear();
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::clear_sketch_line_constraints(
+    const std::string& line_id) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::clear_sketch_line_constraints(*feature_it, line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_point_ids.clear();
@@ -3120,16 +3159,11 @@ DocumentState DocumentManager::set_sketch_line_construction(
       *feature_it, line_id, is_construction);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_entity_id = line_id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_point_id = std::nullopt;
-  // The auto length-dimension is removed when toggling to
-  // construction. Clear the dimension selection if it pointed at it.
-  if (document_->selected_sketch_dimension_id.has_value() &&
-      document_->selected_sketch_dimension_id.value() ==
-          "dim-line-" + line_id &&
-      is_construction) {
-    document_->selected_sketch_dimension_id = std::nullopt;
-  }
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_point_ids.clear();
@@ -3225,9 +3259,11 @@ DocumentState DocumentManager::set_sketch_equal_length_constraint(
       *feature_it, line_id, other_line_id);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
   document_->selected_sketch_point_id = std::nullopt;
-  document_->selected_sketch_entity_id = line_id;
-  document_->selected_sketch_dimension_id = "dim-line-" + line_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_point_ids.clear();
@@ -3262,9 +3298,11 @@ DocumentState DocumentManager::set_sketch_perpendicular_constraint(
       *feature_it, line_id, other_line_id);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
   document_->selected_sketch_point_id = std::nullopt;
-  document_->selected_sketch_entity_id = line_id;
-  document_->selected_sketch_dimension_id = "dim-line-" + line_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_point_ids.clear();
@@ -3403,9 +3441,11 @@ DocumentState DocumentManager::set_sketch_parallel_constraint(
       *feature_it, line_id, other_line_id);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
+  // Deselect after constraint op — the last-updated line may not be
+  // the one the user cares about.
   document_->selected_sketch_point_id = std::nullopt;
-  document_->selected_sketch_entity_id = line_id;
-  document_->selected_sketch_dimension_id = "dim-line-" + line_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_point_ids.clear();
@@ -5198,7 +5238,8 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
                                    start_y,
                                    end_x,
                                    end_y,
-                                   is_construction);
+                                   is_construction,
+                                   /*snap_start=*/false);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_point_id = std::nullopt;
