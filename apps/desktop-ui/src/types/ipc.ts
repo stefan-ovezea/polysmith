@@ -301,6 +301,24 @@ export interface DraftSnapResolvedEvent {
   } | null;
 }
 
+export interface TrimPreviewResultEvent {
+  id: string;
+  type: "trim_preview_result";
+  payload: {
+    entity_id: string;
+    entity_kind: "line" | "circle" | "arc";
+    hovered_index: number;
+    full_circle?: boolean;
+    full_arc?: boolean;
+    segments?: Array<{
+      start?: [number, number];
+      end?: [number, number];
+      param_start?: number;
+      param_end?: number;
+    }>;
+  } | null;
+}
+
 export interface LogEntry {
   level: LogLevel;
   source: string;
@@ -319,6 +337,7 @@ export type CoreMessage =
   | DocumentSavedEvent
   | LogEvent
   | DraftSnapResolvedEvent
+  | TrimPreviewResultEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -1117,6 +1136,16 @@ export interface TrimSketchEntityCommand {
   };
 }
 
+export interface TrimPreviewCommand {
+  id: string;
+  type: "trim_preview";
+  payload: {
+    entity_id: string;
+    cursor_x: number;
+    cursor_y: number;
+  };
+}
+
 export interface DeleteSketchSelectionCommand {
   id: string;
   type: "delete_sketch_selection";
@@ -1752,6 +1781,7 @@ export type CoreCommand =
   | DeleteSketchFilletCommand
   | DeleteSketchDimensionCommand
   | TrimSketchEntityCommand
+  | TrimPreviewCommand
   | DeleteSketchSelectionCommand
   | SelectSketchPointCommand
   | SelectSketchEntityCommand

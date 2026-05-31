@@ -196,6 +196,11 @@ export function useCadCore() {
               }));
             }
           }
+          if (message.type === "trim_preview_result") {
+            window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
+              detail: message.payload,
+            }));
+          }
           handleCoreMessage(message);
         } catch (error) {
           const entry = makeUiLogEntry(

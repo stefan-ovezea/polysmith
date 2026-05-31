@@ -4681,12 +4681,26 @@ void trim_sketch_entity(FeatureEntry& feature,
                        }),
         params.fillets.end());
 
-    // Give the line fresh point IDs so entities sharing the old IDs
-    // aren't pulled to the new endpoint position.
+    // Share point IDs at the new endpoints with coincident geometry
+    // so profile loops stay connected after trim.  Mirrors the
+    // circle→arc path (find_coincident_endpoint + shared/fallback IDs).
     const int fresh_idx = static_cast<int>(params.lines.size()) * 10 +
                           static_cast<int>(params.arcs.size()) * 10 + 1000;
-    line_it->start_point_id = "point-trim-" + std::to_string(fresh_idx) + "-start";
-    line_it->end_point_id   = "point-trim-" + std::to_string(fresh_idx) + "-end";
+
+    const auto shared_start = find_coincident_endpoint(
+        params, entity_id, line_it->start_x, line_it->start_y);
+    const auto shared_end = find_coincident_endpoint(
+        params, entity_id, line_it->end_x, line_it->end_y);
+
+    const std::string new_sp = shared_start.has_value()
+        ? std::get<0>(shared_start.value())
+        : "point-trim-" + std::to_string(fresh_idx) + "-start";
+    const std::string new_ep = shared_end.has_value()
+        ? std::get<0>(shared_end.value())
+        : "point-trim-" + std::to_string(fresh_idx) + "-end";
+
+    line_it->start_point_id = new_sp;
+    line_it->end_point_id   = new_ep;
 
     // Dissolve all polygon records — a trimmed polygon line breaks
     // the parametric polygon. Remaining lines become independent.
@@ -4698,29 +4712,38 @@ void trim_sketch_entity(FeatureEntry& feature,
         params.dimensions.end());
     params.polygons.clear();
 
-    // Break shared point IDs on other lines that referenced old IDs.
+    // Update other lines that shared the old point IDs.  If the other
+    // line's endpoint is still coincident with the trimmed line's new
+    // endpoint, they continue to share.  Otherwise orphan the old ref.
     int next_fresh = fresh_idx + 1;
+    auto update_shared_pt = [&](std::string& pt_id,
+                                double pt_x, double pt_y,
+                                const std::string& old_id,
+                                const std::string& new_id,
+                                double new_x, double new_y) {
+      if (pt_id != old_id) return;
+      if (points_match(pt_x, pt_y, new_x, new_y)) {
+        pt_id = new_id;
+      } else {
+        pt_id = "point-trim-" + std::to_string(next_fresh++) + "-orphan";
+      }
+    };
+
     for (auto& ol : params.lines) {
       if (ol.id == entity_id) continue;
-      if (ol.start_point_id == old_sp_id || ol.start_point_id == old_ep_id)
-        ol.start_point_id = "point-trim-" + std::to_string(next_fresh++) + "-start";
-      if (ol.end_point_id == old_sp_id || ol.end_point_id == old_ep_id)
-        ol.end_point_id = "point-trim-" + std::to_string(next_fresh++) + "-end";
+      update_shared_pt(ol.start_point_id, ol.start_x, ol.start_y,
+                       old_sp_id, new_sp, line_it->start_x, line_it->start_y);
+      update_shared_pt(ol.end_point_id,   ol.end_x,   ol.end_y,
+                       old_sp_id, new_sp, line_it->start_x, line_it->start_y);
+      update_shared_pt(ol.start_point_id, ol.start_x, ol.start_y,
+                       old_ep_id, new_ep, line_it->end_x, line_it->end_y);
+      update_shared_pt(ol.end_point_id,   ol.end_x,   ol.end_y,
+                       old_ep_id, new_ep, line_it->end_x, line_it->end_y);
     }
 
     // Clear any H/V constraint the line may have had — trim may have
     // changed the direction enough to invalidate it.
     line_it->constraint = std::nullopt;
-
-    for (const auto& c : params.constraints) {
-      std::string ids;
-      for (const auto& tid : c.target_ids) ids += tid + " ";
-      fprintf(stderr, "[trim_survivor] kind=%s ids=[%s]\n", c.kind.c_str(), ids.c_str());
-    }
-    for (const auto& r : params.line_relations) {
-      fprintf(stderr, "[trim_survivor_rel] kind=%s %s <-> %s\n",
-              r.kind.c_str(), r.first_line_id.c_str(), r.second_line_id.c_str());
-    }
 
     // Safety net: delete coincident constraints referencing orphaned point IDs.
     {
@@ -4879,6 +4902,33 @@ void trim_sketch_entity(FeatureEntry& feature,
                                 d.secondary_entity_id == entity_id;
                        }),
         params.dimensions.end());
+
+    // Safety net: delete coincident constraints referencing orphaned point IDs.
+    {
+      std::unordered_set<std::string> live_pt;
+      for (const auto& l : params.lines) {
+        live_pt.insert(l.start_point_id); live_pt.insert(l.end_point_id);
+      }
+      for (const auto& c : params.circles) {
+        live_pt.insert("point-circle-" + c.id + "-center");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-0");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-1");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-2");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-3");
+      }
+      for (const auto& a : params.arcs) {
+        live_pt.insert(a.start_point_id); live_pt.insert(a.end_point_id);
+      }
+      params.constraints.erase(
+          std::remove_if(params.constraints.begin(), params.constraints.end(),
+                         [&](const SketchConstraint& c) {
+                           if (c.kind != "coincident") return false;
+                           for (const auto& tid : c.target_ids)
+                             if (!live_pt.count(tid)) return true;
+                           return false;
+                         }),
+          params.constraints.end());
+    }
     return;
   }
 
@@ -4926,30 +4976,42 @@ void trim_sketch_entity(FeatureEntry& feature,
     // Delete the clicked segment — keep from arc start to segment
     // boundary, or from boundary to arc end.
     const int last = static_cast<int>(segments.size()) - 1;
+    auto arc_shared_pt = [&](double x, double y, const std::string& fallback) {
+      const auto shared = find_coincident_endpoint(params, entity_id, x, y);
+      return shared.has_value() ? std::get<0>(shared.value()) : fallback;
+    };
+
     if (clicked_index == 0) {
       arc_it->start_x = segments[1].start_x;
       arc_it->start_y = segments[1].start_y;
-      arc_it->start_point_id = "point-trim-arc-"
-          + std::to_string(params.arcs.size() * 10 + 3000) + "-start";
+      arc_it->start_point_id = arc_shared_pt(
+          arc_it->start_x, arc_it->start_y,
+          "point-trim-arc-" + std::to_string(params.arcs.size() * 10 + 3000) + "-start");
     } else if (clicked_index == last) {
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_point_id = "point-trim-arc-"
-          + std::to_string(params.arcs.size() * 10 + 3000) + "-end";
+      arc_it->end_point_id = arc_shared_pt(
+          arc_it->end_x, arc_it->end_y,
+          "point-trim-arc-" + std::to_string(params.arcs.size() * 10 + 3000) + "-end");
     } else {
       // Middle segment deleted — arc splits into two.
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_point_id = "point-trim-arc-"
-          + std::to_string(params.arcs.size() * 10 + 3000) + "-end";
+      arc_it->end_point_id = arc_shared_pt(
+          arc_it->end_x, arc_it->end_y,
+          "point-trim-arc-" + std::to_string(params.arcs.size() * 10 + 3000) + "-end");
 
       const int next_idx = static_cast<int>(params.arcs.size()) + 1;
       const auto& right = segments[clicked_index + 1];
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(next_idx),
-          .start_point_id = "point-trim-arc-" + std::to_string(next_idx * 10 + 4000) + "-start",
-          .end_point_id   = "point-trim-arc-" + std::to_string(next_idx * 10 + 4000) + "-end",
+          .start_point_id = arc_shared_pt(
+              right.start_x, right.start_y,
+              "point-trim-arc-" + std::to_string(next_idx * 10 + 4000) + "-start"),
+          .end_point_id   = arc_shared_pt(
+              last_seg.end_x, last_seg.end_y,
+              "point-trim-arc-" + std::to_string(next_idx * 10 + 4000) + "-end"),
           .center_x = arc_it->center_x,
           .center_y = arc_it->center_y,
           .radius   = arc_it->radius,
@@ -4996,9 +5058,36 @@ void trim_sketch_entity(FeatureEntry& feature,
                                 f.trim_a_point_id == old_sp_id ||
                                 f.trim_a_point_id == old_ep_id ||
                                 f.trim_b_point_id == old_sp_id ||
-                                f.trim_b_point_id == old_ep_id;
+                                 f.trim_b_point_id == old_ep_id;
                        }),
         params.fillets.end());
+
+    // Safety net: delete coincident constraints referencing orphaned point IDs.
+    {
+      std::unordered_set<std::string> live_pt;
+      for (const auto& l : params.lines) {
+        live_pt.insert(l.start_point_id); live_pt.insert(l.end_point_id);
+      }
+      for (const auto& c : params.circles) {
+        live_pt.insert("point-circle-" + c.id + "-center");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-0");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-1");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-2");
+        live_pt.insert("point-circle-" + c.id + "-quadrant-3");
+      }
+      for (const auto& a : params.arcs) {
+        live_pt.insert(a.start_point_id); live_pt.insert(a.end_point_id);
+      }
+      params.constraints.erase(
+          std::remove_if(params.constraints.begin(), params.constraints.end(),
+                         [&](const SketchConstraint& c) {
+                           if (c.kind != "coincident") return false;
+                           for (const auto& tid : c.target_ids)
+                             if (!live_pt.count(tid)) return true;
+                           return false;
+                         }),
+          params.constraints.end());
+    }
 
     return;
   }

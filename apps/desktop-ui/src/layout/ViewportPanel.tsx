@@ -95,6 +95,8 @@ import {
   lineLineIntersectionTrim,
   lineCircleIntersectionTrim,
 } from "@/utils";
+import { sendCoreCommand } from "@/lib/cadCoreClient";
+import { makeTrimPreviewCommand } from "@/lib/ipcProtocol";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
 import type { ViewCubeHit } from "@/utils";
 
@@ -1355,6 +1357,10 @@ export function ViewportPanel({
   const previewArcRef = useRef<THREE.Line | null>(null);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
+  /** Latest trim_preview_result payload from the core (null when idle). */
+  const trimPreviewResultRef = useRef<any>(null);
+  /** Throttle: skip IPC send if the cursor hasn't moved enough. */
+  const trimPreviewLastSentRef = useRef<{ x: number; y: number } | null>(null);
   const draftDimGroupRef = useRef<THREE.Group | null>(null);
   /** Reusable scene object for draft dimension lines (create once, update positions in-place). */
   const draftDimSceneObjRef = useRef<{
@@ -2835,6 +2841,82 @@ const currentGridSpacingRef = useRef(10);
     hl.renderOrder = 8;
     trimArcHighlightRef.current = hl;
     sketchGroup.add(hl);
+  }
+
+  /**
+   * Render the trim preview highlight from core-computed segment data.
+   * Called by the `polysmith-trim-preview` event listener.
+   */
+  function renderTrimPreviewHighlight() {
+    const data = trimPreviewResultRef.current;
+    if (!data) { clearTrimSegmentHighlight(); clearTrimArcHighlight(); return; }
+
+    const frame = activeSketchPlaneFrameRef.current;
+    const toWorld = (lx: number, ly: number): THREE.Vector3 => {
+      if (frame) {
+        const origin = new THREE.Vector3(frame.origin.x, frame.origin.y, frame.origin.z);
+        const xAxis = new THREE.Vector3(frame.x_axis.x, frame.x_axis.y, frame.x_axis.z);
+        const yAxis = new THREE.Vector3(frame.y_axis.x, frame.y_axis.y, frame.y_axis.z);
+        return origin.clone().addScaledVector(xAxis, lx).addScaledVector(yAxis, ly);
+      }
+      return new THREE.Vector3(lx, 0, ly);
+    };
+
+    const hoveredIdx = data.hovered_index;
+    if (hoveredIdx == null || hoveredIdx < 0) {
+      clearTrimSegmentHighlight(); clearTrimArcHighlight(); return;
+    }
+
+    if (data.entity_kind === "line" && data.segments) {
+      const seg = data.segments[hoveredIdx];
+      if (!seg) { clearTrimSegmentHighlight(); return; }
+      clearTrimArcHighlight();
+      updateTrimSegmentHighlight(data.entity_id, [{
+        sx: seg.start[0], sy: seg.start[1], sz: 0,
+        ex: seg.end[0],   ey: seg.end[1],   ez: 0,
+      }], 0);
+      return;
+    }
+
+    // Circle or arc: sample the arc segment at the plane frame.
+    const scn = sceneData;
+    if (!scn) return;
+    const r =
+      data.entity_kind === "circle"
+        ? scn.sketchCircles?.find((c: any) => c.circleId === data.entity_id)
+        : scn.sketchArcs?.find((a: any) => a.arcId === data.entity_id);
+    if (!r) { clearTrimArcHighlight(); return; }
+
+    const cx = r.center[0], cy = r.center[1], cz = r.center[2];
+    const radius = r.radius;
+    const full = data.full_circle || data.full_arc;
+
+    const pts: Array<[number, number, number]> = [];
+    if (full) {
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * 2 * Math.PI;
+        pts.push([
+          cx + Math.cos(a) * radius,
+          cy + Math.sin(a) * radius,
+          cz,
+        ]);
+      }
+    } else {
+      const seg = data.segments?.[hoveredIdx];
+      if (!seg) { clearTrimArcHighlight(); return; }
+      const s = seg.param_start, e = seg.param_end;
+      const ee = e <= s ? e + 2 * Math.PI : e;
+      for (let i = 0; i <= 48; i++) {
+        const a = s + (ee - s) * (i / 48);
+        pts.push([
+          cx + Math.cos(a) * radius,
+          cy + Math.sin(a) * radius,
+          cz,
+        ]);
+      }
+    }
+    clearTrimSegmentHighlight();
+    updateTrimArcHighlight(pts);
   }
 
   function clearPreviewDimension() {
@@ -7875,6 +7957,15 @@ const currentGridSpacingRef = useRef(10);
             return [ux, uy, 0];
           };
 
+          // Core-driven trim preview: send cursor position to the core
+          // so the segment highlight is computed by the same math that
+          // `trim_sketch_entity` will use on click.  Throttle to 30 Hz.
+          const prev = trimPreviewLastSentRef.current;
+          if (!prev || Math.abs(mx - prev.x) > 0.5 || Math.abs(my - prev.y) > 0.5) {
+            trimPreviewLastSentRef.current = { x: mx, y: my };
+            void sendCoreCommand(makeTrimPreviewCommand(trimHit.id, mx, my));
+          }
+
           // Line hover
           if (trimHit.entityKind === "line") {
           const lineData = scn.sketchLines.find((l) => l.lineId === trimHit.id);
@@ -10323,6 +10414,14 @@ const currentGridSpacingRef = useRef(10);
         hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, hostParamT: d.hostParamT ?? null, timestamp: performance.now() };
     };
     window.addEventListener("polysmith-cpp-snap", onCppSnap);
+
+    const onTrimPreview = (e: Event) => {
+      trimPreviewResultRef.current = (e as CustomEvent).detail;
+      // Render the highlight immediately from the core's data.
+      renderTrimPreviewHighlight();
+    };
+    window.addEventListener("polysmith-trim-preview", onTrimPreview);
+
     resizeRenderer();
 
     const animate = () => {
@@ -10352,6 +10451,7 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
       window.removeEventListener("polysmith-cpp-snap", onCppSnap);
+      window.removeEventListener("polysmith-trim-preview", onTrimPreview);
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);

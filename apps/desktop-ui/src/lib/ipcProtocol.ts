@@ -1922,3 +1922,19 @@ export function getDocumentExportFromMessage(
 
   return null;
 }
+
+export function makeTrimPreviewCommand(
+  entityId: string,
+  cursorX: number,
+  cursorY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "trim_preview",
+    payload: {
+      entity_id: entityId,
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+    },
+  };
+}

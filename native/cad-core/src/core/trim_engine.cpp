@@ -685,9 +685,13 @@ std::vector<TrimIntersection> find_all_intersections(
 
   // Filter out intersections at the arc's own endpoints — they
   // produce zero-length segments and prevent meaningful trimming.
+  // Keep them only if they're the *only* intersections, otherwise
+  // the arc would be fully deleted (the caller treats an empty
+  // result as "isolated entity → delete").
   {
     auto [as, ae] = arc_angles(target);
     const double kEpTol = 1e-6;
+    auto copy = results;
     results.erase(
         std::remove_if(results.begin(), results.end(),
                        [&](const TrimIntersection& is) {
@@ -698,6 +702,7 @@ std::vector<TrimIntersection> find_all_intersections(
                                  std::abs(std::cos(a - ae) - 1.0) < kEpTol);
                        }),
         results.end());
+    if (results.empty()) results = std::move(copy);
   }
 
   if (results.empty()) return results;

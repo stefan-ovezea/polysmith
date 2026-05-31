@@ -1335,6 +1335,27 @@ const draftSnapResolvedEventSchema = z.object({
   ]),
 });
 
+const trimPreviewResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("trim_preview_result"),
+  payload: z.union([
+    z.object({
+      entity_id: z.string(),
+      entity_kind: z.enum(["line", "circle", "arc"]),
+      hovered_index: z.number(),
+      full_circle: z.boolean().optional(),
+      full_arc: z.boolean().optional(),
+      segments: z.array(z.object({
+        start: z.tuple([z.number(), z.number()]).optional(),
+        end: z.tuple([z.number(), z.number()]).optional(),
+        param_start: z.number().optional(),
+        param_end: z.number().optional(),
+      })).optional(),
+    }),
+    z.null(),
+  ]),
+});
+
 export const coreMessageSchema = z.union([
   helloEventSchema,
   pongEventSchema,
@@ -1346,6 +1367,7 @@ export const coreMessageSchema = z.union([
   documentSavedEventSchema,
   logEventSchema,
   draftSnapResolvedEventSchema,
+  trimPreviewResultEventSchema,
   errorEventSchema,
 ]);
 
