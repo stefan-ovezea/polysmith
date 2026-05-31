@@ -1505,6 +1505,10 @@ const currentGridSpacingRef = useRef(10);
     hasMoved: boolean;
   }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
+  // Set on mouse-up commit; cleared when the next viewport rebuild
+  // arrives.  Keeps the drag preview alive across the async IPC gap
+  // so the user doesn't see the entity snap back to its old position.
+  const pendingEndpointCommitRef = useRef(false);
 
   const [selectionRect, setSelectionRect] = useState<{
     left: number; top: number; width: number; height: number;
@@ -9123,7 +9127,14 @@ const currentGridSpacingRef = useRef(10);
           );
         }
 
-        endpointDragRef.current = null;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          // Drag was committed — keep the preview alive until the next
+          // viewport rebuild arrives so the entity doesn't flicker back
+          // to its old position for one frame.
+          pendingEndpointCommitRef.current = true;
+        } else {
+          endpointDragRef.current = null;
+        }
         controls.enabled = true;
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
         setSketchSnapLabel(null);
@@ -10598,6 +10609,36 @@ const currentGridSpacingRef = useRef(10);
       !referenceGroup ||
       !sketchGroup
     ) {
+      return;
+    }
+
+    // When a drag was just committed, skip the dispose + rebuild and
+    // instead patch the existing line / point objects' positions from
+    // the new sceneData.  This avoids the one-frame flicker caused by
+    // tearing down and recreating the sketch group.
+    const didPatch = pendingEndpointCommitRef.current && sceneData;
+    if (didPatch) {
+      for (const sl of sceneData.sketchLines) {
+        const obj = sketchEntityObjectByIdRef.current.get(sl.lineId);
+        if (obj && obj instanceof THREE.Line && obj.geometry.attributes.position) {
+          const pos = obj.geometry.attributes.position.array as Float32Array;
+          pos[0] = sl.start[0]; pos[1] = sl.start[1]; pos[2] = sl.start[2];
+          pos[3] = sl.end[0];   pos[4] = sl.end[1];   pos[5] = sl.end[2];
+          obj.geometry.attributes.position.needsUpdate = true;
+        }
+      }
+      for (const sp of sceneData.sketchPoints) {
+        const obj = sketchPointObjectByIdRef.current.get(sp.pointId);
+        if (obj) {
+          obj.position.set(sp.position[0], sp.position[1], sp.position[2]);
+        }
+      }
+      // Re-paint materials in case selection / DOF state changed.
+      paintSketchEntityMaterials();
+      paintSketchPointMaterials();
+      paintDofStatusColors();
+      pendingEndpointCommitRef.current = false;
+      endpointDragRef.current = null;
       return;
     }
 
