@@ -1230,12 +1230,18 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     } else {
       payload["snap_label"] = nullptr;
     }
+    if (result.snap_kind.has_value()) {
+      payload["snap_kind"] = result.snap_kind.value();
+    } else {
+      payload["snap_kind"] = nullptr;
+    }
     payload["host_entity_id"] = result.host_entity_id.has_value()
         ? nlohmann::json(result.host_entity_id.value())
         : nlohmann::json(nullptr);
     payload["host_point_id"] = result.host_point_id.has_value()
         ? nlohmann::json(result.host_point_id.value())
         : nlohmann::json(nullptr);
+    payload["host_param_t"] = result.host_param_t;
 
     polysmith::protocol::write_message(
         {{"id", command.id},

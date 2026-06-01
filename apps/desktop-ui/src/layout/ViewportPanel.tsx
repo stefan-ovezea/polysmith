@@ -1294,7 +1294,9 @@ export function ViewportPanel({
       | "on_line"
       | "horizontal"
       | "vertical"
-      | "tangent";
+      | "tangent"
+      | "endpoint"
+      | "parallel";
     x: number;
     y: number;
   } | null>(null);
@@ -1535,11 +1537,16 @@ const currentGridSpacingRef = useRef(10);
     snapX: number;
     snapY: number;
   } | null>(null);
+  // Cursor canvas position during endpoint drag — used to position the
+  // floating constraint-preview badge near the pointer.
+  const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
   // Snap target to highlight after the next scene rebuild.
   const pendingSnapHighlightRef = useRef<{
     entityId: string | null;
     pointId: string | null;
     label: string | null;
+    snapKind: string | null;
+    hostParamT: number;
   } | null>(null);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
@@ -4837,6 +4844,28 @@ const currentGridSpacingRef = useRef(10);
     return null;
   }
 
+  /** Map a core snap_kind string to the constraint-preview badge kind. */
+  function snapKindToBadgeKind(kind: string):
+    | "midpoint" | "perpendicular" | "on_line" | "horizontal"
+    | "vertical" | "tangent" | "endpoint" | "parallel" {
+    switch (kind) {
+      case "endpoint": return "endpoint";
+      case "midpoint": return "midpoint";
+      case "center": return "endpoint";       // same glyph as endpoint
+      case "perpendicular": return "perpendicular";
+      case "perpendicular_direction": return "perpendicular";
+      case "parallel": return "parallel";
+      case "tangent": return "tangent";
+      case "axis_lock":
+        return "horizontal";  // label distinguishes H vs V
+      case "nearest":
+      case "intersection":
+      case "quadrant":
+        return "on_line";
+      default: return "on_line";
+    }
+  }
+
   function resolveSnappedSketchPoint(rawPoint: {
     local: [number, number];
     world: [number, number, number];
@@ -7838,6 +7867,13 @@ const currentGridSpacingRef = useRef(10);
             endpointDrag.hasMoved = true;
           }
 
+          // Track cursor canvas position for the floating badge.
+          const canvasRect = renderer.domElement.getBoundingClientRect();
+          dragCursorRef.current = {
+            x: event.clientX - canvasRect.left,
+            y: event.clientY - canvasRect.top,
+          };
+
           // rAF-batched: send only the latest position each frame.
           pendingDragRef.current = {
             pointId: endpointDrag.pointId,
@@ -9077,6 +9113,8 @@ const currentGridSpacingRef = useRef(10);
           pendingEndpointCommitRef.current = true;
         } else {
           endpointDragRef.current = null;
+          setConstraintPreview(null);
+          dragCursorRef.current = null;
         }
         controls.enabled = true;
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
@@ -10459,11 +10497,34 @@ const currentGridSpacingRef = useRef(10);
     const onDragSnap = (e: Event) => {
       const d = (e as CustomEvent).detail;
       dragSnapResultRef.current = { snapX: d.snap_x, snapY: d.snap_y };
-      // Store for application after the next scene rebuild.
+      // Update info panel and hover immediately — don't wait for scene rebuild.
+      setSketchSnapLabel(d.snap_label ?? "");
+      if (d.host_entity_id) {
+        setHoveredSketchEntity(d.host_entity_id);
+      } else if (d.host_point_id) {
+        setHoveredSketchPoint(d.host_point_id);
+      }
+      // Floating badge near the cursor.
+      const cursor = dragCursorRef.current;
+      if (cursor && d.snap_kind) {
+        const badgeKind = d.snap_kind === "axis_lock" && d.snap_label === "Vertical"
+          ? "vertical" as const
+          : snapKindToBadgeKind(d.snap_kind);
+        setConstraintPreview({
+          kind: badgeKind,
+          x: cursor.x,
+          y: cursor.y,
+        });
+      } else {
+        setConstraintPreview(null);
+      }
+      // Also store for application after the next scene rebuild.
       pendingSnapHighlightRef.current = {
         entityId: d.host_entity_id,
         pointId: d.host_point_id,
         label: d.snap_label,
+        snapKind: d.snap_kind,
+        hostParamT: d.host_param_t ?? -1,
       };
     };
     window.addEventListener("polysmith-drag-snap", onDragSnap);
@@ -10672,6 +10733,8 @@ const currentGridSpacingRef = useRef(10);
       // was the final commit frame.
       if (hadPendingCommit) {
         endpointDragRef.current = null;
+        setConstraintPreview(null);
+        dragCursorRef.current = null;
       }
 
       // Apply pending snap highlight even on incremental updates.
@@ -10942,6 +11005,8 @@ const currentGridSpacingRef = useRef(10);
     // visible without the preview override.
     if (hadPendingCommit) {
       endpointDragRef.current = null;
+      setConstraintPreview(null);
+      dragCursorRef.current = null;
     }
 
     syncPrimitiveVisuals();
@@ -12101,6 +12166,10 @@ const currentGridSpacingRef = useRef(10);
                     ? "V"
                     : constraintPreview.kind === "tangent"
                       ? "T"
+                      : constraintPreview.kind === "endpoint"
+                        ? "\u25cf"
+                        : constraintPreview.kind === "parallel"
+                          ? "\u2225"
               : "/"}
           </div>
         ) : null}

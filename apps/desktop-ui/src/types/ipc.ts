@@ -308,8 +308,10 @@ export interface DragSnapResultEvent {
     snap_x: number;
     snap_y: number;
     snap_label: string | null;
+    snap_kind: string | null;
     host_entity_id: string | null;
     host_point_id: string | null;
+    host_param_t: number;
   };
 }
 

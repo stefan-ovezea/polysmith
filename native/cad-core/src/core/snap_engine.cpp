@@ -416,9 +416,11 @@ void collect_perpendicular_candidates(
     const double dy = line.end_y - line.start_y;
     const double len_sq = dx * dx + dy * dy;
     if (len_sq < 1e-12) continue;
-    // Project cursor onto infinite line, clamp to segment.
-    double t = ((cursor_x - line.start_x) * dx + (cursor_y - line.start_y) * dy) / len_sq;
-    t = std::max(0.0, std::min(1.0, t));
+    // Project cursor onto the infinite line (no segment clamp).
+    // The distance check below ensures the foot is close to the cursor;
+    // clamping to the segment would produce a non-perpendicular point
+    // when the projection falls outside, defeating the purpose.
+    const double t = ((cursor_x - line.start_x) * dx + (cursor_y - line.start_y) * dy) / len_sq;
     const double px = line.start_x + t * dx;
     const double py = line.start_y + t * dy;
     const double d = point_distance(cursor_x, cursor_y, px, py);
@@ -781,17 +783,18 @@ std::optional<SnapCandidate> resolve_snap(
     return static_cast<int>(priority.size());
   };
 
-  // Find the best candidate: highest priority first, then smallest distance.
+  // Find the best candidate: smallest distance first, then highest priority
+  // as a tiebreaker when two candidates are at identical distance.
   const SnapCandidate* best = nullptr;
-  int best_rank = std::numeric_limits<int>::max();
   double best_dist = std::numeric_limits<double>::max();
+  int best_rank = std::numeric_limits<int>::max();
 
   for (const auto& c : candidates) {
     int rank = priority_rank(c.kind);
-    if (rank < best_rank || (rank == best_rank && c.distance < best_dist)) {
+    if (c.distance < best_dist || (c.distance == best_dist && rank < best_rank)) {
       best = &c;
-      best_rank = rank;
       best_dist = c.distance;
+      best_rank = rank;
     }
   }
 

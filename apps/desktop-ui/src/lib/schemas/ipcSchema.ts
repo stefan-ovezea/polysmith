@@ -1342,8 +1342,10 @@ const dragSnapResultEventSchema = z.object({
     snap_x: z.number(),
     snap_y: z.number(),
     snap_label: z.string().nullable(),
+    snap_kind: z.string().nullable(),
     host_entity_id: z.string().nullable(),
     host_point_id: z.string().nullable(),
+    host_param_t: z.number(),
   }),
 });
 

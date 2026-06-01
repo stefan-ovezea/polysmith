@@ -2943,21 +2943,40 @@ DragPointResult DocumentManager::drag_sketch_point(
     }
   }
 
-  // Two-pass snap:
-  // Pass 1 (tight): only special points (endpoint, midpoint, center,
-  //   intersection, quadrant) — "nearest" and "grid" are excluded so
-  //   they don't steal the snap from special points.
-  // Pass 2 (wide): all snaps including nearest/grid — only runs if
-  //   pass 1 found nothing.
+  // Three-pass snap:
+  // Pass 1 (tight, 2.0): discrete geometric points only (endpoint,
+  //   midpoint, center, intersection, quadrant). Direction snaps and
+  //   continuous snaps are excluded — direction snaps use angular
+  //   deviation as distance, which is always near-zero and would
+  //   steal every snap.
+  // Pass 2 (tight, 2.0): direction-constrained snaps (axis_lock,
+  //   perpendicular_direction, parallel, polar). Only runs if pass 1
+  //   found no discrete snap within tolerance.
+  // Pass 3 (wide, 4.0): all snaps including continuous — only runs if
+  //   passes 1 and 2 found nothing.
   const double kTightTolerance = 2.0;
   const double kWideTolerance = 4.0;
-  const std::vector<std::string> kSpecialPointPriority = {
-      "endpoint", "center", "midpoint", "intersection", "quadrant"};
+
+  // Pass 1 filter: only discrete geometric points.
+  auto pass1_filter = document_->selection_filter;
+  pass1_filter.snap_nearest = false;
+  pass1_filter.snap_perpendicular = false;
+  pass1_filter.snap_tangent = false;
+  pass1_filter.snap_grid = false;
+  pass1_filter.snap_grid_line = false;
+  // No start_x/start_y → no direction-based snaps collected.
 
   auto snap = polysmith::core::resolve_snap(
-      cursor_x, cursor_y, params, document_->selection_filter,
-      kTightTolerance, start_x, start_y, kSpecialPointPriority);
+      cursor_x, cursor_y, params, pass1_filter, kTightTolerance);
 
+  // Pass 2: direction-constrained snaps.
+  if (!snap.has_value() && start_x.has_value() && start_y.has_value()) {
+    snap = polysmith::core::resolve_snap(
+        cursor_x, cursor_y, params, pass1_filter, kTightTolerance,
+        start_x, start_y);
+  }
+
+  // Pass 3: all snaps including continuous.
   if (!snap.has_value()) {
     snap = polysmith::core::resolve_snap(
         cursor_x, cursor_y, params, document_->selection_filter,
@@ -2998,11 +3017,15 @@ DragPointResult DocumentManager::drag_sketch_point(
 
   return DragPointResult{result_x, result_y, snap_label,
                           snap.has_value()
+                              ? std::make_optional(snap->kind)
+                              : std::nullopt,
+                          snap.has_value()
                               ? std::make_optional(snap->entity_id)
                               : std::nullopt,
                           snap.has_value()
                               ? std::make_optional(snap->point_id)
-                              : std::nullopt};
+                              : std::nullopt,
+                          snap.has_value() ? snap->param_t : -1.0};
 }
 
 DocumentState DocumentManager::set_sketch_line_constraint(

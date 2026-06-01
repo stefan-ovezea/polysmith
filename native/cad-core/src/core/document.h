@@ -25,8 +25,10 @@ struct DragPointResult {
   double x;
   double y;
   std::optional<std::string> snap_label;
+  std::optional<std::string> snap_kind;
   std::optional<std::string> host_entity_id;
   std::optional<std::string> host_point_id;
+  double host_param_t = -1.0;
 };
 
 struct DocumentState {
