@@ -1,8 +1,46 @@
 # CAM Development Plan
 
-> **Status:** Planning — no CAM code exists yet. This document defines the
-> approach and first steps. It is a living design doc, not a spec carved in
-> stone.
+> **Status:** Scaffolding in progress. The CAM workspace is wired, the UI
+> skeleton is in place, and the TNP witness resolution core is implemented.
+> This document defines the approach and tracks progress. It is a living
+> design doc, not a spec carved in stone.
+
+## What's Built (Session 2026-06-01)
+
+### UI — CAM Workspace Skeleton
+
+- **Mode switcher:** CAM entry in the workspace dropdown alongside CAD / Slicer.
+  Switching preserves the model — CAM inherits the CAD document.
+- **Sub-category tabs:** Milling / Turning / Printing / Cutting in the header
+  ribbon, matching the CAD Create / Modify / Construct / Sketch pattern.
+- **Per-category toolbars:** Each tab has its own toolbar with category-specific
+  tools and a shared "Setup" button. Unimplemented tools render as disabled
+  (greyed out) so the layout is visible but nothing is wired yet.
+  - **Milling:** Profile / Pocket / Drill (active) + Face / Contour / Engrave (disabled)
+  - **Turning:** Rough / Finish / Groove / Thread (all disabled)
+  - **Printing:** Slice / Support / Infill (all disabled)
+  - **Cutting:** 2D Cut / Nest / Lead In (all disabled)
+- **CAM operations panel:** Sidebar panel replacing the CAD hierarchy tree in
+  CAM mode. Lists CAM operations with type labels. Currently shows empty state.
+
+### C++ — TNP Witness Resolution
+
+- **`cam_operation.h`** — `CamFaceReference` struct (body id, sample points,
+  captured area, captured normal) and resolution API:
+  `capture_face_reference()` / `resolve_face_reference()`.
+- **`cam_operation.cpp`** — Full implementation: UV-grid point sampling,
+  point-on-face testing via `BRepClass_FaceClassifier`, area comparison,
+  normal comparison, weighted scoring, ambiguity detection.
+- **`cam_face_reference_test.cpp`** — Three test scenarios build and pass:
+  1. Capture and re-resolve on same body → Found with correct index
+  2. Resolve on wrong body → NotFound
+  3. Resolve via DocumentState convenience API → Found
+
+### Documentation
+
+- **`wiki/CAM-Development.md`** — Full architecture plan with v1 operations
+  (Profile → Drill → Pocket), data structures, IPC considerations,
+  progressive preview pipeline, and "what NOT to build" scope.
 
 ## Relationship to Existing Architecture
 
@@ -457,62 +495,42 @@ enum class CamPostProcessor { LinuxCNC, Mach3, Grbl, GenericGCode };
 
 ---
 
-## Immediate Next Steps (Before Writing CAM Code)
+## Implementation Progress
 
-### 1. Prototype the TNP Witness Resolution
+| Step | Status |
+|---|---|
+| 1. TNP Witness Resolution | ✅ Done — `cam_operation.h/.cpp`, test passes |
+| 2. CAM Panel UI skeleton | ✅ Done — sub-category tabs, per-category toolbars, operations panel |
+| 3. Toolpath visualization in viewport | 🔲 Next |
+| 4. Post-processor skeleton | 🔲 After |
 
-Before any toolpath math, prove the geometry reference system works:
+## Next Step: Toolpath Visualization in the Viewport
 
-1. Write `FaceReference::resolve(const TopoDS_Shape& body)` that walks faces,
-   scores them against witness data, and returns 0/1/many candidates.
-2. Test it: create a box, capture a face reference, fillet an adjacent edge,
-   recompute, resolve. The face should still be found.
-3. Test ambiguity: create a symmetric part where two faces have identical
-   geometry. Verify the system reports ambiguity rather than picking one.
+The viewport needs to display CAM toolpath lines before any generation code
+can be tested. This is the next gate — without it, toolpath generation
+produces data with no way to see it.
 
-This is ~200 lines of C++ and a few test cases. It's the most important
-foundation — everything else builds on it.
+**What to build:**
 
-### 2. Sketch the CAM Panel UI
+1. **New viewport primitive type** — toolpath lines as colored polylines
+   (rapid moves in one color, feed moves in another). Distinct from CAD
+   sketch lines. C++ side in `viewport.h/.cpp`, sent via the existing
+   `ViewportState` IPC message.
 
-Before writing toolpath generation, mock up the CAM workspace layout:
+2. **IPC extension** — add an optional `toolpaths` field to the viewport
+   state message. Each toolpath entry has: an id, a list of 3D points,
+   and a per-segment type (rapid/feed). Start with small payloads (~1000
+   points per chunk).
 
-- Left panel: operation list (like the feature timeline but for CAM ops)
-- Center: viewport (same 3D canvas, plus toolpath overlay)
-- Right panel: operation parameters (depth, tool selection, side)
-- Toolbar: operation type buttons (Profile, Pocket, Drill)
+3. **Test with hardcoded data** — inject a sample toolpath (e.g. a square
+   contour with lead-in) from C++ into the viewport state, render it,
+   and verify colors are correct. No toolpath generation needed yet —
+   just the display pipeline.
 
-The existing `CamToolbar.tsx` placeholder can evolve into this. The goal is
-to have a UI that lets you create a CAM operation, select geometry, and set
-parameters — even if "Generate" doesn't do anything yet.
-
-### 3. Add Toolpath Visualization to the Viewport
-
-Before toolpath generation works, the viewport needs to be able to display
-toolpath lines. This means:
-
-- A new mesh primitive for toolpath lines (different colors for rapids vs
-  feeds, different from CAD sketch lines).
-- Extending the `ViewportState` IPC message to include optional toolpath
-  geometry.
-- Using the existing chunked streaming pattern to send toolpath points.
-
-This can be tested with hardcoded sample toolpath data before any generation
-code exists.
-
-### 4. Post-Processor Skeleton
-
-A post-processor takes a toolpath and emits G-code text. Write the simplest
-possible one:
-
-```cpp
-std::string postProcess(const CamToolpath& path, CamPostProcessor post);
-```
-
-For v1, `GenericGCode` is sufficient — it outputs standard G0/G1 with
-coordinates. Fanuc/LinuxCNC/Mach3 dialects are nearly identical for basic
-moves. The abstraction exists to allow future post-specific logic (cycle
-codes, coordinate systems, coolant), not because v1 needs multiple posts.
+**Why this before the post-processor:** Toolpath visualization lets you
+visually verify generated toolpaths. The post-processor converts toolpaths
+to G-code text — you need to see the toolpath first to know if the G-code
+is even right.
 
 ---
 
