@@ -2972,7 +2972,8 @@ DragPointResult DocumentManager::drag_sketch_point(
 
   if (!snap.has_value()) {
     snap = polysmith::core::resolve_continuous_snaps(
-        cursor_x, cursor_y, params, document_->selection_filter, kWideTolerance);
+        cursor_x, cursor_y, params, document_->selection_filter, kWideTolerance,
+        std::nullopt, std::nullopt, dragged_line_ids);
   }
 
   double target_x = cursor_x;

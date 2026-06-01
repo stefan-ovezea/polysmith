@@ -67,6 +67,9 @@ std::optional<SnapCandidate> resolve_direction_snaps(
 // Distance = projection offset from cursor to the geometry.
 // start_x / start_y are optional (unused by current collectors but
 // accepted for caller convenience).
+// exclude_entity_ids: entity ids to drop from perpendicular foot
+//   candidates — prevents the dragged line from snapping to its own
+//   perpendicular foot (a meaningless constraint).
 std::optional<SnapCandidate> resolve_continuous_snaps(
     double cursor_x,
     double cursor_y,
@@ -74,7 +77,8 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
     const SelectionFilter& filter,
     double tolerance,
     std::optional<double> start_x = std::nullopt,
-    std::optional<double> start_y = std::nullopt);
+    std::optional<double> start_y = std::nullopt,
+    const std::vector<std::string>& exclude_entity_ids = {});
 
 // ── Legacy unified resolver ───────────────────────────────────
 // Convenience wrapper that calls the three category resolvers with

@@ -424,7 +424,10 @@ void collect_perpendicular_candidates(
     const double px = line.start_x + t * dx;
     const double py = line.start_y + t * dy;
     const double d = point_distance(cursor_x, cursor_y, px, py);
-    if (d <= tolerance) {
+    // Only fire when the foot is near the visible segment — a foot
+    // far out on the infinite line extension is disorienting.
+    constexpr double kSegmentMargin = 0.2;  // 20 % beyond endpoints
+    if (d <= tolerance && t >= -kSegmentMargin && t <= 1.0 + kSegmentMargin) {
       candidates.push_back(SnapCandidate{
           .kind = "perpendicular",
           .entity_id = line.id,
@@ -842,15 +845,19 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
     const SelectionFilter& filter,
     double tolerance,
     std::optional<double> /*start_x*/,
-    std::optional<double> /*start_y*/) {
+    std::optional<double> /*start_y*/,
+    const std::vector<std::string>& exclude_entity_ids) {
   std::vector<SnapCandidate> candidates;
 
+  // Perpendicular collected first so it wins ties over nearest —
+  // when the cursor is on the line body both produce the same point
+  // but perpendicular is the stronger constraint.
+  if (filter.snap_perpendicular) {
+    collect_perpendicular_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
+  }
   if (filter.snap_nearest) {
     collect_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
     collect_circle_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
-  }
-  if (filter.snap_perpendicular) {
-    collect_perpendicular_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
   }
   if (filter.snap_tangent) {
     collect_tangent_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
@@ -860,6 +867,21 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
   }
   if (filter.snap_grid_line) {
     collect_grid_line_candidates(cursor_x, cursor_y, tolerance, filter, candidates);
+  }
+
+  // Drop perpendicular-foot candidates that reference the line being
+  // dragged — "perpendicular to itself" is meaningless during drag.
+  if (!exclude_entity_ids.empty()) {
+    candidates.erase(
+        std::remove_if(candidates.begin(), candidates.end(),
+                       [&](const SnapCandidate& c) {
+                         if (c.kind != "perpendicular") return false;
+                         return std::find(exclude_entity_ids.begin(),
+                                          exclude_entity_ids.end(),
+                                          c.entity_id) !=
+                                exclude_entity_ids.end();
+                       }),
+        candidates.end());
   }
 
   const auto* best = pick_closest(candidates);
