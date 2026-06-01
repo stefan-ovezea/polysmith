@@ -2924,63 +2924,55 @@ DragPointResult DocumentManager::drag_sketch_point(
 
   auto& params = feature_it->sketch_parameters.value();
 
-  // Find the anchored (other) endpoint for polar/axis-lock snap.
+  // Find the anchored (other) endpoint for polar/axis-lock snap,
+  // and collect every line that shares the dragged point so we can
+  // exclude them from parallel / perpendicular-direction snaps
+  // (a line is trivially parallel to itself).
   std::optional<double> start_x;
   std::optional<double> start_y;
+  std::vector<std::string> dragged_line_ids;
   for (const auto& line : params.lines) {
     if (line.start_point_id == point_id || line.end_point_id == point_id) {
-      const bool is_start = (line.start_point_id == point_id);
-      const std::string other_id =
-          is_start ? line.end_point_id : line.start_point_id;
-      const auto other_it =
-          std::find_if(params.points.begin(), params.points.end(),
-                       [&](const SketchPoint& p) { return p.id == other_id; });
-      if (other_it != params.points.end()) {
-        start_x = other_it->x;
-        start_y = other_it->y;
+      dragged_line_ids.push_back(line.id);
+      if (!start_x.has_value()) {
+        const bool is_start = (line.start_point_id == point_id);
+        const std::string other_id =
+            is_start ? line.end_point_id : line.start_point_id;
+        const auto other_it =
+            std::find_if(params.points.begin(), params.points.end(),
+                         [&](const SketchPoint& p) { return p.id == other_id; });
+        if (other_it != params.points.end()) {
+          start_x = other_it->x;
+          start_y = other_it->y;
+        }
       }
-      break;
     }
   }
 
-  // Three-pass snap:
-  // Pass 1 (tight, 2.0): discrete geometric points only (endpoint,
-  //   midpoint, center, intersection, quadrant). Direction snaps and
-  //   continuous snaps are excluded — direction snaps use angular
-  //   deviation as distance, which is always near-zero and would
-  //   steal every snap.
-  // Pass 2 (tight, 2.0): direction-constrained snaps (axis_lock,
-  //   perpendicular_direction, parallel, polar). Only runs if pass 1
-  //   found no discrete snap within tolerance.
-  // Pass 3 (wide, 4.0): all snaps including continuous — only runs if
-  //   passes 1 and 2 found nothing.
+  // Category-priority snap resolution.
+  //   Discrete (tight,  2.0): endpoint, midpoint, center, intersection, quadrant
+  //   Direction (tight, 2.0): axis_lock, parallel, perpendicular_direction, polar
+  //   Continuous (wide, 4.0): nearest, perpendicular foot, tangent, grid, grid_line
+  //
+  // Categories never compete — Discrete always beats Direction, which always
+  // beats Continuous. Within each category the closest candidate by the
+  // category's native distance metric wins.
   const double kTightTolerance = 2.0;
   const double kWideTolerance = 4.0;
 
-  // Pass 1 filter: only discrete geometric points.
-  auto pass1_filter = document_->selection_filter;
-  pass1_filter.snap_nearest = false;
-  pass1_filter.snap_perpendicular = false;
-  pass1_filter.snap_tangent = false;
-  pass1_filter.snap_grid = false;
-  pass1_filter.snap_grid_line = false;
-  // No start_x/start_y → no direction-based snaps collected.
+  auto snap = polysmith::core::resolve_discrete_snaps(
+      cursor_x, cursor_y, params, document_->selection_filter, kTightTolerance,
+      point_id);
 
-  auto snap = polysmith::core::resolve_snap(
-      cursor_x, cursor_y, params, pass1_filter, kTightTolerance);
-
-  // Pass 2: direction-constrained snaps.
   if (!snap.has_value() && start_x.has_value() && start_y.has_value()) {
-    snap = polysmith::core::resolve_snap(
-        cursor_x, cursor_y, params, pass1_filter, kTightTolerance,
-        start_x, start_y);
+    snap = polysmith::core::resolve_direction_snaps(
+        cursor_x, cursor_y, params, document_->selection_filter,
+        kTightTolerance, start_x, start_y, dragged_line_ids);
   }
 
-  // Pass 3: all snaps including continuous.
   if (!snap.has_value()) {
-    snap = polysmith::core::resolve_snap(
-        cursor_x, cursor_y, params, document_->selection_filter,
-        kWideTolerance, start_x, start_y);
+    snap = polysmith::core::resolve_continuous_snaps(
+        cursor_x, cursor_y, params, document_->selection_filter, kWideTolerance);
   }
 
   double target_x = cursor_x;

@@ -25,9 +25,61 @@ struct SnapCandidate {
   double param_t = -1.0;
 };
 
-// Resolve the best snap candidate given the cursor position, active
-// sketch geometry, current selection filter, and optional line start
-// point for polar-snap angle computation.
+// ── Category-specific snap resolvers ──────────────────────────
+// Each collects candidates from a single category and returns the
+// closest by the category's native distance metric. Categories have
+// absolute priority: Discrete > Direction > Continuous. Callers
+// should try them in that order and stop at the first match.
+
+// Discrete: fixed geometric points — endpoint, midpoint, center,
+//           intersection, quadrant.
+// Distance = Euclidean mm from cursor to the fixed point.
+// exclude_point_id: when set, any candidate whose point_id matches
+//   is dropped. Use this during endpoint drag to prevent the dragged
+//   point from snapping to its own previous position.
+std::optional<SnapCandidate> resolve_discrete_snaps(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<std::string> exclude_point_id = std::nullopt);
+
+// Direction: constraint rays projected from a start point —
+//            axis_lock (H/V), parallel, perpendicular_direction, polar.
+// Distance = perpendicular offset from the constraint ray through start.
+// Requires start_x / start_y; returns nullopt without them.
+// exclude_entity_ids: entity ids to drop from parallel / perpendicular-
+//   direction candidates. Use this to prevent the dragged line from
+//   matching against itself.
+std::optional<SnapCandidate> resolve_direction_snaps(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<double> start_x,
+    std::optional<double> start_y,
+    const std::vector<std::string>& exclude_entity_ids = {});
+
+// Continuous: projection onto geometry — nearest (line/circle body),
+//             perpendicular foot, tangent, grid, grid_line.
+// Distance = projection offset from cursor to the geometry.
+// start_x / start_y are optional (unused by current collectors but
+// accepted for caller convenience).
+std::optional<SnapCandidate> resolve_continuous_snaps(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<double> start_x = std::nullopt,
+    std::optional<double> start_y = std::nullopt);
+
+// ── Legacy unified resolver ───────────────────────────────────
+// Convenience wrapper that calls the three category resolvers with
+// priority Discrete > Direction > Continuous. Prefer the category-
+// specific functions in new code so tolerance can differ per pass.
 std::optional<SnapCandidate> resolve_snap(
     double cursor_x,
     double cursor_y,

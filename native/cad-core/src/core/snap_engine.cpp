@@ -601,8 +601,15 @@ void collect_parallel_candidates(
   for (const auto& line : sketch.lines) {
     if (line.is_construction) continue;
     const double la = std::atan2(line.end_y - line.start_y, line.end_x - line.start_x);
-    for (double dir : {la, la + M_PI}) {
+    // Two parallel directions: la and la±π (normalized to [0, 2π)).
+    const double la_norm = (la < 0) ? la + 2.0 * M_PI : la;
+    const double dirs[2] = {la_norm, la_norm > M_PI ? la_norm - M_PI : la_norm + M_PI};
+    for (double dir : dirs) {
       double ad = std::abs(cursor_angle - dir);
+      // Normalise the raw difference into [0, 2π) before the π-wrap,
+      // otherwise |cursor_angle - dir| can exceed 2π and 2π - ad
+      // underflows to a negative value that always wins.
+      ad = std::fmod(ad, 2.0 * M_PI);
       if (ad > M_PI) ad = 2.0 * M_PI - ad;
       if (ad < best_angle_diff) { best_angle_diff = ad; best_angle = dir; best_line_id = line.id; }
     }
@@ -636,8 +643,19 @@ void collect_perpendicular_direction_candidates(
   for (const auto& line : sketch.lines) {
     if (line.is_construction) continue;
     const double la = std::atan2(line.end_y - line.start_y, line.end_x - line.start_x);
-    for (double dir : {la + M_PI_2, la - M_PI_2, la + 3.0 * M_PI_2, la - 3.0 * M_PI_2}) {
+    // Two perpendicular directions (normalized to [0, 2π)).
+    const double la_norm = (la < 0) ? la + 2.0 * M_PI : la;
+    const double perp1 = la_norm + M_PI_2;
+    const double perp2 = la_norm - M_PI_2;
+    const double dirs[2] = {
+        perp1 >= 2.0 * M_PI ? perp1 - 2.0 * M_PI : perp1,
+        perp2 < 0 ? perp2 + 2.0 * M_PI : perp2};
+    for (double dir : dirs) {
       double ad = std::abs(cursor_angle - dir);
+      // Normalise the raw difference into [0, 2π) before the π-wrap,
+      // otherwise |cursor_angle - dir| can exceed 2π and 2π - ad
+      // underflows to a negative value that always wins.
+      ad = std::fmod(ad, 2.0 * M_PI);
       if (ad > M_PI) ad = 2.0 * M_PI - ad;
       if (ad < best_angle_diff) { best_angle_diff = ad; best_angle = dir; best_line_id = line.id; }
     }
@@ -705,20 +723,31 @@ void collect_axis_lock_candidates(
   }
 }
 
-} // namespace
+} // namespace (anonymous)
 
-std::optional<SnapCandidate> resolve_snap(
+// ── Helper: pick the closest candidate by distance ────────────
+namespace {
+const SnapCandidate* pick_closest(const std::vector<SnapCandidate>& candidates) {
+  if (candidates.empty()) return nullptr;
+  const SnapCandidate* best = &candidates[0];
+  for (size_t i = 1; i < candidates.size(); ++i) {
+    if (candidates[i].distance < best->distance) best = &candidates[i];
+  }
+  return best;
+}
+} // namespace (anonymous)
+
+// ── Category resolvers ────────────────────────────────────────
+
+std::optional<SnapCandidate> resolve_discrete_snaps(
     double cursor_x,
     double cursor_y,
     const SketchFeatureParameters& sketch,
     const SelectionFilter& filter,
     double tolerance,
-    std::optional<double> start_x,
-    std::optional<double> start_y,
-    const std::vector<std::string>& snap_priority) {
+    std::optional<std::string> exclude_point_id) {
   std::vector<SnapCandidate> candidates;
 
-  // Collect candidates based on active snap types in the filter.
   if (filter.snap_endpoint) {
     collect_line_endpoint_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
     collect_arc_endpoint_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
@@ -731,15 +760,94 @@ std::optional<SnapCandidate> resolve_snap(
     collect_polygon_center_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
     collect_arc_center_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
   }
-  if (filter.snap_nearest) {
-    collect_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
-    collect_circle_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
-  }
   if (filter.snap_intersection) {
     collect_intersection_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
   }
   if (filter.snap_quadrant) {
     collect_quadrant_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
+  }
+
+  // Drop candidates that reference the point being dragged, so the
+  // dragged point cannot snap to its own previous position.
+  if (exclude_point_id.has_value() && !exclude_point_id->empty()) {
+    candidates.erase(
+        std::remove_if(candidates.begin(), candidates.end(),
+                       [&](const SnapCandidate& c) {
+                         return c.point_id == *exclude_point_id;
+                       }),
+        candidates.end());
+  }
+
+  const auto* best = pick_closest(candidates);
+  return best ? std::make_optional(*best) : std::nullopt;
+}
+
+std::optional<SnapCandidate> resolve_direction_snaps(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<double> start_x,
+    std::optional<double> start_y,
+    const std::vector<std::string>& exclude_entity_ids) {
+  if (!start_x.has_value() || !start_y.has_value()) {
+    return std::nullopt;
+  }
+
+  std::vector<SnapCandidate> candidates;
+
+  collect_axis_lock_candidates(cursor_x, cursor_y, *start_x, *start_y,
+                               tolerance, sketch, filter, candidates);
+  if (filter.snap_parallel) {
+    collect_parallel_candidates(cursor_x, cursor_y, *start_x, *start_y,
+                                tolerance, sketch, filter, candidates);
+  }
+  if (filter.snap_perpendicular) {
+    collect_perpendicular_direction_candidates(
+        cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter,
+        candidates);
+  }
+  if (filter.snap_polar) {
+    collect_polar_candidates(cursor_x, cursor_y, *start_x, *start_y,
+                             tolerance, filter, candidates);
+  }
+
+  // Drop parallel / perpendicular candidates that reference the line
+  // being dragged — a line is trivially parallel to itself.
+  if (!exclude_entity_ids.empty()) {
+    candidates.erase(
+        std::remove_if(candidates.begin(), candidates.end(),
+                       [&](const SnapCandidate& c) {
+                         if (c.kind != "parallel" &&
+                             c.kind != "perpendicular_direction") {
+                           return false;
+                         }
+                         return std::find(exclude_entity_ids.begin(),
+                                          exclude_entity_ids.end(),
+                                          c.entity_id) !=
+                                exclude_entity_ids.end();
+                       }),
+        candidates.end());
+  }
+
+  const auto* best = pick_closest(candidates);
+  return best ? std::make_optional(*best) : std::nullopt;
+}
+
+std::optional<SnapCandidate> resolve_continuous_snaps(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<double> /*start_x*/,
+    std::optional<double> /*start_y*/) {
+  std::vector<SnapCandidate> candidates;
+
+  if (filter.snap_nearest) {
+    collect_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
+    collect_circle_nearest_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
   }
   if (filter.snap_perpendicular) {
     collect_perpendicular_candidates(sketch, cursor_x, cursor_y, tolerance, filter, candidates);
@@ -753,55 +861,33 @@ std::optional<SnapCandidate> resolve_snap(
   if (filter.snap_grid_line) {
     collect_grid_line_candidates(cursor_x, cursor_y, tolerance, filter, candidates);
   }
-  if (filter.snap_polar && start_x.has_value() && start_y.has_value()) {
-    collect_polar_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, filter, candidates);
+
+  const auto* best = pick_closest(candidates);
+  return best ? std::make_optional(*best) : std::nullopt;
+}
+
+// ── Legacy unified resolver ───────────────────────────────────
+
+std::optional<SnapCandidate> resolve_snap(
+    double cursor_x,
+    double cursor_y,
+    const SketchFeatureParameters& sketch,
+    const SelectionFilter& filter,
+    double tolerance,
+    std::optional<double> start_x,
+    std::optional<double> start_y,
+    const std::vector<std::string>& /*snap_priority*/) {
+  // Priority: Discrete > Direction > Continuous
+  auto snap = resolve_discrete_snaps(cursor_x, cursor_y, sketch, filter, tolerance);
+  if (!snap.has_value()) {
+    snap = resolve_direction_snaps(cursor_x, cursor_y, sketch, filter,
+                                   tolerance, start_x, start_y);
   }
-  if (start_x.has_value() && start_y.has_value()) {
-    collect_axis_lock_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
-    if (filter.snap_parallel) {
-      collect_parallel_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
-    }
-    if (filter.snap_perpendicular) {
-      collect_perpendicular_direction_candidates(cursor_x, cursor_y, *start_x, *start_y, tolerance, sketch, filter, candidates);
-    }
+  if (!snap.has_value()) {
+    snap = resolve_continuous_snaps(cursor_x, cursor_y, sketch, filter,
+                                    tolerance, start_x, start_y);
   }
-
-  if (candidates.empty()) {
-    return std::nullopt;
-  }
-
-  // Build a priority map.
-  const auto& priority = snap_priority.empty() ? kDefaultSnapPriority : snap_priority;
-  std::unordered_set<std::string> priority_set(
-      priority.begin(), priority.end());
-
-  // Assign priority rank. Unknown snap types get lowest priority.
-  auto priority_rank = [&](const std::string& kind) -> int {
-    for (size_t i = 0; i < priority.size(); ++i) {
-      if (priority[i] == kind) return static_cast<int>(i);
-    }
-    return static_cast<int>(priority.size());
-  };
-
-  // Find the best candidate: smallest distance first, then highest priority
-  // as a tiebreaker when two candidates are at identical distance.
-  const SnapCandidate* best = nullptr;
-  double best_dist = std::numeric_limits<double>::max();
-  int best_rank = std::numeric_limits<int>::max();
-
-  for (const auto& c : candidates) {
-    int rank = priority_rank(c.kind);
-    if (c.distance < best_dist || (c.distance == best_dist && rank < best_rank)) {
-      best = &c;
-      best_dist = c.distance;
-      best_rank = rank;
-    }
-  }
-
-  if (best) {
-    return *best;
-  }
-  return std::nullopt;
+  return snap;
 }
 
 } // namespace polysmith::core

@@ -2585,13 +2585,29 @@ void CadCoreApp::handle_command_line(const std::string& line) {
       return;
     }
 
-    const double tolerance = 0.5;
-    const auto snap = polysmith::core::resolve_snap(
+    constexpr double tolerance = 0.5;
+    const auto start_x_opt = std::make_optional(start_x);
+    const auto start_y_opt = std::make_optional(start_y);
+    auto snap = polysmith::core::resolve_discrete_snaps(
         cursor_x, cursor_y,
         feature_it->sketch_parameters.value(),
         doc_opt->selection_filter,
-        tolerance,
-        start_x, start_y);
+        tolerance);
+    if (!snap.has_value()) {
+      snap = polysmith::core::resolve_direction_snaps(
+          cursor_x, cursor_y,
+          feature_it->sketch_parameters.value(),
+          doc_opt->selection_filter,
+          tolerance,
+          start_x_opt, start_y_opt);
+    }
+    if (!snap.has_value()) {
+      snap = polysmith::core::resolve_continuous_snaps(
+          cursor_x, cursor_y,
+          feature_it->sketch_parameters.value(),
+          doc_opt->selection_filter,
+          tolerance);
+    }
 
     if (snap.has_value()) {
       polysmith::protocol::write_message(
