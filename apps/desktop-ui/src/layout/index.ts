@@ -24,3 +24,4 @@ export * from "./MovePreviewPanel";
 export * from "./ProjectsPanel";
 export * from "./SelectionFilterPanel";
 export * from "./ViewportPanel";
+export * from "./CamOperationPanel";

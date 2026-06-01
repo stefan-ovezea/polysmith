@@ -66,6 +66,7 @@ import {
   SettingsModal,
   ViewportPanel,
   ProjectsPanel,
+  CamOperationPanel,
 } from "./layout";
 import type { CategoryId } from "./layout";
 import { ArmedSketchConstraint } from "./types";
@@ -126,7 +127,7 @@ function defaultMoveParameters(targetBodyId = ""): MoveFeatureParameters {
 const SHOW_DEBUG_MESSAGE_LOG =
   import.meta.env.VITE_SHOW_DEBUG_MESSAGE_LOG === "true";
 
-type WorkspaceView = "cad" | "slicer";
+type WorkspaceView = "cad" | "slicer" | "cam";
 type SidebarTab = "hierarchy" | "projects";
 type PendingUnsavedAction =
   | { kind: "quit" }
@@ -538,6 +539,15 @@ function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("cad");
   const [slicerStatus, setSlicerStatus] = useState<string | null>(null);
   const [hasOrcaEmbedSession, setHasOrcaEmbedSession] = useState(false);
+  // CAM workspace state
+  const [activeCamOperation, setActiveCamOperation] =
+    useState<import("./layout/header/CamToolbar").CamOperationType | null>(null);
+  const [camOperations, setCamOperations] = useState<
+    import("./layout/CamOperationPanel").CamOperation[]
+  >([]);
+  const [selectedCamOperationId, setSelectedCamOperationId] = useState<
+    string | null
+  >(null);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
@@ -4102,6 +4112,10 @@ function App() {
     }
   }
 
+  async function showCamView() {
+    setWorkspaceView("cam");
+  }
+
   async function showSlicerView() {
     setWorkspaceView("slicer");
 
@@ -4558,6 +4572,10 @@ function App() {
           onSetWorkspaceView={(view) => {
             if (view === "cad") {
               void showCadView();
+              return;
+            }
+            if (view === "cam") {
+              void showCamView();
               return;
             }
             void showSlicerView();
@@ -5095,6 +5113,10 @@ function App() {
             setMaterialsPanelOpen((current) => !current);
           }}
           onUpdateSelectionFilter={updateSelectionFilter}
+          activeCamOperation={activeCamOperation}
+          onSelectCamOperation={(op) => {
+            setActiveCamOperation((prev) => (prev === op ? null : op));
+          }}
         />
 
         <div className="flex min-h-0 min-w-0">
@@ -5118,7 +5140,47 @@ function App() {
             renderSlicerWorkspace()
           ) : (
             <>
-          {isHierarchyCollapsed ? (
+          {workspaceView === "cam" ? (
+            <aside
+              className="cad-sidebar relative min-h-0 flex-shrink-0"
+              style={{ width: hierarchyWidth }}
+            >
+              <CamOperationPanel
+                operations={camOperations}
+                selectedOperationId={selectedCamOperationId}
+                onSelectOperation={setSelectedCamOperationId}
+                onDeleteOperation={(id) => {
+                  setCamOperations((prev) =>
+                    prev.filter((op) => op.id !== id),
+                  );
+                  if (selectedCamOperationId === id) {
+                    setSelectedCamOperationId(null);
+                  }
+                }}
+              />
+              <div
+                className="cad-sidebar-resizer"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startWidth = hierarchyWidth;
+                  const onMove = (moveEvent: PointerEvent) => {
+                    const next = Math.max(
+                      220,
+                      Math.min(640, startWidth + (moveEvent.clientX - startX)),
+                    );
+                    setHierarchyWidth(next);
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                  };
+                  window.addEventListener("pointermove", onMove);
+                  window.addEventListener("pointerup", onUp);
+                }}
+              />
+            </aside>
+          ) : isHierarchyCollapsed ? (
             <button
               type="button"
               className="cad-sidebar-collapsed"

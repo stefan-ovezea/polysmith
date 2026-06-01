@@ -113,6 +113,9 @@
   "workspace": {
     "cad": "CAD",
     "cadView": "CAD View",
+    "cam": "CAM",
+    "camView": "CAM View",
+    "camToolbarPlaceholder": "CAM workspace ready — stages and toolpaths coming soon.",
     "exportingToSlicer": "Exporting STL to OrcaSlicer...",
     "exportToSlicer": "Export to Slicer",
     "openInBrowser": "Open in Browser",
@@ -126,6 +129,41 @@
     "slicerNoExportableBody": "There is no solid body to export.",
     "slicerView": "Slicer View",
     "slicerWaiting": "Slicer view is waiting for OrcaSlicer."
+  },
+  "cam": {
+    "profile": "Profile",
+    "pocket": "Pocket",
+    "drill": "Drill",
+    "operations": "CAM Operations",
+    "noOperations": "No CAM operations. Select a tool above to create one.",
+    "category": {
+      "milling": "Milling",
+      "turning": "Turning",
+      "printing": "Printing",
+      "cutting": "Cutting"
+    },
+    "common": {
+      "setup": "Setup",
+      "faceOp": "Face",
+      "contour": "Contour",
+      "engrave": "Engrave"
+    },
+    "turning": {
+      "rough": "Rough",
+      "finish": "Finish",
+      "groove": "Groove",
+      "thread": "Thread"
+    },
+    "printing": {
+      "slice": "Slice",
+      "support": "Support",
+      "infill": "Infill"
+    },
+    "cutting": {
+      "twoD": "2D Cut",
+      "nest": "Nest",
+      "leadIn": "Lead In"
+    }
   },
   "toolbar": {
     "arc": "Arc",
