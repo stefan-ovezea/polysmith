@@ -1223,6 +1223,48 @@ export function buildSketchPointObject(point: SketchPointScene) {
   mesh.position.set(...point.position);
   mesh.userData.sketchPointId = point.pointId;
   mesh.userData.sketchPointKind = point.kind;
+
+  // Override raycast to use a sphere-distance test instead of the
+  // default triangle-intersection test. The visual sphere radius is
+  // ~0.7 mm (a few pixels), which the raycaster often misses because
+  // the Line threshold (1.75 mm) gives lines a much wider capture
+  // zone.  The pick radius below gives points a competitive hit area
+  // so clicking near an endpoint ball actually registers.
+  const PICK_RADIUS = 1.5;
+  mesh.raycast = (raycaster, intersects) => {
+    const sphereCenter = new THREE.Vector3();
+    mesh.getWorldPosition(sphereCenter);
+    const rayOrigin = raycaster.ray.origin;
+    const rayDir = raycaster.ray.direction;
+
+    const toCenter = sphereCenter.clone().sub(rayOrigin);
+    const proj = toCenter.dot(rayDir);
+    const closest = rayOrigin.clone().addScaledVector(
+      rayDir, Math.max(0, proj),
+    );
+    const distToRay = sphereCenter.distanceTo(closest);
+
+    if (distToRay > PICK_RADIUS) return;
+
+    // Ray hits the virtual sphere.  Compute the intersection point
+    // along the ray as the closest point on the ray to the sphere
+    // surface.
+    const halfChord = Math.sqrt(
+      Math.max(0, PICK_RADIUS * PICK_RADIUS - distToRay * distToRay),
+    );
+    const t = Math.max(0, proj - halfChord);
+    const hitPoint = rayOrigin.clone().addScaledVector(rayDir, t);
+    const hitDist = hitPoint.distanceTo(rayOrigin);
+
+    intersects.push({
+      distance: hitDist,
+      point: hitPoint,
+      object: mesh,
+      face: null,
+      faceIndex: undefined,
+    } as THREE.Intersection);
+  };
+
   return mesh;
 }
 

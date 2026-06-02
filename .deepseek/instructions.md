@@ -48,3 +48,21 @@ flow back to canonical. In either case, both locations must stay consistent.
 - AGENTS.md at repo root is the binding instruction set — read it at session start.
 - When adding new docs, create the file in `wiki/` and add a link from `wiki/Home.md`.
 - Cross-reference wiki pages by their title-cased name without extension (e.g., `Architecture-Overview`).
+
+## Debugging
+
+- PolySmith is a **Tauri desktop app**. There is no F12 DevTools console.
+- `console.log` and `stderr` output from the webview is captured and discarded
+  by Tauri; it will never reach the developer.
+- The app has a built-in **Logs panel** (opened via the toolbar). To emit
+  messages there, use `addMessage("...")` from `useCadCoreStore` in App.tsx.
+  The store hook is:
+  ```ts
+  const addMessage = useCadCoreStore((state) => state.addMessage);
+  ```
+- Structured `LogEntry` objects can be sent via `addLogEntry(entry)` for
+  level/source/timestamp tagging. Both functions write to the same in-app
+  log viewer.
+- **Never use `console.log` for debugging.** It is invisible in Tauri and
+  wastes the user's time. Wire `addMessage()` through the component tree
+  instead or pass it through existing callback props.

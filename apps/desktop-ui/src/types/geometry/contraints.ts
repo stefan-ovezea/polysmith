@@ -6,6 +6,7 @@ export type ConstraintType =
   | "fixed"
   | "clear"
   | "coincident"
+  | "concentric"
   | "tangent"
   | "equal_length"
   | "equal_radius"

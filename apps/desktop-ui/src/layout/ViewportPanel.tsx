@@ -97,6 +97,7 @@ import {
 } from "@/utils";
 import { sendCoreCommand } from "@/lib/cadCoreClient";
 import { makeGetViewportStateCommand, makeTrimPreviewCommand } from "@/lib/ipcProtocol";
+import { useCadCoreStore } from "@/state/cadCoreStore";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
 import type { ViewCubeHit } from "@/utils";
 
@@ -1256,6 +1257,7 @@ export function ViewportPanel({
   hideReferences,
 }: ViewportPanelProps) {
   const { config, activeTheme, updateConfig } = useAppConfig();
+  const addMessage = useCadCoreStore((state) => state.addMessage);
   const { t: translate } = useTranslation();
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const showViewportGrid = config.viewport.showGrid;
@@ -7184,17 +7186,42 @@ const currentGridSpacingRef = useRef(10);
         }
 
         if (!checkDimensionsLast) {
-          const [sketchPointHit] = raycaster.intersectObjects(
-            sketchPointObjectsRef.current,
-            false,
-          );
-          const sketchPointId =
-            sketchPointHit?.object.userData.sketchPointId;
-          if (typeof sketchPointId === "string") {
+          // Point picking: use a ray-to-sphere distance check instead
+          // of mesh triangle intersection. The visual spheres are
+          // ~0.7 mm radius (a few pixels), which the raycaster often
+          // misses. A generous pick radius makes points competitive
+          // with lines (Line threshold = 1.75 mm).
+          const PICK_RADIUS = 1.8;
+          const rayO = raycaster.ray.origin;
+          const rayD = raycaster.ray.direction;
+          let bestPtDist = PICK_RADIUS;
+          let bestPtId: string | undefined;
+          let bestPtKind: string | undefined;
+
+          for (const mesh of sketchPointObjectsRef.current) {
+            const c = new THREE.Vector3();
+            mesh.getWorldPosition(c);
+            const toC = c.clone().sub(rayO);
+            const proj = toC.dot(rayD);
+            const closest = rayO.clone().addScaledVector(
+              rayD, Math.max(0, proj),
+            );
+            const d = c.distanceTo(closest);
+            if (d < bestPtDist) {
+              bestPtDist = d;
+              bestPtId = mesh.userData.sketchPointId as string | undefined;
+              bestPtKind = mesh.userData.sketchPointKind as string | undefined;
+            }
+          }
+
+          if (typeof bestPtId === "string") {
             return {
               kind: "sketch_point" as const,
-              id: sketchPointId,
-              pointKind: sketchPointHit.object.userData.sketchPointKind,
+              id: bestPtId,
+              pointKind: bestPtKind as
+                | "endpoint"
+                | "center"
+                | "quadrant",
             };
           }
 
@@ -9283,6 +9310,7 @@ const currentGridSpacingRef = useRef(10);
 
           if (
             armedSketchConstraintRef.current &&
+            armedSketchConstraintRef.current.kind !== "coincident" &&
             hit?.kind === "sketch_entity" &&
             !hit.isProjected &&
             hit.entityKind === "line"
@@ -9306,16 +9334,22 @@ const currentGridSpacingRef = useRef(10);
           }
 
           if (hit?.kind === "sketch_constraint") {
-            setSelectedConstraint({
-              kind: hit.constraintKind,
-              entityId: hit.entityId,
-              relatedEntityId: hit.relatedEntityId,
-            });
-            // Flash the entity this constraint sits on
-            paintSketchEntityMaterials();
-            paintSketchPointMaterials();
-            // Highlight will update via the useEffect below
-            return;
+            // When coincident is armed, the constraint badge sits on
+            // top of the point sphere. Skip the badge hit so the
+            // point-picking logic below can find the point.
+            if (armedSketchConstraintRef.current?.kind !== "coincident") {
+              setSelectedConstraint({
+                kind: hit.constraintKind,
+                entityId: hit.entityId,
+                relatedEntityId: hit.relatedEntityId,
+              });
+              // Flash the entity this constraint sits on
+              paintSketchEntityMaterials();
+              paintSketchPointMaterials();
+              // Highlight will update via the useEffect below
+              return;
+            }
+            // Fall through to point/entity handling
           }
 
           if (
@@ -9336,6 +9370,45 @@ const currentGridSpacingRef = useRef(10);
           }
 
           if (hit?.kind === "sketch_entity") {
+            // When coincident is armed, a line click that didn't hit a
+            // point sphere should still count: find the nearest endpoint
+            // of the clicked line and use it as the coincident point.
+            if (
+              armedSketchConstraintRef.current?.kind === "coincident" &&
+              hit.entityKind === "line"
+            ) {
+              const lineObj = sketchEntityObjectByIdRef.current.get(hit.id);
+              if (lineObj instanceof THREE.Line) {
+                const geom = lineObj.geometry;
+                const pos = geom.getAttribute("position");
+                if (pos && pos.count >= 2) {
+                  const ax = pos.getX(0); const ay = pos.getY(0); const az = pos.getZ(0);
+                  const bx = pos.getX(1); const by = pos.getY(1); const bz = pos.getZ(1);
+                  // Find the sketch point closest to either endpoint
+                  let bestMesh: THREE.Mesh | undefined;
+                  let bestD = Infinity;
+                  for (const pm of sketchPointObjectsRef.current) {
+                    const pp = new THREE.Vector3();
+                    pm.getWorldPosition(pp);
+                    const d = Math.min(
+                      pp.distanceTo(new THREE.Vector3(ax, ay, az)),
+                      pp.distanceTo(new THREE.Vector3(bx, by, bz)),
+                    );
+                    if (d < bestD) { bestD = d; bestMesh = pm; }
+                  }
+                  if (bestMesh && bestD < 0.5) {
+                    const pointId = bestMesh.userData.sketchPointId as string | undefined;
+                    const pointKind = bestMesh.userData.sketchPointKind as
+                      | "endpoint" | "center" | "quadrant" | undefined;
+                    if (pointId && pointKind) {
+                      addMessage(`coincident-viewport: line-endpoint fallback ${pointId} (dist ${bestD.toFixed(3)}wu)`);
+                      void pickSketchPointRef.current(pointId, pointKind, additiveSelection);
+                      return;
+                    }
+                  }
+                }
+              }
+            }
             void selectSketchEntityRef.current(hit.id, additiveSelection);
           }
           return;

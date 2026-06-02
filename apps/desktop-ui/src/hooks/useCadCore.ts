@@ -105,6 +105,7 @@ import {
   makeUpdateOffsetPlaneCommand,
   makeUpdateAnglePlaneCommand,
   makeSetSketchCoincidentConstraintCommand,
+  makeDeleteSketchCoincidentConstraintCommand,
   makeSetSketchEqualLengthConstraintCommand,
   makeSetSketchParallelConstraintCommand,
   makeSetSketchPerpendicularConstraintCommand,
@@ -825,6 +826,12 @@ export function useCadCore() {
     },
     setSketchPointFixed: async (pointId: string, isFixed: boolean) => {
       await sendCoreCommand(makeSetSketchPointFixedCommand(pointId, isFixed));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    deleteSketchCoincidentConstraint: async (constraintId: string) => {
+      await sendCoreCommand(
+        makeDeleteSketchCoincidentConstraintCommand(constraintId),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchCircle: async (

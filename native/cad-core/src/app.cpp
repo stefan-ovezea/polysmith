@@ -1390,6 +1390,17 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  if (command.type == "delete_sketch_coincident_constraint") {
+    const auto document =
+        document_manager().delete_sketch_coincident_constraint(
+            read_string(command.payload, "constraint_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "update_sketch_circle") {
     const auto document = document_manager().update_sketch_circle(
         read_string(command.payload, "circle_id"),

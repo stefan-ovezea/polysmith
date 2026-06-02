@@ -1091,6 +1091,18 @@ export function makeSetSketchCoincidentConstraintCommand(
   };
 }
 
+export function makeDeleteSketchCoincidentConstraintCommand(
+  constraintId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_coincident_constraint",
+    payload: {
+      constraint_id: constraintId,
+    },
+  };
+}
+
 export function makeSetSketchPointFixedCommand(
   pointId: string,
   isFixed: boolean,

@@ -504,40 +504,6 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   return std::nullopt;
 }
 
-std::optional<std::tuple<double, double>> find_point_position(
-    const SketchFeatureParameters& parameters,
-    const std::string& point_id) {
-  // Lines are the authoritative source for endpoint coordinates — they
-  // carry the live position after constraint enforcement.  The points
-  // list (`parameters.points`) is a deduplicated view rebuilt by
-  // `rebuild_sketch_points`; when two lines share a point ID but
-  // constraints have temporarily pulled them apart, the points list may
-  // hold a stale coordinate from whichever line was encountered first.
-  // Search lines first so callers always get the live, per-line position.
-  for (const auto& line : parameters.lines) {
-    if (line.start_point_id == point_id) {
-      return std::tuple<double, double>{line.start_x, line.start_y};
-    }
-
-    if (line.end_point_id == point_id) {
-      return std::tuple<double, double>{line.end_x, line.end_y};
-    }
-  }
-
-  // Fall back to the points list for point kinds that are not line
-  // endpoints: circle centers, quadrant points, fillet corners, and
-  // projected points.
-  const auto point_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  if (point_it != parameters.points.end()) {
-    return std::tuple<double, double>{point_it->x, point_it->y};
-  }
-
-  return std::nullopt;
-}
-
 void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   parameters.points.clear();
 
@@ -2618,6 +2584,84 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
 
   sync_all_line_dimensions(parameters);
   refresh_sketch_derived_state(feature);
+
+  // Store an explicit constraint entry so the viewport can render a
+  // badge and the DOF counter accounts for the user-applied constraint.
+  // target_ids lists the lines that share this coincident point.
+  {
+    bool already_exists = false;
+    for (const auto& c : parameters.constraints) {
+      if (c.kind == "coincident" && c.target_ids.size() == affected_line_ids.size()) {
+        bool match = true;
+        for (size_t i = 0; i < affected_line_ids.size(); ++i) {
+          if (c.target_ids[i] != affected_line_ids[i]) { match = false; break; }
+        }
+        if (match) { already_exists = true; break; }
+      }
+    }
+    if (!already_exists && !affected_line_ids.empty()) {
+      parameters.constraints.push_back(SketchConstraint{
+          .constraint_id = "constraint-coincident-" + other_point_id,
+          .kind = "coincident",
+          .target_ids = affected_line_ids,
+      });
+    }
+  }
+}
+
+void delete_sketch_coincident_constraint(FeatureEntry& feature,
+                                         const std::string& constraint_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can delete coincident constraints");
+  }
+
+  auto& parameters = feature.sketch_parameters.value();
+
+  // Extract the merged point ID from the constraint_id pattern:
+  // "constraint-coincident-<point_id>"
+  const std::string prefix = "constraint-coincident-";
+  if (constraint_id.size() <= prefix.size() ||
+      constraint_id.substr(0, prefix.size()) != prefix) {
+    throw std::runtime_error("Not a coincident constraint: " + constraint_id);
+  }
+  const std::string merged_point_id = constraint_id.substr(prefix.size());
+
+  // Remove the constraint entry.
+  const auto constraint_it = std::find_if(
+      parameters.constraints.begin(), parameters.constraints.end(),
+      [&](const SketchConstraint& c) { return c.constraint_id == constraint_id; });
+  if (constraint_it == parameters.constraints.end()) {
+    throw std::runtime_error("Coincident constraint not found: " + constraint_id);
+  }
+  parameters.constraints.erase(constraint_it);
+
+  // Find all lines sharing the merged point.
+  std::vector<SketchLine*> affected_lines;
+  for (auto& line : parameters.lines) {
+    if (line.start_point_id == merged_point_id ||
+        line.end_point_id == merged_point_id) {
+      affected_lines.push_back(&line);
+    }
+  }
+
+  // Assign fresh unique point IDs to all but the first line so each
+  // can move independently. The first line keeps the original point ID.
+  if (affected_lines.size() > 1) {
+    int fresh_counter = static_cast<int>(parameters.lines.size()) * 100;
+    for (size_t i = 1; i < affected_lines.size(); ++i) {
+      const std::string new_id =
+          "point-line-" + std::to_string(fresh_counter++) + "-start";
+      auto* line = affected_lines[i];
+      if (line->start_point_id == merged_point_id) {
+        line->start_point_id = new_id;
+      }
+      if (line->end_point_id == merged_point_id) {
+        line->end_point_id = new_id;
+      }
+    }
+  }
+
+  refresh_sketch_derived_state(feature);
 }
 
 void set_sketch_point_fixed(FeatureEntry& feature,
@@ -3939,6 +3983,23 @@ void add_sketch_arc(FeatureEntry& feature,
       point.is_fixed = true;
     }
   }
+}
+
+std::optional<std::tuple<double, double>> find_point_position(
+    const SketchFeatureParameters& parameters,
+    const std::string& point_id) {
+  for (const auto& line : parameters.lines) {
+    if (line.start_point_id == point_id)
+      return std::tuple<double, double>{line.start_x, line.start_y};
+    if (line.end_point_id == point_id)
+      return std::tuple<double, double>{line.end_x, line.end_y};
+  }
+  const auto point_it = std::find_if(
+      parameters.points.begin(), parameters.points.end(),
+      [&](const SketchPoint& point) { return point.id == point_id; });
+  if (point_it != parameters.points.end())
+    return std::tuple<double, double>{point_it->x, point_it->y};
+  return std::nullopt;
 }
 
 namespace {

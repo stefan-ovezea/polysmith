@@ -1321,6 +1321,14 @@ export interface SetSketchCoincidentConstraintCommand {
   };
 }
 
+export interface DeleteSketchCoincidentConstraintCommand {
+  id: string;
+  type: "delete_sketch_coincident_constraint";
+  payload: {
+    constraint_id: string;
+  };
+}
+
 export interface SetSketchPointFixedCommand {
   id: string;
   type: "set_sketch_point_fixed";
@@ -1790,6 +1798,7 @@ export type CoreCommand =
   | CancelMirrorPreviewCommand
   | SetSketchParallelConstraintCommand
   | SetSketchCoincidentConstraintCommand
+  | DeleteSketchCoincidentConstraintCommand
   | SetSketchPointFixedCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
