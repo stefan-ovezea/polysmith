@@ -869,13 +869,13 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
     collect_grid_line_candidates(cursor_x, cursor_y, tolerance, filter, candidates);
   }
 
-  // Drop perpendicular-foot candidates that reference the line being
-  // dragged — "perpendicular to itself" is meaningless during drag.
+  // Drop candidates that reference entities being dragged —
+  // "nearest / perpendicular / tangent to itself" is meaningless.
   if (!exclude_entity_ids.empty()) {
     candidates.erase(
         std::remove_if(candidates.begin(), candidates.end(),
                        [&](const SnapCandidate& c) {
-                         if (c.kind != "perpendicular") return false;
+                         if (c.entity_id.empty()) return false;
                          return std::find(exclude_entity_ids.begin(),
                                           exclude_entity_ids.end(),
                                           c.entity_id) !=

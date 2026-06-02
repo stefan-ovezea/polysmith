@@ -7164,25 +7164,31 @@ const currentGridSpacingRef = useRef(10);
           };
         }
 
-        const [sketchConstraintHit] = raycaster.intersectObjects(
-          sketchConstraintObjectsRef.current,
-          true, // recursive — catches sprites inside any group
-        );
-        const sketchConstraintId =
-          sketchConstraintHit?.object.userData.sketchConstraintId;
-        if (typeof sketchConstraintId === "string") {
-          return {
-            kind: "sketch_constraint" as const,
-            id: sketchConstraintId,
-            constraintKind:
-              sketchConstraintHit.object.userData
-                .sketchConstraintKind as ConstraintType,
-            entityId:
-              sketchConstraintHit.object.userData.sketchConstraintEntityId,
-            relatedEntityId:
-              sketchConstraintHit.object.userData
-                .sketchConstraintRelatedEntityId ?? null,
-          };
+        // When coincident constraint is armed, constraint badges
+        // sit on top of the endpoint spheres and intercept the ray
+        // before the point-picking logic can find the point.  Skip
+        // the badge hit-test so the point check fires naturally.
+        if (armedSketchConstraintRef.current?.kind !== "coincident") {
+          const [sketchConstraintHit] = raycaster.intersectObjects(
+            sketchConstraintObjectsRef.current,
+            true, // recursive — catches sprites inside any group
+          );
+          const sketchConstraintId =
+            sketchConstraintHit?.object.userData.sketchConstraintId;
+          if (typeof sketchConstraintId === "string") {
+            return {
+              kind: "sketch_constraint" as const,
+              id: sketchConstraintId,
+              constraintKind:
+                sketchConstraintHit.object.userData
+                  .sketchConstraintKind as ConstraintType,
+              entityId:
+                sketchConstraintHit.object.userData.sketchConstraintEntityId,
+              relatedEntityId:
+                sketchConstraintHit.object.userData
+                  .sketchConstraintRelatedEntityId ?? null,
+            };
+          }
         }
 
         if (!checkDimensionsLast) {
@@ -9155,6 +9161,9 @@ const currentGridSpacingRef = useRef(10);
           return;
         }
         // Fall through: treat as a click.
+        // Restore pointerDown so the click-handling code below runs.
+        // (pointerDown was nulled during endpoint-drag setup in pointerDown.)
+        pointerDown = { x: event.clientX, y: event.clientY };
       }
 
       // -- cube-area click ---------------------------------------------
@@ -10798,6 +10807,26 @@ const currentGridSpacingRef = useRef(10);
               pointData.position[1],
               pointData.position[2],
             );
+          }
+        }
+      }
+
+      // Constraint badges also move during drag (e.g. coincident
+      // badge follows the shared endpoint).  Update positions in-place
+      // so they track the geometry instead of lagging behind.
+      if (sceneData.sketchConstraints) {
+        for (const conData of sceneData.sketchConstraints) {
+          for (const conObj of sketchConstraintObjectsRef.current) {
+            if (
+              conObj.userData.sketchConstraintId === conData.constraintId
+            ) {
+              conObj.position.set(
+                conData.position[0],
+                conData.position[1],
+                conData.position[2],
+              );
+              break;
+            }
           }
         }
       }

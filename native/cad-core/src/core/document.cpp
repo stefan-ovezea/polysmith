@@ -2925,12 +2925,16 @@ DragPointResult DocumentManager::drag_sketch_point(
   auto& params = feature_it->sketch_parameters.value();
 
   // Find the anchored (other) endpoint for polar/axis-lock snap,
-  // and collect every line that shares the dragged point so we can
-  // exclude them from parallel / perpendicular-direction snaps
-  // (a line is trivially parallel to itself).
+  // and collect every line that shares the dragged point (by point
+  // ID or by positional coincidence) so we can exclude them from
+  // parallel / perpendicular / nearest snaps — a line is trivially
+  // parallel to itself, and snapping "nearest" to a co-moving line
+  // is meaningless.
   std::optional<double> start_x;
   std::optional<double> start_y;
   std::vector<std::string> dragged_line_ids;
+
+  // Pass 1: lines that share the exact point ID (post-coincident).
   for (const auto& line : params.lines) {
     if (line.start_point_id == point_id || line.end_point_id == point_id) {
       dragged_line_ids.push_back(line.id);
@@ -2945,6 +2949,46 @@ DragPointResult DocumentManager::drag_sketch_point(
           start_x = other_it->x;
           start_y = other_it->y;
         }
+      }
+    }
+  }
+
+  // Pass 2: lines whose endpoints are positionally coincident with
+  // the dragged point but have different point IDs (pre-coincident,
+  // or two lines drawn end-to-end without a constraint).
+  {
+    // Resolve the dragged point's current coordinates.
+    double drag_x = 0.0, drag_y = 0.0;
+    bool found_drag = false;
+    for (const auto& pt : params.points) {
+      if (pt.id == point_id) { drag_x = pt.x; drag_y = pt.y; found_drag = true; break; }
+    }
+    // Fall back to the first line's endpoint if point not in points table.
+    if (!found_drag) {
+      for (const auto& line : params.lines) {
+        if (line.start_point_id == point_id) {
+          drag_x = line.start_x; drag_y = line.start_y; break;
+        }
+        if (line.end_point_id == point_id) {
+          drag_x = line.end_x; drag_y = line.end_y; break;
+        }
+      }
+    }
+
+    for (const auto& line : params.lines) {
+      // Skip lines already collected in pass 1.
+      if (std::find(dragged_line_ids.begin(), dragged_line_ids.end(),
+                    line.id) != dragged_line_ids.end()) {
+        continue;
+      }
+      const bool start_coincident =
+          polysmith::core::points_match(line.start_x, line.start_y,
+                                        drag_x, drag_y);
+      const bool end_coincident =
+          polysmith::core::points_match(line.end_x, line.end_y,
+                                        drag_x, drag_y);
+      if (start_coincident || end_coincident) {
+        dragged_line_ids.push_back(line.id);
       }
     }
   }
