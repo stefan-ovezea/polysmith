@@ -542,12 +542,31 @@ function App() {
   // CAM workspace state
   const [activeCamOperation, setActiveCamOperation] =
     useState<import("./layout/header/CamToolbar").CamOperationType | null>(null);
-  const [camOperations, setCamOperations] = useState<
-    import("./layout/CamOperationPanel").CamOperation[]
-  >([]);
   const [selectedCamOperationId, setSelectedCamOperationId] = useState<
     string | null
   >(null);
+  // Derived from core document state so the panel stays in sync.
+  const camOperations: import("./layout/CamOperationPanel").CamOperation[] =
+    useMemo(() => {
+      const coreTypeToUiType = (
+        t: number,
+      ): import("./layout/header/CamToolbar").CamOperationType => {
+        // C++ CamOperationType enum: FaceMilling=0, Pocket=1, ...
+        switch (t) {
+          case 1:
+            return "pocket";
+          case 2:
+            return "drill";
+          default:
+            return "profile"; // fallback for FaceMilling and unknown
+        }
+      };
+      return (document?.cam_operations ?? []).map((op) => ({
+        id: op.id,
+        name: op.name,
+        type: coreTypeToUiType(op.type),
+      }));
+    }, [document?.cam_operations]);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
@@ -5133,7 +5152,7 @@ function App() {
             if (!body) { console.log("[CAM] No body found"); return; }
             console.log("[CAM] Creating face milling on body", body.id);
             void runAction(async () => {
-              await camFaceMillingCreate(body.id, 4);
+              await camFaceMillingCreate(body.id, 0);
               console.log("[CAM] Face milling done");
             });
           }}
@@ -5170,9 +5189,7 @@ function App() {
                 selectedOperationId={selectedCamOperationId}
                 onSelectOperation={setSelectedCamOperationId}
                 onDeleteOperation={(id) => {
-                  setCamOperations((prev) =>
-                    prev.filter((op) => op.id !== id),
-                  );
+                  // TODO: send cam_operation_delete command to core when implemented
                   if (selectedCamOperationId === id) {
                     setSelectedCamOperationId(null);
                   }

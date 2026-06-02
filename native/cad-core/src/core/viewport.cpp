@@ -4358,23 +4358,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
     }
   }
 
-  // Fallback: if no operations exist, emit the test contour.
-  if (toolpaths.empty()) {
-    ViewportToolpathPrimitive testPath;
-    testPath.id = "test_square_contour";
-    testPath.label = "Test Contour (hardcoded)";
-    const double z = -2.0;
-    testPath.points = {
-        {.x = -25.0, .y = -25.0, .z = 5.0, .is_rapid = true},
-        {.x = -25.0, .y = -25.0, .z = z, .is_rapid = true},
-        {.x =  25.0, .y = -25.0, .z = z, .is_rapid = false},
-        {.x =  25.0, .y =  25.0, .z = z, .is_rapid = false},
-        {.x = -25.0, .y =  25.0, .z = z, .is_rapid = false},
-        {.x = -25.0, .y = -25.0, .z = z, .is_rapid = false},
-        {.x = -25.0, .y = -25.0, .z = 5.0, .is_rapid = true},
-    };
-    toolpaths.push_back(testPath);
-  }
+  // Toolpaths are only emitted when CAM operations exist.
 
   // ── CAM stock — deferred until non-interactive rendering is available.
   // TODO: render stock as a translucent box that doesn't participate in
