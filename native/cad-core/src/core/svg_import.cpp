@@ -1,6 +1,7 @@
 #include "core/svg_import.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -29,6 +30,8 @@ struct Transform {
 struct SvgContext {
   Transform transform;
   bool hidden = false;
+  std::size_t layer_index = 0;
+  int group_depth = 0;
 };
 
 Transform multiply(const Transform& left, const Transform& right) {
@@ -69,10 +72,50 @@ double read_number(const std::string& text, double fallback) {
 }
 
 std::string attr(const std::string& tag, const std::string& name) {
-  const std::regex re(name + R"(\s*=\s*["']([^"']*)["'])",
-                      std::regex::icase);
-  std::smatch match;
-  return std::regex_search(tag, match, re) ? match[1].str() : "";
+  auto is_name_char = [](char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
+           c == '-' || c == ':';
+  };
+
+  std::size_t search_from = 0;
+  while (search_from < tag.size()) {
+    const std::size_t found = tag.find(name, search_from);
+    if (found == std::string::npos) {
+      return "";
+    }
+    const bool has_left_boundary =
+        found == 0 || !is_name_char(tag[found - 1]);
+    std::size_t i = found + name.size();
+    const bool has_right_boundary =
+        i >= tag.size() || !is_name_char(tag[i]);
+    if (!has_left_boundary || !has_right_boundary) {
+      search_from = found + 1;
+      continue;
+    }
+    while (i < tag.size() && std::isspace(static_cast<unsigned char>(tag[i]))) {
+      ++i;
+    }
+    if (i >= tag.size() || tag[i] != '=') {
+      search_from = found + 1;
+      continue;
+    }
+    ++i;
+    while (i < tag.size() && std::isspace(static_cast<unsigned char>(tag[i]))) {
+      ++i;
+    }
+    if (i >= tag.size() || (tag[i] != '"' && tag[i] != '\'')) {
+      search_from = found + 1;
+      continue;
+    }
+    const char quote = tag[i++];
+    const std::size_t value_start = i;
+    const std::size_t value_end = tag.find(quote, value_start);
+    if (value_end == std::string::npos) {
+      return "";
+    }
+    return tag.substr(value_start, value_end - value_start);
+  }
+  return "";
 }
 
 std::string lowercase(std::string value) {
@@ -80,6 +123,31 @@ std::string lowercase(std::string value) {
     return static_cast<char>(std::tolower(c));
   });
   return value;
+}
+
+std::string trim(std::string value) {
+  const auto first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) {
+    return "";
+  }
+  const auto last = value.find_last_not_of(" \t\r\n");
+  return value.substr(first, last - first + 1);
+}
+
+std::string layer_name_from_tag(const std::string& tag, std::size_t fallback_index) {
+  const std::array<std::string, 4> names = {
+      attr(tag, "inkscape:label"),
+      attr(tag, "aria-label"),
+      attr(tag, "label"),
+      attr(tag, "id"),
+  };
+  for (const auto& name : names) {
+    const std::string cleaned = trim(name);
+    if (!cleaned.empty()) {
+      return cleaned;
+    }
+  }
+  return "Layer " + std::to_string(fallback_index);
 }
 
 std::vector<double> parse_numbers(const std::string& text);
@@ -263,6 +331,17 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
                   const std::string& d,
                   const Transform& transform) {
   const auto tokens = tokenize_path(d);
+  bool warned_segment_limit = false;
+  auto reached_segment_limit = [&]() {
+    if (segments.size() < kMaxSvgSegments) {
+      return false;
+    }
+    if (!warned_segment_limit) {
+      warnings.push_back("SVG import reached the sketch segment limit; remaining geometry was skipped");
+      warned_segment_limit = true;
+    }
+    return true;
+  };
   std::size_t i = 0;
   char cmd = '\0';
   double x = 0.0;
@@ -270,6 +349,9 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
   double sx = 0.0;
   double sy = 0.0;
   while (i < tokens.size()) {
+    if (reached_segment_limit()) {
+      break;
+    }
     if (tokens[i].command) {
       cmd = tokens[i++].c;
     }
@@ -294,6 +376,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     }
     if (op == 'L') {
       while (has_number(tokens, i + 1)) {
+        if (reached_segment_limit()) break;
         double nx = read();
         double ny = read();
         if (rel) {
@@ -308,6 +391,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     }
     if (op == 'H') {
       while (has_number(tokens, i)) {
+        if (reached_segment_limit()) break;
         double nx = read();
         if (rel) nx += x;
         add_segment(segments, x, y, nx, y, transform);
@@ -317,6 +401,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     }
     if (op == 'V') {
       while (has_number(tokens, i)) {
+        if (reached_segment_limit()) break;
         double ny = read();
         if (rel) ny += y;
         add_segment(segments, x, y, x, ny, transform);
@@ -326,6 +411,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     }
     if (op == 'C') {
       while (has_number(tokens, i + 5)) {
+        if (reached_segment_limit()) break;
         double x1 = read(), y1 = read(), x2 = read(), y2 = read();
         double x3 = read(), y3 = read();
         if (rel) {
@@ -334,6 +420,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
         double px = x;
         double py = y;
         for (double t = kCurveStep; t <= 1.0001; t += kCurveStep) {
+          if (reached_segment_limit()) break;
           const double nx = cubic(x, x1, x2, x3, std::min(t, 1.0));
           const double ny = cubic(y, y1, y2, y3, std::min(t, 1.0));
           add_segment(segments, px, py, nx, ny, transform);
@@ -347,6 +434,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     }
     if (op == 'Q') {
       while (has_number(tokens, i + 3)) {
+        if (reached_segment_limit()) break;
         double x1 = read(), y1 = read(), x2 = read(), y2 = read();
         if (rel) {
           x1 += x; y1 += y; x2 += x; y2 += y;
@@ -354,6 +442,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
         double px = x;
         double py = y;
         for (double t = kCurveStep; t <= 1.0001; t += kCurveStep) {
+          if (reached_segment_limit()) break;
           const double nx = quad(x, x1, x2, std::min(t, 1.0));
           const double ny = quad(y, y1, y2, std::min(t, 1.0));
           add_segment(segments, px, py, nx, ny, transform);
@@ -368,6 +457,7 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
     if (op == 'A') {
       warnings.push_back("SVG arc path commands were approximated as straight chords");
       while (has_number(tokens, i + 6)) {
+        if (reached_segment_limit()) break;
         const double rx = read();
         const double ry = read();
         (void)rx;
@@ -405,33 +495,73 @@ void flatten_path(std::vector<SvgLineSegment>& segments,
 
 SvgImportResult flatten_svg_file(const std::string& file_path) {
   SvgImportResult result;
+  result.layers.push_back(SvgLayer{.name = "SVG"});
   const std::string text = read_file(file_path);
-  std::smatch svg_match;
-  if (std::regex_search(text, svg_match, std::regex(R"(<svg\b[^>]*>)",
-                                                    std::regex::icase))) {
-    const std::string tag = svg_match[0].str();
-    result.width = read_number(attr(tag, "width"), result.width);
-    result.height = read_number(attr(tag, "height"), result.height);
-    const auto vb = parse_numbers(attr(tag, "viewBox"));
-    if (vb.size() == 4 && vb[2] > 0.0 && vb[3] > 0.0) {
-      if (attr(tag, "width").empty()) result.width = vb[2];
-      if (attr(tag, "height").empty()) result.height = vb[3];
-    }
-  }
 
   std::vector<SvgContext> contexts{SvgContext{}};
-  static const std::regex tag_re(R"(<\s*(/?)\s*([A-Za-z][A-Za-z0-9:_-]*)\b([^>]*)>)");
-  auto begin = std::sregex_iterator(text.begin(), text.end(), tag_re);
-  auto end = std::sregex_iterator();
-  for (auto it = begin; it != end; ++it) {
-    const bool closing = (*it)[1].matched && !(*it)[1].str().empty();
-    const std::string name = lowercase((*it)[2].str());
-    const std::string tag = (*it)[0].str();
-    const std::string attrs_text = (*it)[3].str();
+  bool read_root_svg_size = false;
+  std::size_t search_from = 0;
+  while (search_from < text.size()) {
+    const std::size_t tag_start = text.find('<', search_from);
+    if (tag_start == std::string::npos) {
+      break;
+    }
+    const std::size_t tag_end = text.find('>', tag_start + 1);
+    if (tag_end == std::string::npos) {
+      break;
+    }
+    search_from = tag_end + 1;
+    const std::string tag = text.substr(tag_start, tag_end - tag_start + 1);
+    if (tag.rfind("<!--", 0) == 0 || tag.rfind("<!", 0) == 0 ||
+        tag.rfind("<?", 0) == 0) {
+      continue;
+    }
+
+    std::size_t cursor = 1;
+    while (cursor < tag.size() &&
+           std::isspace(static_cast<unsigned char>(tag[cursor]))) {
+      ++cursor;
+    }
+    bool closing = false;
+    if (cursor < tag.size() && tag[cursor] == '/') {
+      closing = true;
+      ++cursor;
+    }
+    while (cursor < tag.size() &&
+           std::isspace(static_cast<unsigned char>(tag[cursor]))) {
+      ++cursor;
+    }
+    const std::size_t name_start = cursor;
+    while (cursor < tag.size() &&
+           (std::isalnum(static_cast<unsigned char>(tag[cursor])) ||
+            tag[cursor] == ':' || tag[cursor] == '_' || tag[cursor] == '-')) {
+      ++cursor;
+    }
+    if (cursor == name_start) {
+      continue;
+    }
+    std::string name = lowercase(tag.substr(name_start, cursor - name_start));
+    const std::size_t prefix = name.find(':');
+    if (prefix != std::string::npos) {
+      name = name.substr(prefix + 1);
+    }
+    const std::string attrs_text =
+        cursor < tag.size() ? tag.substr(cursor, tag.size() - cursor - 1) : "";
     const bool self_closing =
         !attrs_text.empty() &&
         attrs_text.find_last_not_of(" \t\r\n") != std::string::npos &&
         attrs_text[attrs_text.find_last_not_of(" \t\r\n")] == '/';
+
+    if (!closing && name == "svg" && !read_root_svg_size) {
+      read_root_svg_size = true;
+      result.width = read_number(attr(tag, "width"), result.width);
+      result.height = read_number(attr(tag, "height"), result.height);
+      const auto vb = parse_numbers(attr(tag, "viewBox"));
+      if (vb.size() == 4 && vb[2] > 0.0 && vb[3] > 0.0) {
+        if (attr(tag, "width").empty()) result.width = vb[2];
+        if (attr(tag, "height").empty()) result.height = vb[3];
+      }
+    }
 
     if (closing) {
       if ((name == "g" || name == "svg" || name == "defs" ||
@@ -443,7 +573,8 @@ SvgImportResult flatten_svg_file(const std::string& file_path) {
       continue;
     }
 
-    SvgContext context = contexts.back();
+    const SvgContext parent_context = contexts.back();
+    SvgContext context = parent_context;
     context.transform =
         multiply(context.transform, parse_transform(attr(tag, "transform"), result.warnings));
     context.hidden = context.hidden || hidden_by_display_or_paint(tag);
@@ -454,6 +585,18 @@ SvgImportResult flatten_svg_file(const std::string& file_path) {
         name == "mask" || name == "clippath") {
       context.hidden = true;
     }
+    if (name == "g" && !context.hidden) {
+      const bool explicit_layer =
+          lowercase(attr(tag, "inkscape:groupmode")) == "layer" ||
+          !attr(tag, "inkscape:label").empty();
+      if (explicit_layer || parent_context.group_depth == 0) {
+        result.layers.push_back(SvgLayer{
+            .name = layer_name_from_tag(tag, result.layers.size()),
+        });
+        context.layer_index = result.layers.size() - 1;
+      }
+      context.group_depth = parent_context.group_depth + 1;
+    }
     if (container && !self_closing) {
       contexts.push_back(context);
       continue;
@@ -463,8 +606,9 @@ SvgImportResult flatten_svg_file(const std::string& file_path) {
     }
 
     const Transform& transform = context.transform;
+    auto& layer_segments = result.layers[context.layer_index].segments;
     if (name == "line") {
-      add_segment(result.segments,
+      add_segment(layer_segments,
                   read_number(attr(tag, "x1"), 0.0),
                   read_number(attr(tag, "y1"), 0.0),
                   read_number(attr(tag, "x2"), 0.0),
@@ -475,32 +619,46 @@ SvgImportResult flatten_svg_file(const std::string& file_path) {
       const double y = read_number(attr(tag, "y"), 0.0);
       const double w = read_number(attr(tag, "width"), 0.0);
       const double h = read_number(attr(tag, "height"), 0.0);
-      add_segment(result.segments, x, y, x + w, y, transform);
-      add_segment(result.segments, x + w, y, x + w, y + h, transform);
-      add_segment(result.segments, x + w, y + h, x, y + h, transform);
-      add_segment(result.segments, x, y + h, x, y, transform);
+      add_segment(layer_segments, x, y, x + w, y, transform);
+      add_segment(layer_segments, x + w, y, x + w, y + h, transform);
+      add_segment(layer_segments, x + w, y + h, x, y + h, transform);
+      add_segment(layer_segments, x, y + h, x, y, transform);
     } else if (name == "polyline") {
-      add_poly_points(result.segments, attr(tag, "points"), false, transform);
+      add_poly_points(layer_segments, attr(tag, "points"), false, transform);
     } else if (name == "polygon") {
-      add_poly_points(result.segments, attr(tag, "points"), true, transform);
+      add_poly_points(layer_segments, attr(tag, "points"), true, transform);
     } else if (name == "circle") {
       const double r = read_number(attr(tag, "r"), 0.0);
-      add_ellipse(result.segments,
+      add_ellipse(layer_segments,
                   read_number(attr(tag, "cx"), 0.0),
                   read_number(attr(tag, "cy"), 0.0),
                   r,
                   r,
                   transform);
     } else if (name == "ellipse") {
-      add_ellipse(result.segments,
+      add_ellipse(layer_segments,
                   read_number(attr(tag, "cx"), 0.0),
                   read_number(attr(tag, "cy"), 0.0),
                   read_number(attr(tag, "rx"), 0.0),
                   read_number(attr(tag, "ry"), 0.0),
                   transform);
     } else if (name == "path") {
-      flatten_path(result.segments, result.warnings, attr(tag, "d"), transform);
+      flatten_path(layer_segments, result.warnings, attr(tag, "d"), transform);
     }
+  }
+
+  std::vector<SvgLayer> non_empty_layers;
+  for (auto& layer : result.layers) {
+    if (!layer.segments.empty()) {
+      non_empty_layers.push_back(std::move(layer));
+    }
+  }
+  result.layers = std::move(non_empty_layers);
+  result.segments.clear();
+  for (const auto& layer : result.layers) {
+    result.segments.insert(result.segments.end(),
+                           layer.segments.begin(),
+                           layer.segments.end());
   }
 
   if (std::regex_search(text, std::regex(R"(<image\b)", std::regex::icase))) {

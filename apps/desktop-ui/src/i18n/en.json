@@ -36,7 +36,8 @@
     "sketchTool": "Sketch · Tool",
     "suppress": "Suppress",
     "unlink": "Unlink",
-    "unsuppress": "Unsuppress"
+    "unsuppress": "Unsuppress",
+    "working": "Working"
   },
   "header": {
     "aiAssistant": "AI Assistant",
@@ -404,10 +405,15 @@
       "height": "Height",
       "imageTitle": "Import Image",
       "lockAspect": "Lock aspect",
+      "missingFileOrPlane": "Choose a plane and file before confirming.",
+      "missingPlane": "Choose a plane before confirming.",
+      "missingSvgFile": "Choose an SVG file before confirming.",
+      "noPendingImage": "Image import has no pending feature to confirm.",
       "offset": "Offset (mm)",
       "planeReady": "Plane selected",
       "rotation": "Rotation",
       "size": "Size (mm)",
+      "svgDisabled": "SVG import is temporarily disabled.",
       "svgTitle": "Import SVG",
       "width": "Width"
     },
@@ -647,6 +653,11 @@
   },
   "debug": {
     "coreMessages": "Core Messages"
+  },
+  "toasts": {
+    "dismiss": "Dismiss notification",
+    "error": "Error",
+    "warning": "Warning"
   },
   "dialogs": {
     "exportStepTitle": "Export STEP",

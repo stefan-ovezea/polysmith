@@ -98,19 +98,24 @@ starts with a plane and a file instead of geometry selection alone:
 1. The user invokes **Import > Image** or **Import > SVG**.
 2. If a reference plane, construction plane, or planar face is already selected,
    the panel uses it. Otherwise the panel opens in a choose-plane phase.
-3. File picking is disabled until the panel has a valid plane. Once the user
-   picks a file, the UI sends `create_image_import` or `create_svg_import`.
+3. File picking is disabled until the panel has a valid plane. For images, the
+   UI sends `create_image_import` after the file is picked so the core can own
+   the pending reference-image preview. For SVGs, the UI keeps only the selected
+   source file path and placement form state until **Confirm**.
 4. For images, the core owns the pending feature, copied asset reference,
    placement parameters, and viewport preview payload. The UI only renders that
    payload and edits plane-local X/Y offset, in-plane rotation, width/height,
    and aspect lock through the matching update command.
-5. For SVGs, file selection is the commit point: the core flattens supported
-   vector geometry directly into one new sketch on the selected plane. SVG files
-   are not kept as document assets or shown as pending asset previews.
+5. For SVGs, **Confirm** sends `create_svg_import`; the core converts supported
+   vector geometry directly into one or more sketches on the selected plane.
+   Ungrouped SVG geometry becomes one sketch; visible SVG groups/layers become
+   separate sketches. SVG files are not kept as document assets or shown as
+   pending asset previews.
 6. **Confirm** closes the image panel and marks the reference image
-   non-pending. **Cancel** calls the matching cancel command, removes the
-   pending image feature, and cleans its staged asset when no other feature
-   references it.
+   non-pending, or commits the SVG sketch import. **Cancel** calls the matching
+   cancel command for pending image features and cleans staged image assets when
+   no other feature references them. SVG cancel closes the panel without a core
+   command because no pending SVG feature exists.
 
 ## Selection feedback rules
 

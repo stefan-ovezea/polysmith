@@ -212,6 +212,39 @@ bool test_svg_import_creates_one_sketch_without_asset_preview() {
                 "expected SVG y transform end");
 }
 
+bool test_svg_group_layers_create_multiple_sketches() {
+  const fs::path dir = test_dir();
+  const fs::path source = dir / "layered.svg";
+  write_file(source,
+             R"(<svg width="20" height="20" viewBox="0 0 20 20">)"
+             R"(<g id="outer"><rect x="0" y="0" width="10" height="10"/></g>)"
+             R"(<g inkscape:label="detail"><line x1="12" y1="12" x2="18" y2="18"/></g>)"
+             R"(</svg>)");
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.create_svg_import(svg_params(), source.string());
+  const auto viewport = build_viewport_state(document);
+  int sketches_with_geometry = 0;
+  int imported_line_count = 0;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value() &&
+        !feature.sketch_parameters->lines.empty()) {
+      ++sketches_with_geometry;
+      imported_line_count +=
+          static_cast<int>(feature.sketch_parameters->lines.size());
+    }
+  }
+  return expect(count_kind(document, "svg_import") == 0,
+                "expected layered SVG import to create no asset feature") &&
+         expect(viewport.svg_import_previews.empty(),
+                "expected layered SVG import to create no asset preview") &&
+         expect(sketches_with_geometry == 2,
+                "expected two SVG groups to create two sketches") &&
+         expect(imported_line_count == 5,
+                "expected grouped SVG line count to be preserved");
+}
+
 bool test_svg_without_usable_geometry_fails_cleanly() {
   const fs::path dir = test_dir();
   const fs::path source = dir / "empty.svg";
@@ -236,6 +269,7 @@ int main() {
   if (!test_image_import_lifecycle_and_assets()) return 1;
   if (!test_image_cancel_removes_pending_feature_and_staged_asset()) return 1;
   if (!test_svg_import_creates_one_sketch_without_asset_preview()) return 1;
+  if (!test_svg_group_layers_create_multiple_sketches()) return 1;
   if (!test_svg_without_usable_geometry_fails_cleanly()) return 1;
 
   std::cout << "import_test passed\n";

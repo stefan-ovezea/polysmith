@@ -39,6 +39,7 @@
 #include "core/face_geometry.h"
 #include "core/feature_shape.h"
 #include "core/formula_eval.h"
+#include "core/logger.h"
 #include "core/refresh_dependents.h"
 #include "core/svg_import.h"
 #include "protocol/serialization.h"
@@ -354,6 +355,77 @@ SketchFeatureParameters::SketchPlaneFrame to_sketch_plane_frame(
       .normal_y = frame.normal_y,
       .normal_z = frame.normal_z,
   };
+}
+
+std::string imported_svg_sketch_name(const SvgImportFeatureParameters& params,
+                                     const SvgLayer& layer,
+                                     bool multiple_layers) {
+  const std::string base =
+      params.file_name.empty() ? "Imported SVG" : params.file_name;
+  if (!multiple_layers) {
+    return params.file_name.empty() ? "Imported SVG Sketch" : params.file_name;
+  }
+  return base + " - " + (layer.name.empty() ? "Layer" : layer.name);
+}
+
+std::vector<std::string> append_svg_sketches_to_document(
+    DocumentState& document,
+    int& next_feature_id,
+    int& next_sketch_line_id,
+    const SvgImportFeatureParameters& params,
+    const SvgImportResult& svg) {
+  std::vector<const SvgLayer*> layers;
+  for (const auto& layer : svg.layers) {
+    if (!layer.segments.empty()) {
+      layers.push_back(&layer);
+    }
+  }
+  if (layers.empty()) {
+    throw std::runtime_error("SVG did not contain usable vector geometry");
+  }
+
+  std::vector<std::string> created_ids;
+  const bool multiple_layers = layers.size() > 1;
+  for (const auto* layer : layers) {
+    FeatureEntry sketch;
+    sketch.id = feature_id_from_index(next_feature_id++);
+    sketch.kind = "sketch";
+    sketch.name = imported_svg_sketch_name(params, *layer, multiple_layers);
+    sketch.status = "ok";
+    SketchFeatureParameters sketch_params;
+    sketch_params.plane_id = params.plane_id;
+    if (params.plane_frame.has_value()) {
+      sketch_params.plane_frame = to_sketch_plane_frame(params.plane_frame.value());
+    }
+    sketch_params.active_tool = "select";
+    for (const auto& segment : layer->segments) {
+      const auto [sx, sy] =
+          transform_svg_point(svg, params, segment.start_x, segment.start_y);
+      const auto [ex, ey] =
+          transform_svg_point(svg, params, segment.end_x, segment.end_y);
+      const int line_index = next_sketch_line_id++;
+      sketch_params.lines.push_back(SketchLine{
+          .id = "line-" + std::to_string(line_index),
+          .start_point_id = "point-line-" + std::to_string(line_index) + "-start",
+          .end_point_id = "point-line-" + std::to_string(line_index) + "-end",
+          .start_x = sx,
+          .start_y = sy,
+          .end_x = ex,
+          .end_y = ey,
+          .constraint = std::nullopt,
+          .is_construction = false,
+      });
+    }
+    sketch.sketch_parameters = sketch_params;
+    refresh_sketch_derived_state(sketch);
+    sketch.parameters_summary =
+        sketch_params.plane_id + " · " +
+        std::to_string(sketch.sketch_parameters->lines.size()) +
+        " imported lines";
+    created_ids.push_back(sketch.id);
+    document.feature_history.push_back(std::move(sketch));
+  }
+  return created_ids;
 }
 
 // Test whether two solid shapes intersect with non-zero volume. Used by
@@ -8152,49 +8224,32 @@ DocumentState DocumentManager::create_svg_import(
   params.asset_path = source_path;
   params.media_type = "image/svg+xml";
   params.is_pending = false;
+  log_info("svg_import", "Starting SVG import: " + params.file_name);
   const auto svg = flatten_svg_file(source_path);
+  log_info("svg_import",
+           "Parsed SVG import: " + std::to_string(svg.layers.size()) +
+               " layer(s), " + std::to_string(svg.segments.size()) +
+               " segment(s)");
+  for (const auto& warning : svg.warnings) {
+    log_warn("svg_import", warning);
+  }
   if (svg.segments.empty()) {
     throw std::runtime_error("SVG did not contain usable vector geometry");
   }
   push_undo_state();
   clear_redo_stack();
 
-  FeatureEntry sketch;
-  sketch.id = feature_id_from_index(next_feature_id_++);
-  sketch.kind = "sketch";
-  sketch.name = params.file_name.empty() ? "Imported SVG Sketch"
-                                         : params.file_name;
-  sketch.status = "ok";
-  SketchFeatureParameters sketch_params;
-  sketch_params.plane_id = params.plane_id;
-  if (params.plane_frame.has_value()) {
-    sketch_params.plane_frame = to_sketch_plane_frame(params.plane_frame.value());
-  }
-  sketch_params.active_tool = "select";
-  for (const auto& segment : svg.segments) {
-    const auto [sx, sy] = transform_svg_point(svg, params, segment.start_x, segment.start_y);
-    const auto [ex, ey] = transform_svg_point(svg, params, segment.end_x, segment.end_y);
-    const int line_index = next_sketch_line_id_++;
-    sketch_params.lines.push_back(SketchLine{
-        .id = "line-" + std::to_string(line_index),
-        .start_point_id = "point-line-" + std::to_string(line_index) + "-start",
-        .end_point_id = "point-line-" + std::to_string(line_index) + "-end",
-        .start_x = sx,
-        .start_y = sy,
-        .end_x = ex,
-        .end_y = ey,
-        .constraint = std::nullopt,
-        .is_construction = false,
-    });
-  }
-  sketch.sketch_parameters = sketch_params;
-  refresh_sketch_derived_state(sketch);
-  sketch.parameters_summary =
-      sketch_params.plane_id + " · " +
-      std::to_string(sketch.sketch_parameters->lines.size()) + " imported lines";
-
-  document_->feature_history.push_back(sketch);
-  document_->selected_feature_id = sketch.id;
+  log_info("svg_import", "Creating sketches for SVG import");
+  const auto created_ids =
+      append_svg_sketches_to_document(*document_,
+                                      next_feature_id_,
+                                      next_sketch_line_id_,
+                                      params,
+                                      svg);
+  log_info("svg_import",
+           "Created " + std::to_string(created_ids.size()) +
+               " sketch(es) from SVG import");
+  document_->selected_feature_id = created_ids.back();
   clear_import_selection(*document_);
   document_->revision++;
   return document_.value();
@@ -8239,57 +8294,14 @@ DocumentState DocumentManager::confirm_svg_import(
     throw std::runtime_error("SVG did not contain usable vector geometry");
   }
 
-  FeatureEntry sketch;
-  sketch.id = feature_id_from_index(next_feature_id_++);
-  sketch.kind = "sketch";
-  sketch.name = params.file_name.empty() ? "Imported SVG Sketch"
-                                         : params.file_name;
-  sketch.status = "ok";
-  SketchFeatureParameters sketch_params;
-  sketch_params.plane_id = params.plane_id;
-  if (params.plane_frame.has_value()) {
-    SketchFeatureParameters::SketchPlaneFrame frame{
-        .origin_x = params.plane_frame->origin_x,
-        .origin_y = params.plane_frame->origin_y,
-        .origin_z = params.plane_frame->origin_z,
-        .x_axis_x = params.plane_frame->x_axis_x,
-        .x_axis_y = params.plane_frame->x_axis_y,
-        .x_axis_z = params.plane_frame->x_axis_z,
-        .y_axis_x = params.plane_frame->y_axis_x,
-        .y_axis_y = params.plane_frame->y_axis_y,
-        .y_axis_z = params.plane_frame->y_axis_z,
-        .normal_x = params.plane_frame->normal_x,
-        .normal_y = params.plane_frame->normal_y,
-        .normal_z = params.plane_frame->normal_z,
-    };
-    sketch_params.plane_frame = frame;
-  }
-  sketch_params.active_tool = "select";
-  for (const auto& segment : svg.segments) {
-    const auto [sx, sy] = transform_svg_point(svg, params, segment.start_x, segment.start_y);
-    const auto [ex, ey] = transform_svg_point(svg, params, segment.end_x, segment.end_y);
-    const int line_index = next_sketch_line_id_++;
-    sketch_params.lines.push_back(SketchLine{
-        .id = "line-" + std::to_string(line_index),
-        .start_point_id = "point-line-" + std::to_string(line_index) + "-start",
-        .end_point_id = "point-line-" + std::to_string(line_index) + "-end",
-        .start_x = sx,
-        .start_y = sy,
-        .end_x = ex,
-        .end_y = ey,
-        .constraint = std::nullopt,
-        .is_construction = false,
-    });
-  }
-  sketch.sketch_parameters = sketch_params;
-  refresh_sketch_derived_state(sketch);
-  sketch.parameters_summary =
-      sketch_params.plane_id + " · " +
-      std::to_string(sketch.sketch_parameters->lines.size()) + " imported lines";
-
   remove_feature_by_id(*document_, feature_id);
-  document_->feature_history.push_back(sketch);
-  document_->selected_feature_id = sketch.id;
+  const auto created_ids =
+      append_svg_sketches_to_document(*document_,
+                                      next_feature_id_,
+                                      next_sketch_line_id_,
+                                      params,
+                                      svg);
+  document_->selected_feature_id = created_ids.back();
   document_->revision++;
   return document_.value();
 }

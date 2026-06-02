@@ -275,12 +275,13 @@ tool:
   `feature_history[].image_import_parameters`; render payloads appear in
   `viewport_state.reference_images[]`.
 - `create_svg_import { source_path, ...placement }` imports an SVG directly as
-  one new sketch on the selected plane. SVG files are not kept as document
-  assets. The command applies the plane transform, flattens supported vector
-  geometry into sketch lines, selects the new sketch, and fails cleanly if no
-  usable vector geometry remains. `update_svg_import`, `confirm_svg_import`,
-  and `cancel_svg_import` remain compatibility commands for legacy pending SVG
-  preview features.
+  one or more sketches on the selected plane. SVG files are not kept as
+  document assets. Ungrouped vector geometry becomes one sketch; visible SVG
+  groups/layers become separate sketches. The command applies the plane
+  transform, converts supported vector geometry into sketch lines, selects one
+  of the new sketches, and fails cleanly if no usable vector geometry remains.
+  `update_svg_import`, `confirm_svg_import`, and `cancel_svg_import` remain
+  compatibility commands for legacy pending SVG preview features.
 - `create_body_copy { source_body_id, copy_mode? }` adds a core-owned `body_copy` timeline feature. `copy_mode: "linked"` (default) resolves the source body during replay, emits a new body under the copy feature id, preserves the source local frame, and marks the copy `dependency_broken` if the source body can no longer be resolved. `copy_mode: "standalone"` stores a frozen core shape snapshot and local frame so the copy survives later source edits independently.
 - `unlink_body_copy { feature_id }` converts a linked `body_copy` into a standalone copy by resolving the copy at its current feature-history position, storing that shape snapshot plus local frame, and flipping `copy_mode` to `"standalone"`. The change is undoable through the normal undo stack but intentionally removes the future source-body dependency.
 - `set_body_color { body_id, color }`, `set_face_color { face_id, color }`, `clear_body_color { body_id }`, `clear_face_color { face_id }`, and `clear_appearance_overrides {}` maintain document-scoped appearance overrides. Colors are opaque `#RRGGBB` strings stored under `document_state.appearance`. Body overrides are keyed by body/root feature id. Face overrides store the emitted `face_id`, owner body id, and a face geometry signature so the core only reapplies them when the face still resolves to the same topology; semantic legacy face ids use their stable face id as the signature.

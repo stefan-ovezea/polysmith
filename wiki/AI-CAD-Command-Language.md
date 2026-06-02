@@ -557,8 +557,9 @@ Returns `document_state`.
 
 #### `create_svg_import`
 
-Imports an SVG directly as one new sketch on the selected plane. SVG files are
-not kept as document assets.
+Imports an SVG directly as one or more sketches on the selected plane. SVG
+files are not kept as document assets. Ungrouped vector geometry becomes one
+sketch; visible SVG groups/layers become separate sketches.
 
 Payload:
 
@@ -569,7 +570,8 @@ Payload:
 }
 ```
 
-Returns `document_state`. The selected feature is the new `sketch`.
+Returns `document_state`. The selected feature is one of the new `sketch`
+features.
 
 #### `update_svg_import`
 

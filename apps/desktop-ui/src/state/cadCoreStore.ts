@@ -14,9 +14,18 @@ import {
   getViewportFromMessage,
 } from "../lib/ipcProtocol";
 
+export type ToastKind = "warning" | "error";
+
+export interface ToastNotice {
+  id: string;
+  kind: ToastKind;
+  message: string;
+}
+
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
   messages: string[];
+  toasts: ToastNotice[];
   logs: LogEntry[];
   document: DocumentState | null;
   session: SessionState | null;
@@ -26,9 +35,15 @@ interface CadCoreStoreState {
   setStatus: (status: CadCoreStoreState["status"]) => void;
   handleCoreStopped: () => void;
   addMessage: (message: string) => void;
+  addToast: (kind: ToastKind, message: string) => void;
+  dismissToast: (id: string) => void;
   addLogEntry: (entry: LogEntry) => void;
   clearLogs: () => void;
   handleCoreMessage: (message: CoreMessage) => void;
+}
+
+function toastId() {
+  return crypto.randomUUID();
 }
 
 // Wait until the store receives a new `document` snapshot that satisfies a
@@ -53,6 +68,47 @@ export function awaitDocumentChange(
         return;
       }
       if (predicate(doc, initial)) {
+        window.clearTimeout(timer);
+        unsubscribe();
+        resolve(doc);
+      }
+    });
+  });
+}
+
+export function awaitDocumentChangeOrCoreError(
+  commandId: string,
+  predicate: (next: DocumentState, previous: DocumentState | null) => boolean,
+  timeoutMs = 4000,
+): Promise<DocumentState> {
+  return new Promise((resolve, reject) => {
+    const initialDocument = useCadCoreStore.getState().document;
+    const initialEvent = useCadCoreStore.getState().lastEvent;
+    const timer = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for cad_core to finish the command"));
+    }, timeoutMs);
+    const unsubscribe = useCadCoreStore.subscribe((state) => {
+      const event = state.lastEvent;
+      if (
+        event &&
+        event !== initialEvent &&
+        event.type === "error" &&
+        event.id === commandId
+      ) {
+        window.clearTimeout(timer);
+        unsubscribe();
+        reject(
+          new Error(`${event.payload.code}: ${event.payload.message}`),
+        );
+        return;
+      }
+
+      const doc = state.document;
+      if (!doc || doc === initialDocument) {
+        return;
+      }
+      if (predicate(doc, initialDocument)) {
         window.clearTimeout(timer);
         unsubscribe();
         resolve(doc);
@@ -113,6 +169,7 @@ export function awaitDocumentSaved(
 export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   status: "idle",
   messages: [],
+  toasts: [],
   logs: [],
   document: null,
   session: null,
@@ -131,6 +188,14 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
     }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
+  addToast: (kind, message) =>
+    set((state) => ({
+      toasts: [...state.toasts, { id: toastId(), kind, message }].slice(-5),
+    })),
+  dismissToast: (id) =>
+    set((state) => ({
+      toasts: state.toasts.filter((toast) => toast.id !== id),
+    })),
   addLogEntry: (entry) =>
     set((state) => ({ logs: [...state.logs, entry].slice(-500) })),
   clearLogs: () => set({ logs: [] }),
@@ -174,9 +239,28 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
             ? `event: document_exported - ${message.payload.file_path}`
             : `event: ${message.type}`;
 
+      const toasts = [...state.toasts];
+      if (message.type === "error" && error) {
+        toasts.push({
+          id: toastId(),
+          kind: "error",
+          message: `${error.payload.code}: ${error.payload.message}`,
+        });
+      } else if (
+        message.type === "log" &&
+        (message.payload.level === "warn" || message.payload.level === "error")
+      ) {
+        toasts.push({
+          id: toastId(),
+          kind: message.payload.level === "error" ? "error" : "warning",
+          message: message.payload.message,
+        });
+      }
+
       return {
         ...nextState,
         messages: [...state.messages, renderedMessage],
+        toasts: toasts.slice(-5),
       } as CadCoreStoreState;
     }),
 }));

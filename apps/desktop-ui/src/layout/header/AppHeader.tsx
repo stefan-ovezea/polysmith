@@ -282,7 +282,6 @@ interface AppHeaderProps {
   onSaveDocument: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
   onImportImage: () => void;
-  onImportSvg: () => void;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   logCount: number;
@@ -405,7 +404,6 @@ export function AppHeader({
   onSaveDocument,
   onLoadDocument,
   onImportImage,
-  onImportSvg,
   onUndo,
   onRedo,
   logCount,
@@ -629,7 +627,6 @@ export function AppHeader({
             disabled={disabled}
             items={[
               { label: t("header.importImage"), onSelect: onImportImage },
-              { label: t("header.importSvg"), onSelect: onImportSvg },
             ]}
           />
           <MenuDropdown

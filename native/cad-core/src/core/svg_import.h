@@ -12,9 +12,15 @@ struct SvgLineSegment {
   double end_y = 0.0;
 };
 
+struct SvgLayer {
+  std::string name;
+  std::vector<SvgLineSegment> segments;
+};
+
 struct SvgImportResult {
   double width = 100.0;
   double height = 100.0;
+  std::vector<SvgLayer> layers;
   std::vector<SvgLineSegment> segments;
   std::vector<std::string> warnings;
 };

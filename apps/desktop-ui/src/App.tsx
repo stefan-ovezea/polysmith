@@ -6,6 +6,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import {
   awaitDocumentChange,
+  awaitDocumentChangeOrCoreError,
   awaitDocumentExport,
   awaitDocumentSaved,
   useCadCoreStore,
@@ -34,6 +35,10 @@ import {
   applyHoleStandard,
   findHoleStandard,
   holeStandardsForMode,
+  makeCreateSvgImportCommand,
+  makeGetSessionStateCommand,
+  makeGetViewportStateCommand,
+  sendCoreCommand,
 } from "./lib";
 import {
   embedOrcaWindow,
@@ -65,6 +70,7 @@ import {
   MessageLog,
   MovePreviewPanel,
   ImportPreviewPanel,
+  ToastStack,
   SettingsModal,
   ViewportPanel,
   ProjectsPanel,
@@ -86,6 +92,7 @@ import type {
   ThreadFeatureParameters,
 } from "./types";
 import type { DocumentState } from "./types/ipc";
+import type { CreateSvgImportCommand } from "./types/ipc";
 import type { RecentProject, RecentProjectsDocument } from "./lib";
 
 const DEFAULT_EXTRUDE_DEPTH = 20;
@@ -550,11 +557,14 @@ function App() {
   const [hierarchyWidth, setHierarchyWidth] = useState<number>(320);
   const status = useCadCoreStore((state) => state.status);
   const messages = useCadCoreStore((state) => state.messages);
+  const toasts = useCadCoreStore((state) => state.toasts);
   const logs = useCadCoreStore((state) => state.logs);
   const document = useCadCoreStore((state) => state.document);
   const session = useCadCoreStore((state) => state.session);
   const viewport = useCadCoreStore((state) => state.viewport);
   const addMessage = useCadCoreStore((state) => state.addMessage);
+  const addToast = useCadCoreStore((state) => state.addToast);
+  const dismissToast = useCadCoreStore((state) => state.dismissToast);
   const clearLogs = useCadCoreStore((state) => state.clearLogs);
   const [isLogsOpen, setIsLogsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -822,6 +832,10 @@ function App() {
   }
 
   function triggerImportAction(kind: "image" | "svg") {
+    if (kind === "svg") {
+      addToast("warning", t("panels.import.svgDisabled"));
+      return;
+    }
     if (
       extrudeAction ||
       loftAction ||
@@ -899,19 +913,17 @@ function App() {
     );
     placement.source_width = size.width;
     placement.source_height = size.height;
-    const expectedFeatureKind =
-      importAction.kind === "image" ? "image_import" : "sketch";
-    const documentPromise = awaitDocumentChange((next) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const feature = next.feature_history.find(
-        (entry) => entry.feature_id === next.selected_feature_id,
-      );
-      return feature?.kind === expectedFeatureKind;
-    }, 8000);
     try {
       if (importAction.kind === "image") {
+        const documentPromise = awaitDocumentChange((next) => {
+          if (!next.selected_feature_id) {
+            return false;
+          }
+          const feature = next.feature_history.find(
+            (entry) => entry.feature_id === next.selected_feature_id,
+          );
+          return feature?.kind === "image_import";
+        }, 8000);
         await createImageImport(result, placement);
         const nextDocument = await documentPromise;
         const featureId = nextDocument.selected_feature_id;
@@ -926,13 +938,15 @@ function App() {
           parameters: placement,
         });
       } else {
-        await createSvgImport(result, placement);
-        await documentPromise;
-        setImportAction(null);
-        await clearSelection();
+        setImportAction({
+          ...importAction,
+          featureId: null,
+          sourcePath: result,
+          fileName: result.split(/[\\/]/).pop() ?? result,
+          parameters: placement,
+        });
       }
     } catch (error) {
-      void documentPromise.catch(() => undefined);
       addMessage(`import error: ${String(error)}`);
       setImportAction((current) =>
         current
@@ -1056,7 +1070,6 @@ function App() {
     updateImageImport,
     confirmImageImport,
     cancelImageImport,
-    createSvgImport,
     updateSvgImport,
     confirmSvgImport,
     cancelSvgImport,
@@ -4817,6 +4830,7 @@ function App() {
 
   return (
     <main className="cad-shell h-screen">
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
           <AppHeader
           workspaceView={workspaceView}
@@ -4894,7 +4908,6 @@ function App() {
             requestUnsavedGate({ kind: "load", filePath });
           }}
           onImportImage={() => triggerImportAction("image")}
-          onImportSvg={() => triggerImportAction("svg")}
           onUndo={async () => {
             await runAction(undo);
           }}
@@ -7231,7 +7244,11 @@ function App() {
                 <ImportPreviewPanel
                   kind={importAction.kind}
                   planeSelected={importAction.parameters !== null}
-                  fileSelected={importAction.featureId !== null}
+                  fileSelected={
+                    importAction.kind === "image"
+                      ? importAction.featureId !== null
+                      : importAction.sourcePath !== null
+                  }
                   fileName={importAction.fileName}
                   parameters={importAction.parameters}
                   disabled={status !== "connected"}
@@ -7252,20 +7269,58 @@ function App() {
                     });
                   }}
                   onConfirm={async () => {
-                    if (!importAction.featureId) {
+                    if (!importAction.parameters) {
+                      addToast("warning", t("panels.import.missingPlane"));
                       return;
                     }
                     try {
                       if (importAction.kind === "image") {
+                        if (!importAction.featureId) {
+                          addToast("warning", t("panels.import.noPendingImage"));
+                          return;
+                        }
                         await confirmImageImport(importAction.featureId!);
                       } else {
-                        await confirmSvgImport(importAction.featureId!);
+                        if (!importAction.sourcePath) {
+                          addToast("warning", t("panels.import.missingSvgFile"));
+                          return;
+                        }
+                        const previousSketchCount =
+                          document?.feature_history.filter(
+                            (feature) => feature.kind === "sketch",
+                          ).length ?? 0;
+                        const command = makeCreateSvgImportCommand(
+                          importAction.sourcePath,
+                          importAction.parameters,
+                        ) as CreateSvgImportCommand;
+                        const documentPromise = awaitDocumentChangeOrCoreError(
+                          command.id,
+                          (next) => {
+                            const nextSketchCount = next.feature_history.filter(
+                              (feature) => feature.kind === "sketch",
+                            ).length;
+                            return nextSketchCount > previousSketchCount;
+                          },
+                          30000,
+                        );
+                        await sendCoreCommand(command);
+                        await documentPromise;
+                        await sendCoreCommand(makeGetSessionStateCommand());
+                        await sendCoreCommand(makeGetViewportStateCommand());
                       }
-                      await clearSelection();
+                      if (importAction.kind === "image") {
+                        await clearSelection();
+                      }
                       setImportAction(null);
                     } catch (error) {
-                      addMessage(`import confirm error: ${String(error)}`);
+                      const message = `import confirm error: ${String(error)}`;
+                      addMessage(message);
+                      addToast("error", message);
                     }
+                  }}
+                  onError={(message) => {
+                    addMessage(`import panel error: ${message}`);
+                    addToast("warning", message);
                   }}
                   onCancel={async () => {
                     await cancelActiveTool();

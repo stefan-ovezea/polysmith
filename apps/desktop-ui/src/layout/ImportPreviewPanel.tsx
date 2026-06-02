@@ -14,6 +14,7 @@ interface ImportPreviewPanelProps {
   onPreviewParameters: (parameters: ImportPlacementPayload) => Promise<void>;
   onConfirm: () => Promise<void> | void;
   onCancel: () => Promise<void> | void;
+  onError: (message: string) => void;
 }
 
 type NumberField =
@@ -44,9 +45,11 @@ export function ImportPreviewPanel({
   onPreviewParameters,
   onConfirm,
   onCancel,
+  onError,
 }: ImportPreviewPanelProps) {
   const { t } = useTranslation();
   const [values, setValues] = useState(() => stringValues(parameters));
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const parametersRef = useRef(parameters);
 
   useEffect(() => {
@@ -81,6 +84,24 @@ export function ImportPreviewPanel({
     void onPreviewParameters(next);
   }
 
+  async function handleConfirm() {
+    if (disabled || isSubmitting) {
+      return;
+    }
+    if (!fileSelected || !parametersRef.current) {
+      onError(t("panels.import.missingFileOrPlane"));
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onConfirm();
+    } catch (error) {
+      onError(String(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function renderField(field: NumberField, label: string) {
     return (
       <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
@@ -90,7 +111,7 @@ export function ImportPreviewPanel({
           type="number"
           step="any"
           value={values[field]}
-          disabled={disabled || !parameters}
+          disabled={disabled || isSubmitting || !parameters}
           onChange={(event) => updateField(field, event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -116,16 +137,17 @@ export function ImportPreviewPanel({
       <button
         type="button"
         className="cad-action-ghost mt-4 w-full"
-        disabled={disabled || !planeSelected}
+        disabled={disabled || isSubmitting || !planeSelected}
         onClick={() => void onPickFile()}
       >
         {fileName ?? t("panels.import.chooseFile")}
       </button>
       <form
+        noValidate
         className="mt-4 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          void onConfirm();
+          void handleConfirm();
         }}
       >
         <div>
@@ -147,7 +169,7 @@ export function ImportPreviewPanel({
           <input
             type="checkbox"
             checked={parameters?.lock_aspect ?? true}
-            disabled={disabled || !parameters}
+            disabled={disabled || isSubmitting || !parameters}
             onChange={(event) => {
               const current = parametersRef.current;
               if (!current) return;
@@ -162,14 +184,18 @@ export function ImportPreviewPanel({
           <button
             type="submit"
             className="cad-action-primary flex-1"
-            disabled={disabled || !fileSelected || !parameters}
+            disabled={disabled || isSubmitting || !fileSelected || !parameters}
+            onClick={(event) => {
+              event.preventDefault();
+              void handleConfirm();
+            }}
           >
-            {t("common.confirm")}
+            {isSubmitting ? t("common.working") : t("common.confirm")}
           </button>
           <button
             type="button"
             className="cad-action-ghost flex-1"
-            disabled={disabled}
+            disabled={disabled || isSubmitting}
             onClick={() => void onCancel()}
           >
             {t("common.cancel")}
