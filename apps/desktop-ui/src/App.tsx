@@ -909,6 +909,8 @@ function App() {
     clearSelection,
     batchSelectSketchEntities,
     updateSelectionFilter,
+    camSetupCreate,
+    camFaceMillingCreate,
   } = useCadCore();
 
   function clearTimelineEditVisibility() {
@@ -5116,6 +5118,24 @@ function App() {
           activeCamOperation={activeCamOperation}
           onSelectCamOperation={(op) => {
             setActiveCamOperation((prev) => (prev === op ? null : op));
+          }}
+          hasCamSetup={document?.cam_setup != null}
+          onCamSetupClick={() => {
+            console.log("[CAM] Setup clicked");
+            void runAction(async () => {
+              await camSetupCreate();
+              console.log("[CAM] Setup done");
+            });
+          }}
+          onCamFaceMillingClick={() => {
+            console.log("[CAM] Face Milling clicked");
+            const body = viewport?.bodies?.[0];
+            if (!body) { console.log("[CAM] No body found"); return; }
+            console.log("[CAM] Creating face milling on body", body.id);
+            void runAction(async () => {
+              await camFaceMillingCreate(body.id, 4);
+              console.log("[CAM] Face milling done");
+            });
           }}
         />
 

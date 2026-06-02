@@ -28,6 +28,7 @@ add_executable(cad_core
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/cam_operation.cpp
+  src/core/face_milling.cpp
   src/core/construction_plane_feature.cpp
   src/core/cylinder_feature.cpp
   src/core/dof_counter.cpp
@@ -81,6 +82,7 @@ add_executable(cad_core_multi_profile_extrude_test
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/cam_operation.cpp
+  src/core/face_milling.cpp
   src/core/construction_plane_feature.cpp
   src/core/cylinder_feature.cpp
   src/core/dof_counter.cpp
@@ -121,6 +123,7 @@ add_executable(cad_core_cam_face_reference_test
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/cam_operation.cpp
+  src/core/face_milling.cpp
   src/core/construction_plane_feature.cpp
   src/core/cylinder_feature.cpp
   src/core/dof_counter.cpp

@@ -362,6 +362,9 @@ interface AppHeaderProps {
   // CAM workspace
   activeCamOperation: CamOperationType | null;
   onSelectCamOperation: (op: CamOperationType) => void;
+  hasCamSetup: boolean;
+  onCamSetupClick: () => void;
+  onCamFaceMillingClick: () => void;
 }
 
 export function AppHeader({
@@ -455,6 +458,9 @@ export function AppHeader({
   onUpdateSelectionFilter,
   activeCamOperation,
   onSelectCamOperation,
+  hasCamSetup,
+  onCamSetupClick,
+  onCamFaceMillingClick,
 }: AppHeaderProps) {
   const { t: _t } = useTranslation();
   // Keep the main navigation bar in English regardless of the locale
@@ -840,7 +846,12 @@ export function AppHeader({
           style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
         >
           {activeCamWorkspace === "milling" ? (
-            <CamMillingToolbar disabled={disabled} />
+            <CamMillingToolbar
+              disabled={disabled}
+              hasSetup={hasCamSetup}
+              onSetupClick={onCamSetupClick}
+              onFaceMillingClick={onCamFaceMillingClick}
+            />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />
           ) : activeCamWorkspace === "printing" ? (

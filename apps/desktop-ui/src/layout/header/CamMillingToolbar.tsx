@@ -5,9 +5,17 @@ const ICON_BUTTON_DISABLED = "cad-icon-button cad-icon-tool h-9 w-9 p-0 opacity-
 
 export interface CamMillingToolbarProps {
   disabled: boolean;
+  hasSetup: boolean;
+  onSetupClick: () => void;
+  onFaceMillingClick: () => void;
 }
 
-export function CamMillingToolbar({ disabled }: CamMillingToolbarProps) {
+export function CamMillingToolbar({
+  disabled,
+  hasSetup,
+  onSetupClick,
+  onFaceMillingClick,
+}: CamMillingToolbarProps) {
   const { t } = useTranslation();
 
   return (
@@ -16,7 +24,8 @@ export function CamMillingToolbar({ disabled }: CamMillingToolbarProps) {
       <button type="button" className={ICON_BUTTON_BASE}
         data-tooltip={t("cam.common.setup")}
         aria-label={t("cam.common.setup")}
-        disabled={disabled}>
+        disabled={disabled}
+        onClick={onSetupClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">
@@ -61,8 +70,12 @@ export function CamMillingToolbar({ disabled }: CamMillingToolbarProps) {
 
       <div className="w-px h-6 cad-panel-soft-border mx-1" />
 
-      <button type="button" className={ICON_BUTTON_DISABLED}
-        data-tooltip={t("cam.common.faceOp")} aria-label={t("cam.common.faceOp")} disabled>
+      <button type="button"
+        className={hasSetup && !disabled ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={t("cam.common.faceOp")}
+        aria-label={t("cam.common.faceOp")}
+        disabled={!hasSetup || disabled}
+        onClick={onFaceMillingClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">

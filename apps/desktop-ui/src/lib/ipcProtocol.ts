@@ -1952,3 +1952,39 @@ export function makeTrimPreviewCommand(
     },
   };
 }
+
+// ── CAM ───────────────────────────────────────────────────────────
+
+export function makeCamSetupCreateCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_setup_create",
+    payload: {
+      name: "Setup",
+      machine_config: { machine_type: "3_axis" },
+      stock: {
+        stock_type: "bounding_box",
+        bounding_box: { min_x: -60, min_y: -60, min_z: -15, max_x: 60, max_y: 60, max_z: 5 },
+      },
+      wcs_origin: { x: 0, y: 0, z: 0 },
+    },
+  } as unknown as CoreCommand;
+}
+
+export function makeCamOperationCreateCommand(
+  operationType: string,
+  bodyId: string,
+  faceIndex: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_operation_create",
+    payload: {
+      operation_type: operationType,
+      name: operationType === "face_milling" ? "Face Mill" : operationType,
+      tool_id: "endmill_6mm",
+      face_reference: { body_id: bodyId, face_index: faceIndex },
+      params: { depth: 0.5, stepover: 5, angle_deg: 0 },
+    },
+  } as unknown as CoreCommand;
+}

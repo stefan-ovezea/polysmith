@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "core/cam_operation.h"
 #include "core/document.h"
 #include "core/viewport.h"
 
@@ -23,7 +24,15 @@ json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive);
+json to_payload(const polysmith::core::CamStockDefinition& stock);
+json to_payload(const polysmith::core::CamSetup& setup);
+json to_payload(const polysmith::core::CamToolDefinition& tool);
+json to_payload(const polysmith::core::ViewportToolpathPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportState& viewport);
+
+polysmith::core::CamStockDefinition stock_from_payload(const json& payload);
+polysmith::core::CamSetup setup_from_payload(const json& payload);
+polysmith::core::CamToolDefinition tool_from_payload(const json& payload);
 
 polysmith::core::ExtrudeFeatureParameters extrude_parameters_from_payload(
     const json& payload);

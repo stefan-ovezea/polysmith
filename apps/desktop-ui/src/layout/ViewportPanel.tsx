@@ -1468,6 +1468,7 @@ const currentGridSpacingRef = useRef(10);
   // Translucent red overlay meshes for in-progress cut extrudes. Built
   // from `cut_previews` and rendered without participating in raycasts.
   const cutPreviewObjectsRef = useRef<THREE.Mesh[]>([]);
+  const toolpathLinesRef = useRef<THREE.Line[]>([]);
   const moveGizmoObjectsRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoDragRef = useRef<MoveGizmoDragState | null>(null);
   const moveGizmoRef = useRef<MoveGizmoDescriptor | null>(moveGizmo);
@@ -10500,6 +10501,7 @@ const currentGridSpacingRef = useRef(10);
       edgeLineObjectsRef.current = [];
       vertexObjectsRef.current = [];
       cutPreviewObjectsRef.current = [];
+      toolpathLinesRef.current = [];
       moveGizmoObjectsRef.current = [];
       moveGizmoDragRef.current = null;
       worldGridRef.current = null;
@@ -10653,6 +10655,7 @@ const currentGridSpacingRef = useRef(10);
     edgeLineObjectsRef.current = [];
     vertexObjectsRef.current = [];
     cutPreviewObjectsRef.current = [];
+    toolpathLinesRef.current = [];
     moveGizmoObjectsRef.current = [];
     // Hovered ids reference disposed THREE objects after a rebuild;
     // null them out so the next pointermove cleanly re-applies hover.
@@ -10736,6 +10739,33 @@ const currentGridSpacingRef = useRef(10);
       const cutPreviewMesh = buildCutPreviewObject(preview);
       cutPreviewObjectsRef.current.push(cutPreviewMesh);
       contentGroup.add(cutPreviewMesh);
+    }
+
+    // ── CAM toolpath lines ──────────────────────────────────────
+    // Rapid moves (G0): red, semi-transparent. Feed moves (G1): green.
+    toolpathLinesRef.current = [];
+    for (const tp of viewport?.toolpaths ?? []) {
+      for (let i = 1; i < tp.points.length; i++) {
+        const prev = tp.points[i - 1];
+        const curr = tp.points[i];
+        const isRapid = curr.is_rapid;
+        const geometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(prev.x, prev.y, prev.z),
+          new THREE.Vector3(curr.x, curr.y, curr.z),
+        ]);
+        const material = new THREE.LineBasicMaterial({
+          color: isRapid ? 0xff4444 : 0x44ff44,
+          transparent: true,
+          opacity: isRapid ? 0.5 : 0.85,
+          depthTest: true,
+        });
+        const line = new THREE.Line(geometry, material);
+        line.renderOrder = 10; // above edges (5–6) and sketch (7–8)
+        line.userData.toolpathId = tp.id;
+        line.userData.isRapid = isRapid;
+        toolpathLinesRef.current.push(line);
+        contentGroup.add(line);
+      }
     }
 
     if (moveGizmo && !moveGizmo.disabled) {

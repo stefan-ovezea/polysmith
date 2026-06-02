@@ -902,6 +902,96 @@ json profile_points_to_payload(
   return payload;
 }
 
+// ── CAM Stock & Setup ───────────────────────────────────────────
+
+json to_payload(const polysmith::core::CamStockDefinition& stock) {
+  return {
+      {"width", stock.width},
+      {"height", stock.height},
+      {"depth", stock.depth},
+      {"offset_x", stock.offsetX},
+      {"offset_y", stock.offsetY},
+      {"offset_z", stock.offsetZ},
+  };
+}
+
+json to_payload(const polysmith::core::CamSetup& setup) {
+  return {
+      {"setup_id", setup.id},
+      {"stock", to_payload(setup.stock)},
+      {"wcs_origin",
+       {
+           {"x", setup.wcsOriginX},
+           {"y", setup.wcsOriginY},
+           {"z", setup.wcsOriginZ},
+       }},
+      {"safety_plane_z", setup.safetyPlaneZ},
+      {"axis_count", setup.axisCount},
+  };
+}
+
+polysmith::core::CamStockDefinition stock_from_payload(const json& payload) {
+  polysmith::core::CamStockDefinition stock;
+  if (payload.contains("width")) stock.width = payload["width"].get<double>();
+  if (payload.contains("height")) stock.height = payload["height"].get<double>();
+  if (payload.contains("depth")) stock.depth = payload["depth"].get<double>();
+  if (payload.contains("offset_x")) stock.offsetX = payload["offset_x"].get<double>();
+  if (payload.contains("offset_y")) stock.offsetY = payload["offset_y"].get<double>();
+  if (payload.contains("offset_z")) stock.offsetZ = payload["offset_z"].get<double>();
+  return stock;
+}
+
+json to_payload(const polysmith::core::CamToolDefinition& tool) {
+  return {
+      {"tool_id", tool.id},
+      {"name", tool.name},
+      {"tool_number", tool.toolNumber},
+      {"diameter", tool.diameter},
+      {"flute_length", tool.fluteLength},
+      {"overall_length", tool.overallLength},
+      {"corner_radius", tool.cornerRadius},
+      {"spindle_speed", tool.spindleSpeed},
+      {"feed_rate", tool.feedRate},
+      {"stepover", tool.stepover},
+      {"stepdown", tool.stepdown},
+      {"type", static_cast<int>(tool.type)},
+  };
+}
+
+polysmith::core::CamSetup setup_from_payload(const json& payload) {
+  polysmith::core::CamSetup setup;
+  if (payload.contains("setup_id")) setup.id = payload["setup_id"].get<std::string>();
+  if (payload.contains("stock")) setup.stock = stock_from_payload(payload["stock"]);
+  if (payload.contains("wcs_origin")) {
+    const auto& wcs = payload["wcs_origin"];
+    if (wcs.contains("x")) setup.wcsOriginX = wcs["x"].get<double>();
+    if (wcs.contains("y")) setup.wcsOriginY = wcs["y"].get<double>();
+    if (wcs.contains("z")) setup.wcsOriginZ = wcs["z"].get<double>();
+  }
+  if (payload.contains("safety_plane_z")) setup.safetyPlaneZ = payload["safety_plane_z"].get<double>();
+  if (payload.contains("axis_count")) setup.axisCount = payload["axis_count"].get<int>();
+  return setup;
+}
+
+polysmith::core::CamToolDefinition tool_from_payload(const json& payload) {
+  polysmith::core::CamToolDefinition tool;
+  if (payload.contains("tool_id")) tool.id = payload["tool_id"].get<std::string>();
+  if (payload.contains("name")) tool.name = payload["name"].get<std::string>();
+  if (payload.contains("tool_number")) tool.toolNumber = payload["tool_number"].get<int>();
+  if (payload.contains("diameter")) tool.diameter = payload["diameter"].get<double>();
+  if (payload.contains("flute_length")) tool.fluteLength = payload["flute_length"].get<double>();
+  if (payload.contains("overall_length")) tool.overallLength = payload["overall_length"].get<double>();
+  if (payload.contains("corner_radius")) tool.cornerRadius = payload["corner_radius"].get<double>();
+  if (payload.contains("spindle_speed")) tool.spindleSpeed = payload["spindle_speed"].get<double>();
+  if (payload.contains("feed_rate")) tool.feedRate = payload["feed_rate"].get<double>();
+  if (payload.contains("stepover")) tool.stepover = payload["stepover"].get<double>();
+  if (payload.contains("stepdown")) tool.stepdown = payload["stepdown"].get<double>();
+  if (payload.contains("type")) {
+    tool.type = static_cast<polysmith::core::CamToolDefinition::Type>(payload["type"].get<int>());
+  }
+  return tool;
+}
+
 json to_payload(const polysmith::core::FeatureEntry& feature) {
   return {
       {"feature_id", feature.id},
@@ -1976,6 +2066,39 @@ json to_payload(const polysmith::core::DocumentState& document) {
               {"tolerance_px", sf.tolerance_px},
           };
         }()},
+       {"cam_setup",
+        document.cam_setup.has_value()
+            ? to_payload(document.cam_setup.value())
+            : json(nullptr)},
+       {"tool_library", [&document]() {
+          json tools = json::array();
+          for (const auto& tool : document.tool_library) {
+            tools.push_back(to_payload(tool));
+          }
+          return tools;
+        }()},
+       {"cam_operations", [&document]() {
+          json ops = json::array();
+          for (const auto& op : document.cam_operations) {
+            json opJson = {
+                {"id", op.id},
+                {"name", op.name},
+                {"type", static_cast<int>(op.type)},
+                {"tool_id", op.toolId},
+                {"body_id", op.bodyId},
+                {"face_index", op.faceIndex},
+            };
+            if (op.faceMilling.has_value()) {
+              opJson["face_milling"] = {
+                  {"depth", op.faceMilling->depth},
+                  {"stepover", op.faceMilling->stepover},
+                  {"angle_deg", op.faceMilling->angleDeg},
+              };
+            }
+            ops.push_back(opJson);
+          }
+          return ops;
+        }()},
    };
 }
 
@@ -2522,6 +2645,23 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
   };
 }
 
+json to_payload(const polysmith::core::ViewportToolpathPrimitive& primitive) {
+  json points = json::array();
+  for (const auto& p : primitive.points) {
+    points.push_back({
+        {"x", p.x},
+        {"y", p.y},
+        {"z", p.z},
+        {"is_rapid", p.is_rapid},
+    });
+  }
+  return {
+      {"id", primitive.id},
+      {"label", primitive.label},
+      {"points", points},
+  };
+}
+
 json to_payload(const polysmith::core::ViewportState& viewport) {
   json boxes = json::array();
   for (const auto& box : viewport.boxes) {
@@ -2636,6 +2776,13 @@ json to_payload(const polysmith::core::ViewportState& viewport) {
       {"sketch_constraints", sketch_constraints},
       {"sketch_profiles", sketch_profiles},
       {"meshes", meshes},
+      {"toolpaths", [&viewport]() {
+         json toolpaths_json = json::array();
+         for (const auto& tp : viewport.toolpaths) {
+           toolpaths_json.push_back(to_payload(tp));
+         }
+         return toolpaths_json;
+       }()},
       {"cut_previews", [&viewport]() {
          json previews = json::array();
          for (const auto& preview : viewport.cut_previews) {
@@ -3377,6 +3524,34 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
       filter.magnetic_pull = sf.at("magnetic_pull").get<bool>();
     if (sf.contains("tolerance_px") && sf.at("tolerance_px").is_number())
       filter.tolerance_px = sf.at("tolerance_px").get<int>();
+  }
+
+  // CAM setup (absent in older documents — stays nullopt)
+  if (payload.contains("cam_setup") && payload.at("cam_setup").is_object()) {
+    document.cam_setup = setup_from_payload(payload.at("cam_setup"));
+  }
+
+  // CAM tool library (absent in older documents — stays empty)
+  if (payload.contains("tool_library") && payload.at("tool_library").is_array()) {
+    for (const auto& tool_json : payload.at("tool_library")) {
+      if (!tool_json.is_object()) continue;
+      polysmith::core::CamToolDefinition tool;
+      if (tool_json.contains("tool_id")) tool.id = tool_json["tool_id"].get<std::string>();
+      if (tool_json.contains("name")) tool.name = tool_json["name"].get<std::string>();
+      if (tool_json.contains("tool_number")) tool.toolNumber = tool_json["tool_number"].get<int>();
+      if (tool_json.contains("diameter")) tool.diameter = tool_json["diameter"].get<double>();
+      if (tool_json.contains("flute_length")) tool.fluteLength = tool_json["flute_length"].get<double>();
+      if (tool_json.contains("overall_length")) tool.overallLength = tool_json["overall_length"].get<double>();
+      if (tool_json.contains("corner_radius")) tool.cornerRadius = tool_json["corner_radius"].get<double>();
+      if (tool_json.contains("spindle_speed")) tool.spindleSpeed = tool_json["spindle_speed"].get<double>();
+      if (tool_json.contains("feed_rate")) tool.feedRate = tool_json["feed_rate"].get<double>();
+      if (tool_json.contains("stepover")) tool.stepover = tool_json["stepover"].get<double>();
+      if (tool_json.contains("stepdown")) tool.stepdown = tool_json["stepdown"].get<double>();
+      if (tool_json.contains("type")) {
+        tool.type = static_cast<polysmith::core::CamToolDefinition::Type>(tool_json["type"].get<int>());
+      }
+      document.tool_library.push_back(tool);
+    }
   }
 
   return document;

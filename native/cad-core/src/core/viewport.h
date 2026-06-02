@@ -431,6 +431,19 @@ struct ViewportSceneBounds {
   double max_dimension;
 };
 
+struct ViewportToolpathPoint {
+  double x;
+  double y;
+  double z;
+  bool is_rapid;
+};
+
+struct ViewportToolpathPrimitive {
+  std::string id;
+  std::string label;
+  std::vector<ViewportToolpathPoint> points;
+};
+
 struct ViewportState {
   bool has_active_document;
   std::vector<ViewportBoxPrimitive> boxes;
@@ -468,6 +481,7 @@ struct ViewportState {
   // and faces. Empty when the document contains no boolean / fillet /
   // chamfer features (legacy primitive renderers don't emit vertices).
   std::vector<ViewportVertexPrimitive> vertices;
+  std::vector<ViewportToolpathPrimitive> toolpaths;
   double scene_width;
   double scene_height;
   double scene_depth;

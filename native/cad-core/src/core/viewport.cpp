@@ -2243,6 +2243,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
         .bodies = {},
         .edges = {},
         .vertices = {},
+        .toolpaths = {},
         .scene_width = 0.0,
         .scene_height = 0.0,
         .scene_depth = 0.0,
@@ -4336,6 +4337,49 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
     }
   }
 
+  // ── CAM toolpaths from operations ────────────────────────────
+  std::vector<ViewportToolpathPrimitive> toolpaths;
+  for (const auto& op : view->cam_operations) {
+    CamToolpath camTp;
+    if (op.type == CamOperationType::FaceMilling) {
+      camTp = generate_face_milling_toolpath(op, *view);
+    }
+    // Convert CamToolpath to ViewportToolpathPrimitive.
+    if (camTp.totalPoints > 0) {
+      ViewportToolpathPrimitive vtp;
+      vtp.id = op.id;
+      vtp.label = op.name;
+      for (const auto& move : camTp.moves) {
+        for (const auto& pt : move.points) {
+          vtp.points.push_back({pt.x, pt.y, pt.z, move.isRapid});
+        }
+      }
+      toolpaths.push_back(std::move(vtp));
+    }
+  }
+
+  // Fallback: if no operations exist, emit the test contour.
+  if (toolpaths.empty()) {
+    ViewportToolpathPrimitive testPath;
+    testPath.id = "test_square_contour";
+    testPath.label = "Test Contour (hardcoded)";
+    const double z = -2.0;
+    testPath.points = {
+        {.x = -25.0, .y = -25.0, .z = 5.0, .is_rapid = true},
+        {.x = -25.0, .y = -25.0, .z = z, .is_rapid = true},
+        {.x =  25.0, .y = -25.0, .z = z, .is_rapid = false},
+        {.x =  25.0, .y =  25.0, .z = z, .is_rapid = false},
+        {.x = -25.0, .y =  25.0, .z = z, .is_rapid = false},
+        {.x = -25.0, .y = -25.0, .z = z, .is_rapid = false},
+        {.x = -25.0, .y = -25.0, .z = 5.0, .is_rapid = true},
+    };
+    toolpaths.push_back(testPath);
+  }
+
+  // ── CAM stock — deferred until non-interactive rendering is available.
+  // TODO: render stock as a translucent box that doesn't participate in
+  // the CAD picking chain (ViewportBoxPrimitive triggers feature lookup).
+
   return ViewportState{
       .has_active_document = true,
       .boxes = boxes,
@@ -4360,6 +4404,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
       .bodies = bodies,
       .edges = edges,
       .vertices = vertices,
+      .toolpaths = toolpaths,
       .scene_width = scene_width_with_references,
       .scene_height = scene_height_with_references,
       .scene_depth = scene_depth_with_references,

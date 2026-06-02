@@ -9,6 +9,7 @@
 #include "core/cylinder_feature.h"
 #include "core/export.h"
 #include "core/extrude_feature.h"
+#include "core/cam_operation.h"
 #include "core/feature.h"
 #include "core/loft_feature.h"
 #include "core/parameter.h"
@@ -59,6 +60,13 @@ struct DocumentState {
   std::vector<ParameterEntry> parameters;
   DocumentAppearance appearance;
   SelectionFilter selection_filter;
+  // CAM workspace setup. nullopt when no CAM setup exists.
+  // Must be present before any milling operation can be created.
+  std::optional<CamSetup> cam_setup;
+  // CAM tool library. Persisted with the document.
+  std::vector<CamToolDefinition> tool_library;
+  // CAM operations in execution order.
+  std::vector<CamOperationEntry> cam_operations;
 };
 
 struct SessionState {
@@ -467,6 +475,18 @@ class DocumentManager {
   DocumentState load_document_from_path(const std::string& file_path);
   std::optional<DocumentState> get_document() const;
   SessionState get_session_state() const;
+
+  // ── CAM ─────────────────────────────────────────────────────
+  DocumentState cam_setup_create(const CamSetup& setup);
+  std::optional<CamSetup> cam_setup_get() const;
+  DocumentState cam_setup_update(const CamSetup& setup);
+
+  DocumentState cam_tool_add(const CamToolDefinition& tool);
+  DocumentState cam_tool_update(const std::string& toolId, const CamToolDefinition& tool);
+  DocumentState cam_tool_delete(const std::string& toolId);
+  std::vector<CamToolDefinition> cam_tool_list() const;
+
+  DocumentState cam_operation_add(const CamOperationEntry& op);
 
  private:
   FeatureEntry make_root_feature();
