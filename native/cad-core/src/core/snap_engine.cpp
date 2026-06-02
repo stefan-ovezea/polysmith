@@ -869,13 +869,13 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
     collect_grid_line_candidates(cursor_x, cursor_y, tolerance, filter, candidates);
   }
 
-  // Drop candidates that reference entities being dragged —
-  // "nearest / perpendicular / tangent to itself" is meaningless.
+  // Drop perpendicular-foot candidates that reference the line being
+  // dragged — "perpendicular to itself" is meaningless during drag.
   if (!exclude_entity_ids.empty()) {
     candidates.erase(
         std::remove_if(candidates.begin(), candidates.end(),
                        [&](const SnapCandidate& c) {
-                         if (c.entity_id.empty()) return false;
+                         if (c.kind != "perpendicular") return false;
                          return std::find(exclude_entity_ids.begin(),
                                           exclude_entity_ids.end(),
                                           c.entity_id) !=
@@ -886,6 +886,101 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
 
   const auto* best = pick_closest(candidates);
   return best ? std::make_optional(*best) : std::nullopt;
+}
+
+// ── Drag-aware snap validation ────────────────────────────────
+
+std::unordered_set<std::string> collect_dragged_entity_set(
+    const SketchFeatureParameters& params,
+    const std::string& point_id) {
+  std::unordered_set<std::string> result;
+  std::vector<std::string> queue;
+  std::unordered_set<std::string> visited_points;
+  queue.push_back(point_id);
+  visited_points.insert(point_id);
+
+  while (!queue.empty()) {
+    const std::string pid = std::move(queue.back());
+    queue.pop_back();
+
+    // Lines referencing this point.
+    for (const auto& line : params.lines) {
+      if (line.start_point_id == pid || line.end_point_id == pid) {
+        if (result.insert(line.id).second) {
+          // Queue the other endpoint for transitive walk.
+          const std::string other =
+              (line.start_point_id == pid) ? line.end_point_id
+                                           : line.start_point_id;
+          if (visited_points.insert(other).second) {
+            queue.push_back(other);
+          }
+        }
+      }
+    }
+
+    // Arcs referencing this point.
+    for (const auto& arc : params.arcs) {
+      if (arc.start_point_id == pid || arc.end_point_id == pid) {
+        if (result.insert(arc.id).second) {
+          const std::string other =
+              (arc.start_point_id == pid) ? arc.end_point_id
+                                          : arc.start_point_id;
+          if (visited_points.insert(other).second) {
+            queue.push_back(other);
+          }
+        }
+      }
+    }
+
+    // Circles whose center point matches.
+    for (const auto& circle : params.circles) {
+      const std::string center_id =
+          "point-circle-" + circle.id + "-center";
+      if (center_id == pid) {
+        result.insert(circle.id);
+      }
+    }
+  }
+
+  // Include every line targeted by a coincident constraint whose
+  // target IDs are all already in the result — they're bonded.
+  for (const auto& c : params.constraints) {
+    if (c.kind != "coincident") continue;
+    bool all_in = true;
+    for (const auto& tid : c.target_ids) {
+      if (result.find(tid) == result.end()) { all_in = false; break; }
+    }
+    if (all_in) {
+      for (const auto& tid : c.target_ids) {
+        result.insert(tid);
+      }
+    }
+  }
+
+  return result;
+}
+
+bool is_snap_valid_for_drag(
+    const SnapCandidate& snap,
+    const std::unordered_set<std::string>& dragged_entity_ids) {
+  // Snaps that don't reference an entity are always valid.
+  if (snap.entity_id.empty()) return true;
+
+  // Snaps referencing entities outside the dragged set are valid —
+  // they reference stationary geometry.
+  if (dragged_entity_ids.find(snap.entity_id) == dragged_entity_ids.end()) {
+    return true;
+  }
+
+  // The snap references an entity that is co-moving with the drag.
+  // "perpendicular_direction" is the only direction snap that makes
+  // sense — constraining to 90° between connected lines is useful.
+  // "parallel" is NOT valid here: two connected lines that are parallel
+  // would be collinear, which is always degenerate.
+  if (snap.kind == "perpendicular_direction") return true;
+
+  // Body-snaps and point-snaps to co-moving geometry are invalid.
+  return false;
 }
 
 // ── Legacy unified resolver ───────────────────────────────────

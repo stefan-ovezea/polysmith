@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "core/feature.h"
@@ -79,6 +80,24 @@ std::optional<SnapCandidate> resolve_continuous_snaps(
     std::optional<double> start_x = std::nullopt,
     std::optional<double> start_y = std::nullopt,
     const std::vector<std::string>& exclude_entity_ids = {});
+
+// ── Drag-aware snap validation ────────────────────────────────
+// Used by drag_sketch_point and future move/group-drag operations.
+//
+// collect_dragged_entity_set: returns the transitive closure of all
+// entity IDs (lines, circles, arcs) that move when `point_id` is
+// dragged, following shared endpoints and coincident constraints.
+std::unordered_set<std::string> collect_dragged_entity_set(
+    const SketchFeatureParameters& params,
+    const std::string& point_id);
+
+// is_snap_valid_for_drag: returns true if the snap candidate is
+// meaningful given the dragged entity set.  Body-snaps and point-snaps
+// to co-moving geometry are rejected; direction-snaps and grid snaps
+// are allowed.
+bool is_snap_valid_for_drag(
+    const SnapCandidate& snap,
+    const std::unordered_set<std::string>& dragged_entity_ids);
 
 // ── Legacy unified resolver ───────────────────────────────────
 // Convenience wrapper that calls the three category resolvers with

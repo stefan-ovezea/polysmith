@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -2924,20 +2925,17 @@ DragPointResult DocumentManager::drag_sketch_point(
 
   auto& params = feature_it->sketch_parameters.value();
 
-  // Find the anchored (other) endpoint for polar/axis-lock snap,
-  // and collect every line that shares the dragged point (by point
-  // ID or by positional coincidence) so we can exclude them from
-  // parallel / perpendicular / nearest snaps — a line is trivially
-  // parallel to itself, and snapping "nearest" to a co-moving line
-  // is meaningless.
+  // Build the transitive set of all entities that move when this
+  // point is dragged — direct connections and indirect through shared
+  // endpoints / coincident constraints.
+  const auto dragged_set =
+      polysmith::core::collect_dragged_entity_set(params, point_id);
+
+  // Find the anchored (other) endpoint for polar/axis-lock snap.
   std::optional<double> start_x;
   std::optional<double> start_y;
-  std::vector<std::string> dragged_line_ids;
-
-  // Pass 1: lines that share the exact point ID (post-coincident).
   for (const auto& line : params.lines) {
     if (line.start_point_id == point_id || line.end_point_id == point_id) {
-      dragged_line_ids.push_back(line.id);
       if (!start_x.has_value()) {
         const bool is_start = (line.start_point_id == point_id);
         const std::string other_id =
@@ -2953,46 +2951,6 @@ DragPointResult DocumentManager::drag_sketch_point(
     }
   }
 
-  // Pass 2: lines whose endpoints are positionally coincident with
-  // the dragged point but have different point IDs (pre-coincident,
-  // or two lines drawn end-to-end without a constraint).
-  {
-    // Resolve the dragged point's current coordinates.
-    double drag_x = 0.0, drag_y = 0.0;
-    bool found_drag = false;
-    for (const auto& pt : params.points) {
-      if (pt.id == point_id) { drag_x = pt.x; drag_y = pt.y; found_drag = true; break; }
-    }
-    // Fall back to the first line's endpoint if point not in points table.
-    if (!found_drag) {
-      for (const auto& line : params.lines) {
-        if (line.start_point_id == point_id) {
-          drag_x = line.start_x; drag_y = line.start_y; break;
-        }
-        if (line.end_point_id == point_id) {
-          drag_x = line.end_x; drag_y = line.end_y; break;
-        }
-      }
-    }
-
-    for (const auto& line : params.lines) {
-      // Skip lines already collected in pass 1.
-      if (std::find(dragged_line_ids.begin(), dragged_line_ids.end(),
-                    line.id) != dragged_line_ids.end()) {
-        continue;
-      }
-      const bool start_coincident =
-          polysmith::core::points_match(line.start_x, line.start_y,
-                                        drag_x, drag_y);
-      const bool end_coincident =
-          polysmith::core::points_match(line.end_x, line.end_y,
-                                        drag_x, drag_y);
-      if (start_coincident || end_coincident) {
-        dragged_line_ids.push_back(line.id);
-      }
-    }
-  }
-
   // Category-priority snap resolution.
   //   Discrete (tight,  2.0): endpoint, midpoint, center, intersection, quadrant
   //   Direction (tight, 2.0): axis_lock, parallel, perpendicular_direction, polar
@@ -3004,20 +2962,49 @@ DragPointResult DocumentManager::drag_sketch_point(
   const double kTightTolerance = 2.0;
   const double kWideTolerance = 4.0;
 
-  auto snap = polysmith::core::resolve_discrete_snaps(
+  // Category-priority snap resolution with drag-aware filtering.
+  // After each resolver, drop invalid snaps so the next category
+  // gets a chance — otherwise a filtered "midpoint" blocks "nearest"
+  // from ever running.
+  std::optional<SnapCandidate> snap;
+
+  snap = polysmith::core::resolve_discrete_snaps(
       cursor_x, cursor_y, params, document_->selection_filter, kTightTolerance,
       point_id);
+  if (snap.has_value() &&
+      !polysmith::core::is_snap_valid_for_drag(*snap, dragged_set)) {
+    fprintf(stderr, "[drag-filter] DROPPED snap kind=%s entity=%s\n",
+            snap->kind.c_str(), snap->entity_id.c_str());
+    snap = std::nullopt;
+  }
 
   if (!snap.has_value() && start_x.has_value() && start_y.has_value()) {
     snap = polysmith::core::resolve_direction_snaps(
         cursor_x, cursor_y, params, document_->selection_filter,
-        kTightTolerance, start_x, start_y, dragged_line_ids);
+        kTightTolerance, start_x, start_y);
+    if (snap.has_value() &&
+        !polysmith::core::is_snap_valid_for_drag(*snap, dragged_set)) {
+      fprintf(stderr, "[drag-filter] DROPPED snap kind=%s entity=%s\n",
+              snap->kind.c_str(), snap->entity_id.c_str());
+      snap = std::nullopt;
+    }
   }
 
   if (!snap.has_value()) {
     snap = polysmith::core::resolve_continuous_snaps(
-        cursor_x, cursor_y, params, document_->selection_filter, kWideTolerance,
-        std::nullopt, std::nullopt, dragged_line_ids);
+        cursor_x, cursor_y, params, document_->selection_filter,
+        kWideTolerance);
+    if (snap.has_value() &&
+        !polysmith::core::is_snap_valid_for_drag(*snap, dragged_set)) {
+      fprintf(stderr, "[drag-filter] DROPPED snap kind=%s entity=%s\n",
+              snap->kind.c_str(), snap->entity_id.c_str());
+      snap = std::nullopt;
+    }
+  }
+
+  if (snap.has_value()) {
+    fprintf(stderr, "[drag-filter] KEPT snap kind=%s entity=%s\n",
+            snap->kind.c_str(), snap->entity_id.c_str());
   }
 
   double target_x = cursor_x;
