@@ -667,7 +667,9 @@
     "parallel": "Parallel",
     "perpendicular": "Perpendicular",
     "subSegmentMidpoint": "Sub-segment midpoint",
-    "tangent": "Tangent"
+    "tangent": "Tangent",
+    "axisLockHorizontal": "Horizontal",
+    "axisLockVertical": "Vertical"
   },
   "viewport": {
     "clickPlaceGeometry": "Click to place geometry",

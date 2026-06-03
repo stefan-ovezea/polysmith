@@ -5858,6 +5858,11 @@ function App() {
                   await setSketchTangentConstraint(lineId, circleId);
                 });
               }}
+              onSetSketchParallelConstraint={async (lineId, otherLineId) => {
+                await runAction(async () => {
+                  await setSketchParallelConstraint(lineId, otherLineId);
+                });
+              }}
               onAddSketchRectangle={async (
                 startX,
                 startY,
