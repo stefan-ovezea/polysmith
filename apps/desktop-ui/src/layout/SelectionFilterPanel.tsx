@@ -22,14 +22,6 @@ export interface SelectionFilter {
   polar_angle_degrees: number;
   magnetic_pull: boolean;
   tolerance_px: number;
-  // Per-tool snap engine toggle: when true, the C++ snap engine
-  // (resolve_draft_snap) fires during mousemove for this tool.
-  snap_tool_select: boolean;
-  snap_tool_line: boolean;
-  snap_tool_circle: boolean;
-  snap_tool_rectangle: boolean;
-  snap_tool_arc: boolean;
-  snap_tool_polygon: boolean;
 }
 
 const STORAGE_KEY = "polysmith-selection-filter";
@@ -54,12 +46,6 @@ const defaultFilter: SelectionFilter = {
   polar_angle_degrees: 15,
   magnetic_pull: true,
   tolerance_px: 10,
-  snap_tool_select: true,
-  snap_tool_line: false,
-  snap_tool_circle: false,
-  snap_tool_rectangle: false,
-  snap_tool_arc: false,
-  snap_tool_polygon: false,
 };
 
 export function readStoredFilter(): SelectionFilter {
@@ -119,15 +105,6 @@ const snapTypeRows: FilterRow[] = [
   { key: "snap_grid", labelKey: "selectionFilter.grid" },
   { key: "snap_grid_line", labelKey: "selectionFilter.gridLine" },
   { key: "snap_polar", labelKey: "selectionFilter.polar" },
-];
-
-const snapToolRows: FilterRow[] = [
-  { key: "snap_tool_select", labelKey: "selectionFilter.snapToolSelect" },
-  { key: "snap_tool_line", labelKey: "selectionFilter.snapToolLine" },
-  { key: "snap_tool_circle", labelKey: "selectionFilter.snapToolCircle" },
-  { key: "snap_tool_rectangle", labelKey: "selectionFilter.snapToolRectangle" },
-  { key: "snap_tool_arc", labelKey: "selectionFilter.snapToolArc" },
-  { key: "snap_tool_polygon", labelKey: "selectionFilter.snapToolPolygon" },
 ];
 
 function CloseIcon() {
@@ -288,15 +265,6 @@ export function SelectionFilterPanel({
               </span>
             </span>
           </label>
-        </PanelSection>
-
-        <PanelSection title={t("selectionFilter.snapEngineTools")}>
-          <p className="mb-2 text-xs text-on-surface-muted">
-            {t("selectionFilter.snapEngineToolsHint")}
-          </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            {snapToolRows.map(renderCheckboxRow)}
-          </div>
         </PanelSection>
 
         <PanelSection title={t("selectionFilter.global")}>

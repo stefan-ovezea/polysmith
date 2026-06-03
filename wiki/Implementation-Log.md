@@ -4,7 +4,7 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-05-30
 
-> ⚠️ The snap-in-core work below is deprecated per [Core-UI-Design-Principles](Core-UI-Design-Principles). Snap and drag preview belong in the UI, not the core. `resolve_draft_snap` is being removed.
+> ⚠️ The snap-in-core work below is deprecated per [Core-UI-Design-Principles](Core-UI-Design-Principles). Snap and drag preview belong in the UI, not the core. `resolve_draft_snap` and `drag_sketch_point` were removed on 2026-06-03.
 
 ### Snap system — C++ migration (Phase 1–3) [DEPRECATED]
 

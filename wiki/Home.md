@@ -60,7 +60,6 @@
 | 🏗️ **[2D Sketch System Architecture](2D-Sketch-System-Architecture)** | Constraints, snapping, and unified selection filter design |
 | ✅ **[2D Sketch Constraint System — Implementation TODO](2D-Sketch-Constraint-System)** | Geometric and dimensional constraint tracking |
 | ⚙️ **[Snap Settings — Configuration Options](Snap-Settings-‐-Configuration-Options)** | All snap types, defaults, and user configurability |
-| 🐛 **[Self-Reference Snap Problem](Self-Reference-Snap-Problem)** | Recurring bug pattern: manipulated entities snapping to themselves, and the structural fix |
 | ✂️ **[Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan)** | How the sketch trim tool works: intersection detection, splitting, and constraint handling |
 | 🔤 **[Text Tool — Implementation Plan](Text-Tool-Implementation-Plan)** | Text as sketch entities: font-to-BRep, extrusion, emboss/deboss on surfaces |
 | 📏 **[Draft Dimension Visualization](Draft-Dimension-Visualization)** | Scene-rendered dimension lines and arcs for sketch draft tools |

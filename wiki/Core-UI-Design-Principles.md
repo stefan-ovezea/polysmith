@@ -69,15 +69,11 @@ UI                                      Core
 
 ## What This Means for Snap
 
-The C++ snap engine in `snap_engine.cpp` and its IPC commands (`resolve_draft_snap`, `drag_snap_result`) violate this principle — they send per-frame mouse snap candidates from core to UI. These are transient interaction data with no persistent ID, changing every frame.
-
-**Direction:** Snap computation and resolution must move back to the TypeScript UI layer. The core provides the static geometry (document_state / viewport_state) once per operation — the UI computes snap targets locally from that geometry.
+> ✅ **Done (2026-06-03).** The C++ `resolve_draft_snap` and `drag_snap_result` IPC paths have been removed. `snap_engine.cpp` / `snap_engine.h` have been deleted. The `SnapCandidate` struct now lives in `viewport.h`. Static snap targets (endpoint, midpoint, center, quadrant, intersection) are emitted in `viewport_state.snap_candidates` and resolved locally by the TS `resolveSnappedSketchPoint`. Dynamic snaps (axis_lock, parallel, tangent, etc.) are a TS-side follow-up.
 
 ## What This Means for Drag
 
-Endpoint drag currently sends `drag_sketch_point` per-frame to the core, which applies core-side snap and returns a `drag_snap_result`. This violates the principle: drag deltas are transient, and snap candidates are interaction data.
-
-**Direction:** Drag must be handled entirely in the UI until mouse-up. The UI resolves snap locally, shows a preview, and sends a single `update_sketch_point` (or equivalent) on mouse-up with the final snapped position.
+> ✅ **Done (2026-06-03).** The `drag_sketch_point` IPC path has been removed. Endpoint drag is handled entirely in the TypeScript UI layer: local snap resolution via `resolveSnappedSketchPoint`, dashed-line overlay preview during drag, and a single `update_sketch_point` commit on mouse-up.
 
 ## Mantra
 

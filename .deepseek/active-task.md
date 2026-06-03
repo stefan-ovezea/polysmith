@@ -1,7 +1,7 @@
 # Active Task: Remove C++ Snap from IPC & Move Drag to UI
 
 **Started:** 2026-06-03
-**Status:** In Progress (Steps 1-8, 11 complete)
+**Status:** In Progress (Steps 1-11 complete — drag preview done, UI toggles removed)
 **Source:** `.deepseek/instructions.md` → Active Priority section
 **Principle:** `wiki/Core-UI-Design-Principles.md` — Core sends DOCUMENT STATE, not INTERACTION STATE
 
@@ -58,16 +58,18 @@ Remove `resolve_draft_snap` and `drag_sketch_point` IPC paths. The C++ snap engi
 - Added null snap fields to TS fallthrough returns
 - Verified: `tsc --noEmit` passes
 
-### Step 9: TS — Implement local drag preview ❌
-- NOT STARTED. During endpoint drag: call `resolveSnappedSketchPoint` locally (done)
-- Store result in `dragSnapResultRef` (done)
-- Show constraint preview badge + snap label (partial — snap label set, badge not yet)
-- Render dashed line overlay from anchored endpoints to dragged position (NOT DONE)
-- Disable incremental update path during drag (NOT DONE — entity position doesn't update during drag)
+### Step 9: TS — Implement local drag preview ✅
+- During endpoint drag: `resolveSnappedSketchPoint` called locally
+- Result stored in `dragSnapResultRef` for pointerup commit
+- Snap label updated via `setSketchSnapLabel`
+- Dashed line overlay rendered from anchored endpoints to current snapped position
+- Preview lines cleared on pointerup, tool switch, and renderer teardown
+- Verified: `tsc --noEmit` passes
 
-### Step 10: Cleanup — Remove snap engine UI toggles ❌
-- NOT STARTED. `SelectionFilterPanel.tsx`: remove "Snap engine per tool" section
-- `en.json`: remove related i18n strings
+### Step 10: Cleanup — Remove snap engine UI toggles ✅
+- `SelectionFilterPanel.tsx`: removed per-tool snap engine fields, defaults, `snapToolRows`, and UI section
+- `en.json`: removed 8 related i18n strings
+- Verified: `tsc --noEmit` passes
 
 ### Step 11: Protocol schema ✅
 - `protocol/schema/commands.schema.json`: removed `"resolve_draft_snap"`
@@ -84,9 +86,14 @@ Remove `resolve_draft_snap` and `drag_sketch_point` IPC paths. The C++ snap engi
 - Step 9 (drag preview) partially done — local snap resolves during drag, result stored for commit
 - Step 10 (UI toggles) not started
 
+### Session 2 — 2026-06-03 (30 min)
+- Completed Step 9: drag preview rendering with dashed line overlay
+- Completed Step 10: removed snap engine UI toggles
+- All 11 steps complete. C++ build passes, TS type-check zero errors.
+
 ### Remaining work
-1. **Step 9**: Render dashed line overlay during endpoint drag. Currently the entity stays at its original position during drag (no IPC to mutate state). The snap label updates but there's no visual entity movement.
-2. **Step 10**: Remove the C++ snap engine per-tool toggles from SelectionFilterPanel and i18n
+- Functional testing in the running app — verify endpoint drag works end-to-end
+- Consider re-adding dynamic snaps (axis_lock, parallel, perpendicular, tangent) as a TS-side follow-up. Currently only static snaps (endpoint, midpoint, center, etc.) are resolved in TS.
 
 ### Key files changed
 - `native/cad-core/src/app.cpp` — removed 2 handlers

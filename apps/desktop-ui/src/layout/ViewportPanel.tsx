@@ -1520,6 +1520,8 @@ const currentGridSpacingRef = useRef(10);
   // Cursor canvas position during endpoint drag — used to position the
   // floating constraint-preview badge near the pointer.
   const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
+  // Local preview lines rendered during endpoint drag (dashed overlay).
+  const dragPreviewLinesRef = useRef<THREE.Line[]>([]);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
@@ -2744,6 +2746,16 @@ const currentGridSpacingRef = useRef(10);
       }
     }
   }, [selectedConstraint]);
+
+  function clearDragPreviewLines() {
+    const sketchGroup = sketchGroupRef.current;
+    for (const line of dragPreviewLinesRef.current) {
+      if (sketchGroup) sketchGroup.remove(line);
+      line.geometry.dispose();
+      disposeMaterial(line.material);
+    }
+    dragPreviewLinesRef.current = [];
+  }
 
   function clearPreviewLine() {
     const previewLine = previewLineRef.current;
@@ -7849,6 +7861,48 @@ const currentGridSpacingRef = useRef(10);
                   snapY: snapped.local[1],
                 };
                 setSketchSnapLabel(snapped.snapLabel);
+
+                // Render local preview: dashed lines from anchored
+                // endpoints to the current snapped position.
+                clearDragPreviewLines();
+                const params = sketchLinesRef.current;
+                const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
+                const frame = activeSketchPlaneFrameRef.current;
+                const sketchGroup = sketchGroupRef.current;
+                if (params && sketchGroup) {
+                  const newLines: THREE.Line[] = [];
+                  for (const line of params.lines) {
+                    if (line.start_point_id === next.pointId ||
+                        line.end_point_id === next.pointId) {
+                      const anchoredId = line.start_point_id === next.pointId
+                        ? line.end_point_id : line.start_point_id;
+                      const anchored = params.points.find(
+                        (p) => p.point_id === anchoredId);
+                      if (anchored) {
+                        const mat = new THREE.LineDashedMaterial({
+                          color: 0xffe784,
+                          transparent: true,
+                          opacity: 0.6,
+                          dashSize: 1.5,
+                          gapSize: 0.8,
+                        });
+                        const geo = new THREE.BufferGeometry().setFromPoints([
+                          new THREE.Vector3(
+                            ...toWorldPoint(planeId,
+                              [anchored.x, anchored.y], frame)),
+                          new THREE.Vector3(
+                            ...toWorldPoint(planeId,
+                              [snapped.local[0], snapped.local[1]], frame)),
+                        ]);
+                        const preview = new THREE.Line(geo, mat);
+                        preview.computeLineDistances();
+                        sketchGroup.add(preview);
+                        newLines.push(preview);
+                      }
+                    }
+                  }
+                  dragPreviewLinesRef.current = newLines;
+                }
               }
             });
           }
@@ -9071,6 +9125,7 @@ const currentGridSpacingRef = useRef(10);
           pendingEndpointCommitRef.current = true;
         } else {
           endpointDragRef.current = null;
+          clearDragPreviewLines();
           setConstraintPreview(null);
           dragCursorRef.current = null;
         }
@@ -10530,6 +10585,7 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
+      clearDragPreviewLines();
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);
@@ -10716,6 +10772,7 @@ const currentGridSpacingRef = useRef(10);
       // was the final commit frame.
       if (hadPendingCommit) {
         endpointDragRef.current = null;
+        clearDragPreviewLines();
         setConstraintPreview(null);
         dragCursorRef.current = null;
       }
@@ -10976,6 +11033,7 @@ const currentGridSpacingRef = useRef(10);
     // visible without the preview override.
     if (hadPendingCommit) {
       endpointDragRef.current = null;
+      clearDragPreviewLines();
       setConstraintPreview(null);
       dragCursorRef.current = null;
     }
@@ -11017,6 +11075,7 @@ const currentGridSpacingRef = useRef(10);
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    clearDragPreviewLines();
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
