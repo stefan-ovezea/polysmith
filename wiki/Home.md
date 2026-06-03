@@ -28,6 +28,8 @@
 | | |
 |---|---|
 | 🏗️ **[Architecture Overview](Architecture-Overview)** | High-level system architecture: UI, Tauri, C++ core, IPC |
+| 🧭 **[Core-UI Design Principles](Core-UI-Design-Principles)** | **Binding.** Core sends document state, not interaction state. What belongs where. |
+| ⚡ **[UI Performance Architecture](UI-Performance-Architecture)** | Rust/WASM for UI-side snap, constraint solving, and collision detection |
 | 🗺️ **[Repository Map](Repository-Map)** | Top-level directory structure and ownership rules |
 | 📡 **[IPC Protocol](IPC-Protocol)** | JSON-based protocol between UI and CAD core |
 | 🔷 **[Topological Naming Problem](Topological-Naming-Problem)** | TNP strategy and defences (project mantra) |
@@ -55,12 +57,10 @@
 
 | | |
 |---|---|
-| 🎯 **[Sketch Selection Controls](Sketch-Selection-Controls)** | Checkbox panel that controls selection, snapping, and constraints as one system |
 | 🏗️ **[2D Sketch System Architecture](2D-Sketch-System-Architecture)** | Constraints, snapping, and unified selection filter design |
 | ✅ **[2D Sketch Constraint System — Implementation TODO](2D-Sketch-Constraint-System)** | Geometric and dimensional constraint tracking |
 | ⚙️ **[Snap Settings — Configuration Options](Snap-Settings-‐-Configuration-Options)** | All snap types, defaults, and user configurability |
 | 🐛 **[Self-Reference Snap Problem](Self-Reference-Snap-Problem)** | Recurring bug pattern: manipulated entities snapping to themselves, and the structural fix |
-| 🛠️ **[Snap Engine Fix Plan](Snap-Engine-Fix-Plan)** | Category-based snap ranking refactor (Discrete > Direction > Continuous) |
 | ✂️ **[Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan)** | How the sketch trim tool works: intersection detection, splitting, and constraint handling |
 | 🔤 **[Text Tool — Implementation Plan](Text-Tool-Implementation-Plan)** | Text as sketch entities: font-to-BRep, extrusion, emboss/deboss on surfaces |
 | 📏 **[Draft Dimension Visualization](Draft-Dimension-Visualization)** | Scene-rendered dimension lines and arcs for sketch draft tools |

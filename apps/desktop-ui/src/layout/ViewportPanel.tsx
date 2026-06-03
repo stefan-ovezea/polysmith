@@ -320,12 +320,6 @@ interface ViewportPanelProps {
     hostLineId: string,
     t: number,
   ) => Promise<void>;
-  onResolveDraftSnap: (
-    cursorX: number,
-    cursorY: number,
-    startX: number,
-    startY: number,
-  ) => Promise<void>;
   onAddSketchAngleDimension: (
     firstLineId: string,
     secondLineId: string,
@@ -482,11 +476,6 @@ interface ViewportPanelProps {
     pointId: string,
     x: number,
     y: number,
-  ) => Promise<void>;
-  onDragSketchPoint: (
-    pointId: string,
-    cursorX: number,
-    cursorY: number,
   ) => Promise<void>;
   onFinishSketch: () => Promise<void>;
   moveGizmo?: MoveGizmoDescriptor | null;
@@ -1201,7 +1190,6 @@ export function ViewportPanel({
   onAddSketchLine,
   onSetSketchMidpointAnchor,
   onSetSketchPointLineAnchor,
-  onResolveDraftSnap,
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
@@ -1244,7 +1232,6 @@ export function ViewportPanel({
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
   onUpdateSketchPoint,
-  onDragSketchPoint,
   onFinishSketch,
   moveGizmo = null,
   onMoveGizmoChange,
@@ -1398,15 +1385,6 @@ export function ViewportPanel({
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
-  const cppSnapCacheRef = useRef<{
-    local: [number, number];
-    snapLabel: string | null;
-    snapKind: string;
-    hostEntityId: string;
-    hostPointId: string;
-    hostParamT: number | null;
-    timestamp: number;
-  } | null>(null);
   // Track click timing and position for double-click detection during
   // line drafting. Two clicks <300ms apart at the same location break
   // the chain and start an independent line on the next click.
@@ -1542,14 +1520,6 @@ const currentGridSpacingRef = useRef(10);
   // Cursor canvas position during endpoint drag — used to position the
   // floating constraint-preview badge near the pointer.
   const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
-  // Snap target to highlight after the next scene rebuild.
-  const pendingSnapHighlightRef = useRef<{
-    entityId: string | null;
-    pointId: string | null;
-    label: string | null;
-    snapKind: string | null;
-    hostParamT: number;
-  } | null>(null);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
@@ -1584,7 +1554,6 @@ const currentGridSpacingRef = useRef(10);
   );
   const pickSketchPointRef = useRef(onPickSketchPoint);
   const updateSketchPointRef = useRef(onUpdateSketchPoint);
-  const dragSketchPointRef = useRef(onDragSketchPoint);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
   const updateSketchDimensionLabelPositionRef = useRef(
@@ -4846,70 +4815,10 @@ const currentGridSpacingRef = useRef(10);
     return null;
   }
 
-  /** Map a core snap_kind string to the constraint-preview badge kind. */
-  function snapKindToBadgeKind(kind: string):
-    | "midpoint" | "perpendicular" | "on_line" | "horizontal"
-    | "vertical" | "tangent" | "endpoint" | "parallel" {
-    switch (kind) {
-      case "endpoint": return "endpoint";
-      case "midpoint": return "midpoint";
-      case "center": return "endpoint";       // same glyph as endpoint
-      case "perpendicular": return "perpendicular";
-      case "perpendicular_direction": return "perpendicular";
-      case "parallel": return "parallel";
-      case "tangent": return "tangent";
-      case "axis_lock":
-        return "horizontal";  // label distinguishes H vs V
-      case "nearest":
-      case "intersection":
-      case "quadrant":
-        return "on_line";
-      default: return "on_line";
-    }
-  }
-
   function resolveSnappedSketchPoint(rawPoint: {
     local: [number, number];
     world: [number, number, number];
   }) {
-    // C++ snap cache (Phase 3b): if a recent C++ result matches the
-    // cursor position, use it directly — no TS snap computation.
-    const cppSnap = cppSnapCacheRef.current;
-    if (cppSnap && performance.now() - cppSnap.timestamp < 200) {
-      const d = Math.hypot(rawPoint.local[0] - cppSnap.local[0],
-                           rawPoint.local[1] - cppSnap.local[1]);
-      if (d <= SKETCH_SNAP_DISTANCE * 2) {
-        const snapshot = toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame);
-        const kind = cppSnap.snapKind;
-        const entityId = cppSnap.hostEntityId;
-        const paramT = cppSnap.hostParamT;
-        const isLineNearest = kind === "nearest" && paramT !== null && paramT >= 0;
-
-        return {
-          local: cppSnap.local,
-          world: snapshot,
-          snapLabel: cppSnap.snapLabel,
-          snapMidpointHostLineId:
-            kind === "midpoint" ? entityId : null,
-          snapMidpointT:
-            kind === "midpoint" && paramT !== null ? paramT : null,
-          snapPerpendicularHostLineId:
-            kind === "perpendicular" ? entityId : null,
-          snapEndpointHostLineId:
-            kind === "endpoint" ? entityId : null,
-          snapLineBodyHostLineId:
-            isLineNearest ? entityId : null,
-          snapLineBodyT:
-            isLineNearest ? paramT : null,
-          snapAxisLock: kind === "axis_lock"
-            ? (cppSnap.snapLabel === "Horizontal" ? "horizontal" as const : "vertical" as const)
-            : null,
-          snapTangentCircleId:
-            kind === "tangent" ? entityId : null,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
     // Read filter from localStorage (instant, no IPC round trip).
     const localFilter = readLocalFilter();
     const effectiveFilter: typeof localFilter = localFilter && altHeldRef.current
@@ -5027,6 +4936,10 @@ const currentGridSpacingRef = useRef(10);
         snapMidpointHostLineId: null,
         snapPerpendicularHostLineId: null,
         snapEndpointHostLineId: null,
+        snapLineBodyHostLineId: null,
+        snapLineBodyT: null,
+        snapAxisLock: null,
+        snapTangentCircleId: null,
       } satisfies SketchPreviewPoint;
     }
 
@@ -5036,6 +4949,10 @@ const currentGridSpacingRef = useRef(10);
       snapMidpointHostLineId: null,
       snapPerpendicularHostLineId: null,
       snapEndpointHostLineId: null,
+      snapLineBodyHostLineId: null,
+      snapLineBodyT: null,
+      snapAxisLock: null,
+      snapTangentCircleId: null,
     } satisfies SketchPreviewPoint;
   }
 
@@ -5329,7 +5246,6 @@ const currentGridSpacingRef = useRef(10);
       inactiveSketchEntityPickEnabled;
     pickSketchPointRef.current = onPickSketchPoint;
     updateSketchPointRef.current = onUpdateSketchPoint;
-    dragSketchPointRef.current = onDragSketchPoint;
     selectSketchDimensionRef.current = onSelectSketchDimension;
     updateSketchDimensionRef.current = onUpdateSketchDimension;
     updateSketchDimensionLabelPositionRef.current =
@@ -5383,7 +5299,6 @@ const currentGridSpacingRef = useRef(10);
     onDeleteSketchSelection,
     onSetSketchTool,
     onUpdateSketchPoint,
-    onDragSketchPoint,
     armedSketchConstraint,
     mirrorFocusedSlot,
     onMirrorEntityPick,
@@ -7919,8 +7834,21 @@ const currentGridSpacingRef = useRef(10);
               const next = pendingDragRef.current;
               pendingDragRef.current = null;
               if (next) {
-                void dragSketchPointRef.current(next.pointId, next.x, next.y);
-                void sendCoreCommand(makeGetViewportStateCommand());
+                // Local snap resolution — no IPC during drag.
+                const world = toWorldPoint(
+                  activeSketchPlaneIdRef.current ?? "ref-plane-xy",
+                  [next.x, next.y],
+                  activeSketchPlaneFrameRef.current,
+                );
+                const snapped = resolveSnappedSketchPoint({
+                  local: [next.x, next.y],
+                  world: [world[0], world[1], world[2]],
+                });
+                dragSnapResultRef.current = {
+                  snapX: snapped.local[0],
+                  snapY: snapped.local[1],
+                };
+                setSketchSnapLabel(snapped.snapLabel);
               }
             });
           }
@@ -8385,11 +8313,8 @@ const currentGridSpacingRef = useRef(10);
         const sketchPoint = resolveSnappedSketchPoint(rawPoint);
         setSketchSnapLabel(sketchPoint.snapLabel);
 
-        // Call C++ snap for next-frame cache.
-        if (activeSketchPlaneId && onResolveDraftSnap) {
-          const start = lineDraftStartRef.current ?? sketchPoint.local;
-          void onResolveDraftSnap(rawPoint.local[0], rawPoint.local[1], start[0], start[1]);
-        }
+        // Snap is handled entirely in TS via resolveSnappedSketchPoint,
+        // using the static snap_candidates from viewport_state.
 
         if (
           isDraftDimensionTool(activeSketchToolRef.current) &&
@@ -10569,48 +10494,6 @@ const currentGridSpacingRef = useRef(10);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
-    const onCppSnap = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      cppSnapCacheRef.current = { local: d.local, snapLabel: d.snapLabel, snapKind: d.snapKind,
-        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, hostParamT: d.hostParamT ?? null, timestamp: performance.now() };
-    };
-    window.addEventListener("polysmith-cpp-snap", onCppSnap);
-
-    const onDragSnap = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      dragSnapResultRef.current = { snapX: d.snap_x, snapY: d.snap_y };
-      // Update info panel and hover immediately — don't wait for scene rebuild.
-      setSketchSnapLabel(d.snap_label ?? "");
-      if (d.host_entity_id) {
-        setHoveredSketchEntity(d.host_entity_id);
-      } else if (d.host_point_id) {
-        setHoveredSketchPoint(d.host_point_id);
-      }
-      // Floating badge near the cursor.
-      const cursor = dragCursorRef.current;
-      if (cursor && d.snap_kind) {
-        const badgeKind = d.snap_kind === "axis_lock" && d.snap_label === "Vertical"
-          ? "vertical" as const
-          : snapKindToBadgeKind(d.snap_kind);
-        setConstraintPreview({
-          kind: badgeKind,
-          x: cursor.x,
-          y: cursor.y,
-        });
-      } else {
-        setConstraintPreview(null);
-      }
-      // Also store for application after the next scene rebuild.
-      pendingSnapHighlightRef.current = {
-        entityId: d.host_entity_id,
-        pointId: d.host_point_id,
-        label: d.snap_label,
-        snapKind: d.snap_kind,
-        hostParamT: d.host_param_t ?? -1,
-      };
-    };
-    window.addEventListener("polysmith-drag-snap", onDragSnap);
-
     const onTrimPreview = (e: Event) => {
       trimPreviewResultRef.current = (e as CustomEvent).detail;
       // Render the highlight immediately from the core's data.
@@ -10646,8 +10529,6 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
-      window.removeEventListener("polysmith-cpp-snap", onCppSnap);
-      window.removeEventListener("polysmith-drag-snap", onDragSnap);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
       controls.dispose();
       disposeGroup(contentGroup);
@@ -10837,18 +10718,6 @@ const currentGridSpacingRef = useRef(10);
         endpointDragRef.current = null;
         setConstraintPreview(null);
         dragCursorRef.current = null;
-      }
-
-      // Apply pending snap highlight even on incremental updates.
-      const pending = pendingSnapHighlightRef.current;
-      if (pending) {
-        pendingSnapHighlightRef.current = null;
-        setSketchSnapLabel(pending.label ?? "");
-        if (pending.entityId) {
-          setHoveredSketchEntity(pending.entityId);
-        } else if (pending.pointId) {
-          setHoveredSketchPoint(pending.pointId);
-        }
       }
 
       lastGeometryKeyRef.current = sceneData.geometryKey;
@@ -11118,20 +10987,6 @@ const currentGridSpacingRef = useRef(10);
     paintSketchEntityMaterials();
     paintSketchPointMaterials();
     paintDofStatusColors();
-
-    // Apply any pending snap highlight from a drag_snap_result event.
-    const pending = pendingSnapHighlightRef.current;
-    if (pending) {
-      pendingSnapHighlightRef.current = null;
-      // Always show a label — empty string when no snap ("dragging"),
-      // snap name when one is found.
-      setSketchSnapLabel(pending.label ?? "");
-      if (pending.entityId) {
-        setHoveredSketchEntity(pending.entityId);
-      } else if (pending.pointId) {
-        setHoveredSketchPoint(pending.pointId);
-      }
-    }
 
     if (sceneData.geometryKey !== lastGeometryKeyRef.current) {
       // Auto-frame the camera ONLY on the very first scene load (when

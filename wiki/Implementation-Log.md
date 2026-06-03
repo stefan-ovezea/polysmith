@@ -4,7 +4,9 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-05-30
 
-### Snap system — C++ migration (Phase 1–3)
+> ⚠️ The snap-in-core work below is deprecated per [Core-UI-Design-Principles](Core-UI-Design-Principles). Snap and drag preview belong in the UI, not the core. `resolve_draft_snap` is being removed.
+
+### Snap system — C++ migration (Phase 1–3) [DEPRECATED]
 
 See `constraints` branch and `wiki/Snap-System-CPP-Migration.md` for the full plan.
 
@@ -176,7 +178,9 @@ prepends this directory to `PATH` for the child process on Windows.
   center handle, and local-axis rotation rings; drags are RAF-coalesced and go
   through `update_move_parameters`
 
-### Snap Engine Completion & Wiring
+### Snap Engine Completion & Wiring [DEPRECATED]
+
+> ⚠️ Per [Core-UI-Design-Principles](Core-UI-Design-Principles), this work moves in the wrong direction. Snap is being pulled back to the UI.
 
 **C++ snap engine (`snap_engine.cpp`):**
 - added `collect_intersection_candidates` — line-line and line-arc intersection detection with segment clamping

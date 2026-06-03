@@ -1320,37 +1320,6 @@ const errorEventSchema = z.object({
   }),
 });
 
-const draftSnapResolvedEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("draft_snap_resolved"),
-  payload: z.union([
-    z.object({
-      snap_x: z.number(),
-      snap_y: z.number(),
-      snap_kind: z.string(),
-      snap_label: z.string(),
-      host_entity_id: z.string(),
-      host_point_id: z.string(),
-      host_param_t: z.number().optional(),
-    }),
-    z.null(),
-  ]),
-});
-
-const dragSnapResultEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("drag_snap_result"),
-  payload: z.object({
-    snap_x: z.number(),
-    snap_y: z.number(),
-    snap_label: z.string().nullable(),
-    snap_kind: z.string().nullable(),
-    host_entity_id: z.string().nullable(),
-    host_point_id: z.string().nullable(),
-    host_param_t: z.number(),
-  }),
-});
-
 const trimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("trim_preview_result"),
@@ -1382,8 +1351,6 @@ export const coreMessageSchema = z.union([
   documentExportedEventSchema,
   documentSavedEventSchema,
   logEventSchema,
-  draftSnapResolvedEventSchema,
-  dragSnapResultEventSchema,
   trimPreviewResultEventSchema,
   errorEventSchema,
 ]);

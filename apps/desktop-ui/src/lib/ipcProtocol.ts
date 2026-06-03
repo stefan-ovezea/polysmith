@@ -929,22 +929,6 @@ export function makeUpdateSketchPointCommand(
   };
 }
 
-export function makeDragSketchPointCommand(
-  pointId: string,
-  cursorX: number,
-  cursorY: number,
-): CoreCommand {
-  return {
-    id: crypto.randomUUID(),
-    type: "drag_sketch_point",
-    payload: {
-      point_id: pointId,
-      cursor_x: cursorX,
-      cursor_y: cursorY,
-    },
-  };
-}
-
 export function makeSetSketchLineConstraintCommand(
   lineId: string,
   constraint: "none" | "horizontal" | "vertical",
@@ -1785,24 +1769,6 @@ export function makeUpdateSelectionFilterCommand(
     id: crypto.randomUUID(),
     type: "update_selection_filter",
     payload: { ...filter },
-  };
-}
-
-export function makeResolveDraftSnapCommand(
-  cursorX: number,
-  cursorY: number,
-  startX: number,
-  startY: number,
-): CoreCommand {
-  return {
-    id: crypto.randomUUID(),
-    type: "resolve_draft_snap",
-    payload: {
-      cursor_x: cursorX,
-      cursor_y: cursorY,
-      start_x: startX,
-      start_y: startY,
-    },
   };
 }
 

@@ -12,7 +12,6 @@
 #include "core/document.h"
 #include "core/formula_eval.h"
 #include "core/logger.h"
-#include "core/snap_engine.h"
 #include "core/trim_engine.h"
 #include "core/viewport.h"
 #include "protocol/ipc.h"
@@ -1213,40 +1212,6 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
-    return;
-  }
-
-  if (command.type == "drag_sketch_point") {
-    const auto result = document_manager().drag_sketch_point(
-        read_string(command.payload, "point_id"),
-        read_dimension(command.payload, "cursor_x"),
-        read_dimension(command.payload, "cursor_y"));
-
-    nlohmann::json payload;
-    payload["snap_x"] = result.x;
-    payload["snap_y"] = result.y;
-    if (result.snap_label.has_value()) {
-      payload["snap_label"] = result.snap_label.value();
-    } else {
-      payload["snap_label"] = nullptr;
-    }
-    if (result.snap_kind.has_value()) {
-      payload["snap_kind"] = result.snap_kind.value();
-    } else {
-      payload["snap_kind"] = nullptr;
-    }
-    payload["host_entity_id"] = result.host_entity_id.has_value()
-        ? nlohmann::json(result.host_entity_id.value())
-        : nlohmann::json(nullptr);
-    payload["host_point_id"] = result.host_point_id.has_value()
-        ? nlohmann::json(result.host_point_id.value())
-        : nlohmann::json(nullptr);
-    payload["host_param_t"] = result.host_param_t;
-
-    polysmith::protocol::write_message(
-        {{"id", command.id},
-         {"type", "drag_snap_result"},
-         {"payload", payload}});
     return;
   }
 
@@ -2561,83 +2526,6 @@ void CadCoreApp::handle_command_line(const std::string& line) {
         { { "id", command.id },
           { "type", "trim_preview_result" },
           { "payload", nullptr } });
-    return;
-  }
-
-  if (command.type == "resolve_draft_snap") {
-    const double cursor_x = read_dimension(command.payload, "cursor_x");
-    const double cursor_y = read_dimension(command.payload, "cursor_y");
-    const double start_x = read_dimension(command.payload, "start_x");
-    const double start_y = read_dimension(command.payload, "start_y");
-
-    const auto doc_opt = document_manager().get_document();
-    if (!doc_opt.has_value() ||
-        !doc_opt->active_sketch_feature_id.has_value()) {
-      polysmith::protocol::write_message(
-          { { "id", command.id },
-            { "type", "draft_snap_resolved" },
-            { "payload", nullptr } });
-      return;
-    }
-
-    const auto feature_it = std::find_if(
-        doc_opt->feature_history.begin(),
-        doc_opt->feature_history.end(),
-        [&](const auto& f) {
-          return f.id == doc_opt->active_sketch_feature_id.value();
-        });
-
-    if (feature_it == doc_opt->feature_history.end() ||
-        !feature_it->sketch_parameters.has_value()) {
-      polysmith::protocol::write_message(
-          { { "id", command.id },
-            { "type", "draft_snap_resolved" },
-            { "payload", nullptr } });
-      return;
-    }
-
-    constexpr double tolerance = 0.5;
-    const auto start_x_opt = std::make_optional(start_x);
-    const auto start_y_opt = std::make_optional(start_y);
-    auto snap = polysmith::core::resolve_discrete_snaps(
-        cursor_x, cursor_y,
-        feature_it->sketch_parameters.value(),
-        doc_opt->selection_filter,
-        tolerance);
-    if (!snap.has_value()) {
-      snap = polysmith::core::resolve_direction_snaps(
-          cursor_x, cursor_y,
-          feature_it->sketch_parameters.value(),
-          doc_opt->selection_filter,
-          tolerance,
-          start_x_opt, start_y_opt);
-    }
-    if (!snap.has_value()) {
-      snap = polysmith::core::resolve_continuous_snaps(
-          cursor_x, cursor_y,
-          feature_it->sketch_parameters.value(),
-          doc_opt->selection_filter,
-          tolerance);
-    }
-
-    if (snap.has_value()) {
-      polysmith::protocol::write_message(
-          { { "id", command.id },
-            { "type", "draft_snap_resolved" },
-            { "payload",
-              { { "snap_x", snap->local_x },
-                { "snap_y", snap->local_y },
-                { "snap_kind", snap->kind },
-                { "snap_label", snap->label },
-                { "host_entity_id", snap->entity_id },
-                { "host_point_id", snap->point_id },
-                { "host_param_t", snap->param_t } } } });
-    } else {
-      polysmith::protocol::write_message(
-          { { "id", command.id },
-            { "type", "draft_snap_resolved" },
-            { "payload", nullptr } });
-    }
     return;
   }
 

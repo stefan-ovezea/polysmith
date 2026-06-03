@@ -287,34 +287,6 @@ export interface LogEvent extends BaseMessage {
   payload: LogEntry;
 }
 
-export interface DraftSnapResolvedEvent {
-  id: string;
-  type: "draft_snap_resolved";
-  payload: {
-    snap_x: number;
-    snap_y: number;
-    snap_kind: string;
-    snap_label: string;
-    host_entity_id: string;
-    host_point_id: string;
-    host_param_t?: number;
-  } | null;
-}
-
-export interface DragSnapResultEvent {
-  id: string;
-  type: "drag_snap_result";
-  payload: {
-    snap_x: number;
-    snap_y: number;
-    snap_label: string | null;
-    snap_kind: string | null;
-    host_entity_id: string | null;
-    host_point_id: string | null;
-    host_param_t: number;
-  };
-}
-
 export interface TrimPreviewResultEvent {
   id: string;
   type: "trim_preview_result";
@@ -350,8 +322,6 @@ export type CoreMessage =
   | DocumentExportedEvent
   | DocumentSavedEvent
   | LogEvent
-  | DraftSnapResolvedEvent
-  | DragSnapResultEvent
   | TrimPreviewResultEvent
   | ErrorEvent;
 
@@ -1210,16 +1180,6 @@ export interface UpdateSketchPointCommand {
   };
 }
 
-export interface DragSketchPointCommand {
-  id: string;
-  type: "drag_sketch_point";
-  payload: {
-    point_id: string;
-    cursor_x: number;
-    cursor_y: number;
-  };
-}
-
 export interface SetSketchLineConstraintCommand {
   id: string;
   type: "set_sketch_line_constraint";
@@ -1383,17 +1343,6 @@ export interface DeleteParameterCommand {
   type: "delete_parameter";
   payload: {
     name: string;
-  };
-}
-
-export interface ResolveDraftSnapCommand {
-  id: string;
-  type: "resolve_draft_snap";
-  payload: {
-    cursor_x: number;
-    cursor_y: number;
-    start_x: number;
-    start_y: number;
   };
 }
 
@@ -1785,7 +1734,6 @@ export type CoreCommand =
   | SetSketchToolCommand
   | UpdateSketchLineCommand
   | UpdateSketchPointCommand
-  | DragSketchPointCommand
   | SetSketchLineConstraintCommand
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
@@ -1838,5 +1786,4 @@ export type CoreCommand =
   | UpdateParameterCommand
   | DeleteParameterCommand
   | UpdateSelectionFilterCommand
-  | ResolveDraftSnapCommand
   | ShutdownCommand;

@@ -121,7 +121,6 @@ import {
   makeExtrudeProfileCommand,
   makeSetSketchLineConstraintCommand,
   makeClearSketchLineConstraintsCommand,
-  makeResolveDraftSnapCommand,
   makeSetSketchToolCommand,
   makeStartSketchOnPlaneCommand,
   makeStartSketchOnFaceCommand,
@@ -129,7 +128,6 @@ import {
   makeUpdateSketchCircleCommand,
   makeUpdateSketchDimensionCommand,
   makeUpdateSketchLineCommand,
-  makeDragSketchPointCommand,
   makeUpdateSketchPointCommand,
   makeUpdateBoxFeatureCommand,
   makeUpdateCylinderFeatureCommand,
@@ -183,26 +181,6 @@ export function useCadCore() {
           const message = parseCoreMessage(payload);
           if (message.type === "log") {
             writeLogToConsole(message.payload);
-          }
-          if (message.type === "draft_snap_resolved") {
-            const p = message.payload;
-            if (p) {
-              window.dispatchEvent(new CustomEvent("polysmith-cpp-snap", {
-                detail: {
-                  local: [p.snap_x, p.snap_y] as [number, number],
-                  snapKind: p.snap_kind,
-                  snapLabel: p.snap_label,
-                  hostEntityId: p.host_entity_id,
-                  hostPointId: p.host_point_id,
-                  hostParamT: p.host_param_t,
-                },
-              }));
-            }
-          }
-          if (message.type === "drag_snap_result") {
-            window.dispatchEvent(new CustomEvent("polysmith-drag-snap", {
-              detail: message.payload,
-            }));
           }
           if (message.type === "trim_preview_result") {
             window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
@@ -726,15 +704,6 @@ export function useCadCore() {
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    dragSketchPoint: async (
-      pointId: string,
-      cursorX: number,
-      cursorY: number,
-    ) => {
-      await sendCoreCommand(
-        makeDragSketchPointCommand(pointId, cursorX, cursorY),
-      );
-    },
     setSketchLineConstraint: async (
       lineId: string,
       constraint: "none" | "horizontal" | "vertical",
@@ -749,16 +718,6 @@ export function useCadCore() {
         makeClearSketchLineConstraintsCommand(lineId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
-    },
-    resolveDraftSnap: async (
-      cursorX: number,
-      cursorY: number,
-      startX: number,
-      startY: number,
-    ) => {
-      await sendCoreCommand(
-        makeResolveDraftSnapCommand(cursorX, cursorY, startX, startY),
-      );
     },
     setSketchEqualLengthConstraint: async (
       lineId: string,

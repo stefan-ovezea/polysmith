@@ -8,7 +8,14 @@
 > garbage geometry or explode into errors. PolySmith must never ship a
 > feature that introduces new unhandled TNP exposure. Every new feature
 > kind must either remain topology-independent or re-resolve its
-> references against live body shapes on every recompute.
+
+> **The core owns the document. The UI owns the interaction. Never
+> confuse them.** If it moves with the mouse, it's UI. If it saves to a
+> file, it's core.
+
+> **Never store a naked OCCT topology index and trust it across
+> recomputes.** Every feature that references 3D geometry must re-resolve
+> its references against live body shapes on every recompute.
 
 ---
 

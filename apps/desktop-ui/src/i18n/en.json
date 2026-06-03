@@ -108,7 +108,15 @@
     "snapTypes": "Snap types",
     "tangent": "Tangent",
     "title": "Selection & Snap",
-    "tolerance": "Tolerance (px)"
+    "tolerance": "Tolerance (px)",
+    "snapEngineTools": "Snap engine per tool",
+    "snapEngineToolsHint": "When off, the C++ snap engine does not fire for this tool (no direction/parallel/etc. snap during drawing).",
+    "snapToolSelect": "Select",
+    "snapToolLine": "Line",
+    "snapToolCircle": "Circle",
+    "snapToolRectangle": "Rectangle",
+    "snapToolArc": "Arc",
+    "snapToolPolygon": "Polygon"
   },
   "workspace": {
     "cad": "CAD",

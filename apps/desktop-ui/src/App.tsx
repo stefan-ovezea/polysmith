@@ -838,7 +838,6 @@ function App() {
     setSketchTool,
     setSketchLineConstraint,
     clearSketchLineConstraints,
-    resolveDraftSnap,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
     deleteSketchCoincidentConstraint,
@@ -852,7 +851,6 @@ function App() {
     cancelMirrorPreview,
     setSketchPointFixed,
     updateSketchPoint,
-    dragSketchPoint,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
     selectSketchProfile,
@@ -5817,9 +5815,6 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
-              onResolveDraftSnap={async (cx, cy, sx, sy) => {
-                await resolveDraftSnap(cx, cy, sx, sy);
-              }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
                 await runAction(async () => {
                   await addSketchAngleDimension(firstLineId, secondLineId);
@@ -6294,9 +6289,6 @@ function App() {
                 await runAction(async () => {
                   await updateSketchPoint(pointId, x, y);
                 });
-              }}
-              onDragSketchPoint={async (pointId, cursorX, cursorY) => {
-                await dragSketchPoint(pointId, cursorX, cursorY);
               }}
               hiddenFeatureIds={effectiveHiddenFeatureIds}
               hiddenSketchPlaneIds={hiddenSketchPlaneIds}
