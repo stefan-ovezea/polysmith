@@ -287,20 +287,6 @@ export interface LogEvent extends BaseMessage {
   payload: LogEntry;
 }
 
-export interface DraftSnapResolvedEvent {
-  id: string;
-  type: "draft_snap_resolved";
-  payload: {
-    snap_x: number;
-    snap_y: number;
-    snap_kind: string;
-    snap_label: string;
-    host_entity_id: string;
-    host_point_id: string;
-    host_param_t?: number;
-  } | null;
-}
-
 export interface TrimPreviewResultEvent {
   id: string;
   type: "trim_preview_result";
@@ -336,7 +322,6 @@ export type CoreMessage =
   | DocumentExportedEvent
   | DocumentSavedEvent
   | LogEvent
-  | DraftSnapResolvedEvent
   | TrimPreviewResultEvent
   | ErrorEvent;
 
@@ -1296,6 +1281,14 @@ export interface SetSketchCoincidentConstraintCommand {
   };
 }
 
+export interface DeleteSketchCoincidentConstraintCommand {
+  id: string;
+  type: "delete_sketch_coincident_constraint";
+  payload: {
+    constraint_id: string;
+  };
+}
+
 export interface SetSketchPointFixedCommand {
   id: string;
   type: "set_sketch_point_fixed";
@@ -1350,17 +1343,6 @@ export interface DeleteParameterCommand {
   type: "delete_parameter";
   payload: {
     name: string;
-  };
-}
-
-export interface ResolveDraftSnapCommand {
-  id: string;
-  type: "resolve_draft_snap";
-  payload: {
-    cursor_x: number;
-    cursor_y: number;
-    start_x: number;
-    start_y: number;
   };
 }
 
@@ -1764,6 +1746,7 @@ export type CoreCommand =
   | CancelMirrorPreviewCommand
   | SetSketchParallelConstraintCommand
   | SetSketchCoincidentConstraintCommand
+  | DeleteSketchCoincidentConstraintCommand
   | SetSketchPointFixedCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
@@ -1803,5 +1786,4 @@ export type CoreCommand =
   | UpdateParameterCommand
   | DeleteParameterCommand
   | UpdateSelectionFilterCommand
-  | ResolveDraftSnapCommand
   | ShutdownCommand;

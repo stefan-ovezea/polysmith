@@ -838,9 +838,9 @@ function App() {
     setSketchTool,
     setSketchLineConstraint,
     clearSketchLineConstraints,
-    resolveDraftSnap,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
+    deleteSketchCoincidentConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
     setSketchTangentConstraint,
@@ -3697,6 +3697,7 @@ function App() {
     }
 
     if (!armedSketchConstraint.firstPointId) {
+      addMessage(`coincident: first point ${pointId} (${kind})`);
       await selectSketchPoint(pointId);
       setArmedSketchConstraint({
         kind: "coincident",
@@ -3706,13 +3707,16 @@ function App() {
     }
 
     if (armedSketchConstraint.firstPointId === pointId) {
+      addMessage(`coincident: same point clicked twice, ignoring`);
       return;
     }
 
+    addMessage(`coincident: second point ${pointId} (${kind}) — applying constraint`);
     await setSketchCoincidentConstraint(
       pointId,
       armedSketchConstraint.firstPointId,
     );
+    addMessage(`coincident: constraint applied, armed for next pair`);
     // Stay armed so the user can pick more point pairs without
     // re‑clicking the toolbar button.
     setArmedSketchConstraint({
@@ -5811,9 +5815,6 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
-              onResolveDraftSnap={async (cx, cy, sx, sy) => {
-                await resolveDraftSnap(cx, cy, sx, sy);
-              }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
                 await runAction(async () => {
                   await addSketchAngleDimension(firstLineId, secondLineId);
@@ -5855,6 +5856,11 @@ function App() {
               onSetSketchTangentConstraint={async (lineId, circleId) => {
                 await runAction(async () => {
                   await setSketchTangentConstraint(lineId, circleId);
+                });
+              }}
+              onSetSketchParallelConstraint={async (lineId, otherLineId) => {
+                await runAction(async () => {
+                  await setSketchParallelConstraint(lineId, otherLineId);
                 });
               }}
               onAddSketchRectangle={async (
@@ -6109,6 +6115,11 @@ function App() {
                 await runAction(async () => {
                   if (kind === "fixed") {
                     await setSketchPointFixed(entityId, false);
+                    return;
+                  }
+
+                  if (kind === "coincident") {
+                    await deleteSketchCoincidentConstraint(entityId);
                     return;
                   }
 

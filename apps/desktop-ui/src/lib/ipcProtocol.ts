@@ -1075,6 +1075,18 @@ export function makeSetSketchCoincidentConstraintCommand(
   };
 }
 
+export function makeDeleteSketchCoincidentConstraintCommand(
+  constraintId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_coincident_constraint",
+    payload: {
+      constraint_id: constraintId,
+    },
+  };
+}
+
 export function makeSetSketchPointFixedCommand(
   pointId: string,
   isFixed: boolean,
@@ -1757,24 +1769,6 @@ export function makeUpdateSelectionFilterCommand(
     id: crypto.randomUUID(),
     type: "update_selection_filter",
     payload: { ...filter },
-  };
-}
-
-export function makeResolveDraftSnapCommand(
-  cursorX: number,
-  cursorY: number,
-  startX: number,
-  startY: number,
-): CoreCommand {
-  return {
-    id: crypto.randomUUID(),
-    type: "resolve_draft_snap",
-    payload: {
-      cursor_x: cursorX,
-      cursor_y: cursorY,
-      start_x: startX,
-      start_y: startY,
-    },
   };
 }
 

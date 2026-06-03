@@ -48,10 +48,22 @@ void set_sketch_parallel_constraint(
 // Dimensions and anchors are left untouched.
 void clear_sketch_line_constraints(FeatureEntry& feature,
                                    const std::string& line_id);
+// Look up the current world-space position of a sketch point by
+// searching lines first (authoritative for endpoints), then the
+// points list (centers, quadrants, fillet corners, projected points).
+std::optional<std::tuple<double, double>> find_point_position(
+    const SketchFeatureParameters& parameters,
+    const std::string& point_id);
 void set_sketch_coincident_constraint(
     FeatureEntry& feature,
     const std::string& point_id,
     const std::string& other_point_id);
+// Remove a coincident constraint identified by its constraint_id.
+// Assigns fresh point IDs to all but the first line sharing the
+// merged point so the entities can move independently again.
+void delete_sketch_coincident_constraint(
+    FeatureEntry& feature,
+    const std::string& constraint_id);
 void set_sketch_point_fixed(FeatureEntry& feature,
                             const std::string& point_id,
                             bool is_fixed);

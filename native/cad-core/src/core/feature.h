@@ -601,13 +601,13 @@ struct SelectionFilter {
     bool snap_center          = true;
     bool snap_intersection    = true;
     bool snap_nearest         = true;
-    bool snap_quadrant        = false;
-    bool snap_perpendicular   = false;
-    bool snap_parallel        = false;
+    bool snap_quadrant        = true;
+    bool snap_perpendicular   = true;
+    bool snap_parallel        = true;
     bool snap_tangent         = true;
     bool snap_grid            = true;
-    bool snap_grid_line       = false;
-    bool snap_polar           = false;
+    bool snap_grid_line       = true;
+    bool snap_polar           = true;
 
     // Global settings
     int tolerance_px           = 10;
