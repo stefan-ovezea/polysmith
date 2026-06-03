@@ -8108,4 +8108,31 @@ DocumentState DocumentManager::cam_operation_add(const CamOperationEntry& op) {
   return document_.value();
 }
 
+DocumentState DocumentManager::cam_operation_update(
+    const std::string& operation_id, const CamOperationEntry& updated) {
+  require_document();
+  for (auto& op : document_->cam_operations) {
+    if (op.id == operation_id) {
+      // Preserve TNP witness data, update user-editable fields.
+      op.name = updated.name;
+      op.toolId = updated.toolId;
+      op.faceMilling = updated.faceMilling;
+      bump_geometry_revision();
+      return document_.value();
+    }
+  }
+  return document_.value();
+}
+
+DocumentState DocumentManager::cam_operation_delete(const std::string& operation_id) {
+  require_document();
+  auto& ops = document_->cam_operations;
+  ops.erase(
+      std::remove_if(ops.begin(), ops.end(),
+                     [&](const CamOperationEntry& op) { return op.id == operation_id; }),
+      ops.end());
+  bump_geometry_revision();
+  return document_.value();
+}
+
 }  // namespace polysmith::core

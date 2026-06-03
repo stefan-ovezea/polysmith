@@ -92,13 +92,18 @@ import {
   clearCubeHover,
   applyCubeDragOrbit,
   disposeViewCubeGroup,
+  createCubeRenderTarget,
+  resizeCubeRenderTarget,
+  createCubeBlitScene,
+  updateCubeBlitMesh,
+  disposeCubeBlitScene,
   lineLineIntersectionTrim,
   lineCircleIntersectionTrim,
 } from "@/utils";
+import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { sendCoreCommand } from "@/lib/cadCoreClient";
 import { makeTrimPreviewCommand } from "@/lib/ipcProtocol";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
-import type { ViewCubeHit } from "@/utils";
 
 type DynamicGridRef = {
   key: string;
@@ -284,6 +289,7 @@ interface ViewportPanelProps {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
   document: DocumentState | null;
   viewport: ViewportState | null;
+  showStock?: boolean;
   onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
@@ -1184,6 +1190,7 @@ export function ViewportPanel({
   status,
   document,
   viewport,
+  showStock = true,
   onSnapshotCaptureReady,
   onSelectPrimitive,
   onSelectReference,
@@ -1378,6 +1385,8 @@ export function ViewportPanel({
   const viewCubeSceneRef = useRef<THREE.Scene | null>(null);
   const viewCubeCameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const viewCubeRaycasterRef = useRef<THREE.Raycaster | null>(null);
+  const cubeRenderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const cubeBlitSceneRef = useRef<CubeBlitScene | null>(null);
   const viewCubeHoveredRef = useRef<ViewCubeHit>(null);
   const viewCubeAnimatingRef = useRef(false);
   const viewCubeAnimStartRef = useRef(0);
@@ -5829,6 +5838,12 @@ const currentGridSpacingRef = useRef(10);
     viewCubeCameraRef.current = cubeCamera;
     viewCubeRaycasterRef.current = cubeRaycaster;
 
+    // Render-target-based cube rendering (no scissor test)
+    const cubeTarget = createCubeRenderTarget(renderer);
+    const blitScene = createCubeBlitScene(cubeTarget);
+    cubeRenderTargetRef.current = cubeTarget;
+    cubeBlitSceneRef.current = blitScene;
+
     function ensureDynamicGrid(
       ref: MutableRefObject<DynamicGridRef | null>,
       key: string,
@@ -6733,7 +6748,9 @@ const currentGridSpacingRef = useRef(10);
       const cubeGroup = viewCubeGroupRef.current;
       const cubeScene = viewCubeSceneRef.current;
       const cubeCam = viewCubeCameraRef.current;
-      if (!cubeGroup || !cubeScene || !cubeCam) return;
+      const cubeTarget = cubeRenderTargetRef.current;
+      const blit = cubeBlitSceneRef.current;
+      if (!cubeGroup || !cubeScene || !cubeCam || !cubeTarget || !blit) return;
 
       // Sync cube camera to main view direction
       syncCubeCamera(camera, controls.target, cubeCam);
@@ -6761,28 +6778,28 @@ const currentGridSpacingRef = useRef(10);
         }
       }
 
+      // Resize render target if DPR changed (e.g. window moved across monitors)
       const dpr = renderer.getPixelRatio();
-      const w = renderer.domElement.width;
-      const h = renderer.domElement.height;
-      const rect = getCubeViewportRect(w, h, dpr);
+      resizeCubeRenderTarget(cubeTarget, dpr);
 
-      const oldAutoClear = renderer.autoClear;
-      const oldViewport = new THREE.Vector4();
-      const oldScissor = new THREE.Vector4();
-      renderer.getViewport(oldViewport);
-      renderer.getScissor(oldScissor);
-
-      renderer.autoClear = false;
-      renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
-      renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
-      renderer.setScissorTest(true);
-      renderer.clear(true, true, false);
+      // 1. Render cube to offscreen target
+      const oldTarget = renderer.getRenderTarget();
+      renderer.setRenderTarget(cubeTarget);
       renderer.render(cubeScene, cubeCam);
 
-      renderer.setViewport(oldViewport);
-      renderer.setScissor(oldScissor);
-      renderer.setScissorTest(false);
+      // 2. Blit target texture to screen corner via NDC-plane scene
+      renderer.setRenderTarget(null);
+      const w = renderer.domElement.width / dpr;
+      const h = renderer.domElement.height / dpr;
+      updateCubeBlitMesh(blit.mesh, w, h);
+
+      const oldAutoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.render(blit.scene, blit.camera);
       renderer.autoClear = oldAutoClear;
+
+      // Restore
+      renderer.setRenderTarget(oldTarget);
     }
 
     function pickVisibleSketchLineScreenSpace(
@@ -10470,6 +10487,14 @@ const currentGridSpacingRef = useRef(10);
       viewCubeSceneRef.current = null;
       viewCubeCameraRef.current = null;
       viewCubeRaycasterRef.current = null;
+      if (cubeBlitSceneRef.current) {
+        disposeCubeBlitScene(cubeBlitSceneRef.current);
+        cubeBlitSceneRef.current = null;
+      }
+      if (cubeRenderTargetRef.current) {
+        cubeRenderTargetRef.current.dispose();
+        cubeRenderTargetRef.current = null;
+      }
       renderer.dispose();
       disposeDynamicGrid(worldGridRef.current);
       disposeDynamicGrid(sketchGridRef.current);
@@ -10718,6 +10743,68 @@ const currentGridSpacingRef = useRef(10);
       }
     }
 
+    // ── CAM WCS origin marker ─────────────────────────────────────
+    if (document?.cam_setup) {
+      const wcs = document.cam_setup.wcs_origin;
+      const angleDeg = document.cam_setup.wcs_angle ?? 0;
+      const angleRad = (angleDeg * Math.PI) / 180;
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
+      const origin = new THREE.Vector3(wcs.x, wcs.y, wcs.z);
+      const axisLen = 10;
+      const makeAxis = (dir: THREE.Vector3, color: number) => {
+        const end = origin.clone().add(dir.clone().multiplyScalar(axisLen));
+        const geom = new THREE.BufferGeometry().setFromPoints([origin, end]);
+        const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 });
+        const line = new THREE.Line(geom, mat);
+        line.renderOrder = 1;
+        referenceGroup.add(line);
+      };
+      // X and Y rotate around Z by wcs_angle; Z stays world-up
+      makeAxis(new THREE.Vector3(cosA, sinA, 0), 0xff4444);   // X red
+      makeAxis(new THREE.Vector3(-sinA, cosA, 0), 0x44ff44);  // Y green
+      makeAxis(new THREE.Vector3(0, 0, 1), 0x4488ff);         // Z blue
+
+      // ── Stock bounding box (translucent, centered on model) ────
+      if (showStock) {
+      const stock = document.cam_setup.stock;
+      const stockW = stock.width + stock.offset_x * 2;
+      const stockH = stock.height + stock.offset_y * 2;
+      const stockD = stock.depth + stock.offset_z * 2;
+      const bc = sceneData.bounds?.center ?? [0, 0, 0];
+      const modelCenter = new THREE.Vector3(bc[0], bc[1], bc[2]);
+      const stockBox = new THREE.BoxGeometry(stockW, stockD, stockH);
+      const stockMesh = new THREE.Mesh(
+        stockBox,
+        new THREE.MeshBasicMaterial({
+          color: 0x4488ff,
+          transparent: true,
+          opacity: 0.15,
+          depthTest: true,
+          depthWrite: false,
+        }),
+      );
+      stockMesh.position.copy(modelCenter);
+      stockMesh.renderOrder = 0;
+      referenceGroup.add(stockMesh);
+
+      // Wireframe edges so the box is readable at any angle
+      const stockEdges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(stockBox),
+        new THREE.LineBasicMaterial({
+          color: 0x4488ff,
+          transparent: true,
+          opacity: 0.35,
+          depthTest: true,
+          depthWrite: false,
+        }),
+      );
+      stockEdges.position.copy(modelCenter);
+      stockEdges.renderOrder = 2;
+      referenceGroup.add(stockEdges);
+      }
+    }
+
     for (const face of sceneData.solidFaces) {
       const faceObject = buildSolidFaceObject(face);
       faceMeshesRef.current.push(faceObject.mesh);
@@ -10757,7 +10844,8 @@ const currentGridSpacingRef = useRef(10);
           color: isRapid ? 0xff4444 : 0x44ff44,
           transparent: true,
           opacity: isRapid ? 0.5 : 0.85,
-          depthTest: true,
+          depthTest: false,
+          depthWrite: false,
         });
         const line = new THREE.Line(geometry, material);
         line.renderOrder = 10; // above edges (5–6) and sketch (7–8)

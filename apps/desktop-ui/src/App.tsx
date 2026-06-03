@@ -57,6 +57,8 @@ import {
   SweepPreviewPanel,
   OffsetPlanePanel,
   SketchFilletPanel,
+  CamSetupPanel,
+  FaceMillingPanel,
   MirrorToolPanel,
   FeatureTimeline,
   LogsWindow,
@@ -545,6 +547,8 @@ function App() {
   const [selectedCamOperationId, setSelectedCamOperationId] = useState<
     string | null
   >(null);
+  const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  const [showStock, setShowStock] = useState(true);
   // Derived from core document state so the panel stays in sync.
   const camOperations: import("./layout/CamOperationPanel").CamOperation[] =
     useMemo(() => {
@@ -553,12 +557,14 @@ function App() {
       ): import("./layout/header/CamToolbar").CamOperationType => {
         // C++ CamOperationType enum: FaceMilling=0, Pocket=1, ...
         switch (t) {
+          case 0:
+            return "faceMilling";
           case 1:
             return "pocket";
           case 2:
             return "drill";
           default:
-            return "profile"; // fallback for FaceMilling and unknown
+            return "profile"; // fallback for unknown ops
         }
       };
       return (document?.cam_operations ?? []).map((op) => ({
@@ -929,7 +935,10 @@ function App() {
     batchSelectSketchEntities,
     updateSelectionFilter,
     camSetupCreate,
+    camSetupUpdate,
     camFaceMillingCreate,
+    camOperationUpdate,
+    camOperationDelete,
   } = useCadCore();
 
   function clearTimelineEditVisibility() {
@@ -5140,11 +5149,7 @@ function App() {
           }}
           hasCamSetup={document?.cam_setup != null}
           onCamSetupClick={() => {
-            console.log("[CAM] Setup clicked");
-            void runAction(async () => {
-              await camSetupCreate();
-              console.log("[CAM] Setup done");
-            });
+            setIsCamSetupPanelOpen((prev) => !prev);
           }}
           onCamFaceMillingClick={() => {
             console.log("[CAM] Face Milling clicked");
@@ -5189,10 +5194,12 @@ function App() {
                 selectedOperationId={selectedCamOperationId}
                 onSelectOperation={setSelectedCamOperationId}
                 onDeleteOperation={(id) => {
-                  // TODO: send cam_operation_delete command to core when implemented
-                  if (selectedCamOperationId === id) {
-                    setSelectedCamOperationId(null);
-                  }
+                  void runAction(async () => {
+                    await camOperationDelete(id);
+                    if (selectedCamOperationId === id) {
+                      setSelectedCamOperationId(null);
+                    }
+                  });
                 }}
               />
               <div
@@ -5426,6 +5433,7 @@ function App() {
               status={status}
               document={document}
               viewport={viewport}
+              showStock={showStock}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -8611,6 +8619,87 @@ function App() {
                   }}
                 />
               ) : null}
+              {isCamSetupPanelOpen ? (
+                <CamSetupPanel
+                  initialSetup={{
+                    stock: document?.cam_setup?.stock ?? {
+                      width: 120, height: 120, depth: 20,
+                      offset_x: 5, offset_y: 5, offset_z: 5,
+                    },
+                    wcs_origin: document?.cam_setup?.wcs_origin ?? { x: 0, y: 0, z: 0 },
+                    safety_plane_z: document?.cam_setup?.safety_plane_z ?? 10,
+                    wcs_angle: document?.cam_setup?.wcs_angle ?? 0,
+                    orientation_mode: "model",
+                    origin_mode: "model",
+                  }}
+                  bodies={viewport?.bodies ?? []}
+                  showStock={showStock}
+                  onShowStockChange={setShowStock}
+                  disabled={status !== "connected"}
+                  onUpdate={(state) => {
+                    void runAction(async () => {
+                      await camSetupUpdate({
+                        stock: state.stock,
+                        wcs_origin: state.wcs_origin,
+                        safety_plane_z: state.safety_plane_z,
+                        wcs_angle: state.wcs_angle,
+                      });
+                    });
+                  }}
+                  onConfirm={() => {
+                    setIsCamSetupPanelOpen(false);
+                  }}
+                  onCancel={() => {
+                    setIsCamSetupPanelOpen(false);
+                  }}
+                />
+              ) : null}
+              {selectedCamOperationId && document?.cam_operations ? (() => {
+                const op = document.cam_operations.find(
+                  (o) => o.id === selectedCamOperationId && o.type === 0
+                );
+                if (!op) return null;
+                const tools: import("@/layout/FaceMillingPanel").ToolOption[] =
+                  (document.tool_library ?? []).map((t) => ({
+                    tool_id: t.tool_id,
+                    name: t.name,
+                    diameter: t.diameter,
+                  }));
+                return (
+                  <FaceMillingPanel
+                    operationName={op.name}
+                    initialParams={{
+                      depth: op.face_milling?.depth ?? 0.5,
+                      stepover: op.face_milling?.stepover ?? 5,
+                      angle_deg: op.face_milling?.angle_deg ?? 0,
+                    }}
+                    initialToolId={op.tool_id}
+                    tools={tools}
+                    disabled={status !== "connected"}
+                    onUpdate={(params, toolId) => {
+                      void runAction(async () => {
+                        await camOperationUpdate({
+                          operation_id: op.id,
+                          tool_id: toolId,
+                          params,
+                        });
+                      });
+                    }}
+                    onDelete={() => {
+                      void runAction(async () => {
+                        await camOperationDelete(op.id);
+                        setSelectedCamOperationId(null);
+                      });
+                    }}
+                    onConfirm={() => {
+                      setSelectedCamOperationId(null);
+                    }}
+                    onCancel={() => {
+                      setSelectedCamOperationId(null);
+                    }}
+                  />
+                );
+              })() : null}
               {pendingSketchDeleteConfirmation ? (
                 <section className="pointer-events-auto cad-floating-panel px-5 py-5">
                   <div className="flex items-start gap-3">

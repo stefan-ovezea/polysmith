@@ -20,12 +20,12 @@ export function CamMillingToolbar({
 
   return (
     <div className="flex items-center gap-1.5">
-      {/* Common setup — shared across categories */}
+      {/* Common setup — shared across categories, opens a floating config panel */}
       <button type="button"
-        className={hasSetup && !disabled ? ICON_BUTTON_DISABLED : ICON_BUTTON_BASE}
+        className={ICON_BUTTON_BASE}
         data-tooltip={hasSetup ? t("cam.common.setupDone") : t("cam.common.setup")}
-        aria-label={hasSetup ? t("cam.common.setupDone") : t("cam.common.setup")}
-        disabled={hasSetup || disabled}
+        aria-label={hasSetup ? t("cam.common.editSetup") : t("cam.common.setup")}
+        disabled={disabled}
         onClick={onSetupClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"

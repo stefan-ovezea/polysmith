@@ -24,6 +24,8 @@ export function CamOperationPanel({
 
   const typeLabel = (type: CamOperationType): string => {
     switch (type) {
+      case "faceMilling":
+        return t("cam.common.faceOp");
       case "profile":
         return t("cam.profile");
       case "pocket":
@@ -49,22 +51,41 @@ export function CamOperationPanel({
           <ul className="flex flex-col gap-0.5">
             {operations.map((op) => (
               <li key={op.id}>
-                <button
-                  type="button"
+                <div
                   className={
                     selectedOperationId === op.id
-                      ? "w-full text-left px-2 py-1.5 rounded text-xs cad-panel-item-active"
-                      : "w-full text-left px-2 py-1.5 rounded text-xs cad-panel-item"
+                      ? "flex items-center rounded text-xs cad-panel-item-active"
+                      : "flex items-center rounded text-xs cad-panel-item group"
                   }
-                  onClick={() => onSelectOperation(op.id)}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="truncate">{op.name}</span>
-                    <span className="text-[10px] cad-muted ml-2 shrink-0">
-                      {typeLabel(op.type)}
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    className="flex-1 text-left px-2 py-1.5"
+                    onClick={() => onSelectOperation(op.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="truncate">{op.name}</span>
+                      <span className="text-[10px] cad-muted ml-2 shrink-0">
+                        {typeLabel(op.type)}
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 px-1.5 py-1 text-on-surface-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={t("cam.faceMilling.delete", "Delete")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteOperation(op.id);
+                    }}
+                  >
+                    <svg viewBox="0 0 14 14" width="12" height="12" fill="none"
+                      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M3 4h8M5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M6 7v3M8 7v3" />
+                      <path d="M4 4l.5 7.5a.5.5 0 00.5.5h4a.5.5 0 00.5-.5L10 4" />
+                    </svg>
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

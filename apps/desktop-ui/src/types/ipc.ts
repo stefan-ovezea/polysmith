@@ -57,6 +57,7 @@ export interface DocumentState {
     wcs_origin: { x: number; y: number; z: number };
     safety_plane_z: number;
     axis_count: number;
+    wcs_angle: number;
   } | null;
   tool_library: Array<{
     tool_id: string;

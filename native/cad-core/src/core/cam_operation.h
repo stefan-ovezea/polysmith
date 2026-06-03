@@ -124,6 +124,9 @@ struct CamSetup {
   double safetyPlaneZ = 10.0;
   // 3-axis only for v1.
   int axisCount = 3;
+  // Rotation of the XY plane around Z, in degrees.
+  // Aligns X/Y with part geometry for fixturing.
+  double wcsAngle = 0.0;
 };
 
 // ── Tool library ──────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 
 const ICON_BUTTON_BASE = "cad-icon-button cad-icon-tool h-9 w-9 p-0";
 
-export type CamOperationType = "profile" | "pocket" | "drill";
+export type CamOperationType = "faceMilling" | "profile" | "pocket" | "drill";
 
 export interface CamToolbarProps {
   disabled: boolean;

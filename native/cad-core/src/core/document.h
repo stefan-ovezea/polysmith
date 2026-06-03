@@ -487,6 +487,8 @@ class DocumentManager {
   std::vector<CamToolDefinition> cam_tool_list() const;
 
   DocumentState cam_operation_add(const CamOperationEntry& op);
+  DocumentState cam_operation_update(const std::string& operation_id, const CamOperationEntry& op);
+  DocumentState cam_operation_delete(const std::string& operation_id);
 
  private:
   FeatureEntry make_root_feature();

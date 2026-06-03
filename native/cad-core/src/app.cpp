@@ -2611,6 +2611,56 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     return;
   }
 
+  // ── CAM Operation Update / Delete ───────────────────────────────
+  if (command.type == "cam_operation_update") {
+    const auto opId = read_string(command.payload, "operation_id");
+
+    // Start from the existing operation so fields not in the payload
+    // are preserved (e.g. name, tool_id, TNP witness data).
+    core::CamOperationEntry updated;
+    bool found = false;
+    {
+      const auto doc = document_manager().get_document();
+      if (doc.has_value()) {
+        for (const auto& op : doc->cam_operations) {
+          if (op.id == opId) {
+            updated = op;
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!found) {
+      updated.id = opId;
+    }
+
+    if (command.payload.contains("name")) updated.name = read_string(command.payload, "name");
+    if (command.payload.contains("tool_id")) updated.toolId = read_string(command.payload, "tool_id");
+    if (command.payload.contains("params")) {
+      const auto& p = command.payload["params"];
+      core::FaceMillingParams fm;
+      if (p.contains("depth")) fm.depth = p["depth"].get<double>();
+      if (p.contains("stepover")) fm.stepover = p["stepover"].get<double>();
+      if (p.contains("angle_deg")) fm.angleDeg = p["angle_deg"].get<double>();
+      updated.faceMilling = fm;
+    }
+    const auto document = document_manager().cam_operation_update(opId, updated);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cam_operation_delete") {
+    const auto opId = read_string(command.payload, "operation_id");
+    const auto document = document_manager().cam_operation_delete(opId);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   // ── CAM Setup ──────────────────────────────────────────────────
   if (command.type == "cam_setup_create") {
     const auto setup = polysmith::protocol::setup_from_payload(command.payload);

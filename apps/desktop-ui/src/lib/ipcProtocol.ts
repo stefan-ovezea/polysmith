@@ -1963,11 +1963,30 @@ export function makeCamSetupCreateCommand(): CoreCommand {
       name: "Setup",
       machine_config: { machine_type: "3_axis" },
       stock: {
-        stock_type: "bounding_box",
-        bounding_box: { min_x: -60, min_y: -60, min_z: -15, max_x: 60, max_y: 60, max_z: 5 },
+        width: 120,
+        height: 120,
+        depth: 20,
+        offset_x: 5,
+        offset_y: 5,
+        offset_z: 5,
       },
       wcs_origin: { x: 0, y: 0, z: 0 },
     },
+  } as unknown as CoreCommand;
+}
+
+export interface CamSetupUpdatePayload {
+  stock?: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
+  wcs_origin?: { x: number; y: number; z: number };
+  safety_plane_z?: number;
+  wcs_angle?: number;
+}
+
+export function makeCamSetupUpdateCommand(payload: CamSetupUpdatePayload): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_setup_update",
+    payload,
   } as unknown as CoreCommand;
 }
 
@@ -1986,5 +2005,28 @@ export function makeCamOperationCreateCommand(
       face_reference: { body_id: bodyId, face_index: faceIndex },
       params: { depth: 0.5, stepover: 5, angle_deg: 0 },
     },
+  } as unknown as CoreCommand;
+}
+
+export interface CamOperationUpdatePayload {
+  operation_id: string;
+  name?: string;
+  tool_id?: string;
+  params?: { depth: number; stepover: number; angle_deg: number };
+}
+
+export function makeCamOperationUpdateCommand(payload: CamOperationUpdatePayload): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_operation_update",
+    payload,
+  } as unknown as CoreCommand;
+}
+
+export function makeCamOperationDeleteCommand(operationId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_operation_delete",
+    payload: { operation_id: operationId },
   } as unknown as CoreCommand;
 }

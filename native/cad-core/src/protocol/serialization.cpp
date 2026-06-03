@@ -927,6 +927,7 @@ json to_payload(const polysmith::core::CamSetup& setup) {
        }},
       {"safety_plane_z", setup.safetyPlaneZ},
       {"axis_count", setup.axisCount},
+      {"wcs_angle", setup.wcsAngle},
   };
 }
 
@@ -970,6 +971,7 @@ polysmith::core::CamSetup setup_from_payload(const json& payload) {
   }
   if (payload.contains("safety_plane_z")) setup.safetyPlaneZ = payload["safety_plane_z"].get<double>();
   if (payload.contains("axis_count")) setup.axisCount = payload["axis_count"].get<int>();
+  if (payload.contains("wcs_angle")) setup.wcsAngle = payload["wcs_angle"].get<double>();
   return setup;
 }
 

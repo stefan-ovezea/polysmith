@@ -189,7 +189,9 @@ CamToolpath generate_face_milling_toolpath(
   const auto& params = op.faceMilling.value_or(FaceMillingParams{});
   const double stepover = params.stepover;
   const double angleRad = params.angleDeg * kPi / 180.0;
-  const double safetyZ = 10.0;  // TODO: read from CamSetup
+  const double safetyZ = document.cam_setup.has_value()
+      ? document.cam_setup->safetyPlaneZ
+      : 10.0;
 
   // Get face boundary polygon for clipping (world XY, at face Z).
   const auto boundaryPoly = faceBoundaryPolygonXY(face, center.Z());

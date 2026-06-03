@@ -8,7 +8,10 @@ import {
   startCadCore,
   makeCreateDocumentCommand,
   makeCamSetupCreateCommand,
+  makeCamSetupUpdateCommand,
   makeCamOperationCreateCommand,
+  makeCamOperationUpdateCommand,
+  makeCamOperationDeleteCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
@@ -1270,8 +1273,20 @@ export function useCadCore() {
       await sendCoreCommand(makeCamSetupCreateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    camSetupUpdate: async (payload: import("@/lib/ipcProtocol").CamSetupUpdatePayload) => {
+      await sendCoreCommand(makeCamSetupUpdateCommand(payload));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     camFaceMillingCreate: async (bodyId: string, faceIndex: number) => {
       await sendCoreCommand(makeCamOperationCreateCommand("face_milling", bodyId, faceIndex));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    camOperationUpdate: async (payload: import("@/lib/ipcProtocol").CamOperationUpdatePayload) => {
+      await sendCoreCommand(makeCamOperationUpdateCommand(payload));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    camOperationDelete: async (operationId: string) => {
+      await sendCoreCommand(makeCamOperationDeleteCommand(operationId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
   };
