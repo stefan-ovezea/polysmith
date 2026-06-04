@@ -792,9 +792,9 @@ ViewportSketchDimensionPrimitive make_line_angle_dimension_primitive(
   const double bisector_ux = bx / blen;
   const double bisector_uy = by / blen;
 
-  const double kArcRadius = std::max(8.0, std::min(length, 60.0));
+  const double kArcRadius = std::max(8.0, std::min(length, 500.0));
   constexpr double kAnchorRadius = 4.0;
-  const double kLabelRadius = kArcRadius + 3.0;
+  const double kLabelRadius = kArcRadius;
 
   const WorldPoint anchor_start = to_world_point(
       parameters,
@@ -986,9 +986,9 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
   const double bisector_ux = bx / blen;
   const double bisector_uy = by / blen;
 
-  const double kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 60.0));
+  const double kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 500.0));
   constexpr double kAnchorRadius = 4.0;
-  const double kLabelRadius = kArcRadius + 3.0;
+  const double kLabelRadius = kArcRadius;
 
   const WorldPoint anchor_start = to_world_point(
       parameters,
@@ -1075,8 +1075,8 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     const double raw_dx = *dimension.label_x - pivot_x;
     const double raw_dy = *dimension.label_y - pivot_y;
     const double dimension_radius =
-        std::max(6.0, std::min(std::sqrt(raw_dx * raw_dx + raw_dy * raw_dy), 80.0));
-    const double label_radius = std::max(3.0, dimension_radius * 0.42);
+        std::max(6.0, std::min(std::sqrt(raw_dx * raw_dx + raw_dy * raw_dy), 500.0));
+    const double label_radius = dimension_radius;
     const WorldPoint saved_anchor_start = to_world_point(
         parameters,
         pivot_x + a_ux * kAnchorRadius,

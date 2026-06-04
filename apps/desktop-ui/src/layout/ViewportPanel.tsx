@@ -252,7 +252,7 @@ type DimensionRelationPreview = {
 };
 
 const ANGLE_DIMENSION_MIN_RADIUS = 6;
-const ANGLE_DIMENSION_MAX_RADIUS = 80;
+const ANGLE_DIMENSION_MAX_RADIUS = 500;
 
 const GRID_STEPS_MM = [
   0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000,
@@ -1328,6 +1328,11 @@ export function ViewportPanel({
   const dimensionLabelPositionsRef = useRef<
     Record<string, [number, number, number]>
   >({});
+  // Angle dimensions store just the arc radius during drag, not a
+  // directional control point.  This eliminates the disconnect between
+  // the cursor direction and the bisector that caused arc drift.
+  const [angleDragRadii, setAngleDragRadii] = useState<Record<string, number>>({});
+  const angleDragRadiiRef = useRef<Record<string, number>>({});
   const [draftDimensionSession, setDraftDimensionSession] =
     useState<DraftDimensionSession | null>(null);
   const pendingCircleDimensionPlacementRef = useRef<{
@@ -2202,6 +2207,36 @@ const currentGridSpacingRef = useRef(10);
       return [];
     }
     return sceneData.sketchDimensions.map((dimension) => {
+      // Angle dimensions use a radius-only drag state — no directional
+      // control point, so the arc stays centred on the bisector and the
+      // radius tracks the cursor distance 1:1.
+      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+        const dragRadius = angleDragRadii[dimension.dimensionId];
+        if (dragRadius !== undefined) {
+          const frame = angleDimensionFrame(dimension);
+          if (frame) {
+            const r = Math.max(ANGLE_DIMENSION_MIN_RADIUS, Math.min(dragRadius, ANGLE_DIMENSION_MAX_RADIUS));
+            const toTuple = (p: THREE.Vector3): [number, number, number] => [p.x, p.y, p.z];
+            return {
+              ...dimension,
+              arcRadius: r,
+              anchorStart: toTuple(frame.pivot.clone().add(frame.startUnit.clone().multiplyScalar(frame.anchorRadius))),
+              anchorEnd:   toTuple(frame.pivot.clone().add(frame.endUnit.clone().multiplyScalar(frame.anchorRadius))),
+              dimensionStart: toTuple(frame.pivot.clone().add(frame.startUnit.clone().multiplyScalar(r))),
+              dimensionEnd:   toTuple(frame.pivot.clone().add(frame.endUnit.clone().multiplyScalar(r))),
+              labelPosition:  toTuple(frame.pivot.clone().add(frame.bisector.clone().multiplyScalar(r))),
+            };
+          }
+          return dimension;
+        }
+      }
+
+      // Angle dimensions are handled above via angleDragRadii;
+      // never let them reach the generic offset path.
+      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+        return dimension;
+      }
+
       const labelPosition = dimensionLabelPositions[dimension.dimensionId];
       if (!labelPosition) {
         return dimension;
@@ -2209,20 +2244,28 @@ const currentGridSpacingRef = useRef(10);
       const originalLabel = new THREE.Vector3(...dimension.labelPosition);
       const nextLabel = new THREE.Vector3(...labelPosition);
       let offset = nextLabel.sub(originalLabel);
-      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
-        const frame = angleDimensionFrame(dimension);
-        if (frame) {
-          // Angle dimensions store a control point for the arc radius;
-          // the actual text label is derived on the angle bisector, same
-          // as the relation ghost preview.
-          const dimensionRadius = Math.max(
-            ANGLE_DIMENSION_MIN_RADIUS,
-            Math.min(
-              nextLabel.distanceTo(frame.pivot),
-              ANGLE_DIMENSION_MAX_RADIUS,
-            ),
-          );
-          const labelRadius = Math.max(3.0, dimensionRadius * 0.42);
+      if (dimension.kind === "circle_radius") {
+        const center = new THREE.Vector3(...dimension.dimensionStart)
+          .add(new THREE.Vector3(...dimension.dimensionEnd))
+          .multiplyScalar(0.5);
+        const radius =
+          new THREE.Vector3(...dimension.dimensionStart).distanceTo(
+            new THREE.Vector3(...dimension.dimensionEnd),
+          ) * 0.5;
+        const direction = new THREE.Vector3(...labelPosition).sub(center);
+        const planeNormal = getSketchGridFrame(
+          dimension.planeId,
+          activeSketchPlaneFrame,
+        ).normal;
+        direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
+        if (direction.lengthSq() > 1e-8 && radius > 1e-8) {
+          direction.normalize();
+          const start = center
+            .clone()
+            .add(direction.clone().multiplyScalar(-radius));
+          const end = center
+            .clone()
+            .add(direction.clone().multiplyScalar(radius));
           const toTuple = (point: THREE.Vector3): [number, number, number] => [
             point.x,
             point.y,
@@ -2230,90 +2273,34 @@ const currentGridSpacingRef = useRef(10);
           ];
           return {
             ...dimension,
-            anchorStart: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.startUnit.clone().multiplyScalar(frame.anchorRadius)),
-            ),
-            anchorEnd: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.endUnit.clone().multiplyScalar(frame.anchorRadius)),
-            ),
-            dimensionStart: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.startUnit.clone().multiplyScalar(dimensionRadius)),
-            ),
-            dimensionEnd: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.endUnit.clone().multiplyScalar(dimensionRadius)),
-            ),
-            labelPosition: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.bisector.clone().multiplyScalar(labelRadius)),
-            ),
+            anchorStart: toTuple(start),
+            anchorEnd: toTuple(end),
+            dimensionStart: toTuple(start),
+            dimensionEnd: toTuple(end),
+            labelPosition,
           };
         }
+        // Fall through to generic offset if circle radius computation fails
       }
-      if (dimension.kind !== "angle" && dimension.kind !== "line_angle") {
-        if (dimension.kind === "circle_radius") {
-          const center = new THREE.Vector3(...dimension.dimensionStart)
-            .add(new THREE.Vector3(...dimension.dimensionEnd))
-            .multiplyScalar(0.5);
-          const radius =
-            new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-              new THREE.Vector3(...dimension.dimensionEnd),
-            ) * 0.5;
-          const direction = new THREE.Vector3(...labelPosition).sub(center);
-          const planeNormal = getSketchGridFrame(
-            dimension.planeId,
-            activeSketchPlaneFrame,
-          ).normal;
-          direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-          if (direction.lengthSq() > 1e-8 && radius > 1e-8) {
-            direction.normalize();
-            const start = center
-              .clone()
-              .add(direction.clone().multiplyScalar(-radius));
-            const end = center
-              .clone()
-              .add(direction.clone().multiplyScalar(radius));
-            const toTuple = (point: THREE.Vector3): [number, number, number] => [
-              point.x,
-              point.y,
-              point.z,
-            ];
-            return {
-              ...dimension,
-              anchorStart: toTuple(start),
-              anchorEnd: toTuple(end),
-              dimensionStart: toTuple(start),
-              dimensionEnd: toTuple(end),
-              labelPosition,
-            };
-          }
-        }
-        const extensionAxis = new THREE.Vector3(
-          ...dimension.dimensionStart,
-        ).sub(new THREE.Vector3(...dimension.anchorStart));
-        const dimensionDirection = new THREE.Vector3(
-          ...dimension.dimensionEnd,
-        ).sub(new THREE.Vector3(...dimension.dimensionStart));
-        const placementAxis =
-          extensionAxis.lengthSq() > 1e-8
-            ? extensionAxis.normalize()
-            : getSketchGridFrame(
-                dimension.planeId,
-                activeSketchPlaneFrame,
-              ).normal
-                .cross(dimensionDirection)
-                .normalize();
-        if (placementAxis.lengthSq() > 1e-8) {
-          offset = placementAxis.multiplyScalar(offset.dot(placementAxis));
-        }
+
+      // Generic offset for linear dimensions (line_length, distance, etc.)
+      const extensionAxis = new THREE.Vector3(
+        ...dimension.dimensionStart,
+      ).sub(new THREE.Vector3(...dimension.anchorStart));
+      const dimensionDirection = new THREE.Vector3(
+        ...dimension.dimensionEnd,
+      ).sub(new THREE.Vector3(...dimension.dimensionStart));
+      const placementAxis =
+        extensionAxis.lengthSq() > 1e-8
+          ? extensionAxis.normalize()
+          : getSketchGridFrame(
+              dimension.planeId,
+              activeSketchPlaneFrame,
+            ).normal
+              .cross(dimensionDirection)
+              .normalize();
+      if (placementAxis.lengthSq() > 1e-8) {
+        offset = placementAxis.multiplyScalar(offset.dot(placementAxis));
       }
       const shiftPoint = (point: [number, number, number]) => {
         const shifted = new THREE.Vector3(...point).add(offset);
@@ -2338,7 +2325,7 @@ const currentGridSpacingRef = useRef(10);
         labelPosition: shiftedLabel,
       };
     });
-  }, [activeSketchPlaneFrame, dimensionLabelPositions, sceneData]);
+  }, [activeSketchPlaneFrame, angleDragRadii, dimensionLabelPositions, sceneData]);
   useEffect(() => {
     displayedSketchDimensionsRef.current = displayedSketchDimensions;
   }, [displayedSketchDimensions]);
@@ -3557,8 +3544,8 @@ const currentGridSpacingRef = useRef(10);
     bisector[0] /= bisectorLength;
     bisector[1] /= bisectorLength;
     const labelLocal: [number, number] = [
-      pivot[0] + bisector[0] * Math.max(3, radius * 0.42),
-      pivot[1] + bisector[1] * Math.max(3, radius * 0.42),
+      pivot[0] + bisector[0] * radius,
+      pivot[1] + bisector[1] * radius,
     ];
     const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
     return {
@@ -4224,10 +4211,32 @@ const currentGridSpacingRef = useRef(10);
     if (!dimensionDrag?.isPlacement) {
       return false;
     }
-    persistDimensionLabelPosition(
-      dimensionDrag.dimensionId,
-      dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-    );
+    const dragRadius = angleDragRadiiRef.current[dimensionDrag.dimensionId];
+    if (dragRadius !== undefined) {
+      // Angle dimension: compute world position from radius on bisector.
+      const dimId = dimensionDrag.dimensionId;
+      const dragged = displayedSketchDimensionsRef.current.find(
+        (d) => d.dimensionId === dimId,
+      );
+      const frame = dragged ? angleDimensionFrame(dragged) : null;
+      if (frame) {
+        const labelWorld = frame.pivot
+          .clone()
+          .add(frame.bisector.clone().multiplyScalar(dragRadius));
+        persistDimensionLabelPosition(dimId, [
+          labelWorld.x,
+          labelWorld.y,
+          labelWorld.z,
+        ]);
+      }
+      // Keep the radius override active — it matches what the core will
+      // compute, so there's no flash between commit and core response.
+    } else {
+      persistDimensionLabelPosition(
+        dimensionDrag.dimensionId,
+        dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
+      );
+    }
     clearPreviewDimension();
     dimensionLabelDragRef.current = null;
     dimensionPlacementOriginalPositionRef.current = null;
@@ -4242,6 +4251,13 @@ const currentGridSpacingRef = useRef(10);
       return false;
     }
     clearPreviewDimension();
+    // Clear angle drag radius if active
+    if (angleDragRadiiRef.current[dimensionDrag.dimensionId] !== undefined) {
+      const next = { ...angleDragRadiiRef.current };
+      delete next[dimensionDrag.dimensionId];
+      angleDragRadiiRef.current = next;
+      setAngleDragRadii(next);
+    }
     const originalPosition = dimensionPlacementOriginalPositionRef.current;
     if (originalPosition) {
       setDimensionLabelPositions((current) => ({
@@ -4275,6 +4291,8 @@ const currentGridSpacingRef = useRef(10);
     if (!sketchPoint) {
       return;
     }
+    const isAngleKind =
+      dimension.kind === "angle" || dimension.kind === "line_angle";
     const originalPosition = dimension.labelPosition;
     const circlePosition =
       dimension.kind === "circle_radius"
@@ -4283,46 +4301,76 @@ const currentGridSpacingRef = useRef(10);
     const dragAxis =
       dimension.kind === "circle_radius"
         ? new THREE.Vector3(0, 0, 0)
+        : isAngleKind
+        ? null // angle dimensions use radius-based drag; axis not needed
         : getDimensionPlacementAxis(dimension);
-    if (dimension.kind !== "circle_radius" && !dragAxis) {
+    if (!isAngleKind && dimension.kind !== "circle_radius" && !dragAxis) {
       return;
     }
-    const anglePosition =
-      dimension.kind === "angle" || dimension.kind === "line_angle"
-        ? angleDimensionArcControlNearPoint(dimension, sketchPoint.world)
-        : null;
+
+    // For angle dimensions, store the initial radius directly instead
+    // of a directional control point.
+    if (isAngleKind) {
+      const frame = angleDimensionFrame(dimension);
+      if (frame) {
+        const radius = Math.max(
+          ANGLE_DIMENSION_MIN_RADIUS,
+          Math.min(
+            new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+            ANGLE_DIMENSION_MAX_RADIUS,
+          ),
+        );
+        angleDragRadiiRef.current = {
+          ...angleDragRadiiRef.current,
+          [dimension.dimensionId]: radius,
+        };
+        setAngleDragRadii((prev) => ({
+          ...prev,
+          [dimension.dimensionId]: radius,
+        }));
+      }
+    }
+
     const relationPosition =
       dimension.kind === "line_line_distance" ||
       dimension.kind === "circle_line_distance" ||
       dimension.kind === "circle_center_distance" ||
-      dimension.kind === "angle" ||
-      dimension.kind === "line_angle"
+      isAngleKind
         ? pendingRelationPlacementLabelRef.current
         : null;
     pendingRelationPlacementLabelRef.current = null;
     const nextPosition =
       relationPosition ??
       circlePosition ??
-      anglePosition ??
-      (() => {
-        if (!dragAxis) {
-          return originalPosition;
-        }
-        const originalPositionVector = new THREE.Vector3(...originalPosition);
-        const pointerDelta = new THREE.Vector3(...sketchPoint.world).sub(
-          originalPositionVector,
-        );
-        const nextPositionVector = originalPositionVector
-          .clone()
-          .add(dragAxis.clone().multiplyScalar(pointerDelta.dot(dragAxis)));
-        return [
-          nextPositionVector.x,
-          nextPositionVector.y,
-          nextPositionVector.z,
-        ] as [number, number, number];
-      })();
+      (isAngleKind
+        ? originalPosition // radius-based; label pos irrelevant
+        : (() => {
+            if (!dragAxis) {
+              return originalPosition;
+            }
+            const originalPositionVector = new THREE.Vector3(
+              ...originalPosition,
+            );
+            const pointerDelta = new THREE.Vector3(...sketchPoint.world).sub(
+              originalPositionVector,
+            );
+            const nextPositionVector = originalPositionVector
+              .clone()
+              .add(
+                dragAxis.clone().multiplyScalar(
+                  pointerDelta.dot(dragAxis),
+                ),
+              );
+            return [
+              nextPositionVector.x,
+              nextPositionVector.y,
+              nextPositionVector.z,
+            ] as [number, number, number];
+          })());
     dimensionPlacementOriginalPositionRef.current = dimension.labelPosition;
-    setDimensionLabelPosition(dimension.dimensionId, nextPosition);
+    if (!isAngleKind) {
+      setDimensionLabelPosition(dimension.dimensionId, nextPosition);
+    }
     dimensionLabelDragRef.current = {
       dimensionId: dimension.dimensionId,
       startClientX: pointerEvent.clientX,
@@ -5917,6 +5965,9 @@ const currentGridSpacingRef = useRef(10);
   useEffect(() => {
     dimensionLabelPositionsRef.current = dimensionLabelPositions;
   }, [dimensionLabelPositions]);
+  useEffect(() => {
+    angleDragRadiiRef.current = angleDragRadii;
+  }, [angleDragRadii]);
 
   useEffect(() => {
     if (selectedSketchDimensionValue === null) {
@@ -7857,6 +7908,26 @@ const currentGridSpacingRef = useRef(10);
             activeSketchPlaneFrameRef.current,
           );
           if (dimension && sketchPoint) {
+            if (
+              dimension.kind === "angle" ||
+              dimension.kind === "line_angle"
+            ) {
+              const frame = angleDimensionFrame(dimension);
+              if (frame) {
+                const radius = Math.max(
+                  ANGLE_DIMENSION_MIN_RADIUS,
+                  Math.min(
+                    new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+                    ANGLE_DIMENSION_MAX_RADIUS,
+                  ),
+                );
+                angleDragRadiiRef.current = {
+                  ...angleDragRadiiRef.current,
+                  [hit.id]: radius,
+                };
+                setAngleDragRadii((prev) => ({ ...prev, [hit.id]: radius }));
+              }
+            }
             const dragAxis =
               dimension.kind === "circle_radius"
                 ? new THREE.Vector3(0, 0, 0)
@@ -8091,12 +8162,23 @@ const currentGridSpacingRef = useRef(10);
           draggedDimension?.kind === "angle" ||
           draggedDimension?.kind === "line_angle"
         ) {
-          const nextPosition = angleDimensionArcControlNearPoint(
-            draggedDimension,
-            sketchPoint.world,
-          );
-          if (nextPosition) {
-            setDimensionLabelPosition(dimensionDrag.dimensionId, nextPosition);
+          const frame = angleDimensionFrame(draggedDimension);
+          if (frame) {
+            const radius = Math.max(
+              ANGLE_DIMENSION_MIN_RADIUS,
+              Math.min(
+                new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+                ANGLE_DIMENSION_MAX_RADIUS,
+              ),
+            );
+            angleDragRadiiRef.current = {
+              ...angleDragRadiiRef.current,
+              [dimensionDrag.dimensionId]: radius,
+            };
+            setAngleDragRadii((prev) => ({
+              ...prev,
+              [dimensionDrag.dimensionId]: radius,
+            }));
           }
           return;
         }
@@ -9410,10 +9492,32 @@ const currentGridSpacingRef = useRef(10);
         // the drag is still active (non-placement label drag).
         if (dimensionLabelDragRef.current) {
           if (dimensionDrag.hasMoved) {
-            persistDimensionLabelPosition(
-              dimensionDrag.dimensionId,
-              dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-            );
+            const dragRadius =
+              angleDragRadiiRef.current[dimensionDrag.dimensionId];
+            if (dragRadius !== undefined) {
+              // Angle dimension: commit the radius by computing the
+              // world-space label position on the bisector.
+              const dragged = displayedSketchDimensionsRef.current.find(
+                (d) => d.dimensionId === dimensionDrag.dimensionId,
+              );
+              const frame = dragged ? angleDimensionFrame(dragged) : null;
+              if (frame) {
+                const labelWorld = frame.pivot
+                  .clone()
+                  .add(frame.bisector.clone().multiplyScalar(dragRadius));
+                persistDimensionLabelPosition(dimensionDrag.dimensionId, [
+                  labelWorld.x,
+                  labelWorld.y,
+                  labelWorld.z,
+                ]);
+              }
+              // Keep override — it matches the core's eventual output.
+            } else {
+              persistDimensionLabelPosition(
+                dimensionDrag.dimensionId,
+                dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
+              );
+            }
           }
           dimensionLabelDragRef.current = null;
           controls.enabled = true;
