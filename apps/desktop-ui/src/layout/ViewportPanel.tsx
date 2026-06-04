@@ -254,6 +254,10 @@ type DimensionRelationPreview = {
 const ANGLE_DIMENSION_MIN_RADIUS = 6;
 const ANGLE_DIMENSION_MAX_RADIUS = 500;
 
+function clampAngleRadius(distance: number): number {
+  return Math.max(ANGLE_DIMENSION_MIN_RADIUS, Math.min(distance, ANGLE_DIMENSION_MAX_RADIUS));
+}
+
 const GRID_STEPS_MM = [
   0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000,
 ];
@@ -2215,7 +2219,7 @@ const currentGridSpacingRef = useRef(10);
         if (dragRadius !== undefined) {
           const frame = angleDimensionFrame(dimension);
           if (frame) {
-            const r = Math.max(ANGLE_DIMENSION_MIN_RADIUS, Math.min(dragRadius, ANGLE_DIMENSION_MAX_RADIUS));
+            const r = clampAngleRadius(dragRadius);
             const toTuple = (p: THREE.Vector3): [number, number, number] => [p.x, p.y, p.z];
             return {
               ...dimension,
@@ -3512,10 +3516,7 @@ const currentGridSpacingRef = useRef(10);
     );
     const angle = Math.acos(dot);
     const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
-    const radius = Math.max(
-      ANGLE_DIMENSION_MIN_RADIUS,
-      Math.min(cursorRadius, ANGLE_DIMENSION_MAX_RADIUS),
-    );
+    const radius = clampAngleRadius(cursorRadius);
     const dimensionStart: [number, number] = [
       pivot[0] + firstDir[0] * radius,
       pivot[1] + firstDir[1] * radius,
@@ -4147,29 +4148,6 @@ const currentGridSpacingRef = useRef(10);
     return [position.x, position.y, position.z];
   }
 
-  function angleDimensionArcControlNearPoint(
-    dimension: SketchDimensionScene,
-    worldPoint: [number, number, number],
-  ): [number, number, number] | null {
-    const frame = angleDimensionFrame(dimension);
-    if (!frame) {
-      return null;
-    }
-    const cursor = new THREE.Vector3(...worldPoint);
-    const radius = Math.max(
-      ANGLE_DIMENSION_MIN_RADIUS,
-      Math.min(cursor.distanceTo(frame.pivot), ANGLE_DIMENSION_MAX_RADIUS),
-    );
-    const direction = cursor.sub(frame.pivot);
-    if (direction.lengthSq() <= 1e-8) {
-      direction.copy(frame.bisector);
-    } else {
-      direction.normalize();
-    }
-    const control = frame.pivot.clone().add(direction.multiplyScalar(radius));
-    return [control.x, control.y, control.z];
-  }
-
   function setDimensionLabelPosition(
     dimensionId: string,
     position: [number, number, number],
@@ -4313,12 +4291,8 @@ const currentGridSpacingRef = useRef(10);
     if (isAngleKind) {
       const frame = angleDimensionFrame(dimension);
       if (frame) {
-        const radius = Math.max(
-          ANGLE_DIMENSION_MIN_RADIUS,
-          Math.min(
-            new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-            ANGLE_DIMENSION_MAX_RADIUS,
-          ),
+        const radius = clampAngleRadius(
+          new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
         );
         angleDragRadiiRef.current = {
           ...angleDragRadiiRef.current,
@@ -7914,12 +7888,8 @@ const currentGridSpacingRef = useRef(10);
             ) {
               const frame = angleDimensionFrame(dimension);
               if (frame) {
-                const radius = Math.max(
-                  ANGLE_DIMENSION_MIN_RADIUS,
-                  Math.min(
-                    new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-                    ANGLE_DIMENSION_MAX_RADIUS,
-                  ),
+                const radius = clampAngleRadius(
+                  new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
                 );
                 angleDragRadiiRef.current = {
                   ...angleDragRadiiRef.current,
@@ -8164,12 +8134,8 @@ const currentGridSpacingRef = useRef(10);
         ) {
           const frame = angleDimensionFrame(draggedDimension);
           if (frame) {
-            const radius = Math.max(
-              ANGLE_DIMENSION_MIN_RADIUS,
-              Math.min(
-                new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-                ANGLE_DIMENSION_MAX_RADIUS,
-              ),
+            const radius = clampAngleRadius(
+              new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
             );
             angleDragRadiiRef.current = {
               ...angleDragRadiiRef.current,
