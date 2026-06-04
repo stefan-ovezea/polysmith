@@ -2810,9 +2810,8 @@ void update_sketch_dimension(FeatureEntry& feature,
     auto& line_a = require_line(parameters, dimension.entity_id);
     auto& line_b = require_line(parameters, dimension.secondary_entity_id);
 
-    // Locate the shared endpoint by comparing each pair of endpoints
-    // numerically. We don't rely on point ids because two lines
-    // sharing the same point id is not guaranteed by the model.
+    // Locate the shared endpoint or intersection point.  First try
+    // endpoint–endpoint, then endpoint-on-segment.
     const std::array<std::pair<double, double>, 2> a_ends = {{
         {line_a.start_x, line_a.start_y},
         {line_a.end_x, line_a.end_y},
@@ -2821,6 +2820,19 @@ void update_sketch_dimension(FeatureEntry& feature,
         {line_b.start_x, line_b.start_y},
         {line_b.end_x, line_b.end_y},
     }};
+
+    auto pt_on_seg = [](double px, double py, double ax, double ay,
+                        double bx, double by, double tol) -> bool {
+      double dx = bx - ax, dy = by - ay;
+      double len2 = dx * dx + dy * dy;
+      if (len2 < 1e-12)
+        return std::sqrt((px-ax)*(px-ax) + (py-ay)*(py-ay)) <= tol;
+      double t = ((px-ax)*dx + (py-ay)*dy) / len2;
+      if (t < 0.0) t = 0.0; if (t > 1.0) t = 1.0;
+      double proj_x = ax + t*dx, proj_y = ay + t*dy;
+      return std::sqrt((px-proj_x)*(px-proj_x) + (py-proj_y)*(py-proj_y)) <= tol;
+    };
+
     int a_pivot_index = -1;
     int b_pivot_index = -1;
     for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
@@ -2829,30 +2841,69 @@ void update_sketch_dimension(FeatureEntry& feature,
                 kCoincidentTolerance &&
             std::abs(a_ends[i].second - b_ends[j].second) <=
                 kCoincidentTolerance) {
-          a_pivot_index = i;
-          b_pivot_index = j;
-          break;
+          a_pivot_index = i; b_pivot_index = j; break;
         }
       }
     }
     if (a_pivot_index < 0) {
+      for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
+        if (pt_on_seg(a_ends[i].first, a_ends[i].second,
+                      b_ends[0].first, b_ends[0].second,
+                      b_ends[1].first, b_ends[1].second,
+                      kCoincidentTolerance)) {
+          a_pivot_index = i; b_pivot_index = -1; break;
+        }
+      }
+    }
+    if (a_pivot_index < 0) {
+      for (int j = 0; j < 2 && a_pivot_index < 0; ++j) {
+        if (pt_on_seg(b_ends[j].first, b_ends[j].second,
+                      a_ends[0].first, a_ends[0].second,
+                      a_ends[1].first, a_ends[1].second,
+                      kCoincidentTolerance)) {
+          a_pivot_index = -1; b_pivot_index = j; break;
+        }
+      }
+    }
+    if (a_pivot_index < 0 && b_pivot_index < 0) {
       throw std::runtime_error(
-          "Angle dimension requires the two lines to share an endpoint");
+          "Angle dimension requires the two lines to share an endpoint "
+          "or have one endpoint on the other line");
     }
 
-    const double pivot_x = a_ends[a_pivot_index].first;
-    const double pivot_y = a_ends[a_pivot_index].second;
-    // Outgoing direction of line A (from pivot to its other end).
-    const double a_other_x = a_ends[1 - a_pivot_index].first;
-    const double a_other_y = a_ends[1 - a_pivot_index].second;
-    const double a_dx = a_other_x - pivot_x;
-    const double a_dy = a_other_y - pivot_y;
-    // Driven endpoint of line B (the one that should rotate about
-    // the pivot).
-    const double b_other_x = b_ends[1 - b_pivot_index].first;
-    const double b_other_y = b_ends[1 - b_pivot_index].second;
-    const double b_dx = b_other_x - pivot_x;
-    const double b_dy = b_other_y - pivot_y;
+    double pivot_x, pivot_y;
+    double a_dx, a_dy, b_dx, b_dy;
+    bool drive_a = false;  // true → rotate line A; false → rotate line B
+    int driven_pivot_index = 0;
+
+    if (b_pivot_index >= 0) {
+      // Pivot is an endpoint of line B.  Line B rotates.
+      pivot_x = b_ends[b_pivot_index].first;
+      pivot_y = b_ends[b_pivot_index].second;
+      a_dx = a_ends[0].first - pivot_x; a_dy = a_ends[0].second - pivot_y;
+      double a_len0 = std::sqrt(a_dx*a_dx + a_dy*a_dy);
+      double a_dx1 = a_ends[1].first - pivot_x, a_dy1 = a_ends[1].second - pivot_y;
+      double a_len1 = std::sqrt(a_dx1*a_dx1 + a_dy1*a_dy1);
+      if (a_len1 > a_len0) { a_dx = a_dx1; a_dy = a_dy1; }
+      int b_other = 1 - b_pivot_index;
+      b_dx = b_ends[b_other].first - pivot_x;
+      b_dy = b_ends[b_other].second - pivot_y;
+      driven_pivot_index = b_pivot_index;
+    } else {
+      // Pivot is an endpoint of line A.  Line A rotates.
+      drive_a = true;
+      pivot_x = a_ends[a_pivot_index].first;
+      pivot_y = a_ends[a_pivot_index].second;
+      int a_other = 1 - a_pivot_index;
+      a_dx = a_ends[a_other].first - pivot_x;
+      a_dy = a_ends[a_other].second - pivot_y;
+      b_dx = b_ends[0].first - pivot_x; b_dy = b_ends[0].second - pivot_y;
+      double b_len0 = std::sqrt(b_dx*b_dx + b_dy*b_dy);
+      double b_dx1 = b_ends[1].first - pivot_x, b_dy1 = b_ends[1].second - pivot_y;
+      double b_len1 = std::sqrt(b_dx1*b_dx1 + b_dy1*b_dy1);
+      if (b_len1 > b_len0) { b_dx = b_dx1; b_dy = b_dy1; }
+      driven_pivot_index = a_pivot_index;
+    }
 
     const double a_length = std::sqrt(a_dx * a_dx + a_dy * a_dy);
     const double b_length = std::sqrt(b_dx * b_dx + b_dy * b_dy);
@@ -2862,38 +2913,48 @@ void update_sketch_dimension(FeatureEntry& feature,
           "Angle dimension requires both lines to have non-zero length");
     }
 
-    // Current signed angle from A's direction to B's direction. We
-    // preserve the rotation sense so the user's edit doesn't flip
-    // the line through the reference axis on every solve.
+    // Current signed angle from A's direction to B's direction.
     const double current_signed = std::atan2(
         a_dx * b_dy - a_dy * b_dx, a_dx * b_dx + a_dy * b_dy);
     const double target_signed = current_signed >= 0.0 ? value : -value;
     const double delta = target_signed - current_signed;
     const double cos_delta = std::cos(delta);
     const double sin_delta = std::sin(delta);
-    const double new_b_dx = b_dx * cos_delta - b_dy * sin_delta;
-    const double new_b_dy = b_dx * sin_delta + b_dy * cos_delta;
-    const double new_other_x = pivot_x + new_b_dx;
-    const double new_other_y = pivot_y + new_b_dy;
 
-    // Mutate line B in-place. We have to pick the right endpoint
-    // based on `b_pivot_index`. The non-pivot endpoint is the one
-    // that moves; the pivot stays where it is.
-    if (b_pivot_index == 0) {
-      line_b.end_x = new_other_x;
-      line_b.end_y = new_other_y;
+    double new_other_x, new_other_y;
+    if (drive_a) {
+      // Rotate line A about the pivot.  Rotating A by +delta changes
+      // the relative angle (B − A) by −delta, so we negate.
+      const double rot_cos = std::cos(-delta);
+      const double rot_sin = std::sin(-delta);
+      const double new_a_dx = a_dx * rot_cos - a_dy * rot_sin;
+      const double new_a_dy = a_dx * rot_sin + a_dy * rot_cos;
+      new_other_x = pivot_x + new_a_dx;
+      new_other_y = pivot_y + new_a_dy;
     } else {
-      line_b.start_x = new_other_x;
-      line_b.start_y = new_other_y;
+      const double new_b_dx = b_dx * cos_delta - b_dy * sin_delta;
+      const double new_b_dy = b_dx * sin_delta + b_dy * cos_delta;
+      new_other_x = pivot_x + new_b_dx;
+      new_other_y = pivot_y + new_b_dy;
     }
 
-    snap_line_endpoints_to_coincident_geometry(parameters, line_b);
-    validate_line(line_b.start_x, line_b.start_y, line_b.end_x, line_b.end_y);
+    // Mutate the driven line in-place.
+    auto& driven_line = drive_a ? line_a : line_b;
+    if (driven_pivot_index == 0) {
+      driven_line.end_x = new_other_x;
+      driven_line.end_y = new_other_y;
+    } else {
+      driven_line.start_x = new_other_x;
+      driven_line.start_y = new_other_y;
+    }
 
-    // Propagate the moved endpoint through any coincident points so
-    // chained geometry follows the rotation.
+    snap_line_endpoints_to_coincident_geometry(parameters, driven_line);
+    validate_line(driven_line.start_x, driven_line.start_y,
+                  driven_line.end_x, driven_line.end_y);
+
     const std::string moved_point_id =
-        b_pivot_index == 0 ? line_b.end_point_id : line_b.start_point_id;
+        driven_pivot_index == 0 ? driven_line.end_point_id
+                                : driven_line.start_point_id;
     propagate_connected_point_move(
         parameters, moved_point_id, new_other_x, new_other_y);
 
@@ -3129,8 +3190,10 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   const auto& line_b = require_line(parameters, second_line_id);
 
   // Compute the current angle (unsigned) between outgoing directions
-  // from the shared endpoint. Mirrors the share-endpoint detection
-  // in `update_sketch_dimension`.
+  // from the shared endpoint or intersection point.  First try a
+  // direct endpoint match; if that fails, check whether one line's
+  // endpoint lies on the other line's segment (the lines don't need
+  // to share an endpoint — an endpoint-on-segment is enough).
   const std::array<std::pair<double, double>, 2> a_ends = {{
       {line_a.start_x, line_a.start_y},
       {line_a.end_x, line_a.end_y},
@@ -3139,8 +3202,46 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       {line_b.start_x, line_b.start_y},
       {line_b.end_x, line_b.end_y},
   }};
+
+  // Helper: closest point on segment AB to point P, and the distance.
+  auto point_on_segment = [](double px, double py,
+                             double ax, double ay,
+                             double bx, double by,
+                             double tolerance) -> bool {
+    double dx = bx - ax;
+    double dy = by - ay;
+    double len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) {
+      return std::sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay)) <=
+             tolerance;
+    }
+    double t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    double proj_x = ax + t * dx;
+    double proj_y = ay + t * dy;
+    return std::sqrt((px - proj_x) * (px - proj_x) +
+                     (py - proj_y) * (py - proj_y)) <= tolerance;
+  };
+
+  // Helper: direction away from pivot along line (to the farther endpoint).
+  auto dir_away = [](double px, double py,
+                     double e0x, double e0y,
+                     double e1x, double e1y) -> std::pair<double, double> {
+    double d0 = std::sqrt((e0x - px) * (e0x - px) + (e0y - py) * (e0y - py));
+    double d1 = std::sqrt((e1x - px) * (e1x - px) + (e1y - py) * (e1y - py));
+    double tx = d0 > d1 ? e0x : e1x;
+    double ty = d0 > d1 ? e0y : e1y;
+    double dx = tx - px;
+    double dy = ty - py;
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-12) return {1.0, 0.0};
+    return {dx / len, dy / len};
+  };
+
   int a_pivot_index = -1;
   int b_pivot_index = -1;
+  // Pass 1: direct endpoint–endpoint match (existing behaviour).
   for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
     for (int j = 0; j < 2; ++j) {
       if (std::abs(a_ends[i].first - b_ends[j].first) <=
@@ -3153,17 +3254,81 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       }
     }
   }
+  // Pass 2: one line's endpoint lies on the other line's segment.
   if (a_pivot_index < 0) {
+    for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
+      if (point_on_segment(a_ends[i].first, a_ends[i].second,
+                           b_ends[0].first, b_ends[0].second,
+                           b_ends[1].first, b_ends[1].second,
+                           kCoincidentTolerance)) {
+        a_pivot_index = i;
+        b_pivot_index = -1; // pivot is an A-endpoint, on B's segment
+        break;
+      }
+    }
+  }
+  if (a_pivot_index < 0) {
+    for (int j = 0; j < 2 && a_pivot_index < 0; ++j) {
+      if (point_on_segment(b_ends[j].first, b_ends[j].second,
+                           a_ends[0].first, a_ends[0].second,
+                           a_ends[1].first, a_ends[1].second,
+                           kCoincidentTolerance)) {
+        a_pivot_index = -1; // pivot is a B-endpoint, on A's segment
+        b_pivot_index = j;
+        break;
+      }
+    }
+  }
+  if (a_pivot_index < 0 && b_pivot_index < 0) {
     throw std::runtime_error(
-        "Angle dimension requires the two lines to share an endpoint");
+        "Angle dimension requires the two lines to share an endpoint "
+        "or have one endpoint on the other line");
   }
 
-  const double pivot_x = a_ends[a_pivot_index].first;
-  const double pivot_y = a_ends[a_pivot_index].second;
-  const double a_dx = a_ends[1 - a_pivot_index].first - pivot_x;
-  const double a_dy = a_ends[1 - a_pivot_index].second - pivot_y;
-  const double b_dx = b_ends[1 - b_pivot_index].first - pivot_x;
-  const double b_dy = b_ends[1 - b_pivot_index].second - pivot_y;
+  double pivot_x, pivot_y;
+  double a_dx, a_dy, b_dx, b_dy;
+
+  if (a_pivot_index >= 0 && b_pivot_index >= 0) {
+    // Shared endpoint case (existing behaviour).
+    pivot_x = a_ends[a_pivot_index].first;
+    pivot_y = a_ends[a_pivot_index].second;
+    a_dx = a_ends[1 - a_pivot_index].first - pivot_x;
+    a_dy = a_ends[1 - a_pivot_index].second - pivot_y;
+    b_dx = b_ends[1 - b_pivot_index].first - pivot_x;
+    b_dy = b_ends[1 - b_pivot_index].second - pivot_y;
+  } else if (a_pivot_index >= 0) {
+    // A's endpoint lies on B's segment.
+    pivot_x = a_ends[a_pivot_index].first;
+    pivot_y = a_ends[a_pivot_index].second;
+    auto a_dir = dir_away(pivot_x, pivot_y,
+                          a_ends[1 - a_pivot_index].first,
+                          a_ends[1 - a_pivot_index].second,
+                          a_ends[a_pivot_index].first,
+                          a_ends[a_pivot_index].second);
+    a_dx = a_dir.first;
+    a_dy = a_dir.second;
+    auto b_dir = dir_away(pivot_x, pivot_y,
+                          b_ends[0].first, b_ends[0].second,
+                          b_ends[1].first, b_ends[1].second);
+    b_dx = b_dir.first;
+    b_dy = b_dir.second;
+  } else {
+    // B's endpoint lies on A's segment.
+    pivot_x = b_ends[b_pivot_index].first;
+    pivot_y = b_ends[b_pivot_index].second;
+    auto a_dir = dir_away(pivot_x, pivot_y,
+                          a_ends[0].first, a_ends[0].second,
+                          a_ends[1].first, a_ends[1].second);
+    a_dx = a_dir.first;
+    a_dy = a_dir.second;
+    auto b_dir = dir_away(pivot_x, pivot_y,
+                          b_ends[1 - b_pivot_index].first,
+                          b_ends[1 - b_pivot_index].second,
+                          b_ends[b_pivot_index].first,
+                          b_ends[b_pivot_index].second);
+    b_dx = b_dir.first;
+    b_dy = b_dir.second;
+  }
   const double signed_angle = std::atan2(
       a_dx * b_dy - a_dy * b_dx, a_dx * b_dx + a_dy * b_dy);
   const double current_angle = std::abs(signed_angle);

@@ -934,9 +934,9 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     const SketchDimension& dimension,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
-  // Locate the shared endpoint and the outgoing direction of each
-  // line using the same heuristic as the solver: tolerance match on
-  // numeric coordinates.
+  // Locate the shared endpoint or intersection point.  First try a
+  // direct endpoint match; if that fails, check whether one line's
+  // endpoint lies on the other line's segment.
   const std::array<std::pair<double, double>, 2> a_ends = {{
       {line_a.start_x, line_a.start_y},
       {line_a.end_x, line_a.end_y},
@@ -945,27 +945,104 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
       {line_b.start_x, line_b.start_y},
       {line_b.end_x, line_b.end_y},
   }};
-  int a_pivot = 0;
-  int b_pivot = 0;
-  bool found = false;
-  for (int i = 0; i < 2 && !found; ++i) {
+
+  auto point_on_seg = [](double px, double py,
+                         double ax, double ay,
+                         double bx, double by,
+                         double tol) -> bool {
+    double dx = bx - ax, dy = by - ay;
+    double len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12)
+      return std::sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay)) <= tol;
+    double t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    double proj_x = ax + t * dx, proj_y = ay + t * dy;
+    return std::sqrt((px - proj_x) * (px - proj_x) +
+                     (py - proj_y) * (py - proj_y)) <= tol;
+  };
+
+  auto dir_away = [](double px, double py,
+                     double e0x, double e0y,
+                     double e1x, double e1y) -> std::pair<double, double> {
+    double d0 = std::sqrt((e0x - px) * (e0x - px) + (e0y - py) * (e0y - py));
+    double d1 = std::sqrt((e1x - px) * (e1x - px) + (e1y - py) * (e1y - py));
+    double tx = d0 > d1 ? e0x : e1x, ty = d0 > d1 ? e0y : e1y;
+    double dx = tx - px, dy = ty - py;
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-12) return {1.0, 0.0};
+    return {dx / len, dy / len};
+  };
+
+  constexpr double kPivotTol = 0.05;
+  int a_pivot = -1, b_pivot = -1;
+
+  // Pass 1: direct endpoint–endpoint match.
+  for (int i = 0; i < 2 && a_pivot < 0; ++i) {
     for (int j = 0; j < 2; ++j) {
-      if (std::abs(a_ends[i].first - b_ends[j].first) <= 0.05 &&
-          std::abs(a_ends[i].second - b_ends[j].second) <= 0.05) {
-        a_pivot = i;
-        b_pivot = j;
-        found = true;
-        break;
+      if (std::abs(a_ends[i].first - b_ends[j].first) <= kPivotTol &&
+          std::abs(a_ends[i].second - b_ends[j].second) <= kPivotTol) {
+        a_pivot = i; b_pivot = j; break;
+      }
+    }
+  }
+  // Pass 2: endpoint-on-segment.
+  if (a_pivot < 0) {
+    for (int i = 0; i < 2 && a_pivot < 0; ++i) {
+      if (point_on_seg(a_ends[i].first, a_ends[i].second,
+                       b_ends[0].first, b_ends[0].second,
+                       b_ends[1].first, b_ends[1].second, kPivotTol)) {
+        a_pivot = i; b_pivot = -1; break;
+      }
+    }
+  }
+  if (a_pivot < 0) {
+    for (int j = 0; j < 2 && a_pivot < 0; ++j) {
+      if (point_on_seg(b_ends[j].first, b_ends[j].second,
+                       a_ends[0].first, a_ends[0].second,
+                       a_ends[1].first, a_ends[1].second, kPivotTol)) {
+        a_pivot = -1; b_pivot = j; break;
       }
     }
   }
 
-  const double pivot_x = a_ends[a_pivot].first;
-  const double pivot_y = a_ends[a_pivot].second;
-  const double a_dx = a_ends[1 - a_pivot].first - pivot_x;
-  const double a_dy = a_ends[1 - a_pivot].second - pivot_y;
-  const double b_dx = b_ends[1 - b_pivot].first - pivot_x;
-  const double b_dy = b_ends[1 - b_pivot].second - pivot_y;
+  double pivot_x, pivot_y;
+  double a_dx, a_dy, b_dx, b_dy;
+
+  if (a_pivot >= 0 && b_pivot >= 0) {
+    pivot_x = a_ends[a_pivot].first;
+    pivot_y = a_ends[a_pivot].second;
+    a_dx = a_ends[1 - a_pivot].first - pivot_x;
+    a_dy = a_ends[1 - a_pivot].second - pivot_y;
+    b_dx = b_ends[1 - b_pivot].first - pivot_x;
+    b_dy = b_ends[1 - b_pivot].second - pivot_y;
+  } else if (a_pivot >= 0) {
+    pivot_x = a_ends[a_pivot].first;
+    pivot_y = a_ends[a_pivot].second;
+    auto ad = dir_away(pivot_x, pivot_y,
+                       a_ends[1 - a_pivot].first, a_ends[1 - a_pivot].second,
+                       a_ends[a_pivot].first, a_ends[a_pivot].second);
+    a_dx = ad.first; a_dy = ad.second;
+    auto bd = dir_away(pivot_x, pivot_y,
+                       b_ends[0].first, b_ends[0].second,
+                       b_ends[1].first, b_ends[1].second);
+    b_dx = bd.first; b_dy = bd.second;
+  } else if (b_pivot >= 0) {
+    pivot_x = b_ends[b_pivot].first;
+    pivot_y = b_ends[b_pivot].second;
+    auto ad = dir_away(pivot_x, pivot_y,
+                       a_ends[0].first, a_ends[0].second,
+                       a_ends[1].first, a_ends[1].second);
+    a_dx = ad.first; a_dy = ad.second;
+    auto bd = dir_away(pivot_x, pivot_y,
+                       b_ends[1 - b_pivot].first, b_ends[1 - b_pivot].second,
+                       b_ends[b_pivot].first, b_ends[b_pivot].second);
+    b_dx = bd.first; b_dy = bd.second;
+  } else {
+    // Should not happen — add_sketch_angle_dimension validates first.
+    pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
+    a_dx = 1.0; a_dy = 0.0;  b_dx = 0.0; b_dy = 1.0;
+  }
   const double a_len = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_len = std::sqrt(b_dx * b_dx + b_dy * b_dy);
   const double a_ux = a_len > 0.0 ? a_dx / a_len : 1.0;
