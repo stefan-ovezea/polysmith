@@ -290,6 +290,7 @@ interface ViewportPanelProps {
   document: DocumentState | null;
   viewport: ViewportState | null;
   showStock?: boolean;
+  wcsOrientation?: string;
   onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
@@ -1191,6 +1192,7 @@ export function ViewportPanel({
   document,
   viewport,
   showStock = true,
+  wcsOrientation = "model",
   onSnapshotCaptureReady,
   onSelectPrimitive,
   onSelectReference,
@@ -10746,34 +10748,63 @@ const currentGridSpacingRef = useRef(10);
     // ── CAM WCS origin marker ─────────────────────────────────────
     if (document?.cam_setup) {
       const wcs = document.cam_setup.wcs_origin;
-      const angleDeg = document.cam_setup.wcs_angle ?? 0;
-      const angleRad = (angleDeg * Math.PI) / 180;
-      const cosA = Math.cos(angleRad);
-      const sinA = Math.sin(angleRad);
       const origin = new THREE.Vector3(wcs.x, wcs.y, wcs.z);
-      const axisLen = 10;
+      const axisLen = 20;
       const makeAxis = (dir: THREE.Vector3, color: number) => {
         const end = origin.clone().add(dir.clone().multiplyScalar(axisLen));
         const geom = new THREE.BufferGeometry().setFromPoints([origin, end]);
-        const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 });
+        const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, depthTest: false, depthWrite: false, transparent: true, opacity: 0.9 });
         const line = new THREE.Line(geom, mat);
         line.renderOrder = 1;
         referenceGroup.add(line);
       };
-      // X and Y rotate around Z by wcs_angle; Z stays world-up
-      makeAxis(new THREE.Vector3(cosA, sinA, 0), 0xff4444);   // X red
-      makeAxis(new THREE.Vector3(-sinA, cosA, 0), 0x44ff44);  // Y green
-      makeAxis(new THREE.Vector3(0, 0, 1), 0x4488ff);         // Z blue
+      // Orientation presets
+      let xAxis = new THREE.Vector3(1, 0, 0);
+      let yAxis = new THREE.Vector3(0, 1, 0);
+      let zAxis = new THREE.Vector3(0, 0, 1);
+      if (wcsOrientation === "z_up") {
+        // Tool axis Z points up (CAD Y direction)
+        xAxis.set(1, 0, 0);
+        yAxis.set(0, 0, -1);
+        zAxis.set(0, 1, 0);
+      } else if (wcsOrientation === "y_up") {
+        // Y is up, Z points down
+        xAxis.set(1, 0, 0);
+        yAxis.set(0, 1, 0);
+        zAxis.set(0, 0, -1);
+      }
+      makeAxis(xAxis, 0xff4444);  // X red
+      makeAxis(yAxis, 0x44ff44);  // Y green
+      makeAxis(zAxis, 0x4488ff);  // Z blue
 
       // ── Stock bounding box (translucent, centered on model) ────
-      if (showStock) {
+      if (showStock && document.cam_setup.stock) {
       const stock = document.cam_setup.stock;
       const stockW = stock.width + stock.offset_x * 2;
       const stockH = stock.height + stock.offset_y * 2;
       const stockD = stock.depth + stock.offset_z * 2;
-      const bc = sceneData.bounds?.center ?? [0, 0, 0];
-      const modelCenter = new THREE.Vector3(bc[0], bc[1], bc[2]);
-      const stockBox = new THREE.BoxGeometry(stockW, stockD, stockH);
+
+      // Compute model centre from body bounding boxes (C++ bounds use max/2,
+      // which breaks for offset geometry).
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const body of (viewport?.bodies ?? [])) {
+        const hw = body.size.x / 2, hh = body.size.y / 2, hd = body.size.z / 2;
+        minX = Math.min(minX, body.center.x - hw);
+        maxX = Math.max(maxX, body.center.x + hw);
+        minY = Math.min(minY, body.center.y - hh);
+        maxY = Math.max(maxY, body.center.y + hh);
+        minZ = Math.min(minZ, body.center.z - hd);
+        maxZ = Math.max(maxZ, body.center.z + hd);
+      }
+      const modelCenter = new THREE.Vector3(
+        Number.isFinite(minX) ? (minX + maxX) / 2 : 0,
+        Number.isFinite(minY) ? (minY + maxY) / 2 : 0,
+        Number.isFinite(minZ) ? (minZ + maxZ) / 2 : 0,
+      );
+      // CAD axes: X=width, Y=height(up), Z=depth
+      // Three.js BoxGeometry(width_x, height_y, depth_z)
+      const stockBox = new THREE.BoxGeometry(stockW, stockH, stockD);
       const stockMesh = new THREE.Mesh(
         stockBox,
         new THREE.MeshBasicMaterial({
@@ -11032,7 +11063,7 @@ const currentGridSpacingRef = useRef(10);
 
       lastGeometryKeyRef.current = sceneData.geometryKey;
     }
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, wcsOrientation]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

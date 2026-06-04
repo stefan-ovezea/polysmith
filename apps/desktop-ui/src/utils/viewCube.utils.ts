@@ -142,6 +142,7 @@ export function buildViewCubeGroup(): THREE.Group {
   const arrowMutedColor = viewCubeColor("--cad-viewcube-arrow-muted", "#5d6d70");
 
   // -- faces ----------------------------------------------------------------
+  // Labels follow mechanical CAD convention: +Z = TOP, -Y = FRONT.
   const faceConfigs: Array<{
     face: CubeFace;
     label: string;
@@ -165,28 +166,28 @@ export function buildViewCubeGroup(): THREE.Group {
     },
     {
       face: "TOP",
-      label: "TOP",
+      label: "BACK",
       position: [0, FACE_OFFSET, 0],
       rotation: [-Math.PI / 2, 0, 0],
       color: colors.TOP,
     },
     {
       face: "BOTTOM",
-      label: "BOTTOM",
+      label: "FRONT",
       position: [0, -FACE_OFFSET, 0],
       rotation: [Math.PI / 2, 0, 0],
       color: colors.BOTTOM,
     },
     {
       face: "FRONT",
-      label: "FRONT",
+      label: "TOP",
       position: [0, 0, FACE_OFFSET],
       rotation: [0, 0, 0],
       color: colors.FRONT,
     },
     {
       face: "BACK",
-      label: "BACK",
+      label: "BOTTOM",
       position: [0, 0, -FACE_OFFSET],
       rotation: [0, Math.PI, 0],
       color: colors.BACK,

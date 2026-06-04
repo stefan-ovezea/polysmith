@@ -9,6 +9,14 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <TopoDS_Shape.hxx>
 
+#include <BRepAdaptor_Surface.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
+
+#include "core/body_compiler.h"
 #include "core/document.h"
 #include "core/formula_eval.h"
 #include "core/logger.h"
@@ -2604,6 +2612,47 @@ void CadCoreApp::handle_command_line(const std::string& line) {
       if (ref.contains("body_id")) op.bodyId = ref["body_id"].get<std::string>();
       if (ref.contains("face_index")) op.faceIndex = ref["face_index"].get<int>();
     }
+
+    // For face milling, auto-select the face whose normal is most aligned
+    // with Z (the tool axis) instead of trusting an arbitrary index.
+    if (op.type == core::CamOperationType::FaceMilling && !op.bodyId.empty()) {
+      const auto doc = document_manager().get_document();
+      if (doc.has_value()) {
+        const auto compiled = compile_bodies(doc.value());
+        for (const auto& body : compiled.bodies) {
+          if (body.id == op.bodyId && !body.shape.IsNull()) {
+            TopTools_IndexedMapOfShape faceMap;
+            TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+            int bestIdx = 0;
+            double bestDot = -1.0;
+            for (int i = 1; i <= faceMap.Extent(); ++i) {
+              const TopoDS_Face& face = TopoDS::Face(faceMap(i));
+              BRepAdaptor_Surface surface(face);
+              const double uMid = 0.5 * (surface.FirstUParameter() + surface.LastUParameter());
+              const double vMid = 0.5 * (surface.FirstVParameter() + surface.LastVParameter());
+              gp_Pnt pt;
+              gp_Vec d1u, d1v;
+              surface.D1(uMid, vMid, pt, d1u, d1v);
+              gp_Vec normal = d1u.Crossed(d1v);
+              if (normal.Magnitude() > 1e-12) {
+                normal.Normalize();
+                if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+                const double dotZ = std::abs(normal.Z());
+                if (dotZ > bestDot) {
+                  bestDot = dotZ;
+                  bestIdx = i - 1;  // 0-based
+                }
+              }
+            }
+            if (bestDot > 0.5) {
+              op.faceIndex = bestIdx;
+            }
+            break;
+          }
+        }
+      }
+    }
+
     const auto document = document_manager().cam_operation_add(op);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

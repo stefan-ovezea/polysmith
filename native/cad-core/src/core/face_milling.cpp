@@ -148,12 +148,36 @@ CamToolpath generate_face_milling_toolpath(
     return result;
   }
 
-  // Find the target face.
+  // Find the target face — prefer the stored index, but fall back to
+  // the face with the best Z-axis alignment (tool axis for 3-axis milling).
   TopTools_IndexedMapOfShape faceMap;
   TopExp::MapShapes(*bodyShape, TopAbs_FACE, faceMap);
-  const int oneBased = op.faceIndex + 1;
+
+  auto findBestZFace = [&]() -> int {
+    int bestIdx = 0;
+    double bestDot = -1.0;
+    for (int i = 1; i <= faceMap.Extent(); ++i) {
+      const TopoDS_Face& f = TopoDS::Face(faceMap(i));
+      BRepAdaptor_Surface surf(f);
+      const double uMid = 0.5 * (surf.FirstUParameter() + surf.LastUParameter());
+      const double vMid = 0.5 * (surf.FirstVParameter() + surf.LastVParameter());
+      gp_Pnt pt;
+      gp_Vec d1u, d1v;
+      surf.D1(uMid, vMid, pt, d1u, d1v);
+      gp_Vec n = d1u.Crossed(d1v);
+      if (n.Magnitude() > 1e-12) {
+        n.Normalize();
+        if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+        const double dotZ = std::abs(n.Z());
+        if (dotZ > bestDot) { bestDot = dotZ; bestIdx = i - 1; }
+      }
+    }
+    return (bestDot > 0.5) ? bestIdx : 0;
+  };
+
+  int oneBased = op.faceIndex + 1;
   if (oneBased < 1 || oneBased > faceMap.Extent()) {
-    return result;
+    oneBased = findBestZFace() + 1;
   }
   const TopoDS_Face face = TopoDS::Face(faceMap(oneBased));
   if (face.IsNull()) {

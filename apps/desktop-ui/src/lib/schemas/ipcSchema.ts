@@ -706,7 +706,9 @@ const documentStateSchema = z.object({
       wcs_origin: z.object({ x: z.number(), y: z.number(), z: z.number() }),
       safety_plane_z: z.number(),
       axis_count: z.number(),
+      wcs_angle: z.number().default(0),
     })
+    .passthrough()
     .nullable()
     .default(null),
   tool_library: z

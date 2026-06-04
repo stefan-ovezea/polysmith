@@ -549,6 +549,7 @@ function App() {
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
   const [showStock, setShowStock] = useState(true);
+  const [wcsOrientation, setWcsOrientation] = useState<string>("model");
   // Derived from core document state so the panel stays in sync.
   const camOperations: import("./layout/CamOperationPanel").CamOperation[] =
     useMemo(() => {
@@ -5433,7 +5434,8 @@ function App() {
               status={status}
               document={document}
               viewport={viewport}
-              showStock={showStock}
+              showStock={showStock && workspaceView === "cam"}
+              wcsOrientation={wcsOrientation}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -8632,9 +8634,16 @@ function App() {
                     orientation_mode: "model",
                     origin_mode: "model",
                   }}
-                  bodies={viewport?.bodies ?? []}
+                  bodies={(viewport?.bodies ?? []).map((b) => ({
+                    id: b.id,
+                    label: b.label,
+                    center: b.center,
+                    size: b.size,
+                  }))}
                   showStock={showStock}
                   onShowStockChange={setShowStock}
+                  wcsOrientation={wcsOrientation}
+                  onWcsOrientationChange={setWcsOrientation}
                   disabled={status !== "connected"}
                   onUpdate={(state) => {
                     void runAction(async () => {
