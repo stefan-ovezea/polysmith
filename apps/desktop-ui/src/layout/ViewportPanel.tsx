@@ -1594,6 +1594,8 @@ const currentGridSpacingRef = useRef(10);
     useRef<[number, number, number] | null>(null);
   const pendingRelationPlacementLabelRef =
     useRef<[number, number, number] | null>(null);
+  const pendingAngleIsReflexRef = useRef(false);
+  const pendingReflexAngleRef = useRef(0);
   const pendingRelationPlacementMatchRef =
     useRef<DimensionRelationPreview | null>(null);
   const pendingRelationPlacementRetryRef = useRef<number | null>(null);
@@ -3273,8 +3275,18 @@ const currentGridSpacingRef = useRef(10);
     ) {
       pendingDimensionPlacementRef.current = true;
       pendingDimSourceEntityIdRef.current = null;
+      const isReflex = pendingAngleIsReflexRef.current;
+      const reflexAngle = pendingReflexAngleRef.current;
+      pendingAngleIsReflexRef.current = false;
       void addSketchAngleDimensionRef
         .current(firstEntityId, secondEntityId)
+        .then(() => {
+          if (isReflex) {
+            const ids = [firstEntityId, secondEntityId].sort();
+            const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
+            void updateSketchDimensionRef.current(dimId, reflexAngle);
+          }
+        })
         .catch(() => {
           pendingDimensionPlacementRef.current = false;
           pendingRelationPlacementLabelRef.current = null;
@@ -3397,22 +3409,44 @@ const currentGridSpacingRef = useRef(10);
       0.03;
   }
 
+  function pointOnSegment(
+    px: number, py: number,
+    ax: number, ay: number,
+    bx: number, by: number,
+    tolerance = 0.05,
+  ): boolean {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) {
+      return Math.hypot(px - ax, py - ay) <= tolerance;
+    }
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    return Math.hypot(px - projX, py - projY) <= tolerance;
+  }
+
   function sharedLineEndpoint(
     first: SketchLineEntry,
     second: SketchLineEntry,
   ): [number, number] | null {
-    if (first.start_point_id === second.start_point_id) {
+    // Direct endpoint match by point ID
+    if (first.start_point_id === second.start_point_id) return [first.start_x, first.start_y];
+    if (first.start_point_id === second.end_point_id)   return [first.start_x, first.start_y];
+    if (first.end_point_id === second.start_point_id)   return [first.end_x, first.end_y];
+    if (first.end_point_id === second.end_point_id)     return [first.end_x, first.end_y];
+
+    // One line's endpoint lies on the other line's segment
+    if (pointOnSegment(first.start_x, first.start_y, second.start_x, second.start_y, second.end_x, second.end_y))
       return [first.start_x, first.start_y];
-    }
-    if (first.start_point_id === second.end_point_id) {
-      return [first.start_x, first.start_y];
-    }
-    if (first.end_point_id === second.start_point_id) {
+    if (pointOnSegment(first.end_x, first.end_y, second.start_x, second.start_y, second.end_x, second.end_y))
       return [first.end_x, first.end_y];
-    }
-    if (first.end_point_id === second.end_point_id) {
-      return [first.end_x, first.end_y];
-    }
+    if (pointOnSegment(second.start_x, second.start_y, first.start_x, first.start_y, first.end_x, first.end_y))
+      return [second.start_x, second.start_y];
+    if (pointOnSegment(second.end_x, second.end_y, first.start_x, first.start_y, first.end_x, first.end_y))
+      return [second.end_x, second.end_y];
+
     return null;
   }
 
@@ -3514,7 +3548,41 @@ const currentGridSpacingRef = useRef(10);
       -1,
       Math.min(1, firstDir[0] * secondDir[0] + firstDir[1] * secondDir[1]),
     );
-    const angle = Math.acos(dot);
+    const acuteAngle = Math.acos(dot);
+
+    // Determine whether the cursor is on the reflex (larger-angle) side.
+    // The bisector of the two unit direction vectors points into the acute
+    // angle.  If the cursor lies on the opposite side of the bisector,
+    // the user intends the reflex (larger) angle.
+    //
+    // Use a tighter threshold when the two lines share an endpoint (the
+    // cursor naturally passes near the bisector plane while moving
+    // between lines).  When one endpoint merely lies on the other line's
+    // segment, the natural cursor path is different, so we use a looser
+    // threshold.
+    const sharedEndpoint =
+      first.start_point_id === second.start_point_id ||
+      first.start_point_id === second.end_point_id ||
+      first.end_point_id === second.start_point_id ||
+      first.end_point_id === second.end_point_id;
+    const reflexThreshold = sharedEndpoint ? -0.3 : 0;
+
+    let useReflex = false;
+    const cursorVec = [cursor[0] - pivot[0], cursor[1] - pivot[1]];
+    const cursorLen = Math.hypot(cursorVec[0], cursorVec[1]);
+    if (cursorLen > 1e-9) {
+      const cx = cursorVec[0] / cursorLen;
+      const cy = cursorVec[1] / cursorLen;
+      const bx = firstDir[0] + secondDir[0];
+      const by = firstDir[1] + secondDir[1];
+      const blen = Math.hypot(bx, by);
+      if (blen > 1e-9) {
+        useReflex = (cx * bx + cy * by) / blen < reflexThreshold;
+      }
+    }
+    const angle = useReflex ? 2 * Math.PI - acuteAngle : acuteAngle;
+    pendingAngleIsReflexRef.current = useReflex;
+    if (useReflex) pendingReflexAngleRef.current = angle;
     const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
     const radius = clampAngleRadius(cursorRadius);
     const dimensionStart: [number, number] = [
@@ -4366,12 +4434,7 @@ const currentGridSpacingRef = useRef(10);
     if (!first || !second) {
       return false;
     }
-    return (
-      first.start_point_id === second.start_point_id ||
-      first.start_point_id === second.end_point_id ||
-      first.end_point_id === second.start_point_id ||
-      first.end_point_id === second.end_point_id
-    );
+    return sharedLineEndpoint(first, second) !== null;
   }
 
   function cancelActiveSketchDraft() {
