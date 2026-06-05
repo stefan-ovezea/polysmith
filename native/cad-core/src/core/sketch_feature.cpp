@@ -1941,7 +1941,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     if (result.ok()) {
       solver.apply(*feature.sketch_parameters);
     }
-    // Log solver diagnostics for now; later we'll pipe to UI.
+    feature.sketch_parameters->solver_dofs = result.dofs;
     if (!result.ok()) {
       fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
               static_cast<int>(result.status), result.dofs,
@@ -1949,6 +1949,10 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     }
   }
 
+  // Anchor enforcement runs here — after the solver but before
+  // constraint enforcement. Constraint enforcement (H/V, relations)
+  // may need to adjust lines whose endpoints were moved by anchors,
+  // so anchors must run first.
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
@@ -1961,10 +1965,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_all_perpendicular_relations(*feature.sketch_parameters);
   enforce_all_parallel_relations(*feature.sketch_parameters);
 
-  // Fillets must run *after* the anchor / tangent passes (so they
-  // see the latest line endpoints) and *before* `rebuild_sketch_points`
-  // (which pulls cached coords off lines and arcs into the points
-  // vector — we want it to see the fillet-corrected values).
+  // Fillets must run *after* the tangent passes (so they see the
+  // latest line endpoints) and *before* `rebuild_sketch_points`.
   enforce_sketch_fillets(*feature.sketch_parameters);
 
   // Driven (reference-only) dimensions: re-measure from current geometry

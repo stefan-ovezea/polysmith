@@ -36,7 +36,7 @@ add_library(planegcs STATIC
 )
 target_include_directories(planegcs PUBLIC
   ${PLANEGCS_DIR}
-  ${PLANEGCS_DIR}/native_compat
+  ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
   ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
@@ -99,7 +99,7 @@ target_include_directories(cad_core_sketch_profile_test PRIVATE
   include
   src
   ${PLANEGCS_DIR}
-  ${PLANEGCS_DIR}/native_compat
+  ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
   ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
@@ -143,7 +143,7 @@ target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
   ${PLANEGCS_DIR}
-  ${PLANEGCS_DIR}/native_compat
+  ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
   ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}

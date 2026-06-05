@@ -180,10 +180,13 @@ void ConstraintSolver::build(const SketchFeatureParameters& params) {
             system_->addConstraintPerpendicular(gl1, gl2);
         } else if (rel.kind == "equal_length") {
             system_->addConstraintEqualLength(gl1, gl2);
-        } else if (rel.kind == "tangent") {
-            // Tangent line-line? Not directly supported by planegcs.
-            // For line-circle tangent, we need the circle reference.
-            // Skip for now; handled in a later phase.
+        } else if (rel.kind == "tangent_line_circle") {
+            // second_line_id is the circle id for tangent_line_circle.
+            auto cit = circle_id_to_index_.find(rel.second_line_id);
+            if (cit != circle_id_to_index_.end()) {
+                system_->addConstraintTangent(
+                    gl1, gcs_circles_[cit->second]);
+            }
         }
     }
 
@@ -199,18 +202,18 @@ void ConstraintSolver::build(const SketchFeatureParameters& params) {
                     gcs_points_[it2->second]);
             }
         } else if (sc.kind == "concentric" && sc.target_ids.size() >= 2) {
-            // Concentric circles — add coincident on their center points.
-            // The target_ids reference circle ids, not point ids.
-            // For now, this is handled via point coincidence on circle
-            // center points (inference engine creates these).
-            // TODO: proper circle concentric constraint.
-            auto cit1 = circle_id_to_index_.find(sc.target_ids[0]);
-            auto cit2 = circle_id_to_index_.find(sc.target_ids[1]);
-            if (cit1 != circle_id_to_index_.end() &&
-                cit2 != circle_id_to_index_.end()) {
-                // Use the equal constraint on center coordinates
-                // (this is approximate — a proper concentric
-                //  constraint would be better)
+            // Concentric = center points coincide. Find both circles'
+            // center points (naming convention: point-circle-{id}-center)
+            // and add a P2PCoincident between them.
+            std::string cid1 = "point-circle-" + sc.target_ids[0] + "-center";
+            std::string cid2 = "point-circle-" + sc.target_ids[1] + "-center";
+            auto pit1 = point_id_to_index_.find(cid1);
+            auto pit2 = point_id_to_index_.find(cid2);
+            if (pit1 != point_id_to_index_.end() &&
+                pit2 != point_id_to_index_.end()) {
+                system_->addConstraintP2PCoincident(
+                    gcs_points_[pit1->second],
+                    gcs_points_[pit2->second]);
             }
         }
     }
@@ -295,6 +298,33 @@ void ConstraintSolver::build(const SketchFeatureParameters& params) {
                     gcs_points_[pit1->second],
                     gcs_points_[pit2->second],
                     val_ptr);
+            }
+        } else if (dim.kind == "circle_center_distance" &&
+                   !dim.secondary_entity_id.empty()) {
+            // Distance between two circle centers (P2P).
+            std::string cid1 = "point-circle-" + dim.entity_id + "-center";
+            std::string cid2 = "point-circle-" + dim.secondary_entity_id + "-center";
+            auto pit1 = point_id_to_index_.find(cid1);
+            auto pit2 = point_id_to_index_.find(cid2);
+            if (pit1 != point_id_to_index_.end() &&
+                pit2 != point_id_to_index_.end()) {
+                system_->addConstraintP2PDistance(
+                    gcs_points_[pit1->second],
+                    gcs_points_[pit2->second],
+                    val_ptr);
+            }
+        } else if (dim.kind == "circle_line_distance" &&
+                   !dim.secondary_entity_id.empty()) {
+            // Distance from circle center to a line.
+            // entity_id is the circle, secondary_entity_id is the line.
+            auto cit = circle_id_to_index_.find(dim.entity_id);
+            auto lit = line_id_to_index_.find(dim.secondary_entity_id);
+            if (cit != circle_id_to_index_.end() &&
+                lit != line_id_to_index_.end()) {
+                system_->addConstraintC2LDistance(
+                    gcs_circles_[cit->second],
+                    gcs_lines_[lit->second],
+                    val_ptr, 0);
             }
         }
     }

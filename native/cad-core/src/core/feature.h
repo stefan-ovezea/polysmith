@@ -774,6 +774,10 @@ struct SketchFeatureParameters {
     std::vector<SketchCircle> generated_circles;
   };
   std::optional<PendingMirror> pending_mirror;
+
+  // DOF count from the planegcs solver after the last solve.
+  // -1 = solver hasn't run yet (or no constraints exist).
+  int solver_dofs = -1;
 };
 
 struct FeatureEntry {

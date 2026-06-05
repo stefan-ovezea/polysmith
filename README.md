@@ -142,16 +142,30 @@ For other distributions, follow the [Tauri v2 prerequisites guide](https://v2.ta
 
 1. Install **Visual Studio 2022** with the _Desktop development with C++_ workload (provides MSVC + Windows SDK + CMake).
 2. Install **Rust** via [rustup-init.exe](https://rustup.rs/) and select the `stable-x86_64-pc-windows-msvc` toolchain.
-3. Install **Node.js 20** and enable Corepack:
+3. Install C++ library dependencies via **vcpkg**:
+   ```powershell
+   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+   cd C:\vcpkg
+   .\bootstrap-vcpkg.bat
+   .\vcpkg integrate install
+   .\vcpkg install boost eigen3
+   ```
+   Both are header-only for PolySmith's needs (the geometric constraint solver uses Boost.Graph and Boost.Math; Eigen3 for linear algebra).
+4. Install **Node.js 20** and enable Corepack:
    ```powershell
    powershell -c "irm https://community.chocolatey.org/install.ps1|iex"
    choco install nodejs --version="24.15.0"
    corepack enable pnpm
    corepack prepare pnpm@latest --activate
    ```
-4. Install **WebView2 Runtime** (Tauri requirement) — pre-installed on Windows 11.
+5. Install **WebView2 Runtime** (Tauri requirement) — pre-installed on Windows 11.
 
-Run all PolySmith commands from the **x64 Native Tools Command Prompt for VS 2022** so MSVC is on `PATH`.
+Run all PolySmith commands from the **x64 Native Tools Command Prompt for VS 2022** so MSVC is on `PATH`. The CMake configure step (`pnpm core:configure`) needs the vcpkg toolchain — pass it manually on first configure:
+
+```powershell
+cmake -S native/cad-core -B native/cad-core/build `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
 
 ### 3. Bootstrap (first-time only)
 

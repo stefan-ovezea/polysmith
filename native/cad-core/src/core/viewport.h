@@ -472,6 +472,8 @@ struct ViewportState {
   // the corresponding line/circle/polygon/arc/point, with the status
   // string ("under", "full", "over"). Empty vector when unknown.
   std::vector<EntityDofResult> dof_statuses;
+  // Total DOF count from the planegcs solver (-1 if not available).
+  int solver_dofs = -1;
   std::vector<ViewportMeshPrimitive> meshes;
   std::vector<ViewportCutPreview> cut_previews;
   // Available bodies (in document order) that boolean-mode extrudes can
