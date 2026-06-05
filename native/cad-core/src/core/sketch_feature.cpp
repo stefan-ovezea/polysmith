@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/constraint_solver.h"
 #include "core/formula_eval.h"
 #include "core/inference_engine.h"
 #include "core/sketch_profile.h"
@@ -1926,6 +1927,28 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // midpoint before rebuilding the points list. The cascade may
   // shift other line endpoints which `rebuild_sketch_points` then
   // mirrors into the points vector.
+
+  // --- planegcs constraint solver ---
+  // Solve the geometric constraint system before running ad-hoc
+  // enforce functions. If the solver succeeds, enforce functions
+  // will see already-correct geometry and be no-ops. On failure,
+  // the enforce functions provide a fallback.
+  if (!feature.sketch_parameters->constraints.empty() ||
+      !feature.sketch_parameters->line_relations.empty()) {
+    ConstraintSolver solver;
+    solver.build(*feature.sketch_parameters);
+    auto result = solver.solve();
+    if (result.ok()) {
+      solver.apply(*feature.sketch_parameters);
+    }
+    // Log solver diagnostics for now; later we'll pipe to UI.
+    if (!result.ok()) {
+      fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
+              static_cast<int>(result.status), result.dofs,
+              result.conflicting.size(), result.redundant.size());
+    }
+  }
+
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
@@ -3511,6 +3534,7 @@ void add_sketch_line(FeatureEntry& feature,
         .value = std::atan2(line.end_y - line.start_y,
                             line.end_x - line.start_x),
         .driven = constrained_axis,
+        .is_auto = true,
     });
   }
   if (!is_construction) {
@@ -3564,6 +3588,7 @@ void set_sketch_line_construction(FeatureEntry& feature,
           .kind = "line_length",
           .entity_id = line.id,
           .value = measure_line_length(line),
+          .is_auto = true,
       });
     }
     if (auto_angle_dim_it == parameters.dimensions.end()) {
@@ -3578,6 +3603,7 @@ void set_sketch_line_construction(FeatureEntry& feature,
           .value = std::atan2(line.end_y - line.start_y,
                               line.end_x - line.start_x),
           .driven = constrained_axis,
+          .is_auto = true,
       });
     }
   }
@@ -4072,6 +4098,7 @@ void add_sketch_circle(FeatureEntry& feature,
         .kind = "circle_radius",
         .entity_id = circle.id,
         .value = circle.radius,
+        .is_auto = true,
     });
   }
   if (!is_construction) {
@@ -4552,6 +4579,7 @@ void add_sketch_polygon(FeatureEntry& feature,
         .kind = "polygon_radius",
         .entity_id = polygon.id,
         .value = polygon.radius,
+        .is_auto = true,
     });
   }
 

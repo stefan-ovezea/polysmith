@@ -531,6 +531,12 @@ struct SketchDimension {
   // is kept in sync with the geometry during refresh_sketch_derived_state
   // but editing it does not drive the geometry. Default false (driving).
   bool driven = false;
+  // When true, this dimension was created automatically at entity-commit
+  // time (auto-dimension). Auto-dimensions only become driving constraints
+  // when the user types a value (non-empty expression). Manual dimensions
+  // (is_auto = false) are always driving constraints at their current
+  // measured value, regardless of expression.
+  bool is_auto = false;
   // For circle_radius dimensions: controls whether the UI displays the
   // value as radius or diameter. Empty string = diameter (default, for
   // backward compat). "radius" = display the raw radius value.

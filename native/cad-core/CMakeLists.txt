@@ -17,10 +17,34 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/../../third_party/occt-install")
 
 find_package(OpenCASCADE REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED)
 
 if(UNIX AND NOT APPLE)
   # Use RPATH instead of RUNPATH so transitive dependencies are found
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-new-dtags")
+endif()
+
+# --- planegcs static library (2D geometric constraint solver from FreeCAD) ---
+set(PLANEGCS_DIR "${CMAKE_SOURCE_DIR}/../../third_party/planegcs/planegcs")
+add_library(planegcs STATIC
+  ${PLANEGCS_DIR}/GCS.cpp
+  ${PLANEGCS_DIR}/Geo.cpp
+  ${PLANEGCS_DIR}/Constraints.cpp
+  ${PLANEGCS_DIR}/SubSystem.cpp
+  ${PLANEGCS_DIR}/qp_eq.cpp
+)
+target_include_directories(planegcs PUBLIC
+  ${PLANEGCS_DIR}
+  ${PLANEGCS_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${EIGEN3_INCLUDE_DIR}
+  ${Boost_INCLUDE_DIRS}
+)
+target_compile_definitions(planegcs PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
+# planegcs uses 'register' keyword (removed in C++17) in some Eigen internals
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(planegcs PRIVATE -Wno-register)
 endif()
 
 add_executable(cad_core
@@ -28,6 +52,7 @@ add_executable(cad_core
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/construction_plane_feature.cpp
+  src/core/constraint_solver.cpp
   src/core/cylinder_feature.cpp
   src/core/dof_counter.cpp
   src/core/document.cpp
@@ -58,9 +83,10 @@ target_include_directories(cad_core PRIVATE
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
 
-target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES})
+target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs)
 
 add_executable(cad_core_sketch_profile_test
+  src/core/constraint_solver.cpp
   src/core/formula_eval.cpp
   src/core/inference_engine.cpp
   src/core/sketch_feature.cpp
@@ -72,12 +98,22 @@ add_executable(cad_core_sketch_profile_test
 target_include_directories(cad_core_sketch_profile_test PRIVATE
   include
   src
+  ${PLANEGCS_DIR}
+  ${PLANEGCS_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${EIGEN3_INCLUDE_DIR}
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_sketch_profile_test PRIVATE
+  planegcs
 )
 
 add_executable(cad_core_multi_profile_extrude_test
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/construction_plane_feature.cpp
+  src/core/constraint_solver.cpp
   src/core/cylinder_feature.cpp
   src/core/dof_counter.cpp
   src/core/document.cpp
@@ -106,8 +142,14 @@ target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
   include
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${PLANEGCS_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${EIGEN3_INCLUDE_DIR}
+  ${Boost_INCLUDE_DIRS}
 )
 
 target_link_libraries(cad_core_multi_profile_extrude_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
+  planegcs
 )
