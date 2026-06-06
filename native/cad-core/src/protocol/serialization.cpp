@@ -2449,11 +2449,12 @@ json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primiti
            {"z", primitive.ref_line_start_z},
        }},
       {"ref_line_end",
-       {
-           {"x", primitive.ref_line_end_x},
-           {"y", primitive.ref_line_end_y},
-           {"z", primitive.ref_line_end_z},
-       }},
+        {
+            {"x", primitive.ref_line_end_x},
+            {"y", primitive.ref_line_end_y},
+            {"z", primitive.ref_line_end_z},
+        }},
+      {"driven", primitive.driven},
   };
 }
 

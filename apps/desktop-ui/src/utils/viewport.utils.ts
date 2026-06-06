@@ -1377,10 +1377,14 @@ export function buildSketchDimensionObject(
 ) {
   const isMutedPreview = options.variant === "muted-preview";
   const isPickable = options.pickable ?? !isMutedPreview;
-  const labelText =
+  let labelText =
     displayUnits === "in" && dimension.unitSuffix === "mm"
       ? reformatDimensionLabel(dimension.label, dimension.kind, "in")
       : dimension.label;
+  // Driven (reference) dimensions: wrap in parentheses like "(35mm)".
+  if (dimension.driven && !labelText.startsWith("(")) {
+    labelText = `(${labelText})`;
+  }
   const labelPosition = new THREE.Vector3(...dimension.labelPosition);
   const anchorStart = new THREE.Vector3(...dimension.anchorStart);
   const anchorEnd = new THREE.Vector3(...dimension.anchorEnd);

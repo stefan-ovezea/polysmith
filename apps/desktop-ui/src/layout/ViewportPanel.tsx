@@ -10910,6 +10910,7 @@ const currentGridSpacingRef = useRef(10);
             referenceId: null,
             faceId: null,
             constraintKind: hit.constraintKind,
+            constraintId: hit.id,
             constraintEntityId: hit.entityId,
             constraintRelatedEntityId: hit.relatedEntityId,
           });
@@ -11972,14 +11973,21 @@ const currentGridSpacingRef = useRef(10);
   async function handleDeleteConstraintFromContextMenu() {
     const kind = contextMenu?.constraintKind;
     const entityId = contextMenu?.constraintEntityId;
+    const constraintId = contextMenu?.constraintId;
     if (!kind || !entityId) {
       return;
     }
     setContextMenu(null);
     setSelectedConstraint(null);
+    // For mirror and coincident, use the constraint_id (which encodes
+    // the axis/point). For line-mounted constraints (H/V), use entityId.
+    const deleteId =
+      kind === "mirror" || kind === "coincident"
+        ? constraintId ?? entityId
+        : entityId;
     await clearSketchConstraintRef.current(
       kind as ConstraintType,
-      entityId,
+      deleteId,
       contextMenu?.constraintRelatedEntityId ?? null,
     );
   }

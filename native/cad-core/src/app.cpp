@@ -1304,7 +1304,11 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   }
 
   if (command.type == "commit_mirror_preview") {
-    const auto document = document_manager().commit_mirror_preview();
+    bool persistent = false;
+    if (command.payload.contains("persistent")) {
+      persistent = command.payload["persistent"].get<bool>();
+    }
+    const auto document = document_manager().commit_mirror_preview(persistent);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

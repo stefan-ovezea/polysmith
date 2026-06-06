@@ -696,6 +696,17 @@ struct SketchProfileRegion {
   double radius;
 };
 
+/// Records a persistent mirror relationship: `mirror_id` is the
+/// mirror of `source_id` across `axis_line_id`. The recompute pass
+/// re-projects `source_id`'s geometry across the axis and writes
+/// the result into `mirror_id`.
+struct SketchMirrorRelation {
+  std::string id;
+  std::string source_id;
+  std::string mirror_id;
+  std::string axis_line_id;
+};
+
 struct SketchFeatureParameters {
   struct SketchPlaneFrame {
     double origin_x;
@@ -778,6 +789,12 @@ struct SketchFeatureParameters {
   // DOF count from the planegcs solver after the last solve.
   // -1 = solver hasn't run yet (or no constraints exist).
   int solver_dofs = -1;
+
+  // Persistent mirror relations. When the user commits a mirror with
+  // the "persistent" toggle on, each source→mirror pair is stored
+  // here so it can be re-mirrored on every recompute and shown as a
+  // constraint badge. Empty vector = no persistent mirrors.
+  std::vector<SketchMirrorRelation> mirror_relations;
 };
 
 struct FeatureEntry {

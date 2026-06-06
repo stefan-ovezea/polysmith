@@ -1017,11 +1017,13 @@ export function makeUpdateMirrorPreviewObjectsCommand(
   };
 }
 
-export function makeCommitMirrorPreviewCommand(): CoreCommand {
+export function makeCommitMirrorPreviewCommand(
+  persistent: boolean = false,
+): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "commit_mirror_preview",
-    payload: {},
+    payload: { persistent },
   };
 }
 

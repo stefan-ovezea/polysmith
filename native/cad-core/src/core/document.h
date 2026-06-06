@@ -270,7 +270,7 @@ class DocumentManager {
   DocumentState update_mirror_preview_axis(const std::string& axis_line_id);
   DocumentState update_mirror_preview_objects(
       const std::vector<std::string>& object_ids);
-  DocumentState commit_mirror_preview();
+  DocumentState commit_mirror_preview(bool persistent = false);
   DocumentState cancel_mirror_preview();
   DocumentState set_sketch_parallel_constraint(
       const std::string& line_id,

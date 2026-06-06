@@ -2,19 +2,13 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 interface MirrorToolPanelProps {
-  // Live state from the document. The panel is purely reactive:
-  // it reads the current selection out of `pending_mirror` and
-  // dispatches updates back through the callbacks. No local state
-  // beyond which slot is focused.
   axisLineId: string | null;
   objectIds: string[];
   generatedLineCount: number;
   generatedCircleCount: number;
-  // Which input slot the next viewport entity click will fill.
-  // Owned by the parent (App.tsx) so the click handler in
-  // ViewportPanel can read it via the same path the rest of the
-  // sketch tools use.
   focusedSlot: "objects" | "axis" | null;
+  persistent: boolean;
+  onTogglePersistent: () => void;
   disabled: boolean;
   onFocusObjects: () => void;
   onFocusAxis: () => void;
@@ -37,6 +31,8 @@ export function MirrorToolPanel({
   generatedLineCount,
   generatedCircleCount,
   focusedSlot,
+  persistent,
+  onTogglePersistent,
   disabled,
   onFocusObjects,
   onFocusAxis,
@@ -156,6 +152,17 @@ export function MirrorToolPanel({
           entityLabel: totalGenerated === 1 ? "entity" : "entities",
         })}
       </p>
+
+      <label className="mt-4 flex items-center gap-2 cursor-pointer text-xs text-on-surface">
+        <input
+          type="checkbox"
+          checked={persistent}
+          onChange={onTogglePersistent}
+          disabled={disabled}
+          className="cad-checkbox"
+        />
+        {t("panels.mirror.persistent")}
+      </label>
 
       <div className="mt-4 flex gap-3">
         <button
