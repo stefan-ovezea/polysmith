@@ -28,6 +28,8 @@
 | | |
 |---|---|
 | 🏗️ **[Architecture Overview](Architecture-Overview)** | High-level system architecture: UI, Tauri, C++ core, IPC |
+| 🧭 **[Core-UI Design Principles](Core-UI-Design-Principles)** | **Binding.** Core sends document state, not interaction state. What belongs where. |
+| ⚡ **[UI Performance Architecture](UI-Performance-Architecture)** | Rust/WASM for UI-side snap, constraint solving, and collision detection |
 | 🗺️ **[Repository Map](Repository-Map)** | Top-level directory structure and ownership rules |
 | 📡 **[IPC Protocol](IPC-Protocol)** | JSON-based protocol between UI and CAD core |
 | 🔷 **[Topological Naming Problem](Topological-Naming-Problem)** | TNP strategy and defences (project mantra) |
@@ -56,7 +58,6 @@
 
 | | |
 |---|---|
-| 🎯 **[Sketch Selection Controls](Sketch-Selection-Controls)** | Checkbox panel that controls selection, snapping, and constraints as one system |
 | 🏗️ **[2D Sketch System Architecture](2D-Sketch-System-Architecture)** | Constraints, snapping, and unified selection filter design |
 | ✅ **[2D Sketch Constraint System — Implementation TODO](2D-Sketch-Constraint-System)** | Geometric and dimensional constraint tracking |
 | ⚙️ **[Snap Settings — Configuration Options](Snap-Settings-‐-Configuration-Options)** | All snap types, defaults, and user configurability |

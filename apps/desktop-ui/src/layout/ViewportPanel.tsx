@@ -102,7 +102,8 @@ import {
 } from "@/utils";
 import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { sendCoreCommand } from "@/lib/cadCoreClient";
-import { makeTrimPreviewCommand } from "@/lib/ipcProtocol";
+import { makeGetViewportStateCommand, makeTrimPreviewCommand } from "@/lib/ipcProtocol";
+import { useCadCoreStore } from "@/state/cadCoreStore";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
 
 type DynamicGridRef = {
@@ -160,6 +161,11 @@ type DraftDimensionSession = {
   values: Record<DraftDimensionField, string>;
   activeField: DraftDimensionField;
   lockedFields: Partial<Record<DraftDimensionField, boolean>>;
+  // Fields the user has ever typed into during this draft session,
+  // even if they later cleared the value. Prevents auto-dimension
+  // deletion when the user interacts with a field at all — typing
+  // "10" then backspacing should still preserve the dimension.
+  touchedFields: Partial<Record<DraftDimensionField, boolean>>;
 };
 type ParameterSuggestion = {
   name: string;
@@ -256,7 +262,11 @@ type DimensionRelationPreview = {
 };
 
 const ANGLE_DIMENSION_MIN_RADIUS = 6;
-const ANGLE_DIMENSION_MAX_RADIUS = 80;
+const ANGLE_DIMENSION_MAX_RADIUS = 500;
+
+function clampAngleRadius(distance: number): number {
+  return Math.max(ANGLE_DIMENSION_MIN_RADIUS, Math.min(distance, ANGLE_DIMENSION_MAX_RADIUS));
+}
 
 const GRID_STEPS_MM = [
   0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000,
@@ -326,12 +336,6 @@ interface ViewportPanelProps {
     hostLineId: string,
     t: number,
   ) => Promise<void>;
-  onResolveDraftSnap: (
-    cursorX: number,
-    cursorY: number,
-    startX: number,
-    startY: number,
-  ) => Promise<void>;
   onAddSketchAngleDimension: (
     firstLineId: string,
     secondLineId: string,
@@ -354,6 +358,10 @@ interface ViewportPanelProps {
   onSetSketchTangentConstraint: (
     lineId: string,
     circleId: string,
+  ) => Promise<void>;
+  onSetSketchParallelConstraint: (
+    lineId: string,
+    otherLineId: string | null,
   ) => Promise<void>;
   onAddSketchRectangle: (
     startX: number,
@@ -1063,6 +1071,7 @@ function applyDraftDimensionFieldValue(
         lockedFields: lockField
           ? {...session.lockedFields, [field]: true}
           : session.lockedFields,
+        touchedFields: {...session.touchedFields, [field]: true},
       };
     }
   } else if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -1073,6 +1082,7 @@ function applyDraftDimensionFieldValue(
       lockedFields: lockField
         ? {...session.lockedFields, [field]: true}
         : session.lockedFields,
+      touchedFields: {...session.touchedFields, [field]: true},
     };
   }
 
@@ -1134,6 +1144,7 @@ function applyDraftDimensionFieldValue(
     lockedFields: lockField
       ? {...session.lockedFields, [field]: true}
       : session.lockedFields,
+    touchedFields: {...session.touchedFields, [field]: true},
   };
 }
 
@@ -1204,7 +1215,6 @@ export function ViewportPanel({
   onAddSketchLine,
   onSetSketchMidpointAnchor,
   onSetSketchPointLineAnchor,
-  onResolveDraftSnap,
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
@@ -1213,6 +1223,7 @@ export function ViewportPanel({
   onSetSketchLineConstraint,
   onSetSketchPerpendicularConstraint,
   onSetSketchTangentConstraint,
+  onSetSketchParallelConstraint,
   onAddSketchRectangle,
   onAddSketchCircle,
   onAddSketchArc,
@@ -1259,6 +1270,7 @@ export function ViewportPanel({
   hideReferences,
 }: ViewportPanelProps) {
   const { config, activeTheme, updateConfig } = useAppConfig();
+  const addMessage = useCadCoreStore((state) => state.addMessage);
   const { t: translate } = useTranslation();
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const showViewportGrid = config.viewport.showGrid;
@@ -1297,7 +1309,9 @@ export function ViewportPanel({
       | "on_line"
       | "horizontal"
       | "vertical"
-      | "tangent";
+      | "tangent"
+      | "endpoint"
+      | "parallel";
     x: number;
     y: number;
   } | null>(null);
@@ -1335,6 +1349,11 @@ export function ViewportPanel({
   const dimensionLabelPositionsRef = useRef<
     Record<string, [number, number, number]>
   >({});
+  // Angle dimensions store just the arc radius during drag, not a
+  // directional control point.  This eliminates the disconnect between
+  // the cursor direction and the bisector that caused arc drift.
+  const [angleDragRadii, setAngleDragRadii] = useState<Record<string, number>>({});
+  const angleDragRadiiRef = useRef<Record<string, number>>({});
   const [draftDimensionSession, setDraftDimensionSession] =
     useState<DraftDimensionSession | null>(null);
   const pendingCircleDimensionPlacementRef = useRef<{
@@ -1399,15 +1418,6 @@ export function ViewportPanel({
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
-  const cppSnapCacheRef = useRef<{
-    local: [number, number];
-    snapLabel: string | null;
-    snapKind: string;
-    hostEntityId: string;
-    hostPointId: string;
-    hostParamT: number | null;
-    timestamp: number;
-  } | null>(null);
   // Track click timing and position for double-click detection during
   // line drafting. Two clicks <300ms apart at the same location break
   // the chain and start an independent line on the next click.
@@ -1528,6 +1538,24 @@ const currentGridSpacingRef = useRef(10);
     inFlight: boolean;
   }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
+  // rAF batching for endpoint drag — same pattern as flushMoveGizmoChange.
+  const pendingDragRef = useRef<{
+    pointId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const pendingDragFrameRef = useRef<number | null>(null);
+  // Latest snap result from the core — used on pointerup to avoid
+  // overriding the core's constrained position with raw mouse coords.
+  const dragSnapResultRef = useRef<{
+    snapX: number;
+    snapY: number;
+  } | null>(null);
+  // Cursor canvas position during endpoint drag — used to position the
+  // floating constraint-preview badge near the pointer.
+  const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
+  // Local preview lines rendered during endpoint drag (dashed overlay).
+  const dragPreviewLinesRef = useRef<THREE.Line[]>([]);
   // Set on mouse-up commit; cleared when the next viewport rebuild
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
@@ -1586,6 +1614,8 @@ const currentGridSpacingRef = useRef(10);
     useRef<[number, number, number] | null>(null);
   const pendingRelationPlacementLabelRef =
     useRef<[number, number, number] | null>(null);
+  const pendingAngleIsReflexRef = useRef(false);
+  const pendingReflexAngleRef = useRef(0);
   const pendingRelationPlacementMatchRef =
     useRef<DimensionRelationPreview | null>(null);
   const pendingRelationPlacementRetryRef = useRef<number | null>(null);
@@ -1715,6 +1745,7 @@ const currentGridSpacingRef = useRef(10);
   );
   const setSketchLineConstraintRef = useRef(onSetSketchLineConstraint);
   const setSketchTangentConstraintRef = useRef(onSetSketchTangentConstraint);
+  const setSketchParallelConstraintRef = useRef(onSetSketchParallelConstraint);
   // Track Alt key for object snap override (invert all snap toggles
   // while held). Updated by keydown/keyup listeners below.
   const altHeldRef = useRef(false);
@@ -1735,6 +1766,15 @@ const currentGridSpacingRef = useRef(10);
   const pendingAxisConstraintRef = useRef<{
     fromLineCount: number;
     kind: "horizontal" | "vertical";
+  } | null>(null);
+  // Pending parallel-constraint state. Captured at click-time when the
+  // resolved sketch point indicates the line's end is parallel to an
+  // existing line. The post-add effect dispatches
+  // `set_sketch_parallel_constraint` so the relation sticks.
+  // Same baseline-on-line-count guard as the other refs.
+  const pendingParallelConstraintRef = useRef<{
+    fromLineCount: number;
+    hostLineId: string;
   } | null>(null);
   // Pending dimension deletion after a sketch entity commit. Set by
   // `commitDraftDimensionSession` when the user dragged without typing
@@ -1879,43 +1919,52 @@ const currentGridSpacingRef = useRef(10);
       sketchPolygons: sketch.polygons?.length ?? 0,
       dimIds: sketch.dimensions.map(d => d.dimension_id),
     });
+    // Look up dimensions by entity_id + kind instead of predicting
+    // the ID format (dim-line-{id}, etc.). The response always
+    // contains the full dimensions array, so this tolerates ID
+    // format changes and avoids race conditions where the predicted
+    // ID doesn't match what the core actually created.
+    const findDimId = (entityId: string, kind: string): string | undefined =>
+      sketch.dimensions.find(
+        (d) => d.entity_id === entityId && d.kind === kind,
+      )?.dimension_id;
+
     // Use the last entity instead of fromLineCount to avoid race
     // conditions when React hasn't re-rendered between rapid commits.
     if (pending.shouldDeleteLine && sketch.lines.length > 0) {
       const line = sketch.lines[sketch.lines.length - 1];
       if (line && !line.is_construction) {
-        void deleteSketchDimensionRef.current(`dim-line-${line.line_id}`);
+        const dimId = findDimId(line.line_id, "line_length");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteLineAngle && sketch.lines.length > 0) {
       const line = sketch.lines[sketch.lines.length - 1];
       if (line && !line.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-line-angle-${line.line_id}`,
-        );
+        const dimId = findDimId(line.line_id, "line_angle");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteCircle && sketch.circles.length > 0) {
       const circle = sketch.circles[sketch.circles.length - 1];
       if (circle && !circle.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-circle-${circle.circle_id}`,
-        );
+        const dimId = findDimId(circle.circle_id, "circle_radius");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeletePolygon && (sketch.polygons?.length ?? 0) > 0) {
       const polygon = sketch.polygons?.[(sketch.polygons?.length ?? 1) - 1];
       if (polygon && !polygon.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-polygon-${polygon.polygon_id}`,
-        );
+        const dimId = findDimId(polygon.polygon_id, "polygon_radius");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteRectangle && sketch.lines.length >= 4) {
       for (let i = sketch.lines.length - 4; i < sketch.lines.length; i++) {
         const line = sketch.lines[i];
         if (line && !line.is_construction) {
-          void deleteSketchDimensionRef.current(`dim-line-${line.line_id}`);
+          const dimId = findDimId(line.line_id, "line_length");
+          if (dimId) void deleteSketchDimensionRef.current(dimId);
         }
       }
     }
@@ -2193,6 +2242,36 @@ const currentGridSpacingRef = useRef(10);
       return [];
     }
     return sceneData.sketchDimensions.map((dimension) => {
+      // Angle dimensions use a radius-only drag state — no directional
+      // control point, so the arc stays centred on the bisector and the
+      // radius tracks the cursor distance 1:1.
+      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+        const dragRadius = angleDragRadii[dimension.dimensionId];
+        if (dragRadius !== undefined) {
+          const frame = angleDimensionFrame(dimension);
+          if (frame) {
+            const r = clampAngleRadius(dragRadius);
+            const toTuple = (p: THREE.Vector3): [number, number, number] => [p.x, p.y, p.z];
+            return {
+              ...dimension,
+              arcRadius: r,
+              anchorStart: toTuple(frame.pivot.clone().add(frame.startUnit.clone().multiplyScalar(frame.anchorRadius))),
+              anchorEnd:   toTuple(frame.pivot.clone().add(frame.endUnit.clone().multiplyScalar(frame.anchorRadius))),
+              dimensionStart: toTuple(frame.pivot.clone().add(frame.startUnit.clone().multiplyScalar(r))),
+              dimensionEnd:   toTuple(frame.pivot.clone().add(frame.endUnit.clone().multiplyScalar(r))),
+              labelPosition:  toTuple(frame.pivot.clone().add(frame.bisector.clone().multiplyScalar(r))),
+            };
+          }
+          return dimension;
+        }
+      }
+
+      // Angle dimensions are handled above via angleDragRadii;
+      // never let them reach the generic offset path.
+      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+        return dimension;
+      }
+
       const labelPosition = dimensionLabelPositions[dimension.dimensionId];
       if (!labelPosition) {
         return dimension;
@@ -2200,20 +2279,28 @@ const currentGridSpacingRef = useRef(10);
       const originalLabel = new THREE.Vector3(...dimension.labelPosition);
       const nextLabel = new THREE.Vector3(...labelPosition);
       let offset = nextLabel.sub(originalLabel);
-      if (dimension.kind === "angle" || dimension.kind === "line_angle") {
-        const frame = angleDimensionFrame(dimension);
-        if (frame) {
-          // Angle dimensions store a control point for the arc radius;
-          // the actual text label is derived on the angle bisector, same
-          // as the relation ghost preview.
-          const dimensionRadius = Math.max(
-            ANGLE_DIMENSION_MIN_RADIUS,
-            Math.min(
-              nextLabel.distanceTo(frame.pivot),
-              ANGLE_DIMENSION_MAX_RADIUS,
-            ),
-          );
-          const labelRadius = Math.max(3.0, dimensionRadius * 0.42);
+      if (dimension.kind === "circle_radius") {
+        const center = new THREE.Vector3(...dimension.dimensionStart)
+          .add(new THREE.Vector3(...dimension.dimensionEnd))
+          .multiplyScalar(0.5);
+        const radius =
+          new THREE.Vector3(...dimension.dimensionStart).distanceTo(
+            new THREE.Vector3(...dimension.dimensionEnd),
+          ) * 0.5;
+        const direction = new THREE.Vector3(...labelPosition).sub(center);
+        const planeNormal = getSketchGridFrame(
+          dimension.planeId,
+          activeSketchPlaneFrame,
+        ).normal;
+        direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
+        if (direction.lengthSq() > 1e-8 && radius > 1e-8) {
+          direction.normalize();
+          const start = center
+            .clone()
+            .add(direction.clone().multiplyScalar(-radius));
+          const end = center
+            .clone()
+            .add(direction.clone().multiplyScalar(radius));
           const toTuple = (point: THREE.Vector3): [number, number, number] => [
             point.x,
             point.y,
@@ -2221,90 +2308,34 @@ const currentGridSpacingRef = useRef(10);
           ];
           return {
             ...dimension,
-            anchorStart: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.startUnit.clone().multiplyScalar(frame.anchorRadius)),
-            ),
-            anchorEnd: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.endUnit.clone().multiplyScalar(frame.anchorRadius)),
-            ),
-            dimensionStart: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.startUnit.clone().multiplyScalar(dimensionRadius)),
-            ),
-            dimensionEnd: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.endUnit.clone().multiplyScalar(dimensionRadius)),
-            ),
-            labelPosition: toTuple(
-              frame.pivot
-                .clone()
-                .add(frame.bisector.clone().multiplyScalar(labelRadius)),
-            ),
+            anchorStart: toTuple(start),
+            anchorEnd: toTuple(end),
+            dimensionStart: toTuple(start),
+            dimensionEnd: toTuple(end),
+            labelPosition,
           };
         }
+        // Fall through to generic offset if circle radius computation fails
       }
-      if (dimension.kind !== "angle" && dimension.kind !== "line_angle") {
-        if (dimension.kind === "circle_radius") {
-          const center = new THREE.Vector3(...dimension.dimensionStart)
-            .add(new THREE.Vector3(...dimension.dimensionEnd))
-            .multiplyScalar(0.5);
-          const radius =
-            new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-              new THREE.Vector3(...dimension.dimensionEnd),
-            ) * 0.5;
-          const direction = new THREE.Vector3(...labelPosition).sub(center);
-          const planeNormal = getSketchGridFrame(
-            dimension.planeId,
-            activeSketchPlaneFrame,
-          ).normal;
-          direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-          if (direction.lengthSq() > 1e-8 && radius > 1e-8) {
-            direction.normalize();
-            const start = center
-              .clone()
-              .add(direction.clone().multiplyScalar(-radius));
-            const end = center
-              .clone()
-              .add(direction.clone().multiplyScalar(radius));
-            const toTuple = (point: THREE.Vector3): [number, number, number] => [
-              point.x,
-              point.y,
-              point.z,
-            ];
-            return {
-              ...dimension,
-              anchorStart: toTuple(start),
-              anchorEnd: toTuple(end),
-              dimensionStart: toTuple(start),
-              dimensionEnd: toTuple(end),
-              labelPosition,
-            };
-          }
-        }
-        const extensionAxis = new THREE.Vector3(
-          ...dimension.dimensionStart,
-        ).sub(new THREE.Vector3(...dimension.anchorStart));
-        const dimensionDirection = new THREE.Vector3(
-          ...dimension.dimensionEnd,
-        ).sub(new THREE.Vector3(...dimension.dimensionStart));
-        const placementAxis =
-          extensionAxis.lengthSq() > 1e-8
-            ? extensionAxis.normalize()
-            : getSketchGridFrame(
-                dimension.planeId,
-                activeSketchPlaneFrame,
-              ).normal
-                .cross(dimensionDirection)
-                .normalize();
-        if (placementAxis.lengthSq() > 1e-8) {
-          offset = placementAxis.multiplyScalar(offset.dot(placementAxis));
-        }
+
+      // Generic offset for linear dimensions (line_length, distance, etc.)
+      const extensionAxis = new THREE.Vector3(
+        ...dimension.dimensionStart,
+      ).sub(new THREE.Vector3(...dimension.anchorStart));
+      const dimensionDirection = new THREE.Vector3(
+        ...dimension.dimensionEnd,
+      ).sub(new THREE.Vector3(...dimension.dimensionStart));
+      const placementAxis =
+        extensionAxis.lengthSq() > 1e-8
+          ? extensionAxis.normalize()
+          : getSketchGridFrame(
+              dimension.planeId,
+              activeSketchPlaneFrame,
+            ).normal
+              .cross(dimensionDirection)
+              .normalize();
+      if (placementAxis.lengthSq() > 1e-8) {
+        offset = placementAxis.multiplyScalar(offset.dot(placementAxis));
       }
       const shiftPoint = (point: [number, number, number]) => {
         const shifted = new THREE.Vector3(...point).add(offset);
@@ -2329,7 +2360,7 @@ const currentGridSpacingRef = useRef(10);
         labelPosition: shiftedLabel,
       };
     });
-  }, [activeSketchPlaneFrame, dimensionLabelPositions, sceneData]);
+  }, [activeSketchPlaneFrame, angleDragRadii, dimensionLabelPositions, sceneData]);
   useEffect(() => {
     displayedSketchDimensionsRef.current = displayedSketchDimensions;
   }, [displayedSketchDimensions]);
@@ -2753,6 +2784,16 @@ const currentGridSpacingRef = useRef(10);
     }
   }, [selectedConstraint]);
 
+  function clearDragPreviewLines() {
+    const sketchGroup = sketchGroupRef.current;
+    for (const line of dragPreviewLinesRef.current) {
+      if (sketchGroup) sketchGroup.remove(line);
+      line.geometry.dispose();
+      disposeMaterial(line.material);
+    }
+    dragPreviewLinesRef.current = [];
+  }
+
   function clearPreviewLine() {
     const previewLine = previewLineRef.current;
     const sketchGroup = sketchGroupRef.current;
@@ -3092,6 +3133,7 @@ const currentGridSpacingRef = useRef(10);
       values: draftSessionValues(tool, start, current),
       activeField: fields[0],
       lockedFields: {},
+      touchedFields: {},
     };
   }
 
@@ -3120,19 +3162,25 @@ const currentGridSpacingRef = useRef(10);
     preCapturedSession?: DraftDimensionSession | null,
   ) {
     const session = preCapturedSession ?? draftDimensionSessionRef.current;
+    // Delete auto-dimensions only when the user never touched the
+    // corresponding field. `touchedFields` tracks whether the user
+    // typed into a field at all during this draft session, even if
+    // they later cleared the value. This handles the "typed '10'
+    // then backspaced" edge case: the dimension is preserved because
+    // the user demonstrated intent to control it.
     pendingDimensionDeletionRef.current = {
       shouldDeleteLine:
-        tool === "line" && !session?.lockedFields.length,
+        tool === "line" && !session?.touchedFields.length,
       shouldDeleteCircle:
-        tool === "circle" && !session?.lockedFields.diameter,
+        tool === "circle" && !session?.touchedFields.diameter,
       shouldDeletePolygon:
-        tool === "polygon" && !session?.lockedFields.radius,
+        tool === "polygon" && !session?.touchedFields.radius,
       shouldDeleteRectangle:
         tool === "rectangle" &&
-        !session?.lockedFields.width &&
-        !session?.lockedFields.length,
+        !session?.touchedFields.width &&
+        !session?.touchedFields.length,
       shouldDeleteLineAngle:
-        tool === "line" && !session?.lockedFields.angle,
+        tool === "line" && !session?.touchedFields.angle,
     };
   }
 
@@ -3263,8 +3311,18 @@ const currentGridSpacingRef = useRef(10);
     ) {
       pendingDimensionPlacementRef.current = true;
       pendingDimSourceEntityIdRef.current = null;
+      const isReflex = pendingAngleIsReflexRef.current;
+      const reflexAngle = pendingReflexAngleRef.current;
+      pendingAngleIsReflexRef.current = false;
       void addSketchAngleDimensionRef
         .current(firstEntityId, secondEntityId)
+        .then(() => {
+          if (isReflex) {
+            const ids = [firstEntityId, secondEntityId].sort();
+            const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
+            void updateSketchDimensionRef.current(dimId, reflexAngle);
+          }
+        })
         .catch(() => {
           pendingDimensionPlacementRef.current = false;
           pendingRelationPlacementLabelRef.current = null;
@@ -3387,22 +3445,44 @@ const currentGridSpacingRef = useRef(10);
       0.03;
   }
 
+  function pointOnSegment(
+    px: number, py: number,
+    ax: number, ay: number,
+    bx: number, by: number,
+    tolerance = 0.05,
+  ): boolean {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) {
+      return Math.hypot(px - ax, py - ay) <= tolerance;
+    }
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    return Math.hypot(px - projX, py - projY) <= tolerance;
+  }
+
   function sharedLineEndpoint(
     first: SketchLineEntry,
     second: SketchLineEntry,
   ): [number, number] | null {
-    if (first.start_point_id === second.start_point_id) {
+    // Direct endpoint match by point ID
+    if (first.start_point_id === second.start_point_id) return [first.start_x, first.start_y];
+    if (first.start_point_id === second.end_point_id)   return [first.start_x, first.start_y];
+    if (first.end_point_id === second.start_point_id)   return [first.end_x, first.end_y];
+    if (first.end_point_id === second.end_point_id)     return [first.end_x, first.end_y];
+
+    // One line's endpoint lies on the other line's segment
+    if (pointOnSegment(first.start_x, first.start_y, second.start_x, second.start_y, second.end_x, second.end_y))
       return [first.start_x, first.start_y];
-    }
-    if (first.start_point_id === second.end_point_id) {
-      return [first.start_x, first.start_y];
-    }
-    if (first.end_point_id === second.start_point_id) {
+    if (pointOnSegment(first.end_x, first.end_y, second.start_x, second.start_y, second.end_x, second.end_y))
       return [first.end_x, first.end_y];
-    }
-    if (first.end_point_id === second.end_point_id) {
-      return [first.end_x, first.end_y];
-    }
+    if (pointOnSegment(second.start_x, second.start_y, first.start_x, first.start_y, first.end_x, first.end_y))
+      return [second.start_x, second.start_y];
+    if (pointOnSegment(second.end_x, second.end_y, first.start_x, first.start_y, first.end_x, first.end_y))
+      return [second.end_x, second.end_y];
+
     return null;
   }
 
@@ -3504,12 +3584,43 @@ const currentGridSpacingRef = useRef(10);
       -1,
       Math.min(1, firstDir[0] * secondDir[0] + firstDir[1] * secondDir[1]),
     );
-    const angle = Math.acos(dot);
+    const acuteAngle = Math.acos(dot);
+
+    // Determine whether the cursor is on the reflex (larger-angle) side.
+    // The bisector of the two unit direction vectors points into the acute
+    // angle.  If the cursor lies on the opposite side of the bisector,
+    // the user intends the reflex (larger) angle.
+    //
+    // Use a tighter threshold when the two lines share an endpoint (the
+    // cursor naturally passes near the bisector plane while moving
+    // between lines).  When one endpoint merely lies on the other line's
+    // segment, the natural cursor path is different, so we use a looser
+    // threshold.
+    const sharedEndpoint =
+      first.start_point_id === second.start_point_id ||
+      first.start_point_id === second.end_point_id ||
+      first.end_point_id === second.start_point_id ||
+      first.end_point_id === second.end_point_id;
+    const reflexThreshold = sharedEndpoint ? -0.3 : 0;
+
+    let useReflex = false;
+    const cursorVec = [cursor[0] - pivot[0], cursor[1] - pivot[1]];
+    const cursorLen = Math.hypot(cursorVec[0], cursorVec[1]);
+    if (cursorLen > 1e-9) {
+      const cx = cursorVec[0] / cursorLen;
+      const cy = cursorVec[1] / cursorLen;
+      const bx = firstDir[0] + secondDir[0];
+      const by = firstDir[1] + secondDir[1];
+      const blen = Math.hypot(bx, by);
+      if (blen > 1e-9) {
+        useReflex = (cx * bx + cy * by) / blen < reflexThreshold;
+      }
+    }
+    const angle = useReflex ? 2 * Math.PI - acuteAngle : acuteAngle;
+    pendingAngleIsReflexRef.current = useReflex;
+    if (useReflex) pendingReflexAngleRef.current = angle;
     const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
-    const radius = Math.max(
-      ANGLE_DIMENSION_MIN_RADIUS,
-      Math.min(cursorRadius, ANGLE_DIMENSION_MAX_RADIUS),
-    );
+    const radius = clampAngleRadius(cursorRadius);
     const dimensionStart: [number, number] = [
       pivot[0] + firstDir[0] * radius,
       pivot[1] + firstDir[1] * radius,
@@ -3538,8 +3649,8 @@ const currentGridSpacingRef = useRef(10);
     bisector[0] /= bisectorLength;
     bisector[1] /= bisectorLength;
     const labelLocal: [number, number] = [
-      pivot[0] + bisector[0] * Math.max(3, radius * 0.42),
-      pivot[1] + bisector[1] * Math.max(3, radius * 0.42),
+      pivot[0] + bisector[0] * radius,
+      pivot[1] + bisector[1] * radius,
     ];
     const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
     return {
@@ -4141,29 +4252,6 @@ const currentGridSpacingRef = useRef(10);
     return [position.x, position.y, position.z];
   }
 
-  function angleDimensionArcControlNearPoint(
-    dimension: SketchDimensionScene,
-    worldPoint: [number, number, number],
-  ): [number, number, number] | null {
-    const frame = angleDimensionFrame(dimension);
-    if (!frame) {
-      return null;
-    }
-    const cursor = new THREE.Vector3(...worldPoint);
-    const radius = Math.max(
-      ANGLE_DIMENSION_MIN_RADIUS,
-      Math.min(cursor.distanceTo(frame.pivot), ANGLE_DIMENSION_MAX_RADIUS),
-    );
-    const direction = cursor.sub(frame.pivot);
-    if (direction.lengthSq() <= 1e-8) {
-      direction.copy(frame.bisector);
-    } else {
-      direction.normalize();
-    }
-    const control = frame.pivot.clone().add(direction.multiplyScalar(radius));
-    return [control.x, control.y, control.z];
-  }
-
   function setDimensionLabelPosition(
     dimensionId: string,
     position: [number, number, number],
@@ -4205,10 +4293,32 @@ const currentGridSpacingRef = useRef(10);
     if (!dimensionDrag?.isPlacement) {
       return false;
     }
-    persistDimensionLabelPosition(
-      dimensionDrag.dimensionId,
-      dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-    );
+    const dragRadius = angleDragRadiiRef.current[dimensionDrag.dimensionId];
+    if (dragRadius !== undefined) {
+      // Angle dimension: compute world position from radius on bisector.
+      const dimId = dimensionDrag.dimensionId;
+      const dragged = displayedSketchDimensionsRef.current.find(
+        (d) => d.dimensionId === dimId,
+      );
+      const frame = dragged ? angleDimensionFrame(dragged) : null;
+      if (frame) {
+        const labelWorld = frame.pivot
+          .clone()
+          .add(frame.bisector.clone().multiplyScalar(dragRadius));
+        persistDimensionLabelPosition(dimId, [
+          labelWorld.x,
+          labelWorld.y,
+          labelWorld.z,
+        ]);
+      }
+      // Keep the radius override active — it matches what the core will
+      // compute, so there's no flash between commit and core response.
+    } else {
+      persistDimensionLabelPosition(
+        dimensionDrag.dimensionId,
+        dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
+      );
+    }
     clearPreviewDimension();
     dimensionLabelDragRef.current = null;
     dimensionPlacementOriginalPositionRef.current = null;
@@ -4223,6 +4333,13 @@ const currentGridSpacingRef = useRef(10);
       return false;
     }
     clearPreviewDimension();
+    // Clear angle drag radius if active
+    if (angleDragRadiiRef.current[dimensionDrag.dimensionId] !== undefined) {
+      const next = { ...angleDragRadiiRef.current };
+      delete next[dimensionDrag.dimensionId];
+      angleDragRadiiRef.current = next;
+      setAngleDragRadii(next);
+    }
     const originalPosition = dimensionPlacementOriginalPositionRef.current;
     if (originalPosition) {
       setDimensionLabelPositions((current) => ({
@@ -4256,6 +4373,8 @@ const currentGridSpacingRef = useRef(10);
     if (!sketchPoint) {
       return;
     }
+    const isAngleKind =
+      dimension.kind === "angle" || dimension.kind === "line_angle";
     const originalPosition = dimension.labelPosition;
     const circlePosition =
       dimension.kind === "circle_radius"
@@ -4264,46 +4383,72 @@ const currentGridSpacingRef = useRef(10);
     const dragAxis =
       dimension.kind === "circle_radius"
         ? new THREE.Vector3(0, 0, 0)
+        : isAngleKind
+        ? null // angle dimensions use radius-based drag; axis not needed
         : getDimensionPlacementAxis(dimension);
-    if (dimension.kind !== "circle_radius" && !dragAxis) {
+    if (!isAngleKind && dimension.kind !== "circle_radius" && !dragAxis) {
       return;
     }
-    const anglePosition =
-      dimension.kind === "angle" || dimension.kind === "line_angle"
-        ? angleDimensionArcControlNearPoint(dimension, sketchPoint.world)
-        : null;
+
+    // For angle dimensions, store the initial radius directly instead
+    // of a directional control point.
+    if (isAngleKind) {
+      const frame = angleDimensionFrame(dimension);
+      if (frame) {
+        const radius = clampAngleRadius(
+          new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+        );
+        angleDragRadiiRef.current = {
+          ...angleDragRadiiRef.current,
+          [dimension.dimensionId]: radius,
+        };
+        setAngleDragRadii((prev) => ({
+          ...prev,
+          [dimension.dimensionId]: radius,
+        }));
+      }
+    }
+
     const relationPosition =
       dimension.kind === "line_line_distance" ||
       dimension.kind === "circle_line_distance" ||
       dimension.kind === "circle_center_distance" ||
-      dimension.kind === "angle" ||
-      dimension.kind === "line_angle"
+      isAngleKind
         ? pendingRelationPlacementLabelRef.current
         : null;
     pendingRelationPlacementLabelRef.current = null;
     const nextPosition =
       relationPosition ??
       circlePosition ??
-      anglePosition ??
-      (() => {
-        if (!dragAxis) {
-          return originalPosition;
-        }
-        const originalPositionVector = new THREE.Vector3(...originalPosition);
-        const pointerDelta = new THREE.Vector3(...sketchPoint.world).sub(
-          originalPositionVector,
-        );
-        const nextPositionVector = originalPositionVector
-          .clone()
-          .add(dragAxis.clone().multiplyScalar(pointerDelta.dot(dragAxis)));
-        return [
-          nextPositionVector.x,
-          nextPositionVector.y,
-          nextPositionVector.z,
-        ] as [number, number, number];
-      })();
+      (isAngleKind
+        ? originalPosition // radius-based; label pos irrelevant
+        : (() => {
+            if (!dragAxis) {
+              return originalPosition;
+            }
+            const originalPositionVector = new THREE.Vector3(
+              ...originalPosition,
+            );
+            const pointerDelta = new THREE.Vector3(...sketchPoint.world).sub(
+              originalPositionVector,
+            );
+            const nextPositionVector = originalPositionVector
+              .clone()
+              .add(
+                dragAxis.clone().multiplyScalar(
+                  pointerDelta.dot(dragAxis),
+                ),
+              );
+            return [
+              nextPositionVector.x,
+              nextPositionVector.y,
+              nextPositionVector.z,
+            ] as [number, number, number];
+          })());
     dimensionPlacementOriginalPositionRef.current = dimension.labelPosition;
-    setDimensionLabelPosition(dimension.dimensionId, nextPosition);
+    if (!isAngleKind) {
+      setDimensionLabelPosition(dimension.dimensionId, nextPosition);
+    }
     dimensionLabelDragRef.current = {
       dimensionId: dimension.dimensionId,
       startClientX: pointerEvent.clientX,
@@ -4325,12 +4470,7 @@ const currentGridSpacingRef = useRef(10);
     if (!first || !second) {
       return false;
     }
-    return (
-      first.start_point_id === second.start_point_id ||
-      first.start_point_id === second.end_point_id ||
-      first.end_point_id === second.start_point_id ||
-      first.end_point_id === second.end_point_id
-    );
+    return sharedLineEndpoint(first, second) !== null;
   }
 
   function cancelActiveSketchDraft() {
@@ -4349,6 +4489,9 @@ const currentGridSpacingRef = useRef(10);
     clearDraftDimensionSession();
     setSketchSnapLabel(null);
     setConstraintPreview(null);
+    dragSnapResultRef.current = null;
+    setHoveredSketchEntity(null);
+    setHoveredSketchPoint(null);
     void setSketchToolRef.current("select");
   }
 
@@ -4820,48 +4963,13 @@ const currentGridSpacingRef = useRef(10);
     return null;
   }
 
-  function resolveSnappedSketchPoint(rawPoint: {
-    local: [number, number];
-    world: [number, number, number];
-  }) {
-    // C++ snap cache (Phase 3b): if a recent C++ result matches the
-    // cursor position, use it directly — no TS snap computation.
-    const cppSnap = cppSnapCacheRef.current;
-    if (cppSnap && performance.now() - cppSnap.timestamp < 200) {
-      const d = Math.hypot(rawPoint.local[0] - cppSnap.local[0],
-                           rawPoint.local[1] - cppSnap.local[1]);
-      if (d <= SKETCH_SNAP_DISTANCE * 2) {
-        const snapshot = toWorldPoint(activeSketchPlaneId, cppSnap.local, activeSketchPlaneFrame);
-        const kind = cppSnap.snapKind;
-        const entityId = cppSnap.hostEntityId;
-        const paramT = cppSnap.hostParamT;
-        const isLineNearest = kind === "nearest" && paramT !== null && paramT >= 0;
-
-        return {
-          local: cppSnap.local,
-          world: snapshot,
-          snapLabel: cppSnap.snapLabel,
-          snapMidpointHostLineId:
-            kind === "midpoint" ? entityId : null,
-          snapMidpointT:
-            kind === "midpoint" && paramT !== null ? paramT : null,
-          snapPerpendicularHostLineId:
-            kind === "perpendicular" ? entityId : null,
-          snapEndpointHostLineId:
-            kind === "endpoint" ? entityId : null,
-          snapLineBodyHostLineId:
-            isLineNearest ? entityId : null,
-          snapLineBodyT:
-            isLineNearest ? paramT : null,
-          snapAxisLock: kind === "axis_lock"
-            ? (cppSnap.snapLabel === "Horizontal" ? "horizontal" as const : "vertical" as const)
-            : null,
-          snapTangentCircleId:
-            kind === "tangent" ? entityId : null,
-        } satisfies SketchPreviewPoint;
-      }
-    }
-
+  function resolveSnappedSketchPoint(
+    rawPoint: {
+      local: [number, number];
+      world: [number, number, number];
+    },
+    draftStartLocal?: [number, number] | null,
+  ) {
     // Read filter from localStorage (instant, no IPC round trip).
     const localFilter = readLocalFilter();
     const effectiveFilter: typeof localFilter = localFilter && altHeldRef.current
@@ -4930,10 +5038,6 @@ const currentGridSpacingRef = useRef(10);
     }
 
     // Endpoint / midpoint candidates win immediately (high priority).
-    // Center, quadrant, intersection, and other kinds fall through to
-    // the static-candidate fallback below. Dynamic snaps (tangent,
-    // perpendicular, parallel, axis-lock, line-body) are handled by
-    // the C++ snap engine via the cache check at the top.
     if (closestCandidate && closestDistance <= SKETCH_SNAP_DISTANCE) {
       if (closestCandidate.kind === "endpoint" ||
           closestCandidate.kind === "midpoint") {
@@ -4960,8 +5064,293 @@ const currentGridSpacingRef = useRef(10);
               : null,
         } satisfies SketchPreviewPoint;
       }
-      // Non-endpoint/midpoint candidates: don't return yet —
-      // let dynamic snaps (tangent, perpendicular) compete.
+    }
+
+    // --- Dynamic snap computation ---
+    // These depend on cursor position relative to the draft start and
+    // cannot be pre-computed as static candidates. They compete with
+    // each other and with non-endpoint/midpoint static candidates.
+
+    type DynamicSnapResult = {
+      local: [number, number];
+      snapLabel: string;
+      snapPerpendicularHostLineId: string | null;
+      snapAxisLock: "horizontal" | "vertical" | null;
+      snapTangentCircleId: string | null;
+      snapParallelHostLineId: string | null;
+      snapLineBodyHostLineId: string | null;
+      snapLineBodyT: number | null;
+      distance: number;
+    };
+
+    const params = sketchLinesRef.current;
+    const [cx, cy] = rawPoint.local;
+
+    // Helper: closest point on segment (sx,sy)-(ex,ey) to (px,py).
+    function closestPointOnSegment(
+      sx: number, sy: number,
+      ex: number, ey: number,
+      px: number, py: number,
+    ): { x: number; y: number; t: number; dist: number } {
+      const segDx = ex - sx;
+      const segDy = ey - sy;
+      const lenSq = segDx * segDx + segDy * segDy;
+      if (lenSq < 1e-12) return { x: sx, y: sy, t: 0, dist: Math.hypot(px - sx, py - sy) };
+      let t = ((px - sx) * segDx + (py - sy) * segDy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const x = sx + t * segDx;
+      const y = sy + t * segDy;
+      return { x, y, t, dist: Math.hypot(px - x, py - y) };
+    }
+
+    // Helper: angle between two direction vectors, normalized to [0, PI/2].
+    function angleDiffBetween(dx1: number, dy1: number, dx2: number, dy2: number): number {
+      const mag1 = Math.hypot(dx1, dy1);
+      const mag2 = Math.hypot(dx2, dy2);
+      if (mag1 < 1e-12 || mag2 < 1e-12) return Math.PI / 2;
+      const dot = (dx1 * dx2 + dy1 * dy2) / (mag1 * mag2);
+      const clamped = Math.max(-1, Math.min(1, dot));
+      return Math.acos(clamped);
+    }
+
+    let bestDynamic: DynamicSnapResult | null = null;
+    const AXIS_ANGLE_THRESHOLD = 5 * Math.PI / 180; // 5 degrees
+    const PARALLEL_ANGLE_THRESHOLD = 8 * Math.PI / 180; // 8 degrees (wider for parallel)
+
+    if (draftStartLocal) {
+      const [sx, sy] = draftStartLocal;
+      const draftDx = cx - sx;
+      const draftDy = cy - sy;
+      const draftDist = Math.hypot(draftDx, draftDy);
+
+      if (draftDist > 1e-6) {
+        // --- axis_lock ---
+        // Snap to horizontal or vertical alignment from the draft start.
+        // Gated by snap_polar (polar snap covers axis alignment).
+        const polarEnabled = effectiveFilter ? effectiveFilter.snap_polar : true;
+        if (polarEnabled) {
+          const draftAngle = Math.atan2(draftDy, draftDx);
+          for (const [targetAngle, axisKind, labelKey] of [
+            [0, "horizontal" as const, "snap.axisLockHorizontal"],
+            [Math.PI / 2, "vertical" as const, "snap.axisLockVertical"],
+            [Math.PI, "horizontal" as const, "snap.axisLockHorizontal"],
+            [-Math.PI / 2, "vertical" as const, "snap.axisLockVertical"],
+          ] as const) {
+            let diff = draftAngle - targetAngle;
+            // Normalize to [-PI, PI]
+            while (diff > Math.PI) diff -= 2 * Math.PI;
+            while (diff < -Math.PI) diff += 2 * Math.PI;
+            if (Math.abs(diff) < AXIS_ANGLE_THRESHOLD) {
+              const lockX = axisKind === "horizontal" ? cx : sx;
+              const lockY = axisKind === "vertical" ? cy : sy;
+              const snapDist = Math.hypot(cx - lockX, cy - lockY);
+              if (!bestDynamic || snapDist < bestDynamic.distance) {
+                bestDynamic = {
+                  local: [lockX, lockY],
+                  snapLabel: translate(labelKey),
+                  snapPerpendicularHostLineId: null,
+                  snapAxisLock: axisKind,
+                  snapTangentCircleId: null,
+                  snapParallelHostLineId: null,
+                  snapLineBodyHostLineId: null,
+                  snapLineBodyT: null,
+                  distance: snapDist,
+                };
+              }
+            }
+          }
+        }
+
+        // --- tangent to circle ---
+        // Compute the two tangent points from draft start to each circle.
+        // Geometry: from external point P to circle center C with radius r,
+        // the two tangent direction angles are angle(PC) ± asin(r/|PC|).
+        const tangentEnabled = effectiveFilter ? effectiveFilter.snap_tangent : true;
+        if (tangentEnabled && params) {
+          for (const circle of params.circles) {
+            if (circle.is_construction) continue;
+            const cCx = circle.center_x;
+            const cCy = circle.center_y;
+            const cr = circle.radius;
+            const pcDx = cCx - sx;
+            const pcDy = cCy - sy;
+            const pcDist = Math.hypot(pcDx, pcDy);
+            if (pcDist <= cr + 1e-9) continue; // start inside or on circle, no tangents
+            const alpha = Math.asin(cr / pcDist);
+            const baseAngle = Math.atan2(pcDy, pcDx);
+            const tangentLen = Math.sqrt(pcDist * pcDist - cr * cr);
+            for (const sign of [1, -1]) {
+              const tpDir = baseAngle + sign * alpha;
+              const tpX = sx + tangentLen * Math.cos(tpDir);
+              const tpY = sy + tangentLen * Math.sin(tpDir);
+              const tpDist = Math.hypot(cx - tpX, cy - tpY);
+              if (tpDist <= SKETCH_SNAP_DISTANCE) {
+                if (!bestDynamic || tpDist < bestDynamic.distance) {
+                  bestDynamic = {
+                    local: [tpX, tpY],
+                    snapLabel: translate("snap.tangent"),
+                    snapPerpendicularHostLineId: null,
+                    snapAxisLock: null,
+                    snapTangentCircleId: circle.circle_id,
+                    snapParallelHostLineId: null,
+                    snapLineBodyHostLineId: null,
+                    snapLineBodyT: null,
+                    distance: tpDist,
+                  };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // --- line_body (on-line segment snap) ---
+    // Works both with and without a draft start.
+    if (params) {
+      for (const line of params.lines) {
+        if (line.is_construction) continue;
+        const cp = closestPointOnSegment(
+          line.start_x, line.start_y,
+          line.end_x, line.end_y,
+          cx, cy,
+        );
+        if (cp.dist <= SKETCH_SNAP_DISTANCE) {
+          if (!bestDynamic || cp.dist < bestDynamic.distance) {
+            bestDynamic = {
+              local: [cp.x, cp.y],
+              snapLabel: translate("snap.onLine"),
+              snapPerpendicularHostLineId: null,
+              snapAxisLock: null,
+              snapTangentCircleId: null,
+              snapParallelHostLineId: null,
+              snapLineBodyHostLineId: line.line_id,
+              snapLineBodyT: cp.t,
+              distance: cp.dist,
+            };
+          }
+        }
+      }
+    }
+
+    // --- perpendicular to line ---
+    const perpEnabled = effectiveFilter ? effectiveFilter.snap_perpendicular : true;
+    if (perpEnabled && draftStartLocal && params) {
+      const [sx, sy] = draftStartLocal;
+      for (const line of params.lines) {
+        if (line.is_construction) continue;
+        const ldx = line.end_x - line.start_x;
+        const ldy = line.end_y - line.start_y;
+        const llenSq = ldx * ldx + ldy * ldy;
+        if (llenSq < 1e-12) continue;
+        // Perpendicular foot from cursor onto the infinite line
+        const tProj = ((cx - line.start_x) * ldx + (cy - line.start_y) * ldy) / llenSq;
+        const footX = line.start_x + tProj * ldx;
+        const footY = line.start_y + tProj * ldy;
+        const footDist = Math.hypot(cx - footX, cy - footY);
+        // Only snap if the foot is near the segment (with margin)
+        const margin = SKETCH_SNAP_DISTANCE;
+        const segT = Math.max(0, Math.min(1, tProj));
+        const segX = line.start_x + segT * ldx;
+        const segY = line.start_y + segT * ldy;
+        const closestOnSeg = Math.hypot(footX - segX, footY - segY);
+        if (footDist <= SKETCH_SNAP_DISTANCE && closestOnSeg <= margin) {
+          // Check that the start of our draft lies on this host line
+          // (perpendicular only makes sense when the start is on the host)
+          const startOnLine = closestPointOnSegment(
+            line.start_x, line.start_y,
+            line.end_x, line.end_y,
+            sx, sy,
+          );
+          const startIsOnHost = startOnLine.dist <= SKETCH_SNAP_DISTANCE;
+          if (startIsOnHost) {
+            if (!bestDynamic || footDist < bestDynamic.distance) {
+              bestDynamic = {
+                local: [footX, footY],
+                snapLabel: translate("snap.perpendicular"),
+                snapPerpendicularHostLineId: line.line_id,
+                snapAxisLock: null,
+                snapTangentCircleId: null,
+                snapParallelHostLineId: null,
+                snapLineBodyHostLineId: null,
+                snapLineBodyT: null,
+                distance: footDist,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // --- parallel to line ---
+    const parallelEnabled = effectiveFilter ? effectiveFilter.snap_parallel : true;
+    if (parallelEnabled && draftStartLocal && params) {
+      const [sx, sy] = draftStartLocal;
+      const draftDx = cx - sx;
+      const draftDy = cy - sy;
+      const draftDistSq = draftDx * draftDx + draftDy * draftDy;
+      if (draftDistSq > 1e-12) {
+        for (const line of params.lines) {
+          if (line.is_construction) continue;
+          const ldx = line.end_x - line.start_x;
+          const ldy = line.end_y - line.start_y;
+          if (ldx * ldx + ldy * ldy < 1e-12) continue;
+          // Check if draft direction is parallel to line direction
+          const angle = angleDiffBetween(draftDx, draftDy, ldx, ldy);
+          // Parallel means angle ~0 or ~PI
+          const parallelAngle = Math.min(angle, Math.PI - angle);
+          if (parallelAngle < PARALLEL_ANGLE_THRESHOLD) {
+            // Project cursor onto the parallel line through draft start
+            const lMag = Math.hypot(ldx, ldy);
+            const lUx = ldx / lMag;
+            const lUy = ldy / lMag;
+            const projLen = (cx - sx) * lUx + (cy - sy) * lUy;
+            const ppx = sx + projLen * lUx;
+            const ppy = sy + projLen * lUy;
+            const pDist = Math.hypot(cx - ppx, cy - ppy);
+            if (pDist <= SKETCH_SNAP_DISTANCE) {
+              if (!bestDynamic || pDist < bestDynamic.distance) {
+                bestDynamic = {
+                  local: [ppx, ppy],
+                  snapLabel: translate("snap.parallel"),
+                  snapPerpendicularHostLineId: null,
+                  snapAxisLock: null,
+                  snapTangentCircleId: null,
+                  snapParallelHostLineId: line.line_id,
+                  snapLineBodyHostLineId: null,
+                  snapLineBodyT: null,
+                  distance: pDist,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If a dynamic snap fired and is closer than any static candidate,
+    // return the dynamic result.
+    if (bestDynamic && bestDynamic.distance <= SKETCH_SNAP_DISTANCE) {
+      if (!closestCandidate || bestDynamic.distance < closestDistance) {
+        return {
+          local: bestDynamic.local,
+          world: toWorldPoint(
+            activeSketchPlaneId ?? "ref-plane-xy",
+            bestDynamic.local,
+            activeSketchPlaneFrame,
+          ),
+          snapLabel: bestDynamic.snapLabel,
+          snapMidpointHostLineId: null,
+          snapMidpointT: null,
+          snapPerpendicularHostLineId: bestDynamic.snapPerpendicularHostLineId,
+          snapEndpointHostLineId: null,
+          snapLineBodyHostLineId: bestDynamic.snapLineBodyHostLineId,
+          snapLineBodyT: bestDynamic.snapLineBodyT,
+          snapAxisLock: bestDynamic.snapAxisLock,
+          snapTangentCircleId: bestDynamic.snapTangentCircleId,
+          snapParallelHostLineId: bestDynamic.snapParallelHostLineId,
+        } satisfies SketchPreviewPoint;
+      }
     }
 
     // Fallback: if a lower-priority static candidate (center, quadrant,
@@ -4979,6 +5368,10 @@ const currentGridSpacingRef = useRef(10);
         snapMidpointHostLineId: null,
         snapPerpendicularHostLineId: null,
         snapEndpointHostLineId: null,
+        snapLineBodyHostLineId: null,
+        snapLineBodyT: null,
+        snapAxisLock: null,
+        snapTangentCircleId: null,
       } satisfies SketchPreviewPoint;
     }
 
@@ -4988,6 +5381,11 @@ const currentGridSpacingRef = useRef(10);
       snapMidpointHostLineId: null,
       snapPerpendicularHostLineId: null,
       snapEndpointHostLineId: null,
+      snapLineBodyHostLineId: null,
+      snapLineBodyT: null,
+      snapAxisLock: null,
+      snapTangentCircleId: null,
+      snapParallelHostLineId: null,
     } satisfies SketchPreviewPoint;
   }
 
@@ -5494,6 +5892,10 @@ const currentGridSpacingRef = useRef(10);
     setSketchTangentConstraintRef.current = onSetSketchTangentConstraint;
   }, [onSetSketchTangentConstraint]);
 
+  useEffect(() => {
+    setSketchParallelConstraintRef.current = onSetSketchParallelConstraint;
+  }, [onSetSketchParallelConstraint]);
+
   // Post-add midpoint-anchor dispatch. When `add_sketch_line` settles
   // and the sketch's lines vector has grown, look at the just-added
   // (last) line and issue `set_sketch_midpoint_anchor` for whichever
@@ -5512,6 +5914,7 @@ const currentGridSpacingRef = useRef(10);
     const pendingLine = pendingPointLineAnchorRef.current;
     const pendingAxis = pendingAxisConstraintRef.current;
     const pendingTangent = pendingTangentConstraintRef.current;
+    const pendingParallel = pendingParallelConstraintRef.current;
     if (!params) {
       return;
     }
@@ -5520,7 +5923,8 @@ const currentGridSpacingRef = useRef(10);
       !pendingPerp &&
       !pendingLine &&
       !pendingAxis &&
-      !pendingTangent
+      !pendingTangent &&
+      !pendingParallel
     ) {
       return;
     }
@@ -5534,6 +5938,7 @@ const currentGridSpacingRef = useRef(10);
       pendingLine?.fromLineCount ??
       pendingAxis?.fromLineCount ??
       pendingTangent?.fromLineCount ??
+      pendingParallel?.fromLineCount ??
       -1;
     if (newCount !== baseline + 1) {
       if (newCount !== previousCount) {
@@ -5542,6 +5947,7 @@ const currentGridSpacingRef = useRef(10);
         pendingPointLineAnchorRef.current = null;
         pendingAxisConstraintRef.current = null;
         pendingTangentConstraintRef.current = null;
+        pendingParallelConstraintRef.current = null;
       }
       return;
     }
@@ -5551,6 +5957,7 @@ const currentGridSpacingRef = useRef(10);
     pendingPointLineAnchorRef.current = null;
     pendingAxisConstraintRef.current = null;
     pendingTangentConstraintRef.current = null;
+    pendingParallelConstraintRef.current = null;
     const newLine = params.lines[params.lines.length - 1];
     if (!newLine) {
       return;
@@ -5601,6 +6008,15 @@ const currentGridSpacingRef = useRef(10);
         pendingTangent.circleId,
       );
     }
+    // Parallel relation. Skipped when the new line already has a
+    // perpendicular host, an axis lock, or a tangent relation — all
+    // fully determine the line's direction and would over-constrain.
+    if (pendingParallel && !pendingPerp && !pendingAxis && !pendingTangent) {
+      void setSketchParallelConstraintRef.current(
+        newLine.line_id,
+        pendingParallel.hostLineId,
+      );
+    }
   }, [sketchFeature]);
 
   useEffect(() => {
@@ -5622,6 +6038,9 @@ const currentGridSpacingRef = useRef(10);
   useEffect(() => {
     dimensionLabelPositionsRef.current = dimensionLabelPositions;
   }, [dimensionLabelPositions]);
+  useEffect(() => {
+    angleDragRadiiRef.current = angleDragRadii;
+  }, [angleDragRadii]);
 
   useEffect(() => {
     if (selectedSketchDimensionValue === null) {
@@ -7122,39 +7541,70 @@ const currentGridSpacingRef = useRef(10);
           };
         }
 
-        const [sketchConstraintHit] = raycaster.intersectObjects(
-          sketchConstraintObjectsRef.current,
-          true, // recursive — catches sprites inside any group
-        );
-        const sketchConstraintId =
-          sketchConstraintHit?.object.userData.sketchConstraintId;
-        if (typeof sketchConstraintId === "string") {
-          return {
-            kind: "sketch_constraint" as const,
-            id: sketchConstraintId,
-            constraintKind:
-              sketchConstraintHit.object.userData
-                .sketchConstraintKind as ConstraintType,
-            entityId:
-              sketchConstraintHit.object.userData.sketchConstraintEntityId,
-            relatedEntityId:
-              sketchConstraintHit.object.userData
-                .sketchConstraintRelatedEntityId ?? null,
-          };
+        // When coincident constraint is armed, constraint badges
+        // sit on top of the endpoint spheres and intercept the ray
+        // before the point-picking logic can find the point.  Skip
+        // the badge hit-test so the point check fires naturally.
+        if (armedSketchConstraintRef.current?.kind !== "coincident") {
+          const [sketchConstraintHit] = raycaster.intersectObjects(
+            sketchConstraintObjectsRef.current,
+            true, // recursive — catches sprites inside any group
+          );
+          const sketchConstraintId =
+            sketchConstraintHit?.object.userData.sketchConstraintId;
+          if (typeof sketchConstraintId === "string") {
+            return {
+              kind: "sketch_constraint" as const,
+              id: sketchConstraintId,
+              constraintKind:
+                sketchConstraintHit.object.userData
+                  .sketchConstraintKind as ConstraintType,
+              entityId:
+                sketchConstraintHit.object.userData.sketchConstraintEntityId,
+              relatedEntityId:
+                sketchConstraintHit.object.userData
+                  .sketchConstraintRelatedEntityId ?? null,
+            };
+          }
         }
 
         if (!checkDimensionsLast) {
-          const [sketchPointHit] = raycaster.intersectObjects(
-            sketchPointObjectsRef.current,
-            false,
-          );
-          const sketchPointId =
-            sketchPointHit?.object.userData.sketchPointId;
-          if (typeof sketchPointId === "string") {
+          // Point picking: use a ray-to-sphere distance check instead
+          // of mesh triangle intersection. The visual spheres are
+          // ~0.7 mm radius (a few pixels), which the raycaster often
+          // misses. A generous pick radius makes points competitive
+          // with lines (Line threshold = 1.75 mm).
+          const PICK_RADIUS = 1.8;
+          const rayO = raycaster.ray.origin;
+          const rayD = raycaster.ray.direction;
+          let bestPtDist = PICK_RADIUS;
+          let bestPtId: string | undefined;
+          let bestPtKind: string | undefined;
+
+          for (const mesh of sketchPointObjectsRef.current) {
+            const c = new THREE.Vector3();
+            mesh.getWorldPosition(c);
+            const toC = c.clone().sub(rayO);
+            const proj = toC.dot(rayD);
+            const closest = rayO.clone().addScaledVector(
+              rayD, Math.max(0, proj),
+            );
+            const d = c.distanceTo(closest);
+            if (d < bestPtDist) {
+              bestPtDist = d;
+              bestPtId = mesh.userData.sketchPointId as string | undefined;
+              bestPtKind = mesh.userData.sketchPointKind as string | undefined;
+            }
+          }
+
+          if (typeof bestPtId === "string") {
             return {
               kind: "sketch_point" as const,
-              id: sketchPointId,
-              pointKind: sketchPointHit.object.userData.sketchPointKind,
+              id: bestPtId,
+              pointKind: bestPtKind as
+                | "endpoint"
+                | "center"
+                | "quadrant",
             };
           }
 
@@ -7492,7 +7942,7 @@ const currentGridSpacingRef = useRef(10);
                 controls.enabled = false;
                 renderer.domElement.setPointerCapture(event.pointerId);
                 (renderer.domElement as HTMLCanvasElement).style.cursor =
-                  "grabbing";
+                  "none";
                 pointerDown = null;
                 return;
               }
@@ -7539,6 +7989,22 @@ const currentGridSpacingRef = useRef(10);
             activeSketchPlaneFrameRef.current,
           );
           if (dimension && sketchPoint) {
+            if (
+              dimension.kind === "angle" ||
+              dimension.kind === "line_angle"
+            ) {
+              const frame = angleDimensionFrame(dimension);
+              if (frame) {
+                const radius = clampAngleRadius(
+                  new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+                );
+                angleDragRadiiRef.current = {
+                  ...angleDragRadiiRef.current,
+                  [hit.id]: radius,
+                };
+                setAngleDragRadii((prev) => ({ ...prev, [hit.id]: radius }));
+              }
+            }
             const dragAxis =
               dimension.kind === "circle_radius"
                 ? new THREE.Vector3(0, 0, 0)
@@ -7579,7 +8045,10 @@ const currentGridSpacingRef = useRef(10);
         if (!rawPoint) {
           return;
         }
-        const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+        const sketchPoint = resolveSnappedSketchPoint(
+          rawPoint,
+          lineDraftStartRef.current,
+        );
         lineDraftStartRef.current = sketchPoint.local;
         draftStartedOnPointerDownRef.current = true;
         const session = createDraftDimensionSession(
@@ -7770,12 +8239,19 @@ const currentGridSpacingRef = useRef(10);
           draggedDimension?.kind === "angle" ||
           draggedDimension?.kind === "line_angle"
         ) {
-          const nextPosition = angleDimensionArcControlNearPoint(
-            draggedDimension,
-            sketchPoint.world,
-          );
-          if (nextPosition) {
-            setDimensionLabelPosition(dimensionDrag.dimensionId, nextPosition);
+          const frame = angleDimensionFrame(draggedDimension);
+          if (frame) {
+            const radius = clampAngleRadius(
+              new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
+            );
+            angleDragRadiiRef.current = {
+              ...angleDragRadiiRef.current,
+              [dimensionDrag.dimensionId]: radius,
+            };
+            setAngleDragRadii((prev) => ({
+              ...prev,
+              [dimensionDrag.dimensionId]: radius,
+            }));
           }
           return;
         }
@@ -7810,7 +8286,7 @@ const currentGridSpacingRef = useRef(10);
         return;
       }
 
-      // --- Endpoint drag tracking ---
+      // --- Endpoint drag tracking (core-driven, rAF-batched) ---
       const endpointDrag = endpointDragRef.current;
       if (endpointDrag && activeSketchPlaneIdRef.current) {
         const rawPoint = resolveSketchPlanePoint(
@@ -7821,31 +8297,109 @@ const currentGridSpacingRef = useRef(10);
           activeSketchPlaneFrameRef.current,
         );
         if (rawPoint) {
-          const sketchPoint = resolveSnappedSketchPoint(rawPoint);
-
           const dx = event.clientX - endpointDrag.startClientX;
           const dy = event.clientY - endpointDrag.startClientY;
           if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
             endpointDrag.hasMoved = true;
           }
-          setSketchSnapLabel(sketchPoint.snapLabel);
 
-          // Core-driven preview: send the cursor position to the core
-          // on every pointer-move.  The core computes the constrained
-          // position (H/V, relations, dimensions, snaps) and emits a
-          // viewport snapshot.  The existing scene-rebuild effect
-          // renders the result — no client-side mesh mutation needed.
-          // Throttle to one in-flight request so we don't queue IPC
-          // commands faster than the core can respond.
-          if (!endpointDrag.inFlight) {
-            endpointDrag.inFlight = true;
-            updateSketchPointRef.current(
-              endpointDrag.pointId,
-              sketchPoint.local[0],
-              sketchPoint.local[1],
-            ).finally(() => {
-              if (endpointDragRef.current) {
-                endpointDragRef.current.inFlight = false;
+          // Track cursor canvas position for the floating badge.
+          const canvasRect = renderer.domElement.getBoundingClientRect();
+          dragCursorRef.current = {
+            x: event.clientX - canvasRect.left,
+            y: event.clientY - canvasRect.top,
+          };
+
+          // rAF-batched: send only the latest position each frame.
+          pendingDragRef.current = {
+            pointId: endpointDrag.pointId,
+            x: rawPoint.local[0],
+            y: rawPoint.local[1],
+          };
+          if (pendingDragFrameRef.current === null) {
+            pendingDragFrameRef.current = window.requestAnimationFrame(() => {
+              pendingDragFrameRef.current = null;
+              const next = pendingDragRef.current;
+              pendingDragRef.current = null;
+              if (next) {
+                // Local snap resolution — no IPC during drag.
+                const world = toWorldPoint(
+                  activeSketchPlaneIdRef.current ?? "ref-plane-xy",
+                  [next.x, next.y],
+                  activeSketchPlaneFrameRef.current,
+                );
+                // Find first anchored endpoint for axis-lock dynamic snap.
+                let anchorLocal: [number, number] | null = null;
+                const dragParams = sketchLinesRef.current;
+                if (dragParams) {
+                  for (const line of dragParams.lines) {
+                    if (line.start_point_id === next.pointId ||
+                        line.end_point_id === next.pointId) {
+                      const anchoredId = line.start_point_id === next.pointId
+                        ? line.end_point_id : line.start_point_id;
+                      const anchored = dragParams.points.find(
+                        (p) => p.point_id === anchoredId);
+                      if (anchored) {
+                        anchorLocal = [anchored.x, anchored.y];
+                        break;
+                      }
+                    }
+                  }
+                }
+                const snapped = resolveSnappedSketchPoint(
+                  {
+                    local: [next.x, next.y],
+                    world: [world[0], world[1], world[2]],
+                  },
+                  anchorLocal,
+                );
+                dragSnapResultRef.current = {
+                  snapX: snapped.local[0],
+                  snapY: snapped.local[1],
+                };
+                setSketchSnapLabel(snapped.snapLabel);
+
+                // Render local preview: dashed lines from anchored
+                // endpoints to the current snapped position.
+                clearDragPreviewLines();
+                const params = sketchLinesRef.current;
+                const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
+                const frame = activeSketchPlaneFrameRef.current;
+                const sketchGroup = sketchGroupRef.current;
+                if (params && sketchGroup) {
+                  const newLines: THREE.Line[] = [];
+                  for (const line of params.lines) {
+                    if (line.start_point_id === next.pointId ||
+                        line.end_point_id === next.pointId) {
+                      const anchoredId = line.start_point_id === next.pointId
+                        ? line.end_point_id : line.start_point_id;
+                      const anchored = params.points.find(
+                        (p) => p.point_id === anchoredId);
+                      if (anchored) {
+                        const mat = new THREE.LineDashedMaterial({
+                          color: 0xffe784,
+                          transparent: true,
+                          opacity: 0.6,
+                          dashSize: 1.5,
+                          gapSize: 0.8,
+                        });
+                        const geo = new THREE.BufferGeometry().setFromPoints([
+                          new THREE.Vector3(
+                            ...toWorldPoint(planeId,
+                              [anchored.x, anchored.y], frame)),
+                          new THREE.Vector3(
+                            ...toWorldPoint(planeId,
+                              [snapped.local[0], snapped.local[1]], frame)),
+                        ]);
+                        const preview = new THREE.Line(geo, mat);
+                        preview.computeLineDistances();
+                        sketchGroup.add(preview);
+                        newLines.push(preview);
+                      }
+                    }
+                  }
+                  dragPreviewLinesRef.current = newLines;
+                }
               }
             });
           }
@@ -8307,14 +8861,14 @@ const currentGridSpacingRef = useRef(10);
           return;
         }
 
-        const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+        const sketchPoint = resolveSnappedSketchPoint(
+          rawPoint,
+          lineDraftStartRef.current,
+        );
         setSketchSnapLabel(sketchPoint.snapLabel);
 
-        // Call C++ snap for next-frame cache.
-        if (activeSketchPlaneId && onResolveDraftSnap) {
-          const start = lineDraftStartRef.current ?? sketchPoint.local;
-          void onResolveDraftSnap(rawPoint.local[0], rawPoint.local[1], start[0], start[1]);
-        }
+        // Snap is handled entirely in TS via resolveSnappedSketchPoint,
+        // using the static snap_candidates from viewport_state.
 
         if (
           isDraftDimensionTool(activeSketchToolRef.current) &&
@@ -8366,6 +8920,12 @@ const currentGridSpacingRef = useRef(10);
         } else if (sketchPoint.snapPerpendicularHostLineId) {
           setConstraintPreview({
             kind: "perpendicular",
+            x: previewX,
+            y: previewY,
+          });
+        } else if (sketchPoint.snapParallelHostLineId) {
+          setConstraintPreview({
+            kind: "parallel",
             x: previewX,
             y: previewY,
           });
@@ -9005,10 +9565,32 @@ const currentGridSpacingRef = useRef(10);
         // the drag is still active (non-placement label drag).
         if (dimensionLabelDragRef.current) {
           if (dimensionDrag.hasMoved) {
-            persistDimensionLabelPosition(
-              dimensionDrag.dimensionId,
-              dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-            );
+            const dragRadius =
+              angleDragRadiiRef.current[dimensionDrag.dimensionId];
+            if (dragRadius !== undefined) {
+              // Angle dimension: commit the radius by computing the
+              // world-space label position on the bisector.
+              const dragged = displayedSketchDimensionsRef.current.find(
+                (d) => d.dimensionId === dimensionDrag.dimensionId,
+              );
+              const frame = dragged ? angleDimensionFrame(dragged) : null;
+              if (frame) {
+                const labelWorld = frame.pivot
+                  .clone()
+                  .add(frame.bisector.clone().multiplyScalar(dragRadius));
+                persistDimensionLabelPosition(dimensionDrag.dimensionId, [
+                  labelWorld.x,
+                  labelWorld.y,
+                  labelWorld.z,
+                ]);
+              }
+              // Keep override — it matches the core's eventual output.
+            } else {
+              persistDimensionLabelPosition(
+                dimensionDrag.dimensionId,
+                dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
+              );
+            }
           }
           dimensionLabelDragRef.current = null;
           controls.enabled = true;
@@ -9037,23 +9619,30 @@ const currentGridSpacingRef = useRef(10);
         const dy = event.clientY - drag.startClientY;
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Committed drag — send the final cursor position to the
-          // core.  Constraints, snaps, and dimensions are all computed
-          // by the core; the UI just forwards the cursor position.
-          const rawPoint = resolveSketchPlanePoint(
-            event,
-            renderer,
-            camera,
-            activeSketchPlaneIdRef.current,
-            activeSketchPlaneFrameRef.current,
-          );
-          if (rawPoint) {
-            const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+          // Use the core's snap result if available — avoids overriding
+          // the constrained position with raw mouse coords.
+          const snapResult = dragSnapResultRef.current;
+          if (snapResult) {
             void updateSketchPointRef.current(
               drag.pointId,
-              sketchPoint.local[0],
-              sketchPoint.local[1],
+              snapResult.snapX,
+              snapResult.snapY,
             );
+          } else {
+            const rawPoint = resolveSketchPlanePoint(
+              event,
+              renderer,
+              camera,
+              activeSketchPlaneIdRef.current,
+              activeSketchPlaneFrameRef.current,
+            );
+            if (rawPoint) {
+              void updateSketchPointRef.current(
+                drag.pointId,
+                rawPoint.local[0],
+                rawPoint.local[1],
+              );
+            }
           }
         }
 
@@ -9064,10 +9653,15 @@ const currentGridSpacingRef = useRef(10);
           pendingEndpointCommitRef.current = true;
         } else {
           endpointDragRef.current = null;
+          clearDragPreviewLines();
+          setConstraintPreview(null);
+          dragCursorRef.current = null;
         }
         controls.enabled = true;
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
         setSketchSnapLabel(null);
+        setHoveredSketchEntity(null);
+        setHoveredSketchPoint(null);
 
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
           // Drag was committed — consume the event.
@@ -9075,6 +9669,9 @@ const currentGridSpacingRef = useRef(10);
           return;
         }
         // Fall through: treat as a click.
+        // Restore pointerDown so the click-handling code below runs.
+        // (pointerDown was nulled during endpoint-drag setup in pointerDown.)
+        pointerDown = { x: event.clientX, y: event.clientY };
       }
 
       // -- cube-area click ---------------------------------------------
@@ -9230,6 +9827,7 @@ const currentGridSpacingRef = useRef(10);
 
           if (
             armedSketchConstraintRef.current &&
+            armedSketchConstraintRef.current.kind !== "coincident" &&
             hit?.kind === "sketch_entity" &&
             !hit.isProjected &&
             hit.entityKind === "line"
@@ -9253,16 +9851,22 @@ const currentGridSpacingRef = useRef(10);
           }
 
           if (hit?.kind === "sketch_constraint") {
-            setSelectedConstraint({
-              kind: hit.constraintKind,
-              entityId: hit.entityId,
-              relatedEntityId: hit.relatedEntityId,
-            });
-            // Flash the entity this constraint sits on
-            paintSketchEntityMaterials();
-            paintSketchPointMaterials();
-            // Highlight will update via the useEffect below
-            return;
+            // When coincident is armed, the constraint badge sits on
+            // top of the point sphere. Skip the badge hit so the
+            // point-picking logic below can find the point.
+            if (armedSketchConstraintRef.current?.kind !== "coincident") {
+              setSelectedConstraint({
+                kind: hit.constraintKind,
+                entityId: hit.entityId,
+                relatedEntityId: hit.relatedEntityId,
+              });
+              // Flash the entity this constraint sits on
+              paintSketchEntityMaterials();
+              paintSketchPointMaterials();
+              // Highlight will update via the useEffect below
+              return;
+            }
+            // Fall through to point/entity handling
           }
 
           if (
@@ -9283,6 +9887,45 @@ const currentGridSpacingRef = useRef(10);
           }
 
           if (hit?.kind === "sketch_entity") {
+            // When coincident is armed, a line click that didn't hit a
+            // point sphere should still count: find the nearest endpoint
+            // of the clicked line and use it as the coincident point.
+            if (
+              armedSketchConstraintRef.current?.kind === "coincident" &&
+              hit.entityKind === "line"
+            ) {
+              const lineObj = sketchEntityObjectByIdRef.current.get(hit.id);
+              if (lineObj instanceof THREE.Line) {
+                const geom = lineObj.geometry;
+                const pos = geom.getAttribute("position");
+                if (pos && pos.count >= 2) {
+                  const ax = pos.getX(0); const ay = pos.getY(0); const az = pos.getZ(0);
+                  const bx = pos.getX(1); const by = pos.getY(1); const bz = pos.getZ(1);
+                  // Find the sketch point closest to either endpoint
+                  let bestMesh: THREE.Mesh | undefined;
+                  let bestD = Infinity;
+                  for (const pm of sketchPointObjectsRef.current) {
+                    const pp = new THREE.Vector3();
+                    pm.getWorldPosition(pp);
+                    const d = Math.min(
+                      pp.distanceTo(new THREE.Vector3(ax, ay, az)),
+                      pp.distanceTo(new THREE.Vector3(bx, by, bz)),
+                    );
+                    if (d < bestD) { bestD = d; bestMesh = pm; }
+                  }
+                  if (bestMesh && bestD < 0.5) {
+                    const pointId = bestMesh.userData.sketchPointId as string | undefined;
+                    const pointKind = bestMesh.userData.sketchPointKind as
+                      | "endpoint" | "center" | "quadrant" | undefined;
+                    if (pointId && pointKind) {
+                      addMessage(`coincident-viewport: line-endpoint fallback ${pointId} (dist ${bestD.toFixed(3)}wu)`);
+                      void pickSketchPointRef.current(pointId, pointKind, additiveSelection);
+                      return;
+                    }
+                  }
+                }
+              }
+            }
             void selectSketchEntityRef.current(hit.id, additiveSelection);
           }
           return;
@@ -9716,7 +10359,10 @@ const currentGridSpacingRef = useRef(10);
         if (!rawPoint) {
           return;
         }
-        const sketchPoint = resolveSnappedSketchPoint(rawPoint);
+        const sketchPoint = resolveSnappedSketchPoint(
+          rawPoint,
+          lineDraftStartRef.current,
+        );
         setSketchSnapLabel(sketchPoint.snapLabel);
 
         if (!lineDraftStartRef.current) {
@@ -10092,6 +10738,16 @@ const currentGridSpacingRef = useRef(10);
           };
         }
 
+        // Capture pending parallel relation when the cursor snapped
+        // parallel to an existing line. Skipped when a perpendicular
+        // host, axis lock, or tangent is also pending — they conflict.
+        if (sketchPoint.snapParallelHostLineId && !perpHostLineId && !sketchPoint.snapAxisLock && !sketchPoint.snapTangentCircleId) {
+          pendingParallelConstraintRef.current = {
+            fromLineCount: sketchLineCountRef.current,
+            hostLineId: sketchPoint.snapParallelHostLineId,
+          };
+        }
+
         // The line tool keeps drafting from the just-clicked end so
         // the user can chain segments. When chainBreakRequested is set
         // (double-click detected) instead clear the start so the next
@@ -10274,6 +10930,7 @@ const currentGridSpacingRef = useRef(10);
             referenceId: null,
             faceId: null,
             constraintKind: hit.constraintKind,
+            constraintId: hit.id,
             constraintEntityId: hit.entityId,
             constraintRelatedEntityId: hit.relatedEntityId,
           });
@@ -10434,13 +11091,6 @@ const currentGridSpacingRef = useRef(10);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
-    const onCppSnap = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      cppSnapCacheRef.current = { local: d.local, snapLabel: d.snapLabel, snapKind: d.snapKind,
-        hostEntityId: d.hostEntityId, hostPointId: d.hostPointId, hostParamT: d.hostParamT ?? null, timestamp: performance.now() };
-    };
-    window.addEventListener("polysmith-cpp-snap", onCppSnap);
-
     const onTrimPreview = (e: Event) => {
       trimPreviewResultRef.current = (e as CustomEvent).detail;
       // Render the highlight immediately from the core's data.
@@ -10476,8 +11126,8 @@ const currentGridSpacingRef = useRef(10);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("wheel", handleWheel);
-      window.removeEventListener("polysmith-cpp-snap", onCppSnap);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
+      clearDragPreviewLines();
       controls.dispose();
       disposeGroup(contentGroup);
       disposeGroup(referenceGroup);
@@ -10649,10 +11299,33 @@ const currentGridSpacingRef = useRef(10);
         }
       }
 
+      // Constraint badges also move during drag (e.g. coincident
+      // badge follows the shared endpoint).  Update positions in-place
+      // so they track the geometry instead of lagging behind.
+      if (sceneData.sketchConstraints) {
+        for (const conData of sceneData.sketchConstraints) {
+          for (const conObj of sketchConstraintObjectsRef.current) {
+            if (
+              conObj.userData.sketchConstraintId === conData.constraintId
+            ) {
+              conObj.position.set(
+                conData.position[0],
+                conData.position[1],
+                conData.position[2],
+              );
+              break;
+            }
+          }
+        }
+      }
+
       // After incremental update, release the drag preview if this
       // was the final commit frame.
       if (hadPendingCommit) {
         endpointDragRef.current = null;
+        clearDragPreviewLines();
+        setConstraintPreview(null);
+        dragCursorRef.current = null;
       }
 
       lastGeometryKeyRef.current = sceneData.geometryKey;
@@ -11031,6 +11704,9 @@ const currentGridSpacingRef = useRef(10);
     // visible without the preview override.
     if (hadPendingCommit) {
       endpointDragRef.current = null;
+      clearDragPreviewLines();
+      setConstraintPreview(null);
+      dragCursorRef.current = null;
     }
 
     syncPrimitiveVisuals();
@@ -11070,6 +11746,7 @@ const currentGridSpacingRef = useRef(10);
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    clearDragPreviewLines();
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
@@ -11445,14 +12122,21 @@ const currentGridSpacingRef = useRef(10);
   async function handleDeleteConstraintFromContextMenu() {
     const kind = contextMenu?.constraintKind;
     const entityId = contextMenu?.constraintEntityId;
+    const constraintId = contextMenu?.constraintId;
     if (!kind || !entityId) {
       return;
     }
     setContextMenu(null);
     setSelectedConstraint(null);
+    // For mirror and coincident, use the constraint_id (which encodes
+    // the axis/point). For line-mounted constraints (H/V), use entityId.
+    const deleteId =
+      kind === "mirror" || kind === "coincident"
+        ? constraintId ?? entityId
+        : entityId;
     await clearSketchConstraintRef.current(
       kind as ConstraintType,
-      entityId,
+      deleteId,
       contextMenu?.constraintRelatedEntityId ?? null,
     );
   }
@@ -12176,6 +12860,10 @@ const currentGridSpacingRef = useRef(10);
                     ? "V"
                     : constraintPreview.kind === "tangent"
                       ? "T"
+                      : constraintPreview.kind === "endpoint"
+                        ? "\u25cf"
+                        : constraintPreview.kind === "parallel"
+                          ? "\u2225"
               : "/"}
           </div>
         ) : null}
@@ -12696,15 +13384,15 @@ const currentGridSpacingRef = useRef(10);
                                         ? translate("viewport.dofFull") : "",
                                   })
                                 : translate("viewport.entitySelected"))))
-                        : document?.selected_sketch_point_id
-                          ? translate("viewport.pointSelected")
-                          : document?.selected_sketch_profile_id
-                            ? translate("viewport.profileSelected")
-                            : selectedConstraint
-                              ? translate("viewport.constraintSelected", { kind: selectedConstraint.kind })
-                              : sketchSnapLabel
-                              ? translate("viewport.snap", { label: sketchSnapLabel })
-                              : activeSketchTool === "select"
+                        : sketchSnapLabel
+                          ? `Snap: ${sketchSnapLabel}`
+                          : document?.selected_sketch_point_id
+                            ? translate("viewport.pointSelected")
+                            : document?.selected_sketch_profile_id
+                              ? translate("viewport.profileSelected")
+                              : selectedConstraint
+                                ? translate("viewport.constraintSelected", { kind: selectedConstraint.kind })
+                                : activeSketchTool === "select"
                                 ? translate("viewport.selectionMode")
                                 : activeSketchTool === "project"
                                   ? translate("viewport.projectPrompt")

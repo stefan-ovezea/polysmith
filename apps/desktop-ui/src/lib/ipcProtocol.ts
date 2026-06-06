@@ -1017,11 +1017,13 @@ export function makeUpdateMirrorPreviewObjectsCommand(
   };
 }
 
-export function makeCommitMirrorPreviewCommand(): CoreCommand {
+export function makeCommitMirrorPreviewCommand(
+  persistent: boolean = false,
+): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "commit_mirror_preview",
-    payload: {},
+    payload: { persistent },
   };
 }
 
@@ -1071,6 +1073,18 @@ export function makeSetSketchCoincidentConstraintCommand(
     payload: {
       point_id: pointId,
       other_point_id: otherPointId,
+    },
+  };
+}
+
+export function makeDeleteSketchCoincidentConstraintCommand(
+  constraintId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_coincident_constraint",
+    payload: {
+      constraint_id: constraintId,
     },
   };
 }
@@ -1757,24 +1771,6 @@ export function makeUpdateSelectionFilterCommand(
     id: crypto.randomUUID(),
     type: "update_selection_filter",
     payload: { ...filter },
-  };
-}
-
-export function makeResolveDraftSnapCommand(
-  cursorX: number,
-  cursorY: number,
-  startX: number,
-  startY: number,
-): CoreCommand {
-  return {
-    id: crypto.randomUUID(),
-    type: "resolve_draft_snap",
-    payload: {
-      cursor_x: cursorX,
-      cursor_y: cursorY,
-      start_x: startX,
-      start_y: startY,
-    },
   };
 }
 

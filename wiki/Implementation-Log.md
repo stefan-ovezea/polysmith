@@ -2,9 +2,48 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-06-04
+
+### Angle dimension drag rewrite
+
+**C++ (`native/cad-core/src/core/viewport.cpp`):**
+- Unified all arc-radius caps at 500 (was 60/80 scattered across 3 locations)
+- Removed `×0.42` label-radius multiplier from manual-adjustment path — label now sits at arc radius
+- Removed `+3.0` default label offset — label no longer protrudes beyond arc on initial placement
+- Both `line_angle` and `angle` kinds now consistent
+
+**TS (`apps/desktop-ui/src/layout/ViewportPanel.tsx`, +251/−140):**
+- Replaced directional control-point drag with radius-only state (`angleDragRadii`)
+- Drag now stores a single `number` (clamped cursor-to-pivot distance) instead of a world-space control point whose direction didn't match the bisector
+- Commit sends `pivot + bisector × radius` to C++ — exactly what's displayed, no drift
+- Fixed fallthrough bug where null `angleDimensionFrame` shifted arc by arbitrary offset
+- Added `arcRadius` field to drag override output
+- Guarded angle dimensions from entering generic offset path
+
+### TODO — Cleanup session (next)
+
+**Dead code:**
+- Remove `angleDimensionArcControlNearPoint` (~line 4150) — no longer called
+- Remove its 3 former call sites (replaced inline)
+
+**Unify draft vs committed:**
+- `renderDraftDimensions` angle arc (~line 6615) uses zoom-aware `min(lineLen, zoomCap)`. Decide: adopt fixed clamp or make committed zoom-aware.
+
+**Consolidate dimension state machine:**
+- `pendingDimensionPlacementRef`, `pendingDimSourceEntityIdRef`, `dimensionToolFirstLineRef`, `dimensionRelationPreviewRef`, `pendingRelationPlacementLabelRef` et al. are set/reset across ~55 sites. Replace with single `useReducer`.
+
+**Duplicate arc-radius logic:**
+- `createLineAnglePreview` (~line 3508) duplicates the clamp. Extract shared `clampAngleRadius(distance)`.
+- C++ `make_line_angle_dimension_primitive` and `make_angle_dimension_primitive` duplicate bisector/arc/anchor code.
+
+**File size:**
+- ViewportPanel.tsx is ~13,100 lines. Split into `useDimensionDrag.ts`, `useDraftDimensions.ts`, `useDimensionTool.ts`.
+
 ## 2026-05-30
 
-### Snap system — C++ migration (Phase 1–3)
+> ⚠️ The snap-in-core work below is deprecated per [Core-UI-Design-Principles](Core-UI-Design-Principles). Snap and drag preview belong in the UI, not the core. `resolve_draft_snap` and `drag_sketch_point` were removed on 2026-06-03.
+
+### Snap system — C++ migration (Phase 1–3) [DEPRECATED]
 
 See `constraints` branch and `wiki/Snap-System-CPP-Migration.md` for the full plan.
 
@@ -176,7 +215,9 @@ prepends this directory to `PATH` for the child process on Windows.
   center handle, and local-axis rotation rings; drags are RAF-coalesced and go
   through `update_move_parameters`
 
-### Snap Engine Completion & Wiring
+### Snap Engine Completion & Wiring [DEPRECATED]
+
+> ⚠️ Per [Core-UI-Design-Principles](Core-UI-Design-Principles), this work moves in the wrong direction. Snap is being pulled back to the UI.
 
 **C++ snap engine (`snap_engine.cpp`):**
 - added `collect_intersection_candidates` — line-line and line-arc intersection detection with segment clamping

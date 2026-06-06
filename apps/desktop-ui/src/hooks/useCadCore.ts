@@ -110,6 +110,7 @@ import {
   makeUpdateOffsetPlaneCommand,
   makeUpdateAnglePlaneCommand,
   makeSetSketchCoincidentConstraintCommand,
+  makeDeleteSketchCoincidentConstraintCommand,
   makeSetSketchEqualLengthConstraintCommand,
   makeSetSketchParallelConstraintCommand,
   makeSetSketchPerpendicularConstraintCommand,
@@ -125,7 +126,6 @@ import {
   makeExtrudeProfileCommand,
   makeSetSketchLineConstraintCommand,
   makeClearSketchLineConstraintsCommand,
-  makeResolveDraftSnapCommand,
   makeSetSketchToolCommand,
   makeStartSketchOnPlaneCommand,
   makeStartSketchOnFaceCommand,
@@ -186,21 +186,6 @@ export function useCadCore() {
           const message = parseCoreMessage(payload);
           if (message.type === "log") {
             writeLogToConsole(message.payload);
-          }
-          if (message.type === "draft_snap_resolved") {
-            const p = message.payload;
-            if (p) {
-              window.dispatchEvent(new CustomEvent("polysmith-cpp-snap", {
-                detail: {
-                  local: [p.snap_x, p.snap_y] as [number, number],
-                  snapKind: p.snap_kind,
-                  snapLabel: p.snap_label,
-                  hostEntityId: p.host_entity_id,
-                  hostPointId: p.host_point_id,
-                  hostParamT: p.host_param_t,
-                },
-              }));
-            }
           }
           if (message.type === "trim_preview_result") {
             window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
@@ -739,16 +724,6 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    resolveDraftSnap: async (
-      cursorX: number,
-      cursorY: number,
-      startX: number,
-      startY: number,
-    ) => {
-      await sendCoreCommand(
-        makeResolveDraftSnapCommand(cursorX, cursorY, startX, startY),
-      );
-    },
     setSketchEqualLengthConstraint: async (
       lineId: string,
       otherLineId: string | null,
@@ -787,8 +762,8 @@ export function useCadCore() {
       await sendCoreCommand(makeUpdateMirrorPreviewObjectsCommand(objectIds));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    commitMirrorPreview: async () => {
-      await sendCoreCommand(makeCommitMirrorPreviewCommand());
+    commitMirrorPreview: async (persistent: boolean = false) => {
+      await sendCoreCommand(makeCommitMirrorPreviewCommand(persistent));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     cancelMirrorPreview: async () => {
@@ -815,6 +790,12 @@ export function useCadCore() {
     },
     setSketchPointFixed: async (pointId: string, isFixed: boolean) => {
       await sendCoreCommand(makeSetSketchPointFixedCommand(pointId, isFixed));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    deleteSketchCoincidentConstraint: async (constraintId: string) => {
+      await sendCoreCommand(
+        makeDeleteSketchCoincidentConstraintCommand(constraintId),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchCircle: async (

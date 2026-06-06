@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -3203,7 +3204,7 @@ DocumentState DocumentManager::update_mirror_preview_objects(
   return document_.value();
 }
 
-DocumentState DocumentManager::commit_mirror_preview() {
+DocumentState DocumentManager::commit_mirror_preview(bool persistent) {
   require_document();
   const auto feature_it = require_active_sketch(*document_);
   // Commit is the only mirror_preview op that actually changes
@@ -3213,7 +3214,7 @@ DocumentState DocumentManager::commit_mirror_preview() {
   push_undo_state();
   clear_redo_stack();
   polysmith::core::commit_mirror_preview(
-      *feature_it, next_sketch_line_id_, next_sketch_circle_id_);
+      *feature_it, next_sketch_line_id_, next_sketch_circle_id_, persistent);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   bump_geometry_revision();
@@ -3322,6 +3323,49 @@ DocumentState DocumentManager::set_sketch_coincident_constraint(
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_point_id = other_point_id;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_entity_ids.clear();
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::delete_sketch_coincident_constraint(
+    const std::string& constraint_id) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+
+  // Route mirror constraint deletes to the mirror-specific handler.
+  const std::string mirror_prefix = "mirror-rel-";
+  if (constraint_id.size() > mirror_prefix.size() &&
+      constraint_id.substr(0, mirror_prefix.size()) == mirror_prefix) {
+    polysmith::core::delete_sketch_mirror_relation(*feature_it, constraint_id);
+  } else {
+    polysmith::core::delete_sketch_coincident_constraint(*feature_it, constraint_id);
+  }
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_point_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
@@ -5850,8 +5894,12 @@ DocumentState DocumentManager::select_sketch_entity(
       feature_it->sketch_parameters->arcs.begin(),
       feature_it->sketch_parameters->arcs.end(),
       [&](const SketchArc& arc) { return arc.id == entity_id; });
+  const bool has_polygon = std::any_of(
+      feature_it->sketch_parameters->polygons.begin(),
+      feature_it->sketch_parameters->polygons.end(),
+      [&](const SketchPolygon& polygon) { return polygon.id == entity_id; });
 
-  if (!has_line && !has_circle && !has_arc) {
+  if (!has_line && !has_circle && !has_arc && !has_polygon) {
     throw std::runtime_error("Sketch entity not found: " + entity_id);
   }
 

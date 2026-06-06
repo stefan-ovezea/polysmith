@@ -16,8 +16,7 @@
         "document_exported",
         "document_saved",
         "log",
-        "error",
-        "draft_snap_resolved"
+        "error"
       ]
     },
     "id": { "type": "string" },

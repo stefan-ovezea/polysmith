@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -749,6 +750,7 @@ ViewportSketchDimensionPrimitive make_line_dimension_primitive(
       .label_x = label.x,
       .label_y = label.y,
       .label_z = label.z,
+      .driven = dimension.driven,
   };
 }
 
@@ -792,9 +794,9 @@ ViewportSketchDimensionPrimitive make_line_angle_dimension_primitive(
   const double bisector_ux = bx / blen;
   const double bisector_uy = by / blen;
 
-  const double kArcRadius = std::max(8.0, std::min(length, 60.0));
+  const double kArcRadius = std::max(8.0, std::min(length, 500.0));
   constexpr double kAnchorRadius = 4.0;
-  const double kLabelRadius = kArcRadius + 3.0;
+  const double kLabelRadius = kArcRadius;
 
   const WorldPoint anchor_start = to_world_point(
       parameters,
@@ -874,6 +876,7 @@ ViewportSketchDimensionPrimitive make_line_angle_dimension_primitive(
       .ref_line_end_x = ref_line_end.x,
       .ref_line_end_y = ref_line_end.y,
       .ref_line_end_z = ref_line_end.z,
+      .driven = dimension.driven,
   };
 }
 
@@ -918,6 +921,7 @@ ViewportSketchDimensionPrimitive make_circle_dimension_primitive(
       .label_x = label.x,
       .label_y = label.y,
       .label_z = label.z,
+      .driven = dimension.driven,
   };
 }
 
@@ -934,9 +938,9 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     const SketchDimension& dimension,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
-  // Locate the shared endpoint and the outgoing direction of each
-  // line using the same heuristic as the solver: tolerance match on
-  // numeric coordinates.
+  // Locate the shared endpoint or intersection point.  First try a
+  // direct endpoint match; if that fails, check whether one line's
+  // endpoint lies on the other line's segment.
   const std::array<std::pair<double, double>, 2> a_ends = {{
       {line_a.start_x, line_a.start_y},
       {line_a.end_x, line_a.end_y},
@@ -945,27 +949,104 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
       {line_b.start_x, line_b.start_y},
       {line_b.end_x, line_b.end_y},
   }};
-  int a_pivot = 0;
-  int b_pivot = 0;
-  bool found = false;
-  for (int i = 0; i < 2 && !found; ++i) {
+
+  auto point_on_seg = [](double px, double py,
+                         double ax, double ay,
+                         double bx, double by,
+                         double tol) -> bool {
+    double dx = bx - ax, dy = by - ay;
+    double len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12)
+      return std::sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay)) <= tol;
+    double t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    double proj_x = ax + t * dx, proj_y = ay + t * dy;
+    return std::sqrt((px - proj_x) * (px - proj_x) +
+                     (py - proj_y) * (py - proj_y)) <= tol;
+  };
+
+  auto dir_away = [](double px, double py,
+                     double e0x, double e0y,
+                     double e1x, double e1y) -> std::pair<double, double> {
+    double d0 = std::sqrt((e0x - px) * (e0x - px) + (e0y - py) * (e0y - py));
+    double d1 = std::sqrt((e1x - px) * (e1x - px) + (e1y - py) * (e1y - py));
+    double tx = d0 > d1 ? e0x : e1x, ty = d0 > d1 ? e0y : e1y;
+    double dx = tx - px, dy = ty - py;
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-12) return {1.0, 0.0};
+    return {dx / len, dy / len};
+  };
+
+  constexpr double kPivotTol = 0.05;
+  int a_pivot = -1, b_pivot = -1;
+
+  // Pass 1: direct endpoint–endpoint match.
+  for (int i = 0; i < 2 && a_pivot < 0; ++i) {
     for (int j = 0; j < 2; ++j) {
-      if (std::abs(a_ends[i].first - b_ends[j].first) <= 0.05 &&
-          std::abs(a_ends[i].second - b_ends[j].second) <= 0.05) {
-        a_pivot = i;
-        b_pivot = j;
-        found = true;
-        break;
+      if (std::abs(a_ends[i].first - b_ends[j].first) <= kPivotTol &&
+          std::abs(a_ends[i].second - b_ends[j].second) <= kPivotTol) {
+        a_pivot = i; b_pivot = j; break;
+      }
+    }
+  }
+  // Pass 2: endpoint-on-segment.
+  if (a_pivot < 0) {
+    for (int i = 0; i < 2 && a_pivot < 0; ++i) {
+      if (point_on_seg(a_ends[i].first, a_ends[i].second,
+                       b_ends[0].first, b_ends[0].second,
+                       b_ends[1].first, b_ends[1].second, kPivotTol)) {
+        a_pivot = i; b_pivot = -1; break;
+      }
+    }
+  }
+  if (a_pivot < 0) {
+    for (int j = 0; j < 2 && a_pivot < 0; ++j) {
+      if (point_on_seg(b_ends[j].first, b_ends[j].second,
+                       a_ends[0].first, a_ends[0].second,
+                       a_ends[1].first, a_ends[1].second, kPivotTol)) {
+        a_pivot = -1; b_pivot = j; break;
       }
     }
   }
 
-  const double pivot_x = a_ends[a_pivot].first;
-  const double pivot_y = a_ends[a_pivot].second;
-  const double a_dx = a_ends[1 - a_pivot].first - pivot_x;
-  const double a_dy = a_ends[1 - a_pivot].second - pivot_y;
-  const double b_dx = b_ends[1 - b_pivot].first - pivot_x;
-  const double b_dy = b_ends[1 - b_pivot].second - pivot_y;
+  double pivot_x, pivot_y;
+  double a_dx, a_dy, b_dx, b_dy;
+
+  if (a_pivot >= 0 && b_pivot >= 0) {
+    pivot_x = a_ends[a_pivot].first;
+    pivot_y = a_ends[a_pivot].second;
+    a_dx = a_ends[1 - a_pivot].first - pivot_x;
+    a_dy = a_ends[1 - a_pivot].second - pivot_y;
+    b_dx = b_ends[1 - b_pivot].first - pivot_x;
+    b_dy = b_ends[1 - b_pivot].second - pivot_y;
+  } else if (a_pivot >= 0) {
+    pivot_x = a_ends[a_pivot].first;
+    pivot_y = a_ends[a_pivot].second;
+    auto ad = dir_away(pivot_x, pivot_y,
+                       a_ends[1 - a_pivot].first, a_ends[1 - a_pivot].second,
+                       a_ends[a_pivot].first, a_ends[a_pivot].second);
+    a_dx = ad.first; a_dy = ad.second;
+    auto bd = dir_away(pivot_x, pivot_y,
+                       b_ends[0].first, b_ends[0].second,
+                       b_ends[1].first, b_ends[1].second);
+    b_dx = bd.first; b_dy = bd.second;
+  } else if (b_pivot >= 0) {
+    pivot_x = b_ends[b_pivot].first;
+    pivot_y = b_ends[b_pivot].second;
+    auto ad = dir_away(pivot_x, pivot_y,
+                       a_ends[0].first, a_ends[0].second,
+                       a_ends[1].first, a_ends[1].second);
+    a_dx = ad.first; a_dy = ad.second;
+    auto bd = dir_away(pivot_x, pivot_y,
+                       b_ends[1 - b_pivot].first, b_ends[1 - b_pivot].second,
+                       b_ends[b_pivot].first, b_ends[b_pivot].second);
+    b_dx = bd.first; b_dy = bd.second;
+  } else {
+    // Should not happen — add_sketch_angle_dimension validates first.
+    pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
+    a_dx = 1.0; a_dy = 0.0;  b_dx = 0.0; b_dy = 1.0;
+  }
   const double a_len = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_len = std::sqrt(b_dx * b_dx + b_dy * b_dy);
   const double a_ux = a_len > 0.0 ? a_dx / a_len : 1.0;
@@ -986,9 +1067,9 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
   const double bisector_ux = bx / blen;
   const double bisector_uy = by / blen;
 
-  const double kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 60.0));
+  const double kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 500.0));
   constexpr double kAnchorRadius = 4.0;
-  const double kLabelRadius = kArcRadius + 3.0;
+  const double kLabelRadius = kArcRadius;
 
   const WorldPoint anchor_start = to_world_point(
       parameters,
@@ -1067,16 +1148,17 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
       .ref_line_start_x = ref_line_start.x,
       .ref_line_start_y = ref_line_start.y,
       .ref_line_start_z = ref_line_start.z,
-      .ref_line_end_x = ref_line_end.x,
-      .ref_line_end_y = ref_line_end.y,
-      .ref_line_end_z = ref_line_end.z,
+    .ref_line_end_x = ref_line_end.x,
+    .ref_line_end_y = ref_line_end.y,
+    .ref_line_end_z = ref_line_end.z,
+    .driven = dimension.driven,
   };
   if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
     const double raw_dx = *dimension.label_x - pivot_x;
     const double raw_dy = *dimension.label_y - pivot_y;
     const double dimension_radius =
-        std::max(6.0, std::min(std::sqrt(raw_dx * raw_dx + raw_dy * raw_dy), 80.0));
-    const double label_radius = std::max(3.0, dimension_radius * 0.42);
+        std::max(6.0, std::min(std::sqrt(raw_dx * raw_dx + raw_dy * raw_dy), 500.0));
+    const double label_radius = dimension_radius;
     const WorldPoint saved_anchor_start = to_world_point(
         parameters,
         pivot_x + a_ux * kAnchorRadius,
@@ -1194,6 +1276,7 @@ ViewportSketchDimensionPrimitive make_circle_center_distance_dimension_primitive
       primitive.label_z = shifted_label.z;
     }
   }
+  primitive.driven = dimension.driven;
   return primitive;
 }
 
@@ -1268,6 +1351,7 @@ ViewportSketchDimensionPrimitive make_circle_line_distance_dimension_primitive(
     primitive.label_y = shifted_label.y;
     primitive.label_z = shifted_label.z;
   }
+  primitive.driven = dimension.driven;
   return primitive;
 }
 
@@ -1345,6 +1429,7 @@ ViewportSketchDimensionPrimitive make_line_line_distance_dimension_primitive(
     primitive.label_y = shifted_label.y;
     primitive.label_z = shifted_label.z;
   }
+  primitive.driven = dimension.driven;
   return primitive;
 }
 
@@ -1382,6 +1467,7 @@ ViewportSketchDimensionPrimitive make_point_distance_dimension_primitive(
       .label_x = label.x,
       .label_y = label.y,
       .label_z = label.z,
+      .driven = dimension.driven,
   };
 }
 
@@ -3499,29 +3585,101 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
             continue;
           }
 
-          const bool first_is_selected =
-              is_sketch_entity_selected(first_line_it->id);
-          const bool second_is_selected =
-              is_sketch_entity_selected(second_line_it->id);
+          const auto& first_line = *first_line_it;
+          const auto& second_line = *second_line_it;
+          const bool is_selected =
+              is_sketch_entity_selected(first_line.id) ||
+              is_sketch_entity_selected(second_line.id);
 
-          sketch_constraints.push_back(make_line_constraint_primitive(
-              *first_line_it,
+          const std::string label =
+              relation.kind == "equal_length"   ? "="
+              : relation.kind == "perpendicular" ? "P"
+              : relation.kind == "parallel"     ? "//"
+              : "?";
+
+          // Determine the badge position based on constraint kind.
+          double badge_sketch_x = 0.0;
+          double badge_sketch_y = 0.0;
+
+          if (relation.kind == "perpendicular") {
+            // Place at the shared corner. Find the endpoint that both
+            // lines share (matching point IDs or nearly-equal coords).
+            const double eps = 1e-6;
+            double cx = 0.0, cy = 0.0;
+            bool found = false;
+            const std::array<std::pair<double, double>, 2> a_pts = {{
+                {first_line.start_x, first_line.start_y},
+                {first_line.end_x, first_line.end_y}}};
+            const std::array<std::pair<double, double>, 2> b_pts = {{
+                {second_line.start_x, second_line.start_y},
+                {second_line.end_x, second_line.end_y}}};
+            for (const auto& ap : a_pts) {
+              for (const auto& bp : b_pts) {
+                if (std::abs(ap.first - bp.first) < eps &&
+                    std::abs(ap.second - bp.second) < eps) {
+                  cx = (ap.first + bp.first) / 2.0;
+                  cy = (ap.second + bp.second) / 2.0;
+                  found = true;
+                  break;
+                }
+              }
+              if (found) break;
+            }
+            if (found) {
+              // Offset along the angle bisector so the badge sits
+              // outside the corner.
+              const double dx1 = first_line.end_x - first_line.start_x;
+              const double dy1 = first_line.end_y - first_line.start_y;
+              const double dx2 = second_line.end_x - second_line.start_x;
+              const double dy2 = second_line.end_y - second_line.start_y;
+              const double len1 = std::hypot(dx1, dy1);
+              const double len2 = std::hypot(dx2, dy2);
+              double nx = 0.0, ny = 0.0;
+              if (len1 > 0.0) { nx += -dy1 / len1; ny += dx1 / len1; }
+              if (len2 > 0.0) { nx += -dy2 / len2; ny += dx2 / len2; }
+              const double bn = std::hypot(nx, ny);
+              if (bn > 0.0) { nx /= bn; ny /= bn; }
+              badge_sketch_x = cx + nx * kConstraintBadgeOffset * 1.5;
+              badge_sketch_y = cy + ny * kConstraintBadgeOffset * 1.5;
+            } else {
+              // Fallback: no shared corner found — use first line midpoint.
+              badge_sketch_x = (first_line.start_x + first_line.end_x) / 2.0;
+              badge_sketch_y = (first_line.start_y + first_line.end_y) / 2.0;
+            }
+          } else {
+            // parallel / equal_length: place at the first line's midpoint,
+            // offset outward along its normal so the badge is clearly tied
+            // to that line.
+            const double dx = first_line.end_x - first_line.start_x;
+            const double dy = first_line.end_y - first_line.start_y;
+            const double len = std::hypot(dx, dy);
+            const double nx = len > 0.0 ? -dy / len : 0.0;
+            const double ny = len > 0.0 ?  dx / len : 1.0;
+            badge_sketch_x = (first_line.start_x + first_line.end_x) / 2.0 +
+                             nx * kConstraintBadgeOffset;
+            badge_sketch_y = (first_line.start_y + first_line.end_y) / 2.0 +
+                             ny * kConstraintBadgeOffset;
+          }
+
+          const WorldPoint pos = to_world_point(
               feature.sketch_parameters->plane_id,
-              relation.kind,
-              relation.kind == "equal_length"
-                  ? "="
-                  : relation.kind == "perpendicular" ? "P" : "//",
-              first_is_selected,
-              relation.second_line_id));
-          sketch_constraints.push_back(make_line_constraint_primitive(
-              *second_line_it,
-              feature.sketch_parameters->plane_id,
-              relation.kind,
-              relation.kind == "equal_length"
-                  ? "="
-                  : relation.kind == "perpendicular" ? "P" : "//",
-              second_is_selected,
-              relation.first_line_id));
+              badge_sketch_x, badge_sketch_y,
+              kSketchPlaneOffset + kConstraintBadgeOffset);
+
+          sketch_constraints.push_back(ViewportSketchConstraintPrimitive{
+              .constraint_id = "constraint-" + relation.kind + "-" +
+                               relation.first_line_id + "-" +
+                               relation.second_line_id,
+              .plane_id = feature.sketch_parameters->plane_id,
+              .kind = relation.kind,
+              .entity_id = relation.first_line_id,
+              .related_entity_id = relation.second_line_id,
+              .label = label,
+              .is_selected = is_selected,
+              .position_x = pos.x,
+              .position_y = pos.y,
+              .position_z = pos.z,
+          });
         }
 
         // Tangent (line ↔ circle) badge. Same line-mounted "T" glyph
@@ -3617,6 +3775,52 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
               .position_y = position.y,
               .position_z = position.z,
           });
+        }
+
+        // Mirror constraint badge: one badge per mirror relation,
+        // placed at the axis midpoint. Multiple mirror operations on
+        // the same axis stack with increasing offset, starting above
+        // H/V constraint badges (which use offset 1.0–3.0).
+        {
+          std::map<std::string, int> axis_badge_count;
+          for (const auto& rel : feature.sketch_parameters->mirror_relations) {
+            const auto axis_line = std::find_if(
+                feature.sketch_parameters->lines.begin(),
+                feature.sketch_parameters->lines.end(),
+                [&](const SketchLine& l) { return l.id == rel.axis_line_id; });
+            if (axis_line == feature.sketch_parameters->lines.end()) continue;
+
+            const double mx = (axis_line->start_x + axis_line->end_x) / 2.0;
+            const double my = (axis_line->start_y + axis_line->end_y) / 2.0;
+            const double dx = axis_line->end_x - axis_line->start_x;
+            const double dy = axis_line->end_y - axis_line->start_y;
+            const double len = std::hypot(dx, dy);
+            const double nx = len > 0.0 ? -dy / len : 0.0;
+            const double ny = len > 0.0 ?  dx / len : 1.0;
+
+            // Start at 3.5 to clear H/V badges (at 1.0–3.0), then stack.
+            const int idx = axis_badge_count[rel.axis_line_id]++;
+            const double offset = kConstraintBadgeOffset * (3.5 + idx * 0.8);
+
+            const WorldPoint pos = to_world_point(
+                feature.sketch_parameters->plane_id,
+                mx + nx * offset, my + ny * offset,
+                kSketchPlaneOffset + kConstraintBadgeOffset);
+
+            const bool is_sel = is_sketch_entity_selected(rel.axis_line_id);
+            sketch_constraints.push_back(ViewportSketchConstraintPrimitive{
+                .constraint_id = rel.id,
+                .plane_id = feature.sketch_parameters->plane_id,
+                .kind = "mirror",
+                .entity_id = rel.axis_line_id,
+                .related_entity_id = std::nullopt,
+                .label = "M",
+                .is_selected = is_sel,
+                .position_x = pos.x,
+                .position_y = pos.y,
+                .position_z = pos.z,
+            });
+          }
         }
 
         // Angle dimensions span two lines. Emit them once per dim
@@ -3799,10 +4003,10 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
       }
 
       for (const auto& polygon : feature.sketch_parameters->polygons) {
-        const bool is_selected_polygon =
-            is_sketch_entity_selected(polygon.id);
-        sketch_polygons.push_back(make_sketch_polygon_primitive(
-            polygon, *feature.sketch_parameters, is_selected_polygon));
+        // Polygons are now decomposed into individual lines — the
+        // lines handle the visual representation. The polygon entry
+        // is kept only for selection/identification. Skip the
+        // primitive to avoid double-rendering.
         // Emit polygon radius dimension
         if (view->active_sketch_feature_id.has_value() &&
             view->active_sketch_feature_id.value() == feature.id) {
@@ -3830,6 +4034,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
                 .dimension_start_x = pc.x, .dimension_start_y = pc.y, .dimension_start_z = pc.z,
                 .dimension_end_x = pd.x, .dimension_end_y = pd.y, .dimension_end_z = pd.z,
                 .label_x = pd.x, .label_y = pd.y, .label_z = pd.z,
+                .driven = dim_it->driven,
             });
           }
         }
@@ -3845,6 +4050,97 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
           if (point.is_fixed) {
             sketch_constraints.push_back(make_point_constraint_primitive(
                 point, *feature.sketch_parameters, is_selected_point));
+          }
+        }
+
+        // Emit badge primitives for explicit coincident and concentric
+        // constraints stored in the sketch parameters.
+        for (const auto& c : feature.sketch_parameters->constraints) {
+          if (c.kind == "coincident") {
+            // Find the shared point position from the lines listed in
+            // target_ids. After the point merge, all lines share one
+            // endpoint; find a point ID that appears in at least two.
+            std::string shared_point_id;
+            for (const auto& tid : c.target_ids) {
+              for (const auto& line : feature.sketch_parameters->lines) {
+                if (line.id != tid) continue;
+                const std::string& sp = line.start_point_id;
+                const std::string& ep = line.end_point_id;
+                for (const auto& tid2 : c.target_ids) {
+                  if (tid2 == tid) continue;
+                  for (const auto& line2 : feature.sketch_parameters->lines) {
+                    if (line2.id != tid2) continue;
+                    if (line2.start_point_id == sp || line2.end_point_id == sp) {
+                      shared_point_id = sp; break;
+                    }
+                    if (line2.start_point_id == ep || line2.end_point_id == ep) {
+                      shared_point_id = ep; break;
+                    }
+                  }
+                  if (!shared_point_id.empty()) break;
+                }
+                if (!shared_point_id.empty()) break;
+              }
+              if (!shared_point_id.empty()) break;
+            }
+            if (!shared_point_id.empty()) {
+              const auto pt_pos = find_point_position(
+                  *feature.sketch_parameters, shared_point_id);
+              if (pt_pos.has_value()) {
+                const WorldPoint pos = to_world_point(
+                    *feature.sketch_parameters,
+                    std::get<0>(pt_pos.value()),
+                    std::get<1>(pt_pos.value()),
+                    kSketchPlaneOffset + kConstraintBadgeOffset);
+                const bool is_sel =
+                    is_sketch_point_selected(shared_point_id);
+                sketch_constraints.push_back(
+                    ViewportSketchConstraintPrimitive{
+                        .constraint_id = c.constraint_id,
+                        .plane_id = feature.sketch_parameters->plane_id,
+                        .kind = "coincident",
+                        .entity_id = c.constraint_id,
+                        .related_entity_id = std::nullopt,
+                        .label = "∞",
+                        .is_selected = is_sel,
+                        .position_x = pos.x,
+                        .position_y = pos.y,
+                        .position_z = pos.z,
+                    });
+              }
+            }
+          }
+          if (c.kind == "concentric") {
+            // Target IDs are circle IDs; place badge at the first
+            // circle's center.
+            if (!c.target_ids.empty()) {
+              const auto& circ_id = c.target_ids[0];
+              for (const auto& circ : feature.sketch_parameters->circles) {
+                if (circ.id == circ_id) {
+                  const WorldPoint pos = to_world_point(
+                      *feature.sketch_parameters,
+                      circ.center_x, circ.center_y,
+                      kSketchPlaneOffset + kConstraintBadgeOffset);
+                  const bool is_sel =
+                      is_sketch_point_selected(
+                          "point-circle-" + circ_id + "-center");
+                  sketch_constraints.push_back(
+                      ViewportSketchConstraintPrimitive{
+                          .constraint_id = c.constraint_id,
+                          .plane_id = feature.sketch_parameters->plane_id,
+                          .kind = "concentric",
+                          .entity_id = circ_id,
+                          .related_entity_id = std::nullopt,
+                          .label = "◎",
+                          .is_selected = is_sel,
+                          .position_x = pos.x,
+                          .position_y = pos.y,
+                          .position_z = pos.z,
+                      });
+                  break;
+                }
+              }
+            }
           }
         }
       }
@@ -4320,11 +4616,13 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
   }
 
   // Populate DOF statuses for the active sketch.
+  int solver_dofs = -1;
   if (document->active_sketch_feature_id.has_value()) {
     for (const auto& feat : document->feature_history) {
       if (feat.id == document->active_sketch_feature_id.value() &&
           feat.sketch_parameters.has_value()) {
         dof_statuses = count_sketch_dof(feat.sketch_parameters.value());
+        solver_dofs = feat.sketch_parameters->solver_dofs;
         break;
       }
     }
@@ -4383,6 +4681,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
       .sketch_constraints = sketch_constraints,
       .sketch_profiles = sketch_profiles,
       .dof_statuses = dof_statuses,
+      .solver_dofs = solver_dofs,
       .meshes = meshes,
       .cut_previews = cut_previews,
       .bodies = bodies,

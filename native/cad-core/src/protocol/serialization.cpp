@@ -599,6 +599,12 @@ sketch_parameters_from_payload(const json& payload) {
       if (dim_payload.contains("driven") && dim_payload.at("driven").is_boolean()) {
         dimension.driven = dim_payload.at("driven").get<bool>();
       }
+      // is_auto field — absent in older saves, default to false.
+      // A post-load fixup (below) sets it to true for dimensions whose
+      // IDs match the auto-dimension naming pattern.
+      if (dim_payload.contains("is_auto") && dim_payload.at("is_auto").is_boolean()) {
+        dimension.is_auto = dim_payload.at("is_auto").get<bool>();
+      }
       // Display_as field — absent in older saves, default to "" (diameter)
       if (dim_payload.contains("display_as") &&
           dim_payload.at("display_as").is_string()) {
@@ -614,6 +620,19 @@ sketch_parameters_from_payload(const json& payload) {
         dimension.label_y = dim_payload.at("label_y").get<double>();
       }
       params.dimensions.push_back(dimension);
+    }
+    // Backward compat: dimensions from older saves lack the `is_auto`
+    // field. Detect auto-dimensions by their ID prefix pattern so they
+    // aren't mistakenly treated as manual driving constraints.
+    for (auto& dim : params.dimensions) {
+      if (!dim.is_auto) {
+        bool matches_auto = false;
+        if (dim.id.rfind("dim-line-", 0) == 0) matches_auto = true;
+        else if (dim.id.rfind("dim-line-angle-", 0) == 0) matches_auto = true;
+        else if (dim.id.rfind("dim-circle-", 0) == 0) matches_auto = true;
+        else if (dim.id.rfind("dim-polygon-", 0) == 0) matches_auto = true;
+        if (matches_auto) dim.is_auto = true;
+      }
     }
   }
   if (payload.contains("line_relations") && payload.at("line_relations").is_array()) {
@@ -1444,6 +1463,7 @@ json to_payload(const polysmith::core::FeatureEntry& feature) {
                           {"value", dimension.value},
                           {"expression", dimension.expression},
                           {"driven", dimension.driven},
+                          {"is_auto", dimension.is_auto},
                           {"display_as", dimension.display_as},
                           {"label_x",
                            dimension.label_x.has_value()
@@ -2554,11 +2574,12 @@ json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primiti
            {"z", primitive.ref_line_start_z},
        }},
       {"ref_line_end",
-       {
-           {"x", primitive.ref_line_end_x},
-           {"y", primitive.ref_line_end_y},
-           {"z", primitive.ref_line_end_z},
-       }},
+        {
+            {"x", primitive.ref_line_end_x},
+            {"y", primitive.ref_line_end_y},
+            {"z", primitive.ref_line_end_z},
+        }},
+      {"driven", primitive.driven},
   };
 }
 

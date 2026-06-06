@@ -1103,6 +1103,9 @@ const viewportStateSchema = z.object({
         "midpoint",
         "on_line",
         "tangent_line_circle",
+        "coincident",
+        "concentric",
+        "mirror",
       ]),
       entity_id: z.string(),
       related_entity_id: z.string().nullable(),
@@ -1364,23 +1367,6 @@ const errorEventSchema = z.object({
   }),
 });
 
-const draftSnapResolvedEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("draft_snap_resolved"),
-  payload: z.union([
-    z.object({
-      snap_x: z.number(),
-      snap_y: z.number(),
-      snap_kind: z.string(),
-      snap_label: z.string(),
-      host_entity_id: z.string(),
-      host_point_id: z.string(),
-      host_param_t: z.number().optional(),
-    }),
-    z.null(),
-  ]),
-});
-
 const trimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("trim_preview_result"),
@@ -1412,7 +1398,6 @@ export const coreMessageSchema = z.union([
   documentExportedEventSchema,
   documentSavedEventSchema,
   logEventSchema,
-  draftSnapResolvedEventSchema,
   trimPreviewResultEventSchema,
   errorEventSchema,
 ]);

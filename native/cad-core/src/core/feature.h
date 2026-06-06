@@ -531,6 +531,12 @@ struct SketchDimension {
   // is kept in sync with the geometry during refresh_sketch_derived_state
   // but editing it does not drive the geometry. Default false (driving).
   bool driven = false;
+  // When true, this dimension was created automatically at entity-commit
+  // time (auto-dimension). Auto-dimensions only become driving constraints
+  // when the user types a value (non-empty expression). Manual dimensions
+  // (is_auto = false) are always driving constraints at their current
+  // measured value, regardless of expression.
+  bool is_auto = false;
   // For circle_radius dimensions: controls whether the UI displays the
   // value as radius or diameter. Empty string = diameter (default, for
   // backward compat). "radius" = display the raw radius value.
@@ -601,13 +607,13 @@ struct SelectionFilter {
     bool snap_center          = true;
     bool snap_intersection    = true;
     bool snap_nearest         = true;
-    bool snap_quadrant        = false;
-    bool snap_perpendicular   = false;
-    bool snap_parallel        = false;
+    bool snap_quadrant        = true;
+    bool snap_perpendicular   = true;
+    bool snap_parallel        = true;
     bool snap_tangent         = true;
     bool snap_grid            = true;
-    bool snap_grid_line       = false;
-    bool snap_polar           = false;
+    bool snap_grid_line       = true;
+    bool snap_polar           = true;
 
     // Global settings
     int tolerance_px           = 10;
@@ -690,6 +696,17 @@ struct SketchProfileRegion {
   double radius;
 };
 
+/// Records a persistent mirror relationship: `mirror_id` is the
+/// mirror of `source_id` across `axis_line_id`. The recompute pass
+/// re-projects `source_id`'s geometry across the axis and writes
+/// the result into `mirror_id`.
+struct SketchMirrorRelation {
+  std::string id;
+  std::string source_id;
+  std::string mirror_id;
+  std::string axis_line_id;
+};
+
 struct SketchFeatureParameters {
   struct SketchPlaneFrame {
     double origin_x;
@@ -768,6 +785,16 @@ struct SketchFeatureParameters {
     std::vector<SketchCircle> generated_circles;
   };
   std::optional<PendingMirror> pending_mirror;
+
+  // DOF count from the planegcs solver after the last solve.
+  // -1 = solver hasn't run yet (or no constraints exist).
+  int solver_dofs = -1;
+
+  // Persistent mirror relations. When the user commits a mirror with
+  // the "persistent" toggle on, each source→mirror pair is stored
+  // here so it can be re-mirrored on every recompute and shown as a
+  // constraint badge. Empty vector = no persistent mirrors.
+  std::vector<SketchMirrorRelation> mirror_relations;
 };
 
 struct FeatureEntry {

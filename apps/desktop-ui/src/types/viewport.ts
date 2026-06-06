@@ -398,6 +398,12 @@ export interface SketchPreviewPoint {
   // `tangent_line_circle` relation between the new line and the
   // circle so the line stays tangent through later edits.
   snapTangentCircleId?: string | null;
+  // When the cursor landed on a parallel projection from the draft
+  // start relative to an existing line, this holds the host line id.
+  // The post-commit step uses it to apply a
+  // `set_sketch_parallel_constraint` between the new line and the
+  // host line so the line stays parallel through later edits.
+  snapParallelHostLineId?: string | null;
 }
 
 export type SketchPlaneFrame = NonNullable<

@@ -328,6 +328,7 @@ function App() {
   const [mirrorFocusedSlot, setMirrorFocusedSlot] = useState<
     "objects" | "axis" | null
   >(null);
+  const [mirrorPersistent, setMirrorPersistent] = useState(false);
   const [extrudeAction, setExtrudeAction] =
     useState<ActiveExtrudeAction | null>(null);
   const extrudeCreateInFlightRef = useRef(false);
@@ -874,9 +875,9 @@ function App() {
     setSketchTool,
     setSketchLineConstraint,
     clearSketchLineConstraints,
-    resolveDraftSnap,
     setSketchEqualLengthConstraint,
     setSketchCoincidentConstraint,
+    deleteSketchCoincidentConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
     setSketchTangentConstraint,
@@ -3738,6 +3739,7 @@ function App() {
     }
 
     if (!armedSketchConstraint.firstPointId) {
+      addMessage(`coincident: first point ${pointId} (${kind})`);
       await selectSketchPoint(pointId);
       setArmedSketchConstraint({
         kind: "coincident",
@@ -3747,13 +3749,16 @@ function App() {
     }
 
     if (armedSketchConstraint.firstPointId === pointId) {
+      addMessage(`coincident: same point clicked twice, ignoring`);
       return;
     }
 
+    addMessage(`coincident: second point ${pointId} (${kind}) — applying constraint`);
     await setSketchCoincidentConstraint(
       pointId,
       armedSketchConstraint.firstPointId,
     );
+    addMessage(`coincident: constraint applied, armed for next pair`);
     // Stay armed so the user can pick more point pairs without
     // re‑clicking the toolbar button.
     setArmedSketchConstraint({
@@ -5920,9 +5925,6 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
-              onResolveDraftSnap={async (cx, cy, sx, sy) => {
-                await resolveDraftSnap(cx, cy, sx, sy);
-              }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
                 await runAction(async () => {
                   await addSketchAngleDimension(firstLineId, secondLineId);
@@ -5964,6 +5966,11 @@ function App() {
               onSetSketchTangentConstraint={async (lineId, circleId) => {
                 await runAction(async () => {
                   await setSketchTangentConstraint(lineId, circleId);
+                });
+              }}
+              onSetSketchParallelConstraint={async (lineId, otherLineId) => {
+                await runAction(async () => {
+                  await setSketchParallelConstraint(lineId, otherLineId);
                 });
               }}
               onAddSketchRectangle={async (
@@ -6221,6 +6228,11 @@ function App() {
                     return;
                   }
 
+                  if (kind === "coincident") {
+                    await deleteSketchCoincidentConstraint(entityId);
+                    return;
+                  }
+
                   if (kind === "equal_length") {
                     await setSketchEqualLengthConstraint(entityId, null);
                     return;
@@ -6233,6 +6245,11 @@ function App() {
 
                   if (kind === "parallel") {
                     await setSketchParallelConstraint(entityId, null);
+                    return;
+                  }
+
+                  if (kind === "mirror") {
+                    await deleteSketchCoincidentConstraint(entityId);
                     return;
                   }
 
@@ -6987,6 +7004,8 @@ function App() {
                   generatedLineCount={pendingMirror.generated_lines.length}
                   generatedCircleCount={pendingMirror.generated_circles.length}
                   focusedSlot={mirrorFocusedSlot}
+                  persistent={mirrorPersistent}
+                  onTogglePersistent={() => setMirrorPersistent((v) => !v)}
                   disabled={status !== "connected"}
                   onFocusObjects={() => setMirrorFocusedSlot("objects")}
                   onFocusAxis={() => setMirrorFocusedSlot("axis")}
@@ -7002,7 +7021,7 @@ function App() {
                   }}
                   onConfirm={async () => {
                     await runAction(async () => {
-                      await commitMirrorPreview();
+                      await commitMirrorPreview(mirrorPersistent);
                     });
                     setMirrorFocusedSlot(null);
                   }}

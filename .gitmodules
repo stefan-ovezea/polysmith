@@ -9,3 +9,11 @@
 [submodule "polysmith.wiki"]
 	path = polysmith.wiki
 	url = https://github.com/stefan-ovezea/polysmith.wiki.git
+[submodule "third_party/planegcs"]
+	path = third_party/planegcs
+	url = https://github.com/Salusoft89/planegcs.git
+	branch = main
+[submodule "third_party/planegcs-validation"]
+	path = third_party/planegcs-validation
+	url = https://github.com/Salusoft89/planegcs-validation.git
+	branch = main

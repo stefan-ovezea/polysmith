@@ -278,7 +278,7 @@ class DocumentManager {
   DocumentState update_mirror_preview_axis(const std::string& axis_line_id);
   DocumentState update_mirror_preview_objects(
       const std::vector<std::string>& object_ids);
-  DocumentState commit_mirror_preview();
+  DocumentState commit_mirror_preview(bool persistent = false);
   DocumentState cancel_mirror_preview();
   DocumentState set_sketch_parallel_constraint(
       const std::string& line_id,
@@ -286,6 +286,7 @@ class DocumentManager {
   DocumentState clear_sketch_line_constraints(const std::string& line_id);
   DocumentState set_sketch_coincident_constraint(const std::string& point_id,
                                                  const std::string& other_point_id);
+  DocumentState delete_sketch_coincident_constraint(const std::string& constraint_id);
   DocumentState set_sketch_point_fixed(const std::string& point_id,
                                        bool is_fixed);
   DocumentState update_sketch_circle(const std::string& circle_id,

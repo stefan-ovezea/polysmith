@@ -6,9 +6,28 @@
 #include "core/dof_counter.h"
 #include "core/body_compiler.h"
 #include "core/document.h"
-#include "core/snap_engine.h"
+
+#include <string>
 
 namespace polysmith::core {
+
+// A single snap candidate emitted in viewport state snapshots.
+// The TS UI measures cursor distance against these to resolve
+// static snaps (endpoint, midpoint, center, etc.).
+struct SnapCandidate {
+  std::string kind;
+  std::string entity_id;
+  std::string point_id;
+  double local_x;
+  double local_y;
+  double distance;
+  std::string label;
+  // Parametric position along the host entity, when meaningful.
+  // For "nearest" (line-body): t in [0,1] along the line segment.
+  // For "midpoint": 0.5.
+  // For other kinds: -1.0 (undefined).
+  double param_t = -1.0;
+};
 
 struct ViewportBoxPrimitive {
   std::string id;
@@ -291,6 +310,10 @@ struct ViewportSketchDimensionPrimitive {
   double ref_line_end_x = 0.0;
   double ref_line_end_y = 0.0;
   double ref_line_end_z = 0.0;
+
+  // When true, this is a reference (driven) dimension. The UI renders
+  // it in parentheses like "(35mm)" to distinguish from driving dims.
+  bool driven = false;
 };
 
 struct ViewportSketchConstraintPrimitive {
@@ -466,6 +489,8 @@ struct ViewportState {
   // the corresponding line/circle/polygon/arc/point, with the status
   // string ("under", "full", "over"). Empty vector when unknown.
   std::vector<EntityDofResult> dof_statuses;
+  // Total DOF count from the planegcs solver (-1 if not available).
+  int solver_dofs = -1;
   std::vector<ViewportMeshPrimitive> meshes;
   std::vector<ViewportCutPreview> cut_previews;
   // Available bodies (in document order) that boolean-mode extrudes can

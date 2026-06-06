@@ -20,7 +20,6 @@
 #include "core/document.h"
 #include "core/formula_eval.h"
 #include "core/logger.h"
-#include "core/snap_engine.h"
 #include "core/trim_engine.h"
 #include "core/viewport.h"
 #include "protocol/ipc.h"
@@ -1313,7 +1312,11 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   }
 
   if (command.type == "commit_mirror_preview") {
-    const auto document = document_manager().commit_mirror_preview();
+    bool persistent = false;
+    if (command.payload.contains("persistent")) {
+      persistent = command.payload["persistent"].get<bool>();
+    }
+    const auto document = document_manager().commit_mirror_preview(persistent);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -1357,6 +1360,17 @@ void CadCoreApp::handle_command_line(const std::string& line) {
     const auto document = document_manager().set_sketch_coincident_constraint(
         read_string(command.payload, "point_id"),
         read_string(command.payload, "other_point_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "delete_sketch_coincident_constraint") {
+    const auto document =
+        document_manager().delete_sketch_coincident_constraint(
+            read_string(command.payload, "constraint_id"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
