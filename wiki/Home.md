@@ -37,6 +37,7 @@
 | 📏 **[Dimension Rendering Design](Dimension-Rendering-Design)** | Design rationale and decision record for dimension rendering |
 | 📐 **[Display Units](Display-Units)** | Metric / inch toggle architecture |
 | 📋 **[Contextual Modeling Workflow](Contextual-Modeling-Workflow)** | Binding UX pattern for all modeling features |
+| 🔧 **[CAM Development Plan](CAM-Development)** | CAM workspace: data model, TNP strategy, preview pipeline, v1 operations |
 
 ### 🤖 AI / Agent
 

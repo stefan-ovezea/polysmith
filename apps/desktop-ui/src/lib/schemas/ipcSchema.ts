@@ -696,6 +696,36 @@ const documentStateSchema = z.object({
       error_message: z.string().default(""),
     }),
   ).default([]),
+  cam_setup: z
+    .object({
+      setup_id: z.string(),
+      stock: z.object({
+        width: z.number(), height: z.number(), depth: z.number(),
+        offset_x: z.number(), offset_y: z.number(), offset_z: z.number(),
+      }),
+      wcs_origin: z.object({ x: z.number(), y: z.number(), z: z.number() }),
+      safety_plane_z: z.number(),
+      axis_count: z.number(),
+      wcs_angle: z.number().default(0),
+    })
+    .passthrough()
+    .nullable()
+    .default(null),
+  tool_library: z
+    .array(z.object({
+      tool_id: z.string(), name: z.string(), tool_number: z.number(),
+      diameter: z.number(), flute_length: z.number(), overall_length: z.number(),
+      corner_radius: z.number(), spindle_speed: z.number(), feed_rate: z.number(),
+      stepover: z.number(), stepdown: z.number(), type: z.number(),
+    }))
+    .default([]),
+  cam_operations: z
+    .array(z.object({
+      id: z.string(), name: z.string(), type: z.number(), tool_id: z.string(),
+      body_id: z.string(), face_index: z.number(),
+      face_milling: z.object({ depth: z.number(), stepover: z.number(), angle_deg: z.number() }).optional(),
+    }))
+    .default([]),
 });
 
 const sessionStateSchema = z.object({
@@ -1134,6 +1164,22 @@ const viewportStateSchema = z.object({
         positions: z.array(z.number()),
         normals: z.array(z.number()),
         indices: z.array(z.number()),
+      }),
+    )
+    .default([]),
+  toolpaths: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        points: z.array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            z: z.number(),
+            is_rapid: z.boolean(),
+          }),
+        ),
       }),
     )
     .default([]),

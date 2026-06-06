@@ -57,6 +57,8 @@ import {
   SweepPreviewPanel,
   OffsetPlanePanel,
   SketchFilletPanel,
+  CamSetupPanel,
+  FaceMillingPanel,
   MirrorToolPanel,
   FeatureTimeline,
   LogsWindow,
@@ -66,6 +68,7 @@ import {
   SettingsModal,
   ViewportPanel,
   ProjectsPanel,
+  CamOperationPanel,
 } from "./layout";
 import type { CategoryId } from "./layout";
 import { ArmedSketchConstraint } from "./types";
@@ -126,7 +129,7 @@ function defaultMoveParameters(targetBodyId = ""): MoveFeatureParameters {
 const SHOW_DEBUG_MESSAGE_LOG =
   import.meta.env.VITE_SHOW_DEBUG_MESSAGE_LOG === "true";
 
-type WorkspaceView = "cad" | "slicer";
+type WorkspaceView = "cad" | "slicer" | "cam";
 type SidebarTab = "hierarchy" | "projects";
 type PendingUnsavedAction =
   | { kind: "quit" }
@@ -539,6 +542,39 @@ function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("cad");
   const [slicerStatus, setSlicerStatus] = useState<string | null>(null);
   const [hasOrcaEmbedSession, setHasOrcaEmbedSession] = useState(false);
+  // CAM workspace state
+  const [activeCamOperation, setActiveCamOperation] =
+    useState<import("./layout/header/CamToolbar").CamOperationType | null>(null);
+  const [selectedCamOperationId, setSelectedCamOperationId] = useState<
+    string | null
+  >(null);
+  const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  const [showStock, setShowStock] = useState(true);
+  const [wcsOrientation, setWcsOrientation] = useState<string>("model");
+  // Derived from core document state so the panel stays in sync.
+  const camOperations: import("./layout/CamOperationPanel").CamOperation[] =
+    useMemo(() => {
+      const coreTypeToUiType = (
+        t: number,
+      ): import("./layout/header/CamToolbar").CamOperationType => {
+        // C++ CamOperationType enum: FaceMilling=0, Pocket=1, ...
+        switch (t) {
+          case 0:
+            return "faceMilling";
+          case 1:
+            return "pocket";
+          case 2:
+            return "drill";
+          default:
+            return "profile"; // fallback for unknown ops
+        }
+      };
+      return (document?.cam_operations ?? []).map((op) => ({
+        id: op.id,
+        name: op.name,
+        type: coreTypeToUiType(op.type),
+      }));
+    }, [document?.cam_operations]);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
@@ -900,6 +936,11 @@ function App() {
     clearSelection,
     batchSelectSketchEntities,
     updateSelectionFilter,
+    camSetupCreate,
+    camSetupUpdate,
+    camFaceMillingCreate,
+    camOperationUpdate,
+    camOperationDelete,
   } = useCadCore();
 
   function clearTimelineEditVisibility() {
@@ -4107,6 +4148,10 @@ function App() {
     }
   }
 
+  async function showCamView() {
+    setWorkspaceView("cam");
+  }
+
   async function showSlicerView() {
     setWorkspaceView("slicer");
 
@@ -4563,6 +4608,10 @@ function App() {
           onSetWorkspaceView={(view) => {
             if (view === "cad") {
               void showCadView();
+              return;
+            }
+            if (view === "cam") {
+              void showCamView();
               return;
             }
             void showSlicerView();
@@ -5100,6 +5149,24 @@ function App() {
             setMaterialsPanelOpen((current) => !current);
           }}
           onUpdateSelectionFilter={updateSelectionFilter}
+          activeCamOperation={activeCamOperation}
+          onSelectCamOperation={(op) => {
+            setActiveCamOperation((prev) => (prev === op ? null : op));
+          }}
+          hasCamSetup={document?.cam_setup != null}
+          onCamSetupClick={() => {
+            setIsCamSetupPanelOpen((prev) => !prev);
+          }}
+          onCamFaceMillingClick={() => {
+            console.log("[CAM] Face Milling clicked");
+            const body = viewport?.bodies?.[0];
+            if (!body) { console.log("[CAM] No body found"); return; }
+            console.log("[CAM] Creating face milling on body", body.id);
+            void runAction(async () => {
+              await camFaceMillingCreate(body.id, 0);
+              console.log("[CAM] Face milling done");
+            });
+          }}
         />
 
         <div className="flex min-h-0 min-w-0">
@@ -5123,7 +5190,47 @@ function App() {
             renderSlicerWorkspace()
           ) : (
             <>
-          {isHierarchyCollapsed ? (
+          {workspaceView === "cam" ? (
+            <aside
+              className="cad-sidebar relative min-h-0 flex-shrink-0"
+              style={{ width: hierarchyWidth }}
+            >
+              <CamOperationPanel
+                operations={camOperations}
+                selectedOperationId={selectedCamOperationId}
+                onSelectOperation={setSelectedCamOperationId}
+                onDeleteOperation={(id) => {
+                  void runAction(async () => {
+                    await camOperationDelete(id);
+                    if (selectedCamOperationId === id) {
+                      setSelectedCamOperationId(null);
+                    }
+                  });
+                }}
+              />
+              <div
+                className="cad-sidebar-resizer"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startWidth = hierarchyWidth;
+                  const onMove = (moveEvent: PointerEvent) => {
+                    const next = Math.max(
+                      220,
+                      Math.min(640, startWidth + (moveEvent.clientX - startX)),
+                    );
+                    setHierarchyWidth(next);
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                  };
+                  window.addEventListener("pointermove", onMove);
+                  window.addEventListener("pointerup", onUp);
+                }}
+              />
+            </aside>
+          ) : isHierarchyCollapsed ? (
             <button
               type="button"
               className="cad-sidebar-collapsed"
@@ -5332,6 +5439,8 @@ function App() {
               status={status}
               document={document}
               viewport={viewport}
+              showStock={showStock && workspaceView === "cam"}
+              wcsOrientation={wcsOrientation}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -8531,6 +8640,94 @@ function App() {
                   }}
                 />
               ) : null}
+              {isCamSetupPanelOpen ? (
+                <CamSetupPanel
+                  initialSetup={{
+                    stock: document?.cam_setup?.stock ?? {
+                      width: 120, height: 120, depth: 20,
+                      offset_x: 5, offset_y: 5, offset_z: 5,
+                    },
+                    wcs_origin: document?.cam_setup?.wcs_origin ?? { x: 0, y: 0, z: 0 },
+                    safety_plane_z: document?.cam_setup?.safety_plane_z ?? 10,
+                    wcs_angle: document?.cam_setup?.wcs_angle ?? 0,
+                    orientation_mode: "model",
+                    origin_mode: "model",
+                  }}
+                  bodies={(viewport?.bodies ?? []).map((b) => ({
+                    id: b.id,
+                    label: b.label,
+                    center: b.center,
+                    size: b.size,
+                  }))}
+                  showStock={showStock}
+                  onShowStockChange={setShowStock}
+                  wcsOrientation={wcsOrientation}
+                  onWcsOrientationChange={setWcsOrientation}
+                  disabled={status !== "connected"}
+                  onUpdate={(state) => {
+                    void runAction(async () => {
+                      await camSetupUpdate({
+                        stock: state.stock,
+                        wcs_origin: state.wcs_origin,
+                        safety_plane_z: state.safety_plane_z,
+                        wcs_angle: state.wcs_angle,
+                      });
+                    });
+                  }}
+                  onConfirm={() => {
+                    setIsCamSetupPanelOpen(false);
+                  }}
+                  onCancel={() => {
+                    setIsCamSetupPanelOpen(false);
+                  }}
+                />
+              ) : null}
+              {selectedCamOperationId && document?.cam_operations ? (() => {
+                const op = document.cam_operations.find(
+                  (o) => o.id === selectedCamOperationId && o.type === 0
+                );
+                if (!op) return null;
+                const tools: import("@/layout/FaceMillingPanel").ToolOption[] =
+                  (document.tool_library ?? []).map((t) => ({
+                    tool_id: t.tool_id,
+                    name: t.name,
+                    diameter: t.diameter,
+                  }));
+                return (
+                  <FaceMillingPanel
+                    operationName={op.name}
+                    initialParams={{
+                      depth: op.face_milling?.depth ?? 0.5,
+                      stepover: op.face_milling?.stepover ?? 5,
+                      angle_deg: op.face_milling?.angle_deg ?? 0,
+                    }}
+                    initialToolId={op.tool_id}
+                    tools={tools}
+                    disabled={status !== "connected"}
+                    onUpdate={(params, toolId) => {
+                      void runAction(async () => {
+                        await camOperationUpdate({
+                          operation_id: op.id,
+                          tool_id: toolId,
+                          params,
+                        });
+                      });
+                    }}
+                    onDelete={() => {
+                      void runAction(async () => {
+                        await camOperationDelete(op.id);
+                        setSelectedCamOperationId(null);
+                      });
+                    }}
+                    onConfirm={() => {
+                      setSelectedCamOperationId(null);
+                    }}
+                    onCancel={() => {
+                      setSelectedCamOperationId(null);
+                    }}
+                  />
+                );
+              })() : null}
               {pendingSketchDeleteConfirmation ? (
                 <section className="pointer-events-auto cad-floating-panel px-5 py-5">
                   <div className="flex items-start gap-3">

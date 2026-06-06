@@ -7,11 +7,18 @@ import { SketchToolbar } from "./SketchToolbar";
 import { CreateToolbar } from "./CreateToolbar";
 import { ModifyToolbar } from "./ModifyToolbar";
 import { ConstructToolbar } from "./ConstructToolbar";
+import { CamToolbar, type CamOperationType } from "./CamToolbar";
+import { CamMillingToolbar } from "./CamMillingToolbar";
+import { CamTurningToolbar } from "./CamTurningToolbar";
+import { CamPrintingToolbar } from "./CamPrintingToolbar";
+import { CamCuttingToolbar } from "./CamCuttingToolbar";
 import { ParametersPanel } from "../ParametersPanel";
 import { SelectionFilterPanel, readStoredFilter, writeStoredFilter } from "../SelectionFilterPanel";
 
 const workspaces = ["create", "modify", "construct", "sketch"] as const;
-type WorkspaceView = "cad" | "slicer";
+const camWorkspaces = ["milling", "turning", "printing", "cutting"] as const;
+type CamWorkspace = (typeof camWorkspaces)[number];
+type WorkspaceView = "cad" | "slicer" | "cam";
 
 interface MenuDropdownItem {
   label: string;
@@ -352,6 +359,12 @@ interface AppHeaderProps {
     magnetic_pull?: boolean;
     tolerance_px?: number;
   }) => Promise<void>;
+  // CAM workspace
+  activeCamOperation: CamOperationType | null;
+  onSelectCamOperation: (op: CamOperationType) => void;
+  hasCamSetup: boolean;
+  onCamSetupClick: () => void;
+  onCamFaceMillingClick: () => void;
 }
 
 export function AppHeader({
@@ -443,6 +456,11 @@ export function AppHeader({
   materialsPanelOpen,
   onToggleMaterialsPanel,
   onUpdateSelectionFilter,
+  activeCamOperation,
+  onSelectCamOperation,
+  hasCamSetup,
+  onCamSetupClick,
+  onCamFaceMillingClick,
 }: AppHeaderProps) {
   const { t: _t } = useTranslation();
   // Keep the main navigation bar in English regardless of the locale
@@ -457,6 +475,8 @@ export function AppHeader({
   const { config, updateConfig } = useAppConfig();
   const [activeCadWorkspace, setActiveCadWorkspace] =
     useState<(typeof workspaces)[number]>("create");
+  const [activeCamWorkspace, setActiveCamWorkspace] =
+    useState<CamWorkspace>("milling");
   const [openMenu, setOpenMenu] = useState<"box" | "cylinder" | null>(null);
 
   useEffect(() => {
@@ -478,12 +498,18 @@ export function AppHeader({
             label={
               workspaceView === "cad"
                 ? t("workspace.cad")
-                : t("workspace.slicer")
+                : workspaceView === "cam"
+                  ? t("workspace.cam")
+                  : t("workspace.slicer")
             }
             items={[
               {
                 label: t("workspace.cad"),
                 onSelect: () => onSetWorkspaceView("cad"),
+              },
+              {
+                label: t("workspace.cam"),
+                onSelect: () => onSetWorkspaceView("cam"),
               },
               {
                 label: t("workspace.slicer"),
@@ -508,6 +534,25 @@ export function AppHeader({
                   }}
                 >
                   {t(`header.workspace.${workspace}`)}
+                </button>
+              ))}
+            </nav>
+          ) : null}
+          {workspaceView === "cam" ? (
+            <nav className="flex items-center gap-1 rounded-full p-0.5 cad-subtle-block">
+              {camWorkspaces.map((workspace) => (
+                <button
+                  key={workspace}
+                  className={
+                    activeCamWorkspace === workspace
+                      ? "cad-ribbon-tab cad-ribbon-tab-active"
+                      : "cad-ribbon-tab"
+                  }
+                  onClick={() => {
+                    setActiveCamWorkspace(workspace);
+                  }}
+                >
+                  {t(`cam.category.${workspace}`)}
                 </button>
               ))}
             </nav>
@@ -794,6 +839,26 @@ export function AppHeader({
               {t("workspace.exportToSlicer")}
             </button>
           ) : null}
+        </div>
+      ) : workspaceView === "cam" ? (
+        <div
+          className="flex items-center justify-between gap-3 px-4 py-1"
+          style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
+        >
+          {activeCamWorkspace === "milling" ? (
+            <CamMillingToolbar
+              disabled={disabled}
+              hasSetup={hasCamSetup}
+              onSetupClick={onCamSetupClick}
+              onFaceMillingClick={onCamFaceMillingClick}
+            />
+          ) : activeCamWorkspace === "turning" ? (
+            <CamTurningToolbar disabled={disabled} />
+          ) : activeCamWorkspace === "printing" ? (
+            <CamPrintingToolbar disabled={disabled} />
+          ) : (
+            <CamCuttingToolbar disabled={disabled} />
+          )}
         </div>
       ) : null}
     </header>

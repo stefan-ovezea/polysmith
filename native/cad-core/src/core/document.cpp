@@ -8092,4 +8092,95 @@ SessionState DocumentManager::get_session_state() const {
   };
 }
 
+// ── CAM Setup ──────────────────────────────────────────────────
+
+DocumentState DocumentManager::cam_setup_create(const CamSetup& setup) {
+  require_document();
+  document_->cam_setup = setup;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+std::optional<CamSetup> DocumentManager::cam_setup_get() const {
+  if (!document_.has_value()) return std::nullopt;
+  return document_->cam_setup;
+}
+
+DocumentState DocumentManager::cam_setup_update(const CamSetup& setup) {
+  require_document();
+  document_->cam_setup = setup;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+// ── CAM Tool Library ───────────────────────────────────────────
+
+DocumentState DocumentManager::cam_tool_add(const CamToolDefinition& tool) {
+  require_document();
+  document_->tool_library.push_back(tool);
+  return document_.value();
+}
+
+DocumentState DocumentManager::cam_tool_update(const std::string& toolId,
+                                                const CamToolDefinition& tool) {
+  require_document();
+  for (auto& t : document_->tool_library) {
+    if (t.id == toolId) {
+      t = tool;
+      break;
+    }
+  }
+  return document_.value();
+}
+
+DocumentState DocumentManager::cam_tool_delete(const std::string& toolId) {
+  require_document();
+  auto& tools = document_->tool_library;
+  tools.erase(std::remove_if(tools.begin(), tools.end(),
+                             [&](const CamToolDefinition& t) { return t.id == toolId; }),
+              tools.end());
+  return document_.value();
+}
+
+std::vector<CamToolDefinition> DocumentManager::cam_tool_list() const {
+  if (!document_.has_value()) return {};
+  return document_->tool_library;
+}
+
+// ── CAM Operations ─────────────────────────────────────────────
+
+DocumentState DocumentManager::cam_operation_add(const CamOperationEntry& op) {
+  require_document();
+  document_->cam_operations.push_back(op);
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::cam_operation_update(
+    const std::string& operation_id, const CamOperationEntry& updated) {
+  require_document();
+  for (auto& op : document_->cam_operations) {
+    if (op.id == operation_id) {
+      // Preserve TNP witness data, update user-editable fields.
+      op.name = updated.name;
+      op.toolId = updated.toolId;
+      op.faceMilling = updated.faceMilling;
+      bump_geometry_revision();
+      return document_.value();
+    }
+  }
+  return document_.value();
+}
+
+DocumentState DocumentManager::cam_operation_delete(const std::string& operation_id) {
+  require_document();
+  auto& ops = document_->cam_operations;
+  ops.erase(
+      std::remove_if(ops.begin(), ops.end(),
+                     [&](const CamOperationEntry& op) { return op.id == operation_id; }),
+      ops.end());
+  bump_geometry_revision();
+  return document_.value();
+}
+
 }  // namespace polysmith::core

@@ -92,14 +92,19 @@ import {
   clearCubeHover,
   applyCubeDragOrbit,
   disposeViewCubeGroup,
+  createCubeRenderTarget,
+  resizeCubeRenderTarget,
+  createCubeBlitScene,
+  updateCubeBlitMesh,
+  disposeCubeBlitScene,
   lineLineIntersectionTrim,
   lineCircleIntersectionTrim,
 } from "@/utils";
+import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { sendCoreCommand } from "@/lib/cadCoreClient";
 import { makeGetViewportStateCommand, makeTrimPreviewCommand } from "@/lib/ipcProtocol";
 import { useCadCoreStore } from "@/state/cadCoreStore";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
-import type { ViewCubeHit } from "@/utils";
 
 type DynamicGridRef = {
   key: string;
@@ -294,6 +299,8 @@ interface ViewportPanelProps {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
   document: DocumentState | null;
   viewport: ViewportState | null;
+  showStock?: boolean;
+  wcsOrientation?: string;
   onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
@@ -1195,6 +1202,8 @@ export function ViewportPanel({
   status,
   document,
   viewport,
+  showStock = true,
+  wcsOrientation = "model",
   onSnapshotCaptureReady,
   onSelectPrimitive,
   onSelectReference,
@@ -1397,6 +1406,8 @@ export function ViewportPanel({
   const viewCubeSceneRef = useRef<THREE.Scene | null>(null);
   const viewCubeCameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const viewCubeRaycasterRef = useRef<THREE.Raycaster | null>(null);
+  const cubeRenderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const cubeBlitSceneRef = useRef<CubeBlitScene | null>(null);
   const viewCubeHoveredRef = useRef<ViewCubeHit>(null);
   const viewCubeAnimatingRef = useRef(false);
   const viewCubeAnimStartRef = useRef(0);
@@ -1478,6 +1489,7 @@ const currentGridSpacingRef = useRef(10);
   // Translucent red overlay meshes for in-progress cut extrudes. Built
   // from `cut_previews` and rendered without participating in raycasts.
   const cutPreviewObjectsRef = useRef<THREE.Mesh[]>([]);
+  const toolpathLinesRef = useRef<THREE.Line[]>([]);
   const moveGizmoObjectsRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoDragRef = useRef<MoveGizmoDragState | null>(null);
   const moveGizmoRef = useRef<MoveGizmoDescriptor | null>(moveGizmo);
@@ -6247,6 +6259,12 @@ const currentGridSpacingRef = useRef(10);
     viewCubeCameraRef.current = cubeCamera;
     viewCubeRaycasterRef.current = cubeRaycaster;
 
+    // Render-target-based cube rendering (no scissor test)
+    const cubeTarget = createCubeRenderTarget(renderer);
+    const blitScene = createCubeBlitScene(cubeTarget);
+    cubeRenderTargetRef.current = cubeTarget;
+    cubeBlitSceneRef.current = blitScene;
+
     function ensureDynamicGrid(
       ref: MutableRefObject<DynamicGridRef | null>,
       key: string,
@@ -7151,7 +7169,9 @@ const currentGridSpacingRef = useRef(10);
       const cubeGroup = viewCubeGroupRef.current;
       const cubeScene = viewCubeSceneRef.current;
       const cubeCam = viewCubeCameraRef.current;
-      if (!cubeGroup || !cubeScene || !cubeCam) return;
+      const cubeTarget = cubeRenderTargetRef.current;
+      const blit = cubeBlitSceneRef.current;
+      if (!cubeGroup || !cubeScene || !cubeCam || !cubeTarget || !blit) return;
 
       // Sync cube camera to main view direction
       syncCubeCamera(camera, controls.target, cubeCam);
@@ -7179,28 +7199,28 @@ const currentGridSpacingRef = useRef(10);
         }
       }
 
+      // Resize render target if DPR changed (e.g. window moved across monitors)
       const dpr = renderer.getPixelRatio();
-      const w = renderer.domElement.width;
-      const h = renderer.domElement.height;
-      const rect = getCubeViewportRect(w, h, dpr);
+      resizeCubeRenderTarget(cubeTarget, dpr);
 
-      const oldAutoClear = renderer.autoClear;
-      const oldViewport = new THREE.Vector4();
-      const oldScissor = new THREE.Vector4();
-      renderer.getViewport(oldViewport);
-      renderer.getScissor(oldScissor);
-
-      renderer.autoClear = false;
-      renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
-      renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
-      renderer.setScissorTest(true);
-      renderer.clear(true, true, false);
+      // 1. Render cube to offscreen target
+      const oldTarget = renderer.getRenderTarget();
+      renderer.setRenderTarget(cubeTarget);
       renderer.render(cubeScene, cubeCam);
 
-      renderer.setViewport(oldViewport);
-      renderer.setScissor(oldScissor);
-      renderer.setScissorTest(false);
+      // 2. Blit target texture to screen corner via NDC-plane scene
+      renderer.setRenderTarget(null);
+      const w = renderer.domElement.width / dpr;
+      const h = renderer.domElement.height / dpr;
+      updateCubeBlitMesh(blit.mesh, w, h);
+
+      const oldAutoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.render(blit.scene, blit.camera);
       renderer.autoClear = oldAutoClear;
+
+      // Restore
+      renderer.setRenderTarget(oldTarget);
     }
 
     function pickVisibleSketchLineScreenSpace(
@@ -11119,6 +11139,14 @@ const currentGridSpacingRef = useRef(10);
       viewCubeSceneRef.current = null;
       viewCubeCameraRef.current = null;
       viewCubeRaycasterRef.current = null;
+      if (cubeBlitSceneRef.current) {
+        disposeCubeBlitScene(cubeBlitSceneRef.current);
+        cubeBlitSceneRef.current = null;
+      }
+      if (cubeRenderTargetRef.current) {
+        cubeRenderTargetRef.current.dispose();
+        cubeRenderTargetRef.current = null;
+      }
       renderer.dispose();
       disposeDynamicGrid(worldGridRef.current);
       disposeDynamicGrid(sketchGridRef.current);
@@ -11150,6 +11178,7 @@ const currentGridSpacingRef = useRef(10);
       edgeLineObjectsRef.current = [];
       vertexObjectsRef.current = [];
       cutPreviewObjectsRef.current = [];
+      toolpathLinesRef.current = [];
       moveGizmoObjectsRef.current = [];
       moveGizmoDragRef.current = null;
       worldGridRef.current = null;
@@ -11326,6 +11355,7 @@ const currentGridSpacingRef = useRef(10);
     edgeLineObjectsRef.current = [];
     vertexObjectsRef.current = [];
     cutPreviewObjectsRef.current = [];
+    toolpathLinesRef.current = [];
     moveGizmoObjectsRef.current = [];
     // Hovered ids reference disposed THREE objects after a rebuild;
     // null them out so the next pointermove cleanly re-applies hover.
@@ -11388,6 +11418,97 @@ const currentGridSpacingRef = useRef(10);
       }
     }
 
+    // ── CAM WCS origin marker ─────────────────────────────────────
+    if (document?.cam_setup) {
+      const wcs = document.cam_setup.wcs_origin;
+      const origin = new THREE.Vector3(wcs.x, wcs.y, wcs.z);
+      const axisLen = 20;
+      const makeAxis = (dir: THREE.Vector3, color: number) => {
+        const end = origin.clone().add(dir.clone().multiplyScalar(axisLen));
+        const geom = new THREE.BufferGeometry().setFromPoints([origin, end]);
+        const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, depthTest: false, depthWrite: false, transparent: true, opacity: 0.9 });
+        const line = new THREE.Line(geom, mat);
+        line.renderOrder = 1;
+        referenceGroup.add(line);
+      };
+      // Orientation presets
+      let xAxis = new THREE.Vector3(1, 0, 0);
+      let yAxis = new THREE.Vector3(0, 1, 0);
+      let zAxis = new THREE.Vector3(0, 0, 1);
+      if (wcsOrientation === "z_up") {
+        // Tool axis Z points up (CAD Y direction)
+        xAxis.set(1, 0, 0);
+        yAxis.set(0, 0, -1);
+        zAxis.set(0, 1, 0);
+      } else if (wcsOrientation === "y_up") {
+        // Y is up, Z points down
+        xAxis.set(1, 0, 0);
+        yAxis.set(0, 1, 0);
+        zAxis.set(0, 0, -1);
+      }
+      makeAxis(xAxis, 0xff4444);  // X red
+      makeAxis(yAxis, 0x44ff44);  // Y green
+      makeAxis(zAxis, 0x4488ff);  // Z blue
+
+      // ── Stock bounding box (translucent, centered on model) ────
+      if (showStock && document.cam_setup.stock) {
+      const stock = document.cam_setup.stock;
+      const stockW = stock.width + stock.offset_x * 2;
+      const stockH = stock.height + stock.offset_y * 2;
+      const stockD = stock.depth + stock.offset_z * 2;
+
+      // Compute model centre from body bounding boxes (C++ bounds use max/2,
+      // which breaks for offset geometry).
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const body of (viewport?.bodies ?? [])) {
+        const hw = body.size.x / 2, hh = body.size.y / 2, hd = body.size.z / 2;
+        minX = Math.min(minX, body.center.x - hw);
+        maxX = Math.max(maxX, body.center.x + hw);
+        minY = Math.min(minY, body.center.y - hh);
+        maxY = Math.max(maxY, body.center.y + hh);
+        minZ = Math.min(minZ, body.center.z - hd);
+        maxZ = Math.max(maxZ, body.center.z + hd);
+      }
+      const modelCenter = new THREE.Vector3(
+        Number.isFinite(minX) ? (minX + maxX) / 2 : 0,
+        Number.isFinite(minY) ? (minY + maxY) / 2 : 0,
+        Number.isFinite(minZ) ? (minZ + maxZ) / 2 : 0,
+      );
+      // CAD axes: X=width, Y=height(up), Z=depth
+      // Three.js BoxGeometry(width_x, height_y, depth_z)
+      const stockBox = new THREE.BoxGeometry(stockW, stockH, stockD);
+      const stockMesh = new THREE.Mesh(
+        stockBox,
+        new THREE.MeshBasicMaterial({
+          color: 0x4488ff,
+          transparent: true,
+          opacity: 0.15,
+          depthTest: true,
+          depthWrite: false,
+        }),
+      );
+      stockMesh.position.copy(modelCenter);
+      stockMesh.renderOrder = 0;
+      referenceGroup.add(stockMesh);
+
+      // Wireframe edges so the box is readable at any angle
+      const stockEdges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(stockBox),
+        new THREE.LineBasicMaterial({
+          color: 0x4488ff,
+          transparent: true,
+          opacity: 0.35,
+          depthTest: true,
+          depthWrite: false,
+        }),
+      );
+      stockEdges.position.copy(modelCenter);
+      stockEdges.renderOrder = 2;
+      referenceGroup.add(stockEdges);
+      }
+    }
+
     for (const face of sceneData.solidFaces) {
       const faceObject = buildSolidFaceObject(face);
       faceMeshesRef.current.push(faceObject.mesh);
@@ -11409,6 +11530,34 @@ const currentGridSpacingRef = useRef(10);
       const cutPreviewMesh = buildCutPreviewObject(preview);
       cutPreviewObjectsRef.current.push(cutPreviewMesh);
       contentGroup.add(cutPreviewMesh);
+    }
+
+    // ── CAM toolpath lines ──────────────────────────────────────
+    // Rapid moves (G0): red, semi-transparent. Feed moves (G1): green.
+    toolpathLinesRef.current = [];
+    for (const tp of viewport?.toolpaths ?? []) {
+      for (let i = 1; i < tp.points.length; i++) {
+        const prev = tp.points[i - 1];
+        const curr = tp.points[i];
+        const isRapid = curr.is_rapid;
+        const geometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(prev.x, prev.y, prev.z),
+          new THREE.Vector3(curr.x, curr.y, curr.z),
+        ]);
+        const material = new THREE.LineBasicMaterial({
+          color: isRapid ? 0xff4444 : 0x44ff44,
+          transparent: true,
+          opacity: isRapid ? 0.5 : 0.85,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const line = new THREE.Line(geometry, material);
+        line.renderOrder = 10; // above edges (5–6) and sketch (7–8)
+        line.userData.toolpathId = tp.id;
+        line.userData.isRapid = isRapid;
+        toolpathLinesRef.current.push(line);
+        contentGroup.add(line);
+      }
     }
 
     if (moveGizmo && !moveGizmo.disabled) {
@@ -11590,7 +11739,7 @@ const currentGridSpacingRef = useRef(10);
 
       lastGeometryKeyRef.current = sceneData.geometryKey;
     }
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, wcsOrientation]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

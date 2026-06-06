@@ -142,6 +142,7 @@ export function buildViewCubeGroup(): THREE.Group {
   const arrowMutedColor = viewCubeColor("--cad-viewcube-arrow-muted", "#5d6d70");
 
   // -- faces ----------------------------------------------------------------
+  // Labels follow mechanical CAD convention: +Z = TOP, -Y = FRONT.
   const faceConfigs: Array<{
     face: CubeFace;
     label: string;
@@ -165,28 +166,28 @@ export function buildViewCubeGroup(): THREE.Group {
     },
     {
       face: "TOP",
-      label: "TOP",
+      label: "BACK",
       position: [0, FACE_OFFSET, 0],
       rotation: [-Math.PI / 2, 0, 0],
       color: colors.TOP,
     },
     {
       face: "BOTTOM",
-      label: "BOTTOM",
+      label: "FRONT",
       position: [0, -FACE_OFFSET, 0],
       rotation: [Math.PI / 2, 0, 0],
       color: colors.BOTTOM,
     },
     {
       face: "FRONT",
-      label: "FRONT",
+      label: "TOP",
       position: [0, 0, FACE_OFFSET],
       rotation: [0, 0, 0],
       color: colors.FRONT,
     },
     {
       face: "BACK",
-      label: "BACK",
+      label: "BOTTOM",
       position: [0, 0, -FACE_OFFSET],
       rotation: [0, Math.PI, 0],
       color: colors.BACK,
@@ -753,4 +754,85 @@ export function disposeViewCubeGroup(group: THREE.Group): void {
     }
   });
   group.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Render-target-based cube rendering (avoids scissor-test GPU dependency)
+// ---------------------------------------------------------------------------
+// On some Windows ANGLE backends the scissor test behaves differently or
+// fails silently. Instead, render the cube to an offscreen target and blit
+// the result to the corner with a textured NDC-space plane — no scissor.
+
+export function createCubeRenderTarget(
+  renderer: THREE.WebGLRenderer,
+): THREE.WebGLRenderTarget {
+  const dpr = renderer.getPixelRatio();
+  const size = Math.round(CUBE_VIEWPORT_SIZE * dpr);
+  return new THREE.WebGLRenderTarget(size, size, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+  });
+}
+
+export function resizeCubeRenderTarget(
+  target: THREE.WebGLRenderTarget,
+  dpr: number,
+): void {
+  const size = Math.round(CUBE_VIEWPORT_SIZE * dpr);
+  if (target.width !== size || target.height !== size) {
+    target.setSize(size, size);
+  }
+}
+
+export interface CubeBlitScene {
+  scene: THREE.Scene;
+  camera: THREE.OrthographicCamera;
+  mesh: THREE.Mesh;
+}
+
+export function createCubeBlitScene(
+  renderTarget: THREE.WebGLRenderTarget,
+): CubeBlitScene {
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    map: renderTarget.texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 999;
+  scene.add(mesh);
+
+  return { scene, camera, mesh };
+}
+
+export function updateCubeBlitMesh(
+  mesh: THREE.Mesh,
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  const sizeCSS = CUBE_VIEWPORT_SIZE;
+  const marginCSS = CUBE_VIEWPORT_MARGIN;
+
+  // Non-uniform NDC scale so the plane renders as a square in CSS pixels.
+  const ndcScaleX = (2 * sizeCSS) / canvasWidth;
+  const ndcScaleY = (2 * sizeCSS) / canvasHeight;
+  mesh.scale.set(ndcScaleX, ndcScaleY, 1);
+
+  // Center position in NDC: top-right corner, inset by margin.
+  mesh.position.set(
+    1 - (2 * (marginCSS + sizeCSS / 2)) / canvasWidth,
+    1 - (2 * (marginCSS + sizeCSS / 2)) / canvasHeight,
+    0,
+  );
+}
+
+export function disposeCubeBlitScene(blit: CubeBlitScene): void {
+  (blit.mesh.material as THREE.MeshBasicMaterial).dispose();
+  blit.mesh.geometry.dispose();
 }

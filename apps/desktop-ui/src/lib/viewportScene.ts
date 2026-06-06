@@ -1122,6 +1122,12 @@ export function createViewportScene(
             `sketch-profile:${profile.profileId}:${profile.profileKind}:${profile.planeId}:${profile.profilePoints.map((point) => point.join(":")).join("|")}:${profile.innerLoops.map((loop) => loop.map((point) => point.join(":")).join(",")).join(";")}:${profile.start.join(":")}:${profile.width}:${profile.height}:${profile.radius}:${profile.isSelected}`,
         ),
       )
+      .concat(
+        (viewport.toolpaths ?? []).map(
+          (tp) =>
+            `toolpath:${tp.id}:${tp.points.length}:${tp.points.map((p) => `${p.x}:${p.y}:${p.z}:${p.is_rapid ? "r" : "f"}`).slice(0, 10).join(",")}`,
+        ),
+      )
       .join("|"),
   };
 }

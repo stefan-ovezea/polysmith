@@ -51,6 +51,37 @@ export interface DocumentState {
   feature_history: FeatureEntry[];
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
+  cam_setup: {
+    setup_id: string;
+    stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
+    wcs_origin: { x: number; y: number; z: number };
+    safety_plane_z: number;
+    axis_count: number;
+    wcs_angle: number;
+  } | null;
+  tool_library: Array<{
+    tool_id: string;
+    name: string;
+    tool_number: number;
+    diameter: number;
+    flute_length: number;
+    overall_length: number;
+    corner_radius: number;
+    spindle_speed: number;
+    feed_rate: number;
+    stepover: number;
+    stepdown: number;
+    type: number;
+  }>;
+  cam_operations: Array<{
+    id: string;
+    name: string;
+    type: number;
+    tool_id: string;
+    body_id: string;
+    face_index: number;
+    face_milling?: { depth: number; stepover: number; angle_deg: number };
+  }>;
 }
 
 export interface DocumentAppearance {
@@ -83,6 +114,19 @@ export interface SnapCandidateEntry {
   label: string;
 }
 
+export interface ViewportToolpathPoint {
+  x: number;
+  y: number;
+  z: number;
+  is_rapid: boolean;
+}
+
+export interface ViewportToolpathPrimitive {
+  id: string;
+  label: string;
+  points: ViewportToolpathPoint[];
+}
+
 export interface ViewportState {
   has_active_document: boolean;
   boxes: ViewportBoxPrimitive[];
@@ -106,6 +150,7 @@ export interface ViewportState {
   bodies: ViewportBodySummary[];
   edges: ViewportEdgePrimitive[];
   vertices: ViewportVertexPrimitive[];
+  toolpaths: ViewportToolpathPrimitive[];
   scene_width: number;
   scene_height: number;
   scene_depth: number;
