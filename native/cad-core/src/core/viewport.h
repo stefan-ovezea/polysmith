@@ -310,6 +310,10 @@ struct ViewportSketchDimensionPrimitive {
   double ref_line_end_x = 0.0;
   double ref_line_end_y = 0.0;
   double ref_line_end_z = 0.0;
+
+  // When true, this is a reference (driven) dimension. The UI renders
+  // it in parentheses like "(35mm)" to distinguish from driving dims.
+  bool driven = false;
 };
 
 struct ViewportSketchConstraintPrimitive {
@@ -472,6 +476,8 @@ struct ViewportState {
   // the corresponding line/circle/polygon/arc/point, with the status
   // string ("under", "full", "over"). Empty vector when unknown.
   std::vector<EntityDofResult> dof_statuses;
+  // Total DOF count from the planegcs solver (-1 if not available).
+  int solver_dofs = -1;
   std::vector<ViewportMeshPrimitive> meshes;
   std::vector<ViewportCutPreview> cut_previews;
   // Available bodies (in document order) that boolean-mode extrudes can

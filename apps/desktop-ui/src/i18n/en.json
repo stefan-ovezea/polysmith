@@ -380,6 +380,7 @@
       "clickToSelect": "Click to select...",
       "instructions": "Pick objects to reflect, then a line as the mirror axis.",
       "objects": "Objects",
+      "persistent": "Keep mirror linked (source changes → mirror updates)",
       "preview": "Preview: {{count}} {{entityLabel}}",
       "selected": "{{count}} selected",
       "title": "Mirror"

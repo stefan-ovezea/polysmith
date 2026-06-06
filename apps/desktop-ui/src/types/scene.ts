@@ -282,6 +282,10 @@ export interface SketchDimensionScene {
   // Reference line (from C++ core, for angle/line_angle kinds)
   refLineStart?: [number, number, number];
   refLineEnd?: [number, number, number];
+
+  // When true, this is a reference (driven) dimension — the UI renders
+  // it in parentheses like "(35mm)".
+  driven?: boolean;
 }
 
 export interface SketchConstraintScene {

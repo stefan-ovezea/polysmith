@@ -757,8 +757,8 @@ export function useCadCore() {
       await sendCoreCommand(makeUpdateMirrorPreviewObjectsCommand(objectIds));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    commitMirrorPreview: async () => {
-      await sendCoreCommand(makeCommitMirrorPreviewCommand());
+    commitMirrorPreview: async (persistent: boolean = false) => {
+      await sendCoreCommand(makeCommitMirrorPreviewCommand(persistent));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     cancelMirrorPreview: async () => {

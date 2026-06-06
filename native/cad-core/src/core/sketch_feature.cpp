@@ -11,12 +11,19 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/constraint_solver.h"
 #include "core/formula_eval.h"
 #include "core/inference_engine.h"
 #include "core/sketch_profile.h"
 #include "core/trim_engine.h"
 
 namespace polysmith::core {
+
+// Forward declaration — defined later but used in refresh_mirror pass.
+std::pair<double, double> reflect_point_across_line(double px, double py,
+                                                     double ax, double ay,
+                                                     double bx, double by);
+
 namespace {
 
 constexpr double kMinimumSketchDimensionValue = 0.001;
@@ -1926,6 +1933,32 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // midpoint before rebuilding the points list. The cascade may
   // shift other line endpoints which `rebuild_sketch_points` then
   // mirrors into the points vector.
+
+  // --- planegcs constraint solver ---
+  // Solve the geometric constraint system before running ad-hoc
+  // enforce functions. If the solver succeeds, enforce functions
+  // will see already-correct geometry and be no-ops. On failure,
+  // the enforce functions provide a fallback.
+  if (!feature.sketch_parameters->constraints.empty() ||
+      !feature.sketch_parameters->line_relations.empty()) {
+    ConstraintSolver solver;
+    solver.build(*feature.sketch_parameters);
+    auto result = solver.solve();
+    if (result.ok()) {
+      solver.apply(*feature.sketch_parameters);
+    }
+    feature.sketch_parameters->solver_dofs = result.dofs;
+    if (!result.ok()) {
+      fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
+              static_cast<int>(result.status), result.dofs,
+              result.conflicting.size(), result.redundant.size());
+    }
+  }
+
+  // Anchor enforcement runs here — after the solver but before
+  // constraint enforcement. Constraint enforcement (H/V, relations)
+  // may need to adjust lines whose endpoints were moved by anchors,
+  // so anchors must run first.
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
@@ -1938,11 +1971,13 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_all_perpendicular_relations(*feature.sketch_parameters);
   enforce_all_parallel_relations(*feature.sketch_parameters);
 
-  // Fillets must run *after* the anchor / tangent passes (so they
-  // see the latest line endpoints) and *before* `rebuild_sketch_points`
-  // (which pulls cached coords off lines and arcs into the points
-  // vector — we want it to see the fillet-corrected values).
+  // Fillets must run *after* the tangent passes (so they see the
+  // latest line endpoints) and *before* `rebuild_sketch_points`.
   enforce_sketch_fillets(*feature.sketch_parameters);
+
+  // Sync auto-dimensions after solver and enforce passes so displayed
+  // values always match the actual geometry.
+  sync_all_line_dimensions(*feature.sketch_parameters);
 
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.
@@ -1954,6 +1989,68 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // different coords for the same shared endpoint, causing orphaned
   // spheres and visual divergence.
   reconcile_shared_point_positions(*feature.sketch_parameters);
+
+  // Refresh persistent mirror relations: re-reflect source entities
+  // across their axis lines and update the mirror entity positions.
+  // Also mark mirrored entity dimensions as driven so the user can't
+  // edit them directly — they always follow the source.
+  for (const auto& rel : feature.sketch_parameters->mirror_relations) {
+    // Find the axis line.
+    const auto axis_it = std::find_if(
+        feature.sketch_parameters->lines.begin(),
+        feature.sketch_parameters->lines.end(),
+        [&](const SketchLine& l) { return l.id == rel.axis_line_id; });
+    if (axis_it == feature.sketch_parameters->lines.end()) continue;
+    const double ax = axis_it->start_x, ay = axis_it->start_y;
+    const double bx = axis_it->end_x, by = axis_it->end_y;
+
+    // Reflect a line source.
+    auto line_src = std::find_if(
+        feature.sketch_parameters->lines.begin(),
+        feature.sketch_parameters->lines.end(),
+        [&](const SketchLine& l) { return l.id == rel.source_id; });
+    auto line_dst = std::find_if(
+        feature.sketch_parameters->lines.begin(),
+        feature.sketch_parameters->lines.end(),
+        [&](const SketchLine& l) { return l.id == rel.mirror_id; });
+    if (line_src != feature.sketch_parameters->lines.end() &&
+        line_dst != feature.sketch_parameters->lines.end()) {
+      const auto reflected_start = reflect_point_across_line(
+          line_src->start_x, line_src->start_y, ax, ay, bx, by);
+      const auto reflected_end = reflect_point_across_line(
+          line_src->end_x, line_src->end_y, ax, ay, bx, by);
+      line_dst->start_x = reflected_start.first;
+      line_dst->start_y = reflected_start.second;
+      line_dst->end_x = reflected_end.first;
+      line_dst->end_y = reflected_end.second;
+    }
+
+    // Reflect a circle source.
+    auto circle_src = std::find_if(
+        feature.sketch_parameters->circles.begin(),
+        feature.sketch_parameters->circles.end(),
+        [&](const SketchCircle& c) { return c.id == rel.source_id; });
+    auto circle_dst = std::find_if(
+        feature.sketch_parameters->circles.begin(),
+        feature.sketch_parameters->circles.end(),
+        [&](const SketchCircle& c) { return c.id == rel.mirror_id; });
+    if (circle_src != feature.sketch_parameters->circles.end() &&
+        circle_dst != feature.sketch_parameters->circles.end()) {
+      const auto reflected_center = reflect_point_across_line(
+          circle_src->center_x, circle_src->center_y, ax, ay, bx, by);
+      circle_dst->center_x = reflected_center.first;
+      circle_dst->center_y = reflected_center.second;
+      circle_dst->radius = circle_src->radius;
+    }
+
+    // Mark all dimensions on the mirror entity as driven so edits
+    // are rejected — the value always comes from the source.
+    for (auto& dim : feature.sketch_parameters->dimensions) {
+      if (dim.entity_id == rel.mirror_id) {
+        dim.driven = true;
+      }
+    }
+  }
 
   const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
   rebuild_sketch_points(*feature.sketch_parameters);
@@ -2661,6 +2758,30 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
     }
   }
 
+  refresh_sketch_derived_state(feature);
+}
+
+void delete_sketch_mirror_relation(FeatureEntry& feature,
+                                    const std::string& relation_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can delete mirror relations");
+  }
+  auto& parameters = feature.sketch_parameters.value();
+
+  // Find the relation.
+  const auto it = std::find_if(
+      parameters.mirror_relations.begin(), parameters.mirror_relations.end(),
+      [&](const SketchMirrorRelation& rel) { return rel.id == relation_id; });
+  if (it == parameters.mirror_relations.end()) return;
+
+  // Un-mark the mirrored entity's dimensions as driven.
+  for (auto& dim : parameters.dimensions) {
+    if (dim.entity_id == it->mirror_id) {
+      dim.driven = false;
+    }
+  }
+
+  parameters.mirror_relations.erase(it);
   refresh_sketch_derived_state(feature);
 }
 
@@ -3511,6 +3632,7 @@ void add_sketch_line(FeatureEntry& feature,
         .value = std::atan2(line.end_y - line.start_y,
                             line.end_x - line.start_x),
         .driven = constrained_axis,
+        .is_auto = true,
     });
   }
   if (!is_construction) {
@@ -3564,6 +3686,7 @@ void set_sketch_line_construction(FeatureEntry& feature,
           .kind = "line_length",
           .entity_id = line.id,
           .value = measure_line_length(line),
+          .is_auto = true,
       });
     }
     if (auto_angle_dim_it == parameters.dimensions.end()) {
@@ -3578,6 +3701,7 @@ void set_sketch_line_construction(FeatureEntry& feature,
           .value = std::atan2(line.end_y - line.start_y,
                               line.end_x - line.start_x),
           .driven = constrained_axis,
+          .is_auto = true,
       });
     }
   }
@@ -3918,7 +4042,8 @@ void update_mirror_preview_objects(
 
 void commit_mirror_preview(FeatureEntry& feature,
                            int& next_line_index,
-                           int& next_circle_index) {
+                           int& next_circle_index,
+                           bool persistent) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can host a mirror tool");
   }
@@ -3937,6 +4062,7 @@ void commit_mirror_preview(FeatureEntry& feature,
   // pending state has the source ids in `object_ids` but not split
   // by entity kind; we filter against the live arrays here.
   const auto object_ids = parameters.pending_mirror->object_ids;
+  const auto axis_id = parameters.pending_mirror->axis_line_id;
   parameters.pending_mirror = std::nullopt;
 
   // Snapshot the relations BEFORE committing so we don't iterate
@@ -4030,6 +4156,55 @@ void commit_mirror_preview(FeatureEntry& feature,
     });
   }
 
+  // Collect all mirrored entity IDs (both lines and circles) so we
+  // can strip their auto-dimensions. Mirrored entities only show the
+  // mirror badge — auto line-length / angle / radius dims are clutter.
+  std::vector<std::string> mirrored_ids;
+  for (const auto& [src, dst] : source_to_mirror_line) {
+    mirrored_ids.push_back(dst);
+  }
+  for (const auto& [src, dst] : source_to_mirror_circle) {
+    mirrored_ids.push_back(dst);
+  }
+  parameters.dimensions.erase(
+      std::remove_if(parameters.dimensions.begin(), parameters.dimensions.end(),
+                     [&](const SketchDimension& d) {
+                       // Strip all auto-generated dimensions from mirrored
+                       // entities — they only show the mirror badge. The
+                       // id prefix (dim-line- / dim-line-angle- / dim-circle-)
+                       // reliably identifies dimensions created by add_sketch_line
+                       // and add_sketch_circle.
+                       const bool is_auto_dim =
+                           d.id.rfind("dim-line-", 0) == 0 ||
+                           d.id.rfind("dim-line-angle-", 0) == 0 ||
+                           d.id.rfind("dim-circle-", 0) == 0;
+                       return is_auto_dim &&
+                              std::find(mirrored_ids.begin(), mirrored_ids.end(),
+                                        d.entity_id) != mirrored_ids.end();
+                     }),
+      parameters.dimensions.end());
+
+  // Store persistent mirror relations when the user wants live updates.
+  if (persistent && axis_id.has_value()) {
+    const auto& ax_id = axis_id.value();
+    for (const auto& [source_id, mirror_id] : source_to_mirror_line) {
+      parameters.mirror_relations.push_back(SketchMirrorRelation{
+          .id = "mirror-rel-" + source_id + "-" + mirror_id,
+          .source_id = source_id,
+          .mirror_id = mirror_id,
+          .axis_line_id = ax_id,
+      });
+    }
+    for (const auto& [source_id, mirror_id] : source_to_mirror_circle) {
+      parameters.mirror_relations.push_back(SketchMirrorRelation{
+          .id = "mirror-rel-" + source_id + "-" + mirror_id,
+          .source_id = source_id,
+          .mirror_id = mirror_id,
+          .axis_line_id = ax_id,
+      });
+    }
+  }
+
   // Re-run the derived-state refresh once after relation copying so
   // the constraint glyphs / profile detection see the new edges.
   refresh_sketch_derived_state(feature);
@@ -4072,6 +4247,7 @@ void add_sketch_circle(FeatureEntry& feature,
         .kind = "circle_radius",
         .entity_id = circle.id,
         .value = circle.radius,
+        .is_auto = true,
     });
   }
   if (!is_construction) {
@@ -4511,10 +4687,6 @@ void add_sketch_polygon(FeatureEntry& feature,
   double radius = std::hypot(end_x - start_x, end_y - start_y);
 
   if (mode == "edge") {
-    // Compute center from the edge. The polygon has `sides` sides
-    // of equal length. The edge AB is one side. The center is
-    // at the perpendicular bisector of AB at distance R where
-    // R = AB / (2 * sin(π/N)) for inscribed.
     double dx = end_x - start_x;
     double dy = end_y - start_y;
     double edge_len = std::hypot(dx, dy);
@@ -4523,16 +4695,70 @@ void add_sketch_polygon(FeatureEntry& feature,
     }
     double mid_x = (start_x + end_x) / 2.0;
     double mid_y = (start_y + end_y) / 2.0;
-    // Unit perpendicular (rotate CCW vs CW — choose one side).
     double nx = -dy / edge_len;
     double ny = dx / edge_len;
-    // For inscribed: radius = edge_len / (2 * sin(π/N))
     radius = edge_len / (2.0 * std::sin(M_PI / sides));
     center_x = mid_x + nx * radius * std::cos(M_PI / sides);
     center_y = mid_y + ny * radius * std::cos(M_PI / sides);
   }
 
-  feature.sketch_parameters->polygons.push_back(SketchPolygon{
+  // Decompose into N individual lines so the polygon participates in
+  // snap, constraints, drag, and profile detection — same approach as
+  // add_sketch_rectangle.
+  if (!feature.sketch_parameters.has_value()) return;
+  auto& parameters = *feature.sketch_parameters;
+
+  // Compute vertices in CCW order starting from angle 0 (right).
+  std::vector<std::pair<double, double>> vertices(sides);
+  const double angle_step = 2.0 * M_PI / sides;
+  for (int i = 0; i < sides; ++i) {
+    const double a = angle_step * i - M_PI / 2.0;  // start from top
+    vertices[i] = {center_x + radius * std::cos(a),
+                   center_y + radius * std::sin(a)};
+  }
+
+  // Create lines. Pass false for snap_start so polygon vertices aren't
+  // merged with nearby geometry (same as rectangle).
+  std::vector<std::string> line_ids(sides);
+  for (int i = 0; i < sides; ++i) {
+    const int next = (i + 1) % sides;
+    const int line_idx = polygon_index * 100 + i;  // unique index
+    add_sketch_line(feature, line_idx,
+                    vertices[i].first, vertices[i].second,
+                    vertices[next].first, vertices[next].second,
+                    is_construction, /*snap_start=*/false);
+    line_ids[i] = "line-" + std::to_string(line_idx);
+  }
+
+  // Remove the auto line-length and line-angle dimensions that
+  // add_sketch_line created — polygon lines use the polygon radius
+  // dimension instead. Also clear any H/V constraints so the
+  // polygon can be freely rotated.
+  for (const auto& lid : line_ids) {
+    auto& line = require_line(parameters, lid);
+    line.constraint = std::nullopt;
+  }
+  parameters.dimensions.erase(
+      std::remove_if(parameters.dimensions.begin(), parameters.dimensions.end(),
+                     [&](const SketchDimension& d) {
+                       return (d.kind == "line_length" || d.kind == "line_angle") &&
+                              std::find(line_ids.begin(), line_ids.end(), d.entity_id) != line_ids.end();
+                     }),
+      parameters.dimensions.end());
+
+  // Add equal-length constraints so all sides stay the same length.
+  for (int i = 1; i < sides; ++i) {
+    parameters.line_relations.push_back(SketchLineRelation{
+        .id = "rel-equal-length-poly-" + std::to_string(polygon_index) +
+              "-" + std::to_string(i),
+        .kind = "equal_length",
+        .first_line_id = line_ids[0],
+        .second_line_id = line_ids[i],
+    });
+  }
+
+  // Store the polygon entry so the UI can still select/identify it.
+  parameters.polygons.push_back(SketchPolygon{
       .id = "polygon-" + std::to_string(polygon_index),
       .center_x = center_x,
       .center_y = center_y,
@@ -4546,12 +4772,12 @@ void add_sketch_polygon(FeatureEntry& feature,
       .is_construction = is_construction,
   });
   if (!is_construction) {
-    const auto& polygon = feature.sketch_parameters->polygons.back();
-    feature.sketch_parameters->dimensions.push_back(SketchDimension{
-        .id = "dim-polygon-" + polygon.id,
+    parameters.dimensions.push_back(SketchDimension{
+        .id = "dim-polygon-" + std::to_string(polygon_index),
         .kind = "polygon_radius",
-        .entity_id = polygon.id,
-        .value = polygon.radius,
+        .entity_id = "polygon-" + std::to_string(polygon_index),
+        .value = radius,
+        .is_auto = true,
     });
   }
 

@@ -325,6 +325,7 @@ function App() {
   const [mirrorFocusedSlot, setMirrorFocusedSlot] = useState<
     "objects" | "axis" | null
   >(null);
+  const [mirrorPersistent, setMirrorPersistent] = useState(false);
   const [extrudeAction, setExtrudeAction] =
     useState<ActiveExtrudeAction | null>(null);
   const extrudeCreateInFlightRef = useRef(false);
@@ -6138,6 +6139,11 @@ function App() {
                     return;
                   }
 
+                  if (kind === "mirror") {
+                    await deleteSketchCoincidentConstraint(entityId);
+                    return;
+                  }
+
                   await clearSketchLineConstraints(entityId);
                 });
               }}
@@ -6889,6 +6895,8 @@ function App() {
                   generatedLineCount={pendingMirror.generated_lines.length}
                   generatedCircleCount={pendingMirror.generated_circles.length}
                   focusedSlot={mirrorFocusedSlot}
+                  persistent={mirrorPersistent}
+                  onTogglePersistent={() => setMirrorPersistent((v) => !v)}
                   disabled={status !== "connected"}
                   onFocusObjects={() => setMirrorFocusedSlot("objects")}
                   onFocusAxis={() => setMirrorFocusedSlot("axis")}
@@ -6904,7 +6912,7 @@ function App() {
                   }}
                   onConfirm={async () => {
                     await runAction(async () => {
-                      await commitMirrorPreview();
+                      await commitMirrorPreview(mirrorPersistent);
                     });
                     setMirrorFocusedSlot(null);
                   }}

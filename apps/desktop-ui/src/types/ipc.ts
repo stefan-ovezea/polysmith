@@ -1244,7 +1244,9 @@ export interface UpdateMirrorPreviewObjectsCommand {
 export interface CommitMirrorPreviewCommand {
   id: string;
   type: "commit_mirror_preview";
-  payload: Record<string, never>;
+  payload: {
+    persistent?: boolean;
+  };
 }
 
 export interface CancelMirrorPreviewCommand {

@@ -3204,7 +3204,7 @@ DocumentState DocumentManager::update_mirror_preview_objects(
   return document_.value();
 }
 
-DocumentState DocumentManager::commit_mirror_preview() {
+DocumentState DocumentManager::commit_mirror_preview(bool persistent) {
   require_document();
   const auto feature_it = require_active_sketch(*document_);
   // Commit is the only mirror_preview op that actually changes
@@ -3214,7 +3214,7 @@ DocumentState DocumentManager::commit_mirror_preview() {
   push_undo_state();
   clear_redo_stack();
   polysmith::core::commit_mirror_preview(
-      *feature_it, next_sketch_line_id_, next_sketch_circle_id_);
+      *feature_it, next_sketch_line_id_, next_sketch_circle_id_, persistent);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   bump_geometry_revision();
@@ -3354,7 +3354,15 @@ DocumentState DocumentManager::delete_sketch_coincident_constraint(
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::delete_sketch_coincident_constraint(*feature_it, constraint_id);
+
+  // Route mirror constraint deletes to the mirror-specific handler.
+  const std::string mirror_prefix = "mirror-rel-";
+  if (constraint_id.size() > mirror_prefix.size() &&
+      constraint_id.substr(0, mirror_prefix.size()) == mirror_prefix) {
+    polysmith::core::delete_sketch_mirror_relation(*feature_it, constraint_id);
+  } else {
+    polysmith::core::delete_sketch_coincident_constraint(*feature_it, constraint_id);
+  }
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_point_id = std::nullopt;
@@ -5886,8 +5894,12 @@ DocumentState DocumentManager::select_sketch_entity(
       feature_it->sketch_parameters->arcs.begin(),
       feature_it->sketch_parameters->arcs.end(),
       [&](const SketchArc& arc) { return arc.id == entity_id; });
+  const bool has_polygon = std::any_of(
+      feature_it->sketch_parameters->polygons.begin(),
+      feature_it->sketch_parameters->polygons.end(),
+      [&](const SketchPolygon& polygon) { return polygon.id == entity_id; });
 
-  if (!has_line && !has_circle && !has_arc) {
+  if (!has_line && !has_circle && !has_arc && !has_polygon) {
     throw std::runtime_error("Sketch entity not found: " + entity_id);
   }
 

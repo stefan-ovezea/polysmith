@@ -164,10 +164,17 @@ bool test_circle_creates_center_point_and_profile() {
   FeatureEntry feature = create_sketch_feature(4, "ref-plane-xy");
   add_sketch_circle(feature, 1, 12.0, 8.0, 5.0);
 
-  return expect(feature.sketch_parameters->points.size() == 1,
-                "expected circle sketch to store one center point") &&
-         expect(feature.sketch_parameters->points.front().kind == "center",
-                "expected stored circle point to be a center point") &&
+  // Each circle creates 1 center point + 4 quadrant points = 5 total.
+  bool points_ok =
+      expect(feature.sketch_parameters->points.size() == 5,
+             "expected circle sketch to store 5 points (1 center + 4 quadrants)");
+  // The center point is the first one pushed by rebuild_sketch_points.
+  bool center_ok =
+      expect(!feature.sketch_parameters->points.empty() &&
+                 feature.sketch_parameters->points[0].kind == "center",
+             "expected first stored circle point to be a center point");
+
+  return points_ok && center_ok &&
          expect(feature.sketch_parameters->profiles.size() == 1,
                 "expected circle sketch to store one profile") &&
          expect(feature.sketch_parameters->profiles.front().kind == "circle",

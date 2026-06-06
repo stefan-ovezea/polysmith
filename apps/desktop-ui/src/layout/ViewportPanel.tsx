@@ -156,6 +156,11 @@ type DraftDimensionSession = {
   values: Record<DraftDimensionField, string>;
   activeField: DraftDimensionField;
   lockedFields: Partial<Record<DraftDimensionField, boolean>>;
+  // Fields the user has ever typed into during this draft session,
+  // even if they later cleared the value. Prevents auto-dimension
+  // deletion when the user interacts with a field at all — typing
+  // "10" then backspacing should still preserve the dimension.
+  touchedFields: Partial<Record<DraftDimensionField, boolean>>;
 };
 type ParameterSuggestion = {
   name: string;
@@ -1059,6 +1064,7 @@ function applyDraftDimensionFieldValue(
         lockedFields: lockField
           ? {...session.lockedFields, [field]: true}
           : session.lockedFields,
+        touchedFields: {...session.touchedFields, [field]: true},
       };
     }
   } else if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -1069,6 +1075,7 @@ function applyDraftDimensionFieldValue(
       lockedFields: lockField
         ? {...session.lockedFields, [field]: true}
         : session.lockedFields,
+      touchedFields: {...session.touchedFields, [field]: true},
     };
   }
 
@@ -1130,6 +1137,7 @@ function applyDraftDimensionFieldValue(
     lockedFields: lockField
       ? {...session.lockedFields, [field]: true}
       : session.lockedFields,
+    touchedFields: {...session.touchedFields, [field]: true},
   };
 }
 
@@ -1899,43 +1907,52 @@ const currentGridSpacingRef = useRef(10);
       sketchPolygons: sketch.polygons?.length ?? 0,
       dimIds: sketch.dimensions.map(d => d.dimension_id),
     });
+    // Look up dimensions by entity_id + kind instead of predicting
+    // the ID format (dim-line-{id}, etc.). The response always
+    // contains the full dimensions array, so this tolerates ID
+    // format changes and avoids race conditions where the predicted
+    // ID doesn't match what the core actually created.
+    const findDimId = (entityId: string, kind: string): string | undefined =>
+      sketch.dimensions.find(
+        (d) => d.entity_id === entityId && d.kind === kind,
+      )?.dimension_id;
+
     // Use the last entity instead of fromLineCount to avoid race
     // conditions when React hasn't re-rendered between rapid commits.
     if (pending.shouldDeleteLine && sketch.lines.length > 0) {
       const line = sketch.lines[sketch.lines.length - 1];
       if (line && !line.is_construction) {
-        void deleteSketchDimensionRef.current(`dim-line-${line.line_id}`);
+        const dimId = findDimId(line.line_id, "line_length");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteLineAngle && sketch.lines.length > 0) {
       const line = sketch.lines[sketch.lines.length - 1];
       if (line && !line.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-line-angle-${line.line_id}`,
-        );
+        const dimId = findDimId(line.line_id, "line_angle");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteCircle && sketch.circles.length > 0) {
       const circle = sketch.circles[sketch.circles.length - 1];
       if (circle && !circle.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-circle-${circle.circle_id}`,
-        );
+        const dimId = findDimId(circle.circle_id, "circle_radius");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeletePolygon && (sketch.polygons?.length ?? 0) > 0) {
       const polygon = sketch.polygons?.[(sketch.polygons?.length ?? 1) - 1];
       if (polygon && !polygon.is_construction) {
-        void deleteSketchDimensionRef.current(
-          `dim-polygon-${polygon.polygon_id}`,
-        );
+        const dimId = findDimId(polygon.polygon_id, "polygon_radius");
+        if (dimId) void deleteSketchDimensionRef.current(dimId);
       }
     }
     if (pending.shouldDeleteRectangle && sketch.lines.length >= 4) {
       for (let i = sketch.lines.length - 4; i < sketch.lines.length; i++) {
         const line = sketch.lines[i];
         if (line && !line.is_construction) {
-          void deleteSketchDimensionRef.current(`dim-line-${line.line_id}`);
+          const dimId = findDimId(line.line_id, "line_length");
+          if (dimId) void deleteSketchDimensionRef.current(dimId);
         }
       }
     }
@@ -3104,6 +3121,7 @@ const currentGridSpacingRef = useRef(10);
       values: draftSessionValues(tool, start, current),
       activeField: fields[0],
       lockedFields: {},
+      touchedFields: {},
     };
   }
 
@@ -3132,19 +3150,25 @@ const currentGridSpacingRef = useRef(10);
     preCapturedSession?: DraftDimensionSession | null,
   ) {
     const session = preCapturedSession ?? draftDimensionSessionRef.current;
+    // Delete auto-dimensions only when the user never touched the
+    // corresponding field. `touchedFields` tracks whether the user
+    // typed into a field at all during this draft session, even if
+    // they later cleared the value. This handles the "typed '10'
+    // then backspaced" edge case: the dimension is preserved because
+    // the user demonstrated intent to control it.
     pendingDimensionDeletionRef.current = {
       shouldDeleteLine:
-        tool === "line" && !session?.lockedFields.length,
+        tool === "line" && !session?.touchedFields.length,
       shouldDeleteCircle:
-        tool === "circle" && !session?.lockedFields.diameter,
+        tool === "circle" && !session?.touchedFields.diameter,
       shouldDeletePolygon:
-        tool === "polygon" && !session?.lockedFields.radius,
+        tool === "polygon" && !session?.touchedFields.radius,
       shouldDeleteRectangle:
         tool === "rectangle" &&
-        !session?.lockedFields.width &&
-        !session?.lockedFields.length,
+        !session?.touchedFields.width &&
+        !session?.touchedFields.length,
       shouldDeleteLineAngle:
-        tool === "line" && !session?.lockedFields.angle,
+        tool === "line" && !session?.touchedFields.angle,
     };
   }
 
@@ -10886,6 +10910,7 @@ const currentGridSpacingRef = useRef(10);
             referenceId: null,
             faceId: null,
             constraintKind: hit.constraintKind,
+            constraintId: hit.id,
             constraintEntityId: hit.entityId,
             constraintRelatedEntityId: hit.relatedEntityId,
           });
@@ -11948,14 +11973,21 @@ const currentGridSpacingRef = useRef(10);
   async function handleDeleteConstraintFromContextMenu() {
     const kind = contextMenu?.constraintKind;
     const entityId = contextMenu?.constraintEntityId;
+    const constraintId = contextMenu?.constraintId;
     if (!kind || !entityId) {
       return;
     }
     setContextMenu(null);
     setSelectedConstraint(null);
+    // For mirror and coincident, use the constraint_id (which encodes
+    // the axis/point). For line-mounted constraints (H/V), use entityId.
+    const deleteId =
+      kind === "mirror" || kind === "coincident"
+        ? constraintId ?? entityId
+        : entityId;
     await clearSketchConstraintRef.current(
       kind as ConstraintType,
-      entityId,
+      deleteId,
       contextMenu?.constraintRelatedEntityId ?? null,
     );
   }

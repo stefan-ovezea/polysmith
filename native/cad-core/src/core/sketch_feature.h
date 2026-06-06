@@ -64,6 +64,9 @@ void set_sketch_coincident_constraint(
 void delete_sketch_coincident_constraint(
     FeatureEntry& feature,
     const std::string& constraint_id);
+void delete_sketch_mirror_relation(
+    FeatureEntry& feature,
+    const std::string& relation_id);
 void set_sketch_point_fixed(FeatureEntry& feature,
                             const std::string& point_id,
                             bool is_fixed);
@@ -284,7 +287,8 @@ void update_mirror_preview_objects(
     const std::vector<std::string>& object_ids);
 void commit_mirror_preview(FeatureEntry& feature,
                            int& next_line_index,
-                           int& next_circle_index);
+                           int& next_circle_index,
+                           bool persistent = false);
 void cancel_mirror_preview(FeatureEntry& feature);
 
 }  // namespace polysmith::core

@@ -1075,6 +1075,7 @@ const viewportStateSchema = z.object({
         "tangent_line_circle",
         "coincident",
         "concentric",
+        "mirror",
       ]),
       entity_id: z.string(),
       related_entity_id: z.string().nullable(),
