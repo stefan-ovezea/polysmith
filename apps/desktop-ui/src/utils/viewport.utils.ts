@@ -32,10 +32,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export const SKETCH_PLANE_OFFSET = 0.2;
-export const REFERENCE_PLANE_RENDER_SIZE = 25;
-export const REFERENCE_PLANE_MARGIN = 5;
+const REFERENCE_PLANE_RENDER_SIZE = 25;
+const REFERENCE_PLANE_MARGIN = 5;
 export const SKETCH_SNAP_DISTANCE = 2.5;
-export const DIMENSION_EDITOR_MARGIN = 20;
+const DIMENSION_EDITOR_MARGIN = 20;
 
 export function themeColor(token: string, fallback: string) {
   if (typeof document === "undefined") {
@@ -372,7 +372,7 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
   };
 }
 
-export function orientPlaneMesh(
+function orientPlaneMesh(
   mesh: THREE.Object3D,
   orientation: ReferencePlaneScene["orientation"],
 ) {
@@ -386,7 +386,7 @@ export function orientPlaneMesh(
   }
 }
 
-export function planeOrientationFromId(
+function planeOrientationFromId(
   planeId: string,
 ): ReferencePlaneScene["orientation"] {
   if (planeId === "ref-plane-xy") {
@@ -400,7 +400,7 @@ export function planeOrientationFromId(
   return "xz";
 }
 
-export function makePlaneTransformMatrix(planeId: string, offset = 0) {
+function makePlaneTransformMatrix(planeId: string, offset = 0) {
   if (planeId === "ref-plane-xy") {
     return new THREE.Matrix4().set(
       1,
@@ -463,7 +463,7 @@ export function makePlaneTransformMatrix(planeId: string, offset = 0) {
   );
 }
 
-export function makePlaneTransformMatrixFromFrame(
+function makePlaneTransformMatrixFromFrame(
   planeFrame: {
     origin: [number, number, number] | { x: number; y: number; z: number };
     xAxis?: [number, number, number] | { x: number; y: number; z: number };
@@ -743,7 +743,7 @@ export function buildCutPreviewObject(preview: CutPreviewScene): THREE.Mesh {
   return mesh;
 }
 
-export function buildSceneVertexObject(vertex: SceneVertex): THREE.Mesh {
+function buildSceneVertexObject(vertex: SceneVertex): THREE.Mesh {
   const geometry = new THREE.SphereGeometry(VERTEX_RADIUS, 12, 8);
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
@@ -763,7 +763,7 @@ export function buildSceneVertexObject(vertex: SceneVertex): THREE.Mesh {
   return mesh;
 }
 
-export function orientFaceMesh(mesh: THREE.Object3D, face: SolidFaceScene) {
+function orientFaceMesh(mesh: THREE.Object3D, face: SolidFaceScene) {
   if (Math.abs(face.normal[1]) > 0.5) {
     mesh.rotation.x = -Math.PI / 2;
     return;
@@ -1268,7 +1268,7 @@ export function buildSketchPointObject(point: SketchPointScene) {
   return mesh;
 }
 
-export function makeDimensionLabelSprite(
+function makeDimensionLabelSprite(
   text: string,
   isSelected: boolean,
   options: { variant?: "muted-preview" } = {},
@@ -1324,7 +1324,7 @@ export function makeDimensionLabelSprite(
   return sprite;
 }
 
-export function makeConstraintBadgeSprite(text: string, isSelected: boolean) {
+function makeConstraintBadgeSprite(text: string, isSelected: boolean) {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   if (!context) {

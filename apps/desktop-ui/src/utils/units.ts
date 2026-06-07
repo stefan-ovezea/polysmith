@@ -8,7 +8,7 @@
 
 export type DisplayUnits = "mm" | "in";
 
-export const MM_PER_INCH = 25.4;
+const MM_PER_INCH = 25.4;
 
 /** Convert a core mm value to the display unit. */
 export function mmToDisplay(mm: number, units: DisplayUnits): number {
@@ -25,7 +25,7 @@ export function displayToMm(value: number, units: DisplayUnits): number {
  * active display unit. Follows the same trailing-zero cleanup that
  * the C++ side uses.
  */
-export function formatDimension(
+function formatDimension(
   valueMm: number,
   units: DisplayUnits,
   decimals?: number,

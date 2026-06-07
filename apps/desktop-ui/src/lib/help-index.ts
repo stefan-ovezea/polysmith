@@ -429,6 +429,6 @@ export const helpRegistry: Record<string, HelpEntry> = {
   parameters: parametersEntry,
 };
 
-export function allHelpEntries(): HelpEntry[] {
+function allHelpEntries(): HelpEntry[] {
   return Object.values(helpRegistry);
 }

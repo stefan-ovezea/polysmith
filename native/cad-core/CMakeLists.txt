@@ -47,8 +47,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(planegcs PRIVATE -Wno-register)
 endif()
 
-add_executable(cad_core
-  src/app.cpp
+set(CAD_CORE_SOURCES
   src/core/body_compiler.cpp
   src/core/box_feature.cpp
   src/core/cam_operation.cpp
@@ -76,6 +75,11 @@ add_executable(cad_core
   src/core/viewport.cpp
   src/protocol/ipc.cpp
   src/protocol/serialization.cpp
+)
+
+add_executable(cad_core
+  src/app.cpp
+  ${CAD_CORE_SOURCES}
   src/main.cpp
 )
 
@@ -111,33 +115,7 @@ target_link_libraries(cad_core_sketch_profile_test PRIVATE
 )
 
 add_executable(cad_core_multi_profile_extrude_test
-  src/core/body_compiler.cpp
-  src/core/box_feature.cpp
-  src/core/cam_operation.cpp
-  src/core/constraint_solver.cpp
-  src/core/face_milling.cpp
-  src/core/construction_plane_feature.cpp
-  src/core/cylinder_feature.cpp
-  src/core/dof_counter.cpp
-  src/core/document.cpp
-  src/core/edge_geometry.cpp
-  src/core/export.cpp
-  src/core/extrude_feature.cpp
-  src/core/face_geometry.cpp
-  src/core/feature_shape.cpp
-  src/core/formula_eval.cpp
-  src/core/inference_engine.cpp
-  src/core/loft_feature.cpp
-  src/core/logger.cpp
-  src/core/refresh_dependents.cpp
-  src/core/revolve_feature.cpp
-  src/core/sketch_feature.cpp
-  src/core/sketch_profile.cpp
-  src/core/sweep_feature.cpp
-  src/core/trim_engine.cpp
-  src/core/viewport.cpp
-  src/protocol/ipc.cpp
-  src/protocol/serialization.cpp
+  ${CAD_CORE_SOURCES}
   tests/multi_profile_extrude_test.cpp
 )
 
@@ -157,33 +135,7 @@ target_link_libraries(cad_core_multi_profile_extrude_test PRIVATE
 )
 
 add_executable(cad_core_cam_face_reference_test
-  src/core/body_compiler.cpp
-  src/core/box_feature.cpp
-  src/core/cam_operation.cpp
-  src/core/constraint_solver.cpp
-  src/core/face_milling.cpp
-  src/core/construction_plane_feature.cpp
-  src/core/cylinder_feature.cpp
-  src/core/dof_counter.cpp
-  src/core/document.cpp
-  src/core/edge_geometry.cpp
-  src/core/export.cpp
-  src/core/extrude_feature.cpp
-  src/core/face_geometry.cpp
-  src/core/feature_shape.cpp
-  src/core/formula_eval.cpp
-  src/core/inference_engine.cpp
-  src/core/loft_feature.cpp
-  src/core/logger.cpp
-  src/core/refresh_dependents.cpp
-  src/core/revolve_feature.cpp
-  src/core/sketch_feature.cpp
-  src/core/sketch_profile.cpp
-  src/core/sweep_feature.cpp
-  src/core/trim_engine.cpp
-  src/core/viewport.cpp
-  src/protocol/ipc.cpp
-  src/protocol/serialization.cpp
+  ${CAD_CORE_SOURCES}
   tests/cam_face_reference_test.cpp
 )
 

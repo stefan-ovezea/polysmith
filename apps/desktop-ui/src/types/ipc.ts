@@ -1,30 +1,34 @@
-import {
-  FeatureEntry,
-  ViewportBoxPrimitive,
-  ViewportCylinderPrimitive,
-  ViewportPolygonExtrudePrimitive,
-  ViewportReferenceAxis,
-  ViewportHelixPrimitive,
-  ViewportReferencePoint,
-  ViewportReferencePlane,
-  ViewportSceneBounds,
-  ViewportSketchArc,
-  ViewportSketchCircle,
-  ViewportSketchConstraint,
-  ViewportSketchPolygon,
-  ViewportSketchDimension,
-  ViewportSketchLine,
-  ViewportSketchPoint,
-  ViewportSketchProfile,
-  ViewportSolidFace,
-  SketchTool,
-  PlaneFrame,
+import type {
   FastenerFeatureParameters,
   HelixFeatureParameters,
   HoleFeatureParameters,
   MoveFeatureParameters,
   ThreadFeatureParameters,
-} from "@/types";
+} from "./geometry/3d";
+import type {
+  FeatureEntry,
+  SketchTool,
+} from "./geometry/sketch";
+import type { PlaneFrame } from "./geometry/primitives";
+import type {
+  ViewportBoxPrimitive,
+  ViewportCylinderPrimitive,
+  ViewportHelixPrimitive,
+  ViewportSketchArc,
+  ViewportSketchCircle,
+  ViewportSketchConstraint,
+  ViewportSketchDimension,
+  ViewportSketchLine,
+  ViewportSketchPoint,
+  ViewportSketchPolygon,
+  ViewportSketchProfile,
+  ViewportPolygonExtrudePrimitive,
+  ViewportReferenceAxis,
+  ViewportReferencePlane,
+  ViewportReferencePoint,
+  ViewportSceneBounds,
+  ViewportSolidFace,
+} from "./viewport";
 
 export interface DocumentState {
   document_id: string;

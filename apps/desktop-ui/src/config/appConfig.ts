@@ -25,7 +25,7 @@ const bundledThemes: Record<string, ThemeConfig> = {
 
 const CONFIG_STORAGE_KEY = "polysmith.appConfig";
 
-export const DEFAULT_THEME_FILES = [
+const DEFAULT_THEME_FILES = [
   { fileName: "dark.json", contents: darkTheme },
   { fileName: "light.json", contents: lightTheme },
   { fileName: "catppuccin-latte.json", contents: catppuccinLatteTheme },
@@ -35,8 +35,8 @@ export const DEFAULT_THEME_FILES = [
 ];
 
 export const defaultAppConfig = defaultConfig as AppConfig;
-export const SYSTEM_THEME_ID = "system";
-export const systemThemeOption = {
+const SYSTEM_THEME_ID = "system";
+const systemThemeOption = {
   id: SYSTEM_THEME_ID,
   name: "System",
 } as const;
@@ -60,7 +60,7 @@ interface NativeConfigBootstrap {
   themes: unknown[];
 }
 
-export function getSystemThemeId(): "dark" | "light" {
+function getSystemThemeId(): "dark" | "light" {
   if (typeof window === "undefined") {
     return "dark";
   }
@@ -70,7 +70,7 @@ export function getSystemThemeId(): "dark" | "light" {
     : "dark";
 }
 
-export function isThemeSelection(value: string): value is ThemeSelection {
+function isThemeSelection(value: string): value is ThemeSelection {
   return value.length > 0;
 }
 

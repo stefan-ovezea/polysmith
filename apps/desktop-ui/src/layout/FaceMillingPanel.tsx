@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
 
-export interface FaceMillingFormState {
+interface FaceMillingFormState {
   depth: number;
   stepover: number;
   angle_deg: number;

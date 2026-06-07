@@ -15,7 +15,7 @@ export interface HoleStandardEntry {
   countersinkAngleDegrees: number;
 }
 
-export const METRIC_HOLE_STANDARDS: HoleStandardEntry[] = [
+const METRIC_HOLE_STANDARDS: HoleStandardEntry[] = [
   metric("M2", 0.4, 2.0, 1.6, 2.4, 1.6, 4.4, 2.0),
   metric("M2.5", 0.45, 2.5, 2.05, 2.9, 2.05, 5.0, 2.5),
   metric("M3", 0.5, 3.0, 2.5, 3.4, 2.5, 6.5, 3.0),
@@ -27,7 +27,7 @@ export const METRIC_HOLE_STANDARDS: HoleStandardEntry[] = [
   metric("M12", 1.75, 12.0, 10.2, 13.5, 10.2, 20.0, 12.0),
 ];
 
-export const IMPERIAL_HOLE_STANDARDS: HoleStandardEntry[] = [
+const IMPERIAL_HOLE_STANDARDS: HoleStandardEntry[] = [
   imperial("#0-80 UNF", 80, 0.06, 0.052, 0.073, 0.052, 0.14, 0.07),
   imperial("#2-56 UNC", 56, 0.086, 0.07, 0.096, 0.07, 0.17, 0.09),
   imperial("#4-40 UNC", 40, 0.112, 0.089, 0.128, 0.089, 0.22, 0.11),

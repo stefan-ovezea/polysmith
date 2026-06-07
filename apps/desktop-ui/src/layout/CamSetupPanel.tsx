@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
 
-export interface CamSetupFormState {
+interface CamSetupFormState {
   stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
   wcs_origin: { x: number; y: number; z: number };
   safety_plane_z: number;

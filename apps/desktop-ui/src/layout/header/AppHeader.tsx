@@ -7,7 +7,7 @@ import { SketchToolbar } from "./SketchToolbar";
 import { CreateToolbar } from "./CreateToolbar";
 import { ModifyToolbar } from "./ModifyToolbar";
 import { ConstructToolbar } from "./ConstructToolbar";
-import { CamToolbar, type CamOperationType } from "./CamToolbar";
+import type { CamOperationType } from "./CamToolbar";
 import { CamMillingToolbar } from "./CamMillingToolbar";
 import { CamTurningToolbar } from "./CamTurningToolbar";
 import { CamPrintingToolbar } from "./CamPrintingToolbar";

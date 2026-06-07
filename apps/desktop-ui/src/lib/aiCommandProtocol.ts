@@ -592,7 +592,7 @@ const sketchCreationCommands = new Set<string>([
   "add_sketch_arc",
 ]);
 
-export function validateAiCommandBatchForState(
+function validateAiCommandBatchForState(
   commands: readonly AiExecutableCommand[],
   document: DocumentState | null,
   viewport: ViewportState | null,

@@ -7,7 +7,7 @@ interface DocumentPanelProps {
   onClearSelection: () => Promise<void>;
 }
 
-export function DocumentPanel({
+function DocumentPanel({
   document,
   onSelectFeature,
   onClearSelection,
