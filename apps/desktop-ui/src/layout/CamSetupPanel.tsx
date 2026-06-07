@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
+import {
+  CamNumberField,
+  useCamEscapeCancel,
+  useDebouncedCamUpdate,
+} from "./camPanelShared";
 
 interface CamSetupFormState {
   stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
@@ -25,52 +30,6 @@ interface CamSetupPanelProps {
   onCancel: () => void;
 }
 
-function normalizeNumberInputValue(value: string) {
-  if (value === "") return value;
-  const sign = value.startsWith("-") ? "-" : "";
-  const unsigned = sign ? value.slice(1) : value;
-  if (unsigned.startsWith("0.") || unsigned === "0") return value;
-  const normalized = unsigned.replace(/^0+(?=\d)/, "");
-  return `${sign}${normalized || "0"}`;
-}
-
-function readNumberInputValue(input: HTMLInputElement) {
-  const normalized = normalizeNumberInputValue(input.value);
-  if (normalized !== input.value) input.value = normalized;
-  return Number(normalized);
-}
-
-function NumField({
-  label,
-  value,
-  disabled,
-  step = 0.5,
-  min = 0,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  disabled: boolean;
-  step?: number;
-  min?: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-      {label}
-      <input
-        className="cad-input mt-2"
-        type="number"
-        min={min}
-        step={step}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(readNumberInputValue(event.currentTarget))}
-      />
-    </label>
-  );
-}
-
 type TabId = "machine" | "stock" | "wcs";
 
 export function CamSetupPanel({
@@ -88,31 +47,14 @@ export function CamSetupPanel({
   const { t } = useTranslation();
   const [state, setState] = useState<CamSetupFormState>(initialSetup);
   const [tab, setTab] = useState<TabId>("machine");
-  const lastSentRef = useRef<string>("");
   const confirmRef = useRef(onConfirm);
   confirmRef.current = onConfirm;
+  const serialized = JSON.stringify(state);
+  const markUpdateSent = useDebouncedCamUpdate(serialized, () => {
+    onUpdate(state);
+  });
 
-  useEffect(() => {
-    const serialized = JSON.stringify(state);
-    if (serialized === lastSentRef.current) return;
-    const timer = setTimeout(() => {
-      lastSentRef.current = serialized;
-      onUpdate(state);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [state, onUpdate]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if ((event.target as HTMLElement | null)?.closest(".cad-dropdown")) return;
-        event.preventDefault();
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  useCamEscapeCancel(onCancel);
 
   // Auto-size stock from model bounds when no setup exists yet.
   const autoSizedRef = useRef(false);
@@ -183,7 +125,7 @@ export function CamSetupPanel({
         className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden"
         onSubmit={(event) => {
           event.preventDefault();
-          lastSentRef.current = JSON.stringify(state);
+          markUpdateSent();
           onUpdate(state);
           confirmRef.current();
         }}
@@ -194,7 +136,7 @@ export function CamSetupPanel({
               ════════════════════════════════════════════════════════ */}
           {tab === "machine" && (
             <>
-              <NumField
+              <CamNumberField
                 label={t("cam.setup.axisCount", "Axis count")}
                 value={3}
                 disabled={true}
@@ -236,20 +178,20 @@ export function CamSetupPanel({
           {tab === "stock" && (
             <>
               <div className="grid grid-cols-2 gap-2">
-                <NumField
+                <CamNumberField
                   label={t("cam.setup.stockWidth", "Width (mm)")}
                   value={state.stock.width}
                   disabled={disabled}
                   onChange={(v) => updateStock({ width: v })}
                 />
-                <NumField
+                <CamNumberField
                   label={t("cam.setup.stockHeight", "Height (mm)")}
                   value={state.stock.height}
                   disabled={disabled}
                   onChange={(v) => updateStock({ height: v })}
                 />
               </div>
-              <NumField
+              <CamNumberField
                 label={t("cam.setup.stockDepth", "Depth (mm)")}
                 value={state.stock.depth}
                 disabled={disabled}
@@ -259,19 +201,19 @@ export function CamSetupPanel({
                 {t("cam.setup.offsetsNote", "Offsets add extra material beyond the part bounds on each axis.")}
               </p>
               <div className="grid grid-cols-3 gap-2">
-                <NumField
+                <CamNumberField
                   label={t("cam.setup.offsetX", "Offset X")}
                   value={state.stock.offset_x}
                   disabled={disabled}
                   onChange={(v) => updateStock({ offset_x: v })}
                 />
-                <NumField
+                <CamNumberField
                   label={t("cam.setup.offsetY", "Offset Y")}
                   value={state.stock.offset_y}
                   disabled={disabled}
                   onChange={(v) => updateStock({ offset_y: v })}
                 />
-                <NumField
+                <CamNumberField
                   label={t("cam.setup.offsetZ", "Offset Z")}
                   value={state.stock.offset_z}
                   disabled={disabled}
@@ -288,9 +230,9 @@ export function CamSetupPanel({
             <>
               {/* Origin position */}
               <div className="grid grid-cols-3 gap-2">
-                <NumField label="X" value={state.wcs_origin.x} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ x: v })} />
-                <NumField label="Y" value={state.wcs_origin.y} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ y: v })} />
-                <NumField label="Z" value={state.wcs_origin.z} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ z: v })} />
+                <CamNumberField label="X" value={state.wcs_origin.x} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ x: v })} />
+                <CamNumberField label="Y" value={state.wcs_origin.y} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ y: v })} />
+                <CamNumberField label="Z" value={state.wcs_origin.z} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ z: v })} />
               </div>
 
               {/* Origin mode */}
@@ -337,7 +279,7 @@ export function CamSetupPanel({
               </p>
 
               {/* Safety plane */}
-              <NumField
+              <CamNumberField
                 label={t("cam.setup.safetyPlaneZ", "Safety Z (mm)")}
                 value={state.safety_plane_z}
                 disabled={disabled}

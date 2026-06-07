@@ -10,6 +10,7 @@ import type {
   SketchTool,
 } from "./geometry/sketch";
 import type { PlaneFrame } from "./geometry/primitives";
+import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
@@ -167,27 +168,7 @@ export interface ViewportState {
     status: "under" | "full" | "over";
   }>;
   snap_candidates: SnapCandidateEntry[];
-  selection_filter: {
-    select_curves: boolean;
-    select_points: boolean;
-    select_construction: boolean;
-    select_constraints: boolean;
-    snap_endpoint: boolean;
-    snap_midpoint: boolean;
-    snap_center: boolean;
-    snap_intersection: boolean;
-    snap_nearest: boolean;
-    snap_quadrant: boolean;
-    snap_perpendicular: boolean;
-    snap_parallel: boolean;
-    snap_tangent: boolean;
-    snap_grid: boolean;
-    snap_grid_line: boolean;
-    snap_polar: boolean;
-    polar_angle_degrees: number;
-    magnetic_pull: boolean;
-    tolerance_px: number;
-  };
+  selection_filter: SelectionFilter;
 }
 
 export interface ViewportMeshPrimitive {
@@ -1400,24 +1381,7 @@ export interface DeleteParameterCommand {
 export interface UpdateSelectionFilterCommand {
   id: string;
   type: "update_selection_filter";
-  payload: {
-    select_curves?: boolean;
-    select_points?: boolean;
-    select_construction?: boolean;
-    select_constraints?: boolean;
-    snap_endpoint?: boolean;
-    snap_midpoint?: boolean;
-    snap_center?: boolean;
-    snap_intersection?: boolean;
-    snap_nearest?: boolean;
-    snap_quadrant?: boolean;
-    snap_perpendicular?: boolean;
-    snap_parallel?: boolean;
-    snap_tangent?: boolean;
-    snap_grid?: boolean;
-    magnetic_pull?: boolean;
-    tolerance_px?: number;
-  };
+  payload: SelectionFilterUpdate;
 }
 
 export interface UpdateSketchDimensionCommand {

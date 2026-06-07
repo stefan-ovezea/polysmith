@@ -12,6 +12,7 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   MoveFeatureParameters,
+  SelectionFilterUpdate,
   ThreadFeatureParameters,
   ViewportState,
 } from "@/types";
@@ -1748,24 +1749,7 @@ export function makeUpdateSketchDimensionDisplayCommand(
 }
 
 export function makeUpdateSelectionFilterCommand(
-  filter: {
-    select_curves?: boolean;
-    select_points?: boolean;
-    select_construction?: boolean;
-    select_constraints?: boolean;
-    snap_endpoint?: boolean;
-    snap_midpoint?: boolean;
-    snap_center?: boolean;
-    snap_intersection?: boolean;
-    snap_nearest?: boolean;
-    snap_quadrant?: boolean;
-    snap_perpendicular?: boolean;
-    snap_parallel?: boolean;
-    snap_tangent?: boolean;
-    snap_grid?: boolean;
-    magnetic_pull?: boolean;
-    tolerance_px?: number;
-  },
+  filter: SelectionFilterUpdate,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),

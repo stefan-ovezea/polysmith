@@ -3,7 +3,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MutableRefObject,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,7 +14,7 @@ import {
   matchesHotkey,
   useAppConfig,
 } from "@/config";
-import { Checkbox, Dropdown, ToolbarTooltip } from "@/lib";
+import { ToolbarTooltip } from "@/lib";
 import type { CrosshairMode } from "@/config";
 import { createViewportScene } from "@/lib";
 import type {
@@ -36,39 +35,21 @@ import type {
   SketchProfileInteractionState,
   ViewportContextMenuState,
   SketchPreviewPoint,
-  SketchProfileScene,
-  SketchLineEntry,
-  SketchCircleEntry,
   MoveFeatureParameters,
+  SelectionFilter,
 } from "@/types";
-import type { SelectionFilter } from "./SelectionFilterPanel";
 import {
   applyPrimitiveVisualState,
   applyReferencePlaneVisualState,
   applySketchProfileVisualState,
   applySolidFaceVisualState,
-  buildPrimitiveObject,
-  buildReferenceAxisObject,
-  buildReferenceHelixObject,
-  buildReferencePlaneObject,
-  buildReferencePointObject,
-  buildSketchArcObject,
-  buildSketchCircleObject,
-  buildSketchConstraintObject,
   buildSketchDimensionObject,
-  buildSketchLineObject,
-  buildSketchPointObject,
-  buildSketchPolygonObject,
-  buildSketchProfileObject,
-  buildSolidFaceObject,
-  buildCutPreviewObject,
-  buildSceneEdgeObject,
   applyEdgeVisualColor,
   applyVertexVisualColor,
+  axisAlignedRectangleCorners2d,
   disposeGroup,
   disposeMaterial,
   distanceBetweenPoints,
-  frameCamera,
   frameCameraToSketchPlane,
   projectWorldPointToViewport,
   resolveSketchPlanePoint,
@@ -79,208 +60,152 @@ import {
   buildViewCubeGroup,
   createViewCubeScene,
   createViewCubeCamera,
-  getCubeViewportRect,
   isPointerInCubeArea,
-  syncCubeCamera,
-  updateSketchRotationArrows,
-  raycastViewCube,
-  getCubeHitTargetDirection,
-  getQuantizedCubeUp,
-  isCardinalCubeDirection,
-  animateCameraTowardTarget,
-  applyCubeHover,
   clearCubeHover,
-  applyCubeDragOrbit,
   disposeViewCubeGroup,
   createCubeRenderTarget,
-  resizeCubeRenderTarget,
   createCubeBlitScene,
-  updateCubeBlitMesh,
   disposeCubeBlitScene,
-  lineLineIntersectionTrim,
-  lineCircleIntersectionTrim,
 } from "@/utils";
 import type { ViewCubeHit, CubeBlitScene } from "@/utils";
-import { sendCoreCommand } from "@/lib/cadCoreClient";
-import { makeGetViewportStateCommand, makeTrimPreviewCommand } from "@/lib/ipcProtocol";
+import { makeGetViewportStateCommand } from "@/lib/ipcProtocol";
 import { useCadCoreStore } from "@/state/cadCoreStore";
 import { parseDimensionInput, mmToDisplay } from "@/utils/units";
+import {
+  disposeDynamicGrid,
+  getOrthographicViewHeight,
+  getSketchGridFrame,
+  worldPointToSketchLocal,
+  type ActiveSketchGridPlaneFrame,
+  type DynamicGridRef,
+} from "./viewport/grid";
+import {
+  beginMoveGizmoPointerDown,
+  finishMoveGizmoPointerUp,
+  moveGizmoParametersFromDrag,
+  type MoveGizmoDescriptor,
+  type MoveGizmoDragState,
+} from "./viewport/moveGizmo";
+import {
+  applyPendingLineCommitRelations,
+  draftStartRelations,
+  lineCommitRelations,
+} from "./viewport/lineCommitRelations";
+import {
+  collectRectangleSelectionIds,
+  finishRectangleSelectionDrag,
+  selectionRectOverlayFromDrag,
+  type SelectionRectOverlay,
+  type SelectionDrag,
+} from "./viewport/selectionGeometry";
+import { type EndpointDrag } from "./viewport/endpointDrag";
+import { handleEndpointDragPointerMove } from "./viewport/endpointDragPointerMove";
+import { finishEndpointDragPointerUp } from "./viewport/endpointDragPointerUp";
+import { beginSelectPointerDown } from "./viewport/selectPointerDown";
+import {
+  handleViewCubeDragPointerMove,
+  handleViewCubeHoverPointerMove,
+} from "./viewport/viewCubePointerMove";
+import { finishViewCubePointerUp } from "./viewport/viewCubePointerUp";
+import {
+  buildSketchSnapCandidates,
+  closestStaticSnapCandidate,
+  dynamicSnapCandidate,
+  previewPointFromStaticCandidate,
+  type SketchSnapCandidate,
+} from "./viewport/snapResolution";
+import {
+  DRAFT_DIMENSION_OFFSET_PX,
+  GridMiniIcon,
+  applyDraftDimensionFieldValue,
+  clampAngleRadius,
+  draftSessionFields,
+  draftSessionValues,
+  formatDraftDimension,
+  fuzzyParameterScore,
+  isDraftDimensionTool,
+  isDrawableSketchTool,
+  parameterTokenAtCursor,
+  updateDraftSessionCurrent,
+  type DimensionLabelDragState,
+  type DimensionRelationPreview,
+  type DraftDimensionField,
+  type DraftDimensionSession,
+  type DraftDimensionTool,
+  type ParameterSuggestion,
+} from "./viewport/draftDimensions";
+import { buildDraftDimensionPreview } from "./viewport/draftDimensionPreview";
+import {
+  beginDimensionLabelDragPointerDown,
+  buildAngleDimensionFrame,
+  buildDimensionPlacementStart,
+  circleRadiusDimensionProjection,
+  handleDimensionLabelDragPointerMove,
+  type AngleDimensionFrame,
+} from "./viewport/dimensionLabelDrag";
+import {
+  unaryDimensionIdForEntity,
+} from "./viewport/dimensionToolPicking";
+import { SketchToolPanel } from "./viewport/SketchToolPanel";
+import { ViewportContextMenu } from "./viewport/ViewportContextMenu";
+import { handleTrimPointerMove } from "./viewport/trimPointerMove";
+import {
+  buildDimensionRelationPreview,
+  sketchLinesShareEndpoint as relationPreviewLinesShareEndpoint,
+} from "./viewport/dimensionRelationPreview";
+import {
+  buildViewportContextMenuState,
+  type SelectedConstraintState,
+} from "./viewport/contextMenuState";
+import {
+  type ConstraintPreviewState,
+} from "./viewport/constraintPreview";
+import {
+  beginDraftPointerDown,
+  finishDraftStartedPointerUp,
+  updateDraftChainBreakRequest,
+} from "./viewport/draftPointerDown";
+import { resolveDraftPointerMove } from "./viewport/draftPointerMove";
+import { type ArcToolMode } from "./viewport/arcDraftPreview";
+import { type RectangleToolMode } from "./viewport/rectangleDraftPreview";
+import {
+  commitDraftPointerUp,
+} from "./viewport/draftCommit";
+import { renderDraftPointerPreview } from "./viewport/draftPointerPreview";
+import {
+  type ActiveSketchSelectHit,
+} from "./viewport/sketchClickSelection";
+import {
+  intersectViewportSceneTargets,
+} from "./viewport/sceneTargetPicking";
+import { handleActiveSketchPointerUpTool } from "./viewport/pointerUpActiveSketch";
+import { handlePointerUpSceneSelection } from "./viewport/pointerUpSceneSelection";
+import {
+  applyProjectToolHover,
+  applySceneHover,
+  applySelectToolHover,
+  clearSketchEntityHover,
+} from "./viewport/pointerMoveHover";
+import { disposeGeometryTreeResources } from "./viewport/threeDisposal";
+import {
+  invertSelectionFilter,
+  readStoredFilter,
+} from "./selectionFilterState";
+import { updateScreenSpaceSketchSprites } from "./viewport/screenSpaceSketchSprites";
+import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
+import { bindSketchHotkeys } from "./viewport/sketchHotkeys";
+import { syncViewportScene } from "./viewport/sceneSync";
+import {
+  renderViewCubeFrame,
+  rotateCameraAroundCurrentView,
+} from "./viewport/viewCubeRender";
+import {
+  configureViewportControls,
+  handleViewportWheelZoom,
+  resizeViewportRenderer,
+  setupViewportSnapshotCapture,
+} from "./viewport/viewportRenderer";
 
-type DynamicGridRef = {
-  key: string;
-  group: THREE.Group;
-};
-
-type GridPlaneFrame = {
-  origin: THREE.Vector3;
-  xAxis: THREE.Vector3;
-  yAxis: THREE.Vector3;
-  normal: THREE.Vector3;
-};
-type GridPlaneBounds = {
-  minU: number;
-  maxU: number;
-  minV: number;
-  maxV: number;
-};
-interface MoveGizmoDescriptor {
-  bodyId: string;
-  center: { x: number; y: number; z: number };
-  size: { x: number; y: number; z: number };
-  localFrame: {
-    x_axis: { x: number; y: number; z: number };
-    y_axis: { x: number; y: number; z: number };
-    z_axis: { x: number; y: number; z: number };
-  };
-  parameters: MoveFeatureParameters;
-  disabled: boolean;
-}
-type MoveGizmoAxis = "x" | "y" | "z";
-type MoveGizmoDragState = {
-  kind: "translate" | "rotate" | "free";
-  axis: MoveGizmoAxis | null;
-  startClientX: number;
-  startClientY: number;
-  startAngle: number;
-  center: THREE.Vector3;
-  axes: Record<MoveGizmoAxis, THREE.Vector3>;
-  handleLength: number;
-  parameters: MoveFeatureParameters;
-};
-type ActiveSketchGridPlaneFrame = NonNullable<
-  NonNullable<
-    DocumentState["feature_history"][number]["sketch_parameters"]
-  >["plane_frame"]
->;
-type DraftDimensionTool = "line" | "rectangle" | "circle" | "polygon";
-type DraftDimensionField = "length" | "width" | "diameter" | "radius" | "angle";
-type DraftDimensionSession = {
-  tool: DraftDimensionTool;
-  start: [number, number];
-  current: [number, number];
-  values: Record<DraftDimensionField, string>;
-  activeField: DraftDimensionField;
-  lockedFields: Partial<Record<DraftDimensionField, boolean>>;
-  // Fields the user has ever typed into during this draft session,
-  // even if they later cleared the value. Prevents auto-dimension
-  // deletion when the user interacts with a field at all — typing
-  // "10" then backspacing should still preserve the dimension.
-  touchedFields: Partial<Record<DraftDimensionField, boolean>>;
-};
-type ParameterSuggestion = {
-  name: string;
-  expression: string;
-  kind: "length" | "angle";
-  value: number;
-};
-
-function parameterTokenAtCursor(value: string, cursor: number) {
-  const before = value.slice(0, cursor);
-  const after = value.slice(cursor);
-  const startMatch = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
-  if (!startMatch) {
-    return null;
-  }
-  const endMatch = after.match(/^[A-Za-z0-9_]*/);
-  const start = cursor - startMatch[0].length;
-  const end = cursor + (endMatch?.[0].length ?? 0);
-  return { query: value.slice(start, cursor), start, end };
-}
-
-function fuzzyParameterScore(query: string, candidate: string) {
-  const normalizedQuery = query.toLowerCase();
-  const normalizedCandidate = candidate.toLowerCase();
-  if (!normalizedQuery) {
-    return 1;
-  }
-  if (normalizedCandidate === normalizedQuery) {
-    return 1000;
-  }
-  if (normalizedCandidate.startsWith(normalizedQuery)) {
-    return 800 - (normalizedCandidate.length - normalizedQuery.length);
-  }
-  if (normalizedCandidate.includes(normalizedQuery)) {
-    return 600 - normalizedCandidate.indexOf(normalizedQuery);
-  }
-
-  let score = 0;
-  let candidateIndex = 0;
-  let previousMatch = -1;
-  for (const char of normalizedQuery) {
-    const found = normalizedCandidate.indexOf(char, candidateIndex);
-    if (found < 0) {
-      return 0;
-    }
-    score += previousMatch >= 0 && found === previousMatch + 1 ? 12 : 4;
-    if (found === 0 || /[_\-\s]/.test(candidate[found - 1] ?? "")) {
-      score += 8;
-    }
-    previousMatch = found;
-    candidateIndex = found + 1;
-  }
-  return score - normalizedCandidate.length * 0.1;
-}
-
-function GridMiniIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-[18px] w-[18px]"
-      viewBox="0 0 16 16"
-      fill="none"
-    >
-      <path
-        d="M3 2.5V13.5M8 2.5V13.5M13 2.5V13.5M2.5 3H13.5M2.5 8H13.5M2.5 13H13.5"
-        stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-type DimensionLabelDragState = {
-  dimensionId: string;
-  startClientX: number;
-  startClientY: number;
-  startWorld: [number, number, number];
-  startLabelPosition: [number, number, number];
-  dragAxis: [number, number, number];
-  hasMoved: boolean;
-  isPlacement?: boolean;
-  hitPart?: "label" | "geometry";
-};
-
-type DimensionRelationPreview = {
-  kind:
-    | "parallel_line_distance"
-    | "line_angle"
-    | "circle_line_distance"
-    | "circle_center_distance";
-  firstEntityId: string;
-  targetEntityId: string;
-};
-
-const ANGLE_DIMENSION_MIN_RADIUS = 6;
-const ANGLE_DIMENSION_MAX_RADIUS = 500;
-
-function clampAngleRadius(distance: number): number {
-  return Math.max(ANGLE_DIMENSION_MIN_RADIUS, Math.min(distance, ANGLE_DIMENSION_MAX_RADIUS));
-}
-
-const GRID_STEPS_MM = [
-  0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000,
-];
-const GRID_MIN_HALF_LINE_COUNT = 80;
-const GRID_SKETCH_PADDING_MULTIPLIER = 2;
-const GRID_WORLD_PADDING_MULTIPLIER = 6;
-const GRID_MAJOR_EVERY = 10;
-const GRID_CAMERA_SCALE = 40;
-const SKETCH_GRID_BACK_OFFSET = 0.015;
-const SKETCH_SCREEN_SPRITE_BASE_HEIGHT = 900;
-const SKETCH_LABEL_SCREEN_SCALE = 0.72;
-const SKETCH_CONSTRAINT_SCREEN_SIZE = 34;
-const SKETCH_LABEL_COLLISION_PADDING = 6;
 const ORTHO_FRUSTUM_HEIGHT = 220;
 const ORTHO_MIN_ZOOM = 0.02;
 const ORTHO_MAX_ZOOM = 500;
@@ -291,8 +216,6 @@ const CROSSHAIR_SIZE_FACTORS: Partial<Record<CrosshairMode, number>> = {
   "viewport-50": 0.5,
   "viewport-75": 0.75,
 };
-const CARDINAL_VIEW_DOT_THRESHOLD = 0.985;
-const DRAFT_DIMENSION_OFFSET_PX = 36;
 const GRID_SNAP_SCREEN_DISTANCE_PX = 6;
 
 interface ViewportPanelProps {
@@ -390,18 +313,18 @@ interface ViewportPanelProps {
     endY: number,
     anchorX: number,
     anchorY: number,
-    mode: "three_point" | "center_start_end",
+    mode: ArcToolMode,
     isConstruction: boolean,
   ) => Promise<void>;
   // Tool-level mode for the arc tool. Lifted out of ViewportPanel so
   // the SketchToolbar can render the segmented control. Defaults to
   // "three_point"; the toolbar updates it through `onSetArcToolMode`.
-  arcToolMode: "three_point" | "center_start_end";
-  onSetArcToolMode: (mode: "three_point" | "center_start_end") => void;
+  arcToolMode: ArcToolMode;
+  onSetArcToolMode: (mode: ArcToolMode) => void;
   // Rectangle creation mode — corner-to-corner, center-point, or 3-point.
   // Lifted from App.tsx so the viewport commit handler can compute
   // the rectangle corners differently per mode.
-  rectangleToolMode: "corner_corner" | "center_point" | "three_point";
+  rectangleToolMode: RectangleToolMode;
   // Circle creation mode — center+radius, 2-point, 3-point, or tangent.
   // Lifted from App.tsx so the viewport handler can compute the
   // circle geometry differently per mode.
@@ -512,692 +435,6 @@ interface ViewportPanelProps {
   hideReferences?: boolean;
 }
 
-function snapGridCenter(value: number, spacing: number): number {
-  return Math.round(value / spacing) * spacing;
-}
-
-function isGridMajorLine(value: number, spacing: number): boolean {
-  const majorSpacing = spacing * GRID_MAJOR_EVERY;
-  return (
-    Math.abs(value / majorSpacing - Math.round(value / majorSpacing)) < 1e-5
-  );
-}
-
-function pushGridLine(
-  positions: number[],
-  colors: number[],
-  start: THREE.Vector3,
-  end: THREE.Vector3,
-  color: THREE.Color,
-): void {
-  positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-  colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
-}
-
-function buildDynamicGrid(
-  frame: GridPlaneFrame,
-  spacing: number,
-  bounds: GridPlaneBounds,
-  minorColor: THREE.Color,
-  majorColor: THREE.Color,
-  axisColor: THREE.Color,
-  opacity: number,
-): THREE.LineSegments {
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const start = new THREE.Vector3();
-  const end = new THREE.Vector3();
-
-  for (let u = bounds.minU; u <= bounds.maxU + spacing * 0.5; u += spacing) {
-    const uColor =
-      Math.abs(u) < spacing * 0.25
-        ? axisColor
-        : isGridMajorLine(u, spacing)
-          ? majorColor
-          : minorColor;
-
-    start
-      .copy(frame.origin)
-      .addScaledVector(frame.xAxis, u)
-      .addScaledVector(frame.yAxis, bounds.minV);
-    end
-      .copy(frame.origin)
-      .addScaledVector(frame.xAxis, u)
-      .addScaledVector(frame.yAxis, bounds.maxV);
-    pushGridLine(positions, colors, start, end, uColor);
-  }
-
-  for (let v = bounds.minV; v <= bounds.maxV + spacing * 0.5; v += spacing) {
-    const vColor =
-      Math.abs(v) < spacing * 0.25
-        ? axisColor
-        : isGridMajorLine(v, spacing)
-          ? majorColor
-          : minorColor;
-
-    start
-      .copy(frame.origin)
-      .addScaledVector(frame.xAxis, bounds.minU)
-      .addScaledVector(frame.yAxis, v);
-    end
-      .copy(frame.origin)
-      .addScaledVector(frame.xAxis, bounds.maxU)
-      .addScaledVector(frame.yAxis, v);
-    pushGridLine(positions, colors, start, end, vColor);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  const material = new THREE.LineBasicMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-  });
-  return new THREE.LineSegments(geometry, material);
-}
-
-function disposeDynamicGrid(grid: DynamicGridRef | null): void {
-  if (!grid) {
-    return;
-  }
-  disposeGroup(grid.group);
-}
-
-function moveGizmoAxisVector(
-  axis: { x: number; y: number; z: number },
-): THREE.Vector3 {
-  const vector = new THREE.Vector3(axis.x, axis.y, axis.z);
-  return vector.lengthSq() > 1.0e-12 ? vector.normalize() : new THREE.Vector3(1, 0, 0);
-}
-
-function moveGizmoAxes(
-  gizmo: MoveGizmoDescriptor,
-): Record<MoveGizmoAxis, THREE.Vector3> {
-  return {
-    x: moveGizmoAxisVector(gizmo.localFrame.x_axis),
-    y: moveGizmoAxisVector(gizmo.localFrame.y_axis),
-    z: moveGizmoAxisVector(gizmo.localFrame.z_axis),
-  };
-}
-
-function orientObjectAlongAxis(object: THREE.Object3D, axis: THREE.Vector3) {
-  object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-}
-
-function orientRingToAxis(object: THREE.Object3D, axis: THREE.Vector3) {
-  object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis);
-}
-
-function buildMoveGizmoObject(gizmo: MoveGizmoDescriptor) {
-  const group = new THREE.Group();
-  const pickables: THREE.Object3D[] = [];
-  const center = new THREE.Vector3(
-    gizmo.center.x,
-    gizmo.center.y,
-    gizmo.center.z,
-  );
-  const axes = moveGizmoAxes(gizmo);
-  const maxSize = Math.max(gizmo.size.x, gizmo.size.y, gizmo.size.z, 12);
-  const handleLength = Math.min(Math.max(maxSize * 0.65, 18), 80);
-  const ringRadius = handleLength * 0.55;
-  const axisColors: Record<MoveGizmoAxis, string> = {
-    x: themeColor("--color-axis-x", "#ff6b7a"),
-    y: themeColor("--color-axis-y", "#2bd978"),
-    z: themeColor("--color-axis-z", "#6db4ff"),
-  };
-  const handleRadius = Math.max(handleLength * 0.018, 0.28);
-
-  const freeMaterial = new THREE.MeshBasicMaterial({
-    color: themeColor("--color-primary-glow", "#00e5ff"),
-    transparent: true,
-    opacity: 0.9,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const centerHandle = new THREE.Mesh(
-    new THREE.SphereGeometry(Math.max(handleRadius * 3.2, 2.2), 20, 12),
-    freeMaterial,
-  );
-  centerHandle.position.copy(center);
-  centerHandle.renderOrder = 50;
-  centerHandle.userData.moveGizmoHandle = { kind: "free" };
-  group.add(centerHandle);
-  pickables.push(centerHandle);
-
-  (["x", "y", "z"] as const).forEach((axisKey) => {
-    const axis = axes[axisKey];
-    const color = axisColors[axisKey];
-    const axisMaterial = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.92,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const shaft = new THREE.Mesh(
-      new THREE.CylinderGeometry(handleRadius, handleRadius, handleLength, 12),
-      axisMaterial,
-    );
-    orientObjectAlongAxis(shaft, axis);
-    shaft.position.copy(center).addScaledVector(axis, handleLength * 0.5);
-    shaft.renderOrder = 50;
-    shaft.userData.moveGizmoHandle = { kind: "translate", axis: axisKey };
-    group.add(shaft);
-    pickables.push(shaft);
-
-    const arrow = new THREE.Mesh(
-      new THREE.ConeGeometry(handleRadius * 3.4, handleRadius * 9, 20),
-      axisMaterial,
-    );
-    orientObjectAlongAxis(arrow, axis);
-    arrow.position.copy(center).addScaledVector(axis, handleLength + handleRadius * 4.5);
-    arrow.renderOrder = 50;
-    arrow.userData.moveGizmoHandle = { kind: "translate", axis: axisKey };
-    group.add(arrow);
-    pickables.push(arrow);
-
-    const ringMaterial = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.72,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(ringRadius, Math.max(handleRadius * 0.7, 0.18), 8, 72),
-      ringMaterial,
-    );
-    orientRingToAxis(ring, axis);
-    ring.position.copy(center);
-    ring.renderOrder = 49;
-    ring.userData.moveGizmoHandle = { kind: "rotate", axis: axisKey };
-    group.add(ring);
-    pickables.push(ring);
-  });
-
-  return { group, pickables, handleLength };
-}
-
-function getSketchGridFrame(
-  planeId: string,
-  planeFrame: ActiveSketchGridPlaneFrame | null,
-): GridPlaneFrame {
-  if (planeFrame) {
-    const normal = new THREE.Vector3(
-      planeFrame.normal.x,
-      planeFrame.normal.y,
-      planeFrame.normal.z,
-    ).normalize();
-    return {
-      origin: new THREE.Vector3(
-        planeFrame.origin.x,
-        planeFrame.origin.y,
-        planeFrame.origin.z,
-      ).addScaledVector(normal, -SKETCH_GRID_BACK_OFFSET),
-      xAxis: new THREE.Vector3(
-        planeFrame.x_axis.x,
-        planeFrame.x_axis.y,
-        planeFrame.x_axis.z,
-      ).normalize(),
-      yAxis: new THREE.Vector3(
-        planeFrame.y_axis.x,
-        planeFrame.y_axis.y,
-        planeFrame.y_axis.z,
-      ).normalize(),
-      normal,
-    };
-  }
-
-  if (planeId === "ref-plane-yz") {
-    return {
-      origin: new THREE.Vector3(
-        SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
-        0,
-        0,
-      ),
-      xAxis: new THREE.Vector3(0, 1, 0),
-      yAxis: new THREE.Vector3(0, 0, 1),
-      normal: new THREE.Vector3(1, 0, 0),
-    };
-  }
-
-  if (planeId === "ref-plane-xz") {
-    return {
-      origin: new THREE.Vector3(
-        0,
-        0,
-        SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
-      ),
-      xAxis: new THREE.Vector3(1, 0, 0),
-      yAxis: new THREE.Vector3(0, 1, 0),
-      normal: new THREE.Vector3(0, 0, 1),
-    };
-  }
-
-  return {
-    origin: new THREE.Vector3(
-      0,
-      SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
-      0,
-    ),
-    xAxis: new THREE.Vector3(1, 0, 0),
-    yAxis: new THREE.Vector3(0, 0, 1),
-    normal: new THREE.Vector3(0, 1, 0),
-  };
-}
-
-function projectPointToGridFrame(point: THREE.Vector3, frame: GridPlaneFrame) {
-  const relative = point.clone().sub(frame.origin);
-  return {
-    u: relative.dot(frame.xAxis),
-    v: relative.dot(frame.yAxis),
-  };
-}
-
-function worldPointToSketchLocal(
-  world: [number, number, number],
-  planeId: string | null,
-  planeFrame: ActiveSketchGridPlaneFrame | null,
-): [number, number] | null {
-  if (!planeId) {
-    return null;
-  }
-  if (planeFrame) {
-    const point = new THREE.Vector3(...world);
-    const origin = new THREE.Vector3(
-      planeFrame.origin.x,
-      planeFrame.origin.y,
-      planeFrame.origin.z,
-    );
-    const xAxis = new THREE.Vector3(
-      planeFrame.x_axis.x,
-      planeFrame.x_axis.y,
-      planeFrame.x_axis.z,
-    ).normalize();
-    const yAxis = new THREE.Vector3(
-      planeFrame.y_axis.x,
-      planeFrame.y_axis.y,
-      planeFrame.y_axis.z,
-    ).normalize();
-    const delta = point.sub(origin);
-    return [delta.dot(xAxis), delta.dot(yAxis)];
-  }
-  if (planeId === "ref-plane-xy") {
-    return [world[0], world[2]];
-  }
-  if (planeId === "ref-plane-yz") {
-    return [world[1], world[2]];
-  }
-  return [world[0], world[1]];
-}
-
-function fallbackGridBounds(
-  center: { u: number; v: number },
-  spacing: number,
-): GridPlaneBounds {
-  const extent = spacing * GRID_MIN_HALF_LINE_COUNT;
-  return {
-    minU: snapGridCenter(center.u - extent, spacing),
-    maxU: snapGridCenter(center.u + extent, spacing),
-    minV: snapGridCenter(center.v - extent, spacing),
-    maxV: snapGridCenter(center.v + extent, spacing),
-  };
-}
-
-function getGridViewBounds(
-  camera: THREE.OrthographicCamera,
-  frame: GridPlaneFrame,
-  spacing: number,
-  fallbackCenter: { u: number; v: number },
-  paddingMultiplier: number,
-): GridPlaneBounds {
-  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-    frame.normal.clone().normalize(),
-    frame.origin,
-  );
-  const rayDirection = new THREE.Vector3();
-  camera.getWorldDirection(rayDirection);
-  const corners = [
-    [-1, -1],
-    [1, -1],
-    [-1, 1],
-    [1, 1],
-  ] as const;
-  const projectedCorners: Array<{ u: number; v: number }> = [];
-
-  for (const [x, y] of corners) {
-    const rayOrigin = new THREE.Vector3(x, y, -1).unproject(camera);
-    const denominator = plane.normal.dot(rayDirection);
-    if (Math.abs(denominator) > 1e-6) {
-      const t = -(rayOrigin.dot(plane.normal) + plane.constant) / denominator;
-      const hit = rayOrigin.clone().addScaledVector(rayDirection, t);
-      projectedCorners.push(projectPointToGridFrame(hit, frame));
-    }
-  }
-
-  if (projectedCorners.length < 2) {
-    return fallbackGridBounds(fallbackCenter, spacing);
-  }
-
-  const minU = Math.min(...projectedCorners.map((point) => point.u));
-  const maxU = Math.max(...projectedCorners.map((point) => point.u));
-  const minV = Math.min(...projectedCorners.map((point) => point.v));
-  const maxV = Math.max(...projectedCorners.map((point) => point.v));
-  const spanU = Math.max(maxU - minU, spacing);
-  const spanV = Math.max(maxV - minV, spacing);
-  const minPadding = spacing * GRID_MIN_HALF_LINE_COUNT;
-  const paddingU = Math.max(spanU * paddingMultiplier, minPadding);
-  const paddingV = Math.max(spanV * paddingMultiplier, minPadding);
-
-  return {
-    minU: Math.floor((minU - paddingU) / spacing) * spacing,
-    maxU: Math.ceil((maxU + paddingU) / spacing) * spacing,
-    minV: Math.floor((minV - paddingV) / spacing) * spacing,
-    maxV: Math.ceil((maxV + paddingV) / spacing) * spacing,
-  };
-}
-
-function getOrthographicViewHeight(camera: THREE.OrthographicCamera): number {
-  return (camera.top - camera.bottom) / Math.max(camera.zoom, 0.0001);
-}
-
-function selectOrthographicGridSpacing(
-  camera: THREE.OrthographicCamera,
-): number {
-  const desiredSpacing = Math.max(
-    getOrthographicViewHeight(camera) / GRID_CAMERA_SCALE,
-    GRID_STEPS_MM[0],
-  );
-  return (
-    GRID_STEPS_MM.find((spacing) => spacing >= desiredSpacing) ??
-    GRID_STEPS_MM[GRID_STEPS_MM.length - 1]
-  );
-}
-
-function nearestCardinalAxis(viewOffset: THREE.Vector3): THREE.Vector3 | null {
-  const candidates = [
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(-1, 0, 0),
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3(0, 0, 1),
-    new THREE.Vector3(0, 0, -1),
-  ];
-  let best: THREE.Vector3 | null = null;
-  let bestDot = -1;
-  for (const candidate of candidates) {
-    const dot = viewOffset.dot(candidate);
-    if (dot > bestDot) {
-      best = candidate;
-      bestDot = dot;
-    }
-  }
-  return best && bestDot >= CARDINAL_VIEW_DOT_THRESHOLD ? best : null;
-}
-
-function getCardinalGridFrame(viewOffset: THREE.Vector3): GridPlaneFrame | null {
-  const axis = nearestCardinalAxis(viewOffset);
-  if (!axis) {
-    return null;
-  }
-
-  if (Math.abs(axis.x) > 0.5) {
-    return {
-      origin: new THREE.Vector3(0, 0, 0),
-      xAxis: new THREE.Vector3(0, 1, 0),
-      yAxis: new THREE.Vector3(0, 0, 1),
-      normal: axis,
-    };
-  }
-
-  if (Math.abs(axis.z) > 0.5) {
-    return {
-      origin: new THREE.Vector3(0, 0, 0),
-      xAxis: new THREE.Vector3(1, 0, 0),
-      yAxis: new THREE.Vector3(0, 1, 0),
-      normal: axis,
-    };
-  }
-
-  return {
-    origin: new THREE.Vector3(0, 0, 0),
-    xAxis: new THREE.Vector3(1, 0, 0),
-    yAxis: new THREE.Vector3(0, 0, 1),
-    normal: axis,
-  };
-}
-
-function isDraftDimensionTool(tool: SketchTool): tool is DraftDimensionTool {
-  return tool === "line" || tool === "rectangle" || tool === "circle" || tool === "polygon";
-}
-
-function isDrawableSketchTool(
-  tool: SketchTool | null,
-): tool is DraftDimensionTool | "arc" | "polygon" {
-  return (
-    tool === "line" ||
-    tool === "rectangle" ||
-    tool === "circle" ||
-    tool === "arc" ||
-    tool === "polygon"
-  );
-}
-
-function sketchToolLabelKey(tool: DraftDimensionTool | "arc" | "polygon"): string {
-  if (tool === "line") {
-    return "toolbar.line";
-  }
-  if (tool === "rectangle") {
-    return "toolbar.rectangle";
-  }
-  if (tool === "circle") {
-    return "toolbar.circle";
-  }
-  if (tool === "arc") {
-    return "toolbar.arc";
-  }
-  return "toolbar.polygon";
-}
-
-function formatDraftDimension(value: number): string {
-  return Math.max(Math.abs(value), 0).toFixed(2);
-}
-
-function draftSessionValues(
-  tool: DraftDimensionTool,
-  start: [number, number],
-  current: [number, number],
-): Record<DraftDimensionField, string> {
-  const width = current[0] - start[0];
-  const length = current[1] - start[1];
-  const radius = distanceBetweenPoints(start, current);
-  // Angle from positive X axis in sketch coordinates. Negated so that
-  // positive angles go CCW on screen (sketch Y points down in viewport).
-  // Display shows absolute value; the sign is inferred from cursor
-  // position when the user types.
-  const lineAngleDeg =
-    -Math.atan2(current[1] - start[1], current[0] - start[0]) *
-    (180 / Math.PI);
-  const lineAngle =
-    tool === "line" ? Math.abs(lineAngleDeg).toFixed(2) : "0";
-  return {
-    length:
-      tool === "line"
-        ? formatDraftDimension(radius)
-        : formatDraftDimension(length),
-    width: formatDraftDimension(width),
-    diameter: formatDraftDimension(radius * 2),
-    radius: formatDraftDimension(radius),
-    angle: lineAngle,
-  };
-}
-
-function draftSessionFields(tool: DraftDimensionTool): DraftDimensionField[] {
-  if (tool === "rectangle") {
-    return ["width", "length"];
-  }
-  if (tool === "circle") {
-    return ["diameter"];
-  }
-  if (tool === "polygon") {
-    return ["radius"];
-  }
-  if (tool === "line") {
-    return ["length", "angle"];
-  }
-  return ["length"];
-}
-
-function applyDraftDimensionFieldValue(
-  session: DraftDimensionSession,
-  field: DraftDimensionField,
-  rawValue: string,
-  lockField = true,
-): DraftDimensionSession {
-  const numeric = Number(rawValue);
-  const nextValues = { ...session.values, [field]: rawValue };
-  // Angles may be negative or zero — only reject NaN / Infinity.
-  if (field === "angle") {
-    if (!Number.isFinite(numeric)) {
-      return {
-        ...session,
-        values: nextValues,
-        activeField: field,
-        lockedFields: lockField
-          ? {...session.lockedFields, [field]: true}
-          : session.lockedFields,
-        touchedFields: {...session.touchedFields, [field]: true},
-      };
-    }
-  } else if (!Number.isFinite(numeric) || numeric <= 0) {
-    return {
-      ...session,
-      values: nextValues,
-      activeField: field,
-      lockedFields: lockField
-        ? {...session.lockedFields, [field]: true}
-        : session.lockedFields,
-      touchedFields: {...session.touchedFields, [field]: true},
-    };
-  }
-
-  const dx = session.current[0] - session.start[0];
-  const dy = session.current[1] - session.start[1];
-  const signX = dx < 0 ? -1 : 1;
-  const signY = dy < 0 ? -1 : 1;
-  let current = session.current;
-  if (field === "angle") {
-    // Angle is in degrees; convert to radians. Preserve the sign from
-    // the current draft direction (atan2 of dy/dx) so the line keeps
-    // its original orientation — the user types an unsigned value and
-    // the core infers ± from cursor position.
-    // Preserve the current length (or locked length) and rotate the
-    // endpoint around the start.
-    const currentRad = Math.atan2(dy, dx);
-    const sign = currentRad >= 0 ? 1 : -1;
-    const radians = sign * numeric * (Math.PI / 180);
-    const currentLength = Math.hypot(dx, dy) || 1;
-    const lockedLength = session.lockedFields.length
-      ? Number(session.values.length)
-      : NaN;
-    const useLength =
-      Number.isFinite(lockedLength) && lockedLength > 0
-        ? lockedLength
-        : currentLength;
-    current = [
-      session.start[0] + Math.cos(radians) * useLength,
-      session.start[1] + Math.sin(radians) * useLength,
-    ];
-  } else if (session.tool === "rectangle") {
-    current = [
-      field === "width" ? session.start[0] + signX * numeric : current[0],
-      field === "length" ? session.start[1] + signY * numeric : current[1],
-    ];
-  } else if (session.tool === "circle") {
-    const radius = numeric / 2;
-    const length = Math.hypot(dx, dy) || 1;
-    current = [
-      session.start[0] + (dx / length) * radius,
-      session.start[1] + (dy / length) * radius,
-    ];
-  } else {
-    const length = Math.hypot(dx, dy) || 1;
-    current = [
-      session.start[0] + (dx / length) * numeric,
-      session.start[1] + (dy / length) * numeric,
-    ];
-  }
-
-  return {
-    ...session,
-    current,
-    values: {
-      ...draftSessionValues(session.tool, session.start, current),
-      [field]: rawValue,
-    },
-    activeField: field,
-    lockedFields: lockField
-      ? {...session.lockedFields, [field]: true}
-      : session.lockedFields,
-    touchedFields: {...session.touchedFields, [field]: true},
-  };
-}
-
-function updateDraftSessionCurrent(
-  session: DraftDimensionSession,
-  current: [number, number],
-): DraftDimensionSession {
-  let next: DraftDimensionSession = {
-    ...session,
-    current,
-    values: draftSessionValues(session.tool, session.start, current),
-  };
-
-  for (const field of draftSessionFields(session.tool)) {
-    if (!session.lockedFields[field]) {
-      continue;
-    }
-    const lockedValue = Number(session.values[field]);
-    // Angles can be zero or negative — only reject NaN/Infinity.
-    if (field === "angle") {
-      if (!Number.isFinite(lockedValue)) {
-        next.values[field] = session.values[field];
-        continue;
-      }
-    } else if (!Number.isFinite(lockedValue) || lockedValue <= 0) {
-      next.values[field] = session.values[field];
-      continue;
-    }
-    next = applyDraftDimensionFieldValue(
-      {...next, values: {...next.values, [field]: session.values[field]}},
-      field,
-      session.values[field],
-      false,
-    );
-  }
-
-  return {
-    ...next,
-    activeField: session.activeField,
-    values: {
-      ...next.values,
-      ...Object.fromEntries(
-        Object.entries(session.lockedFields)
-          .filter(([, locked]) => locked)
-          .map(([field]) => [
-            field,
-            session.values[field as DraftDimensionField],
-          ]),
-      ),
-    },
-  };
-}
-
 export function ViewportPanel({
   status,
   document,
@@ -1275,7 +512,6 @@ export function ViewportPanel({
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const showViewportGrid = config.viewport.showGrid;
   const showSketchGrid = config.viewport.showSketchGrid;
-  const [trimDebugInfo, setTrimDebugInfo] = useState<string | null>(null);
   const [contextMenu, setContextMenu] =
     useState<ViewportContextMenuState | null>(null);
   const [sketchSnapLabel, setSketchSnapLabel] = useState<string | null>(null);
@@ -1302,19 +538,8 @@ export function ViewportPanel({
     x: number;
     y: number;
   } | null>(null);
-  const [constraintPreview, setConstraintPreview] = useState<{
-    kind:
-      | "midpoint"
-      | "perpendicular"
-      | "on_line"
-      | "horizontal"
-      | "vertical"
-      | "tangent"
-      | "endpoint"
-      | "parallel";
-    x: number;
-    y: number;
-  } | null>(null);
+  const [constraintPreview, setConstraintPreview] =
+    useState<ConstraintPreviewState | null>(null);
   const [crosshairPointer, setCrosshairPointer] = useState<{
     x: number;
     y: number;
@@ -1423,12 +648,12 @@ export function ViewportPanel({
   // the chain and start an independent line on the next click.
   const lastPointerDownTimeRef = useRef(0);
   const lastPointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
-const chainBreakRequestedRef = useRef(false);
-// 2D sketch-plane angle (radians) of the last committed line segment,
-// used as the reference for the next chained line's angle arc.
-// null for the first / independent line (defaults to horizontal, 0 rad).
-const previousLineAngleRef = useRef<number | null>(null);
-const currentGridSpacingRef = useRef(10);
+  const chainBreakRequestedRef = useRef(false);
+  // 2D sketch-plane angle (radians) of the last committed line segment,
+  // used as the reference for the next chained line's angle arc.
+  // null for the first / independent line (defaults to horizontal, 0 rad).
+  const previousLineAngleRef = useRef<number | null>(null);
+  const currentGridSpacingRef = useRef(10);
   const draftDimensionSessionRef = useRef<DraftDimensionSession | null>(null);
   const draftDimensionInputRefs = useRef<
     Partial<Record<DraftDimensionField, HTMLInputElement | null>>
@@ -1515,28 +740,10 @@ const currentGridSpacingRef = useRef(10);
   const addSketchCircleRef = useRef(onAddSketchCircle);
   
   const addSketchArcRef = useRef(onAddSketchArc);
-  // --- Rectangle selection drag state ---
-  interface SelectionDrag {
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    active: boolean;
-  }
   const selectionDragRef = useRef<SelectionDrag | null>(null);
 
   // Endpoint drag state — active when the user grabs a sketch
   // line endpoint in Select mode and drags it to a new position.
-  interface EndpointDrag {
-    pointId: string;
-    startClientX: number;
-    startClientY: number;
-    startLocalX: number;
-    startLocalY: number;
-    hasMoved: boolean;
-    /** True while an IPC update is in flight — drop intermediate frames. */
-    inFlight: boolean;
-  }
   const endpointDragRef = useRef<EndpointDrag | null>(null);
   // rAF batching for endpoint drag — same pattern as flushMoveGizmoChange.
   const pendingDragRef = useRef<{
@@ -1561,11 +768,8 @@ const currentGridSpacingRef = useRef(10);
   // so the user doesn't see the entity snap back to its old position.
   const pendingEndpointCommitRef = useRef(false);
 
-  const [selectionRect, setSelectionRect] = useState<{
-    left: number; top: number; width: number; height: number;
-    visible: boolean;
-    direction: "window" | "crossing";
-  } | null>(null);
+  const [selectionRect, setSelectionRect] =
+    useState<SelectionRectOverlay | null>(null);
 
   const arcToolModeRef = useRef(arcToolMode);
   const rectangleToolModeRef = useRef(rectangleToolMode);
@@ -1649,33 +853,12 @@ const currentGridSpacingRef = useRef(10);
   const cancelSketchConstraintRef = useRef(onCancelSketchConstraint);
   const clearSketchConstraintRef = useRef(onClearSketchConstraint);
   /** Selected constraint for deletion on Delete key. */
-  interface SelectedConstraint {
-    kind: ConstraintType;
-    entityId: string;
-    relatedEntityId: string | null;
-  }
-  const [selectedConstraint, setSelectedConstraint] = useState<SelectedConstraint | null>(null);
+  const [selectedConstraint, setSelectedConstraint] =
+    useState<SelectedConstraintState | null>(null);
   const selectedConstraintRef = useRef(selectedConstraint);
   selectedConstraintRef.current = selectedConstraint;
   const activeSketchToolRef = useRef<SketchTool>("select");
-  const sketchSnapCandidatesRef = useRef<
-    Array<{
-      local: [number, number];
-      label: string;
-      kind?:
-        | "midpoint"
-        | "endpoint"
-        | "center"
-        | "intersection"
-        | "nearest"
-        | "tangent";
-      hostLineId?: string;
-      // Parametric position along the host line for sub-segment
-      // midpoint candidates (and 0.5 for whole-line midpoints).
-      tValue?: number;
-      endpointHostLineId?: string;
-    }>
-  >([]);
+  const sketchSnapCandidatesRef = useRef<SketchSnapCandidate[]>([]);
   // Track host line ids for midpoint snaps that were committed during
   // a line draft. The first click of a line stores the start's host
   // (if any); the second click stores the end's host. After the
@@ -1912,13 +1095,6 @@ const currentGridSpacingRef = useRef(10);
       pendingDimensionDeletionRef.current = null;
       return;
     }
-    console.warn("[dim-delete] pending", {
-      tool: pending.shouldDeleteLine ? "line" : pending.shouldDeleteCircle ? "circle" : pending.shouldDeletePolygon ? "polygon" : pending.shouldDeleteRectangle ? "rectangle" : "none",
-      sketchLines: sketch.lines.length,
-      sketchCircles: sketch.circles.length,
-      sketchPolygons: sketch.polygons?.length ?? 0,
-      dimIds: sketch.dimensions.map(d => d.dimension_id),
-    });
     // Look up dimensions by entity_id + kind instead of predicting
     // the ID format (dim-line-{id}, etc.). The response always
     // contains the full dimensions array, so this tolerates ID
@@ -2108,133 +1284,13 @@ const currentGridSpacingRef = useRef(10);
     }
     return null;
   }, [document, viewport]);
-  function angleDimensionFrame(dimension: SketchDimensionScene) {
-    const sketch = sketchFeature?.sketch_parameters;
-    const coreDimension = sketch?.dimensions.find(
-      (candidate) => candidate.dimension_id === dimension.dimensionId,
-    );
-    if (
-      sketch &&
-      coreDimension?.kind === "angle" &&
-      coreDimension.secondary_entity_id
-    ) {
-      const lineA = sketch.lines.find(
-        (line) => line.line_id === coreDimension.entity_id,
-      );
-      const lineB = sketch.lines.find(
-        (line) => line.line_id === coreDimension.secondary_entity_id,
-      );
-      if (lineA && lineB) {
-        const aEnds: Array<{
-          pointId: string;
-          local: [number, number];
-        }> = [
-          {pointId: lineA.start_point_id, local: [lineA.start_x, lineA.start_y]},
-          {pointId: lineA.end_point_id, local: [lineA.end_x, lineA.end_y]},
-        ];
-        const bEnds: Array<{
-          pointId: string;
-          local: [number, number];
-        }> = [
-          {pointId: lineB.start_point_id, local: [lineB.start_x, lineB.start_y]},
-          {pointId: lineB.end_point_id, local: [lineB.end_x, lineB.end_y]},
-        ];
-        let aPivotIndex = -1;
-        let bPivotIndex = -1;
-        for (let aIndex = 0; aIndex < aEnds.length && aPivotIndex < 0; aIndex++) {
-          for (let bIndex = 0; bIndex < bEnds.length; bIndex++) {
-            const samePointId = aEnds[aIndex].pointId === bEnds[bIndex].pointId;
-            const dx = aEnds[aIndex].local[0] - bEnds[bIndex].local[0];
-            const dy = aEnds[aIndex].local[1] - bEnds[bIndex].local[1];
-            if (samePointId || Math.hypot(dx, dy) <= 0.05) {
-              aPivotIndex = aIndex;
-              bPivotIndex = bIndex;
-              break;
-            }
-          }
-        }
-
-        if (aPivotIndex >= 0 && bPivotIndex >= 0) {
-          const pivotLocal = aEnds[aPivotIndex].local;
-          const aOther = aEnds[1 - aPivotIndex].local;
-          const bOther = bEnds[1 - bPivotIndex].local;
-          const aDx = aOther[0] - pivotLocal[0];
-          const aDy = aOther[1] - pivotLocal[1];
-          const bDx = bOther[0] - pivotLocal[0];
-          const bDy = bOther[1] - pivotLocal[1];
-          const aLength = Math.hypot(aDx, aDy);
-          const bLength = Math.hypot(bDx, bDy);
-          if (aLength > 1e-8 && bLength > 1e-8) {
-            const pivot = new THREE.Vector3(
-              ...toWorldPoint(dimension.planeId, pivotLocal, sketch.plane_frame),
-            );
-            const aUnitPoint = new THREE.Vector3(
-              ...toWorldPoint(
-                dimension.planeId,
-                [pivotLocal[0] + aDx / aLength, pivotLocal[1] + aDy / aLength],
-                sketch.plane_frame,
-              ),
-            );
-            const bUnitPoint = new THREE.Vector3(
-              ...toWorldPoint(
-                dimension.planeId,
-                [pivotLocal[0] + bDx / bLength, pivotLocal[1] + bDy / bLength],
-                sketch.plane_frame,
-              ),
-            );
-            const startUnit = aUnitPoint.sub(pivot).normalize();
-            const endUnit = bUnitPoint.sub(pivot).normalize();
-            const bisector = startUnit.clone().add(endUnit);
-            if (bisector.lengthSq() > 1e-8) {
-              const anchorRadius = Math.max(
-                0.1,
-                new THREE.Vector3(...dimension.anchorStart).distanceTo(pivot),
-              );
-              const dimensionRadius = Math.max(
-                anchorRadius + 1,
-                new THREE.Vector3(...dimension.dimensionStart).distanceTo(pivot),
-              );
-              return {
-                pivot,
-                startUnit,
-                endUnit,
-                bisector: bisector.normalize(),
-                anchorRadius,
-                dimensionRadius,
-              };
-            }
-          }
-        }
-      }
-    }
-
-    // Fallback: use the core-provided arc centre when line data isn't
-    // available.  anchorStart == dimensionStart for angle dims (both
-    // sit at the arc radius), so the anchor-based pivot computation
-    // below would always fail.
-    if (dimension.arcCenter) {
-      const pivot = new THREE.Vector3(...dimension.arcCenter);
-      const startUnit = new THREE.Vector3(...dimension.dimensionStart)
-        .sub(pivot).normalize();
-      const endUnit = new THREE.Vector3(...dimension.dimensionEnd)
-        .sub(pivot).normalize();
-      const bisector = startUnit.clone().add(endUnit);
-      if (bisector.lengthSq() > 1e-8) {
-        const anchorRadius = new THREE.Vector3(...dimension.anchorEnd)
-          .distanceTo(pivot);
-        const dimensionRadius = new THREE.Vector3(...dimension.dimensionStart)
-          .distanceTo(pivot);
-        return {
-          pivot,
-          startUnit,
-          endUnit,
-          bisector: bisector.normalize(),
-          anchorRadius,
-          dimensionRadius,
-        };
-      }
-    }
-    return null;
+  function angleDimensionFrame(
+    dimension: SketchDimensionScene,
+  ): AngleDimensionFrame | null {
+    return buildAngleDimensionFrame({
+      dimension,
+      sketchParameters: sketchFeature?.sketch_parameters,
+    });
   }
 
   const displayedSketchDimensions = useMemo(() => {
@@ -2280,27 +1336,18 @@ const currentGridSpacingRef = useRef(10);
       const nextLabel = new THREE.Vector3(...labelPosition);
       let offset = nextLabel.sub(originalLabel);
       if (dimension.kind === "circle_radius") {
-        const center = new THREE.Vector3(...dimension.dimensionStart)
-          .add(new THREE.Vector3(...dimension.dimensionEnd))
-          .multiplyScalar(0.5);
-        const radius =
-          new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-            new THREE.Vector3(...dimension.dimensionEnd),
-          ) * 0.5;
-        const direction = new THREE.Vector3(...labelPosition).sub(center);
-        const planeNormal = getSketchGridFrame(
-          dimension.planeId,
-          activeSketchPlaneFrame,
-        ).normal;
-        direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-        if (direction.lengthSq() > 1e-8 && radius > 1e-8) {
-          direction.normalize();
-          const start = center
+        const projection = circleRadiusDimensionProjection({
+          dimension,
+          worldPoint: labelPosition,
+          planeFrame: activeSketchPlaneFrame,
+        });
+        if (projection) {
+          const start = projection.center
             .clone()
-            .add(direction.clone().multiplyScalar(-radius));
-          const end = center
+            .add(projection.direction.clone().multiplyScalar(-projection.radius));
+          const end = projection.center
             .clone()
-            .add(direction.clone().multiplyScalar(radius));
+            .add(projection.direction.clone().multiplyScalar(projection.radius));
           const toTuple = (point: THREE.Vector3): [number, number, number] => [
             point.x,
             point.y,
@@ -2478,143 +1525,15 @@ const currentGridSpacingRef = useRef(10);
     return statuses.find((s) => s.entity_id === id) ?? null;
   }, [document?.selected_sketch_entity_id, viewport?.dof_statuses]);
 
-  const sketchSnapCandidates = useMemo(() => {
-    // When the C++ core emits snap_candidates, build from those.
-    // Otherwise fall back to the legacy TS-side build.
-    const coreCandidates = viewport?.snap_candidates;
-    if (!sketchFeature?.sketch_parameters) {
-      return [];
-    }
-
-    type Candidate = {
-      local: [number, number];
-      label: string;
-      kind?:
-        | "midpoint"
-        | "endpoint"
-        | "center"
-        | "intersection"
-        | "nearest"
-        | "tangent";
-      hostLineId?: string;
-      tValue?: number;
-      endpointHostLineId?: string;
-    };
-    const params = sketchFeature.sketch_parameters;
-    const candidates: Candidate[] = [{ local: [0, 0], label: translate("snap.origin") }];
-
-    if (coreCandidates && coreCandidates.length > 0) {
-      // Build from C++ snap_candidates, gated by the core's SelectionFilter.
-      for (const sc of coreCandidates) {
-        switch (sc.kind) {
-          case "endpoint":
-            candidates.push({
-              local: [sc.local_x, sc.local_y],
-              label: sc.label,
-              kind: "endpoint",
-              endpointHostLineId: sc.entity_id || undefined,
-            });
-            break;
-          case "midpoint":
-            candidates.push({
-              local: [sc.local_x, sc.local_y],
-              label: sc.label,
-              kind: "midpoint",
-              hostLineId: sc.entity_id || undefined,
-              tValue: 0.5,
-            });
-            break;
-          case "center":
-          default:
-            candidates.push({
-              local: [sc.local_x, sc.local_y],
-              label: sc.label,
-            });
-            break;
-        }
-      }
-      return candidates;
-    }
-
-    // Legacy fallback: build candidates from raw sketch entities.
-    // (preserved for when the core hasn't been rebuilt yet)
-    for (const line of params.lines) {
-      candidates.push({
-        local: [line.start_x, line.start_y],
-        label:
-          line.constraint === "horizontal" || line.constraint === "vertical"
-            ? translate("snap.constrainedLine", {
-                constraint:
-                  line.constraint === "horizontal"
-                    ? translate("toolbar.horizontal")
-                    : translate("toolbar.vertical"),
-              })
-            : translate("snap.lineEndpoint"),
-        kind: "endpoint",
-        endpointHostLineId: line.line_id,
-      });
-      candidates.push({
-        local: [line.end_x, line.end_y],
-        label: translate("snap.lineEndpoint"),
-        kind: "endpoint",
-        endpointHostLineId: line.line_id,
-      });
-
-      // Build the list of "split" t-values for this line. A line is
-      // split by any point anchored on it (whole-line midpoint
-      // anchor at t=0.5, or arbitrary-t point-line anchor). Sorting
-      // them and inserting the t=0 / t=1 endpoints yields a sequence
-      // of sub-segments; the midpoint of each sub-segment becomes
-      // its own snap candidate. With no splits, this collapses back
-      // to the classic whole-line midpoint at t=0.5.
-      const splitTs: number[] = [];
-      for (const anchor of params.midpoint_anchors) {
-        if (anchor.line_id === line.line_id) {
-          splitTs.push(0.5);
-        }
-      }
-      for (const anchor of params.point_line_anchors ?? []) {
-        if (anchor.line_id === line.line_id) {
-          splitTs.push(anchor.t);
-        }
-      }
-      // Dedupe + sort. Two anchors at the same t shouldn't generate
-      // a zero-length sub-segment with degenerate snap candidates.
-      const uniqueTs = Array.from(new Set([0, ...splitTs, 1])).sort(
-        (a, b) => a - b,
-      );
-      for (let i = 0; i < uniqueTs.length - 1; i++) {
-        const tMid = (uniqueTs[i] + uniqueTs[i + 1]) / 2;
-        // Skip degenerate sub-segments — same-position anchors leave
-        // adjacent t values equal up to floating-point noise.
-        if (uniqueTs[i + 1] - uniqueTs[i] < 1e-9) {
-          continue;
-        }
-        const isWholeLine = uniqueTs.length === 2;
-        const dx = line.end_x - line.start_x;
-        const dy = line.end_y - line.start_y;
-        candidates.push({
-          local: [line.start_x + tMid * dx, line.start_y + tMid * dy],
-          // The label deliberately avoids ids — see AGENTS.md UI
-          // copy rules. "Midpoint" reads naturally for both whole-
-          // line and sub-segment cases.
-          label: isWholeLine
-            ? translate("snap.midpoint")
-            : translate("snap.subSegmentMidpoint"),
-          kind: "midpoint",
-          hostLineId: line.line_id,
-          tValue: tMid,
-        });
-      }
-    }
-    for (const circle of params.circles) {
-      candidates.push({
-        local: [circle.center_x, circle.center_y],
-        label: translate("snap.circleCenter"),
-      });
-    }
-    return candidates;
-  }, [sketchFeature, translate, viewport?.snap_candidates]);
+  const sketchSnapCandidates = useMemo(
+    () =>
+      buildSketchSnapCandidates({
+        sketchParameters: sketchFeature?.sketch_parameters,
+        coreCandidates: viewport?.snap_candidates,
+        translate,
+      }),
+    [sketchFeature, translate, viewport?.snap_candidates],
+  );
   const activeSketchPlaneIdRef = useRef(activeSketchPlaneId);
   const activeSketchPlaneFrameRef = useRef(activeSketchPlaneFrame);
   const showViewportGridRef = useRef(showViewportGrid);
@@ -2987,25 +1906,30 @@ const currentGridSpacingRef = useRef(10);
 
     sketchGroup.remove(previewDimension.line);
     sketchGroup.remove(previewDimension.label);
-    // `buildSketchDimensionObject` now returns a Group that contains
-    // LineSegments + optional arrow Mesh + optional dashed ref Line.
-    // Traverse its children to dispose each sub-object's resources.
-    previewDimension.line.traverse((child) => {
-      if (
-        child instanceof THREE.Mesh ||
-        child instanceof THREE.LineSegments ||
-        child instanceof THREE.Line
-      ) {
-        child.geometry.dispose();
-        disposeMaterial(child.material);
-      }
-    });
+    disposeGeometryTreeResources(previewDimension.line);
     const labelMaterial = previewDimension.label.material;
     if (labelMaterial instanceof THREE.SpriteMaterial) {
       labelMaterial.map?.dispose();
     }
     disposeMaterial(labelMaterial);
     previewDimensionRef.current = null;
+  }
+
+  function clearDimensionToolFirstPick() {
+    dimensionToolFirstLineRef.current = null;
+    setDimensionToolFirstLine(null);
+    dimensionToolFirstPointRef.current = null;
+  }
+
+  function clearDimensionToolFirstEntity() {
+    dimensionToolFirstLineRef.current = null;
+    setDimensionToolFirstLine(null);
+  }
+
+  function clearPendingDimensionPlacement() {
+    pendingDimensionIdRef.current = null;
+    pendingDimSourceEntityIdRef.current = null;
+    pendingDimensionPlacementRef.current = false;
   }
 
   function setSketchDimensionObjectVisibility(
@@ -3049,12 +1973,7 @@ const currentGridSpacingRef = useRef(10);
       return;
     }
     sketchGroup.remove(group);
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments || child instanceof THREE.Line) {
-        child.geometry.dispose();
-        disposeMaterial(child.material);
-      }
-    });
+    disposeGeometryTreeResources(group);
     draftDimGroupRef.current = null;
 
     // Also clean up the reusable scene object
@@ -3072,6 +1991,33 @@ const currentGridSpacingRef = useRef(10);
       disposeMaterial(arcTest.material);
       draftArcTestRef.current = null;
     }
+  }
+
+  function clearViewportSceneObjectRefs() {
+    primitiveVisualsRef.current.clear();
+    primitiveStatesRef.current.clear();
+    referencePlaneVisualsRef.current.clear();
+    referencePlaneStatesRef.current.clear();
+    solidFaceVisualsRef.current.clear();
+    solidFaceStatesRef.current.clear();
+    sketchProfileVisualsRef.current.clear();
+    sketchProfileStatesRef.current.clear();
+    referencePlaneMeshesRef.current = [];
+    sketchEntityObjectsRef.current = [];
+    sketchDimensionObjectsRef.current = [];
+    sketchConstraintObjectsRef.current = [];
+    sketchPointObjectsRef.current = [];
+    sketchProfileObjectsRef.current = [];
+    meshesRef.current = [];
+    faceMeshesRef.current = [];
+    edgeLineObjectsRef.current = [];
+    vertexObjectsRef.current = [];
+    cutPreviewObjectsRef.current = [];
+    toolpathLinesRef.current = [];
+    moveGizmoObjectsRef.current = [];
+    previewLineRef.current = null;
+    previewCircleRef.current = null;
+    previewArcRef.current = null;
   }
 
 
@@ -3341,412 +2287,9 @@ const currentGridSpacingRef = useRef(10);
     }
   }
 
-  function unaryDimensionIdForEntity(entityId: string) {
-    if (entityId.startsWith("line-")) {
-      return `dim-line-${entityId}`;
-    }
-    if (entityId.startsWith("circle-")) {
-      return `dim-circle-${entityId}`;
-    }
-    if (entityId.startsWith("polygon-")) {
-      return `dim-polygon-${entityId}`;
-    }
-    return null;
-  }
-
   function readDimensionPreviewFilter() {
-    const localFilter = readLocalFilter();
-    const base = localFilter ?? {
-      select_curves: true,
-      select_construction: false,
-      snap_intersection: true,
-      snap_nearest: true,
-      snap_parallel: true,
-    };
-    if (!localFilter || !altHeldRef.current) {
-      return base;
-    }
-    return {
-      ...base,
-      select_curves: !localFilter.select_curves,
-      select_construction: !localFilter.select_construction,
-      snap_intersection: !localFilter.snap_intersection,
-      snap_nearest: !localFilter.snap_nearest,
-      snap_parallel: !localFilter.snap_parallel,
-    };
-  }
-
-  function lineLength(line: SketchLineEntry) {
-    return Math.hypot(line.end_x - line.start_x, line.end_y - line.start_y);
-  }
-
-  function lineDirection(line: SketchLineEntry): [number, number] | null {
-    const length = lineLength(line);
-    if (length <= 1e-9) {
-      return null;
-    }
-    return [(line.end_x - line.start_x) / length, (line.end_y - line.start_y) / length];
-  }
-
-  function midpointOfLine(line: SketchLineEntry): [number, number] {
-    return [(line.start_x + line.end_x) / 2, (line.start_y + line.end_y) / 2];
-  }
-
-  function distanceToLineSegment(
-    point: [number, number],
-    line: SketchLineEntry,
-  ) {
-    const dx = line.end_x - line.start_x;
-    const dy = line.end_y - line.start_y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq <= 1e-12) {
-      return {
-        distance: Math.hypot(point[0] - line.start_x, point[1] - line.start_y),
-        local: [line.start_x, line.start_y] as [number, number],
-        t: 0,
-      };
-    }
-    const t = Math.max(
-      0,
-      Math.min(
-        1,
-        ((point[0] - line.start_x) * dx + (point[1] - line.start_y) * dy) /
-          lenSq,
-      ),
-    );
-    const local: [number, number] = [
-      line.start_x + t * dx,
-      line.start_y + t * dy,
-    ];
-    return {
-      distance: Math.hypot(point[0] - local[0], point[1] - local[1]),
-      local,
-      t,
-    };
-  }
-
-  function distanceToCircleEdge(
-    point: [number, number],
-    circle: SketchCircleEntry,
-  ) {
-    const dx = point[0] - circle.center_x;
-    const dy = point[1] - circle.center_y;
-    const centerDistance = Math.hypot(dx, dy);
-    return Math.abs(centerDistance - circle.radius);
-  }
-
-  function areLinesParallel(first: SketchLineEntry, second: SketchLineEntry) {
-    const firstDir = lineDirection(first);
-    const secondDir = lineDirection(second);
-    if (!firstDir || !secondDir) {
-      return false;
-    }
-    return Math.abs(firstDir[0] * secondDir[1] - firstDir[1] * secondDir[0]) <
-      0.03;
-  }
-
-  function pointOnSegment(
-    px: number, py: number,
-    ax: number, ay: number,
-    bx: number, by: number,
-    tolerance = 0.05,
-  ): boolean {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    if (len2 < 1e-12) {
-      return Math.hypot(px - ax, py - ay) <= tolerance;
-    }
-    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-    const projX = ax + t * dx;
-    const projY = ay + t * dy;
-    return Math.hypot(px - projX, py - projY) <= tolerance;
-  }
-
-  function sharedLineEndpoint(
-    first: SketchLineEntry,
-    second: SketchLineEntry,
-  ): [number, number] | null {
-    // Direct endpoint match by point ID
-    if (first.start_point_id === second.start_point_id) return [first.start_x, first.start_y];
-    if (first.start_point_id === second.end_point_id)   return [first.start_x, first.start_y];
-    if (first.end_point_id === second.start_point_id)   return [first.end_x, first.end_y];
-    if (first.end_point_id === second.end_point_id)     return [first.end_x, first.end_y];
-
-    // One line's endpoint lies on the other line's segment
-    if (pointOnSegment(first.start_x, first.start_y, second.start_x, second.start_y, second.end_x, second.end_y))
-      return [first.start_x, first.start_y];
-    if (pointOnSegment(first.end_x, first.end_y, second.start_x, second.start_y, second.end_x, second.end_y))
-      return [first.end_x, first.end_y];
-    if (pointOnSegment(second.start_x, second.start_y, first.start_x, first.start_y, first.end_x, first.end_y))
-      return [second.start_x, second.start_y];
-    if (pointOnSegment(second.end_x, second.end_y, first.start_x, first.start_y, first.end_x, first.end_y))
-      return [second.end_x, second.end_y];
-
-    return null;
-  }
-
-  function lineDirectionAwayFromPoint(
-    line: SketchLineEntry,
-    point: [number, number],
-  ): [number, number] | null {
-    const startDistance = Math.hypot(line.start_x - point[0], line.start_y - point[1]);
-    const endDistance = Math.hypot(line.end_x - point[0], line.end_y - point[1]);
-    const target =
-      startDistance > endDistance
-        ? [line.start_x, line.start_y]
-        : [line.end_x, line.end_y];
-    const dx = target[0] - point[0];
-    const dy = target[1] - point[1];
-    const length = Math.hypot(dx, dy);
-    if (length <= 1e-9) {
-      return null;
-    }
-    return [dx / length, dy / length];
-  }
-
-  function formatAngleLabel(radians: number) {
-    const degrees = Math.abs((radians * 180) / Math.PI);
-    return `${formatDraftDimension(degrees)}°`;
-  }
-
-  function createParallelLineDistancePreview(
-    first: SketchLineEntry,
-    second: SketchLineEntry,
-    cursor: [number, number],
-  ): SketchDimensionScene | null {
-    const dir = lineDirection(first);
-    if (!dir) {
-      return null;
-    }
-    const normal: [number, number] = [-dir[1], dir[0]];
-    const firstMid = midpointOfLine(first);
-    const secondMid = midpointOfLine(second);
-    const signedDistance =
-      (secondMid[0] - firstMid[0]) * normal[0] +
-      (secondMid[1] - firstMid[1]) * normal[1];
-    if (Math.abs(signedDistance) <= 1e-6) {
-      return null;
-    }
-    if (signedDistance < 0) {
-      normal[0] *= -1;
-      normal[1] *= -1;
-    }
-
-    const projection =
-      (cursor[0] - firstMid[0]) * dir[0] + (cursor[1] - firstMid[1]) * dir[1];
-    const anchorStart: [number, number] = [
-      firstMid[0] + projection * dir[0],
-      firstMid[1] + projection * dir[1],
-    ];
-    const distance = Math.abs(signedDistance);
-    const anchorEnd: [number, number] = [
-      anchorStart[0] + normal[0] * distance,
-      anchorStart[1] + normal[1] * distance,
-    ];
-    const labelLocal: [number, number] = [
-      (anchorStart[0] + anchorEnd[0]) / 2,
-      (anchorStart[1] + anchorEnd[1]) / 2,
-    ];
-    const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
-    return {
-      dimensionId: "preview-dim-line-line-distance",
-      planeId,
-      kind: "line_line_distance",
-      entityId: first.line_id,
-      label: `${formatDraftDimension(distance)} mm`,
-      rawValue: distance,
-      unitSuffix: "mm",
-      isSelected: false,
-      anchorStart: toWorldPoint(planeId, anchorStart, activeSketchPlaneFrameRef.current),
-      anchorEnd: toWorldPoint(planeId, anchorEnd, activeSketchPlaneFrameRef.current),
-      dimensionStart: toWorldPoint(planeId, anchorStart, activeSketchPlaneFrameRef.current),
-      dimensionEnd: toWorldPoint(planeId, anchorEnd, activeSketchPlaneFrameRef.current),
-      labelPosition: toWorldPoint(planeId, labelLocal, activeSketchPlaneFrameRef.current),
-    };
-  }
-
-  function createLineAnglePreview(
-    first: SketchLineEntry,
-    second: SketchLineEntry,
-    cursor: [number, number],
-  ): SketchDimensionScene | null {
-    const pivot = sharedLineEndpoint(first, second);
-    if (!pivot) {
-      return null;
-    }
-    const firstDir = lineDirectionAwayFromPoint(first, pivot);
-    const secondDir = lineDirectionAwayFromPoint(second, pivot);
-    if (!firstDir || !secondDir) {
-      return null;
-    }
-    const dot = Math.max(
-      -1,
-      Math.min(1, firstDir[0] * secondDir[0] + firstDir[1] * secondDir[1]),
-    );
-    const acuteAngle = Math.acos(dot);
-
-    // Determine whether the cursor is on the reflex (larger-angle) side.
-    // The bisector of the two unit direction vectors points into the acute
-    // angle.  If the cursor lies on the opposite side of the bisector,
-    // the user intends the reflex (larger) angle.
-    //
-    // Use a tighter threshold when the two lines share an endpoint (the
-    // cursor naturally passes near the bisector plane while moving
-    // between lines).  When one endpoint merely lies on the other line's
-    // segment, the natural cursor path is different, so we use a looser
-    // threshold.
-    const sharedEndpoint =
-      first.start_point_id === second.start_point_id ||
-      first.start_point_id === second.end_point_id ||
-      first.end_point_id === second.start_point_id ||
-      first.end_point_id === second.end_point_id;
-    const reflexThreshold = sharedEndpoint ? -0.3 : 0;
-
-    let useReflex = false;
-    const cursorVec = [cursor[0] - pivot[0], cursor[1] - pivot[1]];
-    const cursorLen = Math.hypot(cursorVec[0], cursorVec[1]);
-    if (cursorLen > 1e-9) {
-      const cx = cursorVec[0] / cursorLen;
-      const cy = cursorVec[1] / cursorLen;
-      const bx = firstDir[0] + secondDir[0];
-      const by = firstDir[1] + secondDir[1];
-      const blen = Math.hypot(bx, by);
-      if (blen > 1e-9) {
-        useReflex = (cx * bx + cy * by) / blen < reflexThreshold;
-      }
-    }
-    const angle = useReflex ? 2 * Math.PI - acuteAngle : acuteAngle;
-    pendingAngleIsReflexRef.current = useReflex;
-    if (useReflex) pendingReflexAngleRef.current = angle;
-    const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
-    const radius = clampAngleRadius(cursorRadius);
-    const dimensionStart: [number, number] = [
-      pivot[0] + firstDir[0] * radius,
-      pivot[1] + firstDir[1] * radius,
-    ];
-    const dimensionEnd: [number, number] = [
-      pivot[0] + secondDir[0] * radius,
-      pivot[1] + secondDir[1] * radius,
-    ];
-    const anchorRadius = Math.min(lineLength(first), lineLength(second), radius + 2);
-    const anchorStart: [number, number] = [
-      pivot[0] + firstDir[0] * anchorRadius,
-      pivot[1] + firstDir[1] * anchorRadius,
-    ];
-    const anchorEnd: [number, number] = [
-      pivot[0] + secondDir[0] * anchorRadius,
-      pivot[1] + secondDir[1] * anchorRadius,
-    ];
-    const bisector: [number, number] = [
-      firstDir[0] + secondDir[0],
-      firstDir[1] + secondDir[1],
-    ];
-    const bisectorLength = Math.hypot(bisector[0], bisector[1]);
-    if (bisectorLength <= 1e-9) {
-      return null;
-    }
-    bisector[0] /= bisectorLength;
-    bisector[1] /= bisectorLength;
-    const labelLocal: [number, number] = [
-      pivot[0] + bisector[0] * radius,
-      pivot[1] + bisector[1] * radius,
-    ];
-    const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
-    return {
-      dimensionId: "preview-dim-line-angle",
-      planeId,
-      kind: "line_angle",
-      entityId: first.line_id,
-      label: formatAngleLabel(angle),
-      rawValue: angle,
-      unitSuffix: "°",
-      isSelected: false,
-      anchorStart: toWorldPoint(planeId, anchorStart, activeSketchPlaneFrameRef.current),
-      anchorEnd: toWorldPoint(planeId, anchorEnd, activeSketchPlaneFrameRef.current),
-      dimensionStart: toWorldPoint(planeId, dimensionStart, activeSketchPlaneFrameRef.current),
-      dimensionEnd: toWorldPoint(planeId, dimensionEnd, activeSketchPlaneFrameRef.current),
-      labelPosition: toWorldPoint(planeId, labelLocal, activeSketchPlaneFrameRef.current),
-      arcCenter: toWorldPoint(planeId, pivot, activeSketchPlaneFrameRef.current),
-      arcRadius: radius,
-      arcStartAngle: Math.atan2(firstDir[1], firstDir[0]),
-      arcEndAngle: Math.atan2(secondDir[1], secondDir[0]),
-      arcCcw: true,
-    };
-  }
-
-  function createCircleLineDistancePreview(
-    line: SketchLineEntry,
-    circle: SketchCircleEntry,
-  ): SketchDimensionScene | null {
-    const closest = distanceToLineSegment([circle.center_x, circle.center_y], line);
-    const dx = circle.center_x - closest.local[0];
-    const dy = circle.center_y - closest.local[1];
-    const centerDistance = Math.hypot(dx, dy);
-    if (centerDistance <= 1e-9) {
-      return null;
-    }
-    const nx = dx / centerDistance;
-    const ny = dy / centerDistance;
-    const circleEdge: [number, number] = [
-      circle.center_x - nx * circle.radius,
-      circle.center_y - ny * circle.radius,
-    ];
-    const distance = Math.max(0, centerDistance - circle.radius);
-    const labelLocal: [number, number] = [
-      (closest.local[0] + circleEdge[0]) / 2,
-      (closest.local[1] + circleEdge[1]) / 2,
-    ];
-    const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
-    return {
-      dimensionId: "preview-dim-circle-line-distance",
-      planeId,
-      kind: "circle_line_distance",
-      entityId: line.line_id,
-      label: `${formatDraftDimension(distance)} mm`,
-      rawValue: distance,
-      unitSuffix: "mm",
-      isSelected: false,
-      anchorStart: toWorldPoint(planeId, closest.local, activeSketchPlaneFrameRef.current),
-      anchorEnd: toWorldPoint(planeId, circleEdge, activeSketchPlaneFrameRef.current),
-      dimensionStart: toWorldPoint(planeId, closest.local, activeSketchPlaneFrameRef.current),
-      dimensionEnd: toWorldPoint(planeId, circleEdge, activeSketchPlaneFrameRef.current),
-      labelPosition: toWorldPoint(planeId, labelLocal, activeSketchPlaneFrameRef.current),
-    };
-  }
-
-  function createCircleCenterDistancePreview(
-    first: SketchCircleEntry,
-    second: SketchCircleEntry,
-  ): SketchDimensionScene | null {
-    const dx = second.center_x - first.center_x;
-    const dy = second.center_y - first.center_y;
-    const distance = Math.hypot(dx, dy);
-    if (distance <= 1e-9) {
-      return null;
-    }
-    const start: [number, number] = [first.center_x, first.center_y];
-    const end: [number, number] = [second.center_x, second.center_y];
-    const labelLocal: [number, number] = [
-      (first.center_x + second.center_x) / 2,
-      (first.center_y + second.center_y) / 2,
-    ];
-    const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
-    return {
-      dimensionId: "preview-dim-circle-center-distance",
-      planeId,
-      kind: "circle_center_distance",
-      entityId: first.circle_id,
-      label: `${formatDraftDimension(distance)} mm`,
-      rawValue: distance,
-      unitSuffix: "mm",
-      isSelected: false,
-      anchorStart: toWorldPoint(planeId, start, activeSketchPlaneFrameRef.current),
-      anchorEnd: toWorldPoint(planeId, end, activeSketchPlaneFrameRef.current),
-      dimensionStart: toWorldPoint(planeId, start, activeSketchPlaneFrameRef.current),
-      dimensionEnd: toWorldPoint(planeId, end, activeSketchPlaneFrameRef.current),
-      labelPosition: toWorldPoint(planeId, labelLocal, activeSketchPlaneFrameRef.current),
-    };
+    const filter = readStoredFilter();
+    return altHeldRef.current ? invertSelectionFilter(filter) : filter;
   }
 
   function renderDimensionRelationPreview(
@@ -3776,144 +2319,27 @@ const currentGridSpacingRef = useRef(10);
     dimensionRelationPreviewRef.current = null;
     const firstEntityId = dimensionToolFirstLineRef.current;
     const params = sketchLinesRef.current;
-    if (!firstEntityId || !params || activeSketchToolRef.current !== "dimension") {
-      return null;
-    }
     const filter = readDimensionPreviewFilter();
-    if (!filter.select_curves) {
+    const preview = buildDimensionRelationPreview({
+      firstEntityId,
+      activeSketchTool: activeSketchToolRef.current,
+      sketchParameters: params,
+      filter,
+      cursor,
+      planeId: activeSketchPlaneIdRef.current ?? "ref-plane-xy",
+      planeFrame: activeSketchPlaneFrameRef.current,
+    });
+    if (!preview) {
       return null;
     }
-
-    const firstLine = params.lines.find((line) => line.line_id === firstEntityId);
-    const firstCircle = params.circles.find(
-      (circle) => circle.circle_id === firstEntityId,
-    );
-    const allowConstruction = Boolean(filter.select_construction);
-    let best:
-      | {
-          score: number;
-          relation: DimensionRelationPreview;
-          dimension: SketchDimensionScene;
-        }
-      | null = null;
-
-    if (firstLine && (!firstLine.is_construction || allowConstruction)) {
-      for (const line of params.lines) {
-        if (line.line_id === firstLine.line_id) {
-          continue;
-        }
-        if (line.is_construction && !allowConstruction) {
-          continue;
-        }
-        const hit = distanceToLineSegment(cursor, line);
-        if (hit.distance > SKETCH_SNAP_DISTANCE) {
-          continue;
-        }
-        let relation: DimensionRelationPreview | null = null;
-        let dimension: SketchDimensionScene | null = null;
-        if (filter.snap_intersection && sharedLineEndpoint(firstLine, line)) {
-          relation = {
-            kind: "line_angle",
-            firstEntityId,
-            targetEntityId: line.line_id,
-          };
-          dimension = createLineAnglePreview(firstLine, line, cursor);
-        } else if (filter.snap_parallel && areLinesParallel(firstLine, line)) {
-          relation = {
-            kind: "parallel_line_distance",
-            firstEntityId,
-            targetEntityId: line.line_id,
-          };
-          dimension = createParallelLineDistancePreview(firstLine, line, cursor);
-        }
-        if (!relation || !dimension) {
-          continue;
-        }
-        if (!best || hit.distance < best.score) {
-          best = { score: hit.distance, relation, dimension };
-        }
-      }
-
-      if (filter.snap_nearest) {
-        for (const circle of params.circles) {
-          if (circle.is_construction && !allowConstruction) {
-            continue;
-          }
-          const distance = distanceToCircleEdge(cursor, circle);
-          if (distance > SKETCH_SNAP_DISTANCE) {
-            continue;
-          }
-          const dimension = createCircleLineDistancePreview(firstLine, circle);
-          if (!dimension) {
-            continue;
-          }
-          const relation: DimensionRelationPreview = {
-            kind: "circle_line_distance",
-            firstEntityId,
-            targetEntityId: circle.circle_id,
-          };
-          if (!best || distance < best.score) {
-            best = { score: distance, relation, dimension };
-          }
-        }
-      }
-    } else if (
-      firstCircle &&
-      (!firstCircle.is_construction || allowConstruction) &&
-      filter.snap_nearest
-    ) {
-      for (const line of params.lines) {
-        if (line.is_construction && !allowConstruction) {
-          continue;
-        }
-        const hit = distanceToLineSegment(cursor, line);
-        if (hit.distance > SKETCH_SNAP_DISTANCE) {
-          continue;
-        }
-        const dimension = createCircleLineDistancePreview(line, firstCircle);
-        if (!dimension) {
-          continue;
-        }
-        const relation: DimensionRelationPreview = {
-          kind: "circle_line_distance",
-          firstEntityId,
-          targetEntityId: line.line_id,
-        };
-        if (!best || hit.distance < best.score) {
-          best = { score: hit.distance, relation, dimension };
-        }
-      }
-      for (const circle of params.circles) {
-        if (circle.circle_id === firstCircle.circle_id) {
-          continue;
-        }
-        if (circle.is_construction && !allowConstruction) {
-          continue;
-        }
-        const distance = distanceToCircleEdge(cursor, circle);
-        if (distance > SKETCH_SNAP_DISTANCE) {
-          continue;
-        }
-        const dimension = createCircleCenterDistancePreview(firstCircle, circle);
-        if (!dimension) {
-          continue;
-        }
-        const relation: DimensionRelationPreview = {
-          kind: "circle_center_distance",
-          firstEntityId,
-          targetEntityId: circle.circle_id,
-        };
-        if (!best || distance < best.score) {
-          best = { score: distance, relation, dimension };
-        }
+    if (preview.anglePreview) {
+      pendingAngleIsReflexRef.current = preview.anglePreview.isReflex;
+      if (preview.anglePreview.isReflex) {
+        pendingReflexAngleRef.current = preview.anglePreview.angle;
       }
     }
-
-    if (!best) {
-      return null;
-    }
-    renderDimensionRelationPreview(best.relation, best.dimension);
-    return best.relation;
+    renderDimensionRelationPreview(preview.relation, preview.dimension);
+    return preview.relation;
   }
 
   function commitDimensionRelationPreview() {
@@ -4223,35 +2649,6 @@ const currentGridSpacingRef = useRef(10);
     return placementAxis.lengthSq() > 1e-8 ? placementAxis : null;
   }
 
-  function circleDimensionLabelNearPoint(
-    dimension: SketchDimensionScene,
-    worldPoint: [number, number, number],
-  ): [number, number, number] | null {
-    if (dimension.kind !== "circle_radius") {
-      return null;
-    }
-    const center = new THREE.Vector3(...dimension.dimensionStart)
-      .add(new THREE.Vector3(...dimension.dimensionEnd))
-      .multiplyScalar(0.5);
-    const radius =
-      new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-        new THREE.Vector3(...dimension.dimensionEnd),
-      ) * 0.5;
-    const direction = new THREE.Vector3(...worldPoint).sub(center);
-    const planeNormal = getSketchGridFrame(
-      dimension.planeId,
-      activeSketchPlaneFrameRef.current,
-    ).normal;
-    direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-    if (direction.lengthSq() <= 1e-8 || radius <= 1e-8) {
-      return null;
-    }
-    const position = center.add(
-      direction.normalize().multiplyScalar(radius + 4),
-    );
-    return [position.x, position.y, position.z];
-  }
-
   function setDimensionLabelPosition(
     dimensionId: string,
     position: [number, number, number],
@@ -4288,37 +2685,71 @@ const currentGridSpacingRef = useRef(10);
     );
   }
 
+  function setAngleDimensionDragRadius(
+    dimension: SketchDimensionScene,
+    dimensionId: string,
+    worldPoint: readonly [number, number, number],
+  ) {
+    const frame = angleDimensionFrame(dimension);
+    if (!frame) {
+      return;
+    }
+    const radius = clampAngleRadius(
+      new THREE.Vector3(worldPoint[0], worldPoint[1], worldPoint[2]).distanceTo(
+        frame.pivot,
+      ),
+    );
+    angleDragRadiiRef.current = {
+      ...angleDragRadiiRef.current,
+      [dimensionId]: radius,
+    };
+    setAngleDragRadii((prev) => ({
+      ...prev,
+      [dimensionId]: radius,
+    }));
+  }
+
+  function persistAngleDimensionLabelRadius(
+    dimensionId: string,
+    dragRadius: number,
+  ) {
+    const dragged = displayedSketchDimensionsRef.current.find(
+      (dimension) => dimension.dimensionId === dimensionId,
+    );
+    const frame = dragged ? angleDimensionFrame(dragged) : null;
+    if (!frame) {
+      return;
+    }
+    const labelWorld = frame.pivot
+      .clone()
+      .add(frame.bisector.clone().multiplyScalar(dragRadius));
+    persistDimensionLabelPosition(dimensionId, [
+      labelWorld.x,
+      labelWorld.y,
+      labelWorld.z,
+    ]);
+  }
+
+  function persistDimensionDragLabelPosition(
+    dimensionDrag: DimensionLabelDragState,
+  ) {
+    const dragRadius = angleDragRadiiRef.current[dimensionDrag.dimensionId];
+    if (dragRadius !== undefined) {
+      persistAngleDimensionLabelRadius(dimensionDrag.dimensionId, dragRadius);
+      return;
+    }
+    persistDimensionLabelPosition(
+      dimensionDrag.dimensionId,
+      dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
+    );
+  }
+
   function finishDimensionPlacement() {
     const dimensionDrag = dimensionLabelDragRef.current;
     if (!dimensionDrag?.isPlacement) {
       return false;
     }
-    const dragRadius = angleDragRadiiRef.current[dimensionDrag.dimensionId];
-    if (dragRadius !== undefined) {
-      // Angle dimension: compute world position from radius on bisector.
-      const dimId = dimensionDrag.dimensionId;
-      const dragged = displayedSketchDimensionsRef.current.find(
-        (d) => d.dimensionId === dimId,
-      );
-      const frame = dragged ? angleDimensionFrame(dragged) : null;
-      if (frame) {
-        const labelWorld = frame.pivot
-          .clone()
-          .add(frame.bisector.clone().multiplyScalar(dragRadius));
-        persistDimensionLabelPosition(dimId, [
-          labelWorld.x,
-          labelWorld.y,
-          labelWorld.z,
-        ]);
-      }
-      // Keep the radius override active — it matches what the core will
-      // compute, so there's no flash between commit and core response.
-    } else {
-      persistDimensionLabelPosition(
-        dimensionDrag.dimensionId,
-        dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-      );
-    }
+    persistDimensionDragLabelPosition(dimensionDrag);
     clearPreviewDimension();
     dimensionLabelDragRef.current = null;
     dimensionPlacementOriginalPositionRef.current = null;
@@ -4363,102 +2794,33 @@ const currentGridSpacingRef = useRef(10);
     if (!renderer || !camera || !sketchPlaneId || !controls || !pointerEvent) {
       return;
     }
-    const sketchPoint = resolveSketchPlanePoint(
-      pointerEvent,
+    const placement = buildDimensionPlacementStart({
+      event: pointerEvent,
       renderer,
       camera,
-      sketchPlaneId,
-      activeSketchPlaneFrameRef.current,
-    );
-    if (!sketchPoint) {
-      return;
-    }
-    const isAngleKind =
-      dimension.kind === "angle" || dimension.kind === "line_angle";
-    const originalPosition = dimension.labelPosition;
-    const circlePosition =
-      dimension.kind === "circle_radius"
-        ? circleDimensionLabelNearPoint(dimension, sketchPoint.world)
-        : null;
-    const dragAxis =
-      dimension.kind === "circle_radius"
-        ? new THREE.Vector3(0, 0, 0)
-        : isAngleKind
-        ? null // angle dimensions use radius-based drag; axis not needed
-        : getDimensionPlacementAxis(dimension);
-    if (!isAngleKind && dimension.kind !== "circle_radius" && !dragAxis) {
+      activeSketchPlaneId: sketchPlaneId,
+      activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+      dimension,
+      relationPosition: pendingRelationPlacementLabelRef.current,
+      getDimensionPlacementAxis,
+    });
+    if (!placement) {
       return;
     }
 
-    // For angle dimensions, store the initial radius directly instead
-    // of a directional control point.
-    if (isAngleKind) {
-      const frame = angleDimensionFrame(dimension);
-      if (frame) {
-        const radius = clampAngleRadius(
-          new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-        );
-        angleDragRadiiRef.current = {
-          ...angleDragRadiiRef.current,
-          [dimension.dimensionId]: radius,
-        };
-        setAngleDragRadii((prev) => ({
-          ...prev,
-          [dimension.dimensionId]: radius,
-        }));
-      }
+    if (placement.isAngleKind && placement.angleWorldPoint) {
+      setAngleDimensionDragRadius(
+        dimension,
+        dimension.dimensionId,
+        placement.angleWorldPoint,
+      );
     }
-
-    const relationPosition =
-      dimension.kind === "line_line_distance" ||
-      dimension.kind === "circle_line_distance" ||
-      dimension.kind === "circle_center_distance" ||
-      isAngleKind
-        ? pendingRelationPlacementLabelRef.current
-        : null;
     pendingRelationPlacementLabelRef.current = null;
-    const nextPosition =
-      relationPosition ??
-      circlePosition ??
-      (isAngleKind
-        ? originalPosition // radius-based; label pos irrelevant
-        : (() => {
-            if (!dragAxis) {
-              return originalPosition;
-            }
-            const originalPositionVector = new THREE.Vector3(
-              ...originalPosition,
-            );
-            const pointerDelta = new THREE.Vector3(...sketchPoint.world).sub(
-              originalPositionVector,
-            );
-            const nextPositionVector = originalPositionVector
-              .clone()
-              .add(
-                dragAxis.clone().multiplyScalar(
-                  pointerDelta.dot(dragAxis),
-                ),
-              );
-            return [
-              nextPositionVector.x,
-              nextPositionVector.y,
-              nextPositionVector.z,
-            ] as [number, number, number];
-          })());
-    dimensionPlacementOriginalPositionRef.current = dimension.labelPosition;
-    if (!isAngleKind) {
-      setDimensionLabelPosition(dimension.dimensionId, nextPosition);
+    dimensionPlacementOriginalPositionRef.current = placement.originalPosition;
+    if (!placement.isAngleKind) {
+      setDimensionLabelPosition(dimension.dimensionId, placement.nextPosition);
     }
-    dimensionLabelDragRef.current = {
-      dimensionId: dimension.dimensionId,
-      startClientX: pointerEvent.clientX,
-      startClientY: pointerEvent.clientY,
-      startWorld: sketchPoint.world,
-      startLabelPosition: nextPosition,
-      dragAxis: dragAxis ? [dragAxis.x, dragAxis.y, dragAxis.z] : [0, 0, 0],
-      hasMoved: true,
-      isPlacement: true,
-    };
+    dimensionLabelDragRef.current = placement.dragState;
     controls.enabled = false;
     setCanvasCursor("grabbing");
   }
@@ -4470,7 +2832,7 @@ const currentGridSpacingRef = useRef(10);
     if (!first || !second) {
       return false;
     }
-    return sharedLineEndpoint(first, second) !== null;
+    return relationPreviewLinesShareEndpoint(first, second);
   }
 
   function cancelActiveSketchDraft() {
@@ -4495,23 +2857,6 @@ const currentGridSpacingRef = useRef(10);
     void setSketchToolRef.current("select");
   }
 
-  function makeDraftLineMaterial() {
-    if (sketchToolConstructionRef.current) {
-      return new THREE.LineDashedMaterial({
-        color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-        transparent: true,
-        opacity: 0.72,
-        dashSize: 1,
-        gapSize: 0.6,
-      });
-    }
-    return new THREE.LineBasicMaterial({
-      color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-      transparent: true,
-      opacity: 0.88,
-    });
-  }
-
   function renderDraftPreview(session: DraftDimensionSession) {
     const sketchGroup = sketchGroupRef.current;
     if (!sketchGroup || !activeSketchPlaneId) {
@@ -4522,254 +2867,29 @@ const currentGridSpacingRef = useRef(10);
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewDimension();
-    const [sx, sy] = session.start;
-    const [ex, ey] = session.current;
-
-    if (session.tool === "rectangle") {
-      const rectMode = rectangleToolModeRef.current;
-      if (rectMode === "three_point") {
-        const rectSecondPoint = rectSecondPointRef.current;
-        if (!rectSecondPoint) {
-          // Click 2 still pending — dashed first-edge hint.
-          const preview = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([
-              new THREE.Vector3(
-                ...toWorldPoint(activeSketchPlaneId, [sx, sy], activeSketchPlaneFrame),
-              ),
-              new THREE.Vector3(
-                ...toWorldPoint(activeSketchPlaneId, [ex, ey], activeSketchPlaneFrame),
-              ),
-            ]),
-            new THREE.LineDashedMaterial({
-              color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-              transparent: true,
-              opacity: 0.65,
-              dashSize: 1,
-              gapSize: 0.6,
-            }),
-          );
-          preview.computeLineDistances();
-          previewLineRef.current = preview;
-          sketchGroup.add(preview);
-          return;
-        }
-        // Click 2 captured: compute 4 corners from (start, second, current).
-        const [p1x, p1y] = [sx, sy];
-        const [p2x, p2y] = rectSecondPoint;
-        const [p3x, p3y] = [ex, ey];
-        const dx = p2x - p1x;
-        const dy = p2y - p1y;
-        const edgeLen = Math.hypot(dx, dy);
-        if (edgeLen >= 1e-9) {
-          const nx = -dy / edgeLen;
-          const ny = dx / edgeLen;
-          const offset = nx * (p3x - p1x) + ny * (p3y - p1y);
-          const c1x = p1x + nx * offset;
-          const c1y = p1y + ny * offset;
-          const c2x = p2x + nx * offset;
-          const c2y = p2y + ny * offset;
-          const corners: Array<[number, number]> = [
-            [p1x, p1y],
-            [p2x, p2y],
-            [c2x, c2y],
-            [c1x, c1y],
-            [p1x, p1y],
-          ];
-          const preview = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints(
-              corners.map(
-                (corner) =>
-                  new THREE.Vector3(
-                    ...toWorldPoint(activeSketchPlaneId, corner, activeSketchPlaneFrame),
-                  ),
-              ),
-            ),
-            makeDraftLineMaterial(),
-          );
-          if (sketchToolConstructionRef.current) {
-            preview.computeLineDistances();
-          }
-          previewLineRef.current = preview;
-          sketchGroup.add(preview);
-        }
-        return;
-      }
-      // corner_corner / center_point: full-rectangle draft.
-      const isCenterPoint = rectMode === "center_point";
-      const corners: Array<[number, number]> = isCenterPoint
-        ? [
-            [2 * sx - ex, 2 * sy - ey],
-            [ex, 2 * sy - ey],
-            [ex, ey],
-            [2 * sx - ex, ey],
-            [2 * sx - ex, 2 * sy - ey],
-          ]
-        : [
-            [sx, sy],
-            [ex, sy],
-            [ex, ey],
-            [sx, ey],
-            [sx, sy],
-          ];
-      const preview = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(
-          corners.map(
-            (corner) =>
-              new THREE.Vector3(
-                ...toWorldPoint(activeSketchPlaneId, corner, activeSketchPlaneFrame),
-              ),
-          ),
-        ),
-        makeDraftLineMaterial(),
-      );
-      if (sketchToolConstructionRef.current) {
-        preview.computeLineDistances();
-      }
-      previewLineRef.current = preview;
-      sketchGroup.add(preview);
-      return;
-    }
-
-    if (session.tool === "circle") {
-      const circleMode = circleToolModeRef.current;
-      if (circleMode === "two_point") {
-        // Two-point (diameter) circle: center at midpoint, radius = dist/2.
-        const dist = distanceBetweenPoints(session.start, session.current);
-        if (dist <= 0.001) {
-          return;
-        }
-        const cx = (session.start[0] + session.current[0]) / 2;
-        const cy = (session.start[1] + session.current[1]) / 2;
-        const radius = dist / 2;
-        const preview = buildSketchCircleObject(
-          {
-            circleId: "preview-2pt-circle",
-            planeId: activeSketchPlaneId,
-            planeFrame: activeSketchPlaneFrame,
-            center: toWorldPoint(
-              activeSketchPlaneId,
-              [cx, cy],
-              activeSketchPlaneFrame,
-            ),
-            radius,
-            isSelected: false,
-            isConstruction: sketchToolConstructionRef.current,
-            isPreview: false,
-            isProjected: false,
-          },
-          activeSketchPlaneFrame,
-        );
-        previewCircleRef.current = preview;
-        sketchGroup.add(preview);
-        return;
-      }
-      if (circleMode === "three_point") {
-        // Three-point circle: two-phase preview matching handlePointerMove.
-        const circleSecondPoint = circleSecondPointRef.current;
-        if (!circleSecondPoint) {
-          // Click 2 still pending — dashed chord hint.
-          const preview = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([
-              new THREE.Vector3(
-                ...toWorldPoint(activeSketchPlaneId, session.start, activeSketchPlaneFrame),
-              ),
-              new THREE.Vector3(
-                ...toWorldPoint(activeSketchPlaneId, session.current, activeSketchPlaneFrame),
-              ),
-            ]),
-            new THREE.LineDashedMaterial({
-              color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-              transparent: true,
-              opacity: 0.65,
-              dashSize: 1,
-              gapSize: 0.6,
-            }),
-          );
-          preview.computeLineDistances();
-          previewLineRef.current = preview;
-          sketchGroup.add(preview);
-        } else {
-          // Click 2 captured: cursor (session.current) is the third point.
-          const [p1x, p1y] = session.start;
-          const [p2x, p2y] = circleSecondPoint;
-          const [p3x, p3y] = session.current;
-          const d = 2 * (p1x * (p2y - p3y) + p2x * (p3y - p1y) + p3x * (p1y - p2y));
-          if (Math.abs(d) > 1e-9) {
-            const ux =
-              ((p1x*p1x + p1y*p1y)*(p2y - p3y) + (p2x*p2x + p2y*p2y)*(p3y - p1y) + (p3x*p3x + p3y*p3y)*(p1y - p2y)) / d;
-            const uy =
-              ((p1x*p1x + p1y*p1y)*(p3x - p2x) + (p2x*p2x + p2y*p2y)*(p1x - p3x) + (p3x*p3x + p3y*p3y)*(p2x - p1x)) / d;
-            const radius = Math.hypot(p1x - ux, p1y - uy);
-            if (radius >= 1e-3) {
-              const preview = buildSketchCircleObject(
-                {
-                  circleId: "preview-3pt-circle",
-                  planeId: activeSketchPlaneId,
-                  planeFrame: activeSketchPlaneFrame,
-                  center: toWorldPoint(activeSketchPlaneId, [ux, uy], activeSketchPlaneFrame),
-                  radius,
-                  isSelected: false,
-                  isConstruction: sketchToolConstructionRef.current,
-                  isPreview: true,
-                  isProjected: false,
-                },
-                activeSketchPlaneFrame,
-              );
-              previewCircleRef.current = preview;
-              sketchGroup.add(preview);
-            }
-          }
-        }
-        return;
-      }
-      // center_radius: existing draft circle from center.
-      const radius = distanceBetweenPoints(session.start, session.current);
-      if (radius <= 0.001) {
-        return;
-      }
-      const preview = buildSketchCircleObject(
-        {
-          circleId: "preview-circle",
-          planeId: activeSketchPlaneId,
-          planeFrame: activeSketchPlaneFrame,
-          center: toWorldPoint(
-            activeSketchPlaneId,
-            session.start,
-            activeSketchPlaneFrame,
-          ),
-          radius,
-          isSelected: false,
-          isConstruction: sketchToolConstructionRef.current,
-          isPreview: false,
-          isProjected: false,
-        },
-        activeSketchPlaneFrame,
-      );
-      previewCircleRef.current = preview;
-      sketchGroup.add(preview);
-      renderCircleDraftDimension(sketchGroup, session.start, session.current);
-      return;
-    }
-
-    // Rectangle and circle tools are handled above with early returns;
-    // only the line tool reaches this fallback.
-    const localPoints: Array<[number, number]> = [session.start, session.current];
-    const preview = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(
-        localPoints.map(
-          (point) =>
-            new THREE.Vector3(
-              ...toWorldPoint(activeSketchPlaneId, point, activeSketchPlaneFrame),
-            ),
-        ),
-      ),
-      makeDraftLineMaterial(),
-    );
-    if (sketchToolConstructionRef.current) {
-      preview.computeLineDistances();
-    }
-    previewLineRef.current = preview;
-    sketchGroup.add(preview);
+    renderDraftPointerPreview({
+      activeSketchTool: session.tool,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      draftStart: session.start,
+      draftPreviewLocal: session.current,
+      sketchGroup,
+      arcToolMode: arcToolModeRef.current,
+      circleToolMode: circleToolModeRef.current,
+      rectangleToolMode: rectangleToolModeRef.current,
+      arcSecondPoint: arcSecondPointRef.current,
+      circleSecondPoint: circleSecondPointRef.current,
+      rectSecondPoint: rectSecondPointRef.current,
+      isConstruction: sketchToolConstructionRef.current,
+      previewLineRef,
+      previewCircleRef,
+      previewArcRef,
+      clearPreviewLine,
+      clearPreviewCircle,
+      clearPreviewArc,
+      clearPreviewDimension,
+      renderCircleDraftDimension,
+    });
   }
 
   function renderCircleDraftDimension(
@@ -4954,48 +3074,20 @@ const currentGridSpacingRef = useRef(10);
     );
   }
 
-  /** Read the selection filter from localStorage synchronously. */
-  function readLocalFilter(): SelectionFilter | null {
-    try {
-      const raw = localStorage.getItem("polysmith-selection-filter");
-      if (raw) return JSON.parse(raw) as SelectionFilter;
-    } catch { /* ignore */ }
-    return null;
-  }
-
-  function resolveSnappedSketchPoint(
-    rawPoint: {
-      local: [number, number];
+	  function resolveSnappedSketchPoint(
+	    rawPoint: {
+	      local: [number, number];
       world: [number, number, number];
     },
     draftStartLocal?: [number, number] | null,
   ) {
     // Read filter from localStorage (instant, no IPC round trip).
-    const localFilter = readLocalFilter();
-    const effectiveFilter: typeof localFilter = localFilter && altHeldRef.current
-      ? {
-          ...localFilter,
-          select_curves: !localFilter.select_curves,
-          select_points: !localFilter.select_points,
-          select_construction: !localFilter.select_construction,
-          select_constraints: !localFilter.select_constraints,
-          snap_endpoint: !localFilter.snap_endpoint,
-          snap_midpoint: !localFilter.snap_midpoint,
-          snap_center: !localFilter.snap_center,
-          snap_intersection: !localFilter.snap_intersection,
-          snap_nearest: !localFilter.snap_nearest,
-          snap_quadrant: !localFilter.snap_quadrant,
-          snap_perpendicular: !localFilter.snap_perpendicular,
-          snap_parallel: !localFilter.snap_parallel,
-          snap_tangent: !localFilter.snap_tangent,
-          snap_grid: !localFilter.snap_grid,
-          snap_grid_line: !localFilter.snap_grid_line,
-          snap_polar: !localFilter.snap_polar,
-          magnetic_pull: !localFilter.magnetic_pull,
-        }
+    const localFilter: SelectionFilter = readStoredFilter();
+    const effectiveFilter = altHeldRef.current
+      ? invertSelectionFilter(localFilter)
       : localFilter;
 
-    const gridSnapEnabled = effectiveFilter ? effectiveFilter.snap_grid : true;
+    const gridSnapEnabled = effectiveFilter.snap_grid;
 
     // Apply grid snap first — all subsequent geometric snaps resolve
     // against grid-aligned coordinates so the user gets both.
@@ -5011,58 +3103,26 @@ const currentGridSpacingRef = useRef(10);
       rawPoint.world = gridResult.point.world;
     }
 
-    let closestCandidate:
-      | (typeof sketchSnapCandidatesRef.current)[number]
-      | null = null;
-    let closestDistance = Number.POSITIVE_INFINITY;
-
-    for (const candidate of sketchSnapCandidatesRef.current) {
-      // Gate on the selection filter when available.
-      if (effectiveFilter) {
-        const allowed = (
-          (candidate.kind === "endpoint" && effectiveFilter.snap_endpoint) ||
-          (candidate.kind === "midpoint" && effectiveFilter.snap_midpoint) ||
-          (candidate.kind === "center" && effectiveFilter.snap_center) ||
-          (candidate.kind === "intersection" && effectiveFilter.snap_intersection) ||
-          (candidate.kind === "nearest" && effectiveFilter.snap_nearest) ||
-          (candidate.kind === "tangent" && effectiveFilter.snap_tangent) ||
-          (!candidate.kind) // unknown kinds pass unfiltered
-        );
-        if (!allowed) continue;
-      }
-      const distance = distanceBetweenPoints(rawPoint.local, candidate.local);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestCandidate = candidate;
-      }
-    }
+    const closestStatic = closestStaticSnapCandidate(
+      sketchSnapCandidatesRef.current,
+      rawPoint.local,
+      effectiveFilter,
+      distanceBetweenPoints,
+    );
 
     // Endpoint / midpoint candidates win immediately (high priority).
-    if (closestCandidate && closestDistance <= SKETCH_SNAP_DISTANCE) {
-      if (closestCandidate.kind === "endpoint" ||
-          closestCandidate.kind === "midpoint") {
-        return {
-          local: closestCandidate.local,
+    if (closestStatic && closestStatic.distance <= SKETCH_SNAP_DISTANCE) {
+      if (closestStatic.candidate.kind === "endpoint" ||
+          closestStatic.candidate.kind === "midpoint") {
+        return previewPointFromStaticCandidate({
+          candidate: closestStatic.candidate,
           world: toWorldPoint(
             activeSketchPlaneId ?? "ref-plane-xy",
-            closestCandidate.local,
+            closestStatic.candidate.local,
             activeSketchPlaneFrame,
           ),
-          snapLabel: closestCandidate.label,
-          snapMidpointHostLineId:
-            closestCandidate.kind === "midpoint"
-              ? (closestCandidate.hostLineId ?? null)
-              : null,
-          snapMidpointT:
-            closestCandidate.kind === "midpoint"
-              ? (closestCandidate.tValue ?? null)
-              : null,
-          snapPerpendicularHostLineId: null,
-          snapEndpointHostLineId:
-            closestCandidate.kind === "endpoint"
-              ? (closestCandidate.endpointHostLineId ?? null)
-              : null,
-        } satisfies SketchPreviewPoint;
+          includeEndpointMetadata: true,
+        });
       }
     }
 
@@ -5071,267 +3131,34 @@ const currentGridSpacingRef = useRef(10);
     // cannot be pre-computed as static candidates. They compete with
     // each other and with non-endpoint/midpoint static candidates.
 
-    type DynamicSnapResult = {
-      local: [number, number];
-      snapLabel: string;
-      snapPerpendicularHostLineId: string | null;
-      snapAxisLock: "horizontal" | "vertical" | null;
-      snapTangentCircleId: string | null;
-      snapParallelHostLineId: string | null;
-      snapLineBodyHostLineId: string | null;
-      snapLineBodyT: number | null;
-      distance: number;
-    };
-
     const params = sketchLinesRef.current;
-    const [cx, cy] = rawPoint.local;
-
-    // Helper: closest point on segment (sx,sy)-(ex,ey) to (px,py).
-    function closestPointOnSegment(
-      sx: number, sy: number,
-      ex: number, ey: number,
-      px: number, py: number,
-    ): { x: number; y: number; t: number; dist: number } {
-      const segDx = ex - sx;
-      const segDy = ey - sy;
-      const lenSq = segDx * segDx + segDy * segDy;
-      if (lenSq < 1e-12) return { x: sx, y: sy, t: 0, dist: Math.hypot(px - sx, py - sy) };
-      let t = ((px - sx) * segDx + (py - sy) * segDy) / lenSq;
-      t = Math.max(0, Math.min(1, t));
-      const x = sx + t * segDx;
-      const y = sy + t * segDy;
-      return { x, y, t, dist: Math.hypot(px - x, py - y) };
-    }
-
-    // Helper: angle between two direction vectors, normalized to [0, PI/2].
-    function angleDiffBetween(dx1: number, dy1: number, dx2: number, dy2: number): number {
-      const mag1 = Math.hypot(dx1, dy1);
-      const mag2 = Math.hypot(dx2, dy2);
-      if (mag1 < 1e-12 || mag2 < 1e-12) return Math.PI / 2;
-      const dot = (dx1 * dx2 + dy1 * dy2) / (mag1 * mag2);
-      const clamped = Math.max(-1, Math.min(1, dot));
-      return Math.acos(clamped);
-    }
-
-    let bestDynamic: DynamicSnapResult | null = null;
     const AXIS_ANGLE_THRESHOLD = 5 * Math.PI / 180; // 5 degrees
     const PARALLEL_ANGLE_THRESHOLD = 8 * Math.PI / 180; // 8 degrees (wider for parallel)
-
-    if (draftStartLocal) {
-      const [sx, sy] = draftStartLocal;
-      const draftDx = cx - sx;
-      const draftDy = cy - sy;
-      const draftDist = Math.hypot(draftDx, draftDy);
-
-      if (draftDist > 1e-6) {
-        // --- axis_lock ---
-        // Snap to horizontal or vertical alignment from the draft start.
-        // Gated by snap_polar (polar snap covers axis alignment).
-        const polarEnabled = effectiveFilter ? effectiveFilter.snap_polar : true;
-        if (polarEnabled) {
-          const draftAngle = Math.atan2(draftDy, draftDx);
-          for (const [targetAngle, axisKind, labelKey] of [
-            [0, "horizontal" as const, "snap.axisLockHorizontal"],
-            [Math.PI / 2, "vertical" as const, "snap.axisLockVertical"],
-            [Math.PI, "horizontal" as const, "snap.axisLockHorizontal"],
-            [-Math.PI / 2, "vertical" as const, "snap.axisLockVertical"],
-          ] as const) {
-            let diff = draftAngle - targetAngle;
-            // Normalize to [-PI, PI]
-            while (diff > Math.PI) diff -= 2 * Math.PI;
-            while (diff < -Math.PI) diff += 2 * Math.PI;
-            if (Math.abs(diff) < AXIS_ANGLE_THRESHOLD) {
-              const lockX = axisKind === "horizontal" ? cx : sx;
-              const lockY = axisKind === "vertical" ? cy : sy;
-              const snapDist = Math.hypot(cx - lockX, cy - lockY);
-              if (!bestDynamic || snapDist < bestDynamic.distance) {
-                bestDynamic = {
-                  local: [lockX, lockY],
-                  snapLabel: translate(labelKey),
-                  snapPerpendicularHostLineId: null,
-                  snapAxisLock: axisKind,
-                  snapTangentCircleId: null,
-                  snapParallelHostLineId: null,
-                  snapLineBodyHostLineId: null,
-                  snapLineBodyT: null,
-                  distance: snapDist,
-                };
-              }
-            }
-          }
-        }
-
-        // --- tangent to circle ---
-        // Compute the two tangent points from draft start to each circle.
-        // Geometry: from external point P to circle center C with radius r,
-        // the two tangent direction angles are angle(PC) ± asin(r/|PC|).
-        const tangentEnabled = effectiveFilter ? effectiveFilter.snap_tangent : true;
-        if (tangentEnabled && params) {
-          for (const circle of params.circles) {
-            if (circle.is_construction) continue;
-            const cCx = circle.center_x;
-            const cCy = circle.center_y;
-            const cr = circle.radius;
-            const pcDx = cCx - sx;
-            const pcDy = cCy - sy;
-            const pcDist = Math.hypot(pcDx, pcDy);
-            if (pcDist <= cr + 1e-9) continue; // start inside or on circle, no tangents
-            const alpha = Math.asin(cr / pcDist);
-            const baseAngle = Math.atan2(pcDy, pcDx);
-            const tangentLen = Math.sqrt(pcDist * pcDist - cr * cr);
-            for (const sign of [1, -1]) {
-              const tpDir = baseAngle + sign * alpha;
-              const tpX = sx + tangentLen * Math.cos(tpDir);
-              const tpY = sy + tangentLen * Math.sin(tpDir);
-              const tpDist = Math.hypot(cx - tpX, cy - tpY);
-              if (tpDist <= SKETCH_SNAP_DISTANCE) {
-                if (!bestDynamic || tpDist < bestDynamic.distance) {
-                  bestDynamic = {
-                    local: [tpX, tpY],
-                    snapLabel: translate("snap.tangent"),
-                    snapPerpendicularHostLineId: null,
-                    snapAxisLock: null,
-                    snapTangentCircleId: circle.circle_id,
-                    snapParallelHostLineId: null,
-                    snapLineBodyHostLineId: null,
-                    snapLineBodyT: null,
-                    distance: tpDist,
-                  };
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // --- line_body (on-line segment snap) ---
-    // Works both with and without a draft start.
-    if (params) {
-      for (const line of params.lines) {
-        if (line.is_construction) continue;
-        const cp = closestPointOnSegment(
-          line.start_x, line.start_y,
-          line.end_x, line.end_y,
-          cx, cy,
-        );
-        if (cp.dist <= SKETCH_SNAP_DISTANCE) {
-          if (!bestDynamic || cp.dist < bestDynamic.distance) {
-            bestDynamic = {
-              local: [cp.x, cp.y],
-              snapLabel: translate("snap.onLine"),
-              snapPerpendicularHostLineId: null,
-              snapAxisLock: null,
-              snapTangentCircleId: null,
-              snapParallelHostLineId: null,
-              snapLineBodyHostLineId: line.line_id,
-              snapLineBodyT: cp.t,
-              distance: cp.dist,
-            };
-          }
-        }
-      }
-    }
-
-    // --- perpendicular to line ---
-    const perpEnabled = effectiveFilter ? effectiveFilter.snap_perpendicular : true;
-    if (perpEnabled && draftStartLocal && params) {
-      const [sx, sy] = draftStartLocal;
-      for (const line of params.lines) {
-        if (line.is_construction) continue;
-        const ldx = line.end_x - line.start_x;
-        const ldy = line.end_y - line.start_y;
-        const llenSq = ldx * ldx + ldy * ldy;
-        if (llenSq < 1e-12) continue;
-        // Perpendicular foot from cursor onto the infinite line
-        const tProj = ((cx - line.start_x) * ldx + (cy - line.start_y) * ldy) / llenSq;
-        const footX = line.start_x + tProj * ldx;
-        const footY = line.start_y + tProj * ldy;
-        const footDist = Math.hypot(cx - footX, cy - footY);
-        // Only snap if the foot is near the segment (with margin)
-        const margin = SKETCH_SNAP_DISTANCE;
-        const segT = Math.max(0, Math.min(1, tProj));
-        const segX = line.start_x + segT * ldx;
-        const segY = line.start_y + segT * ldy;
-        const closestOnSeg = Math.hypot(footX - segX, footY - segY);
-        if (footDist <= SKETCH_SNAP_DISTANCE && closestOnSeg <= margin) {
-          // Check that the start of our draft lies on this host line
-          // (perpendicular only makes sense when the start is on the host)
-          const startOnLine = closestPointOnSegment(
-            line.start_x, line.start_y,
-            line.end_x, line.end_y,
-            sx, sy,
-          );
-          const startIsOnHost = startOnLine.dist <= SKETCH_SNAP_DISTANCE;
-          if (startIsOnHost) {
-            if (!bestDynamic || footDist < bestDynamic.distance) {
-              bestDynamic = {
-                local: [footX, footY],
-                snapLabel: translate("snap.perpendicular"),
-                snapPerpendicularHostLineId: line.line_id,
-                snapAxisLock: null,
-                snapTangentCircleId: null,
-                snapParallelHostLineId: null,
-                snapLineBodyHostLineId: null,
-                snapLineBodyT: null,
-                distance: footDist,
-              };
-            }
-          }
-        }
-      }
-    }
-
-    // --- parallel to line ---
-    const parallelEnabled = effectiveFilter ? effectiveFilter.snap_parallel : true;
-    if (parallelEnabled && draftStartLocal && params) {
-      const [sx, sy] = draftStartLocal;
-      const draftDx = cx - sx;
-      const draftDy = cy - sy;
-      const draftDistSq = draftDx * draftDx + draftDy * draftDy;
-      if (draftDistSq > 1e-12) {
-        for (const line of params.lines) {
-          if (line.is_construction) continue;
-          const ldx = line.end_x - line.start_x;
-          const ldy = line.end_y - line.start_y;
-          if (ldx * ldx + ldy * ldy < 1e-12) continue;
-          // Check if draft direction is parallel to line direction
-          const angle = angleDiffBetween(draftDx, draftDy, ldx, ldy);
-          // Parallel means angle ~0 or ~PI
-          const parallelAngle = Math.min(angle, Math.PI - angle);
-          if (parallelAngle < PARALLEL_ANGLE_THRESHOLD) {
-            // Project cursor onto the parallel line through draft start
-            const lMag = Math.hypot(ldx, ldy);
-            const lUx = ldx / lMag;
-            const lUy = ldy / lMag;
-            const projLen = (cx - sx) * lUx + (cy - sy) * lUy;
-            const ppx = sx + projLen * lUx;
-            const ppy = sy + projLen * lUy;
-            const pDist = Math.hypot(cx - ppx, cy - ppy);
-            if (pDist <= SKETCH_SNAP_DISTANCE) {
-              if (!bestDynamic || pDist < bestDynamic.distance) {
-                bestDynamic = {
-                  local: [ppx, ppy],
-                  snapLabel: translate("snap.parallel"),
-                  snapPerpendicularHostLineId: null,
-                  snapAxisLock: null,
-                  snapTangentCircleId: null,
-                  snapParallelHostLineId: line.line_id,
-                  snapLineBodyHostLineId: null,
-                  snapLineBodyT: null,
-                  distance: pDist,
-                };
-              }
-            }
-          }
-        }
-      }
-    }
+    const bestDynamic = params
+      ? dynamicSnapCandidate({
+          lines: params.lines,
+          circles: params.circles,
+          filter: effectiveFilter,
+          draftStart: draftStartLocal,
+          cursor: rawPoint.local,
+          threshold: SKETCH_SNAP_DISTANCE,
+          axisAngleThresholdRadians: AXIS_ANGLE_THRESHOLD,
+          parallelAngleThresholdRadians: PARALLEL_ANGLE_THRESHOLD,
+          labels: {
+            axisLockHorizontal: translate("snap.axisLockHorizontal"),
+            axisLockVertical: translate("snap.axisLockVertical"),
+            onLine: translate("snap.onLine"),
+            tangent: translate("snap.tangent"),
+            perpendicular: translate("snap.perpendicular"),
+            parallel: translate("snap.parallel"),
+          },
+        })
+      : null;
 
     // If a dynamic snap fired and is closer than any static candidate,
     // return the dynamic result.
     if (bestDynamic && bestDynamic.distance <= SKETCH_SNAP_DISTANCE) {
-      if (!closestCandidate || bestDynamic.distance < closestDistance) {
+      if (!closestStatic || bestDynamic.distance < closestStatic.distance) {
         return {
           local: bestDynamic.local,
           world: toWorldPoint(
@@ -5356,23 +3183,16 @@ const currentGridSpacingRef = useRef(10);
     // Fallback: if a lower-priority static candidate (center, quadrant,
     // intersection, etc.) matched but dynamic snaps didn't fire, return
     // the static candidate now.
-    if (closestCandidate && closestDistance <= SKETCH_SNAP_DISTANCE) {
-      return {
-        local: closestCandidate.local,
+    if (closestStatic && closestStatic.distance <= SKETCH_SNAP_DISTANCE) {
+      return previewPointFromStaticCandidate({
+        candidate: closestStatic.candidate,
         world: toWorldPoint(
           activeSketchPlaneId ?? "ref-plane-xy",
-          closestCandidate.local,
+          closestStatic.candidate.local,
           activeSketchPlaneFrame,
         ),
-        snapLabel: closestCandidate.label,
-        snapMidpointHostLineId: null,
-        snapPerpendicularHostLineId: null,
-        snapEndpointHostLineId: null,
-        snapLineBodyHostLineId: null,
-        snapLineBodyT: null,
-        snapAxisLock: null,
-        snapTangentCircleId: null,
-      } satisfies SketchPreviewPoint;
+        includeEndpointMetadata: false,
+      });
     }
 
     return {
@@ -5387,6 +3207,24 @@ const currentGridSpacingRef = useRef(10);
       snapTangentCircleId: null,
       snapParallelHostLineId: null,
     } satisfies SketchPreviewPoint;
+  }
+
+  function capturePendingLineCommitRelations(
+    sketchPoint: ReturnType<typeof resolveSnappedSketchPoint>,
+  ) {
+    const relations = lineCommitRelations({
+      sketchPoint,
+      fromLineCount: sketchLineCountRef.current,
+      startMidpointHostLineId: draftStartMidpointHostRef.current,
+      startLineBodyHost: draftStartLineBodyHostRef.current,
+    });
+    pendingMidpointAnchorRef.current = relations.midpointAnchor;
+    pendingPerpendicularConstraintRef.current = relations.perpendicularConstraint;
+    pendingPointLineAnchorRef.current = relations.pointLineAnchor;
+    pendingAxisConstraintRef.current = relations.axisConstraint;
+    pendingTangentConstraintRef.current = relations.tangentConstraint;
+    pendingParallelConstraintRef.current = relations.parallelConstraint;
+    return relations;
   }
 
   function syncPrimitiveVisuals() {
@@ -5760,92 +3598,6 @@ const currentGridSpacingRef = useRef(10);
     });
   }
 
-  function moveGizmoScreenAngle(
-    event: PointerEvent,
-    center: THREE.Vector3,
-    camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
-  ) {
-    const projectedCenter = projectWorldPointToViewport(
-      [center.x, center.y, center.z],
-      camera,
-      renderer,
-    );
-    if (!projectedCenter) {
-      return 0;
-    }
-    const rect = renderer.domElement.getBoundingClientRect();
-    return Math.atan2(
-      event.clientY - rect.top - projectedCenter.y,
-      event.clientX - rect.left - projectedCenter.x,
-    );
-  }
-
-  function moveGizmoTranslationDelta(
-    event: PointerEvent,
-    drag: MoveGizmoDragState,
-    axis: MoveGizmoAxis,
-    camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
-  ) {
-    const center = projectWorldPointToViewport(
-      [drag.center.x, drag.center.y, drag.center.z],
-      camera,
-      renderer,
-    );
-    const endpoint = drag.center.clone().addScaledVector(
-      drag.axes[axis],
-      drag.handleLength,
-    );
-    const projectedEndpoint = projectWorldPointToViewport(
-      [endpoint.x, endpoint.y, endpoint.z],
-      camera,
-      renderer,
-    );
-    if (!center || !projectedEndpoint) {
-      return 0;
-    }
-    const axisScreen = {
-      x: projectedEndpoint.x - center.x,
-      y: projectedEndpoint.y - center.y,
-    };
-    const axisScreenLength = Math.hypot(axisScreen.x, axisScreen.y);
-    if (axisScreenLength <= 1.0e-6) {
-      return 0;
-    }
-    const dragScreen = {
-      x: event.clientX - drag.startClientX,
-      y: event.clientY - drag.startClientY,
-    };
-    const projectedPixels =
-      (dragScreen.x * axisScreen.x + dragScreen.y * axisScreen.y) /
-      axisScreenLength;
-    return (projectedPixels / axisScreenLength) * drag.handleLength;
-  }
-
-  function moveGizmoFreeDelta(
-    event: PointerEvent,
-    drag: MoveGizmoDragState,
-    camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
-  ) {
-    const dx = event.clientX - drag.startClientX;
-    const dy = event.clientY - drag.startClientY;
-    const cameraDirection = new THREE.Vector3();
-    camera.getWorldDirection(cameraDirection);
-    const cameraRight = new THREE.Vector3()
-      .crossVectors(cameraDirection, camera.up)
-      .normalize();
-    const cameraUp = camera.up.clone().normalize();
-    const worldUnitsPerPixel =
-      camera instanceof THREE.OrthographicCamera
-        ? (camera.top - camera.bottom) / camera.zoom / renderer.domElement.clientHeight
-        : drag.handleLength / Math.max(renderer.domElement.clientHeight, 1);
-    return new THREE.Vector3()
-      .addScaledVector(cameraRight, dx * worldUnitsPerPixel)
-      .addScaledVector(cameraUp, -dy * worldUnitsPerPixel);
-  }
-
   useEffect(() => {
     activeSketchToolRef.current = activeSketchTool;
     sketchSnapCandidatesRef.current = sketchSnapCandidates;
@@ -5896,12 +3648,8 @@ const currentGridSpacingRef = useRef(10);
     setSketchParallelConstraintRef.current = onSetSketchParallelConstraint;
   }, [onSetSketchParallelConstraint]);
 
-  // Post-add midpoint-anchor dispatch. When `add_sketch_line` settles
-  // and the sketch's lines vector has grown, look at the just-added
-  // (last) line and issue `set_sketch_midpoint_anchor` for whichever
-  // endpoint(s) snapped to a midpoint host. The pending state is
-  // captured at click-time (so the host id stays consistent even if
-  // intervening edits re-render) and cleared as soon as we apply it.
+  // Post-add line relation dispatch. Pending snap relations are captured
+  // at click-time and consumed once the new line appears after IPC settles.
   useEffect(() => {
     const params = sketchFeature?.sketch_parameters ?? null;
     sketchLinesRef.current = params;
@@ -5909,114 +3657,28 @@ const currentGridSpacingRef = useRef(10);
     const previousCount = sketchLineCountRef.current;
     sketchLineCountRef.current = newCount;
 
-    const pending = pendingMidpointAnchorRef.current;
-    const pendingPerp = pendingPerpendicularConstraintRef.current;
-    const pendingLine = pendingPointLineAnchorRef.current;
-    const pendingAxis = pendingAxisConstraintRef.current;
-    const pendingTangent = pendingTangentConstraintRef.current;
-    const pendingParallel = pendingParallelConstraintRef.current;
-    if (!params) {
-      return;
-    }
-    if (
-      !pending &&
-      !pendingPerp &&
-      !pendingLine &&
-      !pendingAxis &&
-      !pendingTangent &&
-      !pendingParallel
-    ) {
-      return;
-    }
-
-    // All pending kinds use the same matching rule: the line count
-    // must have grown by exactly one past the baseline. If it
-    // didn't, drop every pending (they're stale).
-    const baseline =
-      pending?.fromLineCount ??
-      pendingPerp?.fromLineCount ??
-      pendingLine?.fromLineCount ??
-      pendingAxis?.fromLineCount ??
-      pendingTangent?.fromLineCount ??
-      pendingParallel?.fromLineCount ??
-      -1;
-    if (newCount !== baseline + 1) {
-      if (newCount !== previousCount) {
-        pendingMidpointAnchorRef.current = null;
-        pendingPerpendicularConstraintRef.current = null;
-        pendingPointLineAnchorRef.current = null;
-        pendingAxisConstraintRef.current = null;
-        pendingTangentConstraintRef.current = null;
-        pendingParallelConstraintRef.current = null;
-      }
-      return;
-    }
-
-    pendingMidpointAnchorRef.current = null;
-    pendingPerpendicularConstraintRef.current = null;
-    pendingPointLineAnchorRef.current = null;
-    pendingAxisConstraintRef.current = null;
-    pendingTangentConstraintRef.current = null;
-    pendingParallelConstraintRef.current = null;
-    const newLine = params.lines[params.lines.length - 1];
-    if (!newLine) {
-      return;
-    }
-    // Only the endpoint gets a midpoint anchor. The start point is
-    // a deliberate user placement — binding it would pull the line.
-    if (pending?.endHostLineId) {
-      void setSketchMidpointAnchorRef.current(
-        newLine.end_point_id,
-        pending.endHostLineId,
-      );
-    }
-    if (pendingPerp) {
-      void setSketchPerpendicularConstraintRef.current(
-        newLine.line_id,
-        pendingPerp.hostLineId,
-      );
-    }
-    // Point-on-line anchors. Per side, only fire when that side
-    // wasn't already claimed by a midpoint anchor — the midpoint
-    // anchor is a more specific relation and should win.
-    // Only the endpoint gets a point‑line anchor — same rationale.
-    if (pendingLine?.endHost && !pending?.endHostLineId) {
-      void setSketchPointLineAnchorRef.current(
-        newLine.end_point_id,
-        pendingLine.endHost.lineId,
-        pendingLine.endHost.t,
-      );
-    }
-    // Axis lock takes precedence at most once per draft. Skip it if
-    // a perpendicular constraint already fired for this line — the
-    // two would conflict in the solver (perp's own conflict check
-    // throws). Otherwise dispatch H/V as a sticky line constraint.
-    if (pendingAxis && !pendingPerp) {
-      void setSketchLineConstraintRef.current(
-        newLine.line_id,
-        pendingAxis.kind,
-      );
-    }
-    // Tangent relation. Skipped when the new line already has a
-    // perpendicular host or an axis lock — both fully determine the
-    // line's direction and would over-constrain the tangent. The
-    // user's explicit perp/axis intent wins; tangent is only the
-    // implicit "snapped to a circle" outcome.
-    if (pendingTangent && !pendingPerp && !pendingAxis) {
-      void setSketchTangentConstraintRef.current(
-        newLine.line_id,
-        pendingTangent.circleId,
-      );
-    }
-    // Parallel relation. Skipped when the new line already has a
-    // perpendicular host, an axis lock, or a tangent relation — all
-    // fully determine the line's direction and would over-constrain.
-    if (pendingParallel && !pendingPerp && !pendingAxis && !pendingTangent) {
-      void setSketchParallelConstraintRef.current(
-        newLine.line_id,
-        pendingParallel.hostLineId,
-      );
-    }
+    applyPendingLineCommitRelations({
+      sketchParameters: params,
+      previousLineCount: previousCount,
+      currentLineCount: newCount,
+      refs: {
+        midpointAnchor: pendingMidpointAnchorRef,
+        perpendicularConstraint: pendingPerpendicularConstraintRef,
+        pointLineAnchor: pendingPointLineAnchorRef,
+        axisConstraint: pendingAxisConstraintRef,
+        tangentConstraint: pendingTangentConstraintRef,
+        parallelConstraint: pendingParallelConstraintRef,
+      },
+      actions: {
+        setSketchMidpointAnchor: setSketchMidpointAnchorRef.current,
+        setSketchPerpendicularConstraint:
+          setSketchPerpendicularConstraintRef.current,
+        setSketchPointLineAnchor: setSketchPointLineAnchorRef.current,
+        setSketchLineConstraint: setSketchLineConstraintRef.current,
+        setSketchTangentConstraint: setSketchTangentConstraintRef.current,
+        setSketchParallelConstraint: setSketchParallelConstraintRef.current,
+      },
+    });
   }, [sketchFeature]);
 
   useEffect(() => {
@@ -6208,46 +3870,15 @@ const currentGridSpacingRef = useRef(10);
     fillLight.position.set(-1.5, 0.8, -1.1);
     scene.add(fillLight);
 
-    onSnapshotCaptureReady?.(() => {
-      renderer.render(scene, camera);
-      const source = renderer.domElement;
-      if (source.width === 0 || source.height === 0) {
-        return null;
-      }
-      const thumbnail = window.document.createElement("canvas");
-      thumbnail.width = 240;
-      thumbnail.height = 150;
-      const context = thumbnail.getContext("2d");
-      if (!context) {
-        return null;
-      }
-      const thumbnailBackground =
-        window
-          .getComputedStyle(host)
-          .getPropertyValue("--cad-project-thumbnail-bg")
-          .trim();
-      if (thumbnailBackground) {
-        context.fillStyle = thumbnailBackground;
-        context.fillRect(0, 0, thumbnail.width, thumbnail.height);
-      }
-      context.drawImage(source, 0, 0, thumbnail.width, thumbnail.height);
-      return thumbnail.toDataURL("image/png");
+    setupViewportSnapshotCapture({
+      host,
+      renderer,
+      scene,
+      camera,
+      onSnapshotCaptureReady,
     });
 
-    controls.enableDamping = false;
-    controls.enableZoom = false;
-    controls.screenSpacePanning = true;
-    controls.minDistance = 24;
-    controls.maxDistance = 6000;
-    controls.mouseButtons.LEFT = null;
-    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
-    controls.mouseButtons.RIGHT = null;
-    controls.addEventListener("start", () => {
-      canvas.classList.add("cad-viewport-canvas-dragging");
-    });
-    controls.addEventListener("end", () => {
-      canvas.classList.remove("cad-viewport-canvas-dragging");
-    });
+    configureViewportControls({ controls, canvas });
 
     // -- view cube setup -------------------------------------------------
     const cubeGroup = buildViewCubeGroup();
@@ -6265,363 +3896,27 @@ const currentGridSpacingRef = useRef(10);
     cubeRenderTargetRef.current = cubeTarget;
     cubeBlitSceneRef.current = blitScene;
 
-    function ensureDynamicGrid(
-      ref: MutableRefObject<DynamicGridRef | null>,
-      key: string,
-      buildLine: () => THREE.LineSegments,
-    ) {
-      const current = ref.current;
-      if (current?.key === key) {
-        return;
-      }
-
-      if (current) {
-        scene.remove(current.group);
-        disposeDynamicGrid(current);
-      }
-
-      const group = new THREE.Group();
-      group.add(buildLine());
-      scene.add(group);
-      ref.current = { key, group };
-    }
-
-    function clearDynamicGrid(ref: MutableRefObject<DynamicGridRef | null>) {
-      const current = ref.current;
-      if (!current) {
-        return;
-      }
-      scene.remove(current.group);
-      disposeDynamicGrid(current);
-      ref.current = null;
-    }
-
-    function updateDynamicGrids() {
-      if (!sceneDataRef.current) {
-        clearDynamicGrid(worldGridRef);
-        clearDynamicGrid(sketchGridRef);
-        return;
-      }
-
-      const spacing = selectOrthographicGridSpacing(camera);
-      currentGridSpacingRef.current = spacing;
-      const viewOffset = new THREE.Vector3()
-        .copy(camera.position)
-        .sub(controls.target)
-        .normalize();
-      const cardinalFrame = getCardinalGridFrame(viewOffset);
-      const worldFrame: GridPlaneFrame = cardinalFrame ?? {
-        origin: new THREE.Vector3(0, 0, 0),
-        xAxis: new THREE.Vector3(1, 0, 0),
-        yAxis: new THREE.Vector3(0, 0, 1),
-        normal: new THREE.Vector3(0, 1, 0),
-      };
-
-      const sketchPlaneId = activeSketchPlaneIdRef.current;
-      if (!sketchPlaneId) {
-        if (!showViewportGridRef.current) {
-          clearDynamicGrid(worldGridRef);
-          clearDynamicGrid(sketchGridRef);
-          return;
-        }
-
-        const worldCenter = projectPointToGridFrame(controls.target, worldFrame);
-        const worldBounds = getGridViewBounds(
-          camera,
-          worldFrame,
-          spacing,
-          worldCenter,
-          GRID_WORLD_PADDING_MULTIPLIER,
-        );
-        ensureDynamicGrid(
-          worldGridRef,
-          `world:${
-            cardinalFrame ? "cardinal" : "floor"
-          }:${spacing}:${worldBounds.minU}:${worldBounds.maxU}:${worldBounds.minV}:${worldBounds.maxV}`,
-          () => {
-            const worldGrid = buildDynamicGrid(
-              worldFrame,
-              spacing,
-              worldBounds,
-              new THREE.Color(themeColor("--color-cad-grid", "#3f4648")),
-              new THREE.Color(themeColor("--color-cad-grid-axis", "#5e696c")),
-              new THREE.Color(themeColor("--color-cad-grid-axis", "#7a7a7c")),
-              0.34,
-            );
-            worldGrid.renderOrder = -10;
-            return worldGrid;
-          },
-        );
-        clearDynamicGrid(sketchGridRef);
-        return;
-      }
-
-      clearDynamicGrid(worldGridRef);
-      if (!showSketchGridRef.current) {
-        clearDynamicGrid(sketchGridRef);
-        return;
-      }
-
-      const sketchFrame = getSketchGridFrame(
-        sketchPlaneId,
-        activeSketchPlaneFrameRef.current,
-      );
-      const sketchCenter = projectPointToGridFrame(controls.target, sketchFrame);
-      const sketchBounds = getGridViewBounds(
-        camera,
-        sketchFrame,
-        spacing,
-        sketchCenter,
-        GRID_SKETCH_PADDING_MULTIPLIER,
-      );
-      ensureDynamicGrid(
-        sketchGridRef,
-        `sketch:${sketchPlaneId}:${spacing}:${sketchBounds.minU}:${sketchBounds.maxU}:${sketchBounds.minV}:${sketchBounds.maxV}`,
-        () => {
-          const sketchGrid = buildDynamicGrid(
-            sketchFrame,
-            spacing,
-            sketchBounds,
-            new THREE.Color(themeColor("--cad-sketch-grid", "#2a383b")),
-            new THREE.Color(themeColor("--cad-sketch-grid-axis", "#46585d")),
-            new THREE.Color(
-              themeColor("--cad-sketch-grid-center-axis", "#7a8a8f"),
-            ),
-            0.48,
-          );
-          sketchGrid.renderOrder = -9;
-          return sketchGrid;
-        },
-      );
-    }
-
-    function updateScreenSpaceSketchSprites() {
-      const viewportHeight = Math.max(renderer.domElement.clientHeight, 1);
-      const viewportScale = Math.min(
-        Math.max(viewportHeight / SKETCH_SCREEN_SPRITE_BASE_HEIGHT, 0.82),
-        1.18,
-      );
-      const worldUnitsPerPixel =
-        getOrthographicViewHeight(camera) / viewportHeight;
-      const cameraRight = new THREE.Vector3()
-        .setFromMatrixColumn(camera.matrixWorld, 0)
-        .normalize();
-      const cameraUp = new THREE.Vector3()
-        .setFromMatrixColumn(camera.matrixWorld, 1)
-        .normalize();
-      const dimensionRects: Array<{
-        center: { x: number; y: number };
-        width: number;
-        height: number;
-      }> = [];
-
-      function updateSpriteScale(object: THREE.Object3D, scale: number) {
-        const sprite = object as THREE.Sprite;
-        const screenSize = sprite.userData.screenSize as
-          | { width: number; height: number }
-          | undefined;
-        if (!screenSize || !sprite.isSprite) {
-          return null;
-        }
-
-        const basePosition = sprite.userData.basePosition as
-          | [number, number, number]
-          | null
-          | undefined;
-        if (basePosition) {
-          sprite.position.set(...basePosition);
-        }
-        sprite.scale.set(
-          screenSize.width * scale * viewportScale * worldUnitsPerPixel,
-          screenSize.height * scale * viewportScale * worldUnitsPerPixel,
-          1,
-        );
-        const dimensionStart = sprite.userData.dimensionStart as
-          | [number, number, number]
-          | undefined;
-        const dimensionEnd = sprite.userData.dimensionEnd as
-          | [number, number, number]
-          | undefined;
-        const labelOffsetPixels = 5;
-        if (dimensionStart && dimensionEnd && sprite.material) {
-          const material = sprite.material as THREE.SpriteMaterial;
-          if (
-            sprite.userData.dimensionKind === "angle" ||
-            sprite.userData.dimensionKind === "line_angle"
-          ) {
-            material.rotation = 0;
-            return null;
-          }
-          const start = projectWorldPointToViewport(
-            dimensionStart,
-            camera,
-            renderer,
-          );
-          const end = projectWorldPointToViewport(dimensionEnd, camera, renderer);
-          if (start && end) {
-            const dx = end.x - start.x;
-            const dy = end.y - start.y;
-            let angle = Math.atan2(dy, dx);
-            if (angle > Math.PI / 2) {
-              angle -= Math.PI;
-            } else if (angle < -Math.PI / 2) {
-              angle += Math.PI;
-            }
-            material.rotation = -angle;
-            const lineLength = Math.hypot(dx, dy);
-            if (lineLength > 1e-6) {
-              const midpoint = {
-                x: (start.x + end.x) / 2,
-                y: (start.y + end.y) / 2,
-              };
-              const labelCenter = projectWorldPointToViewport(
-                [sprite.position.x, sprite.position.y, sprite.position.z],
-                camera,
-                renderer,
-              );
-              let normalX = -dy / lineLength;
-              let normalY = dx / lineLength;
-              if (
-                labelCenter &&
-                (labelCenter.x - midpoint.x) * normalX +
-                  (labelCenter.y - midpoint.y) * normalY <
-                  0
-              ) {
-                normalX = -normalX;
-                normalY = -normalY;
-              }
-              sprite.position
-                .addScaledVector(
-                  cameraRight,
-                  normalX * labelOffsetPixels * worldUnitsPerPixel,
-                )
-                .addScaledVector(
-                  cameraUp,
-                  -normalY * labelOffsetPixels * worldUnitsPerPixel,
-                );
-            }
-          } else {
-            material.rotation = 0;
-          }
-        }
-
-        const center = projectWorldPointToViewport(
-          [sprite.position.x, sprite.position.y, sprite.position.z],
-          camera,
-          renderer,
-        );
-        if (!center) {
-          return null;
-        }
-        return {
-          center,
-          width: screenSize.width * scale * viewportScale,
-          height: screenSize.height * scale * viewportScale,
-        };
-      }
-
-      for (const object of sketchDimensionObjectsRef.current) {
-        const rect = updateSpriteScale(object, SKETCH_LABEL_SCREEN_SCALE);
-        if (rect) {
-          dimensionRects.push(rect);
-        }
-      }
-
-      for (const object of sketchConstraintObjectsRef.current) {
-        const rect = updateSpriteScale(
-          object,
-          SKETCH_CONSTRAINT_SCREEN_SIZE / 42,
-        );
-        if (!rect) {
-          continue;
-        }
-        const sprite = object as THREE.Sprite;
-        for (const dimensionRect of dimensionRects) {
-          const dx = rect.center.x - dimensionRect.center.x;
-          const dy = rect.center.y - dimensionRect.center.y;
-          const overlapX =
-            (rect.width + dimensionRect.width) / 2 +
-            SKETCH_LABEL_COLLISION_PADDING -
-            Math.abs(dx);
-          const overlapY =
-            (rect.height + dimensionRect.height) / 2 +
-            SKETCH_LABEL_COLLISION_PADDING -
-            Math.abs(dy);
-          if (overlapX <= 0 || overlapY <= 0) {
-            continue;
-          }
-
-          const moveX =
-            overlapX < overlapY
-              ? (dx >= 0 ? 1 : -1) * overlapX
-              : 0;
-          const moveY =
-            overlapX < overlapY
-              ? 0
-              : (dy >= 0 ? 1 : -1) * overlapY;
-          sprite.position
-            .addScaledVector(cameraRight, moveX * worldUnitsPerPixel)
-            .addScaledVector(cameraUp, -moveY * worldUnitsPerPixel);
-          rect.center.x += moveX;
-          rect.center.y += moveY;
-        }
-      }
-    }
-
     function resizeRenderer() {
-      const width = Math.max(host?.clientWidth ?? 0, 1);
-      const height = Math.max(host?.clientHeight ?? 0, 1);
-      setViewportSize({ width, height });
-      renderer.setSize(width, height, false);
-      const aspect = width / height;
-      camera.left = (-ORTHO_FRUSTUM_HEIGHT * aspect) / 2;
-      camera.right = (ORTHO_FRUSTUM_HEIGHT * aspect) / 2;
-      camera.top = ORTHO_FRUSTUM_HEIGHT / 2;
-      camera.bottom = -ORTHO_FRUSTUM_HEIGHT / 2;
-      camera.updateProjectionMatrix();
-    }
-
-    function worldPointAtPointer(event: WheelEvent) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      camera.updateMatrixWorld();
-      return new THREE.Vector3(ndcX, ndcY, 0).unproject(camera);
+      resizeViewportRenderer({
+        host,
+        renderer,
+        camera,
+        orthoFrustumHeight: ORTHO_FRUSTUM_HEIGHT,
+        setViewportSize,
+      });
     }
 
     function handleWheel(event: WheelEvent) {
-      event.preventDefault();
-
-      const before = worldPointAtPointer(event);
-      const deltaMultiplier =
-        event.deltaMode === WheelEvent.DOM_DELTA_LINE
-          ? 16
-          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? renderer.domElement.clientHeight
-            : 1;
-      const zoomFactor = Math.exp(
-        -event.deltaY * deltaMultiplier * WHEEL_ZOOM_SPEED,
-      );
-      const nextZoom = THREE.MathUtils.clamp(
-        camera.zoom * zoomFactor,
-        ORTHO_MIN_ZOOM,
-        ORTHO_MAX_ZOOM,
-      );
-
-      if (Math.abs(nextZoom - camera.zoom) < 1e-6) {
-        return;
-      }
-
-      camera.zoom = nextZoom;
-      camera.updateProjectionMatrix();
-
-      const after = worldPointAtPointer(event);
-      const pointerShift = before
-        .sub(after)
-        .multiplyScalar(WHEEL_ZOOM_POINTER_PAN);
-      camera.position.add(pointerShift);
-      controls.target.add(pointerShift);
-      controls.update();
+      handleViewportWheelZoom({
+        event,
+        renderer,
+        camera,
+        controls,
+        minZoom: ORTHO_MIN_ZOOM,
+        maxZoom: ORTHO_MAX_ZOOM,
+        zoomSpeed: WHEEL_ZOOM_SPEED,
+        pointerPan: WHEEL_ZOOM_POINTER_PAN,
+      });
     }
 
     function renderDraftDimensions() {
@@ -6636,288 +3931,49 @@ const currentGridSpacingRef = useRef(10);
       // Clear previous frame's geometry
       clearDraftDimGroup();
 
-      const [sx, sy] = session.start;
-      const [ex, ey] = session.current;
-      const dx = ex - sx;
-      const dy = ey - sy;
-      const len = Math.hypot(dx, dy);
-      if (len < 0.001) return;
+      const preview = buildDraftDimensionPreview({
+        session,
+        camera,
+        renderer,
+        activeSketchPlaneId,
+        activeSketchPlaneFrame,
+        previousLineAngle: previousLineAngleRef.current,
+      });
 
-      // Current implementation handles line tool only.
-      // Rectangle, circle, polygon tools are left working as before
-      // via the existing HTML input overlay.
-      if (session.tool !== "line") {
-        draftDimScreenPositionsRef.current = {};
+      if (preview.kind === "none") {
         return;
       }
 
-      const planeId = activeSketchPlaneId ?? "ref-plane-xy";
-      const planeFrame = activeSketchPlaneFrame;
-
-      // Convert 2D sketch coords to 3D world
-      const sw = toWorldPoint(planeId, [sx, sy], planeFrame);
-      const ew = toWorldPoint(planeId, [ex, ey], planeFrame);
-
-      const group = new THREE.Group();
-      group.renderOrder = 6;
-
-      // --- Helper: add line segments to a collection ---
-      const allSegs: THREE.Vector3[] = [];
-      const addSeg = (a: [number, number, number], b: [number, number, number]) => {
-        allSegs.push(new THREE.Vector3(a[0], a[1], a[2]));
-        allSegs.push(new THREE.Vector3(b[0], b[1], b[2]));
-      };
-
-      // Filled arrow triangle collection
-      const arrowPositions: number[] = [];
-      const arrowIndices: number[] = [];
-      const addFilledArrow = (
-        tip: THREE.Vector3,
-        inward: THREE.Vector3,
-        perp: THREE.Vector3,
-      ) => {
-        const base = tip.clone().add(inward.clone().multiplyScalar(ARROW_LEN));
-        const side = perp.clone().multiplyScalar(ARROW_W);
-        const idx = arrowPositions.length / 3;
-        arrowPositions.push(tip.x, tip.y, tip.z);
-        arrowPositions.push(base.x + side.x, base.y + side.y, base.z + side.z);
-        arrowPositions.push(base.x - side.x, base.y - side.y, base.z - side.z);
-        arrowIndices.push(idx, idx + 1, idx + 2);
-      };
-
-      // --- Compute sketch plane normal ---
-      let pNormal: THREE.Vector3;
-      if (planeFrame) {
-        const nx = Array.isArray(planeFrame.normal) ? planeFrame.normal[0] : planeFrame.normal.x;
-        const ny = Array.isArray(planeFrame.normal) ? planeFrame.normal[1] : planeFrame.normal.y;
-        const nz = Array.isArray(planeFrame.normal) ? planeFrame.normal[2] : planeFrame.normal.z;
-        pNormal = new THREE.Vector3(nx, ny, nz);
-      } else {
-        pNormal = new THREE.Vector3(0, 1, 0);
+      draftDimScreenPositionsRef.current = preview.screenPositions;
+      if (preview.kind === "positions") {
+        return;
       }
 
-      // Line direction and perpendicular (in sketch plane)
-      const sVec = new THREE.Vector3(sw[0], sw[1], sw[2]);
-      const eVec = new THREE.Vector3(ew[0], ew[1], ew[2]);
-      const lineDir = eVec.clone().sub(sVec).normalize();
-      const perpDir = new THREE.Vector3().crossVectors(lineDir, pNormal).normalize();
-
-      // Flip perpDir toward camera
-      const toCam = new THREE.Vector3().copy(camera.position).sub(sVec).normalize();
-      if (perpDir.dot(toCam) < 0) perpDir.negate();
-
-      // Zoom-aware dimension offset (~30 px on screen)
-      const viewH = getOrthographicViewHeight(camera);
-      const vpH = rendererRef.current?.domElement.height ?? 600;
-      const zoomDimOffset = Math.max(4, 30 * viewH / vpH);
-      const ARROW_LEN = 1.5;
-      const ARROW_W = 0.27;
-
-      // --- Length dimension ---
-      const dimLabelPos: [number, number, number] = [0, 0, 0];
-      let angleRad = 0; // hoisted for label position computation below
-      let arcMidWorldLabel: [number, number, number] = [0, 0, 0];
-      if (session.tool === "line") {
-        const dimS = new THREE.Vector3(sw[0], sw[1], sw[2]).add(perpDir.clone().multiplyScalar(-2 * zoomDimOffset));
-        const dimE = new THREE.Vector3(ew[0], ew[1], ew[2]).add(perpDir.clone().multiplyScalar(-2 * zoomDimOffset));
-        const dimDir = dimE.clone().sub(dimS);
-
-        // Extension lines
-        addSeg(sw, [dimS.x, dimS.y, dimS.z]);
-        addSeg(ew, [dimE.x, dimE.y, dimE.z]);
-
-        if (dimDir.lengthSq() > 0.001) {
-          const dimDirN = dimDir.clone().normalize();
-
-          // Dimension line
-          addSeg([dimS.x, dimS.y, dimS.z], [dimE.x, dimE.y, dimE.z]);
-
-          // Arrowheads (filled triangles)
-          addFilledArrow(dimS, dimDirN, perpDir);
-          addFilledArrow(dimE, dimDirN.clone().negate(), perpDir);
-
-          // Label position = midpoint of dimension line
-          const mid = dimS.clone().add(dimE).multiplyScalar(0.5);
-          dimLabelPos[0] = mid.x;
-          dimLabelPos[1] = mid.y;
-          dimLabelPos[2] = mid.z;
-        }
-
-        // --- Dotted extension + reference line + angle arc ---
-        angleRad = Math.atan2(dy, dx);
-        const lineLen = Math.hypot(dx, dy);
-
-        // Determine reference angle: previous chained line, or horizontal (0)
-        const refAngle = previousLineAngleRef.current ?? 0;
-
-        // Compute relative display angle (shorter arc direction)
-        let displayAngle = angleRad - refAngle;
-        while (displayAngle > Math.PI) displayAngle -= 2 * Math.PI;
-        while (displayAngle < -Math.PI) displayAngle += 2 * Math.PI;
-        // Negate so arc and length dimension occupy opposite sides.
-        // Preserves angle magnitude, just flips the sweep direction.
-        // Arc sweeps the natural shorter direction (CCW for positive angles).
-
-        // --- Angle arc centered at line start, sweeping refAngle → angleRad ---
-        // Zoom-aware cap so the arc stays ~480 px on screen.
-        const zoomCap = Math.max(20, 480 * viewH / vpH);
-        const arcRadius = Math.max(8, Math.min(lineLen, zoomCap));
-
-        // --- Dotted reference line from start point along reference angle ---
-        // Extend to the arc radius so it meets the dimension arc exactly.
-        {
-          const rsw = toWorldPoint(planeId, [sx, sy], planeFrame);
-          const rex = sx + arcRadius * Math.cos(refAngle);
-          const rey = sy + arcRadius * Math.sin(refAngle);
-          const rew = toWorldPoint(planeId, [rex, rey], planeFrame);
-          const refGeom = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(rsw[0], rsw[1], rsw[2]),
-            new THREE.Vector3(rew[0], rew[1], rew[2]),
-          ]);
-          const refMat = new THREE.LineDashedMaterial({
-            color: new THREE.Color(0x8feaf7), transparent: true,
-            opacity: 0.40, dashSize: 2, gapSize: 2, depthTest: false,
-          });
-          const refLine = new THREE.Line(refGeom, refMat);
-          refLine.computeLineDistances();
-          refLine.renderOrder = 7;
-          group.add(refLine);
-        }
-        const arcSweep = displayAngle;
-        const arcSegments = 24;
-        let prevArc: THREE.Vector3 | null = null;
-        let arcStartWorldPt: [number, number, number] = [0, 0, 0];
-        let arcEndWorldPt: [number, number, number] = [0, 0, 0];
-        for (let i = 0; i <= arcSegments; i++) {
-          const a = refAngle + arcSweep * (i / arcSegments);
-          const lx = sx + arcRadius * Math.cos(a);
-          const ly = sy + arcRadius * Math.sin(a);
-          const wp = toWorldPoint(planeId, [lx, ly], planeFrame);
-          const p = new THREE.Vector3(wp[0], wp[1], wp[2]);
-          if (i === 0) arcStartWorldPt = wp;
-          if (i === arcSegments) arcEndWorldPt = wp;
-          if (prevArc) addSeg([prevArc.x, prevArc.y, prevArc.z], [p.x, p.y, p.z]);
-          prevArc = p;
-        }
-
-        // Filled arrowheads at arc ends
-        const addArcArrow = (tipWorld: [number, number, number], tipAngle: number) => {
-          const tip = new THREE.Vector3(tipWorld[0], tipWorld[1], tipWorld[2]);
-          const tlx = sx + arcRadius * Math.cos(tipAngle) - arcRadius * Math.sin(tipAngle);
-          const tly = sy + arcRadius * Math.sin(tipAngle) + arcRadius * Math.cos(tipAngle);
-          const tw = toWorldPoint(planeId, [tlx, tly], planeFrame);
-          const tanDir = new THREE.Vector3(tw[0], tw[1], tw[2]).sub(tip).normalize();
-          const radDir = tip.clone().sub(sVec).normalize();
-          addFilledArrow(tip, tanDir, radDir);
-        };
-        addArcArrow(arcStartWorldPt, refAngle);
-        addArcArrow(arcEndWorldPt, angleRad);
-
-        // Arc midpoint for label positioning
-        const labelAngle = refAngle + arcSweep / 2;
-        // For near-horizontal lines (|displayAngle| < 20°), a label that
-        // rides in front of the rubber band can trap the mouse pointer —
-        // the cursor lands on the HTML input instead of the canvas,
-        // tracking stops, and both line and label freeze.  Always offset
-        // perpendicular (above/below) to the line in this case, like
-        // other CAD tools do.
-        const angleDeg = Math.abs(displayAngle) * 180 / Math.PI;
-        let labelOnPerp = angleDeg < 20 && lineLen > 0.001;
-        if (labelOnPerp) {
-          const lineUx = dx / lineLen;
-          const lineUy = dy / lineLen;
-          // Place the angle window on the opposite side from the
-          // length dimension.  For a downward line the length dim
-          // already sits below, so angle goes above.
-          const perpFlip = dy >= 0 ? -1 : 1;
-          const perpUx = -lineUy * perpFlip;
-          const perpUy = lineUx * perpFlip;
-          arcMidWorldLabel = toWorldPoint(planeId, [
-            sx + arcRadius * lineUx + perpUx * 2.0 * zoomDimOffset,
-            sy + arcRadius * lineUy + perpUy * 2.0 * zoomDimOffset,
-          ], planeFrame);
-        } else {
-          arcMidWorldLabel = toWorldPoint(planeId, [
-            sx + arcRadius * Math.cos(labelAngle),
-            sy + arcRadius * Math.sin(labelAngle),
-          ], planeFrame);
-        }
-      }
-
-      // (diagnostic line removed)
-
-      // Build line geometry
-      const segCount = allSegs.length;
-      if (segCount > 0) {
-        const positions = new Float32Array(segCount * 3);
-        for (let i = 0; i < segCount; i++) {
-          positions[i * 3] = allSegs[i].x;
-          positions[i * 3 + 1] = allSegs[i].y;
-          positions[i * 3 + 2] = allSegs[i].z;
-        }
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        const mat = new THREE.LineBasicMaterial({
-          color: new THREE.Color(0x8feaf7),
-          transparent: true,
-          opacity: 0.78,
-          depthTest: false,
-        });
-        const line = new THREE.LineSegments(geom, mat);
-        line.renderOrder = 6;
-        group.add(line);
-      }
-
-      // Build filled arrow mesh
-      if (arrowIndices.length > 0) {
-        const arrowGeom = new THREE.BufferGeometry();
-        arrowGeom.setAttribute(
-          "position",
-          new THREE.Float32BufferAttribute(arrowPositions, 3),
-        );
-        arrowGeom.setIndex(arrowIndices);
-        const arrowMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(0x8feaf7),
-          transparent: true,
-          opacity: 0.78,
-          depthTest: false,
-          side: THREE.DoubleSide,
-        });
-        const arrowMesh = new THREE.Mesh(arrowGeom, arrowMat);
-        arrowMesh.renderOrder = 6;
-        group.add(arrowMesh);
-      }
-
-      // Store computed label positions for HTML input overlay
-      draftDimScreenPositionsRef.current = {};
-      if (session.tool === "line") {
-        const theRenderer = rendererRef.current;
-        if (theRenderer) {
-          // Length label at dimension line midpoint
-          const lenLabelProj = projectWorldPointToViewport(
-            dimLabelPos, camera, theRenderer,
-          );
-          if (lenLabelProj) {
-            draftDimScreenPositionsRef.current.length = lenLabelProj;
-          }
-          // Angle label at arc midpoint
-          const angleLabelProj = projectWorldPointToViewport(
-            arcMidWorldLabel, camera, theRenderer,
-          );
-          if (angleLabelProj) {
-            draftDimScreenPositionsRef.current.angle = angleLabelProj;
-          }
-        }
-      }
-
-      sketchGroup.add(group);
-      draftDimGroupRef.current = group;
+      sketchGroup.add(preview.group);
+      draftDimGroupRef.current = preview.group;
     }
 
     function render() {
       controls.update();
-      updateDynamicGrids();
-      updateScreenSpaceSketchSprites();
+      updateDynamicGrids({
+        scene,
+        sceneData: sceneDataRef.current,
+        camera,
+        target: controls.target,
+        worldGridRef,
+        sketchGridRef,
+        currentGridSpacingRef,
+        activeSketchPlaneId: activeSketchPlaneIdRef.current,
+        activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+        showViewportGrid: showViewportGridRef.current,
+        showSketchGrid: showSketchGridRef.current,
+      });
+      updateScreenSpaceSketchSprites({
+        renderer,
+        camera,
+        sketchDimensionObjects: sketchDimensionObjectsRef.current,
+        sketchConstraintObjects: sketchConstraintObjectsRef.current,
+      });
       try {
         renderDraftDimensions();
       } catch (err) {
@@ -6954,57 +4010,6 @@ const currentGridSpacingRef = useRef(10);
     }
 
 
-    function segmentCrossesRect(
-      x1: number, y1: number, x2: number, y2: number,
-      rect: { x1: number; y1: number; x2: number; y2: number },
-    ): boolean {
-      // Check if segment intersects any of the 4 rect edges
-      return (
-        segmentsIntersect(x1, y1, x2, y2, rect.x1, rect.y1, rect.x2, rect.y1) ||
-        segmentsIntersect(x1, y1, x2, y2, rect.x2, rect.y1, rect.x2, rect.y2) ||
-        segmentsIntersect(x1, y1, x2, y2, rect.x2, rect.y2, rect.x1, rect.y2) ||
-        segmentsIntersect(x1, y1, x2, y2, rect.x1, rect.y2, rect.x1, rect.y1)
-      );
-    }
-
-    function segmentsIntersect(
-      ax1: number, ay1: number, ax2: number, ay2: number,
-      bx1: number, by1: number, bx2: number, by2: number,
-    ): boolean {
-      const d1 = cross2D(ax1, ay1, ax2, ay2, bx1, by1);
-      const d2 = cross2D(ax1, ay1, ax2, ay2, bx2, by2);
-      const d3 = cross2D(bx1, by1, bx2, by2, ax1, ay1);
-      const d4 = cross2D(bx1, by1, bx2, by2, ax2, ay2);
-      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
-      if (d1 === 0 && pointOnSegment(ax1, ay1, ax2, ay2, bx1, by1)) return true;
-      if (d2 === 0 && pointOnSegment(ax1, ay1, ax2, ay2, bx2, by2)) return true;
-      if (d3 === 0 && pointOnSegment(bx1, by1, bx2, by2, ax1, ay1)) return true;
-      if (d4 === 0 && pointOnSegment(bx1, by1, bx2, by2, ax2, ay2)) return true;
-      return false;
-    }
-
-    function cross2D(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): number {
-      return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
-    }
-
-    function pointOnSegment(
-      x1: number, y1: number, x2: number, y2: number, px: number, py: number,
-    ): boolean {
-      return (
-        Math.min(x1, x2) <= px && px <= Math.max(x1, x2) &&
-        Math.min(y1, y2) <= py && py <= Math.max(y1, y2)
-      );
-    }
-
-    function boxesIntersect(
-      ax1: number, ay1: number, ax2: number, ay2: number,
-      bx1: number, by1: number, bx2: number, by2: number,
-    ): boolean {
-      return !(ax2 < bx1 || bx2 < ax1 || ay2 < by1 || by2 < ay1);
-    }
-
-
     async function performRectangleSelect(drag: SelectionDrag, additive: boolean) {
       if (!activeSketchPlaneIdRef.current) return;
 
@@ -7012,764 +4017,75 @@ const currentGridSpacingRef = useRef(10);
       const renderer = rendererRef.current;
       if (!camera || !renderer) return;
 
-      // Convert drag rectangle from viewport coords (clientX/Y) to
-      // canvas-relative coords so they match projectWorldPointToViewport
-      // output (which is relative to the renderer's DOM element).
-      const canvasRect = renderer.domElement.getBoundingClientRect();
-      const rect = {
-        x1: Math.min(drag.startX, drag.currentX) - canvasRect.left,
-        y1: Math.min(drag.startY, drag.currentY) - canvasRect.top,
-        x2: Math.max(drag.startX, drag.currentX) - canvasRect.left,
-        y2: Math.max(drag.startY, drag.currentY) - canvasRect.top,
-      };
-      const isWindow = drag.currentX >= drag.startX; // L→R = window
+      const sceneData = sceneDataRef.current;
+      const selected = collectRectangleSelectionIds({
+        drag,
+        sceneData,
+        camera,
+        renderer,
+      });
 
-      // Collect visible sketch entities from sceneData
-      const { sketchLines, sketchCircles, sketchArcs, sketchPolygons, sketchPoints } =
-        sceneDataRef.current ?? {};
-
-      const insideRect = (px: number, py: number) =>
-        px >= rect.x1 && px <= rect.x2 && py >= rect.y1 && py <= rect.y2;
-
-      const selected: string[] = [];
-      console.warn("[SEL]", isWindow ? "win" : "cross",
-        "L:", sketchLines?.length ?? 0,
-        "C:", sketchCircles?.length ?? 0,
-        "P:", sketchPoints?.length ?? 0);
-
-      // Test lines (skip preview and construction)
-      if (sketchLines) {
-        for (const line of sketchLines) {
-          if (line.isPreview || line.isConstruction) continue;
-          const s = projectWorldPointToViewport(
-            [line.start[0], line.start[1], line.start[2]],
-            camera,
-            renderer,
-          );
-          const e = projectWorldPointToViewport(
-            [line.end[0], line.end[1], line.end[2]],
-            camera,
-            renderer,
-          );
-          if (!s || !e) continue;
-          if (isWindow) {
-            if (insideRect(s.x, s.y) && insideRect(e.x, e.y))
-              selected.push(line.lineId);
-          } else {
-            if (insideRect(s.x, s.y) || insideRect(e.x, e.y) ||
-                segmentCrossesRect(s.x, s.y, e.x, e.y, rect))
-              selected.push(line.lineId);
-          }
-        }
-      }
-
-      // Test circles
-      if (sketchCircles) {
-        for (const c of sketchCircles) {
-          const center = projectWorldPointToViewport(
-            [c.center[0], c.center[1], c.center[2]],
-            camera,
-            renderer,
-          );
-          if (!center) continue;
-          // Simple bounding-box test
-          const radius = c.radius; // in world units, approximate px radius
-          const right = projectWorldPointToViewport(
-            [c.center[0] + radius, c.center[1], c.center[2]],
-            camera,
-            renderer,
-          );
-          const approxRadius = right ? Math.abs(right.x - center.x) : 0;
-          const bx1 = center.x - approxRadius, by1 = center.y - approxRadius;
-          const bx2 = center.x + approxRadius, by2 = center.y + approxRadius;
-          if (isWindow) {
-            if (bx1 >= rect.x1 && bx2 <= rect.x2 && by1 >= rect.y1 && by2 <= rect.y2)
-              selected.push(c.circleId);
-          } else {
-            if (boxesIntersect(bx1, by1, bx2, by2, rect.x1, rect.y1, rect.x2, rect.y2))
-              selected.push(c.circleId);
-          }
-        }
-      }
-
-      // Test arcs
-      if (sketchArcs) {
-        for (const arc of sketchArcs) {
-          if (arc.isConstruction) continue;
-          const start = projectWorldPointToViewport(
-            [arc.start[0], arc.start[1], arc.start[2]], camera, renderer);
-          const end = projectWorldPointToViewport(
-            [arc.end[0], arc.end[1], arc.end[2]], camera, renderer);
-          if (!start || !end) continue;
-          // Bounding box: start, end + 4 quadrant extremes of parent circle
-          const cx = arc.center[0], cy = arc.center[1];
-          const r = Math.hypot(arc.start[0] - cx, arc.start[1] - cy);
-          const extremes: Array<[number, number]> = [
-            [cx + r, cy], [cx - r, cy], [cx, cy + r], [cx, cy - r]];
-          let bx1 = Math.min(start.x, end.x), by1 = Math.min(start.y, end.y);
-          let bx2 = Math.max(start.x, end.x), by2 = Math.max(start.y, end.y);
-          for (const [wx, wy] of extremes) {
-            const p = projectWorldPointToViewport(
-              [wx, wy, arc.start[2]], camera, renderer);
-            if (p) {
-              bx1 = Math.min(bx1, p.x); by1 = Math.min(by1, p.y);
-              bx2 = Math.max(bx2, p.x); by2 = Math.max(by2, p.y);
-            }
-          }
-          if (isWindow) {
-            if (insideRect(start.x, start.y) && insideRect(end.x, end.y))
-              selected.push(arc.arcId);
-          } else {
-            if (insideRect(start.x, start.y) || insideRect(end.x, end.y) ||
-                boxesIntersect(bx1, by1, bx2, by2,
-                  rect.x1, rect.y1, rect.x2, rect.y2))
-              selected.push(arc.arcId);
-          }
-        }
-      }
-
-      // Apply selection via IPC
-      // Batch selection via dedicated callback
       if (selected.length > 0) {
         onBatchSelectEntities(selected, additive);
       }
     }
 
-    function isFacingCardinalCubeFace() {
-      const viewOffset = new THREE.Vector3()
-        .copy(camera.position)
-        .sub(controls.target)
-        .normalize();
-      return isCardinalCubeDirection(viewOffset);
-    }
+    const viewCubeAnimationRefs = {
+      animating: viewCubeAnimatingRef,
+      start: viewCubeAnimStartRef,
+      startPos: viewCubeAnimStartPosRef,
+      targetPos: viewCubeAnimTargetPosRef,
+      startUp: viewCubeAnimStartUpRef,
+      targetUp: viewCubeAnimTargetUpRef,
+    };
 
-    function rotateCameraAroundCurrentView(direction: -1 | 1) {
-      const viewOffset = new THREE.Vector3()
-        .copy(camera.position)
-        .sub(controls.target);
-      if (viewOffset.lengthSq() < 1e-6) {
-        return;
-      }
-      const axis = viewOffset.clone().normalize();
-
-      const angle = direction * (Math.PI / 2);
-      viewCubeAnimStartPosRef.current.copy(camera.position);
-      viewCubeAnimTargetPosRef.current.copy(camera.position);
-      viewCubeAnimStartUpRef.current.copy(camera.up).normalize();
-      viewCubeAnimTargetUpRef.current
-        .copy(camera.up)
-        .applyAxisAngle(axis, angle)
-        .normalize();
-      viewCubeAnimStartRef.current = performance.now();
-      viewCubeAnimatingRef.current = true;
-      controls.enabled = false;
+    function rotateCameraAroundCurrentViewFromViewport(direction: -1 | 1) {
+      rotateCameraAroundCurrentView({
+        camera,
+        controls,
+        direction,
+        animationRefs: viewCubeAnimationRefs,
+      });
     }
 
     function renderViewCube() {
-      const cubeGroup = viewCubeGroupRef.current;
-      const cubeScene = viewCubeSceneRef.current;
-      const cubeCam = viewCubeCameraRef.current;
-      const cubeTarget = cubeRenderTargetRef.current;
-      const blit = cubeBlitSceneRef.current;
-      if (!cubeGroup || !cubeScene || !cubeCam || !cubeTarget || !blit) return;
-
-      // Sync cube camera to main view direction
-      syncCubeCamera(camera, controls.target, cubeCam);
-      updateSketchRotationArrows(
-        cubeGroup,
-        cubeCam,
-        isFacingCardinalCubeFace(),
-      );
-
-      // Camera animation tick
-      if (viewCubeAnimatingRef.current) {
-        const done = animateCameraTowardTarget(
-          camera,
-          controls,
-          viewCubeAnimStartPosRef.current,
-          viewCubeAnimTargetPosRef.current,
-          viewCubeAnimStartRef.current,
-          performance.now(),
-          viewCubeAnimStartUpRef.current,
-          viewCubeAnimTargetUpRef.current,
-        );
-        if (done) {
-          viewCubeAnimatingRef.current = false;
-          controls.enabled = true;
-        }
-      }
-
-      // Resize render target if DPR changed (e.g. window moved across monitors)
-      const dpr = renderer.getPixelRatio();
-      resizeCubeRenderTarget(cubeTarget, dpr);
-
-      // 1. Render cube to offscreen target
-      const oldTarget = renderer.getRenderTarget();
-      renderer.setRenderTarget(cubeTarget);
-      renderer.render(cubeScene, cubeCam);
-
-      // 2. Blit target texture to screen corner via NDC-plane scene
-      renderer.setRenderTarget(null);
-      const w = renderer.domElement.width / dpr;
-      const h = renderer.domElement.height / dpr;
-      updateCubeBlitMesh(blit.mesh, w, h);
-
-      const oldAutoClear = renderer.autoClear;
-      renderer.autoClear = false;
-      renderer.render(blit.scene, blit.camera);
-      renderer.autoClear = oldAutoClear;
-
-      // Restore
-      renderer.setRenderTarget(oldTarget);
-    }
-
-    function pickVisibleSketchLineScreenSpace(
-      event: PointerEvent,
-      maxDistancePx = 16,
-    ) {
-      const lines = sceneDataRef.current?.sketchLines ?? [];
-      const rect = renderer.domElement.getBoundingClientRect();
-      const pointerPx = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-      };
-      const toScreen = (point: readonly [number, number, number]) => {
-        const projected = new THREE.Vector3(...point).project(camera);
-        if (
-          projected.z < -1 ||
-          projected.z > 1 ||
-          !Number.isFinite(projected.x) ||
-          !Number.isFinite(projected.y)
-        ) {
-          return null;
-        }
-        return {
-          x: ((projected.x + 1) * 0.5) * rect.width,
-          y: ((-projected.y + 1) * 0.5) * rect.height,
-        };
-      };
-      const pointSegmentDistance = (
-        point: { x: number; y: number },
-        start: { x: number; y: number },
-        end: { x: number; y: number },
-      ) => {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const lengthSq = dx * dx + dy * dy;
-        if (lengthSq <= 1.0e-9) {
-          return Math.hypot(point.x - start.x, point.y - start.y);
-        }
-        const t = Math.max(
-          0,
-          Math.min(
-            1,
-            ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq,
-          ),
-        );
-        return Math.hypot(
-          point.x - (start.x + dx * t),
-          point.y - (start.y + dy * t),
-        );
-      };
-
-      let best: { lineId: string; distance: number } | null = null;
-      for (const line of lines) {
-        if (line.isPreview) {
-          continue;
-        }
-        const start = toScreen(line.start);
-        const end = toScreen(line.end);
-        if (!start || !end) {
-          continue;
-        }
-        const distance = pointSegmentDistance(pointerPx, start, end);
-        if (distance <= maxDistancePx && (!best || distance < best.distance)) {
-          best = { lineId: line.lineId, distance };
-        }
-      }
-      return best?.lineId ?? null;
+      renderViewCubeFrame({
+        renderer,
+        camera,
+        controls,
+        cubeGroupRef: viewCubeGroupRef,
+        cubeSceneRef: viewCubeSceneRef,
+        cubeCameraRef: viewCubeCameraRef,
+        cubeRenderTargetRef,
+        cubeBlitSceneRef,
+        animationRefs: viewCubeAnimationRefs,
+      });
     }
 
     function intersectSceneTargets(event: PointerEvent) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(pointer, camera);
-      raycaster.params.Line = { threshold: 1.75 };
-
-      function pointInPolygon2d(
-        point: [number, number],
-        polygon: Array<[number, number]>,
-      ) {
-        if (polygon.length < 3) {
-          return false;
-        }
-        let inside = false;
-        for (
-          let index = 0, previous = polygon.length - 1;
-          index < polygon.length;
-          previous = index, index += 1
-        ) {
-          const currentPoint = polygon[index];
-          const previousPoint = polygon[previous];
-          const crosses =
-            currentPoint[1] > point[1] !== previousPoint[1] > point[1] &&
-            point[0] <
-              ((previousPoint[0] - currentPoint[0]) *
-                (point[1] - currentPoint[1])) /
-                (previousPoint[1] - currentPoint[1]) +
-                currentPoint[0];
-          if (crosses) {
-            inside = !inside;
-          }
-        }
-        return inside;
-      }
-
-      function profileArea(profile: SketchProfileScene) {
-        if (profile.profileKind === "circle") {
-          return Math.PI * profile.radius * profile.radius;
-        }
-        const polygonArea = (points: Array<[number, number]>) => {
-          let area = 0;
-          for (let index = 0; index < points.length; index += 1) {
-            const current = points[index];
-            const next = points[(index + 1) % points.length];
-            area += current[0] * next[1] - next[0] * current[1];
-          }
-          return Math.abs(area * 0.5);
-        };
-        return (
-          polygonArea(profile.profilePoints) -
-          profile.innerLoops.reduce((sum, loop) => sum + polygonArea(loop), 0)
-        );
-      }
-
-      function profileLocalPoint(profile: SketchProfileScene) {
-        if (profile.planeFrame) {
-          const origin = new THREE.Vector3(
-            profile.planeFrame.origin[0],
-            profile.planeFrame.origin[1],
-            profile.planeFrame.origin[2],
-          );
-          const normal = new THREE.Vector3(
-            profile.planeFrame.normal[0],
-            profile.planeFrame.normal[1],
-            profile.planeFrame.normal[2],
-          );
-          const xAxis = new THREE.Vector3(
-            profile.planeFrame.xAxis[0],
-            profile.planeFrame.xAxis[1],
-            profile.planeFrame.xAxis[2],
-          );
-          const yAxis = new THREE.Vector3(
-            profile.planeFrame.yAxis[0],
-            profile.planeFrame.yAxis[1],
-            profile.planeFrame.yAxis[2],
-          );
-          const renderOrigin = origin.clone().addScaledVector(
-            normal,
-            SKETCH_PLANE_OFFSET,
-          );
-          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-            normal,
-            renderOrigin,
-          );
-          const hitPoint = new THREE.Vector3();
-          const hit = raycaster.ray.intersectPlane(plane, hitPoint);
-          if (!hit) {
-            return null;
-          }
-          const relative = hitPoint.sub(renderOrigin);
-          return [relative.dot(xAxis), relative.dot(yAxis)] as [number, number];
-        }
-
-        const plane =
-          profile.planeId === "ref-plane-xy"
-            ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET)
-            : profile.planeId === "ref-plane-yz"
-              ? new THREE.Plane(
-                  new THREE.Vector3(1, 0, 0),
-                  -SKETCH_PLANE_OFFSET,
-                )
-              : new THREE.Plane(
-                  new THREE.Vector3(0, 0, 1),
-                  -SKETCH_PLANE_OFFSET,
-                );
-        const hitPoint = new THREE.Vector3();
-        const hit = raycaster.ray.intersectPlane(plane, hitPoint);
-        if (!hit) {
-          return null;
-        }
-        if (profile.planeId === "ref-plane-xy") {
-          return [hitPoint.x, hitPoint.z] as [number, number];
-        }
-        if (profile.planeId === "ref-plane-yz") {
-          return [hitPoint.y, hitPoint.z] as [number, number];
-        }
-        return [hitPoint.x, hitPoint.y] as [number, number];
-      }
-
-      function containsProfilePoint(
-        profile: SketchProfileScene,
-        point: [number, number],
-      ) {
-        if (profile.profileKind === "circle") {
-          const dx = point[0] - profile.start[0];
-          const dy = point[1] - profile.start[1];
-          return dx * dx + dy * dy <= profile.radius * profile.radius;
-        }
-        if (!pointInPolygon2d(point, profile.profilePoints)) {
-          return false;
-        }
-        return !profile.innerLoops.some((loop) => pointInPolygon2d(point, loop));
-      }
-
-      function pickSketchProfileId() {
-        const profiles = sceneDataRef.current?.sketchProfiles ?? [];
-        const profileById = new Map(
-          profiles.map((profile) => [profile.profileId, profile]),
-        );
-        const profileObjectHits = raycaster
-          .intersectObjects(sketchProfileObjectsRef.current, true)
-          .map((hit) => {
-            const profileId = hit.object.userData.sketchProfileId;
-            if (typeof profileId !== "string") {
-              return null;
-            }
-            const profile = profileById.get(profileId);
-            if (!profile) {
-              return null;
-            }
-            return {
-              profileId,
-              area: profileArea(profile),
-            };
-          })
-          .filter(
-            (hit): hit is { profileId: string; area: number } => hit !== null,
-          );
-        if (profileObjectHits.length > 0) {
-          profileObjectHits.sort((left, right) => left.area - right.area);
-          return profileObjectHits[0].profileId;
-        }
-
-        const hits = profiles
-          .map((profile) => {
-            const point = profileLocalPoint(profile);
-            if (!point || !containsProfilePoint(profile, point)) {
-              return null;
-            }
-            return {
-              profileId: profile.profileId,
-              area: profileArea(profile),
-            };
-          })
-          .filter(
-            (hit): hit is { profileId: string; area: number } => hit !== null,
-          );
-        if (hits.length === 0) {
-          return null;
-        }
-        hits.sort((left, right) => left.area - right.area);
-        return hits[0].profileId;
-      }
-
-      if (activeSketchPlaneId) {
-        // Dimension tool: check points and entities before dimension
-        // labels so dimension visuals don't occlude endpoint picks
-        // during point-to-point or two-entity workflows.
-        const checkDimensionsLast =
-          activeSketchToolRef.current === "dimension";
-
-        if (checkDimensionsLast) {
-          const [sketchPointHitPre] = raycaster.intersectObjects(
-            sketchPointObjectsRef.current,
-            false,
-          );
-          const sketchPointIdPre =
-            sketchPointHitPre?.object.userData.sketchPointId;
-          if (typeof sketchPointIdPre === "string") {
-            return {
-              kind: "sketch_point" as const,
-              id: sketchPointIdPre,
-              pointKind: sketchPointHitPre.object.userData.sketchPointKind,
-            };
-          }
-
-          const [sketchEntityHitPre] = raycaster.intersectObjects(
-            sketchEntityObjectsRef.current,
-            false,
-          );
-          const sketchEntityIdPre =
-            sketchEntityHitPre?.object.userData.sketchEntityId;
-          if (typeof sketchEntityIdPre === "string") {
-            const hitPoint = sketchEntityHitPre!.point;
-            return {
-              kind: "sketch_entity" as const,
-              id: sketchEntityIdPre,
-              entityKind:
-                sketchEntityHitPre.object.userData.sketchEntityKind,
-              isProjected:
-                sketchEntityHitPre.object.userData
-                  .sketchEntityIsProjected === true,
-              worldPoint: [hitPoint.x, hitPoint.y, hitPoint.z] as [
-                number,
-                number,
-                number,
-              ],
-            };
-          }
-        }
-
-        const [sketchDimensionHit] = raycaster.intersectObjects(
-          sketchDimensionObjectsRef.current,
-          true,
-        );
-        const sketchDimensionId =
-          sketchDimensionHit?.object.userData.sketchDimensionId;
-        if (typeof sketchDimensionId === "string") {
-          const part =
-            sketchDimensionHit?.object.userData.sketchDimensionPart === "label"
-              ? "label"
-              : "geometry";
-          return {
-            kind: "sketch_dimension" as const,
-            id: sketchDimensionId,
-            part,
-          };
-        }
-
-        // When coincident constraint is armed, constraint badges
-        // sit on top of the endpoint spheres and intercept the ray
-        // before the point-picking logic can find the point.  Skip
-        // the badge hit-test so the point check fires naturally.
-        if (armedSketchConstraintRef.current?.kind !== "coincident") {
-          const [sketchConstraintHit] = raycaster.intersectObjects(
-            sketchConstraintObjectsRef.current,
-            true, // recursive — catches sprites inside any group
-          );
-          const sketchConstraintId =
-            sketchConstraintHit?.object.userData.sketchConstraintId;
-          if (typeof sketchConstraintId === "string") {
-            return {
-              kind: "sketch_constraint" as const,
-              id: sketchConstraintId,
-              constraintKind:
-                sketchConstraintHit.object.userData
-                  .sketchConstraintKind as ConstraintType,
-              entityId:
-                sketchConstraintHit.object.userData.sketchConstraintEntityId,
-              relatedEntityId:
-                sketchConstraintHit.object.userData
-                  .sketchConstraintRelatedEntityId ?? null,
-            };
-          }
-        }
-
-        if (!checkDimensionsLast) {
-          // Point picking: use a ray-to-sphere distance check instead
-          // of mesh triangle intersection. The visual spheres are
-          // ~0.7 mm radius (a few pixels), which the raycaster often
-          // misses. A generous pick radius makes points competitive
-          // with lines (Line threshold = 1.75 mm).
-          const PICK_RADIUS = 1.8;
-          const rayO = raycaster.ray.origin;
-          const rayD = raycaster.ray.direction;
-          let bestPtDist = PICK_RADIUS;
-          let bestPtId: string | undefined;
-          let bestPtKind: string | undefined;
-
-          for (const mesh of sketchPointObjectsRef.current) {
-            const c = new THREE.Vector3();
-            mesh.getWorldPosition(c);
-            const toC = c.clone().sub(rayO);
-            const proj = toC.dot(rayD);
-            const closest = rayO.clone().addScaledVector(
-              rayD, Math.max(0, proj),
-            );
-            const d = c.distanceTo(closest);
-            if (d < bestPtDist) {
-              bestPtDist = d;
-              bestPtId = mesh.userData.sketchPointId as string | undefined;
-              bestPtKind = mesh.userData.sketchPointKind as string | undefined;
-            }
-          }
-
-          if (typeof bestPtId === "string") {
-            return {
-              kind: "sketch_point" as const,
-              id: bestPtId,
-              pointKind: bestPtKind as
-                | "endpoint"
-                | "center"
-                | "quadrant",
-            };
-          }
-
-          const [sketchEntityHit] = raycaster.intersectObjects(
-            sketchEntityObjectsRef.current,
-            false,
-          );
-          const sketchEntityId =
-            sketchEntityHit?.object.userData.sketchEntityId;
-          if (typeof sketchEntityId === "string") {
-            const hitPoint = sketchEntityHit!.point;
-            return {
-              kind: "sketch_entity" as const,
-              id: sketchEntityId,
-              entityKind:
-                sketchEntityHit.object.userData.sketchEntityKind ?? null,
-              isProjected:
-                sketchEntityHit.object.userData
-                  .sketchEntityIsProjected === true,
-              worldPoint: [hitPoint.x, hitPoint.y, hitPoint.z] as const,
-            };
-          }
-        }
-
-        const profileId = pickSketchProfileId();
-        if (profileId) {
-          return { kind: "sketch_profile" as const, id: profileId };
-        }
-      }
-
-      // Outside sketch mode, sketch profiles are still pickable so the
-      // user can re-select a closed profile (e.g. after exiting sketch
-      // mode) and run Extrude on it. We check profiles BEFORE the
-      // body-side hits because a profile usually sits on a sketch plane
-      // that may coincide with a body face, and the user's intent in
-      // clicking a profile-tinted region is overwhelmingly "extrude
-      // this", not "select the underlying face". Profiles whose owning
-      // sketch was hidden (e.g. auto-hide-after-extrude) won't have a
-      // mesh in the ref array, so they naturally drop out of the pick.
-      if (inactiveSketchEntityPickEnabledRef.current) {
-        const sketchLineId = pickVisibleSketchLineScreenSpace(event, 16);
-        if (sketchLineId) {
-          return {
-            kind: "sketch_entity" as const,
-            id: sketchLineId,
-            entityKind: "line",
-            isProjected: false,
-            worldPoint: [0, 0, 0] as const,
-          };
-        }
-        const [sketchEntityHit] = raycaster.intersectObjects(
-          sketchEntityObjectsRef.current,
-          false,
-        );
-        const sketchEntityId = sketchEntityHit?.object.userData.sketchEntityId;
-        const sketchEntityKind =
-          sketchEntityHit?.object.userData.sketchEntityKind;
-        const sketchEntityIsProjected =
-          sketchEntityHit?.object.userData.sketchEntityIsProjected === true;
-        if (
-          typeof sketchEntityId === "string" &&
-          sketchEntityKind === "line"
-        ) {
-          const hitPoint = sketchEntityHit!.point;
-          return {
-            kind: "sketch_entity" as const,
-            id: sketchEntityId,
-            entityKind: "line",
-            isProjected: sketchEntityIsProjected,
-            worldPoint: [hitPoint.x, hitPoint.y, hitPoint.z] as const,
-          };
-        }
-      }
-
-      {
-        const profileId = pickSketchProfileId();
-        if (profileId) {
-          return { kind: "sketch_profile" as const, id: profileId };
-        }
-      }
-
-      if (inactiveSketchEntityPickEnabledRef.current) {
-        const [sketchEntityHit] = raycaster.intersectObjects(
-          sketchEntityObjectsRef.current,
-          false,
-        );
-        const sketchEntityId = sketchEntityHit?.object.userData.sketchEntityId;
-        const sketchEntityKind =
-          sketchEntityHit?.object.userData.sketchEntityKind;
-        const sketchEntityIsProjected =
-          sketchEntityHit?.object.userData.sketchEntityIsProjected === true;
-        if (typeof sketchEntityId === "string") {
-          const hitPoint = sketchEntityHit!.point;
-          return {
-            kind: "sketch_entity" as const,
-            id: sketchEntityId,
-            entityKind:
-              typeof sketchEntityKind === "string" ? sketchEntityKind : null,
-            isProjected: sketchEntityIsProjected,
-            worldPoint: [hitPoint.x, hitPoint.y, hitPoint.z] as const,
-          };
-        }
-      }
-
-      const [referenceHit] = raycaster.intersectObjects(
-        referencePlaneMeshesRef.current,
-        false,
-      );
-      const referenceId = referenceHit?.object.userData.referenceId;
-      if (typeof referenceId === "string") {
-        return { kind: "reference" as const, id: referenceId };
-      }
-
-      // Vertices are checked first: they're the smallest pick targets
-      // but always visible (renderOrder = 2, depthTest = false), and
-      // they sit on top of every edge / face, so prioritizing them
-      // matches the visual stacking the user sees.
-      const [vertexHit] = raycaster.intersectObjects(
-        vertexObjectsRef.current,
-        false,
-      );
-      const vertexId = vertexHit?.object.userData.vertexId;
-      if (typeof vertexId === "string") {
-        return { kind: "vertex" as const, id: vertexId };
-      }
-
-      // Edges are checked before faces because they sit ON the faces
-      // and would be hidden by the face fill if checked after.
-      const previousLineThreshold = raycaster.params.Line?.threshold ?? 1;
-      if (raycaster.params.Line) {
-        // Generous pick tolerance so hover lights up edges without
-        // the user having to land on a pixel-perfect line. Click
-        // accuracy isn't hurt here because edges are checked before
-        // faces in this same chain — if both hit, edge wins.
-        raycaster.params.Line.threshold = 1.2;
-      }
-      const [edgeHit] = raycaster.intersectObjects(
-        edgeLineObjectsRef.current,
-        false,
-      );
-      if (raycaster.params.Line) {
-        raycaster.params.Line.threshold = previousLineThreshold;
-      }
-      const edgeId = edgeHit?.object.userData.edgeId;
-      if (typeof edgeId === "string") {
-        return { kind: "edge" as const, id: edgeId };
-      }
-
-      const [faceHit] = raycaster.intersectObjects(
-        faceMeshesRef.current,
-        false,
-      );
-      const faceId = faceHit?.object.userData.faceId;
-      if (typeof faceId === "string") {
-        return { kind: "face" as const, id: faceId };
-      }
-
-      const [primitiveHit] = raycaster.intersectObjects(
-        meshesRef.current,
-        false,
-      );
-      const primitiveId = primitiveHit?.object.userData.primitiveId;
-      return typeof primitiveId === "string"
-        ? { kind: "primitive" as const, id: primitiveId }
-        : null;
+      return intersectViewportSceneTargets({
+        event,
+        renderer,
+        camera,
+        pointer,
+        raycaster,
+        sceneData: sceneDataRef.current,
+        activeSketchPlaneId,
+        activeSketchTool: activeSketchToolRef.current,
+        armedSketchConstraintKind: armedSketchConstraintRef.current?.kind ?? null,
+        inactiveSketchEntityPickEnabled:
+          inactiveSketchEntityPickEnabledRef.current,
+        sketchPointObjects: sketchPointObjectsRef.current,
+        sketchEntityObjects: sketchEntityObjectsRef.current,
+        sketchDimensionObjects: sketchDimensionObjectsRef.current,
+        sketchConstraintObjects: sketchConstraintObjectsRef.current,
+        sketchProfileObjects: sketchProfileObjectsRef.current,
+        referencePlaneMeshes: referencePlaneMeshesRef.current,
+        vertexObjects: vertexObjectsRef.current,
+        edgeLineObjects: edgeLineObjectsRef.current,
+        faceMeshes: faceMeshesRef.current,
+        meshes: meshesRef.current,
+      });
     }
 
     function handlePointerDown(event: PointerEvent) {
@@ -7799,27 +4115,14 @@ const currentGridSpacingRef = useRef(10);
         return;
       }
 
-      // Double-click detection during line drafting: two clicks <300ms
-      // apart at the same location break the chain so the next click
-      // starts a fresh independent line.
-      const now = performance.now();
-      const prevTime = lastPointerDownTimeRef.current;
-      const prevPos = lastPointerDownPosRef.current;
-      lastPointerDownTimeRef.current = now;
-      lastPointerDownPosRef.current = { x: event.clientX, y: event.clientY };
-      if (
-        prevTime > 0 &&
-        now - prevTime < 300 &&
-        prevPos &&
-        Math.abs(event.clientX - prevPos.x) < 6 &&
-        Math.abs(event.clientY - prevPos.y) < 6 &&
-        lineDraftStartRef.current !== null &&
-        isDraftDimensionTool(activeSketchToolRef.current)
-      ) {
-        chainBreakRequestedRef.current = true;
-      } else {
-        chainBreakRequestedRef.current = false;
-      }
+      updateDraftChainBreakRequest({
+        event,
+        activeSketchTool: activeSketchToolRef.current,
+        draftStartRef: lineDraftStartRef,
+        lastPointerDownTimeRef,
+        lastPointerDownPosRef,
+        chainBreakRequestedRef,
+      });
 
       // Cube-area drag start
       if (
@@ -7836,133 +4139,42 @@ const currentGridSpacingRef = useRef(10);
         return;
       }
 
-      const activeMoveGizmo = moveGizmoRef.current;
       if (
-        activeMoveGizmo &&
-        !activeMoveGizmo.disabled &&
-        moveGizmoObjectsRef.current.length > 0
+        beginMoveGizmoPointerDown({
+          event,
+          renderer,
+          camera,
+          controls,
+          raycaster,
+          pointer,
+          moveGizmo: moveGizmoRef.current,
+          moveGizmoObjects: moveGizmoObjectsRef.current,
+          moveGizmoDragRef,
+        })
       ) {
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(pointer, camera);
-        const [gizmoHit] = raycaster.intersectObjects(
-          moveGizmoObjectsRef.current,
-          false,
-        );
-        const handle = gizmoHit?.object.userData.moveGizmoHandle as
-          | { kind: "translate"; axis: MoveGizmoAxis }
-          | { kind: "rotate"; axis: MoveGizmoAxis }
-          | { kind: "free" }
-          | undefined;
-        if (handle) {
-          const center = new THREE.Vector3(
-            activeMoveGizmo.center.x,
-            activeMoveGizmo.center.y,
-            activeMoveGizmo.center.z,
-          );
-          moveGizmoDragRef.current = {
-            kind: handle.kind,
-            axis: handle.kind === "free" ? null : handle.axis,
-            startClientX: event.clientX,
-            startClientY: event.clientY,
-            startAngle:
-              handle.kind === "rotate"
-                ? moveGizmoScreenAngle(event, center, camera, renderer)
-                : 0,
-            center,
-            axes: moveGizmoAxes(activeMoveGizmo),
-            handleLength: Math.min(
-              Math.max(
-                Math.max(
-                  activeMoveGizmo.size.x,
-                  activeMoveGizmo.size.y,
-                  activeMoveGizmo.size.z,
-                  12,
-                ) * 0.65,
-                18,
-              ),
-              80,
-            ),
-            parameters: activeMoveGizmo.parameters,
-          };
-          controls.enabled = false;
-          renderer.domElement.setPointerCapture(event.pointerId);
-          (renderer.domElement as HTMLCanvasElement).style.cursor = "grabbing";
-          pointerDown = null;
-          return;
-        }
+        pointerDown = null;
+        return;
       }
 
       pointerDown = { x: event.clientX, y: event.clientY };
       // --- Select mode: endpoint drag OR rectangle selection ---
       if (activeSketchToolRef.current === "select") {
-        const selHit = intersectSceneTargets(event);
-
-        // Endpoint drag on sketch points (non-fixed endpoints only).
-        if (
-          selHit?.kind === "sketch_point" &&
-          activeSketchPlaneIdRef.current
-        ) {
-          const params = sketchLinesRef.current;
-          if (params) {
-            const point = params.points?.find((p) => p.point_id === selHit.id);
-            console.warn(
-              "[endpoint-drag] pointerDown hit sketch_point:",
-              selHit.id,
-              "kind:",
-              selHit.pointKind,
-              "is_fixed:",
-              point?.is_fixed,
-            );
-            if (point && !point.is_fixed) {
-              const rawPoint = resolveSketchPlanePoint(
-                event,
-                renderer,
-                camera,
-                activeSketchPlaneIdRef.current,
-                activeSketchPlaneFrameRef.current,
-              );
-              if (rawPoint) {
-                console.warn(
-                  "[endpoint-drag] starting drag for point:",
-                  selHit.id,
-                  "at local:",
-                  rawPoint.local,
-                );
-                endpointDragRef.current = {
-                  pointId: selHit.id,
-                  startClientX: event.clientX,
-                  startClientY: event.clientY,
-                  startLocalX: rawPoint.local[0],
-                  startLocalY: rawPoint.local[1],
-                  hasMoved: false,
-                  inFlight: false,
-                };
-                controls.enabled = false;
-                renderer.domElement.setPointerCapture(event.pointerId);
-                (renderer.domElement as HTMLCanvasElement).style.cursor =
-                  "none";
-                pointerDown = null;
-                return;
-              }
-            }
+        const selectPointerDown = beginSelectPointerDown({
+          event,
+          renderer,
+          camera,
+          controls,
+          activeSketchPlaneId: activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+          sketch: sketchLinesRef.current,
+          endpointDragRef,
+          selectionDragRef,
+          intersectSceneTargets,
+        });
+        if (selectPointerDown.handled) {
+          if (selectPointerDown.clearPointerDown) {
+            pointerDown = null;
           }
-        }
-
-        // Rectangle selection on empty space.
-        if (
-          !selHit &&
-          selHit?.kind !== "sketch_dimension"
-        ) {
-          selectionDragRef.current = {
-            startX: event.clientX,
-            startY: event.clientY,
-            currentX: event.clientX,
-            currentY: event.clientY,
-            active: true,
-          };
-          controls.enabled = false;
           return;
         }
       }
@@ -7974,91 +4186,46 @@ const currentGridSpacingRef = useRef(10);
           activeSketchToolRef.current === "dimension")
       ) {
         const hit = intersectSceneTargets(event);
-        if (hit?.kind === "sketch_dimension") {
-          suppressNextDimensionEditorOpenRef.current = true;
-          setIsDimensionEditorOpen(false);
-          void selectSketchDimensionRef.current(hit.id);
-          const dimension = displayedSketchDimensionsRef.current.find(
-            (entry) => entry.dimensionId === hit.id,
-          );
-          const sketchPoint = resolveSketchPlanePoint(
+        if (
+          hit?.kind === "sketch_dimension" &&
+          beginDimensionLabelDragPointerDown({
             event,
             renderer,
             camera,
-            activeSketchPlaneIdRef.current,
-            activeSketchPlaneFrameRef.current,
-          );
-          if (dimension && sketchPoint) {
-            if (
-              dimension.kind === "angle" ||
-              dimension.kind === "line_angle"
-            ) {
-              const frame = angleDimensionFrame(dimension);
-              if (frame) {
-                const radius = clampAngleRadius(
-                  new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-                );
-                angleDragRadiiRef.current = {
-                  ...angleDragRadiiRef.current,
-                  [hit.id]: radius,
-                };
-                setAngleDragRadii((prev) => ({ ...prev, [hit.id]: radius }));
-              }
-            }
-            const dragAxis =
-              dimension.kind === "circle_radius"
-                ? new THREE.Vector3(0, 0, 0)
-                : getDimensionPlacementAxis(dimension);
-            if (dimension.kind !== "circle_radius" && !dragAxis) {
-              return;
-            }
-            dimensionLabelDragRef.current = {
-              dimensionId: hit.id,
-              hitPart: hit.part === "label" ? "label" : "geometry",
-              startClientX: event.clientX,
-              startClientY: event.clientY,
-              startWorld: sketchPoint.world,
-              startLabelPosition: dimension.labelPosition,
-              dragAxis: dragAxis
-                ? [dragAxis.x, dragAxis.y, dragAxis.z]
-                : [0, 0, 0],
-              hasMoved: false,
-            };
-            controls.enabled = false;
-            (renderer.domElement as HTMLCanvasElement).style.cursor = "grabbing";
-            return;
-          }
+            controls,
+            hit,
+            activeSketchPlaneId: activeSketchPlaneIdRef.current,
+            activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+            dimensions: displayedSketchDimensionsRef.current,
+            suppressNextDimensionEditorOpenRef,
+            dimensionLabelDragRef,
+            setIsDimensionEditorOpen,
+            selectSketchDimension: selectSketchDimensionRef.current,
+            setAngleDimensionDragRadius,
+            getDimensionPlacementAxis,
+          })
+        ) {
+          return;
         }
       }
       if (
-        activeSketchPlaneIdRef.current &&
-        isDraftDimensionTool(activeSketchToolRef.current) &&
-        !lineDraftStartRef.current
-      ) {
-        const rawPoint = resolveSketchPlanePoint(
+        beginDraftPointerDown({
           event,
           renderer,
           camera,
-          activeSketchPlaneIdRef.current,
-          activeSketchPlaneFrameRef.current,
-        );
-        if (!rawPoint) {
-          return;
-        }
-        const sketchPoint = resolveSnappedSketchPoint(
-          rawPoint,
-          lineDraftStartRef.current,
-        );
-        lineDraftStartRef.current = sketchPoint.local;
-        draftStartedOnPointerDownRef.current = true;
-        const session = createDraftDimensionSession(
-          activeSketchToolRef.current,
-          sketchPoint.local,
-          sketchPoint.local,
-        );
-        draftDimensionSessionRef.current = session;
-        setDraftDimensionSession(session);
-        focusDraftField(session.activeField);
+          activeSketchPlaneId: activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+          activeSketchTool: activeSketchToolRef.current,
+          draftStartRef: lineDraftStartRef,
+          draftStartedOnPointerDownRef,
+          draftDimensionSessionRef,
+          resolveSnappedSketchPoint,
+          createDraftDimensionSession,
+          setDraftDimensionSession,
+          focusDraftField,
+        })
+      ) {
+        return;
       }
 
     }
@@ -8069,13 +4236,9 @@ const currentGridSpacingRef = useRef(10);
       if (selectionDragRef.current?.active) {
         selectionDragRef.current.currentX = event.clientX;
         selectionDragRef.current.currentY = event.clientY;
-        const d = selectionDragRef.current;
-        const x1 = Math.min(d.startX, d.currentX);
-        const y1 = Math.min(d.startY, d.currentY);
-        const w = Math.abs(d.currentX - d.startX);
-        const h = Math.abs(d.currentY - d.startY);
-        const direction = d.currentX >= d.startX ? "window" : "crossing";
-        setSelectionRect({ left: x1, top: y1, width: w, height: h, visible: w > 3 || h > 3, direction });
+        setSelectionRect(
+          selectionRectOverlayFromDrag(selectionDragRef.current),
+        );
         return;
       }
 
@@ -8098,337 +4261,105 @@ const currentGridSpacingRef = useRef(10);
         setCrosshairPointer(null);
       }
 
-      if (viewCubeDraggingRef.current) {
-        if (viewCubeDragStartRef.current) {
-          const deltaX = event.clientX - viewCubeDragStartRef.current.x;
-          const deltaY = event.clientY - viewCubeDragStartRef.current.y;
-          viewCubeDragStartRef.current = { x: event.clientX, y: event.clientY };
-          applyCubeDragOrbit(camera, controls, deltaX, deltaY, 0.005);
-        }
+      if (
+        handleViewCubeDragPointerMove({
+          event,
+          camera,
+          controls,
+          viewCubeDraggingRef,
+          viewCubeDragStartRef,
+        })
+      ) {
         return;
       }
 
       const moveGizmoDrag = moveGizmoDragRef.current;
       if (moveGizmoDrag) {
-        const next: MoveFeatureParameters = { ...moveGizmoDrag.parameters };
-        if (moveGizmoDrag.kind === "translate" && moveGizmoDrag.axis) {
-          const delta = moveGizmoTranslationDelta(
-            event,
-            moveGizmoDrag,
-            moveGizmoDrag.axis,
-            camera,
-            renderer,
-          );
-          if (moveGizmoDrag.axis === "x") {
-            next.translation_x = moveGizmoDrag.parameters.translation_x + delta;
-          } else if (moveGizmoDrag.axis === "y") {
-            next.translation_y = moveGizmoDrag.parameters.translation_y + delta;
-          } else {
-            next.translation_z = moveGizmoDrag.parameters.translation_z + delta;
-          }
-        } else if (moveGizmoDrag.kind === "free") {
-          const worldDelta = moveGizmoFreeDelta(
-            event,
-            moveGizmoDrag,
-            camera,
-            renderer,
-          );
-          next.translation_x =
-            moveGizmoDrag.parameters.translation_x +
-            worldDelta.dot(moveGizmoDrag.axes.x);
-          next.translation_y =
-            moveGizmoDrag.parameters.translation_y +
-            worldDelta.dot(moveGizmoDrag.axes.y);
-          next.translation_z =
-            moveGizmoDrag.parameters.translation_z +
-            worldDelta.dot(moveGizmoDrag.axes.z);
-        } else if (moveGizmoDrag.axis) {
-          const angle = moveGizmoScreenAngle(
-            event,
-            moveGizmoDrag.center,
-            camera,
-            renderer,
-          );
-          let deltaDegrees =
-            ((angle - moveGizmoDrag.startAngle) * 180) / Math.PI;
-          if (deltaDegrees > 180) {
-            deltaDegrees -= 360;
-          } else if (deltaDegrees < -180) {
-            deltaDegrees += 360;
-          }
-          if (moveGizmoDrag.axis === "x") {
-            next.rotation_x_degrees =
-              moveGizmoDrag.parameters.rotation_x_degrees + deltaDegrees;
-          } else if (moveGizmoDrag.axis === "y") {
-            next.rotation_y_degrees =
-              moveGizmoDrag.parameters.rotation_y_degrees + deltaDegrees;
-          } else {
-            next.rotation_z_degrees =
-              moveGizmoDrag.parameters.rotation_z_degrees + deltaDegrees;
-          }
-        }
-        flushMoveGizmoChange(next);
+        flushMoveGizmoChange(
+          moveGizmoParametersFromDrag(event, moveGizmoDrag, camera, renderer),
+        );
         return;
       }
 
-      if (inCube) {
-        const cubeGroup = viewCubeGroupRef.current;
-        const cubeCam = viewCubeCameraRef.current;
-        const cubeRaycaster = viewCubeRaycasterRef.current;
-        if (cubeGroup && cubeCam && cubeRaycaster) {
-          const canvasWidth = renderer.domElement.width;
-          const canvasHeight = renderer.domElement.height;
-          const rect = getCubeViewportRect(canvasWidth, canvasHeight, cubeDpr);
-          // Pointer in GL coords (origin at bottom-left)
-          const glX = (event.clientX - cubeCanvasRect.left) * cubeDpr;
-          const glY = canvasHeight - (event.clientY - cubeCanvasRect.top) * cubeDpr;
-          const ndcX = ((glX - rect.x) / rect.width) * 2 - 1;
-          const ndcY = ((glY - rect.y) / rect.height) * 2 - 1;
-          cubeRaycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cubeCam);
-          const hit = raycastViewCube(cubeRaycaster, cubeGroup);
-          applyCubeHover(cubeGroup, hit);
-          viewCubeHoveredRef.current = hit;
-          (renderer.domElement as HTMLCanvasElement).style.cursor = hit
-            ? "pointer"
-            : "";
-        }
+      if (
+        handleViewCubeHoverPointerMove({
+          event,
+          renderer,
+          inCube,
+          cubePixelRatio: cubeDpr,
+          cubeGroupRef: viewCubeGroupRef,
+          cubeCameraRef: viewCubeCameraRef,
+          cubeRaycasterRef: viewCubeRaycasterRef,
+          viewCubeHoveredRef,
+        })
+      ) {
         return;
       }
 
-      // Clear cube hover when pointer leaves cube area
-      if (viewCubeHoveredRef.current) {
-        const cubeGroup = viewCubeGroupRef.current;
-        if (cubeGroup) {
-          clearCubeHover(cubeGroup);
-        }
-        viewCubeHoveredRef.current = null;
-        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
-      }
-
-      const dimensionDrag = dimensionLabelDragRef.current;
-      if (dimensionDrag && activeSketchPlaneIdRef.current) {
-        const sketchPoint = resolveSketchPlanePoint(
+      if (
+        handleDimensionLabelDragPointerMove({
           event,
           renderer,
           camera,
-          activeSketchPlaneIdRef.current,
-          activeSketchPlaneFrameRef.current,
-        );
-        if (!sketchPoint) {
-          return;
-        }
-        if (dimensionDrag.isPlacement) {
-          if (updateDimensionRelationPreview(sketchPoint.local)) {
-            // When a relation snap is active, the ghost relation dimension
-            // is the preview. Do not keep moving the temporary unary
-            // dimension label underneath it; that causes the two previews
-            // to fight and flicker.
-            dimensionDrag.hasMoved = true;
-            return;
-          }
-        }
-        const dx = event.clientX - dimensionDrag.startClientX;
-        const dy = event.clientY - dimensionDrag.startClientY;
-        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          dimensionDrag.hasMoved = true;
-        }
-        const draggedDimension = displayedSketchDimensionsRef.current.find(
-          (dimension) => dimension.dimensionId === dimensionDrag.dimensionId,
-        );
-        if (
-          draggedDimension?.kind === "angle" ||
-          draggedDimension?.kind === "line_angle"
-        ) {
-          const frame = angleDimensionFrame(draggedDimension);
-          if (frame) {
-            const radius = clampAngleRadius(
-              new THREE.Vector3(...sketchPoint.world).distanceTo(frame.pivot),
-            );
-            angleDragRadiiRef.current = {
-              ...angleDragRadiiRef.current,
-              [dimensionDrag.dimensionId]: radius,
-            };
-            setAngleDragRadii((prev) => ({
-              ...prev,
-              [dimensionDrag.dimensionId]: radius,
-            }));
-          }
-          return;
-        }
-        if (draggedDimension?.kind === "circle_radius") {
-          const nextPosition = circleDimensionLabelNearPoint(
-            draggedDimension,
-            sketchPoint.world,
-          );
-          if (nextPosition) {
-            setDimensionLabelPosition(dimensionDrag.dimensionId, nextPosition);
-          }
-          return;
-        }
-        const dragAxis = new THREE.Vector3(...dimensionDrag.dragAxis);
-        const worldDelta = new THREE.Vector3(
-          sketchPoint.world[0] - dimensionDrag.startWorld[0],
-          sketchPoint.world[1] - dimensionDrag.startWorld[1],
-          sketchPoint.world[2] - dimensionDrag.startWorld[2],
-        );
-        const constrainedDelta = dragAxis.multiplyScalar(
-          worldDelta.dot(dragAxis),
-        );
-        const nextPositionVector = new THREE.Vector3(
-          ...dimensionDrag.startLabelPosition,
-        ).add(constrainedDelta);
-        const nextPosition: [number, number, number] = [
-          nextPositionVector.x,
-          nextPositionVector.y,
-          nextPositionVector.z,
-        ];
-        setDimensionLabelPosition(dimensionDrag.dimensionId, nextPosition);
+          activeSketchPlaneId: activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+          dimensionLabelDragRef,
+          dimensions: displayedSketchDimensionsRef.current,
+          angleDragRadiiRef,
+          setAngleDragRadii,
+          updateDimensionRelationPreview,
+          angleFrameForDimension: angleDimensionFrame,
+          setDimensionLabelPosition,
+        })
+      ) {
         return;
       }
 
-      // --- Endpoint drag tracking (core-driven, rAF-batched) ---
-      const endpointDrag = endpointDragRef.current;
-      if (endpointDrag && activeSketchPlaneIdRef.current) {
-        const rawPoint = resolveSketchPlanePoint(
+      if (
+        handleEndpointDragPointerMove({
           event,
           renderer,
           camera,
-          activeSketchPlaneIdRef.current,
-          activeSketchPlaneFrameRef.current,
-        );
-        if (rawPoint) {
-          const dx = event.clientX - endpointDrag.startClientX;
-          const dy = event.clientY - endpointDrag.startClientY;
-          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-            endpointDrag.hasMoved = true;
-          }
-
-          // Track cursor canvas position for the floating badge.
-          const canvasRect = renderer.domElement.getBoundingClientRect();
-          dragCursorRef.current = {
-            x: event.clientX - canvasRect.left,
-            y: event.clientY - canvasRect.top,
-          };
-
-          // rAF-batched: send only the latest position each frame.
-          pendingDragRef.current = {
-            pointId: endpointDrag.pointId,
-            x: rawPoint.local[0],
-            y: rawPoint.local[1],
-          };
-          if (pendingDragFrameRef.current === null) {
-            pendingDragFrameRef.current = window.requestAnimationFrame(() => {
-              pendingDragFrameRef.current = null;
-              const next = pendingDragRef.current;
-              pendingDragRef.current = null;
-              if (next) {
-                // Local snap resolution — no IPC during drag.
-                const world = toWorldPoint(
-                  activeSketchPlaneIdRef.current ?? "ref-plane-xy",
-                  [next.x, next.y],
-                  activeSketchPlaneFrameRef.current,
-                );
-                // Find first anchored endpoint for axis-lock dynamic snap.
-                let anchorLocal: [number, number] | null = null;
-                const dragParams = sketchLinesRef.current;
-                if (dragParams) {
-                  for (const line of dragParams.lines) {
-                    if (line.start_point_id === next.pointId ||
-                        line.end_point_id === next.pointId) {
-                      const anchoredId = line.start_point_id === next.pointId
-                        ? line.end_point_id : line.start_point_id;
-                      const anchored = dragParams.points.find(
-                        (p) => p.point_id === anchoredId);
-                      if (anchored) {
-                        anchorLocal = [anchored.x, anchored.y];
-                        break;
-                      }
-                    }
-                  }
-                }
-                const snapped = resolveSnappedSketchPoint(
-                  {
-                    local: [next.x, next.y],
-                    world: [world[0], world[1], world[2]],
-                  },
-                  anchorLocal,
-                );
-                dragSnapResultRef.current = {
-                  snapX: snapped.local[0],
-                  snapY: snapped.local[1],
-                };
-                setSketchSnapLabel(snapped.snapLabel);
-
-                // Render local preview: dashed lines from anchored
-                // endpoints to the current snapped position.
-                clearDragPreviewLines();
-                const params = sketchLinesRef.current;
-                const planeId = activeSketchPlaneIdRef.current ?? "ref-plane-xy";
-                const frame = activeSketchPlaneFrameRef.current;
-                const sketchGroup = sketchGroupRef.current;
-                if (params && sketchGroup) {
-                  const newLines: THREE.Line[] = [];
-                  for (const line of params.lines) {
-                    if (line.start_point_id === next.pointId ||
-                        line.end_point_id === next.pointId) {
-                      const anchoredId = line.start_point_id === next.pointId
-                        ? line.end_point_id : line.start_point_id;
-                      const anchored = params.points.find(
-                        (p) => p.point_id === anchoredId);
-                      if (anchored) {
-                        const mat = new THREE.LineDashedMaterial({
-                          color: 0xffe784,
-                          transparent: true,
-                          opacity: 0.6,
-                          dashSize: 1.5,
-                          gapSize: 0.8,
-                        });
-                        const geo = new THREE.BufferGeometry().setFromPoints([
-                          new THREE.Vector3(
-                            ...toWorldPoint(planeId,
-                              [anchored.x, anchored.y], frame)),
-                          new THREE.Vector3(
-                            ...toWorldPoint(planeId,
-                              [snapped.local[0], snapped.local[1]], frame)),
-                        ]);
-                        const preview = new THREE.Line(geo, mat);
-                        preview.computeLineDistances();
-                        sketchGroup.add(preview);
-                        newLines.push(preview);
-                      }
-                    }
-                  }
-                  dragPreviewLinesRef.current = newLines;
-                }
-              }
-            });
-          }
-        }
+          endpointDragRef,
+          activeSketchPlaneIdRef,
+          activeSketchPlaneFrameRef,
+          sketchLinesRef,
+          pendingDragRef,
+          pendingDragFrameRef,
+          dragSnapResultRef,
+          dragCursorRef,
+          dragPreviewLinesRef,
+          sketchGroupRef,
+          resolveSnappedSketchPoint,
+          setSketchSnapLabel,
+          clearDragPreviewLines,
+        })
+      ) {
         return;
       }
+
+      const hoverActions = {
+        clearPreviewLine,
+        clearPreviewCircle,
+        clearPreviewArc,
+        clearPreviewDimension,
+        setSketchSnapLabel,
+        setConstraintPreview,
+        clearDraftDimensionSession,
+        setHoveredReference,
+        setHoveredPrimitive,
+        setHoveredFace,
+        setHoveredEdge,
+        setHoveredVertex,
+        setHoveredSketchProfile,
+        setHoveredSketchPoint,
+        setHoveredSketchEntity,
+      };
 
       if (activeSketchPlaneId) {
         if (activeSketchToolRef.current === "select") {
-          clearPreviewLine();
-          clearPreviewCircle();
-          clearPreviewArc();
-          clearPreviewDimension();
-          setSketchSnapLabel(null);
-          setConstraintPreview(null);
-          clearDraftDimensionSession();
           const hit = intersectSceneTargets(event);
-          setHoveredReference(null);
-          setHoveredPrimitive(null);
-          setHoveredFace(null);
-          setHoveredEdge(null);
-          setHoveredVertex(null);
-          setHoveredSketchPoint(hit?.kind === "sketch_point" ? hit.id : null);
-          setHoveredSketchEntity(
-            hit?.kind === "sketch_entity" ? hit.id : null,
-          );
-          setHoveredSketchProfile(
-            hit?.kind === "sketch_profile" ? hit.id : null,
-          );
+          applySelectToolHover(hit, hoverActions);
           return;
         }
 
@@ -8441,518 +4372,51 @@ const currentGridSpacingRef = useRef(10);
         // there — instead we mirror the same hover dispatch here
         // and bail out.
         if (activeSketchToolRef.current === "project") {
-          clearPreviewLine();
-          clearPreviewCircle();
-          clearPreviewArc();
-          clearPreviewDimension();
-          setSketchSnapLabel(null);
-          setConstraintPreview(null);
-          clearDraftDimensionSession();
           const projectHit = intersectSceneTargets(event);
-          setHoveredReference(null);
-          setHoveredPrimitive(null);
-          setHoveredSketchProfile(null);
-          setHoveredSketchPoint(null);
-          setHoveredSketchEntity(null);
-          setHoveredFace(projectHit?.kind === "face" ? projectHit.id : null);
-          setHoveredEdge(projectHit?.kind === "edge" ? projectHit.id : null);
-          setHoveredVertex(
-            projectHit?.kind === "vertex" ? projectHit.id : null,
-          );
+          applyProjectToolHover(projectHit, hoverActions);
           return;
         }
 
         // Trim tool hover: highlight the segment under the cursor in red.
         if (activeSketchToolRef.current === "trim") {
-          clearPreviewLine();
-          clearPreviewCircle();
-          clearPreviewArc();
-          clearPreviewDimension();
-          setSketchSnapLabel(null);
-          setConstraintPreview(null);
-          clearDraftDimensionSession();
-          const trimHit = intersectSceneTargets(event);
-          setHoveredSketchEntity(
-            trimHit?.kind === "sketch_entity" ? trimHit.id : null,
-          );
-          setHoveredSketchProfile(null);
-          setHoveredSketchPoint(null);
-          setHoveredFace(null);
-          setHoveredEdge(null);
-          setHoveredVertex(null);
-
-          const scn = sceneDataRef.current;
-          if (
-            !scn ||
-            !trimHit ||
-            trimHit.kind !== "sketch_entity" ||
-            (trimHit.entityKind !== "line" && trimHit.entityKind !== "circle" && trimHit.entityKind !== "arc")
-          ) {
-            clearTrimSegmentHighlight();
-            return;
-          }
-
-          // Compute the 2D sketch-local position of the cursor.
-          const rawPt = resolveSketchPlanePoint(
+          handleTrimPointerMove({
             event,
             renderer,
             camera,
             activeSketchPlaneId,
             activeSketchPlaneFrame,
-          );
-          if (!rawPt) {
-            clearTrimSegmentHighlight();
-            clearTrimArcHighlight();
-            return;
-          }
-          const [mx, my] = rawPt.local;
-
-          const pid = activeSketchPlaneId;
-          const frame = activeSketchPlaneFrameRef.current;
-
-          const toLocal = (px: number, py: number, pz: number): [number, number] => {
-            if (frame) {
-              const dx = px - frame.origin.x;
-              const dy = py - frame.origin.y;
-              const dz = pz - frame.origin.z;
-              return [
-                dx * frame.x_axis.x + dy * frame.x_axis.y + dz * frame.x_axis.z,
-                dx * frame.y_axis.x + dy * frame.y_axis.y + dz * frame.y_axis.z,
-              ];
-            }
-            if (pid === "ref-plane-xy") return [px, pz];
-            if (pid === "ref-plane-yz") return [py, pz];
-            return [px, py];
-          };
-          const toWorld = (ux: number, uy: number): [number, number, number] => {
-            if (frame) {
-              return [
-                frame.origin.x + ux * frame.x_axis.x + uy * frame.y_axis.x,
-                frame.origin.y + ux * frame.x_axis.y + uy * frame.y_axis.y,
-                frame.origin.z + ux * frame.x_axis.z + uy * frame.y_axis.z,
-              ];
-            }
-            if (pid === "ref-plane-xy") return [ux, 0, uy];
-            if (pid === "ref-plane-yz") return [0, ux, uy];
-            return [ux, uy, 0];
-          };
-
-          // Core-driven trim preview: send cursor position to the core
-          // so the segment highlight is computed by the same math that
-          // `trim_sketch_entity` will use on click.  Throttle to 30 Hz.
-          const prev = trimPreviewLastSentRef.current;
-          if (!prev || Math.abs(mx - prev.x) > 0.5 || Math.abs(my - prev.y) > 0.5) {
-            trimPreviewLastSentRef.current = { x: mx, y: my };
-            void sendCoreCommand(makeTrimPreviewCommand(trimHit.id, mx, my));
-          }
-
-          // Line hover
-          if (trimHit.entityKind === "line") {
-          const lineData = scn.sketchLines.find((l) => l.lineId === trimHit.id);
-          if (!lineData) {
-            clearTrimSegmentHighlight();
-            clearTrimArcHighlight();
-            return;
-          }
-
-          // Convert 3D endpoints to 2D sketch-local.
-          const wx = lineData.start[0], wy = lineData.start[1], wz = lineData.start[2];
-          const lx = lineData.end[0], ly = lineData.end[1], lz = lineData.end[2];
-
-          const [ax2, ay2] = toLocal(wx, wy, wz);
-          const [bx2, by2] = toLocal(lx, ly, lz);
-
-          // Collect intersection parameters along the line.
-          const ts: number[] = [];
-
-          // Line-line intersections.
-          for (const other of scn.sketchLines) {
-            if (other.lineId === lineData.lineId || other.isConstruction) continue;
-            const [ox2, oy2] = toLocal(other.start[0], other.start[1], other.start[2]);
-            const [ox3, oy3] = toLocal(other.end[0], other.end[1], other.end[2]);
-            const t = lineLineIntersectionTrim(ax2, ay2, bx2, by2, ox2, oy2, ox3, oy3);
-            if (t !== null) ts.push(t);
-          }
-
-          // Line-circle intersections.
-          for (const circle of scn.sketchCircles) {
-            if (circle.isConstruction) continue;
-            const [cx, cy] = toLocal(circle.center[0], circle.center[1], circle.center[2]);
-            const lens = lineCircleIntersectionTrim(ax2, ay2, bx2, by2, cx, cy, circle.radius);
-            for (const t of lens) ts.push(t);
-          }
-
-          if (ts.length === 0) {
-            // No intersections — the entire line is one segment.
-            const [wsx, wsy, wsz] = toWorld(ax2, ay2);
-            const [wex, wey, wez] = toWorld(bx2, by2);
-            updateTrimSegmentHighlight(lineData.lineId, [
-              { sx: wsx, sy: wsy, sz: wsz, ex: wex, ey: wey, ez: wez },
-            ], 0);
-            return;
-          }
-
-          console.log("[trim_hover] line=", lineData.lineId,
-            "ts_raw=", ts.map((t: number) => t.toFixed(3)),
-            "n_lines=", scn.sketchLines.length,
-            "n_circles=", scn.sketchCircles.length);
-          // Sort and deduplicate.
-          ts.sort((a, b) => a - b);
-          const deduped: number[] = [ts[0]];
-          for (let i = 1; i < ts.length; i++) {
-            if (ts[i] - deduped[deduped.length - 1] > 0.01) {
-              deduped.push(ts[i]);
-            }
-          }
-
-          // Build segments.
-          const segs: Array<{ sx: number; sy: number; sz: number; ex: number; ey: number; ez: number }> = [];
-          // First segment: 0 → deduped[0]
-          {
-            const u = 0, v = deduped[0];
-            const sx = ax2 + u * (bx2 - ax2), sy = ay2 + u * (by2 - ay2);
-            const ex = ax2 + v * (bx2 - ax2), ey = ay2 + v * (by2 - ay2);
-            const [wsx, wsy, wsz] = toWorld(sx, sy);
-            const [wex, wey, wez] = toWorld(ex, ey);
-            segs.push({ sx: wsx, sy: wsy, sz: wsz, ex: wex, ey: wey, ez: wez });
-          }
-          // Middle segments.
-          for (let i = 0; i + 1 < deduped.length; i++) {
-            const u = deduped[i], v = deduped[i + 1];
-            const sx = ax2 + u * (bx2 - ax2), sy = ay2 + u * (by2 - ay2);
-            const ex = ax2 + v * (bx2 - ax2), ey = ay2 + v * (by2 - ay2);
-            const [wsx, wsy, wsz] = toWorld(sx, sy);
-            const [wex, wey, wez] = toWorld(ex, ey);
-            segs.push({ sx: wsx, sy: wsy, sz: wsz, ex: wex, ey: wey, ez: wez });
-          }
-          // Last segment: deduped[last] → 1
-          {
-            const u = deduped[deduped.length - 1], v = 1;
-            const sx = ax2 + u * (bx2 - ax2), sy = ay2 + u * (by2 - ay2);
-            const ex = ax2 + v * (bx2 - ax2), ey = ay2 + v * (by2 - ay2);
-            const [wsx, wsy, wsz] = toWorld(sx, sy);
-            const [wex, wey, wez] = toWorld(ex, ey);
-            segs.push({ sx: wsx, sy: wsy, sz: wsz, ex: wex, ey: wey, ez: wez });
-          }
-
-          // Determine which segment the cursor is on.
-          const abx = bx2 - ax2, aby = by2 - ay2;
-          const abLenSq = abx * abx + aby * aby;
-          let clickT = 0;
-          if (abLenSq > 1e-6) {
-            clickT = ((mx - ax2) * abx + (my - ay2) * aby) / abLenSq;
-            clickT = Math.max(0, Math.min(1, clickT));
-          }
-          let hoveredIdx = -1;
-          // Check segments in order: first, middle (loop), last
-          if (clickT >= 0 - 1e-10 && clickT <= deduped[0] + 1e-10) {
-            hoveredIdx = 0;
-          } else {
-            for (let i = 0; i + 1 < deduped.length; i++) {
-              if (clickT >= deduped[i] - 1e-10 && clickT <= deduped[i + 1] + 1e-10) {
-                hoveredIdx = i + 1;
-                break;
-              }
-            }
-            if (hoveredIdx < 0 && clickT >= deduped[deduped.length - 1] - 1e-10) {
-              hoveredIdx = deduped.length; // last segment
-            }
-          }
-
-          updateTrimSegmentHighlight(lineData.lineId, segs, hoveredIdx);
+            activeSketchPlaneFrameRef,
+            sceneDataRef,
+            trimPreviewLastSentRef,
+            hoverActions,
+            intersectSceneTargets,
+            clearTrimSegmentHighlight,
+            clearTrimArcHighlight,
+            updateTrimSegmentHighlight,
+            updateTrimArcHighlight,
+          });
           return;
         }
 
-        // Circle hover: highlight the arc segment under the cursor.
-        if (trimHit.entityKind === "circle") {
-          clearTrimSegmentHighlight();
-          const circleData = scn.sketchCircles.find((c) => c.circleId === trimHit.id);
-          if (!circleData) { clearTrimArcHighlight(); return; }
-
-          const [clx, cly] = toLocal(circleData.center[0], circleData.center[1], circleData.center[2]);
-          const cursorAngle = Math.atan2(my - cly, mx - clx);
-          const wrap = (a: number) => { while (a < 0) a += 2*Math.PI; while (a >= 2*Math.PI) a -= 2*Math.PI; return a; };
-          const cAngle = wrap(cursorAngle);
-          const angles: number[] = [];
-
-          for (const other of scn.sketchLines) {
-            if (other.isConstruction) continue;
-            const [ox, oy] = toLocal(other.start[0], other.start[1], other.start[2]);
-            const [ox2, oy2] = toLocal(other.end[0], other.end[1], other.end[2]);
-            const ts = lineCircleIntersectionTrim(ox, oy, ox2, oy2, clx, cly, circleData.radius);
-            for (const t of ts) {
-              const ix = ox + t * (ox2 - ox), iy = oy + t * (oy2 - oy);
-              angles.push(wrap(Math.atan2(iy - cly, ix - clx)));
-            }
-          }
-          for (const other of scn.sketchCircles) {
-            if (other.circleId === circleData.circleId || other.isConstruction) continue;
-            const [ocx, ocy] = toLocal(other.center[0], other.center[1], other.center[2]);
-            const dx = ocx - clx, dy = ocy - cly;
-            const d = Math.hypot(dx, dy);
-            const r1 = circleData.radius, r2 = other.radius;
-            if (d > r1 + r2 + 0.01 || d < Math.abs(r1 - r2) - 0.01) continue;
-            const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
-            const hSq = r1 * r1 - a * a;
-            const h = hSq <= 0 ? 0 : Math.sqrt(hSq);
-            const px = clx + a * dx / d, py = cly + a * dy / d;
-            const hx = -dy * h / d, hy = dx * h / d;
-            angles.push(wrap(Math.atan2(py + hy - cly, px + hx - clx)));
-            if (hSq > 1e-12) angles.push(wrap(Math.atan2(py - hy - cly, px - hx - clx)));
-          }
-
-          if (angles.length === 0) {
-            // No intersections — full circle as one segment.
-            const pts: Array<[number, number, number]> = [];
-            for (let i = 0; i <= 48; i++) {
-              const a = (i / 48) * 2 * Math.PI;
-              const [wx, wy, wz] = toWorld(clx + circleData.radius * Math.cos(a), cly + circleData.radius * Math.sin(a));
-              pts.push([wx, wy, wz]);
-            }
-            updateTrimArcHighlight(pts);
-            return;
-          }
-
-          angles.sort((a, b) => a - b);
-          const deduped = [angles[0]];
-          for (let i = 1; i < angles.length; i++)
-            if (angles[i] - deduped[deduped.length-1] > 0.01) deduped.push(angles[i]);
-          const N = deduped.length;
-          const full = 2 * Math.PI;
-
-          let hoveredSeg = -1;
-          for (let i = 0; i < N; i++) {
-            const s = deduped[i];
-            const e = deduped[(i+1)%N];
-            const ee = e <= s ? e + full : e;
-            let ta = cAngle;
-            if (e <= s && ta < s) ta += full;
-            if (ta >= s - 1e-10 && ta <= ee + 1e-10) { hoveredSeg = i; break; }
-          }
-          if (hoveredSeg < 0) { clearTrimArcHighlight(); return; }
-
-          const s = deduped[hoveredSeg];
-          const e = deduped[(hoveredSeg+1)%N];
-          const ee = e <= s ? e + full : e;
-          const pts: Array<[number, number, number]> = [];
-          const steps = 48;
-          for (let i = 0; i <= steps; i++) {
-            const a = s + (ee - s) * (i / steps);
-            const [wx, wy, wz] = toWorld(
-              clx + circleData.radius * Math.cos(a),
-              cly + circleData.radius * Math.sin(a));
-            pts.push([wx, wy, wz]);
-          }
-          updateTrimArcHighlight(pts);
-          return;
-        }
-
-        // Arc hover: like circle but constrained to the arc's sweep.
-        if (trimHit.entityKind === "arc") {
-          clearTrimSegmentHighlight();
-          const arcData = scn.sketchArcs.find((a) => a.arcId === trimHit.id);
-          if (!arcData) { clearTrimArcHighlight(); return; }
-
-          const [clx, cly] = toLocal(arcData.center[0], arcData.center[1], arcData.center[2]);
-          const [asx, asy] = toLocal(arcData.start[0], arcData.start[1], arcData.start[2]);
-          const [aex, aey] = toLocal(arcData.end[0], arcData.end[1], arcData.end[2]);
-          const aStart = Math.atan2(asy - cly, asx - clx);
-          const aEnd = Math.atan2(aey - cly, aex - clx);
-          const ccw = arcData.ccw;
-
-          const cursorAngle = Math.atan2(my - cly, mx - clx);
-          const wrap = (a: number) => { while (a < 0) a += 2*Math.PI; while (a >= 2*Math.PI) a -= 2*Math.PI; return a; };
-          const full = 2 * Math.PI;
-          let cAngle = wrap(cursorAngle);
-          if (ccw) { if (cAngle < wrap(aStart)) cAngle += full; }
-          else { if (cAngle > wrap(aStart)) cAngle -= full; }
-
-          const angles: number[] = [];
-          for (const other of scn.sketchLines) {
-            if (other.isConstruction) continue;
-            const [ox, oy] = toLocal(other.start[0], other.start[1], other.start[2]);
-            const [ox2, oy2] = toLocal(other.end[0], other.end[1], other.end[2]);
-            const ts = lineCircleIntersectionTrim(ox, oy, ox2, oy2, clx, cly, arcData.radius);
-            for (const t of ts) {
-              const ix = ox + t * (ox2 - ox), iy = oy + t * (oy2 - oy);
-              let ai = wrap(Math.atan2(iy - cly, ix - clx));
-              if (ccw) { if (ai < wrap(aStart)) ai += full; }
-              else { if (ai > wrap(aStart)) ai -= full; }
-              if ((ccw && ai >= wrap(aStart) - 1e-10 && ai <= (wrap(aEnd) <= wrap(aStart) ? wrap(aEnd) + full : wrap(aEnd)) + 1e-10) ||
-                  (!ccw && ai <= wrap(aStart) + 1e-10 && ai >= (wrap(aEnd) >= wrap(aStart) ? wrap(aEnd) - full : wrap(aEnd)) - 1e-10))
-                angles.push(ai);
-            }
-          }
-          for (const other of scn.sketchCircles) {
-            if (other.isConstruction) continue;
-            const [ocx, ocy] = toLocal(other.center[0], other.center[1], other.center[2]);
-            const dx = ocx - clx, dy = ocy - cly;
-            const d = Math.hypot(dx, dy);
-            if (d > arcData.radius + other.radius + 0.01 || d < Math.abs(arcData.radius - other.radius) - 0.01) continue;
-            const a = (arcData.radius * arcData.radius - other.radius * other.radius + d * d) / (2 * d);
-            const hSq = arcData.radius * arcData.radius - a * a;
-            const h = hSq <= 0 ? 0 : Math.sqrt(hSq);
-            const px = clx + a * dx / d, py = cly + a * dy / d;
-            const hx = -dy * h / d, hy = dx * h / d;
-            for (const [ix, iy] of [[px + hx, py + hy], [px - hx, py - hy]] as [number, number][]) {
-              let ai = wrap(Math.atan2(iy - cly, ix - clx));
-              if (ccw) { if (ai < wrap(aStart)) ai += full; }
-              else { if (ai > wrap(aStart)) ai -= full; }
-              if ((ccw && ai >= wrap(aStart) - 1e-10 && ai <= (wrap(aEnd) <= wrap(aStart) ? wrap(aEnd) + full : wrap(aEnd)) + 1e-10) ||
-                  (!ccw && ai <= wrap(aStart) + 1e-10 && ai >= (wrap(aEnd) >= wrap(aStart) ? wrap(aEnd) - full : wrap(aEnd)) - 1e-10))
-                angles.push(ai);
-            }
-          }
-
-          if (angles.length === 0) {
-            const pts: Array<[number, number, number]> = [];
-            const steps = 48;
-            for (let i = 0; i <= steps; i++) {
-              const ang = aStart + (ccw ? 1 : -1) * (i / steps) * Math.abs(ccw ? (wrap(aEnd) <= wrap(aStart) ? wrap(aEnd) + full - wrap(aStart) : wrap(aEnd) - wrap(aStart)) : (wrap(aStart) - (wrap(aEnd) >= wrap(aStart) ? wrap(aEnd) - full : wrap(aEnd))));
-              const [wx, wy, wz] = toWorld(clx + arcData.radius * Math.cos(ang), cly + arcData.radius * Math.sin(ang));
-              pts.push([wx, wy, wz]);
-            }
-            updateTrimArcHighlight(pts);
-            return;
-          }
-
-          angles.sort((a, b) => ccw ? a - b : b - a);
-          const deduped = [angles[0]];
-          for (let i = 1; i < angles.length; i++)
-            if (Math.abs(angles[i] - deduped[deduped.length-1]) > 0.01) deduped.push(angles[i]);
-
-          let hoveredSeg = -1;
-          const N = deduped.length;
-          const segs = [wrap(aStart), ...deduped, ccw ? (wrap(aEnd) <= wrap(aStart) ? wrap(aEnd) + full : wrap(aEnd)) : (wrap(aEnd) >= wrap(aStart) ? wrap(aEnd) - full : wrap(aEnd))];
-          for (let i = 0; i <= N; i++) {
-            const s = segs[i], e = segs[i+1];
-            let ta = cAngle;
-            if (ccw) { if (ta < s) ta += full; }
-            else { if (ta > s) ta -= full; }
-            if (ta >= s - 1e-10 && ta <= e + 1e-10) { hoveredSeg = i; break; }
-          }
-          if (hoveredSeg < 0) { clearTrimArcHighlight(); return; }
-
-          const s = segs[hoveredSeg], e = segs[hoveredSeg+1];
-          const pts: Array<[number, number, number]> = [];
-          const steps = 48;
-          for (let i = 0; i <= steps; i++) {
-            const ang = s + (e - s) * (i / steps);
-            const [wx, wy, wz] = toWorld(clx + arcData.radius * Math.cos(ang), cly + arcData.radius * Math.sin(ang));
-            pts.push([wx, wy, wz]);
-          }
-          updateTrimArcHighlight(pts);
-          return;
-        }
-        }
-
-        setHoveredSketchProfile(null);
-        setHoveredSketchPoint(null);
-        setHoveredSketchEntity(null);
-        const draftStart = lineDraftStartRef.current;
-        const rawPoint = resolveSketchPlanePoint(
+        clearSketchEntityHover(hoverActions);
+        const draftMove = resolveDraftPointerMove({
           event,
           renderer,
           camera,
           activeSketchPlaneId,
           activeSketchPlaneFrame,
-        );
-        if (!rawPoint) {
+          activeSketchTool: activeSketchToolRef.current,
+          draftStartRef: lineDraftStartRef,
+          draftDimensionSessionRef,
+          resolveSnappedSketchPoint,
+          updateDraftSessionFromPoint,
+          setSketchSnapLabel,
+          setConstraintPreview,
+        });
+        if (!draftMove) {
           return;
         }
-
-        const sketchPoint = resolveSnappedSketchPoint(
-          rawPoint,
-          lineDraftStartRef.current,
-        );
-        setSketchSnapLabel(sketchPoint.snapLabel);
-
-        // Snap is handled entirely in TS via resolveSnappedSketchPoint,
-        // using the static snap_candidates from viewport_state.
-
-        if (
-          isDraftDimensionTool(activeSketchToolRef.current) &&
-          draftDimensionSessionRef.current
-        ) {
-          updateDraftSessionFromPoint(sketchPoint.local);
-        }
-        const draftPreviewLocal =
-          isDraftDimensionTool(activeSketchToolRef.current) &&
-          draftDimensionSessionRef.current
-            ? draftDimensionSessionRef.current.current
-            : sketchPoint.local;
-        const draftPreviewWorld = toWorldPoint(
-          activeSketchPlaneId,
-          draftPreviewLocal,
-          activeSketchPlaneFrame,
-        );
-
-        // Hover-time constraint preview. The badge sits next to the
-        // cursor in viewport-local coordinates so it stays glued to
-        // the pointer regardless of canvas size or scroll. Pixel
-        // offsets are taken from `getBoundingClientRect` rather than
-        // `clientX/Y` directly because the canvas can be inset
-        // inside the viewport panel (toolbar, side panels, etc.).
-        const canvasRect = renderer.domElement.getBoundingClientRect();
-        const previewX = event.clientX - canvasRect.left;
-        const previewY = event.clientY - canvasRect.top;
-        if (sketchPoint.snapMidpointHostLineId) {
-          // Whole-line midpoint snaps render the "M" glyph; sub-
-          // segment midpoints commit as parametric anchors and so
-          // get the same "/" point-on-line glyph as a generic
-          // line-body snap, keeping the visual language aligned
-          // with what's actually being created on commit.
-          const isWhole =
-            sketchPoint.snapMidpointT !== null &&
-            sketchPoint.snapMidpointT !== undefined &&
-            Math.abs(sketchPoint.snapMidpointT - 0.5) < 1e-9;
-          setConstraintPreview({
-            kind: isWhole ? "midpoint" : "on_line",
-            x: previewX,
-            y: previewY,
-          });
-        } else if (sketchPoint.snapLineBodyHostLineId) {
-          setConstraintPreview({
-            kind: "on_line",
-            x: previewX,
-            y: previewY,
-          });
-        } else if (sketchPoint.snapPerpendicularHostLineId) {
-          setConstraintPreview({
-            kind: "perpendicular",
-            x: previewX,
-            y: previewY,
-          });
-        } else if (sketchPoint.snapParallelHostLineId) {
-          setConstraintPreview({
-            kind: "parallel",
-            x: previewX,
-            y: previewY,
-          });
-        } else if (
-          sketchPoint.snapLabel &&
-          sketchPoint.snapLabel.startsWith("On ")
-        ) {
-          setConstraintPreview({
-            kind: "on_line",
-            x: previewX,
-            y: previewY,
-          });
-        } else if (sketchPoint.snapAxisLock) {
-          setConstraintPreview({
-            kind: sketchPoint.snapAxisLock,
-            x: previewX,
-            y: previewY,
-          });
-        } else if (sketchPoint.snapTangentCircleId) {
-          setConstraintPreview({
-            kind: "tangent",
-            x: previewX,
-            y: previewY,
-          });
-        } else {
-          setConstraintPreview(null);
-        }
+        const { draftStart, draftPreviewLocal } = draftMove;
 
         if (!draftStart) {
           setHoveredPrimitive(null);
@@ -8965,518 +4429,34 @@ const currentGridSpacingRef = useRef(10);
           return;
         }
 
-        clearPreviewLine();
-        clearPreviewCircle();
-        clearPreviewArc();
-        clearPreviewDimension();
-        if (activeSketchToolRef.current === "arc") {
-          // Arc preview branches on the user's progress through the
-          // three-click sequence and the active arc creation mode.
-          // Goal: the dashed preview should always show the *exact*
-          // arc the next click will commit (or, for the early
-          // single-click states, an unambiguous hint about what is
-          // currently locked in).
-          const arcSecondPoint = arcSecondPointRef.current;
-          const cursor = sketchPoint.local;
-          const arcMode = arcToolModeRef.current;
-
-          // Build a SketchArcScene-shaped preview from a 2D
-          // (center, radius, start, end, ccw) tuple. The
-          // `buildSketchArcObject` renderer projects coords back
-          // through the plane frame so we can hand it world-space
-          // coords directly.
-          const buildArcPreview = (
-            centerLocal: [number, number],
-            radius: number,
-            startLocal: [number, number],
-            endLocal: [number, number],
-            ccw: boolean,
-          ) => {
-            if (radius < 1e-3) {
-              return null;
-            }
-            return buildSketchArcObject(
-              {
-                arcId: "preview-arc",
-                startPointId: "preview-arc-start",
-                endPointId: "preview-arc-end",
-                planeId: activeSketchPlaneId,
-                planeFrame: activeSketchPlaneFrame,
-                center: toWorldPoint(
-                  activeSketchPlaneId,
-                  centerLocal,
-                  activeSketchPlaneFrame,
-                ),
-                radius,
-                start: toWorldPoint(
-                  activeSketchPlaneId,
-                  startLocal,
-                  activeSketchPlaneFrame,
-                ),
-                end: toWorldPoint(
-                  activeSketchPlaneId,
-                  endLocal,
-                  activeSketchPlaneFrame,
-                ),
-                ccw,
-                isSelected: false,
-                isConstruction: sketchToolConstructionRef.current,
-                isPreview: true,
-                isProjected: false,
-              },
-              activeSketchPlaneFrame,
-            );
-          };
-
-          if (arcMode === "three_point") {
-            if (!arcSecondPoint) {
-              // Click 2 still pending. We don't know enough to draw
-              // an arc yet, so render a dashed line from start to
-              // cursor as a chord-of-the-future-end hint. Mirrors
-              // the existing "line preview while drafting" cue but
-              // dashed so it reads as not-yet-an-arc.
-              const preview = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  new THREE.Vector3(
-                    ...toWorldPoint(
-                      activeSketchPlaneId,
-                      draftStart,
-                      activeSketchPlaneFrame,
-                    ),
-                  ),
-                  new THREE.Vector3(...sketchPoint.world),
-                ]),
-                new THREE.LineDashedMaterial({
-                  color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-                  transparent: true,
-                  opacity: 0.65,
-                  dashSize: 1,
-                  gapSize: 0.6,
-                }),
-              );
-              preview.computeLineDistances();
-              previewArcRef.current = preview;
-              sketchGroupRefValue.add(preview);
-            } else {
-              // Click 2 captured: cursor is the bulge anchor. Solve
-              // the circumcircle of (start, cursor, end) — same
-              // formula as `DocumentManager::add_sketch_arc` so the
-              // preview lands exactly on what we'll commit. Falls
-              // through to a no-preview state when the three points
-              // are colinear (degenerate arc).
-              const [sx, sy] = draftStart;
-              const [ex, ey] = arcSecondPoint;
-              const [ax, ay] = cursor;
-              const d = 2 * (sx * (ey - ay) + ex * (ay - sy) + ax * (sy - ey));
-              if (Math.abs(d) > 1e-9) {
-                const s2 = sx * sx + sy * sy;
-                const e2 = ex * ex + ey * ey;
-                const a2 = ax * ax + ay * ay;
-                const cx =
-                  (s2 * (ey - ay) + e2 * (ay - sy) + a2 * (sy - ey)) / d;
-                const cy =
-                  (s2 * (ax - ex) + e2 * (sx - ax) + a2 * (ex - sx)) / d;
-                const radius = Math.hypot(sx - cx, sy - cy);
-                const cross = (ax - sx) * (ey - sy) - (ay - sy) * (ex - sx);
-                const ccw = cross > 0;
-                const preview = buildArcPreview(
-                  [cx, cy],
-                  radius,
-                  [sx, sy],
-                  [ex, ey],
-                  ccw,
-                );
-                if (preview) {
-                  previewArcRef.current = preview;
-                  sketchGroupRefValue.add(preview);
-                }
-              }
-            }
-          } else {
-            // center_start_end mode.
-            if (!arcSecondPoint) {
-              // Click 2 still pending. Center is locked; draw a
-              // dashed full circle of radius |cursor - center| so
-              // the user can see the radius they're about to
-              // commit. Once they click, the start position will be
-              // the cursor's current position.
-              const radius = Math.hypot(
-                cursor[0] - draftStart[0],
-                cursor[1] - draftStart[1],
-              );
-              if (radius >= 1e-3) {
-                const preview = buildSketchCircleObject(
-                  {
-                    circleId: "preview-arc-circle",
-                    planeId: activeSketchPlaneId,
-                    planeFrame: activeSketchPlaneFrame,
-                    center: toWorldPoint(
-                      activeSketchPlaneId,
-                      draftStart,
-                      activeSketchPlaneFrame,
-                    ),
-                    radius,
-                    isSelected: false,
-                    isConstruction: sketchToolConstructionRef.current,
-                    // Mark as preview so it renders dashed +
-                    // translucent. (LineLoop is fine here even
-                    // though the ref is typed as Line — the
-                    // dispose path only touches geometry/material.)
-                    isPreview: true,
-                    isProjected: false,
-                  },
-                  activeSketchPlaneFrame,
-                );
-                previewArcRef.current = preview as unknown as THREE.Line;
-                sketchGroupRefValue.add(preview);
-              }
-            } else {
-              // Click 2 captured (= start). Cursor is the end; we
-              // snap it onto the circle established by
-              // |center → start| just like the core does, then
-              // render the arc.
-              const cx = draftStart[0];
-              const cy = draftStart[1];
-              const sx = arcSecondPoint[0];
-              const sy = arcSecondPoint[1];
-              const radius = Math.hypot(sx - cx, sy - cy);
-              const endDx = cursor[0] - cx;
-              const endDy = cursor[1] - cy;
-              const endLen = Math.hypot(endDx, endDy);
-              if (radius >= 1e-3 && endLen >= 1e-3) {
-                const finalEx = cx + (endDx * radius) / endLen;
-                const finalEy = cy + (endDy * radius) / endLen;
-                const cross =
-                  (sx - cx) * (finalEy - cy) - (sy - cy) * (finalEx - cx);
-                const ccw = cross > 0;
-                const preview = buildArcPreview(
-                  [cx, cy],
-                  radius,
-                  [sx, sy],
-                  [finalEx, finalEy],
-                  ccw,
-                );
-                if (preview) {
-                  previewArcRef.current = preview;
-                  sketchGroupRefValue.add(preview);
-                }
-              }
-            }
-          }
-          return;
-        }
-        if (activeSketchToolRef.current === "circle") {
-          const circleMode = circleToolModeRef.current;
-          if (circleMode === "three_point") {
-            // 3-point circle: two-phase preview.
-            // Click 1 locked (draftStart); click 2 captured by circleSecondPointRef.
-            const circleSecondPoint = circleSecondPointRef.current;
-            const cursor = draftPreviewLocal;
-            if (!circleSecondPoint) {
-              // Click 2 still pending — dashed chord hint from first point.
-              const preview = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  new THREE.Vector3(
-                    ...toWorldPoint(
-                      activeSketchPlaneId,
-                      draftStart,
-                      activeSketchPlaneFrame,
-                    ),
-                  ),
-                  new THREE.Vector3(...draftPreviewWorld),
-                ]),
-                new THREE.LineDashedMaterial({
-                  color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-                  transparent: true,
-                  opacity: 0.65,
-                  dashSize: 1,
-                  gapSize: 0.6,
-                }),
-              );
-              preview.computeLineDistances();
-              previewLineRef.current = preview;
-              sketchGroupRefValue.add(preview);
-            } else {
-              // Click 2 captured: cursor is the third point. Compute
-              // circumcircle of (draftStart, secondPoint, cursor).
-              const [p1x, p1y] = draftStart;
-              const [p2x, p2y] = circleSecondPoint;
-              const [p3x, p3y] = cursor;
-              const d = 2 * (p1x * (p2y - p3y) + p2x * (p3y - p1y) + p3x * (p1y - p2y));
-              if (Math.abs(d) > 1e-9) {
-                const ux =
-                  ((p1x * p1x + p1y * p1y) * (p2y - p3y) +
-                   (p2x * p2x + p2y * p2y) * (p3y - p1y) +
-                   (p3x * p3x + p3y * p3y) * (p1y - p2y)) / d;
-                const uy =
-                  ((p1x * p1x + p1y * p1y) * (p3x - p2x) +
-                   (p2x * p2x + p2y * p2y) * (p1x - p3x) +
-                   (p3x * p3x + p3y * p3y) * (p2x - p1x)) / d;
-                const radius = Math.hypot(p1x - ux, p1y - uy);
-                if (radius >= 1e-3) {
-                  const preview = buildSketchCircleObject(
-                    {
-                      circleId: "preview-3pt-circle",
-                      planeId: activeSketchPlaneId,
-                      planeFrame: activeSketchPlaneFrame,
-                      center: toWorldPoint(
-                        activeSketchPlaneId,
-                        [ux, uy],
-                        activeSketchPlaneFrame,
-                      ),
-                      radius,
-                      isSelected: false,
-                      isConstruction: sketchToolConstructionRef.current,
-                      isPreview: true,
-                      isProjected: false,
-                    },
-                    activeSketchPlaneFrame,
-                  );
-                  previewCircleRef.current = preview;
-                  sketchGroupRefValue.add(preview);
-                }
-              }
-            }
-          } else if (circleMode === "two_point") {
-            // Two-point circle: center at midpoint of (click, cursor),
-            // radius = half the distance. Same math as handlePointerUp.
-            const p1x = draftStart[0];
-            const p1y = draftStart[1];
-            const p2x = draftPreviewLocal[0];
-            const p2y = draftPreviewLocal[1];
-            const dist = distanceBetweenPoints(draftStart, draftPreviewLocal);
-            if (dist > 0.001) {
-              const cx = (p1x + p2x) / 2;
-              const cy = (p1y + p2y) / 2;
-              const radius = dist / 2;
-              const preview = buildSketchCircleObject(
-                {
-                  circleId: "preview-2pt-circle",
-                  planeId: activeSketchPlaneId,
-                  planeFrame: activeSketchPlaneFrame,
-                  center: toWorldPoint(
-                    activeSketchPlaneId,
-                    [cx, cy],
-                    activeSketchPlaneFrame,
-                  ),
-                  radius,
-                  isSelected: false,
-                  isConstruction: sketchToolConstructionRef.current,
-                  isPreview: false,
-                  isProjected: false,
-                },
-                activeSketchPlaneFrame,
-              );
-              previewCircleRef.current = preview;
-              sketchGroupRefValue.add(preview);
-            }
-          } else {
-            // center_radius: existing draft circle from center.
-            const radius = distanceBetweenPoints(draftStart, draftPreviewLocal);
-            if (radius > 0.001) {
-              // Pass the active sketch's plane frame so the perimeter is
-              // projected onto the actual sketch plane. Without it the
-              // perimeter falls back to the legacy ref-plane axis
-              // mapping which disagrees with the center's projection
-              // for arbitrary planes (face-based sketches), and the
-              // circle reads as perpendicular to the sketch plane.
-              const preview = buildSketchCircleObject(
-                {
-                  circleId: "preview-circle",
-                  planeId: activeSketchPlaneId,
-                  planeFrame: activeSketchPlaneFrame,
-                  center: toWorldPoint(
-                    activeSketchPlaneId,
-                    draftStart,
-                    activeSketchPlaneFrame,
-                  ),
-                  radius,
-                  isSelected: false,
-                  isConstruction: sketchToolConstructionRef.current,
-                  // The line/circle draft preview (drawn while the
-                  // user is dragging out a new circle) is not a
-                  // tool-generated preview entity; the renderer's
-                  // dashed-translucent path is gated on `isPreview`,
-                  // so leaving it false keeps the existing draft
-                  // styling intact.
-                  isPreview: false,
-                  isProjected: false,
-                },
-                activeSketchPlaneFrame,
-              );
-              previewCircleRef.current = preview;
-              sketchGroupRefValue.add(preview);
-              renderCircleDraftDimension(
-                sketchGroupRefValue,
-                draftStart,
-                draftPreviewLocal,
-              );
-            }
-          }
-        } else if (activeSketchToolRef.current === "rectangle") {
-          const rectMode = rectangleToolModeRef.current;
-          if (rectMode === "three_point") {
-            // 3-point rectangle: two-phase preview.
-            const rectSecondPoint = rectSecondPointRef.current;
-            const cursor = draftPreviewLocal;
-            if (!rectSecondPoint) {
-              // Click 2 still pending — dashed first-edge hint.
-              const preview = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  new THREE.Vector3(
-                    ...toWorldPoint(
-                      activeSketchPlaneId,
-                      draftStart,
-                      activeSketchPlaneFrame,
-                    ),
-                  ),
-                  new THREE.Vector3(...draftPreviewWorld),
-                ]),
-                new THREE.LineDashedMaterial({
-                  color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-                  transparent: true,
-                  opacity: 0.65,
-                  dashSize: 1,
-                  gapSize: 0.6,
-                }),
-              );
-              preview.computeLineDistances();
-              previewLineRef.current = preview;
-              sketchGroupRefValue.add(preview);
-            } else {
-              // Click 2 captured. Compute the 4 corners from
-              // (draftStart, secondPoint, cursor-as-offset).
-              const [p1x, p1y] = draftStart;
-              const [p2x, p2y] = rectSecondPoint;
-              const [p3x, p3y] = cursor;
-              const dx = p2x - p1x;
-              const dy = p2y - p1y;
-              const edgeLen = Math.hypot(dx, dy);
-              if (edgeLen >= 1e-9) {
-                const nx = -dy / edgeLen;
-                const ny = dx / edgeLen;
-                const offset = nx * (p3x - p1x) + ny * (p3y - p1y);
-                const cx = p1x + nx * offset;
-                const cy = p1y + ny * offset;
-                const c2x = p2x + nx * offset;
-                const c2y = p2y + ny * offset;
-                const corners: Array<[number, number]> = [
-                  [p1x, p1y],
-                  [p2x, p2y],
-                  [c2x, c2y],
-                  [cx, cy],
-                  [p1x, p1y],
-                ];
-                const worldCorners = corners.map(
-                  (corner) =>
-                    new THREE.Vector3(
-                      ...toWorldPoint(
-                        activeSketchPlaneId,
-                        corner,
-                        activeSketchPlaneFrame,
-                      ),
-                    ),
-                );
-                const preview = new THREE.Line(
-                  new THREE.BufferGeometry().setFromPoints(worldCorners),
-                  makeDraftLineMaterial(),
-                );
-                if (sketchToolConstructionRef.current) {
-                  preview.computeLineDistances();
-                }
-                previewLineRef.current = preview;
-                sketchGroupRefValue.add(preview);
-              }
-            }
-          } else {
-            // corner_corner / center_point: full-rectangle draft.
-            const [sx, sy] = draftStart;
-            const [ex, ey] = draftPreviewLocal;
-            const isCenterPoint = rectMode === "center_point";
-            const corners: Array<[number, number]> = isCenterPoint
-              ? [
-                  [2 * sx - ex, 2 * sy - ey],
-                  [ex, 2 * sy - ey],
-                  [ex, ey],
-                  [2 * sx - ex, ey],
-                  [2 * sx - ex, 2 * sy - ey],
-                ]
-              : [
-                  [sx, sy],
-                  [ex, sy],
-                  [ex, ey],
-                  [sx, ey],
-                  [sx, sy],
-                ];
-            const worldCorners = corners.map(
-              (corner) =>
-                new THREE.Vector3(
-                  ...toWorldPoint(
-                    activeSketchPlaneId,
-                    corner,
-                    activeSketchPlaneFrame,
-                  ),
-                ),
-            );
-            const preview = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints(worldCorners),
-              makeDraftLineMaterial(),
-            );
-            if (sketchToolConstructionRef.current) {
-              preview.computeLineDistances();
-            }
-            previewLineRef.current = preview;
-            sketchGroupRefValue.add(preview);
-          }
-        } else {
-          const preview = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([
-              new THREE.Vector3(
-                ...toWorldPoint(
-                  activeSketchPlaneId,
-                  draftStart,
-                  activeSketchPlaneFrame,
-                ),
-              ),
-              new THREE.Vector3(...draftPreviewWorld),
-            ]),
-            makeDraftLineMaterial(),
-          );
-          if (sketchToolConstructionRef.current) {
-            preview.computeLineDistances();
-          }
-          previewLineRef.current = preview;
-          sketchGroupRefValue.add(preview);
-        }
+        renderDraftPointerPreview({
+          activeSketchTool: activeSketchToolRef.current,
+          activeSketchPlaneId,
+          activeSketchPlaneFrame,
+          draftStart,
+          draftPreviewLocal,
+          sketchGroup: sketchGroupRefValue,
+          arcToolMode: arcToolModeRef.current,
+          circleToolMode: circleToolModeRef.current,
+          rectangleToolMode: rectangleToolModeRef.current,
+          arcSecondPoint: arcSecondPointRef.current,
+          circleSecondPoint: circleSecondPointRef.current,
+          rectSecondPoint: rectSecondPointRef.current,
+          isConstruction: sketchToolConstructionRef.current,
+          previewLineRef,
+          previewCircleRef,
+          previewArcRef,
+          clearPreviewLine,
+          clearPreviewCircle,
+          clearPreviewArc,
+          clearPreviewDimension,
+          renderCircleDraftDimension,
+        });
         return;
       }
 
       const hit = intersectSceneTargets(event);
-      if (hit?.kind === "sketch_dimension" || hit?.kind === "sketch_entity") {
-        setHoveredReference(null);
-        setHoveredPrimitive(null);
-        setHoveredSketchProfile(null);
-        setHoveredSketchPoint(null);
-        setHoveredSketchEntity(hit?.kind === "sketch_entity" ? hit.id : null);
-        setHoveredFace(null);
-        setHoveredEdge(null);
-        setHoveredVertex(null);
-        return;
-      }
-      setHoveredReference(hit?.kind === "reference" ? hit.id : null);
-      setHoveredSketchProfile(hit?.kind === "sketch_profile" ? hit.id : null);
-      setHoveredSketchPoint(hit?.kind === "sketch_point" ? hit.id : null);
-      setHoveredSketchEntity(null);
-      setHoveredFace(hit?.kind === "face" ? hit.id : null);
-      // Edges and vertices are mutually exclusive with each other (the
-      // raycaster prioritizes vertex over edge over face), so only one
-      // of these will resolve to a real id at a time.
-      setHoveredEdge(hit?.kind === "edge" ? hit.id : null);
-      setHoveredVertex(hit?.kind === "vertex" ? hit.id : null);
-      // Suppress primitive hover while a face under the same primitive is
-      // hovered so the visual highlight reads as a face hover, not a body
-      // hover.
-      setHoveredPrimitive(hit?.kind === "primitive" && hit.id ? hit.id : null);
+      applySceneHover(hit, hoverActions);
     }
 
     function handlePointerLeave() {
@@ -9509,19 +4489,110 @@ const currentGridSpacingRef = useRef(10);
       viewCubeHoveredRef.current = null;
     }
 
+    function finishDimensionLabelDragPointerUp() {
+      const dimensionDrag = dimensionLabelDragRef.current;
+      if (!dimensionDrag) {
+        return "inactive" as const;
+      }
+
+      if (dimensionDrag.isPlacement) {
+        if (commitDimensionRelationPreview()) {
+          setIsDimensionEditorOpen(false);
+          pointerDown = null;
+          return "consumed" as const;
+        }
+        finishDimensionPlacement();
+        setIsDimensionEditorOpen(false);
+        // Fall through to entity handling so two-pick workflows
+        // (angle, distance) can process the second click.
+      }
+
+      // finishDimensionPlacement nulls the ref; only clean up if the drag
+      // is still active (non-placement label drag).
+      if (!dimensionLabelDragRef.current) {
+        return "continue" as const;
+      }
+
+      if (dimensionDrag.hasMoved) {
+        persistDimensionDragLabelPosition(dimensionDrag);
+      }
+
+      dimensionLabelDragRef.current = null;
+      controls.enabled = true;
+      (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+      pointerDown = null;
+      if (!dimensionDrag.hasMoved) {
+        if (dimensionDrag.hitPart === "label") {
+          suppressNextDimensionEditorOpenRef.current = false;
+          dimensionInputSelectionLockedRef.current = true;
+          void selectSketchDimensionRef.current(dimensionDrag.dimensionId);
+          setIsDimensionEditorOpen(true);
+        } else {
+          suppressNextDimensionEditorOpenRef.current = true;
+          setIsDimensionEditorOpen(false);
+          void selectSketchDimensionRef.current(dimensionDrag.dimensionId);
+        }
+      }
+      return "consumed" as const;
+    }
+
+    function finishEndpointDragPointerUpFromViewport(event: PointerEvent) {
+      return finishEndpointDragPointerUp({
+        event,
+        renderer,
+        camera,
+        controls,
+        endpointDragRef,
+        dragSnapResultRef,
+        activeSketchPlaneIdRef,
+        activeSketchPlaneFrameRef,
+        pendingEndpointCommitRef,
+        dragCursorRef,
+        updateSketchPoint: updateSketchPointRef.current,
+        clearDragPreviewLines,
+        setConstraintPreview,
+        setSketchSnapLabel,
+        setHoveredSketchEntity,
+        setHoveredSketchPoint,
+        setPointerDown: (point) => {
+          pointerDown = point;
+        },
+      });
+    }
+
+    function finishViewCubePointerUpFromViewport(event: PointerEvent) {
+      return finishViewCubePointerUp({
+        event,
+        renderer,
+        camera,
+        controls,
+        viewCubeDraggingRef,
+        viewCubeDragStartRef,
+        viewCubeGroupRef,
+        viewCubeCameraRef,
+        viewCubeRaycasterRef,
+        viewCubeAnimatingRef,
+        viewCubeAnimStartRef,
+        viewCubeAnimStartPosRef,
+        viewCubeAnimTargetPosRef,
+        viewCubeAnimStartUpRef,
+        viewCubeAnimTargetUpRef,
+        rotateCameraAroundCurrentView: rotateCameraAroundCurrentViewFromViewport,
+      });
+    }
+
     function handlePointerUp(event: PointerEvent) {
 
       // --- Rectangle selection finalize ---
-      if (selectionDragRef.current?.active) {
-        const d = selectionDragRef.current;
-        const w = Math.abs(d.currentX - d.startX);
-        const h = Math.abs(d.currentY - d.startY);
-        if (w > 3 || h > 3) {
-          void performRectangleSelect(d, event.shiftKey);
-        }
-        selectionDragRef.current = null;
-        setSelectionRect(null);
-        controls.enabled = true;
+      if (
+        finishRectangleSelectionDrag({
+          event,
+          selectionDragRef,
+          setSelectionRect,
+          controls,
+          performRectangleSelect,
+        })
+      ) {
         return;
       }
 
@@ -9540,190 +4611,30 @@ const currentGridSpacingRef = useRef(10);
         renderer.domElement.releasePointerCapture(event.pointerId);
       }
 
-      if (moveGizmoDragRef.current) {
-        moveGizmoDragRef.current = null;
-        controls.enabled = true;
-        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+      if (
+        finishMoveGizmoPointerUp({
+          renderer,
+          controls,
+          moveGizmoDragRef,
+        })
+      ) {
         pointerDown = null;
         return;
       }
 
-      const dimensionDrag = dimensionLabelDragRef.current;
-      if (dimensionDrag) {
-        if (dimensionDrag.isPlacement) {
-          if (commitDimensionRelationPreview()) {
-            setIsDimensionEditorOpen(false);
-            pointerDown = null;
-            return;
-          }
-          finishDimensionPlacement();
-          setIsDimensionEditorOpen(false);
-          // Fall through to entity handling so two-pick workflows
-          // (angle, distance) can process the second click.
-        }
-        // finishDimensionPlacement nulls the ref; only clean up if
-        // the drag is still active (non-placement label drag).
-        if (dimensionLabelDragRef.current) {
-          if (dimensionDrag.hasMoved) {
-            const dragRadius =
-              angleDragRadiiRef.current[dimensionDrag.dimensionId];
-            if (dragRadius !== undefined) {
-              // Angle dimension: commit the radius by computing the
-              // world-space label position on the bisector.
-              const dragged = displayedSketchDimensionsRef.current.find(
-                (d) => d.dimensionId === dimensionDrag.dimensionId,
-              );
-              const frame = dragged ? angleDimensionFrame(dragged) : null;
-              if (frame) {
-                const labelWorld = frame.pivot
-                  .clone()
-                  .add(frame.bisector.clone().multiplyScalar(dragRadius));
-                persistDimensionLabelPosition(dimensionDrag.dimensionId, [
-                  labelWorld.x,
-                  labelWorld.y,
-                  labelWorld.z,
-                ]);
-              }
-              // Keep override — it matches the core's eventual output.
-            } else {
-              persistDimensionLabelPosition(
-                dimensionDrag.dimensionId,
-                dimensionLabelPositionsRef.current[dimensionDrag.dimensionId],
-              );
-            }
-          }
-          dimensionLabelDragRef.current = null;
-          controls.enabled = true;
-          (renderer.domElement as HTMLCanvasElement).style.cursor = "";
-          pointerDown = null;
-          if (!dimensionDrag.hasMoved) {
-            if (dimensionDrag.hitPart === "label") {
-              suppressNextDimensionEditorOpenRef.current = false;
-              dimensionInputSelectionLockedRef.current = true;
-              void selectSketchDimensionRef.current(dimensionDrag.dimensionId);
-              setIsDimensionEditorOpen(true);
-            } else {
-              suppressNextDimensionEditorOpenRef.current = true;
-              setIsDimensionEditorOpen(false);
-              void selectSketchDimensionRef.current(dimensionDrag.dimensionId);
-            }
-          }
-          return;
-        }
+      const dimensionDragResult = finishDimensionLabelDragPointerUp();
+      if (dimensionDragResult === "consumed") {
+        return;
       }
 
       // --- Endpoint drag finalize ---
-      if (endpointDragRef.current) {
-        const drag = endpointDragRef.current;
-        const dx = event.clientX - drag.startClientX;
-        const dy = event.clientY - drag.startClientY;
-
-        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Use the core's snap result if available — avoids overriding
-          // the constrained position with raw mouse coords.
-          const snapResult = dragSnapResultRef.current;
-          if (snapResult) {
-            void updateSketchPointRef.current(
-              drag.pointId,
-              snapResult.snapX,
-              snapResult.snapY,
-            );
-          } else {
-            const rawPoint = resolveSketchPlanePoint(
-              event,
-              renderer,
-              camera,
-              activeSketchPlaneIdRef.current,
-              activeSketchPlaneFrameRef.current,
-            );
-            if (rawPoint) {
-              void updateSketchPointRef.current(
-                drag.pointId,
-                rawPoint.local[0],
-                rawPoint.local[1],
-              );
-            }
-          }
-        }
-
-        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Drag was committed — keep the preview alive until the next
-          // viewport rebuild arrives so the entity doesn't flicker back
-          // to its old position for one frame.
-          pendingEndpointCommitRef.current = true;
-        } else {
-          endpointDragRef.current = null;
-          clearDragPreviewLines();
-          setConstraintPreview(null);
-          dragCursorRef.current = null;
-        }
-        controls.enabled = true;
-        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
-        setSketchSnapLabel(null);
-        setHoveredSketchEntity(null);
-        setHoveredSketchPoint(null);
-
-        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-          // Drag was committed — consume the event.
-          pointerDown = null;
-          return;
-        }
-        // Fall through: treat as a click.
-        // Restore pointerDown so the click-handling code below runs.
-        // (pointerDown was nulled during endpoint-drag setup in pointerDown.)
-        pointerDown = { x: event.clientX, y: event.clientY };
+      const endpointDragResult = finishEndpointDragPointerUpFromViewport(event);
+      if (endpointDragResult === "consumed") {
+        return;
       }
 
       // -- cube-area click ---------------------------------------------
-      if (viewCubeDraggingRef.current) {
-        viewCubeDraggingRef.current = false;
-        const dragStart = viewCubeDragStartRef.current;
-        viewCubeDragStartRef.current = null;
-
-        // If it was a click (minimal drag), snap camera
-        if (
-          dragStart &&
-          Math.abs(event.clientX - dragStart.x) <= 4 &&
-          Math.abs(event.clientY - dragStart.y) <= 4
-        ) {
-          const cubeGroup = viewCubeGroupRef.current;
-          const cubeCam = viewCubeCameraRef.current;
-          const cubeRaycaster = viewCubeRaycasterRef.current;
-          if (cubeGroup && cubeCam && cubeRaycaster) {
-            const cubeDpr = renderer.getPixelRatio();
-            const cubeCanvasRect = renderer.domElement.getBoundingClientRect();
-            const canvasWidth = renderer.domElement.width;
-            const canvasHeight = renderer.domElement.height;
-            const rect = getCubeViewportRect(canvasWidth, canvasHeight, cubeDpr);
-            const glX = (event.clientX - cubeCanvasRect.left) * cubeDpr;
-            const glY = canvasHeight - (event.clientY - cubeCanvasRect.top) * cubeDpr;
-            const ndcX = ((glX - rect.x) / rect.width) * 2 - 1;
-            const ndcY = ((glY - rect.y) / rect.height) * 2 - 1;
-            cubeRaycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cubeCam);
-            const hit = raycastViewCube(cubeRaycaster, cubeGroup);
-            if (hit) {
-              if (hit.type === "rotation_arrow") {
-                rotateCameraAroundCurrentView(-hit.direction as -1 | 1);
-                return;
-              }
-              const direction = getCubeHitTargetDirection(hit);
-              const targetUp = getQuantizedCubeUp(direction, camera.up);
-              const distance = camera.position.distanceTo(controls.target);
-              const targetPos = controls.target.clone().add(
-                direction.multiplyScalar(distance),
-              );
-              viewCubeAnimStartPosRef.current.copy(camera.position);
-              viewCubeAnimTargetPosRef.current.copy(targetPos);
-              viewCubeAnimStartUpRef.current.copy(camera.up).normalize();
-              viewCubeAnimTargetUpRef.current.copy(targetUp);
-              viewCubeAnimStartRef.current = performance.now();
-              viewCubeAnimatingRef.current = true;
-              // controls.enabled stays false (already set on pointerDown)
-            } else {
-              controls.enabled = true;
-            }
-          }
-        }
+      if (finishViewCubePointerUpFromViewport(event) === "consumed") {
         return;
       }
 
@@ -9735,18 +4646,15 @@ const currentGridSpacingRef = useRef(10);
       const deltaY = Math.abs(event.clientY - pointerDown.y);
       pointerDown = null;
 
-      if (draftStartedOnPointerDownRef.current) {
-        draftStartedOnPointerDownRef.current = false;
-
-        if (deltaX > 4 || deltaY > 4) {
-          const field = draftDimensionSessionRef.current?.activeField;
-          if (field) {
-            window.requestAnimationFrame(() => {
-              draftDimensionInputRefs.current[field]?.focus();
-              draftDimensionInputRefs.current[field]?.select();
-            });
-          }
-        }
+      if (
+        finishDraftStartedPointerUp({
+          deltaX,
+          deltaY,
+          draftStartedOnPointerDownRef,
+          draftDimensionSessionRef,
+          draftDimensionInputRefs,
+        })
+      ) {
         return;
       }
 
@@ -9759,585 +4667,73 @@ const currentGridSpacingRef = useRef(10);
         const additiveSelection =
           event.shiftKey || event.ctrlKey || event.metaKey;
         if (
-          activeSketchToolRef.current === "project" &&
-          hit?.kind === "sketch_profile"
+          handleActiveSketchPointerUpTool({
+            activeSketchTool: activeSketchToolRef.current,
+            hit: hit as ActiveSketchSelectHit,
+            additiveSelection,
+            planeId: activeSketchPlaneId,
+            planeFrame: activeSketchPlaneFrameRef.current,
+            sketch: sketchLinesRef.current,
+            armedSketchConstraint: armedSketchConstraintRef.current,
+            mirrorFocusedSlot: mirrorFocusedSlotRef.current,
+            inactiveSketchEntityPickEnabled:
+              inactiveSketchEntityPickEnabledRef.current,
+            sketchEntityObjectById: sketchEntityObjectByIdRef.current,
+            sketchPointObjects: sketchPointObjectsRef.current,
+            resolveFilletPoint: () => {
+              const filletRawPoint = resolveSketchPlanePoint(
+                event,
+                renderer,
+                camera,
+                activeSketchPlaneId,
+                activeSketchPlaneFrame,
+              );
+              return filletRawPoint
+                ? resolveSnappedSketchPoint(filletRawPoint)
+                : null;
+            },
+            selectSketchProfile: selectSketchProfileRef.current,
+            selectVertex: selectVertexRef.current,
+            selectEdge: selectEdgeRef.current,
+            selectFace: selectFaceRef.current,
+            trimSketchEntity: trimSketchEntityRef.current,
+            mirrorEntityPick: mirrorEntityPickRef.current,
+            selectSketchEntity: selectSketchEntityRef.current,
+            pickSketchPoint: pickSketchPointRef.current,
+            handleDimensionClick,
+            setSelectedConstraint,
+            paintSketchEntityMaterials,
+            paintSketchPointMaterials,
+            addMessage,
+            addSketchFillet: addSketchFilletRef.current,
+            pendingDimensionPlacement: pendingDimensionPlacementRef.current,
+            pendingDimensionSourceId: pendingDimSourceEntityIdRef.current,
+            pendingDimensionId: pendingDimensionIdRef.current,
+            getDimensionFirstEntityId: () => dimensionToolFirstLineRef.current,
+            getDimensionFirstPoint: () => dimensionToolFirstPointRef.current,
+            clearDimensionFirstPick: clearDimensionToolFirstPick,
+            clearDimensionFirstEntity: clearDimensionToolFirstEntity,
+            clearPendingDimensionPlacement: clearPendingDimensionPlacement,
+            stageDimensionFirstEntity: (entityId) => {
+              dimensionToolFirstLineRef.current = entityId;
+              setDimensionToolFirstLine(entityId);
+            },
+            stageDimensionFirstPoint: (point) => {
+              dimensionToolFirstPointRef.current = point;
+            },
+            deleteSketchDimension: (dimensionId) => {
+              void deleteSketchDimensionRef.current(dimensionId);
+            },
+            createDimensionAngleOrDistance: dimCreateAngleOrDistance,
+            createDimensionPointDistance: dimCreatePointDistance,
+            createDimensionLine: dimCreateLine,
+            createDimensionCircle: dimCreateCircle,
+            selectDimensionCircle: dimSelectCircle,
+            createDimensionPolygon: dimCreatePolygon,
+            selectDimensionPolygon: dimSelectPolygon,
+            selectDimensionLine: dimSelectLine,
+          })
         ) {
-          void selectSketchProfileRef.current(hit.id, false);
-          return;
-        }
-        // Trim tool. Intercept entity clicks. Uses the 3D world-space
-        // hit point from the raycaster, then projects it onto the sketch
-        // plane frame to get consistent sketch-local coordinates that
-        // match the core's line storage.
-        if (
-          activeSketchToolRef.current === "trim" &&
-          hit?.kind === "sketch_entity" &&
-          (hit.entityKind === "line" || hit.entityKind === "circle" || hit.entityKind === "arc") &&
-          "worldPoint" in hit
-        ) {
-          const wp = hit.worldPoint as readonly [number, number, number];
-          const frame = activeSketchPlaneFrameRef.current;
-          // Use the same sketch-local convention as resolveSketchPlanePoint
-          // so coordinates land in the same space as the line data.
-          let localX: number, localY: number;
-          if (frame) {
-            const dx = wp[0] - frame.origin.x;
-            const dy = wp[1] - frame.origin.y;
-            const dz = wp[2] - frame.origin.z;
-            localX = dx * frame.x_axis.x + dy * frame.x_axis.y + dz * frame.x_axis.z;
-            localY = dx * frame.y_axis.x + dy * frame.y_axis.y + dz * frame.y_axis.z;
-          } else if (activeSketchPlaneId === "ref-plane-xy") {
-            localX = wp[0];
-            localY = wp[2];
-          } else if (activeSketchPlaneId === "ref-plane-yz") {
-            localX = wp[1];
-            localY = wp[2];
-          } else {
-            localX = wp[0];
-            localY = wp[1];
-          }
-
-          console.log("[trim] hit_world=[", wp[0].toFixed(1), wp[1].toFixed(1), wp[2].toFixed(1),
-                      "] local=[", localX.toFixed(1), localY.toFixed(1), "]");
-
-          void trimSketchEntityRef.current?.(
-            hit.id,
-            localX,
-            localY,
-          );
-          return;
-        }
-
-        if (activeSketchToolRef.current === "select") {
-          // Mirror tool takes priority over the rest of the
-          // selection / armed-constraint flow when one of its
-          // slots is focused. We route line and circle hits to
-          // the parent's mirror handler; everything else falls
-          // through (so the user can still rotate the camera,
-          // edit dimensions, etc. with the panel open).
-          if (
-            mirrorFocusedSlotRef.current &&
-            hit?.kind === "sketch_entity" &&
-            !hit.isProjected &&
-            (hit.entityKind === "line" || hit.entityKind === "circle")
-          ) {
-            void mirrorEntityPickRef.current(hit.id, hit.entityKind);
-            return;
-          }
-
-          if (
-            armedSketchConstraintRef.current &&
-            armedSketchConstraintRef.current.kind !== "coincident" &&
-            hit?.kind === "sketch_entity" &&
-            !hit.isProjected &&
-            hit.entityKind === "line"
-          ) {
-            void selectSketchEntityRef.current(hit.id, false);
-            return;
-          }
-
-          if (hit?.kind === "sketch_point") {
-            void pickSketchPointRef.current(
-              hit.id,
-              hit.pointKind,
-              additiveSelection,
-            );
-            return;
-          }
-
-          if (hit?.kind === "sketch_dimension") {
-            handleDimensionClick(hit.id);
-            return;
-          }
-
-          if (hit?.kind === "sketch_constraint") {
-            // When coincident is armed, the constraint badge sits on
-            // top of the point sphere. Skip the badge hit so the
-            // point-picking logic below can find the point.
-            if (armedSketchConstraintRef.current?.kind !== "coincident") {
-              setSelectedConstraint({
-                kind: hit.constraintKind,
-                entityId: hit.entityId,
-                relatedEntityId: hit.relatedEntityId,
-              });
-              // Flash the entity this constraint sits on
-              paintSketchEntityMaterials();
-              paintSketchPointMaterials();
-              // Highlight will update via the useEffect below
-              return;
-            }
-            // Fall through to point/entity handling
-          }
-
-          if (
-            inactiveSketchEntityPickEnabledRef.current &&
-            hit?.kind === "sketch_entity" &&
-            (hit.entityKind === "line" || hit.entityKind === "arc")
-          ) {
-            void selectSketchEntityRef.current(hit.id, false);
-            return;
-          }
-
-          if (hit?.kind === "sketch_profile") {
-            void selectSketchProfileRef.current(
-              hit.id,
-              event.shiftKey || event.ctrlKey || event.metaKey,
-            );
-            return;
-          }
-
-          if (hit?.kind === "sketch_entity") {
-            // When coincident is armed, a line click that didn't hit a
-            // point sphere should still count: find the nearest endpoint
-            // of the clicked line and use it as the coincident point.
-            if (
-              armedSketchConstraintRef.current?.kind === "coincident" &&
-              hit.entityKind === "line"
-            ) {
-              const lineObj = sketchEntityObjectByIdRef.current.get(hit.id);
-              if (lineObj instanceof THREE.Line) {
-                const geom = lineObj.geometry;
-                const pos = geom.getAttribute("position");
-                if (pos && pos.count >= 2) {
-                  const ax = pos.getX(0); const ay = pos.getY(0); const az = pos.getZ(0);
-                  const bx = pos.getX(1); const by = pos.getY(1); const bz = pos.getZ(1);
-                  // Find the sketch point closest to either endpoint
-                  let bestMesh: THREE.Mesh | undefined;
-                  let bestD = Infinity;
-                  for (const pm of sketchPointObjectsRef.current) {
-                    const pp = new THREE.Vector3();
-                    pm.getWorldPosition(pp);
-                    const d = Math.min(
-                      pp.distanceTo(new THREE.Vector3(ax, ay, az)),
-                      pp.distanceTo(new THREE.Vector3(bx, by, bz)),
-                    );
-                    if (d < bestD) { bestD = d; bestMesh = pm; }
-                  }
-                  if (bestMesh && bestD < 0.5) {
-                    const pointId = bestMesh.userData.sketchPointId as string | undefined;
-                    const pointKind = bestMesh.userData.sketchPointKind as
-                      | "endpoint" | "center" | "quadrant" | undefined;
-                    if (pointId && pointKind) {
-                      addMessage(`coincident-viewport: line-endpoint fallback ${pointId} (dist ${bestD.toFixed(3)}wu)`);
-                      void pickSketchPointRef.current(pointId, pointKind, additiveSelection);
-                      return;
-                    }
-                  }
-                }
-              }
-            }
-            void selectSketchEntityRef.current(hit.id, additiveSelection);
-          }
-          return;
-        }
-
-        // Dimension tool. Circle picks open the diameter editor.
-        // Line picks are staged: the first line opens its length dim,
-        // and a second different line creates/selects an angle dim.
-        // Enter confirms the focused input; Escape cancels via the
-        // global sketch key path.
-        if (activeSketchToolRef.current === "dimension") {
-          if (hit?.kind === "sketch_dimension") {
-            dimensionToolFirstLineRef.current = null;
-            setDimensionToolFirstLine(null);
-            dimensionToolFirstPointRef.current = null;
-            handleDimensionClick(hit.id);
-            return;
-          }
-          // --- Regroup check ---
-          // If a single-entity dimension was just created (pending) and the
-          // user clicks a different entity, delete the pending dim and stage
-          // the source entity for a two-entity/point dimension.
-          if (
-            pendingDimensionPlacementRef.current &&
-            pendingDimSourceEntityIdRef.current
-          ) {
-            const pendingSourceId = pendingDimSourceEntityIdRef.current;
-            let clickedEntityId: string | null = null;
-            let clickedIsPoint = false;
-            if (hit?.kind === "sketch_entity") {
-              clickedEntityId = hit.id;
-            } else if (hit?.kind === "sketch_point") {
-              clickedIsPoint = true;
-              const lm = hit.id.match(/^point-(line-\d+)/);
-              if (lm) { clickedEntityId = lm[1]; }
-              if (!clickedEntityId) {
-                const cm = hit.id.match(/^point-(circle-\d+)/);
-                if (cm) { clickedEntityId = cm[1]; }
-              }
-              if (!clickedEntityId) {
-                const pm = hit.id.match(/^point-(polygon-\d+)/);
-                if (pm) { clickedEntityId = pm[1]; }
-              }
-            }
-            if (clickedEntityId && clickedEntityId !== pendingSourceId) {
-              // Regroup: delete the hastily-created dimension
-              const dimId = pendingDimensionIdRef.current;
-              if (dimId) {
-                void deleteSketchDimensionRef.current(dimId);
-              }
-              pendingDimensionIdRef.current = null;
-              pendingDimSourceEntityIdRef.current = null;
-              pendingDimensionPlacementRef.current = false;
-              // Stage the source entity so the two-entity handler below
-              // picks it up as the "first pick" in a two-entity flow.
-              dimensionToolFirstLineRef.current = pendingSourceId;
-              setDimensionToolFirstLine(pendingSourceId);
-              // If the click was on a sketch point, route through the
-              // point-distance path instead of entity handler.
-              if (clickedIsPoint) {
-                dimensionToolFirstPointRef.current = { id: hit!.id, x: 0, y: 0 };
-              }
-              // Fall through to the entity handler below which will see
-              // firstEntityId != clickedEntityId and call
-              // dimCreateAngleOrDistance / dimCreatePointDistance.
-            }
-          }
-          // Point_distance mode: on the *second* click of a two-pick
-          // sequence, restore the staged entity so the existing handler
-          // below processes angle / parallel-distance.  First clicks
-          // fall through untouched so the existing handler creates the
-          // unary dimension (line length / circle radius) and stages the
-          // entity for a possible follow-up pick.
-          if (
-            hit?.kind === "sketch_entity" || hit?.kind === "sketch_point"
-          ) {
-            let entityId: string | null = null;
-            if (hit.kind === "sketch_entity") {
-              entityId = hit.id;
-            } else if (hit.kind === "sketch_point") {
-              const match = hit.id.match(/^point-(line-\d+)/);
-              if (match) entityId = match[1];
-            }
-            if (!entityId) {
-              // Point didn't resolve to a known entity — for
-              // circle-center points, try the circle pattern.
-              if (hit?.kind === "sketch_point") {
-                const circleMatch = hit.id.match(/^point-(circle-\d+)/);
-                if (circleMatch) entityId = circleMatch[1];
-              }
-              if (!entityId) return;
-            }
-            const firstEntityId = dimensionToolFirstLineRef.current;
-            if (firstEntityId) {
-              if (firstEntityId === entityId) {
-                dimensionToolFirstLineRef.current = null;
-                setDimensionToolFirstLine(null);
-                return;
-              }
-              dimensionToolFirstLineRef.current = firstEntityId;
-              setDimensionToolFirstLine(firstEntityId);
-              // Fall through to sketch_entity handler.
-            }
-            // First click with no staged entity: fall through to the
-            // existing handler which creates the unary dimension and
-            // stages the entity.
-          }
-          if (hit?.kind === "sketch_entity") {
-            if (hit.isProjected) {
-              return;
-            }
-            const firstEntityId = dimensionToolFirstLineRef.current;
-            const firstPoint = dimensionToolFirstPointRef.current;
-            if (firstEntityId && firstEntityId !== hit.id) {
-              dimensionToolFirstLineRef.current = null;
-              setDimensionToolFirstLine(null);
-              // Delete the single-entity dimension created for the first
-              // pick so it doesn't persist alongside the two-entity dim.
-              // Dimension IDs carry the entity kind prefix twice
-              // (e.g. dim-line-line-0, dim-circle-circle-1).
-              const firstDimId =
-                firstEntityId.startsWith("line-")
-                  ? `dim-line-${firstEntityId}`
-                  : firstEntityId.startsWith("circle-")
-                    ? `dim-circle-${firstEntityId}`
-                    : firstEntityId.startsWith("polygon-")
-                      ? `dim-polygon-${firstEntityId}`
-                      : null;
-              if (firstDimId) {
-                void deleteSketchDimensionRef.current(firstDimId);
-              }
-              // When the first pick was a point (line endpoint, circle
-              // center, etc.), create a point-to-point distance to the
-              // second entity's reference point instead of an
-              // entity-to-entity distance.
-              if (firstPoint) {
-                dimensionToolFirstPointRef.current = null;
-                if (hit.entityKind === "circle") {
-                  dimCreatePointDistance(
-                      firstPoint.id, `point-circle-${hit.id}-center`);
-                  return;
-                }
-                if (hit.entityKind === "polygon") {
-                  dimCreatePointDistance(
-                      firstPoint.id, `point-polygon-${hit.id}-center`);
-                  return;
-                }
-                // For line bodies, fall through to entity-to-entity
-                // (e.g. line_line_distance or angle).
-              }
-              dimCreateAngleOrDistance(firstEntityId, hit.id);
-              return;
-            }
-            // First click on this entity (or re-click on the staged one).
-            // When a point was staged from the same line (user clicked
-            // one endpoint, now re-clicks the line body), treat it as a
-            // line-length dimension instead of creating a duplicate.
-            if (firstPoint && hit.entityKind === "line") {
-              const m = firstPoint.id.match(/^point-(line-\d+)/);
-              if (m && m[1] === hit.id) {
-                dimensionToolFirstLineRef.current = null;
-                setDimensionToolFirstLine(null);
-                dimensionToolFirstPointRef.current = null;
-                dimCreateLine(hit.id);
-                return;
-              }
-            }
-            // Re-click on a staged circle with no radius dimension yet:
-            // create the radius dimension now.
-            if (firstPoint && firstEntityId === hit.id &&
-                hit.entityKind === "circle") {
-              const exists =
-                sketchLinesRef.current?.dimensions.some(
-                  (d) => d.dimension_id === `dim-circle-${hit.id}`,
-                ) ?? false;
-              if (!exists) {
-                dimensionToolFirstLineRef.current = null;
-                setDimensionToolFirstLine(null);
-                dimensionToolFirstPointRef.current = null;
-                dimCreateCircle(hit.id, "");
-                return;
-              }
-            }
-            // Create or select the unary dimension, stage for two-entity flow.
-            if (hit.entityKind === "circle") {
-              const exists =
-                sketchLinesRef.current?.dimensions.some(
-                  (d) => d.dimension_id === `dim-circle-${hit.id}`,
-                ) ?? false;
-              if (exists) {
-                // Already has a radius dimension — select it and
-                // stage for two-entity flow.
-                dimSelectCircle(hit.id);
-              } else {
-                // First circle click creates the diameter dimension, then
-                // stages the circle for relation previews while the label is
-                // being placed.
-                dimCreateCircle(hit.id, "");
-              }
-              return;
-            }
-            // Polygon
-            if (hit.entityKind === "polygon") {
-              const exists =
-                sketchLinesRef.current?.dimensions.some(
-                  (d) => d.dimension_id === `dim-polygon-${hit.id}`,
-                ) ?? false;
-              if (exists) {
-                dimSelectPolygon(hit.id);
-              } else {
-                dimCreatePolygon(hit.id);
-              }
-              return;
-            }
-            // Line
-            const exists =
-              sketchLinesRef.current?.dimensions.some(
-                (d) => d.dimension_id === `dim-line-${hit.id}`,
-              ) ?? false;
-            if (exists) {
-              dimSelectLine(hit.id);
-            } else {
-              dimCreateLine(hit.id);
-            }
-            return;
-          }
-          // Sketch-point hit: route to point-to-point distance or entity
-          // dimension based on whether a first point is already staged.
-          // Without this, clicking near a shared chained-line endpoint
-          // hits the point sphere before the line, and the dimension
-          // tool silently ignores it.
-          if (hit?.kind === "sketch_point") {
-            const firstPoint = dimensionToolFirstPointRef.current;
-            if (firstPoint && firstPoint.id !== hit.id) {
-              // Two-point flow. If both points belong to the same
-              // line (user clicked both endpoints), create a
-              // line-length dimension. Otherwise point-to-point.
-              const resolveLine = (pid: string) => {
-                const m = pid.match(/^point-(line-\d+)/);
-                return m ? m[1] : null;
-              };
-              const lineA = resolveLine(firstPoint.id);
-              const lineB = resolveLine(hit.id);
-              if (lineA && lineA === lineB) {
-                dimensionToolFirstLineRef.current = null;
-                setDimensionToolFirstLine(null);
-                dimensionToolFirstPointRef.current = null;
-                dimCreateLine(lineA);
-                return;
-              }
-              dimensionToolFirstLineRef.current = null;
-              setDimensionToolFirstLine(null);
-              dimensionToolFirstPointRef.current = null;
-              dimCreatePointDistance(firstPoint.id, hit.id);
-              return;
-            }
-            // First point pick — stage it, then resolve to an entity
-            // so the next click on an entity body works.
-            dimensionToolFirstPointRef.current = {
-              id: hit.id, x: 0, y: 0,
-            };
-            // Resolve point → entity for the unary-dimension path
-            let resolvedId: string | null = null;
-            const lm = hit.id.match(/^point-(line-\d+)/);
-            if (lm) { resolvedId = lm[1]; }
-            const cm = hit.id.match(/^point-(circle-\d+)/);
-            if (cm) { resolvedId = cm[1]; }
-            const pm = hit.id.match(/^point-(polygon-\d+)/);
-            if (pm) { resolvedId = pm[1]; }
-            if (!resolvedId) {
-              dimensionToolFirstLineRef.current = null;
-              setDimensionToolFirstLine(null);
-              return;
-            }
-            // Stage the resolved entity so the next click can create
-            // a two-entity dimension. Don't create a single-entity dim yet
-            // — point clicks always stage and wait for the next action.
-            dimensionToolFirstLineRef.current = resolvedId;
-            setDimensionToolFirstLine(resolvedId);
-            return;
-          }
-          // Click in empty space: accept pending dimension if one is open,
-          // or cancel staging if a two-entity pick is in progress.
-          if (pendingDimensionPlacementRef.current) {
-            // Accept the current dimension as-is — it stays visible.
-            // Clear pending refs so the regroup path doesn't fire on next click.
-            pendingDimensionIdRef.current = null;
-            pendingDimSourceEntityIdRef.current = null;
-            pendingDimensionPlacementRef.current = false;
-          }
-          dimensionToolFirstLineRef.current = null;
-          setDimensionToolFirstLine(null);
-          dimensionToolFirstPointRef.current = null;
-          return;
-        }
-
-        // Sketch fillet tool. Clicks must land on a sketch point that
-        // is shared by exactly two non-construction sketch lines and
-        // is not already filleted. Anything else is a no-op (the
-        // user can switch back to Select if they want to inspect).
-        // Eligibility is resolved against the *current* sketch
-        // snapshot in `sketchLinesRef`, not the document store, so
-        // it stays in sync with what the user just sees.
-        if (activeSketchToolRef.current === "fillet") {
-          const filletRawPoint = resolveSketchPlanePoint(
-            event,
-            renderer,
-            camera,
-            activeSketchPlaneId,
-            activeSketchPlaneFrame,
-          );
-          if (!filletRawPoint) {
-            return;
-          }
-          const filletSnapped = resolveSnappedSketchPoint(filletRawPoint);
-          const params = sketchLinesRef.current;
-          if (!params) {
-            return;
-          }
-
-          // Find the sketch point id that matches the snapped click
-          // location within `kCoincidentTolerance` (same fudge the
-          // core uses). We don't rely on `endpointHostLineId` from
-          // the snap candidate because a corner is by definition
-          // shared by *two* lines and the snap only carries one
-          // host id.
-          const tolerance = 0.05;
-          const cornerPoint = params.points.find(
-            (point) =>
-              Math.hypot(
-                point.x - filletSnapped.local[0],
-                point.y - filletSnapped.local[1],
-              ) <= tolerance,
-          );
-          if (!cornerPoint) {
-            return;
-          }
-
-          // Lines that reference this point as an endpoint and are
-          // not construction-only (construction lines don't
-          // contribute to closed loops, so filleting them would
-          // produce nothing useful).
-          const incidentLines = params.lines.filter(
-            (line) =>
-              !line.is_construction &&
-              (line.start_point_id === cornerPoint.point_id ||
-                line.end_point_id === cornerPoint.point_id),
-          );
-          if (incidentLines.length !== 2) {
-            return;
-          }
-
-          // Reject corners that already host a fillet referencing
-          // either of the same lines — same guard the core enforces
-          // in `add_sketch_fillet`. Surfaced here too so the click
-          // doesn't bother round-tripping a doomed command.
-          const alreadyFilleted = (params.fillets ?? []).some((fillet) =>
-            incidentLines.some(
-              (line) =>
-                (fillet.line_a_id === line.line_id ||
-                  fillet.line_b_id === line.line_id) &&
-                (fillet.trim_a_point_id === cornerPoint.point_id ||
-                  fillet.trim_b_point_id === cornerPoint.point_id),
-            ),
-          );
-          if (alreadyFilleted) {
-            return;
-          }
-
-          // The session radius lives in App's panel state; the
-          // viewport only signals which corner was picked. App
-          // dispatches `add_sketch_fillet` with whatever radius
-          // the panel is showing at click time.
-          void addSketchFilletRef.current(
-            cornerPoint.point_id,
-            incidentLines[0].line_id,
-            incidentLines[1].line_id,
-          );
-          return;
-        }
-
-        // Modal Project tool. Clicks must land on a body face,
-        // edge, or vertex; we dispatch the matching selection
-        // callback (App.tsx intercepts those while the tool is
-        // active and turns them into `project_*_into_sketch`
-        // commands). Empty-space clicks and sketch-entity clicks
-        // are no-ops so the user can't accidentally start drafting
-        // a line: per the user's explicit request, the only valid
-        // action while Project is armed is "pick something to
-        // project". The tool stays armed across clicks.
-        if (activeSketchToolRef.current === "project") {
-          if (hit?.kind === "vertex") {
-            void selectVertexRef.current(hit.id, /*additive=*/ false);
-            return;
-          }
-          if (hit?.kind === "edge") {
-            void selectEdgeRef.current(hit.id, /*additive=*/ false);
-            return;
-          }
-          if (hit?.kind === "face") {
-            void selectFaceRef.current(hit.id);
-            return;
-          }
-          // No body geometry under the cursor — swallow the click
-          // so we don't drop into the line-draft branch below.
-          return;
-        }
-
-        // Trim tool: only sketch-entity clicks (handled above)
-        // produce a trim. Empty-space clicks and non-entity clicks
-        // are no-ops so the tool stays armed.
-        if (activeSketchToolRef.current === "trim") {
           return;
         }
 
@@ -10365,510 +4761,81 @@ const currentGridSpacingRef = useRef(10);
         );
         setSketchSnapLabel(sketchPoint.snapLabel);
 
-        if (!lineDraftStartRef.current) {
-          lineDraftStartRef.current = sketchPoint.local;
-          // Whole-line midpoint snaps (t==0.5) get a true
-          // `midpoint_anchor`; sub-segment midpoints (t!=0.5,
-          // e.g. quarter-line snaps after a sibling line has split
-          // the host) get a parametric `point_line_anchor` instead
-          // — same machinery as the line-body snap. The two
-          // branches stay mutually exclusive: the snap resolver
-          // can only return one host per click.
-          const midpointHostLineId = sketchPoint.snapMidpointHostLineId;
-          const midpointT = sketchPoint.snapMidpointT ?? null;
-          const isWholeLineMidpoint =
-            midpointHostLineId !== null &&
-            midpointHostLineId !== undefined &&
-            midpointT !== null &&
-            Math.abs(midpointT - 0.5) < 1e-9;
-          draftStartMidpointHostRef.current = isWholeLineMidpoint
-            ? (midpointHostLineId ?? null)
-            : null;
-          // If the start snapped to an existing line's endpoint, arm
-          // the perpendicular-foot snap for the rest of the draft.
-          // (The midpoint and endpoint hosts are independent: a
-          // single click can only be one or the other since they
-          // come from distinct snap candidates.)
-          draftStartEndpointHostRef.current =
-            sketchPoint.snapEndpointHostLineId ?? null;
-          // Line-body snap captures the host + parametric position
-          // so the post-add effect can anchor the new line's start
-          // point to the host once it lands. We funnel sub-segment
-          // midpoint snaps through the same channel: they're just
-          // discrete-t projections onto the line's body.
-          if (
-            !isWholeLineMidpoint &&
-            midpointHostLineId &&
-            midpointT !== null
-          ) {
-            draftStartLineBodyHostRef.current = {
-              lineId: midpointHostLineId,
-              t: midpointT,
-            };
-          } else {
-            draftStartLineBodyHostRef.current =
-              sketchPoint.snapLineBodyHostLineId &&
-              typeof sketchPoint.snapLineBodyT === "number"
-                ? {
-                    lineId: sketchPoint.snapLineBodyHostLineId,
-                    t: sketchPoint.snapLineBodyT,
-                  }
-                : null;
-          }
-          return;
-        }
-
-	        const [startX, startY] = lineDraftStartRef.current;
-	        const committedEnd =
-	          draftDimensionSessionRef.current &&
-	          isDraftDimensionTool(activeSketchToolRef.current)
-	            ? draftDimensionSessionRef.current.current
-	            : sketchPoint.local;
-	        // Prevent committing a degenerate zero-length line (e.g. when
-	        // double-clicking at the same endpoint to break the chain).
-	        if (Math.abs(committedEnd[0] - startX) < 0.01 &&
-	            Math.abs(committedEnd[1] - startY) < 0.01) {
-	          lineDraftStartRef.current = null;
-	          clearDraftDimensionSession();
-	          return;
-	        }
-	        clearPreviewLine();
-	        clearPreviewCircle();
-	        clearPreviewArc();
-	        clearPreviewDimension();
-
-        if (activeSketchToolRef.current === "arc") {
-          // Three-click arc placement. The first click landed in the
-          // `!lineDraftStartRef.current` branch and stored the
-          // start point; the second click captures the end point and
-          // returns; the third click reads the anchor and dispatches.
-          if (!arcSecondPointRef.current) {
-            arcSecondPointRef.current = sketchPoint.local;
-            return;
-          }
-          const [secondX, secondY] = arcSecondPointRef.current;
-          const [thirdX, thirdY] = sketchPoint.local;
-          arcSecondPointRef.current = null;
-          lineDraftStartRef.current = null;
-          // Click order differs by mode. In `three_point` the user
-          // clicks (start, end, point-on-arc), which lines up 1:1
-          // with the IPC's (start, end, anchor) params. In
-          // `center_start_end` the user clicks (center, start, end)
-          // — center is the *third* IPC param, so we have to
-          // permute. The preview rendering above already follows
-          // the same per-mode interpretation; without the permute
-          // here the committed arc lands on the opposite side from
-          // what the preview showed because the core then treats
-          // click 1 (center) as if it were the arc's start.
-          const mode = arcToolModeRef.current;
-          if (mode === "three_point") {
-            void addSketchArcRef.current(
-              startX,
-              startY,
-              secondX,
-              secondY,
-              thirdX,
-              thirdY,
-              mode,
-              sketchToolConstructionRef.current,
-            );
-          } else {
-            // center_start_end: IPC params are
-            // (start=click2, end=click3, anchor=click1).
-            void addSketchArcRef.current(
-              secondX,
-              secondY,
-              thirdX,
-              thirdY,
-              startX,
-              startY,
-              mode,
-              sketchToolConstructionRef.current,
-            );
-          }
-          return;
-        }
-
-        if (activeSketchToolRef.current === "rectangle") {
-          const mode = rectangleToolModeRef.current;
-          // 3-point rectangle: click 1 = corner, click 2 = second corner
-          // of first edge, click 3 = perpendicular offset point.
-          if (mode === "three_point") {
-            if (!rectSecondPointRef.current) {
-              rectSecondPointRef.current = [committedEnd[0], committedEnd[1]];
-              return;
-            }
-            const [secondX, secondY] = rectSecondPointRef.current;
-            rectSecondPointRef.current = null;
-            lineDraftStartRef.current = null;
-            scheduleDimensionDeletion("rectangle");
-            scheduleDraftDimensionExpressionUpdate("rectangle");
-            clearDraftDimensionSession();
-            suppressDimensionEditorAfterSketchCommit();
-            const p1x = startX;
-            const p1y = startY;
-            const p2x = secondX;
-            const p2y = secondY;
-            const p3x = committedEnd[0];
-            const p3y = committedEnd[1];
-            const dx = p2x - p1x;
-            const dy = p2y - p1y;
-            const edgeLen = Math.hypot(dx, dy);
-            if (edgeLen < 1e-9) return;
-            const nx = -dy / edgeLen;
-            const ny = dx / edgeLen;
-            const offset = nx * (p3x - p1x) + ny * (p3y - p1y);
-            const cx = p1x + nx * offset;
-            const cy = p1y + ny * offset;
-            const c2x = p2x + nx * offset;
-            const c2y = p2y + ny * offset;
-            const minX = Math.min(p1x, p2x, cx, c2x);
-            const minY = Math.min(p1y, p2y, cy, c2y);
-            const maxX = Math.max(p1x, p2x, cx, c2x);
-            const maxY = Math.max(p1y, p2y, cy, c2y);
-            void addSketchRectangleRef.current(
-              minX,
-              minY,
-              maxX,
-              maxY,
-              sketchToolConstructionRef.current,
-            );
-            return;
-          }
-          lineDraftStartRef.current = null;
-          scheduleDimensionDeletion("rectangle");
-          scheduleDraftDimensionExpressionUpdate("rectangle");
-          clearDraftDimensionSession();
-          suppressDimensionEditorAfterSketchCommit();
-          const rectStartX =
-            mode === "center_point"
-              ? 2 * startX - committedEnd[0]
-              : startX;
-          const rectStartY =
-            mode === "center_point"
-              ? 2 * startY - committedEnd[1]
-              : startY;
-          void addSketchRectangleRef.current(
-            rectStartX,
-            rectStartY,
-            committedEnd[0],
-            committedEnd[1],
-            sketchToolConstructionRef.current,
-          );
-          return;
-        }
-
-        if (activeSketchToolRef.current === "circle") {
-          const circleMode = circleToolModeRef.current;
-          // 3-point circle: click 1 = point on circle, click 2 = point on
-          // circle, click 3 = third point on circle → compute circumcenter.
-          if (circleMode === "three_point") {
-            if (!circleSecondPointRef.current) {
-              circleSecondPointRef.current = [committedEnd[0], committedEnd[1]];
-              return;
-            }
-            const [p2x, p2y] = circleSecondPointRef.current;
-            circleSecondPointRef.current = null;
-            lineDraftStartRef.current = null;
-            scheduleDimensionDeletion("circle");
-            scheduleDraftDimensionExpressionUpdate("circle");
-            clearDraftDimensionSession();
-            suppressDimensionEditorAfterSketchCommit();
-            const p1x = startX;
-            const p1y = startY;
-            const p3x = committedEnd[0];
-            const p3y = committedEnd[1];
-            // Circumcenter from three points using perpendicular bisectors
-            const d = 2 * (p1x * (p2y - p3y) + p2x * (p3y - p1y) + p3x * (p1y - p2y));
-            if (Math.abs(d) < 1e-9) return; // collinear
-            const ux = ((p1x*p1x + p1y*p1y)*(p2y - p3y) + (p2x*p2x + p2y*p2y)*(p3y - p1y) + (p3x*p3x + p3y*p3y)*(p1y - p2y)) / d;
-            const uy = ((p1x*p1x + p1y*p1y)*(p3x - p2x) + (p2x*p2x + p2y*p2y)*(p1x - p3x) + (p3x*p3x + p3y*p3y)*(p2x - p1x)) / d;
-            const radius = Math.hypot(ux - p1x, uy - p1y);
-            void addSketchCircleRef.current(
-              ux,
-              uy,
-              radius,
-              sketchToolConstructionRef.current,
-            );
-            return;
-          }
-          // Tangent modes: reserved for future core support.
-          if (circleMode === "tangent_two_lines" || circleMode === "tangent_three_lines") {
-            return;
-          }
-          lineDraftStartRef.current = null;
-          pendingCircleDimensionPlacementRef.current = {
-            fromCircleCount:
-              sketchFeature?.sketch_parameters?.circles.length ?? 0,
-            center: [startX, startY],
-            end: committedEnd,
-          };
-          scheduleDimensionDeletion("circle");
-          scheduleDraftDimensionExpressionUpdate("circle");
-          clearDraftDimensionSession();
-          suppressDimensionEditorAfterSketchCommit();
-          let cx = startX;
-          let cy = startY;
-          let radius = distanceBetweenPoints(
-            [startX, startY],
-            committedEnd,
-          );
-          if (circleMode === "two_point") {
-            cx = (startX + committedEnd[0]) / 2;
-            cy = (startY + committedEnd[1]) / 2;
-            radius = distanceBetweenPoints(
-              [startX, startY],
-              committedEnd,
-            ) / 2;
-          }
-          void addSketchCircleRef.current(
-            cx,
-            cy,
-            radius,
-            sketchToolConstructionRef.current,
-          );
-          return;
-        }
-
-        if (activeSketchToolRef.current === "polygon") {
-          lineDraftStartRef.current = null;
-          scheduleDimensionDeletion("polygon");
-          scheduleDraftDimensionExpressionUpdate("polygon");
-          clearDraftDimensionSession();
-          suppressDimensionEditorAfterSketchCommit();
-          void addSketchPolygonRef.current(
-            polygonSidesRef.current,
-            polygonToolModeRef.current,
-            startX,
-            startY,
-            committedEnd[0],
-            committedEnd[1],
-            sketchToolConstructionRef.current,
-          );
-          return;
-        }
-
-        // Capture both endpoints' midpoint hosts before the draft
-        // state advances, so the post-add effect can attach anchors
-        // to the just-created line. The baseline line count anchors
-        // the effect's match: it will fire only when the sketch's
-        // line count grows past `fromLineCount` by 1. Whole-line
-        // midpoints (t==0.5) → midpoint_anchor; sub-segment
-        // midpoints → point_line_anchor (handled below as part of
-        // the line-body anchor path).
-        const startHostLineId = draftStartMidpointHostRef.current;
-        const endMidpointT = sketchPoint.snapMidpointT ?? null;
-        const endIsWholeLineMidpoint =
-          sketchPoint.snapMidpointHostLineId &&
-          endMidpointT !== null &&
-          Math.abs(endMidpointT - 0.5) < 1e-9;
-        const endHostLineId = endIsWholeLineMidpoint
-          ? (sketchPoint.snapMidpointHostLineId ?? null)
-          : null;
-        if (startHostLineId || endHostLineId) {
-          pendingMidpointAnchorRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            startHostLineId,
-            endHostLineId,
-          };
-        }
-
-        // Capture pending perpendicular constraint when the cursor
-        // committed on the perpendicular ray of the start's host
-        // line. The post-add effect dispatches the constraint once
-        // the new line lands.
-        const perpHostLineId = sketchPoint.snapPerpendicularHostLineId;
-        if (perpHostLineId) {
-          pendingPerpendicularConstraintRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            hostLineId: perpHostLineId,
-          };
-        }
-
-        // Capture pending point-on-line anchor for either side that
-        // landed on a line body OR a sub-segment midpoint. The
-        // start-side host was stashed at the previous click (or
-        // chained from the last commit); the end-side comes
-        // straight from the current snap result. Sub-segment
-        // midpoints (t!=0.5) ride this same channel so they
-        // commit as parametric anchors.
-        const endIsSubSegmentMidpoint =
-          sketchPoint.snapMidpointHostLineId &&
-          endMidpointT !== null &&
-          !endIsWholeLineMidpoint;
-        const endLineBodyHost = endIsSubSegmentMidpoint
-          ? {
-              lineId: sketchPoint.snapMidpointHostLineId as string,
-              t: endMidpointT as number,
-            }
-          : sketchPoint.snapLineBodyHostLineId &&
-              typeof sketchPoint.snapLineBodyT === "number"
-            ? {
-                lineId: sketchPoint.snapLineBodyHostLineId,
-                t: sketchPoint.snapLineBodyT,
-              }
-            : null;
-        const startLineBodyHost = draftStartLineBodyHostRef.current;
-        if (startLineBodyHost || endLineBodyHost) {
-          pendingPointLineAnchorRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            startHost: startLineBodyHost,
-            endHost: endLineBodyHost,
-          };
-        }
-
-        // Capture pending axis lock so the post-add effect can
-        // dispatch a sticky `set_sketch_line_constraint` for the new
-        // line. Skipped when the line also has a perpendicular host
-        // — the solver rejects the combination.
-        if (sketchPoint.snapAxisLock && !perpHostLineId) {
-          pendingAxisConstraintRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            kind: sketchPoint.snapAxisLock,
-          };
-        }
-
-        // Capture pending tangent relation when the cursor snapped
-        // onto a circle's tangent point. Skipped when a perpendicular
-        // host is also pending — they conflict on the line's end.
-        if (sketchPoint.snapTangentCircleId && !perpHostLineId) {
-          pendingTangentConstraintRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            circleId: sketchPoint.snapTangentCircleId,
-          };
-        }
-
-        // Capture pending parallel relation when the cursor snapped
-        // parallel to an existing line. Skipped when a perpendicular
-        // host, axis lock, or tangent is also pending — they conflict.
-        if (sketchPoint.snapParallelHostLineId && !perpHostLineId && !sketchPoint.snapAxisLock && !sketchPoint.snapTangentCircleId) {
-          pendingParallelConstraintRef.current = {
-            fromLineCount: sketchLineCountRef.current,
-            hostLineId: sketchPoint.snapParallelHostLineId,
-          };
-        }
-
-        // The line tool keeps drafting from the just-clicked end so
-        // the user can chain segments. When chainBreakRequested is set
-        // (double-click detected) instead clear the start so the next
-        // click begins a fresh independent line.
-        if (chainBreakRequestedRef.current) {
-          chainBreakRequestedRef.current = false;
-          lineDraftStartRef.current = null;
-          previousLineAngleRef.current = null;
-          scheduleDraftDimensionExpressionUpdate("line");
-          clearDraftDimensionSession();
-        } else {
-          lineDraftStartRef.current = committedEnd;
-          // Store the 2D sketch angle of the committed segment so
-          // the next chained line's angle arc references it instead of
-          // the horizontal axis.
-          const pdx = committedEnd[0] - startX;
-          const pdy = committedEnd[1] - startY;
-          if (Math.hypot(pdx, pdy) > 1e-6) {
-            previousLineAngleRef.current = Math.atan2(pdy, pdx);
-          }
-          draftStartMidpointHostRef.current = endHostLineId;
-          // Reset the perpendicular host: a fresh draft segment starts
-          // from the just-clicked end. Only set it again if that end
-          // happened to itself snap to an existing line's endpoint.
-          draftStartEndpointHostRef.current =
-            sketchPoint.snapEndpointHostLineId ?? null;
-          // Same chaining for the line-body host: the next draft
-          // segment's start is the end we just committed.
-          draftStartLineBodyHostRef.current = endLineBodyHost;
-          Object.values(draftDimensionInputRefs.current).forEach((input) => {
-            input?.blur();
-          });
-          suppressDimensionEditorAfterSketchCommit();
-          // Capture the old session's lockedFields before creating the
-          // new chained session, so we know whether the user typed.
-          const oldSession = draftDimensionSessionRef.current;
-          scheduleDraftDimensionExpressionUpdate("line");
-          const nextLineSession = createDraftDimensionSession(
-            "line",
-            committedEnd,
-            committedEnd,
-          );
-          // Clear previous line's scene object so the next line gets a fresh one
-          clearDraftDimGroup();
-          draftDimensionSessionRef.current = nextLineSession;
-          setDraftDimensionSession(nextLineSession);
-          focusDraftField(nextLineSession.activeField);
-          scheduleDimensionDeletion("line", oldSession);
-        }
-        void addSketchLineRef.current(
-          startX,
-          startY,
-          committedEnd[0],
-          committedEnd[1],
-          sketchToolConstructionRef.current,
-        );
+        commitDraftPointerUp({
+          activeSketchTool: activeSketchToolRef.current,
+          sketchPoint,
+          draftDimensionSession: draftDimensionSessionRef.current,
+          sketchCircleCount:
+            sketchFeature?.sketch_parameters?.circles.length ?? 0,
+          refs: {
+            draftStart: lineDraftStartRef,
+            arcSecondPoint: arcSecondPointRef,
+            rectSecondPoint: rectSecondPointRef,
+            circleSecondPoint: circleSecondPointRef,
+            chainBreakRequested: chainBreakRequestedRef,
+            previousLineAngle: previousLineAngleRef,
+            draftStartMidpointHost: draftStartMidpointHostRef,
+            draftStartEndpointHost: draftStartEndpointHostRef,
+            draftStartLineBodyHost: draftStartLineBodyHostRef,
+            draftDimensionSession: draftDimensionSessionRef,
+            draftDimensionInputs: draftDimensionInputRefs,
+          },
+          modes: {
+            arc: arcToolModeRef.current,
+            rectangle: rectangleToolModeRef.current,
+            circle: circleToolModeRef.current,
+            polygon: polygonToolModeRef.current,
+          },
+          polygonSides: polygonSidesRef.current,
+          isConstruction: sketchToolConstructionRef.current,
+          clearPreviews: () => {
+            clearPreviewLine();
+            clearPreviewCircle();
+            clearPreviewArc();
+            clearPreviewDimension();
+          },
+          clearDraftDimensionSession,
+          suppressDimensionEditorAfterSketchCommit,
+          scheduleDimensionDeletion,
+          scheduleDraftDimensionExpressionUpdate,
+          setPendingCircleDimensionPlacement: (placement) => {
+            pendingCircleDimensionPlacementRef.current = placement;
+          },
+          captureLineCommitRelations: capturePendingLineCommitRelations,
+          createLineDraftDimensionSession: (start, current) =>
+            createDraftDimensionSession("line", start, current),
+          clearDraftDimGroup,
+          setDraftDimensionSession,
+          focusDraftField,
+          addSketchArc: addSketchArcRef.current,
+          addSketchRectangle: addSketchRectangleRef.current,
+          addSketchCircle: addSketchCircleRef.current,
+          addSketchPolygon: addSketchPolygonRef.current,
+          addSketchLine: addSketchLineRef.current,
+        });
         return;
       }
 
       if (
-        inactiveSketchEntityPickEnabledRef.current &&
-        pickInactiveSketchLineRef.current
+        handlePointerUpSceneSelection({
+          event,
+          sceneData: sceneDataRef.current,
+          camera,
+          renderer,
+          inactiveSketchEntityPickEnabled:
+            inactiveSketchEntityPickEnabledRef.current,
+          pickInactiveSketchLine: pickInactiveSketchLineRef.current,
+          intersectSceneTargets,
+          selectSketchEntity: selectSketchEntityRef.current,
+          selectSketchProfile: selectSketchProfileRef.current,
+          selectReference: selectReferenceRef.current,
+          selectVertex: selectVertexRef.current,
+          selectEdge: selectEdgeRef.current,
+          selectFace: selectFaceRef.current,
+          selectPrimitive: selectPrimitiveRef.current,
+        })
       ) {
-        const sketchLineId = pickVisibleSketchLineScreenSpace(event, 16);
-        if (sketchLineId) {
-          void pickInactiveSketchLineRef.current(sketchLineId);
-          return;
-        }
-      }
-
-      const hit = intersectSceneTargets(event);
-      if (
-        inactiveSketchEntityPickEnabledRef.current &&
-        hit?.kind === "sketch_entity" &&
-        (hit.entityKind === "line" || hit.entityKind === "arc")
-      ) {
-        void selectSketchEntityRef.current(hit.id, false);
         return;
-      }
-      if (hit?.kind === "sketch_profile") {
-        // Profiles are pickable outside sketch mode so the user can
-        // run Extrude on a closed profile without re-entering its
-        // sketch (contextual modeling). Selection is a no-op on the core's
-        // body picking path; the floating Extrude action consumes
-        // `selected_sketch_profile_id` directly.
-        void selectSketchProfileRef.current(
-          hit.id,
-          event.shiftKey || event.ctrlKey || event.metaKey,
-        );
-        return;
-      }
-
-      if (hit?.kind === "reference") {
-        void selectReferenceRef.current(hit.id);
-        return;
-      }
-
-      // Shift, Ctrl (Win/Linux) and Cmd (mac) all toggle the picked
-      // entity into the existing multi-select set; plain click
-      // replaces. We accept all three so the additive gesture matches
-      // each OS's native file-manager / list conventions without
-      // forcing the user to learn a tool-specific modifier.
-      const additive = event.shiftKey || event.ctrlKey || event.metaKey;
-
-      if (hit?.kind === "vertex") {
-        void selectVertexRef.current(hit.id, additive);
-        return;
-      }
-
-      if (hit?.kind === "edge") {
-        void selectEdgeRef.current(hit.id, additive);
-        return;
-      }
-
-      if (hit?.kind === "face") {
-        void selectFaceRef.current(hit.id);
-        return;
-      }
-
-      if (hit?.kind === "primitive") {
-        void selectPrimitiveRef.current(hit.id);
       }
     }
 
@@ -10878,183 +4845,20 @@ const currentGridSpacingRef = useRef(10);
       // Use the ref so right-clicks after a batch select see the
       // latest document state even when the handler closure is stale.
       const doc = documentRef.current;
-
-      if (activeSketchPlaneId) {
-        const hit = intersectSceneTargets(event as PointerEvent);
-        if (
-          hit?.kind !== "sketch_entity" &&
-          hit?.kind !== "sketch_point" &&
-          hit?.kind !== "sketch_profile" &&
-          hit?.kind !== "sketch_dimension" &&
-          hit?.kind !== "sketch_constraint"
-        ) {
-          // Check if there's an active selection (from rectangle select or clicks)
-          const selEntityIds = [
-            ...(doc?.selected_sketch_entity_ids ?? []),
-            ...(doc?.selected_sketch_entity_id
-              ? [doc.selected_sketch_entity_id]
-              : []),
-          ];
-          const selPointIds = [
-            ...(doc?.selected_sketch_point_ids ?? []),
-            ...(doc?.selected_sketch_point_id
-              ? [doc.selected_sketch_point_id]
-              : []),
-          ];
-          const hasSelection = selEntityIds.length > 0 || selPointIds.length > 0;
-          if (hasSelection) {
-            const rect = renderer.domElement.getBoundingClientRect();
-            setContextMenu({
-              x: event.clientX - rect.left,
-              y: event.clientY - rect.top,
-              referenceId: null,
-              faceId: null,
-              sketchDeleteSelection: {
-                entityIds: [...new Set(selEntityIds)],
-                pointIds: [...new Set(selPointIds)],
-                profileIds: doc?.selected_sketch_profile_ids ?? [],
-              },
-            });
-            return;
-          }
-          setContextMenu(null);
-          return;
-        }
-
-        // Right-click on a sketch constraint: show Delete context menu
-        if (hit?.kind === "sketch_constraint") {
-          const rect = renderer.domElement.getBoundingClientRect();
-          setContextMenu({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-            referenceId: null,
-            faceId: null,
-            constraintKind: hit.constraintKind,
-            constraintId: hit.id,
-            constraintEntityId: hit.entityId,
-            constraintRelatedEntityId: hit.relatedEntityId,
-          });
-          setSelectedConstraint({
-            kind: hit.constraintKind,
-            entityId: hit.entityId,
-            relatedEntityId: hit.relatedEntityId,
-          });
-          return;
-        }
-
-        // Right-click on a sketch dimension: show Delete context menu
-        if (hit?.kind === "sketch_dimension") {
-          const rect = renderer.domElement.getBoundingClientRect();
-          setContextMenu({
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-            referenceId: null,
-            faceId: null,
-            dimensionId: hit.id,
-          });
-          return;
-        }
-
-        const selectedEntityIds = [
-          ...(doc?.selected_sketch_entity_ids ?? []),
-          ...(doc?.selected_sketch_entity_id
-            ? [doc.selected_sketch_entity_id]
-            : []),
-        ];
-        const selectedPointIds = [
-          ...(doc?.selected_sketch_point_ids ?? []),
-          ...(doc?.selected_sketch_point_id
-            ? [doc.selected_sketch_point_id]
-            : []),
-        ];
-        const selectedProfileIds = [
-          ...(doc?.selected_sketch_profile_ids ?? []),
-          ...(doc?.selected_sketch_profile_id
-            ? [doc.selected_sketch_profile_id]
-            : []),
-        ];
-        const currentSelection = {
-          entityIds: [...new Set(selectedEntityIds)],
-          pointIds: [...new Set(selectedPointIds)],
-          profileIds: [...new Set(selectedProfileIds)],
-        };
-        const clickedSelection =
-          hit.kind === "sketch_entity"
-            ? { entityIds: [hit.id], pointIds: [], profileIds: [] }
-            : hit.kind === "sketch_point"
-              ? { entityIds: [], pointIds: [hit.id], profileIds: [] }
-              : { entityIds: [], pointIds: [], profileIds: [hit.id] };
-        const clickedIsSelected =
-          (hit.kind === "sketch_entity" &&
-            currentSelection.entityIds.includes(hit.id)) ||
-          (hit.kind === "sketch_point" &&
-            currentSelection.pointIds.includes(hit.id)) ||
-          (hit.kind === "sketch_profile" &&
-            currentSelection.profileIds.includes(hit.id));
-        const selection =
-          clickedIsSelected &&
-          (currentSelection.entityIds.length > 0 ||
-            currentSelection.pointIds.length > 0 ||
-            currentSelection.profileIds.length > 0)
-            ? currentSelection
-            : clickedSelection;
-        const rect = renderer.domElement.getBoundingClientRect();
-        setContextMenu({
-          x: event.clientX - rect.left,
-          y: event.clientY - rect.top,
-          referenceId: null,
-          faceId: null,
-          sketchDeleteSelection: selection,
-        });
-        return;
-      }
-
-      function bodyIdFromTopologyId(id: string | null | undefined) {
-        if (!id) {
-          return null;
-        }
-        for (const marker of [":face:", ":edge:", ":vertex:"]) {
-          const markerIndex = id.indexOf(marker);
-          if (markerIndex > 0) {
-            return id.slice(0, markerIndex);
-          }
-        }
-        return null;
-      }
-
-      const hit = intersectSceneTargets(event as PointerEvent);
-      if (
-        hit?.kind !== "reference" &&
-        hit?.kind !== "face" &&
-        hit?.kind !== "primitive" &&
-        hit?.kind !== "edge" &&
-        hit?.kind !== "vertex"
-      ) {
-        setContextMenu(null);
-        return;
-      }
-
       const rect = renderer.domElement.getBoundingClientRect();
-      const solidFace =
-        hit.kind === "face"
-          ? sceneDataRef.current?.solidFaces.find((face) => face.faceId === hit.id)
-          : null;
-      const bodyId =
-        hit.kind === "primitive"
-          ? hit.id
-          : hit.kind === "face"
-            ? (solidFace?.ownerId ?? bodyIdFromTopologyId(hit.id))
-            : hit.kind === "edge" || hit.kind === "vertex"
-              ? bodyIdFromTopologyId(hit.id)
-              : null;
-      setContextMenu({
+      const hit = intersectSceneTargets(event as PointerEvent);
+      const result = buildViewportContextMenuState({
+        activeSketchPlaneId,
+        document: doc,
+        hit,
         x: event.clientX - rect.left,
         y: event.clientY - rect.top,
-        referenceId: hit.kind === "reference" ? hit.id : null,
-        faceId: hit.kind === "face" ? hit.id : null,
-        bodyId,
-        sketchDeleteSelection: null,
+        solidFaces: sceneDataRef.current?.solidFaces ?? [],
       });
+      setContextMenu(result.contextMenu);
+      if (result.selectedConstraint !== undefined) {
+        setSelectedConstraint(result.selectedConstraint);
+      }
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -11157,589 +4961,85 @@ const currentGridSpacingRef = useRef(10);
       contentGroupRef.current = null;
       referenceGroupRef.current = null;
       sketchGroupRef.current = null;
-      primitiveVisualsRef.current.clear();
-      primitiveStatesRef.current.clear();
-      referencePlaneVisualsRef.current.clear();
-      referencePlaneStatesRef.current.clear();
-      solidFaceVisualsRef.current.clear();
-      solidFaceStatesRef.current.clear();
-      sketchProfileVisualsRef.current.clear();
-      sketchProfileStatesRef.current.clear();
-      referencePlaneMeshesRef.current = [];
-      sketchEntityObjectsRef.current = [];
+      clearViewportSceneObjectRefs();
       sketchEntityObjectByIdRef.current.clear();
-      sketchDimensionObjectsRef.current = [];
-      sketchConstraintObjectsRef.current = [];
-      sketchPointObjectsRef.current = [];
       sketchPointObjectByIdRef.current.clear();
-      sketchProfileObjectsRef.current = [];
-      meshesRef.current = [];
-      faceMeshesRef.current = [];
-      edgeLineObjectsRef.current = [];
-      vertexObjectsRef.current = [];
-      cutPreviewObjectsRef.current = [];
-      toolpathLinesRef.current = [];
-      moveGizmoObjectsRef.current = [];
       moveGizmoDragRef.current = null;
       worldGridRef.current = null;
       sketchGridRef.current = null;
-      previewLineRef.current = null;
-      previewCircleRef.current = null;
-      previewArcRef.current = null;
       lineDraftStartRef.current = null;
       lastGeometryKeyRef.current = "";
     };
   }, [activeSketchPlaneId]);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    const contentGroup = contentGroupRef.current;
-    const referenceGroup = referenceGroupRef.current;
-    const sketchGroup = sketchGroupRef.current;
-
-    if (
-      !scene ||
-      !camera ||
-      !controls ||
-      !contentGroup ||
-      !referenceGroup ||
-      !sketchGroup
-    ) {
-      return;
-    }
-
-    const hadPendingCommit = pendingEndpointCommitRef.current;
-    pendingEndpointCommitRef.current = false;
-
-    // During an active endpoint drag (pointer-move phase, not the
-    // final commit), skip the full dispose+rebuild.  Instead, update
-    // existing mesh geometry in-place from the new sceneData.  This
-    // avoids the 1-2 frame lag of destroying and recreating every
-    // Three.js object 60 times per second.
-    const isDragging =
-      endpointDragRef.current !== null && !hadPendingCommit;
-
-    if (isDragging && sceneData && sketchGroup.children.length > 0) {
-      // --- Incremental update (drag preview) ---
-      if (sceneData.sketchLines) {
-        for (const lineData of sceneData.sketchLines) {
-          const lineObj = sketchEntityObjectByIdRef.current.get(
-            lineData.lineId,
-          );
-          if (
-            lineObj instanceof THREE.Line &&
-            lineObj.geometry.attributes.position
-          ) {
-            const pos = lineObj.geometry.attributes.position
-              .array as Float32Array;
-            pos[0] = lineData.start[0];
-            pos[1] = lineData.start[1];
-            pos[2] = lineData.start[2];
-            pos[3] = lineData.end[0];
-            pos[4] = lineData.end[1];
-            pos[5] = lineData.end[2];
-            lineObj.geometry.attributes.position.needsUpdate = true;
-          }
-        }
-      }
-
-      if (sceneData.sketchCircles) {
-        const frame = activeSketchPlaneFrameRef.current;
-        let xa: [number, number, number];
-        let ya: [number, number, number];
-        if (frame) {
-          xa = [frame.x_axis.x, frame.x_axis.y, frame.x_axis.z];
-          ya = [frame.y_axis.x, frame.y_axis.y, frame.y_axis.z];
-        } else {
-          xa = [1, 0, 0];
-          ya = [0, 0, 1];
-        }
-        for (const circleData of sceneData.sketchCircles) {
-          const circleObj = sketchEntityObjectByIdRef.current.get(
-            circleData.circleId,
-          );
-          if (
-            circleObj instanceof THREE.LineLoop &&
-            circleObj.geometry.attributes.position
-          ) {
-            const pos = circleObj.geometry.attributes.position
-              .array as Float32Array;
-            const r = circleData.radius;
-            const cx = circleData.center[0];
-            const cy = circleData.center[1];
-            const cz = circleData.center[2];
-            const segments = (pos.length / 3) - 1;
-            for (let i = 0; i <= segments; i++) {
-              const angle = (i / segments) * Math.PI * 2;
-              const lx = Math.cos(angle) * r;
-              const ly = Math.sin(angle) * r;
-              pos[i * 3] = cx + xa[0] * lx + ya[0] * ly;
-              pos[i * 3 + 1] = cy + xa[1] * lx + ya[1] * ly;
-              pos[i * 3 + 2] = cz + xa[2] * lx + ya[2] * ly;
-            }
-            circleObj.geometry.attributes.position.needsUpdate = true;
-          }
-        }
-      }
-
-      if (sceneData.sketchPoints) {
-        for (const pointData of sceneData.sketchPoints) {
-          const pointObj = sketchPointObjectByIdRef.current.get(
-            pointData.pointId,
-          );
-          if (pointObj) {
-            pointObj.position.set(
-              pointData.position[0],
-              pointData.position[1],
-              pointData.position[2],
-            );
-          }
-        }
-      }
-
-      // Constraint badges also move during drag (e.g. coincident
-      // badge follows the shared endpoint).  Update positions in-place
-      // so they track the geometry instead of lagging behind.
-      if (sceneData.sketchConstraints) {
-        for (const conData of sceneData.sketchConstraints) {
-          for (const conObj of sketchConstraintObjectsRef.current) {
-            if (
-              conObj.userData.sketchConstraintId === conData.constraintId
-            ) {
-              conObj.position.set(
-                conData.position[0],
-                conData.position[1],
-                conData.position[2],
-              );
-              break;
-            }
-          }
-        }
-      }
-
-      // After incremental update, release the drag preview if this
-      // was the final commit frame.
-      if (hadPendingCommit) {
-        endpointDragRef.current = null;
-        clearDragPreviewLines();
-        setConstraintPreview(null);
-        dragCursorRef.current = null;
-      }
-
-      lastGeometryKeyRef.current = sceneData.geometryKey;
-      return;
-    }
-
-    // --- Full rebuild (normal operation or final commit) ---
-    disposeGroup(contentGroup);
-    disposeGroup(referenceGroup);
-    disposeGroup(sketchGroup);
-    primitiveVisualsRef.current.clear();
-    primitiveStatesRef.current.clear();
-    referencePlaneVisualsRef.current.clear();
-    referencePlaneStatesRef.current.clear();
-    solidFaceVisualsRef.current.clear();
-    solidFaceStatesRef.current.clear();
-    sketchProfileVisualsRef.current.clear();
-    sketchProfileStatesRef.current.clear();
-    referencePlaneMeshesRef.current = [];
-    sketchEntityObjectsRef.current = [];
-    sketchDimensionObjectsRef.current = [];
-    sketchConstraintObjectsRef.current = [];
-    sketchPointObjectsRef.current = [];
-    sketchProfileObjectsRef.current = [];
-    meshesRef.current = [];
-    faceMeshesRef.current = [];
-    edgeLineObjectsRef.current = [];
-    vertexObjectsRef.current = [];
-    cutPreviewObjectsRef.current = [];
-    toolpathLinesRef.current = [];
-    moveGizmoObjectsRef.current = [];
-    // Hovered ids reference disposed THREE objects after a rebuild;
-    // null them out so the next pointermove cleanly re-applies hover.
-    hoveredEdgeIdRef.current = null;
-    hoveredVertexIdRef.current = null;
-    hoveredSketchEntityIdRef.current = null;
-    hoveredSketchPointIdRef.current = null;
-    previewLineRef.current = null;
-    previewCircleRef.current = null;
-    previewArcRef.current = null;
-
-    if (!sceneData) {
-      lastGeometryKeyRef.current = "";
-      return;
-    }
-
-    for (const primitive of sceneData.primitives) {
-      const object = buildPrimitiveObject(primitive);
-      meshesRef.current.push(object.mesh);
-      primitiveVisualsRef.current.set(primitive.primitiveId, object.visual);
-      primitiveStatesRef.current.set(primitive.primitiveId, {
-        isSelected: primitive.isSelected,
-        isHovered: false,
-      });
-      contentGroup.add(object.mesh);
-      contentGroup.add(object.edges);
-    }
-
-    for (const reference of sceneData.references) {
-      if (reference.kind === "reference_plane") {
-        if (!showReferencePlanes) {
-          continue;
-        }
-
-        const object = buildReferencePlaneObject(reference);
-        referencePlaneMeshesRef.current.push(object.mesh);
-        referencePlaneVisualsRef.current.set(
-          reference.referenceId,
-          object.visual,
-        );
-        referencePlaneStatesRef.current.set(reference.referenceId, {
-          isSelected: reference.isSelected,
-          isHovered: false,
-          isActiveSketchPlane: reference.isActiveSketchPlane,
-        });
-        referenceGroup.add(object.mesh);
-        referenceGroup.add(object.edges);
-        continue;
-      }
-
-      if (reference.kind === "reference_axis") {
-        const axisObject = buildReferenceAxisObject(reference);
-        referenceGroup.add(axisObject.line);
-      } else if (reference.kind === "reference_point") {
-        const pointObject = buildReferencePointObject(reference);
-        referenceGroup.add(pointObject.mesh);
-      } else if (reference.kind === "reference_helix") {
-        const helixObject = buildReferenceHelixObject(reference);
-        referenceGroup.add(helixObject.line);
-      }
-    }
-
-    // ── CAM WCS origin marker ─────────────────────────────────────
-    if (document?.cam_setup) {
-      const wcs = document.cam_setup.wcs_origin;
-      const origin = new THREE.Vector3(wcs.x, wcs.y, wcs.z);
-      const axisLen = 20;
-      const makeAxis = (dir: THREE.Vector3, color: number) => {
-        const end = origin.clone().add(dir.clone().multiplyScalar(axisLen));
-        const geom = new THREE.BufferGeometry().setFromPoints([origin, end]);
-        const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, depthTest: false, depthWrite: false, transparent: true, opacity: 0.9 });
-        const line = new THREE.Line(geom, mat);
-        line.renderOrder = 1;
-        referenceGroup.add(line);
-      };
-      // Orientation presets
-      let xAxis = new THREE.Vector3(1, 0, 0);
-      let yAxis = new THREE.Vector3(0, 1, 0);
-      let zAxis = new THREE.Vector3(0, 0, 1);
-      if (wcsOrientation === "z_up") {
-        // Tool axis Z points up (CAD Y direction)
-        xAxis.set(1, 0, 0);
-        yAxis.set(0, 0, -1);
-        zAxis.set(0, 1, 0);
-      } else if (wcsOrientation === "y_up") {
-        // Y is up, Z points down
-        xAxis.set(1, 0, 0);
-        yAxis.set(0, 1, 0);
-        zAxis.set(0, 0, -1);
-      }
-      makeAxis(xAxis, 0xff4444);  // X red
-      makeAxis(yAxis, 0x44ff44);  // Y green
-      makeAxis(zAxis, 0x4488ff);  // Z blue
-
-      // ── Stock bounding box (translucent, centered on model) ────
-      if (showStock && document.cam_setup.stock) {
-      const stock = document.cam_setup.stock;
-      const stockW = stock.width + stock.offset_x * 2;
-      const stockH = stock.height + stock.offset_y * 2;
-      const stockD = stock.depth + stock.offset_z * 2;
-
-      // Compute model centre from body bounding boxes (C++ bounds use max/2,
-      // which breaks for offset geometry).
-      let minX = Infinity, minY = Infinity, minZ = Infinity;
-      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-      for (const body of (viewport?.bodies ?? [])) {
-        const hw = body.size.x / 2, hh = body.size.y / 2, hd = body.size.z / 2;
-        minX = Math.min(minX, body.center.x - hw);
-        maxX = Math.max(maxX, body.center.x + hw);
-        minY = Math.min(minY, body.center.y - hh);
-        maxY = Math.max(maxY, body.center.y + hh);
-        minZ = Math.min(minZ, body.center.z - hd);
-        maxZ = Math.max(maxZ, body.center.z + hd);
-      }
-      const modelCenter = new THREE.Vector3(
-        Number.isFinite(minX) ? (minX + maxX) / 2 : 0,
-        Number.isFinite(minY) ? (minY + maxY) / 2 : 0,
-        Number.isFinite(minZ) ? (minZ + maxZ) / 2 : 0,
-      );
-      // CAD axes: X=width, Y=height(up), Z=depth
-      // Three.js BoxGeometry(width_x, height_y, depth_z)
-      const stockBox = new THREE.BoxGeometry(stockW, stockH, stockD);
-      const stockMesh = new THREE.Mesh(
-        stockBox,
-        new THREE.MeshBasicMaterial({
-          color: 0x4488ff,
-          transparent: true,
-          opacity: 0.15,
-          depthTest: true,
-          depthWrite: false,
-        }),
-      );
-      stockMesh.position.copy(modelCenter);
-      stockMesh.renderOrder = 0;
-      referenceGroup.add(stockMesh);
-
-      // Wireframe edges so the box is readable at any angle
-      const stockEdges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(stockBox),
-        new THREE.LineBasicMaterial({
-          color: 0x4488ff,
-          transparent: true,
-          opacity: 0.35,
-          depthTest: true,
-          depthWrite: false,
-        }),
-      );
-      stockEdges.position.copy(modelCenter);
-      stockEdges.renderOrder = 2;
-      referenceGroup.add(stockEdges);
-      }
-    }
-
-    for (const face of sceneData.solidFaces) {
-      const faceObject = buildSolidFaceObject(face);
-      faceMeshesRef.current.push(faceObject.mesh);
-      solidFaceVisualsRef.current.set(face.faceId, faceObject.visual);
-      solidFaceStatesRef.current.set(face.faceId, {
-        isSelected: face.isSelected,
-        isHovered: false,
-      });
-      contentGroup.add(faceObject.mesh);
-    }
-
-    for (const edge of sceneData.edges) {
-      const edgeLine = buildSceneEdgeObject(edge);
-      edgeLineObjectsRef.current.push(edgeLine);
-      contentGroup.add(edgeLine);
-    }
-
-    for (const preview of sceneData.cutPreviews) {
-      const cutPreviewMesh = buildCutPreviewObject(preview);
-      cutPreviewObjectsRef.current.push(cutPreviewMesh);
-      contentGroup.add(cutPreviewMesh);
-    }
-
-    // ── CAM toolpath lines ──────────────────────────────────────
-    // Rapid moves (G0): red, semi-transparent. Feed moves (G1): green.
-    toolpathLinesRef.current = [];
-    for (const tp of viewport?.toolpaths ?? []) {
-      for (let i = 1; i < tp.points.length; i++) {
-        const prev = tp.points[i - 1];
-        const curr = tp.points[i];
-        const isRapid = curr.is_rapid;
-        const geometry = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(prev.x, prev.y, prev.z),
-          new THREE.Vector3(curr.x, curr.y, curr.z),
-        ]);
-        const material = new THREE.LineBasicMaterial({
-          color: isRapid ? 0xff4444 : 0x44ff44,
-          transparent: true,
-          opacity: isRapid ? 0.5 : 0.85,
-          depthTest: false,
-          depthWrite: false,
-        });
-        const line = new THREE.Line(geometry, material);
-        line.renderOrder = 10; // above edges (5–6) and sketch (7–8)
-        line.userData.toolpathId = tp.id;
-        line.userData.isRapid = isRapid;
-        toolpathLinesRef.current.push(line);
-        contentGroup.add(line);
-      }
-    }
-
-    if (moveGizmo && !moveGizmo.disabled) {
-      const object = buildMoveGizmoObject(moveGizmo);
-      moveGizmoObjectsRef.current = object.pickables;
-      contentGroup.add(object.group);
-    }
-
-    for (const sketchLine of sceneData.sketchLines) {
-      const sketchLineObject = buildSketchLineObject(sketchLine);
-      sketchLineObject.userData.isSelected = sketchLine.isSelected;
-      sketchEntityObjectsRef.current.push(sketchLineObject);
-      sketchEntityObjectByIdRef.current.set(
-        sketchLine.lineId,
-        sketchLineObject,
-      );
-      sketchGroup.add(sketchLineObject);
-    }
-
-    for (const sketchCircle of sceneData.sketchCircles) {
-      const frame =
-        sketchCircle.planeFrame ??
-        (activeSketchPlaneId &&
-        sketchCircle.planeId === activeSketchPlaneId &&
-        activeSketchPlaneFrame
-          ? activeSketchPlaneFrame
-          : null);
-      const sketchCircleObject = buildSketchCircleObject(sketchCircle, frame);
-      sketchCircleObject.userData.isSelected = sketchCircle.isSelected;
-      sketchEntityObjectsRef.current.push(sketchCircleObject);
-      sketchEntityObjectByIdRef.current.set(
-        sketchCircle.circleId,
-        sketchCircleObject,
-      );
-      sketchGroup.add(sketchCircleObject);
-    }
-
-    for (const sketchPolygon of sceneData.sketchPolygons) {
-      const sketchPolygonObject = buildSketchPolygonObject(sketchPolygon);
-      sketchPolygonObject.userData.isSelected = sketchPolygon.isSelected;
-      sketchEntityObjectsRef.current.push(sketchPolygonObject);
-      sketchEntityObjectByIdRef.current.set(
-        sketchPolygon.polygonId,
-        sketchPolygonObject,
-      );
-      sketchGroup.add(sketchPolygonObject);
-    }
-
-    for (const sketchArc of sceneData.sketchArcs) {
-      const frame =
-        sketchArc.planeFrame ??
-        (activeSketchPlaneId &&
-        sketchArc.planeId === activeSketchPlaneId &&
-        activeSketchPlaneFrame
-          ? activeSketchPlaneFrame
-          : null);
-      const sketchArcObject = buildSketchArcObject(sketchArc, frame);
-      sketchArcObject.userData.isSelected = sketchArc.isSelected;
-      sketchEntityObjectsRef.current.push(sketchArcObject);
-      sketchEntityObjectByIdRef.current.set(sketchArc.arcId, sketchArcObject);
-      sketchGroup.add(sketchArcObject);
-    }
-
-    for (const sketchDimension of displayedSketchDimensions) {
-      const sketchDimensionObject = buildSketchDimensionObject(
-        sketchDimension,
-        config.displayUnits,
-      );
-      if (
-        hiddenRelationPreviewDimensionIdsRef.current.has(
-          sketchDimension.dimensionId,
-        )
-      ) {
-        sketchDimensionObject.line.visible = false;
-        sketchDimensionObject.label.visible = false;
-      }
-      sketchDimensionObjectsRef.current.push(sketchDimensionObject.line);
-      sketchDimensionObjectsRef.current.push(sketchDimensionObject.label);
-      sketchGroup.add(sketchDimensionObject.line);
-      sketchGroup.add(sketchDimensionObject.label);
-    }
-
-    for (const sketchConstraint of sceneData.sketchConstraints) {
-      if (sketchConstraint.kind === "fixed") {
-        continue;
-      }
-      const sketchConstraintObject =
-        buildSketchConstraintObject(sketchConstraint);
-      sketchConstraintObjectsRef.current.push(sketchConstraintObject);
-      sketchGroup.add(sketchConstraintObject);
-    }
-    // Highlight the currently selected constraint badge.
-    const selCon = selectedConstraintRef.current;
-    for (const obj of sketchConstraintObjectsRef.current) {
-      const conEntityId =
-        obj.userData.sketchConstraintEntityId as string | undefined;
-      const conKind =
-        obj.userData.sketchConstraintKind as string | undefined;
-      const isSelected =
-        selCon !== null &&
-        conEntityId === selCon.entityId &&
-        conKind === selCon.kind;
-      if (obj instanceof THREE.Sprite && obj.material instanceof THREE.SpriteMaterial) {
-        if (isSelected) {
-          obj.material.color.set(0x60e0ff); // bright cyan
-          obj.scale.set(7.5, 7.5, 1);
-        } else {
-          obj.material.color.set(0xffffff);
-          obj.scale.set(6, 6, 1);
-        }
-      }
-    }
-
-    for (const sketchProfile of sceneData.sketchProfiles) {
-      const sketchProfileObject = buildSketchProfileObject(sketchProfile);
-      sketchProfileObjectsRef.current.push(sketchProfileObject.group);
-      sketchProfileVisualsRef.current.set(
-        sketchProfile.profileId,
-        sketchProfileObject.visual,
-      );
-      sketchProfileStatesRef.current.set(sketchProfile.profileId, {
-        isSelected: sketchProfile.isSelected,
-        isHovered: false,
-      });
-      sketchGroup.add(sketchProfileObject.group);
-    }
-
-    for (const sketchPoint of sceneData.sketchPoints) {
-      if (sketchPoint.kind === "quadrant") {
-        continue;
-      }
-      const sketchPointObject = buildSketchPointObject(sketchPoint);
-      sketchPointObject.userData.isSelected = sketchPoint.isSelected;
-      sketchPointObjectsRef.current.push(sketchPointObject);
-      sketchPointObjectByIdRef.current.set(
-        sketchPoint.pointId,
-        sketchPointObject,
-      );
-      sketchGroup.add(sketchPointObject);
-    }
-
-    // Now that every mesh is in the scene, release the drag preview.
-    // This ensures there is no frame where stale pre-drag geometry is
-    // visible without the preview override.
-    if (hadPendingCommit) {
-      endpointDragRef.current = null;
-      clearDragPreviewLines();
-      setConstraintPreview(null);
-      dragCursorRef.current = null;
-    }
-
-    syncPrimitiveVisuals();
-    syncReferencePlaneVisuals();
-    syncSolidFaceVisuals();
-    syncSketchProfileVisuals();
-    paintSketchEntityMaterials();
-    paintSketchPointMaterials();
-    paintDofStatusColors();
-
-    if (sceneData.geometryKey !== lastGeometryKeyRef.current) {
-      // Auto-frame the camera ONLY on the very first scene load (when
-      // we haven't recorded any prior geometry key yet). On subsequent
-      // rebuilds the geometry key flips for many reasons that have
-      // nothing to do with the user's intended view — selection
-      // state, hover/select highlight rebuilds, depth-preview ticks
-      // during an extrude edit, etc. — so re-fitting every time
-      // would yank the camera back to its initial pose any time the
-      // user clicks a face. Sketch-mode framing is handled by a
-      // separate effect (frameCameraToSketchPlane).
-      const isFirstSceneLoad = lastGeometryKeyRef.current === "";
-      if (isFirstSceneLoad && !activeSketchPlaneId) {
-        frameCamera(
-          camera,
-          controls,
-          sceneData.bounds.center,
-          sceneData.bounds.maxDimension,
-        );
-      }
-
-      lastGeometryKeyRef.current = sceneData.geometryKey;
-    }
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, wcsOrientation]);
+    syncViewportScene({
+      groups: {
+        scene: sceneRef.current,
+        camera: cameraRef.current,
+        controls: controlsRef.current,
+        contentGroup: contentGroupRef.current,
+        referenceGroup: referenceGroupRef.current,
+        sketchGroup: sketchGroupRef.current,
+      },
+      refs: {
+        pendingEndpointCommit: pendingEndpointCommitRef,
+        endpointDrag: endpointDragRef,
+        activeSketchPlaneFrame: activeSketchPlaneFrameRef,
+        sketchEntityObjectById: sketchEntityObjectByIdRef,
+        sketchPointObjectById: sketchPointObjectByIdRef,
+        sketchConstraintObjects: sketchConstraintObjectsRef,
+        dragCursor: dragCursorRef,
+        lastGeometryKey: lastGeometryKeyRef,
+        hoveredEdgeId: hoveredEdgeIdRef,
+        hoveredVertexId: hoveredVertexIdRef,
+        hoveredSketchEntityId: hoveredSketchEntityIdRef,
+        hoveredSketchPointId: hoveredSketchPointIdRef,
+        meshes: meshesRef,
+        primitiveVisuals: primitiveVisualsRef,
+        primitiveStates: primitiveStatesRef,
+        referencePlaneMeshes: referencePlaneMeshesRef,
+        referencePlaneVisuals: referencePlaneVisualsRef,
+        referencePlaneStates: referencePlaneStatesRef,
+        faceMeshes: faceMeshesRef,
+        solidFaceVisuals: solidFaceVisualsRef,
+        solidFaceStates: solidFaceStatesRef,
+        edgeLineObjects: edgeLineObjectsRef,
+        cutPreviewObjects: cutPreviewObjectsRef,
+        toolpathLines: toolpathLinesRef,
+        moveGizmoObjects: moveGizmoObjectsRef,
+        hiddenRelationPreviewDimensionIds: hiddenRelationPreviewDimensionIdsRef,
+        selectedConstraint: selectedConstraintRef,
+        sketchEntityObjects: sketchEntityObjectsRef,
+        sketchDimensionObjects: sketchDimensionObjectsRef,
+        sketchProfileObjects: sketchProfileObjectsRef,
+        sketchProfileVisuals: sketchProfileVisualsRef,
+        sketchProfileStates: sketchProfileStatesRef,
+        sketchPointObjects: sketchPointObjectsRef,
+      },
+      sceneData,
+      document,
+      viewport,
+      displayedSketchDimensions,
+      displayUnits: config.displayUnits,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      showReferencePlanes,
+      showStock,
+      wcsOrientation,
+      moveGizmo,
+      clearViewportSceneObjectRefs,
+      clearDragPreviewLines,
+      setConstraintPreview,
+      syncPrimitiveVisuals,
+      syncReferencePlaneVisuals,
+      syncSolidFaceVisuals,
+      syncSketchProfileVisuals,
+      paintSketchEntityMaterials,
+      paintSketchPointMaterials,
+      paintDofStatusColors,
+    });
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;
@@ -11763,171 +5063,34 @@ const currentGridSpacingRef = useRef(10);
     dimensionToolFirstPointRef.current = null;
   }, [activeSketchPlaneId, activeSketchTool]);
 
-  useEffect(() => {
-    if (!activeSketchPlaneId) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (
-        event.code === "Enter" &&
-        dimensionLabelDragRef.current?.isPlacement
-      ) {
-        event.preventDefault();
-        finishDimensionPlacement();
-        return;
-      }
-      if (
-        event.code === "Escape" &&
-        dimensionLabelDragRef.current?.isPlacement
-      ) {
-        event.preventDefault();
-        const dimId = dimensionLabelDragRef.current.dimensionId;
-        dimensionLabelDragRef.current = null;
-        dimensionPlacementOriginalPositionRef.current = null;
-        if (controlsRef.current) controlsRef.current.enabled = true;
-        setCanvasCursor("");
-        void deleteSketchDimensionRef.current(dimId);
-        return;
-      }
-      // Escape in the dimension tool: delete the just-placed
-      // dimension.  We check refs (not closure-captured state) so
-      // the handler works even when selectedSketchDimension hasn't
-      // updated yet.  pendingDimensionIdRef is set before every IPC
-      // dimension-create call; if that's null we fall back to
-      // checking the label drag state.
-      if (
-        event.code === "Escape" &&
-        activeSketchToolRef.current === "dimension"
-      ) {
-        const drag = dimensionLabelDragRef.current;
-        const targetId = pendingDimensionIdRef.current ??
-          (drag?.isPlacement ? drag.dimensionId : null);
-        if (targetId) {
-          event.preventDefault();
-          clearPreviewDimension();
-          pendingDimensionIdRef.current = null;
-          pendingDimSourceEntityIdRef.current = null;
-          pendingDimensionPlacementRef.current = false;
-          dimensionLabelDragRef.current = null;
-          dimensionPlacementOriginalPositionRef.current = null;
-          if (controlsRef.current) controlsRef.current.enabled = true;
-          setCanvasCursor("");
-          void deleteSketchDimensionRef.current(targetId);
-          return;
-        }
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (event.code === "Escape") {
-        event.preventDefault();
-        setSelectedConstraint(null);
-        cancelActiveSketchDraft();
-        return;
-      }
-
-      if (event.code === "Delete" || event.code === "Backspace") {
-        event.preventDefault();
-        const sel = selectedConstraintRef.current;
-        if (sel) {
-          setSelectedConstraint(null);
-          void clearSketchConstraintRef.current(
-            sel.kind, sel.entityId, sel.relatedEntityId ?? undefined,
-          );
-        } else {
-          // Read selection from document state directly (not via the
-          // async store) to avoid a race condition where the user presses
-          // Delete before the select_sketch_entity IPC response updates
-          // the store's document state. Use selected_sketch_entity_ids
-          // from the current document object (ref).
-          const entityIds = document?.selected_sketch_entity_ids ?? [];
-          const entityId = document?.selected_sketch_entity_id;
-          const pointIds = document?.selected_sketch_point_ids ?? [];
-          const profileIds = document?.selected_sketch_profile_ids ?? [];
-          const allEntityIds = entityId
-            ? entityIds.includes(entityId)
-              ? entityIds
-              : [...entityIds, entityId]
-            : entityIds;
-          if (allEntityIds.length > 0 || pointIds.length > 0 || profileIds.length > 0) {
-            void deleteSketchSelectionRef.current({
-              entityIds: allEntityIds,
-              pointIds,
-              profileIds,
-            });
-          } else {
-            void deleteSketchSelectionRef.current();
-          }
-        }
-        return;
-      }
-
-      if (matchesHotkey(event, config.hotkeys.sketchToolbar.line)) {
-        event.preventDefault();
-        void setSketchToolRef.current("line");
-        return;
-      }
-
-      if (matchesHotkey(event, config.hotkeys.sketchToolbar.rectangle)) {
-        event.preventDefault();
-        void setSketchToolRef.current("rectangle");
-        return;
-      }
-
-      if (matchesHotkey(event, config.hotkeys.sketchToolbar.circle)) {
-        event.preventDefault();
-        void setSketchToolRef.current("circle");
-        return;
-      }
-
-      if (matchesHotkey(event, config.hotkeys.sketchToolbar.trim)) {
-        event.preventDefault();
-        void setSketchToolRef.current("trim");
-        return;
-      }
-
-      // X toggles the construction flag while a drawable sketch tool
-      // is armed.
-      if (
-        matchesHotkey(
-          event,
-          config.hotkeys.sketchToolbar.toggleConstruction,
-        ) &&
-        (isDraftDimensionTool(activeSketchToolRef.current) ||
-          activeSketchToolRef.current === "arc")
-      ) {
-        event.preventDefault();
-        setSketchToolConstruction((prev) => {
-          const next = !prev;
-          sketchToolConstructionRef.current = next;
-          return next;
-        });
-        return;
-      }
-
-      // D arms the dimension tool (CAD convention). Clicking a
-      // line or circle while armed opens its driving dimension's
-      // inline editor.
-      if (matchesHotkey(event, config.hotkeys.sketchToolbar.dimension)) {
-        event.preventDefault();
-        void setSketchToolRef.current("dimension");
-        return;
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [activeSketchPlaneId, config.hotkeys.sketchToolbar]);
+  useEffect(
+    () =>
+      bindSketchHotkeys({
+        activeSketchPlaneId,
+        sketchToolbarHotkeys: config.hotkeys.sketchToolbar,
+        document,
+        activeSketchToolRef,
+        dimensionLabelDragRef,
+        dimensionPlacementOriginalPositionRef,
+        pendingDimensionIdRef,
+        pendingDimSourceEntityIdRef,
+        pendingDimensionPlacementRef,
+        controlsRef,
+        selectedConstraintRef,
+        sketchToolConstructionRef,
+        deleteSketchDimensionRef,
+        clearSketchConstraintRef,
+        deleteSketchSelectionRef,
+        setSketchToolRef,
+        clearPreviewDimension,
+        finishDimensionPlacement,
+        setCanvasCursor,
+        setSelectedConstraint,
+        cancelActiveSketchDraft,
+        setSketchToolConstruction,
+      }),
+    [activeSketchPlaneId, config.hotkeys.sketchToolbar],
+  );
 
   // Tab toggles ghost-edge visibility while a fillet/chamfer panel is
   // open. The handler is mounted only when at least one body has a
@@ -12161,6 +5324,20 @@ const currentGridSpacingRef = useRef(10);
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
   const pointCount = sketchFeature?.sketch_parameters?.points.length ?? 0;
   const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
+
+  function getCircleDimensionToggleLabel(dimensionId: string) {
+    const sketch = sketchLinesRef.current;
+    if (!sketch) {
+      return null;
+    }
+    const dim = sketch.dimensions.find(
+      (dimension) => dimension.dimension_id === dimensionId,
+    );
+    if (!dim || dim.kind !== "circle_radius") {
+      return null;
+    }
+    return dim.display_as === "radius" ? "Show Diameter" : "Show Radius";
+  }
 
   function isLinkedBodyCopy(bodyId: string | null | undefined) {
     if (!bodyId) {
@@ -12603,132 +5780,21 @@ const currentGridSpacingRef = useRef(10);
         className="absolute inset-0 min-h-0 min-w-0 overflow-hidden rounded-[18px]"
       >
         {contextMenu ? (
-          <div
-            className="cad-context-menu absolute z-20 min-w-[160px] rounded-2xl p-1.5 backdrop-blur-xl"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-              transform: "translate(8px, 8px)",
-            }}
-          >
-            {contextMenu.dimensionId ? (
-              <>
-                {(() => {
-                  // Only show toggle for circle_radius dimensions
-                  const sketch = sketchLinesRef.current;
-                  if (!sketch) return null;
-                  const dim = sketch.dimensions.find(
-                    (d) => d.dimension_id === contextMenu.dimensionId,
-                  );
-                  if (!dim || dim.kind !== "circle_radius") return null;
-                  const label =
-                    dim.display_as === "radius"
-                      ? "Show Diameter"
-                      : "Show Radius";
-                  return (
-                    <button
-                      type="button"
-                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                      onClick={handleToggleDimensionDisplayFromContextMenu}
-                    >
-                      {label}
-                    </button>
-                  );
-                })()}
-                <button
-                  type="button"
-                  className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                  onClick={handleDeleteDimensionFromContextMenu}
-                >
-                  Delete
-                </button>
-              </>
-            ) : contextMenu.constraintKind ? (
-              <button
-                type="button"
-                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                onClick={handleDeleteConstraintFromContextMenu}
-              >
-                Delete Constraint
-              </button>
-            ) : contextMenu.sketchDeleteSelection ? (
-              <button
-                type="button"
-                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                onClick={handleDeleteSketchFromContextMenu}
-              >
-                Delete
-              </button>
-            ) : (
-              <>
-                {contextMenu.bodyId ? (
-                  <>
-                    <button
-                      type="button"
-                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                      onClick={handleMoveBodyFromContextMenu}
-                    >
-                      {translate("common.move")}
-                    </button>
-                    <div className="group/copy relative">
-                      <button
-                        type="button"
-                        className="cad-context-menu-item flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                      >
-                        <span>{translate("common.copy")}</span>
-                        <span className="text-on-surface-dim">&gt;</span>
-                      </button>
-                      <div className="cad-context-menu invisible absolute left-full top-0 z-30 ml-1 min-w-[180px] rounded-2xl p-1.5 opacity-0 backdrop-blur-xl transition-opacity group-hover/copy:visible group-hover/copy:opacity-100">
-                        <button
-                          type="button"
-                          className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                          onClick={() => {
-                            void handleCopyBodyFromContextMenu("linked");
-                          }}
-                        >
-                          {translate("common.copyLinked")}
-                        </button>
-                        <button
-                          type="button"
-                          className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                          onClick={() => {
-                            void handleCopyBodyFromContextMenu("standalone");
-                          }}
-                        >
-                          {translate("common.copyIndependent")}
-                        </button>
-                      </div>
-                    </div>
-                    {isLinkedBodyCopy(contextMenu.bodyId) ? (
-                      <button
-                        type="button"
-                        className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                        onClick={handleUnlinkBodyCopyFromContextMenu}
-                      >
-                        {translate("common.unlink")}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                      onClick={handleExportBodyMeshFromContextMenu}
-                    >
-                      {translate("common.exportAsMesh")}
-                    </button>
-                  </>
-                ) : null}
-                {contextMenu.referenceId || contextMenu.faceId ? (
-                  <button
-                    type="button"
-                    className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                    onClick={handleCreateSketchFromContextMenu}
-                  >
-                    Create Sketch
-                  </button>
-                ) : null}
-              </>
-            )}
-          </div>
+          <ViewportContextMenu
+            contextMenu={contextMenu}
+            translate={translate}
+            getCircleDimensionToggleLabel={getCircleDimensionToggleLabel}
+            isLinkedBodyCopy={isLinkedBodyCopy}
+            onToggleDimensionDisplay={handleToggleDimensionDisplayFromContextMenu}
+            onDeleteDimension={handleDeleteDimensionFromContextMenu}
+            onDeleteConstraint={handleDeleteConstraintFromContextMenu}
+            onDeleteSketchSelection={handleDeleteSketchFromContextMenu}
+            onMoveBody={handleMoveBodyFromContextMenu}
+            onCopyBody={handleCopyBodyFromContextMenu}
+            onUnlinkBodyCopy={handleUnlinkBodyCopyFromContextMenu}
+            onExportBodyMesh={handleExportBodyMeshFromContextMenu}
+            onCreateSketch={handleCreateSketchFromContextMenu}
+          />
         ) : null}
         <canvas
           ref={canvasRef}
@@ -12966,170 +6032,29 @@ const currentGridSpacingRef = useRef(10);
               );
             })
           : null}
-        {activeSketchPlaneId && isDrawableSketchTool(activeSketchTool) ? (
-          <section className="pointer-events-auto cad-floating-panel absolute right-4 top-4 z-20 w-72 px-5 py-5">
-            <p className="cad-kicker">{translate("common.sketchTool")}</p>
-            <h2 className="cad-title mt-2">
-              {isDrawableSketchTool(activeSketchTool)
-                ? translate(sketchToolLabelKey(activeSketchTool))
-                : translate("toolbar.line")}
-            </h2>
-            {activeSketchTool === "circle" && (
-              <p className="text-xs text-on-surface/50 mt-1">
-                {translate(`toolbar.circle${circleToolMode === "center_radius" ? "CenterRadius" : circleToolMode === "two_point" ? "TwoPoint" : circleToolMode === "three_point" ? "ThreePoint" : circleToolMode === "tangent_two_lines" ? "TangentTwoLines" : "TangentThreeLines"}`)}
-              </p>
-            )}
-            {activeSketchTool === "rectangle" && (
-              <p className="text-xs text-on-surface/50 mt-1">
-                {translate(`toolbar.rectangle${rectangleToolMode === "corner_corner" ? "CornerCorner" : rectangleToolMode === "center_point" ? "CenterPoint" : "ThreePoint"}`)}
-              </p>
-            )}
-            {activeSketchTool === "arc" && (
-              <p className="text-xs text-on-surface/50 mt-1">
-                {translate(arcToolMode === "three_point" ? "toolbar.arcThreePoint" : "toolbar.arcCenter")}
-              </p>
-            )}
-            {activeSketchTool === "polygon" && (
-              <p className="text-xs text-on-surface/50 mt-1">
-                {translate(`toolbar.polygon${polygonToolMode === "circumscribed" ? "Circumscribed" : polygonToolMode === "inscribed" ? "Inscribed" : "Edge"}`)}
-              </p>
-            )}
-            <div className="mt-5 flex flex-col gap-4">
-              {isDrawableSketchTool(activeSketchTool) ? (
-                <label className="flex items-center justify-between gap-4 text-sm text-on-surface">
-                  <span>{translate("common.construction")}</span>
-                  <Checkbox
-                    checked={sketchToolConstruction}
-                    ariaLabel={translate("common.construction")}
-                    onCheckedChange={(checked) => {
-                      sketchToolConstructionRef.current = checked;
-                      setSketchToolConstruction(checked);
-                    }}
-                  />
-                </label>
-              ) : null}
-              {activeSketchTool === "arc" ? (
-                <div>
-                  <p className="cad-kicker">{translate("viewport.mode")}</p>
-                  <div className="mt-3 flex gap-2">
-                    {[
-                      { value: "three_point", label: translate("toolbar.arcThreePointTitle") },
-                      { value: "center_start_end", label: translate("toolbar.arcCenter") },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={
-                          arcToolMode === option.value
-                            ? "cad-action-primary flex-1"
-                            : "cad-action-ghost flex-1"
-                        }
-                        onClick={() => {
-                          onSetArcToolMode(
-                            option.value as
-                              | "three_point"
-                              | "center_start_end",
-                          );
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {activeSketchTool === "circle" ? (
-                <div>
-                  <p className="cad-kicker">{translate("viewport.mode")}</p>
-                  <div className="mt-3">
-                    <Dropdown
-                      value={circleToolMode}
-                      options={[
-                        { value: "center_radius", label: translate("toolbar.circleCenterRadius") },
-                        { value: "two_point", label: translate("toolbar.circleTwoPoint") },
-                        { value: "three_point", label: translate("toolbar.circleThreePoint") },
-                        { value: "tangent_two_lines", label: translate("toolbar.circleTangentTwoLines") },
-                        { value: "tangent_three_lines", label: translate("toolbar.circleTangentThreeLines") },
-                      ]}
-                      label={translate("viewport.mode")}
-                      onChange={(value) => {
-                        onSetCircleToolMode(value as
-                          | "center_radius"
-                          | "two_point"
-                          | "three_point"
-                          | "tangent_two_lines"
-                          | "tangent_three_lines");
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {activeSketchTool === "rectangle" ? (
-                <div>
-                  <p className="cad-kicker">{translate("viewport.mode")}</p>
-                  <div className="mt-3">
-                    <Dropdown
-                      value={rectangleToolMode}
-                      options={[
-                        { value: "corner_corner", label: translate("toolbar.rectangleCornerCorner") },
-                        { value: "center_point", label: translate("toolbar.rectangleCenterPoint") },
-                        { value: "three_point", label: translate("toolbar.rectangleThreePoint") },
-                      ]}
-                      label={translate("viewport.mode")}
-                      onChange={(value) => {
-                        onSetRectangleToolMode(value as
-                          | "corner_corner"
-                          | "center_point"
-                          | "three_point");
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {activeSketchTool === "polygon" ? (
-                <div>
-                  <p className="cad-kicker">{translate("viewport.mode")}</p>
-                  <div className="mt-3">
-                    <Dropdown
-                      value={polygonToolMode}
-                      options={[
-                        { value: "circumscribed", label: translate("toolbar.polygonCircumscribed") },
-                        { value: "inscribed", label: translate("toolbar.polygonInscribed") },
-                        { value: "edge", label: translate("toolbar.polygonEdge") },
-                      ]}
-                      label={translate("viewport.mode")}
-                      onChange={(value) => {
-                        onSetPolygonToolMode(value as
-                          | "circumscribed"
-                          | "inscribed"
-                          | "edge");
-                      }}
-                    />
-                    <div className="mt-3 flex items-center gap-2">
-                      <span className="text-xs text-on-surface/60">Sides:</span>
-                      <input
-                        type="number"
-                        min="3"
-                        max="48"
-                        step="1"
-                        className="h-7 w-16 rounded-md border px-2 text-xs text-center tabular-nums bg-transparent"
-                        style={{
-                          border: "1px solid var(--cad-panel-border)",
-                          color: "inherit",
-                        }}
-                        value={polygonSides}
-                        onChange={(event) => {
-                          const value = Math.max(3, Math.min(48, Number(event.target.value) || 3));
-                          setPolygonSides(value);
-                          polygonSidesRef.current = value;
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </section>
+        {activeSketchPlaneId ? (
+          <SketchToolPanel
+            translate={translate}
+            activeSketchTool={activeSketchTool}
+            sketchToolConstruction={sketchToolConstruction}
+            arcToolMode={arcToolMode}
+            circleToolMode={circleToolMode}
+            rectangleToolMode={rectangleToolMode}
+            polygonToolMode={polygonToolMode}
+            polygonSides={polygonSides}
+            onConstructionChange={(checked) => {
+              sketchToolConstructionRef.current = checked;
+              setSketchToolConstruction(checked);
+            }}
+            onSetArcToolMode={onSetArcToolMode}
+            onSetCircleToolMode={onSetCircleToolMode}
+            onSetRectangleToolMode={onSetRectangleToolMode}
+            onSetPolygonToolMode={onSetPolygonToolMode}
+            onPolygonSidesChange={(value) => {
+              setPolygonSides(value);
+              polygonSidesRef.current = value;
+            }}
+          />
         ) : null}
         {/*
           Floating Dimension Tool hint panel. Active only while the

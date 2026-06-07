@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import type {
+  ChangeEvent as ReactChangeEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
@@ -11,21 +14,13 @@ import {
 } from "./state";
 import { useCadCore } from "./hooks";
 import {
-  createProjectFolder,
-  deleteProjectFolder,
   deleteProjectFile,
   findDependents,
   loadRecentProjects,
   matchesHotkey,
-  moveProjectToFolder,
   projectFileExists,
   projectNameFromPath,
   readProjectThumbnail,
-  removeProjectFromRecentProjects,
-  renameProjectFolder,
-  renameRecentProject,
-  saveRecentProjects,
-  upsertRecentProject,
   useAppConfig,
   writeProjectThumbnail,
   Checkbox,
@@ -82,238 +77,119 @@ import type {
   HoleFeatureParameters,
   HoleStandard,
   MoveFeatureParameters,
+  SketchTool,
   ThreadFeatureParameters,
 } from "./types";
-import type { DocumentState } from "./types/ipc";
 import type { RecentProject, RecentProjectsDocument } from "./lib";
+import {
+  BODY_KINDS,
+  DEFAULT_ANGLE_PLANE_DEGREES,
+  DEFAULT_CHAMFER_DISTANCE,
+  DEFAULT_EXTRUDE_DEPTH,
+  DEFAULT_FASTENER_DIAMETER,
+  DEFAULT_FASTENER_LENGTH,
+  DEFAULT_FASTENER_SIZE,
+  DEFAULT_FASTENER_THREAD_LENGTH,
+  DEFAULT_FILLET_RADIUS,
+  DEFAULT_HELIX_HEIGHT,
+  DEFAULT_HELIX_PITCH,
+  DEFAULT_HELIX_RADIUS,
+  DEFAULT_HOLE_DEPTH,
+  DEFAULT_HOLE_DIAMETER,
+  DEFAULT_OFFSET_PLANE_DISTANCE,
+  DEFAULT_SHELL_THICKNESS,
+  DEFAULT_THREAD_LENGTH,
+  DEFAULT_THREAD_MAJOR_DIAMETER,
+  DEFAULT_THREAD_MINOR_DIAMETER,
+  DEFAULT_THREAD_PITCH,
+  EMPTY_RECENT_PROJECTS_DOCUMENT,
+  IS_MACOS,
+  SHOW_DEBUG_MESSAGE_LOG,
+  STANDALONE_SLICER_BOUNDS,
+  activeExtrudeActionFromCreatedFeature,
+  bodyIdFromFaceId,
+  canCombineExtrudeWithExistingBody,
+  defaultHiddenSketchIdsForLoadedDocument,
+  defaultMoveParameters,
+  documentHasSolidBody,
+  type AnglePlaneAction,
+  type ActiveEdgeOpAction,
+  type ActiveExtrudeAction,
+  type ActiveLoftAction,
+  type ActiveMoveAction,
+  type ActiveRevolveAction,
+  type ActiveSweepAction,
+  type FastenerAction,
+  type HelixAction,
+  type HoleAction,
+  type MidplaneAction,
+  type OffsetPlaneAction,
+  type PendingUnsavedAction,
+  type PendingReferenceAction,
+  type SavedDocumentBaseline,
+  type SidebarTab,
+  type ShellAction,
+  type SketchDeleteSelection,
+  type ThreadAction,
+  type WorkspaceView,
+} from "./app/appState";
+import {
+  awaitCreatedFeature,
+  awaitCreatedFeatureOfKind,
+} from "./app/featureCreation";
+import { isToolStartBlocked } from "./app/actionAvailability";
+import {
+  pickExportPath,
+  pickExportStlPath,
+  pickLoadDocumentPath,
+  pickSaveDocumentPath,
+} from "./app/documentDialogs";
+import * as recentProjectActions from "./app/recentProjectActions";
+import * as selectionSources from "./app/selectionSources";
+import {
+  currentSketchDeleteSelection,
+  extrudesAffectedBySketchSelection,
+} from "./app/sketchSelectionDelete";
+import { editTimelineFeature } from "./app/timelineFeatureEdit";
+import { cancelActiveToolFromContext } from "./app/toolCancellation";
+import { handleViewportFaceSelection } from "./app/viewportFaceSelection";
+import type { DocumentState } from "./types/ipc";
 
-const DEFAULT_EXTRUDE_DEPTH = 20;
-const DEFAULT_FILLET_RADIUS = 1;
-const DEFAULT_CHAMFER_DISTANCE = 1;
-const DEFAULT_SHELL_THICKNESS = 2;
-const DEFAULT_HOLE_DIAMETER = 5;
-const DEFAULT_HOLE_DEPTH = 10;
-const DEFAULT_HELIX_RADIUS = 2.5;
-const DEFAULT_HELIX_PITCH = 1;
-const DEFAULT_HELIX_HEIGHT = 10;
-const DEFAULT_THREAD_MAJOR_DIAMETER = 5;
-const DEFAULT_THREAD_MINOR_DIAMETER = 4;
-const DEFAULT_THREAD_PITCH = 0.8;
-const DEFAULT_THREAD_LENGTH = 10;
-const DEFAULT_FASTENER_SIZE = "M5";
-const DEFAULT_FASTENER_DIAMETER = 5;
-const DEFAULT_FASTENER_LENGTH = 20;
-const DEFAULT_FASTENER_THREAD_LENGTH = 16;
-// Default seed for the Offset Plane panel. Zero would be a valid
-// frame (sitting on top of the source) but gives no visible preview;
-// 10 mm matches common CAD workflow's "show me something" default.
-const DEFAULT_OFFSET_PLANE_DISTANCE = 10;
-const DEFAULT_ANGLE_PLANE_DEGREES = 45;
-
-function defaultMoveParameters(targetBodyId = ""): MoveFeatureParameters {
-  return {
-    target_body_id: targetBodyId,
-    translation_x: 0,
-    translation_y: 0,
-    translation_z: 0,
-    rotation_x_degrees: 0,
-    rotation_y_degrees: 0,
-    rotation_z_degrees: 0,
-    is_pending: true,
-  };
-}
-
-// The Core Messages debug panel is hidden by default. Set
-// `VITE_SHOW_DEBUG_MESSAGE_LOG=true` in `.env.local` (or your shell when
-// running `pnpm dev`) to surface it again while debugging the IPC bridge.
-const SHOW_DEBUG_MESSAGE_LOG =
-  import.meta.env.VITE_SHOW_DEBUG_MESSAGE_LOG === "true";
-
-type WorkspaceView = "cad" | "slicer" | "cam";
-type SidebarTab = "hierarchy" | "projects";
-type PendingUnsavedAction =
-  | { kind: "quit" }
-  | { kind: "new" }
-  | { kind: "newProject"; parentFolderId: string | null }
-  | { kind: "load"; filePath: string };
-interface SavedDocumentBaseline {
-  documentId: string;
-  revision: number;
-}
-const EMPTY_RECENT_PROJECTS_DOCUMENT: RecentProjectsDocument = {
-  version: 3,
-  rootFolderIds: [],
-  rootProjectPaths: [],
-  folders: [],
-  projects: [],
-};
-const IS_MACOS =
-  typeof navigator !== "undefined" &&
-  navigator.platform.toLowerCase().includes("mac");
-const STANDALONE_SLICER_BOUNDS: SlicerViewportBounds = {
-  x: 0,
-  y: 0,
-  width: 1,
-  height: 1,
-  scaleFactor: 1,
-};
-const BODY_KINDS = new Set([
-  "box",
-  "cylinder",
-  "polygon_extrude",
-  "extrude",
-  "loft",
-  "revolve",
-  "sweep",
-  "fastener",
-  "body_copy",
-]);
-
-function documentHasSolidBody(documentState: DocumentState | null) {
-  return (documentState?.feature_history ?? []).some(
-    (feature) =>
-      BODY_KINDS.has(feature.kind) &&
-      feature.suppressed !== true &&
-      feature.status !== "warning" &&
-      feature.dependency_broken !== true,
+function isTypingTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
   );
 }
 
-function defaultHiddenSketchIdsForLoadedDocument(documentState: DocumentState) {
-  const next = new Set<string>();
-  if (!documentHasSolidBody(documentState)) {
-    return next;
-  }
-  for (const feature of documentState.feature_history) {
-    if (feature.kind === "sketch") {
-      next.add(feature.feature_id);
-    }
-  }
-  return next;
+function isPlainSaveHotkey(event: KeyboardEvent) {
+  return (
+    event.code === "KeyS" &&
+    (IS_MACOS ? event.metaKey : event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey
+  );
 }
 
-interface ActiveExtrudeAction {
-  phase: "pending" | "active";
-  featureId: string | null;
-  featureIds: string[];
-  profileIds: string[];
-  automaticMode: boolean;
-  initialDepth: number;
-  initialMode: ExtrudeMode;
-  initialParameters: ExtrudeFeatureParameters | null;
-  initialTargetBodyId: string | null;
-  profileCount: number;
-  // Snapshot of "did the document have any other solid bodies before the
-  // user invoked this extrude?" — drives whether Join/Cut are offered.
-  canCombineWithExistingBody: boolean;
-  // Set when the panel was opened to *edit* an existing extrude (via
-  // double-click in the timeline) rather than to dial in a freshly-
-  // created one. On cancel we restore these values instead of calling
-  // `undo`, which would clobber whatever the user did *after* the
-  // extrude was originally created.
-  originalSnapshot: {
-    depth: number;
-    mode: ExtrudeMode;
-    targetBodyId: string | null;
-    parameters: ExtrudeFeatureParameters;
-  } | null;
+function hasCancelableAppAction(
+  actions: readonly unknown[],
+  materialsPanelOpen: boolean,
+) {
+  return actions.some(Boolean) || materialsPanelOpen;
 }
 
-interface ActiveLoftAction {
-  phase: "pending" | "active";
-  featureId: string | null;
-  initialRuled: boolean;
-  profileIds: string[];
-  originalSnapshot: {
-    profileIds: string[];
-    ruled: boolean;
-  } | null;
+function hasDocumentSelection(documentState: DocumentState | null) {
+  return Boolean(
+    documentState &&
+      (documentState.selected_feature_id ||
+        documentState.selected_reference_id ||
+        documentState.selected_face_id ||
+        documentState.selected_edge_ids.length > 0 ||
+        documentState.selected_vertex_ids.length > 0),
+  );
 }
-
-interface ActiveRevolveAction {
-  phase: "pending" | "active";
-  featureId: string | null;
-  profileId: string | null;
-  axisEntityId: string | null;
-  initialAngle: number;
-  originalSnapshot: {
-    profileId: string;
-    axisEntityId: string;
-    angleDegrees: number;
-  } | null;
-}
-
-interface ActiveSweepAction {
-  phase: "pending" | "active";
-  featureId: string | null;
-  profileId: string | null;
-  pathEntityId: string | null;
-  originalSnapshot: {
-    profileId: string;
-    pathEntityId: string;
-  } | null;
-}
-
-type ActiveMoveAction =
-  | { phase: "pending"; parameters: MoveFeatureParameters }
-  | {
-      phase: "active";
-      featureId: string;
-      targetBodyId: string;
-      parameters: MoveFeatureParameters;
-      originalSnapshot: MoveFeatureParameters | null;
-      createdCopyFeatureId?: string | null;
-    };
-
-interface SketchDeleteSelection {
-  entityIds: string[];
-  pointIds: string[];
-  profileIds: string[];
-}
-
-function bodyIdFromFaceId(faceId: string | null | undefined) {
-  if (!faceId) {
-    return null;
-  }
-  const marker = ":face:";
-  const markerIndex = faceId.indexOf(marker);
-  if (markerIndex <= 0) {
-    return null;
-  }
-  return faceId.slice(0, markerIndex);
-}
-
-// In-progress fillet or chamfer feature. Two-phase contextual modeling flow:
-//
-//   - phase "pending": panel is open but no feature exists yet. The
-//     user opens this by invoking Fillet / Chamfer with no edges
-//     selected. They can either type a value first or click an edge
-//     first; whichever comes first, the other is honored when the
-//     feature is created on the first edge click.
-//
-//   - phase "active": the core created the feature on the first edge
-//     pick. The panel now drives live `update_*_radius` /
-//     `update_*_distance` and edge clicks toggle membership through
-//     `update_*_edges`. We mirror the edge list locally as the
-//     authoritative source while editing — relying on the document
-//     round-trip for it caused dropped edges under rapid clicking,
-//     because each click read a stale snapshot of `selected_edge_ids`.
-type ActiveEdgeOpAction =
-  | {
-      phase: "pending";
-      kind: "fillet" | "chamfer";
-      // Seed value displayed in the panel; the *current* typed value
-      // lives in `pendingValueRef` so that an edge click placed
-      // mid-typing still uses the latest input.
-      initialValue: number;
-    }
-  | {
-      phase: "active";
-      kind: "fillet" | "chamfer";
-      featureId: string;
-      initialValue: number;
-      edgeIds: string[];
-    };
 
 function App() {
   const { t } = useTranslation();
@@ -396,15 +272,6 @@ function App() {
   const [edgeOpAction, setEdgeOpAction] = useState<ActiveEdgeOpAction | null>(
     null,
   );
-  type ShellAction =
-    | { phase: "pending"; initialThickness: number }
-    | {
-        phase: "active";
-        featureId: string;
-        faceId: string;
-        faceSummary: string;
-        initialThickness: number;
-      };
   const [shellAction, setShellAction] = useState<ShellAction | null>(null);
   const pendingShellThicknessRef = useRef<number>(DEFAULT_SHELL_THICKNESS);
   // In-progress offset plane session. Mirrors the fillet/chamfer
@@ -417,73 +284,25 @@ function App() {
   //     clicking.
   //   - "active": the core created the feature; typing here drives
   //     `update_offset_plane` for live preview.
-  type OffsetPlaneAction =
-    | { phase: "pending"; initialOffset: number }
-    | {
-        phase: "active";
-        featureId: string;
-        initialOffset: number;
-        sourceSummary: string;
-      };
   const [offsetPlaneAction, setOffsetPlaneAction] =
     useState<OffsetPlaneAction | null>(null);
   const pendingOffsetRef = useRef<number>(DEFAULT_OFFSET_PLANE_DISTANCE);
-  const [midplaneAction, setMidplaneAction] = useState<{
-    sourceIds: string[];
-  } | null>(null);
-  const [tangentPlaneAction, setTangentPlaneAction] = useState<{
-    isPending: true;
-  } | null>(null);
-  type AnglePlaneAction =
-    | {
-        phase: "pick_plane";
-        initialAngle: number;
-      }
-    | {
-        phase: "pick_axis";
-        sourcePlaneId: string;
-        sourceSummary: string;
-        initialAngle: number;
-      }
-    | {
-        phase: "active";
-        featureId: string;
-        sourcePlaneId: string;
-        sourceSummary: string;
-        axisId: string;
-        axisSummary: string;
-        initialAngle: number;
-      };
+  const [midplaneAction, setMidplaneAction] =
+    useState<MidplaneAction | null>(null);
+  const [tangentPlaneAction, setTangentPlaneAction] =
+    useState<PendingReferenceAction | null>(null);
   const [anglePlaneAction, setAnglePlaneAction] =
     useState<AnglePlaneAction | null>(null);
   const pendingAngleRef = useRef<number>(DEFAULT_ANGLE_PLANE_DEGREES);
   const [constructionAxisAction, setConstructionAxisAction] =
-    useState<{ isPending: true } | null>(null);
+    useState<PendingReferenceAction | null>(null);
   const [constructionPointAction, setConstructionPointAction] =
-    useState<{ isPending: true } | null>(null);
-  type HelixAction =
-    | { phase: "pending" }
-    | { phase: "active"; featureId: string };
+    useState<PendingReferenceAction | null>(null);
   const [helixAction, setHelixAction] = useState<HelixAction | null>(null);
-  type ThreadAction =
-    | { phase: "pick_target"; axisSourceId: string | null }
-    | { phase: "pick_axis"; targetBodyId: string; targetSummary: string }
-    | {
-        phase: "active";
-        featureId: string;
-        originalParameters: ThreadFeatureParameters | null;
-      };
   const [threadAction, setThreadAction] = useState<ThreadAction | null>(null);
-  type FastenerAction = {
-    featureId: string;
-    originalParameters: FastenerFeatureParameters | null;
-  };
   const [fastenerAction, setFastenerAction] = useState<FastenerAction | null>(
     null,
   );
-  type HoleAction =
-    | { phase: "pending" }
-    | { phase: "active"; featureId: string };
   const [holeAction, setHoleAction] = useState<HoleAction | null>(null);
   // Identifies which feature (if any) is being edited via the floating
   // edit panel. The panel itself reads the feature's parameters
@@ -507,6 +326,16 @@ function App() {
     EMPTY_RECENT_PROJECTS_DOCUMENT,
   );
   recentProjectsDocumentRef.current = recentProjectsDocument;
+  const recentProjectsStore = useMemo(
+    () => ({
+      read: () => recentProjectsDocumentRef.current,
+      write: (nextDocument: RecentProjectsDocument) => {
+        recentProjectsDocumentRef.current = nextDocument;
+        setRecentProjectsDocument(nextDocument);
+      },
+    }),
+    [],
+  );
   const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(
     null,
   );
@@ -694,6 +523,28 @@ function App() {
       );
     });
   }
+  const translateSelectionLabel = (
+    key: string,
+    options?: Record<string, unknown>,
+  ) => t(key, options);
+  const planeSourceContext = {
+    document,
+    viewport,
+    selectedSketchProfileIds,
+    sketchProfileLabelById,
+    translate: translateSelectionLabel,
+  };
+  const axisSourceContext = {
+    document,
+    viewport,
+    sketchLineLabelById,
+    translate: translateSelectionLabel,
+  };
+  const threadTargetContext = {
+    document,
+    viewport,
+    translate: translateSelectionLabel,
+  };
   const selectedExtrudableFaceId =
     selectedSketchProfileIds.length === 0
       ? selectedSketchableFace?.face_id ?? null
@@ -1216,27 +1067,36 @@ function App() {
     return result;
   }, [document, effectiveHiddenFeatureIds]);
 
+  const activeToolState = {
+    activeSketchPlaneId,
+    extrudeAction,
+    loftAction,
+    revolveAction,
+    sweepAction,
+    edgeOpAction,
+    shellAction,
+    holeAction,
+    offsetPlaneAction,
+    midplaneAction,
+    tangentPlaneAction,
+    anglePlaneAction,
+    constructionAxisAction,
+    constructionPointAction,
+    helixAction,
+    threadAction,
+    fastenerAction,
+    moveAction,
+  };
+
   async function triggerExtrudeAction() {
     if (extrudeAction?.phase === "active") {
       return;
     }
     if (
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction
+      isToolStartBlocked(activeToolState, {
+        activeSketchPlane: false,
+        extrude: false,
+      })
     ) {
       return;
     }
@@ -1351,46 +1211,23 @@ function App() {
     // the `document_state` event with the new feature. To capture the real
     // new feature id we subscribe to the next document update that contains
     // a freshly created extrude feature.
-    let createdFeatureIds: string[] = [];
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const createdFeatures = next.feature_history
-        .slice(previousLength)
-        .filter((feature) => feature.kind === "extrude");
-      if (createdFeatures.length === 0) {
-        return false;
-      }
-      const lastFeature = createdFeatures[createdFeatures.length - 1];
-      if (lastFeature.feature_id !== next.selected_feature_id) {
-        return false;
-      }
-      createdFeatureIds = createdFeatures.map((feature) => feature.feature_id);
-      return true;
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("extrude");
 
     await runAction(async () => {
       try {
         await extrudeProfile(profileIds, depth, mode, targetBodyId, parameters);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
-        lastExtrudeProfileUpdateRef.current = profileIds.join("|");
-        const createdFeature = nextDocument.feature_history.find(
-          (entry) => entry.feature_id === newFeatureId,
-        );
+        const {
+          document: nextDocument,
+          feature: createdFeature,
+          featureId: newFeatureId,
+          createdFeatures,
+        } = await documentPromise;
         const createdParams = createdFeature?.extrude_parameters;
+        lastExtrudeProfileUpdateRef.current = profileIds.join("|");
         setExtrudeAction({
           phase: "active",
           featureId: newFeatureId,
-          featureIds: createdFeatureIds.length > 0 ? createdFeatureIds : [newFeatureId],
+          featureIds: createdFeatures.map((feature) => feature.feature_id),
           profileIds,
           automaticMode: false,
           initialDepth: depth,
@@ -1501,54 +1338,25 @@ function App() {
     }
     extrudeCreateInFlightRef.current = true;
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "extrude"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("extrude");
 
     await runAction(async () => {
       try {
         await extrudeFace(faceId, depth, mode, targetBodyId, parameters);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
-        const createdFeature = nextDocument.feature_history.find(
-          (entry) => entry.feature_id === newFeatureId,
+        const { feature: createdFeature, featureId: newFeatureId } =
+          await documentPromise;
+        setExtrudeAction(
+          activeExtrudeActionFromCreatedFeature({
+            createdFeature,
+            featureId: newFeatureId,
+            depth,
+            mode,
+            targetBodyId,
+            profileCount: 1,
+            canCombineWithExistingBody:
+              canCombineExtrudeWithExistingBody(document),
+          }),
         );
-        const createdParams = createdFeature?.extrude_parameters;
-        setExtrudeAction({
-          phase: "active",
-          featureId: newFeatureId,
-          featureIds: [newFeatureId],
-          profileIds: [],
-          automaticMode: false,
-          initialDepth: depth,
-          initialMode: createdParams?.mode ?? mode ?? "new_body",
-          initialParameters: createdParams ?? null,
-          initialTargetBodyId:
-            createdParams?.target_body_id ?? targetBodyId ?? null,
-          profileCount: 1,
-          originalSnapshot: null,
-          canCombineWithExistingBody:
-            (document?.feature_history ?? []).some(
-              (entry) =>
-                entry.kind === "box" ||
-                entry.kind === "cylinder" ||
-                entry.kind === "extrude",
-            ) ?? false,
-        });
       } catch (error) {
         addMessage(`extrude face action error: ${String(error)}`);
       } finally {
@@ -1569,54 +1377,25 @@ function App() {
     }
     extrudeCreateInFlightRef.current = true;
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "extrude"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("extrude");
 
     await runAction(async () => {
       try {
         await extrudeOpenEntities(entityIds, depth, mode, targetBodyId, parameters);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
-        const createdFeature = nextDocument.feature_history.find(
-          (entry) => entry.feature_id === newFeatureId,
+        const { feature: createdFeature, featureId: newFeatureId } =
+          await documentPromise;
+        setExtrudeAction(
+          activeExtrudeActionFromCreatedFeature({
+            createdFeature,
+            featureId: newFeatureId,
+            depth,
+            mode,
+            targetBodyId,
+            profileCount: entityIds.length,
+            canCombineWithExistingBody:
+              canCombineExtrudeWithExistingBody(document),
+          }),
         );
-        const createdParams = createdFeature?.extrude_parameters;
-        setExtrudeAction({
-          phase: "active",
-          featureId: newFeatureId,
-          featureIds: [newFeatureId],
-          profileIds: [],
-          automaticMode: false,
-          initialDepth: depth,
-          initialMode: createdParams?.mode ?? mode ?? "new_body",
-          initialParameters: createdParams ?? null,
-          initialTargetBodyId:
-            createdParams?.target_body_id ?? targetBodyId ?? null,
-          profileCount: entityIds.length,
-          originalSnapshot: null,
-          canCombineWithExistingBody:
-            (document?.feature_history ?? []).some(
-              (entry) =>
-                entry.kind === "box" ||
-                entry.kind === "cylinder" ||
-                entry.kind === "extrude",
-            ) ?? false,
-        });
       } catch (error) {
         addMessage(`thin extrude action error: ${String(error)}`);
       } finally {
@@ -1708,33 +1487,14 @@ function App() {
     }
     loftCreateInFlightRef.current = true;
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "loft"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("loft");
 
     await runAction(async () => {
       try {
         await loftProfiles(profileIds, ruled);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { feature: createdFeature, featureId: newFeatureId } =
+          await documentPromise;
         lastLoftProfileUpdateRef.current = profileIds.join("|");
-        const createdFeature = nextDocument.feature_history.find(
-          (entry) => entry.feature_id === newFeatureId,
-        );
         setLoftAction({
           phase: "active",
           featureId: newFeatureId,
@@ -1798,33 +1558,14 @@ function App() {
     }
     revolveCreateInFlightRef.current = true;
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "revolve"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("revolve");
 
     await runAction(async () => {
       try {
         await revolveProfile(profileId, axisEntityId, angleDegrees);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { feature: createdFeature, featureId: newFeatureId } =
+          await documentPromise;
         lastRevolveInputsRef.current = `${profileId}|${axisEntityId}`;
-        const createdFeature = nextDocument.feature_history.find(
-          (entry) => entry.feature_id === newFeatureId,
-        );
         setRevolveAction({
           phase: "active",
           featureId: newFeatureId,
@@ -1893,29 +1634,12 @@ function App() {
     }
     sweepCreateInFlightRef.current = true;
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "sweep"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("sweep");
 
     await runAction(async () => {
       try {
         await sweepProfile(profileId, pathEntityId);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { featureId: newFeatureId } = await documentPromise;
         lastSweepInputsRef.current = `${profileId}|${pathEntityId}`;
         setSweepAction({
           phase: "active",
@@ -1996,36 +1720,6 @@ function App() {
   // pre-selected when the action is invoked, we honor that and create
   // immediately, jumping straight to the "active" phase. See the
   // ActiveEdgeOpAction comment above for the rationale.
-  // Friendly label for a plane the user just clicked. Per AGENTS.md
-  // UI Copy Rules we never expose internal ids — origin planes get
-  // "XY plane" / "YZ plane" / "XZ plane", construction planes use
-  // their feature name (e.g. "Offset Plane 2"), and faces use the
-  // owning body name + the face's kind label.
-  function describePlaneSource(referenceId: string): string {
-    if (referenceId === "ref-plane-xy") return t("geometry.xyPlane");
-    if (referenceId === "ref-plane-yz") return t("geometry.yzPlane");
-    if (referenceId === "ref-plane-xz") return t("geometry.xzPlane");
-    const feature = document?.feature_history.find(
-      (entry) => entry.feature_id === referenceId,
-    );
-    if (feature) {
-      return feature.name || feature.kind;
-    }
-    const profileLabel = sketchProfileLabelById.get(referenceId);
-    if (profileLabel) {
-      return profileLabel;
-    }
-    // Face id "<body_id>:face:<index>" — pull the face's label /
-    // owning body label off the viewport snapshot if we can.
-    const face = viewport?.solid_faces.find(
-      (entry) => entry.face_id === referenceId,
-    );
-    if (face) {
-      return face.label || t("geometry.ownerFace", { owner: face.owner_kind });
-    }
-    return t("geometry.selectedPlane");
-  }
-
   // Start the contextual modeling Offset Plane flow. Opens the panel in
   // pending phase; the next viewport click on a plane / planar face
   // promotes the session to active by calling `create_offset_plane`.
@@ -2033,42 +1727,21 @@ function App() {
   // "select-then-invoke" shortcut and create the feature immediately.
   async function triggerOffsetPlaneAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        hole: false,
+        helix: false,
+        thread: false,
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
     pendingOffsetRef.current = DEFAULT_OFFSET_PLANE_DISTANCE;
 
     // Already-selected plane? Use it immediately.
-    const preselectedReference = document?.selected_reference_id ?? null;
-    const preselectedFaceId = document?.selected_face_id ?? null;
-    const preselectedProfileId =
-      document?.selected_sketch_profile_id ??
-      selectedSketchProfileIds[selectedSketchProfileIds.length - 1] ??
-      null;
-    const preselectedFace = preselectedFaceId
-      ? (viewport?.solid_faces.find(
-          (entry) => entry.face_id === preselectedFaceId,
-        ) ?? null)
-      : null;
     const sourceId =
-      preselectedReference ??
-      (preselectedFace && preselectedFace.sketchability === "planar"
-        ? preselectedFaceId
-        : null) ??
-      preselectedProfileId;
+      selectionSources.currentPlaneLikeSourceId(planeSourceContext);
     if (sourceId) {
       await createOffsetPlaneFeature(sourceId, DEFAULT_OFFSET_PLANE_DISTANCE);
       return;
@@ -2084,34 +1757,20 @@ function App() {
   // come back over IPC, mirroring the extrude / fillet flows. Promotes
   // the panel from pending to active once the feature id is known.
   async function createOffsetPlaneFeature(sourceId: string, offset: number) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "construction_plane"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("construction_plane");
 
     await runAction(async () => {
       await createOffsetPlane(sourceId, offset);
       try {
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { featureId: newFeatureId } = await documentPromise;
         setOffsetPlaneAction({
           phase: "active",
           featureId: newFeatureId,
           initialOffset: offset,
-          sourceSummary: describePlaneSource(sourceId),
+          sourceSummary: selectionSources.describePlaneSource(
+            planeSourceContext,
+            sourceId,
+          ),
         });
       } catch (error) {
         addMessage(`offset plane error: ${String(error)}`);
@@ -2119,127 +1778,8 @@ function App() {
     });
   }
 
-  function currentPlaneLikeSourceId(): string | null {
-    const preselectedReference = document?.selected_reference_id ?? null;
-    const preselectedFaceId = document?.selected_face_id ?? null;
-    const preselectedFace = preselectedFaceId
-      ? (viewport?.solid_faces.find(
-          (entry) => entry.face_id === preselectedFaceId,
-        ) ?? null)
-      : null;
-    const preselectedProfileId =
-      document?.selected_sketch_profile_id ??
-      selectedSketchProfileIds[selectedSketchProfileIds.length - 1] ??
-      null;
-    return (
-      preselectedReference ??
-      (preselectedFace && preselectedFace.sketchability === "planar"
-        ? preselectedFaceId
-        : null) ??
-      preselectedProfileId
-    );
-  }
-
-  function currentFaceSourceId(): string | null {
-    return document?.selected_face_id ?? null;
-  }
-
-  function currentAxisSourceId(): string | null {
-    const selectedEdgeId = document?.selected_edge_ids[0] ?? null;
-    if (selectedEdgeId) {
-      return selectedEdgeId;
-    }
-    const selectedSketchEntityId = document?.selected_sketch_entity_id ?? null;
-    if (
-      selectedSketchEntityId &&
-      sketchLineLabelById.has(selectedSketchEntityId)
-    ) {
-      return selectedSketchEntityId;
-    }
-    const selectedFeatureId = document?.selected_feature_id ?? null;
-    const selectedFeature = selectedFeatureId
-      ? document?.feature_history.find(
-          (feature) => feature.feature_id === selectedFeatureId,
-        )
-      : null;
-    if (selectedFeature?.kind === "construction_axis") {
-      return selectedFeature.feature_id;
-    }
-    return null;
-  }
-
-  function describeAxisSource(axisId: string): string {
-    const feature = document?.feature_history.find(
-      (entry) => entry.feature_id === axisId,
-    );
-    return (
-      sketchLineLabelById.get(axisId) ??
-      feature?.name ??
-      t("geometry.selectedAxis")
-    );
-  }
-
-  function currentThreadTargetBody(): {
-    bodyId: string;
-    summary: string;
-  } | null {
-    const selectedFaceId = document?.selected_face_id ?? null;
-    if (selectedFaceId) {
-      const face = viewport?.solid_faces.find(
-        (entry) => entry.face_id === selectedFaceId,
-      );
-      if (face) {
-        const bodyLabel =
-          viewport?.bodies.find((body) => body.id === face.owner_id)?.label ??
-          face.owner_id;
-        return {
-          bodyId: face.owner_id,
-          summary: `${bodyLabel} · ${face.label}`,
-        };
-      }
-    }
-    const selectedFeatureId = document?.selected_feature_id ?? null;
-    if (selectedFeatureId) {
-      const body = viewport?.bodies.find((entry) => entry.id === selectedFeatureId);
-      if (body) {
-        return { bodyId: body.id, summary: body.label };
-      }
-    }
-    return null;
-  }
-
-  function describeThreadTarget(bodyId: string): string {
-    return (
-      viewport?.bodies.find((body) => body.id === bodyId)?.label ??
-      document?.feature_history.find((feature) => feature.feature_id === bodyId)
-        ?.name ??
-      t("geometry.selectedBody")
-    );
-  }
-
-  function currentPointSourceId(): string | null {
-    const selectedVertexId = document?.selected_vertex_ids[0] ?? null;
-    if (selectedVertexId) {
-      return selectedVertexId;
-    }
-    return document?.selected_sketch_point_id ?? null;
-  }
-
   async function createMidplaneFeature(sourceIds: [string, string]) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "construction_plane"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("construction_plane");
 
     await runAction(async () => {
       await createMidplane(sourceIds);
@@ -2252,20 +1792,7 @@ function App() {
   }
 
   async function createTangentPlaneFeature(sourceFaceId: string) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "construction_plane"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("construction_plane");
 
     await runAction(async () => {
       await createTangentPlane(sourceFaceId);
@@ -2282,36 +1809,25 @@ function App() {
     sourceAxisId: string,
     angleDegrees: number,
   ) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "construction_plane"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("construction_plane");
 
     await runAction(async () => {
       await createAnglePlane(sourcePlaneId, sourceAxisId, angleDegrees);
       try {
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { featureId: newFeatureId } = await documentPromise;
         setAnglePlaneAction({
           phase: "active",
           featureId: newFeatureId,
           sourcePlaneId,
-          sourceSummary: describePlaneSource(sourcePlaneId),
+          sourceSummary: selectionSources.describePlaneSource(
+            planeSourceContext,
+            sourcePlaneId,
+          ),
           axisId: sourceAxisId,
-          axisSummary: describeAxisSource(sourceAxisId),
+          axisSummary: selectionSources.describeAxisSource(
+            axisSourceContext,
+            sourceAxisId,
+          ),
           initialAngle: angleDegrees,
         });
       } catch (error) {
@@ -2341,41 +1857,38 @@ function App() {
 
   async function triggerMidplaneAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        hole: false,
+        constructionAxis: false,
+        constructionPoint: false,
+        helix: false,
+        thread: false,
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
-    const firstSourceId = currentPlaneLikeSourceId();
+    const firstSourceId =
+      selectionSources.currentPlaneLikeSourceId(planeSourceContext);
     setMidplaneAction({ sourceIds: firstSourceId ? [firstSourceId] : [] });
   }
 
   async function triggerTangentPlaneAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        hole: false,
+        constructionAxis: false,
+        constructionPoint: false,
+        helix: false,
+        thread: false,
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
-    const sourceFaceId = currentFaceSourceId();
+    const sourceFaceId = selectionSources.currentFaceSourceId(document);
     if (sourceFaceId) {
       await createTangentPlaneFeature(sourceFaceId);
       return;
@@ -2385,23 +1898,23 @@ function App() {
 
   async function triggerAnglePlaneAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        hole: false,
+        constructionAxis: false,
+        constructionPoint: false,
+        helix: false,
+        thread: false,
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
     pendingAngleRef.current = DEFAULT_ANGLE_PLANE_DEGREES;
-    const sourcePlaneId = currentPlaneLikeSourceId();
-    const sourceAxisId = currentAxisSourceId();
+    const sourcePlaneId =
+      selectionSources.currentPlaneLikeSourceId(planeSourceContext);
+    const sourceAxisId =
+      selectionSources.currentAxisSourceId(axisSourceContext);
     if (sourcePlaneId && sourceAxisId) {
       await createAnglePlaneFeature(
         sourcePlaneId,
@@ -2414,7 +1927,10 @@ function App() {
       setAnglePlaneAction({
         phase: "pick_axis",
         sourcePlaneId,
-        sourceSummary: describePlaneSource(sourcePlaneId),
+        sourceSummary: selectionSources.describePlaneSource(
+          planeSourceContext,
+          sourcePlaneId,
+        ),
         initialAngle: DEFAULT_ANGLE_PLANE_DEGREES,
       });
       return;
@@ -2449,27 +1965,13 @@ function App() {
 
   async function triggerConstructionAxisAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction
+      isToolStartBlocked(activeToolState, {
+        activeSketchPlane: false,
+      })
     ) {
       return;
     }
-    const sourceId = currentAxisSourceId();
+    const sourceId = selectionSources.currentAxisSourceId(axisSourceContext);
     if (sourceId) {
       await createConstructionAxisFeature(sourceId);
       return;
@@ -2479,27 +1981,13 @@ function App() {
 
   async function triggerConstructionPointAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction
+      isToolStartBlocked(activeToolState, {
+        activeSketchPlane: false,
+      })
     ) {
       return;
     }
-    const sourceId = currentPointSourceId();
+    const sourceId = selectionSources.currentPointSourceId(document);
     if (sourceId) {
       await createConstructionPointFeature(sourceId);
       return;
@@ -2511,20 +1999,7 @@ function App() {
     axisSourceId: string,
     parameters: Partial<HelixFeatureParameters> = {},
   ) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "helix"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("helix");
 
     await runAction(async () => {
       try {
@@ -2536,11 +2011,8 @@ function App() {
           start_angle_degrees: 0,
           ...parameters,
         });
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (newFeatureId) {
-          setHelixAction({ phase: "active", featureId: newFeatureId });
-        }
+        const { featureId: newFeatureId } = await documentPromise;
+        setHelixAction({ phase: "active", featureId: newFeatureId });
       } catch (error) {
         addMessage(`helix error: ${String(error)}`);
       }
@@ -2548,29 +2020,10 @@ function App() {
   }
 
   async function triggerHelixAction() {
-    if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction ||
-      activeSketchPlaneId
-    ) {
+    if (isToolStartBlocked(activeToolState)) {
       return;
     }
-    const sourceId = currentAxisSourceId();
+    const sourceId = selectionSources.currentAxisSourceId(axisSourceContext);
     if (sourceId) {
       await createHelixFeature(sourceId);
       return;
@@ -2605,20 +2058,7 @@ function App() {
     axisSourceId: string,
     parameters: Partial<ThreadFeatureParameters> = {},
   ) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "thread"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("thread");
 
     await runAction(async () => {
       try {
@@ -2626,15 +2066,12 @@ function App() {
           ...defaultThreadParameters(targetBodyId, axisSourceId),
           ...parameters,
         });
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (newFeatureId) {
-          setThreadAction({
-            phase: "active",
-            featureId: newFeatureId,
-            originalParameters: null,
-          });
-        }
+        const { featureId: newFeatureId } = await documentPromise;
+        setThreadAction({
+          phase: "active",
+          featureId: newFeatureId,
+          originalParameters: null,
+        });
       } catch (error) {
         addMessage(`thread error: ${String(error)}`);
       }
@@ -2642,30 +2079,12 @@ function App() {
   }
 
   async function triggerThreadAction() {
-    if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction ||
-      activeSketchPlaneId
-    ) {
+    if (isToolStartBlocked(activeToolState)) {
       return;
     }
-    const target = currentThreadTargetBody();
-    const axisSourceId = currentAxisSourceId();
+    const target = selectionSources.currentThreadTargetBody(threadTargetContext);
+    const axisSourceId =
+      selectionSources.currentAxisSourceId(axisSourceContext);
     if (target && axisSourceId) {
       await createThreadFeature(target.bodyId, axisSourceId);
       return;
@@ -2698,55 +2117,20 @@ function App() {
   }
 
   async function triggerFastenerAction() {
-    if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction ||
-      activeSketchPlaneId
-    ) {
+    if (isToolStartBlocked(activeToolState)) {
       return;
     }
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "fastener"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("fastener");
 
     await runAction(async () => {
       try {
         await createFastener(defaultFastenerParameters());
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (newFeatureId) {
-          setFastenerAction({
-            featureId: newFeatureId,
-            originalParameters: null,
-          });
-        }
+        const { featureId: newFeatureId } = await documentPromise;
+        setFastenerAction({
+          featureId: newFeatureId,
+          originalParameters: null,
+        });
       } catch (error) {
         addMessage(`fastener error: ${String(error)}`);
       }
@@ -2758,20 +2142,7 @@ function App() {
     parameters: MoveFeatureParameters = defaultMoveParameters(targetBodyId),
     options: { createdCopyFeatureId?: string | null } = {},
   ) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "move"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("move");
 
     await runAction(async () => {
       try {
@@ -2781,12 +2152,9 @@ function App() {
           is_pending: true,
         };
         await createMove(targetBodyId, seeded);
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        const created = nextDocument.feature_history.find(
-          (feature) => feature.feature_id === newFeatureId,
-        );
-        if (newFeatureId && created?.move_parameters) {
+        const { feature: created, featureId: newFeatureId } =
+          await documentPromise;
+        if (created.move_parameters) {
           setMoveAction({
             phase: "active",
             featureId: newFeatureId,
@@ -2804,26 +2172,7 @@ function App() {
   }
 
   function isBodyPlacementActionBlocked() {
-    return (
-      activeSketchPlaneId ||
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction
-    );
+    return isToolStartBlocked(activeToolState);
   }
 
   async function moveBodyFromContext(bodyId: string) {
@@ -2837,7 +2186,11 @@ function App() {
     const bodyName =
       document?.feature_history.find((feature) => feature.feature_id === bodyId)
         ?.name ?? document?.name;
-    const filePath = await pickExportStlPath(bodyName);
+    const filePath = await pickExportStlPath({
+      translate: t,
+      documentName: bodyName,
+      addMessage,
+    });
     if (!filePath) {
       return;
     }
@@ -2856,60 +2209,82 @@ function App() {
       return;
     }
 
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "body_copy" &&
-        lastFeature.body_copy_parameters?.source_body_id === sourceBodyId &&
-        lastFeature.body_copy_parameters.copy_mode === copyMode
-      );
-    });
+    const documentPromise = awaitCreatedFeature(
+      (feature) =>
+        feature.kind === "body_copy" &&
+        feature.body_copy_parameters?.source_body_id === sourceBodyId &&
+        feature.body_copy_parameters.copy_mode === copyMode,
+    );
 
     try {
       await runAction(async () => {
         await createBodyCopy(sourceBodyId, copyMode);
       });
-      const nextDocument = await documentPromise;
-      const copyBodyId = nextDocument.selected_feature_id ?? null;
-      if (copyBodyId) {
-        await createMoveFeature(copyBodyId, defaultMoveParameters(copyBodyId), {
-          createdCopyFeatureId: copyBodyId,
-        });
-      }
+      const { featureId: copyBodyId } = await documentPromise;
+      await createMoveFeature(copyBodyId, defaultMoveParameters(copyBodyId), {
+        createdCopyFeatureId: copyBodyId,
+      });
     } catch (error) {
       addMessage(`copy body error: ${String(error)}`);
     }
   }
 
+  const bodyContextActions = {
+    onMoveBody: moveBodyFromContext,
+    onCopyBody: copyBodyAndMove,
+    onExportBodyMesh: exportBodyAsMesh,
+    onUnlinkBodyCopy: confirmAndUnlinkBodyCopy,
+  };
+
+  async function updateActiveMovePreviewParameters(
+    parameters: MoveFeatureParameters,
+  ) {
+    if (moveAction?.phase !== "active") {
+      return false;
+    }
+    await runAction(async () => {
+      await updateMoveParameters(moveAction.featureId, parameters);
+    });
+    setMoveAction((current) =>
+      current?.phase === "active" &&
+      current.featureId === moveAction.featureId
+        ? { ...current, parameters }
+        : current,
+    );
+    return true;
+  }
+
+  function hideFeatureSourceSketches(
+    featureId: string,
+    readSourceSketchIds: (
+      feature: NonNullable<typeof document>["feature_history"][number],
+    ) => Array<string | null | undefined>,
+  ) {
+    const confirmedFeature =
+      document?.feature_history.find((entry) => entry.feature_id === featureId) ??
+      null;
+    if (!confirmedFeature) {
+      return;
+    }
+
+    const sourceSketchIds = readSourceSketchIds(confirmedFeature).filter(
+      (id): id is string => Boolean(id),
+    );
+    if (sourceSketchIds.length === 0) {
+      return;
+    }
+
+    setHiddenFeatureIds((current) => {
+      const next = new Set(current);
+      for (const sourceSketchId of sourceSketchIds) {
+        next.add(sourceSketchId);
+      }
+      return next;
+    });
+  }
+
   async function triggerMoveAction() {
-    if (
-      activeSketchPlaneId ||
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction
-    ) {
+    if (isToolStartBlocked(activeToolState)) {
       return;
     }
 
@@ -2967,26 +2342,7 @@ function App() {
   }
 
   async function triggerEdgeOpAction(kind: "fillet" | "chamfer") {
-    if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      fastenerAction ||
-      moveAction ||
-      activeSketchPlaneId
-    ) {
+    if (isToolStartBlocked(activeToolState)) {
       return;
     }
     const initialValue =
@@ -3017,23 +2373,7 @@ function App() {
     if (edgeIds.length === 0) {
       return;
     }
-    // Same fire-and-forget IPC trick as triggerExtrudeAction: subscribe to
-    // the next document update that contains a freshly-created feature of
-    // the requested kind so we can pick up its real id.
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === kind
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind(kind);
 
     await runAction(async () => {
       if (kind === "fillet") {
@@ -3042,11 +2382,7 @@ function App() {
         await createChamfer(edgeIds, value);
       }
       try {
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { featureId: newFeatureId } = await documentPromise;
         activeEdgeIdsRef.current = [...edgeIds];
         setEdgeOpAction({
           phase: "active",
@@ -3062,34 +2398,20 @@ function App() {
   }
 
   async function createShellFeature(faceId: string, thickness: number) {
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "shell"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("shell");
 
     await runAction(async () => {
       await createShell(faceId, thickness);
       try {
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (!newFeatureId) {
-          return;
-        }
+        const { featureId: newFeatureId } = await documentPromise;
         setShellAction({
           phase: "active",
           featureId: newFeatureId,
           faceId,
-          faceSummary: describePlaneSource(faceId),
+          faceSummary: selectionSources.describePlaneSource(
+            planeSourceContext,
+            faceId,
+          ),
           initialThickness: thickness,
         });
       } catch (error) {
@@ -3100,22 +2422,10 @@ function App() {
 
   async function triggerShellAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      threadAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
@@ -3140,20 +2450,7 @@ function App() {
       addMessage("hole action error: selected face is no longer available");
       return;
     }
-    const documentPromise = awaitDocumentChange((next, previous) => {
-      if (!next.selected_feature_id) {
-        return false;
-      }
-      const previousLength = previous?.feature_history.length ?? 0;
-      if (next.feature_history.length <= previousLength) {
-        return false;
-      }
-      const lastFeature = next.feature_history[next.feature_history.length - 1];
-      return (
-        lastFeature.feature_id === next.selected_feature_id &&
-        lastFeature.kind === "hole"
-      );
-    });
+    const documentPromise = awaitCreatedFeatureOfKind("hole");
 
     await runAction(async () => {
       await createHole(faceId, face.center, {
@@ -3178,11 +2475,8 @@ function App() {
         ...parameters,
       });
       try {
-        const nextDocument = await documentPromise;
-        const newFeatureId = nextDocument.selected_feature_id ?? null;
-        if (newFeatureId) {
-          setHoleAction({ phase: "active", featureId: newFeatureId });
-        }
+        const { featureId: newFeatureId } = await documentPromise;
+        setHoleAction({ phase: "active", featureId: newFeatureId });
       } catch (error) {
         addMessage(`hole action error: ${String(error)}`);
       }
@@ -3191,21 +2485,11 @@ function App() {
 
   async function triggerHoleAction() {
     if (
-      extrudeAction ||
-      loftAction ||
-      revolveAction ||
-      sweepAction ||
-      edgeOpAction ||
-      shellAction ||
-      holeAction ||
-      offsetPlaneAction ||
-      midplaneAction ||
-      tangentPlaneAction ||
-      anglePlaneAction ||
-      constructionAxisAction ||
-      constructionPointAction ||
-      helixAction ||
-      activeSketchPlaneId
+      isToolStartBlocked(activeToolState, {
+        thread: false,
+        fastener: false,
+        move: false,
+      })
     ) {
       return;
     }
@@ -3221,279 +2505,101 @@ function App() {
     // Central Escape/Cancel path for app-level tools. Sketch mode is
     // deliberately excluded here; sketch drafting Escape stays owned by
     // ViewportPanel so Esc never exits an active sketch.
-    if (extrudeAction) {
-      if (extrudeAction.phase === "active" && extrudeAction.featureId) {
-        const snapshot = extrudeAction.originalSnapshot;
-        if (snapshot) {
-          await runAction(async () => {
-            await updateExtrudeDepth(extrudeAction.featureId!, snapshot.depth);
-            await updateExtrudeMode(extrudeAction.featureId!, snapshot.mode);
-            await updateExtrudeTargetBody(
-              extrudeAction.featureId!,
-              snapshot.targetBodyId,
-            );
-            await updateExtrudeParameters(
-              extrudeAction.featureId!,
-              snapshot.parameters,
-            );
-          });
-        } else {
-          await undoUntilExtrudePreviewRemoved(
-            extrudeAction.featureIds.length > 0
-              ? extrudeAction.featureIds
-              : [extrudeAction.featureId],
-          );
-        }
-      }
-      setExtrudeAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (loftAction) {
-      if (loftAction.originalSnapshot && loftAction.featureId) {
-        const snapshot = loftAction.originalSnapshot;
-        await runAction(async () => {
-          await updateLoftProfiles(loftAction.featureId!, snapshot.profileIds);
-          await updateLoftRuled(loftAction.featureId!, snapshot.ruled);
-        });
-      } else if (loftAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setLoftAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (revolveAction) {
-      if (revolveAction.originalSnapshot && revolveAction.featureId) {
-        const snapshot = revolveAction.originalSnapshot;
-        await runAction(async () => {
-          await updateRevolveProfile(revolveAction.featureId!, snapshot.profileId);
-          await updateRevolveAxis(revolveAction.featureId!, snapshot.axisEntityId);
-          await updateRevolveAngle(
-            revolveAction.featureId!,
-            snapshot.angleDegrees,
-          );
-        });
-      } else if (revolveAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setRevolveAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (sweepAction) {
-      if (sweepAction.originalSnapshot && sweepAction.featureId) {
-        const snapshot = sweepAction.originalSnapshot;
-        await runAction(async () => {
-          await updateSweepProfile(sweepAction.featureId!, snapshot.profileId);
-          await updateSweepPath(sweepAction.featureId!, snapshot.pathEntityId);
-        });
-      } else if (sweepAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setSweepAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (moveAction) {
-      if (moveAction.phase === "active") {
-        if (moveAction.originalSnapshot) {
-          await runAction(async () => {
-            await updateMoveParameters(
-              moveAction.featureId,
-              moveAction.originalSnapshot!,
-            );
-          });
-        } else {
-          await runAction(async () => {
-            await undo();
-            if (moveAction.createdCopyFeatureId) {
-              await undo();
-            }
-          });
-        }
-      }
-      setMoveAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (edgeOpAction) {
-      if (edgeOpAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      activeEdgeIdsRef.current = [];
-      setEdgeOpAction(null);
-      return true;
-    }
-
-    if (shellAction) {
-      if (shellAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setShellAction(null);
-      return true;
-    }
-
-    if (holeAction) {
-      if (holeAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setHoleAction(null);
-      return true;
-    }
-
-    if (offsetPlaneAction) {
-      if (offsetPlaneAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setOffsetPlaneAction(null);
-      return true;
-    }
-
-    if (anglePlaneAction) {
-      if (anglePlaneAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setAnglePlaneAction(null);
-      return true;
-    }
-
-    if (midplaneAction) {
-      setMidplaneAction(null);
-      return true;
-    }
-
-    if (tangentPlaneAction) {
-      setTangentPlaneAction(null);
-      return true;
-    }
-
-    if (constructionAxisAction) {
-      setConstructionAxisAction(null);
-      return true;
-    }
-
-    if (constructionPointAction) {
-      setConstructionPointAction(null);
-      return true;
-    }
-
-    if (threadAction) {
-      if (threadAction.phase === "active") {
-        await runAction(async () => {
-          if (threadAction.originalParameters) {
-            await updateThreadParameters(
-              threadAction.featureId,
-              threadAction.originalParameters,
-            );
-          } else {
-            await undo();
-          }
-        });
-        await restoreTimelineCursorAfterEdit();
-      }
-      setThreadAction(null);
-      return true;
-    }
-
-    if (fastenerAction) {
-      await runAction(async () => {
-        if (fastenerAction.originalParameters) {
-          await updateFastenerParameters(
-            fastenerAction.featureId,
-            fastenerAction.originalParameters,
-          );
-        } else {
-          await undo();
-        }
-      });
-      setFastenerAction(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (helixAction) {
-      if (helixAction.phase === "active") {
-        await runAction(async () => {
-          await undo();
-        });
-      }
-      setHelixAction(null);
-      return true;
-    }
-
-    if (editingFeatureId) {
-      setEditingFeatureId(null);
-      await restoreTimelineCursorAfterEdit();
-      return true;
-    }
-
-    if (materialsPanelOpen) {
-      setMaterialsPanelOpen(false);
-      return true;
-    }
-
-    return false;
+    return cancelActiveToolFromContext({
+      actions: {
+        extrudeAction,
+        loftAction,
+        revolveAction,
+        sweepAction,
+        moveAction,
+        edgeOpAction,
+        shellAction,
+        holeAction,
+        offsetPlaneAction,
+        anglePlaneAction,
+        midplaneAction,
+        tangentPlaneAction,
+        constructionAxisAction,
+        constructionPointAction,
+        threadAction,
+        fastenerAction,
+        helixAction,
+        editingFeatureId,
+        materialsPanelOpen,
+      },
+      setters: {
+        setExtrudeAction,
+        setLoftAction,
+        setRevolveAction,
+        setSweepAction,
+        setMoveAction,
+        setEdgeOpAction,
+        setShellAction,
+        setHoleAction,
+        setOffsetPlaneAction,
+        setAnglePlaneAction,
+        setMidplaneAction,
+        setTangentPlaneAction,
+        setConstructionAxisAction,
+        setConstructionPointAction,
+        setThreadAction,
+        setFastenerAction,
+        setHelixAction,
+        setEditingFeatureId,
+        setMaterialsPanelOpen,
+      },
+      activeEdgeIdsRef,
+      runAction,
+      restoreTimelineCursorAfterEdit,
+      undo,
+      undoUntilExtrudePreviewRemoved,
+      updateExtrudeDepth,
+      updateExtrudeMode,
+      updateExtrudeTargetBody,
+      updateExtrudeParameters,
+      updateLoftProfiles,
+      updateLoftRuled,
+      updateRevolveProfile,
+      updateRevolveAxis,
+      updateRevolveAngle,
+      updateSweepProfile,
+      updateSweepPath,
+      updateMoveParameters,
+      updateThreadParameters,
+      updateFastenerParameters,
+    });
   }
 
   useEffect(() => {
-    function isTypingTarget(target: EventTarget | null) {
-      return (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      );
-    }
-
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) {
         return;
       }
 
       const target = event.target;
-      const hasCancelableTool =
-        Boolean(
-          extrudeAction ||
-            loftAction ||
-            revolveAction ||
-            sweepAction ||
-            moveAction ||
-            edgeOpAction ||
-            shellAction ||
-            holeAction ||
-            offsetPlaneAction ||
-            anglePlaneAction ||
-            midplaneAction ||
-            tangentPlaneAction ||
-            constructionAxisAction ||
-            constructionPointAction ||
-            threadAction ||
-            fastenerAction ||
-            helixAction ||
-            editingFeatureId,
-        ) || materialsPanelOpen;
+      const hasCancelableTool = hasCancelableAppAction(
+        [
+          extrudeAction,
+          loftAction,
+          revolveAction,
+          sweepAction,
+          moveAction,
+          edgeOpAction,
+          shellAction,
+          holeAction,
+          offsetPlaneAction,
+          anglePlaneAction,
+          midplaneAction,
+          tangentPlaneAction,
+          constructionAxisAction,
+          constructionPointAction,
+          threadAction,
+          fastenerAction,
+          helixAction,
+          editingFeatureId,
+        ],
+        materialsPanelOpen,
+      );
 
       if (event.code === "Escape" && hasCancelableTool) {
         event.preventDefault();
@@ -3507,12 +2613,7 @@ function App() {
         return;
       }
 
-      if (
-        event.code === "KeyS" &&
-        (IS_MACOS ? event.metaKey : event.ctrlKey) &&
-        !event.altKey &&
-        !event.shiftKey
-      ) {
+      if (isPlainSaveHotkey(event)) {
         event.preventDefault();
         void runAction(async () => {
           await saveCurrentDocument();
@@ -3523,22 +2624,8 @@ function App() {
       if (
         event.code === "Escape" &&
         !activeSketchPlaneId &&
-        !extrudeAction &&
-        !loftAction &&
-        !revolveAction &&
-        !sweepAction &&
-        !edgeOpAction &&
-        !shellAction &&
-        !threadAction &&
-        !fastenerAction &&
-        !moveAction &&
-        !materialsPanelOpen &&
-        document &&
-        (document.selected_feature_id ||
-          document.selected_reference_id ||
-          document.selected_face_id ||
-          document.selected_edge_ids.length > 0 ||
-          document.selected_vertex_ids.length > 0)
+        !hasCancelableTool &&
+        hasDocumentSelection(document)
       ) {
         event.preventDefault();
         void runAction(clearSelection);
@@ -3663,6 +2750,21 @@ function App() {
     setArmedSketchConstraint(null);
   }
 
+  async function finishActiveSketch() {
+    await runAction(async () => {
+      clearArmedSketchConstraint();
+      await finishSketch();
+      await restoreTimelineCursorAfterEdit();
+    });
+  }
+
+  async function setActiveSketchTool(tool: SketchTool) {
+    await runAction(async () => {
+      clearArmedSketchConstraint();
+      await setSketchTool(tool);
+    });
+  }
+
   async function handleSketchConstraintLinePick(lineId: string, additive = false) {
     if (!armedSketchConstraint) {
       await selectSketchEntity(lineId, additive);
@@ -3767,144 +2869,43 @@ function App() {
     });
   }
 
-  function makeDefaultExportBaseName(name?: string | null) {
-    return (
-      (name ?? document?.name ?? "polysmith-part")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "polysmith-part"
-    );
-  }
-
-  async function pickExportPath() {
-    const filePath = await save({
-      title: t("dialogs.exportStepTitle"),
-      defaultPath: `${makeDefaultExportBaseName()}.step`,
-      filters: [
-        {
-          name: t("dialogs.stepFileType"),
-          extensions: ["step", "stp"],
-        },
-      ],
-    });
-
-    if (filePath === null) {
-      addMessage("export canceled");
-      return null;
-    }
-
-    return filePath;
-  }
-
-  async function pickExportStlPath(baseName?: string | null) {
-    const filePath = await save({
-      title: t("dialogs.exportMeshTitle"),
-      defaultPath: `${makeDefaultExportBaseName(baseName)}.stl`,
-      filters: [
-        {
-          name: t("dialogs.stlFileType"),
-          extensions: ["stl"],
-        },
-      ],
-    });
-
-    if (filePath === null) {
-      addMessage("export canceled");
-      return null;
-    }
-
-    return filePath;
-  }
-
-  async function pickSaveDocumentPath() {
-    const filePath = await save({
-      title: t("dialogs.saveDocumentTitle"),
-      defaultPath: `${makeDefaultExportBaseName()}.polysmith`,
-      filters: [
-        {
-          name: t("dialogs.polysmithDocumentType"),
-          extensions: ["polysmith", "json"],
-        },
-      ],
-    });
-
-    if (filePath === null) {
-      addMessage("save canceled");
-      return null;
-    }
-    return filePath;
-  }
-
-  async function pickLoadDocumentPath() {
-    const result = await open({
-      title: t("dialogs.openDocumentTitle"),
-      multiple: false,
-      directory: false,
-      filters: [
-        {
-          name: t("dialogs.polysmithDocumentType"),
-          extensions: ["polysmith", "json"],
-        },
-      ],
-    });
-
-    if (result === null || Array.isArray(result)) {
-      addMessage("open canceled");
-      return null;
-    }
-    return result;
-  }
-
   async function recordRecentProject(
     filePath: string,
     thumbnailDataUrl: string | null,
     parentFolderId?: string | null,
   ) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    const existing = baseDocument.projects.find(
-      (project) => project.path === filePath,
-    );
-    const nextProjectsDocument = upsertRecentProject(baseDocument, {
-      path: filePath,
-      name: existing?.name,
-      thumbnailDataUrl: thumbnailDataUrl ?? existing?.thumbnailDataUrl ?? null,
+    await recentProjectActions.recordRecentProject(
+      recentProjectsStore,
+      filePath,
+      thumbnailDataUrl,
       parentFolderId,
-    });
-    recentProjectsDocumentRef.current = nextProjectsDocument;
-    setRecentProjectsDocument(nextProjectsDocument);
-    await saveRecentProjects(nextProjectsDocument);
-  }
-
-  async function updateRecentProjectsDocument(
-    nextProjectsDocument: RecentProjectsDocument,
-  ) {
-    recentProjectsDocumentRef.current = nextProjectsDocument;
-    setRecentProjectsDocument(nextProjectsDocument);
-    await saveRecentProjects(nextProjectsDocument);
+    );
   }
 
   async function createRecentProjectFolder(
     name: string,
     parentFolderId: string | null,
   ) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      createProjectFolder(baseDocument, name, parentFolderId),
+    await recentProjectActions.createRecentProjectFolder(
+      recentProjectsStore,
+      name,
+      parentFolderId,
     );
   }
 
   async function moveRecentProject(projectPath: string, folderId: string | null) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      moveProjectToFolder(baseDocument, projectPath, folderId),
+    await recentProjectActions.moveRecentProject(
+      recentProjectsStore,
+      projectPath,
+      folderId,
     );
   }
 
   async function renameRecentProjectEntry(project: RecentProject, name: string) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      renameRecentProject(baseDocument, project.path, name),
+    await recentProjectActions.renameRecentProjectEntry(
+      recentProjectsStore,
+      project,
+      name,
     );
   }
 
@@ -3919,23 +2920,24 @@ function App() {
         setSavedDocumentBaseline(null);
       }
     }
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      removeProjectFromRecentProjects(baseDocument, project.path),
+    await recentProjectActions.removeRecentProjectEntry(
+      recentProjectsStore,
+      project,
     );
   }
 
   async function deleteRecentProjectFolder(folderId: string) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      deleteProjectFolder(baseDocument, folderId),
+    await recentProjectActions.deleteRecentProjectFolder(
+      recentProjectsStore,
+      folderId,
     );
   }
 
   async function renameRecentProjectFolder(folderId: string, name: string) {
-    const baseDocument = recentProjectsDocumentRef.current;
-    await updateRecentProjectsDocument(
-      renameProjectFolder(baseDocument, folderId, name),
+    await recentProjectActions.renameRecentProjectFolder(
+      recentProjectsStore,
+      folderId,
+      name,
     );
   }
 
@@ -3969,7 +2971,13 @@ function App() {
     if (!document) {
       return false;
     }
-    const filePath = currentProjectPath ?? (await pickSaveDocumentPath());
+    const filePath =
+      currentProjectPath ??
+      (await pickSaveDocumentPath({
+        translate: t,
+        documentName: document.name,
+        addMessage,
+      }));
     if (!filePath) {
       return false;
     }
@@ -4152,6 +3160,33 @@ function App() {
     setWorkspaceView("cam");
   }
 
+  async function prepareExportedSlicerStl() {
+    const exportPath = await prepareOrcaExportPath();
+    await exportDocumentStl(exportPath);
+    await awaitDocumentExport(
+      (result) => result.format === "stl" && result.file_path === exportPath,
+    );
+    return exportPath;
+  }
+
+  function reportSlicerEmbedError(error: unknown, logPrefix: string) {
+    const message = String(error);
+    setSlicerStatus(t("workspace.slicerEmbedFailed", { error: message }));
+    addMessage(`${logPrefix}: ${message}`);
+  }
+
+  function applyOrcaEmbedResult(
+    result: Awaited<ReturnType<typeof embedOrcaWindow>>,
+    logPrefix: string,
+    trackEmbedSession: boolean,
+  ) {
+    setSlicerStatus(result.message);
+    if (trackEmbedSession) {
+      setHasOrcaEmbedSession(result.status === "embedded");
+    }
+    addMessage(`${logPrefix}: ${result.message}`);
+  }
+
   async function showSlicerView() {
     setWorkspaceView("slicer");
 
@@ -4186,13 +3221,9 @@ function App() {
         modelFilePath: null,
         bounds,
       });
-      setSlicerStatus(result.message);
-      setHasOrcaEmbedSession(result.status === "embedded");
-      addMessage(`slicer: ${result.message}`);
+      applyOrcaEmbedResult(result, "slicer", true);
     } catch (error) {
-      const message = String(error);
-      setSlicerStatus(t("workspace.slicerEmbedFailed", { error: message }));
-      addMessage(`slicer error: ${message}`);
+      reportSlicerEmbedError(error, "slicer error");
     }
   }
 
@@ -4210,22 +3241,13 @@ function App() {
     if (config.orcaSlicer.integrationMode === "web") {
       try {
         setSlicerStatus(t("workspace.exportingToSlicer"));
-        const exportPath = await prepareOrcaExportPath();
-        await exportDocumentStl(exportPath);
-        await awaitDocumentExport(
-          (result) =>
-            result.format === "stl" && result.file_path === exportPath,
-        );
+        const exportPath = await prepareExportedSlicerStl();
         await uploadStlToOrcaWeb(exportPath);
         setWorkspaceView("slicer");
         setSlicerStatus(null);
         addMessage("slicer: exported STL to OrcaSlicer web.");
       } catch (error) {
-        const message = String(error);
-        setSlicerStatus(
-          t("workspace.slicerEmbedFailed", { error: message }),
-        );
-        addMessage(`slicer web export error: ${message}`);
+        reportSlicerEmbedError(error, "slicer web export error");
       }
       return;
     }
@@ -4239,19 +3261,14 @@ function App() {
     try {
       if (IS_MACOS) {
         setSlicerStatus(t("workspace.exportingToSlicer"));
-        const exportPath = await prepareOrcaExportPath();
-        await exportDocumentStl(exportPath);
-        await awaitDocumentExport(
-          (result) => result.format === "stl" && result.file_path === exportPath,
-        );
+        const exportPath = await prepareExportedSlicerStl();
 
         const result = await embedOrcaWindow({
           binaryPath,
           modelFilePath: exportPath,
           bounds: STANDALONE_SLICER_BOUNDS,
         });
-        setSlicerStatus(result.message);
-        addMessage(`slicer export: ${result.message}`);
+        applyOrcaEmbedResult(result, "slicer export", false);
         return;
       }
 
@@ -4264,24 +3281,16 @@ function App() {
         return;
       }
 
-      const exportPath = await prepareOrcaExportPath();
-      await exportDocumentStl(exportPath);
-      await awaitDocumentExport(
-        (result) => result.format === "stl" && result.file_path === exportPath,
-      );
+      const exportPath = await prepareExportedSlicerStl();
 
       const result = await embedOrcaWindow({
         binaryPath,
         modelFilePath: exportPath,
         bounds,
       });
-      setSlicerStatus(result.message);
-      setHasOrcaEmbedSession(result.status === "embedded");
-      addMessage(`slicer export: ${result.message}`);
+      applyOrcaEmbedResult(result, "slicer export", true);
     } catch (error) {
-      const message = String(error);
-      setSlicerStatus(t("workspace.slicerEmbedFailed", { error: message }));
-      addMessage(`slicer export error: ${message}`);
+      reportSlicerEmbedError(error, "slicer export error");
     }
   }
 
@@ -4381,99 +3390,6 @@ function App() {
     });
   }
 
-  function currentSketchSelection() {
-    const entityIds = [
-      ...(document?.selected_sketch_entity_ids ?? []),
-      ...(document?.selected_sketch_entity_id
-        ? [document.selected_sketch_entity_id]
-        : []),
-    ];
-    const pointIds = [
-      ...(document?.selected_sketch_point_ids ?? []),
-      ...(document?.selected_sketch_point_id
-        ? [document.selected_sketch_point_id]
-        : []),
-    ];
-    const profileIds = [
-      ...(document?.selected_sketch_profile_ids ?? []),
-      ...(document?.selected_sketch_profile_id
-        ? [document.selected_sketch_profile_id]
-        : []),
-    ];
-    return {
-      entityIds: [...new Set(entityIds)],
-      pointIds: [...new Set(pointIds)],
-      profileIds: [...new Set(profileIds)],
-    };
-  }
-
-  function sketchSelectionAffectsExtrude(selection: SketchDeleteSelection) {
-    if (!document?.active_sketch_feature_id || !activeSketchFeature) {
-      return [];
-    }
-    const sketch = activeSketchFeature.sketch_parameters;
-    if (!sketch) {
-      return [];
-    }
-
-    const entityIds = new Set(selection.entityIds);
-    for (const pointId of selection.pointIds) {
-      for (const line of sketch.lines) {
-        if (
-          line.start_point_id === pointId ||
-          line.end_point_id === pointId
-        ) {
-          entityIds.add(line.line_id);
-        }
-      }
-      for (const arc of sketch.arcs ?? []) {
-        if (arc.start_point_id === pointId || arc.end_point_id === pointId) {
-          entityIds.add(arc.arc_id);
-        }
-      }
-      for (const circle of sketch.circles) {
-        if (`point-circle-${circle.circle_id}-center` === pointId) {
-          entityIds.add(circle.circle_id);
-        }
-      }
-    }
-
-    const affectedProfileIds = new Set(selection.profileIds);
-    for (const profile of sketch.profiles) {
-      const usesSelectedLine = profile.line_ids.some((id) =>
-        entityIds.has(id),
-      );
-      const usesSelectedCircle =
-        profile.source_circle_id !== null &&
-        entityIds.has(profile.source_circle_id);
-      if (usesSelectedLine || usesSelectedCircle) {
-        affectedProfileIds.add(profile.profile_id);
-      }
-    }
-
-    if (affectedProfileIds.size === 0) {
-      return [];
-    }
-
-    return document.feature_history.filter((feature) => {
-      if (
-        feature.kind !== "extrude" ||
-        !feature.extrude_parameters ||
-        feature.extrude_parameters.sketch_feature_id !==
-          document.active_sketch_feature_id
-      ) {
-        return false;
-      }
-      const sourceProfileIds =
-        feature.extrude_parameters.profile_ids.length > 0
-          ? feature.extrude_parameters.profile_ids
-          : [feature.extrude_parameters.profile_id];
-      return sourceProfileIds.some((profileId) =>
-        affectedProfileIds.has(profileId),
-      );
-    });
-  }
-
   function deleteSketchSelectionNow(selection: SketchDeleteSelection) {
     void runAction(async () => {
       await deleteSketchSelection(
@@ -4488,7 +3404,7 @@ function App() {
     if (!document?.active_sketch_feature_id) {
       return;
     }
-    const deleteSelection = selection ?? currentSketchSelection();
+    const deleteSelection = selection ?? currentSketchDeleteSelection(document);
     const { entityIds, pointIds, profileIds } = deleteSelection;
     if (
       entityIds.length === 0 &&
@@ -4498,10 +3414,14 @@ function App() {
       return;
     }
 
-    const dependents = sketchSelectionAffectsExtrude({
-      entityIds,
-      pointIds,
-      profileIds,
+    const dependents = extrudesAffectedBySketchSelection({
+      document,
+      activeSketchFeature,
+      selection: {
+        entityIds,
+        pointIds,
+        profileIds,
+      },
     });
     if (dependents.length > 0) {
       setPendingSketchDeleteConfirmation({
@@ -4595,6 +3515,138 @@ function App() {
     );
   }
 
+  function handleSidebarResizePointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = hierarchyWidth;
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = Math.max(
+        220,
+        Math.min(640, startWidth + (moveEvent.clientX - startX)),
+      );
+      setHierarchyWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function renderSidebarResizer() {
+    return (
+      <div
+        className="cad-sidebar-resizer"
+        onPointerDown={handleSidebarResizePointerDown}
+      />
+    );
+  }
+
+  function updateActiveHoleParameters(
+    patch: Partial<HoleFeatureParameters>,
+  ) {
+    if (!activeHoleParameters) {
+      return;
+    }
+    void runAction(async () => {
+      await updateHoleParameters(
+        holeAction?.phase === "active" ? holeAction.featureId : "",
+        {
+          ...activeHoleParameters,
+          ...patch,
+        },
+      );
+    });
+  }
+
+  function makePositiveHoleNumberChange(
+    patchFromValue: (value: number) => Partial<HoleFeatureParameters>,
+  ) {
+    return (event: ReactChangeEvent<HTMLInputElement>) => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value) || value <= 0) {
+        return;
+      }
+      updateActiveHoleParameters(patchFromValue(value));
+    };
+  }
+
+  const canExtrudeFromSelection =
+    !loftAction &&
+    !revolveAction &&
+    !sweepAction &&
+    !shellAction &&
+    !holeAction &&
+    !constructionAxisAction &&
+    !constructionPointAction &&
+    !helixAction &&
+    !threadAction &&
+    !fastenerAction &&
+    !moveAction &&
+    (!extrudeAction || extrudeAction.phase === "pending");
+  const noTimelineFeatureActionExceptMove =
+    !extrudeAction &&
+    !loftAction &&
+    !revolveAction &&
+    !sweepAction &&
+    !edgeOpAction &&
+    !threadAction &&
+    !fastenerAction;
+  const canStartTimelineFeatureEdit =
+    noTimelineFeatureActionExceptMove && !moveAction;
+  const noReferenceFeatureAction =
+    !offsetPlaneAction &&
+    !midplaneAction &&
+    !tangentPlaneAction &&
+    !anglePlaneAction &&
+    !constructionAxisAction &&
+    !constructionPointAction &&
+    !helixAction;
+  const canStartReferencePlaneAction =
+    !activeSketchPlaneId &&
+    canStartTimelineFeatureEdit &&
+    !shellAction &&
+    noReferenceFeatureAction;
+  const canStartSolidFeatureAction =
+    canStartReferencePlaneAction && !holeAction;
+  const canStartConstructionReferenceAction =
+    canStartTimelineFeatureEdit &&
+    !shellAction &&
+    !holeAction &&
+    noReferenceFeatureAction;
+  const canStartHelixRibbonAction =
+    !activeSketchPlaneId &&
+    noTimelineFeatureActionExceptMove &&
+    !shellAction &&
+    !holeAction &&
+    noReferenceFeatureAction;
+
+  function handleTimelineFeatureEdit(featureId: string) {
+    editTimelineFeature({
+      document,
+      viewport,
+      featureId,
+      canStartTimelineFeatureEdit,
+      beginTimelineEditSession,
+      runAction,
+      reenterSketch,
+      setEditingFeatureId,
+      setExtrudeAction,
+      setLoftAction,
+      setRevolveAction,
+      setSweepAction,
+      setThreadAction,
+      setFastenerAction,
+      setMoveAction,
+      lastLoftProfileUpdateRef,
+      lastRevolveInputsRef,
+      lastSweepInputsRef,
+    });
+  }
+
   return (
     <main className="cad-shell h-screen">
       <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
@@ -4654,7 +3706,11 @@ function App() {
             requestUnsavedGate({ kind: "new" });
           }}
           onExportDocument={async () => {
-            const filePath = await pickExportPath();
+            const filePath = await pickExportPath({
+              translate: t,
+              documentName: document?.name,
+              addMessage,
+            });
             if (!filePath) {
               return;
             }
@@ -4670,7 +3726,10 @@ function App() {
             });
           }}
           onLoadDocument={async () => {
-            const filePath = await pickLoadDocumentPath();
+            const filePath = await pickLoadDocumentPath({
+              translate: t,
+              addMessage,
+            });
             if (!filePath) {
               return;
             }
@@ -4706,358 +3765,50 @@ function App() {
               await addCylinderFeature(radius, height);
             });
           }}
-          canExtrude={
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !shellAction &&
-            !holeAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction &&
-            (!extrudeAction || extrudeAction.phase === "pending")
-          }
+          canExtrude={canExtrudeFromSelection}
           onExtrude={triggerExtrudeAction}
-          canLoft={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canLoft={canStartSolidFeatureAction}
           onLoft={triggerLoftAction}
-          canRevolve={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canRevolve={canStartSolidFeatureAction}
           onRevolve={triggerRevolveAction}
-          canSweep={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canSweep={canStartSolidFeatureAction}
           onSweep={triggerSweepAction}
-          canHole={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canHole={canStartSolidFeatureAction}
           onHole={triggerHoleAction}
-          canThread={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canThread={canStartSolidFeatureAction}
           onThread={triggerThreadAction}
-          canFastener={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canFastener={canStartSolidFeatureAction}
           onFastener={triggerFastenerAction}
           // Modify ribbon: Fillet / Chamfer can be invoked at any
           // time outside a sketch / other floating action. Edge
           // selection is *not* required — the panel opens in
           // "pending" mode and waits for the user to click edges in
           // the viewport.
-          canEdgeOp={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canEdgeOp={canStartSolidFeatureAction}
           onFillet={async () => {
             await triggerEdgeOpAction("fillet");
           }}
           onChamfer={async () => {
             await triggerEdgeOpAction("chamfer");
           }}
-          canMove={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canMove={canStartSolidFeatureAction}
           onMove={async () => {
             await triggerMoveAction();
           }}
-          canShell={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canShell={canStartSolidFeatureAction}
           onShell={async () => {
             await triggerShellAction();
           }}
-          canOffsetPlane={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
+          canOffsetPlane={canStartReferencePlaneAction}
           onOffsetPlane={() => {
             void triggerOffsetPlaneAction();
           }}
-          canMidplane={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
-          canTangentPlane={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
-          canAnglePlane={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
-          canConstructionAxis={
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
-          canConstructionPoint={
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction &&
-            !moveAction
-          }
-          canHelix={
-            !activeSketchPlaneId &&
-            !extrudeAction &&
-            !loftAction &&
-            !revolveAction &&
-            !sweepAction &&
-            !edgeOpAction &&
-            !shellAction &&
-            !holeAction &&
-            !offsetPlaneAction &&
-            !midplaneAction &&
-            !tangentPlaneAction &&
-            !anglePlaneAction &&
-            !constructionAxisAction &&
-            !constructionPointAction &&
-            !helixAction &&
-            !threadAction &&
-            !fastenerAction
-          }
+          canMidplane={canStartReferencePlaneAction}
+          canTangentPlane={canStartReferencePlaneAction}
+          canAnglePlane={canStartReferencePlaneAction}
+          canConstructionAxis={canStartConstructionReferenceAction}
+          canConstructionPoint={canStartConstructionReferenceAction}
+          canHelix={canStartHelixRibbonAction}
           onMidplane={() => {
             void triggerMidplaneAction();
           }}
@@ -5077,19 +3828,8 @@ function App() {
             void triggerHelixAction();
           }}
           onStartSketch={triggerCreateSketchAction}
-          onFinishSketch={async () => {
-            await runAction(async () => {
-              clearArmedSketchConstraint();
-              await finishSketch();
-              await restoreTimelineCursorAfterEdit();
-            });
-          }}
-          onSetSketchTool={async (tool) => {
-            await runAction(async () => {
-              clearArmedSketchConstraint();
-              await setSketchTool(tool);
-            });
-          }}
+          onFinishSketch={finishActiveSketch}
+          onSetSketchTool={setActiveSketchTool}
           onArmSketchConstraint={async (constraint) => {
             let shouldArm = true;
 
@@ -5158,13 +3898,12 @@ function App() {
             setIsCamSetupPanelOpen((prev) => !prev);
           }}
           onCamFaceMillingClick={() => {
-            console.log("[CAM] Face Milling clicked");
             const body = viewport?.bodies?.[0];
-            if (!body) { console.log("[CAM] No body found"); return; }
-            console.log("[CAM] Creating face milling on body", body.id);
+            if (!body) {
+              return;
+            }
             void runAction(async () => {
               await camFaceMillingCreate(body.id, 0);
-              console.log("[CAM] Face milling done");
             });
           }}
         />
@@ -5208,27 +3947,7 @@ function App() {
                   });
                 }}
               />
-              <div
-                className="cad-sidebar-resizer"
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  const startX = event.clientX;
-                  const startWidth = hierarchyWidth;
-                  const onMove = (moveEvent: PointerEvent) => {
-                    const next = Math.max(
-                      220,
-                      Math.min(640, startWidth + (moveEvent.clientX - startX)),
-                    );
-                    setHierarchyWidth(next);
-                  };
-                  const onUp = () => {
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", onUp);
-                  };
-                  window.addEventListener("pointermove", onMove);
-                  window.addEventListener("pointerup", onUp);
-                }}
-              />
+              {renderSidebarResizer()}
             </aside>
           ) : isHierarchyCollapsed ? (
             <button
@@ -5340,18 +4059,7 @@ function App() {
                     onDeleteFeature={async (featureId) => {
                       confirmAndDeleteFeature(featureId);
                     }}
-                    onMoveBody={async (bodyId) => {
-                      await moveBodyFromContext(bodyId);
-                    }}
-                    onCopyBody={async (bodyId, copyMode) => {
-                      await copyBodyAndMove(bodyId, copyMode);
-                    }}
-                    onExportBodyMesh={async (bodyId) => {
-                      await exportBodyAsMesh(bodyId);
-                    }}
-                    onUnlinkBodyCopy={(featureId) => {
-                      confirmAndUnlinkBodyCopy(featureId);
-                    }}
+                    {...bodyContextActions}
                     onSetFeatureSuppressed={async (featureId, suppressed) => {
                       await runAction(async () => {
                         await setFeatureSuppressed(featureId, suppressed);
@@ -5406,31 +4114,7 @@ function App() {
                   />
                 )}
               </div>
-              <div
-                className="cad-sidebar-resizer"
-                onPointerDown={(event) => {
-                  // Pointer-driven drag: capture the start position
-                  // and width, then update on every move until the
-                  // user releases. Width is clamped to keep the
-                  // panel usable.
-                  event.preventDefault();
-                  const startX = event.clientX;
-                  const startWidth = hierarchyWidth;
-                  const onMove = (moveEvent: PointerEvent) => {
-                    const next = Math.max(
-                      220,
-                      Math.min(640, startWidth + (moveEvent.clientX - startX)),
-                    );
-                    setHierarchyWidth(next);
-                  };
-                  const onUp = () => {
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", onUp);
-                  };
-                  window.addEventListener("pointermove", onMove);
-                  window.addEventListener("pointerup", onUp);
-                }}
-              />
+              {renderSidebarResizer()}
             </aside>
           )}
 
@@ -5461,31 +4145,9 @@ function App() {
                   : null
               }
               onMoveGizmoChange={async (parameters) => {
-                if (moveAction?.phase !== "active") {
-                  return;
-                }
-                await runAction(async () => {
-                  await updateMoveParameters(moveAction.featureId, parameters);
-                });
-                setMoveAction((current) =>
-                  current?.phase === "active" &&
-                  current.featureId === moveAction.featureId
-                    ? { ...current, parameters }
-                    : current,
-                );
+                await updateActiveMovePreviewParameters(parameters);
               }}
-              onMoveBody={async (bodyId) => {
-                await moveBodyFromContext(bodyId);
-              }}
-              onCopyBody={async (bodyId, copyMode) => {
-                await copyBodyAndMove(bodyId, copyMode);
-              }}
-              onExportBodyMesh={async (bodyId) => {
-                await exportBodyAsMesh(bodyId);
-              }}
-              onUnlinkBodyCopy={(featureId) => {
-                confirmAndUnlinkBodyCopy(featureId);
-              }}
+              {...bodyContextActions}
               inactiveSketchEntityPickEnabled={
                 revolveAction !== null ||
                 sweepAction !== null ||
@@ -5593,7 +4255,10 @@ function App() {
                   setAnglePlaneAction({
                     phase: "pick_axis",
                     sourcePlaneId: referenceId,
-                    sourceSummary: describePlaneSource(referenceId),
+                    sourceSummary: selectionSources.describePlaneSource(
+                      planeSourceContext,
+                      referenceId,
+                    ),
                     initialAngle: pendingAngleRef.current,
                   });
                   return;
@@ -5603,170 +4268,45 @@ function App() {
                 });
               }}
               onSelectFace={async (faceId) => {
-                if (moveAction?.phase === "pending") {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face) {
-                    await createMoveFeature(face.owner_id, moveAction.parameters);
-                  }
-                  return;
-                }
-                if (
-                  threadAction?.phase === "pick_target" ||
-                  threadAction?.phase === "pick_axis"
-                ) {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (!face) {
-                    return;
-                  }
-                  const bodyLabel =
-                    viewport?.bodies.find((body) => body.id === face.owner_id)
-                      ?.label ?? face.owner_id;
-                  const summary = `${bodyLabel} · ${face.label}`;
-                  if (threadAction.phase === "pick_target") {
-                    if (threadAction.axisSourceId) {
-                      await createThreadFeature(
-                        face.owner_id,
-                        threadAction.axisSourceId,
-                      );
-                    } else {
-                      setThreadAction({
-                        phase: "pick_axis",
-                        targetBodyId: face.owner_id,
-                        targetSummary: summary,
-                      });
-                    }
-                    return;
-                  }
-                  setThreadAction({
-                    ...threadAction,
-                    targetBodyId: face.owner_id,
-                    targetSummary: summary,
-                  });
-                  return;
-                }
-                if (holeAction?.phase === "pending") {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face && face.sketchability === "planar") {
-                    await createHoleFeature(faceId);
-                  }
-                  return;
-                }
-                if (shellAction?.phase === "pending") {
-                  await createShellFeature(
-                    faceId,
-                    pendingShellThicknessRef.current,
-                  );
-                  return;
-                }
-                // Same intercept as onSelectReference: a face click
-                // during the pending phase is a valid offset-plane
-                // source as long as the face is planar.
-                if (
-                  offsetPlaneAction &&
-                  offsetPlaneAction.phase === "pending"
-                ) {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face && face.sketchability === "planar") {
-                    await createOffsetPlaneFeature(
-                      faceId,
-                      pendingOffsetRef.current,
-                    );
-                    return;
-                  }
-                  // Non-planar face: ignore the click, leave the
-                  // panel in pending phase so the user can pick
-                  // somewhere else.
-                  return;
-                }
-                if (midplaneAction) {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face && face.sketchability === "planar") {
-                    await addMidplaneSource(faceId);
-                  }
-                  return;
-                }
-                if (anglePlaneAction?.phase === "pick_plane") {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face && face.sketchability === "planar") {
-                    setAnglePlaneAction({
-                      phase: "pick_axis",
-                      sourcePlaneId: faceId,
-                      sourceSummary: describePlaneSource(faceId),
-                      initialAngle: pendingAngleRef.current,
-                    });
-                  }
-                  return;
-                }
-                if (tangentPlaneAction) {
-                  setTangentPlaneAction(null);
-                  await createTangentPlaneFeature(faceId);
-                  return;
-                }
-                // Modal Project tool: a face click while it's active
-                // projects the face's outline onto the active sketch
-                // plane via `project_face_into_sketch`. The tool
-                // stays armed so the user can keep clicking more
-                // faces / edges / vertices without re-toggling the
-                // button.
-                if (activeSketchPlaneId && activeSketchTool === "project") {
-                  await runAction(async () => {
-                    try {
-                      await projectFaceIntoSketch(faceId);
-                    } catch (error) {
-                      addMessage(
-                        `Project face: ${error instanceof Error ? error.message : String(error)}`,
-                      );
-                    }
-                  });
-                  return;
-                }
-                if (
-                  extrudeAction &&
-                  extrudeAction.phase === "pending" &&
-                  selectedSketchProfileIds.length === 0
-                ) {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face && face.sketchability === "planar") {
-                    const defaultSettings = getDefaultExtrudeSettings(
-                      [],
-                      faceId,
-                    );
-                    const mode =
-                      extrudeAction.initialMode === "new_body"
-                        ? defaultSettings.mode
-                        : extrudeAction.initialMode;
-                    const targetBodyId =
-                      mode === "new_body"
-                        ? null
-                        : extrudeAction.initialTargetBodyId ??
-                          defaultSettings.targetBodyId ??
-                          bodyIdFromFaceId(faceId);
-                    await createExtrudeFromSelectedFace(
-                      faceId,
-                      extrudeAction.initialDepth,
-                      mode,
-                      targetBodyId,
-                    );
-                    return;
-                  }
-                  return;
-                }
-                await runAction(async () => {
-                  await selectFace(faceId);
+                await handleViewportFaceSelection({
+                  faceId,
+                  viewport,
+                  moveAction,
+                  threadAction,
+                  holeAction,
+                  shellAction,
+                  offsetPlaneAction,
+                  midplaneAction,
+                  anglePlaneAction,
+                  tangentPlaneAction,
+                  activeSketchPlaneId,
+                  activeSketchTool,
+                  extrudeAction,
+                  selectedSketchProfileIds,
+                  pendingOffsetRef,
+                  pendingShellThicknessRef,
+                  pendingAngleRef,
+                  setThreadAction,
+                  setAnglePlaneAction,
+                  setTangentPlaneAction,
+                  createMoveFeature,
+                  createThreadFeature,
+                  createHoleFeature,
+                  createShellFeature,
+                  createOffsetPlaneFeature,
+                  addMidplaneSource,
+                  createTangentPlaneFeature,
+                  projectFaceIntoSketch,
+                  createExtrudeFromSelectedFace,
+                  selectFace,
+                  getDefaultExtrudeSettings,
+                  describePlaneSource: (sourceId) =>
+                    selectionSources.describePlaneSource(
+                      planeSourceContext,
+                      sourceId,
+                    ),
+                  addMessage,
+                  runAction,
                 });
               }}
               onSelectEdge={async (edgeId, additive) => {
@@ -6298,7 +4838,10 @@ function App() {
                   setAnglePlaneAction({
                     phase: "pick_axis",
                     sourcePlaneId: profileId,
-                    sourceSummary: describePlaneSource(profileId),
+                    sourceSummary: selectionSources.describePlaneSource(
+                      planeSourceContext,
+                      profileId,
+                    ),
                     initialAngle: pendingAngleRef.current,
                   });
                   return;
@@ -6392,19 +4935,8 @@ function App() {
                   );
                 });
               }}
-              onFinishSketch={async () => {
-                await runAction(async () => {
-                  clearArmedSketchConstraint();
-                  await finishSketch();
-                  await restoreTimelineCursorAfterEdit();
-                });
-              }}
-              onSetSketchTool={async (tool) => {
-                await runAction(async () => {
-                  clearArmedSketchConstraint();
-                  await setSketchTool(tool);
-                });
-              }}
+              onFinishSketch={finishActiveSketch}
+              onSetSketchTool={setActiveSketchTool}
               onUpdateSketchPoint={async (pointId, x, y) => {
                 await runAction(async () => {
                   await updateSketchPoint(pointId, x, y);
@@ -6841,23 +5373,10 @@ function App() {
                         angleDegrees,
                       );
                     });
-                    const confirmedFeature =
-                      document?.feature_history.find(
-                        (entry) => entry.feature_id === revolveAction.featureId,
-                      ) ?? null;
-                    const sourceSketchIds = [
-                      confirmedFeature?.revolve_parameters?.sketch_feature_id,
-                      confirmedFeature?.revolve_parameters?.axis_sketch_feature_id,
-                    ].filter((id): id is string => Boolean(id));
-                    if (sourceSketchIds.length > 0) {
-                      setHiddenFeatureIds((current) => {
-                        const next = new Set(current);
-                        for (const featureId of sourceSketchIds) {
-                          next.add(featureId);
-                        }
-                        return next;
-                      });
-                    }
+                    hideFeatureSourceSketches(revolveAction.featureId, (feature) => [
+                      feature.revolve_parameters?.sketch_feature_id,
+                      feature.revolve_parameters?.axis_sketch_feature_id,
+                    ]);
                     setRevolveAction(null);
                     await restoreTimelineCursorAfterEdit();
                   }}
@@ -6894,23 +5413,10 @@ function App() {
                     ) {
                       return;
                     }
-                    const confirmedFeature =
-                      document?.feature_history.find(
-                        (entry) => entry.feature_id === sweepAction.featureId,
-                      ) ?? null;
-                    const sourceSketchIds = [
-                      confirmedFeature?.sweep_parameters?.sketch_feature_id,
-                      confirmedFeature?.sweep_parameters?.path_sketch_feature_id,
-                    ].filter((id): id is string => Boolean(id));
-                    if (sourceSketchIds.length > 0) {
-                      setHiddenFeatureIds((current) => {
-                        const next = new Set(current);
-                        for (const featureId of sourceSketchIds) {
-                          next.add(featureId);
-                        }
-                        return next;
-                      });
-                    }
+                    hideFeatureSourceSketches(sweepAction.featureId, (feature) => [
+                      feature.sweep_parameters?.sketch_feature_id,
+                      feature.sweep_parameters?.path_sketch_feature_id,
+                    ]);
                     setSweepAction(null);
                     await restoreTimelineCursorAfterEdit();
                   }}
@@ -7050,7 +5556,10 @@ function App() {
                   }
                   disabled={status !== "connected"}
                   onPreviewParameters={async (parameters) => {
-                    if (moveAction.phase !== "active") {
+                    if (await updateActiveMovePreviewParameters(parameters)) {
+                      return;
+                    }
+                    if (moveAction.phase === "pending") {
                       setMoveAction((current) =>
                         current?.phase === "pending"
                           ? { ...current, parameters }
@@ -7058,15 +5567,6 @@ function App() {
                       );
                       return;
                     }
-                    await runAction(async () => {
-                      await updateMoveParameters(moveAction.featureId, parameters);
-                    });
-                    setMoveAction((current) =>
-                      current?.phase === "active" &&
-                      current.featureId === moveAction.featureId
-                        ? { ...current, parameters }
-                        : current,
-                    );
                   }}
                   onConfirm={async () => {
                     if (moveAction.phase === "active") {
@@ -7405,23 +5905,9 @@ function App() {
                             step="any"
                             value={activeHoleParameters.diameter}
                             disabled={status !== "connected"}
-                            onChange={(event) => {
-                              const diameter = Number(event.target.value);
-                              if (!Number.isFinite(diameter) || diameter <= 0) {
-                                return;
-                              }
-                              void runAction(async () => {
-                                await updateHoleParameters(
-                                  holeAction.phase === "active"
-                                    ? holeAction.featureId
-                                    : "",
-                                  {
-                                    ...activeHoleParameters,
-                                    diameter,
-                                  },
-                                );
-                              });
-                            }}
+                            onChange={makePositiveHoleNumberChange(
+                              (diameter) => ({ diameter }),
+                            )}
                           />
                         </label>
                         {activeHoleParameters.extent_type === "blind" ? (
@@ -7434,30 +5920,15 @@ function App() {
                               step="any"
                               value={activeHoleParameters.depth}
                               disabled={status !== "connected"}
-                              onChange={(event) => {
-                                const depth = Number(event.target.value);
-                                if (!Number.isFinite(depth) || depth <= 0) {
-                                  return;
-                                }
-                                void runAction(async () => {
-                                  await updateHoleParameters(
-                                    holeAction.phase === "active"
-                                      ? holeAction.featureId
-                                      : "",
-                                    {
-                                      ...activeHoleParameters,
+                              onChange={makePositiveHoleNumberChange((depth) => ({
+                                depth,
+                                thread_depth: activeHoleParameters.thread_enabled
+                                  ? Math.min(
+                                      activeHoleParameters.thread_depth,
                                       depth,
-                                      thread_depth:
-                                        activeHoleParameters.thread_enabled
-                                          ? Math.min(
-                                              activeHoleParameters.thread_depth,
-                                              depth,
-                                            )
-                                          : activeHoleParameters.thread_depth,
-                                    },
-                                  );
-                                });
-                              }}
+                                    )
+                                  : activeHoleParameters.thread_depth,
+                              }))}
                             />
                           </label>
                         ) : null}
@@ -7473,23 +5944,11 @@ function App() {
                                 step="any"
                                 value={activeHoleParameters.counterbore_diameter}
                                 disabled={status !== "connected"}
-                                onChange={(event) => {
-                                  const value = Number(event.target.value);
-                                  if (!Number.isFinite(value) || value <= 0) {
-                                    return;
-                                  }
-                                  void runAction(async () => {
-                                    await updateHoleParameters(
-                                      holeAction.phase === "active"
-                                        ? holeAction.featureId
-                                        : "",
-                                      {
-                                        ...activeHoleParameters,
-                                        counterbore_diameter: value,
-                                      },
-                                    );
-                                  });
-                                }}
+                                onChange={makePositiveHoleNumberChange(
+                                  (value) => ({
+                                    counterbore_diameter: value,
+                                  }),
+                                )}
                               />
                             </label>
                             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
@@ -7501,23 +5960,11 @@ function App() {
                                 step="any"
                                 value={activeHoleParameters.counterbore_depth}
                                 disabled={status !== "connected"}
-                                onChange={(event) => {
-                                  const value = Number(event.target.value);
-                                  if (!Number.isFinite(value) || value <= 0) {
-                                    return;
-                                  }
-                                  void runAction(async () => {
-                                    await updateHoleParameters(
-                                      holeAction.phase === "active"
-                                        ? holeAction.featureId
-                                        : "",
-                                      {
-                                        ...activeHoleParameters,
-                                        counterbore_depth: value,
-                                      },
-                                    );
-                                  });
-                                }}
+                                onChange={makePositiveHoleNumberChange(
+                                  (value) => ({
+                                    counterbore_depth: value,
+                                  }),
+                                )}
                               />
                             </label>
                           </div>
@@ -7533,23 +5980,11 @@ function App() {
                                 step="any"
                                 value={activeHoleParameters.countersink_diameter}
                                 disabled={status !== "connected"}
-                                onChange={(event) => {
-                                  const value = Number(event.target.value);
-                                  if (!Number.isFinite(value) || value <= 0) {
-                                    return;
-                                  }
-                                  void runAction(async () => {
-                                    await updateHoleParameters(
-                                      holeAction.phase === "active"
-                                        ? holeAction.featureId
-                                        : "",
-                                      {
-                                        ...activeHoleParameters,
-                                        countersink_diameter: value,
-                                      },
-                                    );
-                                  });
-                                }}
+                                onChange={makePositiveHoleNumberChange(
+                                  (value) => ({
+                                    countersink_diameter: value,
+                                  }),
+                                )}
                               />
                             </label>
                             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
@@ -7564,23 +5999,11 @@ function App() {
                                   activeHoleParameters.countersink_angle_degrees
                                 }
                                 disabled={status !== "connected"}
-                                onChange={(event) => {
-                                  const value = Number(event.target.value);
-                                  if (!Number.isFinite(value) || value <= 0) {
-                                    return;
-                                  }
-                                  void runAction(async () => {
-                                    await updateHoleParameters(
-                                      holeAction.phase === "active"
-                                        ? holeAction.featureId
-                                        : "",
-                                      {
-                                        ...activeHoleParameters,
-                                        countersink_angle_degrees: value,
-                                      },
-                                    );
-                                  });
-                                }}
+                                onChange={makePositiveHoleNumberChange(
+                                  (value) => ({
+                                    countersink_angle_degrees: value,
+                                  }),
+                                )}
                               />
                             </label>
                           </div>
@@ -7850,7 +6273,10 @@ function App() {
                         <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs uppercase tracking-[0.18em] text-on-surface-dim">
                           <span>{t("panels.thread.axis")}</span>
                           <span className="truncate text-right text-on-surface">
-                            {describeAxisSource(threadAction.axisSourceId)}
+                            {selectionSources.describeAxisSource(
+                              axisSourceContext,
+                              threadAction.axisSourceId,
+                            )}
                           </span>
                         </div>
                       ) : null}
@@ -7875,11 +6301,17 @@ function App() {
                       <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs uppercase tracking-[0.18em] text-on-surface-dim">
                         <span>{t("panels.thread.target")}</span>
                         <span className="truncate text-right text-on-surface">
-                          {describeThreadTarget(activeThreadParameters.target_body_id)}
+                          {selectionSources.describeThreadTarget(
+                            threadTargetContext,
+                            activeThreadParameters.target_body_id,
+                          )}
                         </span>
                         <span>{t("panels.thread.axis")}</span>
                         <span className="truncate text-right text-on-surface">
-                          {describeAxisSource(activeThreadParameters.axis_source_id)}
+                          {selectionSources.describeAxisSource(
+                            axisSourceContext,
+                            activeThreadParameters.axis_source_id,
+                          )}
                         </span>
                       </div>
                       <div className="mt-5 space-y-4">
@@ -8445,7 +6877,10 @@ function App() {
                       <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs uppercase tracking-[0.18em] text-on-surface-dim">
                         <span>{t("panels.helix.axis")}</span>
                         <span className="truncate text-right text-on-surface">
-                          {describeAxisSource(activeHelixParameters.axis_source_id)}
+                          {selectionSources.describeAxisSource(
+                            axisSourceContext,
+                            activeHelixParameters.axis_source_id,
+                          )}
                         </span>
                       </div>
                       <div className="mt-5 space-y-4">
@@ -8831,216 +7266,7 @@ function App() {
               await setTimelineCursor(includedActionCount);
             });
           }}
-          onEditFeature={(featureId) => {
-            // Dispatch by feature kind: box/cylinder open the inline
-            // parameter form; sketch re-enters the sketch so the user
-            // can edit its lines (extrudes that depend on the sketch
-            // re-evaluate automatically); extrude opens the same
-            // floating preview panel that creation uses, but seeded
-            // with the existing depth/mode/target so cancel can
-            // restore instead of undoing the whole feature.
-            const feature = document?.feature_history.find(
-              (entry) => entry.feature_id === featureId,
-            );
-            if (!feature) {
-              return;
-            }
-            if (feature.kind === "box" || feature.kind === "cylinder") {
-              beginTimelineEditSession(featureId, feature.kind);
-              setEditingFeatureId(featureId);
-              return;
-            }
-            if (feature.kind === "sketch") {
-              beginTimelineEditSession(featureId, feature.kind);
-              void runAction(async () => {
-                await reenterSketch(featureId);
-              });
-              return;
-            }
-            if (feature.kind === "extrude" && feature.extrude_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              const params = feature.extrude_parameters;
-              const otherBodies = (viewport?.bodies ?? []).filter(
-                (body) => body.id !== featureId,
-              );
-              beginTimelineEditSession(featureId, feature.kind);
-              setExtrudeAction({
-                phase: "active",
-                featureId,
-                featureIds: [featureId],
-                profileIds: [...(params.profile_ids ?? [])],
-                automaticMode: false,
-                initialDepth: params.depth,
-                initialMode: params.mode,
-                initialParameters: params,
-                initialTargetBodyId: params.target_body_id ?? null,
-                profileCount: params.profile_ids?.length || 1,
-                canCombineWithExistingBody: otherBodies.length > 0,
-                originalSnapshot: {
-                  depth: params.depth,
-                  mode: params.mode,
-                  targetBodyId: params.target_body_id ?? null,
-                  parameters: params,
-                },
-              });
-            }
-            if (feature.kind === "loft" && feature.loft_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              const params = feature.loft_parameters;
-              const profileIds = params.sections.map((section) => section.profile_id);
-              beginTimelineEditSession(featureId, feature.kind);
-              lastLoftProfileUpdateRef.current = profileIds.join("|");
-              setLoftAction({
-                phase: "active",
-                featureId,
-                initialRuled: params.ruled,
-                profileIds,
-                originalSnapshot: {
-                  profileIds,
-                  ruled: params.ruled,
-                },
-              });
-            }
-            if (feature.kind === "revolve" && feature.revolve_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              const params = feature.revolve_parameters;
-              beginTimelineEditSession(featureId, feature.kind);
-              lastRevolveInputsRef.current = `${params.profile_id}|${params.axis_entity_id}`;
-              setRevolveAction({
-                phase: "active",
-                featureId,
-                profileId: params.profile_id,
-                axisEntityId: params.axis_entity_id,
-                initialAngle: params.angle_degrees,
-                originalSnapshot: {
-                  profileId: params.profile_id,
-                  axisEntityId: params.axis_entity_id,
-                  angleDegrees: params.angle_degrees,
-                },
-              });
-            }
-            if (feature.kind === "sweep" && feature.sweep_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              const params = feature.sweep_parameters;
-              beginTimelineEditSession(featureId, feature.kind);
-              lastSweepInputsRef.current = `${params.profile_id}|${params.path_entity_id}`;
-              setSweepAction({
-                phase: "active",
-                featureId,
-                profileId: params.profile_id,
-                pathEntityId: params.path_entity_id,
-                originalSnapshot: {
-                  profileId: params.profile_id,
-                  pathEntityId: params.path_entity_id,
-                },
-              });
-            }
-            if (feature.kind === "thread" && feature.thread_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              beginTimelineEditSession(featureId, feature.kind);
-              setThreadAction({
-                phase: "active",
-                featureId,
-                originalParameters: feature.thread_parameters,
-              });
-            }
-            if (feature.kind === "fastener" && feature.fastener_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              beginTimelineEditSession(featureId, feature.kind);
-              setFastenerAction({
-                featureId,
-                originalParameters: feature.fastener_parameters,
-              });
-            }
-            if (feature.kind === "move" && feature.move_parameters) {
-              if (
-                extrudeAction ||
-                loftAction ||
-                revolveAction ||
-                sweepAction ||
-                edgeOpAction ||
-                threadAction ||
-                fastenerAction ||
-                moveAction
-              ) {
-                return;
-              }
-              beginTimelineEditSession(featureId, feature.kind);
-              setMoveAction({
-                phase: "active",
-                featureId,
-                targetBodyId: feature.move_parameters.target_body_id,
-                parameters: feature.move_parameters,
-                originalSnapshot: feature.move_parameters,
-              });
-            }
-          }}
+          onEditFeature={handleTimelineFeatureEdit}
           onSuppressFeature={(featureId, suppressed) => {
             void runAction(async () => {
               await setFeatureSuppressed(featureId, suppressed);

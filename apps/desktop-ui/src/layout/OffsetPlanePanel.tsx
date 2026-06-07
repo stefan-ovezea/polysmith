@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const PREVIEW_DEBOUNCE_MS = 200;
+import { NumericPreviewPanel } from "./NumericPreviewPanel";
 
 interface OffsetPlanePanelProps {
   // True while the user hasn't picked a source plane yet. The panel
@@ -43,140 +42,31 @@ export function OffsetPlanePanel({
   onCancel,
 }: OffsetPlanePanelProps) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(String(initialOffset));
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
-  const lastPreviewedRef = useRef<number>(initialOffset);
-  const onPreviewOffsetRef = useRef(onPreviewOffset);
-
-  useEffect(() => {
-    onPreviewOffsetRef.current = onPreviewOffset;
-  }, [onPreviewOffset]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-    return () => {
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  function handleValueChange(nextValue: string) {
-    setValue(nextValue);
-    const parsed = Number(nextValue);
-    // Offsets can be negative (the plane slides backward along the
-    // source's normal). Zero is a valid frame too — it just sits on
-    // top of the source — but the core's create path will accept it
-    // and the user can see what they've got.
-    if (!Number.isFinite(parsed)) {
-      return;
-    }
-
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-    }
-
-    previewTimerRef.current = window.setTimeout(() => {
-      previewTimerRef.current = null;
-      if (parsed === lastPreviewedRef.current) {
-        return;
-      }
-      lastPreviewedRef.current = parsed;
-      void onPreviewOffsetRef.current(parsed);
-    }, PREVIEW_DEBOUNCE_MS);
-  }
-
-  async function flushPendingValue() {
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return;
-    }
-
-    if (parsed === lastPreviewedRef.current) {
-      return;
-    }
-
-    lastPreviewedRef.current = parsed;
-    await onPreviewOffsetRef.current(parsed);
-  }
 
   async function handleConfirm() {
-    if (isPending) {
-      // Nothing to confirm yet — the user still needs to click a plane.
-      return;
-    }
-    await flushPendingValue();
     await onConfirm();
   }
 
   return (
-    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
-      <p className="cad-kicker">{t("panels.offsetPlane.title")}</p>
-      <p className="mt-3 text-xs text-on-surface-muted">
-        {isPending
+    <NumericPreviewPanel
+      title={t("panels.offsetPlane.title")}
+      helperText={
+        isPending
           ? t("panels.offsetPlane.pickSource")
           : sourceSummary
             ? t("panels.offsetPlane.fromSource", { source: sourceSummary })
-            : t("panels.offsetPlane.adjustOffset")}
-      </p>
-      <form
-        className="mt-4 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleConfirm();
-        }}
-      >
-        <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-          {t("forms.offsetMm")}
-          <input
-            ref={inputRef}
-            className="cad-input mt-2"
-            type="number"
-            step="0.1"
-            value={value}
-            disabled={disabled}
-            onChange={(event) => {
-              handleValueChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                void onCancel();
-              }
-            }}
-          />
-        </label>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            className="cad-action-primary flex-1"
-            disabled={disabled || isPending || !Number.isFinite(Number(value))}
-          >
-            {t("common.confirm")}
-          </button>
-          <button
-            type="button"
-            className="cad-action-ghost flex-1"
-            disabled={disabled}
-            onClick={() => {
-              void onCancel();
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
-        <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
-          {t("panels.shortcutHint.confirm")}
-        </p>
-      </form>
-    </section>
+            : t("panels.offsetPlane.adjustOffset")
+      }
+      valueLabel={t("forms.offsetMm")}
+      initialValue={initialOffset}
+      disabled={disabled}
+      canConfirm={!isPending}
+      inputStep="0.1"
+      isPreviewValueValid={Number.isFinite}
+      isConfirmValueValid={Number.isFinite}
+      onPreviewValue={onPreviewOffset}
+      onConfirm={handleConfirm}
+      onCancel={onCancel}
+    />
   );
 }

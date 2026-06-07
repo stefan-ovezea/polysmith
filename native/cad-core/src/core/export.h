@@ -1,25 +1,3 @@
 #pragma once
 
-#include <string>
-
-namespace polysmith::core {
-
-struct DocumentState;
-
-struct ExportResult {
-  std::string file_path;
-  std::string format;
-  int exported_feature_count;
-};
-
-ExportResult export_document_as_step(const DocumentState& document,
-                                     const std::string& file_path);
-
-ExportResult export_document_as_stl(const DocumentState& document,
-                                    const std::string& file_path);
-
-ExportResult export_body_as_stl(const DocumentState& document,
-                                const std::string& file_path,
-                                const std::string& body_id);
-
-}  // namespace polysmith::core
+#include "core/export/export.h"

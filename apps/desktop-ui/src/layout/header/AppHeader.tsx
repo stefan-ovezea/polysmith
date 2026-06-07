@@ -1,24 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ConstraintType, SketchTool, ArmedSketchConstraint } from "@/types";
+import {
+  ConstraintType,
+  SketchTool,
+  ArmedSketchConstraint,
+  type SelectionFilterUpdate,
+} from "@/types";
 import { useAppConfig } from "@/config";
 import { SketchToolbar } from "./SketchToolbar";
 import { CreateToolbar } from "./CreateToolbar";
+import type { CreateToolbarProps } from "./CreateToolbar";
 import { ModifyToolbar } from "./ModifyToolbar";
 import { ConstructToolbar } from "./ConstructToolbar";
+import type { ConstructToolbarProps } from "./ConstructToolbar";
 import type { CamOperationType } from "./CamToolbar";
 import { CamMillingToolbar } from "./CamMillingToolbar";
 import { CamTurningToolbar } from "./CamTurningToolbar";
 import { CamPrintingToolbar } from "./CamPrintingToolbar";
 import { CamCuttingToolbar } from "./CamCuttingToolbar";
 import { ParametersPanel } from "../ParametersPanel";
-import { SelectionFilterPanel, readStoredFilter, writeStoredFilter } from "../SelectionFilterPanel";
+import { SelectionFilterPanel } from "../SelectionFilterPanel";
+import { readStoredFilter, writeStoredFilter } from "../selectionFilterState";
 
 const workspaces = ["create", "modify", "construct", "sketch"] as const;
 const camWorkspaces = ["milling", "turning", "printing", "cutting"] as const;
 type CamWorkspace = (typeof camWorkspaces)[number];
 type WorkspaceView = "cad" | "slicer" | "cam";
+type AppHeaderCreateToolbarProps = Omit<
+  CreateToolbarProps,
+  "disabled" | "openMenu" | "setOpenMenu"
+>;
+type AppHeaderConstructToolbarProps = Omit<
+  ConstructToolbarProps,
+  "disabled"
+>;
 
 interface MenuDropdownItem {
   label: string;
@@ -236,7 +252,9 @@ function SnapFilterIcon() {
   );
 }
 
-interface AppHeaderProps {
+interface AppHeaderProps
+  extends AppHeaderCreateToolbarProps,
+    AppHeaderConstructToolbarProps {
   workspaceView: WorkspaceView;
   canOpenSlicerView: boolean;
   canExportToSlicer: boolean;
@@ -278,30 +296,6 @@ interface AppHeaderProps {
   showAiAssistant: boolean;
   isAiPanelOpen: boolean;
   onToggleAiPanel: () => void;
-  onAddBoxFeature: (
-    width: number,
-    height: number,
-    depth: number,
-  ) => Promise<void>;
-  onAddCylinderFeature: (radius: number, height: number) => Promise<void>;
-  // Extrude lives in the Create ribbon next to Box/Cylinder. The
-  // parent owns the gating (a closed profile or planar face must be
-  // selected) and the action itself, which is shared with the E
-  // hotkey path in App.tsx.
-  canExtrude: boolean;
-  onExtrude: () => Promise<void>;
-  canLoft: boolean;
-  onLoft: () => Promise<void>;
-  canRevolve: boolean;
-  onRevolve: () => Promise<void>;
-  canSweep: boolean;
-  onSweep: () => Promise<void>;
-  canHole: boolean;
-  onHole: () => Promise<void>;
-  canThread: boolean;
-  onThread: () => Promise<void>;
-  canFastener: boolean;
-  onFastener: () => Promise<void>;
   // Modify ribbon (Fillet / Chamfer). Enabled state is owned by the
   // parent so it can match the F-hotkey gating exactly.
   canEdgeOp: boolean;
@@ -311,22 +305,6 @@ interface AppHeaderProps {
   onChamfer: () => Promise<void>;
   onMove: () => Promise<void>;
   onShell: () => Promise<void>;
-  // Construct ribbon. The parent gates the buttons on
-  // "no other floating action is open" — same shape as canEdgeOp.
-  canOffsetPlane: boolean;
-  canMidplane: boolean;
-  canTangentPlane: boolean;
-  canAnglePlane: boolean;
-  canConstructionAxis: boolean;
-  canConstructionPoint: boolean;
-  canHelix: boolean;
-  onOffsetPlane: () => void;
-  onMidplane: () => void;
-  onTangentPlane: () => void;
-  onAnglePlane: () => void;
-  onConstructionAxis: () => void;
-  onConstructionPoint: () => void;
-  onHelix: () => void;
   onStartSketch: () => Promise<void>;
   onFinishSketch: () => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
@@ -341,24 +319,7 @@ interface AppHeaderProps {
   onToggleFilterPanel: () => void;
   materialsPanelOpen: boolean;
   onToggleMaterialsPanel: () => void;
-  onUpdateSelectionFilter: (filter: {
-    select_curves?: boolean;
-    select_points?: boolean;
-    select_construction?: boolean;
-    select_constraints?: boolean;
-    snap_endpoint?: boolean;
-    snap_midpoint?: boolean;
-    snap_center?: boolean;
-    snap_intersection?: boolean;
-    snap_nearest?: boolean;
-    snap_quadrant?: boolean;
-    snap_perpendicular?: boolean;
-    snap_parallel?: boolean;
-    snap_tangent?: boolean;
-    snap_grid?: boolean;
-    magnetic_pull?: boolean;
-    tolerance_px?: number;
-  }) => Promise<void>;
+  onUpdateSelectionFilter: (filter: SelectionFilterUpdate) => Promise<void>;
   // CAM workspace
   activeCamOperation: CamOperationType | null;
   onSelectCamOperation: (op: CamOperationType) => void;

@@ -48,31 +48,31 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 set(CAD_CORE_SOURCES
-  src/core/body_compiler.cpp
-  src/core/box_feature.cpp
-  src/core/cam_operation.cpp
-  src/core/constraint_solver.cpp
-  src/core/face_milling.cpp
-  src/core/construction_plane_feature.cpp
-  src/core/cylinder_feature.cpp
-  src/core/dof_counter.cpp
-  src/core/document.cpp
-  src/core/edge_geometry.cpp
-  src/core/export.cpp
-  src/core/extrude_feature.cpp
-  src/core/face_geometry.cpp
-  src/core/feature_shape.cpp
-  src/core/formula_eval.cpp
-  src/core/inference_engine.cpp
-  src/core/loft_feature.cpp
-  src/core/logger.cpp
-  src/core/refresh_dependents.cpp
-  src/core/revolve_feature.cpp
-  src/core/sketch_feature.cpp
-  src/core/sketch_profile.cpp
-  src/core/sweep_feature.cpp
-  src/core/trim_engine.cpp
-  src/core/viewport.cpp
+  src/core/cam/cam_operation.cpp
+  src/core/cam/face_milling.cpp
+  src/core/construction/construction_plane_feature.cpp
+  src/core/diagnostics/logger.cpp
+  src/core/document/document.cpp
+  src/core/export/export.cpp
+  src/core/extrude/extrude_feature.cpp
+  src/core/geometry/body_compiler.cpp
+  src/core/geometry/edge_geometry.cpp
+  src/core/geometry/face_geometry.cpp
+  src/core/geometry/feature_shape.cpp
+  src/core/geometry/refresh_dependents.cpp
+  src/core/loft/loft_feature.cpp
+  src/core/primitive/box_feature.cpp
+  src/core/primitive/cylinder_feature.cpp
+  src/core/revolve/revolve_feature.cpp
+  src/core/sketch/constraint_solver.cpp
+  src/core/sketch/dof_counter.cpp
+  src/core/sketch/formula_eval.cpp
+  src/core/sketch/inference_engine.cpp
+  src/core/sketch/sketch_feature.cpp
+  src/core/sketch/sketch_profile.cpp
+  src/core/sketch/trim_engine.cpp
+  src/core/sweep/sweep_feature.cpp
+  src/core/viewport/viewport.cpp
   src/protocol/ipc.cpp
   src/protocol/serialization.cpp
 )
@@ -84,7 +84,6 @@ add_executable(cad_core
 )
 
 target_include_directories(cad_core PRIVATE
-  include
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
@@ -92,17 +91,16 @@ target_include_directories(cad_core PRIVATE
 target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs)
 
 add_executable(cad_core_sketch_profile_test
-  src/core/constraint_solver.cpp
-  src/core/formula_eval.cpp
-  src/core/inference_engine.cpp
-  src/core/sketch_feature.cpp
-  src/core/sketch_profile.cpp
-  src/core/trim_engine.cpp
+  src/core/sketch/constraint_solver.cpp
+  src/core/sketch/formula_eval.cpp
+  src/core/sketch/inference_engine.cpp
+  src/core/sketch/sketch_feature.cpp
+  src/core/sketch/sketch_profile.cpp
+  src/core/sketch/trim_engine.cpp
   tests/sketch_profile_test.cpp
 )
 
 target_include_directories(cad_core_sketch_profile_test PRIVATE
-  include
   src
   ${PLANEGCS_DIR}
   ${CMAKE_SOURCE_DIR}/native_compat
@@ -120,7 +118,6 @@ add_executable(cad_core_multi_profile_extrude_test
 )
 
 target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
-  include
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
   ${PLANEGCS_DIR}
@@ -140,7 +137,6 @@ add_executable(cad_core_cam_face_reference_test
 )
 
 target_include_directories(cad_core_cam_face_reference_test PRIVATE
-  include
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
   ${PLANEGCS_DIR}

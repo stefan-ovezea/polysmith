@@ -29,13 +29,32 @@ import {
   SolidFaceScene,
 } from "@/types";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-export const SKETCH_PLANE_OFFSET = 0.2;
+import { polygonArea2d, SKETCH_PLANE_OFFSET } from "./viewport/viewportMath";
+import {
+  buildFilledArrowMesh,
+  buildSketchDimensionGeometry,
+} from "./viewport/dimensionGeometry";
+export {
+  SKETCH_PLANE_OFFSET,
+  SKETCH_SNAP_DISTANCE,
+  axisAlignedRectangleCorners2d,
+  circleFromThreePoints2d,
+  distanceBetweenPoints,
+  frameCamera,
+  frameCameraToSketchPlane,
+  lineCircleIntersectionTrim,
+  lineLineIntersectionTrim,
+  polygonArea2d,
+  projectWorldPointToViewport,
+  rectangleFromThreePoints2d,
+  resolveSketchPlanePoint,
+  signedPolygonArea2d,
+  toWorldPoint,
+} from "./viewport/viewportMath";
+
 const REFERENCE_PLANE_RENDER_SIZE = 25;
 const REFERENCE_PLANE_MARGIN = 5;
-export const SKETCH_SNAP_DISTANCE = 2.5;
-const DIMENSION_EDITOR_MARGIN = 20;
 
 export function themeColor(token: string, fallback: string) {
   if (typeof document === "undefined") {
@@ -47,23 +66,112 @@ export function themeColor(token: string, fallback: string) {
     .trim();
   return value || fallback;
 }
-
 function configureSketchOverlayMaterial(material: THREE.Material) {
   material.depthTest = false;
   material.depthWrite = false;
 }
 
-function polygonArea2d(points: Array<[number, number]>) {
-  if (points.length < 3) {
-    return 0;
+function shapeFromProfileLoops(
+  outerLoop: readonly (readonly [number, number])[],
+  innerLoops: readonly (readonly (readonly [number, number])[])[],
+) {
+  const shape = new THREE.Shape();
+  outerLoop.forEach((point, index) => {
+    if (index === 0) {
+      shape.moveTo(point[0], point[1]);
+      return;
+    }
+    shape.lineTo(point[0], point[1]);
+  });
+  shape.closePath();
+
+  for (const loop of innerLoops) {
+    const path = new THREE.Path();
+    [...loop].reverse().forEach((point, index) => {
+      if (index === 0) {
+        path.moveTo(point[0], point[1]);
+        return;
+      }
+      path.lineTo(point[0], point[1]);
+    });
+    path.closePath();
+    shape.holes.push(path);
   }
-  let area = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    area += current[0] * next[1] - next[0] * current[1];
+
+  return shape;
+}
+
+function resolveSketchPlaneAxes(
+  planeId: string,
+  planeFrame: SketchPlaneFrame | null,
+): {
+  xAxis: [number, number, number];
+  yAxis: [number, number, number];
+} {
+  if (planeFrame) {
+    return {
+      xAxis: [planeFrame.x_axis.x, planeFrame.x_axis.y, planeFrame.x_axis.z],
+      yAxis: [planeFrame.y_axis.x, planeFrame.y_axis.y, planeFrame.y_axis.z],
+    };
   }
-  return area * 0.5;
+
+  if (planeId === "ref-plane-xy") {
+    return {
+      xAxis: [1, 0, 0],
+      yAxis: [0, 0, 1],
+    };
+  }
+
+  if (planeId === "ref-plane-yz") {
+    return {
+      xAxis: [0, 1, 0],
+      yAxis: [0, 0, 1],
+    };
+  }
+
+  return {
+    xAxis: [1, 0, 0],
+    yAxis: [0, 1, 0],
+  };
+}
+
+function fallbackCanvasSprite(canvas: HTMLCanvasElement) {
+  const texture = new THREE.CanvasTexture(canvas);
+  return new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: texture, transparent: true }),
+  );
+}
+
+function spriteFromCanvas({
+  canvas,
+  opacity = 1,
+  scale,
+  includeBasePosition = false,
+}: {
+  canvas: HTMLCanvasElement;
+  opacity?: number;
+  scale: [number, number, number];
+  includeBasePosition?: boolean;
+}) {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(...scale);
+  sprite.userData.screenSize = {
+    width: canvas.width,
+    height: canvas.height,
+  };
+  if (includeBasePosition) {
+    sprite.userData.basePosition = null;
+  }
+  return sprite;
 }
 
 export function disposeMaterial(material: THREE.Material | THREE.Material[]) {
@@ -297,31 +405,10 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       48,
     );
   } else if (primitive.kind === "polygon_extrude") {
-    const shape = new THREE.Shape();
-    primitive.profilePoints.forEach((point, index) => {
-      if (index === 0) {
-        shape.moveTo(point[0], point[1]);
-        return;
-      }
-      shape.lineTo(point[0], point[1]);
-    });
-    shape.closePath();
-    for (const loop of primitive.innerLoops) {
-      const path = new THREE.Path();
-      // The core stores hole loops as profile contours. Three treats
-      // `shape.holes` as subtractive paths, so the preview primitive
-      // must carry those loops too; otherwise the temporary extrude
-      // appears as the old filled outer profile.
-      [...loop].reverse().forEach((point, index) => {
-        if (index === 0) {
-          path.moveTo(point[0], point[1]);
-          return;
-        }
-        path.lineTo(point[0], point[1]);
-      });
-      path.closePath();
-      shape.holes.push(path);
-    }
+    const shape = shapeFromProfileLoops(
+      primitive.profilePoints,
+      primitive.innerLoops,
+    );
 
     geometry = new THREE.ExtrudeGeometry(shape, {
       depth: primitive.depth,
@@ -1039,25 +1126,9 @@ export function buildSketchCircleObject(
     false,
     0,
   );
-  // Determine the plane's x and y world-space axes. For sketches with
-  // an arbitrary plane (face-based sketches) we must use the frame the
-  // core ships; otherwise the perimeter ends up perpendicular to the
-  // actual sketch plane (the "preview shows in wrong plane" bug).
-  let xAxis: [number, number, number];
-  let yAxis: [number, number, number];
-  if (planeFrame) {
-    xAxis = [planeFrame.x_axis.x, planeFrame.x_axis.y, planeFrame.x_axis.z];
-    yAxis = [planeFrame.y_axis.x, planeFrame.y_axis.y, planeFrame.y_axis.z];
-  } else if (circle.planeId === "ref-plane-xy") {
-    xAxis = [1, 0, 0];
-    yAxis = [0, 0, 1];
-  } else if (circle.planeId === "ref-plane-yz") {
-    xAxis = [0, 1, 0];
-    yAxis = [0, 0, 1];
-  } else {
-    xAxis = [1, 0, 0];
-    yAxis = [0, 1, 0];
-  }
+  // Face-based sketches use the core-provided frame; named reference
+  // planes use the legacy axis mapping for compatibility.
+  const { xAxis, yAxis } = resolveSketchPlaneAxes(circle.planeId, planeFrame);
   const points = curve
     .getPoints(64)
     .map(
@@ -1118,24 +1189,7 @@ export function buildSketchArcObject(
       });
   configureSketchOverlayMaterial(material);
 
-  // Resolve the sketch plane's local x / y world axes (same logic as
-  // `buildSketchCircleObject`). Arc sampling parameterizes on angle
-  // around the center in this local 2D frame.
-  let xAxis: [number, number, number];
-  let yAxis: [number, number, number];
-  if (planeFrame) {
-    xAxis = [planeFrame.x_axis.x, planeFrame.x_axis.y, planeFrame.x_axis.z];
-    yAxis = [planeFrame.y_axis.x, planeFrame.y_axis.y, planeFrame.y_axis.z];
-  } else if (arc.planeId === "ref-plane-xy") {
-    xAxis = [1, 0, 0];
-    yAxis = [0, 0, 1];
-  } else if (arc.planeId === "ref-plane-yz") {
-    xAxis = [0, 1, 0];
-    yAxis = [0, 0, 1];
-  } else {
-    xAxis = [1, 0, 0];
-    yAxis = [0, 1, 0];
-  }
+  const { xAxis, yAxis } = resolveSketchPlaneAxes(arc.planeId, planeFrame);
 
   // Project a world-space point into the (xAxis, yAxis) frame
   // anchored at the arc's center. Used to recover start_angle /
@@ -1276,10 +1330,7 @@ function makeDimensionLabelSprite(
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   if (!context) {
-    const texture = new THREE.CanvasTexture(canvas);
-    return new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: texture, transparent: true }),
-    );
+    return fallbackCanvasSprite(canvas);
   }
 
   const fontSize = 26;
@@ -1305,33 +1356,19 @@ function makeDimensionLabelSprite(
   context.textBaseline = "middle";
   context.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
+  return spriteFromCanvas({
+    canvas,
     opacity: isMutedPreview ? 0.72 : 1,
-    depthTest: false,
-    depthWrite: false,
+    scale: [canvas.width / 9, canvas.height / 9, 1],
+    includeBasePosition: true,
   });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(canvas.width / 9, canvas.height / 9, 1);
-  sprite.userData.screenSize = {
-    width: canvas.width,
-    height: canvas.height,
-  };
-  sprite.userData.basePosition = null;
-  return sprite;
 }
 
 function makeConstraintBadgeSprite(text: string, isSelected: boolean) {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   if (!context) {
-    const texture = new THREE.CanvasTexture(canvas);
-    return new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: texture, transparent: true }),
-    );
+    return fallbackCanvasSprite(canvas);
   }
 
   canvas.width = 44;
@@ -1353,21 +1390,10 @@ function makeConstraintBadgeSprite(text: string, isSelected: boolean) {
   context.textBaseline = "middle";
   context.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
+  return spriteFromCanvas({
+    canvas,
+    scale: [6, 6, 1],
   });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(6, 6, 1);
-  sprite.userData.screenSize = {
-    width: 44,
-    height: 44,
-  };
-  return sprite;
 }
 
 export function buildSketchDimensionObject(
@@ -1386,203 +1412,23 @@ export function buildSketchDimensionObject(
     labelText = `(${labelText})`;
   }
   const labelPosition = new THREE.Vector3(...dimension.labelPosition);
-  const anchorStart = new THREE.Vector3(...dimension.anchorStart);
-  const anchorEnd = new THREE.Vector3(...dimension.anchorEnd);
-  const dimensionStart = new THREE.Vector3(...dimension.dimensionStart);
-  const dimensionEnd = new THREE.Vector3(...dimension.dimensionEnd);
-  const extensionOverrun = 0.75;
-  const arrowLength = 1.5;
-  const arrowWidth = 0.27;
-  const dimensionDirection = dimensionEnd.clone().sub(dimensionStart);
-  const dimensionLength = dimensionDirection.length();
-  if (dimensionLength > 1e-6) {
-    dimensionDirection.divideScalar(dimensionLength);
-  } else {
-    dimensionDirection.set(1, 0, 0);
-  }
-  const extensionDirection = dimensionStart.clone().sub(anchorStart);
-  if (extensionDirection.length() > 1e-6) {
-    extensionDirection.normalize();
-  } else {
-    extensionDirection.set(0, 1, 0);
-  }
-
-  const points: THREE.Vector3[] = [];
-  const addSegment = (start: THREE.Vector3, end: THREE.Vector3) => {
-    points.push(start.clone(), end.clone());
-  };
-
-  // Filled arrow triangle vertices (flat array, 3 floats per vertex)
-  const arrowPositions: number[] = [];
-  const arrowIndices: number[] = [];
-  const addFilledArrow = (tip: THREE.Vector3, inward: THREE.Vector3, perp: THREE.Vector3) => {
-    const base = tip.clone().add(inward.clone().multiplyScalar(arrowLength));
-    const side = perp.clone().multiplyScalar(arrowWidth);
-    const idx = arrowPositions.length / 3;
-    arrowPositions.push(tip.x, tip.y, tip.z);
-    arrowPositions.push(base.x + side.x, base.y + side.y, base.z + side.z);
-    arrowPositions.push(base.x - side.x, base.y - side.y, base.z - side.z);
-    arrowIndices.push(idx, idx + 1, idx + 2);
-  };
-
-  // Reference line data for angle dimensions (hoisted for access outside the angle block)
-  const refLineData: { start: THREE.Vector3; end: THREE.Vector3 } | null =
-    (dimension.kind === "angle" || dimension.kind === "line_angle") &&
-    dimension.refLineStart && dimension.refLineEnd
-      ? {
-          start: new THREE.Vector3(...dimension.refLineStart),
-          end: new THREE.Vector3(...dimension.refLineEnd),
-        }
-      : null;
-
-  if (dimension.kind === "angle" || dimension.kind === "line_angle") {
-    // Prefer core-provided arc geometry when available
-    if (dimension.arcRadius && dimension.arcRadius > 0 && dimension.arcCenter) {
-      const pivot = new THREE.Vector3(...dimension.arcCenter);
-      const startAngle = dimension.arcStartAngle ?? 0;
-      const endAngle = dimension.arcEndAngle ?? 0;
-      const ccw = dimension.arcCcw ?? true;
-
-
-
-      // Arc vectors
-      const startRay = dimensionStart.clone().sub(pivot);
-      const endRay = dimensionEnd.clone().sub(pivot);
-      const radius = startRay.length();
-      const normal = startRay.clone().cross(endRay).normalize();
-      if (radius > 1e-6 && normal.lengthSq() > 1e-8) {
-        const uAxis = startRay.clone().normalize();
-        const vAxis = normal.clone().cross(uAxis).normalize();
-
-        // Sweep from core angles.  The (uAxis, vAxis) frame is oriented
-        // so that a positive sweep always goes the short way from
-        // dimensionStart to dimensionEnd (uAxis → vAxis).  Just use the
-        // normalised magnitude — never flip on ccw.
-        let sweep = endAngle - startAngle;
-        while (sweep > Math.PI) sweep -= 2 * Math.PI;
-        while (sweep <= -Math.PI) sweep += 2 * Math.PI;
-        sweep = Math.abs(sweep);
-        const arcSegments = 32;
-        let previousPoint = dimensionStart.clone();
-        for (let index = 1; index <= arcSegments; index++) {
-          const angle = sweep * (index / arcSegments);
-          const point = pivot
-            .clone()
-            .add(uAxis.clone().multiplyScalar(Math.cos(angle) * radius))
-            .add(vAxis.clone().multiplyScalar(Math.sin(angle) * radius));
-          addSegment(previousPoint, point);
-          previousPoint = point;
-        }
-
-        // Arrowheads at arc endpoints
-        const startTangent = normal.clone().cross(startRay).normalize();
-        const endTangent = normal.clone().cross(endRay).normalize();
-        const sweepSign = sweep >= 0 ? 1 : -1;
-        addFilledArrow(
-          dimensionStart,
-          startTangent.clone().multiplyScalar(sweepSign),
-          startRay.clone().normalize(),
-        );
-        addFilledArrow(
-          dimensionEnd,
-          endTangent.clone().multiplyScalar(-sweepSign),
-          endRay.clone().normalize(),
-        );
+  const { points, arrowPositions, arrowIndices, refLineData } =
+    buildSketchDimensionGeometry(dimension);
+  const dimensionColor = isMutedPreview
+    ? themeColor("--color-on-surface-muted", "#9b9b98")
+    : dimension.isSelected
+      ? themeColor("--color-primary-edge-active", "#c3f5ff")
+      : themeColor("--color-primary-soft", "#8feaf7");
+  const geometryUserData = isPickable
+    ? {
+        sketchDimensionId: dimension.dimensionId,
+        sketchDimensionPart: "geometry",
       }
-    } else {
-      // Fallback: client-side arc reconstruction from collinear point pairs
-      const startRay = dimensionStart.clone().sub(anchorStart);
-      const endRay = dimensionEnd.clone().sub(anchorEnd);
-      if (startRay.lengthSq() > 1e-8 && endRay.lengthSq() > 1e-8) {
-        const startDirection = startRay.clone().normalize();
-        const endDirection = endRay.clone().normalize();
-        const betweenAnchors = anchorStart.clone().sub(anchorEnd);
-        const directionDot = startDirection.dot(endDirection);
-        const denominator = 1 - directionDot * directionDot;
-        if (Math.abs(denominator) > 1e-8) {
-          const startOffset =
-            (directionDot * endDirection.dot(betweenAnchors) -
-              startDirection.dot(betweenAnchors)) /
-            denominator;
-          const endOffset =
-            (endDirection.dot(betweenAnchors) -
-              directionDot * startDirection.dot(betweenAnchors)) /
-            denominator;
-          const pivot = anchorStart
-            .clone()
-            .add(startDirection.clone().multiplyScalar(startOffset))
-            .add(
-              anchorEnd
-                .clone()
-                .add(endDirection.clone().multiplyScalar(endOffset)),
-            )
-            .multiplyScalar(0.5);
-          const startVector = dimensionStart.clone().sub(pivot);
-          const endVector = dimensionEnd.clone().sub(pivot);
-          const radius = startVector.length();
-          const normal2 = startVector.clone().cross(endVector).normalize();
-          if (radius > 1e-6 && normal2.lengthSq() > 1e-8) {
-            const uAxis = startVector.clone().normalize();
-            const vAxis = normal2.clone().cross(uAxis).normalize();
-            let sweep = Math.atan2(endVector.dot(vAxis), endVector.dot(uAxis));
-            if (sweep > Math.PI) {
-              sweep -= Math.PI * 2;
-            } else if (sweep < -Math.PI) {
-              sweep += Math.PI * 2;
-            }
-            const arcSegments = 32;
-            let previousPoint = dimensionStart.clone();
-            for (let index = 1; index <= arcSegments; index++) {
-              const angle = (sweep * index) / arcSegments;
-              const point = pivot
-                .clone()
-                .add(uAxis.clone().multiplyScalar(Math.cos(angle) * radius))
-                .add(vAxis.clone().multiplyScalar(Math.sin(angle) * radius));
-              addSegment(previousPoint, point);
-              previousPoint = point;
-            }
-            const startTangent = normal2.clone().cross(startVector).normalize();
-            const endTangent = normal2.clone().cross(endVector).normalize();
-            const sweepSign = sweep >= 0 ? 1 : -1;
-            addFilledArrow(
-              dimensionStart,
-              startTangent.clone().multiplyScalar(sweepSign),
-              startVector.clone().normalize(),
-            );
-            addFilledArrow(
-              dimensionEnd,
-              endTangent.clone().multiplyScalar(-sweepSign),
-              endVector.clone().normalize(),
-            );
-          }
-        }
-      }
-    }
-  } else {
-    addSegment(
-      anchorStart,
-      dimensionStart
-        .clone()
-        .add(extensionDirection.clone().multiplyScalar(extensionOverrun)),
-    );
-    addSegment(dimensionStart, dimensionEnd);
-    addSegment(
-      anchorEnd,
-      dimensionEnd
-        .clone()
-        .add(extensionDirection.clone().multiplyScalar(extensionOverrun)),
-    );
-    addFilledArrow(dimensionStart, dimensionDirection, extensionDirection);
-    addFilledArrow(dimensionEnd, dimensionDirection.clone().multiplyScalar(-1), extensionDirection);
-  }
+    : undefined;
 
   // Build line segments geometry
   const material = new THREE.LineBasicMaterial({
-    color: isMutedPreview
-      ? themeColor("--color-on-surface-muted", "#9b9b98")
-      : dimension.isSelected
-      ? themeColor("--color-primary-edge-active", "#c3f5ff")
-      : themeColor("--color-primary-soft", "#8feaf7"),
+    color: dimensionColor,
     transparent: true,
     opacity: isMutedPreview ? 0.34 : dimension.isSelected ? 0.98 : 0.84,
     depthTest: false,
@@ -1590,43 +1436,26 @@ export function buildSketchDimensionObject(
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const lineSegments = new THREE.LineSegments(geometry, material);
   lineSegments.renderOrder = isMutedPreview ? 5 : 6;
-  if (isPickable) {
-    lineSegments.userData.sketchDimensionId = dimension.dimensionId;
-    lineSegments.userData.sketchDimensionPart = "geometry";
+  if (geometryUserData) {
+    Object.assign(lineSegments.userData, geometryUserData);
   }
 
   // Build filled arrow mesh
   const group = new THREE.Group();
   group.add(lineSegments);
-  if (isPickable) {
-    group.userData.sketchDimensionId = dimension.dimensionId;
-    group.userData.sketchDimensionPart = "geometry";
+  if (geometryUserData) {
+    Object.assign(group.userData, geometryUserData);
   }
 
-  if (arrowIndices.length > 0) {
-    const arrowGeom = new THREE.BufferGeometry();
-    arrowGeom.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(arrowPositions, 3),
-    );
-    arrowGeom.setIndex(arrowIndices);
-    const arrowMat = new THREE.MeshBasicMaterial({
-      color: isMutedPreview
-        ? themeColor("--color-on-surface-muted", "#9b9b98")
-        : dimension.isSelected
-        ? themeColor("--color-primary-edge-active", "#c3f5ff")
-        : themeColor("--color-primary-soft", "#8feaf7"),
-      transparent: true,
-      opacity: isMutedPreview ? 0.34 : dimension.isSelected ? 0.98 : 0.84,
-      depthTest: false,
-      side: THREE.DoubleSide,
-    });
-    const arrowMesh = new THREE.Mesh(arrowGeom, arrowMat);
-    arrowMesh.renderOrder = isMutedPreview ? 5 : 6;
-    if (isPickable) {
-      arrowMesh.userData.sketchDimensionId = dimension.dimensionId;
-      arrowMesh.userData.sketchDimensionPart = "geometry";
-    }
+  const arrowMesh = buildFilledArrowMesh({
+    arrowPositions,
+    arrowIndices,
+    color: dimensionColor,
+    opacity: isMutedPreview ? 0.34 : dimension.isSelected ? 0.98 : 0.84,
+    renderOrder: isMutedPreview ? 5 : 6,
+    userData: geometryUserData,
+  });
+  if (arrowMesh) {
     group.add(arrowMesh);
   }
 
@@ -1775,31 +1604,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     };
   }
 
-  const shape = new THREE.Shape();
-  profile.profilePoints.forEach((point, index) => {
-    if (index === 0) {
-      shape.moveTo(point[0], point[1]);
-      return;
-    }
-    shape.lineTo(point[0], point[1]);
-  });
-  shape.closePath();
-  for (const loop of profile.innerLoops) {
-    const path = new THREE.Path();
-    // Three expects hole contours to wind opposite the outer shape.
-    // The core stores profile loops in a consistent CCW order, so
-    // reverse them here to make both rendering and raycasting match
-    // the actual ring-shaped face.
-    [...loop].reverse().forEach((point, index) => {
-      if (index === 0) {
-        path.moveTo(point[0], point[1]);
-        return;
-      }
-      path.lineTo(point[0], point[1]);
-    });
-    path.closePath();
-    shape.holes.push(path);
-  }
+  const shape = shapeFromProfileLoops(profile.profilePoints, profile.innerLoops);
 
   const geometry = new THREE.ShapeGeometry(shape);
   const mesh = new THREE.Mesh(geometry, fillMaterial);
@@ -1819,9 +1624,9 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
       : makePlaneTransformMatrix(profile.planeId, SKETCH_PLANE_OFFSET),
   );
   group.userData.sketchProfileArea =
-    Math.abs(polygonArea2d(profile.profilePoints)) -
+    polygonArea2d(profile.profilePoints) -
     profile.innerLoops.reduce(
-      (sum, loop) => sum + Math.abs(polygonArea2d(loop)),
+      (sum, loop) => sum + polygonArea2d(loop),
       0,
     );
   return {
@@ -1831,290 +1636,4 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
       edgeMaterials,
     },
   };
-}
-
-export function frameCamera(
-  camera: THREE.OrthographicCamera,
-  controls: OrbitControls,
-  center: [number, number, number],
-  maxDimension: number,
-) {
-  const distance = Math.max(maxDimension * 1.8, 160);
-  const viewHeight = Math.max(maxDimension * 2.4, 120);
-  camera.position.set(
-    center[0] + distance,
-    center[1] + distance * 0.8,
-    center[2] + distance,
-  );
-  camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
-  camera.updateProjectionMatrix();
-  controls.target.set(...center);
-  controls.update();
-}
-
-export function frameCameraToSketchPlane(
-  camera: THREE.OrthographicCamera,
-  controls: OrbitControls,
-  activePlaneId: string,
-  planeFrame: SketchPlaneFrame | null,
-  maxDimension: number,
-) {
-  const distance = Math.max(maxDimension * 1.6, 120);
-  const viewHeight = Math.max(maxDimension * 1.35, 80);
-  camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
-  camera.updateProjectionMatrix();
-
-  if (planeFrame) {
-    const origin = new THREE.Vector3(
-      planeFrame.origin.x,
-      planeFrame.origin.y,
-      planeFrame.origin.z,
-    );
-    const normal = new THREE.Vector3(
-      planeFrame.normal.x,
-      planeFrame.normal.y,
-      planeFrame.normal.z,
-    ).normalize();
-
-    // CAD-style up: prefer world Y; if the face normal is vertical, fall
-    // back to world -Z so the sketch reads top-down without rolling.
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const up =
-      Math.abs(normal.dot(worldUp)) > 0.95
-        ? new THREE.Vector3(0, 0, -1)
-        : worldUp.clone();
-
-    camera.position.copy(origin.clone().add(normal.multiplyScalar(distance)));
-    camera.up.copy(up);
-    controls.target.copy(origin);
-    controls.update();
-    return;
-  }
-
-  if (activePlaneId === "ref-plane-xy") {
-    camera.position.set(0, distance, 0);
-    camera.up.set(0, 0, -1);
-    controls.target.set(0, 0, 0);
-    controls.update();
-    return;
-  }
-
-  if (activePlaneId === "ref-plane-yz") {
-    camera.position.set(distance, 0, 0);
-    camera.up.set(0, 1, 0);
-    controls.target.set(0, 0, 0);
-    controls.update();
-    return;
-  }
-
-  camera.position.set(0, 0, distance);
-  camera.up.set(0, 1, 0);
-  controls.target.set(0, 0, 0);
-  controls.update();
-}
-
-export function resolveSketchPlanePoint(
-  event: PointerEvent,
-  renderer: THREE.WebGLRenderer,
-  camera: THREE.Camera,
-  activePlaneId: string,
-  planeFrame: SketchPlaneFrame | null,
-) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  const pointer = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1,
-  );
-  const raycaster = new THREE.Raycaster();
-  raycaster.setFromCamera(pointer, camera);
-
-  if (planeFrame) {
-    const origin = new THREE.Vector3(
-      planeFrame.origin.x,
-      planeFrame.origin.y,
-      planeFrame.origin.z,
-    );
-    const normal = new THREE.Vector3(
-      planeFrame.normal.x,
-      planeFrame.normal.y,
-      planeFrame.normal.z,
-    );
-    const xAxis = new THREE.Vector3(
-      planeFrame.x_axis.x,
-      planeFrame.x_axis.y,
-      planeFrame.x_axis.z,
-    );
-    const yAxis = new THREE.Vector3(
-      planeFrame.y_axis.x,
-      planeFrame.y_axis.y,
-      planeFrame.y_axis.z,
-    );
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-      normal,
-      origin,
-    );
-    const hitPoint = new THREE.Vector3();
-    const hit = raycaster.ray.intersectPlane(plane, hitPoint);
-    if (!hit) {
-      return null;
-    }
-    const relative = hitPoint.clone().sub(origin);
-    return {
-      local: [relative.dot(xAxis), relative.dot(yAxis)] as [number, number],
-      world: [hitPoint.x, hitPoint.y, hitPoint.z] as [number, number, number],
-    };
-  }
-
-  const plane =
-    activePlaneId === "ref-plane-xy"
-      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET)
-      : activePlaneId === "ref-plane-yz"
-        ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -SKETCH_PLANE_OFFSET)
-        : new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
-
-  const hitPoint = new THREE.Vector3();
-  const hit = raycaster.ray.intersectPlane(plane, hitPoint);
-  if (!hit) {
-    return null;
-  }
-
-  if (activePlaneId === "ref-plane-xy") {
-    return {
-      local: [hitPoint.x, hitPoint.z] as [number, number],
-      world: [hitPoint.x, SKETCH_PLANE_OFFSET, hitPoint.z] as [
-        number,
-        number,
-        number,
-      ],
-    };
-  }
-
-  if (activePlaneId === "ref-plane-yz") {
-    return {
-      local: [hitPoint.y, hitPoint.z] as [number, number],
-      world: [SKETCH_PLANE_OFFSET, hitPoint.y, hitPoint.z] as [
-        number,
-        number,
-        number,
-      ],
-    };
-  }
-
-  return {
-    local: [hitPoint.x, hitPoint.y] as [number, number],
-    world: [hitPoint.x, hitPoint.y, SKETCH_PLANE_OFFSET] as [
-      number,
-      number,
-      number,
-    ],
-  };
-}
-
-export function toWorldPoint(
-  planeId: string,
-  local: [number, number],
-  planeFrame: SketchPlaneFrame | null = null,
-): [number, number, number] {
-  if (planeFrame) {
-    return [
-      planeFrame.origin.x +
-        planeFrame.x_axis.x * local[0] +
-        planeFrame.y_axis.x * local[1],
-      planeFrame.origin.y +
-        planeFrame.x_axis.y * local[0] +
-        planeFrame.y_axis.y * local[1],
-      planeFrame.origin.z +
-        planeFrame.x_axis.z * local[0] +
-        planeFrame.y_axis.z * local[1],
-    ];
-  }
-  if (planeId === "ref-plane-xy") {
-    return [local[0], SKETCH_PLANE_OFFSET, local[1]];
-  }
-
-  if (planeId === "ref-plane-yz") {
-    return [SKETCH_PLANE_OFFSET, local[0], local[1]];
-  }
-
-  return [local[0], local[1], SKETCH_PLANE_OFFSET];
-}
-
-export function distanceBetweenPoints(
-  a: [number, number],
-  b: [number, number],
-) {
-  const dx = a[0] - b[0];
-  const dy = a[1] - b[1];
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-export function projectWorldPointToViewport(
-  point: [number, number, number],
-  camera: THREE.Camera,
-  renderer: THREE.WebGLRenderer,
-) {
-  const projected = new THREE.Vector3(...point).project(camera);
-  if (projected.z < -1 || projected.z > 1) {
-    return null;
-  }
-
-  const widthHalf = renderer.domElement.clientWidth / 2;
-  const heightHalf = renderer.domElement.clientHeight / 2;
-
-  const rawX = projected.x * widthHalf + widthHalf;
-  const rawY = -projected.y * heightHalf + heightHalf;
-
-  return {
-    x: Math.min(
-      Math.max(rawX, DIMENSION_EDITOR_MARGIN),
-      renderer.domElement.clientWidth - DIMENSION_EDITOR_MARGIN,
-    ),
-    y: Math.min(
-      Math.max(rawY, DIMENSION_EDITOR_MARGIN),
-      renderer.domElement.clientHeight - DIMENSION_EDITOR_MARGIN,
-    ),
-  };
-}
-
-// -- Trim tool: 2D intersection helpers -----------------------------------
-
-const TRIM_COINCIDENT_TS = 0.01;
-
-export function lineLineIntersectionTrim(
-  ax: number, ay: number, bx: number, by: number,
-  cx: number, cy: number, dx: number, dy: number,
-): number | null {
-  const abx = bx - ax, aby = by - ay;
-  const cdx = dx - cx, cdy = dy - cy;
-  const denom = abx * cdy - aby * cdx;
-  if (Math.abs(denom) < TRIM_COINCIDENT_TS) return null;
-  const acx = cx - ax, acy = cy - ay;
-  const t = (acx * cdy - acy * cdx) / denom;
-  const u = (acx * aby - acy * abx) / denom;
-  if (t < -1e-12 || t > 1 + 1e-12) return null;
-  if (u < -1e-12 || u > 1 + 1e-12) return null;
-  return Math.max(0, Math.min(1, t));
-}
-
-export function lineCircleIntersectionTrim(
-  ax: number, ay: number, bx: number, by: number,
-  cx: number, cy: number, r: number,
-): number[] {
-  const abx = bx - ax, aby = by - ay;
-  const dx = ax - cx, dy = ay - cy;
-  const a = abx * abx + aby * aby;
-  if (a < TRIM_COINCIDENT_TS * TRIM_COINCIDENT_TS) return [];
-  const b = 2 * (dx * abx + dy * aby);
-  const c = dx * dx + dy * dy - r * r;
-  const disc = b * b - 4 * a * c;
-  if (disc < -TRIM_COINCIDENT_TS) return [];
-  const sqrtDisc = disc <= 0 ? 0 : Math.sqrt(disc);
-  const inv2a = 1 / (2 * a);
-  const result: number[] = [];
-  for (const t of [(-b - sqrtDisc) * inv2a, (-b + sqrtDisc) * inv2a]) {
-    if (t >= -1e-12 && t <= 1 + 1e-12) {
-      result.push(Math.max(0, Math.min(1, t)));
-    }
-  }
-  return result;
 }
