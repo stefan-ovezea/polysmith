@@ -38,9 +38,9 @@ target_include_directories(planegcs PUBLIC
   ${PLANEGCS_DIR}
   ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
-  ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
 )
+target_link_libraries(planegcs PUBLIC Eigen3::Eigen)
 target_compile_definitions(planegcs PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
 # planegcs uses 'register' keyword (removed in C++17) in some Eigen internals
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -103,7 +103,6 @@ target_include_directories(cad_core_sketch_profile_test PRIVATE
   ${PLANEGCS_DIR}
   ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
-  ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
 )
 
@@ -149,7 +148,6 @@ target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
   ${PLANEGCS_DIR}
   ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
-  ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
 )
 
@@ -196,7 +194,6 @@ target_include_directories(cad_core_cam_face_reference_test PRIVATE
   ${PLANEGCS_DIR}
   ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
-  ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
 )
 
