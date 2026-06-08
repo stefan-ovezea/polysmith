@@ -10,12 +10,21 @@ import type {
   ViewportScene,
 } from "@/types";
 import { resolveSketchPlanePoint } from "@/utils";
-import type { ArcToolMode } from "./arcDraftPreview";
-import type { CircleToolMode } from "./circleDraftPreview";
 import type { ViewportPickHit } from "./contextMenuState";
 import { commitDraftPointerUp } from "./draftCommit";
 import type {
-  DraftDimensionField,
+  ArcDraftCommitOptions,
+  CircleDraftCommitOptions,
+  DraftCommitSketchPoint,
+  DraftPointerUpCommitOptions,
+  LineBodyHost,
+  LineDraftCommitOptions,
+  Point2d,
+  PolygonDraftCommitOptions,
+  PolygonToolMode,
+  RectangleDraftCommitOptions,
+} from "./draftCommit";
+import type {
   DraftDimensionSession,
 } from "./draftDimensions";
 import { finishDraftStartedPointerUp } from "./draftPointerDown";
@@ -25,13 +34,13 @@ import {
 } from "./moveGizmo";
 import {
   handleActiveSketchPointerUpTool,
+  type ActiveSketchPointerUpContext,
 } from "./pointerUpActiveSketch";
 import { handlePointerUpSceneSelection } from "./pointerUpSceneSelection";
 import type {
   ActiveSketchSelectHit,
   SharedSketchSelectionHit,
 } from "./sketchClickSelection";
-import type { RectangleToolMode } from "./rectangleDraftPreview";
 import {
   finishRectangleSelectionDrag,
   type SelectionDrag,
@@ -43,23 +52,7 @@ interface MutableRef<T> {
 }
 
 type PointerDownPosition = { x: number; y: number };
-type Point2d = [number, number];
-type LineBodyHost = { lineId: string; t: number };
-type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 type EndpointDragPointerUpResult = "inactive" | "continue" | "consumed";
-
-interface DraftCommitSketchPoint {
-  local: Point2d;
-  snapMidpointHostLineId?: string | null;
-  snapMidpointT?: number | null;
-  snapPerpendicularHostLineId?: string | null;
-  snapEndpointHostLineId?: string | null;
-  snapLineBodyHostLineId?: string | null;
-  snapLineBodyT?: number | null;
-  snapAxisLock?: "horizontal" | "vertical" | null;
-  snapTangentCircleId?: string | null;
-  snapParallelHostLineId?: string | null;
-}
 
 interface ViewportPointerUpParams {
   event: PointerEvent;
@@ -83,9 +76,7 @@ interface ViewportPointerUpParams {
   finishViewCubePointerUp: (event: PointerEvent) => "inactive" | "consumed";
   draftStartedOnPointerDownRef: MutableRef<boolean>;
   draftDimensionSessionRef: MutableRef<DraftDimensionSession | null>;
-  draftDimensionInputRefs: MutableRef<
-    Partial<Record<DraftDimensionField, HTMLInputElement | null>>
-  >;
+  draftDimensionInputRefs: DraftPointerUpCommitOptions["refs"]["draftDimensionInputs"];
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit;
   activeSketchToolRef: MutableRef<SketchTool>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
@@ -103,59 +94,39 @@ interface ViewportPointerUpParams {
     draftStartLocal?: Point2d | null,
   ) => SketchPreviewPoint;
   setSketchSnapLabel: (label: string | null) => void;
-  selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
-  selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
-  selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
-  selectFace: (faceId: string) => Promise<void>;
-  trimSketchEntity:
-    | ((entityId: string, localX: number, localY: number) => Promise<void>)
-    | null
-    | undefined;
-  mirrorEntityPick: (
-    entityId: string,
-    entityKind: "line" | "circle",
-  ) => Promise<void>;
-  selectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
-  pickSketchPoint: (
-    pointId: string,
-    pointKind: "endpoint" | "center" | "quadrant",
-    additive: boolean,
-  ) => Promise<void>;
-  handleDimensionClick: (dimensionId: string) => void;
-  setSelectedConstraint: Parameters<typeof handleActiveSketchPointerUpTool>[0]["setSelectedConstraint"];
-  paintSketchEntityMaterials: () => void;
-  paintSketchPointMaterials: () => void;
-  addMessage: (message: string) => void;
-  addSketchFillet: (
-    cornerPointId: string,
-    lineAId: string,
-    lineBId: string,
-  ) => Promise<void>;
-  pendingDimensionPlacement: boolean;
-  pendingDimensionSourceId: string | null;
-  pendingDimensionId: string | null;
-  getDimensionFirstEntityId: () => string | null;
-  getDimensionFirstPoint: () => { id: string; x: number; y: number } | null;
-  clearDimensionFirstPick: () => void;
-  clearDimensionFirstEntity: () => void;
-  clearPendingDimensionPlacement: () => void;
-  stageDimensionFirstEntity: (entityId: string) => void;
-  stageDimensionFirstPoint: (point: { id: string; x: number; y: number }) => void;
-  deleteSketchDimension: (dimensionId: string) => void;
-  createDimensionAngleOrDistance: (
-    firstEntityId: string,
-    secondEntityId: string,
-  ) => void;
-  createDimensionPointDistance: (
-    firstPointId: string,
-    secondPointId: string,
-  ) => void;
-  createDimensionLine: (lineId: string) => void;
-  createDimensionCircle: (circleId: string, label: string) => void;
-  selectDimensionCircle: (circleId: string) => void;
-  createDimensionPolygon: (polygonId: string) => void;
-  selectDimensionPolygon: (polygonId: string) => void;
-  selectDimensionLine: (lineId: string) => void;
+  selectSketchProfile: ActiveSketchPointerUpContext["selectSketchProfile"];
+  selectVertex: ActiveSketchPointerUpContext["selectVertex"];
+  selectEdge: ActiveSketchPointerUpContext["selectEdge"];
+  selectFace: ActiveSketchPointerUpContext["selectFace"];
+  trimSketchEntity: ActiveSketchPointerUpContext["trimSketchEntity"];
+  mirrorEntityPick: ActiveSketchPointerUpContext["mirrorEntityPick"];
+  selectSketchEntity: ActiveSketchPointerUpContext["selectSketchEntity"];
+  pickSketchPoint: ActiveSketchPointerUpContext["pickSketchPoint"];
+  handleDimensionClick: ActiveSketchPointerUpContext["handleDimensionClick"];
+  setSelectedConstraint: ActiveSketchPointerUpContext["setSelectedConstraint"];
+  paintSketchEntityMaterials: ActiveSketchPointerUpContext["paintSketchEntityMaterials"];
+  paintSketchPointMaterials: ActiveSketchPointerUpContext["paintSketchPointMaterials"];
+  addMessage: ActiveSketchPointerUpContext["addMessage"];
+  addSketchFillet: ActiveSketchPointerUpContext["addSketchFillet"];
+  pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
+  pendingDimensionSourceId: ActiveSketchPointerUpContext["pendingDimensionSourceId"];
+  pendingDimensionId: ActiveSketchPointerUpContext["pendingDimensionId"];
+  getDimensionFirstEntityId: ActiveSketchPointerUpContext["getDimensionFirstEntityId"];
+  getDimensionFirstPoint: ActiveSketchPointerUpContext["getDimensionFirstPoint"];
+  clearDimensionFirstPick: ActiveSketchPointerUpContext["clearDimensionFirstPick"];
+  clearDimensionFirstEntity: ActiveSketchPointerUpContext["clearDimensionFirstEntity"];
+  clearPendingDimensionPlacement: ActiveSketchPointerUpContext["clearPendingDimensionPlacement"];
+  stageDimensionFirstEntity: ActiveSketchPointerUpContext["stageDimensionFirstEntity"];
+  stageDimensionFirstPoint: ActiveSketchPointerUpContext["stageDimensionFirstPoint"];
+  deleteSketchDimension: ActiveSketchPointerUpContext["deleteSketchDimension"];
+  createDimensionAngleOrDistance: ActiveSketchPointerUpContext["createDimensionAngleOrDistance"];
+  createDimensionPointDistance: ActiveSketchPointerUpContext["createDimensionPointDistance"];
+  createDimensionLine: ActiveSketchPointerUpContext["createDimensionLine"];
+  createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
+  selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
+  createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];
+  selectDimensionPolygon: ActiveSketchPointerUpContext["selectDimensionPolygon"];
+  selectDimensionLine: ActiveSketchPointerUpContext["selectDimensionLine"];
   sketchCircleCount: number;
   lineDraftStartRef: MutableRef<Point2d | null>;
   arcSecondPointRef: MutableRef<Point2d | null>;
@@ -166,80 +137,29 @@ interface ViewportPointerUpParams {
   draftStartMidpointHostRef: MutableRef<string | null>;
   draftStartEndpointHostRef: MutableRef<string | null>;
   draftStartLineBodyHostRef: MutableRef<LineBodyHost | null>;
-  draftDimensionInputRefsForCommit: MutableRef<
-    Partial<Record<DraftDimensionField, HTMLInputElement | null>>
-  >;
-  arcToolMode: ArcToolMode;
-  rectangleToolMode: RectangleToolMode;
-  circleToolMode: CircleToolMode;
+  draftDimensionInputRefsForCommit: DraftPointerUpCommitOptions["refs"]["draftDimensionInputs"];
+  arcToolMode: DraftPointerUpCommitOptions["modes"]["arc"];
+  rectangleToolMode: DraftPointerUpCommitOptions["modes"]["rectangle"];
+  circleToolMode: DraftPointerUpCommitOptions["modes"]["circle"];
   polygonToolMode: PolygonToolMode;
   polygonSides: number;
   isConstruction: boolean;
   clearPreviews: () => void;
-  clearDraftDimensionSession: () => void;
-  suppressDimensionEditorAfterSketchCommit: () => void;
-  scheduleDimensionDeletion: (
-    tool: "line" | "rectangle" | "circle" | "polygon",
-    preCapturedSession?: DraftDimensionSession | null,
-  ) => void;
-  scheduleDraftDimensionExpressionUpdate: (
-    tool: "line" | "rectangle" | "circle" | "polygon",
-  ) => void;
-  setPendingCircleDimensionPlacement: (placement: {
-    fromCircleCount: number;
-    center: Point2d;
-    end: Point2d;
-  }) => void;
-  captureLineCommitRelations: (sketchPoint: DraftCommitSketchPoint) => {
-    endHostLineId: string | null;
-    endLineBodyHost: LineBodyHost | null;
-  };
-  createLineDraftDimensionSession: (
-    start: Point2d,
-    current: Point2d,
-  ) => DraftDimensionSession;
-  clearDraftDimGroup: () => void;
-  setDraftDimensionSession: (session: DraftDimensionSession) => void;
-  focusDraftField: (field: DraftDimensionSession["activeField"]) => void;
-  addSketchArc: (
-    startX: number,
-    startY: number,
-    endX: number,
-    endY: number,
-    anchorX: number,
-    anchorY: number,
-    mode: ArcToolMode,
-    isConstruction: boolean,
-  ) => Promise<void> | void;
-  addSketchRectangle: (
-    startX: number,
-    startY: number,
-    endX: number,
-    endY: number,
-    isConstruction: boolean,
-  ) => Promise<void> | void;
-  addSketchCircle: (
-    centerX: number,
-    centerY: number,
-    radius: number,
-    isConstruction: boolean,
-  ) => Promise<void> | void;
-  addSketchPolygon: (
-    sides: number,
-    mode: PolygonToolMode,
-    centerX: number,
-    centerY: number,
-    edgeX: number,
-    edgeY: number,
-    isConstruction: boolean,
-  ) => Promise<void> | void;
-  addSketchLine: (
-    startX: number,
-    startY: number,
-    endX: number,
-    endY: number,
-    isConstruction: boolean,
-  ) => Promise<void> | void;
+  clearDraftDimensionSession: DraftPointerUpCommitOptions["clearDraftDimensionSession"];
+  suppressDimensionEditorAfterSketchCommit: DraftPointerUpCommitOptions["suppressDimensionEditorAfterSketchCommit"];
+  scheduleDimensionDeletion: DraftPointerUpCommitOptions["scheduleDimensionDeletion"];
+  scheduleDraftDimensionExpressionUpdate: DraftPointerUpCommitOptions["scheduleDraftDimensionExpressionUpdate"];
+  setPendingCircleDimensionPlacement: DraftPointerUpCommitOptions["setPendingCircleDimensionPlacement"];
+  captureLineCommitRelations: DraftPointerUpCommitOptions["captureLineCommitRelations"];
+  createLineDraftDimensionSession: DraftPointerUpCommitOptions["createLineDraftDimensionSession"];
+  clearDraftDimGroup: DraftPointerUpCommitOptions["clearDraftDimGroup"];
+  setDraftDimensionSession: DraftPointerUpCommitOptions["setDraftDimensionSession"];
+  focusDraftField: DraftPointerUpCommitOptions["focusDraftField"];
+  addSketchArc: ArcDraftCommitOptions["addSketchArc"];
+  addSketchRectangle: RectangleDraftCommitOptions["addSketchRectangle"];
+  addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
+  addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
+  addSketchLine: LineDraftCommitOptions["addSketchLine"];
   sceneDataRef: MutableRef<ViewportScene | null>;
   pickInactiveSketchLine:
     | ((sketchLineId: string) => void | Promise<void>)

@@ -51,6 +51,18 @@ export function clearSketchEntityHover(actions: HoverSetters) {
   actions.setHoveredSketchEntity(null);
 }
 
+function clearBodyHover(actions: HoverSetters) {
+  actions.setHoveredFace(null);
+  actions.setHoveredEdge(null);
+  actions.setHoveredVertex(null);
+}
+
+function applyBodyHover(hit: PointerHoverHit, actions: HoverSetters) {
+  actions.setHoveredFace(hitId(hit, "face"));
+  actions.setHoveredEdge(hitId(hit, "edge"));
+  actions.setHoveredVertex(hitId(hit, "vertex"));
+}
+
 export function applySelectToolHover(
   hit: PointerHoverHit,
   actions: PointerMoveHoverActions,
@@ -76,9 +88,7 @@ export function applyProjectToolHover(
   actions.setHoveredSketchProfile(null);
   actions.setHoveredSketchPoint(null);
   actions.setHoveredSketchEntity(null);
-  actions.setHoveredFace(hitId(hit, "face"));
-  actions.setHoveredEdge(hitId(hit, "edge"));
-  actions.setHoveredVertex(hitId(hit, "vertex"));
+  applyBodyHover(hit, actions);
 }
 
 export function applyTrimToolHover(
@@ -89,9 +99,7 @@ export function applyTrimToolHover(
   actions.setHoveredSketchEntity(hitId(hit, "sketch_entity"));
   actions.setHoveredSketchProfile(null);
   actions.setHoveredSketchPoint(null);
-  actions.setHoveredFace(null);
-  actions.setHoveredEdge(null);
-  actions.setHoveredVertex(null);
+  clearBodyHover(actions);
 }
 
 export function applySceneHover(
@@ -104,9 +112,7 @@ export function applySceneHover(
     actions.setHoveredSketchProfile(null);
     actions.setHoveredSketchPoint(null);
     actions.setHoveredSketchEntity(hitId(hit, "sketch_entity"));
-    actions.setHoveredFace(null);
-    actions.setHoveredEdge(null);
-    actions.setHoveredVertex(null);
+    clearBodyHover(actions);
     return;
   }
 
@@ -114,8 +120,6 @@ export function applySceneHover(
   actions.setHoveredSketchProfile(hitId(hit, "sketch_profile"));
   actions.setHoveredSketchPoint(hitId(hit, "sketch_point"));
   actions.setHoveredSketchEntity(null);
-  actions.setHoveredFace(hitId(hit, "face"));
-  actions.setHoveredEdge(hitId(hit, "edge"));
-  actions.setHoveredVertex(hitId(hit, "vertex"));
+  applyBodyHover(hit, actions);
   actions.setHoveredPrimitive(hitId(hit, "primitive"));
 }

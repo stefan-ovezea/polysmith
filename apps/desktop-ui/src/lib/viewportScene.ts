@@ -40,7 +40,10 @@ import type {
   FeatureEntry,
   SketchProfileRegionEntry,
 } from "@/types";
-import { polygonArea2d } from "@/utils/viewport/viewportMath";
+import {
+  pointInPolygon2d,
+  polygonArea2d,
+} from "@/utils/viewport/viewportMath";
 
 function clampDimension(value: number) {
   return Math.max(value, 1);
@@ -571,34 +574,6 @@ function makeSketchProfileFromDocument(
     radius: profile.radius,
     isSelected: selectedProfileIds.has(profile.profile_id),
   };
-}
-
-function pointInPolygon2d(
-  point: [number, number],
-  polygon: Array<[number, number]>,
-) {
-  if (polygon.length < 3) {
-    return false;
-  }
-  let inside = false;
-  for (
-    let index = 0, previous = polygon.length - 1;
-    index < polygon.length;
-    previous = index, index += 1
-  ) {
-    const current = polygon[index];
-    const prior = polygon[previous];
-    const crosses =
-      current[1] > point[1] !== prior[1] > point[1] &&
-      point[0] <
-        ((prior[0] - current[0]) * (point[1] - current[1])) /
-          (prior[1] - current[1]) +
-          current[0];
-    if (crosses) {
-      inside = !inside;
-    }
-  }
-  return inside;
 }
 
 function profileContour(profile: SketchProfileScene): [number, number][] {

@@ -7,6 +7,32 @@ export const SKETCH_SNAP_DISTANCE = 2.5;
 
 const DIMENSION_EDITOR_MARGIN = 20;
 
+export function legacySketchPlane(planeId: string) {
+  if (planeId === "ref-plane-xy") {
+    return new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET);
+  }
+
+  if (planeId === "ref-plane-yz") {
+    return new THREE.Plane(new THREE.Vector3(1, 0, 0), -SKETCH_PLANE_OFFSET);
+  }
+
+  return new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
+}
+
+function frameVector(vector: { x: number; y: number; z: number }) {
+  return new THREE.Vector3(vector.x, vector.y, vector.z);
+}
+
+export function setPointerNdcFromEvent(
+  pointer: THREE.Vector2,
+  event: PointerEvent,
+  renderer: THREE.WebGLRenderer,
+) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
 export function frameCamera(
   camera: THREE.OrthographicCamera,
   controls: OrbitControls,
@@ -39,16 +65,8 @@ export function frameCameraToSketchPlane(
   camera.updateProjectionMatrix();
 
   if (planeFrame) {
-    const origin = new THREE.Vector3(
-      planeFrame.origin.x,
-      planeFrame.origin.y,
-      planeFrame.origin.z,
-    );
-    const normal = new THREE.Vector3(
-      planeFrame.normal.x,
-      planeFrame.normal.y,
-      planeFrame.normal.z,
-    ).normalize();
+    const origin = frameVector(planeFrame.origin);
+    const normal = frameVector(planeFrame.normal).normalize();
 
     // CAD-style up: prefer world Y; if the face normal is vertical, fall
     // back to world -Z so the sketch reads top-down without rolling.
@@ -94,35 +112,16 @@ export function resolveSketchPlanePoint(
   activePlaneId: string,
   planeFrame: SketchPlaneFrame | null,
 ) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  const pointer = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1,
-  );
+  const pointer = new THREE.Vector2();
+  setPointerNdcFromEvent(pointer, event, renderer);
   const raycaster = new THREE.Raycaster();
   raycaster.setFromCamera(pointer, camera);
 
   if (planeFrame) {
-    const origin = new THREE.Vector3(
-      planeFrame.origin.x,
-      planeFrame.origin.y,
-      planeFrame.origin.z,
-    );
-    const normal = new THREE.Vector3(
-      planeFrame.normal.x,
-      planeFrame.normal.y,
-      planeFrame.normal.z,
-    );
-    const xAxis = new THREE.Vector3(
-      planeFrame.x_axis.x,
-      planeFrame.x_axis.y,
-      planeFrame.x_axis.z,
-    );
-    const yAxis = new THREE.Vector3(
-      planeFrame.y_axis.x,
-      planeFrame.y_axis.y,
-      planeFrame.y_axis.z,
-    );
+    const origin = frameVector(planeFrame.origin);
+    const normal = frameVector(planeFrame.normal);
+    const xAxis = frameVector(planeFrame.x_axis);
+    const yAxis = frameVector(planeFrame.y_axis);
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
       normal,
       origin,
@@ -139,12 +138,7 @@ export function resolveSketchPlanePoint(
     };
   }
 
-  const plane =
-    activePlaneId === "ref-plane-xy"
-      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET)
-      : activePlaneId === "ref-plane-yz"
-        ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -SKETCH_PLANE_OFFSET)
-        : new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
+  const plane = legacySketchPlane(activePlaneId);
 
   const hitPoint = new THREE.Vector3();
   const hit = raycaster.ray.intersectPlane(plane, hitPoint);
@@ -238,6 +232,35 @@ export function signedPolygonArea2d(points: Array<[number, number]>) {
 
 export function polygonArea2d(points: Array<[number, number]>) {
   return Math.abs(signedPolygonArea2d(points));
+}
+
+export function pointInPolygon2d(
+  point: [number, number],
+  polygon: Array<[number, number]>,
+) {
+  if (polygon.length < 3) {
+    return false;
+  }
+
+  let inside = false;
+  for (
+    let index = 0, previous = polygon.length - 1;
+    index < polygon.length;
+    previous = index, index += 1
+  ) {
+    const current = polygon[index];
+    const prior = polygon[previous];
+    const crosses =
+      current[1] > point[1] !== prior[1] > point[1] &&
+      point[0] <
+        ((prior[0] - current[0]) * (point[1] - current[1])) /
+          (prior[1] - current[1]) +
+          current[0];
+    if (crosses) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 export function circleFromThreePoints2d(

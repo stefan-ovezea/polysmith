@@ -1,11 +1,12 @@
 import { useTranslation } from "react-i18next";
-import {
-  Dropdown,
-  findHoleStandard,
-  holeStandardsForMode,
-  type HoleStandardEntry,
-} from "../lib";
+import { Dropdown, type HoleStandardEntry } from "../lib";
 import type { FastenerFeatureParameters } from "../types";
+import { ActivePanelActions } from "./ActivePanelActions";
+import { HoleStandardSizeDropdown } from "./HoleStandardSizeDropdown";
+import {
+  fastenerPatchForSize,
+  fastenerPatchForStandard,
+} from "./threadStandardPatches";
 
 type FastenerStandard = FastenerFeatureParameters["standard"];
 type FastenerHeadType = FastenerFeatureParameters["head_type"];
@@ -64,54 +65,30 @@ export function ActiveFastenerPanel({
               },
             ]}
             onChange={(value) => {
-              if (value === "custom") {
-                onUpdateParameters({
-                  standard: value,
-                  size: "",
-                });
+              const patch = fastenerPatchForStandard(value);
+              if (!patch) {
                 return;
               }
-              const entry = holeStandardsForMode(value)[0];
-              if (!entry) {
-                return;
-              }
-              onUpdateParameters({
-                standard: value,
-                size: entry.id,
-                diameter: entry.majorDiameter,
-                minor_diameter: entry.minorDiameter,
-                pitch: entry.pitch,
-              });
+              onUpdateParameters(patch);
             }}
           />
         </div>
         {parameters.standard !== "custom" ? (
           <div>
             <span className="cad-field-label">{t("panels.fastener.size")}</span>
-            <Dropdown<string>
+            <HoleStandardSizeDropdown
               label={t("panels.fastener.size")}
               className="mt-2"
-              value={
-                findHoleStandard(parameters.standard, parameters.size)?.id ??
-                standards[0]?.id ??
-                ""
-              }
+              size={parameters.size}
+              standard={parameters.standard}
               disabled={disabled || standards.length === 0}
-              options={standards.map((entry) => ({
-                value: entry.id,
-                label: entry.label,
-              }))}
+              standards={standards}
               onChange={(value) => {
-                const entry = findHoleStandard(parameters.standard, value);
-                if (!entry) {
+                const patch = fastenerPatchForSize(parameters.standard, value);
+                if (!patch) {
                   return;
                 }
-                onUpdateParameters({
-                  size: entry.id,
-                  diameter: entry.majorDiameter,
-                  minor_diameter: entry.minorDiameter,
-                  pitch: entry.pitch,
-                });
+                onUpdateParameters(patch);
               }}
             />
           </div>
@@ -248,23 +225,11 @@ export function ActiveFastenerPanel({
           </p>
         </div>
       </div>
-      <div className="mt-5 flex gap-3">
-        <button
-          type="button"
-          className="cad-ribbon-action cad-ribbon-action-primary flex-1"
-          disabled={disabled}
-          onClick={onConfirm}
-        >
-          {t("common.confirm")}
-        </button>
-        <button
-          type="button"
-          className="cad-ribbon-action flex-1"
-          onClick={onCancel}
-        >
-          {t("common.cancel")}
-        </button>
-      </div>
+      <ActivePanelActions
+        disabled={disabled}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
     </section>
   );
 }

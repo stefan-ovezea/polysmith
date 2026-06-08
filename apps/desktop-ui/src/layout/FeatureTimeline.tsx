@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { DocumentState } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
 import { FeatureKindIcon } from "./header/ToolBarIcons";
+import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
 interface FeatureTimelineProps {
   document: DocumentState | null;
@@ -73,27 +74,9 @@ export function FeatureTimeline({
   const [draggingCursor, setDraggingCursor] = useState(false);
   const lastRequestedCursor = useRef<number | null>(null);
 
-  // Global dismiss: clicking anywhere outside the menu closes it. We
-  // also close on `Escape` so keyboard users don't get trapped.
-  useEffect(() => {
-    if (!contextMenu) {
-      return;
-    }
-    const dismiss = () => setContextMenu(null);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setContextMenu(null);
-      }
-    };
-    window.addEventListener("click", dismiss);
-    window.addEventListener("contextmenu", dismiss);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", dismiss);
-      window.removeEventListener("contextmenu", dismiss);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [contextMenu]);
+  useContextMenuDismiss(Boolean(contextMenu), () => setContextMenu(null), {
+    includeContextMenu: true,
+  });
 
   useEffect(() => {
     if (!draggingCursor) {

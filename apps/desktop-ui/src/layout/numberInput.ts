@@ -1,5 +1,5 @@
 export function normalizeNumberInputValue(value: string) {
-  if (value === "") {
+  if (value === "" || value === "-" || value === "." || value === "-.") {
     return value;
   }
   const sign = value.startsWith("-") ? "-" : "";

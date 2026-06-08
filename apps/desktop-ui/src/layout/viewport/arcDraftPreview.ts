@@ -3,9 +3,9 @@ import type { SketchPlaneFrame } from "@/types";
 import {
   buildSketchArcObject,
   buildSketchCircleObject,
-  themeColor,
   toWorldPoint,
 } from "@/utils";
+import { buildDraftChordHint } from "./draftChordHint";
 
 export type ArcToolMode = "three_point" | "center_start_end";
 
@@ -62,29 +62,6 @@ function buildArcPreview({
   );
 }
 
-function buildArcChordHint({
-  start,
-  current,
-  planeId,
-  planeFrame,
-}: Pick<ArcDraftPreviewOptions, "start" | "current" | "planeId" | "planeFrame">) {
-  const preview = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(...toWorldPoint(planeId, start, planeFrame)),
-      new THREE.Vector3(...toWorldPoint(planeId, current, planeFrame)),
-    ]),
-    new THREE.LineDashedMaterial({
-      color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-      transparent: true,
-      opacity: 0.65,
-      dashSize: 1,
-      gapSize: 0.6,
-    }),
-  );
-  preview.computeLineDistances();
-  return preview;
-}
-
 function buildArcRadiusCircle({
   start,
   current,
@@ -124,7 +101,7 @@ function buildThreePointArcPreview({
   isConstruction,
 }: Omit<ArcDraftPreviewOptions, "mode">) {
   if (!secondPoint) {
-    return buildArcChordHint({ start, current, planeId, planeFrame });
+    return buildDraftChordHint({ start, current, planeId, planeFrame });
   }
 
   const [sx, sy] = start;

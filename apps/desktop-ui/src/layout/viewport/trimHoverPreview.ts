@@ -130,6 +130,77 @@ function toWorldPoint(
   return [ux, uy, 0];
 }
 
+function sampleTrimArcPoints({
+  center,
+  radius,
+  startAngle,
+  endAngle,
+  planeId,
+  planeFrame,
+}: {
+  center: [number, number];
+  radius: number;
+  startAngle: number;
+  endAngle: number;
+  planeId: string;
+  planeFrame: TrimPlaneFrame | null;
+}) {
+  const points: Array<[number, number, number]> = [];
+  for (let index = 0; index <= 48; index += 1) {
+    const angle = startAngle + (endAngle - startAngle) * (index / 48);
+    points.push(
+      toWorldPoint(
+        [
+          center[0] + radius * Math.cos(angle),
+          center[1] + radius * Math.sin(angle),
+        ],
+        planeId,
+        planeFrame,
+      ),
+    );
+  }
+  return points;
+}
+
+function collectLineCircleIntersectionAngles({
+  sceneData,
+  center,
+  radius,
+  planeId,
+  planeFrame,
+  onAngle,
+}: {
+  sceneData: ViewportScene;
+  center: [number, number];
+  radius: number;
+  planeId: string;
+  planeFrame: TrimPlaneFrame | null;
+  onAngle: (angle: number) => void;
+}) {
+  const [clx, cly] = center;
+  for (const other of sceneData.sketchLines) {
+    if (other.isConstruction) {
+      continue;
+    }
+    const [ox1, oy1] = trimWorldPointToLocal(other.start, planeId, planeFrame);
+    const [ox2, oy2] = trimWorldPointToLocal(other.end, planeId, planeFrame);
+    const ts = lineCircleIntersectionTrim(
+      ox1,
+      oy1,
+      ox2,
+      oy2,
+      clx,
+      cly,
+      radius,
+    );
+    for (const t of ts) {
+      const ix = ox1 + t * (ox2 - ox1);
+      const iy = oy1 + t * (oy2 - oy1);
+      onAngle(Math.atan2(iy - cly, ix - clx));
+    }
+  }
+}
+
 function circleCircleIntersectionAngles({
   center,
   radius,
@@ -320,27 +391,14 @@ function computeCircleTrimPreview({
   const cursorAngle = wrapAngle(Math.atan2(my - cly, mx - clx));
   const angles: number[] = [];
 
-  for (const other of sceneData.sketchLines) {
-    if (other.isConstruction) {
-      continue;
-    }
-    const [ox1, oy1] = trimWorldPointToLocal(other.start, planeId, planeFrame);
-    const [ox2, oy2] = trimWorldPointToLocal(other.end, planeId, planeFrame);
-    const ts = lineCircleIntersectionTrim(
-      ox1,
-      oy1,
-      ox2,
-      oy2,
-      clx,
-      cly,
-      circleData.radius,
-    );
-    for (const t of ts) {
-      const ix = ox1 + t * (ox2 - ox1);
-      const iy = oy1 + t * (oy2 - oy1);
-      angles.push(wrapAngle(Math.atan2(iy - cly, ix - clx)));
-    }
-  }
+  collectLineCircleIntersectionAngles({
+    sceneData,
+    center: [clx, cly],
+    radius: circleData.radius,
+    planeId,
+    planeFrame,
+    onAngle: (angle) => angles.push(wrapAngle(angle)),
+  });
 
   for (const other of sceneData.sketchCircles) {
     if (other.circleId === circleData.circleId || other.isConstruction) {
@@ -357,21 +415,17 @@ function computeCircleTrimPreview({
   }
 
   if (angles.length === 0) {
-    const points: Array<[number, number, number]> = [];
-    for (let index = 0; index <= 48; index++) {
-      const angle = (index / 48) * 2 * Math.PI;
-      points.push(
-        toWorldPoint(
-          [
-            clx + circleData.radius * Math.cos(angle),
-            cly + circleData.radius * Math.sin(angle),
-          ],
-          planeId,
-          planeFrame,
-        ),
-      );
-    }
-    return { kind: "arc", points };
+    return {
+      kind: "arc",
+      points: sampleTrimArcPoints({
+        center: [clx, cly],
+        radius: circleData.radius,
+        startAngle: 0,
+        endAngle: 2 * Math.PI,
+        planeId,
+        planeFrame,
+      }),
+    };
   }
 
   angles.sort((left, right) => left - right);
@@ -401,21 +455,17 @@ function computeCircleTrimPreview({
   const start = deduped[hoveredSegment];
   const end = deduped[(hoveredSegment + 1) % deduped.length];
   const adjustedEnd = end <= start ? end + full : end;
-  const points: Array<[number, number, number]> = [];
-  for (let index = 0; index <= 48; index++) {
-    const angle = start + (adjustedEnd - start) * (index / 48);
-    points.push(
-      toWorldPoint(
-        [
-          clx + circleData.radius * Math.cos(angle),
-          cly + circleData.radius * Math.sin(angle),
-        ],
-        planeId,
-        planeFrame,
-      ),
-    );
-  }
-  return { kind: "arc", points };
+  return {
+    kind: "arc",
+    points: sampleTrimArcPoints({
+      center: [clx, cly],
+      radius: circleData.radius,
+      startAngle: start,
+      endAngle: adjustedEnd,
+      planeId,
+      planeFrame,
+    }),
+  };
 }
 
 function computeArcTrimPreview({
@@ -474,30 +524,19 @@ function computeArcTrimPreview({
   const cursorAngle = normalizeToArcSweep(Math.atan2(my - cly, mx - clx));
   const angles: number[] = [];
 
-  for (const other of sceneData.sketchLines) {
-    if (other.isConstruction) {
-      continue;
-    }
-    const [ox1, oy1] = trimWorldPointToLocal(other.start, planeId, planeFrame);
-    const [ox2, oy2] = trimWorldPointToLocal(other.end, planeId, planeFrame);
-    const ts = lineCircleIntersectionTrim(
-      ox1,
-      oy1,
-      ox2,
-      oy2,
-      clx,
-      cly,
-      arcData.radius,
-    );
-    for (const t of ts) {
-      const ix = ox1 + t * (ox2 - ox1);
-      const iy = oy1 + t * (oy2 - oy1);
-      const angle = normalizeToArcSweep(Math.atan2(iy - cly, ix - clx));
-      if (isOnSweep(angle)) {
-        angles.push(angle);
+  collectLineCircleIntersectionAngles({
+    sceneData,
+    center: [clx, cly],
+    radius: arcData.radius,
+    planeId,
+    planeFrame,
+    onAngle: (angle) => {
+      const normalized = normalizeToArcSweep(angle);
+      if (isOnSweep(normalized)) {
+        angles.push(normalized);
       }
-    }
-  }
+    },
+  });
 
   for (const other of sceneData.sketchCircles) {
     if (other.isConstruction) {
@@ -519,22 +558,18 @@ function computeArcTrimPreview({
   }
 
   if (angles.length === 0) {
-    const points: Array<[number, number, number]> = [];
-    for (let index = 0; index <= 48; index++) {
-      const angle =
-        startAngle + (ccw ? 1 : -1) * (index / 48) * Math.abs(sweepEnd - wrappedStart);
-      points.push(
-        toWorldPoint(
-          [
-            clx + arcData.radius * Math.cos(angle),
-            cly + arcData.radius * Math.sin(angle),
-          ],
-          planeId,
-          planeFrame,
-        ),
-      );
-    }
-    return { kind: "arc", points };
+    return {
+      kind: "arc",
+      points: sampleTrimArcPoints({
+        center: [clx, cly],
+        radius: arcData.radius,
+        startAngle,
+        endAngle:
+          startAngle + (ccw ? 1 : -1) * Math.abs(sweepEnd - wrappedStart),
+        planeId,
+        planeFrame,
+      }),
+    };
   }
 
   angles.sort((left, right) => (ccw ? left - right : right - left));
@@ -563,21 +598,17 @@ function computeArcTrimPreview({
 
   const start = segments[hoveredSegment];
   const end = segments[hoveredSegment + 1];
-  const points: Array<[number, number, number]> = [];
-  for (let index = 0; index <= 48; index++) {
-    const angle = start + (end - start) * (index / 48);
-    points.push(
-      toWorldPoint(
-        [
-          clx + arcData.radius * Math.cos(angle),
-          cly + arcData.radius * Math.sin(angle),
-        ],
-        planeId,
-        planeFrame,
-      ),
-    );
-  }
-  return { kind: "arc", points };
+  return {
+    kind: "arc",
+    points: sampleTrimArcPoints({
+      center: [clx, cly],
+      radius: arcData.radius,
+      startAngle: start,
+      endAngle: end,
+      planeId,
+      planeFrame,
+    }),
+  };
 }
 
 export function computeTrimHoverPreview({

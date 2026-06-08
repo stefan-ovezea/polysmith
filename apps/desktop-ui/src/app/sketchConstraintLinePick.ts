@@ -1,32 +1,17 @@
 import type { ArmedSketchConstraint } from "../types";
+import type { SketchLineConstraintActions } from "./sketchLineConstraintActions";
 
 type PairLineConstraint = Extract<
   NonNullable<ArmedSketchConstraint>,
   { firstLineId: string | null }
 >;
 
-export interface SketchConstraintLinePickContext {
+export interface SketchConstraintLinePickContext
+  extends SketchLineConstraintActions {
   lineId: string;
   additive: boolean;
   armedSketchConstraint: ArmedSketchConstraint;
   selectSketchEntity: (entityId: string, additive?: boolean) => Promise<void>;
-  setSketchLineConstraint: (
-    lineId: string,
-    constraint: "horizontal" | "vertical",
-  ) => Promise<void>;
-  clearSketchLineConstraints: (lineId: string) => Promise<void>;
-  setSketchEqualLengthConstraint: (
-    lineId: string,
-    otherLineId: string,
-  ) => Promise<void>;
-  setSketchParallelConstraint: (
-    lineId: string,
-    otherLineId: string,
-  ) => Promise<void>;
-  setSketchPerpendicularConstraint: (
-    lineId: string,
-    otherLineId: string,
-  ) => Promise<void>;
   setArmedSketchConstraint: (constraint: ArmedSketchConstraint) => void;
 }
 

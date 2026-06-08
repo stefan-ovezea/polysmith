@@ -18,12 +18,14 @@ import { beginDimensionLabelDragPointerDown } from "./dimensionLabelDrag";
 import type { DimensionLabelDragState } from "./draftDimensions";
 import {
   beginDraftPointerDown,
+  type BeginDraftPointerDownParams,
+  type MutableRef,
+  type PointerDownPosition,
+  type UpdateDraftChainBreakParams,
   updateDraftChainBreakRequest,
 } from "./draftPointerDown";
 import type {
-  DraftDimensionField,
   DraftDimensionSession,
-  DraftDimensionTool,
 } from "./draftDimensions";
 import { beginSelectPointerDown } from "./selectPointerDown";
 import type { EndpointDrag } from "./endpointDrag";
@@ -33,15 +35,6 @@ import type {
   SelectedConstraintState,
   ViewportPickHit,
 } from "./contextMenuState";
-
-interface MutableRef<T> {
-  current: T;
-}
-
-interface PointerDownPosition {
-  x: number;
-  y: number;
-}
 
 interface ViewportPointerDownParams {
   event: PointerEvent;
@@ -58,10 +51,10 @@ interface ViewportPointerDownParams {
   activeSketchToolRef: MutableRef<SketchTool>;
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
-  lineDraftStartRef: MutableRef<[number, number] | null>;
-  lastPointerDownTimeRef: MutableRef<number>;
-  lastPointerDownPosRef: MutableRef<PointerDownPosition | null>;
-  chainBreakRequestedRef: MutableRef<boolean>;
+  lineDraftStartRef: BeginDraftPointerDownParams["draftStartRef"];
+  lastPointerDownTimeRef: UpdateDraftChainBreakParams["lastPointerDownTimeRef"];
+  lastPointerDownPosRef: UpdateDraftChainBreakParams["lastPointerDownPosRef"];
+  chainBreakRequestedRef: UpdateDraftChainBreakParams["chainBreakRequestedRef"];
   isPointerInCubeArea: (
     event: PointerEvent,
     canvasRect: DOMRect,
@@ -88,22 +81,12 @@ interface ViewportPointerDownParams {
   getDimensionPlacementAxis: (
     dimension: SketchDimensionScene,
   ) => THREE.Vector3 | null;
-  draftStartedOnPointerDownRef: MutableRef<boolean>;
-  draftDimensionSessionRef: MutableRef<DraftDimensionSession | null>;
-  resolveSnappedSketchPoint: (
-    rawPoint: {
-      local: [number, number];
-      world: [number, number, number];
-    },
-    draftStartLocal?: [number, number] | null,
-  ) => SketchPreviewPoint;
-  createDraftDimensionSession: (
-    tool: DraftDimensionTool,
-    start: [number, number],
-    current: [number, number],
-  ) => DraftDimensionSession;
-  setDraftDimensionSession: (session: DraftDimensionSession) => void;
-  focusDraftField: (field: DraftDimensionField) => void;
+  draftStartedOnPointerDownRef: BeginDraftPointerDownParams["draftStartedOnPointerDownRef"];
+  draftDimensionSessionRef: BeginDraftPointerDownParams["draftDimensionSessionRef"];
+  resolveSnappedSketchPoint: BeginDraftPointerDownParams["resolveSnappedSketchPoint"];
+  createDraftDimensionSession: BeginDraftPointerDownParams["createDraftDimensionSession"];
+  setDraftDimensionSession: BeginDraftPointerDownParams["setDraftDimensionSession"];
+  focusDraftField: BeginDraftPointerDownParams["focusDraftField"];
 }
 
 export function handleViewportPointerDown(params: ViewportPointerDownParams) {

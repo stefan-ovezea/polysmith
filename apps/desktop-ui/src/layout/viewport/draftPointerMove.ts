@@ -11,11 +11,11 @@ import {
   type DraftDimensionSession,
 } from "./draftDimensions";
 
-interface MutableRef<T> {
+export interface MutableRef<T> {
   current: T;
 }
 
-interface DraftPointerMoveParams {
+export interface DraftPointerMoveParams {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
   camera: THREE.Camera;

@@ -1,6 +1,8 @@
 import type {
   CoreCommand,
   CoreMessage,
+  CamSetupOrigin,
+  CamSetupStock,
   DocumentState,
   DocumentExportResult,
   ErrorEvent,
@@ -287,8 +289,8 @@ export function makeCamSetupCreateCommand(): CoreCommand {
 }
 
 export interface CamSetupUpdatePayload {
-  stock?: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
-  wcs_origin?: { x: number; y: number; z: number };
+  stock?: CamSetupStock;
+  wcs_origin?: CamSetupOrigin;
   safety_plane_z?: number;
   wcs_angle?: number;
 }

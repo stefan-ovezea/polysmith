@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const PREVIEW_DEBOUNCE_MS = 200;
+import { PreviewPanelActions } from "./PreviewPanelActions";
+import { useDebouncedNumericPreview } from "./hooks/useDebouncedNumericPreview";
 
 interface RevolvePreviewPanelProps {
   phase: "pending" | "active";
@@ -27,76 +27,21 @@ export function RevolvePreviewPanel({
   onCancel,
 }: RevolvePreviewPanelProps) {
   const { t } = useTranslation();
-  const [angle, setAngle] = useState(String(initialAngle));
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
-  const lastPreviewedRef = useRef<number>(initialAngle);
-  const onPreviewAngleRef = useRef(onPreviewAngle);
-
-  useEffect(() => {
-    onPreviewAngleRef.current = onPreviewAngle;
-  }, [onPreviewAngle]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-    return () => {
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    setAngle(String(initialAngle));
-    lastPreviewedRef.current = initialAngle;
-  }, [initialAngle]);
+  const {
+    value: angle,
+    inputRef,
+    handleValueChange: handleAngleChange,
+    flushPendingValue: flushPendingAngle,
+  } = useDebouncedNumericPreview({
+    initialValue: initialAngle,
+    onPreviewValue: onPreviewAngle,
+    isValid: isValidAngle,
+    immediate: phase === "pending",
+  });
 
   function parseAngle(value: string) {
     const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 360) {
-      return null;
-    }
-    return parsed;
-  }
-
-  function handleAngleChange(nextValue: string) {
-    setAngle(nextValue);
-    const parsed = parseAngle(nextValue);
-    if (parsed === null) {
-      return;
-    }
-    if (phase === "pending") {
-      lastPreviewedRef.current = parsed;
-      void onPreviewAngleRef.current(parsed);
-      return;
-    }
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-    }
-    previewTimerRef.current = window.setTimeout(() => {
-      previewTimerRef.current = null;
-      if (parsed === lastPreviewedRef.current) {
-        return;
-      }
-      lastPreviewedRef.current = parsed;
-      void onPreviewAngleRef.current(parsed);
-    }, PREVIEW_DEBOUNCE_MS);
-  }
-
-  async function flushPendingAngle() {
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-    const parsed = parseAngle(angle);
-    if (parsed === null || parsed === lastPreviewedRef.current) {
-      return parsed;
-    }
-    lastPreviewedRef.current = parsed;
-    await onPreviewAngleRef.current(parsed);
-    return parsed;
+    return isValidAngle(parsed) ? parsed : null;
   }
 
   async function handleConfirm() {
@@ -153,29 +98,21 @@ export function RevolvePreviewPanel({
             }}
           />
         </label>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            className="cad-action-primary flex-1"
-            disabled={disabled || !canConfirm || parseAngle(angle) === null}
-          >
-            {t("common.confirm")}
-          </button>
-          <button
-            type="button"
-            className="cad-action-ghost flex-1"
-            disabled={disabled}
-            onClick={() => {
-              void onCancel();
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
+        <PreviewPanelActions
+          confirmDisabled={disabled || !canConfirm || parseAngle(angle) === null}
+          cancelDisabled={disabled}
+          onCancel={() => {
+            void onCancel();
+          }}
+        />
         <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
           {t("panels.revolve.pickHint")}
         </p>
       </form>
     </section>
   );
+}
+
+function isValidAngle(value: number) {
+  return Number.isFinite(value) && value > 0 && value <= 360;
 }

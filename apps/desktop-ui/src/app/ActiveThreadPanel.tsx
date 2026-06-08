@@ -1,12 +1,13 @@
 import { useTranslation } from "react-i18next";
-import {
-  Dropdown,
-  findHoleStandard,
-  holeStandardsForMode,
-  type HoleStandardEntry,
-} from "../lib";
+import { Dropdown, type HoleStandardEntry } from "../lib";
 import type { ThreadFeatureParameters } from "../types";
+import { ActivePanelActions } from "./ActivePanelActions";
+import { HoleStandardSizeDropdown } from "./HoleStandardSizeDropdown";
 import type { ThreadAction } from "./appState";
+import {
+  threadPatchForSize,
+  threadPatchForStandard,
+} from "./threadStandardPatches";
 
 type ThreadMode = ThreadFeatureParameters["mode"];
 type ThreadStandard = ThreadFeatureParameters["standard"];
@@ -64,7 +65,7 @@ export function ActiveThreadPanel({
               onUpdateParameters={onUpdateParameters}
             />
           </div>
-          <ThreadPanelActions
+          <ActivePanelActions
             disabled={disabled}
             onCancel={onCancel}
             onConfirm={onConfirm}
@@ -204,54 +205,30 @@ function ThreadParameterFields({
             },
           ]}
           onChange={(value) => {
-            if (value === "custom") {
-              onUpdateParameters({
-                standard: value,
-                size: "",
-              });
+            const patch = threadPatchForStandard(value);
+            if (!patch) {
               return;
             }
-            const entry = holeStandardsForMode(value)[0];
-            if (!entry) {
-              return;
-            }
-            onUpdateParameters({
-              standard: value,
-              size: entry.id,
-              major_diameter: entry.majorDiameter,
-              minor_diameter: entry.minorDiameter,
-              pitch: entry.pitch,
-            });
+            onUpdateParameters(patch);
           }}
         />
       </div>
       {parameters.standard !== "custom" ? (
         <div>
           <span className="cad-field-label">{t("panels.thread.size")}</span>
-          <Dropdown<string>
+          <HoleStandardSizeDropdown
             label={t("panels.thread.size")}
             className="mt-2"
-            value={
-              findHoleStandard(parameters.standard, parameters.size)?.id ??
-              standards[0]?.id ??
-              ""
-            }
+            size={parameters.size}
+            standard={parameters.standard}
             disabled={disabled || standards.length === 0}
-            options={standards.map((entry) => ({
-              value: entry.id,
-              label: entry.label,
-            }))}
+            standards={standards}
             onChange={(value) => {
-              const entry = findHoleStandard(parameters.standard, value);
-              if (!entry) {
+              const patch = threadPatchForSize(parameters.standard, value);
+              if (!patch) {
                 return;
               }
-              onUpdateParameters({
-                size: entry.id,
-                major_diameter: entry.majorDiameter,
-                minor_diameter: entry.minorDiameter,
-                pitch: entry.pitch,
-              });
+              onUpdateParameters(patch);
             }}
           />
         </div>
@@ -368,37 +345,5 @@ function ThreadNumberField({
         }}
       />
     </label>
-  );
-}
-
-function ThreadPanelActions({
-  disabled,
-  onCancel,
-  onConfirm,
-}: {
-  disabled: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="mt-5 flex gap-3">
-      <button
-        type="button"
-        className="cad-ribbon-action cad-ribbon-action-primary flex-1"
-        disabled={disabled}
-        onClick={onConfirm}
-      >
-        {t("common.confirm")}
-      </button>
-      <button
-        type="button"
-        className="cad-ribbon-action flex-1"
-        onClick={onCancel}
-      >
-        {t("common.cancel")}
-      </button>
-    </div>
   );
 }

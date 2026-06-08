@@ -4,9 +4,9 @@ import {
   buildSketchCircleObject,
   circleFromThreePoints2d,
   distanceBetweenPoints,
-  themeColor,
   toWorldPoint,
 } from "@/utils";
+import { buildDraftChordHint } from "./draftChordHint";
 
 export type CircleToolMode =
   | "center_radius"
@@ -35,32 +35,6 @@ interface CircleDraftPreviewOptions {
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
   isConstruction: boolean;
-}
-
-function buildDashedChordHint({
-  start,
-  current,
-  planeId,
-  planeFrame,
-}: Pick<
-  CircleDraftPreviewOptions,
-  "start" | "current" | "planeId" | "planeFrame"
->): CircleDraftPreview {
-  const preview = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(...toWorldPoint(planeId, start, planeFrame)),
-      new THREE.Vector3(...toWorldPoint(planeId, current, planeFrame)),
-    ]),
-    new THREE.LineDashedMaterial({
-      color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
-      transparent: true,
-      opacity: 0.65,
-      dashSize: 1,
-      gapSize: 0.6,
-    }),
-  );
-  preview.computeLineDistances();
-  return { kind: "hint", object: preview, renderDraftDimension: false };
 }
 
 function buildCircleObject({
@@ -127,7 +101,11 @@ export function buildCircleDraftPreview({
 
   if (mode === "three_point") {
     if (!secondPoint) {
-      return buildDashedChordHint({ start, current, planeId, planeFrame });
+      return {
+        kind: "hint",
+        object: buildDraftChordHint({ start, current, planeId, planeFrame }),
+        renderDraftDimension: false,
+      };
     }
     const circle = circleFromThreePoints2d(start, secondPoint, current);
     if (!circle) {

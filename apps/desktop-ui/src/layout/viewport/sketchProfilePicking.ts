@@ -1,36 +1,11 @@
 import * as THREE from "three";
 import type { SketchProfileScene } from "@/types";
-import { polygonArea2d, SKETCH_PLANE_OFFSET } from "@/utils";
-
-function pointInPolygon2d(
-  point: [number, number],
-  polygon: Array<[number, number]>,
-) {
-  if (polygon.length < 3) {
-    return false;
-  }
-
-  let inside = false;
-  for (
-    let index = 0, previous = polygon.length - 1;
-    index < polygon.length;
-    previous = index, index += 1
-  ) {
-    const currentPoint = polygon[index];
-    const previousPoint = polygon[previous];
-    const crosses =
-      currentPoint[1] > point[1] !== previousPoint[1] > point[1] &&
-      point[0] <
-        ((previousPoint[0] - currentPoint[0]) *
-          (point[1] - currentPoint[1])) /
-          (previousPoint[1] - currentPoint[1]) +
-          currentPoint[0];
-    if (crosses) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
+import {
+  pointInPolygon2d,
+  polygonArea2d,
+  legacySketchPlane,
+  SKETCH_PLANE_OFFSET,
+} from "@/utils/viewport/viewportMath";
 
 function profileArea(profile: SketchProfileScene) {
   if (profile.profileKind === "circle") {
@@ -83,12 +58,7 @@ function profileLocalPoint(
     return [relative.dot(xAxis), relative.dot(yAxis)];
   }
 
-  const plane =
-    profile.planeId === "ref-plane-xy"
-      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET)
-      : profile.planeId === "ref-plane-yz"
-        ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -SKETCH_PLANE_OFFSET)
-        : new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
+  const plane = legacySketchPlane(profile.planeId);
   const hitPoint = new THREE.Vector3();
   const hit = ray.intersectPlane(plane, hitPoint);
   if (!hit) {

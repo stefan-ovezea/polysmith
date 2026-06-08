@@ -1,4 +1,6 @@
-import type { CoreCommand, SketchTool } from "@/types";
+import type { CoreCommand, SketchEntityPlaneFrame, SketchTool } from "@/types";
+
+export type SketchPlaneFramePayload = SketchEntityPlaneFrame;
 
 export function makeStartSketchOnPlaneCommand(
   referenceId: string,
@@ -14,12 +16,7 @@ export function makeStartSketchOnPlaneCommand(
 
 export function makeStartSketchOnFaceCommand(
   faceId: string,
-  planeFrame: {
-    origin: { x: number; y: number; z: number };
-    x_axis: { x: number; y: number; z: number };
-    y_axis: { x: number; y: number; z: number };
-    normal: { x: number; y: number; z: number };
-  },
+  planeFrame: SketchPlaneFramePayload,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),

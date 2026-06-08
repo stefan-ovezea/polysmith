@@ -10,8 +10,15 @@ import type { ArcToolMode } from "./arcDraftPreview";
 import type { CircleToolMode } from "./circleDraftPreview";
 import type { ConstraintPreviewState } from "./constraintPreview";
 import type { DraftDimensionSession } from "./draftDimensions";
-import { resolveDraftPointerMove } from "./draftPointerMove";
-import { renderDraftPointerPreview } from "./draftPointerPreview";
+import {
+  resolveDraftPointerMove,
+  type DraftPointerMoveParams,
+  type MutableRef,
+} from "./draftPointerMove";
+import {
+  renderDraftPointerPreview,
+  type DraftPointerPreviewControls,
+} from "./draftPointerPreview";
 import {
   applyProjectToolHover,
   applySelectToolHover,
@@ -23,53 +30,15 @@ import { handleTrimPointerMove } from "./trimPointerMove";
 import type { TrimLineHighlightSegment } from "./trimHoverPreview";
 import type { ViewportPickHit } from "./contextMenuState";
 
-interface MutableRef<T> {
-  current: T;
-}
-
-interface ActiveSketchPointerMoveParams {
-  event: PointerEvent;
-  renderer: THREE.WebGLRenderer;
-  camera: THREE.Camera;
-  activeSketchPlaneId: string;
-  activeSketchPlaneFrame: SketchPlaneFrame | null;
-  activeSketchTool: SketchTool;
+interface ActiveSketchPointerMoveParams
+  extends DraftPointerMoveParams,
+    DraftPointerPreviewControls {
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
   trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
-  draftStartRef: MutableRef<[number, number] | null>;
-  draftDimensionSessionRef: MutableRef<DraftDimensionSession | null>;
-  resolveSnappedSketchPoint: (
-    rawPoint: {
-      local: [number, number];
-      world: [number, number, number];
-    },
-    draftStartLocal?: [number, number] | null,
-  ) => SketchPreviewPoint;
-  updateDraftSessionFromPoint: (point: [number, number]) => void;
-  setSketchSnapLabel: (label: string | null) => void;
-  setConstraintPreview: (preview: ConstraintPreviewState | null) => void;
   sketchGroupRef: MutableRef<THREE.Group | null>;
-  arcToolMode: ArcToolMode;
-  circleToolMode: CircleToolMode;
-  rectangleToolMode: RectangleToolMode;
-  arcSecondPoint: [number, number] | null;
-  circleSecondPoint: [number, number] | null;
-  rectSecondPoint: [number, number] | null;
-  isConstruction: boolean;
-  previewLineRef: MutableRef<THREE.Line | null>;
-  previewCircleRef: MutableRef<THREE.LineLoop | null>;
-  previewArcRef: MutableRef<THREE.Line | null>;
-  previewDimensionRef: MutableRef<{
-    line: THREE.Object3D;
-    label: THREE.Sprite;
-  } | null>;
-  clearPreviewLine: () => void;
-  clearPreviewCircle: () => void;
-  clearPreviewArc: () => void;
-  clearPreviewDimension: () => void;
   clearTrimSegmentHighlight: () => void;
   clearTrimArcHighlight: () => void;
   updateTrimSegmentHighlight: (
@@ -101,20 +70,7 @@ export function handleActiveSketchPointerMove(params: ActiveSketchPointerMovePar
 
 function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
   clearSketchEntityHover(params.hoverActions);
-  const draftMove = resolveDraftPointerMove({
-    event: params.event,
-    renderer: params.renderer,
-    camera: params.camera,
-    activeSketchPlaneId: params.activeSketchPlaneId,
-    activeSketchPlaneFrame: params.activeSketchPlaneFrame,
-    activeSketchTool: params.activeSketchTool,
-    draftStartRef: params.draftStartRef,
-    draftDimensionSessionRef: params.draftDimensionSessionRef,
-    resolveSnappedSketchPoint: params.resolveSnappedSketchPoint,
-    updateDraftSessionFromPoint: params.updateDraftSessionFromPoint,
-    setSketchSnapLabel: params.setSketchSnapLabel,
-    setConstraintPreview: params.setConstraintPreview,
-  });
+  const draftMove = resolveDraftPointerMove(params);
   if (!draftMove) {
     return;
   }

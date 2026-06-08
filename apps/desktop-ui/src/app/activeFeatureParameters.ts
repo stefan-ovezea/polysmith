@@ -7,6 +7,7 @@ import type {
   HoleAction,
   ThreadAction,
 } from "./appState";
+import { selectedDocumentBodyId } from "./selectedDocumentBody";
 
 type FeatureHistoryEntry = DocumentState["feature_history"][number];
 
@@ -116,17 +117,4 @@ function activeMoveParameters(
     return activeMoveFeature.move_parameters;
   }
   return moveAction?.phase === "active" ? moveAction.parameters : null;
-}
-
-function selectedDocumentBodyId(
-  document: DocumentState | null,
-  viewport: ViewportState | null,
-) {
-  const selectedFeatureId = document?.selected_feature_id;
-  if (!selectedFeatureId) {
-    return null;
-  }
-  return viewport?.bodies.some((body) => body.id === selectedFeatureId)
-    ? selectedFeatureId
-    : null;
 }

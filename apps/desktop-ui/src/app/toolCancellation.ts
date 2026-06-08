@@ -1,11 +1,10 @@
 import type { MutableRefObject } from "react";
 import type {
-  ExtrudeFeatureParameters,
-  ExtrudeMode,
   FastenerFeatureParameters,
   MoveFeatureParameters,
   ThreadFeatureParameters,
 } from "../types";
+import type { ActiveToolActions } from "./activeToolActions";
 import type {
   ActiveEdgeOpAction,
   ActiveExtrudeAction,
@@ -23,33 +22,14 @@ import type {
   ShellAction,
   ThreadAction,
 } from "./appState";
+import type { ExtrudeUpdateCallbacks } from "./extrudeUpdateCallbacks";
 
 type AsyncVoid = () => Promise<void>;
 type RunAction = (action: AsyncVoid) => Promise<void>;
 type Setter<T> = (value: T | null) => void;
 
-export interface CancelActiveToolContext {
-  actions: {
-    extrudeAction: ActiveExtrudeAction | null;
-    loftAction: ActiveLoftAction | null;
-    revolveAction: ActiveRevolveAction | null;
-    sweepAction: ActiveSweepAction | null;
-    moveAction: ActiveMoveAction | null;
-    edgeOpAction: ActiveEdgeOpAction | null;
-    shellAction: ShellAction | null;
-    holeAction: HoleAction | null;
-    offsetPlaneAction: OffsetPlaneAction | null;
-    anglePlaneAction: AnglePlaneAction | null;
-    midplaneAction: MidplaneAction | null;
-    tangentPlaneAction: PendingReferenceAction | null;
-    constructionAxisAction: PendingReferenceAction | null;
-    constructionPointAction: PendingReferenceAction | null;
-    threadAction: ThreadAction | null;
-    fastenerAction: FastenerAction | null;
-    helixAction: HelixAction | null;
-    editingFeatureId: string | null;
-    materialsPanelOpen: boolean;
-  };
+export interface CancelActiveToolContext extends ExtrudeUpdateCallbacks {
+  actions: ActiveToolActions;
   setters: {
     setExtrudeAction: Setter<ActiveExtrudeAction>;
     setLoftAction: Setter<ActiveLoftAction>;
@@ -77,19 +57,6 @@ export interface CancelActiveToolContext {
   undo: AsyncVoid;
   undoUntilExtrudePreviewRemoved: (
     featureIds: readonly string[],
-  ) => Promise<void>;
-  updateExtrudeDepth: (featureId: string, depth: number) => Promise<void>;
-  updateExtrudeMode: (
-    featureId: string,
-    mode: ExtrudeMode,
-  ) => Promise<void>;
-  updateExtrudeTargetBody: (
-    featureId: string,
-    targetBodyId: string | null,
-  ) => Promise<void>;
-  updateExtrudeParameters: (
-    featureId: string,
-    parameters: ExtrudeFeatureParameters,
   ) => Promise<void>;
   updateLoftProfiles: (
     featureId: string,

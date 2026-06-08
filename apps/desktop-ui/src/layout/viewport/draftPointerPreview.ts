@@ -14,18 +14,9 @@ import {
   buildRectangleDraftPreview,
   type RectangleToolMode,
 } from "./rectangleDraftPreview";
+import type { MutableRef } from "./draftPointerMove";
 
-interface MutableRef<T> {
-  current: T;
-}
-
-interface DraftPointerPreviewParams {
-  activeSketchTool: SketchTool;
-  activeSketchPlaneId: string;
-  activeSketchPlaneFrame: SketchPlaneFrame | null;
-  draftStart: [number, number];
-  draftPreviewLocal: [number, number];
-  sketchGroup: THREE.Group;
+export interface DraftPointerPreviewControls {
   arcToolMode: ArcToolMode;
   circleToolMode: CircleToolMode;
   rectangleToolMode: RectangleToolMode;
@@ -44,6 +35,15 @@ interface DraftPointerPreviewParams {
   clearPreviewCircle: () => void;
   clearPreviewArc: () => void;
   clearPreviewDimension: () => void;
+}
+
+interface DraftPointerPreviewParams extends DraftPointerPreviewControls {
+  activeSketchTool: SketchTool;
+  activeSketchPlaneId: string;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+  draftStart: [number, number];
+  draftPreviewLocal: [number, number];
+  sketchGroup: THREE.Group;
 }
 
 export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {

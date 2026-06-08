@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import type { MoveFeatureParameters } from "@/types";
 import { projectWorldPointToViewport, themeColor } from "@/utils";
+import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 
 export interface MoveGizmoDescriptor {
   bodyId: string;
@@ -209,9 +210,7 @@ export function beginMoveGizmoPointerDown({
     return false;
   }
 
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  setPointerNdcFromEvent(pointer, event, renderer);
   raycaster.setFromCamera(pointer, camera);
   const [gizmoHit] = raycaster.intersectObjects(moveGizmoObjects, false);
   const handle = gizmoHit?.object.userData.moveGizmoHandle as

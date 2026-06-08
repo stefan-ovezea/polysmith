@@ -10,6 +10,7 @@ import {
   writeLogToConsole,
 } from "@/lib";
 import { useCadCoreStore } from "@/state";
+import { reportCoreError } from "./coreLogReporting";
 
 export function useCadCoreEventBridge() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
@@ -38,15 +39,11 @@ export function useCadCoreEventBridge() {
           }
           handleCoreMessage(message);
         } catch (error) {
-          const entry = makeUiLogEntry(
-            "error",
+          reportCoreError(
+            { addLogEntry, addMessage, setStatus },
             "desktop_ui",
             `parse error: ${String(error)}`,
           );
-          writeLogToConsole(entry);
-          addLogEntry(entry);
-          addMessage(entry.message);
-          setStatus("error");
         }
       });
 

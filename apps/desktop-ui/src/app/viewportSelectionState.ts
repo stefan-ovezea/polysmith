@@ -1,4 +1,5 @@
 import type { DocumentState, ViewportState } from "../types";
+import { selectedDocumentBodyId } from "./selectedDocumentBody";
 
 export interface ViewportSelectionStateInput {
   document: DocumentState | null;
@@ -46,17 +47,4 @@ export function computeViewportSelectionState({
       selectedSketchProfiles.map((profile) => profile.profile_id),
     selectedSketchEntityIds: document?.selected_sketch_entity_ids ?? [],
   };
-}
-
-function selectedDocumentBodyId(
-  document: DocumentState | null,
-  viewport: ViewportState | null,
-) {
-  const selectedFeatureId = document?.selected_feature_id;
-  if (!selectedFeatureId) {
-    return null;
-  }
-  return viewport?.bodies.some((body) => body.id === selectedFeatureId)
-    ? selectedFeatureId
-    : null;
 }

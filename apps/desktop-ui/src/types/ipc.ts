@@ -155,6 +155,22 @@ export * from "./ipc/bodyFeatureCommands";
 
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
+
+export interface CamSetupStock {
+  width: number;
+  height: number;
+  depth: number;
+  offset_x: number;
+  offset_y: number;
+  offset_z: number;
+}
+
+export interface CamSetupOrigin {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface DocumentState {
   document_id: string;
   name: string;
@@ -182,8 +198,8 @@ export interface DocumentState {
   appearance: DocumentAppearance;
   cam_setup: {
     setup_id: string;
-    stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
-    wcs_origin: { x: number; y: number; z: number };
+    stock: CamSetupStock;
+    wcs_origin: CamSetupOrigin;
     safety_plane_z: number;
     axis_count: number;
     wcs_angle: number;

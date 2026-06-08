@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirmCancelHotkeys } from "./hooks/useConfirmCancelHotkeys";
 
 interface SweepPreviewPanelProps {
   phase: "pending" | "active";
@@ -21,23 +21,7 @@ export function SweepPreviewPanel({
 }: SweepPreviewPanelProps) {
   const { t } = useTranslation();
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        void onCancel();
-      }
-      if (event.key === "Enter" && canConfirm && !disabled) {
-        event.preventDefault();
-        void onConfirm();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [canConfirm, disabled, onCancel, onConfirm]);
+  useConfirmCancelHotkeys({ canConfirm, disabled, onCancel, onConfirm });
 
   return (
     <section className="pointer-events-auto cad-floating-panel box-border w-80 max-w-[calc(100vw-2rem)] overflow-hidden px-5 py-5">

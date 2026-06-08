@@ -17,16 +17,38 @@ import {
 } from "./lineCommitRelations";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 
-type Point2d = [number, number];
-type LineBodyHost = { lineId: string; t: number };
-type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
+export type Point2d = [number, number];
+export type LineBodyHost = { lineId: string; t: number };
+export type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 type MutableRef<T> = { current: T };
 
-interface DraftCommitSketchPoint extends LineCommitSnapPoint {
+export interface DraftCommitSketchPoint extends LineCommitSnapPoint {
   local: Point2d;
 }
 
-interface RectangleDraftCommitOptions {
+interface DraftFinalizeActions {
+  clearDraftStart: () => void;
+  scheduleDimensionDeletion: () => void;
+  scheduleDraftDimensionExpressionUpdate: () => void;
+  clearDraftDimensionSession: () => void;
+  suppressDimensionEditorAfterSketchCommit: () => void;
+}
+
+function finalizeDraftCommit({
+  clearDraftStart,
+  scheduleDimensionDeletion,
+  scheduleDraftDimensionExpressionUpdate,
+  clearDraftDimensionSession,
+  suppressDimensionEditorAfterSketchCommit,
+}: DraftFinalizeActions) {
+  clearDraftStart();
+  scheduleDimensionDeletion();
+  scheduleDraftDimensionExpressionUpdate();
+  clearDraftDimensionSession();
+  suppressDimensionEditorAfterSketchCommit();
+}
+
+export interface RectangleDraftCommitOptions {
   mode: RectangleToolMode;
   start: Point2d;
   committedEnd: Point2d;
@@ -48,7 +70,7 @@ interface RectangleDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
-interface ArcDraftCommitOptions {
+export interface ArcDraftCommitOptions {
   mode: ArcToolMode;
   start: Point2d;
   current: Point2d;
@@ -69,7 +91,7 @@ interface ArcDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
-interface CircleDraftCommitOptions {
+export interface CircleDraftCommitOptions {
   mode: CircleToolMode;
   start: Point2d;
   committedEnd: Point2d;
@@ -96,7 +118,7 @@ interface CircleDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
-interface PolygonDraftCommitOptions {
+export interface PolygonDraftCommitOptions {
   sides: number;
   mode: PolygonToolMode;
   start: Point2d;
@@ -118,7 +140,7 @@ interface PolygonDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
-interface LineDraftCommitOptions {
+export interface LineDraftCommitOptions {
   start: Point2d;
   committedEnd: Point2d;
   isConstruction: boolean;
@@ -159,7 +181,7 @@ interface LineDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
-interface DraftPointerUpCommitOptions {
+export interface DraftPointerUpCommitOptions {
   activeSketchTool: SketchTool;
   sketchPoint: DraftCommitSketchPoint;
   draftDimensionSession: DraftDimensionSession | null;
@@ -244,11 +266,13 @@ function commitRectangleDraft({
     }
 
     clearSecondPoint();
-    clearDraftStart();
-    scheduleDimensionDeletion();
-    scheduleDraftDimensionExpressionUpdate();
-    clearDraftDimensionSession();
-    suppressDimensionEditorAfterSketchCommit();
+    finalizeDraftCommit({
+      clearDraftStart,
+      scheduleDimensionDeletion,
+      scheduleDraftDimensionExpressionUpdate,
+      clearDraftDimensionSession,
+      suppressDimensionEditorAfterSketchCommit,
+    });
 
     const rectangle = rectangleFromThreePoints2d(start, secondPoint, committedEnd);
     if (!rectangle) {
@@ -260,11 +284,13 @@ function commitRectangleDraft({
     return;
   }
 
-  clearDraftStart();
-  scheduleDimensionDeletion();
-  scheduleDraftDimensionExpressionUpdate();
-  clearDraftDimensionSession();
-  suppressDimensionEditorAfterSketchCommit();
+  finalizeDraftCommit({
+    clearDraftStart,
+    scheduleDimensionDeletion,
+    scheduleDraftDimensionExpressionUpdate,
+    clearDraftDimensionSession,
+    suppressDimensionEditorAfterSketchCommit,
+  });
 
   const rectStartX =
     mode === "center_point" ? 2 * startX - committedEnd[0] : startX;
@@ -350,11 +376,13 @@ function commitCircleDraft({
     }
 
     clearSecondPoint();
-    clearDraftStart();
-    scheduleDimensionDeletion();
-    scheduleDraftDimensionExpressionUpdate();
-    clearDraftDimensionSession();
-    suppressDimensionEditorAfterSketchCommit();
+    finalizeDraftCommit({
+      clearDraftStart,
+      scheduleDimensionDeletion,
+      scheduleDraftDimensionExpressionUpdate,
+      clearDraftDimensionSession,
+      suppressDimensionEditorAfterSketchCommit,
+    });
 
     const circle = circleFromThreePoints2d(start, secondPoint, committedEnd);
     if (!circle) {
@@ -408,11 +436,13 @@ function commitPolygonDraft({
   suppressDimensionEditorAfterSketchCommit,
   addSketchPolygon,
 }: PolygonDraftCommitOptions): void {
-  clearDraftStart();
-  scheduleDimensionDeletion();
-  scheduleDraftDimensionExpressionUpdate();
-  clearDraftDimensionSession();
-  suppressDimensionEditorAfterSketchCommit();
+  finalizeDraftCommit({
+    clearDraftStart,
+    scheduleDimensionDeletion,
+    scheduleDraftDimensionExpressionUpdate,
+    clearDraftDimensionSession,
+    suppressDimensionEditorAfterSketchCommit,
+  });
   void addSketchPolygon(
     sides,
     mode,

@@ -3,33 +3,23 @@ import type { Dispatch, SetStateAction } from "react";
 import { ExtrudePreviewPanel } from "../layout/ExtrudePreviewPanel";
 import type {
   ExtrudeAdvancedParameters,
-  ExtrudeFeatureParameters,
   ExtrudeMode,
 } from "../types";
 import type { DocumentState, ViewportState } from "../types/ipc";
 import type { ActiveExtrudeAction } from "./appState";
 import { activeExtrudeAdvancedParameters } from "./extrudeCreationState";
+import type { ExtrudeUpdateCallbacks } from "./extrudeUpdateCallbacks";
 
 type AsyncVoid = () => Promise<void>;
 type AnyAsync = () => Promise<unknown>;
 type RunAction = (action: AsyncVoid) => Promise<void>;
 
-export interface ActiveExtrudePreviewProps {
+export interface ActiveExtrudePreviewProps extends ExtrudeUpdateCallbacks {
   extrudeAction: ActiveExtrudeAction | null;
   document: DocumentState | null;
   viewport: ViewportState | null;
   disabled: boolean;
   runAction: RunAction;
-  updateExtrudeDepth: (featureId: string, depth: number) => Promise<void>;
-  updateExtrudeMode: (featureId: string, mode: ExtrudeMode) => Promise<void>;
-  updateExtrudeTargetBody: (
-    featureId: string,
-    targetBodyId: string | null,
-  ) => Promise<void>;
-  updateExtrudeParameters: (
-    featureId: string,
-    parameters: ExtrudeFeatureParameters,
-  ) => Promise<void>;
   recreateNewProfileExtrudePreview: (
     action: ActiveExtrudeAction,
     depth: number,

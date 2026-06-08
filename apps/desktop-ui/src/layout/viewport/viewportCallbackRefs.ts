@@ -11,7 +11,11 @@ import type { ArcToolMode } from "./arcDraftPreview";
 import type { CircleToolMode } from "./circleDraftPreview";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 import type { MoveGizmoDescriptor } from "./moveGizmo";
-import type { PolygonToolMode, SketchSelection } from "./viewportPanelTypes";
+import type {
+  PolygonToolMode,
+  SketchSelection,
+  ViewportPanelProps,
+} from "./viewportPanelTypes";
 
 interface ViewportCallbackRefTargets {
   selectPrimitiveRef: MutableRefObject<(primitiveId: string) => Promise<void>>;
@@ -200,17 +204,17 @@ interface ViewportCallbackRefTargets {
   >;
 }
 
-interface ViewportCallbackRefValues {
-  onSelectPrimitive: (primitiveId: string) => Promise<void>;
-  onSelectReference: (referenceId: string) => Promise<void>;
-  onSelectFace: (faceId: string) => Promise<void>;
-  onSelectEdge: (edgeId: string, additive: boolean) => Promise<void>;
-  onSelectVertex: (vertexId: string, additive: boolean) => Promise<void>;
-  onStartSketch: (referenceId: string) => Promise<void>;
-  onStartSketchOnFace: (
-    faceId: string,
-    planeFrame: SolidFacePlaneFrame,
-  ) => Promise<void>;
+interface ViewportCallbackRefValues
+  extends Pick<
+    ViewportPanelProps,
+    | "onSelectPrimitive"
+    | "onSelectReference"
+    | "onSelectFace"
+    | "onSelectEdge"
+    | "onSelectVertex"
+    | "onStartSketch"
+    | "onStartSketchOnFace"
+  > {
   onSetSketchMidpointAnchor: ViewportCallbackRefTargets["setSketchMidpointAnchorRef"]["current"];
   onSetSketchPointLineAnchor: ViewportCallbackRefTargets["setSketchPointLineAnchorRef"]["current"];
   onAddSketchLine: ViewportCallbackRefTargets["addSketchLineRef"]["current"];

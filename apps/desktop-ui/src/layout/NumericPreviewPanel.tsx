@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PreviewPanelActions } from "./PreviewPanelActions";
 import { useDebouncedNumericPreview } from "./hooks/useDebouncedNumericPreview";
 
 interface NumericPreviewPanelProps {
@@ -94,25 +95,13 @@ export function NumericPreviewPanel({
             }}
           />
         </label>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            className="cad-action-primary flex-1"
-            disabled={confirmDisabled}
-          >
-            {t("common.confirm")}
-          </button>
-          <button
-            type="button"
-            className="cad-action-ghost flex-1"
-            disabled={disabled}
-            onClick={() => {
-              void onCancel();
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
+        <PreviewPanelActions
+          confirmDisabled={confirmDisabled}
+          cancelDisabled={disabled}
+          onCancel={() => {
+            void onCancel();
+          }}
+        />
         <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
           {shortcutHint ?? t("panels.shortcutHint.confirm")}
         </p>

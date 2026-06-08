@@ -282,11 +282,7 @@ export function handleActiveSketchProjectHit({
   selectFace,
 }: {
   hit: ActiveSketchSelectHit;
-  selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
-  selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
-  selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
-  selectFace: (faceId: string) => Promise<void>;
-}) {
+} & SketchBodySelectionActions) {
   if (hit?.kind === "sketch_profile") {
     void selectSketchProfile(hit.id, false);
     return true;
@@ -310,6 +306,19 @@ export function handleActiveSketchProjectHit({
   return true;
 }
 
+export interface SketchBodySelectionActions {
+  selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
+  selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
+  selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
+  selectFace: (faceId: string) => Promise<void>;
+}
+
+export interface SceneSelectionActions
+  extends Omit<SketchBodySelectionActions, "selectSketchProfile"> {
+  selectReference: (referenceId: string) => Promise<void>;
+  selectPrimitive: (primitiveId: string) => Promise<void>;
+}
+
 export function handleSceneSelectionHit({
   hit,
   additiveSelection,
@@ -321,12 +330,7 @@ export function handleSceneSelectionHit({
 }: {
   hit: SceneSelectionHit;
   additiveSelection: boolean;
-  selectReference: (referenceId: string) => Promise<void>;
-  selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
-  selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
-  selectFace: (faceId: string) => Promise<void>;
-  selectPrimitive: (primitiveId: string) => Promise<void>;
-}) {
+} & SceneSelectionActions) {
   if (hit?.kind === "reference" && typeof hit.id === "string") {
     void selectReference(hit.id);
     return true;

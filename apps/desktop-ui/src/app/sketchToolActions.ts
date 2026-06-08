@@ -6,10 +6,11 @@ import {
   handleSketchConstraintPointPickFromContext,
   type SketchConstraintPointKind,
 } from "./sketchConstraintPointPick";
+import type { SketchLineConstraintActions } from "./sketchLineConstraintActions";
 
 type RunAction = (action: () => Promise<void>) => Promise<void>;
 
-interface SketchToolActionContext {
+interface SketchToolActionContext extends SketchLineConstraintActions {
   armedSketchConstraint: ArmedSketchConstraint;
   setArmedSketchConstraint: Dispatch<SetStateAction<ArmedSketchConstraint>>;
   runAction: RunAction;
@@ -20,23 +21,6 @@ interface SketchToolActionContext {
   selectSketchPoint: (
     pointId: string,
     additive?: boolean,
-  ) => Promise<void>;
-  setSketchLineConstraint: (
-    lineId: string,
-    constraint: "horizontal" | "vertical",
-  ) => Promise<void>;
-  clearSketchLineConstraints: (lineId: string) => Promise<void>;
-  setSketchEqualLengthConstraint: (
-    lineId: string,
-    otherLineId: string,
-  ) => Promise<void>;
-  setSketchParallelConstraint: (
-    lineId: string,
-    otherLineId: string,
-  ) => Promise<void>;
-  setSketchPerpendicularConstraint: (
-    lineId: string,
-    otherLineId: string,
   ) => Promise<void>;
   setSketchCoincidentConstraint: (
     pointId: string,

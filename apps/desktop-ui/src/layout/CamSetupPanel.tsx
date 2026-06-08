@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
+import type { CamSetupOrigin, CamSetupStock } from "@/types";
 import {
   CamNumberField,
   useCamEscapeCancel,
@@ -9,8 +10,8 @@ import {
 } from "./camPanelShared";
 
 interface CamSetupFormState {
-  stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
-  wcs_origin: { x: number; y: number; z: number };
+  stock: CamSetupStock;
+  wcs_origin: CamSetupOrigin;
   safety_plane_z: number;
   wcs_angle: number;
   orientation_mode: string;

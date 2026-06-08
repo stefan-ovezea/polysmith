@@ -60,21 +60,8 @@ export function endpointDragAnchorLocal(
   params: SketchFeatureParameters | null,
   pointId: string,
 ): [number, number] | null {
-  if (!params) {
-    return null;
-  }
-  for (const line of params.lines) {
-    if (line.start_point_id !== pointId && line.end_point_id !== pointId) {
-      continue;
-    }
-    const anchoredId =
-      line.start_point_id === pointId ? line.end_point_id : line.start_point_id;
-    const anchored = params.points.find((point) => point.point_id === anchoredId);
-    if (anchored) {
-      return [anchored.x, anchored.y];
-    }
-  }
-  return null;
+  const anchor = endpointDragAnchors(params, pointId)[0];
+  return anchor ? [anchor.x, anchor.y] : null;
 }
 
 export interface EndpointDragPreviewSegment {
@@ -91,7 +78,21 @@ export function endpointDragPreviewSegments(
     return [];
   }
 
-  const segments: EndpointDragPreviewSegment[] = [];
+  return endpointDragAnchors(params, pointId).map((anchor) => ({
+    start: [anchor.x, anchor.y],
+    end: snappedLocal,
+  }));
+}
+
+function endpointDragAnchors(
+  params: SketchFeatureParameters | null,
+  pointId: string,
+) {
+  if (!params) {
+    return [];
+  }
+
+  const anchors: Array<{ x: number; y: number }> = [];
   for (const line of params.lines) {
     if (line.start_point_id !== pointId && line.end_point_id !== pointId) {
       continue;
@@ -100,13 +101,10 @@ export function endpointDragPreviewSegments(
       line.start_point_id === pointId ? line.end_point_id : line.start_point_id;
     const anchored = params.points.find((point) => point.point_id === anchoredId);
     if (anchored) {
-      segments.push({
-        start: [anchored.x, anchored.y],
-        end: snappedLocal,
-      });
+      anchors.push(anchored);
     }
   }
-  return segments;
+  return anchors;
 }
 
 export function buildEndpointDragPreviewLines({

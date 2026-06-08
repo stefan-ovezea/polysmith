@@ -9,16 +9,16 @@ import {
   type DraftDimensionTool,
 } from "./draftDimensions";
 
-interface MutableRef<T> {
+export interface MutableRef<T> {
   current: T;
 }
 
-interface PointerDownPosition {
+export interface PointerDownPosition {
   x: number;
   y: number;
 }
 
-interface UpdateDraftChainBreakParams {
+export interface UpdateDraftChainBreakParams {
   event: PointerEvent;
   activeSketchTool: SketchTool;
   draftStartRef: MutableRef<[number, number] | null>;
@@ -27,7 +27,7 @@ interface UpdateDraftChainBreakParams {
   chainBreakRequestedRef: MutableRef<boolean>;
 }
 
-interface BeginDraftPointerDownParams {
+export interface BeginDraftPointerDownParams {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
   camera: THREE.Camera;

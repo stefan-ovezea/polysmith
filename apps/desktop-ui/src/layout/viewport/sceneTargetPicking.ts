@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import type { ConstraintType, SketchTool, ViewportScene } from "@/types";
 import type { ViewportPickHit } from "./contextMenuState";
+import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import { sketchEntitySelectionHitFromIntersection } from "./sketchClickSelection";
 import { pickSketchProfileId } from "./sketchProfilePicking";
 
@@ -104,10 +105,7 @@ export function intersectViewportSceneTargets({
   faceMeshes: THREE.Mesh[];
   meshes: THREE.Mesh[];
 }): ViewportPickHit | null {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
+  setPointerNdcFromEvent(pointer, event, renderer);
   raycaster.setFromCamera(pointer, camera);
   raycaster.params.Line = { threshold: 1.75 };
 

@@ -7,6 +7,7 @@ interface UseDebouncedNumericPreviewOptions {
   onPreviewValue: (value: number) => Promise<void> | void;
   debounceMs?: number;
   isValid?: (value: number) => boolean;
+  immediate?: boolean;
 }
 
 function isPositiveFiniteNumber(value: number) {
@@ -18,6 +19,7 @@ export function useDebouncedNumericPreview({
   onPreviewValue,
   debounceMs = DEFAULT_PREVIEW_DEBOUNCE_MS,
   isValid = isPositiveFiniteNumber,
+  immediate = false,
 }: UseDebouncedNumericPreviewOptions) {
   const [value, setValue] = useState(String(initialValue));
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -28,6 +30,11 @@ export function useDebouncedNumericPreview({
   useEffect(() => {
     onPreviewValueRef.current = onPreviewValue;
   }, [onPreviewValue]);
+
+  useEffect(() => {
+    setValue(String(initialValue));
+    lastPreviewedRef.current = initialValue;
+  }, [initialValue]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -44,6 +51,16 @@ export function useDebouncedNumericPreview({
     setValue(nextValue);
     const parsed = Number(nextValue);
     if (!isValid(parsed)) {
+      return;
+    }
+
+    if (immediate) {
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      lastPreviewedRef.current = parsed;
+      void onPreviewValueRef.current(parsed);
       return;
     }
 
@@ -69,15 +86,16 @@ export function useDebouncedNumericPreview({
 
     const parsed = Number(value);
     if (!isValid(parsed)) {
-      return;
+      return null;
     }
 
     if (parsed === lastPreviewedRef.current) {
-      return;
+      return parsed;
     }
 
     lastPreviewedRef.current = parsed;
     await onPreviewValueRef.current(parsed);
+    return parsed;
   }
 
   return {

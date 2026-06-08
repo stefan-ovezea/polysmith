@@ -17,17 +17,17 @@ import {
   type ActiveSketchSelectHit,
 } from "./sketchClickSelection";
 
-interface DimensionFirstPoint {
+export interface DimensionFirstPoint {
   id: string;
   x: number;
   y: number;
 }
 
-interface FilletPoint {
+export interface FilletPoint {
   local: [number, number];
 }
 
-interface ActiveSketchPointerUpContext {
+export interface ActiveSketchPointerUpContext {
   activeSketchTool: SketchTool;
   hit: ActiveSketchSelectHit;
   additiveSelection: boolean;

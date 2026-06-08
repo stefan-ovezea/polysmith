@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { DocumentState } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
+import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
 export type CategoryId = "origin" | "construction" | "sketches" | "bodies";
 
@@ -484,24 +485,7 @@ export function DocumentHierarchyPanel({
     null,
   );
 
-  // Dismiss the context menu on any outside click or Escape key.
-  useEffect(() => {
-    if (!contextMenu) {
-      return undefined;
-    }
-    const dismiss = () => setContextMenu(null);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setContextMenu(null);
-      }
-    };
-    window.addEventListener("click", dismiss);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", dismiss);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [contextMenu]);
+  useContextMenuDismiss(Boolean(contextMenu), () => setContextMenu(null));
 
   const features = document?.feature_history ?? [];
   const featureNameById = useMemo(

@@ -167,7 +167,9 @@ import {
   sendAndRefreshSessionViewport,
   sendAndRefreshViewport,
 } from "./cadCoreCommandRefresh";
+import { reportCoreError } from "./coreLogReporting";
 import { useCadCoreEventBridge } from "./useCadCoreEventBridge";
+import type { SketchPlaneFramePayload } from "@/lib/ipc/sketchCommands";
 
 export function useCadCore() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
@@ -186,15 +188,11 @@ export function useCadCore() {
         addLogEntry(entry);
         addMessage(`start: ${result}`);
       } catch (error) {
-        const entry = makeUiLogEntry(
-          "error",
+        reportCoreError(
+          { addLogEntry, addMessage, setStatus },
           "desktop_ui",
           `start failed: ${String(error)}`,
         );
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(entry.message);
-        setStatus("error");
       }
     },
     ping: async () => {
@@ -556,12 +554,7 @@ export function useCadCore() {
     },
     startSketchOnFace: async (
       faceId: string,
-      planeFrame: {
-        origin: { x: number; y: number; z: number };
-        x_axis: { x: number; y: number; z: number };
-        y_axis: { x: number; y: number; z: number };
-        normal: { x: number; y: number; z: number };
-      },
+      planeFrame: SketchPlaneFramePayload,
     ) => {
       await sendCoreCommand(makeStartSketchOnFaceCommand(faceId, planeFrame));
       await sendCoreCommand(makeGetViewportStateCommand());

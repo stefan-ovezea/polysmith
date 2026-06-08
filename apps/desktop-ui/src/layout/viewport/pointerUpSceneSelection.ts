@@ -4,11 +4,12 @@ import type { ViewportScene } from "@/types";
 import {
   handleSceneSelectionHit,
   handleSharedSketchSelectionHit,
+  type SceneSelectionActions,
   type SharedSketchSelectionHit,
 } from "./sketchClickSelection";
 import { pickVisibleSketchLineScreenSpace } from "./sceneTargetPicking";
 
-interface PointerUpSceneSelectionParams {
+interface PointerUpSceneSelectionParams extends SceneSelectionActions {
   event: PointerEvent;
   sceneData: ViewportScene | null;
   camera: THREE.OrthographicCamera;
@@ -21,11 +22,6 @@ interface PointerUpSceneSelectionParams {
   intersectSceneTargets: (event: PointerEvent) => SharedSketchSelectionHit;
   selectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
   selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
-  selectReference: (referenceId: string) => Promise<void>;
-  selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
-  selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
-  selectFace: (faceId: string) => Promise<void>;
-  selectPrimitive: (primitiveId: string) => Promise<void>;
 }
 
 export function handlePointerUpSceneSelection({

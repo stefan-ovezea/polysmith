@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Dropdown } from "../lib";
 import type { HelixFeatureParameters } from "../types";
+import { ActivePanelActions } from "./ActivePanelActions";
 import type { HelixAction } from "./appState";
 
 type HelixHandedness = HelixFeatureParameters["handedness"];
@@ -156,23 +157,11 @@ export function ActiveHelixPanel({
               />
             </div>
           </div>
-          <div className="mt-5 flex gap-3">
-            <button
-              type="button"
-              className="cad-ribbon-action cad-ribbon-action-primary flex-1"
-              disabled={disabled}
-              onClick={onConfirm}
-            >
-              {t("common.confirm")}
-            </button>
-            <button
-              type="button"
-              className="cad-ribbon-action flex-1"
-              onClick={onCancel}
-            >
-              {t("common.cancel")}
-            </button>
-          </div>
+          <ActivePanelActions
+            disabled={disabled}
+            onCancel={onCancel}
+            onConfirm={onConfirm}
+          />
         </>
       )}
     </section>

@@ -3,24 +3,8 @@ import { matchesHotkey } from "../config";
 import type { AppHotkeys } from "../config";
 import type { SketchTool } from "../types";
 import type { DocumentState } from "../types/ipc";
-import {
-  IS_MACOS,
-  type ActiveEdgeOpAction,
-  type ActiveExtrudeAction,
-  type ActiveLoftAction,
-  type ActiveMoveAction,
-  type ActiveRevolveAction,
-  type ActiveSweepAction,
-  type AnglePlaneAction,
-  type FastenerAction,
-  type HelixAction,
-  type HoleAction,
-  type MidplaneAction,
-  type OffsetPlaneAction,
-  type PendingReferenceAction,
-  type ShellAction,
-  type ThreadAction,
-} from "./appState";
+import { IS_MACOS } from "./appState";
+import type { ActiveToolActions } from "./activeToolActions";
 
 type AsyncAction = () => Promise<void>;
 type AnyAsyncAction = () => Promise<unknown>;
@@ -29,27 +13,7 @@ type RunAction = (action: AsyncAction) => Promise<void>;
 export interface AppHotkeyContext {
   event: KeyboardEvent;
   hotkeys: AppHotkeys;
-  actions: {
-    extrudeAction: ActiveExtrudeAction | null;
-    loftAction: ActiveLoftAction | null;
-    revolveAction: ActiveRevolveAction | null;
-    sweepAction: ActiveSweepAction | null;
-    moveAction: ActiveMoveAction | null;
-    edgeOpAction: ActiveEdgeOpAction | null;
-    shellAction: ShellAction | null;
-    holeAction: HoleAction | null;
-    offsetPlaneAction: OffsetPlaneAction | null;
-    anglePlaneAction: AnglePlaneAction | null;
-    midplaneAction: MidplaneAction | null;
-    tangentPlaneAction: PendingReferenceAction | null;
-    constructionAxisAction: PendingReferenceAction | null;
-    constructionPointAction: PendingReferenceAction | null;
-    threadAction: ThreadAction | null;
-    fastenerAction: FastenerAction | null;
-    helixAction: HelixAction | null;
-    editingFeatureId: string | null;
-    materialsPanelOpen: boolean;
-  };
+  actions: ActiveToolActions;
   state: {
     activeSketchPlaneId: string | null;
     activeSketchTool: SketchTool;
