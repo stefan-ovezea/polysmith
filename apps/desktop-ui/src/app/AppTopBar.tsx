@@ -135,303 +135,216 @@ interface AppTopBarProps {
   ) => Promise<void>;
 }
 
-export function AppTopBar({
-  workspaceView,
-  canOpenSlicerView,
-  canExportToSlicer,
-  showCadView,
-  showCamView,
-  showSlicerView,
-  exportToSlicer,
-  status,
-  canUndo,
-  canRedo,
-  activeSketchPlaneId,
-  activeSketchTool,
-  selectedReferenceId,
-  selectedFaceId,
-  armedSketchConstraint,
-  isMirrorToolOpen,
-  arcToolMode,
-  setArcToolMode,
-  rectangleToolMode,
-  setRectangleToolMode,
-  circleToolMode,
-  setCircleToolMode,
-  polygonToolMode,
-  setPolygonToolMode,
-  runAction,
-  start,
-  startMirrorPreview,
-  setMirrorFocusedSlot,
-  clearArmedSketchConstraint,
-  requestUnsavedGate,
-  translate,
-  document,
-  viewport,
-  addMessage,
-  exportDocument,
-  saveCurrentDocument,
-  undo,
-  redo,
-  logCount,
-  errorLogCount,
-  setIsLogsOpen,
-  setIsSettingsOpen,
-  showAiAssistant,
-  isAiPanelOpen,
-  setIsAiPanelOpen,
-  addBoxFeature,
-  addCylinderFeature,
-  canExtrudeFromSelection,
-  triggerExtrudeAction,
-  canStartSolidFeatureAction,
-  triggerLoftAction,
-  triggerRevolveAction,
-  triggerSweepAction,
-  triggerHoleAction,
-  triggerThreadAction,
-  triggerFastenerAction,
-  triggerEdgeOpAction,
-  triggerMoveAction,
-  triggerShellAction,
-  canStartReferencePlaneAction,
-  triggerOffsetPlaneAction,
-  triggerMidplaneAction,
-  triggerTangentPlaneAction,
-  triggerAnglePlaneAction,
-  canStartConstructionReferenceAction,
-  triggerConstructionAxisAction,
-  triggerConstructionPointAction,
-  canStartHelixRibbonAction,
-  triggerHelixAction,
-  triggerCreateSketchAction,
-  finishActiveSketch,
-  setActiveSketchTool,
-  setArmedSketchConstraint,
-  setSketchTool,
-  handleWorkspaceDropdownOpenChange,
-  parametersPanelOpen,
-  setParametersPanelOpen,
-  filterPanelOpen,
-  setFilterPanelOpen,
-  materialsPanelOpen,
-  setMaterialsPanelOpen,
-  updateSelectionFilter,
-  activeCamOperation,
-  setActiveCamOperation,
-  setIsCamSetupPanelOpen,
-  camFaceMillingCreate,
-}: AppTopBarProps) {
+export function AppTopBar(props: AppTopBarProps) {
   return (
     <AppHeader
-      workspaceView={workspaceView}
-      canOpenSlicerView={canOpenSlicerView}
-      canExportToSlicer={canExportToSlicer}
+      workspaceView={props.workspaceView}
+      canOpenSlicerView={props.canOpenSlicerView}
+      canExportToSlicer={props.canExportToSlicer}
       onSetWorkspaceView={(view) => {
         if (view === "cad") {
-          void showCadView();
+          void props.showCadView();
           return;
         }
         if (view === "cam") {
-          void showCamView();
+          void props.showCamView();
           return;
         }
-        void showSlicerView();
+        void props.showSlicerView();
       }}
-      onExportToSlicer={() => void exportToSlicer()}
-      status={status}
-      disabled={status !== "connected"}
-      canUndo={canUndo}
-      canRedo={canRedo}
-      activeSketchPlaneId={activeSketchPlaneId}
-      activeSketchTool={activeSketchTool}
-      selectedReferenceId={selectedReferenceId}
-      selectedFaceId={selectedFaceId}
-      armedSketchConstraint={armedSketchConstraint}
-      isMirrorToolOpen={isMirrorToolOpen}
-      arcToolMode={arcToolMode}
-      onSetArcToolMode={setArcToolMode}
-      rectangleToolMode={rectangleToolMode}
-      onSetRectangleToolMode={setRectangleToolMode}
-      circleToolMode={circleToolMode}
-      onSetCircleToolMode={setCircleToolMode}
-      polygonToolMode={polygonToolMode}
-      onSetPolygonToolMode={setPolygonToolMode}
+      onExportToSlicer={() => void props.exportToSlicer()}
+      status={props.status}
+      disabled={props.status !== "connected"}
+      canUndo={props.canUndo}
+      canRedo={props.canRedo}
+      activeSketchPlaneId={props.activeSketchPlaneId}
+      activeSketchTool={props.activeSketchTool}
+      selectedReferenceId={props.selectedReferenceId}
+      selectedFaceId={props.selectedFaceId}
+      armedSketchConstraint={props.armedSketchConstraint}
+      isMirrorToolOpen={props.isMirrorToolOpen}
+      arcToolMode={props.arcToolMode}
+      onSetArcToolMode={props.setArcToolMode}
+      rectangleToolMode={props.rectangleToolMode}
+      onSetRectangleToolMode={props.setRectangleToolMode}
+      circleToolMode={props.circleToolMode}
+      onSetCircleToolMode={props.setCircleToolMode}
+      polygonToolMode={props.polygonToolMode}
+      onSetPolygonToolMode={props.setPolygonToolMode}
       onStart={async () => {
-        await runAction(start);
+        await props.runAction(props.start);
       }}
       onStartMirrorTool={async () => {
-        await runAction(async () => {
-          await startMirrorPreview();
-          setMirrorFocusedSlot("objects");
-          clearArmedSketchConstraint();
+        await props.runAction(async () => {
+          await props.startMirrorPreview();
+          props.setMirrorFocusedSlot("objects");
+          props.clearArmedSketchConstraint();
         });
       }}
       onCreateDocument={async () => {
-        requestUnsavedGate({ kind: "new" });
+        props.requestUnsavedGate({ kind: "new" });
       }}
       onExportDocument={async () => {
         const filePath = await pickExportPath({
-          translate,
-          documentName: document?.name,
-          addMessage,
+          translate: props.translate,
+          documentName: props.document?.name,
+          addMessage: props.addMessage,
         });
         if (!filePath) {
           return;
         }
 
-        await runAction(async () => {
-          await exportDocument(filePath);
-          addMessage(`export requested: ${filePath}`);
+        await props.runAction(async () => {
+          await props.exportDocument(filePath);
+          props.addMessage(`export requested: ${filePath}`);
         });
       }}
       onSaveDocument={async () => {
-        await runAction(async () => {
-          await saveCurrentDocument();
+        await props.runAction(async () => {
+          await props.saveCurrentDocument();
         });
       }}
       onLoadDocument={async () => {
         const filePath = await pickLoadDocumentPath({
-          translate,
-          addMessage,
+          translate: props.translate,
+          addMessage: props.addMessage,
         });
         if (!filePath) {
           return;
         }
 
-        requestUnsavedGate({ kind: "load", filePath });
+        props.requestUnsavedGate({ kind: "load", filePath });
       }}
       onUndo={async () => {
-        await runAction(undo);
+        await props.runAction(props.undo);
       }}
       onRedo={async () => {
-        await runAction(redo);
+        await props.runAction(props.redo);
       }}
-      logCount={logCount}
-      errorLogCount={errorLogCount}
+      logCount={props.logCount}
+      errorLogCount={props.errorLogCount}
       onOpenLogs={() => {
-        setIsLogsOpen(true);
+        props.setIsLogsOpen(true);
       }}
       onOpenSettings={() => {
-        setIsSettingsOpen(true);
+        props.setIsSettingsOpen(true);
       }}
-      showAiAssistant={showAiAssistant}
-      isAiPanelOpen={isAiPanelOpen}
+      showAiAssistant={props.showAiAssistant}
+      isAiPanelOpen={props.isAiPanelOpen}
       onToggleAiPanel={() => {
-        setIsAiPanelOpen((current) => !current);
+        props.setIsAiPanelOpen((current) => !current);
       }}
       onAddBoxFeature={async (width, height, depth) => {
-        await runAction(async () => {
-          await addBoxFeature(width, height, depth);
+        await props.runAction(async () => {
+          await props.addBoxFeature(width, height, depth);
         });
       }}
       onAddCylinderFeature={async (radius, height) => {
-        await runAction(async () => {
-          await addCylinderFeature(radius, height);
+        await props.runAction(async () => {
+          await props.addCylinderFeature(radius, height);
         });
       }}
-      canExtrude={canExtrudeFromSelection}
-      onExtrude={triggerExtrudeAction}
-      canLoft={canStartSolidFeatureAction}
-      onLoft={triggerLoftAction}
-      canRevolve={canStartSolidFeatureAction}
-      onRevolve={triggerRevolveAction}
-      canSweep={canStartSolidFeatureAction}
-      onSweep={triggerSweepAction}
-      canHole={canStartSolidFeatureAction}
-      onHole={triggerHoleAction}
-      canThread={canStartSolidFeatureAction}
-      onThread={triggerThreadAction}
-      canFastener={canStartSolidFeatureAction}
-      onFastener={triggerFastenerAction}
-      canEdgeOp={canStartSolidFeatureAction}
+      canExtrude={props.canExtrudeFromSelection}
+      onExtrude={props.triggerExtrudeAction}
+      canLoft={props.canStartSolidFeatureAction}
+      onLoft={props.triggerLoftAction}
+      canRevolve={props.canStartSolidFeatureAction}
+      onRevolve={props.triggerRevolveAction}
+      canSweep={props.canStartSolidFeatureAction}
+      onSweep={props.triggerSweepAction}
+      canHole={props.canStartSolidFeatureAction}
+      onHole={props.triggerHoleAction}
+      canThread={props.canStartSolidFeatureAction}
+      onThread={props.triggerThreadAction}
+      canFastener={props.canStartSolidFeatureAction}
+      onFastener={props.triggerFastenerAction}
+      canEdgeOp={props.canStartSolidFeatureAction}
       onFillet={async () => {
-        await triggerEdgeOpAction("fillet");
+        await props.triggerEdgeOpAction("fillet");
       }}
       onChamfer={async () => {
-        await triggerEdgeOpAction("chamfer");
+        await props.triggerEdgeOpAction("chamfer");
       }}
-      canMove={canStartSolidFeatureAction}
-      onMove={triggerMoveAction}
-      canShell={canStartSolidFeatureAction}
-      onShell={triggerShellAction}
-      canOffsetPlane={canStartReferencePlaneAction}
+      canMove={props.canStartSolidFeatureAction}
+      onMove={props.triggerMoveAction}
+      canShell={props.canStartSolidFeatureAction}
+      onShell={props.triggerShellAction}
+      canOffsetPlane={props.canStartReferencePlaneAction}
       onOffsetPlane={() => {
-        void triggerOffsetPlaneAction();
+        void props.triggerOffsetPlaneAction();
       }}
-      canMidplane={canStartReferencePlaneAction}
-      canTangentPlane={canStartReferencePlaneAction}
-      canAnglePlane={canStartReferencePlaneAction}
-      canConstructionAxis={canStartConstructionReferenceAction}
-      canConstructionPoint={canStartConstructionReferenceAction}
-      canHelix={canStartHelixRibbonAction}
+      canMidplane={props.canStartReferencePlaneAction}
+      canTangentPlane={props.canStartReferencePlaneAction}
+      canAnglePlane={props.canStartReferencePlaneAction}
+      canConstructionAxis={props.canStartConstructionReferenceAction}
+      canConstructionPoint={props.canStartConstructionReferenceAction}
+      canHelix={props.canStartHelixRibbonAction}
       onMidplane={() => {
-        void triggerMidplaneAction();
+        void props.triggerMidplaneAction();
       }}
       onTangentPlane={() => {
-        void triggerTangentPlaneAction();
+        void props.triggerTangentPlaneAction();
       }}
       onAnglePlane={() => {
-        void triggerAnglePlaneAction();
+        void props.triggerAnglePlaneAction();
       }}
       onConstructionAxis={() => {
-        void triggerConstructionAxisAction();
+        void props.triggerConstructionAxisAction();
       }}
       onConstructionPoint={() => {
-        void triggerConstructionPointAction();
+        void props.triggerConstructionPointAction();
       }}
       onHelix={() => {
-        void triggerHelixAction();
+        void props.triggerHelixAction();
       }}
-      onStartSketch={triggerCreateSketchAction}
-      onFinishSketch={finishActiveSketch}
-      onSetSketchTool={setActiveSketchTool}
+      onStartSketch={props.triggerCreateSketchAction}
+      onFinishSketch={props.finishActiveSketch}
+      onSetSketchTool={props.setActiveSketchTool}
       onArmSketchConstraint={async (constraint) => {
         let shouldSwitchToSelect = false;
 
-        setArmedSketchConstraint((current) => {
+        props.setArmedSketchConstraint((current) => {
           const transition = toggleArmedSketchConstraint(current, constraint);
           shouldSwitchToSelect = transition.shouldSwitchToSelect;
           return transition.next;
         });
 
-        if (shouldSwitchToSelect && activeSketchTool !== "select") {
-          await runAction(async () => {
-            await setSketchTool("select");
+        if (shouldSwitchToSelect && props.activeSketchTool !== "select") {
+          await props.runAction(async () => {
+            await props.setSketchTool("select");
           });
         }
       }}
-      onCancelSketchConstraint={clearArmedSketchConstraint}
-      onWorkspaceDropdownOpenChange={handleWorkspaceDropdownOpenChange}
-      parametersPanelOpen={parametersPanelOpen}
+      onCancelSketchConstraint={props.clearArmedSketchConstraint}
+      onWorkspaceDropdownOpenChange={props.handleWorkspaceDropdownOpenChange}
+      parametersPanelOpen={props.parametersPanelOpen}
       onToggleParametersPanel={() => {
-        setParametersPanelOpen((current) => !current);
+        props.setParametersPanelOpen((current) => !current);
       }}
-      filterPanelOpen={filterPanelOpen}
+      filterPanelOpen={props.filterPanelOpen}
       onToggleFilterPanel={() => {
-        setFilterPanelOpen((current) => !current);
+        props.setFilterPanelOpen((current) => !current);
       }}
-      materialsPanelOpen={materialsPanelOpen}
+      materialsPanelOpen={props.materialsPanelOpen}
       onToggleMaterialsPanel={() => {
-        setMaterialsPanelOpen((current) => !current);
+        props.setMaterialsPanelOpen((current) => !current);
       }}
-      onUpdateSelectionFilter={updateSelectionFilter}
-      activeCamOperation={activeCamOperation}
+      onUpdateSelectionFilter={props.updateSelectionFilter}
+      activeCamOperation={props.activeCamOperation}
       onSelectCamOperation={(op) => {
-        setActiveCamOperation((prev) => (prev === op ? null : op));
+        props.setActiveCamOperation((prev) => (prev === op ? null : op));
       }}
-      hasCamSetup={document?.cam_setup != null}
+      hasCamSetup={props.document?.cam_setup != null}
       onCamSetupClick={() => {
-        setIsCamSetupPanelOpen((prev) => !prev);
+        props.setIsCamSetupPanelOpen((prev) => !prev);
       }}
       onCamFaceMillingClick={() => {
-        const body = viewport?.bodies?.[0];
+        const body = props.viewport?.bodies?.[0];
         if (!body) {
           return;
         }
-        void runAction(async () => {
-          await camFaceMillingCreate(body.id, 0);
+        void props.runAction(async () => {
+          await props.camFaceMillingCreate(body.id, 0);
         });
       }}
     />

@@ -34,6 +34,13 @@ interface DraftFinalizeActions {
   suppressDimensionEditorAfterSketchCommit: () => void;
 }
 
+interface ThreePointDraftActions extends DraftFinalizeActions {
+  committedEnd: Point2d;
+  secondPoint: Point2d | null;
+  setSecondPoint: (point: Point2d) => void;
+  clearSecondPoint: () => void;
+}
+
 function finalizeDraftCommit({
   clearDraftStart,
   scheduleDimensionDeletion,
@@ -46,6 +53,17 @@ function finalizeDraftCommit({
   scheduleDraftDimensionExpressionUpdate();
   clearDraftDimensionSession();
   suppressDimensionEditorAfterSketchCommit();
+}
+
+function prepareThreePointDraft(options: ThreePointDraftActions) {
+  if (!options.secondPoint) {
+    options.setSecondPoint([options.committedEnd[0], options.committedEnd[1]]);
+    return null;
+  }
+
+  options.clearSecondPoint();
+  finalizeDraftCommit(options);
+  return options.secondPoint;
 }
 
 export interface RectangleDraftCommitOptions {
@@ -242,66 +260,47 @@ export interface DraftPointerUpCommitOptions {
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
 }
 
-function commitRectangleDraft({
-  mode,
-  start,
-  committedEnd,
-  secondPoint,
-  isConstruction,
-  setSecondPoint,
-  clearSecondPoint,
-  clearDraftStart,
-  scheduleDimensionDeletion,
-  scheduleDraftDimensionExpressionUpdate,
-  clearDraftDimensionSession,
-  suppressDimensionEditorAfterSketchCommit,
-  addSketchRectangle,
-}: RectangleDraftCommitOptions): void {
-  const [startX, startY] = start;
+function commitRectangleDraft(options: RectangleDraftCommitOptions): void {
+  const [startX, startY] = options.start;
 
-  if (mode === "three_point") {
+  if (options.mode === "three_point") {
+    const secondPoint = prepareThreePointDraft(options);
     if (!secondPoint) {
-      setSecondPoint([committedEnd[0], committedEnd[1]]);
       return;
     }
 
-    clearSecondPoint();
-    finalizeDraftCommit({
-      clearDraftStart,
-      scheduleDimensionDeletion,
-      scheduleDraftDimensionExpressionUpdate,
-      clearDraftDimensionSession,
-      suppressDimensionEditorAfterSketchCommit,
-    });
-
-    const rectangle = rectangleFromThreePoints2d(start, secondPoint, committedEnd);
+    const rectangle = rectangleFromThreePoints2d(
+      options.start,
+      secondPoint,
+      options.committedEnd,
+    );
     if (!rectangle) {
       return;
     }
 
     const { minX, minY, maxX, maxY } = rectangle.bounds;
-    void addSketchRectangle(minX, minY, maxX, maxY, isConstruction);
+    void options.addSketchRectangle(
+      minX,
+      minY,
+      maxX,
+      maxY,
+      options.isConstruction,
+    );
     return;
   }
 
-  finalizeDraftCommit({
-    clearDraftStart,
-    scheduleDimensionDeletion,
-    scheduleDraftDimensionExpressionUpdate,
-    clearDraftDimensionSession,
-    suppressDimensionEditorAfterSketchCommit,
-  });
+  finalizeDraftCommit(options);
 
   const rectStartX =
-    mode === "center_point" ? 2 * startX - committedEnd[0] : startX;
+    options.mode === "center_point" ? 2 * startX - options.committedEnd[0] : startX;
   const rectStartY =
-    mode === "center_point" ? 2 * startY - committedEnd[1] : startY;
-  void addSketchRectangle(
+    options.mode === "center_point" ? 2 * startY - options.committedEnd[1] : startY;
+  void options.addSketchRectangle(
     rectStartX,
     rectStartY,
-    committedEnd[0],
-    committedEnd[1],
-    isConstruction,
+    options.committedEnd[0],
+    options.committedEnd[1],
+    options.isConstruction,
   );
 }
 
@@ -350,77 +349,62 @@ function commitArcDraft({
   );
 }
 
-function commitCircleDraft({
-  mode,
-  start,
-  committedEnd,
-  secondPoint,
-  fromCircleCount,
-  isConstruction,
-  setSecondPoint,
-  clearSecondPoint,
-  clearDraftStart,
-  setPendingCircleDimensionPlacement,
-  scheduleDimensionDeletion,
-  scheduleDraftDimensionExpressionUpdate,
-  clearDraftDimensionSession,
-  suppressDimensionEditorAfterSketchCommit,
-  addSketchCircle,
-}: CircleDraftCommitOptions): void {
-  const [startX, startY] = start;
+function commitCircleDraft(options: CircleDraftCommitOptions): void {
+  const [startX, startY] = options.start;
 
-  if (mode === "three_point") {
+  if (options.mode === "three_point") {
+    const secondPoint = prepareThreePointDraft(options);
     if (!secondPoint) {
-      setSecondPoint([committedEnd[0], committedEnd[1]]);
       return;
     }
 
-    clearSecondPoint();
-    finalizeDraftCommit({
-      clearDraftStart,
-      scheduleDimensionDeletion,
-      scheduleDraftDimensionExpressionUpdate,
-      clearDraftDimensionSession,
-      suppressDimensionEditorAfterSketchCommit,
-    });
-
-    const circle = circleFromThreePoints2d(start, secondPoint, committedEnd);
+    const circle = circleFromThreePoints2d(
+      options.start,
+      secondPoint,
+      options.committedEnd,
+    );
     if (!circle) {
       return;
     }
 
-    void addSketchCircle(
+    void options.addSketchCircle(
       circle.center[0],
       circle.center[1],
       circle.radius,
-      isConstruction,
+      options.isConstruction,
     );
     return;
   }
 
-  if (mode === "tangent_two_lines" || mode === "tangent_three_lines") {
+  if (
+    options.mode === "tangent_two_lines" ||
+    options.mode === "tangent_three_lines"
+  ) {
     return;
   }
 
-  clearDraftStart();
-  setPendingCircleDimensionPlacement({
-    fromCircleCount,
-    center: start,
-    end: committedEnd,
+  options.clearDraftStart();
+  options.setPendingCircleDimensionPlacement({
+    fromCircleCount: options.fromCircleCount,
+    center: options.start,
+    end: options.committedEnd,
   });
-  scheduleDimensionDeletion();
-  scheduleDraftDimensionExpressionUpdate();
-  clearDraftDimensionSession();
-  suppressDimensionEditorAfterSketchCommit();
+  options.scheduleDimensionDeletion();
+  options.scheduleDraftDimensionExpressionUpdate();
+  options.clearDraftDimensionSession();
+  options.suppressDimensionEditorAfterSketchCommit();
 
-  let center: Point2d = start;
-  let radius = distanceBetweenPoints(start, committedEnd);
-  if (mode === "two_point") {
-    center = [(startX + committedEnd[0]) / 2, (startY + committedEnd[1]) / 2];
-    radius = distanceBetweenPoints(start, committedEnd) / 2;
+  let center: Point2d = options.start;
+  let radius = distanceBetweenPoints(options.start, options.committedEnd);
+  if (options.mode === "two_point") {
+    center = [
+      (startX + options.committedEnd[0]) / 2,
+      (startY + options.committedEnd[1]) / 2,
+    ];
+    radius = distanceBetweenPoints(options.start, options.committedEnd) / 2;
   }
 
-  void addSketchCircle(center[0], center[1], radius, isConstruction);
+  void options.addSketchCircle(center[0], center[1], radius, options.isConstruction);
 }
 
 function commitPolygonDraft({

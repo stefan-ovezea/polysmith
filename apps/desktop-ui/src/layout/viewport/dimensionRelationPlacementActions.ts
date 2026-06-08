@@ -66,63 +66,37 @@ interface RelationPlacementActionsContext {
   beginDimensionPlacement: (dimension: SketchDimensionScene) => void;
 }
 
-export function createDimensionRelationPlacementActions({
-  rendererRef,
-  cameraRef,
-  controlsRef,
-  activeSketchPlaneIdRef,
-  activeSketchPlaneFrameRef,
-  activeSketchToolRef,
-  lastPointerEventRef,
-  dimensionRelationPreviewRef,
-  dimensionRelationPreviewLabelRef,
-  pendingRelationPlacementLabelRef,
-  pendingRelationPlacementMatchRef,
-  pendingRelationPlacementRetryRef,
-  pendingDimensionIdRef,
-  pendingDimSourceEntityIdRef,
-  pendingDimensionPlacementRef,
-  dimensionLabelDragRef,
-  dimensionPlacementOriginalPositionRef,
-  dimensionToolFirstLineRef,
-  dimensionToolFirstPointRef,
-  displayedSketchDimensionsRef,
-  sketchLinesRef,
-  deleteSketchDimensionRef,
-  setDimensionToolFirstLine,
-  clearPreviewDimension,
-  setCanvasCursor,
-  createDimensionAngleOrDistance,
-  beginDimensionPlacement,
-}: RelationPlacementActionsContext) {
+export function createDimensionRelationPlacementActions(
+  context: RelationPlacementActionsContext,
+) {
   function commitDimensionRelationPreview() {
-    const relation = dimensionRelationPreviewRef.current;
+    const relation = context.dimensionRelationPreviewRef.current;
     if (!relation) {
       return false;
     }
-    pendingRelationPlacementLabelRef.current =
+    context.pendingRelationPlacementLabelRef.current =
       relationLabelPositionFromPointer() ??
-      dimensionRelationPreviewLabelRef.current;
-    pendingRelationPlacementMatchRef.current = relation;
-    clearPreviewDimension();
-    dimensionRelationPreviewRef.current = null;
+      context.dimensionRelationPreviewLabelRef.current;
+    context.pendingRelationPlacementMatchRef.current = relation;
+    context.clearPreviewDimension();
+    context.dimensionRelationPreviewRef.current = null;
     const unaryDimensionId = unaryDimensionIdForEntity(relation.firstEntityId);
     if (unaryDimensionId) {
-      void deleteSketchDimensionRef.current(unaryDimensionId);
+      void context.deleteSketchDimensionRef.current(unaryDimensionId);
     }
-    pendingDimensionIdRef.current = null;
-    pendingDimSourceEntityIdRef.current = null;
-    pendingDimensionPlacementRef.current = false;
-    dimensionLabelDragRef.current = null;
-    dimensionPlacementOriginalPositionRef.current = null;
-    if (controlsRef.current) {
-      controlsRef.current.enabled = true;
+    context.pendingDimensionIdRef.current = null;
+    context.pendingDimSourceEntityIdRef.current = null;
+    context.pendingDimensionPlacementRef.current = false;
+    context.dimensionLabelDragRef.current = null;
+    context.dimensionPlacementOriginalPositionRef.current = null;
+    if (context.controlsRef.current) {
+      context.controlsRef.current.enabled = true;
     }
-    setCanvasCursor("");
-    dimensionToolFirstLineRef.current = null;
-    setDimensionToolFirstLine(null);
-    dimensionToolFirstPointRef.current = null;
-    createDimensionAngleOrDistance(
+    context.setCanvasCursor("");
+    context.dimensionToolFirstLineRef.current = null;
+    context.setDimensionToolFirstLine(null);
+    context.dimensionToolFirstPointRef.current = null;
+    context.createDimensionAngleOrDistance(
       relation.firstEntityId,
       relation.targetEntityId,
     );
@@ -131,52 +105,52 @@ export function createDimensionRelationPlacementActions({
   }
 
   function relationLabelPositionFromPointer() {
-    const pointerEvent = lastPointerEventRef.current;
-    const renderer = rendererRef.current;
-    const camera = cameraRef.current;
-    const sketchPlaneId = activeSketchPlaneIdRef.current;
+    const pointerEvent = context.lastPointerEventRef.current;
+    const renderer = context.rendererRef.current;
+    const camera = context.cameraRef.current;
+    const sketchPlaneId = context.activeSketchPlaneIdRef.current;
     return pointerEvent && renderer && camera && sketchPlaneId
       ? resolveSketchPlanePoint(
           pointerEvent,
           renderer,
           camera,
           sketchPlaneId,
-          activeSketchPlaneFrameRef.current,
+          context.activeSketchPlaneFrameRef.current,
         )?.world ?? null
       : null;
   }
 
   function startPendingRelationPlacementIfReady() {
     if (
-      !pendingDimensionPlacementRef.current ||
-      activeSketchToolRef.current !== "dimension"
+      !context.pendingDimensionPlacementRef.current ||
+      context.activeSketchToolRef.current !== "dimension"
     ) {
       return true;
     }
-    const relation = pendingRelationPlacementMatchRef.current;
+    const relation = context.pendingRelationPlacementMatchRef.current;
     if (!relation) {
       return true;
     }
     const placementDimension = findPendingRelationDimension(
       relation,
-      displayedSketchDimensionsRef.current,
-      sketchLinesRef.current,
+      context.displayedSketchDimensionsRef.current,
+      context.sketchLinesRef.current,
     );
     if (!placementDimension) {
       return false;
     }
-    pendingRelationPlacementMatchRef.current = null;
-    pendingDimensionIdRef.current = null;
-    pendingDimensionPlacementRef.current = false;
-    pendingDimSourceEntityIdRef.current = null;
-    beginDimensionPlacement(placementDimension);
+    context.pendingRelationPlacementMatchRef.current = null;
+    context.pendingDimensionIdRef.current = null;
+    context.pendingDimensionPlacementRef.current = false;
+    context.pendingDimSourceEntityIdRef.current = null;
+    context.beginDimensionPlacement(placementDimension);
     return true;
   }
 
   function stopPendingRelationPlacementRetry() {
-    if (pendingRelationPlacementRetryRef.current !== null) {
-      window.cancelAnimationFrame(pendingRelationPlacementRetryRef.current);
-      pendingRelationPlacementRetryRef.current = null;
+    if (context.pendingRelationPlacementRetryRef.current !== null) {
+      window.cancelAnimationFrame(context.pendingRelationPlacementRetryRef.current);
+      context.pendingRelationPlacementRetryRef.current = null;
     }
   }
 
@@ -185,18 +159,18 @@ export function createDimensionRelationPlacementActions({
     let attempts = 0;
     const tick = () => {
       if (startPendingRelationPlacementIfReady()) {
-        pendingRelationPlacementRetryRef.current = null;
+        context.pendingRelationPlacementRetryRef.current = null;
         return;
       }
       attempts += 1;
       if (attempts >= 90) {
-        pendingRelationPlacementRetryRef.current = null;
+        context.pendingRelationPlacementRetryRef.current = null;
         return;
       }
-      pendingRelationPlacementRetryRef.current =
+      context.pendingRelationPlacementRetryRef.current =
         window.requestAnimationFrame(tick);
     };
-    pendingRelationPlacementRetryRef.current =
+    context.pendingRelationPlacementRetryRef.current =
       window.requestAnimationFrame(tick);
   }
 
