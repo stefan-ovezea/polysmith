@@ -2,7 +2,7 @@
 
 #include <TopoDS_Shape.hxx>
 
-#include "core/feature.h"
+#include "core/document/feature.h"
 
 namespace polysmith::core {
 

@@ -1,4 +1,4 @@
-#include "core/extrude_feature.h"
+#include "core/extrude/extrude_feature.h"
 
 #include <cmath>
 #include <sstream>
@@ -13,7 +13,7 @@
 #include <gp_Vec.hxx>
 #include <TopoDS_Shape.hxx>
 
-#include "core/feature_shape.h"
+#include "core/geometry/feature_shape.h"
 
 namespace polysmith::core {
 namespace {

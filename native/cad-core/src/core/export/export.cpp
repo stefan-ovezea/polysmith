@@ -1,4 +1,4 @@
-#include "core/export.h"
+#include "core/export/export.h"
 
 #include <stdexcept>
 #include <vector>
@@ -12,8 +12,8 @@
 #include <TopoDS_Shape.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 
-#include "core/body_compiler.h"
-#include "core/document.h"
+#include "core/geometry/body_compiler.h"
+#include "core/document/document.h"
 
 namespace polysmith::core {
 namespace {

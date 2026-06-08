@@ -1,4 +1,4 @@
-#include "core/logger.h"
+#include "core/diagnostics/logger.h"
 
 #include <chrono>
 #include <ctime>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/feature.h"
+#include "core/document/feature.h"
 
 namespace polysmith::core {
 

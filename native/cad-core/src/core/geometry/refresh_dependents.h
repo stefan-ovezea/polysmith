@@ -3,8 +3,8 @@
 #include <optional>
 #include <string>
 
-#include "core/construction_plane_feature.h"
-#include "core/feature.h"
+#include "core/construction/construction_plane_feature.h"
+#include "core/document/feature.h"
 
 namespace polysmith::core {
 

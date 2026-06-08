@@ -1,4 +1,4 @@
-#include "core/cylinder_feature.h"
+#include "core/primitive/cylinder_feature.h"
 
 #include <sstream>
 #include <stdexcept>

@@ -1,4 +1,4 @@
-#include "core/inference_engine.h"
+#include "core/sketch/inference_engine.h"
 
 #include <cmath>
 #include <string>

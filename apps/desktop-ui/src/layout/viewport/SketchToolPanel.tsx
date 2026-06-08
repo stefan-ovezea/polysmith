@@ -1,18 +1,13 @@
 import { Checkbox, Dropdown } from "@/lib";
 import type { SketchTool } from "@/types";
+import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
+import type { PolygonToolMode } from "./viewportPanelTypes";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 type ArcToolMode = "three_point" | "center_start_end";
-type CircleToolMode =
-  | "center_radius"
-  | "two_point"
-  | "three_point"
-  | "tangent_two_lines"
-  | "tangent_three_lines";
 type RectangleToolMode = "corner_corner" | "center_point" | "three_point";
-type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 
 interface SketchToolPanelProps {
   translate: Translate;

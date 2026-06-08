@@ -3,10 +3,14 @@ import { ConstraintType, SketchTool, ArmedSketchConstraint } from "@/types";
 import { formatHotkey, useAppConfig } from "@/config";
 import type { AppHotkeys, CrosshairMode } from "@/config";
 import { Dropdown, SplitToolButton } from "@/lib";
-import { ConstraintIcon, SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon } from "./ToolBarIcons";
+import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon } from "./ToolBarIcons";
 import { useTranslation } from "react-i18next";
 import { HelpPopover } from "@/layout/HelpPopover";
 import { helpRegistry } from "@/lib/help-index";
+import {
+  ArmedConstraintStatus,
+  SketchConstraintControls,
+} from "./SketchConstraintControls";
 
 interface SketchToolbarProps {
   disabled?: boolean;
@@ -311,126 +315,13 @@ export function SketchToolbar({
       </SplitToolButton>
       </span>
       <div className="h-8 w-px bg-white/10" />
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "horizontal"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.horizontal")}
-        aria-label={t("toolbar.horizontal")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("horizontal");
-        }}
-      >
-        <ConstraintIcon kind="horizontal" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "vertical"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.vertical")}
-        aria-label={t("toolbar.vertical")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("vertical");
-        }}
-      >
-        <ConstraintIcon kind="vertical" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "clear"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.clearConstraint")}
-        aria-label={t("toolbar.clearConstraint")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("clear");
-        }}
-      >
-        <ConstraintIcon kind="clear" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "coincident"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.coincident")}
-        aria-label={t("toolbar.coincident")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("coincident");
-        }}
-      >
-        <ConstraintIcon kind="coincident" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "equal_length"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.equalLength")}
-        aria-label={t("toolbar.equalLength")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("equal_length");
-        }}
-      >
-        <ConstraintIcon kind="equal_length" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "perpendicular"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.perpendicular")}
-        aria-label={t("toolbar.perpendicular")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("perpendicular");
-        }}
-      >
-        <ConstraintIcon kind="perpendicular" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && armedSketchConstraint?.kind === "parallel"
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.parallel")}
-        aria-label={t("toolbar.parallel")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onArmSketchConstraint("parallel");
-        }}
-      >
-        <ConstraintIcon kind="parallel" />
-      </button>
-      <button
-        className={
-          activeSketchPlaneId && isMirrorToolOpen
-            ? "cad-icon-button cad-icon-tool cad-icon-tool-active h-9 w-9 p-0"
-            : "cad-icon-button cad-icon-tool h-9 w-9 p-0"
-        }
-        data-tooltip={t("toolbar.mirror")}
-        aria-label={t("toolbar.mirror")}
-        disabled={!activeSketchPlaneId}
-        onClick={() => {
-          void onStartMirrorTool();
-        }}
-      >
-        <ConstraintIcon kind="mirror" />
-      </button>
+      <SketchConstraintControls
+        activeSketchPlaneId={activeSketchPlaneId}
+        armedSketchConstraint={armedSketchConstraint}
+        isMirrorToolOpen={isMirrorToolOpen}
+        onArmSketchConstraint={onArmSketchConstraint}
+        onStartMirrorTool={onStartMirrorTool}
+      />
       <div className="h-8 w-px bg-white/10" />
       <Dropdown
         label={t("toolbar.sketchCrosshair")}
@@ -451,37 +342,7 @@ export function SketchToolbar({
           }));
         }}
       />
-      {armedSketchConstraint ? (
-        <p className="text-xs uppercase tracking-[0.14em] text-on-surface-dim">
-          {armedSketchConstraint.kind === "coincident"
-            ? armedSketchConstraint.firstPointId
-              ? t("constraints.coincidentSecondPointColon")
-              : t("constraints.coincidentFirstPointColon")
-            : armedSketchConstraint.kind === "equal_length" ||
-                armedSketchConstraint.kind === "perpendicular" ||
-                armedSketchConstraint.kind === "parallel"
-              ? armedSketchConstraint.firstLineId
-                ? t("constraints.lineSecondColon", {
-                    label:
-                      armedSketchConstraint.kind === "equal_length"
-                        ? t("toolbar.equalLength")
-                        : armedSketchConstraint.kind === "perpendicular"
-                          ? t("toolbar.perpendicular")
-                          : t("toolbar.parallel"),
-                  })
-                : t("constraints.lineFirstColon", {
-                    label:
-                      armedSketchConstraint.kind === "equal_length"
-                        ? t("toolbar.equalLength")
-                        : armedSketchConstraint.kind === "perpendicular"
-                          ? t("toolbar.perpendicular")
-                          : t("toolbar.parallel"),
-                  })
-              : t("constraints.clickLineColon", {
-                  kind: armedSketchConstraint.kind,
-                })}
-        </p>
-      ) : null}
+      <ArmedConstraintStatus armedSketchConstraint={armedSketchConstraint} />
       <HelpPopover
         entry={helpEntry}
         anchor={helpAnchor}

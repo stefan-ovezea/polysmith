@@ -122,282 +122,349 @@ export interface CancelActiveToolContext {
 }
 
 export async function cancelActiveToolFromContext({
-  actions,
-  setters,
-  activeEdgeIdsRef,
-  runAction,
-  restoreTimelineCursorAfterEdit,
-  undo,
-  undoUntilExtrudePreviewRemoved,
-  updateExtrudeDepth,
-  updateExtrudeMode,
-  updateExtrudeTargetBody,
-  updateExtrudeParameters,
-  updateLoftProfiles,
-  updateLoftRuled,
-  updateRevolveProfile,
-  updateRevolveAxis,
-  updateRevolveAngle,
-  updateSweepProfile,
-  updateSweepPath,
-  updateMoveParameters,
-  updateThreadParameters,
-  updateFastenerParameters,
+  ...context
 }: CancelActiveToolContext) {
-  const {
-    extrudeAction,
-    loftAction,
-    revolveAction,
-    sweepAction,
-    moveAction,
-    edgeOpAction,
-    shellAction,
-    holeAction,
-    offsetPlaneAction,
-    anglePlaneAction,
-    midplaneAction,
-    tangentPlaneAction,
-    constructionAxisAction,
-    constructionPointAction,
-    threadAction,
-    fastenerAction,
-    helixAction,
-    editingFeatureId,
-    materialsPanelOpen,
-  } = actions;
+  for (const handler of cancellationHandlers) {
+    if (await handler(context)) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  if (extrudeAction) {
-    if (extrudeAction.phase === "active" && extrudeAction.featureId) {
-      const snapshot = extrudeAction.originalSnapshot;
-      if (snapshot) {
-        await runAction(async () => {
-          await updateExtrudeDepth(extrudeAction.featureId!, snapshot.depth);
-          await updateExtrudeMode(extrudeAction.featureId!, snapshot.mode);
-          await updateExtrudeTargetBody(
-            extrudeAction.featureId!,
-            snapshot.targetBodyId,
-          );
-          await updateExtrudeParameters(
-            extrudeAction.featureId!,
-            snapshot.parameters,
-          );
-        });
-      } else {
-        await undoUntilExtrudePreviewRemoved(
-          extrudeAction.featureIds.length > 0
-            ? extrudeAction.featureIds
-            : [extrudeAction.featureId],
+type CancellationHandler = (
+  context: CancelActiveToolContext,
+) => Promise<boolean>;
+
+const cancellationHandlers: readonly CancellationHandler[] = [
+  cancelExtrudeTool,
+  cancelLoftTool,
+  cancelRevolveTool,
+  cancelSweepTool,
+  cancelMoveTool,
+  cancelEdgeOpTool,
+  cancelShellTool,
+  cancelHoleTool,
+  cancelOffsetPlaneTool,
+  cancelAnglePlaneTool,
+  cancelMidplaneTool,
+  cancelTangentPlaneTool,
+  cancelConstructionAxisTool,
+  cancelConstructionPointTool,
+  cancelThreadTool,
+  cancelFastenerTool,
+  cancelHelixTool,
+  cancelTimelineEdit,
+  closeMaterialsPanel,
+];
+
+async function cancelExtrudeTool(context: CancelActiveToolContext) {
+  const { extrudeAction } = context.actions;
+  if (!extrudeAction) {
+    return false;
+  }
+  if (extrudeAction.phase === "active" && extrudeAction.featureId) {
+    await restoreOrUndoExtrude(context, extrudeAction);
+  }
+  context.setters.setExtrudeAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
+
+async function restoreOrUndoExtrude(
+  context: CancelActiveToolContext,
+  extrudeAction: ActiveExtrudeAction,
+) {
+  const snapshot = extrudeAction.originalSnapshot;
+  if (!snapshot) {
+    await context.undoUntilExtrudePreviewRemoved(
+      extrudeAction.featureIds.length > 0
+        ? extrudeAction.featureIds
+        : [extrudeAction.featureId],
+    );
+    return;
+  }
+  await context.runAction(async () => {
+    await context.updateExtrudeDepth(extrudeAction.featureId!, snapshot.depth);
+    await context.updateExtrudeMode(extrudeAction.featureId!, snapshot.mode);
+    await context.updateExtrudeTargetBody(
+      extrudeAction.featureId!,
+      snapshot.targetBodyId,
+    );
+    await context.updateExtrudeParameters(
+      extrudeAction.featureId!,
+      snapshot.parameters,
+    );
+  });
+}
+
+async function cancelLoftTool(context: CancelActiveToolContext) {
+  const { loftAction } = context.actions;
+  if (!loftAction) {
+    return false;
+  }
+  if (loftAction.originalSnapshot && loftAction.featureId) {
+    const snapshot = loftAction.originalSnapshot;
+    await context.runAction(async () => {
+      await context.updateLoftProfiles(loftAction.featureId!, snapshot.profileIds);
+      await context.updateLoftRuled(loftAction.featureId!, snapshot.ruled);
+    });
+  } else if (loftAction.phase === "active") {
+    await undoLatest(context);
+  }
+  context.setters.setLoftAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
+
+async function cancelRevolveTool(context: CancelActiveToolContext) {
+  const { revolveAction } = context.actions;
+  if (!revolveAction) {
+    return false;
+  }
+  if (revolveAction.originalSnapshot && revolveAction.featureId) {
+    const snapshot = revolveAction.originalSnapshot;
+    await context.runAction(async () => {
+      await context.updateRevolveProfile(revolveAction.featureId!, snapshot.profileId);
+      await context.updateRevolveAxis(revolveAction.featureId!, snapshot.axisEntityId);
+      await context.updateRevolveAngle(
+        revolveAction.featureId!,
+        snapshot.angleDegrees,
+      );
+    });
+  } else if (revolveAction.phase === "active") {
+    await undoLatest(context);
+  }
+  context.setters.setRevolveAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
+
+async function cancelSweepTool(context: CancelActiveToolContext) {
+  const { sweepAction } = context.actions;
+  if (!sweepAction) {
+    return false;
+  }
+  if (sweepAction.originalSnapshot && sweepAction.featureId) {
+    const snapshot = sweepAction.originalSnapshot;
+    await context.runAction(async () => {
+      await context.updateSweepProfile(sweepAction.featureId!, snapshot.profileId);
+      await context.updateSweepPath(sweepAction.featureId!, snapshot.pathEntityId);
+    });
+  } else if (sweepAction.phase === "active") {
+    await undoLatest(context);
+  }
+  context.setters.setSweepAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
+
+async function cancelMoveTool(context: CancelActiveToolContext) {
+  const { moveAction } = context.actions;
+  if (!moveAction) {
+    return false;
+  }
+  if (moveAction.phase === "active") {
+    await restoreOrUndoMove(context, moveAction);
+  }
+  context.setters.setMoveAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
+
+async function restoreOrUndoMove(
+  context: CancelActiveToolContext,
+  moveAction: ActiveMoveAction & { phase: "active" },
+) {
+  if (moveAction.originalSnapshot) {
+    await context.runAction(async () => {
+      await context.updateMoveParameters(
+        moveAction.featureId,
+        moveAction.originalSnapshot!,
+      );
+    });
+    return;
+  }
+  await context.runAction(async () => {
+    await context.undo();
+    if (moveAction.createdCopyFeatureId) {
+      await context.undo();
+    }
+  });
+}
+
+async function cancelEdgeOpTool(context: CancelActiveToolContext) {
+  const { edgeOpAction } = context.actions;
+  if (!edgeOpAction) {
+    return false;
+  }
+  if (edgeOpAction.phase === "active") {
+    await undoLatest(context);
+  }
+  context.activeEdgeIdsRef.current = [];
+  context.setters.setEdgeOpAction(null);
+  return true;
+}
+
+async function cancelShellTool(context: CancelActiveToolContext) {
+  return cancelUndoableActiveAction({
+    action: context.actions.shellAction,
+    clear: context.setters.setShellAction,
+    context,
+  });
+}
+
+async function cancelHoleTool(context: CancelActiveToolContext) {
+  return cancelUndoableActiveAction({
+    action: context.actions.holeAction,
+    clear: context.setters.setHoleAction,
+    context,
+  });
+}
+
+async function cancelOffsetPlaneTool(context: CancelActiveToolContext) {
+  return cancelUndoableActiveAction({
+    action: context.actions.offsetPlaneAction,
+    clear: context.setters.setOffsetPlaneAction,
+    context,
+  });
+}
+
+async function cancelAnglePlaneTool(context: CancelActiveToolContext) {
+  return cancelUndoableActiveAction({
+    action: context.actions.anglePlaneAction,
+    clear: context.setters.setAnglePlaneAction,
+    context,
+  });
+}
+
+async function cancelMidplaneTool(context: CancelActiveToolContext) {
+  return clearPendingAction(
+    context.actions.midplaneAction,
+    context.setters.setMidplaneAction,
+  );
+}
+
+async function cancelTangentPlaneTool(context: CancelActiveToolContext) {
+  return clearPendingAction(
+    context.actions.tangentPlaneAction,
+    context.setters.setTangentPlaneAction,
+  );
+}
+
+async function cancelConstructionAxisTool(context: CancelActiveToolContext) {
+  return clearPendingAction(
+    context.actions.constructionAxisAction,
+    context.setters.setConstructionAxisAction,
+  );
+}
+
+async function cancelConstructionPointTool(context: CancelActiveToolContext) {
+  return clearPendingAction(
+    context.actions.constructionPointAction,
+    context.setters.setConstructionPointAction,
+  );
+}
+
+async function cancelThreadTool(context: CancelActiveToolContext) {
+  const { threadAction } = context.actions;
+  if (!threadAction) {
+    return false;
+  }
+  if (threadAction.phase === "active") {
+    await context.runAction(async () => {
+      if (threadAction.originalParameters) {
+        await context.updateThreadParameters(
+          threadAction.featureId,
+          threadAction.originalParameters,
         );
-      }
-    }
-    setters.setExtrudeAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
-
-  if (loftAction) {
-    if (loftAction.originalSnapshot && loftAction.featureId) {
-      const snapshot = loftAction.originalSnapshot;
-      await runAction(async () => {
-        await updateLoftProfiles(loftAction.featureId!, snapshot.profileIds);
-        await updateLoftRuled(loftAction.featureId!, snapshot.ruled);
-      });
-    } else if (loftAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setLoftAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
-
-  if (revolveAction) {
-    if (revolveAction.originalSnapshot && revolveAction.featureId) {
-      const snapshot = revolveAction.originalSnapshot;
-      await runAction(async () => {
-        await updateRevolveProfile(revolveAction.featureId!, snapshot.profileId);
-        await updateRevolveAxis(revolveAction.featureId!, snapshot.axisEntityId);
-        await updateRevolveAngle(
-          revolveAction.featureId!,
-          snapshot.angleDegrees,
-        );
-      });
-    } else if (revolveAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setRevolveAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
-
-  if (sweepAction) {
-    if (sweepAction.originalSnapshot && sweepAction.featureId) {
-      const snapshot = sweepAction.originalSnapshot;
-      await runAction(async () => {
-        await updateSweepProfile(sweepAction.featureId!, snapshot.profileId);
-        await updateSweepPath(sweepAction.featureId!, snapshot.pathEntityId);
-      });
-    } else if (sweepAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setSweepAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
-
-  if (moveAction) {
-    if (moveAction.phase === "active") {
-      if (moveAction.originalSnapshot) {
-        await runAction(async () => {
-          await updateMoveParameters(
-            moveAction.featureId,
-            moveAction.originalSnapshot!,
-          );
-        });
       } else {
-        await runAction(async () => {
-          await undo();
-          if (moveAction.createdCopyFeatureId) {
-            await undo();
-          }
-        });
-      }
-    }
-    setters.setMoveAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
-
-  if (edgeOpAction) {
-    if (edgeOpAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    activeEdgeIdsRef.current = [];
-    setters.setEdgeOpAction(null);
-    return true;
-  }
-
-  if (shellAction) {
-    if (shellAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setShellAction(null);
-    return true;
-  }
-
-  if (holeAction) {
-    if (holeAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setHoleAction(null);
-    return true;
-  }
-
-  if (offsetPlaneAction) {
-    if (offsetPlaneAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setOffsetPlaneAction(null);
-    return true;
-  }
-
-  if (anglePlaneAction) {
-    if (anglePlaneAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
-    }
-    setters.setAnglePlaneAction(null);
-    return true;
-  }
-
-  if (midplaneAction) {
-    setters.setMidplaneAction(null);
-    return true;
-  }
-
-  if (tangentPlaneAction) {
-    setters.setTangentPlaneAction(null);
-    return true;
-  }
-
-  if (constructionAxisAction) {
-    setters.setConstructionAxisAction(null);
-    return true;
-  }
-
-  if (constructionPointAction) {
-    setters.setConstructionPointAction(null);
-    return true;
-  }
-
-  if (threadAction) {
-    if (threadAction.phase === "active") {
-      await runAction(async () => {
-        if (threadAction.originalParameters) {
-          await updateThreadParameters(
-            threadAction.featureId,
-            threadAction.originalParameters,
-          );
-        } else {
-          await undo();
-        }
-      });
-      await restoreTimelineCursorAfterEdit();
-    }
-    setters.setThreadAction(null);
-    return true;
-  }
-
-  if (fastenerAction) {
-    await runAction(async () => {
-      if (fastenerAction.originalParameters) {
-        await updateFastenerParameters(
-          fastenerAction.featureId,
-          fastenerAction.originalParameters,
-        );
-      } else {
-        await undo();
+        await context.undo();
       }
     });
-    setters.setFastenerAction(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
+    await context.restoreTimelineCursorAfterEdit();
   }
+  context.setters.setThreadAction(null);
+  return true;
+}
 
-  if (helixAction) {
-    if (helixAction.phase === "active") {
-      await runAction(async () => {
-        await undo();
-      });
+async function cancelFastenerTool(context: CancelActiveToolContext) {
+  const { fastenerAction } = context.actions;
+  if (!fastenerAction) {
+    return false;
+  }
+  await context.runAction(async () => {
+    if (fastenerAction.originalParameters) {
+      await context.updateFastenerParameters(
+        fastenerAction.featureId,
+        fastenerAction.originalParameters,
+      );
+    } else {
+      await context.undo();
     }
-    setters.setHelixAction(null);
-    return true;
-  }
+  });
+  context.setters.setFastenerAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
 
-  if (editingFeatureId) {
-    setters.setEditingFeatureId(null);
-    await restoreTimelineCursorAfterEdit();
-    return true;
-  }
+async function cancelHelixTool(context: CancelActiveToolContext) {
+  return cancelUndoableActiveAction({
+    action: context.actions.helixAction,
+    clear: context.setters.setHelixAction,
+    context,
+  });
+}
 
-  if (materialsPanelOpen) {
-    setters.setMaterialsPanelOpen(false);
-    return true;
+async function cancelTimelineEdit(context: CancelActiveToolContext) {
+  if (!context.actions.editingFeatureId) {
+    return false;
   }
+  context.setters.setEditingFeatureId(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
+}
 
-  return false;
+async function closeMaterialsPanel(context: CancelActiveToolContext) {
+  if (!context.actions.materialsPanelOpen) {
+    return false;
+  }
+  context.setters.setMaterialsPanelOpen(false);
+  return true;
+}
+
+async function cancelUndoableActiveAction<T extends { phase?: string }>({
+  action,
+  clear,
+  context,
+}: {
+  action: T | null;
+  clear: Setter<T>;
+  context: CancelActiveToolContext;
+}) {
+  if (!action) {
+    return false;
+  }
+  if (action.phase === "active") {
+    await undoLatest(context);
+  }
+  clear(null);
+  return true;
+}
+
+async function clearPendingAction<T>(
+  action: T | null,
+  clear: Setter<T>,
+) {
+  if (!action) {
+    return false;
+  }
+  clear(null);
+  return true;
+}
+
+async function undoLatest(context: CancelActiveToolContext) {
+  await context.runAction(async () => {
+    await context.undo();
+  });
 }

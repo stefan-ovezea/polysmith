@@ -1,9 +1,9 @@
-#include "core/loft_feature.h"
+#include "core/loft/loft_feature.h"
 
 #include <sstream>
 #include <stdexcept>
 
-#include "core/feature_shape.h"
+#include "core/geometry/feature_shape.h"
 
 namespace polysmith::core {
 namespace {

@@ -1,4 +1,4 @@
-#include "core/edge_geometry.h"
+#include "core/geometry/edge_geometry.h"
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRep_Tool.hxx>
@@ -11,8 +11,8 @@
 #include <gp_Circ.hxx>
 #include <gp_Pnt.hxx>
 
-#include "core/body_compiler.h"
-#include "core/document.h"
+#include "core/geometry/body_compiler.h"
+#include "core/document/document.h"
 
 namespace polysmith::core {
 namespace {

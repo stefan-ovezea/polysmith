@@ -100,6 +100,14 @@ export function editTimelineFeature(context: TimelineFeatureEditContext) {
   }
 }
 
+export function createTimelineFeatureEditHandler(
+  context: Omit<TimelineFeatureEditContext, "featureId">,
+) {
+  return (featureId: string) => {
+    editTimelineFeature({ ...context, featureId });
+  };
+}
+
 function editExtrudeFeature(
   { viewport, featureId, beginTimelineEditSession, setExtrudeAction }: TimelineFeatureEditContext,
   feature: FeatureEntry,

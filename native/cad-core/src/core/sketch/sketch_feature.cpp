@@ -1,4 +1,4 @@
-#include "core/sketch_feature.h"
+#include "core/sketch/sketch_feature.h"
 
 #include <algorithm>
 #include <array>
@@ -11,11 +11,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "core/constraint_solver.h"
-#include "core/formula_eval.h"
-#include "core/inference_engine.h"
-#include "core/sketch_profile.h"
-#include "core/trim_engine.h"
+#include "core/sketch/constraint_solver.h"
+#include "core/sketch/formula_eval.h"
+#include "core/sketch/inference_engine.h"
+#include "core/sketch/sketch_profile.h"
+#include "core/sketch/trim_engine.h"
 
 namespace polysmith::core {
 

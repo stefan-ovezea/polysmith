@@ -1,4 +1,4 @@
-#include "core/body_compiler.h"
+#include "core/geometry/body_compiler.h"
 
 #include <algorithm>
 #include <array>
@@ -51,9 +51,9 @@
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
-#include "core/document.h"
-#include "core/feature_shape.h"
-#include "core/refresh_dependents.h"
+#include "core/document/document.h"
+#include "core/geometry/feature_shape.h"
+#include "core/geometry/refresh_dependents.h"
 
 namespace polysmith::core {
 namespace {

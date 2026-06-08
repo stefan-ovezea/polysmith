@@ -1,9 +1,15 @@
 import * as THREE from "three";
 
 import type { SketchPlaneFrame, SketchTool } from "@/types";
+import {
+  buildSketchDimensionObject,
+  distanceBetweenPoints,
+  toWorldPoint,
+} from "@/utils";
 import { buildArcDraftPreview, type ArcToolMode } from "./arcDraftPreview";
 import { buildCircleDraftPreview, type CircleToolMode } from "./circleDraftPreview";
 import { buildDraftLinePreview } from "./draftLinePreview";
+import { formatDraftDimension } from "./draftDimensions";
 import {
   buildRectangleDraftPreview,
   type RectangleToolMode,
@@ -30,15 +36,14 @@ interface DraftPointerPreviewParams {
   previewLineRef: MutableRef<THREE.Line | null>;
   previewCircleRef: MutableRef<THREE.LineLoop | null>;
   previewArcRef: MutableRef<THREE.Line | null>;
+  previewDimensionRef: MutableRef<{
+    line: THREE.Object3D;
+    label: THREE.Sprite;
+  } | null>;
   clearPreviewLine: () => void;
   clearPreviewCircle: () => void;
   clearPreviewArc: () => void;
   clearPreviewDimension: () => void;
-  renderCircleDraftDimension: (
-    sketchGroup: THREE.Group,
-    center: [number, number],
-    edge: [number, number],
-  ) => void;
 }
 
 export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
@@ -100,7 +105,7 @@ function renderCirclePointerPreview({
   isConstruction,
   previewLineRef,
   previewCircleRef,
-  renderCircleDraftDimension,
+  previewDimensionRef,
 }: DraftPointerPreviewParams) {
   const preview = buildCircleDraftPreview({
     mode: circleToolMode,
@@ -121,8 +126,91 @@ function renderCirclePointerPreview({
   }
   sketchGroup.add(preview.object);
   if (preview.renderDraftDimension) {
-    renderCircleDraftDimension(sketchGroup, draftStart, draftPreviewLocal);
+    renderCircleDraftDimension({
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      sketchGroup,
+      previewDimensionRef,
+      center: draftStart,
+      edge: draftPreviewLocal,
+    });
   }
+}
+
+function renderCircleDraftDimension({
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  sketchGroup,
+  previewDimensionRef,
+  center,
+  edge,
+}: Pick<
+  DraftPointerPreviewParams,
+  "activeSketchPlaneId" | "activeSketchPlaneFrame" | "sketchGroup" | "previewDimensionRef"
+> & {
+  center: [number, number];
+  edge: [number, number];
+}) {
+  const radius = distanceBetweenPoints(center, edge);
+  const dx = edge[0] - center[0];
+  const dy = edge[1] - center[1];
+  const length = Math.hypot(dx, dy);
+  if (radius <= 0.001 || length <= 1e-6) {
+    return;
+  }
+
+  const ux = dx / length;
+  const uy = dy / length;
+  const dimensionStartLocal: [number, number] = [
+    center[0] - ux * radius,
+    center[1] - uy * radius,
+  ];
+  const dimensionEndLocal: [number, number] = [
+    center[0] + ux * radius,
+    center[1] + uy * radius,
+  ];
+  const labelLocal: [number, number] = [
+    center[0] + ux * (radius + 4),
+    center[1] + uy * (radius + 4),
+  ];
+  const draftDimension = buildSketchDimensionObject({
+    dimensionId: "preview-circle-diameter",
+    planeId: activeSketchPlaneId,
+    kind: "circle_radius",
+    entityId: "preview-circle",
+    label: `D ${formatDraftDimension(radius * 2)} mm`,
+    rawValue: radius * 2,
+    unitSuffix: "mm",
+    isSelected: false,
+    anchorStart: toWorldPoint(
+      activeSketchPlaneId,
+      dimensionStartLocal,
+      activeSketchPlaneFrame,
+    ),
+    anchorEnd: toWorldPoint(
+      activeSketchPlaneId,
+      dimensionEndLocal,
+      activeSketchPlaneFrame,
+    ),
+    dimensionStart: toWorldPoint(
+      activeSketchPlaneId,
+      dimensionStartLocal,
+      activeSketchPlaneFrame,
+    ),
+    dimensionEnd: toWorldPoint(
+      activeSketchPlaneId,
+      dimensionEndLocal,
+      activeSketchPlaneFrame,
+    ),
+    labelPosition: toWorldPoint(
+      activeSketchPlaneId,
+      labelLocal,
+      activeSketchPlaneFrame,
+    ),
+  });
+  previewDimensionRef.current = draftDimension;
+  sketchGroup.add(draftDimension.line);
+  sketchGroup.add(draftDimension.label);
 }
 
 function renderRectanglePointerPreview({

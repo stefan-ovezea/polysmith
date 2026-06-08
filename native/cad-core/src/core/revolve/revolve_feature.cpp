@@ -1,4 +1,4 @@
-#include "core/revolve_feature.h"
+#include "core/revolve/revolve_feature.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -6,7 +6,7 @@
 
 #include <TopoDS_Shape.hxx>
 
-#include "core/feature_shape.h"
+#include "core/geometry/feature_shape.h"
 
 namespace polysmith::core {
 namespace {

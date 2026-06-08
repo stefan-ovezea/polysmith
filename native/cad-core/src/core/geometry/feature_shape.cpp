@@ -1,4 +1,4 @@
-#include "core/feature_shape.h"
+#include "core/geometry/feature_shape.h"
 
 #include <algorithm>
 #include <cmath>

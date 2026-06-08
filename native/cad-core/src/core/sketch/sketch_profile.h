@@ -3,9 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "core/feature.h"
+#include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
+
+struct FeatureEntry;
 
 struct PolygonSketchProfile {
   std::string id;

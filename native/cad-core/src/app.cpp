@@ -16,12 +16,12 @@
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
-#include "core/body_compiler.h"
-#include "core/document.h"
-#include "core/formula_eval.h"
-#include "core/logger.h"
-#include "core/trim_engine.h"
-#include "core/viewport.h"
+#include "core/geometry/body_compiler.h"
+#include "core/document/document.h"
+#include "core/sketch/formula_eval.h"
+#include "core/diagnostics/logger.h"
+#include "core/sketch/trim_engine.h"
+#include "core/viewport/viewport.h"
 #include "protocol/ipc.h"
 #include "protocol/serialization.h"
 

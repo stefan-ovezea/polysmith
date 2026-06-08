@@ -2,9 +2,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "core/cam_operation.h"
-#include "core/document.h"
-#include "core/viewport.h"
+#include "core/cam/cam_operation.h"
+#include "core/document/document.h"
+#include "core/viewport/viewport.h"
 
 namespace polysmith::protocol {
 

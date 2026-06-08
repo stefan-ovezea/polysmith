@@ -1,4 +1,4 @@
-#include "core/refresh_dependents.h"
+#include "core/geometry/refresh_dependents.h"
 
 #include <algorithm>
 #include <array>
@@ -23,13 +23,13 @@
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
-#include "core/body_compiler.h"
-#include "core/construction_plane_feature.h"
-#include "core/document.h"
-#include "core/edge_geometry.h"
-#include "core/face_geometry.h"
-#include "core/feature.h"
-#include "core/sketch_feature.h"
+#include "core/geometry/body_compiler.h"
+#include "core/construction/construction_plane_feature.h"
+#include "core/document/document.h"
+#include "core/geometry/edge_geometry.h"
+#include "core/geometry/face_geometry.h"
+#include "core/document/feature.h"
+#include "core/sketch/sketch_feature.h"
 
 namespace polysmith::core {
 namespace {

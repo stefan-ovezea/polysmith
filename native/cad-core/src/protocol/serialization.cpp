@@ -3,7 +3,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "core/dof_counter.h"
+#include "core/sketch/dof_counter.h"
 
 namespace polysmith::protocol {
 

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "core/feature.h"
+#include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
 

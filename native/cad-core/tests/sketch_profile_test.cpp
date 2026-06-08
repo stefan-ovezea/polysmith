@@ -3,9 +3,9 @@
 #include <iostream>
 #include <exception>
 
-#include "core/feature.h"
-#include "core/sketch_feature.h"
-#include "core/sketch_profile.h"
+#include "core/document/feature.h"
+#include "core/sketch/sketch_feature.h"
+#include "core/sketch/sketch_profile.h"
 
 namespace {
 

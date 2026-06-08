@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/feature.h"
+#include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
 

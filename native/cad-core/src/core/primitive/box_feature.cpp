@@ -1,4 +1,4 @@
-#include "core/box_feature.h"
+#include "core/primitive/box_feature.h"
 
 #include <sstream>
 #include <stdexcept>

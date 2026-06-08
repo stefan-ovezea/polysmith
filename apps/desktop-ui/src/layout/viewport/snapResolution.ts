@@ -1,9 +1,11 @@
 import type {
   SelectionFilter,
   SketchFeatureParameters,
+  SketchPlaneFrame,
   SketchPreviewPoint,
   SnapCandidateEntry,
 } from "@/types";
+import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -25,10 +27,327 @@ export interface ClosestSnapCandidate {
   distance: number;
 }
 
+export interface RawSketchPoint {
+  local: [number, number];
+  world: [number, number, number];
+}
+
 type TranslateSnapLabel = (
   key: string,
   options?: Record<string, string>,
 ) => string;
+
+export function resolveSnappedSketchPoint({
+  rawPoint,
+  draftStartLocal,
+  sketchSnapCandidates,
+  sketchParameters,
+  filter,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  currentGridSpacing,
+  worldUnitsPerPixel,
+  gridSnapScreenDistancePx,
+  sketchSnapDistance,
+  labels,
+}: {
+  rawPoint: RawSketchPoint;
+  draftStartLocal?: [number, number] | null;
+  sketchSnapCandidates: readonly SketchSnapCandidate[];
+  sketchParameters: SketchFeatureParameters | null | undefined;
+  filter: SelectionFilter;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+  currentGridSpacing: number;
+  worldUnitsPerPixel: number;
+  gridSnapScreenDistancePx: number;
+  sketchSnapDistance: number;
+  labels: {
+    grid: string;
+    axisLockHorizontal: string;
+    axisLockVertical: string;
+    onLine: string;
+    tangent: string;
+    perpendicular: string;
+    parallel: string;
+  };
+}): SketchPreviewPoint {
+  const gridResult = snapRawPointToGrid({
+    rawPoint,
+    currentGridSpacing,
+    worldUnitsPerPixel,
+    gridSnapScreenDistancePx,
+    gridSnapEnabled: filter.snap_grid,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame,
+  });
+  const point = gridResult.point;
+  const resolvedSnap = chooseResolvedSnap({
+    staticSnap: resolveStaticSnap({
+      candidates: sketchSnapCandidates,
+      point,
+      filter,
+      sketchSnapDistance,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      includeEndpointMetadata: true,
+    }),
+    dynamicSnap: resolveDynamicSnap({
+      sketchParameters,
+      draftStartLocal,
+      point,
+      filter,
+      sketchSnapDistance,
+      labels,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+    }),
+  });
+  return resolvedSnap ?? unsnappedPreviewPoint(point, gridResult.snapped ? labels.grid : null);
+}
+
+function chooseResolvedSnap({
+  staticSnap,
+  dynamicSnap,
+}: {
+  staticSnap: ResolvedStaticSnap | null;
+  dynamicSnap: ResolvedDynamicSnap | null;
+}) {
+  const prioritySnap = priorityStaticSnapPoint(staticSnap);
+  if (prioritySnap) {
+    return prioritySnap;
+  }
+  if (dynamicSnapOutranksStatic(dynamicSnap, staticSnap)) {
+    return dynamicSnap.point;
+  }
+  return staticSnap?.point ?? null;
+}
+
+function priorityStaticSnapPoint(staticSnap: ResolvedStaticSnap | null) {
+  return staticSnap?.isPriority ? staticSnap.point : null;
+}
+
+function dynamicSnapOutranksStatic(
+  dynamicSnap: ResolvedDynamicSnap | null,
+  staticSnap: ResolvedStaticSnap | null,
+) {
+  if (!dynamicSnap) {
+    return false;
+  }
+  return !staticSnap || dynamicSnap.distance < staticSnap.distance;
+}
+
+function snapRawPointToGrid({
+  rawPoint,
+  currentGridSpacing,
+  worldUnitsPerPixel,
+  gridSnapScreenDistancePx,
+  gridSnapEnabled,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+}: {
+  rawPoint: RawSketchPoint;
+  currentGridSpacing: number;
+  worldUnitsPerPixel: number;
+  gridSnapScreenDistancePx: number;
+  gridSnapEnabled: boolean;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+}): { point: RawSketchPoint; snapped: boolean } {
+  if (!gridSnapEnabled || !Number.isFinite(currentGridSpacing) || currentGridSpacing <= 0) {
+    return { point: rawPoint, snapped: false };
+  }
+  const threshold = worldUnitsPerPixel * gridSnapScreenDistancePx;
+  const local = gridSnappedLocalPoint(rawPoint.local, currentGridSpacing, threshold);
+  if (local[0] === rawPoint.local[0] && local[1] === rawPoint.local[1]) {
+    return { point: rawPoint, snapped: false };
+  }
+  return {
+    point: {
+      local,
+      world: sketchLocalToWorld(activeSketchPlaneId, local, activeSketchPlaneFrame),
+    },
+    snapped: true,
+  };
+}
+
+function gridSnappedLocalPoint(
+  local: [number, number],
+  spacing: number,
+  threshold: number,
+): [number, number] {
+  const nearestX = Math.round(local[0] / spacing) * spacing;
+  const nearestY = Math.round(local[1] / spacing) * spacing;
+  return [
+    Math.abs(local[0] - nearestX) <= threshold ? nearestX : local[0],
+    Math.abs(local[1] - nearestY) <= threshold ? nearestY : local[1],
+  ];
+}
+
+type ResolvedStaticSnap = {
+  point: SketchPreviewPoint;
+  distance: number;
+  isPriority: boolean;
+};
+
+function resolveStaticSnap({
+  candidates,
+  point,
+  filter,
+  sketchSnapDistance,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  includeEndpointMetadata,
+}: {
+  candidates: readonly SketchSnapCandidate[];
+  point: RawSketchPoint;
+  filter: SelectionFilter;
+  sketchSnapDistance: number;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+  includeEndpointMetadata: boolean;
+}): ResolvedStaticSnap | null {
+  const closest = closestStaticSnapCandidate(
+    candidates,
+    point.local,
+    filter,
+    distanceBetweenPoints,
+  );
+  if (!closest || closest.distance > sketchSnapDistance) {
+    return null;
+  }
+  return {
+    point: previewPointFromStaticCandidate({
+      candidate: closest.candidate,
+      world: sketchLocalToWorld(
+        activeSketchPlaneId,
+        closest.candidate.local,
+        activeSketchPlaneFrame,
+      ),
+      includeEndpointMetadata:
+        includeEndpointMetadata && isPriorityStaticSnap(closest.candidate),
+    }),
+    distance: closest.distance,
+    isPriority: isPriorityStaticSnap(closest.candidate),
+  };
+}
+
+function isPriorityStaticSnap(candidate: SketchSnapCandidate) {
+  return candidate.kind === "endpoint" || candidate.kind === "midpoint";
+}
+
+type ResolvedDynamicSnap = {
+  point: SketchPreviewPoint;
+  distance: number;
+};
+
+function resolveDynamicSnap({
+  sketchParameters,
+  draftStartLocal,
+  point,
+  filter,
+  sketchSnapDistance,
+  labels,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+}: {
+  sketchParameters: SketchFeatureParameters | null | undefined;
+  draftStartLocal?: [number, number] | null;
+  point: RawSketchPoint;
+  filter: SelectionFilter;
+  sketchSnapDistance: number;
+  labels: {
+    axisLockHorizontal: string;
+    axisLockVertical: string;
+    onLine: string;
+    tangent: string;
+    perpendicular: string;
+    parallel: string;
+  };
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+}): ResolvedDynamicSnap | null {
+  if (!sketchParameters) {
+    return null;
+  }
+  const bestDynamic = dynamicSnapCandidate({
+    lines: sketchParameters.lines,
+    circles: sketchParameters.circles,
+    filter,
+    draftStart: draftStartLocal,
+    cursor: point.local,
+    threshold: sketchSnapDistance,
+    axisAngleThresholdRadians: 5 * Math.PI / 180,
+    parallelAngleThresholdRadians: 8 * Math.PI / 180,
+    labels,
+  });
+  if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
+    return null;
+  }
+  return {
+    point: previewPointFromDynamicSnap({
+      snap: bestDynamic,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+    }),
+    distance: bestDynamic.distance,
+  };
+}
+
+function previewPointFromDynamicSnap({
+  snap,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+}: {
+  snap: DynamicSnapResult;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+}): SketchPreviewPoint {
+  return {
+    local: snap.local,
+    world: sketchLocalToWorld(activeSketchPlaneId, snap.local, activeSketchPlaneFrame),
+    snapLabel: snap.snapLabel,
+    snapMidpointHostLineId: null,
+    snapMidpointT: null,
+    snapPerpendicularHostLineId: snap.snapPerpendicularHostLineId,
+    snapEndpointHostLineId: null,
+    snapLineBodyHostLineId: snap.snapLineBodyHostLineId,
+    snapLineBodyT: snap.snapLineBodyT,
+    snapAxisLock: snap.snapAxisLock,
+    snapTangentCircleId: snap.snapTangentCircleId,
+    snapParallelHostLineId: snap.snapParallelHostLineId,
+  };
+}
+
+function unsnappedPreviewPoint(
+  point: RawSketchPoint,
+  snapLabel: string | null,
+): SketchPreviewPoint {
+  return {
+    ...point,
+    snapLabel,
+    snapMidpointHostLineId: null,
+    snapPerpendicularHostLineId: null,
+    snapEndpointHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+  };
+}
+
+function sketchLocalToWorld(
+  activeSketchPlaneId: string | null,
+  local: [number, number],
+  activeSketchPlaneFrame: SketchPlaneFrame | null,
+) {
+  return toWorldPoint(
+    activeSketchPlaneId ?? "ref-plane-xy",
+    local,
+    activeSketchPlaneFrame,
+  );
+}
 
 export function buildSketchSnapCandidates({
   sketchParameters,
@@ -677,15 +996,25 @@ export function isStaticSnapCandidateAllowed(
   candidate: SketchSnapCandidate,
   filter: SelectionFilter,
 ) {
-  return (
-    (candidate.kind === "endpoint" && filter.snap_endpoint) ||
-    (candidate.kind === "midpoint" && filter.snap_midpoint) ||
-    (candidate.kind === "center" && filter.snap_center) ||
-    (candidate.kind === "intersection" && filter.snap_intersection) ||
-    (candidate.kind === "nearest" && filter.snap_nearest) ||
-    (candidate.kind === "tangent" && filter.snap_tangent) ||
-    !candidate.kind
-  );
+  if (!candidate.kind) {
+    return true;
+  }
+  return filter[selectionFilterKeyForSnapKind(candidate.kind)];
+}
+
+type SketchSnapKind = NonNullable<SketchSnapCandidate["kind"]>;
+
+const SNAP_FILTER_KEY_BY_KIND = {
+  endpoint: "snap_endpoint",
+  midpoint: "snap_midpoint",
+  center: "snap_center",
+  intersection: "snap_intersection",
+  nearest: "snap_nearest",
+  tangent: "snap_tangent",
+} satisfies Record<SketchSnapKind, keyof SelectionFilter>;
+
+function selectionFilterKeyForSnapKind(kind: SketchSnapKind) {
+  return SNAP_FILTER_KEY_BY_KIND[kind];
 }
 
 export function closestStaticSnapCandidate(
