@@ -6,6 +6,8 @@ import type {
   SketchPreviewPoint,
 } from "@/types";
 import { toWorldPoint } from "@/utils";
+import { getBridge } from "@/lib/planegcsSolver";
+import type { SketchConstraintData } from "@/lib/planegcsBridge";
 
 export interface EndpointDrag {
   pointId: string;
@@ -111,14 +113,19 @@ export function buildEndpointDragPreviewLines({
   segments,
   planeId,
   planeFrame,
+  color,
 }: {
   segments: readonly EndpointDragPreviewSegment[];
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
+  /** Hex color for the preview lines. Yellow (0xffe784) for TS-only snap,
+   *  cornflower blue (0x6495ed) when constraint-solver was used. */
+  color?: number;
 }) {
+  const lineColor = color ?? 0xffe784;
   return segments.map((segment) => {
     const mat = new THREE.LineDashedMaterial({
-      color: 0xffe784,
+      color: lineColor,
       transparent: true,
       opacity: 0.6,
       dashSize: 1.5,
@@ -146,6 +153,7 @@ export function resolveEndpointDragFrame({
   planeId,
   planeFrame,
   resolveSnappedSketchPoint,
+  constraints,
 }: {
   next: PendingEndpointDragFrame;
   sketch: SketchFeatureParameters | null;
@@ -158,6 +166,8 @@ export function resolveEndpointDragFrame({
     },
     draftStartLocal?: [number, number] | null,
   ) => SketchPreviewPoint;
+  /** planegcs constraint data from the viewport state, for WASM solver. */
+  constraints?: SketchConstraintData[];
 }) {
   const world = toWorldPoint(planeId, [next.x, next.y], planeFrame);
   const anchorLocal = endpointDragAnchorLocal(sketch, next.pointId);
@@ -169,16 +179,44 @@ export function resolveEndpointDragFrame({
     anchorLocal,
   );
 
+  // Run planegcs WASM solver for constraint-aware drag preview.
+  // Shallow-clone params with the dragged point at the snap position
+  // so the solver can compute constraint effects on connected geometry.
+  let finalLocal: [number, number] = [sketchPoint.local[0], sketchPoint.local[1]];
+  let solverUsed = false;
+  const gcsBridge = getBridge();
+  if (gcsBridge && sketch) {
+    const paramsCopy: SketchFeatureParameters = {
+      ...sketch,
+      points: sketch.points.map((p) =>
+        p.point_id === next.pointId
+          ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }
+          : p,
+      ),
+    };
+    const result = gcsBridge.solve(paramsCopy, constraints ?? []);
+    if (result.ok) {
+      const solved = result.points.find((p) => p.id === next.pointId);
+      if (solved) {
+        finalLocal = [solved.x, solved.y];
+        solverUsed = true;
+      }
+    }
+  }
+
   return {
-    sketchPoint,
+    sketchPoint: { ...sketchPoint, local: finalLocal },
     previewLines: buildEndpointDragPreviewLines({
       segments: endpointDragPreviewSegments(
         sketch,
         next.pointId,
-        sketchPoint.local,
+        finalLocal,
       ),
       planeId,
       planeFrame,
+      // Blue when constraint-solver corrected the position,
+      // yellow when using raw TS snap (bridge unavailable).
+      color: solverUsed ? 0x6495ed : undefined,
     }),
   };
 }

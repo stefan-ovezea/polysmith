@@ -16,6 +16,9 @@ importers:
       '@fontsource/space-grotesk':
         specifier: ^5.2.10
         version: 5.2.10
+      '@salusoft89/planegcs':
+        specifier: ^1.1.7
+        version: 1.1.7
       '@tauri-apps/api':
         specifier: ^2
         version: 2.10.1
@@ -484,6 +487,9 @@ packages:
     resolution: {integrity: sha512-lWMnixq/QzxyhTV6NjQJ4SFo1J6PvOX8vUx5Wb4bBPsEb+8xZ89Bz6kOXpfXj9ak9AHTQVQzlgzBEc1SyM27xQ==}
     cpu: [x64]
     os: [win32]
+
+  '@salusoft89/planegcs@1.1.7':
+    resolution: {integrity: sha512-7xTCyQBS8xzRXvB5vXj7vzcGdmPVUZHYgZXrcHBMaBtSE/XMSKH1/OWpdJp8DonbBnuzmjpX8djLta2MFbkhzw==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -1546,6 +1552,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.60.1':
     optional: true
+
+  '@salusoft89/planegcs@1.1.7': {}
 
   '@standard-schema/spec@1.1.0': {}
 

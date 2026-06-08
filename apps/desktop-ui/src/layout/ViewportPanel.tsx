@@ -155,6 +155,8 @@ import {
   invertSelectionFilter,
   readStoredFilter,
 } from "./selectionFilterState";
+import { ensureBridge } from "@/lib/planegcsSolver";
+import type { SketchConstraintData } from "@/lib/planegcsBridge";
 import { updateScreenSpaceSketchSprites } from "./viewport/screenSpaceSketchSprites";
 import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
 import { bindSketchHotkeys } from "./viewport/sketchHotkeys";
@@ -729,6 +731,9 @@ export function ViewportPanel({
   const sketchLinesRef = useRef<
     NonNullable<typeof sketchFeature>["sketch_parameters"] | null
   >(null);
+  // planegcs constraint data from the viewport state, kept in sync
+  // so the drag rAF can read it without depending on render-cycle state.
+  const sketchConstraintsRef = useRef<SketchConstraintData[]>([]);
   const { pendingEdgeOpBodyIds, sceneData, sceneDataRef } =
     useViewportSceneData({
     document,
@@ -740,6 +745,18 @@ export function ViewportPanel({
   useEffect(() => {
     applyTheme(activeTheme);
   }, [activeTheme]);
+  // Init the planegcs WASM constraint solver (lazy, once).
+  useEffect(() => {
+    ensureBridge()
+      .then(() => {
+        addMessage("[planegcs] WASM constraint solver ready");
+      })
+      .catch((err) => {
+        addMessage(
+          `[planegcs] WASM solver init failed: ${String(err)}`,
+        );
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const hasActiveDocument = Boolean(viewport?.has_active_document);
   const activeSketchPlaneId = document?.active_sketch_plane_id ?? null;
   const activeSketchTool = document?.active_sketch_tool ?? "select";
@@ -777,6 +794,19 @@ export function ViewportPanel({
       updateSketchDimension: updateSketchDimensionRef.current,
     });
   }, [sketchFeature]);
+  // Keep planegcs constraint data ref in sync with the viewport state
+  // so the drag rAF can read it without render-cycle stale closures.
+  useEffect(() => {
+    sketchConstraintsRef.current = (viewport?.sketch_constraints ?? []).map(
+      (c) => ({
+        constraint_id: c.constraint_id,
+        kind: c.kind,
+        target_ids: (
+          [c.entity_id, c.related_entity_id] as (string | null)[]
+        ).filter((id): id is string => id !== null && id.length > 0),
+      }),
+    );
+  }, [viewport?.sketch_constraints]);
   const {
     selectedPrimitiveLabel,
     selectedReference,
@@ -2243,6 +2273,7 @@ export function ViewportPanel({
           activeSketchPlaneIdRef,
           activeSketchPlaneFrameRef,
           sketchLinesRef,
+          sketchConstraintsRef,
           pendingDragRef,
           pendingDragFrameRef,
           dragSnapResultRef,
