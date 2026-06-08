@@ -1,0 +1,5 @@
+#include "core/geometry/impl/projection_frame_helpers.inc"
+#include "core/geometry/impl/helix_refresh_points.inc"
+#include "core/geometry/impl/sweep_path_refresh_helpers.inc"
+#include "core/geometry/impl/projection_patch_helpers.inc"
+#include "core/geometry/impl/refresh_sketch_projections.inc"

@@ -1,0 +1,7 @@
+#include "core/document/impl/helix_commands.inc"
+#include "core/document/impl/thread_commands.inc"
+#include "core/document/impl/fastener_commands.inc"
+#include "core/document/impl/move_commands.inc"
+#include "core/document/impl/body_copy_commands.inc"
+#include "core/document/impl/appearance_override_commands.inc"
+#include "core/document/impl/construction_plane_update_commands.inc"

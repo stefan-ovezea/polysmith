@@ -1,0 +1,6 @@
+#include "core/document/impl/sketch_session_tool_commands.inc"
+#include "core/document/impl/sketch_update_geometry_commands.inc"
+#include "core/document/impl/sketch_line_constraint_commands.inc"
+#include "core/document/impl/sketch_mirror_preview_commands.inc"
+#include "core/document/impl/sketch_relation_constraint_commands.inc"
+#include "core/document/impl/sketch_point_circle_update_commands.inc"

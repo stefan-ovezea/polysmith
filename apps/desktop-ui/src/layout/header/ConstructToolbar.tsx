@@ -9,7 +9,7 @@ import {
 } from "./ToolBarIcons";
 import { useTranslation } from "react-i18next";
 
-interface ConstructToolbarProps {
+export interface ConstructToolbarProps {
   disabled: boolean;
   // True when the Offset Plane button can be clicked. Driven by the
   // parent so it knows the difference between "no document yet" and

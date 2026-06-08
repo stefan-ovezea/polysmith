@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirmCancelHotkeys } from "./hooks/useConfirmCancelHotkeys";
 
 interface LoftProfileItem {
   profileId: string;
@@ -92,23 +93,7 @@ export function LoftPreviewPanel({
     setRuled(initialRuled);
   }, [initialRuled]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        void onCancel();
-      }
-      if (event.key === "Enter" && canConfirm && !disabled) {
-        event.preventDefault();
-        void onConfirm();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [canConfirm, disabled, onCancel, onConfirm]);
+  useConfirmCancelHotkeys({ canConfirm, disabled, onCancel, onConfirm });
 
   async function setMode(nextRuled: boolean) {
     setRuled(nextRuled);

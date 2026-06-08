@@ -1,9 +1,4 @@
-import { useEffect } from "react";
 import {
-  onCadCoreError,
-  onCadCoreEvent,
-  onCadCoreExited,
-  onCadCoreLog,
   sendCoreCommand,
   startCadCore,
   makeCreateDocumentCommand,
@@ -151,7 +146,6 @@ import {
   makeUpdateSweepProfileCommand,
   makeUpdateLoftProfilesCommand,
   makeUpdateLoftRuledCommand,
-  parseCoreMessage,
   makeUiLogEntry,
   writeLogToConsole,
 } from "@/lib";
@@ -163,98 +157,26 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   MoveFeatureParameters,
+  SelectionFilterUpdate,
   ThreadFeatureParameters,
 } from "@/types";
 
 import { useCadCoreStore } from "@/state";
 import { SketchTool } from "@/types";
+import {
+  sendAndRefreshSessionViewport,
+  sendAndRefreshViewport,
+} from "./cadCoreCommandRefresh";
+import { reportCoreError } from "./coreLogReporting";
+import { useCadCoreEventBridge } from "./useCadCoreEventBridge";
+import type { SketchPlaneFramePayload } from "@/lib/ipc/sketchCommands";
 
 export function useCadCore() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
   const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
-  const handleCoreMessage = useCadCoreStore((state) => state.handleCoreMessage);
-  const handleCoreStopped = useCadCoreStore((state) => state.handleCoreStopped);
   const setStatus = useCadCoreStore((state) => state.setStatus);
 
-  useEffect(() => {
-    let disposed = false;
-    const unlistenFns: Array<() => void> = [];
-
-    async function setupListeners() {
-      const unlistenEvent = await onCadCoreEvent((payload) => {
-        try {
-          const message = parseCoreMessage(payload);
-          if (message.type === "log") {
-            writeLogToConsole(message.payload);
-          }
-          if (message.type === "trim_preview_result") {
-            window.dispatchEvent(new CustomEvent("polysmith-trim-preview", {
-              detail: message.payload,
-            }));
-          }
-          handleCoreMessage(message);
-        } catch (error) {
-          const entry = makeUiLogEntry(
-            "error",
-            "desktop_ui",
-            `parse error: ${String(error)}`,
-          );
-          writeLogToConsole(entry);
-          addLogEntry(entry);
-          addMessage(entry.message);
-          setStatus("error");
-        }
-      });
-
-      const unlistenLog = await onCadCoreLog((line) => {
-        const level = line.startsWith("ERROR") ? "error"
-                    : line.startsWith("WARN")  ? "warn"
-                    : "info";
-        const entry = makeUiLogEntry(level, "cad_core_stderr", line);
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(`log: ${line}`);
-      });
-
-      const unlistenError = await onCadCoreError((message) => {
-        const entry = makeUiLogEntry("error", "tauri_bridge", message);
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(`bridge error: ${message}`);
-        setStatus("error");
-      });
-
-      const unlistenExited = await onCadCoreExited((message) => {
-        const entry = makeUiLogEntry("warn", "cad_core", message);
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(`exit: ${message}`);
-        handleCoreStopped();
-      });
-
-      for (const unlisten of [
-        unlistenEvent,
-        unlistenLog,
-        unlistenError,
-        unlistenExited,
-      ]) {
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenFns.push(unlisten);
-        }
-      }
-    }
-
-    void setupListeners();
-
-    return () => {
-      disposed = true;
-      for (const unlisten of unlistenFns) {
-        unlisten();
-      }
-    };
-  }, [addLogEntry, addMessage, handleCoreMessage, handleCoreStopped, setStatus]);
+  useCadCoreEventBridge();
 
   return {
     start: async () => {
@@ -266,24 +188,18 @@ export function useCadCore() {
         addLogEntry(entry);
         addMessage(`start: ${result}`);
       } catch (error) {
-        const entry = makeUiLogEntry(
-          "error",
+        reportCoreError(
+          { addLogEntry, addMessage, setStatus },
           "desktop_ui",
           `start failed: ${String(error)}`,
         );
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(entry.message);
-        setStatus("error");
       }
     },
     ping: async () => {
       await sendCoreCommand(makePingCommand());
     },
     createDocument: async () => {
-      await sendCoreCommand(makeCreateDocumentCommand());
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeCreateDocumentCommand());
     },
     refreshDocument: async () => {
       await sendCoreCommand(makeGetDocumentStateCommand());
@@ -315,34 +231,34 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     projectFaceIntoSketch: async (faceId: string) => {
-      await sendCoreCommand(makeProjectFaceIntoSketchCommand(faceId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeProjectFaceIntoSketchCommand(faceId),
+      );
     },
     projectProfileIntoSketch: async (profileId: string) => {
-      await sendCoreCommand(makeProjectProfileIntoSketchCommand(profileId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeProjectProfileIntoSketchCommand(profileId),
+      );
     },
     projectEdgeIntoSketch: async (edgeId: string) => {
-      await sendCoreCommand(makeProjectEdgeIntoSketchCommand(edgeId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeProjectEdgeIntoSketchCommand(edgeId),
+      );
     },
     projectVertexIntoSketch: async (vertexId: string) => {
-      await sendCoreCommand(makeProjectVertexIntoSketchCommand(vertexId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeProjectVertexIntoSketchCommand(vertexId),
+      );
     },
     addBoxFeature: async (width: number, height: number, depth: number) => {
-      await sendCoreCommand(makeAddBoxFeatureCommand(width, height, depth));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeAddBoxFeatureCommand(width, height, depth),
+      );
     },
     addCylinderFeature: async (radius: number, height: number) => {
-      await sendCoreCommand(makeAddCylinderFeatureCommand(radius, height));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeAddCylinderFeatureCommand(radius, height),
+      );
     },
     updateBoxFeature: async (
       featureId: string,
@@ -350,196 +266,156 @@ export function useCadCore() {
       height: number,
       depth: number,
     ) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeUpdateBoxFeatureCommand(featureId, width, height, depth),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateCylinderFeature: async (
       featureId: string,
       radius: number,
       height: number,
     ) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeUpdateCylinderFeatureCommand(featureId, radius, height),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateExtrudeDepth: async (featureId: string, depth: number) => {
-      await sendCoreCommand(makeUpdateExtrudeDepthCommand(featureId, depth));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeUpdateExtrudeDepthCommand(featureId, depth),
+      );
     },
     renameFeature: async (featureId: string, name: string) => {
-      await sendCoreCommand(makeRenameFeatureCommand(featureId, name));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeRenameFeatureCommand(featureId, name),
+      );
     },
     setFeatureSuppressed: async (featureId: string, suppressed: boolean) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeSetFeatureSuppressedCommand(featureId, suppressed),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteFeature: async (featureId: string) => {
-      await sendCoreCommand(makeDeleteFeatureCommand(featureId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeDeleteFeatureCommand(featureId));
     },
     undo: async () => {
-      await sendCoreCommand(makeUndoCommand());
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeUndoCommand());
     },
     redo: async () => {
-      await sendCoreCommand(makeRedoCommand());
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeRedoCommand());
     },
     setTimelineCursor: async (includedActionCount: number) => {
-      await sendCoreCommand(makeSetTimelineCursorCommand(includedActionCount));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(
+        makeSetTimelineCursorCommand(includedActionCount),
+      );
     },
     selectFeature: async (featureId: string) => {
-      await sendCoreCommand(makeSelectFeatureCommand(featureId));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(makeSelectFeatureCommand(featureId));
     },
     selectReference: async (referenceId: string) => {
-      await sendCoreCommand(makeSelectReferenceCommand(referenceId));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(makeSelectReferenceCommand(referenceId));
     },
     selectFace: async (faceId: string) => {
-      await sendCoreCommand(makeSelectFaceCommand(faceId));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(makeSelectFaceCommand(faceId));
     },
     selectEdge: async (edgeId: string, additive: boolean = false) => {
-      await sendCoreCommand(makeSelectEdgeCommand(edgeId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(makeSelectEdgeCommand(edgeId, additive));
     },
     selectVertex: async (vertexId: string, additive: boolean = false) => {
-      await sendCoreCommand(makeSelectVertexCommand(vertexId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshViewport(makeSelectVertexCommand(vertexId, additive));
     },
     setBodyColor: async (bodyId: string, color: string) => {
-      await sendCoreCommand(makeSetBodyColorCommand(bodyId, color));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeSetBodyColorCommand(bodyId, color));
     },
     setFaceColor: async (faceId: string, color: string) => {
-      await sendCoreCommand(makeSetFaceColorCommand(faceId, color));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeSetFaceColorCommand(faceId, color));
     },
     clearBodyColor: async (bodyId: string) => {
-      await sendCoreCommand(makeClearBodyColorCommand(bodyId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeClearBodyColorCommand(bodyId));
     },
     clearFaceColor: async (faceId: string) => {
-      await sendCoreCommand(makeClearFaceColorCommand(faceId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeClearFaceColorCommand(faceId));
     },
     clearAppearanceOverrides: async () => {
-      await sendCoreCommand(makeClearAppearanceOverridesCommand());
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeClearAppearanceOverridesCommand());
     },
     createFillet: async (edgeIds: readonly string[], radius: number) => {
-      await sendCoreCommand(makeCreateFilletCommand(edgeIds, radius));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeCreateFilletCommand(edgeIds, radius),
+      );
     },
     updateFilletRadius: async (featureId: string, radius: number) => {
-      await sendCoreCommand(makeUpdateFilletRadiusCommand(featureId, radius));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeUpdateFilletRadiusCommand(featureId, radius),
+      );
     },
     updateFilletEdges: async (
       featureId: string,
       edgeIds: readonly string[],
     ) => {
-      await sendCoreCommand(makeUpdateFilletEdgesCommand(featureId, edgeIds));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeUpdateFilletEdgesCommand(featureId, edgeIds),
+      );
     },
     createChamfer: async (edgeIds: readonly string[], distance: number) => {
-      await sendCoreCommand(makeCreateChamferCommand(edgeIds, distance));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeCreateChamferCommand(edgeIds, distance),
+      );
     },
     updateChamferDistance: async (featureId: string, distance: number) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeUpdateChamferDistanceCommand(featureId, distance),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateChamferEdges: async (
       featureId: string,
       edgeIds: readonly string[],
     ) => {
-      await sendCoreCommand(makeUpdateChamferEdgesCommand(featureId, edgeIds));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeUpdateChamferEdgesCommand(featureId, edgeIds),
+      );
     },
     confirmFillet: async (featureId: string) => {
-      await sendCoreCommand(makeConfirmFilletCommand(featureId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeConfirmFilletCommand(featureId));
     },
     confirmChamfer: async (featureId: string) => {
-      await sendCoreCommand(makeConfirmChamferCommand(featureId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeConfirmChamferCommand(featureId));
     },
     createShell: async (faceId: string, thickness: number) => {
-      await sendCoreCommand(makeCreateShellCommand(faceId, thickness));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeCreateShellCommand(faceId, thickness),
+      );
     },
     updateShellThickness: async (featureId: string, thickness: number) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeUpdateShellThicknessCommand(featureId, thickness),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     confirmShell: async (featureId: string) => {
-      await sendCoreCommand(makeConfirmShellCommand(featureId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(makeConfirmShellCommand(featureId));
     },
     createOffsetPlane: async (sourcePlaneId: string, offset: number) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeCreateOffsetPlaneCommand(sourcePlaneId, offset),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     createMidplane: async (sourcePlaneIds: [string, string]) => {
-      await sendCoreCommand(makeCreateMidplaneCommand(sourcePlaneIds));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeCreateMidplaneCommand(sourcePlaneIds),
+      );
     },
     createTangentPlane: async (sourceFaceId: string) => {
-      await sendCoreCommand(makeCreateTangentPlaneCommand(sourceFaceId));
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendAndRefreshSessionViewport(
+        makeCreateTangentPlaneCommand(sourceFaceId),
+      );
     },
     createAnglePlane: async (
       sourcePlaneId: string,
       sourceAxisId: string,
       angleDegrees: number,
     ) => {
-      await sendCoreCommand(
+      await sendAndRefreshSessionViewport(
         makeCreateAnglePlaneCommand(sourcePlaneId, sourceAxisId, angleDegrees),
       );
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     createConstructionAxis: async (sourceId: string) => {
       await sendCoreCommand(makeCreateConstructionAxisCommand(sourceId));
@@ -678,12 +554,7 @@ export function useCadCore() {
     },
     startSketchOnFace: async (
       faceId: string,
-      planeFrame: {
-        origin: { x: number; y: number; z: number };
-        x_axis: { x: number; y: number; z: number };
-        y_axis: { x: number; y: number; z: number };
-        normal: { x: number; y: number; z: number };
-      },
+      planeFrame: SketchPlaneFramePayload,
     ) => {
       await sendCoreCommand(makeStartSketchOnFaceCommand(faceId, planeFrame));
       await sendCoreCommand(makeGetViewportStateCommand());
@@ -1023,24 +894,7 @@ export function useCadCore() {
       await sendCoreCommand(makeUpdateParameterCommand(name, expression, kind));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    updateSelectionFilter: async (filter: {
-      select_curves?: boolean;
-      select_points?: boolean;
-      select_construction?: boolean;
-      select_constraints?: boolean;
-      snap_endpoint?: boolean;
-      snap_midpoint?: boolean;
-      snap_center?: boolean;
-      snap_intersection?: boolean;
-      snap_nearest?: boolean;
-      snap_quadrant?: boolean;
-      snap_perpendicular?: boolean;
-      snap_parallel?: boolean;
-      snap_tangent?: boolean;
-      snap_grid?: boolean;
-      magnetic_pull?: boolean;
-      tolerance_px?: number;
-    }) => {
+    updateSelectionFilter: async (filter: SelectionFilterUpdate) => {
       await sendCoreCommand(makeUpdateSelectionFilterCommand(filter));
       await sendCoreCommand(makeGetViewportStateCommand());
     },

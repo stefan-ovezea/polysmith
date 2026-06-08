@@ -1,0 +1,5 @@
+#include "core/geometry/impl/fastener_shape_basics.inc"
+#include "core/geometry/impl/fastener_threaded_shaft_shapes.inc"
+#include "core/geometry/impl/shape_compound_helpers.inc"
+#include "core/geometry/impl/fastener_drive_cutters.inc"
+#include "core/geometry/impl/fastener_shape_build.inc"

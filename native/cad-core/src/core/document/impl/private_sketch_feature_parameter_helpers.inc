@@ -1,0 +1,5 @@
+#include "core/document/impl/private_sketch_feature_lookup_helpers.inc"
+#include "core/document/impl/private_sweep_path_parameter_helpers.inc"
+#include "core/document/impl/private_loft_parameter_helpers.inc"
+#include "core/document/impl/private_revolve_parameter_helpers.inc"
+#include "core/document/impl/private_sweep_parameter_helpers.inc"

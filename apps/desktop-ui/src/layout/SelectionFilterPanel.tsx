@@ -1,68 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/lib/components/Checkbox";
-
-export interface SelectionFilter {
-  select_curves: boolean;
-  select_points: boolean;
-  select_construction: boolean;
-  select_constraints: boolean;
-  snap_endpoint: boolean;
-  snap_midpoint: boolean;
-  snap_center: boolean;
-  snap_intersection: boolean;
-  snap_nearest: boolean;
-  snap_quadrant: boolean;
-  snap_perpendicular: boolean;
-  snap_parallel: boolean;
-  snap_tangent: boolean;
-  snap_grid: boolean;
-  snap_grid_line: boolean;
-  snap_polar: boolean;
-  polar_angle_degrees: number;
-  magnetic_pull: boolean;
-  tolerance_px: number;
-}
-
-const STORAGE_KEY = "polysmith-selection-filter";
-
-const defaultFilter: SelectionFilter = {
-  select_curves: true,
-  select_points: true,
-  select_construction: false,
-  select_constraints: true,
-  snap_endpoint: true,
-  snap_midpoint: true,
-  snap_center: true,
-  snap_intersection: true,
-  snap_nearest: true,
-  snap_quadrant: true,
-  snap_perpendicular: true,
-  snap_parallel: true,
-  snap_tangent: true,
-  snap_grid: true,
-  snap_grid_line: true,
-  snap_polar: true,
-  polar_angle_degrees: 15,
-  magnetic_pull: true,
-  tolerance_px: 10,
-};
-
-export function readStoredFilter(): SelectionFilter {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      return { ...defaultFilter, ...JSON.parse(raw) };
-    }
-  } catch {
-    // corrupted, use default
-  }
-  return { ...defaultFilter };
-}
-
-export function writeStoredFilter(filter: SelectionFilter): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(filter));
-}
+import type { SelectionFilter } from "@/types";
 
 interface Props {
   currentFilter: SelectionFilter;

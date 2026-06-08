@@ -1,6 +1,6 @@
 import { ConstraintType, SketchTool } from "@/types";
 
-export const SelectIcon = () => (
+const SelectIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -15,7 +15,7 @@ export const SelectIcon = () => (
   </svg>
 );
 
-export const LineIcon = () => (
+const LineIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -32,7 +32,7 @@ export const LineIcon = () => (
   </svg>
 );
 
-export const DimensionIcon = () => (
+const DimensionIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -113,7 +113,7 @@ export const ArcIcon = () => (
   </svg>
 );
 
-export const TrimIcon = () => (
+const TrimIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -129,7 +129,7 @@ export const TrimIcon = () => (
   </svg>
 );
 
-export const HorizontalConstraintIcon = () => (
+const HorizontalConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -146,7 +146,7 @@ export const HorizontalConstraintIcon = () => (
   </svg>
 );
 
-export const VerticalConstraintIcon = () => (
+const VerticalConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -163,7 +163,7 @@ export const VerticalConstraintIcon = () => (
   </svg>
 );
 
-export const PerpendicularConstraintIcon = () => (
+const PerpendicularConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -179,7 +179,7 @@ export const PerpendicularConstraintIcon = () => (
   </svg>
 );
 
-export const CoincidentConstraintIcon = () => (
+const CoincidentConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -195,7 +195,7 @@ export const CoincidentConstraintIcon = () => (
   </svg>
 );
 
-export const ParallelConstraintIcon = () => (
+const ParallelConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -213,7 +213,7 @@ export const ParallelConstraintIcon = () => (
   </svg>
 );
 
-export const EqualLengthConstraintIcon = () => (
+const EqualLengthConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -229,7 +229,7 @@ export const EqualLengthConstraintIcon = () => (
   </svg>
 );
 
-export const MirrorConstraintIcon = () => (
+const MirrorConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -249,7 +249,7 @@ export const MirrorConstraintIcon = () => (
   </svg>
 );
 
-export const ClearConstraintIcon = () => (
+const ClearConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -330,7 +330,7 @@ export const CylinderIcon = () => (
   </svg>
 );
 
-export const SphereIcon = () => (
+const SphereIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -466,7 +466,7 @@ export const FastenerIcon = () => (
   </svg>
 );
 
-export const PatternIcon = () => (
+const PatternIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -484,7 +484,7 @@ export const PatternIcon = () => (
   </svg>
 );
 
-export const SketchIcon = () => (
+const SketchIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -502,7 +502,7 @@ export const SketchIcon = () => (
 
 // Project glyph: source outline, projection rays, and target sketch
 // outline. Kept deliberately simple so it reads at toolbar size.
-export const ProjectFaceIcon = () => (
+const ProjectFaceIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
@@ -758,7 +758,7 @@ export const MoveIcon = () => (
 
 // Generic fallback used by the feature timeline for the synthetic
 // "root" entry and any future feature kinds we haven't drawn yet.
-export const FeatureGenericIcon = () => (
+const FeatureGenericIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"

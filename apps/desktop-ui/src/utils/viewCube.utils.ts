@@ -442,6 +442,22 @@ export function isPointerInCubeArea(
   );
 }
 
+export function setViewCubeRaycasterFromPointer(
+  raycaster: THREE.Raycaster,
+  cubeCamera: THREE.Camera,
+  event: PointerEvent,
+  canvas: HTMLCanvasElement,
+  dpr: number,
+) {
+  const canvasRect = canvas.getBoundingClientRect();
+  const rect = getCubeViewportRect(canvas.width, canvas.height, dpr);
+  const glX = (event.clientX - canvasRect.left) * dpr;
+  const glY = canvas.height - (event.clientY - canvasRect.top) * dpr;
+  const ndcX = ((glX - rect.x) / rect.width) * 2 - 1;
+  const ndcY = ((glY - rect.y) / rect.height) * 2 - 1;
+  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cubeCamera);
+}
+
 // ---------------------------------------------------------------------------
 // Sync cube camera to match main view direction
 // ---------------------------------------------------------------------------

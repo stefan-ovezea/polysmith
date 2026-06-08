@@ -1,0 +1,5 @@
+#include "protocol/impl/viewport_to_payload_solid_primitives.inc"
+#include "protocol/impl/viewport_to_payload_reference_primitives.inc"
+#include "protocol/impl/viewport_to_payload_sketch_primitives.inc"
+#include "protocol/impl/viewport_to_payload_cam_toolpaths.inc"
+#include "protocol/impl/viewport_to_payload_viewport_state.inc"

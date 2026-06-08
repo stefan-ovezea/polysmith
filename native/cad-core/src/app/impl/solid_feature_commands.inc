@@ -1,0 +1,5 @@
+#include "app/impl/solid_feature_profile_selection_command_handlers.inc"
+#include "app/impl/solid_feature_extrude_command_handlers.inc"
+#include "app/impl/solid_feature_loft_command_handlers.inc"
+#include "app/impl/solid_feature_revolve_command_handlers.inc"
+#include "app/impl/solid_feature_sweep_command_handlers.inc"

@@ -21,3 +21,4 @@ third_party/freetype-install/
 .env
 claude-ds.sh
 wiki/.git-wiki/
+.scannerwork/

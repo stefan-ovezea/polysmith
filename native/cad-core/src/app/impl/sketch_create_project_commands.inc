@@ -1,0 +1,7 @@
+#include "app/impl/sketch_create_geometry_command_handlers.inc"
+#include "app/impl/sketch_create_fillet_command_handlers.inc"
+#include "app/impl/sketch_create_dimension_delete_display_command_handlers.inc"
+#include "app/impl/sketch_create_delete_selection_command_handlers.inc"
+#include "app/impl/sketch_create_selection_session_command_handlers.inc"
+#include "app/impl/sketch_create_projection_command_handlers.inc"
+#include "app/impl/sketch_create_clear_selection_command_handlers.inc"

@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "core/body_compiler.h"
-#include "core/document.h"
-#include "core/feature.h"
+#include "core/geometry/body_compiler.h"
+#include "core/document/document.h"
+#include "core/document/feature.h"
 
 namespace {
 

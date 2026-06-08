@@ -1,0 +1,114 @@
+polysmith::core::ExtrudeFeatureParameters
+parse_extrude_parameters_from_payload(const json& payload) {
+  polysmith::core::ExtrudeFeatureParameters params{};
+  params.sketch_feature_id = read_string(payload, "sketch_feature_id");
+  params.profile_id = read_string(payload, "profile_id");
+  if (payload.contains("profile_ids") && payload.at("profile_ids").is_array()) {
+    for (const auto& id_value : payload.at("profile_ids")) {
+      params.profile_ids.push_back(id_value.get<std::string>());
+    }
+  } else if (!params.profile_id.empty()) {
+    params.profile_ids.push_back(params.profile_id);
+  }
+  if (payload.contains("open_entity_ids") &&
+      payload.at("open_entity_ids").is_array()) {
+    for (const auto& id_value : payload.at("open_entity_ids")) {
+      params.open_entity_ids.push_back(id_value.get<std::string>());
+    }
+  }
+  params.plane_id = read_string(payload, "plane_id");
+  if (payload.contains("plane_frame") && !payload.at("plane_frame").is_null()) {
+    params.plane_frame = plane_frame_from_payload(payload.at("plane_frame"));
+  }
+  params.profile_kind = read_string(payload, "profile_kind");
+  params.start_x = read_number(payload, "start_x");
+  params.start_y = read_number(payload, "start_y");
+  params.width = read_number(payload, "width");
+  params.height = read_number(payload, "height");
+  params.radius = read_number(payload, "radius");
+  if (payload.contains("profile_points") && payload.at("profile_points").is_array()) {
+    for (const auto& point_payload : payload.at("profile_points")) {
+      params.profile_points.push_back(polysmith::core::SketchProfilePoint{
+          .x = point_payload.at("x").get<double>(),
+          .y = point_payload.at("y").get<double>(),
+      });
+    }
+  }
+  if (payload.contains("inner_loops") && payload.at("inner_loops").is_array()) {
+    for (const auto& loop_payload : payload.at("inner_loops")) {
+      std::vector<polysmith::core::SketchProfilePoint> loop;
+      for (const auto& point_payload : loop_payload) {
+        loop.push_back(polysmith::core::SketchProfilePoint{
+            .x = point_payload.at("x").get<double>(),
+            .y = point_payload.at("y").get<double>(),
+        });
+      }
+      params.inner_loops.push_back(std::move(loop));
+    }
+  }
+  if (payload.contains("additional_profile_points") &&
+      payload.at("additional_profile_points").is_array()) {
+    for (const auto& profile_payload : payload.at("additional_profile_points")) {
+      std::vector<polysmith::core::SketchProfilePoint> profile;
+      for (const auto& point_payload : profile_payload) {
+        profile.push_back(polysmith::core::SketchProfilePoint{
+            .x = point_payload.at("x").get<double>(),
+            .y = point_payload.at("y").get<double>(),
+        });
+      }
+      params.additional_profile_points.push_back(std::move(profile));
+    }
+  }
+  if (payload.contains("additional_inner_loops") &&
+      payload.at("additional_inner_loops").is_array()) {
+    for (const auto& profile_payload : payload.at("additional_inner_loops")) {
+      std::vector<std::vector<polysmith::core::SketchProfilePoint>> loops;
+      for (const auto& loop_payload : profile_payload) {
+        std::vector<polysmith::core::SketchProfilePoint> loop;
+        for (const auto& point_payload : loop_payload) {
+          loop.push_back(polysmith::core::SketchProfilePoint{
+              .x = point_payload.at("x").get<double>(),
+              .y = point_payload.at("y").get<double>(),
+          });
+        }
+        loops.push_back(std::move(loop));
+      }
+      params.additional_inner_loops.push_back(std::move(loops));
+    }
+  }
+  params.depth = read_number(payload, "depth");
+  params.extent_mode =
+      read_optional_string_value(payload, "extent_mode", params.extent_mode);
+  params.side1.distance = std::abs(params.depth);
+  if (payload.contains("side1") && payload.at("side1").is_object()) {
+    params.side1 = extrude_side_from_payload(payload.at("side1"), params.side1);
+  }
+  if (payload.contains("side2") && payload.at("side2").is_object()) {
+    params.side2 =
+        extrude_side_from_payload(payload.at("side2"), params.side1);
+  }
+  if (payload.contains("thin") && payload.at("thin").is_object()) {
+    const auto& thin = payload.at("thin");
+    if (thin.contains("enabled") && thin.at("enabled").is_boolean()) {
+      params.thin.enabled = thin.at("enabled").get<bool>();
+    }
+    params.thin.thickness =
+        read_optional_number(thin, "thickness", params.thin.thickness);
+    params.thin.placement =
+        read_optional_string_value(thin, "placement", params.thin.placement);
+  }
+  if (payload.contains("mode") && payload.at("mode").is_string()) {
+    params.mode = payload.at("mode").get<std::string>();
+  }
+  params.operation =
+      read_optional_string_value(payload, "operation", params.mode);
+  params.intersect_result =
+      read_optional_string_value(payload,
+                                 "intersect_result",
+                                 params.intersect_result);
+  if (payload.contains("target_body_id") &&
+      payload.at("target_body_id").is_string()) {
+    params.target_body_id = payload.at("target_body_id").get<std::string>();
+  }
+  return params;
+}

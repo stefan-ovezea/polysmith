@@ -1,0 +1,5 @@
+#include "core/document/impl/private_profile_boundary_helpers.inc"
+#include "core/document/impl/private_extrude_profile_parameter_helpers.inc"
+#include "core/document/impl/private_loft_profile_parameter_helpers.inc"
+#include "core/document/impl/private_revolve_profile_parameter_helpers.inc"
+#include "core/document/impl/private_sweep_parameter_forward.inc"

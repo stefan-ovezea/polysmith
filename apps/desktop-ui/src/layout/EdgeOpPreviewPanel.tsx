@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const PREVIEW_DEBOUNCE_MS = 200;
+import { NumericPreviewPanel } from "./NumericPreviewPanel";
 
 interface EdgeOpPreviewPanelProps {
   // "Fillet" or "Chamfer" — the only label that differs between the
@@ -36,135 +35,26 @@ export function EdgeOpPreviewPanel({
   onCancel,
 }: EdgeOpPreviewPanelProps) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(String(initialValue));
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
-  const lastPreviewedRef = useRef<number>(initialValue);
-  const onPreviewValueRef = useRef(onPreviewValue);
-
-  useEffect(() => {
-    onPreviewValueRef.current = onPreviewValue;
-  }, [onPreviewValue]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-    return () => {
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  function handleValueChange(nextValue: string) {
-    setValue(nextValue);
-    const parsed = Number(nextValue);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return;
-    }
-
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-    }
-
-    previewTimerRef.current = window.setTimeout(() => {
-      previewTimerRef.current = null;
-      if (parsed === lastPreviewedRef.current) {
-        return;
-      }
-      lastPreviewedRef.current = parsed;
-      void onPreviewValueRef.current(parsed);
-    }, PREVIEW_DEBOUNCE_MS);
-  }
-
-  // Force-commit the current input value to the core. Used on Confirm so
-  // pressing Enter while the debounce timer is still pending doesn't close
-  // the panel before the typed value has reached the core.
-  async function flushPendingValue() {
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return;
-    }
-
-    if (parsed === lastPreviewedRef.current) {
-      return;
-    }
-
-    lastPreviewedRef.current = parsed;
-    await onPreviewValueRef.current(parsed);
-  }
 
   async function handleConfirm() {
-    await flushPendingValue();
     await onConfirm();
   }
 
   return (
-    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
-      <p className="cad-kicker">{title}</p>
-      <p className="mt-3 text-xs text-on-surface-muted">
-        {t("panels.edgeOp.edgePicker", {
-          count: edgeCount,
-          plural: edgeCount === 1 ? "" : "s",
-        })}
-      </p>
-      <form
-        className="mt-4 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleConfirm();
-        }}
-      >
-        <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-          {valueLabel}
-          <input
-            ref={inputRef}
-            className="cad-input mt-2"
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={value}
-            disabled={disabled}
-            onChange={(event) => {
-              handleValueChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                void onCancel();
-              }
-            }}
-          />
-        </label>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            className="cad-action-primary flex-1"
-            disabled={disabled || Number(value) <= 0}
-          >
-            {t("common.confirm")}
-          </button>
-          <button
-            type="button"
-            className="cad-action-ghost flex-1"
-            disabled={disabled}
-            onClick={() => {
-              void onCancel();
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
-        <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
-          {t("panels.shortcutHint.confirm")}
-        </p>
-      </form>
-    </section>
+    <NumericPreviewPanel
+      title={title}
+      helperText={t("panels.edgeOp.edgePicker", {
+        count: edgeCount,
+        plural: edgeCount === 1 ? "" : "s",
+      })}
+      valueLabel={valueLabel}
+      initialValue={initialValue}
+      disabled={disabled}
+      inputMin="0.01"
+      inputStep="0.01"
+      onPreviewValue={onPreviewValue}
+      onConfirm={handleConfirm}
+      onCancel={onCancel}
+    />
   );
 }

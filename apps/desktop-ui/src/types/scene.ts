@@ -173,17 +173,19 @@ export interface SketchLineScene {
   isProjected: boolean;
 }
 
+export interface SketchEntityPlaneFrame {
+  origin: { x: number; y: number; z: number };
+  x_axis: { x: number; y: number; z: number };
+  y_axis: { x: number; y: number; z: number };
+  normal: { x: number; y: number; z: number };
+}
+
 export interface SketchCircleScene {
   // See `SketchLineScene.isPreview`.
   isPreview: boolean;
   circleId: string;
   planeId: string;
-  planeFrame: {
-    origin: { x: number; y: number; z: number };
-    x_axis: { x: number; y: number; z: number };
-    y_axis: { x: number; y: number; z: number };
-    normal: { x: number; y: number; z: number };
-  } | null;
+  planeFrame: SketchEntityPlaneFrame | null;
   center: [number, number, number];
   radius: number;
   isSelected: boolean;
@@ -214,12 +216,7 @@ export interface SketchArcScene {
   startPointId: string;
   endPointId: string;
   planeId: string;
-  planeFrame: {
-    origin: { x: number; y: number; z: number };
-    x_axis: { x: number; y: number; z: number };
-    y_axis: { x: number; y: number; z: number };
-    normal: { x: number; y: number; z: number };
-  } | null;
+  planeFrame: SketchEntityPlaneFrame | null;
   center: [number, number, number];
   radius: number;
   start: [number, number, number];

@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const PREVIEW_DEBOUNCE_MS = 200;
+import { NumericPreviewPanel } from "./NumericPreviewPanel";
 
 interface SketchFilletPanelProps {
   // Initial radius for the panel session. Used as the default for
@@ -41,137 +40,31 @@ export function SketchFilletPanel({
   onCancel,
 }: SketchFilletPanelProps) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(String(initialValue));
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
-  const lastPreviewedRef = useRef<number>(initialValue);
-  const onPreviewValueRef = useRef(onPreviewValue);
-
-  useEffect(() => {
-    onPreviewValueRef.current = onPreviewValue;
-  }, [onPreviewValue]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-    return () => {
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  function handleValueChange(nextValue: string) {
-    setValue(nextValue);
-    const parsed = Number(nextValue);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return;
-    }
-
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-    }
-
-    previewTimerRef.current = window.setTimeout(() => {
-      previewTimerRef.current = null;
-      if (parsed === lastPreviewedRef.current) {
-        return;
-      }
-      lastPreviewedRef.current = parsed;
-      void onPreviewValueRef.current(parsed);
-    }, PREVIEW_DEBOUNCE_MS);
-  }
-
-  // Force-commit the current input to the core before confirming so
-  // that hitting Enter while the debounce is still pending doesn't
-  // close the panel with a stale value.
-  async function flushPendingValue() {
-    if (previewTimerRef.current !== null) {
-      window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return;
-    }
-
-    if (parsed === lastPreviewedRef.current) {
-      return;
-    }
-
-    lastPreviewedRef.current = parsed;
-    await onPreviewValueRef.current(parsed);
-  }
 
   async function handleConfirm() {
-    await flushPendingValue();
     await onConfirm();
   }
 
   return (
-    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
-      <p className="cad-kicker">{t("panels.sketchFillet.title")}</p>
-      <p className="mt-3 text-xs text-on-surface-muted">
-        {count === 0
+    <NumericPreviewPanel
+      title={t("panels.sketchFillet.title")}
+      helperText={
+        count === 0
           ? t("panels.sketchFillet.clickCorner")
           : t("panels.sketchFillet.addAnother", {
               count,
               plural: count === 1 ? "" : "s",
-            })}
-      </p>
-      <form
-        className="mt-4 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleConfirm();
-        }}
-      >
-        <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-          {t("forms.radiusMm")}
-          <input
-            ref={inputRef}
-            className="cad-input mt-2"
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={value}
-            disabled={disabled}
-            onChange={(event) => {
-              handleValueChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                void onCancel();
-              }
-            }}
-          />
-        </label>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            className="cad-action-primary flex-1"
-            disabled={disabled || Number(value) <= 0 || count === 0}
-          >
-            {t("common.confirm")}
-          </button>
-          <button
-            type="button"
-            className="cad-action-ghost flex-1"
-            disabled={disabled}
-            onClick={() => {
-              void onCancel();
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
-        <p className="text-[11px] uppercase tracking-[0.16em] text-on-surface-dim">
-          {t("panels.shortcutHint.confirm")}
-        </p>
-      </form>
-    </section>
+            })
+      }
+      valueLabel={t("forms.radiusMm")}
+      initialValue={initialValue}
+      disabled={disabled}
+      canConfirm={count > 0}
+      inputMin="0.01"
+      inputStep="0.01"
+      onPreviewValue={onPreviewValue}
+      onConfirm={handleConfirm}
+      onCancel={onCancel}
+    />
   );
 }

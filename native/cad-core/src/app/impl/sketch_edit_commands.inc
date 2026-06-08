@@ -1,0 +1,7 @@
+#include "app/impl/sketch_session_tool_command_handlers.inc"
+#include "app/impl/sketch_geometry_update_command_handlers.inc"
+#include "app/impl/sketch_line_constraint_command_handlers.inc"
+#include "app/impl/sketch_mirror_command_handlers.inc"
+#include "app/impl/sketch_relation_constraint_command_handlers.inc"
+#include "app/impl/sketch_dimension_update_command_handlers.inc"
+#include "app/impl/sketch_dimension_create_command_handlers.inc"

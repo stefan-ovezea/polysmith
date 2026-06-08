@@ -16,6 +16,9 @@ interface EditingRow {
   isNew: boolean;
 }
 
+const EDIT_INPUT_CLASS =
+  "h-8 w-full rounded-lg border border-surface-high/70 bg-surface-container px-2 text-xs outline-none focus:border-primary-soft";
+
 export function ParametersPanel({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
   const document = useCadCoreStore((s) => s.document);
@@ -195,6 +198,48 @@ export function ParametersPanel({ onClose }: { onClose?: () => void }) {
     </div>
   );
 
+  const renderEditingCells = (placeholders: boolean) =>
+    editing ? (
+      <>
+        <td className="rounded-l-lg px-2 py-2">
+          <input
+            ref={nameRef}
+            className={EDIT_INPUT_CLASS}
+            placeholder={placeholders ? t("parameters.name") : undefined}
+            value={editing.name}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            onKeyDown={(e) => handleKeyDown(e)}
+          />
+        </td>
+        <td className="px-2 py-2">
+          <input
+            ref={exprRef}
+            className={EDIT_INPUT_CLASS}
+            placeholder={placeholders ? "e.g. 50 or width * 2" : undefined}
+            value={editing.expression}
+            onChange={(e) =>
+              setEditing({
+                ...editing,
+                expression: e.target.value,
+              })
+            }
+            onKeyDown={(e) => handleKeyDown(e)}
+          />
+        </td>
+        <td className="px-2 py-2">
+          <Dropdown
+            value={editing.kind}
+            options={KIND_OPTIONS}
+            label={t("parameters.kind")}
+            onChange={(kind) => {
+              kindRef.current = kind;
+              setEditing({ ...editing, kind });
+            }}
+          />
+        </td>
+      </>
+    ) : null;
+
   return (
     <>
       {/* Invisible backdrop: clicking anywhere outside the panel closes it */}
@@ -253,44 +298,7 @@ export function ParametersPanel({ onClose }: { onClose?: () => void }) {
                   }`}
                 >
                   {isEditing ? (
-                    <>
-                      <td className="rounded-l-lg px-2 py-2">
-                        <input
-                          ref={nameRef}
-                          className="h-8 w-full rounded-lg border border-surface-high/70 bg-surface-container px-2 text-xs outline-none focus:border-primary-soft"
-                          value={editing.name}
-                          onChange={(e) =>
-                            setEditing({ ...editing, name: e.target.value })
-                          }
-                          onKeyDown={(e) => handleKeyDown(e)}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          ref={exprRef}
-                          className="h-8 w-full rounded-lg border border-surface-high/70 bg-surface-container px-2 text-xs outline-none focus:border-primary-soft"
-                          value={editing.expression}
-                          onChange={(e) =>
-                            setEditing({
-                              ...editing,
-                              expression: e.target.value,
-                            })
-                          }
-                          onKeyDown={(e) => handleKeyDown(e)}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Dropdown
-                          value={editing.kind}
-                          options={KIND_OPTIONS}
-                          label={t("parameters.kind")}
-                          onChange={(kind) => {
-                            kindRef.current = kind;
-                            setEditing({ ...editing, kind });
-                          }}
-                        />
-                      </td>
-                    </>
+                    renderEditingCells(false)
                   ) : (
                     <>
                       <td
@@ -347,41 +355,7 @@ export function ParametersPanel({ onClose }: { onClose?: () => void }) {
 
             {editing?.isNew ? (
               <tr>
-                <td className="rounded-l-lg px-2 py-2">
-                  <input
-                    ref={nameRef}
-                    className="h-8 w-full rounded-lg border border-surface-high/70 bg-surface-container px-2 text-xs outline-none focus:border-primary-soft"
-                    placeholder={t("parameters.name")}
-                    value={editing.name}
-                    onChange={(e) =>
-                      setEditing({ ...editing, name: e.target.value })
-                    }
-                    onKeyDown={(e) => handleKeyDown(e)}
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    ref={exprRef}
-                    className="h-8 w-full rounded-lg border border-surface-high/70 bg-surface-container px-2 text-xs outline-none focus:border-primary-soft"
-                    placeholder="e.g. 50 or width * 2"
-                    value={editing.expression}
-                    onChange={(e) =>
-                      setEditing({ ...editing, expression: e.target.value })
-                    }
-                    onKeyDown={(e) => handleKeyDown(e)}
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <Dropdown
-                    value={editing.kind}
-                    options={KIND_OPTIONS}
-                    label={t("parameters.kind")}
-                    onChange={(kind) => {
-                      kindRef.current = kind;
-                      setEditing({ ...editing, kind });
-                    }}
-                  />
-                </td>
+                {renderEditingCells(true)}
                 <td className="px-2 py-2" />
                 <td className="rounded-r-lg px-2 py-2">
                   {renderEditActions()}

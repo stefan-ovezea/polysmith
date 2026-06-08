@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/lib";
 import type { ProjectFolder, RecentProject, RecentProjectsDocument } from "@/lib";
 import { ContextMenuShell } from "./ContextMenuShell";
+import { buildProjectBreadcrumbs } from "./projectBreadcrumbs";
 
 interface ProjectsPanelProps {
   document: RecentProjectsDocument;
@@ -517,34 +518,18 @@ export function ProjectsPanel({
     return folder ? [folder] : [];
   });
   const moveBreadcrumbs = useMemo(() => {
-    const next: ProjectFolder[] = [];
-    let folderId = moveProjectRequest?.folderId ?? null;
-    const visited = new Set<string>();
-    while (folderId !== null && !visited.has(folderId)) {
-      visited.add(folderId);
-      const folder = foldersById.get(folderId);
-      if (!folder) {
-        break;
-      }
-      next.unshift(folder);
-      folderId = parentByFolderId.get(folderId) ?? null;
-    }
-    return next;
+    return buildProjectBreadcrumbs(
+      moveProjectRequest?.folderId ?? null,
+      foldersById,
+      parentByFolderId,
+    );
   }, [foldersById, moveProjectRequest?.folderId, parentByFolderId]);
   const breadcrumbs = useMemo(() => {
-    const next: ProjectFolder[] = [];
-    let folderId = currentFolderId;
-    const visited = new Set<string>();
-    while (folderId !== null && !visited.has(folderId)) {
-      visited.add(folderId);
-      const folder = foldersById.get(folderId);
-      if (!folder) {
-        break;
-      }
-      next.unshift(folder);
-      folderId = parentByFolderId.get(folderId) ?? null;
-    }
-    return next;
+    return buildProjectBreadcrumbs(
+      currentFolderId,
+      foldersById,
+      parentByFolderId,
+    );
   }, [currentFolderId, foldersById, parentByFolderId]);
   const hasAnyItems =
     document.projects.length > 0 || document.folders.length > 0;

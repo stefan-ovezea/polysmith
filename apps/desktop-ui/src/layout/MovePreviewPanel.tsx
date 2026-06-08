@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MoveFeatureParameters } from "@/types";
+import { normalizeNumberInputValue } from "./numberInput";
 
 interface MovePreviewPanelProps {
   phase: "pending" | "active";
@@ -20,19 +21,6 @@ type MoveNumberField =
   | "rotation_x_degrees"
   | "rotation_y_degrees"
   | "rotation_z_degrees";
-
-function normalizeNumberInputValue(value: string) {
-  if (value === "" || value === "-" || value === "." || value === "-.") {
-    return value;
-  }
-  const sign = value.startsWith("-") ? "-" : "";
-  const unsigned = sign ? value.slice(1) : value;
-  if (unsigned.startsWith("0.") || unsigned === "0") {
-    return value;
-  }
-  const normalized = unsigned.replace(/^0+(?=\d)/, "");
-  return `${sign}${normalized || "0"}`;
-}
 
 function valuesFromParameters(parameters: MoveFeatureParameters) {
   return {

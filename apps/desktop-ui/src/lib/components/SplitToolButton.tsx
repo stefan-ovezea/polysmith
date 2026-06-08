@@ -1,12 +1,12 @@
 import {
-  useEffect,
   useId,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useDismissableLayer } from "./useDismissableLayer";
 
-export interface SplitToolOption<TValue extends string> {
+interface SplitToolOption<TValue extends string> {
   value: TValue;
   label: string;
   icon?: ReactNode;
@@ -51,30 +51,7 @@ export function SplitToolButton<TValue extends string>({
     options.find((o) => o.value === value)?.label ??
     options[0].label;
 
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen]);
+  useDismissableLayer(isOpen, rootRef, () => setIsOpen(false));
 
   return (
     <div

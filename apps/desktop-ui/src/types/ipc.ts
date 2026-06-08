@@ -1,30 +1,175 @@
-import {
+import type {
+  ExtrudeProfileCommand,
+  ExtrudeFaceCommand,
+  UpdateExtrudeModeCommand,
+  UpdateExtrudeTargetBodyCommand,
+  UpdateExtrudeParametersCommand,
+  UpdateExtrudeProfilesCommand,
+  LoftProfilesCommand,
+  UpdateLoftProfilesCommand,
+  UpdateLoftRuledCommand,
+  RevolveProfileCommand,
+  UpdateRevolveProfileCommand,
+  UpdateRevolveAxisCommand,
+  UpdateRevolveAngleCommand,
+  SweepProfileCommand,
+  UpdateSweepProfileCommand,
+  UpdateSweepPathCommand,
+} from "./ipc/profileFeatureCommands";
+import type {
+  StartSketchOnPlaneCommand,
+  StartSketchOnFaceCommand,
+  AddSketchLineCommand,
+  SetSketchLineConstructionCommand,
+  SetSketchMidpointAnchorCommand,
+  AddSketchAngleDimensionCommand,
+  AddSketchDistanceDimensionCommand,
+  AddSketchPointDistanceDimensionCommand,
+  AddSketchLineLengthDimensionCommand,
+  AddSketchCircleRadiusDimensionCommand,
+  AddSketchPolygonRadiusDimensionCommand,
+  SetSketchPointLineAnchorCommand,
+  AddSketchRectangleCommand,
+  AddSketchCircleCommand,
+  AddSketchPolygonCommand,
+  AddSketchArcCommand,
+  AddSketchFilletCommand,
+  UpdateSketchFilletRadiusCommand,
+  DeleteSketchFilletCommand,
+  DeleteSketchDimensionCommand,
+  TrimSketchEntityCommand,
+  TrimPreviewCommand,
+  DeleteSketchSelectionCommand,
+  SetSketchToolCommand,
+  UpdateSketchLineCommand,
+  UpdateSketchPointCommand,
+  SetSketchLineConstraintCommand,
+  ClearSketchLineConstraintsCommand,
+  SetSketchEqualLengthConstraintCommand,
+  SetSketchPerpendicularConstraintCommand,
+  StartMirrorPreviewCommand,
+  UpdateMirrorPreviewAxisCommand,
+  UpdateMirrorPreviewObjectsCommand,
+  CommitMirrorPreviewCommand,
+  CancelMirrorPreviewCommand,
+  SetSketchTangentConstraintCommand,
+  SetSketchParallelConstraintCommand,
+  SetSketchCoincidentConstraintCommand,
+  DeleteSketchCoincidentConstraintCommand,
+  SetSketchPointFixedCommand,
+  UpdateSketchCircleCommand,
+  UpdateSketchDimensionCommand,
+  UpdateSketchDimensionLabelPositionCommand,
+  UpdateSketchDimensionDisplayCommand,
+  SelectSketchProfileCommand,
+  SelectSketchEntityCommand,
+  SelectSketchPointCommand,
+  SelectSketchDimensionCommand,
+  FinishSketchCommand,
+  ReenterSketchCommand,
+  ClearSelectionCommand,
+} from "./ipc/sketchCommands";
+import type {
+  AddBoxFeatureCommand,
+  AddCylinderFeatureCommand,
+  UpdateBoxFeatureCommand,
+  UpdateCylinderFeatureCommand,
+  UpdateExtrudeDepthCommand,
+  SetFeatureSuppressedCommand,
+  RenameFeatureCommand,
+  DeleteFeatureCommand,
+  UndoCommand,
+  RedoCommand,
+  SetTimelineCursorCommand,
+  SelectFeatureCommand,
+  SelectReferenceCommand,
+  SelectFaceCommand,
+  SelectEdgeCommand,
+  SelectVertexCommand,
+  SetBodyColorCommand,
+  SetFaceColorCommand,
+  ClearBodyColorCommand,
+  ClearFaceColorCommand,
+  ClearAppearanceOverridesCommand,
+  CreateFilletCommand,
+  UpdateFilletRadiusCommand,
+  UpdateFilletEdgesCommand,
+  UpdateChamferEdgesCommand,
+  CreateChamferCommand,
+  UpdateChamferDistanceCommand,
+  ConfirmFilletCommand,
+  ConfirmChamferCommand,
+  CreateShellCommand,
+  UpdateShellThicknessCommand,
+  ConfirmShellCommand,
+  CreateOffsetPlaneCommand,
+  CreateMidplaneCommand,
+  CreateTangentPlaneCommand,
+  CreateAnglePlaneCommand,
+  CreateConstructionAxisCommand,
+  CreateConstructionPointCommand,
+  CreateHoleCommand,
+  UpdateHoleParametersCommand,
+  ConfirmHoleCommand,
+  CreateHelixCommand,
+  UpdateHelixParametersCommand,
+  CreateThreadCommand,
+  UpdateThreadParametersCommand,
+  ConfirmThreadCommand,
+  CreateFastenerCommand,
+  UpdateFastenerParametersCommand,
+  CreateMoveCommand,
+  UpdateMoveParametersCommand,
+  ConfirmMoveCommand,
+  CreateBodyCopyCommand,
+  UnlinkBodyCopyCommand,
+  UpdateOffsetPlaneCommand,
+  UpdateAnglePlaneCommand,
+} from "./ipc/bodyFeatureCommands";
+import type {
   FeatureEntry,
+  SketchTool,
+} from "./geometry/sketch";
+import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
+import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
-  ViewportPolygonExtrudePrimitive,
-  ViewportReferenceAxis,
   ViewportHelixPrimitive,
-  ViewportReferencePoint,
-  ViewportReferencePlane,
-  ViewportSceneBounds,
   ViewportSketchArc,
   ViewportSketchCircle,
   ViewportSketchConstraint,
-  ViewportSketchPolygon,
   ViewportSketchDimension,
   ViewportSketchLine,
   ViewportSketchPoint,
+  ViewportSketchPolygon,
   ViewportSketchProfile,
+  ViewportPolygonExtrudePrimitive,
+  ViewportReferenceAxis,
+  ViewportReferencePlane,
+  ViewportReferencePoint,
+  ViewportSceneBounds,
   ViewportSolidFace,
-  SketchTool,
-  PlaneFrame,
-  FastenerFeatureParameters,
-  HelixFeatureParameters,
-  HoleFeatureParameters,
-  MoveFeatureParameters,
-  ThreadFeatureParameters,
-} from "@/types";
+} from "./viewport";
+
+export * from "./ipc/bodyFeatureCommands";
+
+export * from "./ipc/profileFeatureCommands";
+export * from "./ipc/sketchCommands";
+
+export interface CamSetupStock {
+  width: number;
+  height: number;
+  depth: number;
+  offset_x: number;
+  offset_y: number;
+  offset_z: number;
+}
+
+export interface CamSetupOrigin {
+  x: number;
+  y: number;
+  z: number;
+}
 
 export interface DocumentState {
   document_id: string;
@@ -53,8 +198,8 @@ export interface DocumentState {
   appearance: DocumentAppearance;
   cam_setup: {
     setup_id: string;
-    stock: { width: number; height: number; depth: number; offset_x: number; offset_y: number; offset_z: number };
-    wcs_origin: { x: number; y: number; z: number };
+    stock: CamSetupStock;
+    wcs_origin: CamSetupOrigin;
     safety_plane_z: number;
     axis_count: number;
     wcs_angle: number;
@@ -163,27 +308,7 @@ export interface ViewportState {
     status: "under" | "full" | "over";
   }>;
   snap_candidates: SnapCandidateEntry[];
-  selection_filter: {
-    select_curves: boolean;
-    select_points: boolean;
-    select_construction: boolean;
-    select_constraints: boolean;
-    snap_endpoint: boolean;
-    snap_midpoint: boolean;
-    snap_center: boolean;
-    snap_intersection: boolean;
-    snap_nearest: boolean;
-    snap_quadrant: boolean;
-    snap_perpendicular: boolean;
-    snap_parallel: boolean;
-    snap_tangent: boolean;
-    snap_grid: boolean;
-    snap_grid_line: boolean;
-    snap_polar: boolean;
-    polar_angle_degrees: number;
-    magnetic_pull: boolean;
-    tolerance_px: number;
-  };
+  selection_filter: SelectionFilter;
 }
 
 export interface ViewportMeshPrimitive {
@@ -473,889 +598,6 @@ export interface ProjectVertexIntoSketchCommand {
   };
 }
 
-export interface AddBoxFeatureCommand {
-  id: string;
-  type: "add_box_feature";
-  payload: {
-    width: number;
-    height: number;
-    depth: number;
-  };
-}
-
-export interface AddCylinderFeatureCommand {
-  id: string;
-  type: "add_cylinder_feature";
-  payload: {
-    radius: number;
-    height: number;
-  };
-}
-
-export interface UpdateBoxFeatureCommand {
-  id: string;
-  type: "update_box_feature";
-  payload: {
-    feature_id: string;
-    width: number;
-    height: number;
-    depth: number;
-  };
-}
-
-export interface UpdateCylinderFeatureCommand {
-  id: string;
-  type: "update_cylinder_feature";
-  payload: {
-    feature_id: string;
-    radius: number;
-    height: number;
-  };
-}
-
-export interface UpdateExtrudeDepthCommand {
-  id: string;
-  type: "update_extrude_depth";
-  payload: {
-    feature_id: string;
-    depth: number;
-  };
-}
-
-export interface SetFeatureSuppressedCommand {
-  id: string;
-  type: "set_feature_suppressed";
-  payload: {
-    feature_id: string;
-    suppressed: boolean;
-  };
-}
-
-export interface RenameFeatureCommand {
-  id: string;
-  type: "rename_feature";
-  payload: {
-    feature_id: string;
-    name: string;
-  };
-}
-
-export interface DeleteFeatureCommand {
-  id: string;
-  type: "delete_feature";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface UndoCommand {
-  id: string;
-  type: "undo";
-  payload: Record<string, never>;
-}
-
-export interface RedoCommand {
-  id: string;
-  type: "redo";
-  payload: Record<string, never>;
-}
-
-export interface SetTimelineCursorCommand {
-  id: string;
-  type: "set_timeline_cursor";
-  payload: {
-    included_action_count: number;
-  };
-}
-
-export interface SelectFeatureCommand {
-  id: string;
-  type: "select_feature";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface SelectReferenceCommand {
-  id: string;
-  type: "select_reference";
-  payload: {
-    reference_id: string;
-  };
-}
-
-export interface SelectFaceCommand {
-  id: string;
-  type: "select_face";
-  payload: {
-    face_id: string;
-  };
-}
-
-export interface SelectEdgeCommand {
-  id: string;
-  type: "select_edge";
-  payload: {
-    edge_id: string;
-    // When true, the edge is toggled into the existing edge
-    // selection set (shift-click). When false / omitted, it replaces
-    // the previous edge selection.
-    additive: boolean;
-  };
-}
-
-export interface SelectVertexCommand {
-  id: string;
-  type: "select_vertex";
-  payload: {
-    // Mirrors SelectEdgeCommand: shift-click toggles into the
-    // multi-vertex set; plain click replaces.
-    additive: boolean;
-    vertex_id: string;
-  };
-}
-
-export interface SetBodyColorCommand {
-  id: string;
-  type: "set_body_color";
-  payload: {
-    body_id: string;
-    color: string;
-  };
-}
-
-export interface SetFaceColorCommand {
-  id: string;
-  type: "set_face_color";
-  payload: {
-    face_id: string;
-    color: string;
-  };
-}
-
-export interface ClearBodyColorCommand {
-  id: string;
-  type: "clear_body_color";
-  payload: {
-    body_id: string;
-  };
-}
-
-export interface ClearFaceColorCommand {
-  id: string;
-  type: "clear_face_color";
-  payload: {
-    face_id: string;
-  };
-}
-
-export interface ClearAppearanceOverridesCommand {
-  id: string;
-  type: "clear_appearance_overrides";
-  payload: Record<string, never>;
-}
-
-export interface CreateFilletCommand {
-  id: string;
-  type: "create_fillet";
-  payload: {
-    // One or more edges (must all share the same owner body — the
-    // core rejects mixed-body selections).
-    edge_ids: string[];
-    radius: number;
-  };
-}
-
-export interface UpdateFilletRadiusCommand {
-  id: string;
-  type: "update_fillet_radius";
-  payload: {
-    feature_id: string;
-    radius: number;
-  };
-}
-
-export interface UpdateFilletEdgesCommand {
-  id: string;
-  type: "update_fillet_edges";
-  payload: {
-    feature_id: string;
-    edge_ids: string[];
-  };
-}
-
-export interface UpdateChamferEdgesCommand {
-  id: string;
-  type: "update_chamfer_edges";
-  payload: {
-    feature_id: string;
-    edge_ids: string[];
-  };
-}
-
-export interface CreateChamferCommand {
-  id: string;
-  type: "create_chamfer";
-  payload: {
-    edge_ids: string[];
-    distance: number;
-  };
-}
-
-export interface UpdateChamferDistanceCommand {
-  id: string;
-  type: "update_chamfer_distance";
-  payload: {
-    feature_id: string;
-    distance: number;
-  };
-}
-
-export interface ConfirmFilletCommand {
-  id: string;
-  type: "confirm_fillet";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface ConfirmChamferCommand {
-  id: string;
-  type: "confirm_chamfer";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface CreateShellCommand {
-  id: string;
-  type: "create_shell";
-  payload: {
-    face_id: string;
-    thickness: number;
-  };
-}
-
-export interface UpdateShellThicknessCommand {
-  id: string;
-  type: "update_shell_thickness";
-  payload: {
-    feature_id: string;
-    thickness: number;
-  };
-}
-
-export interface ConfirmShellCommand {
-  id: string;
-  type: "confirm_shell";
-  payload: {
-    feature_id: string;
-  };
-}
-
-// Create a parametric offset construction plane. `source_plane_id`
-// must resolve to a plane the core knows about (origin plane,
-// existing construction plane, sketch profile id, or
-// "<body_id>:face:<index>" face id).
-export interface CreateOffsetPlaneCommand {
-  id: string;
-  type: "create_offset_plane";
-  payload: {
-    source_plane_id: string;
-    offset: number;
-  };
-}
-
-export interface CreateMidplaneCommand {
-  id: string;
-  type: "create_midplane";
-  payload: {
-    source_plane_ids: [string, string];
-  };
-}
-
-export interface CreateTangentPlaneCommand {
-  id: string;
-  type: "create_tangent_plane";
-  payload: {
-    source_face_id: string;
-  };
-}
-
-export interface CreateAnglePlaneCommand {
-  id: string;
-  type: "create_angle_plane";
-  payload: {
-    source_plane_id: string;
-    source_axis_id: string;
-    angle_degrees: number;
-  };
-}
-
-export interface CreateConstructionAxisCommand {
-  id: string;
-  type: "create_construction_axis";
-  payload: {
-    source_id: string;
-  };
-}
-
-export interface CreateConstructionPointCommand {
-  id: string;
-  type: "create_construction_point";
-  payload: {
-    source_id: string;
-  };
-}
-
-export interface CreateHoleCommand {
-  id: string;
-  type: "create_hole";
-  payload: Partial<HoleFeatureParameters> & {
-    face_id: string;
-    center_x: number;
-    center_y: number;
-    center_z: number;
-  };
-}
-
-export interface UpdateHoleParametersCommand {
-  id: string;
-  type: "update_hole_parameters";
-  payload: {
-    feature_id: string;
-    parameters: Partial<HoleFeatureParameters>;
-  };
-}
-
-export interface ConfirmHoleCommand {
-  id: string;
-  type: "confirm_hole";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface CreateHelixCommand {
-  id: string;
-  type: "create_helix";
-  payload: Partial<HelixFeatureParameters> & {
-    axis_source_id: string;
-  };
-}
-
-export interface UpdateHelixParametersCommand {
-  id: string;
-  type: "update_helix_parameters";
-  payload: {
-    feature_id: string;
-    parameters: Partial<HelixFeatureParameters>;
-  };
-}
-
-export interface CreateThreadCommand {
-  id: string;
-  type: "create_thread";
-  payload: Partial<ThreadFeatureParameters>;
-}
-
-export interface UpdateThreadParametersCommand {
-  id: string;
-  type: "update_thread_parameters";
-  payload: {
-    feature_id: string;
-    parameters: Partial<ThreadFeatureParameters>;
-  };
-}
-
-export interface ConfirmThreadCommand {
-  id: string;
-  type: "confirm_thread";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface CreateFastenerCommand {
-  id: string;
-  type: "create_fastener";
-  payload: Partial<FastenerFeatureParameters>;
-}
-
-export interface UpdateFastenerParametersCommand {
-  id: string;
-  type: "update_fastener_parameters";
-  payload: {
-    feature_id: string;
-    parameters: Partial<FastenerFeatureParameters>;
-  };
-}
-
-export interface CreateMoveCommand {
-  id: string;
-  type: "create_move";
-  payload: Partial<MoveFeatureParameters> & {
-    target_body_id: string;
-  };
-}
-
-export interface UpdateMoveParametersCommand {
-  id: string;
-  type: "update_move_parameters";
-  payload: {
-    feature_id: string;
-    parameters: Partial<MoveFeatureParameters>;
-  };
-}
-
-export interface ConfirmMoveCommand {
-  id: string;
-  type: "confirm_move";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface CreateBodyCopyCommand {
-  id: string;
-  type: "create_body_copy";
-  payload: {
-    source_body_id: string;
-    copy_mode?: "linked" | "standalone";
-  };
-}
-
-export interface UnlinkBodyCopyCommand {
-  id: string;
-  type: "unlink_body_copy";
-  payload: {
-    feature_id: string;
-  };
-}
-
-// Live-edit an existing construction plane's offset. The core
-// re-derives the cached frame from the source's current frame, so
-// chained planes / face-source planes update correctly.
-export interface UpdateOffsetPlaneCommand {
-  id: string;
-  type: "update_offset_plane";
-  payload: {
-    feature_id: string;
-    offset: number;
-  };
-}
-
-export interface UpdateAnglePlaneCommand {
-  id: string;
-  type: "update_angle_plane";
-  payload: {
-    feature_id: string;
-    angle_degrees: number;
-  };
-}
-
-export interface StartSketchOnPlaneCommand {
-  id: string;
-  type: "start_sketch_on_plane";
-  payload: {
-    reference_id: string;
-  };
-}
-
-export interface StartSketchOnFaceCommand {
-  id: string;
-  type: "start_sketch_on_face";
-  payload: {
-    face_id: string;
-    plane_frame: PlaneFrame;
-  };
-}
-
-export interface AddSketchLineCommand {
-  id: string;
-  type: "add_sketch_line";
-  payload: {
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-    is_construction: boolean;
-  };
-}
-
-export interface SetSketchLineConstructionCommand {
-  id: string;
-  type: "set_sketch_line_construction";
-  payload: {
-    line_id: string;
-    is_construction: boolean;
-  };
-}
-
-export interface SetSketchMidpointAnchorCommand {
-  id: string;
-  type: "set_sketch_midpoint_anchor";
-  payload: {
-    point_id: string;
-    // Empty string clears any existing anchor for the point.
-    host_line_id: string;
-  };
-}
-
-export interface AddSketchAngleDimensionCommand {
-  id: string;
-  type: "add_sketch_angle_dimension";
-  payload: {
-    first_line_id: string;
-    second_line_id: string;
-  };
-}
-
-export interface AddSketchDistanceDimensionCommand {
-  id: string;
-  type: "add_sketch_distance_dimension";
-  payload: {
-    first_entity_id: string;
-    second_entity_id: string;
-  };
-}
-
-export interface AddSketchPointDistanceDimensionCommand {
-  id: string;
-  type: "add_sketch_point_distance_dimension";
-  payload: {
-    point_a_id: string;
-    point_b_id: string;
-  };
-}
-
-export interface AddSketchLineLengthDimensionCommand {
-  id: string;
-  type: "add_sketch_line_length_dimension";
-  payload: {
-    line_id: string;
-  };
-}
-
-export interface AddSketchCircleRadiusDimensionCommand {
-  id: string;
-  type: "add_sketch_circle_radius_dimension";
-  payload: {
-    circle_id: string;
-  };
-}
-
-export interface AddSketchPolygonRadiusDimensionCommand {
-  id: string;
-  type: "add_sketch_polygon_radius_dimension";
-  payload: {
-    polygon_id: string;
-  };
-}
-
-export interface SetSketchPointLineAnchorCommand {
-  id: string;
-  type: "set_sketch_point_line_anchor";
-  payload: {
-    point_id: string;
-    // Empty string clears any existing anchor for the point.
-    host_line_id: string;
-    // Parametric position along the host line, clamped to [0, 1] by
-    // the core. 0 = host start, 1 = host end.
-    t: number;
-  };
-}
-
-export interface AddSketchRectangleCommand {
-  id: string;
-  type: "add_sketch_rectangle";
-  payload: {
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-    is_construction: boolean;
-  };
-}
-
-export interface AddSketchCircleCommand {
-  id: string;
-  type: "add_sketch_circle";
-  payload: {
-    center_x: number;
-    center_y: number;
-    radius: number;
-    is_construction: boolean;
-  };
-}
-
-export interface AddSketchPolygonCommand {
-  id: string;
-  type: "add_sketch_polygon";
-  payload: {
-    sides: number;
-    mode: string;
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-    is_construction: boolean;
-  };
-}
-
-// Add an arc to the active sketch. The third anchor's interpretation
-// depends on `mode`:
-//   - "three_point": (start, end, anchor) where anchor lies on the
-//     arc and fixes the bulge. Center is the circumcenter of the
-//     three points.
-//   - "center_start_end": anchor is the center; radius derives from
-//     |center - start|, and the end point is snapped onto the
-//     resulting circle.
-export interface AddSketchArcCommand {
-  id: string;
-  type: "add_sketch_arc";
-  payload: {
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-    anchor_x: number;
-    anchor_y: number;
-    mode: "three_point" | "center_start_end";
-    is_construction: boolean;
-  };
-}
-
-// Round a corner shared by two sketch lines into a tangent arc.
-// `corner_point_id` must be an endpoint of both lines; the v1 core
-// rejects mismatches and oversized radii with a structured error.
-export interface AddSketchFilletCommand {
-  id: string;
-  type: "add_sketch_fillet";
-  payload: {
-    corner_point_id: string;
-    line_a_id: string;
-    line_b_id: string;
-    radius: number;
-  };
-}
-
-export interface UpdateSketchFilletRadiusCommand {
-  id: string;
-  type: "update_sketch_fillet_radius";
-  payload: {
-    fillet_id: string;
-    radius: number;
-  };
-}
-
-export interface DeleteSketchFilletCommand {
-  id: string;
-  type: "delete_sketch_fillet";
-  payload: {
-    fillet_id: string;
-  };
-}
-
-export interface DeleteSketchDimensionCommand {
-  id: string;
-  type: "delete_sketch_dimension";
-  payload: {
-    dimension_id: string;
-  };
-}
-
-export interface TrimSketchEntityCommand {
-  id: string;
-  type: "trim_sketch_entity";
-  payload: {
-    entity_id: string;
-    click_x: number;
-    click_y: number;
-  };
-}
-
-export interface TrimPreviewCommand {
-  id: string;
-  type: "trim_preview";
-  payload: {
-    entity_id: string;
-    cursor_x: number;
-    cursor_y: number;
-  };
-}
-
-export interface DeleteSketchSelectionCommand {
-  id: string;
-  type: "delete_sketch_selection";
-  payload: {
-    entity_ids: string[];
-    point_ids: string[];
-    profile_ids: string[];
-  };
-}
-
-export interface SetSketchToolCommand {
-  id: string;
-  type: "set_sketch_tool";
-  payload: {
-    tool: SketchTool;
-  };
-}
-
-export interface UpdateSketchLineCommand {
-  id: string;
-  type: "update_sketch_line";
-  payload: {
-    line_id: string;
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-  };
-}
-
-export interface UpdateSketchPointCommand {
-  id: string;
-  type: "update_sketch_point";
-  payload: {
-    point_id: string;
-    x: number;
-    y: number;
-  };
-}
-
-export interface SetSketchLineConstraintCommand {
-  id: string;
-  type: "set_sketch_line_constraint";
-  payload: {
-    line_id: string;
-    constraint: "none" | "horizontal" | "vertical";
-  };
-}
-
-export interface ClearSketchLineConstraintsCommand {
-  id: string;
-  type: "clear_sketch_line_constraints";
-  payload: {
-    line_id: string;
-  };
-}
-
-export interface SetSketchEqualLengthConstraintCommand {
-  id: string;
-  type: "set_sketch_equal_length_constraint";
-  payload: {
-    line_id: string;
-    other_line_id: string;
-  };
-}
-
-export interface SetSketchPerpendicularConstraintCommand {
-  id: string;
-  type: "set_sketch_perpendicular_constraint";
-  payload: {
-    line_id: string;
-    other_line_id: string;
-  };
-}
-
-// Mirror tool — contextual modeling pending preview lifecycle. See
-// `wiki/polysmith.wiki/Contextual-Modeling-Workflow.md` and
-// `core/sketch_feature.h`.
-export interface StartMirrorPreviewCommand {
-  id: string;
-  type: "start_mirror_preview";
-  payload: Record<string, never>;
-}
-
-export interface UpdateMirrorPreviewAxisCommand {
-  id: string;
-  type: "update_mirror_preview_axis";
-  payload: {
-    // Empty string clears the axis (preview drops to no geometry).
-    axis_line_id: string;
-  };
-}
-
-export interface UpdateMirrorPreviewObjectsCommand {
-  id: string;
-  type: "update_mirror_preview_objects";
-  payload: {
-    object_ids: string[];
-  };
-}
-
-export interface CommitMirrorPreviewCommand {
-  id: string;
-  type: "commit_mirror_preview";
-  payload: {
-    persistent?: boolean;
-  };
-}
-
-export interface CancelMirrorPreviewCommand {
-  id: string;
-  type: "cancel_mirror_preview";
-  payload: Record<string, never>;
-}
-
-export interface SetSketchTangentConstraintCommand {
-  id: string;
-  type: "set_sketch_tangent_constraint";
-  payload: {
-    line_id: string;
-    // Empty string clears any existing tangent relation on the line.
-    circle_id: string;
-  };
-}
-
-export interface SetSketchParallelConstraintCommand {
-  id: string;
-  type: "set_sketch_parallel_constraint";
-  payload: {
-    line_id: string;
-    other_line_id: string;
-  };
-}
-
-export interface SetSketchCoincidentConstraintCommand {
-  id: string;
-  type: "set_sketch_coincident_constraint";
-  payload: {
-    point_id: string;
-    other_point_id: string;
-  };
-}
-
-export interface DeleteSketchCoincidentConstraintCommand {
-  id: string;
-  type: "delete_sketch_coincident_constraint";
-  payload: {
-    constraint_id: string;
-  };
-}
-
-export interface SetSketchPointFixedCommand {
-  id: string;
-  type: "set_sketch_point_fixed";
-  payload: {
-    point_id: string;
-    is_fixed: boolean;
-  };
-}
-
-export interface UpdateSketchCircleCommand {
-  id: string;
-  type: "update_sketch_circle";
-  payload: {
-    circle_id: string;
-    center_x: number;
-    center_y: number;
-    radius: number;
-  };
-}
-
 export interface ParameterEntry {
   name: string;
   expression: string;
@@ -1396,295 +638,7 @@ export interface DeleteParameterCommand {
 export interface UpdateSelectionFilterCommand {
   id: string;
   type: "update_selection_filter";
-  payload: {
-    select_curves?: boolean;
-    select_points?: boolean;
-    select_construction?: boolean;
-    select_constraints?: boolean;
-    snap_endpoint?: boolean;
-    snap_midpoint?: boolean;
-    snap_center?: boolean;
-    snap_intersection?: boolean;
-    snap_nearest?: boolean;
-    snap_quadrant?: boolean;
-    snap_perpendicular?: boolean;
-    snap_parallel?: boolean;
-    snap_tangent?: boolean;
-    snap_grid?: boolean;
-    magnetic_pull?: boolean;
-    tolerance_px?: number;
-  };
-}
-
-export interface UpdateSketchDimensionCommand {
-  id: string;
-  type: "update_sketch_dimension";
-  payload: {
-    dimension_id: string;
-    value: number | string;
-  };
-}
-
-export interface UpdateSketchDimensionLabelPositionCommand {
-  id: string;
-  type: "update_sketch_dimension_label_position";
-  payload: {
-    dimension_id: string;
-    label_x: number;
-    label_y: number;
-  };
-}
-
-export interface UpdateSketchDimensionDisplayCommand {
-  id: string;
-  type: "update_sketch_dimension_display";
-  payload: {
-    dimension_id: string;
-    display_as: string;
-  };
-}
-
-export interface SelectSketchProfileCommand {
-  id: string;
-  type: "select_sketch_profile";
-  payload: {
-    profile_id: string;
-    additive?: boolean;
-  };
-}
-
-export type ExtrudeMode = "new_body" | "join" | "cut" | "intersect";
-export type ExtrudeOperation = ExtrudeMode;
-export type ExtrudeExtentMode = "one_side" | "symmetric" | "two_sides";
-export type ExtrudeExtentType =
-  | "distance"
-  | "through_all"
-  | "to_object"
-  | "to_next";
-export type ExtrudeThinPlacement = "center" | "inside" | "outside";
-
-export interface ExtrudeSideParameters {
-  extent_type: ExtrudeExtentType;
-  distance: number;
-  start_offset: number;
-  taper_angle_degrees: number;
-  target_reference_id: string | null;
-}
-
-export interface ExtrudeThinParameters {
-  enabled: boolean;
-  thickness: number;
-  placement: ExtrudeThinPlacement;
-}
-
-export interface ExtrudeAdvancedParameters {
-  extent_mode: ExtrudeExtentMode;
-  side1: ExtrudeSideParameters;
-  side2: ExtrudeSideParameters | null;
-  thin: ExtrudeThinParameters;
-  operation: ExtrudeOperation;
-  intersect_result: "replace_target" | "new_body";
-}
-
-export interface ExtrudeProfileCommand {
-  id: string;
-  type: "extrude_profile";
-  payload: {
-    profile_id?: string;
-    profile_ids?: string[];
-    open_entity_ids?: string[];
-    depth: number;
-    mode?: ExtrudeMode;
-    target_body_id?: string;
-    parameters?: Partial<ExtrudeAdvancedParameters>;
-  };
-}
-
-export interface ExtrudeFaceCommand {
-  id: string;
-  type: "extrude_face";
-  payload: {
-    face_id: string;
-    depth: number;
-    mode?: ExtrudeMode;
-    target_body_id?: string;
-    parameters?: Partial<ExtrudeAdvancedParameters>;
-  };
-}
-
-export interface UpdateExtrudeModeCommand {
-  id: string;
-  type: "update_extrude_mode";
-  payload: {
-    feature_id: string;
-    mode: ExtrudeMode;
-  };
-}
-
-export interface UpdateExtrudeTargetBodyCommand {
-  id: string;
-  type: "update_extrude_target_body";
-  payload: {
-    feature_id: string;
-    // Omit (or set undefined) to clear the explicit target and fall back
-    // to the most recent body.
-    target_body_id?: string;
-  };
-}
-
-export interface UpdateExtrudeParametersCommand {
-  id: string;
-  type: "update_extrude_parameters";
-  payload: {
-    feature_id: string;
-    parameters: import("./geometry/3d").ExtrudeFeatureParameters;
-  };
-}
-
-export interface UpdateExtrudeProfilesCommand {
-  id: string;
-  type: "update_extrude_profiles";
-  payload: {
-    feature_id: string;
-    profile_ids: string[];
-  };
-}
-
-export interface LoftProfilesCommand {
-  id: string;
-  type: "loft_profiles";
-  payload: {
-    profile_ids: string[];
-    ruled?: boolean;
-  };
-}
-
-export interface UpdateLoftProfilesCommand {
-  id: string;
-  type: "update_loft_profiles";
-  payload: {
-    feature_id: string;
-    profile_ids: string[];
-  };
-}
-
-export interface UpdateLoftRuledCommand {
-  id: string;
-  type: "update_loft_ruled";
-  payload: {
-    feature_id: string;
-    ruled: boolean;
-  };
-}
-
-export interface RevolveProfileCommand {
-  id: string;
-  type: "revolve_profile";
-  payload: {
-    profile_id: string;
-    axis_entity_id: string;
-    angle_degrees?: number;
-  };
-}
-
-export interface UpdateRevolveProfileCommand {
-  id: string;
-  type: "update_revolve_profile";
-  payload: {
-    feature_id: string;
-    profile_id: string;
-  };
-}
-
-export interface UpdateRevolveAxisCommand {
-  id: string;
-  type: "update_revolve_axis";
-  payload: {
-    feature_id: string;
-    axis_entity_id: string;
-  };
-}
-
-export interface UpdateRevolveAngleCommand {
-  id: string;
-  type: "update_revolve_angle";
-  payload: {
-    feature_id: string;
-    angle_degrees: number;
-  };
-}
-
-export interface SweepProfileCommand {
-  id: string;
-  type: "sweep_profile";
-  payload: {
-    profile_id: string;
-    path_entity_id: string;
-  };
-}
-
-export interface UpdateSweepProfileCommand {
-  id: string;
-  type: "update_sweep_profile";
-  payload: {
-    feature_id: string;
-    profile_id: string;
-  };
-}
-
-export interface UpdateSweepPathCommand {
-  id: string;
-  type: "update_sweep_path";
-  payload: {
-    feature_id: string;
-    path_entity_id: string;
-  };
-}
-
-export interface SelectSketchEntityCommand {
-  id: string;
-  type: "select_sketch_entity";
-  payload: {
-    entity_id: string;
-    additive: boolean;
-  };
-}
-
-export interface SelectSketchPointCommand {
-  id: string;
-  type: "select_sketch_point";
-  payload: {
-    point_id: string;
-    additive: boolean;
-  };
-}
-
-export interface SelectSketchDimensionCommand {
-  id: string;
-  type: "select_sketch_dimension";
-  payload: {
-    dimension_id: string;
-  };
-}
-
-export interface FinishSketchCommand {
-  id: string;
-  type: "finish_sketch";
-  payload: Record<string, never>;
-}
-
-export interface ReenterSketchCommand {
-  id: string;
-  type: "reenter_sketch";
-  payload: {
-    feature_id: string;
-  };
-}
-
-export interface ClearSelectionCommand {
-  id: string;
-  type: "clear_selection";
-  payload: Record<string, never>;
+  payload: SelectionFilterUpdate;
 }
 
 export interface ShutdownCommand {

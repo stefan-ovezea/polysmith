@@ -1,0 +1,8 @@
+#include "app/impl/feature_operation_fillet_command_handlers.inc"
+#include "app/impl/feature_operation_chamfer_command_handlers.inc"
+#include "app/impl/feature_operation_shell_command_handlers.inc"
+#include "app/impl/feature_operation_construction_create_command_handlers.inc"
+#include "app/impl/feature_operation_hole_command_handlers.inc"
+#include "app/impl/feature_operation_threaded_command_handlers.inc"
+#include "app/impl/feature_operation_transform_command_handlers.inc"
+#include "app/impl/feature_operation_construction_update_command_handlers.inc"

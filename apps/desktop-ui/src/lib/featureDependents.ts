@@ -30,70 +30,136 @@ export function findDependents(
   document: DocumentState,
   featureId: string,
 ): FeatureEntry[] {
-  const dependents: FeatureEntry[] = [];
   const targetFeature = document.feature_history.find(
     (feature) => feature.feature_id === featureId,
   );
-  for (const feature of document.feature_history) {
-    if (feature.feature_id === featureId) {
-      continue;
-    }
-    const sketchPlaneId = feature.sketch_parameters?.plane_id ?? null;
-    const constructionSourceId =
-      feature.construction_plane_parameters?.source_plane_id ?? null;
-    const constructionSourceIds =
-      feature.construction_plane_parameters?.source_plane_ids ?? [];
-    const constructionAxisId =
-      feature.construction_plane_parameters?.source_axis_id ?? null;
-    const constructionAxisOwnedByTarget =
-      constructionAxisId != null &&
-      (targetFeature?.sketch_parameters?.lines.some(
-        (line) => line.line_id === constructionAxisId,
-      ) ??
-        false);
-    const constructionReferenceId =
-      feature.construction_axis_parameters?.source_id ??
-      feature.construction_point_parameters?.source_id ??
-      null;
-    const constructionReferenceOwnedByTarget =
-      constructionReferenceId != null &&
-      (constructionReferenceId.startsWith(`${featureId}:`) ||
-        (targetFeature?.sketch_parameters?.lines.some(
-          (line) => line.line_id === constructionReferenceId,
-        ) ??
-          false) ||
-        (targetFeature?.sketch_parameters?.points.some(
-          (point) => point.point_id === constructionReferenceId,
-        ) ??
-          false));
-    if (
-      feature.extrude_parameters?.sketch_feature_id === featureId ||
-      feature.extrude_parameters?.target_body_id === featureId ||
-      feature.loft_parameters?.sections.some(
-        (section) => section.sketch_feature_id === featureId,
-      ) ||
-      feature.revolve_parameters?.sketch_feature_id === featureId ||
-      feature.revolve_parameters?.axis_sketch_feature_id === featureId ||
-      feature.sweep_parameters?.sketch_feature_id === featureId ||
-      feature.sweep_parameters?.path_sketch_feature_id === featureId ||
-      feature.fillet_parameters?.target_body_id === featureId ||
-      feature.chamfer_parameters?.target_body_id === featureId ||
-      feature.shell_parameters?.target_body_id === featureId ||
-      feature.hole_parameters?.target_body_id === featureId ||
-      feature.hole_parameters?.source_face_id.startsWith(`${featureId}:`) ||
-      feature.helix_parameters?.axis_source_id === featureId ||
-      feature.thread_parameters?.target_body_id === featureId ||
-      feature.thread_parameters?.axis_source_id === featureId ||
-      sketchPlaneId === featureId ||
-      constructionSourceId === featureId ||
-      constructionAxisId === featureId ||
-      constructionAxisOwnedByTarget ||
-      constructionReferenceId === featureId ||
-      constructionReferenceOwnedByTarget ||
-      constructionSourceIds.includes(featureId)
-    ) {
-      dependents.push(feature);
-    }
-  }
-  return dependents;
+  return document.feature_history.filter(
+    (feature) =>
+      feature.feature_id !== featureId &&
+      featureReferencesTarget(feature, featureId, targetFeature),
+  );
+}
+
+function featureReferencesTarget(
+  feature: FeatureEntry,
+  featureId: string,
+  targetFeature: FeatureEntry | undefined,
+) {
+  return (
+    referencesSketchOrBody(feature, featureId) ||
+    referencesConstruction(feature, featureId, targetFeature)
+  );
+}
+
+function referencesSketchOrBody(feature: FeatureEntry, featureId: string) {
+  return (
+    equalsAnyFeatureId(featureId, [
+      feature.extrude_parameters?.sketch_feature_id,
+      feature.extrude_parameters?.target_body_id,
+      feature.revolve_parameters?.sketch_feature_id,
+      feature.revolve_parameters?.axis_sketch_feature_id,
+      feature.sweep_parameters?.sketch_feature_id,
+      feature.sweep_parameters?.path_sketch_feature_id,
+      feature.fillet_parameters?.target_body_id,
+      feature.chamfer_parameters?.target_body_id,
+      feature.shell_parameters?.target_body_id,
+      feature.hole_parameters?.target_body_id,
+      feature.helix_parameters?.axis_source_id,
+      feature.thread_parameters?.target_body_id,
+      feature.thread_parameters?.axis_source_id,
+      feature.sketch_parameters?.plane_id,
+    ]) ||
+    referencesFeatureOwnedFace(feature.hole_parameters?.source_face_id, featureId) ||
+    referencesLoftSection(feature, featureId)
+  );
+}
+
+function referencesConstruction(
+  feature: FeatureEntry,
+  featureId: string,
+  targetFeature: FeatureEntry | undefined,
+) {
+  const constructionAxisId =
+    feature.construction_plane_parameters?.source_axis_id ?? null;
+  const constructionReferenceId =
+    feature.construction_axis_parameters?.source_id ??
+    feature.construction_point_parameters?.source_id ??
+    null;
+
+  return (
+    equalsAnyFeatureId(featureId, [
+      feature.construction_plane_parameters?.source_plane_id,
+      constructionAxisId,
+      constructionReferenceId,
+    ]) ||
+    (feature.construction_plane_parameters?.source_plane_ids ?? []).includes(
+      featureId,
+    ) ||
+    sketchLineBelongsToFeature(constructionAxisId, targetFeature) ||
+    constructionReferenceBelongsToFeature(
+      constructionReferenceId,
+      featureId,
+      targetFeature,
+    )
+  );
+}
+
+function referencesLoftSection(feature: FeatureEntry, featureId: string) {
+  return (
+    feature.loft_parameters?.sections.some(
+      (section) => section.sketch_feature_id === featureId,
+    ) ?? false
+  );
+}
+
+function referencesFeatureOwnedFace(
+  sourceFaceId: string | undefined,
+  featureId: string,
+) {
+  return sourceFaceId?.startsWith(`${featureId}:`) ?? false;
+}
+
+function constructionReferenceBelongsToFeature(
+  referenceId: string | null,
+  featureId: string,
+  targetFeature: FeatureEntry | undefined,
+) {
+  return (
+    referencesFeatureOwnedFace(referenceId ?? undefined, featureId) ||
+    sketchLineBelongsToFeature(referenceId, targetFeature) ||
+    sketchPointBelongsToFeature(referenceId, targetFeature)
+  );
+}
+
+function sketchLineBelongsToFeature(
+  lineId: string | null,
+  targetFeature: FeatureEntry | undefined,
+) {
+  return (
+    lineId != null &&
+    (targetFeature?.sketch_parameters?.lines.some(
+      (line) => line.line_id === lineId,
+    ) ??
+      false)
+  );
+}
+
+function sketchPointBelongsToFeature(
+  pointId: string | null,
+  targetFeature: FeatureEntry | undefined,
+) {
+  return (
+    pointId != null &&
+    (targetFeature?.sketch_parameters?.points.some(
+      (point) => point.point_id === pointId,
+    ) ??
+      false)
+  );
+}
+
+function equalsAnyFeatureId(
+  featureId: string,
+  candidates: Array<string | null | undefined>,
+) {
+  return candidates.includes(featureId);
 }

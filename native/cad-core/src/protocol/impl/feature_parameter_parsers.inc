@@ -1,0 +1,5 @@
+#include "protocol/impl/feature_parameter_extrude_parser.inc"
+#include "protocol/impl/feature_parameter_loft_parser.inc"
+#include "protocol/impl/feature_parameter_revolve_parser.inc"
+#include "protocol/impl/feature_parameter_sweep_parser.inc"
+#include "protocol/impl/feature_parameter_sketch_parser.inc"

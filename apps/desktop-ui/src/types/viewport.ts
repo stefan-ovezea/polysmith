@@ -343,11 +343,12 @@ export interface ViewportContextMenuState {
   // Constraint right-click → Delete:
   // Set when user right-clicks a constraint badge.
   constraintKind?: string;
+  constraintId?: string;
   constraintEntityId?: string;
   constraintRelatedEntityId?: string | null;
 }
 
-export interface SketchEntityInteractionState {
+interface SketchEntityInteractionState {
   isSelected: boolean;
   isHovered: boolean;
 }
