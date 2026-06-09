@@ -33,6 +33,8 @@
 | 📡 **[IPC Protocol](IPC-Protocol)** | JSON-based protocol between UI and CAD core |
 | 🔷 **[Topological Naming Problem](Topological-Naming-Problem)** | TNP strategy and defences (project mantra) |
 | 🎨 **[Design System](Design-System)** | Dark/Light dual theme system and Catppuccin palette support |
+| 🧩 **[Plugin System](Plugin-System)** | Trusted plugin architecture and extension boundaries |
+| 🧰 **[Plugin SDK](Plugin-SDK)** | How first-party plugins register menus, settings, and CAD commands |
 | 📏 **[Dimension Rendering Design](Dimension-Rendering-Design)** | Design rationale and decision record for dimension rendering |
 | 📐 **[Display Units](Display-Units)** | Metric / inch toggle architecture |
 | 📋 **[Contextual Modeling Workflow](Contextual-Modeling-Workflow)** | Binding UX pattern for all modeling features |
@@ -74,6 +76,7 @@
 | ⭕ **[Circle Tool](help/circle.md)** | How to use the circle tool |
 | ⬜ **[Rectangle Tool](help/rectangle.md)** | How to use the rectangle tool |
 | ⚙️ **[Parameters](help/parameters.md)** | How to use the parameter system |
+| 🧱 **[Gridfinity Plugin](Gridfinity-Plugin)** | Gridfinity bin and baseplate generator plugin |
 
 ### 🏛️ Decision Records
 
@@ -82,5 +85,4 @@
 | 📋 **[ADR 0001: Initial Tech Stack](ADR-0001-Tech-Stack)** | Tech stack decisions: React, Tauri, C++, OCCT |
 
 ---
-
 

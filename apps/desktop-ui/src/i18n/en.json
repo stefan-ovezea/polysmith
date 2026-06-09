@@ -49,6 +49,7 @@
     "logs": "Logs",
     "new": "New",
     "open": "Open...",
+    "plugins": "Plugins",
     "redo": "Redo",
     "save": "Save...",
     "settings": "Settings",
@@ -60,6 +61,28 @@
       "create": "Create",
       "modify": "Modify",
       "sketch": "Sketch"
+    }
+  },
+  "plugins": {
+    "actionBlocked": "Finish the active tool before opening a plugin.",
+    "configPath": "Plugin config: {{path}}",
+    "disabled": "That plugin is disabled.",
+    "gridfinity": {
+      "baseplate": "Baseplate",
+      "bin": "Bin",
+      "compartmentsX": "Compartments X",
+      "compartmentsY": "Compartments Y",
+      "defaultModel": "Default model",
+      "floorThickness": "Floor thickness (mm)",
+      "gridX": "Grid X",
+      "gridY": "Grid Y",
+      "gridZ": "Height (7 mm units)",
+      "labelTab": "Label tab",
+      "magnetHoles": "Magnet holes",
+      "screwHoles": "Screw holes",
+      "stackingLip": "Stacking lip",
+      "title": "Gridfinity Generator",
+      "wallThickness": "Wall thickness (mm)"
     }
   },
   "materials": {

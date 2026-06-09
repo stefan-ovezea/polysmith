@@ -61,6 +61,7 @@ const BODY_KINDS = new Set([
   "sweep",
   "fastener",
   "body_copy",
+  "plugin_feature",
 ]);
 
 function EyeIcon({ open }: { open: boolean }) {

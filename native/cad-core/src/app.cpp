@@ -36,6 +36,8 @@ using polysmith::core::FastenerFeatureParameters;
 using polysmith::core::HelixFeatureParameters;
 using polysmith::core::HoleFeatureParameters;
 using polysmith::core::MoveFeatureParameters;
+using polysmith::core::PluginFeatureParameters;
+using polysmith::core::PluginGeometryOperation;
 using polysmith::core::ThreadFeatureParameters;
 using polysmith::protocol::CommandMessage;
 

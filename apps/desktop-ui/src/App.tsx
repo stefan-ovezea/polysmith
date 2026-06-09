@@ -133,10 +133,23 @@ import {
 import { handleViewportPrimitiveSelection } from "./app/viewportPrimitiveSelection";
 import { handleViewportSketchProfileSelection } from "./app/viewportSketchProfileSelection";
 import { computeViewportSelectionState } from "./app/viewportSelectionState";
+import { isToolStartBlocked } from "./app/actionAvailability";
+import { sendCoreCommand } from "./lib/cadCoreClient";
+import { makeGetViewportStateCommand } from "./lib/ipcProtocol";
+import { usePluginHost } from "./plugins/PluginProvider";
+import {
+  GridfinityPanel,
+  configToFeatureParameters,
+  type GridfinityFeatureParameters,
+  type GridfinityPluginConfig,
+} from "./plugins/gridfinity";
+import { makeCreateGridfinityFeatureCommand } from "./plugins/gridfinity/commands";
+import { GRIDFINITY_PLUGIN_ID } from "./plugins/gridfinity/types";
 
 function App() {
   const { t } = useTranslation();
   const { config } = useAppConfig();
+  const pluginHost = usePluginHost();
   const [armedSketchConstraint, setArmedSketchConstraint] =
     useState<ArmedSketchConstraint>(null);
   // Which input slot in the floating Mirror panel is currently
@@ -163,6 +176,10 @@ function App() {
   const sweepCreateInFlightRef = useRef(false);
   const lastSweepInputsRef = useRef("");
   const [moveAction, setMoveAction] = useState<ActiveMoveAction | null>(null);
+  const [gridfinityAction, setGridfinityAction] = useState<{
+    featureId: string;
+    parameters: GridfinityFeatureParameters;
+  } | null>(null);
   // Arc tool creation mode. Defaults to three-point (common CAD workflow's default
   // and the most ergonomic for shaping curves on the fly). The
   // SketchToolbar exposes a segmented control to toggle to
@@ -658,6 +675,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
+    pluginAction: gridfinityAction,
   };
 
   const {
@@ -888,6 +906,7 @@ function App() {
         threadAction,
         fastenerAction,
         helixAction,
+        pluginAction: gridfinityAction,
         editingFeatureId,
         materialsPanelOpen,
       },
@@ -909,6 +928,11 @@ function App() {
         setThreadAction,
         setFastenerAction,
         setHelixAction,
+        setPluginAction: (value) => {
+          if (!value) {
+            setGridfinityAction(null);
+          }
+        },
         setEditingFeatureId,
         setMaterialsPanelOpen,
       },
@@ -931,6 +955,7 @@ function App() {
       updateMoveParameters,
       updateThreadParameters,
       updateFastenerParameters,
+      deleteFeature,
     });
   }
 
@@ -1024,6 +1049,7 @@ function App() {
       threadAction,
       fastenerAction,
       helixAction,
+      pluginAction: gridfinityAction,
       editingFeatureId,
       materialsPanelOpen,
     },
@@ -1154,6 +1180,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
+    pluginAction: gridfinityAction,
   });
 
   const handleTimelineFeatureEdit = createTimelineFeatureEditHandler({
@@ -1175,6 +1202,49 @@ function App() {
     lastRevolveInputsRef,
     lastSweepInputsRef,
   });
+
+  const pluginMenuItems = pluginHost.menuItems.map((item) => ({
+    ...item,
+    label: t(item.labelKey),
+  }));
+
+  async function openGridfinityGenerator() {
+    if (isToolStartBlocked(activeToolState)) {
+      addMessage(t("plugins.actionBlocked"));
+      return;
+    }
+
+    const gridfinityEntry = pluginHost.plugins.find(
+      (entry) => entry.plugin.manifest.id === GRIDFINITY_PLUGIN_ID,
+    );
+    if (!gridfinityEntry?.enabled) {
+      addMessage(t("plugins.disabled"));
+      return;
+    }
+
+    const parameters = configToFeatureParameters(
+      gridfinityEntry.config as GridfinityPluginConfig,
+    );
+    await runAction(async () => {
+      await sendCoreCommand(makeCreateGridfinityFeatureCommand(parameters));
+      const created = await awaitCreatedFeature(
+        (feature) =>
+          feature.kind === "plugin_feature" &&
+          feature.plugin_feature_parameters?.plugin_id === GRIDFINITY_PLUGIN_ID,
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+      setGridfinityAction({
+        featureId: created.featureId,
+        parameters,
+      });
+    });
+  }
+
+  function handlePluginCommand(command: string) {
+    if (command === "gridfinity.open") {
+      void openGridfinityGenerator();
+    }
+  }
 
   return (
     <main className="cad-shell h-screen">
@@ -1221,6 +1291,8 @@ function App() {
           saveCurrentDocument={saveCurrentDocument}
           undo={undo}
           redo={redo}
+          pluginMenuItems={pluginMenuItems}
+          onPluginCommand={handlePluginCommand}
           logCount={logs.length}
           errorLogCount={errorLogCount}
           setIsLogsOpen={setIsLogsOpen}
@@ -2085,6 +2157,14 @@ function App() {
                 updateBoxFeature={updateBoxFeature}
                 updateCylinderFeature={updateCylinderFeature}
               />
+              {gridfinityAction ? (
+                <GridfinityPanel
+                  disabled={status !== "connected"}
+                  featureId={gridfinityAction.featureId}
+                  initialParameters={gridfinityAction.parameters}
+                  onClose={() => setGridfinityAction(null)}
+                />
+              ) : null}
               <ActiveMirrorPanel
                 disabled={status !== "connected"}
                 focusedSlot={mirrorFocusedSlot}

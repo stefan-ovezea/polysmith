@@ -418,6 +418,38 @@ export const documentStateSchema = z.object({
         })
         .nullable()
         .default(null),
+      plugin_feature_parameters: z
+        .object({
+          plugin_id: z.string(),
+          feature_type: z.string(),
+          schema_version: z.number().int().default(1),
+          is_pending: z.boolean().default(false),
+          display_name: z.string().default("Plugin Feature"),
+          parameters_summary: z.string().default(""),
+          parameters: z.record(z.string(), z.unknown()).default({}),
+          geometry: z
+            .array(
+              z.object({
+                operation: z.enum(["add", "subtract"]).default("add"),
+                primitive: z
+                  .enum(["box", "rounded_box", "tapered_rounded_box", "cylinder"])
+                  .default("box"),
+                x: z.number().default(0),
+                y: z.number().default(0),
+                z: z.number().default(0),
+                width: z.number().default(1),
+                depth: z.number().default(1),
+                height: z.number().default(1),
+                radius: z.number().optional().default(0),
+                top_width: z.number().optional().default(0),
+                top_depth: z.number().optional().default(0),
+                top_radius: z.number().optional().default(0),
+              }),
+            )
+            .default([]),
+        })
+        .nullable()
+        .default(null),
       sketch_parameters: z
         .object({
           plane_id: z.string(),

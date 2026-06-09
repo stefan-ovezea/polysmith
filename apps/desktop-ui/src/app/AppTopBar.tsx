@@ -78,6 +78,14 @@ interface AppTopBarProps {
   saveCurrentDocument: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
+  pluginMenuItems: Array<{
+    id: string;
+    label: string;
+    command: string;
+    disabled?: boolean;
+    disabledWhenCoreOffline?: boolean;
+  }>;
+  onPluginCommand: (command: string) => void;
   logCount: number;
   errorLogCount: number;
   setIsLogsOpen: Dispatch<SetStateAction<boolean>>;
@@ -221,6 +229,8 @@ export function AppTopBar(props: AppTopBarProps) {
       onRedo={async () => {
         await props.runAction(props.redo);
       }}
+      pluginMenuItems={props.pluginMenuItems}
+      onPluginCommand={props.onPluginCommand}
       logCount={props.logCount}
       errorLogCount={props.errorLogCount}
       onOpenLogs={() => {

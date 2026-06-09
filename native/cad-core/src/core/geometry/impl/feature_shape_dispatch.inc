@@ -20,5 +20,9 @@ TopoDS_Shape build_feature_shape(const FeatureEntry& feature) {
   if (feature.kind == "fastener" && feature.fastener_parameters.has_value()) {
     return build_fastener_shape(feature.fastener_parameters.value());
   }
+  if (feature.kind == "plugin_feature" &&
+      feature.plugin_parameters.has_value()) {
+    return build_plugin_feature_shape(feature.plugin_parameters.value());
+  }
   return TopoDS_Shape{};
 }

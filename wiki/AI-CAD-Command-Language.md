@@ -2793,6 +2793,10 @@ After non-construction closed geometry:
 
 ## Gotchas
 
+- Gridfinity is available through the bundled plugin, not as native-core
+  Gridfinity commands. Use the plugin SDK/command helpers so the command
+  includes both the plugin-owned `parameters` JSON and the generic `geometry`
+  recipe required by `create_plugin_feature` / `update_plugin_feature`.
 - `select_*` commands are not required before modeling commands that accept
   explicit IDs.
 - `extrude_profile` accepts profiles from finished sketches.

@@ -278,6 +278,7 @@ function hasCancelableToolAction(actions: AppHotkeyContext["actions"]) {
       actions.threadAction,
       actions.fastenerAction,
       actions.helixAction,
+      actions.pluginAction,
       actions.editingFeatureId,
     ],
     actions.materialsPanelOpen,

@@ -337,6 +337,30 @@ export interface ConstructionPointFeatureParameters {
   position: Vector3;
 }
 
+export interface PluginFeatureParameters {
+  plugin_id: string;
+  feature_type: string;
+  schema_version: number;
+  is_pending: boolean;
+  display_name: string;
+  parameters_summary: string;
+  parameters: Record<string, unknown>;
+  geometry: Array<{
+    operation: "add" | "subtract";
+    primitive: "box" | "rounded_box" | "tapered_rounded_box" | "cylinder";
+    x: number;
+    y: number;
+    z: number;
+    width: number;
+    depth: number;
+    height: number;
+    radius?: number;
+    top_width?: number;
+    top_depth?: number;
+    top_radius?: number;
+  }>;
+}
+
 export interface FeatureEntry {
   feature_id: string;
   kind: string;
@@ -367,6 +391,7 @@ export interface FeatureEntry {
   fastener_parameters: FastenerFeatureParameters | null;
   move_parameters: MoveFeatureParameters | null;
   body_copy_parameters: BodyCopyFeatureParameters | null;
+  plugin_feature_parameters?: PluginFeatureParameters | null;
   sketch_parameters: SketchFeatureParameters | null;
   fillet_parameters: FilletFeatureParameters | null;
   chamfer_parameters: ChamferFeatureParameters | null;

@@ -46,6 +46,65 @@ export interface UpdateCylinderFeatureCommand {
   };
 }
 
+export type PluginGeometryOperationKind = "add" | "subtract";
+export type PluginGeometryPrimitive =
+  | "box"
+  | "rounded_box"
+  | "tapered_rounded_box"
+  | "cylinder";
+
+export interface PluginGeometryOperation {
+  operation: PluginGeometryOperationKind;
+  primitive: PluginGeometryPrimitive;
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  depth: number;
+  height: number;
+  radius?: number;
+  top_width?: number;
+  top_depth?: number;
+  top_radius?: number;
+}
+
+export interface CreatePluginFeatureCommand {
+  id: string;
+  type: "create_plugin_feature";
+  payload: {
+    plugin_id: string;
+    feature_type: string;
+    schema_version?: number;
+    display_name: string;
+    parameters_summary: string;
+    parameters: unknown;
+    geometry: PluginGeometryOperation[];
+  };
+}
+
+export interface UpdatePluginFeatureCommand {
+  id: string;
+  type: "update_plugin_feature";
+  payload: {
+    feature_id: string;
+    plugin_id: string;
+    feature_type: string;
+    schema_version?: number;
+    display_name: string;
+    parameters_summary: string;
+    parameters: unknown;
+    geometry: PluginGeometryOperation[];
+  };
+}
+
+export interface ConfirmPluginFeatureCommand {
+  id: string;
+  type: "confirm_plugin_feature";
+  payload: {
+    feature_id: string;
+  };
+}
+
 export interface UpdateExtrudeDepthCommand {
   id: string;
   type: "update_extrude_depth";
