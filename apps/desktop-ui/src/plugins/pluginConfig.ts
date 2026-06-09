@@ -39,7 +39,7 @@ function migrateBundledPluginConfig(
 ): Record<string, unknown> {
   if (
     pluginId === "polysmith.gridfinity" &&
-    config.configSchemaVersion !== 2 &&
+    config.configSchemaVersion !== 3 &&
     config.gridX === 2 &&
     config.gridY === 2 &&
     config.compartmentsX === 2 &&
@@ -47,7 +47,7 @@ function migrateBundledPluginConfig(
   ) {
     return {
       ...config,
-      configSchemaVersion: 2,
+      configSchemaVersion: 3,
       compartmentsX: 1,
       compartmentsY: 1,
     };
@@ -55,7 +55,7 @@ function migrateBundledPluginConfig(
   if (pluginId === "polysmith.gridfinity") {
     return {
       ...config,
-      configSchemaVersion: 2,
+      configSchemaVersion: 3,
     };
   }
   return config;

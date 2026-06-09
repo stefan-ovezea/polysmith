@@ -20,6 +20,11 @@ const FOOT_UPPER_CHAMFER_MM = 2.15;
 const BASEPLATE_THIN_HEIGHT_MM = 4;
 const BASEPLATE_WEIGHTED_HEIGHT_MM = 7;
 const STACKING_LIP_HEIGHT_MM = 4.4;
+const STACKING_LIP_CHANNEL_INSET_MM = 4.8;
+const STACKING_LIP_CHANNEL_WIDTH_MM = 2.15;
+const STACKING_LIP_CHANNEL_DEPTH_MM = 0.8;
+const LABEL_TAB_DEPTH_MM = 9.5;
+const LABEL_TAB_HEIGHT_MM = 4.8;
 const MAGNET_RADIUS_MM = 3.25;
 const MAGNET_DEPTH_MM = 2.4;
 const SCREW_RADIUS_MM = 1.5;
@@ -157,6 +162,140 @@ function addCornerHoles(
   }
 }
 
+function addStackingLip(
+  operations: PluginGeometryOperation[],
+  parameters: GridfinityFeatureParameters,
+  width: number,
+  depth: number,
+  baseHeight: number,
+) {
+  const outerX = GRID_CLEARANCE_MM / 2;
+  const outerY = GRID_CLEARANCE_MM / 2;
+  const channelZ =
+    baseHeight + STACKING_LIP_HEIGHT_MM - STACKING_LIP_CHANNEL_DEPTH_MM;
+  const wall = parameters.wallThickness;
+
+  operations.push(
+    op(
+      "add",
+      "rounded_box",
+      outerX,
+      outerY,
+      baseHeight - 0.25,
+      width,
+      depth,
+      STACKING_LIP_HEIGHT_MM + 0.25,
+      OUTER_RADIUS_MM,
+    ),
+    op(
+      "subtract",
+      "rounded_box",
+      outerX + wall,
+      outerY + wall,
+      baseHeight - 0.35,
+      Math.max(1, width - wall * 2),
+      Math.max(1, depth - wall * 2),
+      STACKING_LIP_HEIGHT_MM + 0.55,
+      INNER_RADIUS_MM,
+    ),
+    op(
+      "subtract",
+      "box",
+      outerX + STACKING_LIP_CHANNEL_INSET_MM,
+      outerY + STACKING_LIP_CHANNEL_INSET_MM,
+      channelZ,
+      Math.max(1, width - STACKING_LIP_CHANNEL_INSET_MM * 2),
+      STACKING_LIP_CHANNEL_WIDTH_MM,
+      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
+    ),
+    op(
+      "subtract",
+      "box",
+      outerX + STACKING_LIP_CHANNEL_INSET_MM,
+      outerY + depth - STACKING_LIP_CHANNEL_INSET_MM - STACKING_LIP_CHANNEL_WIDTH_MM,
+      channelZ,
+      Math.max(1, width - STACKING_LIP_CHANNEL_INSET_MM * 2),
+      STACKING_LIP_CHANNEL_WIDTH_MM,
+      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
+    ),
+    op(
+      "subtract",
+      "box",
+      outerX + STACKING_LIP_CHANNEL_INSET_MM,
+      outerY + STACKING_LIP_CHANNEL_INSET_MM,
+      channelZ,
+      STACKING_LIP_CHANNEL_WIDTH_MM,
+      Math.max(1, depth - STACKING_LIP_CHANNEL_INSET_MM * 2),
+      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
+    ),
+    op(
+      "subtract",
+      "box",
+      outerX + width - STACKING_LIP_CHANNEL_INSET_MM - STACKING_LIP_CHANNEL_WIDTH_MM,
+      outerY + STACKING_LIP_CHANNEL_INSET_MM,
+      channelZ,
+      STACKING_LIP_CHANNEL_WIDTH_MM,
+      Math.max(1, depth - STACKING_LIP_CHANNEL_INSET_MM * 2),
+      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
+    ),
+  );
+}
+
+function addLabelTab(
+  operations: PluginGeometryOperation[],
+  parameters: GridfinityFeatureParameters,
+  width: number,
+  depth: number,
+  baseHeight: number,
+) {
+  const tabWidth = Math.min(36, Math.max(24, width * 0.38));
+  const tabDepth = Math.min(
+    LABEL_TAB_DEPTH_MM,
+    Math.max(1, depth - parameters.wallThickness * 2),
+  );
+  const topZ =
+    baseHeight + (parameters.stackingLip ? STACKING_LIP_HEIGHT_MM : 0);
+  const tabHeight = Math.min(LABEL_TAB_HEIGHT_MM, Math.max(1, topZ));
+  const tabX = GRID_CLEARANCE_MM / 2 + width / 2 - tabWidth / 2;
+  const tabY =
+    GRID_CLEARANCE_MM / 2 + depth - parameters.wallThickness - tabDepth;
+  const tabZ = Math.max(0, topZ - tabHeight);
+
+  operations.push(
+    op(
+      "add",
+      "rounded_box",
+      tabX,
+      tabY,
+      tabZ,
+      tabWidth,
+      tabDepth,
+      tabHeight,
+      1.2,
+    ),
+    op(
+      "subtract",
+      "box",
+      tabX - 0.5,
+      tabY - 0.7,
+      topZ - 1.2,
+      4,
+      1.4,
+      1.3,
+    ),
+    op(
+      "subtract",
+      "box",
+      tabX + tabWidth - 3.5,
+      tabY - 0.7,
+      topZ - 1.2,
+      4,
+      1.4,
+      1.3,
+    ),
+  );
+}
+
 function buildBinGeometry(
   parameters: GridfinityFeatureParameters,
 ): PluginGeometryOperation[] {
@@ -272,48 +411,11 @@ function buildBinGeometry(
   }
 
   if (parameters.stackingLip) {
-    operations.push(
-      taperedOp(
-        GRID_CLEARANCE_MM / 2,
-        GRID_CLEARANCE_MM / 2,
-        baseHeight - 0.25,
-        width,
-        depth,
-        STACKING_LIP_HEIGHT_MM + 0.25,
-        OUTER_RADIUS_MM,
-        Math.max(1, width - GRID_CLEARANCE_MM),
-        Math.max(1, depth - GRID_CLEARANCE_MM),
-        Math.max(0.1, OUTER_RADIUS_MM - GRID_CLEARANCE_MM / 2),
-      ),
-      op(
-        "subtract",
-        "rounded_box",
-        GRID_CLEARANCE_MM / 2 + parameters.wallThickness,
-        GRID_CLEARANCE_MM / 2 + parameters.wallThickness,
-        baseHeight - 0.35,
-        Math.max(1, width - parameters.wallThickness * 2),
-        Math.max(1, depth - parameters.wallThickness * 2),
-        STACKING_LIP_HEIGHT_MM + 0.55,
-        INNER_RADIUS_MM,
-      ),
-    );
+    addStackingLip(operations, parameters, width, depth, baseHeight);
   }
 
   if (parameters.labelTab) {
-    const tabWidth = Math.min(30, Math.max(18, width * 0.35));
-    operations.push(
-      op(
-        "add",
-        "rounded_box",
-        GRID_CLEARANCE_MM / 2 + width / 2 - tabWidth / 2,
-        -5,
-        Math.max(cavityBottom, baseHeight - 8),
-        tabWidth,
-        5.5,
-        Math.min(8, baseHeight),
-        1.2,
-      ),
-    );
+    addLabelTab(operations, parameters, width, depth, baseHeight);
   }
 
   addCornerHoles(

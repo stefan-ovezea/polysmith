@@ -1,7 +1,7 @@
 import type { GridfinityPluginConfig, GridfinityFeatureParameters } from "./types";
 
 export const defaultGridfinityConfig: GridfinityPluginConfig = {
-  configSchemaVersion: 2,
+  configSchemaVersion: 3,
   defaultModelKind: "bin",
   gridX: 2,
   gridY: 2,

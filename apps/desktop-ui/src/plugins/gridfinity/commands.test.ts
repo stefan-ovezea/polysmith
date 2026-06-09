@@ -21,6 +21,11 @@ function closeTo(value: number | undefined, expected: number) {
 }
 
 describe("Gridfinity geometry recipe", () => {
+  it("defaults new bins to one compartment", () => {
+    expect(defaultGridfinityConfig.compartmentsX).toBe(1);
+    expect(defaultGridfinityConfig.compartmentsY).toBe(1);
+  });
+
   it("emits spec-sized repeated base feet for each grid cell", () => {
     const geometry = gridfinityOperations();
     const lowerFoot = geometry.find(
@@ -66,6 +71,72 @@ describe("Gridfinity geometry recipe", () => {
     expect(Math.min(...cavityCuts.map((operation) => operation.z))).toBeCloseTo(
       7.15,
     );
+  });
+
+  it("cuts a recessed stacking channel into the top rim", () => {
+    const channelCuts = gridfinityOperations().filter(
+      (operation) =>
+        operation.operation === "subtract" &&
+        operation.primitive === "box" &&
+        closeTo(operation.z, 45.6) &&
+        closeTo(operation.height, 0.85),
+    );
+
+    expect(channelCuts).toHaveLength(4);
+    expect(
+      channelCuts.some(
+        (operation) =>
+          closeTo(operation.x, 5.05) &&
+          closeTo(operation.y, 5.05) &&
+          closeTo(operation.width, 73.9) &&
+          closeTo(operation.depth, 2.15),
+      ),
+    ).toBe(true);
+    expect(
+      channelCuts.some(
+        (operation) =>
+          closeTo(operation.x, 5.05) &&
+          closeTo(operation.y, 76.8) &&
+          closeTo(operation.width, 73.9) &&
+          closeTo(operation.depth, 2.15),
+      ),
+    ).toBe(true);
+    expect(
+      channelCuts.some(
+        (operation) =>
+          closeTo(operation.x, 5.05) &&
+          closeTo(operation.y, 5.05) &&
+          closeTo(operation.width, 2.15) &&
+          closeTo(operation.depth, 73.9),
+      ),
+    ).toBe(true);
+    expect(
+      channelCuts.some(
+        (operation) =>
+          closeTo(operation.x, 76.8) &&
+          closeTo(operation.y, 5.05) &&
+          closeTo(operation.width, 2.15) &&
+          closeTo(operation.depth, 73.9),
+      ),
+    ).toBe(true);
+  });
+
+  it("places the label tab as an internal rear shelf", () => {
+    const tab = gridfinityOperations().find(
+      (operation) =>
+        operation.operation === "add" &&
+        operation.primitive === "rounded_box" &&
+        closeTo(operation.width, 31.73) &&
+        closeTo(operation.depth, 9.5) &&
+        closeTo(operation.height, 4.8),
+    );
+
+    expect(closeTo(tab?.x, 26.135)).toBe(true);
+    expect(closeTo(tab?.y, 72.65)).toBe(true);
+    expect(closeTo(tab?.z, 41.6)).toBe(true);
+    expect(tab?.radius).toBe(1.2);
+    expect(tab?.y).toBeGreaterThan(0);
+    expect((tab?.y ?? 0) + (tab?.depth ?? 0)).toBeLessThanOrEqual(83.75);
   });
 
   it("places magnet holes in all four corners of every grid unit", () => {
