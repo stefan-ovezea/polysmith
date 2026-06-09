@@ -86,6 +86,10 @@ export class PlanegcsBridge {
   private _config: SolverConfig;
   /** Point ids in the order they were pushed (index → id). */
   private _pointIds: string[] = [];
+  /** Number of successful solves since init. */
+  solveCount = 0;
+  /** Fires once on the first successful solve. Set externally. */
+  onFirstSolve: (() => void) | null = null;
 
   constructor(config: SolverConfig = LOOSE) {
     this._config = config;
@@ -401,6 +405,11 @@ export class PlanegcsBridge {
 
       result.conflicting = w.get_gcs_conflicting_constraints();
       result.redundant = w.get_gcs_redundant_constraints();
+
+      this.solveCount++;
+      if (this.solveCount === 1 && this.onFirstSolve) {
+        this.onFirstSolve();
+      }
     }
 
     return result;

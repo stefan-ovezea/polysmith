@@ -157,6 +157,7 @@ import {
 } from "./selectionFilterState";
 import { ensureBridge } from "@/lib/planegcsSolver";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
+import { makeUiLogEntry } from "@/lib/logger";
 import { updateScreenSpaceSketchSprites } from "./viewport/screenSpaceSketchSprites";
 import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
 import { bindSketchHotkeys } from "./viewport/sketchHotkeys";
@@ -274,6 +275,7 @@ export function ViewportPanel({
 }: ViewportPanelProps) {
   const { config, activeTheme, updateConfig } = useAppConfig();
   const addMessage = useCadCoreStore((state) => state.addMessage);
+  const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
   const { t: translate } = useTranslation();
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const showViewportGrid = config.viewport.showGrid;
@@ -748,12 +750,28 @@ export function ViewportPanel({
   // Init the planegcs WASM constraint solver (lazy, once).
   useEffect(() => {
     ensureBridge()
-      .then(() => {
+      .then((bridge) => {
+        addLogEntry(makeUiLogEntry(
+          "info", "planegcs",
+          `WASM solver ready — ${bridge.config.maxIterations} iter, ` +
+          `${bridge.config.convergenceThreshold} tol, ` +
+          `${bridge.config.algorithm === 1 ? "Levenberg-Marquardt" : "DogLeg"}`,
+        ));
         addMessage("[planegcs] WASM constraint solver ready");
+        bridge.onFirstSolve = () => {
+          addLogEntry(makeUiLogEntry(
+            "info", "planegcs",
+            "First WASM solve completed during drag — constraint preview active",
+          ));
+        };
       })
       .catch((err) => {
+        addLogEntry(makeUiLogEntry(
+          "error", "planegcs",
+          `WASM solver init failed (drag will use TS-only fallback): ${String(err)}`,
+        ));
         addMessage(
-          `[planegcs] WASM solver init failed: ${String(err)}`,
+          `[planegcs] WASM solver init failed (drag will use TS-only fallback): ${String(err)}`,
         );
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

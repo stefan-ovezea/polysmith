@@ -23,10 +23,20 @@ import planegcsWasmUrl from "@salusoft89/planegcs/dist/planegcs_dist/planegcs.wa
 
 let _bridge: PlanegcsBridge | null = null;
 let _initPromise: Promise<PlanegcsBridge> | null = null;
+let _status: "unloaded" | "loading" | "ready" | "error" = "unloaded";
+let _error: string | null = null;
 
 /** Return the bridge if already initialised, null otherwise. */
 export function getBridge(): PlanegcsBridge | null {
   return _bridge;
+}
+
+/** Current WASM solver status for UI indicator / diagnostics. */
+export function getSolverStatus(): {
+  status: "unloaded" | "loading" | "ready" | "error";
+  error: string | null;
+} {
+  return { status: _status, error: _error };
 }
 
 /**
@@ -38,15 +48,18 @@ export async function ensureBridge(
 ): Promise<PlanegcsBridge> {
   if (_bridge) return _bridge;
   if (!_initPromise) {
+    _status = "loading";
     _initPromise = (async () => {
       const b = new PlanegcsBridge(config);
       await b.init(planegcsWasmUrl);
       _bridge = b;
-      console.log("[planegcs] WASM solver ready (LOOSE:",
-        b.config.maxIterations, "iter,",
-        b.config.convergenceThreshold, "tol)");
+      _status = "ready";
       return b;
-    })();
+    })().catch((err) => {
+      _status = "error";
+      _error = String(err);
+      throw err;
+    });
   }
   return _initPromise;
 }
