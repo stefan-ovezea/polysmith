@@ -107,6 +107,8 @@
     // Delete the circle.
     params.circles.erase(circle_it);
 
+    #include "core/sketch/impl/trim_circle_split_crossing_lines.inc"
+
     // Mark all constraints referencing the circle as dependency_broken.
     // (The constraint and dimension structs don't have a dependency_broken
     // flag yet, so for v1 we just delete circle-related constraints.)

@@ -71,6 +71,15 @@ export interface EndpointDragPreviewSegment {
   end: [number, number];
 }
 
+/** Circle center drag metadata — carried alongside preview segments so the
+ *  renderer can also draw a dashed circle outline at the preview position. */
+export interface CircleCenterDragPreview {
+  kind: "circle_center_drag";
+  oldCenter: [number, number];
+  newCenter: [number, number];
+  radius: number;
+}
+
 export function endpointDragPreviewSegments(
   params: SketchFeatureParameters | null,
   pointId: string,
@@ -86,6 +95,30 @@ export function endpointDragPreviewSegments(
   }));
 }
 
+/** If pointId is a circle center, returns the drag preview metadata.
+ *  Returns null for non-circle points. */
+export function circleCenterDragPreview(
+  params: SketchFeatureParameters | null,
+  pointId: string,
+  snappedLocal: [number, number],
+): CircleCenterDragPreview | null {
+  if (!params) return null;
+
+  const match = /^point-circle-(.+)-center$/.exec(pointId);
+  if (!match) return null;
+
+  const circleId = match[1];
+  const circle = params.circles.find((c) => c.circle_id === circleId);
+  if (!circle) return null;
+
+  return {
+    kind: "circle_center_drag",
+    oldCenter: [circle.center_x, circle.center_y],
+    newCenter: [snappedLocal[0], snappedLocal[1]],
+    radius: circle.radius,
+  };
+}
+
 function endpointDragAnchors(
   params: SketchFeatureParameters | null,
   pointId: string,
@@ -95,6 +128,8 @@ function endpointDragAnchors(
   }
 
   const anchors: Array<{ x: number; y: number }> = [];
+
+  // Line endpoints: anchored to the opposite endpoint.
   for (const line of params.lines) {
     if (line.start_point_id !== pointId && line.end_point_id !== pointId) {
       continue;
@@ -106,6 +141,19 @@ function endpointDragAnchors(
       anchors.push(anchored);
     }
   }
+
+  // Circle center: anchor is the circle's current center (so we get a
+  // line from old center → new center).
+  if (anchors.length === 0) {
+    const circleMatch = /^point-circle-(.+)-center$/.exec(pointId);
+    if (circleMatch) {
+      const circle = params.circles.find((c) => c.circle_id === circleMatch[1]);
+      if (circle) {
+        anchors.push({ x: circle.center_x, y: circle.center_y });
+      }
+    }
+  }
+
   return anchors;
 }
 
@@ -139,6 +187,46 @@ export function buildEndpointDragPreviewLines({
     preview.computeLineDistances();
     return preview;
   });
+}
+
+export function buildCircleDragPreviewObject({
+  circlePreview,
+  planeId,
+  planeFrame,
+  color,
+}: {
+  circlePreview: CircleCenterDragPreview;
+  planeId: string;
+  planeFrame: SketchPlaneFrame | null;
+  color?: number;
+}): THREE.Line {
+  const segments = 64;
+  const points: THREE.Vector3[] = [];
+  const cx = circlePreview.newCenter[0];
+  const cy = circlePreview.newCenter[1];
+  const r = circlePreview.radius;
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const world = toWorldPoint(
+      planeId,
+      [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r],
+      planeFrame,
+    );
+    points.push(new THREE.Vector3(...world));
+  }
+
+  const mat = new THREE.LineDashedMaterial({
+    color: color ?? 0xffe784,
+    transparent: true,
+    opacity: 0.5,
+    dashSize: 2.0,
+    gapSize: 1.0,
+  });
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const preview = new THREE.Line(geo, mat);
+  preview.computeLineDistances();
+  return preview;
 }
 
 export interface PendingEndpointDragFrame {
@@ -204,19 +292,32 @@ export function resolveEndpointDragFrame({
     }
   }
 
+  const previewLines: THREE.Line[] = buildEndpointDragPreviewLines({
+    segments: endpointDragPreviewSegments(
+      sketch,
+      next.pointId,
+      finalLocal,
+    ),
+    planeId,
+    planeFrame,
+    color: solverUsed ? 0x6495ed : undefined,
+  });
+
+  // Circle center drag: add a dashed circle outline at the preview position.
+  const circlePreview = circleCenterDragPreview(sketch, next.pointId, finalLocal);
+  if (circlePreview) {
+    previewLines.push(
+      buildCircleDragPreviewObject({
+        circlePreview,
+        planeId,
+        planeFrame,
+        color: solverUsed ? 0x6495ed : undefined,
+      }),
+    );
+  }
+
   return {
     sketchPoint: { ...sketchPoint, local: finalLocal },
-    previewLines: buildEndpointDragPreviewLines({
-      segments: endpointDragPreviewSegments(
-        sketch,
-        next.pointId,
-        finalLocal,
-      ),
-      planeId,
-      planeFrame,
-      // Blue when constraint-solver corrected the position,
-      // yellow when using raw TS snap (bridge unavailable).
-      color: solverUsed ? 0x6495ed : undefined,
-    }),
+    previewLines,
   };
 }
