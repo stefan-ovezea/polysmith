@@ -37,6 +37,7 @@
 | 📐 **[Display Units](Display-Units)** | Metric / inch toggle architecture |
 | 📋 **[Contextual Modeling Workflow](Contextual-Modeling-Workflow)** | Binding UX pattern for all modeling features |
 | ⚡ **[Planegcs Dual-Deployment Solver](Planegcs-Dual-Solver)** | WASM + native planegcs for UI-side drag preview and core-side final solve |
+| 🧩 **[GCS Implementation Strategy](GCS-Implementation-Strategy)** | Freeze state machine, speculative inferencing, DOF feedback — implementation plan |
 | 🔧 **[CAM Development Plan](CAM-Development)** | CAM workspace: data model, TNP strategy, preview pipeline, v1 operations |
 
 ### 🤖 AI / Agent

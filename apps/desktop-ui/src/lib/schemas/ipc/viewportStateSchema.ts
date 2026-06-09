@@ -523,6 +523,9 @@ export const viewportStateSchema = z.object({
       status: z.enum(["under", "full", "over"]),
     }),
   ),
+  solver_dofs: z.number().optional().default(-1),
+  solver_conflicting_count: z.number().optional().default(-1),
+  solver_redundant_count: z.number().optional().default(-1),
   snap_candidates: z.array(
     z.object({
       kind: z.string(),

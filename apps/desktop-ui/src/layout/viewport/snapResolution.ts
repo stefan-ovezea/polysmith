@@ -6,6 +6,9 @@ import type {
   SnapCandidateEntry,
 } from "@/types";
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
+import { getBridge } from "@/lib/planegcsSolver";
+import { speculativeSolve } from "@/lib/speculativeSolve";
+import type { SketchConstraintData } from "@/lib/planegcsBridge";
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -280,6 +283,7 @@ function resolveDynamicSnap({
     axisAngleThresholdRadians: 5 * Math.PI / 180,
     parallelAngleThresholdRadians: 8 * Math.PI / 180,
     labels,
+    sketchParameters,
   });
   if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
     return null;
@@ -900,6 +904,8 @@ export function dynamicSnapCandidate({
   axisAngleThresholdRadians,
   parallelAngleThresholdRadians,
   labels,
+  sketchParameters,
+  constraints,
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
@@ -917,6 +923,12 @@ export function dynamicSnapCandidate({
     perpendicular: string;
     parallel: string;
   };
+  /** Full sketch params for speculative WASM solver path. When provided
+   *  and the WASM bridge is ready, solver-validated snaps take priority
+   *  over hand-coded geometric math. */
+  sketchParameters?: SketchFeatureParameters | null;
+  /** Constraints for speculative WASM solver path. */
+  constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
 
@@ -926,67 +938,89 @@ export function dynamicSnapCandidate({
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
     if (hasDraftMovement && filter.snap_polar) {
-      best = closerDynamicSnap(
-        best,
-        axisLockSnapCandidate({
-          draftStart,
-          cursor,
-          thresholdRadians: axisAngleThresholdRadians,
-          horizontalLabel: labels.axisLockHorizontal,
-          verticalLabel: labels.axisLockVertical,
-        }),
-      );
+      // Try speculative WASM solver for axis lock first.
+      const speculativeResult = speculativeAxisLockSnap({
+        sketchParameters: sketchParameters ?? null,
+        constraints: constraints ?? [],
+        draftStart,
+        cursor,
+        threshold,
+        labels,
+      });
+      if (speculativeResult) {
+        best = speculativeResult;
+      } else {
+        // Fallback to hand-coded geometric math.
+        best = closerDynamicSnap(
+          best,
+          axisLockSnapCandidate({
+            draftStart,
+            cursor,
+            thresholdRadians: axisAngleThresholdRadians,
+            horizontalLabel: labels.axisLockHorizontal,
+            verticalLabel: labels.axisLockVertical,
+          }),
+        );
+      }
     }
 
     if (hasDraftMovement && filter.snap_tangent) {
-      best = closerDynamicSnap(
-        best,
+      const spec = speculativeTangentSnap({
+        sketchParameters: sketchParameters ?? null,
+        constraints: constraints ?? [],
+        circles, draftStart, cursor, threshold,
+        snapLabel: labels.tangent,
+      });
+      best = closerDynamicSnap(best, spec ??
         tangentSnapCandidate({
-          circles,
-          draftStart,
-          cursor,
-          threshold,
+          circles, draftStart, cursor, threshold,
           snapLabel: labels.tangent,
-        }),
-      );
+        }));
     }
   }
 
-  best = closerDynamicSnap(
-    best,
-    lineBodySnapCandidate({
-      lines,
-      cursor,
-      threshold,
+  {
+    const spec = speculativeLineBodySnap({
+      sketchParameters: sketchParameters ?? null,
+      constraints: constraints ?? [],
+      lines, cursor, threshold,
       snapLabel: labels.onLine,
-    }),
-  );
+    });
+    best = closerDynamicSnap(best, spec ??
+      lineBodySnapCandidate({
+        lines, cursor, threshold,
+        snapLabel: labels.onLine,
+      }));
+  }
 
   if (draftStart && filter.snap_perpendicular) {
-    best = closerDynamicSnap(
-      best,
+    const spec = speculativePerpendicularSnap({
+      sketchParameters: sketchParameters ?? null,
+      constraints: constraints ?? [],
+      lines, draftStart, cursor, threshold,
+      snapLabel: labels.perpendicular,
+    });
+    best = closerDynamicSnap(best, spec ??
       perpendicularSnapCandidate({
-        lines,
-        draftStart,
-        cursor,
-        threshold,
+        lines, draftStart, cursor, threshold,
         snapLabel: labels.perpendicular,
-      }),
-    );
+      }));
   }
 
   if (draftStart && filter.snap_parallel) {
-    best = closerDynamicSnap(
-      best,
+    const spec = speculativeParallelSnap({
+      sketchParameters: sketchParameters ?? null,
+      constraints: constraints ?? [],
+      lines, draftStart, cursor, threshold,
+      angleThresholdRadians: parallelAngleThresholdRadians,
+      snapLabel: labels.parallel,
+    });
+    best = closerDynamicSnap(best, spec ??
       parallelSnapCandidate({
-        lines,
-        draftStart,
-        cursor,
-        threshold,
+        lines, draftStart, cursor, threshold,
         angleThresholdRadians: parallelAngleThresholdRadians,
         snapLabel: labels.parallel,
-      }),
-    );
+      }));
   }
 
   return best;
@@ -1068,5 +1102,425 @@ export function previewPointFromStaticCandidate({
     snapAxisLock: null,
     snapTangentCircleId: null,
     snapParallelHostLineId: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Speculative WASM solver snap helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Try axis-lock (horizontal / vertical) snap via the planegcs WASM solver.
+ */
+function speculativeAxisLockSnap({
+  sketchParameters,
+  constraints,
+  draftStart,
+  cursor,
+  threshold,
+  labels,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  threshold: number;
+  labels: {
+    axisLockHorizontal: string;
+    axisLockVertical: string;
+  };
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  const [sx, sy] = draftStart;
+  const [cx, cy] = cursor;
+  const draftDx = cx - sx;
+  const draftDy = cy - sy;
+
+  if (Math.hypot(draftDx, draftDy) <= 1e-6) return null;
+
+  // Determine which axis is closer to the current draft direction.
+  const draftAngle = Math.atan2(draftDy, draftDx);
+  let bestSnap: "horizontal_l" | "vertical_l" | null = null;
+  let bestAngleDiff = Infinity;
+
+  for (const [targetAngle, snapType] of [
+    [0, "horizontal_l" as const],
+    [Math.PI / 2, "vertical_l" as const],
+    [Math.PI, "horizontal_l" as const],
+    [-Math.PI / 2, "vertical_l" as const],
+  ] as const) {
+    let diff = draftAngle - targetAngle;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (Math.abs(diff) < Math.abs(bestAngleDiff)) {
+      bestAngleDiff = diff;
+      bestSnap = snapType;
+    }
+  }
+
+  if (!bestSnap) return null;
+
+  // Axis lock doesn't target a specific entity — the speculative solve
+  // only needs the virtual line + H/V constraint.
+  const result = speculativeSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart,
+    cursor,
+    snapType: bestSnap,
+    targetEntityId: "__axis_lock",
+  });
+
+  if (!result?.converged) return null;
+  if (result.distance > threshold) return null;
+
+  const snapLabel =
+    bestSnap === "horizontal_l"
+      ? labels.axisLockHorizontal
+      : labels.axisLockVertical;
+  const axisKind = bestSnap === "horizontal_l" ? "horizontal" : "vertical";
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: axisKind,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    distance: result.distance,
+  };
+}
+
+/**
+ * Try tangent snap via speculative WASM solver on the best TS candidate.
+ * Uses TS math for fast proximity gating, then refines with the solver.
+ */
+function speculativeTangentSnap({
+  sketchParameters,
+  constraints,
+  circles,
+  draftStart,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  circles: readonly SketchSnapCircle[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  // Fast TS proximity gating — find the best circle.
+  let bestCircle: (typeof circles)[number] | null = null;
+  let bestDist = Infinity;
+
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+    const pcDx = circle.center_x - draftStart[0];
+    const pcDy = circle.center_y - draftStart[1];
+    const pcDist = Math.hypot(pcDx, pcDy);
+    if (pcDist <= circle.radius + 1e-9) continue;
+
+    const alpha = Math.asin(circle.radius / pcDist);
+    const baseAngle = Math.atan2(pcDy, pcDx);
+    const tangentLen = Math.sqrt(pcDist * pcDist - circle.radius * circle.radius);
+    for (const sign of [1, -1]) {
+      const tpDir = baseAngle + sign * alpha;
+      const tpX = draftStart[0] + tangentLen * Math.cos(tpDir);
+      const tpY = draftStart[1] + tangentLen * Math.sin(tpDir);
+      const tpDist = Math.hypot(cursor[0] - tpX, cursor[1] - tpY);
+      if (tpDist < bestDist) {
+        bestDist = tpDist;
+        bestCircle = circle;
+      }
+    }
+  }
+
+  if (!bestCircle || bestDist > threshold) return null;
+
+  // Refine with speculative solver on the best circle only.
+  const result = speculativeSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart,
+    cursor,
+    snapType: "tangent_lc",
+    targetEntityId: bestCircle.circle_id,
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: bestCircle.circle_id,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    distance: result.distance,
+  };
+}
+
+/**
+ * Try perpendicular snap via speculative WASM solver on the best TS candidate.
+ */
+function speculativePerpendicularSnap({
+  sketchParameters,
+  constraints,
+  lines,
+  draftStart,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  lines: readonly SketchSnapLine[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  // Fast TS proximity gating — find the best line.
+  let bestLine: (typeof lines)[number] | null = null;
+  let bestDist = Infinity;
+
+  for (const line of lines) {
+    if (line.is_construction) continue;
+    const ldx = line.end_x - line.start_x;
+    const ldy = line.end_y - line.start_y;
+    const llenSq = ldx * ldx + ldy * ldy;
+    if (llenSq < 1e-12) continue;
+
+    const tProj = ((cursor[0] - line.start_x) * ldx + (cursor[1] - line.start_y) * ldy) / llenSq;
+    const footX = line.start_x + tProj * ldx;
+    const footY = line.start_y + tProj * ldy;
+    const footDist = Math.hypot(cursor[0] - footX, cursor[1] - footY);
+    const segT = Math.max(0, Math.min(1, tProj));
+    const segX = line.start_x + segT * ldx;
+    const segY = line.start_y + segT * ldy;
+    const closestOnSeg = Math.hypot(footX - segX, footY - segY);
+    if (footDist > threshold || closestOnSeg > threshold) continue;
+
+    // Check draft start is on line too.
+    const startProj = ((draftStart[0] - line.start_x) * ldx + (draftStart[1] - line.start_y) * ldy) / llenSq;
+    const startFootX = line.start_x + startProj * ldx;
+    const startFootY = line.start_y + startProj * ldy;
+    const startDist = Math.hypot(draftStart[0] - startFootX, draftStart[1] - startFootY);
+    if (startDist > threshold) continue;
+
+    if (footDist < bestDist) {
+      bestDist = footDist;
+      bestLine = line;
+    }
+  }
+
+  if (!bestLine) return null;
+
+  const result = speculativeSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart,
+    cursor,
+    snapType: "perpendicular_ll",
+    targetEntityId: bestLine.line_id,
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: bestLine.line_id,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    distance: result.distance,
+  };
+}
+
+/**
+ * Try parallel snap via speculative WASM solver on the best TS candidate.
+ */
+function speculativeParallelSnap({
+  sketchParameters,
+  constraints,
+  lines,
+  draftStart,
+  cursor,
+  threshold,
+  angleThresholdRadians,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  lines: readonly SketchSnapLine[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  threshold: number;
+  angleThresholdRadians: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  const draftDx = cursor[0] - draftStart[0];
+  const draftDy = cursor[1] - draftStart[1];
+  const draftDistSq = draftDx * draftDx + draftDy * draftDy;
+  if (draftDistSq <= 1e-12) return null;
+
+  // Fast TS proximity gating.
+  let bestLine: (typeof lines)[number] | null = null;
+  let bestDist = Infinity;
+
+  for (const line of lines) {
+    if (line.is_construction) continue;
+    const ldx = line.end_x - line.start_x;
+    const ldy = line.end_y - line.start_y;
+    const lenSq = ldx * ldx + ldy * ldy;
+    if (lenSq < 1e-12) continue;
+
+    const mag1 = Math.sqrt(draftDistSq);
+    const mag2 = Math.sqrt(lenSq);
+    const dot = (draftDx * ldx + draftDy * ldy) / (mag1 * mag2);
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+    if (Math.min(angle, Math.PI - angle) >= angleThresholdRadians) continue;
+
+    const len = Math.sqrt(lenSq);
+    const ux = ldx / len;
+    const uy = ldy / len;
+    const projLen = (cursor[0] - draftStart[0]) * ux + (cursor[1] - draftStart[1]) * uy;
+    const ppx = draftStart[0] + projLen * ux;
+    const ppy = draftStart[1] + projLen * uy;
+    const dist = Math.hypot(cursor[0] - ppx, cursor[1] - ppy);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestLine = line;
+    }
+  }
+
+  if (!bestLine) return null;
+
+  const result = speculativeSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart,
+    cursor,
+    snapType: "parallel",
+    targetEntityId: bestLine.line_id,
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: bestLine.line_id,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    distance: result.distance,
+  };
+}
+
+/**
+ * Try line-body snap via speculative WASM solver on the best TS candidate.
+ */
+function speculativeLineBodySnap({
+  sketchParameters,
+  constraints,
+  lines,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  lines: readonly SketchSnapLine[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  // Fast TS proximity gating.
+  let bestLine: (typeof lines)[number] | null = null;
+  let bestDist = Infinity;
+  let bestT = 0;
+  let bestClosestX = 0;
+  let bestClosestY = 0;
+
+  for (const line of lines) {
+    if (line.is_construction) continue;
+    const segDx = line.end_x - line.start_x;
+    const segDy = line.end_y - line.start_y;
+    const lenSq = segDx * segDx + segDy * segDy;
+    if (lenSq < 1e-12) continue;
+    const t = Math.max(0, Math.min(1,
+      ((cursor[0] - line.start_x) * segDx + (cursor[1] - line.start_y) * segDy) / lenSq));
+    const x = line.start_x + t * segDx;
+    const y = line.start_y + t * segDy;
+    const dist = Math.hypot(cursor[0] - x, cursor[1] - y);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestLine = line;
+      bestT = t;
+      bestClosestX = x;
+      bestClosestY = y;
+    }
+  }
+
+  if (!bestLine) return null;
+
+  const result = speculativeSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    // For point_on_line, draftStart is not used — the constraint is on the
+    // cursor point directly. Use cursor as "draft start" so the virtual line
+    // is degenerate (the solver ignores the line for point_on_line_pl).
+    draftStart: cursor,
+    cursor,
+    snapType: "point_on_line_pl",
+    targetEntityId: bestLine.line_id,
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: bestLine.line_id,
+    snapLineBodyT: bestT,
+    distance: result.distance,
   };
 }

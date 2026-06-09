@@ -235,6 +235,53 @@ export interface PendingEndpointDragFrame {
   y: number;
 }
 
+/**
+ * Compute the 1-hop connected point set from a dragged point for
+ * ripple-freeze during constraint-aware drag preview.
+ *
+ * The active set includes:
+ *   - The dragged point itself
+ *   - The opposite endpoint of every line connected to the dragged point
+ *   - The circle center for any circle whose center is the dragged point
+ *
+ * All other points are frozen (fixed=true) during the WASM solve, so only
+ * the dragged point and its immediate neighbours can move.
+ */
+export function computeRippleActivePoints(
+  sketch: SketchFeatureParameters | null,
+  draggedPointId: string,
+): string[] {
+  if (!sketch) return [draggedPointId];
+
+  const active = new Set<string>();
+  active.add(draggedPointId);
+
+  for (const line of sketch.lines) {
+    if (line.start_point_id === draggedPointId) {
+      active.add(line.end_point_id);
+    } else if (line.end_point_id === draggedPointId) {
+      active.add(line.start_point_id);
+    }
+  }
+
+  // Include circle center if this is a center point.
+  const centerMatch = /^point-circle-(.+)-center$/.exec(draggedPointId);
+  if (centerMatch) {
+    active.add(draggedPointId); // already added, just being explicit
+  }
+
+  // If the dragged point is a normal point that happens to be a circle
+  // center, check if there's a circle whose center id matches.
+  for (const circle of sketch.circles) {
+    const centerId = `point-circle-${circle.circle_id}-center`;
+    if (centerId === draggedPointId) {
+      active.add(centerId);
+    }
+  }
+
+  return Array.from(active);
+}
+
 export function resolveEndpointDragFrame({
   next,
   sketch,
@@ -270,6 +317,8 @@ export function resolveEndpointDragFrame({
   // Run planegcs WASM solver for constraint-aware drag preview.
   // Shallow-clone params with the dragged point at the snap position
   // so the solver can compute constraint effects on connected geometry.
+  // Ripple-freeze: only the dragged point and its 1-hop neighbours
+  // participate — all other geometry is frozen to prevent ghost movement.
   let finalLocal: [number, number] = [sketchPoint.local[0], sketchPoint.local[1]];
   let solverUsed = false;
   const gcsBridge = getBridge();
@@ -282,7 +331,10 @@ export function resolveEndpointDragFrame({
           : p,
       ),
     };
-    const result = gcsBridge.solve(paramsCopy, constraints ?? []);
+    const activePointIds = computeRippleActivePoints(sketch, next.pointId);
+    const result = gcsBridge.solve(paramsCopy, constraints ?? [], {
+      activePointIds,
+    });
     if (result.ok) {
       const solved = result.points.find((p) => p.id === next.pointId);
       if (solved) {

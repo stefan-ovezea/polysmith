@@ -60,6 +60,26 @@ export const EXACT: SolverConfig = {
   algorithm: Algorithm.DogLeg as Algorithm,
 };
 
+/** Fast, low-accuracy config for speculative snap inferencing.
+ *  5 iterations at 1e-3 tolerance — just enough to determine if a
+ *  constraint converges and approximately where. Used by the speculative
+ *  solve path in pointer-move handlers; the committed position is always
+ *  recomputed by the core's EXACT solver on mouse-up. */
+export const INFERENCE: SolverConfig = {
+  maxIterations: 5,
+  convergenceThreshold: 1e-3,
+  algorithm: Algorithm.LevenbergMarquardt as Algorithm,
+};
+
+/** Snap types that can be resolved via speculative WASM constraints. */
+export type SpeculativeSnapType =
+  | "tangent_lc"
+  | "perpendicular_ll"
+  | "parallel"
+  | "point_on_line_pl"
+  | "horizontal_l"
+  | "vertical_l";
+
 // ---------------------------------------------------------------------------
 // Result
 // ---------------------------------------------------------------------------
@@ -126,10 +146,16 @@ export class PlanegcsBridge {
    *                     Not yet on the TS SketchFeatureParameters type — pass
    *                     from viewport_state.sketch_constraints or the raw IPC
    *                     payload.
+   * @param opts.activePointIds  When set, only these point IDs are unfrozen
+   *                     (fixed=false); all other points are locked (fixed=true)
+   *                     regardless of their stored is_fixed value. Used for
+   *                     drag ripple-freeze: only the dragged point and its
+   *                     1-hop connections participate in the solve.
    */
   solve(
     params: SketchFeatureParameters,
     constraints: SketchConstraintData[] = [],
+    opts?: { activePointIds?: string[] },
   ): SolveOutput {
     if (!this.wrapper) throw new Error("PlanegcsBridge not initialised");
 
@@ -137,14 +163,21 @@ export class PlanegcsBridge {
     w.clear_data();
     this._pointIds = [];
 
+    const activeSet = opts?.activePointIds
+      ? new Set(opts.activePointIds)
+      : null;
+
     // ---- 1. Push points ------------------------------------------------
     for (const pt of params.points) {
+      // When activeSet is provided, freeze all points NOT in the active set.
+      // Otherwise use the stored is_fixed value.
+      const frozen = activeSet ? !activeSet.has(pt.point_id) : pt.is_fixed;
       w.push_primitive({
         id: pt.point_id,
         type: "point",
         x: pt.x,
         y: pt.y,
-        fixed: pt.is_fixed,
+        fixed: frozen,
       });
       this._pointIds.push(pt.point_id);
     }

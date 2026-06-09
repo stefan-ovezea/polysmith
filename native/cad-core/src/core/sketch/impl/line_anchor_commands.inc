@@ -38,7 +38,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
       .line_id = host_line_id,
   });
 
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {point_id, host_line_id});
 }
 
 // Anchor a point to the body of a host line at a specific parametric
@@ -99,5 +99,5 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
       .t = clamped_t,
   });
 
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {point_id, host_line_id});
 }
