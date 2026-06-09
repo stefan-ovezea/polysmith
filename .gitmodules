@@ -13,7 +13,9 @@
 	path = third_party/planegcs
 	url = https://github.com/Salusoft89/planegcs.git
 	branch = main
+	ignore = dirty
 [submodule "third_party/planegcs-validation"]
 	path = third_party/planegcs-validation
 	url = https://github.com/Salusoft89/planegcs-validation.git
 	branch = main
+	ignore = dirty
