@@ -1,10 +1,18 @@
 # 2D Sketch System Architecture
 
+> **Status:** The unified selection filter, constraint inference engine, DOF
+> counting, and snap gating described below are all shipped (2026-05-23/24).
+> This document describes the as-built architecture. Remaining items from the
+> original plan: perpendicular snap (general case), driven dimension proposal,
+> and DOF colour legend.
+
 ## Overview
 
-This document defines the core interaction systems for the 2D sketch environment: **Constraints**, **Snapping**, and **Selection**. The guiding principle, based on analysis of industry-standard CAD systems, is that these three systems should be unified under a single **Selection Filter** model rather than maintained as independent settings.
-
-> **Core Insight:** Snapping and constraining are consequences of selectability. If an entity type is not selectable, it cannot be snapped to or constrained.
+This document defines the core interaction systems for the 2D sketch
+environment as they are currently implemented: **Constraints**, **Snapping**,
+and **Selection**. These three systems are unified under a single
+**Selection Filter** model — snapping and constraining are consequences of
+selectability.
 
 ---
 
