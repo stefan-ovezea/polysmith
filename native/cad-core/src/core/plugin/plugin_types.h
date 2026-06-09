@@ -5,6 +5,11 @@
 
 namespace polysmith::core {
 
+struct PluginProfilePoint {
+  double u = 0.0;
+  double v = 0.0;
+};
+
 struct PluginGeometryOperation {
   std::string operation = "add";
   std::string primitive = "box";
@@ -20,6 +25,14 @@ struct PluginGeometryOperation {
   double top_radius = 0.0;
   double top_offset_x = 0.0;
   double top_offset_y = 0.0;
+  std::string profile_plane = "xy";
+  double extrude_x = 0.0;
+  double extrude_y = 0.0;
+  double extrude_z = 0.0;
+  double path_width = 0.0;
+  double path_depth = 0.0;
+  double path_radius = 0.0;
+  std::vector<PluginProfilePoint> profile_points;
 };
 
 struct PluginFeatureParameters {

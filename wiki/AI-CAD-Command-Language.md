@@ -2799,6 +2799,12 @@ After non-construction closed geometry:
   recipe required by `create_plugin_feature` / `update_plugin_feature`.
   `tapered_rounded_box` plugin geometry may include `top_width`, `top_depth`,
   `top_radius`, `top_offset_x`, and `top_offset_y` for lofted profiles.
+  `profile_extrude` plugin geometry may include a `profile_plane` (`xy`, `xz`,
+  or `yz`), `profile_points: [{u, v}]`, and `extrude_x` / `extrude_y` /
+  `extrude_z` for generic profile solids.
+  `rounded_rect_profile_sweep` plugin geometry may include a `yz` profile and
+  `path_width`, `path_depth`, and `path_radius` for generic rounded-path
+  profile sweeps.
 - `select_*` commands are not required before modeling commands that accept
   explicit IDs.
 - `extrude_profile` accepts profiles from finished sketches.

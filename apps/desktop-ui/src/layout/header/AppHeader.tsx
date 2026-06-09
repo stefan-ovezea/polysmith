@@ -291,12 +291,13 @@ interface AppHeaderProps
   onRedo: () => Promise<void>;
   pluginMenuItems: Array<{
     id: string;
+    pluginId: string;
     label: string;
     command: string;
     disabled?: boolean;
     disabledWhenCoreOffline?: boolean;
   }>;
-  onPluginCommand: (command: string) => void;
+  onPluginCommand: (pluginId: string, command: string) => void;
   logCount: number;
   errorLogCount: number;
   onOpenLogs: () => void;
@@ -641,7 +642,7 @@ export function AppHeader({
               disabled:
                 item.disabled ||
                 (item.disabledWhenCoreOffline && status !== "connected"),
-              onSelect: () => onPluginCommand(item.command),
+              onSelect: () => onPluginCommand(item.pluginId, item.command),
             }))}
           />
           <button

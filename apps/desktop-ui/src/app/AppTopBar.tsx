@@ -80,12 +80,13 @@ interface AppTopBarProps {
   redo: AsyncVoid;
   pluginMenuItems: Array<{
     id: string;
+    pluginId: string;
     label: string;
     command: string;
     disabled?: boolean;
     disabledWhenCoreOffline?: boolean;
   }>;
-  onPluginCommand: (command: string) => void;
+  onPluginCommand: (pluginId: string, command: string) => void;
   logCount: number;
   errorLogCount: number;
   setIsLogsOpen: Dispatch<SetStateAction<boolean>>;

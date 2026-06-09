@@ -10,6 +10,7 @@ import {
 import { sendCoreCommand } from "@/lib/cadCoreClient";
 import { makeGetViewportStateCommand } from "@/lib/ipcProtocol";
 import type { DocumentState, ViewportState } from "@/types";
+import { awaitCreatedFeature } from "@/app/featureCreation";
 import { bundledPlugins } from "./bundled";
 import {
   bootstrapPluginConfig,
@@ -104,6 +105,7 @@ export function PluginProvider({
         refreshViewport: async () => {
           await sendCoreCommand(makeGetViewportStateCommand());
         },
+        awaitCreatedFeature,
       });
       return {
         plugin,

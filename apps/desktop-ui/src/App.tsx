@@ -55,9 +55,6 @@ import {
   type ThreadAction,
   type WorkspaceView,
 } from "./app/appState";
-import {
-  awaitCreatedFeature,
-} from "./app/featureCreation";
 import { computeActiveFeatureParameters } from "./app/activeFeatureParameters";
 import {
   buildCamOperations,
@@ -137,14 +134,7 @@ import { isToolStartBlocked } from "./app/actionAvailability";
 import { sendCoreCommand } from "./lib/cadCoreClient";
 import { makeGetViewportStateCommand } from "./lib/ipcProtocol";
 import { usePluginHost } from "./plugins/PluginProvider";
-import {
-  GridfinityPanel,
-  configToFeatureParameters,
-  type GridfinityFeatureParameters,
-  type GridfinityPluginConfig,
-} from "./plugins/gridfinity";
-import { makeCreateGridfinityFeatureCommand } from "./plugins/gridfinity/commands";
-import { GRIDFINITY_PLUGIN_ID } from "./plugins/gridfinity/types";
+import type { PluginActiveAction } from "./plugins/sdk";
 
 function App() {
   const { t } = useTranslation();
@@ -176,10 +166,8 @@ function App() {
   const sweepCreateInFlightRef = useRef(false);
   const lastSweepInputsRef = useRef("");
   const [moveAction, setMoveAction] = useState<ActiveMoveAction | null>(null);
-  const [gridfinityAction, setGridfinityAction] = useState<{
-    featureId: string;
-    parameters: GridfinityFeatureParameters;
-  } | null>(null);
+  const [activePluginAction, setActivePluginAction] =
+    useState<PluginActiveAction | null>(null);
   // Arc tool creation mode. Defaults to three-point (common CAD workflow's default
   // and the most ergonomic for shaping curves on the fly). The
   // SketchToolbar exposes a segmented control to toggle to
@@ -675,7 +663,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
-    pluginAction: gridfinityAction,
+    pluginAction: activePluginAction,
   };
 
   const {
@@ -906,7 +894,7 @@ function App() {
         threadAction,
         fastenerAction,
         helixAction,
-        pluginAction: gridfinityAction,
+        pluginAction: activePluginAction,
         editingFeatureId,
         materialsPanelOpen,
       },
@@ -930,7 +918,7 @@ function App() {
         setHelixAction,
         setPluginAction: (value) => {
           if (!value) {
-            setGridfinityAction(null);
+            setActivePluginAction(null);
           }
         },
         setEditingFeatureId,
@@ -1049,7 +1037,7 @@ function App() {
       threadAction,
       fastenerAction,
       helixAction,
-      pluginAction: gridfinityAction,
+      pluginAction: activePluginAction,
       editingFeatureId,
       materialsPanelOpen,
     },
@@ -1180,7 +1168,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
-    pluginAction: gridfinityAction,
+    pluginAction: activePluginAction,
   });
 
   const handleTimelineFeatureEdit = createTimelineFeatureEditHandler({
@@ -1208,43 +1196,42 @@ function App() {
     label: t(item.labelKey),
   }));
 
-  async function openGridfinityGenerator() {
+  async function handlePluginCommand(pluginId: string, command: string) {
     if (isToolStartBlocked(activeToolState)) {
       addMessage(t("plugins.actionBlocked"));
       return;
     }
 
-    const gridfinityEntry = pluginHost.plugins.find(
-      (entry) => entry.plugin.manifest.id === GRIDFINITY_PLUGIN_ID,
+    const pluginEntry = pluginHost.plugins.find(
+      (entry) => entry.plugin.manifest.id === pluginId,
     );
-    if (!gridfinityEntry?.enabled) {
+    if (!pluginEntry?.enabled) {
       addMessage(t("plugins.disabled"));
       return;
     }
-
-    const parameters = configToFeatureParameters(
-      gridfinityEntry.config as GridfinityPluginConfig,
-    );
+    if (!pluginEntry.runtime.handleCommand) {
+      return;
+    }
     await runAction(async () => {
-      await sendCoreCommand(makeCreateGridfinityFeatureCommand(parameters));
-      const created = await awaitCreatedFeature(
-        (feature) =>
-          feature.kind === "plugin_feature" &&
-          feature.plugin_feature_parameters?.plugin_id === GRIDFINITY_PLUGIN_ID,
-      );
-      await sendCoreCommand(makeGetViewportStateCommand());
-      setGridfinityAction({
-        featureId: created.featureId,
-        parameters,
-      });
+      const result = await pluginEntry.runtime.handleCommand?.(command);
+      if (result) {
+        setActivePluginAction({
+          ...result,
+          pluginId,
+        });
+      }
     });
   }
 
-  function handlePluginCommand(command: string) {
-    if (command === "gridfinity.open") {
-      void openGridfinityGenerator();
-    }
-  }
+  const activePluginPanel = activePluginAction
+    ? pluginHost.plugins
+        .find((entry) => entry.plugin.manifest.id === activePluginAction.pluginId)
+        ?.runtime.renderAction?.({
+          disabled: status !== "connected",
+          action: activePluginAction,
+          onClose: () => setActivePluginAction(null),
+        }) ?? null
+    : null;
 
   return (
     <main className="cad-shell h-screen">
@@ -2157,14 +2144,7 @@ function App() {
                 updateBoxFeature={updateBoxFeature}
                 updateCylinderFeature={updateCylinderFeature}
               />
-              {gridfinityAction ? (
-                <GridfinityPanel
-                  disabled={status !== "connected"}
-                  featureId={gridfinityAction.featureId}
-                  initialParameters={gridfinityAction.parameters}
-                  onClose={() => setGridfinityAction(null)}
-                />
-              ) : null}
+              {activePluginPanel}
               <ActiveMirrorPanel
                 disabled={status !== "connected"}
                 focusedSlot={mirrorFocusedSlot}

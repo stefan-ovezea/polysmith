@@ -22,6 +22,13 @@
                     json operations = json::array();
                     for (const auto& operation :
                          feature.plugin_parameters->geometry) {
+                      json profile_points = json::array();
+                      for (const auto& point : operation.profile_points) {
+                        profile_points.push_back(json{
+                            {"u", point.u},
+                            {"v", point.v},
+                        });
+                      }
                       operations.push_back(json{
                           {"operation", operation.operation},
                           {"primitive", operation.primitive},
@@ -37,6 +44,14 @@
                           {"top_radius", operation.top_radius},
                           {"top_offset_x", operation.top_offset_x},
                           {"top_offset_y", operation.top_offset_y},
+                          {"profile_plane", operation.profile_plane},
+                          {"extrude_x", operation.extrude_x},
+                          {"extrude_y", operation.extrude_y},
+                          {"extrude_z", operation.extrude_z},
+                          {"path_width", operation.path_width},
+                          {"path_depth", operation.path_depth},
+                          {"path_radius", operation.path_radius},
+                          {"profile_points", profile_points},
                       });
                     }
                     return operations;

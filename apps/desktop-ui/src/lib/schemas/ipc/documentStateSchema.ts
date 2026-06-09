@@ -432,7 +432,14 @@ export const documentStateSchema = z.object({
               z.object({
                 operation: z.enum(["add", "subtract"]).default("add"),
                 primitive: z
-                  .enum(["box", "rounded_box", "tapered_rounded_box", "cylinder"])
+                  .enum([
+                    "box",
+                    "rounded_box",
+                    "tapered_rounded_box",
+                    "cylinder",
+                    "profile_extrude",
+                    "rounded_rect_profile_sweep",
+                  ])
                   .default("box"),
                 x: z.number().default(0),
                 y: z.number().default(0),
@@ -446,6 +453,22 @@ export const documentStateSchema = z.object({
                 top_radius: z.number().optional().default(0),
                 top_offset_x: z.number().optional().default(0),
                 top_offset_y: z.number().optional().default(0),
+                profile_plane: z.enum(["xy", "xz", "yz"]).optional().default("xy"),
+                extrude_x: z.number().optional().default(0),
+                extrude_y: z.number().optional().default(0),
+                extrude_z: z.number().optional().default(0),
+                path_width: z.number().optional().default(0),
+                path_depth: z.number().optional().default(0),
+                path_radius: z.number().optional().default(0),
+                profile_points: z
+                  .array(
+                    z.object({
+                      u: z.number(),
+                      v: z.number(),
+                    }),
+                  )
+                  .optional()
+                  .default([]),
               }),
             )
             .default([]),

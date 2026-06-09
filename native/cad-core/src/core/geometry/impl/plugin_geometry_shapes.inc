@@ -20,6 +20,21 @@ gp_Pnt make_plugin_point(double x, double y, double z) {
   return gp_Pnt(x, z, y);
 }
 
+gp_Vec make_plugin_vector(double x, double y, double z) {
+  return gp_Vec(x, z, y);
+}
+
+gp_Pnt make_plugin_profile_point(const PluginGeometryOperation& operation,
+                                 const PluginProfilePoint& point) {
+  if (operation.profile_plane == "xz") {
+    return make_plugin_point(operation.x + point.u, operation.y, operation.z + point.v);
+  }
+  if (operation.profile_plane == "yz") {
+    return make_plugin_point(operation.x, operation.y + point.u, operation.z + point.v);
+  }
+  return make_plugin_point(operation.x + point.u, operation.y + point.v, operation.z);
+}
+
 TopoDS_Wire make_plugin_rounded_rectangle_wire_at(double x,
                                                   double y,
                                                   double z,
@@ -180,6 +195,76 @@ TopoDS_Shape make_plugin_tapered_rounded_box_at(double x,
   return loft.Shape();
 }
 
+TopoDS_Shape make_plugin_profile_extrude_shape(
+    const PluginGeometryOperation& operation) {
+  BRepBuilderAPI_MakePolygon polygon_builder;
+  for (const auto& point : operation.profile_points) {
+    polygon_builder.Add(make_plugin_profile_point(operation, point));
+  }
+  polygon_builder.Close();
+  if (!polygon_builder.IsDone()) {
+    throw std::runtime_error("Failed to build plugin profile wire");
+  }
+
+  BRepBuilderAPI_MakeFace face_builder(polygon_builder.Wire());
+  if (!face_builder.IsDone()) {
+    throw std::runtime_error("Failed to build plugin profile face");
+  }
+
+  const TopoDS_Shape shape =
+      BRepPrimAPI_MakePrism(face_builder.Face(),
+                            make_plugin_vector(operation.extrude_x,
+                                               operation.extrude_y,
+                                               operation.extrude_z))
+          .Shape();
+  if (shape.IsNull()) {
+    throw std::runtime_error("Failed to build plugin profile extrude");
+  }
+  return shape;
+}
+
+TopoDS_Shape make_plugin_rounded_rect_profile_sweep_shape(
+    const PluginGeometryOperation& operation) {
+  const double r = std::max(
+      0.0,
+      std::min(operation.path_radius,
+               std::min(operation.path_width, operation.path_depth) / 2.0));
+
+  BRepBuilderAPI_MakePolygon profile_builder;
+  PluginGeometryOperation profile_operation = operation;
+  profile_operation.x = operation.x + r;
+  profile_operation.y = operation.y;
+  for (const auto& point : operation.profile_points) {
+    profile_builder.Add(make_plugin_profile_point(profile_operation, point));
+  }
+  profile_builder.Close();
+  if (!profile_builder.IsDone()) {
+    throw std::runtime_error("Failed to build plugin sweep profile wire");
+  }
+
+  BRepBuilderAPI_MakeFace face_builder(profile_builder.Wire());
+  if (!face_builder.IsDone()) {
+    throw std::runtime_error("Failed to build plugin sweep profile face");
+  }
+
+  const TopoDS_Wire path = make_plugin_rounded_rectangle_wire_at(operation.x,
+                                                                 operation.y,
+                                                                 operation.z,
+                                                                 operation.path_width,
+                                                                 operation.path_depth,
+                                                                 r);
+  BRepOffsetAPI_MakePipe pipe(path, face_builder.Face());
+  pipe.Build();
+  if (!pipe.IsDone()) {
+    throw std::runtime_error("Failed to build plugin rounded rectangle sweep");
+  }
+  const TopoDS_Shape shape = pipe.Shape();
+  if (shape.IsNull()) {
+    throw std::runtime_error("Failed to build plugin rounded rectangle sweep shape");
+  }
+  return shape;
+}
+
 TopoDS_Shape build_plugin_operation_shape(
     const PluginGeometryOperation& operation) {
   if (operation.primitive == "box") {
@@ -219,6 +304,12 @@ TopoDS_Shape build_plugin_operation_shape(
                                    operation.z,
                                    operation.radius,
                                    operation.height);
+  }
+  if (operation.primitive == "profile_extrude") {
+    return make_plugin_profile_extrude_shape(operation);
+  }
+  if (operation.primitive == "rounded_rect_profile_sweep") {
+    return make_plugin_rounded_rect_profile_sweep_shape(operation);
   }
   return TopoDS_Shape{};
 }

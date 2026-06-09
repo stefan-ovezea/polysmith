@@ -51,7 +51,14 @@ export type PluginGeometryPrimitive =
   | "box"
   | "rounded_box"
   | "tapered_rounded_box"
-  | "cylinder";
+  | "cylinder"
+  | "profile_extrude"
+  | "rounded_rect_profile_sweep";
+
+export interface PluginProfilePoint {
+  u: number;
+  v: number;
+}
 
 export interface PluginGeometryOperation {
   operation: PluginGeometryOperationKind;
@@ -68,6 +75,14 @@ export interface PluginGeometryOperation {
   top_radius?: number;
   top_offset_x?: number;
   top_offset_y?: number;
+  profile_plane?: "xy" | "xz" | "yz";
+  extrude_x?: number;
+  extrude_y?: number;
+  extrude_z?: number;
+  path_width?: number;
+  path_depth?: number;
+  path_radius?: number;
+  profile_points?: PluginProfilePoint[];
 }
 
 export interface CreatePluginFeatureCommand {

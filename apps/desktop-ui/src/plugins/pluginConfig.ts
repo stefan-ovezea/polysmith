@@ -33,34 +33,6 @@ function cloneConfig<TConfig>(config: TConfig): TConfig {
   return JSON.parse(JSON.stringify(config)) as TConfig;
 }
 
-function migrateBundledPluginConfig(
-  pluginId: string,
-  config: Record<string, unknown>,
-): Record<string, unknown> {
-  if (
-    pluginId === "polysmith.gridfinity" &&
-    config.configSchemaVersion !== 3 &&
-    config.gridX === 2 &&
-    config.gridY === 2 &&
-    config.compartmentsX === 2 &&
-    config.compartmentsY === 2
-  ) {
-    return {
-      ...config,
-      configSchemaVersion: 3,
-      compartmentsX: 1,
-      compartmentsY: 1,
-    };
-  }
-  if (pluginId === "polysmith.gridfinity") {
-    return {
-      ...config,
-      configSchemaVersion: 3,
-    };
-  }
-  return config;
-}
-
 function normalizePluginConfig(
   input: unknown,
   plugins: TrustedPlugin[],
@@ -93,10 +65,14 @@ function normalizePluginConfig(
         : {};
     const config =
       plugin.defaultConfig && typeof plugin.defaultConfig === "object"
-        ? migrateBundledPluginConfig(plugin.manifest.id, {
+        ? plugin.migrateConfig?.({
             ...(cloneConfig(plugin.defaultConfig) as Record<string, unknown>),
             ...(rawConfig as Record<string, unknown>),
-          })
+          }) ??
+          ({
+            ...(cloneConfig(plugin.defaultConfig) as Record<string, unknown>),
+            ...(rawConfig as Record<string, unknown>),
+          } as typeof plugin.defaultConfig)
         : rawConfig;
 
     normalized.plugins[plugin.manifest.id] = {

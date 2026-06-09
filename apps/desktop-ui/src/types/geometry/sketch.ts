@@ -347,7 +347,13 @@ export interface PluginFeatureParameters {
   parameters: Record<string, unknown>;
   geometry: Array<{
     operation: "add" | "subtract";
-    primitive: "box" | "rounded_box" | "tapered_rounded_box" | "cylinder";
+    primitive:
+      | "box"
+      | "rounded_box"
+      | "tapered_rounded_box"
+      | "cylinder"
+      | "profile_extrude"
+      | "rounded_rect_profile_sweep";
     x: number;
     y: number;
     z: number;
@@ -360,6 +366,14 @@ export interface PluginFeatureParameters {
     top_radius?: number;
     top_offset_x?: number;
     top_offset_y?: number;
+    profile_plane?: "xy" | "xz" | "yz";
+    extrude_x?: number;
+    extrude_y?: number;
+    extrude_z?: number;
+    path_width?: number;
+    path_depth?: number;
+    path_radius?: number;
+    profile_points?: Array<{ u: number; v: number }>;
   }>;
 }
 

@@ -16,6 +16,7 @@ using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
 using polysmith::core::PluginFeatureParameters;
 using polysmith::core::PluginGeometryOperation;
+using polysmith::core::PluginProfilePoint;
 using polysmith::core::build_plugin_feature_shape;
 using polysmith::core::compile_bodies;
 using polysmith::core::create_plugin_feature;
@@ -110,6 +111,104 @@ bool test_compiles_generic_plugin_body() {
                 "expected compiled plugin shape");
 }
 
+bool test_builds_generic_profile_extrude() {
+  PluginFeatureParameters parameters{};
+  parameters.plugin_id = "example.plugin";
+  parameters.feature_type = "example_profile";
+  parameters.display_name = "Example Plugin Profile";
+  parameters.geometry.push_back(PluginGeometryOperation{
+      .operation = "add",
+      .primitive = "profile_extrude",
+      .x = 2.0,
+      .y = 3.0,
+      .z = 4.0,
+      .width = 1.0,
+      .depth = 1.0,
+      .height = 1.0,
+      .profile_plane = "yz",
+      .extrude_x = 12.0,
+      .profile_points = std::vector<PluginProfilePoint>{
+          PluginProfilePoint{.u = 0.0, .v = 0.0},
+          PluginProfilePoint{.u = 8.0, .v = 0.0},
+          PluginProfilePoint{.u = 8.0, .v = 5.0},
+          PluginProfilePoint{.u = 2.0, .v = 7.0},
+      },
+  });
+
+  const auto shape = build_plugin_feature_shape(parameters);
+  if (!expect(!shape.IsNull(),
+              "expected generic profile extrude to build a shape")) {
+    return false;
+  }
+
+  Bnd_Box bounds;
+  BRepBndLib::Add(shape, bounds);
+  double xmin = 0.0;
+  double ymin = 0.0;
+  double zmin = 0.0;
+  double xmax = 0.0;
+  double ymax = 0.0;
+  double zmax = 0.0;
+  bounds.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+
+  return expect((xmax - xmin) > 11.0,
+                "expected profile extrude width in X") &&
+         expect((ymax - ymin) > 6.0,
+                "expected profile extrude height in Y") &&
+         expect((zmax - zmin) > 7.0,
+                "expected profile extrude depth in Z");
+}
+
+bool test_builds_generic_rounded_rect_profile_sweep() {
+  PluginFeatureParameters parameters{};
+  parameters.plugin_id = "example.plugin";
+  parameters.feature_type = "example_profile_sweep";
+  parameters.display_name = "Example Plugin Profile Sweep";
+  parameters.geometry.push_back(PluginGeometryOperation{
+      .operation = "add",
+      .primitive = "rounded_rect_profile_sweep",
+      .x = 0.0,
+      .y = 0.0,
+      .z = 0.0,
+      .width = 1.0,
+      .depth = 1.0,
+      .height = 1.0,
+      .profile_plane = "yz",
+      .path_width = 42.0,
+      .path_depth = 42.0,
+      .path_radius = 4.0,
+      .profile_points = std::vector<PluginProfilePoint>{
+          PluginProfilePoint{.u = 0.0, .v = 0.0},
+          PluginProfilePoint{.u = 0.0, .v = 4.0},
+          PluginProfilePoint{.u = 2.0, .v = 2.0},
+          PluginProfilePoint{.u = 3.0, .v = 0.0},
+      },
+  });
+
+  const auto shape = build_plugin_feature_shape(parameters);
+  if (!expect(!shape.IsNull(),
+              "expected generic rounded rectangle profile sweep to build a shape")) {
+    return false;
+  }
+
+  Bnd_Box bounds;
+  BRepBndLib::Add(shape, bounds);
+  double xmin = 0.0;
+  double ymin = 0.0;
+  double zmin = 0.0;
+  double xmax = 0.0;
+  double ymax = 0.0;
+  double zmax = 0.0;
+  bounds.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+
+  return expect((xmax - xmin) > 40.0,
+                "expected swept profile width in X") &&
+         expect((ymax - ymin) > 3.0,
+                "expected swept profile height in Y") &&
+         expect((zmax - zmin) > 40.0,
+                "expected swept profile depth in Z");
+}
+
 bool test_rejects_empty_recipe() {
   auto parameters = make_plugin_parameters();
   parameters.geometry.clear();
@@ -127,6 +226,8 @@ int main() {
   if (!test_creates_generic_plugin_feature() ||
       !test_builds_shape_from_generic_recipe() ||
       !test_compiles_generic_plugin_body() ||
+      !test_builds_generic_profile_extrude() ||
+      !test_builds_generic_rounded_rect_profile_sweep() ||
       !test_rejects_empty_recipe()) {
     return 1;
   }

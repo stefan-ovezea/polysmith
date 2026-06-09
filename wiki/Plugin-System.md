@@ -34,3 +34,9 @@ The first bundled plugin is `polysmith.gridfinity`. All Gridfinity-specific
 defaults, validation, and recipe generation live in the plugin package; the
 core only sees `plugin_id`, `feature_type`, display metadata, serialized
 plugin parameters, and the generic geometry recipe.
+
+The desktop app only owns plugin host glue: loading trusted plugin runtimes,
+showing their menu items, forwarding generic command selections, storing an
+active plugin action descriptor, and asking the owning plugin to render its
+context panel. It must not import a bundled plugin's command builders or panels
+directly.
