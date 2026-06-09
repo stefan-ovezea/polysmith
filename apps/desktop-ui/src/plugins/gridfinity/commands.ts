@@ -434,10 +434,11 @@ function addStackingLip(
   const outerX = GRID_CLEARANCE_MM / 2;
   const outerY = GRID_CLEARANCE_MM / 2;
   const wall = parameters.wallThickness;
-  const innerBottomWidth = Math.max(1, width - wall * 2);
-  const innerBottomDepth = Math.max(1, depth - wall * 2);
+  const innerWidth = Math.max(1, width - wall * 2);
+  const innerDepth = Math.max(1, depth - wall * 2);
   const innerTopWidth = Math.max(1, width - CHAMFER_EPSILON_MM * 2);
   const innerTopDepth = Math.max(1, depth - CHAMFER_EPSILON_MM * 2);
+  const chamferHeight = Math.min(wall, STACKING_LIP_HEIGHT_MM);
 
   operations.push(
     op(
@@ -445,19 +446,30 @@ function addStackingLip(
       "rounded_box",
       outerX,
       outerY,
-      baseHeight - 0.05,
+      baseHeight,
       width,
       depth,
-      STACKING_LIP_HEIGHT_MM + 0.05,
+      STACKING_LIP_HEIGHT_MM,
       OUTER_RADIUS_MM,
+    ),
+    op(
+      "subtract",
+      "rounded_box",
+      outerX + wall,
+      outerY + wall,
+      baseHeight - 0.05,
+      innerWidth,
+      innerDepth,
+      STACKING_LIP_HEIGHT_MM + 0.1,
+      Math.max(0.1, OUTER_RADIUS_MM - wall),
     ),
     taperedOp(
       outerX + wall,
       outerY + wall,
-      baseHeight - 0.15,
-      innerBottomWidth,
-      innerBottomDepth,
-      STACKING_LIP_HEIGHT_MM + 0.3,
+      baseHeight + STACKING_LIP_HEIGHT_MM - chamferHeight,
+      innerWidth,
+      innerDepth,
+      chamferHeight + 0.05,
       Math.max(0.1, OUTER_RADIUS_MM - wall),
       innerTopWidth,
       innerTopDepth,
@@ -1099,19 +1111,39 @@ function buildBaseplateGeometry(
       ? BASEPLATE_WEIGHTED_HEIGHT_MM
       : BASEPLATE_THIN_HEIGHT_MM;
   const profileBaseZ = Math.max(0, height - BASEPLATE_THIN_HEIGHT_MM);
-  const operations: PluginGeometryOperation[] = [
-    op(
-      "add",
-      "rounded_box",
-      0,
-      0,
-      0,
-      width,
-      depth,
-      profileBaseZ + BASEPLATE_PROFILE_FLOOR_Z_MM,
-      BASEPLATE_CORNER_RADIUS_MM,
-    ),
-  ];
+  const operations: PluginGeometryOperation[] = [];
+
+  if (profileBaseZ > 0) {
+    operations.push(
+      op(
+        "add",
+        "rounded_box",
+        0,
+        0,
+        0,
+        width,
+        depth,
+        profileBaseZ,
+        BASEPLATE_CORNER_RADIUS_MM,
+      ),
+    );
+  }
+
+  if (parameters.drawerFitWidth > 0 || parameters.drawerFitDepth > 0) {
+    operations.push(
+      op(
+        "add",
+        "rounded_box",
+        0,
+        0,
+        0,
+        width,
+        depth,
+        Math.max(0.25, profileBaseZ),
+        BASEPLATE_CORNER_RADIUS_MM,
+      ),
+    );
+  }
 
   for (let gx = 0; gx < parameters.gridX; gx += 1) {
     for (let gy = 0; gy < parameters.gridY; gy += 1) {

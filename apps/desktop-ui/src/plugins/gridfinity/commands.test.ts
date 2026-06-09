@@ -120,7 +120,8 @@ describe("Gridfinity geometry recipe", () => {
     const cavityCuts = payload.geometry.filter(
       (operation) =>
         operation.operation === "subtract" &&
-        operation.primitive === "rounded_box",
+        operation.primitive === "rounded_box" &&
+        operation.z < 6.9,
     );
     const stackingLipCut = payload.geometry.find(
       (operation) =>
@@ -253,7 +254,8 @@ describe("Gridfinity geometry recipe", () => {
     const cavityCuts = payload.geometry.filter(
       (operation) =>
         operation.operation === "subtract" &&
-        operation.primitive === "rounded_box",
+        operation.primitive === "rounded_box" &&
+        operation.z < 13.9,
     );
 
     expect(payload.feature_type).toBe("gridfinity_holey_bin");
@@ -363,43 +365,52 @@ describe("Gridfinity geometry recipe", () => {
         operation.primitive === "rounded_box" &&
         closeTo(operation.x, 0.25) &&
         closeTo(operation.y, 0.25) &&
-        closeTo(operation.z, 41.95) &&
-        closeTo(operation.height, 4.45),
+        closeTo(operation.z, 42) &&
+        closeTo(operation.height, 4.4),
     );
-    const lipCut = gridfinityOperations().find(
+    const receiverCut = gridfinityOperations().find(
+      (operation) =>
+        operation.operation === "subtract" &&
+        operation.primitive === "rounded_box" &&
+        closeTo(operation.x, 2.15) &&
+        closeTo(operation.y, 2.15) &&
+        closeTo(operation.z, 41.95) &&
+        closeTo(operation.width, 79.7) &&
+        closeTo(operation.depth, 79.7) &&
+        closeTo(operation.height, 4.5),
+    );
+    const chamferCut = gridfinityOperations().find(
       (operation) =>
         operation.operation === "subtract" &&
         operation.primitive === "tapered_rounded_box" &&
         closeTo(operation.x, 2.15) &&
         closeTo(operation.y, 2.15) &&
-        closeTo(operation.z, 41.85) &&
+        closeTo(operation.z, 44.5) &&
         closeTo(operation.width, 79.7) &&
         closeTo(operation.depth, 79.7) &&
-        closeTo(operation.height, 4.7),
+        closeTo(operation.height, 1.95),
     );
 
     expect(lipAdd).toMatchObject({ width: 83.5, depth: 83.5, radius: 3.75 });
-    expect(lipCut).toMatchObject({
+    expect(receiverCut).toMatchObject({ radius: 1.85 });
+    expect(chamferCut).toMatchObject({
       top_width: 83.48,
       top_depth: 83.48,
       radius: 1.85,
       top_radius: 3.74,
     });
     expect(
-      (lipCut?.top_width ?? 0) - (lipCut?.width ?? 0),
+      (chamferCut?.top_width ?? 0) - (chamferCut?.width ?? 0),
     ).toBeCloseTo(3.78);
     expect(
-      (lipCut?.top_depth ?? 0) - (lipCut?.depth ?? 0),
+      (chamferCut?.top_depth ?? 0) - (chamferCut?.depth ?? 0),
     ).toBeCloseTo(3.78);
     expect(
-      (lipCut?.top_width ?? 0) - (lipCut?.width ?? 0),
+      (chamferCut?.top_width ?? 0) - (chamferCut?.width ?? 0),
     ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2 - 0.02);
     expect(
-      (lipCut?.top_depth ?? 0) - (lipCut?.depth ?? 0),
+      (chamferCut?.top_depth ?? 0) - (chamferCut?.depth ?? 0),
     ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2 - 0.02);
-    expect(
-      closeTo((lipCut?.height ?? 0) - 0.3, 4.4),
-    ).toBe(true);
   });
 
   it("adds independent divider walls with gridfinitycreator's default thickness", () => {
@@ -578,7 +589,7 @@ describe("Gridfinity geometry recipe", () => {
       gridY: 1,
       magnetHoles: false,
     });
-    const floor = geometry.find(
+    const filledFloor = geometry.find(
       (operation) =>
         operation.operation === "add" &&
         operation.primitive === "rounded_box",
@@ -589,15 +600,7 @@ describe("Gridfinity geometry recipe", () => {
         operation.primitive === "rounded_rect_profile_sweep",
     );
 
-    expect(floor).toMatchObject({
-      x: 0,
-      y: 0,
-      z: 0,
-      width: 42,
-      depth: 42,
-      height: 0.7,
-      radius: 4,
-    });
+    expect(filledFloor).toBeUndefined();
     expect(sweeps).toHaveLength(1);
     expect(sweeps).toEqual(
       expect.arrayContaining([
@@ -641,7 +644,7 @@ describe("Gridfinity geometry recipe", () => {
         operation.primitive === "rounded_rect_profile_sweep",
     );
 
-    expect(floor?.height).toBeCloseTo(3.05);
+    expect(floor?.height).toBeCloseTo(2.35);
     expect(sweeps).toHaveLength(1);
     expect(sweeps.every((operation) => closeTo(operation.z, 2.35))).toBe(true);
   });

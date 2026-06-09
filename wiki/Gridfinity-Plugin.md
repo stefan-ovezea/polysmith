@@ -42,8 +42,9 @@ design reference: 35.6 mm lower flat, 0.8 mm lower 45-degree transition,
 41.5 mm footprint. Corner callouts in the reference are treated as diameters,
 so the bin uses 3.75 mm outer corner radius and 1.6 mm inner corner radius.
 The stacking lip follows gridfinitycreator's classic-bin approach: a raised
-outer wall with a chamfered inner receiver that widens from the wall-thickness
-opening to almost the full bin footprint. Compartments are made from one
+outer wall with a straight wall-thickness receiver and only the top inside edge
+chamfered open. This lets the lower 35.6/37.2 mm underside profile enter before
+the upper chamfer centers it. Compartments are made from one
 interior cutout plus explicit divider walls, matching gridfinitycreator's
 separate divider-thickness setting rather than reusing the outside wall
 thickness. The label ridge is an interior sloped shelf and can be repeated for
@@ -70,8 +71,9 @@ For baseplates, each grid cell uses the same side-profile dimensions as
 `gridfinitycreator`'s baseplate generator: 4.65 mm profile height, 2.25 mm
 inner step, 2.85 mm profile wall, 2.5 mm mid-slope height, and 0.7 mm floor.
 The plugin follows the upstream swept rounded-square path with the generic
-`rounded_rect_profile_sweep` primitive, plus a connected floor plate so
-drawer-fit baseplates remain one body.
+`rounded_rect_profile_sweep` primitive. Thin baseplates are socket rails rather
+than a filled floor plate; weighted baseplates add only the lower weighted body
+under the same socket profile.
 
 ## Workflow
 
