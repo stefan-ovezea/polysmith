@@ -49,6 +49,8 @@ PluginFeatureParameters make_plugin_parameters() {
       .top_width = 40.0,
       .top_depth = 30.0,
       .top_radius = 4.0,
+      .top_offset_x = 1.0,
+      .top_offset_y = -1.0,
   });
   parameters.geometry.push_back(PluginGeometryOperation{
       .operation = "subtract",

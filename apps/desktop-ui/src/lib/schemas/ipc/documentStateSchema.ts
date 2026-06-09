@@ -444,6 +444,8 @@ export const documentStateSchema = z.object({
                 top_width: z.number().optional().default(0),
                 top_depth: z.number().optional().default(0),
                 top_radius: z.number().optional().default(0),
+                top_offset_x: z.number().optional().default(0),
+                top_offset_y: z.number().optional().default(0),
               }),
             )
             .default([]),

@@ -61,7 +61,10 @@ Supported operations are `add` and `subtract`. Supported primitives are `box`,
 `rounded_box`, `tapered_rounded_box`, and `cylinder`.
 `tapered_rounded_box` uses the normal `width`, `depth`, and `radius` as the
 bottom profile and optional `top_width`, `top_depth`, and `top_radius` for a
-centered top profile. Recipe coordinates use plugin-local X/Y for the footprint
-plane and Z for height. The core validates and interprets this recipe as a CAD
-body; plugins must not generate mesh/STL geometry in React, and the native core
-must not contain plugin-specific modeling code.
+top profile. Optional `top_offset_x` and `top_offset_y` shift that top profile
+from the centered position, which lets plugins create one-direction printable
+ramps while still using a generic lofted primitive. Recipe coordinates use
+plugin-local X/Y for the footprint plane and Z for height. The core validates
+and interprets this recipe as a CAD body; plugins must not generate mesh/STL
+geometry in React, and the native core must not contain plugin-specific
+modeling code.

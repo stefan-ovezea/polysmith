@@ -66,6 +66,8 @@ export interface PluginGeometryOperation {
   top_width?: number;
   top_depth?: number;
   top_radius?: number;
+  top_offset_x?: number;
+  top_offset_y?: number;
 }
 
 export interface CreatePluginFeatureCommand {

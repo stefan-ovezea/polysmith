@@ -2797,6 +2797,8 @@ After non-construction closed geometry:
   Gridfinity commands. Use the plugin SDK/command helpers so the command
   includes both the plugin-owned `parameters` JSON and the generic `geometry`
   recipe required by `create_plugin_feature` / `update_plugin_feature`.
+  `tapered_rounded_box` plugin geometry may include `top_width`, `top_depth`,
+  `top_radius`, `top_offset_x`, and `top_offset_y` for lofted profiles.
 - `select_*` commands are not required before modeling commands that accept
   explicit IDs.
 - `extrude_profile` accepts profiles from finished sketches.

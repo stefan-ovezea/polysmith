@@ -266,8 +266,9 @@ tool:
   `subtract`; primitives are `box`, `rounded_box`, `tapered_rounded_box`, or
   `cylinder`; coordinates use plugin-local X/Y for the footprint plane and Z
   for height. `tapered_rounded_box` accepts optional `top_width`, `top_depth`,
-  and `top_radius` fields for centered lofted profiles. The core must not
-  contain plugin-specific modeling code.
+  and `top_radius` fields for lofted profiles. Optional `top_offset_x` and
+  `top_offset_y` shift the top profile from its centered position. The core
+  must not contain plugin-specific modeling code.
 - `create_offset_plane { source_plane_id, offset }` adds a parametric offset construction plane to the document. `source_plane_id` may be one of the three origin planes (`ref-plane-xy/yz/xz`), an existing construction plane's feature id, a sketch profile id, or a planar body face id of the form `<body_id>:face:<index>`. `offset` is a signed distance (mm) along the source's normal. For sketch profiles, the core uses the owning sketch plane and centers the source frame on the profile region. The core resolves the source's frame, slides it along the normal, stores the result on a new `construction_plane` feature, and emits the updated document.
 - `create_midplane { source_plane_ids: [first, second] }` adds a construction plane halfway between two parallel plane-like sources. Sources use the same ids as `create_offset_plane` except both must resolve to parallel plane frames. The core stores both source ids on the construction-plane feature and re-resolves both during dependency refresh.
 - `create_tangent_plane { source_face_id }` adds a construction plane tangent to a body face. The source must be a body face id from `viewport_state.solid_faces[]`; curved faces are sampled at their representative midpoint and planar faces resolve to a coincident tangent plane.

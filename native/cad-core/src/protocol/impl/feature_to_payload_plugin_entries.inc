@@ -35,6 +35,8 @@
                           {"top_width", operation.top_width},
                           {"top_depth", operation.top_depth},
                           {"top_radius", operation.top_radius},
+                          {"top_offset_x", operation.top_offset_x},
+                          {"top_offset_y", operation.top_offset_y},
                       });
                     }
                     return operations;

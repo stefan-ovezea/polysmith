@@ -19,11 +19,10 @@ const FOOT_VERTICAL_MM = 1.8;
 const FOOT_UPPER_CHAMFER_MM = 2.15;
 const BASEPLATE_THIN_HEIGHT_MM = 4;
 const BASEPLATE_WEIGHTED_HEIGHT_MM = 7;
-const STACKING_LIP_HEIGHT_MM = 4.4;
-const STACKING_LIP_CHANNEL_INSET_MM = 4.8;
-const STACKING_LIP_CHANNEL_WIDTH_MM = 2.15;
-const STACKING_LIP_CHANNEL_DEPTH_MM = 0.8;
-const LABEL_TAB_DEPTH_MM = 9.5;
+const STACKING_LIP_HEIGHT_MM = FOOT_HEIGHT_MM;
+const STACKING_SOCKET_Z_RELIEF_MM = 0.1;
+const LABEL_TAB_DEPTH_MM = 12;
+const LABEL_TAB_TOP_DEPTH_MM = 3.2;
 const LABEL_TAB_HEIGHT_MM = 4.8;
 const MAGNET_RADIUS_MM = 3.25;
 const MAGNET_DEPTH_MM = 2.4;
@@ -84,9 +83,12 @@ function taperedOp(
   topWidth: number,
   topDepth: number,
   topRadius: number,
+  operation: PluginGeometryOperation["operation"] = "add",
+  topOffsetX = 0,
+  topOffsetY = 0,
 ): PluginGeometryOperation {
   return {
-    operation: "add",
+    operation,
     primitive: "tapered_rounded_box",
     x,
     y,
@@ -98,6 +100,8 @@ function taperedOp(
     top_width: topWidth,
     top_depth: topDepth,
     top_radius: topRadius,
+    top_offset_x: topOffsetX,
+    top_offset_y: topOffsetY,
   };
 }
 
@@ -171,74 +175,58 @@ function addStackingLip(
 ) {
   const outerX = GRID_CLEARANCE_MM / 2;
   const outerY = GRID_CLEARANCE_MM / 2;
-  const channelZ =
-    baseHeight + STACKING_LIP_HEIGHT_MM - STACKING_LIP_CHANNEL_DEPTH_MM;
   const wall = parameters.wallThickness;
+  const socketInset = (GRID_UNIT_MM - FOOT_BOTTOM_SIZE_MM) / 2;
+  const socketZ = baseHeight - STACKING_SOCKET_Z_RELIEF_MM / 2;
+  const socketHeight = STACKING_LIP_HEIGHT_MM + STACKING_SOCKET_Z_RELIEF_MM;
 
   operations.push(
-    op(
-      "add",
-      "rounded_box",
+    taperedOp(
       outerX,
       outerY,
-      baseHeight - 0.25,
+      baseHeight - 0.05,
       width,
       depth,
-      STACKING_LIP_HEIGHT_MM + 0.25,
+      STACKING_LIP_HEIGHT_MM + 0.05,
       OUTER_RADIUS_MM,
+      Math.max(1, width - FOOT_LOWER_CHAMFER_MM * 2),
+      Math.max(1, depth - FOOT_LOWER_CHAMFER_MM * 2),
+      Math.max(0.1, OUTER_RADIUS_MM - FOOT_LOWER_CHAMFER_MM),
     ),
-    op(
-      "subtract",
-      "rounded_box",
-      outerX + wall,
-      outerY + wall,
-      baseHeight - 0.35,
+    taperedOp(
+      outerX + wall + FOOT_UPPER_CHAMFER_MM,
+      outerY + wall + FOOT_UPPER_CHAMFER_MM,
+      baseHeight - 0.15,
+      Math.max(1, width - (wall + FOOT_UPPER_CHAMFER_MM) * 2),
+      Math.max(1, depth - (wall + FOOT_UPPER_CHAMFER_MM) * 2),
+      STACKING_LIP_HEIGHT_MM + 0.3,
+      INNER_RADIUS_MM,
       Math.max(1, width - wall * 2),
       Math.max(1, depth - wall * 2),
-      STACKING_LIP_HEIGHT_MM + 0.55,
       INNER_RADIUS_MM,
-    ),
-    op(
       "subtract",
-      "box",
-      outerX + STACKING_LIP_CHANNEL_INSET_MM,
-      outerY + STACKING_LIP_CHANNEL_INSET_MM,
-      channelZ,
-      Math.max(1, width - STACKING_LIP_CHANNEL_INSET_MM * 2),
-      STACKING_LIP_CHANNEL_WIDTH_MM,
-      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
-    ),
-    op(
-      "subtract",
-      "box",
-      outerX + STACKING_LIP_CHANNEL_INSET_MM,
-      outerY + depth - STACKING_LIP_CHANNEL_INSET_MM - STACKING_LIP_CHANNEL_WIDTH_MM,
-      channelZ,
-      Math.max(1, width - STACKING_LIP_CHANNEL_INSET_MM * 2),
-      STACKING_LIP_CHANNEL_WIDTH_MM,
-      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
-    ),
-    op(
-      "subtract",
-      "box",
-      outerX + STACKING_LIP_CHANNEL_INSET_MM,
-      outerY + STACKING_LIP_CHANNEL_INSET_MM,
-      channelZ,
-      STACKING_LIP_CHANNEL_WIDTH_MM,
-      Math.max(1, depth - STACKING_LIP_CHANNEL_INSET_MM * 2),
-      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
-    ),
-    op(
-      "subtract",
-      "box",
-      outerX + width - STACKING_LIP_CHANNEL_INSET_MM - STACKING_LIP_CHANNEL_WIDTH_MM,
-      outerY + STACKING_LIP_CHANNEL_INSET_MM,
-      channelZ,
-      STACKING_LIP_CHANNEL_WIDTH_MM,
-      Math.max(1, depth - STACKING_LIP_CHANNEL_INSET_MM * 2),
-      STACKING_LIP_CHANNEL_DEPTH_MM + 0.05,
     ),
   );
+
+  for (let gx = 0; gx < parameters.gridX; gx += 1) {
+    for (let gy = 0; gy < parameters.gridY; gy += 1) {
+      operations.push(
+        taperedOp(
+          gx * GRID_UNIT_MM + socketInset,
+          gy * GRID_UNIT_MM + socketInset,
+          socketZ,
+          FOOT_BOTTOM_SIZE_MM,
+          FOOT_BOTTOM_SIZE_MM,
+          socketHeight,
+          INNER_RADIUS_MM,
+          BLOCK_FOOTPRINT_MM,
+          BLOCK_FOOTPRINT_MM,
+          OUTER_RADIUS_MM,
+          "subtract",
+        ),
+      );
+    }
+  }
 }
 
 function addLabelTab(
@@ -248,7 +236,7 @@ function addLabelTab(
   depth: number,
   baseHeight: number,
 ) {
-  const tabWidth = Math.min(36, Math.max(24, width * 0.38));
+  const tabWidth = Math.min(30, Math.max(18, width * 0.32));
   const tabDepth = Math.min(
     LABEL_TAB_DEPTH_MM,
     Math.max(1, depth - parameters.wallThickness * 2),
@@ -256,15 +244,16 @@ function addLabelTab(
   const topZ =
     baseHeight + (parameters.stackingLip ? STACKING_LIP_HEIGHT_MM : 0);
   const tabHeight = Math.min(LABEL_TAB_HEIGHT_MM, Math.max(1, topZ));
-  const tabX = GRID_CLEARANCE_MM / 2 + width / 2 - tabWidth / 2;
+  const tabX =
+    GRID_CLEARANCE_MM / 2 + width - parameters.wallThickness - tabWidth;
   const tabY =
     GRID_CLEARANCE_MM / 2 + depth - parameters.wallThickness - tabDepth;
   const tabZ = Math.max(0, topZ - tabHeight);
+  const topDepth = Math.min(LABEL_TAB_TOP_DEPTH_MM, Math.max(0.5, tabDepth));
+  const topOffsetY = Math.max(0, (tabDepth - topDepth) / 2);
 
   operations.push(
-    op(
-      "add",
-      "rounded_box",
+    taperedOp(
       tabX,
       tabY,
       tabZ,
@@ -272,26 +261,12 @@ function addLabelTab(
       tabDepth,
       tabHeight,
       1.2,
-    ),
-    op(
-      "subtract",
-      "box",
-      tabX - 0.5,
-      tabY - 0.7,
-      topZ - 1.2,
-      4,
-      1.4,
-      1.3,
-    ),
-    op(
-      "subtract",
-      "box",
-      tabX + tabWidth - 3.5,
-      tabY - 0.7,
-      topZ - 1.2,
-      4,
-      1.4,
-      1.3,
+      tabWidth,
+      topDepth,
+      0.8,
+      "add",
+      0,
+      topOffsetY,
     ),
   );
 }

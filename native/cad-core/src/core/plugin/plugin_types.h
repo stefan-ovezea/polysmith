@@ -18,6 +18,8 @@ struct PluginGeometryOperation {
   double top_width = 0.0;
   double top_depth = 0.0;
   double top_radius = 0.0;
+  double top_offset_x = 0.0;
+  double top_offset_y = 0.0;
 };
 
 struct PluginFeatureParameters {

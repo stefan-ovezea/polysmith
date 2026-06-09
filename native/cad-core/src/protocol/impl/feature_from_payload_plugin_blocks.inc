@@ -66,6 +66,12 @@
         operation.top_radius = read_optional_number(operation_payload,
                                                     "top_radius",
                                                     operation.top_radius);
+        operation.top_offset_x = read_optional_number(operation_payload,
+                                                      "top_offset_x",
+                                                      operation.top_offset_x);
+        operation.top_offset_y = read_optional_number(operation_payload,
+                                                      "top_offset_y",
+                                                      operation.top_offset_y);
         parameters.geometry.push_back(operation);
       }
     }

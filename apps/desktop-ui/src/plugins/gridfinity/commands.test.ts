@@ -73,70 +73,63 @@ describe("Gridfinity geometry recipe", () => {
     );
   });
 
-  it("cuts a recessed stacking channel into the top rim", () => {
-    const channelCuts = gridfinityOperations().filter(
+  it("cuts stackable top sockets that match the bottom foot profile", () => {
+    const socketCuts = gridfinityOperations().filter(
       (operation) =>
         operation.operation === "subtract" &&
-        operation.primitive === "box" &&
-        closeTo(operation.z, 45.6) &&
-        closeTo(operation.height, 0.85),
+        operation.primitive === "tapered_rounded_box" &&
+        closeTo(operation.z, 41.95) &&
+        closeTo(operation.width, 35.6) &&
+        closeTo(operation.depth, 35.6) &&
+        closeTo(operation.height, 4.85),
     );
 
-    expect(channelCuts).toHaveLength(4);
+    expect(socketCuts).toHaveLength(4);
     expect(
-      channelCuts.some(
+      socketCuts.some(
         (operation) =>
-          closeTo(operation.x, 5.05) &&
-          closeTo(operation.y, 5.05) &&
-          closeTo(operation.width, 73.9) &&
-          closeTo(operation.depth, 2.15),
+          closeTo(operation.x, 3.2) &&
+          closeTo(operation.y, 3.2) &&
+          closeTo(operation.top_width, 41.5) &&
+          closeTo(operation.top_depth, 41.5),
       ),
     ).toBe(true);
     expect(
-      channelCuts.some(
+      socketCuts.some(
         (operation) =>
-          closeTo(operation.x, 5.05) &&
-          closeTo(operation.y, 76.8) &&
-          closeTo(operation.width, 73.9) &&
-          closeTo(operation.depth, 2.15),
+          closeTo(operation.x, 45.2) &&
+          closeTo(operation.y, 45.2) &&
+          closeTo(operation.top_width, 41.5) &&
+          closeTo(operation.top_depth, 41.5),
       ),
     ).toBe(true);
+    expect(socketCuts.every((operation) => closeTo(operation.radius, 1.6))).toBe(
+      true,
+    );
     expect(
-      channelCuts.some(
-        (operation) =>
-          closeTo(operation.x, 5.05) &&
-          closeTo(operation.y, 5.05) &&
-          closeTo(operation.width, 2.15) &&
-          closeTo(operation.depth, 73.9),
-      ),
-    ).toBe(true);
-    expect(
-      channelCuts.some(
-        (operation) =>
-          closeTo(operation.x, 76.8) &&
-          closeTo(operation.y, 5.05) &&
-          closeTo(operation.width, 2.15) &&
-          closeTo(operation.depth, 73.9),
-      ),
+      socketCuts.every((operation) => closeTo(operation.top_radius, 3.75)),
     ).toBe(true);
   });
 
-  it("places the label tab as an internal rear shelf", () => {
+  it("places the label tab as a sloped internal rear-corner shelf", () => {
     const tab = gridfinityOperations().find(
       (operation) =>
         operation.operation === "add" &&
-        operation.primitive === "rounded_box" &&
-        closeTo(operation.width, 31.73) &&
-        closeTo(operation.depth, 9.5) &&
-        closeTo(operation.height, 4.8),
+        operation.primitive === "tapered_rounded_box" &&
+        closeTo(operation.width, 26.72) &&
+        closeTo(operation.depth, 12) &&
+        closeTo(operation.height, 4.8) &&
+        closeTo(operation.top_depth, 3.2),
     );
 
-    expect(closeTo(tab?.x, 26.135)).toBe(true);
-    expect(closeTo(tab?.y, 72.65)).toBe(true);
-    expect(closeTo(tab?.z, 41.6)).toBe(true);
+    expect(closeTo(tab?.x, 55.43)).toBe(true);
+    expect(closeTo(tab?.y, 70.15)).toBe(true);
+    expect(closeTo(tab?.z, 41.95)).toBe(true);
+    expect(closeTo(tab?.top_offset_y, 4.4)).toBe(true);
     expect(tab?.radius).toBe(1.2);
     expect(tab?.y).toBeGreaterThan(0);
     expect((tab?.y ?? 0) + (tab?.depth ?? 0)).toBeLessThanOrEqual(83.75);
+    expect((tab?.x ?? 0) + (tab?.width ?? 0)).toBeLessThanOrEqual(83.75);
   });
 
   it("places magnet holes in all four corners of every grid unit", () => {

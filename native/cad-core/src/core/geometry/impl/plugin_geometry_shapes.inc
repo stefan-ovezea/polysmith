@@ -154,13 +154,17 @@ TopoDS_Shape make_plugin_tapered_rounded_box_at(double x,
                                                 double radius,
                                                 double top_width,
                                                 double top_depth,
-                                                double top_radius) {
+                                                double top_radius,
+                                                double top_offset_x,
+                                                double top_offset_y) {
   const double resolved_top_width = top_width > 0.0 ? top_width : width;
   const double resolved_top_depth = top_depth > 0.0 ? top_depth : depth;
   const double resolved_top_radius =
       top_radius > 0.0 ? top_radius : radius;
-  const double top_x = x + (width - resolved_top_width) / 2.0;
-  const double top_y = y + (depth - resolved_top_depth) / 2.0;
+  const double top_x =
+      x + (width - resolved_top_width) / 2.0 + top_offset_x;
+  const double top_y =
+      y + (depth - resolved_top_depth) / 2.0 + top_offset_y;
 
   BRepOffsetAPI_ThruSections loft(true, false, 1.0e-6);
   loft.AddWire(make_plugin_rounded_rectangle_wire_at(
@@ -205,7 +209,9 @@ TopoDS_Shape build_plugin_operation_shape(
                                              operation.radius,
                                              operation.top_width,
                                              operation.top_depth,
-                                             operation.top_radius);
+                                             operation.top_radius,
+                                             operation.top_offset_x,
+                                             operation.top_offset_y);
   }
   if (operation.primitive == "cylinder") {
     return make_plugin_cylinder_at(operation.x,
