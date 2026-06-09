@@ -6,6 +6,7 @@ import type {
   SketchPreviewPoint,
 } from "@/types";
 import { resolveSketchPlanePoint } from "@/utils";
+import type { SketchConstraintData } from "@/lib/planegcsBridge";
 import {
   endpointDragCursorPosition,
   endpointDragHasMoved,
@@ -34,6 +35,8 @@ interface HandleEndpointDragPointerMoveParams {
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sketchLinesRef: MutableRef<SketchFeatureParameters | null>;
+  /** planegcs constraint data from the viewport state. */
+  sketchConstraintsRef: MutableRef<SketchConstraintData[]>;
   pendingDragRef: MutableRef<PendingEndpointDragFrame | null>;
   pendingDragFrameRef: MutableRef<number | null>;
   dragSnapResultRef: MutableRef<{ snapX: number; snapY: number } | null>;
@@ -104,6 +107,7 @@ function requestEndpointDragFrame(params: HandleEndpointDragPointerMoveParams) {
       planeId: params.activeSketchPlaneIdRef.current ?? "ref-plane-xy",
       planeFrame: params.activeSketchPlaneFrameRef.current,
       resolveSnappedSketchPoint: params.resolveSnappedSketchPoint,
+      constraints: params.sketchConstraintsRef.current,
     });
     applyEndpointDragFrameResult(params, result);
   });

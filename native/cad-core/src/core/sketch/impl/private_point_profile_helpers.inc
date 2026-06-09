@@ -170,8 +170,18 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
 // doesn't matter what the previous-frame value was — derived geometry is
 // always locked.
 void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
+  // Collect arc endpoint point ids so we can freeze them too.
+  // v1 doesn't support post-creation arc reshape, so arc endpoints
+  // must stay locked to prevent the constraint solver from dragging
+  // them away from their connections.
+  std::unordered_set<std::string> arc_endpoint_ids;
+  for (const auto& arc : parameters.arcs) {
+    arc_endpoint_ids.insert(arc.start_point_id);
+    arc_endpoint_ids.insert(arc.end_point_id);
+  }
   for (auto& point : parameters.points) {
-    if (point.kind == "projected" || point.kind == "quadrant") {
+    if (point.kind == "projected" || point.kind == "quadrant" ||
+        arc_endpoint_ids.count(point.id)) {
       point.is_fixed = true;
     }
   }

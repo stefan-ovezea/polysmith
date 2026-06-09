@@ -40,19 +40,35 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // enforce functions. If the solver succeeds, enforce functions
   // will see already-correct geometry and be no-ops. On failure,
   // the enforce functions provide a fallback.
-  if (!feature.sketch_parameters->constraints.empty() ||
-      !feature.sketch_parameters->line_relations.empty()) {
-    ConstraintSolver solver;
-    solver.build(*feature.sketch_parameters);
-    auto result = solver.solve();
-    if (result.ok()) {
-      solver.apply(*feature.sketch_parameters);
+  // Only run when constraint-like data actually exists — prevents
+  // re-solving on unrelated geometry additions.
+  {
+    size_t driving_dims = 0;
+    for (const auto& dim : feature.sketch_parameters->dimensions) {
+      if (dim.driven) continue;
+      if (dim.is_auto && dim.expression.empty()) continue;
+      ++driving_dims;
     }
-    feature.sketch_parameters->solver_dofs = result.dofs;
-    if (!result.ok()) {
-      fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
-              static_cast<int>(result.status), result.dofs,
-              result.conflicting.size(), result.redundant.size());
+    const bool constraints_exist =
+        !feature.sketch_parameters->constraints.empty() ||
+        !feature.sketch_parameters->line_relations.empty() ||
+        !feature.sketch_parameters->midpoint_anchors.empty() ||
+        !feature.sketch_parameters->point_line_anchors.empty() ||
+        driving_dims > 0;
+
+    if (constraints_exist) {
+      ConstraintSolver solver;
+      solver.build(*feature.sketch_parameters);
+      auto result = solver.solve();
+      if (result.ok()) {
+        solver.apply(*feature.sketch_parameters);
+      }
+      feature.sketch_parameters->solver_dofs = result.dofs;
+      if (!result.ok()) {
+        fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
+                static_cast<int>(result.status), result.dofs,
+                result.conflicting.size(), result.redundant.size());
+      }
     }
   }
 

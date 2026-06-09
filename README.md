@@ -18,20 +18,49 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
 
 - JSON IPC bridge with versioned schema
 - Document model: feature history tree, undo/redo, core-owned selection
-- 2D sketch system: lines, rectangles, circles, arcs, points, dimensions, constraints (H/V, coincident, parallel, perpendicular, equal-length, tangent), closed-profile detection
-- Contextual modeling workflow: select → invoke → floating panel → real geometry preview → confirm/cancel
-- Extrude (new body) with live depth editing
+- 2D sketch system: lines, rectangles, circles, arcs, polygons, points,
+  dimensions, geometric + dimensional constraints, closed-profile detection
+  with inner-loop/hole support
+- Contextual modeling workflow: select → invoke → floating panel → real
+  geometry preview → confirm/cancel
+- Extrude (New Body, Join, Cut) with one-side/symmetric/two-side extent,
+  taper, thin, and explicit target-body selection
+- Revolve, Sweep, Loft, Box, and Cylinder features
+- Shell body-modifying feature
 - Edge/vertex selection, **Fillet & Chamfer** on edges with live preview panels
-- Sketches on origin planes or solid faces; sketch re-entry
+- **Hole** feature: simple, counterbore, countersink, spotface with
+  metric/imperial standard presets
+- Helix, Thread, and Fastener features (cosmetic threads; modeled threads
+  are experimental)
+- Sketches on origin planes, solid faces, or construction planes; sketch re-entry
 - 2D sketch fillets (line-line corners)
-- Project tool (face/edge/vertex projection into active sketch)
+- Project tool (face/edge/vertex) with live parametric re-projection links
 - Save/load `.polysmith` documents (core-owned JSON format)
-- STEP + STL export
+- STEP + STL export (honours cut/join booleans)
 - OrcaSlicer integration (native window embedding via X11/XWayland)
-- Offset construction planes
-- Unified selection filter panel: selection, snapping, and constraints controlled by one checkbox panel
-- Comprehensive snap system (endpoint, midpoint, center, quadrant, intersection, nearest, tangent, perpendicular, parallel, polar, grid)
-- Sketches on offset planes from faces/reference planes
+- Offset construction planes (offset, midplane, tangent, angle-at-plane)
+- Construction axes and points
+- Unified selection filter panel: selection, snapping, and constraints
+- Comprehensive snap system (endpoint, midpoint, center, quadrant, intersection,
+  nearest, tangent, perpendicular, parallel, polar, grid, grid-line)
+- DOF counting and entity colouring (blue = fully constrained, red =
+  over-constrained, yellow = under-constrained)
+- Dimension tool (single-entity, two-entity angle/distance, placement drag)
+- Draft dimension visualisation (Three.js-rendered during line drafting)
+- On-demand sketch dimensions (typed values create dimensions; drag-only doesn't)
+- Per-dimension radius/diameter toggle and driven (reference) dimensions
+- Trim tool (lines, circles→arcs, arcs; core-driven hover preview)
+- Parametric parameters & dimension formulas with cycle detection
+- Endpoint drag with planegcs WASM solver (60 fps local preview, core commit
+  on mouse-up)
+- Rectangle drag-selection (left→right = window, right→left = crossing)
+- 3D Move tool with local-axis manipulator
+- Body copy (linked and independent)
+- Materials (body/face colour overrides, HSV picker)
+- View cube with cardinal face snaps, sketch-plane rotation arrows
+- Dynamic zoom-aware grids (millimetric spacing, sketch-plane back grid)
+- CAM workspace scaffolding (UI skeleton, TNP face witness resolution, face milling)
+- Natural-language AI command bar
 
 ## The Project's Mantra: Topological Naming Problem (TNP)
 
@@ -41,15 +70,15 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
 
 Every modeling feature follows: **select inputs → invoke action → floating context panel → real geometry preview (core-recomputed) → confirm or cancel.** No fake previews, no modal dialogs. Enter confirms, Escape cancels with `undo`.
 
-## What's Next (V1 Roadmap)
+## What's Next (V1 Remaining)
 
-The project is roughly mid-way through Milestone 3. The next big items:
+The bulk of the original v1 roadmap is shipped. Remaining items:
 
-1. **Cut/subtract extrude** — needs a new viewport mesh primitive for boolean'd bodies (single largest UX unlock)
-2. **Hole feature** — simple/counterbore/countersink on a face
-3. **Pattern features** — linear and circular
-4. **Mirror** — body/feature mirror about a plane
-5. **Measure tool**, named parameters, view cube, display units toggle
+1. **Pattern features** — linear and circular
+2. **Measure tool** — point-to-point, edge length, face area
+3. **Display units toggle** — metric/inch, UI-layer only (architecture designed in `Display-Units`)
+4. **Text tool** — sketched text via OCCT `StdPrs_BRepFont` (plan in `Text-Tool-Implementation-Plan`)
+5. **CAM** — beyond the current scaffolding (face milling shipped; full plan in `CAM-Development`)
 
 ## Cross-Platform
 
@@ -85,7 +114,7 @@ git submodule update --init --recursive
 
 ### 2. Install prerequisites
 
-PolySmith needs a JavaScript toolchain, a Rust toolchain (for Tauri), a C++ toolchain, and CMake.
+PolySmith needs a JavaScript toolchain, a Rust toolchain (for Tauri), a C++ toolchain, CMake, Eigen3, and Boost.
 
 | Tool   | Minimum version          |
 | ------ | ------------------------ |
@@ -94,6 +123,8 @@ PolySmith needs a JavaScript toolchain, a Rust toolchain (for Tauri), a C++ tool
 | Rust   | stable (`rustup` latest) |
 | CMake  | 3.20 or newer            |
 | C++    | C++20-capable compiler   |
+| Eigen3 | 3.3 or newer (header-only) |
+| Boost  | 1.71 or newer (header-only for planegcs) |
 
 Install them on your platform:
 
@@ -104,6 +135,9 @@ Install them on your platform:
 xcode-select --install
 
 # Homebrew dependencies
+brew install cmake eigen boost freetype pkg-config
+
+# Node + pnpm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 nvm install 24
 corepack enable pnpm
@@ -120,12 +154,11 @@ sudo apt install -y \
   build-essential cmake git pkg-config \
   libeigen3-dev \
   libboost-dev \
-  libfreetype6-dev libfontconfig1-dev \
+  libfreetype-dev libfontconfig1-dev \
   libgtk-3-dev libwebkit2gtk-4.1-dev \
   libayatana-appindicator3-dev librsvg2-dev \
   libssl-dev curl libjavascriptcoregtk-4.1-dev \
-  libsoup-3.0-dev \
-sudo apt install -y tcl-dev tk-dev libfreetype-dev libx11-dev
+  libsoup-3.0-dev libx11-dev
 
 # Node + pnpm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
@@ -136,7 +169,7 @@ corepack enable pnpm
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-For other distributions, follow the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/) and make sure CMake, a C++20 compiler, and FreeType development headers are present.
+For other distributions, follow the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/) and make sure CMake, a C++20 compiler, Eigen3, Boost, and FreeType development headers are present.
 
 #### Windows
 
@@ -248,26 +281,12 @@ PolySmith v1 is intentionally narrow:
 
 PolySmith does not currently aim to support:
 
-- CAM / CNC workflows
 - Simulation / FEA
 - Cloud collaboration
 - Enterprise features
 - Complex assemblies
 
-## Architecture Snapshot
-
-PolySmith is built as a desktop application with three main layers:
-
-- UI: React + TypeScript
-- Desktop shell: Tauri
-- CAD core: C++ + OpenCascade
-
-Communication between the UI and CAD core happens over a JSON IPC protocol.
-
-Architecture rule:
-
-- React owns presentation and user intent only
-- The native CAD core owns CAD state, document state, geometry, feature history, and modeling behavior
+CAM is in early scaffolding (face milling shipped). The full CAM roadmap is in [CAM-Development](wiki/CAM-Development.md).
 
 ## Repository Layout
 
@@ -281,41 +300,42 @@ native/
 protocol/
   schema/          IPC message schemas
 
-wiki/
-  polysmith.wiki/  GitHub wiki submodule — all documentation
+wiki/              Canonical documentation (mirrored to polysmith.wiki/)
 
 third_party/
-  occt/            Vendored OpenCascade source
+  occt/            Vendored OpenCascade 7.8 source
+  freetype/        FreeType (for OCCT font rendering)
+  planegcs/        2D geometric constraint solver (from FreeCAD)
 ```
 
 ## Current Status
 
-PolySmith is in early development.
+PolySmith is in active development. The original v1 milestones are largely
+complete — the core modeling features (extrude, revolve, sweep, loft,
+fillet/chamfer, shell, hole, construction geometry), the sketch system
+(constraints, dimensions, trim, project, fillets), and the interaction
+layer (snap, drag, selection, view cube, draft dimensions) are all shipped.
 
-The current focus is:
+Current focus:
 
-- hardening the IPC boundary between UI and CAD core
-- establishing document lifecycle and core-owned state flow
-- building the smallest useful modeling foundation for a narrow v1
-
-At the moment, the repository contains:
-
-- a React + Tauri desktop shell
-- a native CAD core bootstrap
-- an OpenCascade smoke test
-- a minimal IPC handshake and ping flow
+- rounding out the remaining v1 features (patterns, measure tool, display units)
+- CAM workspace: face milling shipped, pocket/contour/drilling next
+- hardening and bug fixing (modeled threads, constraint edge cases)
 
 ## Wiki
 
-All project documentation has moved to the [GitHub wiki](wiki/polysmith.wiki/Home.md).
+All project documentation lives in the [GitHub wiki](https://github.com/stefan-ovezea/polysmith/wiki).
+
+Repo-local copies are in `wiki/` (canonical) and `polysmith.wiki/` (GitHub mirror submodule).
 
 Key pages:
 
-- [Architecture Overview](wiki/polysmith.wiki/Architecture-Overview.md)
-- [IPC Protocol](wiki/polysmith.wiki/IPC-Protocol.md)
-- [Repository Map](wiki/polysmith.wiki/Repository-Map.md)
-- [V1 Roadmap](wiki/polysmith.wiki/V1-Roadmap.md)
-- [ADR 0001: Initial Tech Stack](wiki/polysmith.wiki/ADR-0001-Tech-Stack.md)
+- [Architecture Overview](wiki/Architecture-Overview.md)
+- [IPC Protocol](wiki/IPC-Protocol.md)
+- [Repository Map](wiki/Repository-Map.md)
+- [V1 Roadmap](wiki/V1-Roadmap.md)
+- [Core-UI Design Principles](wiki/Core-UI-Design-Principles.md)
+- [ADR 0001: Initial Tech Stack](wiki/ADR-0001-Tech-Stack.md)
 
 ## License
 

@@ -1,15 +1,14 @@
 # Sketch Endpoint Drag
 
-> **Status as of 2026-05-29:** Basic endpoint drag shipped. Development paused
-> in favour of a dedicated constraint-system branch. After constraint fixes
-> land, this will expand to **Point Drag** — the ability to drag any sketch
-> point, not just line endpoints. That includes intersection points, shared
-> coincident points between geometries, circle centers, and construction
-> points. Line rubber-bands during
-> drag with snap resolution. H/V constraints enforce axis-aligned stretch
-> (industry-standard). Constraint relaxation (auto-delete conflicting
-> constraints on coincident snap) is planned but not yet implemented. Several
-> constraint-interop bugs identified — see Known Gaps below.
+> **Status as of 2026-06-03:** Endpoint drag has been moved entirely to the
+> TypeScript UI layer per [Core-UI-Design-Principles](Core-UI-Design-Principles).
+> The old C++ `drag_sketch_point` and `resolve_draft_snap` IPC paths have been
+> removed. During drag, the UI runs a planegcs WASM solver (20 iterations,
+> 1e-4 tolerance, Levenberg-Marquardt) for 60 fps local preview with zero IPC
+> round-trips. On mouse-up, a single `update_sketch_point` IPC commits the final
+> position to the core, which runs the native planegcs (200 iterations, 1e-10
+> tolerance, DogLeg) for the exact solve.
+> See [Planegcs-Dual-Solver](Planegcs-Dual-Solver) for the full architecture.
 
 ## Overview
 
@@ -139,15 +138,15 @@ different elevation" workflow.
 
 | Layer | File | What |
 |---|---|---|
-| UI — drag interaction | `apps/desktop-ui/src/layout/ViewportPanel.tsx` | `endpointDragRef`, detection in `handlePointerDown`, rubber-band in `handlePointerMove`, commit in `handlePointerUp` |
-| UI — props | `apps/desktop-ui/src/layout/ViewportPanel.tsx` | `onUpdateSketchPoint` prop |
-| UI — wiring | `apps/desktop-ui/src/App.tsx` | `updateSketchPoint` from `useCadCore` |
+| UI — drag interaction | `apps/desktop-ui/src/layout/viewport/endpointDrag.ts` | Drag state, pointer-down/move/up handlers |
+| UI — planegcs bridge | `apps/desktop-ui/src/lib/planegcsBridge.ts` | TS ↔ planegcs constraint mapping, WASM solve |
+| UI — planegcs loader | `apps/desktop-ui/src/lib/planegcsSolver.ts` | Lazy WASM singleton, module lifecycle |
+| UI — WASM binary | `apps/desktop-ui/public/planegcs.wasm` | Emscripten-built planegcs (dev server) |
+| C++ — native solver wrapper | `native/cad-core/src/core/constraint_solver.cpp` | Wrapper for native planegcs (final solve on commit) |
 | C++ — point update | `native/cad-core/src/core/sketch_feature.cpp` | `update_sketch_point` → `propagate_connected_point_move` |
-| C++ — H/V stretch | `native/cad-core/src/core/sketch_feature.cpp` | H/V block in `propagate_connected_point_move` — snap to axis, don't rigidly translate |
-| C++ — perpendicular constraint | `native/cad-core/src/core/sketch_feature.cpp` | `set_sketch_perpendicular_constraint`, `drive_line_perpendicular_to_reference`, `enforce_perpendicular_relations` |
-| C++ — constraint badges | `native/cad-core/src/core/viewport.cpp` | `make_line_constraint_primitive`, `relation_constraint_line_ids` suppression |
-| UI — constraint toolbar | `apps/desktop-ui/src/layout/header/SketchToolbar.tsx` | Constraint arm/disarm buttons |
-| UI — constraint pick handler | `apps/desktop-ui/src/App.tsx` | `handleSketchConstraintPointPick`, `handleSketchConstraintLinePick` |
+| C++ — H/V stretch | `native/cad-core/src/core/sketch_feature.cpp` | H/V block in `propagate_connected_point_move` — snap to axis |
+| C++ — planegcs sources | `third_party/planegcs/planegcs/` | Shared C++ sources (GCS.cpp, Geo.cpp, …) |
+| CMake | `native/cad-core/CMakeLists.txt` | Builds planegcs as static library `libplanegcs.a` |
 
 ## Known Gaps
 

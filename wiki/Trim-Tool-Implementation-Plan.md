@@ -1,8 +1,12 @@
 # Trim Tool — Implementation Plan
 
-> **Status:** Planning phase. Not yet implemented.
-> **Priority:** High — first major editing tool after snap/constraint/selection engine.
-> **Dependencies:** Snapping engine ✅, Selection engine ✅, DOF counter ✅.
+> **Status:** Shipped (2026-05-24 through 2026-05-31). Line, circle→arc, and arc
+> trimming are implemented in `trim_engine.cpp`. Core-driven hover preview via
+> `trim_preview` IPC. Constraint re-evaluation and polygon dissolve are handled.
+> Zero-length segment guards, arc-endpoint share-point-id fix, and intersection
+> filtering landed in the 2026-05-31 stabilisation pass. This plan is retained as
+> reference documentation — the implementation matches the design below.
+> **Priority:** Done — bug fixes only.
 
 ## 1. What Trim Does in CAD
 

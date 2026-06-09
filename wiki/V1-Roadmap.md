@@ -15,36 +15,66 @@ enterprise features, and complex assemblies.
 
 ## Current Repo Status
 
-The earlier "infrastructure-heavy, feature-light" phase is done. The
-codebase now has:
+The original v1 milestones 0–3 are complete. The codebase now has:
 
 - a React + Tauri desktop shell with the `Midnight Carbon` design language
-- a C++ CAD core built with CMake on top of OpenCascade
+- a C++ CAD core built with CMake on top of OpenCascade 7.8
 - a JSON IPC bridge with documented commands and a versioned schema
-- a real document model with feature history, undo/redo, and core-owned
-  selection state
-- 2D sketch entities (lines, rectangles, circles, arcs), points,
-  dimensions, constraints (horizontal/vertical/perpendicular/parallel/
-  equal-length/coincident/fixed), and stored sketch profiles
-- closed-profile detection that survives parametric edits and point
-  merges, including loops that mix line and arc edges
-- extrude features that target sketch profiles, with editable depth via
-  `update_extrude_depth`
-- selectable solid faces and reference planes; sketches can start on any
-  origin plane or any solid face
-- finished sketches can be re-entered without rebuilding via `reenter_sketch`
-- STEP export of the live document
-- a contextual modeling workflow documented in
-  `Contextual-Modeling-Workflow`: select inputs → invoke
-  action → floating context panel → real geometry preview → confirm/cancel
-- an `E` hotkey + floating extrude preview panel that drives live, debounced
-  `update_extrude_depth` recomputes
-- a CAD-style document hierarchy with collapsible Origin / Sketches /
-  Bodies categories, eye-icon visibility toggles, double-click to re-enter
-  sketches, and a right-click context menu for rename / hide / delete
-
-That puts the project past Milestones 0–2 of the original v1 roadmap and
-roughly mid-way through Milestone 3.
+- a real document model with feature history, undo/redo, and core-owned selection state
+- 2D sketch system: lines, rectangles, circles, arcs, points, polygons, dimensions,
+  geometric constraints (H/V, coincident, parallel, perpendicular, equal-length, tangent,
+  concentric, point-on-object), dimensional constraints (length, radius, angle, distance),
+  and stored sketch profiles with inner-loop/hole support
+- closed-profile detection that survives parametric edits, point merges, and
+  mixed line+arc loops
+- extrude features: New Body, Join, Cut modes with one-side, symmetric, two-side extent,
+  taper, thin, Through All / To Object / To Next, and explicit target-body selection
+- Revolve, Sweep, and Loft features with live preview panels
+- Box and Cylinder primitives
+- Shell body-modifying feature
+- Edge & vertex selection, Fillet & Chamfer on edges with live preview panels
+- Hole feature: simple, counterbore, countersink, spotface; metric/imperial standard
+  presets with clearance/tap-drill/threaded fit selection
+- Sketches on origin planes, solid faces, or construction planes; sketch re-entry
+- 2D sketch fillets (line-line corners)
+- Project tool (face/edge/vertex) with live parametric re-projection links
+- Save/load `.polysmith` documents (core-owned JSON format)
+- STEP + STL export (honours cut/join booleans)
+- OrcaSlicer integration (native window embedding via X11/XWayland)
+- Offset construction planes (offset, midplane, tangent, angle-at-plane)
+- Construction axes (from sketch lines / straight body edges) and construction points
+- Unified selection filter panel: selection, snapping, and constraints controlled by
+  one checkbox panel with localStorage persistence
+- Comprehensive snap system: endpoint, midpoint, center, quadrant, intersection,
+  nearest, tangent, perpendicular, parallel, polar, grid, grid-line
+- DOF counting and entity colouring (blue = fully constrained, red = over-constrained,
+  yellow = under-constrained)
+- Inference engine for auto-creating coincident/concentric constraints at commit time
+- Constraint badge click + Delete / right-click → Delete
+- Dimension tool: single-entity, two-entity (angle, distance, line-line distance,
+  circle-line distance), placement drag, regroup-aware first-click handling
+- Draft dimension visualisation (Three.js-rendered dimension geometry during line
+  drafting, replacing HTML-only inputs)
+- On-demand sketch dimensions: auto-dimensions created only when user types a value;
+  drag-only creation produces no dimension
+- Per-dimension radius/diameter toggle and driven (reference) dimension support
+- Trim tool: line-line, line-circle, line-arc, circle-circle, circle-arc, arc-arc
+  intersections; entity splitting; constraint re-evaluation; core-driven hover preview
+- Parametric parameters & dimension formulas: document-scoped name → expression →
+  resolved value, recursive-descent evaluator with cycle detection
+- Endpoint drag with planegcs WASM solver (60 fps local feedback, core commit on
+  mouse-up). See [Planegcs-Dual-Solver](Planegcs-Dual-Solver).
+- Rectangle drag-selection (left→right = window, right→left = crossing)
+- 3D Move tool with local-axis translation/rotation manipulator
+- Body copy: linked (re-resolves source) and independent (frozen snapshot) modes
+- Materials: body/face colour overrides with HSV picker, saved in `.polysmith`
+- Helix, Thread, and Fastener features (threaded holes, cosmetic + modeled threads;
+  see Known Modeling Issues below for modeled-thread caveats)
+- CAM workspace scaffolding: UI skeleton with Milling/Turning/Printing/Cutting tabs,
+  TNP witness resolution for face references, face milling operation
+- Natural-language AI command bar
+- View cube with cardinal face snaps, sketch-plane rotation arrows, orthographic camera
+- Dynamic grids (zoom-aware millimetric spacing, sketch-plane back grid)
 
 ## Architectural Invariants (Do Not Break)
 
@@ -60,138 +90,53 @@ These are rules going forward, not goals to chase:
   invent geometry locally.
 - Changes stay minimal, scoped, and reviewable. No vibe-coded rewrites.
 
-## Where We Are Going
+## What Remains (V1 Polish & Follow-Up)
 
-The next phase is the modeling slice that turns PolySmith from "extrude a
-single profile" into "model a printable part you'd actually want to print".
+### Features still to build
 
-### Tier 1 — make modeling actually useful
-
-These three close the gap between fancy demo and real workflow:
-
-- **Cut / subtract extrude.** Add `New Body | Join | Cut` modes to the
-  Extrude action. Single largest UX unlock. Depends on a new viewport
-  mesh primitive type (the boolean'd body cannot be visualised by the
-  existing per-feature primitive types).
-- ✅ **Save / load `.polysmith` document** — shipped. Core-owned JSON
-  document format with a `document_from_payload` deserializer mirroring
-  `to_payload`, plus File → Open / Save buttons.
-- ✅ **STL export** — shipped alongside STEP export.
-
-### Tier 2 — the obvious next features
-
-- ✅ **Edge & vertex selection** — shipped. Core enumerates body edges
-  and vertices via `TopExp` and emits `viewport_state.edges` /
-  `viewport_state.vertices`; the UI raycasts vertices first, then edges,
-  then faces, and dispatches `select_edge` / `select_vertex`.
-- ✅ **Fillet & chamfer on edges** — shipped. New body-modifying
-  feature kinds (`fillet`, `chamfer`) are applied during body
-  compilation via `BRepFilletAPI_MakeFillet` /
-  `BRepFilletAPI_MakeChamfer` against the target body's edges.
-  Hotkey `F` / `C` on a selected edge spawns a contextual floating
-  preview panel with live `update_fillet_radius` /
-  `update_chamfer_distance` updates and Confirm / Cancel.
-- **Hole feature.** Parametric simple/counterbore/countersink on a face,
-  built on top of cut extrude.
-- **Pattern features.** Linear and circular patterns of features and
-  bodies.
-- **Mirror.** Body / feature mirror about a plane.
-
-### Tier 3 — modeling primitives & references
-
-- **Offset construction plane.** Sketch on a plane offset from a face or
-  reference plane.
-- ⚠️ **Sketch arcs, slots, polygons, and offset-curve.** Arcs shipped
-  in v1: `add_sketch_arc` supports three-point and center+start+end
-  modes through a segmented toolbar control, the closed-
-  profile detector walks lines and arcs uniformly so loops mixing the
-  two extrude cleanly, and arc endpoints share the SketchPoint graph.
-  Endpoints are stored fixed for v1 (no post-creation reshape /
-  constraints / dimension drive); slots, polygons, and offset-curve
-  remain.
-- ✅ **2D sketch fillets** — shipped. Parametric corner fillet between
-  two sketch lines: click the Fillet tool, click a shared corner, and
-  the floating `SketchFilletPanel` drives live `update_sketch_fillet_radius`
-  previews. Cancel calls `delete_sketch_fillet` to restore the
-  original corner. The recompute pass keeps the fillet tangent under
-  subsequent line edits, so dragging the far end of a filleted line
-  preserves the rounded corner. v1 limits to line-line corners; line-
-  arc and arc-arc are follow-ups.
-- **Construction axes** through edges and through two points.
-- ✅ **Project sketch tool** — shipped. Projects extrude faces (rectangle
-  and circle profiles) onto the active sketch as fixed-endpoint lines or
-  a circle. Polygon-extrude sides and legacy box/cylinder features remain
-  to be added.
-
-### Cross-cutting polish
-
-Small individually but they shape day-to-day usability:
-
-- ✅ **Undo / redo hotkeys** (`⌘Z` / `⌘⇧Z` and Ctrl equivalents) — shipped.
-- **Measure tool** (point-to-point, edge length, face area).
-- **Named user parameters** that drive sketch dimensions and feature
-  depths.
-- **View cube / named views** (Front / Top / Iso).
-- **Active sketch panel** showing entities in the same hierarchy treatment.
+| Feature | Notes |
+|---|---|
+| **Pattern features** | Linear and circular patterns of features/bodies |
+| **Measure tool** | Point-to-point, edge length, face area |
+| **Display units toggle** | Metric/inch. Architecture designed in `Display-Units`. Core always mm; UI converts at presentation boundary. |
+| **Text tool** | Text as sketch entities via OCCT `StdPrs_BRepFont`. Plan in `Text-Tool-Implementation-Plan`. |
+| **Sketch arc constraints & dimension drive** | Arc endpoints are fixed for v1; reshape/dimension-drive follow-up |
+| **Line-arc and arc-arc sketch fillets** | Currently line-line only |
+| **Perpendicular snap** | General perpendicular-to-line; perpendicular-foot (start-on-host-line) works |
+| **Driven dimension proposal** | Auto-offer driven dim when entity already fully constrained |
 
 ### Known Modeling Issues
 
 - ⚠️ **Modeled thread geometry is bugged.** The semantic hole/thread/fastener
   feature stack exists and cosmetic thread markers are usable, but modeled
-  threads are not reliable yet. Manual QA showed generated fastener threads can
-  lose the helical shaft, split into detached pieces, or export as incomplete
-  screw geometry. Treat modeled fastener threads, standalone modeled thread
-  cuts, and modeled threaded holes as experimental until the native thread
-  construction path is reworked and validated against viewport and export.
+  threads are not reliable yet. Generated fastener threads can lose the helical
+  shaft, split into detached pieces, or export as incomplete screw geometry.
+  Treat modeled fastener threads, standalone modeled thread cuts, and modeled
+  threaded holes as experimental until the native thread construction path is
+  reworked and validated against viewport and export.
 
-## Suggested Order
+### CAM
 
-1. ✅ Save/load + STL export + undo/redo hotkeys + Project — shipped.
-2. **Viewport mesh primitive + cut extrude** (next big slice; the mesh
-   primitive unlocks every boolean-producing feature below).
-3. **Edge & vertex selection** plumbing → **fillet & chamfer**.
-4. **Pattern + mirror**.
-5. **Hole feature** (cut-extrude variant on a selected face).
-6. Polish: measure tool, named parameters, view cube, active sketch panel.
-7. **Display units (metric/inch toggle).** UI-layer conversion only: the
-   C++ core always works in mm; React converts at the presentation
-   boundary. Design doc: `Display-Units`.
-8. ✅ **Manual sketch dimension tool completion.** Single-entity dimension
-   creation for lines, circles, and polygons whose auto-dimensions were
-   deleted — shipped 2026-05-24.
-9. ✅ **Unified sketch interaction system.** Selection filter checkbox
-   panel with localStorage persistence. Snap gating (endpoint, midpoint,
-   center, nearest, tangent, grid, perpendicular-foot) controlled by
-   checkboxes. DOF counting and entity coloring (blue = fully
-   constrained, red = over-constrained, yellow = under-constrained).
-   Constraint badge click + Delete to remove constraints. ✅ badge
-   highlight (cyan + scale-up) and ✅ right-click → Delete on
-   constraint badges. Inference engine auto-creates coincident/
-   concentric constraints. Remaining: perpendicular snap, driven
-   dimension proposal, DOF color legend.
-   See [Implementation-Log](Implementation-Log) (2026-05-23/24) and
-   [Sketch-Selection-Controls](Sketch-Selection-Controls).
-
-Each row above maps cleanly onto the existing contextual modeling action pattern
-(select inputs → invoke action → floating panel → live preview →
-confirm/cancel) and reuses the panel + hotkey machinery already built.
+CAM is in early scaffolding. The workspace UI skeleton is wired, TNP witness
+resolution for face references is implemented and tested, and a basic face
+milling operation exists. The full plan is in [CAM-Development](CAM-Development).
 
 ## Key Decisions and Constraints
 
 - The UI does not own CAD state.
 - Tauri acts as the bridge between UI and native systems, not as a second
   CAD logic layer.
-- The IPC protocol is the contract of the system. The bridge is currently
-  fire-and-forget; flows that depend on post-command state must subscribe
-  to the next document/viewport event (see `awaitDocumentChange` in the
-  store) rather than reading the store immediately after sending a
-  command.
+- The IPC protocol is the contract of the system. The bridge is fire-and-forget;
+  flows that depend on post-command state must subscribe to the next
+  document/viewport event (see `awaitDocumentChange` in the store) rather than
+  reading the store immediately after sending a command.
 - V1 stays single-part and local-first.
 - Changes should remain minimal, readable, and reviewable.
 - Broad rewrites should be avoided unless clearly justified.
 
-## Near-Term Recommended Next Task
+## Near-Term Recommended Next Tasks
 
-Implement Tier 1 in order: cut extrude, then save/load, then STL export.
-Each is a distinct focused turn. Cut extrude is the highest-impact next
-feature and the most obvious user-visible gain.
+1. **Pattern features** — linear and circular, highest remaining UX impact
+2. **Measure tool** — small, self-contained, high day-to-day value
+3. **Display units toggle** — UI-layer only, architecture already designed
+4. **Text tool** — blocked by font bundling decision but plan is written
