@@ -279,8 +279,12 @@ function commitOrCancelDraft({
 >) {
   if (event.key === "Enter") {
     event.preventDefault();
-    void commitDraftDimensionSession(session);
-    void selectTool();
+    const result = commitDraftDimensionSession(session);
+    if (result && typeof result.then === "function") {
+      void result.then(() => { void selectTool(); });
+    } else {
+      void selectTool();
+    }
     return true;
   }
   if (event.key === "Escape") {

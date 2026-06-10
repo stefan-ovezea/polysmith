@@ -1583,6 +1583,7 @@ export function ViewportPanel({
         tangent: translate("snap.tangent"),
         perpendicular: translate("snap.perpendicular"),
         parallel: translate("snap.parallel"),
+        intersection: translate("snap.intersection"),
       },
     });
   }
@@ -2610,9 +2611,10 @@ export function ViewportPanel({
 	        addSketchLine: addSketchLineRef.current,
 	        sceneDataRef,
 	        pickInactiveSketchLine: pickInactiveSketchLineRef.current,
-	        selectReference: selectReferenceRef.current,
-	        selectPrimitive: selectPrimitiveRef.current,
-	      });
+        selectReference: selectReferenceRef.current,
+        selectPrimitive: selectPrimitiveRef.current,
+        setIsDimensionEditorOpen,
+      });
 	    }
 
     function handleContextMenu(event: MouseEvent) {

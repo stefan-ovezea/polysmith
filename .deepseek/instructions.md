@@ -68,23 +68,11 @@ flow back to canonical. In either case, both locations must stay consistent.
   wastes the user's time. Wire `addMessage()` through the component tree
   instead or pass it through existing callback props.
 
-## ⚠️ Active Priority (2026-06-03)
+## ⚠️ Active Priority (2026-06-09)
 
-Per [Core-UI-Design-Principles](wiki/Core-UI-Design-Principles.md), the
-following work is the top priority for the next session:
+Current active task: **GCS Freeze State Machine** — see `.deepseek/active-task.md`
+for full status. P1+P2+P3.1+P3.2 complete (build clean), P3.3 in progress.
 
-1. **Remove `resolve_draft_snap` IPC** — The C++ snap engine must not send
-   per-frame snap candidates to the UI. Snap is interaction state, not
-   document state. Remove the IPC command, its handler in `app.cpp`, and
-   the `onResolveDraftSnap` call site in `ViewportPanel.tsx`. The
-   `drag_snap_result` custom event must also be removed.
-
-2. **Move drag back to UI** — Endpoint drag must be handled entirely in the
-   TypeScript layer until mouse-up. The UI resolves snap locally from the
-   static geometry in `viewport_state`, shows a preview without IPC
-   round-trips, and sends a single `update_sketch_point` on mouse-up with
-   the final snapped position. The `drag_sketch_point` and
-   `drag_snap_result` IPC paths must be removed.
-
-See removed pages: `Snap-Engine-Fix-Plan`, `Snap-System-CPP-Migration`,
-`ADR-0002-Core-Driven-Drag-Preview`, `Sketch-Selection-Controls`.
+The older 2026-06-03 priority (remove `resolve_draft_snap` IPC, move drag to UI)
+has been superseded by the GCS work which addresses the same concerns through
+the WASM-based drag/snap pipeline.

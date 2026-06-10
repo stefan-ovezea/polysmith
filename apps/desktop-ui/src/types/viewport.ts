@@ -405,6 +405,12 @@ export interface SketchPreviewPoint {
   // `set_sketch_parallel_constraint` between the new line and the
   // host line so the line stays parallel through later edits.
   snapParallelHostLineId?: string | null;
+  // When the cursor snapped to the intersection of two sketch lines
+  // (via multi-constraint speculative solve), this holds the pair of
+  // intersecting line IDs. The post-commit step can use these to
+  // attach coincident constraints to both lines at the intersection
+  // point. Null when not at an intersection.
+  snapIntersectionLineIds?: [string, string] | null;
 }
 
 export type SketchPlaneFrame = NonNullable<

@@ -45,6 +45,7 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
         .kind = "line_length",
         .entity_id = line.id,
         .value = measure_line_length(line),
+        .is_auto = true,
     });
     // Line-angle dimension: the absolute angle from the positive X axis
     // (horizontal). Stored in radians. Axis-constrained lines (rectangle

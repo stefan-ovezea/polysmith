@@ -7,6 +7,10 @@
  * push a temporary constraint to the planegcs solver and read the exact
  * snap point directly.
  *
+ * Supports both single-constraint (speculativeSolve) and multi-constraint
+ * (speculativeMultiSolve) speculative queries. Multi-constraint solves
+ * enable compound snaps like line-line intersection and tangent-through-line.
+ *
  * Usage (from snapResolution.ts dynamicSnapCandidate):
  *
  *   import { speculativeSolve } from "./speculativeSolve";
@@ -47,6 +51,24 @@ export interface SpeculativeSolveParams {
   targetEntityId: string;
 }
 
+/** A single speculative constraint entry for multi-constraint solves. */
+export interface SpeculativeConstraintEntry {
+  snapType: SpeculativeSnapType;
+  targetEntityId: string;
+}
+
+/** Parameters for multi-constraint speculative solves (intersection, etc.). */
+export interface SpeculativeMultiSolveParams {
+  bridge: PlanegcsBridge;
+  params: SketchFeatureParameters;
+  constraints: SketchConstraintData[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  /** Array of speculative constraints to push simultaneously.
+   *  All are marked temporary:true. */
+  snapConstraints: SpeculativeConstraintEntry[];
+}
+
 export interface SpeculativeSolveResult {
   /** Solved snap position in sketch-local coordinates [x, y]. */
   position: [number, number];
@@ -77,34 +99,22 @@ const VIRTUAL_LINE_ID = "__spec_line";
 const SPECULATIVE_CONSTRAINT_ID = "__spec_constraint";
 
 // ---------------------------------------------------------------------------
-// Core function
+// Shared geometry + constraint builder
 // ---------------------------------------------------------------------------
 
 /**
- * Run a speculative constraint solve to find a snap position.
+ * Push all sketch geometry (points, lines, circles) and existing constraints
+ * into the WASM solver wrapper. Extracted so both single and multi-constraint
+ * speculative solve paths share the same build logic without duplication.
  *
- * Builds the sketch geometry + existing constraints in the WASM solver,
- * adds a virtual draft line and the specified speculative constraint,
- * runs a fast INFERENCE solve, and returns the solved cursor position.
- *
- * The WASM solver is fully rebuilt on each call (clear_data + push all).
- * For typical sketch sizes (10–50 parameters) with 5 iterations, this
- * completes in ~0.02–0.05ms — well within the 16ms frame budget even
- * when checking 6+ snap types per frame.
+ * Returns the number of sketch points pushed (used later to locate the
+ * virtual cursor point in the flat parameter array).
  */
-export function speculativeSolve({
-  bridge,
-  params,
-  constraints,
-  draftStart,
-  cursor,
-  snapType,
-  targetEntityId,
-}: SpeculativeSolveParams): SpeculativeSolveResult | null {
-  const w = (bridge as any).wrapper;
-  if (!w) return null;
-
-  // ---- 1. Build system with sketch geometry + constraints ----------
+function pushSketchGeometryAndConstraints(
+  w: any,
+  params: SketchFeatureParameters,
+  constraints: SketchConstraintData[],
+): number {
   w.clear_data();
 
   const pointIds: string[] = [];
@@ -307,10 +317,23 @@ export function speculativeSolve({
     }
   }
 
-  // ---- 2. Push virtual draft line -----------------------------------
-  // The draft start point is fixed (anchored at its current position).
-  // The cursor point is free — the solver will move it to satisfy the
-  // speculative constraint.
+  return pointIds.length;
+}
+
+// ---------------------------------------------------------------------------
+// Virtual primitives + solve helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Push the virtual draft line (draftStart → cursor) into the solver.
+ * draftStart is fixed; cursor is free — the solver moves it to satisfy
+ * speculative constraints.
+ */
+function pushVirtualDraftLine(
+  w: any,
+  draftStart: [number, number],
+  cursor: [number, number],
+): void {
   w.push_primitive({
     id: VIRTUAL_DRAFT_POINT_ID,
     type: "point",
@@ -331,14 +354,19 @@ export function speculativeSolve({
     p1_id: VIRTUAL_DRAFT_POINT_ID,
     p2_id: VIRTUAL_CURSOR_POINT_ID,
   });
+}
 
-  // ---- 3. Push speculative constraint --------------------------------
-  // All speculative constraints are temporary — they don't get numeric
-  // tag IDs and don't participate in DOF counting.
+/** Push a single speculative constraint. */
+function pushSpeculativeConstraint(
+  w: any,
+  snapType: SpeculativeSnapType,
+  targetEntityId: string,
+  constraintId: string,
+): void {
   switch (snapType) {
     case "horizontal_l":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "horizontal_l",
         l_id: VIRTUAL_LINE_ID,
         temporary: true,
@@ -346,7 +374,7 @@ export function speculativeSolve({
       break;
     case "vertical_l":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "vertical_l",
         l_id: VIRTUAL_LINE_ID,
         temporary: true,
@@ -354,7 +382,7 @@ export function speculativeSolve({
       break;
     case "tangent_lc":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "tangent_lc",
         l_id: VIRTUAL_LINE_ID,
         c_id: targetEntityId,
@@ -363,7 +391,7 @@ export function speculativeSolve({
       break;
     case "perpendicular_ll":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "perpendicular_ll",
         l1_id: VIRTUAL_LINE_ID,
         l2_id: targetEntityId,
@@ -372,7 +400,7 @@ export function speculativeSolve({
       break;
     case "parallel":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "parallel",
         l1_id: VIRTUAL_LINE_ID,
         l2_id: targetEntityId,
@@ -381,23 +409,29 @@ export function speculativeSolve({
       break;
     case "point_on_line_pl":
       w.push_primitive({
-        id: SPECULATIVE_CONSTRAINT_ID,
+        id: constraintId,
         type: "point_on_line_pl",
         p_id: VIRTUAL_CURSOR_POINT_ID,
         l_id: targetEntityId,
         temporary: true,
       });
       break;
-    default:
-      return null;
   }
+}
 
-  // ---- 4. Solve (INFERENCE mode) ------------------------------------
+/**
+ * Run the INFERENCE-mode solve and extract the cursor position.
+ * Returns the result or null if no solved position could be read.
+ */
+function runInferenceAndReadCursor(
+  w: any,
+  sketchPointCount: number,
+  cursor: [number, number],
+): SpeculativeSolveResult {
   w.set_max_iterations(5);
   w.set_convergence_threshold(1e-3);
   const status = w.solve(1); // LevenbergMarquardt = 1
 
-  // ---- 5. Read solved cursor position --------------------------------
   const ok = status === 0 /* Success */ || status === 1; /* Converged */
 
   if (ok) {
@@ -407,7 +441,7 @@ export function speculativeSolve({
     // + draft start). Find its parameter index in the flat param array.
     const allParams: number[] = w.get_gcs_params();
     // Total points pushed: sketch points + virtual draft + virtual cursor
-    const totalPoints = pointIds.length + 2;
+    const totalPoints = sketchPointCount + 2;
     // Cursor point index in the points array = totalPoints - 1
     const cursorPointIndex = totalPoints - 1;
     const solvedX = allParams[cursorPointIndex * 2] ?? cursor[0];
@@ -425,18 +459,122 @@ export function speculativeSolve({
     };
   }
 
-  // Check if the solver detected a conflict from the speculative
-  // constraint — this means the snap is geometrically impossible
-  // given existing constraints.
-  const conflicting = w.get_gcs_conflicting_constraints() as string[];
-  if (conflicting.includes(SPECULATIVE_CONSTRAINT_ID)) {
-    return null; // Over-constrained — snap not possible
-  }
-
   return {
     position: [cursor[0], cursor[1]],
     converged: false,
     distance: Infinity,
     solverStatus: status,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Public API — Single-constraint speculative solve
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a speculative constraint solve to find a snap position.
+ *
+ * Builds the sketch geometry + existing constraints in the WASM solver,
+ * adds a virtual draft line and ONE speculative constraint,
+ * runs a fast INFERENCE solve, and returns the solved cursor position.
+ *
+ * The WASM solver is fully rebuilt on each call (clear_data + push all).
+ * For typical sketch sizes (10–50 parameters) with 5 iterations, this
+ * completes in ~0.02–0.05ms — well within the 16ms frame budget even
+ * when checking 6+ snap types per frame.
+ */
+export function speculativeSolve({
+  bridge,
+  params,
+  constraints,
+  draftStart,
+  cursor,
+  snapType,
+  targetEntityId,
+}: SpeculativeSolveParams): SpeculativeSolveResult | null {
+  const w = (bridge as any).wrapper;
+  if (!w) return null;
+
+  // 1. Build system with sketch geometry + constraints.
+  const pointCount = pushSketchGeometryAndConstraints(w, params, constraints);
+
+  // 2. Push virtual draft line.
+  pushVirtualDraftLine(w, draftStart, cursor);
+
+  // 3. Push the single speculative constraint.
+  pushSpeculativeConstraint(w, snapType, targetEntityId, SPECULATIVE_CONSTRAINT_ID);
+
+  // 4. Solve and read cursor.
+  const result = runInferenceAndReadCursor(w, pointCount, cursor);
+
+  if (!result.converged) {
+    // Check if the solver detected a conflict from the speculative
+    // constraint — this means the snap is geometrically impossible
+    // given existing constraints.
+    const conflicting = w.get_gcs_conflicting_constraints() as string[];
+    if (conflicting.includes(SPECULATIVE_CONSTRAINT_ID)) {
+      return null; // Over-constrained — snap not possible
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Public API — Multi-constraint speculative solve
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a speculative solve with MULTIPLE simultaneous temporary constraints.
+ *
+ * This enables compound snaps that require two constraints to express:
+ *   - Line-line intersection:  point_on_line_pl × 2
+ *   - Tangent through a line:  tangent_lc + point_on_line_pl
+ *   - Perpendicular through midpoint: perpendicular_ll + point_on_line_pl
+ *
+ * All speculative constraints are pushed with temporary:true, solved
+ * together in a single INFERENCE pass, and the cursor point position
+ * is read from the solved parameter array.
+ *
+ * Constraints are identified by sequential IDs: __spec_multi_0, __spec_multi_1, …
+ */
+export function speculativeMultiSolve({
+  bridge,
+  params,
+  constraints,
+  draftStart,
+  cursor,
+  snapConstraints,
+}: SpeculativeMultiSolveParams): SpeculativeSolveResult | null {
+  const w = (bridge as any).wrapper;
+  if (!w) return null;
+
+  if (snapConstraints.length === 0) return null;
+
+  // 1. Build system with sketch geometry + constraints.
+  const pointCount = pushSketchGeometryAndConstraints(w, params, constraints);
+
+  // 2. Push virtual draft line.
+  pushVirtualDraftLine(w, draftStart, cursor);
+
+  // 3. Push all speculative constraints simultaneously.
+  const constraintIds: string[] = [];
+  for (let i = 0; i < snapConstraints.length; i++) {
+    const cid = `__spec_multi_${i}`;
+    constraintIds.push(cid);
+    pushSpeculativeConstraint(w, snapConstraints[i].snapType, snapConstraints[i].targetEntityId, cid);
+  }
+
+  // 4. Solve and read cursor.
+  const result = runInferenceAndReadCursor(w, pointCount, cursor);
+
+  if (!result.converged) {
+    // Check if any speculative constraint was flagged as conflicting.
+    const conflicting = w.get_gcs_conflicting_constraints() as string[];
+    for (const cid of constraintIds) {
+      if (conflicting.includes(cid)) return null; // Over-constrained
+    }
+  }
+
+  return result;
 }

@@ -756,6 +756,7 @@
     "lineEndpoint": "Line endpoint",
     "midpoint": "Midpoint",
     "onCircle": "On circle",
+    "intersection": "Intersection",
     "onLine": "On line",
     "origin": "Origin",
     "parallel": "Parallel",

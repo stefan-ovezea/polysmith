@@ -12,18 +12,24 @@ import { useCadCoreStore } from "@/state";
 export function SketchDofBadge() {
   const viewport = useCadCoreStore((state) => state.viewport);
 
-  if (!viewport || viewport.solver_dofs === undefined || viewport.solver_dofs === null) {
-    return null;
+  if (!viewport) return null;
+
+  // Use solver DOF when available; fall back to per-entity DOF aggregate
+  // (manual counter) when the planegcs solver hasn't run.
+  let solverDof: number;
+  if (viewport.solver_dofs !== undefined && viewport.solver_dofs !== null && viewport.solver_dofs >= 0) {
+    solverDof = viewport.solver_dofs;
+  } else if (viewport.dof_statuses && viewport.dof_statuses.length > 0) {
+    // Manual DOF fallback: sum remaining DOF across all entities.
+    solverDof = viewport.dof_statuses.reduce(
+      (sum, e) => sum + e.total_dof - e.consumed_dof, 0);
+  } else {
+    return null; // No DOF data at all.
   }
 
-  const dof = viewport.solver_dofs;
+  const dof = solverDof;
   const conflicting = viewport.solver_conflicting_count ?? 0;
   const redundant = viewport.solver_redundant_count ?? 0;
-
-  // No constraints → solver hasn't run, nothing to show.
-  if (dof < 0 && conflicting < 0) {
-    return null;
-  }
 
   const hasConflicts = conflicting > 0;
   const hasRedundant = redundant > 0;

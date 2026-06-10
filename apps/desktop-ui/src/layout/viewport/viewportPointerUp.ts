@@ -104,6 +104,7 @@ interface ViewportPointerUpParams {
   pickSketchPoint: ActiveSketchPointerUpContext["pickSketchPoint"];
   handleDimensionClick: ActiveSketchPointerUpContext["handleDimensionClick"];
   setSelectedConstraint: ActiveSketchPointerUpContext["setSelectedConstraint"];
+  setIsDimensionEditorOpen: (open: boolean) => void;
   paintSketchEntityMaterials: ActiveSketchPointerUpContext["paintSketchEntityMaterials"];
   paintSketchPointMaterials: ActiveSketchPointerUpContext["paintSketchPointMaterials"];
   addMessage: ActiveSketchPointerUpContext["addMessage"];
@@ -284,6 +285,12 @@ function finishActiveSketchPointerUp(params: ViewportPointerUpParams) {
   const hit = params.intersectSceneTargets(params.event);
   const additiveSelection =
     params.event.shiftKey || params.event.ctrlKey || params.event.metaKey;
+
+  // Click on empty canvas with select tool → close the dimension editor.
+  if (!hit && params.activeSketchToolRef.current === "select" && !additiveSelection) {
+    params.setIsDimensionEditorOpen(false);
+  }
+
   if (
     handleActiveSketchToolPointerUp(
       params,

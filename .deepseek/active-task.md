@@ -1,7 +1,7 @@
 # Active Task: GCS Freeze State Machine, Ripple-Freeze, DOF Feedback, Speculative Inferencing
 
 **Started:** 2026-06-09
-**Status:** P1 + P2 + P3.1 + P3.2 complete ✅ (C++ build clean, TS type-check clean, NOT yet tested in running app)
+**Status:** P1 + P2 + P3.1 + P3.2 + P3.3 complete ✅ (C++ build clean, TS type-check clean, NOT yet tested in running app)
 **Source:** `.deepseek/pastes/` — user-provided GCS architecture document
 **Plan:** `wiki/GCS-Implementation-Strategy.md`
 
@@ -128,10 +128,20 @@ New helper functions in `snapResolution.ts`:
 | Phase | Feature | Notes |
 |---|---|---|
 | **Testing** | Run the app, verify everything works | Nothing tested in running Tauri app yet |
-| **P3.3** | Multi-constraint solves (intersection, compound snaps) | Requires pushing TWO simultaneous speculative constraints |
 | **P3.4** | Delete legacy dynamic snap math (~400 lines) | Only after P3.2 verified working in app |
 | **P3** | Dimension Drive Mode | New IPC + Append Mode with dimension entity as focus |
 | **P5** | Kinematic Animation | Far future |
+
+### P3.3 — Multi-Constraint Solves (completed 2026-06-10)
+
+- **`speculativeMultiSolve()`** in `speculativeSolve.ts` — accepts array of speculative constraints, pushes all simultaneously, single INFERENCE solve
+- **Shared geometry builder** extracted: `pushSketchGeometryAndConstraints()` — used by both single and multi-constraint paths
+- **`speculativeIntersectionSnap()`** — line-line intersection via `point_on_line_pl` × 2; TS proximity gating finds best line pair, single WASM solve refines
+- **`speculativeTangentThroughLineSnap()`** — tangent to circle + on a line via `tangent_lc` + `point_on_line_pl`; TS proximity gating finds best circle + line pair
+- **`snapIntersectionLineIds: [string, string]`** — new field on `DynamicSnapResult` + `SketchPreviewPoint`
+- **`intersection`** i18n snap label added to `en.json` + `ViewportPanel.tsx` labels
+- Both helpers wired into `dynamicSnapCandidate()` — gated on `filter.snap_intersection` and `filter.snap_tangent` respectively
+- TypeScript `tsc --noEmit`: zero errors
 
 ---
 
@@ -165,6 +175,11 @@ New helper functions in `snapResolution.ts`:
 - `apps/desktop-ui/src/layout/header/AppHeader.tsx` — wire SketchDofBadge
 - `apps/desktop-ui/src/lib/schemas/ipc/viewportStateSchema.ts` — +diagnostics
 - `apps/desktop-ui/src/types/ipc.ts` — +diagnostics
+- `apps/desktop-ui/src/types/viewport.ts` — +snapIntersectionLineIds field (P3.3)
+- `apps/desktop-ui/src/i18n/en.json` — +intersection snap label (P3.3)
+- `apps/desktop-ui/src/layout/ViewportPanel.tsx` — pass intersection label (P3.3)
+- `.deepseek/instructions.md` — updated active priority (P3.3)
+- `.deepseek/planegcs-integration-plan.md` — marked SUPERSEDED
 
 ### Documentation
 - `wiki/GCS-Implementation-Strategy.md` — **NEW** — full implementation plan
@@ -184,4 +199,6 @@ New helper functions in `snapResolution.ts`:
 1. Run the app: `pnpm dev` from project root, test drawing + constraints + drag
 2. Verify DOF badge appears in toolbar when constraints exist
 3. Verify append mode doesn't break existing sketches
-4. If stable, proceed to P3.3 (multi-constraint solves) or P3.4 (delete legacy math)
+4. Test intersection snap: draw two crossing lines, try to snap to their intersection
+5. Test tangent-through-line snap: draw circle + line, try tangent snap near the line
+6. If stable, proceed to P3.4 (delete legacy dynamic snap math ~400 lines)

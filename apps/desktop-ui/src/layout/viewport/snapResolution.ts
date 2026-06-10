@@ -7,7 +7,7 @@ import type {
 } from "@/types";
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
-import { speculativeSolve } from "@/lib/speculativeSolve";
+import { speculativeSolve, speculativeMultiSolve } from "@/lib/speculativeSolve";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
 
 export interface SketchSnapCandidate {
@@ -73,6 +73,7 @@ export function resolveSnappedSketchPoint({
     tangent: string;
     perpendicular: string;
     parallel: string;
+    intersection: string;
   };
 }): SketchPreviewPoint {
   const gridResult = snapRawPointToGrid({
@@ -266,6 +267,7 @@ function resolveDynamicSnap({
     tangent: string;
     perpendicular: string;
     parallel: string;
+    intersection: string;
   };
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -338,6 +340,7 @@ function unsnappedPreviewPoint(
     snapAxisLock: null,
     snapTangentCircleId: null,
     snapParallelHostLineId: null,
+    snapIntersectionLineIds: null,
   };
 }
 
@@ -510,6 +513,7 @@ interface DynamicSnapResult {
   snapParallelHostLineId: string | null;
   snapLineBodyHostLineId: string | null;
   snapLineBodyT: number | null;
+  snapIntersectionLineIds: [string, string] | null;
   distance: number;
 }
 
@@ -628,6 +632,7 @@ function axisLockSnapCandidate({
         snapParallelHostLineId: null,
         snapLineBodyHostLineId: null,
         snapLineBodyT: null,
+        snapIntersectionLineIds: null,
         distance,
       };
     }
@@ -675,6 +680,7 @@ function lineBodySnapCandidate({
         snapParallelHostLineId: null,
         snapLineBodyHostLineId: line.line_id,
         snapLineBodyT: closest.t,
+        snapIntersectionLineIds: null,
         distance: closest.dist,
       };
     }
@@ -732,6 +738,7 @@ function tangentSnapCandidate({
           snapParallelHostLineId: null,
           snapLineBodyHostLineId: null,
           snapLineBodyT: null,
+          snapIntersectionLineIds: null,
           distance: tpDist,
         };
       }
@@ -803,6 +810,7 @@ function perpendicularSnapCandidate({
         snapParallelHostLineId: null,
         snapLineBodyHostLineId: null,
         snapLineBodyT: null,
+        snapIntersectionLineIds: null,
         distance: footDist,
       };
     }
@@ -873,6 +881,7 @@ function parallelSnapCandidate({
         snapParallelHostLineId: line.line_id,
         snapLineBodyHostLineId: null,
         snapLineBodyT: null,
+        snapIntersectionLineIds: null,
         distance,
       };
     }
@@ -922,6 +931,7 @@ export function dynamicSnapCandidate({
     tangent: string;
     perpendicular: string;
     parallel: string;
+    intersection: string;
   };
   /** Full sketch params for speculative WASM solver path. When provided
    *  and the WASM bridge is ready, solver-validated snaps take priority
@@ -1023,6 +1033,28 @@ export function dynamicSnapCandidate({
       }));
   }
 
+  // Multi-constraint intersection snap (P3.3).
+  if (filter.snap_intersection) {
+    const spec = speculativeIntersectionSnap({
+      sketchParameters: sketchParameters ?? null,
+      constraints: constraints ?? [],
+      lines, cursor, threshold,
+      snapLabel: labels.intersection,
+    });
+    best = closerDynamicSnap(best, spec);
+  }
+
+  // Multi-constraint tangent-through-line snap (P3.3).
+  if (draftStart && filter.snap_tangent) {
+    const spec = speculativeTangentThroughLineSnap({
+      sketchParameters: sketchParameters ?? null,
+      constraints: constraints ?? [],
+      circles, lines, draftStart, cursor, threshold,
+      snapLabel: labels.tangent,
+    });
+    best = closerDynamicSnap(best, spec);
+  }
+
   return best;
 }
 
@@ -1102,6 +1134,7 @@ export function previewPointFromStaticCandidate({
     snapAxisLock: null,
     snapTangentCircleId: null,
     snapParallelHostLineId: null,
+    snapIntersectionLineIds: null,
   };
 }
 
@@ -1192,6 +1225,7 @@ function speculativeAxisLockSnap({
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
+    snapIntersectionLineIds: null,
     distance: result.distance,
   };
 }
@@ -1270,6 +1304,7 @@ function speculativeTangentSnap({
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
+    snapIntersectionLineIds: null,
     distance: result.distance,
   };
 }
@@ -1354,6 +1389,7 @@ function speculativePerpendicularSnap({
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
+    snapIntersectionLineIds: null,
     distance: result.distance,
   };
 }
@@ -1442,6 +1478,7 @@ function speculativeParallelSnap({
     snapParallelHostLineId: bestLine.line_id,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
+    snapIntersectionLineIds: null,
     distance: result.distance,
   };
 }
@@ -1521,6 +1558,220 @@ function speculativeLineBodySnap({
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: bestT,
+    snapIntersectionLineIds: null,
+    distance: result.distance,
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// Multi-constraint speculative snap helpers (P3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Try line-line intersection snap via speculative WASM solver.
+ *
+ * Strategy: for every pair of non-parallel lines near the cursor, push
+ * point_on_line_pl constraints for both lines simultaneously. The solver
+ * finds the intersection point that satisfies both.
+ *
+ * Uses TS math for fast proximity gating (find best line pair), then
+ * runs a single speculativeMultiSolve to refine the intersection.
+ */
+function speculativeIntersectionSnap({
+  sketchParameters,
+  constraints,
+  lines,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  lines: readonly SketchSnapLine[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  let bestPair: { line1: (typeof lines)[number]; line2: (typeof lines)[number] } | null = null;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line1 = lines[i];
+    if (line1.is_construction) continue;
+
+    const dx1 = line1.end_x - line1.start_x;
+    const dy1 = line1.end_y - line1.start_y;
+    const lenSq1 = dx1 * dx1 + dy1 * dy1;
+    if (lenSq1 < 1e-12) continue;
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const line2 = lines[j];
+      if (line2.is_construction) continue;
+
+      const dx2 = line2.end_x - line2.start_x;
+      const dy2 = line2.end_y - line2.start_y;
+      const lenSq2 = dx2 * dx2 + dy2 * dy2;
+      if (lenSq2 < 1e-12) continue;
+
+      const cross = dx1 * dy2 - dy1 * dx2;
+      if (Math.abs(cross) < 1e-10) continue;
+
+      const x1 = line1.start_x, y1 = line1.start_y;
+      const x2 = line2.start_x, y2 = line2.start_y;
+      const t = ((x2 - x1) * dy2 - (y2 - y1) * dx2) / cross;
+      const ix = x1 + t * dx1;
+      const iy = y1 + t * dy1;
+
+      const t1 = ((ix - x1) * dx1 + (iy - y1) * dy1) / lenSq1;
+      const t2 = ((ix - x2) * dx2 + (iy - y2) * dy2) / lenSq2;
+      if (t1 < -0.05 || t1 > 1.05 || t2 < -0.05 || t2 > 1.05) continue;
+
+      const dist = Math.hypot(cursor[0] - ix, cursor[1] - iy);
+      if (dist > threshold) continue;
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestPair = { line1, line2 };
+      }
+    }
+  }
+
+  if (!bestPair) return null;
+
+  const result = speculativeMultiSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart: cursor,
+    cursor,
+    snapConstraints: [
+      { snapType: "point_on_line_pl", targetEntityId: bestPair.line1.line_id },
+      { snapType: "point_on_line_pl", targetEntityId: bestPair.line2.line_id },
+    ],
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapIntersectionLineIds: [bestPair.line1.line_id, bestPair.line2.line_id],
+    distance: result.distance,
+  };
+}
+
+/**
+ * Try tangent-through-line snap via speculative WASM solver.
+ *
+ * Strategy: when the draft line is tangent to a circle AND the cursor
+ * should lie on a line, push tangent_lc (virtual line + circle) and
+ * point_on_line_pl (cursor point + host line) simultaneously.
+ */
+function speculativeTangentThroughLineSnap({
+  sketchParameters,
+  constraints,
+  circles,
+  lines,
+  draftStart,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  sketchParameters: SketchFeatureParameters | null;
+  constraints: SketchConstraintData[];
+  circles: readonly SketchSnapCircle[];
+  lines: readonly SketchSnapLine[];
+  draftStart: [number, number];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  const bridge = getBridge();
+  if (!bridge || !sketchParameters) return null;
+
+  let bestCircle: (typeof circles)[number] | null = null;
+  let bestLine: (typeof lines)[number] | null = null;
+  let bestDist = Infinity;
+
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+
+    const pcDx = circle.center_x - draftStart[0];
+    const pcDy = circle.center_y - draftStart[1];
+    const pcDist = Math.hypot(pcDx, pcDy);
+    if (pcDist <= circle.radius + 1e-9) continue;
+
+    const alpha = Math.asin(circle.radius / pcDist);
+    const baseAngle = Math.atan2(pcDy, pcDx);
+    const tangentLen = Math.sqrt(pcDist * pcDist - circle.radius * circle.radius);
+
+    for (const sign of [1, -1]) {
+      const tpDir = baseAngle + sign * alpha;
+      const tpX = draftStart[0] + tangentLen * Math.cos(tpDir);
+      const tpY = draftStart[1] + tangentLen * Math.sin(tpDir);
+
+      for (const line of lines) {
+        if (line.is_construction) continue;
+        const segDx = line.end_x - line.start_x;
+        const segDy = line.end_y - line.start_y;
+        const segLenSq = segDx * segDx + segDy * segDy;
+        if (segLenSq < 1e-12) continue;
+
+        const t = Math.max(0, Math.min(1,
+          ((tpX - line.start_x) * segDx + (tpY - line.start_y) * segDy) / segLenSq));
+        const lx = line.start_x + t * segDx;
+        const ly = line.start_y + t * segDy;
+        const dist = Math.hypot(tpX - lx, tpY - ly);
+        if (dist > threshold) continue;
+
+        const cursorDist = Math.hypot(cursor[0] - tpX, cursor[1] - tpY);
+        if (cursorDist > threshold * 2) continue;
+
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestCircle = circle;
+          bestLine = line;
+        }
+      }
+    }
+  }
+
+  if (!bestCircle || !bestLine) return null;
+
+  const result = speculativeMultiSolve({
+    bridge,
+    params: sketchParameters,
+    constraints,
+    draftStart,
+    cursor,
+    snapConstraints: [
+      { snapType: "tangent_lc", targetEntityId: bestCircle.circle_id },
+      { snapType: "point_on_line_pl", targetEntityId: bestLine.line_id },
+    ],
+  });
+
+  if (!result?.converged || result.distance > threshold) return null;
+
+  return {
+    local: result.position,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: bestCircle.circle_id,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: bestLine.line_id,
+    snapLineBodyT: null,
+    snapIntersectionLineIds: null,
     distance: result.distance,
   };
 }
