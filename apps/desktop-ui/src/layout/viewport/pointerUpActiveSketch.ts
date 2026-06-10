@@ -59,6 +59,7 @@ export interface ActiveSketchPointerUpContext {
     additive: boolean,
   ) => Promise<void>;
   handleDimensionClick: (dimensionId: string) => void;
+  setIsDimensionEditorOpen: (open: boolean) => void;
   setSelectedConstraint: (constraint: SelectedConstraintState) => void;
   paintSketchEntityMaterials: () => void;
   paintSketchPointMaterials: () => void;

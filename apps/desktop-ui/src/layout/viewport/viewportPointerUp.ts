@@ -331,6 +331,7 @@ function handleActiveSketchToolPointerUp(
     pickSketchPoint: params.pickSketchPoint,
     handleDimensionClick: params.handleDimensionClick,
     setSelectedConstraint: params.setSelectedConstraint,
+    setIsDimensionEditorOpen: params.setIsDimensionEditorOpen,
     paintSketchEntityMaterials: params.paintSketchEntityMaterials,
     paintSketchPointMaterials: params.paintSketchPointMaterials,
     addMessage: params.addMessage,
