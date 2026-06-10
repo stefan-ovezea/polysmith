@@ -189,38 +189,14 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       .entity_id = first_line_id,
       .secondary_entity_id = second_line_id,
       .value = current_angle,
+      // Auto-dimension: display-only until the user types a value into
+      // the editor. This matches the convention used by auto line-length
+      // dimensions. Driving the angle from creation time would introduce
+      // an additional solver constraint that, combined with existing
+      // coincident/relation constraints, can over-constrain the system
+      // and cause the solver to deform the sketch.
+      .is_auto = true,
   });
-
-  // When creating an angle dimension, both lines need driving length
-  // constraints so the solver preserves their current lengths and the
-  // angle solve doesn't deform the shape. The TS dimension-tool flow
-  // may have already deleted the first line's auto-dimension, so we
-  // either convert an existing auto-dimension or create one.
-  for (const auto& line_id : {first_line_id, second_line_id}) {
-    const auto& line = line_id == first_line_id ? line_a : line_b;
-    const std::string len_dim_id = "dim-line-" + line_id;
-    auto len_it = std::find_if(
-        parameters.dimensions.begin(),
-        parameters.dimensions.end(),
-        [&](SketchDimension& dim) {
-          return dim.id == len_dim_id && dim.kind == "line_length";
-        });
-    if (len_it != parameters.dimensions.end()) {
-      // Existing auto-dimension: make it driving.
-      len_it->is_auto = false;
-    } else {
-      // Dimension was deleted (e.g. by the TS auto-cleanup flow).
-      // Re-create it as a manual (driving) dimension locked to the
-      // current measured length.
-      parameters.dimensions.push_back(SketchDimension{
-          .id = len_dim_id,
-          .kind = "line_length",
-          .entity_id = line_id,
-          .value = measure_line_length(line),
-          .is_auto = false,
-      });
-    }
-  }
 
   refresh_sketch_derived_state(feature);
 }

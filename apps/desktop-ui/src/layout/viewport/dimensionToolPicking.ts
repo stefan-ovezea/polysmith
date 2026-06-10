@@ -468,7 +468,6 @@ function dimensionEntityPickAction({
   hasUnary: boolean;
 }): DimensionEntityPickAction {
   if (firstEntityId && firstEntityId !== entityId) {
-    const deleteDimensionId = unaryDimensionIdForEntity(firstEntityId);
     const referencePointId = firstPointId
       ? entityReferencePointId(entityKind, entityId)
       : null;
@@ -477,14 +476,14 @@ function dimensionEntityPickAction({
         kind: "point_distance_to_entity_reference",
         firstPointId,
         secondPointId: referencePointId,
-        deleteDimensionId,
+        deleteDimensionId: null,
       };
     }
     return {
       kind: "entity_distance",
       firstEntityId,
       secondEntityId: entityId,
-      deleteDimensionId,
+      deleteDimensionId: null,
     };
   }
 

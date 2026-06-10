@@ -123,6 +123,39 @@ New helper functions in `snapResolution.ts`:
 
 ---
 
+### P3.3 Fix — Angle Dimension Stealing + Geometry Deformation (2026-06-10)
+
+**Two bugs, one commit (4405e23):**
+
+1. **TS "stealing":** `dimensionToolPicking.ts:dimensionEntityPickAction()` always
+   computed a `deleteDimensionId` for the first entity and `applyEntityPickAction()`
+   unconditionally deleted it before creating the angle dimension. So clicking L1
+   then L2 with the dimension tool deleted L1's permanent auto line-length dimension
+   and replaced it with an angle dimension — "stealing" it.
+
+2. **C++ over-constraining:** The same commit added code that re-created both lines'
+   dimensions as DRIVING (`is_auto=false`) + created the angle dimension as DRIVING
+   (default `is_auto=false`). The solver then had 3 driving constraints on 2 lines
+   (angle + 2 lengths), over-constraining the system and deforming geometry.
+
+**Fix (2 files):**
+
+- `dimensionToolPicking.ts`: Changed `deleteDimensionId` to `null` for both
+  `entity_distance` and `point_distance_to_entity_reference` actions. The first
+  entity's dimension is no longer deleted when creating a relationship dimension.
+  The `if (action.deleteDimensionId)` guard in `applyEntityPickAction()` already
+  handles null safely.
+
+- `dimension_angle_commands.inc`: Removed the 32-line block that auto-created
+  driving line-length dimensions. Set `is_auto = true` on the angle dimension
+  so it's display-only at creation (matching auto line-length convention).
+
+- ✅ C++ build clean
+- ✅ TS type-check clean
+- ✅ C++ tests pass
+
+---
+
 ## Not Yet Done
 
 | Phase | Feature | Notes |
