@@ -92,6 +92,7 @@ target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs)
 
 add_executable(cad_core_sketch_profile_test
   src/core/sketch/constraint_solver.cpp
+  src/core/sketch/dof_counter.cpp
   src/core/sketch/formula_eval.cpp
   src/core/sketch/inference_engine.cpp
   src/core/sketch/sketch_feature.cpp

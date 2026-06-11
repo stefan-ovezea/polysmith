@@ -231,9 +231,9 @@ function applyEntityPickAction(
   switch (action.kind) {
     case "entity_distance":
       context.clearFirstPick();
-      if (action.deleteDimensionId) {
-        context.deleteSketchDimension(action.deleteDimensionId);
-      }
+      // Don't delete the first entity's unary dimension — the angle
+      // or distance dimension coexists with it.  Deleting it would
+      // leave the entity unconstrained and the solver would deform it.
       context.createAngleOrDistance(action.firstEntityId, action.secondEntityId);
       return;
     case "point_distance_to_entity_reference":

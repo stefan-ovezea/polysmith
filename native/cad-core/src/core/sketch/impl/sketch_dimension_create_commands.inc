@@ -91,6 +91,18 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   });
 
   refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dimension_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
 }
 
 void add_sketch_circle_radius_dimension(FeatureEntry& feature,
@@ -127,6 +139,18 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
   });
 
   refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dimension_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
 }
 
 void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
@@ -168,4 +192,16 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
   });
 
   refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dimension_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
 }

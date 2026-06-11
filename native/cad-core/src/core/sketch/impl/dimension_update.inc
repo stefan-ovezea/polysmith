@@ -88,6 +88,10 @@ void update_sketch_dimension(FeatureEntry& feature,
   }
 
   if (dimension.kind == "angle") {
+    fprintf(stderr, "ANGLE-UPDATE: id=%s old=%.4f rad (%.1f°) new=%.4f rad (%.1f°)\n",
+            dimension_id.c_str(),
+            dimension.value, dimension.value * 180.0 / M_PI,
+            value, value * 180.0 / M_PI);
     update_angle_dimension(feature, parameters, dimension, value);
     return;
   }

@@ -63,12 +63,26 @@ void add_sketch_distance_dimension(FeatureEntry& feature,
     return;
   }
 
+  const std::string dim_id =
+      "dim-" + kind + "-" + driven_entity_id + "-" + reference_entity_id;
   parameters.dimensions.push_back(SketchDimension{
-      .id = "dim-" + kind + "-" + driven_entity_id + "-" + reference_entity_id,
+      .id = dim_id,
       .kind = kind,
       .entity_id = driven_entity_id,
       .secondary_entity_id = reference_entity_id,
       .value = value,
   });
   refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dim_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
 }

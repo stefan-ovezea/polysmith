@@ -33,15 +33,30 @@
                     gcs_circles_[cit->second], val_ptr);
             }
         } else if (dim.kind == "angle" && !dim.secondary_entity_id.empty()) {
-            // Angle between two lines.
+            // Angle between two lines.  Ensure both line directions
+            // (p1→p2) point away from the shared vertex so the solver
+            // enforces the interior angle, not its supplement.
             auto lit1 = line_id_to_index_.find(dim.entity_id);
             auto lit2 = line_id_to_index_.find(dim.secondary_entity_id);
             if (lit1 != line_id_to_index_.end() &&
                 lit2 != line_id_to_index_.end()) {
-                system_->addConstraintL2LAngle(
-                    gcs_lines_[lit1->second],
-                    gcs_lines_[lit2->second],
-                    val_ptr);
+                auto gl1 = gcs_lines_[lit1->second];
+                auto gl2 = gcs_lines_[lit2->second];
+                // Detect shared endpoint by comparing coordinate values.
+                auto eq = [](const GCS::Point& a, const GCS::Point& b) {
+                    return std::abs(*a.x - *b.x) < 1e-6 &&
+                           std::abs(*a.y - *b.y) < 1e-6;
+                };
+                int best_i = -1, best_j = -1;
+                if (eq(gl1.p1, gl2.p1))      { best_i = 0; best_j = 0; }
+                else if (eq(gl1.p1, gl2.p2)) { best_i = 0; best_j = 1; }
+                else if (eq(gl1.p2, gl2.p1)) { best_i = 1; best_j = 0; }
+                else if (eq(gl1.p2, gl2.p2)) { best_i = 1; best_j = 1; }
+                // If shared pivot is at p2, swap so it's at p1
+                // (direction points away from pivot).
+                if (best_i == 1) std::swap(gl1.p1, gl1.p2);
+                if (best_j == 1) std::swap(gl2.p1, gl2.p2);
+                system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
             }
         } else if (dim.kind == "point_distance" &&
                    !dim.secondary_entity_id.empty()) {
