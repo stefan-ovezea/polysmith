@@ -56,6 +56,70 @@
                 // (direction points away from pivot).
                 if (best_i == 1) std::swap(gl1.p1, gl1.p2);
                 if (best_j == 1) std::swap(gl2.p1, gl2.p2);
+
+                // Endpoint-on-segment case (T-connection): one line's
+                // endpoint lies on the other line's segment rather than
+                // at a shared vertex.  Orient both direction vectors
+                // away from that pivot so the L2LAngle signed-angle
+                // convention matches what add_sketch_angle_dimension
+                // stored (dir_away from the pivot).
+                if (best_i == -1 && best_j == -1) {
+                    auto pt_on_seg = [](double px, double py,
+                                       double ax, double ay,
+                                       double bx, double by,
+                                       double tol) -> bool {
+                        double dx = bx - ax, dy = by - ay;
+                        double len2 = dx * dx + dy * dy;
+                        if (len2 < 1e-12) return false;
+                        double t = ((px - ax) * dx + (py - ay) * dy) / len2;
+                        if (t < 0.0 || t > 1.0) return false;
+                        double proj_x = ax + t * dx, proj_y = ay + t * dy;
+                        return std::sqrt((px - proj_x) * (px - proj_x) +
+                                         (py - proj_y) * (py - proj_y)) < tol;
+                    };
+                    bool found = false;
+                    // Check each endpoint of gl1 against gl2's segment.
+                    for (int ei = 0; ei < 2 && !found; ++ei) {
+                        const GCS::Point& p =
+                            (ei == 0) ? gl1.p1 : gl1.p2;
+                        if (pt_on_seg(*p.x, *p.y,
+                                      *gl2.p1.x, *gl2.p1.y,
+                                      *gl2.p2.x, *gl2.p2.y, 1e-3)) {
+                            // gl1's endpoint lies on gl2 — pivot is p.
+                            if (ei == 1) std::swap(gl1.p1, gl1.p2);
+                            double d0 =
+                                std::sqrt((*gl2.p1.x - *p.x) * (*gl2.p1.x - *p.x) +
+                                          (*gl2.p1.y - *p.y) * (*gl2.p1.y - *p.y));
+                            double d1 =
+                                std::sqrt((*gl2.p2.x - *p.x) * (*gl2.p2.x - *p.x) +
+                                          (*gl2.p2.y - *p.y) * (*gl2.p2.y - *p.y));
+                            // Swap gl2 if p1 is farther from pivot than p2
+                            // (want direction p1→p2 to point away,
+                            // so p1 should be the closer endpoint).
+                            if (d0 > d1) std::swap(gl2.p1, gl2.p2);
+                            found = true;
+                        }
+                    }
+                    // Check each endpoint of gl2 against gl1's segment.
+                    for (int ej = 0; ej < 2 && !found; ++ej) {
+                        const GCS::Point& p =
+                            (ej == 0) ? gl2.p1 : gl2.p2;
+                        if (pt_on_seg(*p.x, *p.y,
+                                      *gl1.p1.x, *gl1.p1.y,
+                                      *gl1.p2.x, *gl1.p2.y, 1e-3)) {
+                            // gl2's endpoint lies on gl1 — pivot is p.
+                            if (ej == 1) std::swap(gl2.p1, gl2.p2);
+                            double d0 =
+                                std::sqrt((*gl1.p1.x - *p.x) * (*gl1.p1.x - *p.x) +
+                                          (*gl1.p1.y - *p.y) * (*gl1.p1.y - *p.y));
+                            double d1 =
+                                std::sqrt((*gl1.p2.x - *p.x) * (*gl1.p2.x - *p.x) +
+                                          (*gl1.p2.y - *p.y) * (*gl1.p2.y - *p.y));
+                            if (d0 > d1) std::swap(gl1.p1, gl1.p2);
+                            found = true;
+                        }
+                    }
+                }
                 system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
             }
         } else if (dim.kind == "point_distance" &&

@@ -159,7 +159,7 @@ void update_angle_dimension(FeatureEntry& feature,
   propagate_connected_point_move(
       parameters, moved_point_id, new_other_x, new_other_y);
 
-  dimension.value = value;
+  dimension.value = target_signed;
   refresh_sketch_derived_state(feature);
   return;
 }

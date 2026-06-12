@@ -160,7 +160,11 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   // temporary lines for the L2LAngle constraint.
   const double signed_angle = std::atan2(
       a_dx * b_dy - a_dy * b_dx, a_dx * b_dx + a_dy * b_dy);
-  const double current_angle = std::abs(signed_angle);
+  // Store the SIGNED angle so the planegcs L2LAngle constraint
+  // (which enforces a directed angle, not an interior angle)
+  // receives the correct target value.  The UI displays the
+  // absolute value for human readability.
+  const double current_angle = signed_angle;
 
   fprintf(stderr, "ANGLE-DEBUG: lines=%s/%s pivot=(%.2f,%.2f) "
           "a_dir=(%.4f,%.4f) b_dir=(%.4f,%.4f) "
@@ -227,11 +231,59 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     }
   }
 
-  // Use append-focus freeze so only the two lines involved in the angle
-  // can move.  Everything else is frozen at its current position.  Since
-  // the angle value matches the current measured angle, the solver should
-  // produce zero net displacement — no deformation.
-  refresh_sketch_with_append_focus(feature, {first_line_id, second_line_id});
+  // For endpoint-on-segment (T-connection): add a point-line anchor
+  // so the solver keeps the pivot endpoint on the host line.  Without
+  // this, the angle constraint will tear the T-connection apart.
+  // Also freeze the host line so only the pivot line can move.
+  std::vector<std::string> focus_ids = {first_line_id, second_line_id};
+  if (a_pivot_index >= 0 && b_pivot_index < 0) {
+    // Line A's endpoint is on line B's segment.
+    const std::string pivot_point_id = a_pivot_index == 0
+        ? line_a.start_point_id : line_a.end_point_id;
+    double dx = b_ends[1].first - b_ends[0].first;
+    double dy = b_ends[1].second - b_ends[0].second;
+    double len2 = dx * dx + dy * dy;
+    double t = len2 > 1e-12
+        ? ((pivot_x - b_ends[0].first) * dx +
+           (pivot_y - b_ends[0].second) * dy) / len2
+        : 0.0;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    parameters.point_line_anchors.push_back(SketchPointLineAnchor{
+        .id = "anchor-angle-" + first + "-" + second,
+        .point_id = pivot_point_id,
+        .line_id = second_line_id,
+        .t = t,
+    });
+    focus_ids = {first_line_id};
+  } else if (a_pivot_index < 0 && b_pivot_index >= 0) {
+    // Line B's endpoint is on line A's segment.
+    const std::string pivot_point_id = b_pivot_index == 0
+        ? line_b.start_point_id : line_b.end_point_id;
+    double dx = a_ends[1].first - a_ends[0].first;
+    double dy = a_ends[1].second - a_ends[0].second;
+    double len2 = dx * dx + dy * dy;
+    double t = len2 > 1e-12
+        ? ((pivot_x - a_ends[0].first) * dx +
+           (pivot_y - a_ends[0].second) * dy) / len2
+        : 0.0;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    parameters.point_line_anchors.push_back(SketchPointLineAnchor{
+        .id = "anchor-angle-" + first + "-" + second,
+        .point_id = pivot_point_id,
+        .line_id = first_line_id,
+        .t = t,
+    });
+    focus_ids = {second_line_id};
+  }
+
+  // Use append-focus freeze so only the involved lines can move.
+  // For shared endpoints both lines are unfrozen; for T-connections
+  // only the pivot line is unfrozen (the host line stays fixed).
+  // Since the angle value matches the current measured angle, the
+  // solver should produce zero net displacement — no deformation.
+  refresh_sketch_with_append_focus(feature, focus_ids);
 
   // If the solver reports conflicts after adding this dimension,
   // it over-constrained the system.  Convert to driven so the
@@ -248,7 +300,7 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
         });
     if (angle_it != parameters.dimensions.end()) {
       angle_it->driven = true;
-      refresh_sketch_with_append_focus(feature, {first_line_id, second_line_id});
+      refresh_sketch_with_append_focus(feature, focus_ids);
     }
   }
 }

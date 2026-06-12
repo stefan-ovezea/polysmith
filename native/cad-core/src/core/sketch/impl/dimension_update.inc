@@ -133,7 +133,7 @@ void update_sketch_dimension(FeatureEntry& feature,
           parameters, line.end_point_id, line.end_x, line.end_y);
     }
 
-    dimension.value = value;
+    dimension.value = target;
     sync_all_line_dimensions(parameters);
     refresh_sketch_derived_state(feature);
     return;

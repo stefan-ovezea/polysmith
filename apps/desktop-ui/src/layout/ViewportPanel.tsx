@@ -109,9 +109,6 @@ import {
 } from "./viewport/dimensionLabelDrag";
 import { handleActiveSketchPointerMove } from "./viewport/activeSketchPointerMove";
 import { renderTrimPreviewHighlight } from "./viewport/trimPreviewHighlight";
-import {
-  sketchLinesShareEndpoint as relationPreviewLinesShareEndpoint,
-} from "./viewport/dimensionRelationPreview";
 import { createDimensionRelationPreviewActions } from "./viewport/dimensionRelationPreviewActions";
 import { createDimensionRelationPlacementActions } from "./viewport/dimensionRelationPlacementActions";
 import { createDimensionToolActions } from "./viewport/dimensionToolActions";
@@ -1269,7 +1266,6 @@ export function ViewportPanel({
     addSketchPointDistanceDimensionRef,
     updateSketchDimensionRef,
     setDimensionToolFirstLine,
-    sketchLinesShareEndpoint,
     handleDimensionClick,
   });
 
@@ -1376,16 +1372,6 @@ export function ViewportPanel({
     createDimensionAngleOrDistance: dimCreateAngleOrDistance,
     beginDimensionPlacement,
   });
-
-  function sketchLinesShareEndpoint(firstLineId: string, secondLineId: string) {
-    const params = sketchLinesRef.current;
-    const first = params?.lines.find((line) => line.line_id === firstLineId);
-    const second = params?.lines.find((line) => line.line_id === secondLineId);
-    if (!first || !second) {
-      return false;
-    }
-    return relationPreviewLinesShareEndpoint(first, second);
-  }
 
   function cancelActiveSketchDraft() {
     if (armedSketchConstraintRef.current) {

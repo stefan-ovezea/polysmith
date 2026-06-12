@@ -39,10 +39,6 @@ interface DimensionToolActionParams {
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
   >;
   setDimensionToolFirstLine: Dispatch<SetStateAction<string | null>>;
-  sketchLinesShareEndpoint: (
-    firstLineId: string,
-    secondLineId: string,
-  ) => boolean;
   handleDimensionClick: (dimensionId: string) => void;
 }
 
@@ -63,7 +59,6 @@ export function createDimensionToolActions({
   addSketchPointDistanceDimensionRef,
   updateSketchDimensionRef,
   setDimensionToolFirstLine,
-  sketchLinesShareEndpoint,
   handleDimensionClick,
 }: DimensionToolActionParams) {
   function stageUnaryDimension(entityId: string, dimensionId: string) {
@@ -138,7 +133,7 @@ export function createDimensionToolActions({
     pendingDimSourceEntityIdRef.current = null;
     if (
       firstEntityId.startsWith("line-") &&
-      sketchLinesShareEndpoint(firstEntityId, secondEntityId)
+      secondEntityId.startsWith("line-")
     ) {
       const isReflex = pendingAngleIsReflexRef.current;
       const reflexAngle = pendingReflexAngleRef.current;

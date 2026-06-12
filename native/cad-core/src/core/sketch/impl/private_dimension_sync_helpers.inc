@@ -68,7 +68,7 @@ void sync_angle_dimensions(SketchFeatureParameters& parameters) {
     double b_dy = b_ends[1 - b_pivot].second - py;
     double signed_angle = std::atan2(a_dx * b_dy - a_dy * b_dx,
                                      a_dx * b_dx + a_dy * b_dy);
-    double new_val = std::abs(signed_angle);
+    double new_val = signed_angle;
     if (std::abs(dim.value - new_val) > 0.001) {
       fprintf(stderr, "ANGLE-SYNC: id=%s old=%.4f rad (%.1f°) new=%.4f rad (%.1f°)\n",
               dim.id.c_str(),
