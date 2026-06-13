@@ -64,6 +64,36 @@
                 // convention matches what add_sketch_angle_dimension
                 // stored (dir_away from the pivot).
                 if (best_i == -1 && best_j == -1) {
+                    constexpr double kLocalPi = 3.14159265358979323846;
+                    constexpr double kLocalTwoPi = 2.0 * kLocalPi;
+                    double requested = std::fmod(std::abs(*val_ptr), kLocalTwoPi);
+                    if (requested < 0.0) requested += kLocalTwoPi;
+                    const double target_small =
+                        requested > kLocalPi ? kLocalTwoPi - requested : requested;
+                    auto ray_score = [&](const GCS::Point& ray_start,
+                                         const GCS::Point& ray_end,
+                                         double other_dx,
+                                         double other_dy,
+                                         bool host_is_first_line) {
+                        double dx = *ray_end.x - *ray_start.x;
+                        double dy = *ray_end.y - *ray_start.y;
+                        double len = std::sqrt(dx * dx + dy * dy);
+                        double other_len =
+                            std::sqrt(other_dx * other_dx + other_dy * other_dy);
+                        if (len < 1e-12 || other_len < 1e-12) {
+                            return 1e99;
+                        }
+                        dx /= len;
+                        dy /= len;
+                        other_dx /= other_len;
+                        other_dy /= other_len;
+                        const double cross = host_is_first_line
+                            ? dx * other_dy - dy * other_dx
+                            : other_dx * dy - other_dy * dx;
+                        const double dot = dx * other_dx + dy * other_dy;
+                        return std::abs(std::abs(std::atan2(cross, dot)) -
+                                        target_small);
+                    };
                     auto pt_on_seg = [](double px, double py,
                                        double ax, double ay,
                                        double bx, double by,
@@ -87,16 +117,13 @@
                                       *gl2.p2.x, *gl2.p2.y, 0.10)) {
                             // gl1's endpoint lies on gl2 — pivot is p.
                             if (ei == 1) std::swap(gl1.p1, gl1.p2);
-                            double d0 =
-                                std::sqrt((*gl2.p1.x - *p.x) * (*gl2.p1.x - *p.x) +
-                                          (*gl2.p1.y - *p.y) * (*gl2.p1.y - *p.y));
-                            double d1 =
-                                std::sqrt((*gl2.p2.x - *p.x) * (*gl2.p2.x - *p.x) +
-                                          (*gl2.p2.y - *p.y) * (*gl2.p2.y - *p.y));
-                            // Swap gl2 if p1 is farther from pivot than p2
-                            // (want direction p1→p2 to point away,
-                            // so p1 should be the closer endpoint).
-                            if (d0 > d1) std::swap(gl2.p1, gl2.p2);
+                            const double other_dx = *gl1.p2.x - *gl1.p1.x;
+                            const double other_dy = *gl1.p2.y - *gl1.p1.y;
+                            const double keep_score =
+                                ray_score(gl2.p1, gl2.p2, other_dx, other_dy, false);
+                            const double swap_score =
+                                ray_score(gl2.p2, gl2.p1, other_dx, other_dy, false);
+                            if (swap_score < keep_score) std::swap(gl2.p1, gl2.p2);
                             found = true;
                         }
                     }
@@ -109,13 +136,13 @@
                                       *gl1.p2.x, *gl1.p2.y, 0.10)) {
                             // gl2's endpoint lies on gl1 — pivot is p.
                             if (ej == 1) std::swap(gl2.p1, gl2.p2);
-                            double d0 =
-                                std::sqrt((*gl1.p1.x - *p.x) * (*gl1.p1.x - *p.x) +
-                                          (*gl1.p1.y - *p.y) * (*gl1.p1.y - *p.y));
-                            double d1 =
-                                std::sqrt((*gl1.p2.x - *p.x) * (*gl1.p2.x - *p.x) +
-                                          (*gl1.p2.y - *p.y) * (*gl1.p2.y - *p.y));
-                            if (d0 > d1) std::swap(gl1.p1, gl1.p2);
+                            const double other_dx = *gl2.p2.x - *gl2.p1.x;
+                            const double other_dy = *gl2.p2.y - *gl2.p1.y;
+                            const double keep_score =
+                                ray_score(gl1.p1, gl1.p2, other_dx, other_dy, true);
+                            const double swap_score =
+                                ray_score(gl1.p2, gl1.p1, other_dx, other_dy, true);
+                            if (swap_score < keep_score) std::swap(gl1.p1, gl1.p2);
                             found = true;
                         }
                     }

@@ -138,6 +138,7 @@ export function createDimensionToolActions({
       const isReflex = pendingAngleIsReflexRef.current;
       const reflexAngle = pendingReflexAngleRef.current;
       pendingAngleIsReflexRef.current = false;
+      pendingReflexAngleRef.current = 0;
       void addSketchAngleDimensionRef
         .current(firstEntityId, secondEntityId)
         .then(() => {
@@ -173,6 +174,8 @@ export function createDimensionToolActions({
     pendingDimensionPlacementRef.current = false;
     pendingRelationPlacementLabelRef.current = null;
     pendingRelationPlacementMatchRef.current = null;
+    pendingAngleIsReflexRef.current = false;
+    pendingReflexAngleRef.current = 0;
   }
 
   return {

@@ -208,6 +208,50 @@ function lineDirectionAwayFromPoint(
   return [dx / length, dy / length];
 }
 
+function lineHasEndpointAt(
+  line: SketchLineEntry,
+  point: [number, number],
+): boolean {
+  return (
+    Math.hypot(line.start_x - point[0], line.start_y - point[1]) <= 1e-6 ||
+    Math.hypot(line.end_x - point[0], line.end_y - point[1]) <= 1e-6
+  );
+}
+
+function lineDirectionTowardSmallerAngle(
+  line: SketchLineEntry,
+  point: [number, number],
+  otherDirection: [number, number],
+): [number, number] | null {
+  const candidates: [number, number][] = [
+    [line.start_x - point[0], line.start_y - point[1]],
+    [line.end_x - point[0], line.end_y - point[1]],
+  ];
+  let best: [number, number] | null = null;
+  let bestAngle = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const length = Math.hypot(candidate[0], candidate[1]);
+    if (length <= 1e-9) {
+      continue;
+    }
+    const unit: [number, number] = [
+      candidate[0] / length,
+      candidate[1] / length,
+    ];
+    const angle = Math.abs(
+      Math.atan2(
+        unit[0] * otherDirection[1] - unit[1] * otherDirection[0],
+        unit[0] * otherDirection[0] + unit[1] * otherDirection[1],
+      ),
+    );
+    if (angle < bestAngle) {
+      bestAngle = angle;
+      best = unit;
+    }
+  }
+  return best;
+}
+
 function formatAngleLabel(radians: number) {
   const degrees = Math.abs((radians * 180) / Math.PI);
   return `${formatDraftDimension(degrees)}°`;
@@ -300,10 +344,22 @@ export function createLineAnglePreview({
   if (!firstDir || !secondDir) {
     return null;
   }
+  const firstEndpointAtPivot = lineHasEndpointAt(first, pivot);
+  const secondEndpointAtPivot = lineHasEndpointAt(second, pivot);
+  const resolvedFirstDir = firstEndpointAtPivot
+    ? firstDir
+    : (lineDirectionTowardSmallerAngle(first, pivot, secondDir) ?? firstDir);
+  const resolvedSecondDir = secondEndpointAtPivot
+    ? secondDir
+    : (lineDirectionTowardSmallerAngle(second, pivot, firstDir) ?? secondDir);
 
   const dot = Math.max(
     -1,
-    Math.min(1, firstDir[0] * secondDir[0] + firstDir[1] * secondDir[1]),
+    Math.min(
+      1,
+      resolvedFirstDir[0] * resolvedSecondDir[0] +
+        resolvedFirstDir[1] * resolvedSecondDir[1],
+    ),
   );
   const acuteAngle = Math.acos(dot);
   const sharedEndpoint =
@@ -319,8 +375,8 @@ export function createLineAnglePreview({
   if (cursorLen > 1e-9) {
     const cx = cursorVec[0] / cursorLen;
     const cy = cursorVec[1] / cursorLen;
-    const bx = firstDir[0] + secondDir[0];
-    const by = firstDir[1] + secondDir[1];
+    const bx = resolvedFirstDir[0] + resolvedSecondDir[0];
+    const by = resolvedFirstDir[1] + resolvedSecondDir[1];
     const blen = Math.hypot(bx, by);
     if (blen > 1e-9) {
       useReflex = (cx * bx + cy * by) / blen < reflexThreshold;
@@ -331,25 +387,25 @@ export function createLineAnglePreview({
   const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
   const radius = clampAngleRadius(cursorRadius);
   const dimensionStart: [number, number] = [
-    pivot[0] + firstDir[0] * radius,
-    pivot[1] + firstDir[1] * radius,
+    pivot[0] + resolvedFirstDir[0] * radius,
+    pivot[1] + resolvedFirstDir[1] * radius,
   ];
   const dimensionEnd: [number, number] = [
-    pivot[0] + secondDir[0] * radius,
-    pivot[1] + secondDir[1] * radius,
+    pivot[0] + resolvedSecondDir[0] * radius,
+    pivot[1] + resolvedSecondDir[1] * radius,
   ];
   const anchorRadius = Math.min(lineLength(first), lineLength(second), radius + 2);
   const anchorStart: [number, number] = [
-    pivot[0] + firstDir[0] * anchorRadius,
-    pivot[1] + firstDir[1] * anchorRadius,
+    pivot[0] + resolvedFirstDir[0] * anchorRadius,
+    pivot[1] + resolvedFirstDir[1] * anchorRadius,
   ];
   const anchorEnd: [number, number] = [
-    pivot[0] + secondDir[0] * anchorRadius,
-    pivot[1] + secondDir[1] * anchorRadius,
+    pivot[0] + resolvedSecondDir[0] * anchorRadius,
+    pivot[1] + resolvedSecondDir[1] * anchorRadius,
   ];
   const bisector: [number, number] = [
-    firstDir[0] + secondDir[0],
-    firstDir[1] + secondDir[1],
+    resolvedFirstDir[0] + resolvedSecondDir[0],
+    resolvedFirstDir[1] + resolvedSecondDir[1],
   ];
   const bisectorLength = Math.hypot(bisector[0], bisector[1]);
   if (bisectorLength <= 1e-9) {

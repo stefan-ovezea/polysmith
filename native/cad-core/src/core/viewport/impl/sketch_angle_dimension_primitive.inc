@@ -50,6 +50,27 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     if (len < 1e-12) return {1.0, 0.0};
     return {dx / len, dy / len};
   };
+  auto dir_toward_smaller_angle =
+      [](double px, double py,
+         double host0x, double host0y,
+         double host1x, double host1y,
+         double other_dx, double other_dy) -> std::pair<double, double> {
+    auto unit = [&](double x, double y) {
+      double dx = x - px;
+      double dy = y - py;
+      double len = std::sqrt(dx * dx + dy * dy);
+      if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+      return std::pair<double, double>{dx / len, dy / len};
+    };
+    auto d0 = unit(host0x, host0y);
+    auto d1 = unit(host1x, host1y);
+    auto angle_to_other = [&](const std::pair<double, double>& dir) {
+      return std::abs(std::atan2(
+          dir.first * other_dy - dir.second * other_dx,
+          dir.first * other_dx + dir.second * other_dy));
+    };
+    return angle_to_other(d0) <= angle_to_other(d1) ? d0 : d1;
+  };
 
   constexpr double kPivotTol = 0.05;
   int a_pivot = -1, b_pivot = -1;
@@ -100,21 +121,25 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
                        a_ends[1 - a_pivot].first, a_ends[1 - a_pivot].second,
                        a_ends[a_pivot].first, a_ends[a_pivot].second);
     a_dx = ad.first; a_dy = ad.second;
-    auto bd = dir_away(pivot_x, pivot_y,
-                       b_ends[0].first, b_ends[0].second,
-                       b_ends[1].first, b_ends[1].second);
+    auto bd = dir_toward_smaller_angle(
+        pivot_x, pivot_y,
+        b_ends[0].first, b_ends[0].second,
+        b_ends[1].first, b_ends[1].second,
+        a_dx, a_dy);
     b_dx = bd.first; b_dy = bd.second;
   } else if (b_pivot >= 0) {
     pivot_x = b_ends[b_pivot].first;
     pivot_y = b_ends[b_pivot].second;
-    auto ad = dir_away(pivot_x, pivot_y,
-                       a_ends[0].first, a_ends[0].second,
-                       a_ends[1].first, a_ends[1].second);
-    a_dx = ad.first; a_dy = ad.second;
     auto bd = dir_away(pivot_x, pivot_y,
                        b_ends[1 - b_pivot].first, b_ends[1 - b_pivot].second,
                        b_ends[b_pivot].first, b_ends[b_pivot].second);
     b_dx = bd.first; b_dy = bd.second;
+    auto ad = dir_toward_smaller_angle(
+        pivot_x, pivot_y,
+        a_ends[0].first, a_ends[0].second,
+        a_ends[1].first, a_ends[1].second,
+        b_dx, b_dy);
+    a_dx = ad.first; a_dy = ad.second;
   } else {
     // Should not happen — add_sketch_angle_dimension validates first.
     pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
