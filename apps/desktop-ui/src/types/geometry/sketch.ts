@@ -337,6 +337,46 @@ export interface ConstructionPointFeatureParameters {
   position: Vector3;
 }
 
+export interface PluginFeatureParameters {
+  plugin_id: string;
+  feature_type: string;
+  schema_version: number;
+  is_pending: boolean;
+  display_name: string;
+  parameters_summary: string;
+  parameters: Record<string, unknown>;
+  geometry: Array<{
+    operation: "add" | "subtract";
+    primitive:
+      | "box"
+      | "rounded_box"
+      | "tapered_rounded_box"
+      | "cylinder"
+      | "profile_extrude"
+      | "rounded_rect_profile_sweep";
+    x: number;
+    y: number;
+    z: number;
+    width: number;
+    depth: number;
+    height: number;
+    radius?: number;
+    top_width?: number;
+    top_depth?: number;
+    top_radius?: number;
+    top_offset_x?: number;
+    top_offset_y?: number;
+    profile_plane?: "xy" | "xz" | "yz";
+    extrude_x?: number;
+    extrude_y?: number;
+    extrude_z?: number;
+    path_width?: number;
+    path_depth?: number;
+    path_radius?: number;
+    profile_points?: Array<{ u: number; v: number }>;
+  }>;
+}
+
 export interface FeatureEntry {
   feature_id: string;
   kind: string;
@@ -367,6 +407,7 @@ export interface FeatureEntry {
   fastener_parameters: FastenerFeatureParameters | null;
   move_parameters: MoveFeatureParameters | null;
   body_copy_parameters: BodyCopyFeatureParameters | null;
+  plugin_feature_parameters?: PluginFeatureParameters | null;
   sketch_parameters: SketchFeatureParameters | null;
   fillet_parameters: FilletFeatureParameters | null;
   chamfer_parameters: ChamferFeatureParameters | null;

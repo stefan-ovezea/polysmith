@@ -56,9 +56,6 @@ import {
   type ThreadAction,
   type WorkspaceView,
 } from "./app/appState";
-import {
-  awaitCreatedFeature,
-} from "./app/featureCreation";
 import { computeActiveFeatureParameters } from "./app/activeFeatureParameters";
 import {
   buildCamOperations,
@@ -134,10 +131,16 @@ import {
 import { handleViewportPrimitiveSelection } from "./app/viewportPrimitiveSelection";
 import { handleViewportSketchProfileSelection } from "./app/viewportSketchProfileSelection";
 import { computeViewportSelectionState } from "./app/viewportSelectionState";
+import { isToolStartBlocked } from "./app/actionAvailability";
+import { sendCoreCommand } from "./lib/cadCoreClient";
+import { makeGetViewportStateCommand } from "./lib/ipcProtocol";
+import { usePluginHost } from "./plugins/PluginProvider";
+import type { PluginActiveAction } from "./plugins/sdk";
 
 function App() {
   const { t } = useTranslation();
   const { config } = useAppConfig();
+  const pluginHost = usePluginHost();
   const [armedSketchConstraint, setArmedSketchConstraint] =
     useState<ArmedSketchConstraint>(null);
   // Which input slot in the floating Mirror panel is currently
@@ -164,6 +167,8 @@ function App() {
   const sweepCreateInFlightRef = useRef(false);
   const lastSweepInputsRef = useRef("");
   const [moveAction, setMoveAction] = useState<ActiveMoveAction | null>(null);
+  const [activePluginAction, setActivePluginAction] =
+    useState<PluginActiveAction | null>(null);
   // Arc tool creation mode. Defaults to three-point (common CAD workflow's default
   // and the most ergonomic for shaping curves on the fly). The
   // SketchToolbar exposes a segmented control to toggle to
@@ -659,6 +664,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
+    pluginAction: activePluginAction,
   };
 
   const {
@@ -889,6 +895,7 @@ function App() {
         threadAction,
         fastenerAction,
         helixAction,
+        pluginAction: activePluginAction,
         editingFeatureId,
         materialsPanelOpen,
       },
@@ -910,6 +917,11 @@ function App() {
         setThreadAction,
         setFastenerAction,
         setHelixAction,
+        setPluginAction: (value) => {
+          if (!value) {
+            setActivePluginAction(null);
+          }
+        },
         setEditingFeatureId,
         setMaterialsPanelOpen,
       },
@@ -932,6 +944,7 @@ function App() {
       updateMoveParameters,
       updateThreadParameters,
       updateFastenerParameters,
+      deleteFeature,
     });
   }
 
@@ -1025,6 +1038,7 @@ function App() {
       threadAction,
       fastenerAction,
       helixAction,
+      pluginAction: activePluginAction,
       editingFeatureId,
       materialsPanelOpen,
     },
@@ -1164,6 +1178,7 @@ function App() {
     threadAction,
     fastenerAction,
     moveAction,
+    pluginAction: activePluginAction,
   });
 
   const handleTimelineFeatureEdit = createTimelineFeatureEditHandler({
@@ -1185,6 +1200,48 @@ function App() {
     lastRevolveInputsRef,
     lastSweepInputsRef,
   });
+
+  const pluginMenuItems = pluginHost.menuItems.map((item) => ({
+    ...item,
+    label: t(item.labelKey),
+  }));
+
+  async function handlePluginCommand(pluginId: string, command: string) {
+    if (isToolStartBlocked(activeToolState)) {
+      addMessage(t("plugins.actionBlocked"));
+      return;
+    }
+
+    const pluginEntry = pluginHost.plugins.find(
+      (entry) => entry.plugin.manifest.id === pluginId,
+    );
+    if (!pluginEntry?.enabled) {
+      addMessage(t("plugins.disabled"));
+      return;
+    }
+    if (!pluginEntry.runtime.handleCommand) {
+      return;
+    }
+    await runAction(async () => {
+      const result = await pluginEntry.runtime.handleCommand?.(command);
+      if (result) {
+        setActivePluginAction({
+          ...result,
+          pluginId,
+        });
+      }
+    });
+  }
+
+  const activePluginPanel = activePluginAction
+    ? pluginHost.plugins
+        .find((entry) => entry.plugin.manifest.id === activePluginAction.pluginId)
+        ?.runtime.renderAction?.({
+          disabled: status !== "connected",
+          action: activePluginAction,
+          onClose: () => setActivePluginAction(null),
+        }) ?? null
+    : null;
 
   return (
     <main className="cad-shell h-screen">
@@ -1231,6 +1288,8 @@ function App() {
           saveCurrentDocument={saveCurrentDocument}
           undo={undo}
           redo={redo}
+          pluginMenuItems={pluginMenuItems}
+          onPluginCommand={handlePluginCommand}
           logCount={logs.length}
           errorLogCount={errorLogCount}
           setIsLogsOpen={setIsLogsOpen}
@@ -2095,6 +2154,7 @@ function App() {
                 updateBoxFeature={updateBoxFeature}
                 updateCylinderFeature={updateCylinderFeature}
               />
+              {activePluginPanel}
               <ActiveMirrorPanel
                 disabled={status !== "connected"}
                 focusedSlot={mirrorFocusedSlot}

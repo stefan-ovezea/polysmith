@@ -17,6 +17,7 @@ export interface FeatureActionAvailabilityInput {
   threadAction: unknown | null;
   fastenerAction: unknown | null;
   moveAction: unknown | null;
+  pluginAction: unknown | null;
 }
 
 export interface FeatureActionAvailability {
@@ -47,6 +48,7 @@ export function computeFeatureActionAvailability({
   threadAction,
   fastenerAction,
   moveAction,
+  pluginAction,
 }: FeatureActionAvailabilityInput): FeatureActionAvailability {
   const blocksExtrudeFromSelection = hasAnyAction([
     loftAction,
@@ -60,6 +62,7 @@ export function computeFeatureActionAvailability({
     threadAction,
     fastenerAction,
     moveAction,
+    pluginAction,
   ]);
   const canUseCurrentExtrudeAction =
     !extrudeAction || extrudeAction.phase === "pending";
@@ -74,6 +77,7 @@ export function computeFeatureActionAvailability({
       edgeOpAction,
       threadAction,
       fastenerAction,
+      pluginAction,
     ]);
   const canStartTimelineFeatureEdit =
     noTimelineFeatureActionExceptMove && !moveAction;

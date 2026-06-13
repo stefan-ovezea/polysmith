@@ -9,6 +9,7 @@
 #include "core/export/export.h"
 #include "core/extrude/extrude_feature.h"
 #include "core/loft/loft_feature.h"
+#include "core/plugin/plugin_feature.h"
 #include "core/primitive/box_feature.h"
 #include "core/primitive/cylinder_feature.h"
 #include "core/revolve/revolve_feature.h"

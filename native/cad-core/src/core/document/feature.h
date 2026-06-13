@@ -8,6 +8,7 @@
 #include "core/document/plane_frame.h"
 #include "core/extrude/extrude_types.h"
 #include "core/loft/loft_types.h"
+#include "core/plugin/plugin_types.h"
 #include "core/primitive/primitive_types.h"
 #include "core/revolve/revolve_types.h"
 #include "core/sketch/sketch_types.h"
@@ -59,6 +60,7 @@ struct FeatureEntry {
   std::optional<FastenerFeatureParameters> fastener_parameters;
   std::optional<MoveFeatureParameters> move_parameters;
   std::optional<BodyCopyFeatureParameters> body_copy_parameters;
+  std::optional<PluginFeatureParameters> plugin_parameters;
 };
 
 }  // namespace polysmith::core

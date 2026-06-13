@@ -61,6 +61,7 @@ set(CAD_CORE_SOURCES
   src/core/geometry/feature_shape.cpp
   src/core/geometry/refresh_dependents.cpp
   src/core/loft/loft_feature.cpp
+  src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
   src/core/primitive/cylinder_feature.cpp
   src/core/revolve/revolve_feature.cpp
@@ -147,6 +148,25 @@ target_include_directories(cad_core_cam_face_reference_test PRIVATE
 )
 
 target_link_libraries(cad_core_cam_face_reference_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+)
+
+add_executable(cad_core_plugin_feature_test
+  ${CAD_CORE_SOURCES}
+  tests/plugin_feature_test.cpp
+)
+
+target_include_directories(cad_core_plugin_feature_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_plugin_feature_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
 )

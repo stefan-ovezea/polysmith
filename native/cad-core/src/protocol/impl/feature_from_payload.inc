@@ -28,5 +28,6 @@ polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
 #include "protocol/impl/feature_from_payload_construction_blocks.inc"
 #include "protocol/impl/feature_from_payload_threaded_blocks.inc"
 #include "protocol/impl/feature_from_payload_transform_blocks.inc"
+#include "protocol/impl/feature_from_payload_plugin_blocks.inc"
   return feature;
 }

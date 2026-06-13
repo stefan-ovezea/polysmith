@@ -34,6 +34,7 @@ export interface ActiveToolActions {
   threadAction: ThreadAction | null;
   fastenerAction: FastenerAction | null;
   helixAction: HelixAction | null;
+  pluginAction: { featureId: string } | null;
   editingFeatureId: string | null;
   materialsPanelOpen: boolean;
 }

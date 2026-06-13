@@ -1,10 +1,12 @@
 #include "core/geometry/feature_shape.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <vector>
 #include <optional>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -42,6 +44,8 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Wire.hxx>
 
+#include "core/plugin/plugin_feature.h"
+
 namespace polysmith::core {
 namespace {
 
@@ -51,6 +55,7 @@ namespace {
 }  // namespace
 
 #include "core/geometry/impl/primitive_extrude_shapes.inc"
+#include "core/geometry/impl/plugin_geometry_shapes.inc"
 #include "core/geometry/impl/loft_revolve_sweep_hole_shapes.inc"
 #include "core/geometry/impl/fastener_shapes.inc"
 #include "core/geometry/impl/feature_shape_dispatch.inc"
