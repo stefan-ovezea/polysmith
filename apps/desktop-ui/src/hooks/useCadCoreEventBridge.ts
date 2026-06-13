@@ -9,7 +9,7 @@ import {
   parseCoreMessage,
   writeLogToConsole,
 } from "@/lib";
-import { useCadCoreStore } from "@/state";
+import { useCadCoreStore, useToastStore } from "@/state";
 import { reportCoreError } from "./coreLogReporting";
 
 export function useCadCoreEventBridge() {
@@ -18,6 +18,7 @@ export function useCadCoreEventBridge() {
   const handleCoreMessage = useCadCoreStore((state) => state.handleCoreMessage);
   const handleCoreStopped = useCadCoreStore((state) => state.handleCoreStopped);
   const setStatus = useCadCoreStore((state) => state.setStatus);
+  const pushToast = useToastStore((state) => state.pushToast);
 
   useEffect(() => {
     let disposed = false;
@@ -57,6 +58,9 @@ export function useCadCoreEventBridge() {
         writeLogToConsole(entry);
         addLogEntry(entry);
         addMessage(`log: ${line}`);
+        if (level === "error") {
+          pushToast("error", line);
+        }
       });
 
       const unlistenError = await onCadCoreError((message) => {
@@ -64,6 +68,7 @@ export function useCadCoreEventBridge() {
         writeLogToConsole(entry);
         addLogEntry(entry);
         addMessage(`bridge error: ${message}`);
+        pushToast("error", message);
         setStatus("error");
       });
 
@@ -97,5 +102,12 @@ export function useCadCoreEventBridge() {
         unlisten();
       }
     };
-  }, [addLogEntry, addMessage, handleCoreMessage, handleCoreStopped, setStatus]);
+  }, [
+    addLogEntry,
+    addMessage,
+    handleCoreMessage,
+    handleCoreStopped,
+    pushToast,
+    setStatus,
+  ]);
 }

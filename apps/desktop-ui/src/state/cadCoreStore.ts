@@ -13,6 +13,7 @@ import {
   getErrorFromMessage,
   getViewportFromMessage,
 } from "../lib/ipcProtocol";
+import { useToastStore } from "./toastStore";
 
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
@@ -165,6 +166,11 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       }
 
       const error = getErrorFromMessage(message);
+      if (error) {
+        useToastStore
+          .getState()
+          .pushToast("error", error.payload.message);
+      }
       const renderedMessage =
         message.type === "error"
           ? `error: ${error?.payload.code} - ${error?.payload.message}`

@@ -33,6 +33,7 @@
 | 📡 **[IPC Protocol](IPC-Protocol)** | JSON-based protocol between UI and CAD core |
 | 🔷 **[Topological Naming Problem](Topological-Naming-Problem)** | TNP strategy and defences (project mantra) |
 | 🎨 **[Design System](Design-System)** | Dark/Light dual theme system and Catppuccin palette support |
+| 🔔 **[Toast Notifications](Toast-Notifications)** | Global toast component, usage rules, and core-error routing |
 | 📏 **[Dimension Rendering Design](Dimension-Rendering-Design)** | Design rationale and decision record for dimension rendering |
 | 📐 **[Display Units](Display-Units)** | Metric / inch toggle architecture |
 | 📋 **[Contextual Modeling Workflow](Contextual-Modeling-Workflow)** | Binding UX pattern for all modeling features |
@@ -83,5 +84,4 @@
 | 📋 **[ADR 0001: Initial Tech Stack](ADR-0001-Tech-Stack)** | Tech stack decisions: React, Tauri, C++, OCCT |
 
 ---
-
 

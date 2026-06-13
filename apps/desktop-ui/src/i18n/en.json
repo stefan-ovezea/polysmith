@@ -38,6 +38,14 @@
     "unlink": "Unlink",
     "unsuppress": "Unsuppress"
   },
+  "toast": {
+    "dismiss": "Dismiss notification",
+    "level": {
+      "error": "Error",
+      "info": "Info",
+      "warn": "Warning"
+    }
+  },
   "header": {
     "aiAssistant": "AI Assistant",
     "coreOffline": "Core Offline",

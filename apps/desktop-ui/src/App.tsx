@@ -14,6 +14,7 @@ import {
   LogsWindow,
   MessageLog,
   SettingsModal,
+  ToastViewport,
   ViewportPanel,
 } from "./layout";
 import type { CategoryId } from "./layout";
@@ -2296,6 +2297,7 @@ function App() {
           onSave={() => void saveThenContinuePendingAction()}
         />
       ) : null}
+      <ToastViewport />
     </main>
   );
 }

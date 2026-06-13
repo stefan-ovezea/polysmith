@@ -1,4 +1,5 @@
 import { makeUiLogEntry, writeLogToConsole } from "@/lib";
+import { useToastStore } from "@/state";
 
 interface CoreLogReporter {
   addLogEntry: (entry: ReturnType<typeof makeUiLogEntry>) => void;
@@ -15,5 +16,6 @@ export function reportCoreError(
   writeLogToConsole(entry);
   reporter.addLogEntry(entry);
   reporter.addMessage(entry.message);
+  useToastStore.getState().pushToast("error", message);
   reporter.setStatus("error");
 }
