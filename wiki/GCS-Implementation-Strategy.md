@@ -158,10 +158,11 @@ Neither surfaces them to the user.
 
 ## Part 3: Speculative Constraint Inferencing — WASM as a General-Purpose Geometric Inference Engine
 
-### Current State
+### Original State
 
-Snap inference during pointer tracking is done with hand-coded geometric math in
-TS (`snapResolution.ts`, `activeSketchPointerMove.ts`). Each snap type
+Before P3.2 and P3.4, snap inference during pointer tracking was done with
+hand-coded geometric math in TS (`snapResolution.ts`,
+`activeSketchPointerMove.ts`). Each snap type
 (axis-lock, tangent, perpendicular, parallel, line-body) has 30–60 lines of
 dedicated math with its own edge-case handling. This is:
 
@@ -306,9 +307,8 @@ After collecting solver-validated snap candidates:
 
 1. **Priority snaps** (endpoint, midpoint) always win regardless of distance —
    keep existing static-snap-first priority.
-2. **Solver-validated dynamic snaps** outrank non-validated dynamic snaps
-   (the solver says "this perpendicular snap is geometrically valid" → it's
-   better than the raw geometric projection).
+2. **Solver-validated dynamic snaps** outrank static nearest/body snaps when
+   closer than the static candidate.
 3. **Distance ordering** within each tier: closest snap wins.
 
 ### Implementation Plan — Phased Rollout
@@ -347,7 +347,7 @@ Each step:
 3. Run side-by-side with existing TS math for comparison during testing
 4. Remove TS math variant once solver-based version is verified
 5. The solver-based result carries a `solverValidated: true` flag that makes
-   it outrank any non-validated dynamic snap
+   it outrank static nearest/body snaps when closer
 
 #### Phase 3.3: Multi-Constraint Solves (intersection, compound snaps)
 
@@ -360,21 +360,23 @@ These are inherently solver-only — the current TS code can't express them at
 all. They become possible only because the speculative solve pattern can
 handle multi-constraint systems.
 
-#### Phase 3.4: Delete Legacy Dynamic Snap Math
+#### Phase 3.4: Delete Legacy Dynamic Snap Math (completed 2026-06-13)
 
-Once all snap types are solver-based and verified, remove the hand-coded
-geometric functions from `snapResolution.ts`:
+After all snap types were solver-based and P3.2 was verified in the app, the
+hand-coded geometric fallback functions were removed from `snapResolution.ts`:
 - `axisLockSnapCandidate` (~60 lines)
 - `tangentSnapCandidate` (~56 lines)
 - `perpendicularSnapCandidate` (~70 lines)
 - `parallelSnapCandidate` (~80 lines)
 - `lineBodySnapCandidate` (~45 lines)
-- `dynamicSnapCandidate` — simplified to coordinate speculative solves
-- Various helper functions (`closestPointOnSegment2d`, `angleDiffBetween2d`,
-  `closerDynamicSnap`, etc.)
+- Various helper functions (`closestPointOnSegment2d`, `angleDiffBetween2d`)
 
-**Net deletion: ~400 lines of fragile geometry math, replaced by ~150 lines of
-solver orchestration.**
+`dynamicSnapCandidate` now only coordinates speculative solver snaps plus the
+P3.3 multi-constraint solves. Fast TS proximity gating remains inside the
+speculative helpers so the UI still runs one targeted solve per snap type
+instead of broad-solving every entity.
+
+**Net deletion: ~300 lines of fragile fallback geometry math.**
 
 ### planegcsBridge API Changes
 
@@ -422,13 +424,13 @@ current TS math cannot do.
 ### Edge Cases & Safety
 
 1. **Solver failure**: If the speculative solve returns `Failed` (status 2),
-   the geometric TS fallback is used. Speculative constraints are always
-   `temporary: true` so they never affect the DOF count or conflict tracking.
+   that dynamic snap candidate is rejected for the frame. Speculative
+   constraints are always `temporary: true` so they never affect the DOF count
+   or conflict tracking.
 
 2. **Over-constrained during inference**: If adding a speculative constraint
    over-constrains the system (e.g., horizontal + vertical on same line),
-   the solver reports `conflicting` — the snap is rejected and TS fallback
-   is used.
+   the solver reports `conflicting` — the snap is rejected for the frame.
 
 3. **Performance budget**: With max 5 iterations per solve and typical sketch
    sizes (10–50 parameters), a single speculative solve takes ~0.02–0.05ms.
@@ -524,7 +526,7 @@ Not in scope for the current planning cycle.
 | **P3.2d** | Speculative Line-Body Snap | P3.1 | Low — replace `lineBodySnapCandidate` |
 | **P3.2e** | Speculative Axis Lock Snap | P3.1 | Low — replace `axisLockSnapCandidate` |
 | **P3.3** | Multi-Constraint Solves (intersection, compound) | P3.2 | High — new solver capabilities |
-| **P3.4** | Delete legacy dynamic snap math (~400 lines) | P3.2 complete | Low — pure deletion |
+| **P3.4** | Delete legacy dynamic snap math | P3.2 complete | Done — pure deletion |
 | **P3** | Dimension Drive Mode | Append Mode helpers | Medium — new IPC + solver mode |
 | **P5** | Kinematic Animation | Driving angle concept | Very high |
 
@@ -544,7 +546,7 @@ Not in scope for the current planning cycle.
 | `apps/desktop-ui/src/layout/header/SketchToolbar.tsx` | DOF badge |
 | `apps/desktop-ui/src/types/ipc.ts` | Solver diagnostics in viewport state |
 | `apps/desktop-ui/src/lib/planegcsBridge.ts` | INFERENCE config, `speculativeSolve()` method, `temporary` constraint flag handling |
-| `apps/desktop-ui/src/layout/viewport/snapResolution.ts` | Replace dynamic snap functions with solver calls; eventual ~400 line deletion |
+| `apps/desktop-ui/src/layout/viewport/snapResolution.ts` | Speculative solver dynamic snaps; legacy fallback math deletion complete |
 
 ## Key Files (New)
 

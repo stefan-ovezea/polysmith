@@ -1,7 +1,7 @@
 # Active Task: GCS Freeze State Machine, Ripple-Freeze, DOF Feedback, Speculative Inferencing
 
 **Started:** 2026-06-09
-**Status:** P1 + P2 + P3.1 + P3.2 + P3.3 complete ✅ (C++ build clean, TS type-check clean, NOT yet tested in running app)
+**Status:** P1 + P2 + P3.1 + P3.2 + P3.3 + P3.4 complete ✅ (P3.2 verified working in app, C++ build clean, TS type-check clean)
 **Source:** `.deepseek/pastes/` — user-provided GCS architecture document
 **Plan:** `wiki/GCS-Implementation-Strategy.md`
 
@@ -99,9 +99,9 @@ Supports all 6 snap types: `horizontal_l`, `vertical_l`, `tangent_lc`,
 
 ### P3.2 — Dynamic Snaps Replaced with Speculative WASM
 
-All 5 dynamic snap types now try the speculative WASM solver first,
-falling back to hand-coded TS math when the bridge is unavailable or
-the solve fails.
+All 5 dynamic snap types now use the speculative WASM solver. Legacy
+hand-coded dynamic snap fallbacks were removed in P3.4 after P3.2 was
+verified working in the app.
 
 Strategy: fast TS proximity gating to find best candidate entity →
 single speculative solve to refine position (only **1 WASM solve per
@@ -156,12 +156,39 @@ New helper functions in `snapResolution.ts`:
 
 ---
 
+### P3.4 — Legacy Dynamic Snap Math Removed (completed 2026-06-13)
+
+Removed the old non-solver dynamic snap fallback helpers from
+`snapResolution.ts`:
+
+- `axisLockSnapCandidate`
+- `lineBodySnapCandidate`
+- `tangentSnapCandidate`
+- `perpendicularSnapCandidate`
+- `parallelSnapCandidate`
+- Shared helpers `closestPointOnSegment2d` and `angleDiffBetween2d`
+
+`dynamicSnapCandidate()` now relies on the speculative WASM snap helpers only:
+
+- `speculativeAxisLockSnap`
+- `speculativeTangentSnap`
+- `speculativeLineBodySnap`
+- `speculativePerpendicularSnap`
+- `speculativeParallelSnap`
+- P3.3 multi-solves: `speculativeIntersectionSnap`,
+  `speculativeTangentThroughLineSnap`
+
+Fast TS proximity gating remains inside the speculative helpers so the UI still
+does one targeted solver attempt per snap type instead of broad-solving every
+entity.
+
+---
+
 ## Not Yet Done
 
 | Phase | Feature | Notes |
 |---|---|---|
-| **Testing** | Run the app, verify everything works | Nothing tested in running Tauri app yet |
-| **P3.4** | Delete legacy dynamic snap math (~400 lines) | Only after P3.2 verified working in app |
+| **Testing** | Broader app regression pass | P3.2 verified working in app; full snap/constraint regression still needed |
 | **P3** | Dimension Drive Mode | New IPC + Append Mode with dimension entity as focus |
 | **P5** | Kinematic Animation | Far future |
 
@@ -203,7 +230,7 @@ New helper functions in `snapResolution.ts`:
 - `apps/desktop-ui/src/lib/speculativeSolve.ts` — **NEW** — core speculative solve module
 - `apps/desktop-ui/src/lib/planegcsSolver.ts` — (no changes)
 - `apps/desktop-ui/src/layout/viewport/endpointDrag.ts` — ripple-freeze
-- `apps/desktop-ui/src/layout/viewport/snapResolution.ts` — 5 speculative helpers + wiring
+- `apps/desktop-ui/src/layout/viewport/snapResolution.ts` — speculative helpers + legacy dynamic fallback removal
 - `apps/desktop-ui/src/layout/header/SketchDofBadge.tsx` — **NEW** — toolbar DOF badge
 - `apps/desktop-ui/src/layout/header/AppHeader.tsx` — wire SketchDofBadge
 - `apps/desktop-ui/src/lib/schemas/ipc/viewportStateSchema.ts` — +diagnostics
@@ -225,13 +252,13 @@ New helper functions in `snapResolution.ts`:
 - ✅ C++ `make -j$(nproc)`: all 3 targets built clean
 - ✅ C++ tests: `cad_core_multi_profile_extrude_test` + `cad_core_cam_face_reference_test` both pass
 - ✅ TypeScript `tsc --noEmit`: zero errors
-- ❌ App NOT run / tested yet
+- ✅ P3.2 verified working in the running app
+- ⚠️ Broader app regression pass still needed
 
 ## Next Session
 
-1. Run the app: `pnpm dev` from project root, test drawing + constraints + drag
+1. Run a broader app regression pass: drawing + constraints + drag
 2. Verify DOF badge appears in toolbar when constraints exist
 3. Verify append mode doesn't break existing sketches
 4. Test intersection snap: draw two crossing lines, try to snap to their intersection
 5. Test tangent-through-line snap: draw circle + line, try tangent snap near the line
-6. If stable, proceed to P3.4 (delete legacy dynamic snap math ~400 lines)
