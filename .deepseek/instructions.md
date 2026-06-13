@@ -71,7 +71,8 @@ flow back to canonical. In either case, both locations must stay consistent.
 ## ⚠️ Active Priority (2026-06-09)
 
 Current active task: **GCS Freeze State Machine** — see `.deepseek/active-task.md`
-for full status. P1+P2+P3.1+P3.2 complete (build clean), P3.3 in progress.
+for full status. P1+P2+P3.1+P3.2+P3.3+P3.4 complete; broader app
+regression and Dimension Drive Mode are the next priorities.
 
 The older 2026-06-03 priority (remove `resolve_draft_snap` IPC, move drag to UI)
 has been superseded by the GCS work which addresses the same concerns through

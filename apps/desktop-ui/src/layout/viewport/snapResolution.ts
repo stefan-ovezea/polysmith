@@ -282,7 +282,6 @@ function resolveDynamicSnap({
     draftStart: draftStartLocal,
     cursor: point.local,
     threshold: sketchSnapDistance,
-    axisAngleThresholdRadians: 5 * Math.PI / 180,
     parallelAngleThresholdRadians: 8 * Math.PI / 180,
     labels,
     sketchParameters,
@@ -322,6 +321,7 @@ function previewPointFromDynamicSnap({
     snapAxisLock: snap.snapAxisLock,
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
+    snapIntersectionLineIds: snap.snapIntersectionLineIds,
   };
 }
 
@@ -534,362 +534,6 @@ interface SketchSnapCircle {
   is_construction: boolean;
 }
 
-interface ClosestPointOnSegmentResult {
-  x: number;
-  y: number;
-  t: number;
-  dist: number;
-}
-
-function closestPointOnSegment2d(
-  sx: number,
-  sy: number,
-  ex: number,
-  ey: number,
-  px: number,
-  py: number,
-): ClosestPointOnSegmentResult {
-  const segDx = ex - sx;
-  const segDy = ey - sy;
-  const lenSq = segDx * segDx + segDy * segDy;
-  if (lenSq < 1e-12) {
-    return { x: sx, y: sy, t: 0, dist: Math.hypot(px - sx, py - sy) };
-  }
-  const t = Math.max(
-    0,
-    Math.min(1, ((px - sx) * segDx + (py - sy) * segDy) / lenSq),
-  );
-  const x = sx + t * segDx;
-  const y = sy + t * segDy;
-  return { x, y, t, dist: Math.hypot(px - x, py - y) };
-}
-
-function angleDiffBetween2d(
-  dx1: number,
-  dy1: number,
-  dx2: number,
-  dy2: number,
-): number {
-  const mag1 = Math.hypot(dx1, dy1);
-  const mag2 = Math.hypot(dx2, dy2);
-  if (mag1 < 1e-12 || mag2 < 1e-12) {
-    return Math.PI / 2;
-  }
-  const dot = (dx1 * dx2 + dy1 * dy2) / (mag1 * mag2);
-  const clamped = Math.max(-1, Math.min(1, dot));
-  return Math.acos(clamped);
-}
-
-function axisLockSnapCandidate({
-  draftStart,
-  cursor,
-  thresholdRadians,
-  horizontalLabel,
-  verticalLabel,
-}: {
-  draftStart: [number, number];
-  cursor: [number, number];
-  thresholdRadians: number;
-  horizontalLabel: string;
-  verticalLabel: string;
-}): DynamicSnapResult | null {
-  const [sx, sy] = draftStart;
-  const [cx, cy] = cursor;
-  const draftDx = cx - sx;
-  const draftDy = cy - sy;
-  if (Math.hypot(draftDx, draftDy) <= 1e-6) {
-    return null;
-  }
-
-  const draftAngle = Math.atan2(draftDy, draftDx);
-  let best: DynamicSnapResult | null = null;
-  for (const [targetAngle, axisKind, snapLabel] of [
-    [0, "horizontal" as const, horizontalLabel],
-    [Math.PI / 2, "vertical" as const, verticalLabel],
-    [Math.PI, "horizontal" as const, horizontalLabel],
-    [-Math.PI / 2, "vertical" as const, verticalLabel],
-  ] as const) {
-    let diff = draftAngle - targetAngle;
-    while (diff > Math.PI) {
-      diff -= 2 * Math.PI;
-    }
-    while (diff < -Math.PI) {
-      diff += 2 * Math.PI;
-    }
-    if (Math.abs(diff) >= thresholdRadians) {
-      continue;
-    }
-    const lockX = axisKind === "horizontal" ? cx : sx;
-    const lockY = axisKind === "vertical" ? cy : sy;
-    const distance = Math.hypot(cx - lockX, cy - lockY);
-    if (!best || distance < best.distance) {
-      best = {
-        local: [lockX, lockY],
-        snapLabel,
-        snapPerpendicularHostLineId: null,
-        snapAxisLock: axisKind,
-        snapTangentCircleId: null,
-        snapParallelHostLineId: null,
-        snapLineBodyHostLineId: null,
-        snapLineBodyT: null,
-        snapIntersectionLineIds: null,
-        distance,
-      };
-    }
-  }
-
-  return best;
-}
-
-function lineBodySnapCandidate({
-  lines,
-  cursor,
-  threshold,
-  snapLabel,
-}: {
-  lines: readonly SketchSnapLine[];
-  cursor: [number, number];
-  threshold: number;
-  snapLabel: string;
-}): DynamicSnapResult | null {
-  const [cx, cy] = cursor;
-  let best: DynamicSnapResult | null = null;
-
-  for (const line of lines) {
-    if (line.is_construction) {
-      continue;
-    }
-    const closest = closestPointOnSegment2d(
-      line.start_x,
-      line.start_y,
-      line.end_x,
-      line.end_y,
-      cx,
-      cy,
-    );
-    if (closest.dist > threshold) {
-      continue;
-    }
-    if (!best || closest.dist < best.distance) {
-      best = {
-        local: [closest.x, closest.y],
-        snapLabel,
-        snapPerpendicularHostLineId: null,
-        snapAxisLock: null,
-        snapTangentCircleId: null,
-        snapParallelHostLineId: null,
-        snapLineBodyHostLineId: line.line_id,
-        snapLineBodyT: closest.t,
-        snapIntersectionLineIds: null,
-        distance: closest.dist,
-      };
-    }
-  }
-
-  return best;
-}
-
-function tangentSnapCandidate({
-  circles,
-  draftStart,
-  cursor,
-  threshold,
-  snapLabel,
-}: {
-  circles: readonly SketchSnapCircle[];
-  draftStart: [number, number];
-  cursor: [number, number];
-  threshold: number;
-  snapLabel: string;
-}): DynamicSnapResult | null {
-  const [sx, sy] = draftStart;
-  const [cx, cy] = cursor;
-  let best: DynamicSnapResult | null = null;
-
-  for (const circle of circles) {
-    if (circle.is_construction) {
-      continue;
-    }
-    const pcDx = circle.center_x - sx;
-    const pcDy = circle.center_y - sy;
-    const pcDist = Math.hypot(pcDx, pcDy);
-    if (pcDist <= circle.radius + 1e-9) {
-      continue;
-    }
-
-    const alpha = Math.asin(circle.radius / pcDist);
-    const baseAngle = Math.atan2(pcDy, pcDx);
-    const tangentLen = Math.sqrt(pcDist * pcDist - circle.radius * circle.radius);
-    for (const sign of [1, -1]) {
-      const tpDir = baseAngle + sign * alpha;
-      const tpX = sx + tangentLen * Math.cos(tpDir);
-      const tpY = sy + tangentLen * Math.sin(tpDir);
-      const tpDist = Math.hypot(cx - tpX, cy - tpY);
-      if (tpDist > threshold) {
-        continue;
-      }
-      if (!best || tpDist < best.distance) {
-        best = {
-          local: [tpX, tpY],
-          snapLabel,
-          snapPerpendicularHostLineId: null,
-          snapAxisLock: null,
-          snapTangentCircleId: circle.circle_id,
-          snapParallelHostLineId: null,
-          snapLineBodyHostLineId: null,
-          snapLineBodyT: null,
-          snapIntersectionLineIds: null,
-          distance: tpDist,
-        };
-      }
-    }
-  }
-
-  return best;
-}
-
-function perpendicularSnapCandidate({
-  lines,
-  draftStart,
-  cursor,
-  threshold,
-  snapLabel,
-}: {
-  lines: readonly SketchSnapLine[];
-  draftStart: [number, number];
-  cursor: [number, number];
-  threshold: number;
-  snapLabel: string;
-}): DynamicSnapResult | null {
-  const [sx, sy] = draftStart;
-  const [cx, cy] = cursor;
-  let best: DynamicSnapResult | null = null;
-
-  for (const line of lines) {
-    if (line.is_construction) {
-      continue;
-    }
-    const ldx = line.end_x - line.start_x;
-    const ldy = line.end_y - line.start_y;
-    const llenSq = ldx * ldx + ldy * ldy;
-    if (llenSq < 1e-12) {
-      continue;
-    }
-
-    const tProj = ((cx - line.start_x) * ldx + (cy - line.start_y) * ldy) / llenSq;
-    const footX = line.start_x + tProj * ldx;
-    const footY = line.start_y + tProj * ldy;
-    const footDist = Math.hypot(cx - footX, cy - footY);
-    const segT = Math.max(0, Math.min(1, tProj));
-    const segX = line.start_x + segT * ldx;
-    const segY = line.start_y + segT * ldy;
-    const closestOnSeg = Math.hypot(footX - segX, footY - segY);
-    if (footDist > threshold || closestOnSeg > threshold) {
-      continue;
-    }
-
-    const startOnLine = closestPointOnSegment2d(
-      line.start_x,
-      line.start_y,
-      line.end_x,
-      line.end_y,
-      sx,
-      sy,
-    );
-    if (startOnLine.dist > threshold) {
-      continue;
-    }
-
-    if (!best || footDist < best.distance) {
-      best = {
-        local: [footX, footY],
-        snapLabel,
-        snapPerpendicularHostLineId: line.line_id,
-        snapAxisLock: null,
-        snapTangentCircleId: null,
-        snapParallelHostLineId: null,
-        snapLineBodyHostLineId: null,
-        snapLineBodyT: null,
-        snapIntersectionLineIds: null,
-        distance: footDist,
-      };
-    }
-  }
-
-  return best;
-}
-
-function parallelSnapCandidate({
-  lines,
-  draftStart,
-  cursor,
-  threshold,
-  angleThresholdRadians,
-  snapLabel,
-}: {
-  lines: readonly SketchSnapLine[];
-  draftStart: [number, number];
-  cursor: [number, number];
-  threshold: number;
-  angleThresholdRadians: number;
-  snapLabel: string;
-}): DynamicSnapResult | null {
-  const [sx, sy] = draftStart;
-  const [cx, cy] = cursor;
-  const draftDx = cx - sx;
-  const draftDy = cy - sy;
-  const draftDistSq = draftDx * draftDx + draftDy * draftDy;
-  if (draftDistSq <= 1e-12) {
-    return null;
-  }
-
-  let best: DynamicSnapResult | null = null;
-  for (const line of lines) {
-    if (line.is_construction) {
-      continue;
-    }
-    const ldx = line.end_x - line.start_x;
-    const ldy = line.end_y - line.start_y;
-    const lenSq = ldx * ldx + ldy * ldy;
-    if (lenSq < 1e-12) {
-      continue;
-    }
-
-    const angle = angleDiffBetween2d(draftDx, draftDy, ldx, ldy);
-    const parallelAngle = Math.min(angle, Math.PI - angle);
-    if (parallelAngle >= angleThresholdRadians) {
-      continue;
-    }
-
-    const len = Math.sqrt(lenSq);
-    const ux = ldx / len;
-    const uy = ldy / len;
-    const projLen = (cx - sx) * ux + (cy - sy) * uy;
-    const ppx = sx + projLen * ux;
-    const ppy = sy + projLen * uy;
-    const distance = Math.hypot(cx - ppx, cy - ppy);
-    if (distance > threshold) {
-      continue;
-    }
-    if (!best || distance < best.distance) {
-      best = {
-        local: [ppx, ppy],
-        snapLabel,
-        snapPerpendicularHostLineId: null,
-        snapAxisLock: null,
-        snapTangentCircleId: null,
-        snapParallelHostLineId: line.line_id,
-        snapLineBodyHostLineId: null,
-        snapLineBodyT: null,
-        snapIntersectionLineIds: null,
-        distance,
-      };
-    }
-  }
-
-  return best;
-}
-
 function closerDynamicSnap(
   current: DynamicSnapResult | null,
   candidate: DynamicSnapResult | null,
@@ -910,7 +554,6 @@ export function dynamicSnapCandidate({
   draftStart,
   cursor,
   threshold,
-  axisAngleThresholdRadians,
   parallelAngleThresholdRadians,
   labels,
   sketchParameters,
@@ -922,7 +565,6 @@ export function dynamicSnapCandidate({
   draftStart: [number, number] | null | undefined;
   cursor: [number, number];
   threshold: number;
-  axisAngleThresholdRadians: number;
   parallelAngleThresholdRadians: number;
   labels: {
     axisLockHorizontal: string;
@@ -933,9 +575,7 @@ export function dynamicSnapCandidate({
     parallel: string;
     intersection: string;
   };
-  /** Full sketch params for speculative WASM solver path. When provided
-   *  and the WASM bridge is ready, solver-validated snaps take priority
-   *  over hand-coded geometric math. */
+  /** Full sketch params for speculative WASM solver path. */
   sketchParameters?: SketchFeatureParameters | null;
   /** Constraints for speculative WASM solver path. */
   constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
@@ -948,7 +588,6 @@ export function dynamicSnapCandidate({
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
     if (hasDraftMovement && filter.snap_polar) {
-      // Try speculative WASM solver for axis lock first.
       const speculativeResult = speculativeAxisLockSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
@@ -959,18 +598,6 @@ export function dynamicSnapCandidate({
       });
       if (speculativeResult) {
         best = speculativeResult;
-      } else {
-        // Fallback to hand-coded geometric math.
-        best = closerDynamicSnap(
-          best,
-          axisLockSnapCandidate({
-            draftStart,
-            cursor,
-            thresholdRadians: axisAngleThresholdRadians,
-            horizontalLabel: labels.axisLockHorizontal,
-            verticalLabel: labels.axisLockVertical,
-          }),
-        );
       }
     }
 
@@ -981,11 +608,7 @@ export function dynamicSnapCandidate({
         circles, draftStart, cursor, threshold,
         snapLabel: labels.tangent,
       });
-      best = closerDynamicSnap(best, spec ??
-        tangentSnapCandidate({
-          circles, draftStart, cursor, threshold,
-          snapLabel: labels.tangent,
-        }));
+      best = closerDynamicSnap(best, spec);
     }
   }
 
@@ -996,11 +619,7 @@ export function dynamicSnapCandidate({
       lines, cursor, threshold,
       snapLabel: labels.onLine,
     });
-    best = closerDynamicSnap(best, spec ??
-      lineBodySnapCandidate({
-        lines, cursor, threshold,
-        snapLabel: labels.onLine,
-      }));
+    best = closerDynamicSnap(best, spec);
   }
 
   if (draftStart && filter.snap_perpendicular) {
@@ -1010,11 +629,7 @@ export function dynamicSnapCandidate({
       lines, draftStart, cursor, threshold,
       snapLabel: labels.perpendicular,
     });
-    best = closerDynamicSnap(best, spec ??
-      perpendicularSnapCandidate({
-        lines, draftStart, cursor, threshold,
-        snapLabel: labels.perpendicular,
-      }));
+    best = closerDynamicSnap(best, spec);
   }
 
   if (draftStart && filter.snap_parallel) {
@@ -1025,12 +640,7 @@ export function dynamicSnapCandidate({
       angleThresholdRadians: parallelAngleThresholdRadians,
       snapLabel: labels.parallel,
     });
-    best = closerDynamicSnap(best, spec ??
-      parallelSnapCandidate({
-        lines, draftStart, cursor, threshold,
-        angleThresholdRadians: parallelAngleThresholdRadians,
-        snapLabel: labels.parallel,
-      }));
+    best = closerDynamicSnap(best, spec);
   }
 
   // Multi-constraint intersection snap (P3.3).
@@ -1508,8 +1118,6 @@ function speculativeLineBodySnap({
   let bestLine: (typeof lines)[number] | null = null;
   let bestDist = Infinity;
   let bestT = 0;
-  let bestClosestX = 0;
-  let bestClosestY = 0;
 
   for (const line of lines) {
     if (line.is_construction) continue;
@@ -1527,8 +1135,6 @@ function speculativeLineBodySnap({
       bestDist = dist;
       bestLine = line;
       bestT = t;
-      bestClosestX = x;
-      bestClosestY = y;
     }
   }
 
