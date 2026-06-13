@@ -4,6 +4,7 @@
 mod app_config;
 mod cad_core;
 mod orca_slicer;
+mod plugin_config;
 mod project_metadata;
 mod protocol;
 
@@ -50,6 +51,18 @@ fn bootstrap_app_config(
 #[tauri::command]
 fn save_app_config(config: Value) -> Result<(), String> {
     app_config::save_app_config(config)
+}
+
+#[tauri::command]
+fn bootstrap_plugin_config(
+    default_plugins: Vec<plugin_config::PluginConfigEntry>,
+) -> Result<plugin_config::PluginConfigBootstrap, String> {
+    plugin_config::bootstrap_plugin_config(default_plugins)
+}
+
+#[tauri::command]
+fn save_plugin_config(config: Value) -> Result<(), String> {
+    plugin_config::save_plugin_config(config)
 }
 
 #[tauri::command]
@@ -225,6 +238,8 @@ pub fn run() {
             send_core_command,
             bootstrap_app_config,
             save_app_config,
+            bootstrap_plugin_config,
+            save_plugin_config,
             load_recent_projects,
             save_recent_projects,
             read_project_thumbnail,

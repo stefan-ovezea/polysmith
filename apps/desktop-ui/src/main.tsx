@@ -3,6 +3,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppConfigProvider, useAppConfig } from "./config";
 import { showMainWindow } from "./lib/windowLifecycle";
+import { PluginProvider } from "./plugins/PluginProvider";
+import { useCadCoreStore } from "./state";
 import "./i18n";
 import "./styles.css";
 
@@ -76,10 +78,21 @@ function StartupReveal() {
   return null;
 }
 
+function PluginShell() {
+  const document = useCadCoreStore((state) => state.document);
+  const viewport = useCadCoreStore((state) => state.viewport);
+
+  return (
+    <PluginProvider document={document} viewport={viewport}>
+      <App />
+    </PluginProvider>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <AppConfigProvider>
-      <App />
+      <PluginShell />
       <StartupReveal />
     </AppConfigProvider>
   </React.StrictMode>,

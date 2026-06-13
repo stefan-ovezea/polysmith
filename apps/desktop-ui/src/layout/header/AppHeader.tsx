@@ -289,6 +289,15 @@ interface AppHeaderProps
   onLoadDocument: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
+  pluginMenuItems: Array<{
+    id: string;
+    pluginId: string;
+    label: string;
+    command: string;
+    disabled?: boolean;
+    disabledWhenCoreOffline?: boolean;
+  }>;
+  onPluginCommand: (pluginId: string, command: string) => void;
   logCount: number;
   errorLogCount: number;
   onOpenLogs: () => void;
@@ -359,6 +368,8 @@ export function AppHeader({
   onLoadDocument,
   onUndo,
   onRedo,
+  pluginMenuItems,
+  onPluginCommand,
   logCount,
   errorLogCount,
   onOpenLogs,
@@ -622,6 +633,17 @@ export function AppHeader({
                 onSelect: () => void onRedo(),
               },
             ]}
+          />
+          <MenuDropdown
+            label={t("header.plugins")}
+            disabled={pluginMenuItems.length === 0}
+            items={pluginMenuItems.map((item) => ({
+              label: item.label,
+              disabled:
+                item.disabled ||
+                (item.disabledWhenCoreOffline && status !== "connected"),
+              onSelect: () => onPluginCommand(item.pluginId, item.command),
+            }))}
           />
           <button
             type="button"

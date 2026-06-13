@@ -78,4 +78,8 @@
       any_boolean = true;
       break;
     }
+    if (feature.kind == "plugin_feature") {
+      any_boolean = true;
+      break;
+    }
   }

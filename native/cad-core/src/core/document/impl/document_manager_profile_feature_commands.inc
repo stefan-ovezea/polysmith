@@ -5,6 +5,12 @@
   DocumentState update_cylinder_feature(
       const std::string& feature_id,
       const CylinderFeatureParameters& parameters);
+  DocumentState create_plugin_feature(
+      const PluginFeatureParameters& parameters);
+  DocumentState update_plugin_feature(
+      const std::string& feature_id,
+      const PluginFeatureParameters& parameters);
+  DocumentState confirm_plugin_feature(const std::string& feature_id);
   DocumentState update_extrude_depth(const std::string& feature_id,
                                      double depth);
   DocumentState update_extrude_mode(const std::string& feature_id,

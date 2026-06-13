@@ -10,8 +10,15 @@ import {
 } from "@/config";
 import type { AppConfig, HotkeyBinding, OrcaIntegrationMode } from "@/config";
 import { Checkbox, Dropdown, listOllamaModels } from "@/lib";
+import { usePluginHost } from "@/plugins/PluginProvider";
 
-type SettingsSection = "general" | "appearance" | "keybinds" | "ai" | "orca";
+type SettingsSection =
+  | "general"
+  | "appearance"
+  | "keybinds"
+  | "ai"
+  | "orca"
+  | "plugins";
 type LanguageCode = "en" | "es" | "ja" | "zh";
 
 interface SettingsModalProps {
@@ -174,6 +181,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setConfig,
     updateConfig,
   } = useAppConfig();
+  const pluginHost = usePluginHost();
   const [section, setSection] = useState<SettingsSection>("general");
   const [activeHotkeyId, setActiveHotkeyId] = useState<string | null>(null);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
@@ -381,6 +389,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               ["appearance", t("settings.appearance")],
               ["keybinds", t("settings.keybinds")],
               ["ai", t("common.ai")],
+              ["plugins", t("header.plugins")],
               ["orca", t("settings.slicer")],
             ].map(([id, label]) => (
               <button
@@ -410,7 +419,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   ? t("settings.keybinds")
                   : section === "ai"
                     ? t("common.ai")
-                    : t("settings.slicer")}
+                    : section === "plugins"
+                      ? t("header.plugins")
+                      : t("settings.slicer")}
             </h2>
           </header>
 
@@ -645,6 +656,52 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     />
                   </label>
                 </fieldset>
+              </div>
+            ) : section === "plugins" ? (
+              <div className="max-w-2xl space-y-4">
+                {pluginHost.configPath ? (
+                  <p className="text-xs text-on-surface-muted">
+                    {t("plugins.configPath", { path: pluginHost.configPath })}
+                  </p>
+                ) : null}
+                {pluginHost.plugins.map((entry) => (
+                  <section
+                    key={entry.plugin.manifest.id}
+                    className="rounded-md border border-white/10 bg-white/[0.025] p-4"
+                  >
+                    <label className="flex items-start justify-between gap-4">
+                      <span>
+                        <span className="block text-sm font-medium text-on-surface">
+                          {entry.plugin.manifest.name}
+                        </span>
+                        <span className="mt-1 block text-xs text-on-surface-muted">
+                          {entry.plugin.manifest.description}
+                        </span>
+                      </span>
+                      <Checkbox
+                        checked={entry.enabled}
+                        ariaLabel={entry.plugin.manifest.name}
+                        onCheckedChange={(enabled) =>
+                          pluginHost.setPluginEnabled(
+                            entry.plugin.manifest.id,
+                            enabled,
+                          )
+                        }
+                      />
+                    </label>
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      {entry.runtime.renderSettings({
+                        config: entry.config,
+                        disabled: !entry.enabled,
+                        onChange: (nextConfig) =>
+                          pluginHost.updatePluginConfig(
+                            entry.plugin.manifest.id,
+                            () => nextConfig,
+                          ),
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             ) : (
               <div className="max-w-xl space-y-5">

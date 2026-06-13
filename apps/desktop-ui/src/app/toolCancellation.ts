@@ -48,6 +48,7 @@ export interface CancelActiveToolContext extends ExtrudeUpdateCallbacks {
     setThreadAction: Setter<ThreadAction>;
     setFastenerAction: Setter<FastenerAction>;
     setHelixAction: Setter<HelixAction>;
+    setPluginAction: Setter<{ featureId: string }>;
     setEditingFeatureId: Setter<string>;
     setMaterialsPanelOpen: (open: boolean) => void;
   };
@@ -86,6 +87,7 @@ export interface CancelActiveToolContext extends ExtrudeUpdateCallbacks {
     featureId: string,
     parameters: FastenerFeatureParameters,
   ) => Promise<void>;
+  deleteFeature: (featureId: string) => Promise<void>;
 }
 
 export async function cancelActiveToolFromContext({
@@ -121,6 +123,7 @@ const cancellationHandlers: readonly CancellationHandler[] = [
   cancelThreadTool,
   cancelFastenerTool,
   cancelHelixTool,
+  cancelPluginTool,
   cancelTimelineEdit,
   closeMaterialsPanel,
 ];
@@ -381,6 +384,19 @@ async function cancelHelixTool(context: CancelActiveToolContext) {
     clear: context.setters.setHelixAction,
     context,
   });
+}
+
+async function cancelPluginTool(context: CancelActiveToolContext) {
+  const { pluginAction } = context.actions;
+  if (!pluginAction) {
+    return false;
+  }
+  await context.runAction(async () => {
+    await context.deleteFeature(pluginAction.featureId);
+  });
+  context.setters.setPluginAction(null);
+  await context.restoreTimelineCursorAfterEdit();
+  return true;
 }
 
 async function cancelTimelineEdit(context: CancelActiveToolContext) {

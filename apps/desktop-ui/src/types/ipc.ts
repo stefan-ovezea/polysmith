@@ -74,6 +74,9 @@ import type {
   AddCylinderFeatureCommand,
   UpdateBoxFeatureCommand,
   UpdateCylinderFeatureCommand,
+  CreatePluginFeatureCommand,
+  UpdatePluginFeatureCommand,
+  ConfirmPluginFeatureCommand,
   UpdateExtrudeDepthCommand,
   SetFeatureSuppressedCommand,
   RenameFeatureCommand,
@@ -665,6 +668,9 @@ export type CoreCommand =
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand
   | UpdateCylinderFeatureCommand
+  | CreatePluginFeatureCommand
+  | UpdatePluginFeatureCommand
+  | ConfirmPluginFeatureCommand
   | UpdateExtrudeDepthCommand
   | UpdateExtrudeModeCommand
   | UpdateExtrudeTargetBodyCommand

@@ -35,6 +35,7 @@ export interface AppToolState {
   threadAction: ThreadAction | null;
   fastenerAction: FastenerAction | null;
   moveAction: ActiveMoveAction | null;
+  pluginAction: { featureId: string } | null;
 }
 
 export interface ToolBlockOptions {
@@ -56,6 +57,7 @@ export interface ToolBlockOptions {
   thread?: boolean;
   fastener?: boolean;
   move?: boolean;
+  plugin?: boolean;
 }
 
 const DEFAULT_TOOL_BLOCKS: Required<ToolBlockOptions> = {
@@ -77,6 +79,7 @@ const DEFAULT_TOOL_BLOCKS: Required<ToolBlockOptions> = {
   thread: true,
   fastener: true,
   move: true,
+  plugin: true,
 };
 
 type ToolBlockKey = keyof Required<ToolBlockOptions>;
@@ -103,6 +106,7 @@ const TOOL_BLOCK_CHECKS: Array<{
   { key: "thread", read: (state) => state.threadAction },
   { key: "fastener", read: (state) => state.fastenerAction },
   { key: "move", read: (state) => state.moveAction },
+  { key: "plugin", read: (state) => state.pluginAction },
 ];
 
 export function isToolStartBlocked(
