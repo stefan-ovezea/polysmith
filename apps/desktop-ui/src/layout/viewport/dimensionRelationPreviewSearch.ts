@@ -128,6 +128,93 @@ function parallelLineRelationScore({
   return Math.abs(cursorNormal - signedDistance / 2);
 }
 
+function distanceToPointSegment(
+  point: [number, number],
+  start: [number, number],
+  end: [number, number],
+) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 1e-12) {
+    return {
+      distance: Math.hypot(point[0] - start[0], point[1] - start[1]),
+      t: 0,
+    };
+  }
+  const rawT =
+    ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lenSq;
+  const t = Math.max(0, Math.min(1, rawT));
+  const closest: [number, number] = [start[0] + dx * t, start[1] + dy * t];
+  return {
+    distance: Math.hypot(point[0] - closest[0], point[1] - closest[1]),
+    t: rawT,
+  };
+}
+
+function lineCircleRelationScore({
+  line,
+  circle,
+  cursor,
+}: {
+  line: SketchLineEntry;
+  circle: SketchCircleEntry;
+  cursor: [number, number];
+}) {
+  const closest = distanceToLineSegment([circle.center_x, circle.center_y], line);
+  const dx = circle.center_x - closest.local[0];
+  const dy = circle.center_y - closest.local[1];
+  const centerDistance = Math.hypot(dx, dy);
+  if (centerDistance <= circle.radius + 1e-6) {
+    return null;
+  }
+
+  const nx = dx / centerDistance;
+  const ny = dy / centerDistance;
+  const circleEdge: [number, number] = [
+    circle.center_x - nx * circle.radius,
+    circle.center_y - ny * circle.radius,
+  ];
+  const corridor = distanceToPointSegment(cursor, closest.local, circleEdge);
+  if (
+    corridor.t < -0.25 ||
+    corridor.t > 1.25 ||
+    corridor.distance > SKETCH_SNAP_DISTANCE * 1.5
+  ) {
+    return null;
+  }
+
+  return corridor.distance + Math.abs(corridor.t - 0.5) * 0.05;
+}
+
+function circleCircleRelationScore({
+  first,
+  second,
+  cursor,
+}: {
+  first: SketchCircleEntry;
+  second: SketchCircleEntry;
+  cursor: [number, number];
+}) {
+  const start: [number, number] = [first.center_x, first.center_y];
+  const end: [number, number] = [second.center_x, second.center_y];
+  const centerDistance = Math.hypot(end[0] - start[0], end[1] - start[1]);
+  if (centerDistance <= 1e-9) {
+    return null;
+  }
+
+  const corridor = distanceToPointSegment(cursor, start, end);
+  if (
+    corridor.t < -0.25 ||
+    corridor.t > 1.25 ||
+    corridor.distance > SKETCH_SNAP_DISTANCE * 1.5
+  ) {
+    return null;
+  }
+
+  return corridor.distance + Math.abs(corridor.t - 0.5) * 0.05;
+}
+
 export function buildLineDimensionRelationPreview({
   firstEntityId,
   sketchParameters,
@@ -192,7 +279,12 @@ export function buildLineDimensionRelationPreview({
         continue;
       }
       const distance = distanceToCircleEdge(cursor, circle);
-      if (distance > SKETCH_SNAP_DISTANCE) {
+      const relationScore = lineCircleRelationScore({
+        line: firstLine,
+        circle,
+        cursor,
+      });
+      if (distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
         continue;
       }
       const candidate = buildLineCircleDimensionRelationPreview({
@@ -203,7 +295,12 @@ export function buildLineDimensionRelationPreview({
         planeFrame,
       });
       if (candidate) {
-        const next = betterPreview(best, candidate, distance, bestScore);
+        const next = betterPreview(
+          best,
+          candidate,
+          relationScore ?? distance,
+          bestScore,
+        );
         best = next.best;
         bestScore = next.score;
       }
@@ -336,7 +433,12 @@ export function buildCircleDimensionRelationPreview({
       continue;
     }
     const hit = distanceToLineSegment(cursor, line);
-    if (hit.distance > SKETCH_SNAP_DISTANCE) {
+    const relationScore = lineCircleRelationScore({
+      line,
+      circle: firstCircle,
+      cursor,
+    });
+    if (hit.distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
       continue;
     }
     const candidate = buildCircleLineDimensionRelationPreview({
@@ -347,7 +449,12 @@ export function buildCircleDimensionRelationPreview({
       planeFrame,
     });
     if (candidate) {
-      const next = betterPreview(best, candidate, hit.distance, bestScore);
+      const next = betterPreview(
+        best,
+        candidate,
+        relationScore ?? hit.distance,
+        bestScore,
+      );
       best = next.best;
       bestScore = next.score;
     }
@@ -361,7 +468,12 @@ export function buildCircleDimensionRelationPreview({
       continue;
     }
     const distance = distanceToCircleEdge(cursor, circle);
-    if (distance > SKETCH_SNAP_DISTANCE) {
+    const relationScore = circleCircleRelationScore({
+      first: firstCircle,
+      second: circle,
+      cursor,
+    });
+    if (distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
       continue;
     }
     const candidate = buildCircleCircleDimensionRelationPreview({
@@ -372,7 +484,12 @@ export function buildCircleDimensionRelationPreview({
       planeFrame,
     });
     if (candidate) {
-      const next = betterPreview(best, candidate, distance, bestScore);
+      const next = betterPreview(
+        best,
+        candidate,
+        relationScore ?? distance,
+        bestScore,
+      );
       best = next.best;
       bestScore = next.score;
     }
