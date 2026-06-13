@@ -63,7 +63,10 @@ interface RelationPlacementActionsContext {
     firstEntityId: string,
     secondEntityId: string,
   ) => void;
-  beginDimensionPlacement: (dimension: SketchDimensionScene) => void;
+  beginDimensionPlacement: (
+    dimension: SketchDimensionScene,
+    relation?: DimensionRelationPreview | null,
+  ) => void;
 }
 
 export function createDimensionRelationPlacementActions(
@@ -143,7 +146,7 @@ export function createDimensionRelationPlacementActions(
     context.pendingDimensionIdRef.current = null;
     context.pendingDimensionPlacementRef.current = false;
     context.pendingDimSourceEntityIdRef.current = null;
-    context.beginDimensionPlacement(placementDimension);
+    context.beginDimensionPlacement(placementDimension, relation);
     return true;
   }
 

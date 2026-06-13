@@ -110,6 +110,7 @@ import {
 import { handleActiveSketchPointerMove } from "./viewport/activeSketchPointerMove";
 import { renderTrimPreviewHighlight } from "./viewport/trimPreviewHighlight";
 import { createDimensionRelationPreviewActions } from "./viewport/dimensionRelationPreviewActions";
+import { createLineAnglePreview } from "./viewport/dimensionRelationPreviewGeometry";
 import { createDimensionRelationPlacementActions } from "./viewport/dimensionRelationPlacementActions";
 import { createDimensionToolActions } from "./viewport/dimensionToolActions";
 import {
@@ -342,6 +343,13 @@ export function ViewportPanel({
   // the cursor direction and the bisector that caused arc drift.
   const [angleDragRadii, setAngleDragRadii] = useState<Record<string, number>>({});
   const angleDragRadiiRef = useRef<Record<string, number>>({});
+  const [anglePlacementPreviews, setAnglePlacementPreviews] = useState<
+    Record<string, SketchDimensionScene>
+  >({});
+  const anglePlacementPreviewsRef = useRef<Record<string, SketchDimensionScene>>(
+    {},
+  );
+  const anglePlacementPreviewValuesRef = useRef<Record<string, number>>({});
   const [draftDimensionSession, setDraftDimensionSession] =
     useState<DraftDimensionSession | null>(null);
   const pendingCircleDimensionPlacementRef =
@@ -839,11 +847,13 @@ export function ViewportPanel({
         sketchParameters: sketchFeature?.sketch_parameters,
         activeSketchPlaneFrame,
         angleDragRadii,
+        anglePlacementPreviews,
         dimensionLabelPositions,
       }),
     [
       activeSketchPlaneFrame,
       angleDragRadii,
+      anglePlacementPreviews,
       dimensionLabelPositions,
       document,
       sceneData,
@@ -1310,6 +1320,71 @@ export function ViewportPanel({
     });
   }
 
+  function setAnglePlacementPreview(
+    dimensionId: string,
+    dimension: SketchDimensionScene,
+    angle: number,
+  ) {
+    anglePlacementPreviewsRef.current = {
+      ...anglePlacementPreviewsRef.current,
+      [dimensionId]: dimension,
+    };
+    anglePlacementPreviewValuesRef.current = {
+      ...anglePlacementPreviewValuesRef.current,
+      [dimensionId]: angle,
+    };
+    setAnglePlacementPreviews(anglePlacementPreviewsRef.current);
+  }
+
+  function updateAngleDimensionPlacementPreview(
+    drag: DimensionLabelDragState,
+    cursorLocal: [number, number],
+  ) {
+    const relation = drag.anglePlacementRelation;
+    const sketch = sketchLinesRef.current;
+    const planeId = activeSketchPlaneIdRef.current;
+    if (!relation || relation.kind !== "line_angle" || !sketch || !planeId) {
+      return false;
+    }
+
+    const firstLine = sketch.lines.find(
+      (line) => line.line_id === relation.firstEntityId,
+    );
+    const secondLine = sketch.lines.find(
+      (line) => line.line_id === relation.targetEntityId,
+    );
+    if (!firstLine || !secondLine) {
+      return false;
+    }
+
+    const preview = createLineAnglePreview({
+      first: firstLine,
+      second: secondLine,
+      cursor: cursorLocal,
+      planeId,
+      planeFrame: activeSketchPlaneFrameRef.current,
+    });
+    if (!preview) {
+      return false;
+    }
+
+    const currentDimension = displayedSketchDimensionsRef.current.find(
+      (dimension) => dimension.dimensionId === drag.dimensionId,
+    );
+    setAnglePlacementPreview(
+      drag.dimensionId,
+      {
+        ...preview.dimension,
+        dimensionId: drag.dimensionId,
+        entityId: currentDimension?.entityId ?? preview.dimension.entityId,
+        isSelected: currentDimension?.isSelected ?? true,
+        driven: currentDimension?.driven,
+      },
+      preview.anglePreview.angle,
+    );
+    return true;
+  }
+
   const {
     beginDimensionPlacement,
     cancelDimensionPlacement,
@@ -1332,7 +1407,11 @@ export function ViewportPanel({
     setDimensionLabelPositions,
     angleDragRadiiRef,
     setAngleDragRadii,
+    anglePlacementPreviewsRef,
+    setAnglePlacementPreviews,
+    anglePlacementPreviewValuesRef,
     displayedSketchDimensionsRef,
+    updateSketchDimensionRef,
     updateSketchDimensionLabelPositionRef,
     angleDimensionFrame,
     clearPreviewDimension,
@@ -1818,6 +1897,9 @@ export function ViewportPanel({
   useEffect(() => {
     angleDragRadiiRef.current = angleDragRadii;
   }, [angleDragRadii]);
+  useEffect(() => {
+    anglePlacementPreviewsRef.current = anglePlacementPreviews;
+  }, [anglePlacementPreviews]);
 
   useDimensionEditorEffects({
     selectedSketchDimension,
@@ -2262,6 +2344,7 @@ export function ViewportPanel({
           angleDragRadiiRef,
           setAngleDragRadii,
           updateDimensionRelationPreview,
+          updateAngleDimensionPlacementPreview,
           angleFrameForDimension: angleDimensionFrame,
           setDimensionLabelPosition,
         })

@@ -39,6 +39,7 @@ export type DimensionLabelDragState = {
   hasMoved: boolean;
   isPlacement?: boolean;
   hitPart?: "label" | "geometry";
+  anglePlacementRelation?: DimensionRelationPreview;
 };
 
 export type DimensionRelationPreview = {

@@ -1065,6 +1065,15 @@ function App() {
     }
   }
 
+  async function runActionOrThrow(action: () => Promise<void>) {
+    try {
+      await action();
+    } catch (error) {
+      addMessage(`action error: ${String(error)}`);
+      throw error;
+    }
+  }
+
   const {
     exportToSlicer,
     handleWorkspaceDropdownOpenChange,
@@ -1582,7 +1591,7 @@ function App() {
                 });
               }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
-                await runAction(async () => {
+                await runActionOrThrow(async () => {
                   await addSketchAngleDimension(firstLineId, secondLineId);
                 });
               }}
