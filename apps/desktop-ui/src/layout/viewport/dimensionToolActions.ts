@@ -135,6 +135,21 @@ export function createDimensionToolActions({
       firstEntityId.startsWith("line-") &&
       secondEntityId.startsWith("line-")
     ) {
+      const relation = pendingRelationPlacementMatchRef.current;
+      if (
+        relation?.kind === "parallel_line_distance" &&
+        ((relation.firstEntityId === firstEntityId &&
+          relation.targetEntityId === secondEntityId) ||
+          (relation.firstEntityId === secondEntityId &&
+            relation.targetEntityId === firstEntityId))
+      ) {
+        pendingAngleIsReflexRef.current = false;
+        pendingReflexAngleRef.current = 0;
+        void addSketchDistanceDimensionRef
+          .current(firstEntityId, secondEntityId)
+          .catch(clearRelationPlacementStage);
+        return;
+      }
       const isReflex = pendingAngleIsReflexRef.current;
       const reflexAngle = pendingReflexAngleRef.current;
       pendingAngleIsReflexRef.current = false;

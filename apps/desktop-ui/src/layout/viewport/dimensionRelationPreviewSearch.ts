@@ -39,6 +39,95 @@ function betterPreview(
   return { best: current, score: currentScore };
 }
 
+function lineLength(line: SketchLineEntry) {
+  return Math.hypot(line.end_x - line.start_x, line.end_y - line.start_y);
+}
+
+function lineDirection(line: SketchLineEntry): [number, number] | null {
+  const length = lineLength(line);
+  if (length <= 1e-9) {
+    return null;
+  }
+  return [
+    (line.end_x - line.start_x) / length,
+    (line.end_y - line.start_y) / length,
+  ];
+}
+
+function parallelLineRelationScore({
+  first,
+  second,
+  cursor,
+}: {
+  first: SketchLineEntry;
+  second: SketchLineEntry;
+  cursor: [number, number];
+}) {
+  if (!areLinesParallel(first, second)) {
+    return null;
+  }
+  const dir = lineDirection(first);
+  if (!dir) {
+    return null;
+  }
+  const firstLength = lineLength(first);
+  const secondLength = lineLength(second);
+  if (firstLength <= 1e-9 || secondLength <= 1e-9) {
+    return null;
+  }
+
+  let normal: [number, number] = [-dir[1], dir[0]];
+  const firstMid: [number, number] = [
+    (first.start_x + first.end_x) / 2,
+    (first.start_y + first.end_y) / 2,
+  ];
+  const secondMid: [number, number] = [
+    (second.start_x + second.end_x) / 2,
+    (second.start_y + second.end_y) / 2,
+  ];
+  let signedDistance =
+    (secondMid[0] - firstMid[0]) * normal[0] +
+    (secondMid[1] - firstMid[1]) * normal[1];
+  if (Math.abs(signedDistance) <= 1e-6) {
+    return null;
+  }
+  if (signedDistance < 0) {
+    normal = [-normal[0], -normal[1]];
+    signedDistance = -signedDistance;
+  }
+
+  const cursorAlong =
+    (cursor[0] - first.start_x) * dir[0] +
+    (cursor[1] - first.start_y) * dir[1];
+  const secondStartAlong =
+    (second.start_x - first.start_x) * dir[0] +
+    (second.start_y - first.start_y) * dir[1];
+  const secondEndAlong =
+    (second.end_x - first.start_x) * dir[0] +
+    (second.end_y - first.start_y) * dir[1];
+  const minAlong =
+    Math.min(0, firstLength, secondStartAlong, secondEndAlong) -
+    SKETCH_SNAP_DISTANCE * 2;
+  const maxAlong =
+    Math.max(0, firstLength, secondStartAlong, secondEndAlong) +
+    SKETCH_SNAP_DISTANCE * 2;
+  if (cursorAlong < minAlong || cursorAlong > maxAlong) {
+    return null;
+  }
+
+  const cursorNormal =
+    (cursor[0] - first.start_x) * normal[0] +
+    (cursor[1] - first.start_y) * normal[1];
+  const withinCorridor =
+    cursorNormal >= -SKETCH_SNAP_DISTANCE &&
+    cursorNormal <= signedDistance + SKETCH_SNAP_DISTANCE;
+  if (!withinCorridor) {
+    return null;
+  }
+
+  return Math.abs(cursorNormal - signedDistance / 2);
+}
+
 export function buildLineDimensionRelationPreview({
   firstEntityId,
   sketchParameters,
@@ -67,7 +156,12 @@ export function buildLineDimensionRelationPreview({
     }
 
     const hit = distanceToLineSegment(cursor, line);
-    if (hit.distance > SKETCH_SNAP_DISTANCE) {
+    const parallelScore = parallelLineRelationScore({
+      first: firstLine,
+      second: line,
+      cursor,
+    });
+    if (hit.distance > SKETCH_SNAP_DISTANCE && parallelScore === null) {
       continue;
     }
 
@@ -81,7 +175,12 @@ export function buildLineDimensionRelationPreview({
       planeFrame,
     });
     if (candidate) {
-      const next = betterPreview(best, candidate, hit.distance, bestScore);
+      const next = betterPreview(
+        best,
+        candidate,
+        parallelScore ?? hit.distance,
+        bestScore,
+      );
       best = next.best;
       bestScore = next.score;
     }
