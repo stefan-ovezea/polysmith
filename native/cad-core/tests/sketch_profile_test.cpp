@@ -442,6 +442,58 @@ bool test_angle_dimension_confirm_uses_short_host_ray() {
                             "short host ray confirm should not flip angled line");
 }
 
+bool test_angle_dimension_can_store_large_supplementary_angle() {
+  FeatureEntry feature = create_sketch_feature(32, "ref-plane-xy");
+  add_sketch_line(feature, 1, -80.0, 0.0, 20.0, 0.0);
+  add_sketch_line(feature, 2, 0.0, 0.0, 20.0, 14.0);
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr,
+              "large angle setup: expected both lines")) {
+    return false;
+  }
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+  constexpr double kPi = 3.14159265358979323846;
+  const double large_angle = kPi - std::atan2(14.0, 20.0);
+
+  update_sketch_dimension(feature, "dim-angle-line-1-line-2", large_angle);
+
+  const auto* angle =
+      find_dimension_by_id(feature, "dim-angle-line-1-line-2");
+  return expect(angle != nullptr,
+                "large angle update should keep angle dimension") &&
+         expect(std::abs(std::abs(angle->value) - large_angle) < 1e-6,
+                "large angle update should store supplementary value") &&
+         expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "large angle update should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "large angle update should not flip angled line");
+}
+
+bool test_angle_dimension_rejects_duplicate_pair() {
+  FeatureEntry feature = create_sketch_feature(33, "ref-plane-xy");
+  add_sketch_line(feature, 1, -80.0, 0.0, 20.0, 0.0);
+  add_sketch_line(feature, 2, 0.0, 0.0, 20.0, 14.0);
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  bool threw = false;
+  try {
+    add_sketch_angle_dimension(feature, "line-1", "line-2");
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  return expect(threw,
+                "expected duplicate angle dimension on the same lines to throw");
+}
+
 bool test_midpoint_anchor_both_ends_follow_host_length_change() {
   // User-reported repro: rectangle, draw a vertical line from
   // bottom-midpoint to top-midpoint (so both endpoints carry a
@@ -853,6 +905,12 @@ int main() {
     return EXIT_FAILURE;
   }
   if (!test_angle_dimension_confirm_uses_short_host_ray()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_can_store_large_supplementary_angle()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_rejects_duplicate_pair()) {
     return EXIT_FAILURE;
   }
   if (!test_midpoint_anchor_both_ends_follow_perpendicular_resize()) {

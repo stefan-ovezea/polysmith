@@ -237,7 +237,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                  dim.secondary_entity_id == first_line_id));
       });
   if (duplicate_it != parameters.dimensions.end()) {
-    return;
+    throw std::runtime_error(
+        "Angle dimension already exists for these two lines");
   }
 
   // Stable id derived from the line ids (sorted) so the same pair

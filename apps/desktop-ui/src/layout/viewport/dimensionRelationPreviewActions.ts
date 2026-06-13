@@ -101,8 +101,8 @@ export function createDimensionRelationPreviewActions({
       return null;
     }
     if (preview.anglePreview) {
-      pendingAngleIsReflexRef.current = preview.anglePreview.isReflex;
-      pendingReflexAngleRef.current = preview.anglePreview.isReflex
+      pendingAngleIsReflexRef.current = preview.anglePreview.shouldApply;
+      pendingReflexAngleRef.current = preview.anglePreview.shouldApply
         ? preview.anglePreview.angle
         : 0;
     } else {
