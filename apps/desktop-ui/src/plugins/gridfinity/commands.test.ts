@@ -1,3 +1,4 @@
+// @vitest-environment node
 // @ts-nocheck
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -137,8 +138,8 @@ describe("Gridfinity geometry recipe", () => {
     expect(stackingLipCut).toMatchObject({
       width: 37.7,
       depth: 37.7,
-      top_width: 41.48,
-      top_depth: 41.48,
+      top_width: 41.5,
+      top_depth: 41.5,
     });
   });
 
@@ -385,32 +386,32 @@ describe("Gridfinity geometry recipe", () => {
         operation.primitive === "tapered_rounded_box" &&
         closeTo(operation.x, 2.15) &&
         closeTo(operation.y, 2.15) &&
-        closeTo(operation.z, 44.5) &&
+        closeTo(operation.z, 44.25) &&
         closeTo(operation.width, 79.7) &&
         closeTo(operation.depth, 79.7) &&
-        closeTo(operation.height, 1.95),
+        closeTo(operation.height, 2.2),
     );
 
     expect(lipAdd).toMatchObject({ width: 83.5, depth: 83.5, radius: 3.75 });
     expect(receiverCut).toMatchObject({ radius: 1.85 });
     expect(chamferCut).toMatchObject({
-      top_width: 83.48,
-      top_depth: 83.48,
+      top_width: 83.5,
+      top_depth: 83.5,
       radius: 1.85,
-      top_radius: 3.74,
+      top_radius: 3.75,
     });
     expect(
       (chamferCut?.top_width ?? 0) - (chamferCut?.width ?? 0),
-    ).toBeCloseTo(3.78);
+    ).toBeCloseTo(3.8);
     expect(
       (chamferCut?.top_depth ?? 0) - (chamferCut?.depth ?? 0),
-    ).toBeCloseTo(3.78);
+    ).toBeCloseTo(3.8);
     expect(
       (chamferCut?.top_width ?? 0) - (chamferCut?.width ?? 0),
-    ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2 - 0.02);
+    ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2);
     expect(
       (chamferCut?.top_depth ?? 0) - (chamferCut?.depth ?? 0),
-    ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2 - 0.02);
+    ).toBeCloseTo(defaultGridfinityConfig.wallThickness * 2);
   });
 
   it("adds independent divider walls with gridfinitycreator's default thickness", () => {
@@ -465,7 +466,7 @@ describe("Gridfinity geometry recipe", () => {
       { u: expect.closeTo(68.6), v: expect.closeTo(41.6) },
       { u: expect.closeTo(68.6), v: expect.closeTo(46.4) },
       { u: expect.closeTo(81.6), v: expect.closeTo(46.4) },
-      { u: expect.closeTo(76.8), v: expect.closeTo(41.6) },
+      { u: expect.closeTo(81.6), v: expect.closeTo(45.2) },
     ]);
   });
 

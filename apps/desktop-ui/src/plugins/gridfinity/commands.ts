@@ -436,9 +436,7 @@ function addStackingLip(
   const wall = parameters.wallThickness;
   const innerWidth = Math.max(1, width - wall * 2);
   const innerDepth = Math.max(1, depth - wall * 2);
-  const innerTopWidth = Math.max(1, width - CHAMFER_EPSILON_MM * 2);
-  const innerTopDepth = Math.max(1, depth - CHAMFER_EPSILON_MM * 2);
-  const chamferHeight = Math.min(wall, STACKING_LIP_HEIGHT_MM);
+  const chamferHeight = FOOT_UPPER_CHAMFER_MM;
 
   operations.push(
     op(
@@ -471,9 +469,9 @@ function addStackingLip(
       innerDepth,
       chamferHeight + 0.05,
       Math.max(0.1, OUTER_RADIUS_MM - wall),
-      innerTopWidth,
-      innerTopDepth,
-      Math.max(0.1, OUTER_RADIUS_MM - CHAMFER_EPSILON_MM),
+      width,
+      depth,
+      OUTER_RADIUS_MM,
       "subtract",
       0,
       0,
@@ -505,6 +503,8 @@ function addLabelTab(
   const ridgeX = GRID_CLEARANCE_MM / 2 + parameters.wallThickness;
   const ridgeYOrigin = GRID_CLEARANCE_MM / 2;
 
+  const tabTipThickness = Math.max(1.2, ridgeHeight - ridgeDepth);
+
   for (let row = rowStart; row < rowStart + rowCount; row += 1) {
     const rowStartY =
       parameters.wallThickness +
@@ -522,8 +522,8 @@ function addLabelTab(
           { u: rowStartY, v: layout.topHeight },
           { u: rowStartY + ridgeDepth, v: layout.topHeight },
           {
-            u: rowStartY + ridgeDepth - ridgeHeight,
-            v: layout.topHeight - ridgeHeight,
+            u: rowStartY + ridgeDepth,
+            v: layout.topHeight - tabTipThickness,
           },
         ],
         layout.internalWidth,
