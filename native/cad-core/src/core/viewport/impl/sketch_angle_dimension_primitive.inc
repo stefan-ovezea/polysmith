@@ -184,7 +184,7 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
   // Render the value in degrees (CAD convention) with the same
   // formatter as length / radius so trailing-zero handling stays
   // consistent.
-  const double degrees = dimension.value * 180.0 / 3.14159265358979323846;
+  const double degrees = std::abs(dimension.value) * 180.0 / 3.14159265358979323846;
   auto primitive = ViewportSketchDimensionPrimitive{
       .dimension_id = dimension.id,
       .plane_id = parameters.plane_id,

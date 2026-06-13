@@ -63,8 +63,50 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     return {dx / len, dy / len};
   };
 
+  // --- Parallelism gate: parallel lines that do NOT share a point
+  //     ID get a line-line distance dimension, not an angle.  This
+  //     matches Fusion 360 behaviour and runs *before* the coordinate-
+  //     proximity pivot search so that two unrelated parallel lines
+  //     whose endpoints happen to be near each other aren't mistaken
+  //     for a shared vertex.
+  bool share_point_id = false;
+  for (const auto& id_a : {line_a.start_point_id, line_a.end_point_id}) {
+    for (const auto& id_b : {line_b.start_point_id, line_b.end_point_id}) {
+      if (id_a == id_b) { share_point_id = true; break; }
+    }
+    if (share_point_id) break;
+  }
+  if (!share_point_id) {
+    double adx = line_a.end_x - line_a.start_x;
+    double ady = line_a.end_y - line_a.start_y;
+    double alen = std::sqrt(adx * adx + ady * ady);
+    double bdx = line_b.end_x - line_b.start_x;
+    double bdy = line_b.end_y - line_b.start_y;
+    double blen = std::sqrt(bdx * bdx + bdy * bdy);
+    if (alen > 1e-12 && blen > 1e-12) {
+      double cross = (adx / alen) * (bdy / blen) - (ady / alen) * (bdx / blen);
+      if (std::abs(cross) < 1e-3) {
+        // Parallel, no shared point → line-line distance.
+        add_sketch_distance_dimension(feature, first_line_id, second_line_id);
+        return;
+      }
+    }
+  }
+
   int a_pivot_index = -1;
   int b_pivot_index = -1;
+
+  // Debug: log endpoint coordinates for pivot-detection diagnosis.
+  fprintf(stderr, "ANGLE-PIVOT: A(%s)=(%.4f,%.4f)->(%.4f,%.4f) "
+          "B(%s)=(%.4f,%.4f)->(%.4f,%.4f) sharePtId=%d\n",
+          first_line_id.c_str(),
+          a_ends[0].first, a_ends[0].second,
+          a_ends[1].first, a_ends[1].second,
+          second_line_id.c_str(),
+          b_ends[0].first, b_ends[0].second,
+          b_ends[1].first, b_ends[1].second,
+          share_point_id ? 1 : 0);
+
   // Pass 1: direct endpoint–endpoint match (existing behaviour).
   for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
     for (int j = 0; j < 2; ++j) {
@@ -79,14 +121,15 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     }
   }
   // Pass 2: one line's endpoint lies on the other line's segment.
+  // 0.10 tolerance — generous enough for real-world snap precision.
   if (a_pivot_index < 0) {
     for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
       if (point_on_segment(a_ends[i].first, a_ends[i].second,
                            b_ends[0].first, b_ends[0].second,
                            b_ends[1].first, b_ends[1].second,
-                           kCoincidentTolerance)) {
+                           0.10)) {
         a_pivot_index = i;
-        b_pivot_index = -1; // pivot is an A-endpoint, on B's segment
+        b_pivot_index = -1;
         break;
       }
     }
@@ -96,17 +139,54 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       if (point_on_segment(b_ends[j].first, b_ends[j].second,
                            a_ends[0].first, a_ends[0].second,
                            a_ends[1].first, a_ends[1].second,
-                           kCoincidentTolerance)) {
-        a_pivot_index = -1; // pivot is a B-endpoint, on A's segment
+                           0.10)) {
+        a_pivot_index = -1;
         b_pivot_index = j;
         break;
       }
     }
   }
+  fprintf(stderr, "ANGLE-PIVOT: result a_pivot=%d b_pivot=%d\n",
+          a_pivot_index, b_pivot_index);
+
   if (a_pivot_index < 0 && b_pivot_index < 0) {
+    // Diagnostic: compute the closest distance between any endpoint
+    // and the other line's segment.
+    double min_proj = 1e99;
+    for (int i = 0; i < 2; ++i) {
+      for (int j = 0; j < 2; ++j) {
+        double dx = b_ends[1].first - b_ends[0].first;
+        double dy = b_ends[1].second - b_ends[0].second;
+        double len2 = dx * dx + dy * dy;
+        if (len2 > 1e-12) {
+          double t = ((a_ends[i].first - b_ends[0].first) * dx +
+                      (a_ends[i].second - b_ends[0].second) * dy) / len2;
+          if (t < 0.0) t = 0.0; if (t > 1.0) t = 1.0;
+          double proj_x = b_ends[0].first + t * dx;
+          double proj_y = b_ends[0].second + t * dy;
+          double dist = std::sqrt((a_ends[i].first - proj_x) * (a_ends[i].first - proj_x) +
+                                  (a_ends[i].second - proj_y) * (a_ends[i].second - proj_y));
+          if (dist < min_proj) min_proj = dist;
+        }
+        dx = a_ends[1].first - a_ends[0].first;
+        dy = a_ends[1].second - a_ends[0].second;
+        len2 = dx * dx + dy * dy;
+        if (len2 > 1e-12) {
+          double t = ((b_ends[j].first - a_ends[0].first) * dx +
+                      (b_ends[j].second - a_ends[0].second) * dy) / len2;
+          if (t < 0.0) t = 0.0; if (t > 1.0) t = 1.0;
+          double proj_x = a_ends[0].first + t * dx;
+          double proj_y = a_ends[0].second + t * dy;
+          double dist = std::sqrt((b_ends[j].first - proj_x) * (b_ends[j].first - proj_x) +
+                                  (b_ends[j].second - proj_y) * (b_ends[j].second - proj_y));
+          if (dist < min_proj) min_proj = dist;
+        }
+      }
+    }
+    fprintf(stderr, "ANGLE-PIVOT: min_projection_dist=%.6f\n", min_proj);
     throw std::runtime_error(
-        "Angle dimension requires the two lines to share an endpoint "
-        "or have one endpoint on the other line");
+        "Dimension requires the two lines to share an endpoint, "
+        "have one endpoint on the other line, or be parallel");
   }
 
   double pivot_x, pivot_y;

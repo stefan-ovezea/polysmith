@@ -84,7 +84,7 @@
                             (ei == 0) ? gl1.p1 : gl1.p2;
                         if (pt_on_seg(*p.x, *p.y,
                                       *gl2.p1.x, *gl2.p1.y,
-                                      *gl2.p2.x, *gl2.p2.y, 1e-3)) {
+                                      *gl2.p2.x, *gl2.p2.y, 0.10)) {
                             // gl1's endpoint lies on gl2 — pivot is p.
                             if (ei == 1) std::swap(gl1.p1, gl1.p2);
                             double d0 =
@@ -106,7 +106,7 @@
                             (ej == 0) ? gl2.p1 : gl2.p2;
                         if (pt_on_seg(*p.x, *p.y,
                                       *gl1.p1.x, *gl1.p1.y,
-                                      *gl1.p2.x, *gl1.p2.y, 1e-3)) {
+                                      *gl1.p2.x, *gl1.p2.y, 0.10)) {
                             // gl2's endpoint lies on gl1 — pivot is p.
                             if (ej == 1) std::swap(gl2.p1, gl2.p2);
                             double d0 =
