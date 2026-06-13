@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <cmath>
+#include <array>
 #include <iostream>
 #include <exception>
 
@@ -14,6 +15,7 @@ using polysmith::core::FeatureEntry;
 using polysmith::core::SketchFeatureParameters;
 using polysmith::core::SketchLine;
 using polysmith::core::add_sketch_arc;
+using polysmith::core::add_sketch_angle_dimension;
 using polysmith::core::add_sketch_circle;
 using polysmith::core::add_sketch_fillet;
 using polysmith::core::add_sketch_line;
@@ -47,6 +49,51 @@ const polysmith::core::SketchPoint* find_point(
   }
 
   return nullptr;
+}
+
+const polysmith::core::SketchLine* find_line_by_id(
+    const FeatureEntry& feature,
+    const char* line_id) {
+  for (const auto& line : feature.sketch_parameters->lines) {
+    if (line.id == line_id) {
+      return &line;
+    }
+  }
+
+  return nullptr;
+}
+
+const polysmith::core::SketchDimension* find_dimension_by_id(
+    const FeatureEntry& feature,
+    const char* dimension_id) {
+  for (const auto& dimension : feature.sketch_parameters->dimensions) {
+    if (dimension.id == dimension_id) {
+      return &dimension;
+    }
+  }
+
+  return nullptr;
+}
+
+std::array<double, 4> capture_line_coords(const SketchLine& line) {
+  return {line.start_x, line.start_y, line.end_x, line.end_y};
+}
+
+bool expect_line_coords(
+    const FeatureEntry& feature,
+    const char* line_id,
+    const std::array<double, 4>& expected,
+    const char* message) {
+  const auto* line = find_line_by_id(feature, line_id);
+  if (!expect(line != nullptr, message)) {
+    return false;
+  }
+
+  return expect(std::abs(line->start_x - expected[0]) < 1e-6 &&
+                    std::abs(line->start_y - expected[1]) < 1e-6 &&
+                    std::abs(line->end_x - expected[2]) < 1e-6 &&
+                    std::abs(line->end_y - expected[3]) < 1e-6,
+                message);
 }
 
 FeatureEntry make_sketch_with_shared_point_ids() {
@@ -263,6 +310,188 @@ bool test_midpoint_anchor_both_ends_follow_perpendicular_resize() {
          expect(std::min(line5.start_y, line5.end_y) >= -1e-6 &&
                     std::max(line5.start_y, line5.end_y) <= 10.0 + 1e-6,
                 "perpendicular resize: line-5 must lie inside [0, 10]");
+}
+
+FeatureEntry make_endpoint_on_segment_angle_sketch() {
+  FeatureEntry feature = create_sketch_feature(30, "ref-plane-xy");
+  add_sketch_line(feature, 1, -40.0, 0.0, 40.0, 0.0);
+  add_sketch_line(feature, 2, 10.0, 18.0, 30.0, 0.0);
+  return feature;
+}
+
+bool test_angle_dimension_creation_preserves_endpoint_on_segment_geometry() {
+  FeatureEntry feature = make_endpoint_on_segment_angle_sketch();
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr,
+              "angle creation setup: expected both lines")) {
+    return false;
+  }
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* angle =
+      find_dimension_by_id(feature, "dim-angle-line-1-line-2");
+  return expect(angle != nullptr,
+                "expected angle dimension to be created") &&
+         expect(angle->kind == "angle",
+                "expected created dimension to be an angle") &&
+         expect(angle->is_auto,
+                "expected newly placed angle dimension to start as reference") &&
+         expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "angle creation should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "angle creation should not move angled line");
+}
+
+bool test_angle_dimension_confirming_displayed_value_is_noop() {
+  FeatureEntry feature = make_endpoint_on_segment_angle_sketch();
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  const auto* angle =
+      find_dimension_by_id(feature, "dim-angle-line-1-line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr && angle != nullptr,
+              "angle confirm setup: expected lines and dimension")) {
+    return false;
+  }
+
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+  constexpr double kPi = 3.14159265358979323846;
+  const double displayed_degrees =
+      std::round(std::abs(angle->value) * 180.0 / kPi * 100.0) / 100.0;
+  const double submitted_radians = displayed_degrees * kPi / 180.0;
+
+  update_sketch_dimension(
+      feature, "dim-angle-line-1-line-2", submitted_radians);
+
+  return expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "angle confirm should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "angle confirm should not move angled line");
+}
+
+bool test_angle_dimension_reflex_display_update_is_noop() {
+  FeatureEntry feature = make_endpoint_on_segment_angle_sketch();
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  const auto* angle =
+      find_dimension_by_id(feature, "dim-angle-line-1-line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr && angle != nullptr,
+              "angle reflex setup: expected lines and dimension")) {
+    return false;
+  }
+
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+  constexpr double kPi = 3.14159265358979323846;
+  const double reflex_value = 2.0 * kPi - std::abs(angle->value);
+
+  update_sketch_dimension(feature, "dim-angle-line-1-line-2", reflex_value);
+
+  return expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "angle reflex update should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "angle reflex update should not move angled line");
+}
+
+bool test_angle_dimension_confirm_uses_short_host_ray() {
+  FeatureEntry feature = create_sketch_feature(31, "ref-plane-xy");
+  add_sketch_line(feature, 1, -80.0, 0.0, 20.0, 0.0);
+  add_sketch_line(feature, 2, 0.0, 0.0, 20.0, 14.0);
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr,
+              "short host ray setup: expected both lines")) {
+    return false;
+  }
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+  const double submitted_radians = std::atan2(14.0, 20.0);
+
+  update_sketch_dimension(
+      feature, "dim-angle-line-1-line-2", submitted_radians);
+
+  return expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "short host ray confirm should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "short host ray confirm should not flip angled line");
+}
+
+bool test_angle_dimension_can_store_large_supplementary_angle() {
+  FeatureEntry feature = create_sketch_feature(32, "ref-plane-xy");
+  add_sketch_line(feature, 1, -80.0, 0.0, 20.0, 0.0);
+  add_sketch_line(feature, 2, 0.0, 0.0, 20.0, 14.0);
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  const auto* line1 = find_line_by_id(feature, "line-1");
+  const auto* line2 = find_line_by_id(feature, "line-2");
+  if (!expect(line1 != nullptr && line2 != nullptr,
+              "large angle setup: expected both lines")) {
+    return false;
+  }
+  const auto line1_before = capture_line_coords(*line1);
+  const auto line2_before = capture_line_coords(*line2);
+  constexpr double kPi = 3.14159265358979323846;
+  const double large_angle = kPi - std::atan2(14.0, 20.0);
+
+  update_sketch_dimension(feature, "dim-angle-line-1-line-2", large_angle);
+
+  const auto* angle =
+      find_dimension_by_id(feature, "dim-angle-line-1-line-2");
+  return expect(angle != nullptr,
+                "large angle update should keep angle dimension") &&
+         expect(std::abs(std::abs(angle->value) - large_angle) < 1e-6,
+                "large angle update should store supplementary value") &&
+         expect_line_coords(feature,
+                            "line-1",
+                            line1_before,
+                            "large angle update should not move host line") &&
+         expect_line_coords(feature,
+                            "line-2",
+                            line2_before,
+                            "large angle update should not flip angled line");
+}
+
+bool test_angle_dimension_rejects_duplicate_pair() {
+  FeatureEntry feature = create_sketch_feature(33, "ref-plane-xy");
+  add_sketch_line(feature, 1, -80.0, 0.0, 20.0, 0.0);
+  add_sketch_line(feature, 2, 0.0, 0.0, 20.0, 14.0);
+  add_sketch_angle_dimension(feature, "line-1", "line-2");
+
+  bool threw = false;
+  try {
+    add_sketch_angle_dimension(feature, "line-1", "line-2");
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  return expect(threw,
+                "expected duplicate angle dimension on the same lines to throw");
 }
 
 bool test_midpoint_anchor_both_ends_follow_host_length_change() {
@@ -664,6 +893,24 @@ int main() {
     return EXIT_FAILURE;
   }
   if (!test_midpoint_anchor_both_ends_follow_host_length_change()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_creation_preserves_endpoint_on_segment_geometry()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_confirming_displayed_value_is_noop()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_reflex_display_update_is_noop()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_confirm_uses_short_host_ray()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_can_store_large_supplementary_angle()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_angle_dimension_rejects_duplicate_pair()) {
     return EXIT_FAILURE;
   }
   if (!test_midpoint_anchor_both_ends_follow_perpendicular_resize()) {

@@ -1,4 +1,5 @@
 #include "core/sketch/sketch_feature.h"
+#include "core/sketch/dof_counter.h"
 
 #include <algorithm>
 #include <array>

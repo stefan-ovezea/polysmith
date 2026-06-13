@@ -96,11 +96,30 @@ struct SketchFeatureParameters {
   // -1 = solver hasn't run yet (or no constraints exist).
   int solver_dofs = -1;
 
+  // Solver diagnostics from the last solve. Populated by
+  // refresh_sketch_derived_state after each solver pass.
+  // -1 = solver hasn't run or has no conflicts.
+  int solver_conflicting_count = -1;
+  int solver_redundant_count = -1;
+
   // Persistent mirror relations. When the user commits a mirror with
   // the "persistent" toggle on, each source→mirror pair is stored
   // here so it can be re-mirrored on every recompute and shown as a
   // constraint badge. Empty vector = no persistent mirrors.
   std::vector<SketchMirrorRelation> mirror_relations;
+
+  // --- Append-mode freeze state machine (transient) ---
+  // Set by mutators BEFORE calling refresh_sketch_derived_state when
+  // the mutation should only affect a subset of the sketch (new entity
+  // creation, constraint application). When non-empty:
+  //   1. All existing points are temporarily frozen (is_fixed = true)
+  //   2. Points referenced by these focus entity IDs are unfrozen
+  //   3. Solver runs — only focus entities move
+  //   4. Original is_fixed values are restored
+  // Cleared by refresh_sketch_derived_state after the solver pass.
+  // Empty vector = normal mode (no freeze, all non-fixed points
+  // participate in the solve).
+  std::vector<std::string> pending_append_focus_ids;
 };
 
 }  // namespace polysmith::core

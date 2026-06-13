@@ -51,5 +51,5 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   enforce_perpendicular_relations(*feature.sketch_parameters, line_it->id);
   enforce_parallel_relations(*feature.sketch_parameters, line_it->id);
   sync_all_line_dimensions(*feature.sketch_parameters);
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {line_id});
 }

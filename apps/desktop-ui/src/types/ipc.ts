@@ -310,6 +310,9 @@ export interface ViewportState {
     consumed_dof: number;
     status: "under" | "full" | "over";
   }>;
+  solver_dofs: number;
+  solver_conflicting_count: number;
+  solver_redundant_count: number;
   snap_candidates: SnapCandidateEntry[];
   selection_filter: SelectionFilter;
 }

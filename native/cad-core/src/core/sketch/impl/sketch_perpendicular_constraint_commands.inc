@@ -69,7 +69,8 @@ void set_sketch_perpendicular_constraint(
     enforce_perpendicular_relations(parameters, line_id);
     enforce_parallel_relations(parameters, line_id);
     sync_all_line_dimensions(parameters);
-    refresh_sketch_derived_state(feature);
+    refresh_sketch_with_append_focus(
+        feature, {line_id, other_line_id.value()});
   } catch (...) {
     // Roll back completely: remove the relation, restore the driven
     // line's endpoints, and restore its original constraint.

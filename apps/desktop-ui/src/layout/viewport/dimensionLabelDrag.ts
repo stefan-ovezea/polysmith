@@ -4,7 +4,11 @@ import type { SketchDimensionScene, SketchFeatureParameters } from "@/types";
 import { resolveSketchPlanePoint, toWorldPoint } from "@/utils";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
 import { getSketchGridFrame } from "./grid";
-import { clampAngleRadius, type DimensionLabelDragState } from "./draftDimensions";
+import {
+  clampAngleRadius,
+  type DimensionLabelDragState,
+  type DimensionRelationPreview,
+} from "./draftDimensions";
 
 export interface AngleDimensionFrame {
   pivot: THREE.Vector3;
@@ -348,6 +352,7 @@ export function buildDimensionPlacementStart({
   activeSketchPlaneFrame,
   dimension,
   relationPosition,
+  relation,
   getDimensionPlacementAxis,
 }: {
   event: PointerEvent;
@@ -357,6 +362,7 @@ export function buildDimensionPlacementStart({
   activeSketchPlaneFrame: ActiveSketchGridPlaneFrame | null;
   dimension: SketchDimensionScene;
   relationPosition: [number, number, number] | null;
+  relation?: DimensionRelationPreview | null;
   getDimensionPlacementAxis: (
     dimension: SketchDimensionScene,
   ) => THREE.Vector3 | null;
@@ -418,6 +424,8 @@ export function buildDimensionPlacementStart({
       dragAxis: dragAxis ? [dragAxis.x, dragAxis.y, dragAxis.z] : [0, 0, 0],
       hasMoved: true,
       isPlacement: true,
+      anglePlacementRelation:
+        isAngleKind && relation?.kind === "line_angle" ? relation : undefined,
     },
   };
 }
@@ -588,6 +596,7 @@ export function handleDimensionLabelDragPointerMove({
   angleDragRadiiRef,
   setAngleDragRadii,
   updateDimensionRelationPreview,
+  updateAngleDimensionPlacementPreview,
   angleFrameForDimension,
   setDimensionLabelPosition,
 }: {
@@ -605,6 +614,11 @@ export function handleDimensionLabelDragPointerMove({
       | ((current: Record<string, number>) => Record<string, number>),
   ) => void;
   updateDimensionRelationPreview: (localPoint: [number, number]) => unknown;
+  updateAngleDimensionPlacementPreview?: (
+    drag: DimensionLabelDragState,
+    localPoint: [number, number],
+    worldPoint: [number, number, number],
+  ) => boolean;
   angleFrameForDimension: (
     dimension: SketchDimensionScene,
   ) => AngleDimensionFrame | null;
@@ -626,6 +640,18 @@ export function handleDimensionLabelDragPointerMove({
     activeSketchPlaneFrame,
   );
   if (!sketchPoint) {
+    return true;
+  }
+
+  if (
+    dimensionDrag.isPlacement &&
+    updateAngleDimensionPlacementPreview?.(
+      dimensionDrag,
+      sketchPoint.local,
+      sketchPoint.world,
+    )
+  ) {
+    dimensionDrag.hasMoved = true;
     return true;
   }
 

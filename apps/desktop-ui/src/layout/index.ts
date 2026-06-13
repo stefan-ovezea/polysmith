@@ -25,5 +25,6 @@ export * from "./MaterialsPanel";
 export * from "./MovePreviewPanel";
 export * from "./ProjectsPanel";
 export * from "./SelectionFilterPanel";
+export * from "./ToastViewport";
 export * from "./ViewportPanel";
 export * from "./CamOperationPanel";

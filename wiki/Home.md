@@ -33,12 +33,14 @@
 | 📡 **[IPC Protocol](IPC-Protocol)** | JSON-based protocol between UI and CAD core |
 | 🔷 **[Topological Naming Problem](Topological-Naming-Problem)** | TNP strategy and defences (project mantra) |
 | 🎨 **[Design System](Design-System)** | Dark/Light dual theme system and Catppuccin palette support |
+| 🔔 **[Toast Notifications](Toast-Notifications)** | Global toast component, usage rules, and core-error routing |
 | 🧩 **[Plugin System](Plugin-System)** | Trusted plugin architecture and extension boundaries |
 | 🧰 **[Plugin SDK](Plugin-SDK)** | How first-party plugins register menus, settings, and CAD commands |
 | 📏 **[Dimension Rendering Design](Dimension-Rendering-Design)** | Design rationale and decision record for dimension rendering |
 | 📐 **[Display Units](Display-Units)** | Metric / inch toggle architecture |
 | 📋 **[Contextual Modeling Workflow](Contextual-Modeling-Workflow)** | Binding UX pattern for all modeling features |
 | ⚡ **[Planegcs Dual-Deployment Solver](Planegcs-Dual-Solver)** | WASM + native planegcs for UI-side drag preview and core-side final solve |
+| 🧩 **[GCS Implementation Strategy](GCS-Implementation-Strategy)** | Freeze state machine, speculative inferencing, DOF feedback — implementation plan |
 | 🔧 **[CAM Development Plan](CAM-Development)** | CAM workspace: data model, TNP strategy, preview pipeline, v1 operations |
 
 ### 🤖 AI / Agent

@@ -71,13 +71,16 @@ export function finishRectangleSelectionDrag({
 
   const width = Math.abs(drag.currentX - drag.startX);
   const height = Math.abs(drag.currentY - drag.startY);
-  if (width > 3 || height > 3) {
+  const wasRealDrag = width > 3 || height > 3;
+  if (wasRealDrag) {
     void performRectangleSelect(drag, event.shiftKey);
   }
   selectionDragRef.current = null;
   setSelectionRect(null);
   controls.enabled = true;
-  return true;
+  // Only consume the event if there was an actual drag. A simple click
+  // on empty canvas should propagate so the selection flow can deselect.
+  return wasRealDrag;
 }
 
 function cross2d(

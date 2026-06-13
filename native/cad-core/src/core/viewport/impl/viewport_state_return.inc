@@ -18,6 +18,8 @@
       .sketch_profiles = sketch_profiles,
       .dof_statuses = dof_statuses,
       .solver_dofs = solver_dofs,
+      .solver_conflicting_count = solver_conflicting_count,
+      .solver_redundant_count = solver_redundant_count,
       .meshes = meshes,
       .cut_previews = cut_previews,
       .bodies = bodies,

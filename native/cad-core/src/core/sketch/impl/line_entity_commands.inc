@@ -45,6 +45,7 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
         .kind = "line_length",
         .entity_id = line.id,
         .value = measure_line_length(line),
+        .is_auto = true,
     });
     // Line-angle dimension: the absolute angle from the positive X axis
     // (horizontal). Stored in radians. Axis-constrained lines (rectangle
@@ -67,7 +68,7 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
     run_inference_on_new_line(*feature.sketch_parameters,
                               feature.sketch_parameters->lines.back());
   }
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {line.id});
 }
 
 void set_sketch_line_construction(FeatureEntry &feature,

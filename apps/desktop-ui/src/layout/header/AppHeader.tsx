@@ -9,6 +9,7 @@ import {
 } from "@/types";
 import { useAppConfig } from "@/config";
 import { SketchToolbar } from "./SketchToolbar";
+import { SketchDofBadge } from "./SketchDofBadge";
 import { CreateToolbar } from "./CreateToolbar";
 import type { CreateToolbarProps } from "./CreateToolbar";
 import { ModifyToolbar } from "./ModifyToolbar";
@@ -810,6 +811,7 @@ export function AppHeader({
                 onStartMirrorTool={onStartMirrorTool}
               />
             ) : null}
+            {activeCadWorkspace === "sketch" ? <SketchDofBadge /> : null}
           </div>
 
           {canExportToSlicer ? (

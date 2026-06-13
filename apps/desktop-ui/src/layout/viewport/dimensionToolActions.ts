@@ -39,10 +39,6 @@ interface DimensionToolActionParams {
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
   >;
   setDimensionToolFirstLine: Dispatch<SetStateAction<string | null>>;
-  sketchLinesShareEndpoint: (
-    firstLineId: string,
-    secondLineId: string,
-  ) => boolean;
   handleDimensionClick: (dimensionId: string) => void;
 }
 
@@ -63,7 +59,6 @@ export function createDimensionToolActions({
   addSketchPointDistanceDimensionRef,
   updateSketchDimensionRef,
   setDimensionToolFirstLine,
-  sketchLinesShareEndpoint,
   handleDimensionClick,
 }: DimensionToolActionParams) {
   function stageUnaryDimension(entityId: string, dimensionId: string) {
@@ -138,11 +133,27 @@ export function createDimensionToolActions({
     pendingDimSourceEntityIdRef.current = null;
     if (
       firstEntityId.startsWith("line-") &&
-      sketchLinesShareEndpoint(firstEntityId, secondEntityId)
+      secondEntityId.startsWith("line-")
     ) {
+      const relation = pendingRelationPlacementMatchRef.current;
+      if (
+        relation?.kind === "parallel_line_distance" &&
+        ((relation.firstEntityId === firstEntityId &&
+          relation.targetEntityId === secondEntityId) ||
+          (relation.firstEntityId === secondEntityId &&
+            relation.targetEntityId === firstEntityId))
+      ) {
+        pendingAngleIsReflexRef.current = false;
+        pendingReflexAngleRef.current = 0;
+        void addSketchDistanceDimensionRef
+          .current(firstEntityId, secondEntityId)
+          .catch(clearRelationPlacementStage);
+        return;
+      }
       const isReflex = pendingAngleIsReflexRef.current;
       const reflexAngle = pendingReflexAngleRef.current;
       pendingAngleIsReflexRef.current = false;
+      pendingReflexAngleRef.current = 0;
       void addSketchAngleDimensionRef
         .current(firstEntityId, secondEntityId)
         .then(() => {
@@ -178,6 +189,8 @@ export function createDimensionToolActions({
     pendingDimensionPlacementRef.current = false;
     pendingRelationPlacementLabelRef.current = null;
     pendingRelationPlacementMatchRef.current = null;
+    pendingAngleIsReflexRef.current = false;
+    pendingReflexAngleRef.current = 0;
   }
 
   return {

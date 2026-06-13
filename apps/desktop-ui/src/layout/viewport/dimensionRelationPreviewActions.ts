@@ -96,13 +96,18 @@ export function createDimensionRelationPreviewActions({
       planeFrame: activeSketchPlaneFrameRef.current,
     });
     if (!preview) {
+      pendingAngleIsReflexRef.current = false;
+      pendingReflexAngleRef.current = 0;
       return null;
     }
     if (preview.anglePreview) {
-      pendingAngleIsReflexRef.current = preview.anglePreview.isReflex;
-      if (preview.anglePreview.isReflex) {
-        pendingReflexAngleRef.current = preview.anglePreview.angle;
-      }
+      pendingAngleIsReflexRef.current = preview.anglePreview.shouldApply;
+      pendingReflexAngleRef.current = preview.anglePreview.shouldApply
+        ? preview.anglePreview.angle
+        : 0;
+    } else {
+      pendingAngleIsReflexRef.current = false;
+      pendingReflexAngleRef.current = 0;
     }
     renderDimensionRelationPreview(preview.relation, preview.dimension);
     return preview.relation;

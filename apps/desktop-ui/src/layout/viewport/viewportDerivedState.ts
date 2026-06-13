@@ -27,6 +27,7 @@ export interface ViewportDerivedStateInput {
   sketchParameters: SketchParameters | null | undefined;
   activeSketchPlaneFrame: ActiveSketchGridPlaneFrame | null;
   angleDragRadii: Record<string, number>;
+  anglePlacementPreviews: Record<string, SketchDimensionScene>;
   dimensionLabelPositions: Record<string, [number, number, number]>;
 }
 
@@ -37,6 +38,7 @@ export function computeViewportDerivedState({
   sketchParameters,
   activeSketchPlaneFrame,
   angleDragRadii,
+  anglePlacementPreviews,
   dimensionLabelPositions,
 }: ViewportDerivedStateInput) {
   const displayedSketchDimensions = computeDisplayedSketchDimensions({
@@ -44,6 +46,7 @@ export function computeViewportDerivedState({
     sketchParameters,
     activeSketchPlaneFrame,
     angleDragRadii,
+    anglePlacementPreviews,
     dimensionLabelPositions,
   });
   const selectedSketchDimensionId =
@@ -131,6 +134,7 @@ function computeDisplayedSketchDimensions({
   sketchParameters,
   activeSketchPlaneFrame,
   angleDragRadii,
+  anglePlacementPreviews,
   dimensionLabelPositions,
 }: Omit<
   ViewportDerivedStateInput,
@@ -145,6 +149,7 @@ function computeDisplayedSketchDimensions({
       sketchParameters,
       activeSketchPlaneFrame,
       angleDragRadii,
+      anglePlacementPreviews,
       dimensionLabelPositions,
     }),
   );
@@ -155,14 +160,21 @@ function displayedSketchDimension({
   sketchParameters,
   activeSketchPlaneFrame,
   angleDragRadii,
+  anglePlacementPreviews,
   dimensionLabelPositions,
 }: {
   dimension: SketchDimensionScene;
   sketchParameters: SketchParameters | null | undefined;
   activeSketchPlaneFrame: ActiveSketchGridPlaneFrame | null;
   angleDragRadii: Record<string, number>;
+  anglePlacementPreviews: Record<string, SketchDimensionScene>;
   dimensionLabelPositions: Record<string, [number, number, number]>;
 }): SketchDimensionScene {
+  const anglePlacementPreview = anglePlacementPreviews[dimension.dimensionId];
+  if (anglePlacementPreview) {
+    return anglePlacementPreview;
+  }
+
   if (dimension.kind === "angle" || dimension.kind === "line_angle") {
     return displayedAngleDimension({
       dimension,

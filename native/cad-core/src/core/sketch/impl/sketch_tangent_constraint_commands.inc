@@ -48,5 +48,5 @@ void set_sketch_tangent_constraint(FeatureEntry& feature,
       .second_line_id = circle_id,
   });
 
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {line_id, circle_id});
 }

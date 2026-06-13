@@ -61,6 +61,7 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
     if (!dimension.driven) {
       continue;
     }
+    try {
     if (dimension.kind == "line_length") {
       const auto& line = require_line(parameters, dimension.entity_id);
       dimension.value = measure_line_length(line);
@@ -160,6 +161,13 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
         const double dy = point_b_it->y - point_a_it->y;
         dimension.value = std::sqrt(dx * dx + dy * dy);
       }
+    }
+    } catch (const std::exception& e) {
+      fprintf(stderr, "sync_driven_dimensions: skipping %s '%s': %s\n",
+              dimension.kind.c_str(), dimension.id.c_str(), e.what());
+      // Un-drive the broken dimension so it won't throw on every
+      // subsequent refresh.  The user can delete it from the UI.
+      dimension.driven = false;
     }
   }
 }

@@ -10,8 +10,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
         "Angle dimension requires two distinct lines");
   }
   auto& parameters = *feature.sketch_parameters;
-  const auto& line_a = require_line(parameters, first_line_id);
-  const auto& line_b = require_line(parameters, second_line_id);
+  auto& line_a = require_line(parameters, first_line_id);
+  auto& line_b = require_line(parameters, second_line_id);
 
   // Compute the current angle (unsigned) between outgoing directions
   // from the shared endpoint or intersection point.  First try a
@@ -62,9 +62,61 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     if (len < 1e-12) return {1.0, 0.0};
     return {dx / len, dy / len};
   };
+  auto dir_toward_smaller_angle =
+      [](double px, double py,
+         double host0x, double host0y,
+         double host1x, double host1y,
+         double other_dx, double other_dy) -> std::pair<double, double> {
+    auto unit = [&](double x, double y) {
+      double dx = x - px;
+      double dy = y - py;
+      double len = std::sqrt(dx * dx + dy * dy);
+      if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+      return std::pair<double, double>{dx / len, dy / len};
+    };
+    auto d0 = unit(host0x, host0y);
+    auto d1 = unit(host1x, host1y);
+    auto angle_to_other = [&](const std::pair<double, double>& dir) {
+      return std::abs(std::atan2(
+          dir.first * other_dy - dir.second * other_dx,
+          dir.first * other_dx + dir.second * other_dy));
+    };
+    return angle_to_other(d0) <= angle_to_other(d1) ? d0 : d1;
+  };
+
+  // --- Parallelism gate: parallel lines that do NOT share a point
+  //     ID get a line-line distance dimension, not an angle.  This
+  //     matches Fusion 360 behaviour and runs *before* the coordinate-
+  //     proximity pivot search so that two unrelated parallel lines
+  //     whose endpoints happen to be near each other aren't mistaken
+  //     for a shared vertex.
+  bool share_point_id = false;
+  for (const auto& id_a : {line_a.start_point_id, line_a.end_point_id}) {
+    for (const auto& id_b : {line_b.start_point_id, line_b.end_point_id}) {
+      if (id_a == id_b) { share_point_id = true; break; }
+    }
+    if (share_point_id) break;
+  }
+  if (!share_point_id) {
+    double adx = line_a.end_x - line_a.start_x;
+    double ady = line_a.end_y - line_a.start_y;
+    double alen = std::sqrt(adx * adx + ady * ady);
+    double bdx = line_b.end_x - line_b.start_x;
+    double bdy = line_b.end_y - line_b.start_y;
+    double blen = std::sqrt(bdx * bdx + bdy * bdy);
+    if (alen > 1e-12 && blen > 1e-12) {
+      double cross = (adx / alen) * (bdy / blen) - (ady / alen) * (bdx / blen);
+      if (std::abs(cross) < 1e-3) {
+        // Parallel, no shared point → line-line distance.
+        add_sketch_distance_dimension(feature, first_line_id, second_line_id);
+        return;
+      }
+    }
+  }
 
   int a_pivot_index = -1;
   int b_pivot_index = -1;
+
   // Pass 1: direct endpoint–endpoint match (existing behaviour).
   for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
     for (int j = 0; j < 2; ++j) {
@@ -79,14 +131,15 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     }
   }
   // Pass 2: one line's endpoint lies on the other line's segment.
+  // 0.10 tolerance — generous enough for real-world snap precision.
   if (a_pivot_index < 0) {
     for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
       if (point_on_segment(a_ends[i].first, a_ends[i].second,
                            b_ends[0].first, b_ends[0].second,
                            b_ends[1].first, b_ends[1].second,
-                           kCoincidentTolerance)) {
+                           0.10)) {
         a_pivot_index = i;
-        b_pivot_index = -1; // pivot is an A-endpoint, on B's segment
+        b_pivot_index = -1;
         break;
       }
     }
@@ -96,8 +149,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       if (point_on_segment(b_ends[j].first, b_ends[j].second,
                            a_ends[0].first, a_ends[0].second,
                            a_ends[1].first, a_ends[1].second,
-                           kCoincidentTolerance)) {
-        a_pivot_index = -1; // pivot is a B-endpoint, on A's segment
+                           0.10)) {
+        a_pivot_index = -1;
         b_pivot_index = j;
         break;
       }
@@ -105,8 +158,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   }
   if (a_pivot_index < 0 && b_pivot_index < 0) {
     throw std::runtime_error(
-        "Angle dimension requires the two lines to share an endpoint "
-        "or have one endpoint on the other line");
+        "Dimension requires the two lines to share an endpoint, "
+        "have one endpoint on the other line, or be parallel");
   }
 
   double pivot_x, pivot_y;
@@ -131,20 +184,17 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                           a_ends[a_pivot_index].second);
     a_dx = a_dir.first;
     a_dy = a_dir.second;
-    auto b_dir = dir_away(pivot_x, pivot_y,
-                          b_ends[0].first, b_ends[0].second,
-                          b_ends[1].first, b_ends[1].second);
+    auto b_dir = dir_toward_smaller_angle(
+        pivot_x, pivot_y,
+        b_ends[0].first, b_ends[0].second,
+        b_ends[1].first, b_ends[1].second,
+        a_dx, a_dy);
     b_dx = b_dir.first;
     b_dy = b_dir.second;
   } else {
     // B's endpoint lies on A's segment.
     pivot_x = b_ends[b_pivot_index].first;
     pivot_y = b_ends[b_pivot_index].second;
-    auto a_dir = dir_away(pivot_x, pivot_y,
-                          a_ends[0].first, a_ends[0].second,
-                          a_ends[1].first, a_ends[1].second);
-    a_dx = a_dir.first;
-    a_dy = a_dir.second;
     auto b_dir = dir_away(pivot_x, pivot_y,
                           b_ends[1 - b_pivot_index].first,
                           b_ends[1 - b_pivot_index].second,
@@ -152,10 +202,26 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                           b_ends[b_pivot_index].second);
     b_dx = b_dir.first;
     b_dy = b_dir.second;
+    auto a_dir = dir_toward_smaller_angle(
+        pivot_x, pivot_y,
+        a_ends[0].first, a_ends[0].second,
+        a_ends[1].first, a_ends[1].second,
+        b_dx, b_dy);
+    a_dx = a_dir.first;
+    a_dy = a_dir.second;
   }
+  // Compute the geometric interior angle using the pivot-aware
+  // direction vectors (a_dx/a_dy, b_dx/b_dy) already computed above.
+  // The planegcs solver will enforce this same value because
+  // constraint_solver_dimension_constraints creates properly-oriented
+  // temporary lines for the L2LAngle constraint.
   const double signed_angle = std::atan2(
       a_dx * b_dy - a_dy * b_dx, a_dx * b_dx + a_dy * b_dy);
-  const double current_angle = std::abs(signed_angle);
+  // Store the SIGNED angle so the planegcs L2LAngle constraint
+  // (which enforces a directed angle, not an interior angle)
+  // receives the correct target value.  The UI displays the
+  // absolute value for human readability.
+  const double current_angle = signed_angle;
 
   // Refuse to create a duplicate angle dimension on the same pair so
   // the dimension list doesn't accumulate stale entries when the
@@ -171,7 +237,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                  dim.secondary_entity_id == first_line_id));
       });
   if (duplicate_it != parameters.dimensions.end()) {
-    return;
+    throw std::runtime_error(
+        "Angle dimension already exists for these two lines");
   }
 
   // Stable id derived from the line ids (sorted) so the same pair
@@ -189,6 +256,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       .entity_id = first_line_id,
       .secondary_entity_id = second_line_id,
       .value = current_angle,
+      .is_auto = true,
   });
-  refresh_sketch_derived_state(feature);
+
+  feature.parameters_summary = make_parameters_summary(parameters);
 }

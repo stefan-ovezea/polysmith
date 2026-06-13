@@ -33,7 +33,7 @@ void add_sketch_circle(FeatureEntry& feature,
     run_inference_on_new_circle(*feature.sketch_parameters,
                                 feature.sketch_parameters->circles.back());
   }
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(feature, {circle.id});
 }
 
 void add_sketch_arc(FeatureEntry& feature,
@@ -92,7 +92,8 @@ void add_sketch_arc(FeatureEntry& feature,
       .is_construction = is_construction,
   });
 
-  refresh_sketch_derived_state(feature);
+  refresh_sketch_with_append_focus(
+      feature, {"arc-" + std::to_string(arc_index)});
 
   // After the rebuild above, the arc's endpoint points exist in the
   // points list. Flag them as fixed so v1 stops the user from dragging

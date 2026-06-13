@@ -8,7 +8,7 @@ import { toWorldPoint } from "@/utils";
 import { clampAngleRadius, formatDraftDimension } from "./draftDimensions";
 
 interface AnglePreviewState {
-  isReflex: boolean;
+  shouldApply: boolean;
   angle: number;
 }
 
@@ -208,6 +208,93 @@ function lineDirectionAwayFromPoint(
   return [dx / length, dy / length];
 }
 
+function lineHasEndpointAt(
+  line: SketchLineEntry,
+  point: [number, number],
+): boolean {
+  return (
+    Math.hypot(line.start_x - point[0], line.start_y - point[1]) <= 1e-6 ||
+    Math.hypot(line.end_x - point[0], line.end_y - point[1]) <= 1e-6
+  );
+}
+
+function lineDirectionTowardSmallerAngle(
+  line: SketchLineEntry,
+  point: [number, number],
+  otherDirection: [number, number],
+): [number, number] | null {
+  const candidates: [number, number][] = [
+    [line.start_x - point[0], line.start_y - point[1]],
+    [line.end_x - point[0], line.end_y - point[1]],
+  ];
+  let best: [number, number] | null = null;
+  let bestAngle = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const length = Math.hypot(candidate[0], candidate[1]);
+    if (length <= 1e-9) {
+      continue;
+    }
+    const unit: [number, number] = [
+      candidate[0] / length,
+      candidate[1] / length,
+    ];
+    const angle = Math.abs(
+      Math.atan2(
+        unit[0] * otherDirection[1] - unit[1] * otherDirection[0],
+        unit[0] * otherDirection[0] + unit[1] * otherDirection[1],
+      ),
+    );
+    if (angle < bestAngle) {
+      bestAngle = angle;
+      best = unit;
+    }
+  }
+  return best;
+}
+
+function lineEndpointDirections(
+  line: SketchLineEntry,
+  point: [number, number],
+): [number, number][] {
+  const result: [number, number][] = [];
+  for (const candidate of [
+    [line.start_x - point[0], line.start_y - point[1]],
+    [line.end_x - point[0], line.end_y - point[1]],
+  ] as [number, number][]) {
+    const length = Math.hypot(candidate[0], candidate[1]);
+    if (length <= 1e-9) {
+      continue;
+    }
+    result.push([candidate[0] / length, candidate[1] / length]);
+  }
+  return result;
+}
+
+function angleBetweenDirections(
+  first: [number, number],
+  second: [number, number],
+) {
+  return Math.abs(
+    Math.atan2(
+      first[0] * second[1] - first[1] * second[0],
+      first[0] * second[0] + first[1] * second[1],
+    ),
+  );
+}
+
+function normalizedBisector(
+  first: [number, number],
+  second: [number, number],
+): [number, number] | null {
+  const bx = first[0] + second[0];
+  const by = first[1] + second[1];
+  const length = Math.hypot(bx, by);
+  if (length <= 1e-9) {
+    return null;
+  }
+  return [bx / length, by / length];
+}
+
 function formatAngleLabel(radians: number) {
   const degrees = Math.abs((radians * 180) / Math.PI);
   return `${formatDraftDimension(degrees)}°`;
@@ -300,12 +387,44 @@ export function createLineAnglePreview({
   if (!firstDir || !secondDir) {
     return null;
   }
-
-  const dot = Math.max(
-    -1,
-    Math.min(1, firstDir[0] * secondDir[0] + firstDir[1] * secondDir[1]),
-  );
-  const acuteAngle = Math.acos(dot);
+  const firstEndpointAtPivot = lineHasEndpointAt(first, pivot);
+  const secondEndpointAtPivot = lineHasEndpointAt(second, pivot);
+  const candidates = (
+    firstEndpointAtPivot && !secondEndpointAtPivot
+      ? lineEndpointDirections(second, pivot).map((candidate) => ({
+          firstDir,
+          secondDir: candidate,
+        }))
+      : !firstEndpointAtPivot && secondEndpointAtPivot
+        ? lineEndpointDirections(first, pivot).map((candidate) => ({
+            firstDir: candidate,
+            secondDir,
+          }))
+        : [
+            {
+              firstDir,
+              secondDir,
+            },
+          ]
+  )
+    .map((candidate) => ({
+      ...candidate,
+      angle: angleBetweenDirections(candidate.firstDir, candidate.secondDir),
+      bisector: normalizedBisector(candidate.firstDir, candidate.secondDir),
+    }))
+    .filter(
+      (
+        candidate,
+      ): candidate is {
+        firstDir: [number, number];
+        secondDir: [number, number];
+        angle: number;
+        bisector: [number, number];
+      } => candidate.bisector !== null,
+    );
+  if (candidates.length === 0) {
+    return null;
+  }
   const sharedEndpoint =
     first.start_point_id === second.start_point_id ||
     first.start_point_id === second.end_point_id ||
@@ -313,57 +432,69 @@ export function createLineAnglePreview({
     first.end_point_id === second.end_point_id;
   const reflexThreshold = sharedEndpoint ? -0.3 : 0;
 
-  let useReflex = false;
   const cursorVec = [cursor[0] - pivot[0], cursor[1] - pivot[1]];
   const cursorLen = Math.hypot(cursorVec[0], cursorVec[1]);
-  if (cursorLen > 1e-9) {
-    const cx = cursorVec[0] / cursorLen;
-    const cy = cursorVec[1] / cursorLen;
-    const bx = firstDir[0] + secondDir[0];
-    const by = firstDir[1] + secondDir[1];
-    const blen = Math.hypot(bx, by);
-    if (blen > 1e-9) {
-      useReflex = (cx * bx + cy * by) / blen < reflexThreshold;
-    }
+  const cursorDir: [number, number] | null =
+    cursorLen > 1e-9
+      ? [cursorVec[0] / cursorLen, cursorVec[1] / cursorLen]
+      : null;
+  let selected = candidates[0];
+  if (cursorDir && candidates.length > 1) {
+    selected = candidates.reduce((best, candidate) =>
+      cursorDir[0] * candidate.bisector[0] +
+        cursorDir[1] * candidate.bisector[1] >
+      cursorDir[0] * best.bisector[0] + cursorDir[1] * best.bisector[1]
+        ? candidate
+        : best,
+    );
+  }
+  const smallestCandidateAngle = Math.min(
+    ...candidates.map((candidate) => candidate.angle),
+  );
+  const usesAlternateSupplement =
+    Math.abs(selected.angle - smallestCandidateAngle) > 1e-6;
+  let useReflex = false;
+  if (cursorDir && candidates.length === 1) {
+    const dot =
+      cursorDir[0] * selected.bisector[0] +
+      cursorDir[1] * selected.bisector[1];
+    useReflex = dot < reflexThreshold;
   }
 
-  const angle = useReflex ? 2 * Math.PI - acuteAngle : acuteAngle;
+  const angle = useReflex ? 2 * Math.PI - selected.angle : selected.angle;
+  const shouldApply = usesAlternateSupplement || useReflex;
+  const resolvedFirstDir = selected.firstDir;
+  const resolvedSecondDir = selected.secondDir;
   const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
   const radius = clampAngleRadius(cursorRadius);
   const dimensionStart: [number, number] = [
-    pivot[0] + firstDir[0] * radius,
-    pivot[1] + firstDir[1] * radius,
+    pivot[0] + resolvedFirstDir[0] * radius,
+    pivot[1] + resolvedFirstDir[1] * radius,
   ];
   const dimensionEnd: [number, number] = [
-    pivot[0] + secondDir[0] * radius,
-    pivot[1] + secondDir[1] * radius,
+    pivot[0] + resolvedSecondDir[0] * radius,
+    pivot[1] + resolvedSecondDir[1] * radius,
   ];
   const anchorRadius = Math.min(lineLength(first), lineLength(second), radius + 2);
   const anchorStart: [number, number] = [
-    pivot[0] + firstDir[0] * anchorRadius,
-    pivot[1] + firstDir[1] * anchorRadius,
+    pivot[0] + resolvedFirstDir[0] * anchorRadius,
+    pivot[1] + resolvedFirstDir[1] * anchorRadius,
   ];
   const anchorEnd: [number, number] = [
-    pivot[0] + secondDir[0] * anchorRadius,
-    pivot[1] + secondDir[1] * anchorRadius,
+    pivot[0] + resolvedSecondDir[0] * anchorRadius,
+    pivot[1] + resolvedSecondDir[1] * anchorRadius,
   ];
   const bisector: [number, number] = [
-    firstDir[0] + secondDir[0],
-    firstDir[1] + secondDir[1],
+    selected.bisector[0],
+    selected.bisector[1],
   ];
-  const bisectorLength = Math.hypot(bisector[0], bisector[1]);
-  if (bisectorLength <= 1e-9) {
-    return null;
-  }
-  bisector[0] /= bisectorLength;
-  bisector[1] /= bisectorLength;
   const labelLocal: [number, number] = [
     pivot[0] + bisector[0] * radius,
     pivot[1] + bisector[1] * radius,
   ];
 
   return {
-    anglePreview: { isReflex: useReflex, angle },
+    anglePreview: { shouldApply, angle },
     dimension: {
       dimensionId: "preview-dim-line-angle",
       planeId,
@@ -380,8 +511,8 @@ export function createLineAnglePreview({
       labelPosition: toWorldPoint(planeId, labelLocal, planeFrame),
       arcCenter: toWorldPoint(planeId, pivot, planeFrame),
       arcRadius: radius,
-      arcStartAngle: Math.atan2(firstDir[1], firstDir[0]),
-      arcEndAngle: Math.atan2(secondDir[1], secondDir[0]),
+      arcStartAngle: Math.atan2(resolvedFirstDir[1], resolvedFirstDir[0]),
+      arcEndAngle: Math.atan2(resolvedSecondDir[1], resolvedSecondDir[0]),
       arcCcw: true,
     },
   };

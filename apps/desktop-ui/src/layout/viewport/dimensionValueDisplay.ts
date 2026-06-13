@@ -42,7 +42,9 @@ export function dimensionDisplayValue({
   sketch: SketchFeatureParameters | null;
 }) {
   if (dimension.kind === "angle" || dimension.kind === "line_angle") {
-    return coreValue * (180 / Math.PI);
+    // Core value is signed (planegcs L2LAngle constraint enforces a
+    // directed angle), but users see an unsigned interior angle.
+    return Math.abs(coreValue) * (180 / Math.PI);
   }
   if (dimension.kind === "circle_radius") {
     const displayAs = resolveDimensionDisplayAs(sketch, dimension.dimensionId);

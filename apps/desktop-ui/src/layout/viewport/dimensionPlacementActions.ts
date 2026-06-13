@@ -9,7 +9,11 @@ import {
   buildDimensionPlacementStart,
   type AngleDimensionFrame,
 } from "./dimensionLabelDrag";
-import { clampAngleRadius, type DimensionLabelDragState } from "./draftDimensions";
+import {
+  clampAngleRadius,
+  type DimensionLabelDragState,
+  type DimensionRelationPreview,
+} from "./draftDimensions";
 import { getSketchGridFrame } from "./grid";
 
 interface MutableRef<T> {
@@ -38,7 +42,15 @@ interface DimensionPlacementActionsContext {
   >;
   angleDragRadiiRef: MutableRef<Record<string, number>>;
   setAngleDragRadii: Dispatch<SetStateAction<Record<string, number>>>;
+  anglePlacementPreviewsRef: MutableRef<Record<string, SketchDimensionScene>>;
+  setAnglePlacementPreviews: Dispatch<
+    SetStateAction<Record<string, SketchDimensionScene>>
+  >;
+  anglePlacementPreviewValuesRef: MutableRef<Record<string, number>>;
   displayedSketchDimensionsRef: MutableRef<SketchDimensionScene[]>;
+  updateSketchDimensionRef: MutableRef<
+    (dimensionId: string, value: number | string) => Promise<void>
+  >;
   updateSketchDimensionLabelPositionRef: MutableRef<
     (dimensionId: string, labelX: number, labelY: number) => Promise<void>
   >;
@@ -63,7 +75,11 @@ export function createDimensionPlacementActions({
   setDimensionLabelPositions,
   angleDragRadiiRef,
   setAngleDragRadii,
+  anglePlacementPreviewsRef,
+  setAnglePlacementPreviews,
+  anglePlacementPreviewValuesRef,
   displayedSketchDimensionsRef,
+  updateSketchDimensionRef,
   updateSketchDimensionLabelPositionRef,
   angleDimensionFrame,
   clearPreviewDimension,
@@ -133,6 +149,20 @@ export function createDimensionPlacementActions({
     );
   }
 
+  function clearAnglePlacementPreview(dimensionId: string) {
+    if (anglePlacementPreviewsRef.current[dimensionId] !== undefined) {
+      const nextPreviews = { ...anglePlacementPreviewsRef.current };
+      delete nextPreviews[dimensionId];
+      anglePlacementPreviewsRef.current = nextPreviews;
+      setAnglePlacementPreviews(nextPreviews);
+    }
+    if (anglePlacementPreviewValuesRef.current[dimensionId] !== undefined) {
+      const nextValues = { ...anglePlacementPreviewValuesRef.current };
+      delete nextValues[dimensionId];
+      anglePlacementPreviewValuesRef.current = nextValues;
+    }
+  }
+
   function setAngleDimensionDragRadius(
     dimension: SketchDimensionScene,
     dimensionId: string,
@@ -181,6 +211,26 @@ export function createDimensionPlacementActions({
   function persistDimensionDragLabelPosition(
     dimensionDrag: DimensionLabelDragState,
   ) {
+    const anglePlacementPreview =
+      anglePlacementPreviewsRef.current[dimensionDrag.dimensionId];
+    const anglePlacementValue =
+      anglePlacementPreviewValuesRef.current[dimensionDrag.dimensionId];
+    if (
+      anglePlacementPreview &&
+      anglePlacementValue !== undefined &&
+      dimensionDrag.anglePlacementRelation?.kind === "line_angle"
+    ) {
+      const labelPosition = anglePlacementPreview.labelPosition;
+      void updateSketchDimensionRef
+        .current(dimensionDrag.dimensionId, anglePlacementValue)
+        .then(() => {
+          persistDimensionLabelPosition(dimensionDrag.dimensionId, labelPosition);
+        })
+        .catch(() => {});
+      clearAnglePlacementPreview(dimensionDrag.dimensionId);
+      return;
+    }
+
     const dragRadius = angleDragRadiiRef.current[dimensionDrag.dimensionId];
     if (dragRadius !== undefined) {
       persistAngleDimensionLabelRadius(dimensionDrag.dimensionId, dragRadius);
@@ -214,6 +264,7 @@ export function createDimensionPlacementActions({
       return false;
     }
     clearPreviewDimension();
+    clearAnglePlacementPreview(dimensionDrag.dimensionId);
     if (angleDragRadiiRef.current[dimensionDrag.dimensionId] !== undefined) {
       const next = { ...angleDragRadiiRef.current };
       delete next[dimensionDrag.dimensionId];
@@ -236,7 +287,10 @@ export function createDimensionPlacementActions({
     return true;
   }
 
-  function beginDimensionPlacement(dimension: SketchDimensionScene) {
+  function beginDimensionPlacement(
+    dimension: SketchDimensionScene,
+    relation?: DimensionRelationPreview | null,
+  ) {
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     const sketchPlaneId = activeSketchPlaneIdRef.current;
@@ -253,6 +307,7 @@ export function createDimensionPlacementActions({
       activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
       dimension,
       relationPosition: pendingRelationPlacementLabelRef.current,
+      relation,
       getDimensionPlacementAxis,
     });
     if (!placement) {

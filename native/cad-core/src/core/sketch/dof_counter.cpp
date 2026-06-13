@@ -92,9 +92,12 @@ std::vector<EntityDofResult> count_sketch_dof(
     }
   }
 
-  // Driving dimensions.
+  // Driving dimensions.  Auto-dimensions without a user-set expression
+  // are display-only (is_auto=true, expression="") — they do NOT consume
+  // DOF because the solver ignores them.
   for (const auto& d : params.dimensions) {
     if (d.driven) continue;
+    if (d.is_auto && d.expression.empty()) continue;
     if (map.count(d.entity_id)) map[d.entity_id].consumed += 1;
   }
 

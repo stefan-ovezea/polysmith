@@ -57,6 +57,54 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         driving_dims > 0;
 
     if (constraints_exist) {
+      // --- Append-mode freeze state machine ---
+      // When pending_append_focus_ids is non-empty, freeze all existing
+      // points before the solve so only the focus entities can move.
+      // This prevents "ghost movements" when adding new geometry or
+      // constraints to an already-constrained sketch.
+      const bool append_mode =
+          !feature.sketch_parameters->pending_append_focus_ids.empty();
+
+      // Snapshot original is_fixed values before any temporary mutation.
+      std::vector<bool> saved_fixed;
+      if (append_mode) {
+        saved_fixed.reserve(feature.sketch_parameters->points.size());
+        for (const auto& pt : feature.sketch_parameters->points) {
+          saved_fixed.push_back(pt.is_fixed);
+        }
+
+        // Build a lookup set of point IDs that belong to focus entities.
+        std::unordered_set<std::string> unfrozen_point_ids;
+        for (const auto& focus_id :
+             feature.sketch_parameters->pending_append_focus_ids) {
+          // Focus is a line → unfreeze both endpoints.
+          for (const auto& line : feature.sketch_parameters->lines) {
+            if (line.id == focus_id) {
+              unfrozen_point_ids.insert(line.start_point_id);
+              unfrozen_point_ids.insert(line.end_point_id);
+            }
+          }
+          // Focus is a circle → unfreeze its center point.
+          for (const auto& circle : feature.sketch_parameters->circles) {
+            if (circle.id == focus_id) {
+              unfrozen_point_ids.insert(
+                  "point-circle-" + circle.id + "-center");
+            }
+          }
+          // Focus is a point explicitly.
+          unfrozen_point_ids.insert(focus_id);
+        }
+
+        // Freeze all points, then unfreeze only the focus set.
+        for (auto& pt : feature.sketch_parameters->points) {
+          if (unfrozen_point_ids.count(pt.id)) {
+            pt.is_fixed = false;
+          } else {
+            pt.is_fixed = true;
+          }
+        }
+      }
+
       ConstraintSolver solver;
       solver.build(*feature.sketch_parameters);
       auto result = solver.solve();
@@ -64,10 +112,22 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         solver.apply(*feature.sketch_parameters);
       }
       feature.sketch_parameters->solver_dofs = result.dofs;
+      feature.sketch_parameters->solver_conflicting_count =
+          static_cast<int>(result.conflicting.size());
+      feature.sketch_parameters->solver_redundant_count =
+          static_cast<int>(result.redundant.size());
       if (!result.ok()) {
         fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
                 static_cast<int>(result.status), result.dofs,
                 result.conflicting.size(), result.redundant.size());
+      }
+
+      // Restore original is_fixed values.
+      if (append_mode) {
+        for (size_t i = 0; i < feature.sketch_parameters->points.size(); ++i) {
+          feature.sketch_parameters->points[i].is_fixed = saved_fixed[i];
+        }
+        feature.sketch_parameters->pending_append_focus_ids.clear();
       }
     }
   }
@@ -118,6 +178,14 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_derived_points_fixed(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);
   feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+}
+
+void refresh_sketch_with_append_focus(FeatureEntry& feature,
+                                       const std::vector<std::string>& focus_ids) {
+  if (feature.sketch_parameters.has_value()) {
+    feature.sketch_parameters->pending_append_focus_ids = focus_ids;
+    refresh_sketch_derived_state(feature);
+  }
 }
 
 #include "core/sketch/impl/sketch_create_and_tool_commands.inc"

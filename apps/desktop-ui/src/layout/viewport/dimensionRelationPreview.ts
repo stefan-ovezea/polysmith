@@ -23,7 +23,7 @@ interface PreviewBuildContext {
 }
 
 interface AnglePreviewState {
-  isReflex: boolean;
+  shouldApply: boolean;
   angle: number;
 }
 

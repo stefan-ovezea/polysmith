@@ -1,7 +1,10 @@
 # Plan: Integrate planegcs Constraint Solver into PolySmith
 
 **Started:** 2026-06-05
-**Status:** Phase 0–1 complete ✅ — Phase 2 ready (constraint-by-constraint testing)
+**Status:** SUPERSEDED (2026-06-10) — The native planegcs C++ integration is on hold.
+The WASM-based approach (planegcs via Emscripten bridge in TypeScript) proved sufficient
+for interactive solving. See `.deepseek/active-task.md` and `wiki/GCS-Implementation-Strategy.md`
+for the current dual-deployment architecture (C++ EXACT + WASM LOOSE/INFERENCE).
 **Source:** User request to integrate `third_party/planegcs` as the 2D sketch constraint solver
 **Principle:** Core owns document state → solver runs natively in C++ core, NOT WASM in UI
 

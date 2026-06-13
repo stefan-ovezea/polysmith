@@ -115,7 +115,6 @@ export function useDimensionEditorEffects({
     setIsDimensionEditorOpen(true);
   }, [
     selectedSketchDimension?.dimensionId,
-    selectedSketchDimension,
     dimensionInputRef,
     dimensionInputSelectionLockedRef,
     suppressNextDimensionEditorOpenRef,
@@ -132,12 +131,22 @@ export function useDimensionEditorEffects({
       return;
     }
 
+    if (
+      window.document.activeElement === input &&
+      !dimensionInputSelectionLockedRef.current
+    ) {
+      return;
+    }
+
     input.focus();
-    input.select();
+    if (dimensionInputSelectionLockedRef.current) {
+      input.select();
+      dimensionInputSelectionLockedRef.current = false;
+    }
   }, [
     isDimensionEditorOpen,
     selectedSketchDimension?.dimensionId,
-    selectedSketchDimension,
     dimensionInputRef,
+    dimensionInputSelectionLockedRef,
   ]);
 }

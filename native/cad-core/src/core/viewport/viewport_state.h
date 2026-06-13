@@ -36,6 +36,10 @@ struct ViewportState {
   std::vector<EntityDofResult> dof_statuses;
   // Total DOF count from the planegcs solver (-1 if not available).
   int solver_dofs = -1;
+  // Number of conflicting / redundant constraints from the last solve.
+  // -1 = solver hasn't run. Coupled with solver_dofs.
+  int solver_conflicting_count = -1;
+  int solver_redundant_count = -1;
   std::vector<ViewportMeshPrimitive> meshes;
   std::vector<ViewportCutPreview> cut_previews;
   // Available bodies (in document order) that boolean-mode extrudes can

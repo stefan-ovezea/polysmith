@@ -76,3 +76,6 @@
           }
           return statuses;
         }()},
+       {"solver_dofs", viewport.solver_dofs},
+       {"solver_conflicting_count", viewport.solver_conflicting_count},
+       {"solver_redundant_count", viewport.solver_redundant_count},
