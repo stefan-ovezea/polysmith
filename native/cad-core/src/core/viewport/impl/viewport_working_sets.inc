@@ -36,7 +36,7 @@
   // emission below to avoid double-rendering. Failures in OCCT booleans
   // produce empty meshes — see body_compiler.cpp — so legacy fallback
   // still renders something.
-  CompiledBodies compiled_bodies = compile_bodies(*view);
+  CompiledBodies compiled_bodies = compile_bodies_for_viewport(*view);
   std::optional<std::string> selected_move_target_body_id;
   if (view->selected_feature_id.has_value()) {
     for (const auto& feature : view->feature_history) {

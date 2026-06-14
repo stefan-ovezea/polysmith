@@ -14,6 +14,7 @@ import {
   type EndpointDrag,
   type PendingEndpointDragFrame,
 } from "./endpointDrag";
+import type { ResolveSnapOptions } from "./snapResolution";
 
 interface MutableRef<T> {
   current: T;
@@ -25,6 +26,7 @@ type ResolveSnappedSketchPoint = (
     world: [number, number, number];
   },
   draftStartLocal?: [number, number] | null,
+  options?: ResolveSnapOptions,
 ) => SketchPreviewPoint;
 
 interface HandleEndpointDragPointerMoveParams {
@@ -46,6 +48,7 @@ interface HandleEndpointDragPointerMoveParams {
   resolveSnappedSketchPoint: ResolveSnappedSketchPoint;
   setSketchSnapLabel: (label: string | null) => void;
   clearDragPreviewLines: () => void;
+  requestRender: () => void;
 }
 
 export function handleEndpointDragPointerMove(
@@ -110,6 +113,7 @@ function requestEndpointDragFrame(params: HandleEndpointDragPointerMoveParams) {
       constraints: params.sketchConstraintsRef.current,
     });
     applyEndpointDragFrameResult(params, result);
+    params.requestRender();
   });
 }
 

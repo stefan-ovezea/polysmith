@@ -63,6 +63,7 @@ interface ViewportSceneSyncRefs {
   sketchConstraintObjects: MutableRef<THREE.Object3D[]>;
   dragCursor: MutableRef<{ x: number; y: number } | null>;
   lastGeometryKey: MutableRef<string>;
+  lastSceneBuildKey: MutableRef<string>;
   hoveredEdgeId: MutableRef<string | null>;
   hoveredVertexId: MutableRef<string | null>;
   hoveredSketchEntityId: MutableRef<string | null>;
@@ -221,16 +222,72 @@ function rebuildViewportScene(
   params: SyncViewportSceneParams,
   groups: ReadyViewportSceneGroups,
 ) {
+  const sceneBuildKey = viewportSceneBuildKey(params);
+  if (
+    params.sceneData &&
+    params.refs.lastSceneBuildKey.current === sceneBuildKey
+  ) {
+    return;
+  }
+
   resetViewportSceneGroups(params, groups);
 
   if (!params.sceneData) {
     params.refs.lastGeometryKey.current = "";
+    params.refs.lastSceneBuildKey.current = "";
     return;
   }
 
   addModelSceneObjects(params, groups);
   addMoveGizmoSceneObject(params, groups.contentGroup);
   addSketchSceneObjectSet(params, groups.sketchGroup);
+  params.refs.lastSceneBuildKey.current = sceneBuildKey;
+}
+
+function viewportSceneBuildKey({
+  sceneData,
+  displayedSketchDimensions,
+  displayUnits,
+  activeSketchPlaneId,
+  showReferencePlanes,
+  showStock,
+  wcsOrientation,
+  moveGizmo,
+}: SyncViewportSceneParams) {
+  if (!sceneData) {
+    return "";
+  }
+  return [
+    sceneData.geometryKey,
+    displayUnits,
+    activeSketchPlaneId ?? "",
+    showReferencePlanes ? "refs:on" : "refs:off",
+    showStock ? "stock:on" : "stock:off",
+    wcsOrientation,
+    moveGizmoKey(moveGizmo),
+    displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),
+  ].join("::");
+}
+
+function moveGizmoKey(moveGizmo: MoveGizmoDescriptor | null | undefined) {
+  if (!moveGizmo || moveGizmo.disabled) {
+    return "move:none";
+  }
+  return JSON.stringify(moveGizmo);
+}
+
+function sketchDimensionBuildKey(dimension: SketchDimensionScene) {
+  return [
+    dimension.dimensionId,
+    dimension.kind,
+    dimension.entityId,
+    dimension.label,
+    dimension.anchorStart.join(":"),
+    dimension.anchorEnd.join(":"),
+    dimension.dimensionStart.join(":"),
+    dimension.dimensionEnd.join(":"),
+    dimension.labelPosition.join(":"),
+  ].join(":");
 }
 
 function resetViewportSceneGroups(
