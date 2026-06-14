@@ -281,7 +281,7 @@ export function ViewportPanelShell({
         <CrosshairGuideOverlay
           pointer={crosshairPointer}
           size={crosshairGuideSize}
-          visible={isSketchDrawingCursor && usesCrosshairGuide}
+          visible={isSketchDrawingCursor}
         />
         <SelectionRectangleOverlay overlay={selectionRect} />
         <ConstraintPreviewBadge preview={constraintPreview} />

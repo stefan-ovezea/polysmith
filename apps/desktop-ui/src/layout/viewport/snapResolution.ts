@@ -37,6 +37,7 @@ export interface RawSketchPoint {
 
 export interface ResolveSnapOptions {
   dynamicSnapsEnabled?: boolean;
+  objectSnapLatchKey?: string | null;
 }
 
 type TranslateSnapLabel = (
@@ -51,6 +52,7 @@ export function resolveSnappedSketchPoint({
   sketchParameters,
   sketchConstraints,
   dynamicSnapsEnabled = true,
+  objectSnapLatchKey = null,
   filter,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
@@ -66,6 +68,7 @@ export function resolveSnappedSketchPoint({
   sketchParameters: SketchFeatureParameters | null | undefined;
   sketchConstraints?: SketchConstraintData[];
   dynamicSnapsEnabled?: boolean;
+  objectSnapLatchKey?: string | null;
   filter: SelectionFilter;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -102,6 +105,7 @@ export function resolveSnappedSketchPoint({
     activeSketchPlaneId,
     activeSketchPlaneFrame,
     includeEndpointMetadata: true,
+    objectSnapLatchKey,
   });
   const prioritySnap = priorityStaticSnapPoint(staticSnap);
   if (prioritySnap) {
@@ -121,6 +125,7 @@ export function resolveSnappedSketchPoint({
           labels,
           activeSketchPlaneId,
           activeSketchPlaneFrame,
+          objectSnapLatchKey,
         })
       : null,
   });
@@ -219,6 +224,7 @@ function resolveStaticSnap({
   activeSketchPlaneId,
   activeSketchPlaneFrame,
   includeEndpointMetadata,
+  objectSnapLatchKey,
 }: {
   candidates: readonly SketchSnapCandidate[];
   point: RawSketchPoint;
@@ -227,7 +233,25 @@ function resolveStaticSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   includeEndpointMetadata: boolean;
+  objectSnapLatchKey?: string | null;
 }): ResolvedStaticSnap | null {
+  const latched = objectSnapLatchKey
+    ? staticSnapCandidateByKey(candidates, objectSnapLatchKey)
+    : null;
+  if (
+    latched &&
+    isStaticSnapCandidateAllowed(latched, filter) &&
+    distanceBetweenPoints(point.local, latched.local) <= sketchSnapDistance
+  ) {
+    return resolvedStaticSnapFromCandidate({
+      candidate: latched,
+      point,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      includeEndpointMetadata,
+    });
+  }
+
   const closest = closestStaticSnapCandidate(
     candidates,
     point.local,
@@ -237,19 +261,41 @@ function resolveStaticSnap({
   if (!closest || closest.distance > sketchSnapDistance) {
     return null;
   }
+  return resolvedStaticSnapFromCandidate({
+    candidate: closest.candidate,
+    point,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame,
+    includeEndpointMetadata,
+  });
+}
+
+function resolvedStaticSnapFromCandidate({
+  candidate,
+  point,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  includeEndpointMetadata,
+}: {
+  candidate: SketchSnapCandidate;
+  point: RawSketchPoint;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+  includeEndpointMetadata: boolean;
+}): ResolvedStaticSnap {
   return {
     point: previewPointFromStaticCandidate({
-      candidate: closest.candidate,
+      candidate,
       world: sketchLocalToWorld(
         activeSketchPlaneId,
-        closest.candidate.local,
+        candidate.local,
         activeSketchPlaneFrame,
       ),
       includeEndpointMetadata:
-        includeEndpointMetadata && isPriorityStaticSnap(closest.candidate),
+        includeEndpointMetadata && isPriorityStaticSnap(candidate),
     }),
-    distance: closest.distance,
-    isPriority: isPriorityStaticSnap(closest.candidate),
+    distance: distanceBetweenPoints(point.local, candidate.local),
+    isPriority: isPriorityStaticSnap(candidate),
   };
 }
 
@@ -272,6 +318,7 @@ function resolveDynamicSnap({
   labels,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
+  objectSnapLatchKey,
 }: {
   sketchParameters: SketchFeatureParameters | null | undefined;
   sketchConstraints?: SketchConstraintData[];
@@ -290,6 +337,7 @@ function resolveDynamicSnap({
   };
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
+  objectSnapLatchKey?: string | null;
 }): ResolvedDynamicSnap | null {
   if (!sketchParameters || !hasEnabledDynamicSnap(filter, draftStartLocal)) {
     return null;
@@ -305,6 +353,7 @@ function resolveDynamicSnap({
     labels,
     sketchParameters,
     constraints: sketchConstraints,
+    objectSnapLatchKey,
   });
   if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
     return null;
@@ -349,6 +398,8 @@ function previewPointFromDynamicSnap({
     local: snap.local,
     world: sketchLocalToWorld(activeSketchPlaneId, snap.local, activeSketchPlaneFrame),
     snapLabel: snap.snapLabel,
+    snapFeedbackSource: dynamicSnapFeedbackSource(snap),
+    snapTargetKey: dynamicSnapTargetKey(snap),
     snapMidpointHostLineId: null,
     snapMidpointT: null,
     snapPerpendicularHostLineId: snap.snapPerpendicularHostLineId,
@@ -369,6 +420,8 @@ function unsnappedPreviewPoint(
   return {
     ...point,
     snapLabel,
+    snapFeedbackSource: snapLabel ? "grid" : null,
+    snapTargetKey: null,
     snapMidpointHostLineId: null,
     snapPerpendicularHostLineId: null,
     snapEndpointHostLineId: null,
@@ -444,6 +497,12 @@ function appendCoreSnapCandidates(
         });
         break;
       case "center":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "center",
+        });
+        break;
       default:
         candidates.push({
           local: [candidate.local_x, candidate.local_y],
@@ -537,6 +596,7 @@ function appendLegacyCircleSnapCandidates(
     candidates.push({
       local: [circle.center_x, circle.center_y],
       label: translate("snap.circleCenter"),
+      kind: "center",
     });
   }
 }
@@ -595,6 +655,7 @@ export function dynamicSnapCandidate({
   labels,
   sketchParameters,
   constraints,
+  objectSnapLatchKey,
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
@@ -616,8 +677,25 @@ export function dynamicSnapCandidate({
   sketchParameters?: SketchFeatureParameters | null;
   /** Constraints for speculative WASM solver path. */
   constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
+  objectSnapLatchKey?: string | null;
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
+
+  if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:line-body:")) {
+    const lineId = objectSnapLatchKey.slice("dynamic:line-body:".length);
+    const line = lines.find((candidate) => candidate.line_id === lineId);
+    if (line) {
+      const latchedLineBody = speculativeLineBodySnap({
+        lines: [line],
+        cursor,
+        threshold,
+        snapLabel: labels.onLine,
+      });
+      if (latchedLineBody) {
+        best = latchedLineBody;
+      }
+    }
+  }
 
   if (draftStart) {
     const draftDx = cursor[0] - draftStart[0];
@@ -729,6 +807,23 @@ export function isStaticSnapCandidateAllowed(
   return filter[selectionFilterKeyForSnapKind(candidate.kind)];
 }
 
+function staticSnapCandidateByKey(
+  candidates: readonly SketchSnapCandidate[],
+  key: string,
+) {
+  return candidates.find((candidate) => staticSnapCandidateKey(candidate) === key) ?? null;
+}
+
+function staticSnapCandidateKey(candidate: SketchSnapCandidate) {
+  const kind = candidate.kind ?? "point";
+  const host =
+    candidate.endpointHostLineId ??
+    candidate.hostLineId ??
+    `${candidate.local[0].toFixed(6)},${candidate.local[1].toFixed(6)}`;
+  const t = candidate.tValue === undefined ? "" : `:${candidate.tValue.toFixed(6)}`;
+  return `static:${kind}:${host}${t}`;
+}
+
 type SketchSnapKind = NonNullable<SketchSnapCandidate["kind"]>;
 
 const SNAP_FILTER_KEY_BY_KIND = {
@@ -781,6 +876,8 @@ export function previewPointFromStaticCandidate({
     local: candidate.local,
     world,
     snapLabel: candidate.label,
+    snapFeedbackSource: "object",
+    snapTargetKey: staticSnapCandidateKey(candidate),
     snapMidpointHostLineId:
       candidate.kind === "midpoint" ? (candidate.hostLineId ?? null) : null,
     snapMidpointT:
@@ -797,6 +894,40 @@ export function previewPointFromStaticCandidate({
     snapParallelHostLineId: null,
     snapIntersectionLineIds: null,
   };
+}
+
+function dynamicSnapFeedbackSource(
+  snap: DynamicSnapResult,
+): SketchPreviewPoint["snapFeedbackSource"] {
+  if (
+    snap.snapPerpendicularHostLineId ||
+    snap.snapTangentCircleId ||
+    snap.snapParallelHostLineId ||
+    snap.snapLineBodyHostLineId ||
+    snap.snapIntersectionLineIds
+  ) {
+    return "object";
+  }
+  return null;
+}
+
+function dynamicSnapTargetKey(snap: DynamicSnapResult) {
+  if (snap.snapLineBodyHostLineId) {
+    return `dynamic:line-body:${snap.snapLineBodyHostLineId}`;
+  }
+  if (snap.snapPerpendicularHostLineId) {
+    return `dynamic:perpendicular:${snap.snapPerpendicularHostLineId}`;
+  }
+  if (snap.snapParallelHostLineId) {
+    return `dynamic:parallel:${snap.snapParallelHostLineId}`;
+  }
+  if (snap.snapTangentCircleId) {
+    return `dynamic:tangent:${snap.snapTangentCircleId}`;
+  }
+  if (snap.snapIntersectionLineIds) {
+    return `dynamic:intersection:${snap.snapIntersectionLineIds.join(":")}`;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

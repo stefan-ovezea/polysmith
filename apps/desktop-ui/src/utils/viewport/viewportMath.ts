@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export const SKETCH_PLANE_OFFSET = 0.2;
 export const SKETCH_SNAP_DISTANCE = 2.5;
+export const SKETCH_SNAP_DISTANCE_PX = 20;
 
 const DIMENSION_EDITOR_MARGIN = 20;
 

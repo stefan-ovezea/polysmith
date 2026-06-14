@@ -68,11 +68,13 @@ function resolvePoint({
   candidates = [],
   dynamicSnapsEnabled = true,
   filter = defaultSelectionFilter,
+  gridSnapScreenDistancePx = 0,
 }: {
   rawPoint: RawSketchPoint;
   candidates?: SketchSnapCandidate[];
   dynamicSnapsEnabled?: boolean;
   filter?: typeof defaultSelectionFilter;
+  gridSnapScreenDistancePx?: number;
 }) {
   return resolveSnappedSketchPoint({
     rawPoint,
@@ -86,7 +88,7 @@ function resolvePoint({
     activeSketchPlaneFrame: null,
     currentGridSpacing: 10,
     worldUnitsPerPixel: 1,
-    gridSnapScreenDistancePx: 0,
+    gridSnapScreenDistancePx,
     sketchSnapDistance: 5,
     labels,
   });
@@ -119,6 +121,7 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     });
 
     expect(result.snapLabel).toBe("Endpoint");
+    expect(result.snapFeedbackSource).toBe("object");
     expect(speculativeSolveMock).not.toHaveBeenCalled();
     expect(speculativeMultiSolveMock).not.toHaveBeenCalled();
   });
@@ -148,9 +151,79 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     });
 
     expect(result.snapLabel).toBe("On line");
+    expect(result.snapFeedbackSource).toBe("object");
     expect(result.local).toEqual([1, 0]);
     expect(result.snapLineBodyHostLineId).toBe("l1");
     expect(speculativeSolveMock).not.toHaveBeenCalled();
     expect(speculativeMultiSolveMock).not.toHaveBeenCalled();
+  });
+
+  it("marks grid snaps separately so cursor feedback does not steal to grid", () => {
+    const result = resolvePoint({
+      rawPoint: { local: [9.5, 9.5], world: [9.5, 0, 9.5] },
+      candidates: [],
+      dynamicSnapsEnabled: false,
+      gridSnapScreenDistancePx: 1,
+    });
+
+    expect(result.snapLabel).toBe("Grid");
+    expect(result.local).toEqual([10, 10]);
+    expect(result.snapFeedbackSource).toBe("grid");
+  });
+
+  it("keeps an object snap latched until that target leaves tolerance", () => {
+    const first = resolvePoint({
+      rawPoint: { local: [0.5, 0], world: [0.5, 0, 0] },
+      candidates: [
+        {
+          local: [0, 0],
+          label: "Endpoint A",
+          kind: "endpoint",
+          endpointHostLineId: "a",
+        },
+        {
+          local: [2, 0],
+          label: "Endpoint B",
+          kind: "endpoint",
+          endpointHostLineId: "b",
+        },
+      ],
+    });
+    expect(first.snapTargetKey).toBe("static:endpoint:a");
+
+    const latched = resolveSnappedSketchPoint({
+      rawPoint: { local: [1.6, 0], world: [1.6, 0, 0] },
+      draftStartLocal: [0, 0],
+      sketchSnapCandidates: [
+        {
+          local: [0, 0],
+          label: "Endpoint A",
+          kind: "endpoint",
+          endpointHostLineId: "a",
+        },
+        {
+          local: [2, 0],
+          label: "Endpoint B",
+          kind: "endpoint",
+          endpointHostLineId: "b",
+        },
+      ],
+      sketchParameters: sketchParameters(),
+      sketchConstraints: [],
+      dynamicSnapsEnabled: true,
+      objectSnapLatchKey: first.snapTargetKey,
+      filter: defaultSelectionFilter,
+      activeSketchPlaneId: "ref-plane-xy",
+      activeSketchPlaneFrame: null,
+      currentGridSpacing: 10,
+      worldUnitsPerPixel: 1,
+      gridSnapScreenDistancePx: 0,
+      sketchSnapDistance: 2,
+      labels,
+    });
+
+    expect(latched.snapLabel).toBe("Endpoint A");
+    expect(latched.local).toEqual([0, 0]);
+    expect(latched.snapTargetKey).toBe("static:endpoint:a");
   });
 });

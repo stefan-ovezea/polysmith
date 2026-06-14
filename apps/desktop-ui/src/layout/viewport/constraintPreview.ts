@@ -28,6 +28,9 @@ export function constraintPreviewFromSnap(
       Math.abs(sketchPoint.snapMidpointT - 0.5) < 1e-9;
     return { kind: isWhole ? "midpoint" : "on_line", x, y };
   }
+  if (sketchPoint.snapEndpointHostLineId) {
+    return { kind: "endpoint", x, y };
+  }
   if (sketchPoint.snapLineBodyHostLineId) {
     return { kind: "on_line", x, y };
   }
