@@ -8,6 +8,7 @@ import type {
 import { toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
+import type { ResolveSnapOptions } from "./snapResolution";
 
 export interface EndpointDrag {
   pointId: string;
@@ -300,6 +301,7 @@ export function resolveEndpointDragFrame({
       world: [number, number, number];
     },
     draftStartLocal?: [number, number] | null,
+    options?: ResolveSnapOptions,
   ) => SketchPreviewPoint;
   /** planegcs constraint data from the viewport state, for WASM solver. */
   constraints?: SketchConstraintData[];
@@ -312,6 +314,7 @@ export function resolveEndpointDragFrame({
       world: [world[0], world[1], world[2]],
     },
     anchorLocal,
+    { dynamicSnapsEnabled: false },
   );
 
   // Run planegcs WASM solver for constraint-aware drag preview.

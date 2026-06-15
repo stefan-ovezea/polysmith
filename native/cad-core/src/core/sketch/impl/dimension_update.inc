@@ -194,6 +194,23 @@ void update_sketch_dimension(FeatureEntry& feature,
     return;
   }
 
+  if (dimension.kind == "point_distance") {
+    auto& point_a = require_point(parameters, dimension.entity_id);
+    auto& point_b = require_point(parameters, dimension.secondary_entity_id);
+    const double dx = point_b.x - point_a.x;
+    const double dy = point_b.y - point_a.y;
+    const double current_length = std::sqrt(dx * dx + dy * dy);
+    if (current_length <= kMinimumSketchDimensionValue) {
+      throw std::runtime_error(
+          "Point-distance dimension requires distinct points");
+    }
+    point_b.x = point_a.x + (dx / current_length) * value;
+    point_b.y = point_a.y + (dy / current_length) * value;
+    dimension.value = value;
+    refresh_sketch_derived_state(feature);
+    return;
+  }
+
   if (dimension.kind == "polygon_radius") {
     const auto polygon_it = std::find_if(
         parameters.polygons.begin(),

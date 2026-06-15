@@ -8,6 +8,8 @@ const SKETCH_LABEL_SCREEN_SCALE = 0.72;
 const SKETCH_CONSTRAINT_SCREEN_SIZE = 34;
 const SKETCH_LABEL_COLLISION_PADDING = 6;
 
+const lastUpdateKeyByRenderer = new WeakMap<THREE.WebGLRenderer, string>();
+
 type SpriteRect = {
   center: { x: number; y: number };
   width: number;
@@ -25,6 +27,17 @@ export function updateScreenSpaceSketchSprites({
   sketchDimensionObjects: readonly THREE.Object3D[];
   sketchConstraintObjects: readonly THREE.Object3D[];
 }) {
+  const updateKey = screenSpaceSpriteUpdateKey({
+    renderer,
+    camera,
+    sketchDimensionObjects,
+    sketchConstraintObjects,
+  });
+  if (lastUpdateKeyByRenderer.get(renderer) === updateKey) {
+    return;
+  }
+  lastUpdateKeyByRenderer.set(renderer, updateKey);
+
   const viewportHeight = Math.max(renderer.domElement.clientHeight, 1);
   const viewportScale = Math.min(
     Math.max(viewportHeight / SKETCH_SCREEN_SPRITE_BASE_HEIGHT, 0.82),
@@ -79,6 +92,53 @@ export function updateScreenSpaceSketchSprites({
       worldUnitsPerPixel,
     });
   }
+}
+
+function screenSpaceSpriteUpdateKey({
+  renderer,
+  camera,
+  sketchDimensionObjects,
+  sketchConstraintObjects,
+}: {
+  renderer: THREE.WebGLRenderer;
+  camera: THREE.OrthographicCamera;
+  sketchDimensionObjects: readonly THREE.Object3D[];
+  sketchConstraintObjects: readonly THREE.Object3D[];
+}) {
+  const canvas = renderer.domElement;
+  return [
+    canvas.clientWidth,
+    canvas.clientHeight,
+    camera.zoom,
+    camera.position.x,
+    camera.position.y,
+    camera.position.z,
+    camera.quaternion.x,
+    camera.quaternion.y,
+    camera.quaternion.z,
+    camera.quaternion.w,
+    objectListKey(sketchDimensionObjects),
+    objectListKey(sketchConstraintObjects),
+  ].join("|");
+}
+
+function objectListKey(objects: readonly THREE.Object3D[]) {
+  if (objects.length === 0) {
+    return "0";
+  }
+  return objects
+    .map((object) =>
+      [
+        object.uuid,
+        object.visible ? "v" : "h",
+        object.position.x,
+        object.position.y,
+        object.position.z,
+        object.scale.x,
+        object.scale.y,
+      ].join(":"),
+    )
+    .join("|");
 }
 
 function updateSpriteScale({

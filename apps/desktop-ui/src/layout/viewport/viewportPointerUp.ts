@@ -262,6 +262,12 @@ function finishClickPointerUp(params: ViewportPointerUpParams) {
 
   if (params.activeSketchPlaneId) {
     finishActiveSketchPointerUp(params);
+    // Commit any remaining dimension label placement that wasn't
+    // consumed by entity handling (e.g. two-click regroup workflows
+    // clear the drag ref via clearPendingDimensionPlacement so this
+    // is a no-op for those; single-click empty-space commits fall
+    // through to here).
+    params.finishDimensionLabelDragPointerUp();
     return;
   }
   finishScenePointerUp(params);

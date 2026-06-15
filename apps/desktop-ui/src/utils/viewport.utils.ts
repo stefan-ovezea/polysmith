@@ -34,6 +34,7 @@ export {
 export {
   SKETCH_PLANE_OFFSET,
   SKETCH_SNAP_DISTANCE,
+  SKETCH_SNAP_DISTANCE_PX,
   axisAlignedRectangleCorners2d,
   circleFromThreePoints2d,
   distanceBetweenPoints,

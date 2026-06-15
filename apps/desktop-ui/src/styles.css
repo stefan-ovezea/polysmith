@@ -672,10 +672,6 @@ button:not(:disabled),
   }
 
   .cad-viewport-canvas-drawing {
-    cursor: var(--cad-cursor-sketch);
-  }
-
-  .cad-viewport-canvas-drawing-guide {
     cursor: none;
   }
 
@@ -685,10 +681,6 @@ button:not(:disabled),
   }
 
   .cad-viewport-canvas-drawing:active {
-    cursor: var(--cad-cursor-sketch);
-  }
-
-  .cad-viewport-canvas-drawing-guide:active {
     cursor: none;
   }
 

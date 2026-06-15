@@ -36,7 +36,6 @@ import {
   frameCameraToSketchPlane,
   projectWorldPointToViewport,
   SKETCH_PLANE_OFFSET,
-  SKETCH_SNAP_DISTANCE,
   toWorldPoint,
   buildViewCubeGroup,
   createViewCubeScene,
@@ -84,6 +83,7 @@ import { finishViewCubePointerUp } from "./viewport/viewCubePointerUp";
 import {
   buildSketchSnapCandidates,
   resolveSnappedSketchPoint as resolveSnappedSketchPointFromContext,
+  type ResolveSnapOptions,
   type SketchSnapCandidate,
 } from "./viewport/snapResolution";
 import {
@@ -304,12 +304,28 @@ export function ViewportPanel({
     x: number;
     y: number;
   } | null>(null);
-  const [constraintPreview, setConstraintPreview] =
+  const [constraintPreview, setConstraintPreviewState] =
     useState<ConstraintPreviewState | null>(null);
-  const [crosshairPointer, setCrosshairPointer] = useState<{
+  const constraintPreviewRef = useRef<ConstraintPreviewState | null>(null);
+  function setConstraintPreview(preview: ConstraintPreviewState | null) {
+    if (constraintPreviewEquals(constraintPreviewRef.current, preview)) {
+      return;
+    }
+    constraintPreviewRef.current = preview;
+    setConstraintPreviewState(preview);
+  }
+  const [crosshairPointer, setCrosshairPointerState] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const crosshairPointerRef = useRef<{ x: number; y: number } | null>(null);
+  function setCrosshairPointer(point: { x: number; y: number } | null) {
+    if (screenPointEquals(crosshairPointerRef.current, point)) {
+      return;
+    }
+    crosshairPointerRef.current = point;
+    setCrosshairPointerState(point);
+  }
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
   // Whether the next drawable sketch entity will be flagged as
   // construction geometry. The core owns the resulting CAD state;
@@ -495,7 +511,12 @@ export function ViewportPanel({
     null,
   );
   const pendingMoveGizmoFrameRef = useRef<number | null>(null);
+  const pendingDraftPointerMoveEventRef = useRef<PointerEvent | null>(null);
+  const pendingDraftPointerMoveFrameRef = useRef<number | null>(null);
+  const objectSnapLatchRef = useRef<string | null>(null);
   const lastGeometryKeyRef = useRef("");
+  const lastSceneBuildKeyRef = useRef("");
+  const requestViewportRenderRef = useRef<(() => void) | null>(null);
   const selectPrimitiveRef = useRef(onSelectPrimitive);
   const selectReferenceRef = useRef(onSelectReference);
   const selectFaceRef = useRef(onSelectFace);
@@ -588,6 +609,7 @@ export function ViewportPanel({
     useRef<[number, number, number] | null>(null);
   const pendingAngleIsReflexRef = useRef(false);
   const pendingReflexAngleRef = useRef(0);
+  const worldUnitsPerPixelRef = useRef(1);
   const pendingRelationPlacementMatchRef =
     useRef<DimensionRelationPreview | null>(null);
   const pendingRelationPlacementRetryRef = useRef<number | null>(null);
@@ -1011,6 +1033,7 @@ export function ViewportPanel({
     paintSketchEntityMaterials();
     paintSketchPointMaterials();
     paintDofStatusColors();
+    requestViewportRenderRef.current?.();
   }, [activeTheme.id]);
 
   // Update constraint badge highlights whenever selection changes.
@@ -1034,6 +1057,7 @@ export function ViewportPanel({
         }
       }
     }
+    requestViewportRenderRef.current?.();
   }, [selectedConstraint]);
 
   const {
@@ -1075,6 +1099,14 @@ export function ViewportPanel({
     pendingDimensionIdRef.current = null;
     pendingDimSourceEntityIdRef.current = null;
     pendingDimensionPlacementRef.current = false;
+    // Clear the drag ref so a subsequent regroup into a two-entity
+    // dimension doesn't commit stale placement state from the old
+    // single-entity dimension.
+    dimensionLabelDragRef.current = null;
+    clearDimensionToolFirstPick();
+    if (controlsRef.current) {
+      controlsRef.current.enabled = true;
+    }
   }
 
   function setSketchDimensionObjectVisibility(
@@ -1125,6 +1157,7 @@ export function ViewportPanel({
       activeSketchPlaneFrameRef,
       pendingAngleIsReflexRef,
       pendingReflexAngleRef,
+      worldUnitsPerPixelRef,
       clearPreviewDimension,
       hideRelationPreviewDimension,
       readDimensionPreviewFilter,
@@ -1618,6 +1651,7 @@ export function ViewportPanel({
       world: [number, number, number];
     },
     draftStartLocal?: [number, number] | null,
+    options?: ResolveSnapOptions,
   ) {
     const localFilter: SelectionFilter = readStoredFilter();
     const effectiveFilter = altHeldRef.current
@@ -1628,18 +1662,22 @@ export function ViewportPanel({
         ? getOrthographicViewHeight(cameraRef.current) /
             Math.max(rendererRef.current.domElement.clientHeight, 1)
         : 1;
+    worldUnitsPerPixelRef.current = worldUnitsPerPixel;
     return resolveSnappedSketchPointFromContext({
       rawPoint,
       draftStartLocal,
       sketchSnapCandidates: sketchSnapCandidatesRef.current,
       sketchParameters: sketchLinesRef.current,
+      sketchConstraints: sketchConstraintsRef.current,
+      dynamicSnapsEnabled: options?.dynamicSnapsEnabled,
+      objectSnapLatchKey: options?.objectSnapLatchKey,
       filter: effectiveFilter,
       activeSketchPlaneId,
       activeSketchPlaneFrame,
       currentGridSpacing: currentGridSpacingRef.current,
       worldUnitsPerPixel,
       gridSnapScreenDistancePx: GRID_SNAP_SCREEN_DISTANCE_PX,
-      sketchSnapDistance: SKETCH_SNAP_DISTANCE,
+      sketchSnapDistance: effectiveFilter.tolerance_px * worldUnitsPerPixel,
       labels: {
         grid: translate("snap.grid"),
         axisLockHorizontal: translate("snap.axisLockHorizontal"),
@@ -1840,6 +1878,7 @@ export function ViewportPanel({
       pendingMoveGizmoParametersRef.current = null;
       if (next) {
         void moveGizmoChangeRef.current?.(next);
+        requestViewportRenderRef.current?.();
       }
     });
   }
@@ -1972,7 +2011,8 @@ export function ViewportPanel({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let pointerDown: { x: number; y: number } | null = null;
-    let frameId = 0;
+    let frameId: number | null = null;
+    let renderBurstUntil = 0;
 
     rendererRef.current = renderer;
     sceneRef.current = scene;
@@ -2010,6 +2050,7 @@ export function ViewportPanel({
     });
 
     configureViewportControls({ controls, canvas });
+    controls.addEventListener("change", requestRenderOnControlsChange);
 
     // -- view cube setup -------------------------------------------------
     const cubeGroup = buildViewCubeGroup();
@@ -2082,6 +2123,30 @@ export function ViewportPanel({
 
       sketchGroup.add(preview.group);
       draftDimGroupRef.current = preview.group;
+    }
+
+    function requestRender(burstMs = 0) {
+      if (burstMs > 0) {
+        renderBurstUntil = Math.max(renderBurstUntil, performance.now() + burstMs);
+      }
+      if (frameId !== null) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(renderScheduledFrame);
+    }
+
+    function renderScheduledFrame() {
+      frameId = null;
+      render();
+      if (viewCubeAnimatingRef.current || performance.now() < renderBurstUntil) {
+        requestRender();
+      }
+    }
+
+    requestViewportRenderRef.current = requestRender;
+
+    function requestRenderOnControlsChange() {
+      requestRender();
     }
 
     function render() {
@@ -2216,55 +2281,178 @@ export function ViewportPanel({
         edgeLineObjects: edgeLineObjectsRef.current,
         faceMeshes: faceMeshesRef.current,
         meshes: meshesRef.current,
+        tolerancePx: readStoredFilter().tolerance_px,
       });
     }
 
-	    function handlePointerDown(event: PointerEvent) {
-	      handleViewportPointerDown({
-	        event,
-	        renderer,
-	        camera,
-	        controls,
-	        raycaster,
-	        pointer,
-	        setSelectedConstraint,
-	        setContextMenu,
-	        lastPointerEventRef,
-	        setPointerDown: (point) => {
-	          pointerDown = point;
-	        },
-	        dimensionLabelDragRef,
-	        activeSketchToolRef,
-	        activeSketchPlaneIdRef,
-	        activeSketchPlaneFrameRef,
-	        lineDraftStartRef,
-	        lastPointerDownTimeRef,
-	        lastPointerDownPosRef,
-	        chainBreakRequestedRef,
-	        isPointerInCubeArea,
-	        viewCubeDraggingRef,
-	        viewCubeDragStartRef,
-	        moveGizmoRef,
-	        moveGizmoObjectsRef,
-	        moveGizmoDragRef,
-	        sketchLinesRef,
-	        endpointDragRef,
-	        selectionDragRef,
-	        intersectSceneTargets,
-	        displayedSketchDimensionsRef,
-	        suppressNextDimensionEditorOpenRef,
-	        setIsDimensionEditorOpen,
-	        selectSketchDimension: selectSketchDimensionRef.current,
-	        setAngleDimensionDragRadius,
-	        getDimensionPlacementAxis,
-	        draftStartedOnPointerDownRef,
-	        draftDimensionSessionRef,
-	        resolveSnappedSketchPoint,
-	        createDraftDimensionSession,
-	        setDraftDimensionSession,
-	        focusDraftField,
-	      });
-	    }
+    function hoverActions() {
+      return {
+        clearPreviewLine,
+        clearPreviewCircle,
+        clearPreviewArc,
+        clearPreviewDimension,
+        setSketchSnapLabel,
+        setConstraintPreview,
+        clearDraftDimensionSession,
+        setHoveredReference,
+        setHoveredPrimitive,
+        setHoveredFace,
+        setHoveredEdge,
+        setHoveredVertex,
+        setHoveredSketchProfile,
+        setHoveredSketchPoint,
+        setHoveredSketchEntity,
+      };
+    }
+
+    function updateCrosshairPointer(event: PointerEvent, inCube?: boolean) {
+      const canvasRect = renderer.domElement.getBoundingClientRect();
+      const pointerInCube =
+        inCube ??
+        isPointerInCubeArea(event, canvasRect, renderer.getPixelRatio());
+      if (
+        activeSketchPlaneIdRef.current &&
+        activeSketchToolRef.current !== "select" &&
+        activeSketchToolRef.current !== "project" &&
+        !pointerInCube
+      ) {
+        setCrosshairPointer({
+          x: event.clientX - canvasRect.left,
+          y: event.clientY - canvasRect.top,
+        });
+        return;
+      }
+      setCrosshairPointer(null);
+    }
+
+    function runActiveSketchPointerMove(event: PointerEvent) {
+      const currentActiveSketchPlaneId = activeSketchPlaneIdRef.current;
+      if (!currentActiveSketchPlaneId) {
+        return false;
+      }
+
+      handleActiveSketchPointerMove({
+        event,
+        renderer,
+        camera,
+        activeSketchPlaneId: currentActiveSketchPlaneId,
+        activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
+        activeSketchTool: activeSketchToolRef.current,
+        activeSketchPlaneFrameRef,
+        sceneDataRef,
+        trimPreviewLastSentRef,
+        hoverActions: hoverActions(),
+        intersectSceneTargets,
+        draftStartRef: lineDraftStartRef,
+        draftDimensionSessionRef,
+        objectSnapLatchRef,
+        resolveSnappedSketchPoint,
+        updateDraftSessionFromPoint,
+        setSketchSnapLabel,
+        setConstraintPreview,
+        setDraftCursorPoint: setCrosshairPointer,
+        sketchGroupRef,
+        arcToolMode: arcToolModeRef.current,
+        circleToolMode: circleToolModeRef.current,
+        rectangleToolMode: rectangleToolModeRef.current,
+        arcSecondPoint: arcSecondPointRef.current,
+        circleSecondPoint: circleSecondPointRef.current,
+        rectSecondPoint: rectSecondPointRef.current,
+        isConstruction: sketchToolConstructionRef.current,
+        previewLineRef,
+        previewCircleRef,
+        previewArcRef,
+        previewDimensionRef,
+        clearPreviewLine,
+        clearPreviewCircle,
+        clearPreviewArc,
+        clearPreviewDimension,
+        clearTrimSegmentHighlight,
+        clearTrimArcHighlight,
+        updateTrimSegmentHighlight,
+        updateTrimArcHighlight,
+      });
+      return true;
+    }
+
+    function requestDraftPointerMoveFrame(event: PointerEvent) {
+      pendingDraftPointerMoveEventRef.current = event;
+      if (pendingDraftPointerMoveFrameRef.current !== null) {
+        return;
+      }
+
+      pendingDraftPointerMoveFrameRef.current = window.requestAnimationFrame(() => {
+        pendingDraftPointerMoveFrameRef.current = null;
+        const nextEvent = pendingDraftPointerMoveEventRef.current;
+        pendingDraftPointerMoveEventRef.current = null;
+        if (
+          !nextEvent ||
+          !activeSketchPlaneIdRef.current ||
+          !isDrawableSketchTool(activeSketchToolRef.current)
+        ) {
+          return;
+        }
+        runActiveSketchPointerMove(nextEvent);
+        requestRender();
+      });
+    }
+
+    function cancelPendingDraftPointerMoveFrame() {
+      pendingDraftPointerMoveEventRef.current = null;
+      if (pendingDraftPointerMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingDraftPointerMoveFrameRef.current);
+        pendingDraftPointerMoveFrameRef.current = null;
+      }
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      cancelPendingDraftPointerMoveFrame();
+      objectSnapLatchRef.current = null;
+      handleViewportPointerDown({
+        event,
+        renderer,
+        camera,
+        controls,
+        raycaster,
+        pointer,
+        setSelectedConstraint,
+        setContextMenu,
+        lastPointerEventRef,
+        setPointerDown: (point) => {
+          pointerDown = point;
+        },
+        dimensionLabelDragRef,
+        activeSketchToolRef,
+        activeSketchPlaneIdRef,
+        activeSketchPlaneFrameRef,
+        lineDraftStartRef,
+        lastPointerDownTimeRef,
+        lastPointerDownPosRef,
+        chainBreakRequestedRef,
+        isPointerInCubeArea,
+        viewCubeDraggingRef,
+        viewCubeDragStartRef,
+        moveGizmoRef,
+        moveGizmoObjectsRef,
+        moveGizmoDragRef,
+        sketchLinesRef,
+        endpointDragRef,
+        selectionDragRef,
+        intersectSceneTargets,
+        displayedSketchDimensionsRef,
+        suppressNextDimensionEditorOpenRef,
+        setIsDimensionEditorOpen,
+        selectSketchDimension: selectSketchDimensionRef.current,
+        setAngleDimensionDragRadius,
+        getDimensionPlacementAxis,
+        draftStartedOnPointerDownRef,
+        draftDimensionSessionRef,
+        resolveSnappedSketchPoint,
+        createDraftDimensionSession,
+        setDraftDimensionSession,
+        focusDraftField,
+      });
+    }
 
     function handlePointerMove(event: PointerEvent) {
 
@@ -2283,19 +2471,6 @@ export function ViewportPanel({
       const cubeDpr = renderer.getPixelRatio();
       const cubeCanvasRect = renderer.domElement.getBoundingClientRect();
       const inCube = isPointerInCubeArea(event, cubeCanvasRect, cubeDpr);
-      if (
-        activeSketchPlaneIdRef.current &&
-        activeSketchToolRef.current !== "select" &&
-        activeSketchToolRef.current !== "project" &&
-        !inCube
-      ) {
-        setCrosshairPointer({
-          x: event.clientX - cubeCanvasRect.left,
-          y: event.clientY - cubeCanvasRect.top,
-        });
-      } else {
-        setCrosshairPointer(null);
-      }
 
       if (
         handleViewCubeDragPointerMove({
@@ -2371,77 +2546,33 @@ export function ViewportPanel({
           resolveSnappedSketchPoint,
           setSketchSnapLabel,
           clearDragPreviewLines,
+          requestRender,
         })
       ) {
         return;
       }
 
-      const hoverActions = {
-        clearPreviewLine,
-        clearPreviewCircle,
-        clearPreviewArc,
-        clearPreviewDimension,
-        setSketchSnapLabel,
-        setConstraintPreview,
-        clearDraftDimensionSession,
-        setHoveredReference,
-        setHoveredPrimitive,
-        setHoveredFace,
-        setHoveredEdge,
-        setHoveredVertex,
-        setHoveredSketchProfile,
-        setHoveredSketchPoint,
-        setHoveredSketchEntity,
-      };
-
-	      if (activeSketchPlaneId) {
-	        handleActiveSketchPointerMove({
-	          event,
-	          renderer,
-	          camera,
-	          activeSketchPlaneId,
-	          activeSketchPlaneFrame,
-	          activeSketchTool: activeSketchToolRef.current,
-	          activeSketchPlaneFrameRef,
-	          sceneDataRef,
-	          trimPreviewLastSentRef,
-	          hoverActions,
-	          intersectSceneTargets,
-	          draftStartRef: lineDraftStartRef,
-	          draftDimensionSessionRef,
-	          resolveSnappedSketchPoint,
-	          updateDraftSessionFromPoint,
-	          setSketchSnapLabel,
-	          setConstraintPreview,
-	          sketchGroupRef,
-	          arcToolMode: arcToolModeRef.current,
-	          circleToolMode: circleToolModeRef.current,
-	          rectangleToolMode: rectangleToolModeRef.current,
-	          arcSecondPoint: arcSecondPointRef.current,
-	          circleSecondPoint: circleSecondPointRef.current,
-	          rectSecondPoint: rectSecondPointRef.current,
-	          isConstruction: sketchToolConstructionRef.current,
-	          previewLineRef,
-	          previewCircleRef,
-	          previewArcRef,
-	          previewDimensionRef,
-	          clearPreviewLine,
-	          clearPreviewCircle,
-	          clearPreviewArc,
-	          clearPreviewDimension,
-	          clearTrimSegmentHighlight,
-	          clearTrimArcHighlight,
-	          updateTrimSegmentHighlight,
-	          updateTrimArcHighlight,
-	        });
-	        return;
-	      }
+      if (activeSketchPlaneIdRef.current) {
+        if (isDrawableSketchTool(activeSketchToolRef.current)) {
+          if (!objectSnapLatchRef.current) {
+            updateCrosshairPointer(event, inCube);
+          }
+          requestDraftPointerMoveFrame(event);
+          return;
+        }
+        updateCrosshairPointer(event, inCube);
+        if (runActiveSketchPointerMove(event)) {
+          return;
+        }
+      }
 
       const hit = intersectSceneTargets(event);
-      applySceneHover(hit, hoverActions);
+      applySceneHover(hit, hoverActions());
     }
 
     function handlePointerLeave() {
+      cancelPendingDraftPointerMoveFrame();
+      objectSnapLatchRef.current = null;
       pointerDown = null;
       if (moveGizmoDragRef.current) {
         moveGizmoDragRef.current = null;
@@ -2483,7 +2614,11 @@ export function ViewportPanel({
           pointerDown = null;
           return "consumed" as const;
         }
-        finishDimensionPlacement();
+        // Defer placement commit until after entity handling so
+        // two-pick dimension workflows (angle, distance) can regroup
+        // into a two-entity dimension before the old single-entity
+        // placement is committed.  The regroup calls
+        // clearPendingDimensionPlacement which cleans up the drag ref.
         setIsDimensionEditorOpen(false);
         // Fall through to entity handling so two-pick workflows
         // (angle, distance) can process the second click.
@@ -2501,6 +2636,11 @@ export function ViewportPanel({
 
       dimensionLabelDragRef.current = null;
       controls.enabled = true;
+      // Clear the dimension tool's staged first-pick so the next
+      // entity click starts a fresh dimension instead of leaking
+      // a stale two-pick workflow (e.g. "Angle dimension already
+      // exists" when the user only wants a line length dimension).
+      clearDimensionToolFirstPick();
       (renderer.domElement as HTMLCanvasElement).style.cursor = "";
       pointerDown = null;
       if (!dimensionDrag.hasMoved) {
@@ -2563,67 +2703,69 @@ export function ViewportPanel({
       });
     }
 
-	    function handlePointerUp(event: PointerEvent) {
-	      handleViewportPointerUp({
-	        event,
-	        renderer,
-	        camera,
-	        controls,
-	        activeSketchPlaneId,
-	        activeSketchPlaneFrame,
-	        pointerDown,
-	        setPointerDown: (point) => {
-	          pointerDown = point;
-	        },
-	        lastPointerEventRef,
-	        selectionDragRef,
-	        setSelectionRect,
-	        performRectangleSelect,
-	        moveGizmoDragRef,
-	        finishDimensionLabelDragPointerUp,
-	        finishEndpointDragPointerUp: finishEndpointDragPointerUpFromViewport,
-	        finishViewCubePointerUp: finishViewCubePointerUpFromViewport,
-	        draftStartedOnPointerDownRef,
-	        draftDimensionSessionRef,
-	        draftDimensionInputRefs,
-	        intersectSceneTargets,
-	        activeSketchToolRef,
-	        activeSketchPlaneFrameRef,
-	        sketchLinesRef,
-	        armedSketchConstraintRef,
-	        mirrorFocusedSlotRef,
-	        inactiveSketchEntityPickEnabledRef,
-	        sketchEntityObjectByIdRef,
-	        sketchPointObjectsRef,
-	        resolveSnappedSketchPoint,
-	        setSketchSnapLabel,
-	        selectSketchProfile: selectSketchProfileRef.current,
-	        selectVertex: selectVertexRef.current,
-	        selectEdge: selectEdgeRef.current,
-	        selectFace: selectFaceRef.current,
-	        trimSketchEntity: trimSketchEntityRef.current,
-	        mirrorEntityPick: mirrorEntityPickRef.current,
-	        selectSketchEntity: selectSketchEntityRef.current,
-	        pickSketchPoint: pickSketchPointRef.current,
-	        handleDimensionClick,
-	        setSelectedConstraint,
-	        paintSketchEntityMaterials,
-	        paintSketchPointMaterials,
-	        addMessage,
-	        addSketchFillet: addSketchFilletRef.current,
-	        pendingDimensionPlacement: pendingDimensionPlacementRef.current,
-	        pendingDimensionSourceId: pendingDimSourceEntityIdRef.current,
-	        pendingDimensionId: pendingDimensionIdRef.current,
-	        getDimensionFirstEntityId: () => dimensionToolFirstLineRef.current,
-	        getDimensionFirstPoint: () => dimensionToolFirstPointRef.current,
-	        clearDimensionFirstPick: clearDimensionToolFirstPick,
-	        clearDimensionFirstEntity: clearDimensionToolFirstEntity,
-	        clearPendingDimensionPlacement,
-	        stageDimensionFirstEntity: (entityId) => {
-	          dimensionToolFirstLineRef.current = entityId;
-	          setDimensionToolFirstLine(entityId);
-	        },
-	        stageDimensionFirstPoint: (point) => {
+    function handlePointerUp(event: PointerEvent) {
+      cancelPendingDraftPointerMoveFrame();
+      objectSnapLatchRef.current = null;
+      handleViewportPointerUp({
+        event,
+        renderer,
+        camera,
+        controls,
+        activeSketchPlaneId,
+        activeSketchPlaneFrame,
+        pointerDown,
+        setPointerDown: (point) => {
+          pointerDown = point;
+        },
+        lastPointerEventRef,
+        selectionDragRef,
+        setSelectionRect,
+        performRectangleSelect,
+        moveGizmoDragRef,
+        finishDimensionLabelDragPointerUp,
+        finishEndpointDragPointerUp: finishEndpointDragPointerUpFromViewport,
+        finishViewCubePointerUp: finishViewCubePointerUpFromViewport,
+        draftStartedOnPointerDownRef,
+        draftDimensionSessionRef,
+        draftDimensionInputRefs,
+        intersectSceneTargets,
+        activeSketchToolRef,
+        activeSketchPlaneFrameRef,
+        sketchLinesRef,
+        armedSketchConstraintRef,
+        mirrorFocusedSlotRef,
+        inactiveSketchEntityPickEnabledRef,
+        sketchEntityObjectByIdRef,
+        sketchPointObjectsRef,
+        resolveSnappedSketchPoint,
+        setSketchSnapLabel,
+        selectSketchProfile: selectSketchProfileRef.current,
+        selectVertex: selectVertexRef.current,
+        selectEdge: selectEdgeRef.current,
+        selectFace: selectFaceRef.current,
+        trimSketchEntity: trimSketchEntityRef.current,
+        mirrorEntityPick: mirrorEntityPickRef.current,
+        selectSketchEntity: selectSketchEntityRef.current,
+        pickSketchPoint: pickSketchPointRef.current,
+        handleDimensionClick,
+        setSelectedConstraint,
+        paintSketchEntityMaterials,
+        paintSketchPointMaterials,
+        addMessage,
+        addSketchFillet: addSketchFilletRef.current,
+        pendingDimensionPlacement: pendingDimensionPlacementRef.current,
+        pendingDimensionSourceId: pendingDimSourceEntityIdRef.current,
+        pendingDimensionId: pendingDimensionIdRef.current,
+        getDimensionFirstEntityId: () => dimensionToolFirstLineRef.current,
+        getDimensionFirstPoint: () => dimensionToolFirstPointRef.current,
+        clearDimensionFirstPick: clearDimensionToolFirstPick,
+        clearDimensionFirstEntity: clearDimensionToolFirstEntity,
+        clearPendingDimensionPlacement,
+        stageDimensionFirstEntity: (entityId) => {
+          dimensionToolFirstLineRef.current = entityId;
+          setDimensionToolFirstLine(entityId);
+        },
+        stageDimensionFirstPoint: (point) => {
 	          dimensionToolFirstPointRef.current = point;
 	        },
 	        deleteSketchDimension: (dimensionId) => {
@@ -2710,7 +2852,7 @@ export function ViewportPanel({
 
     const resizeObserver = new ResizeObserver(() => {
       resizeRenderer();
-      render();
+      requestRender();
     });
 
     resizeObserver.observe(host);
@@ -2735,13 +2877,6 @@ export function ViewportPanel({
       void startSketchOnFaceRef.current(solidFace.faceId, solidFace.planeFrame);
     }
 
-    renderer.domElement.addEventListener("pointerdown", handlePointerDown);
-    renderer.domElement.addEventListener("pointermove", handlePointerMove);
-    renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
-    renderer.domElement.addEventListener("pointerup", handlePointerUp);
-    renderer.domElement.addEventListener("contextmenu", handleContextMenu);
-    renderer.domElement.addEventListener("dblclick", handleDoubleClick);
-    renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
     const onTrimPreview = (e: Event) => {
       trimPreviewResultRef.current = (e as CustomEvent).detail;
       // Render the highlight immediately from the core's data.
@@ -2755,37 +2890,71 @@ export function ViewportPanel({
           updateTrimArcHighlight,
         },
       });
+      requestRender();
     };
     window.addEventListener("polysmith-trim-preview", onTrimPreview);
 
     resizeRenderer();
+    requestRender();
 
-    const animate = () => {
-      render();
-      frameId = window.requestAnimationFrame(animate);
+    const onPointerDown = (event: PointerEvent) => {
+      handlePointerDown(event);
+      requestRender();
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      handlePointerMove(event);
+      requestRender(viewCubeDraggingRef.current ? 100 : 0);
+    };
+    const onPointerLeave = () => {
+      handlePointerLeave();
+      requestRender();
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      handlePointerUp(event);
+      requestRender(viewCubeAnimatingRef.current ? 320 : 0);
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      handleContextMenu(event);
+      requestRender();
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      handleDoubleClick(event);
+      requestRender();
+    };
+    const onWheel = (event: WheelEvent) => {
+      handleWheel(event);
+      requestRender();
     };
 
-    frameId = window.requestAnimationFrame(animate);
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerleave", onPointerLeave);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("contextmenu", onContextMenu);
+    renderer.domElement.addEventListener("dblclick", onDoubleClick);
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       onSnapshotCaptureReady?.(null);
-      window.cancelAnimationFrame(frameId);
+      requestViewportRenderRef.current = null;
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
       if (pendingMoveGizmoFrameRef.current !== null) {
         window.cancelAnimationFrame(pendingMoveGizmoFrameRef.current);
         pendingMoveGizmoFrameRef.current = null;
       }
       pendingMoveGizmoParametersRef.current = null;
+      cancelPendingDraftPointerMoveFrame();
       resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
-      renderer.domElement.removeEventListener("pointermove", handlePointerMove);
-      renderer.domElement.removeEventListener(
-        "pointerleave",
-        handlePointerLeave,
-      );
-      renderer.domElement.removeEventListener("pointerup", handlePointerUp);
-      renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
-      renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
-      renderer.domElement.removeEventListener("wheel", handleWheel);
+      controls.removeEventListener("change", requestRenderOnControlsChange);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("contextmenu", onContextMenu);
+      renderer.domElement.removeEventListener("dblclick", onDoubleClick);
+      renderer.domElement.removeEventListener("wheel", onWheel);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
       clearDragPreviewLines();
       controls.dispose();
@@ -2825,6 +2994,7 @@ export function ViewportPanel({
       sketchGridRef.current = null;
       lineDraftStartRef.current = null;
       lastGeometryKeyRef.current = "";
+      lastSceneBuildKeyRef.current = "";
     };
   }, [activeSketchPlaneId]);
 
@@ -2847,6 +3017,7 @@ export function ViewportPanel({
         sketchConstraintObjects: sketchConstraintObjectsRef,
         dragCursor: dragCursorRef,
         lastGeometryKey: lastGeometryKeyRef,
+        lastSceneBuildKey: lastSceneBuildKeyRef,
         hoveredEdgeId: hoveredEdgeIdRef,
         hoveredVertexId: hoveredVertexIdRef,
         hoveredSketchEntityId: hoveredSketchEntityIdRef,
@@ -2895,6 +3066,7 @@ export function ViewportPanel({
       paintSketchPointMaterials,
       paintDofStatusColors,
     });
+    requestViewportRenderRef.current?.();
   }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation]);
 
   useEffect(() => {
@@ -3220,4 +3392,30 @@ export function ViewportPanel({
       }}
     />
   );
+}
+
+function constraintPreviewEquals(
+  a: ConstraintPreviewState | null,
+  b: ConstraintPreviewState | null,
+) {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return a.kind === b.kind && a.x === b.x && a.y === b.y;
+}
+
+function screenPointEquals(
+  a: { x: number; y: number } | null,
+  b: { x: number; y: number } | null,
+) {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return a.x === b.x && a.y === b.y;
 }

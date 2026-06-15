@@ -30,11 +30,10 @@ export function computeViewportCrosshairState({
   const crosshairGuideSize =
     crosshairMode === "infinite"
       ? Math.max(viewportSize.width, viewportSize.height) * 2
-      : viewportSize.height * (CROSSHAIR_SIZE_FACTORS[crosshairMode] ?? 0);
+      : viewportSize.height * (CROSSHAIR_SIZE_FACTORS[crosshairMode] ?? 0) || 18;
   const crosshairCanvasClass = isSketchDrawingCursor
     ? [
         "cad-viewport-canvas-drawing",
-        usesCrosshairGuide ? "cad-viewport-canvas-drawing-guide" : "",
       ]
         .filter(Boolean)
         .join(" ")

@@ -21,7 +21,7 @@ export const defaultSelectionFilter: SelectionFilter = {
   snap_polar: true,
   polar_angle_degrees: 15,
   magnetic_pull: true,
-  tolerance_px: 10,
+  tolerance_px: 20,
 };
 
 export function readStoredFilter(): SelectionFilter {

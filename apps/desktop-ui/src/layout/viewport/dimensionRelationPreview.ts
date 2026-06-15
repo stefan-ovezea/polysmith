@@ -20,6 +20,7 @@ interface PreviewBuildContext {
   cursor: [number, number];
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
+  worldUnitsPerPixel: number;
 }
 
 interface AnglePreviewState {
@@ -83,6 +84,7 @@ export function buildDimensionRelationPreview({
   cursor,
   planeId,
   planeFrame,
+  worldUnitsPerPixel,
 }: PreviewBuildContext): DimensionRelationPreviewResult | null {
   if (!firstEntityId || !sketchParameters || activeSketchTool !== "dimension") {
     return null;
@@ -102,6 +104,7 @@ export function buildDimensionRelationPreview({
       planeId,
       planeFrame,
       allowConstruction,
+      worldUnitsPerPixel,
     }) ??
     buildCircleDimensionRelationPreview({
       firstEntityId,
@@ -111,6 +114,7 @@ export function buildDimensionRelationPreview({
       planeId,
       planeFrame,
       allowConstruction,
+      worldUnitsPerPixel,
     })
   );
 }

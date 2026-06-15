@@ -5,6 +5,7 @@ import type { ViewportPickHit } from "./contextMenuState";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import { sketchEntitySelectionHitFromIntersection } from "./sketchClickSelection";
 import { pickSketchProfileId } from "./sketchProfilePicking";
+import { getOrthographicViewHeight } from "./grid";
 
 export function pickVisibleSketchLineScreenSpace({
   event,
@@ -83,6 +84,7 @@ export function intersectViewportSceneTargets({
   edgeLineObjects,
   faceMeshes,
   meshes,
+  tolerancePx = 20,
 }: {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
@@ -104,10 +106,19 @@ export function intersectViewportSceneTargets({
   edgeLineObjects: THREE.Line[];
   faceMeshes: THREE.Mesh[];
   meshes: THREE.Mesh[];
+  tolerancePx?: number;
 }): ViewportPickHit | null {
   setPointerNdcFromEvent(pointer, event, renderer);
   raycaster.setFromCamera(pointer, camera);
-  raycaster.params.Line = { threshold: 1.75 };
+
+  const worldUnitsPerPixel =
+    getOrthographicViewHeight(camera) /
+    Math.max(renderer.domElement.clientHeight, 1);
+
+  // Zoom-aware line picking threshold matching user-configured snap tolerance.
+  raycaster.params.Line = {
+    threshold: Math.max(0.75, tolerancePx * worldUnitsPerPixel),
+  };
 
   const pickProfile = () =>
     pickSketchProfileId({
@@ -126,6 +137,8 @@ export function intersectViewportSceneTargets({
       sketchDimensionObjects,
       sketchConstraintObjects,
       pickProfile,
+      worldUnitsPerPixel,
+      tolerancePx,
     });
     if (activeSketchHit) {
       return activeSketchHit;
@@ -196,6 +209,8 @@ function pickActiveSketchTarget({
   sketchDimensionObjects,
   sketchConstraintObjects,
   pickProfile,
+  worldUnitsPerPixel,
+  tolerancePx,
 }: {
   activeSketchTool: SketchTool;
   armedSketchConstraintKind: ConstraintType | null;
@@ -205,14 +220,24 @@ function pickActiveSketchTarget({
   sketchDimensionObjects: THREE.Object3D[];
   sketchConstraintObjects: THREE.Object3D[];
   pickProfile: () => string | null;
+  worldUnitsPerPixel: number;
+  tolerancePx: number;
 }): ViewportPickHit | null {
   const checkDimensionsLast = activeSketchTool === "dimension";
 
   if (checkDimensionsLast) {
+    // Use sphere-based point picking so the dimension tool reliably
+    // detects sketch points even when the raycaster misses the tiny
+    // point mesh (common at moderate zoom levels).  Without this,
+    // the raycaster hits the line entity instead → entity_distance
+    // routing → angle-dimension error for unrelated lines.
     const preDimensionHit = pickSketchPointOrEntity({
       raycaster,
       sketchPointObjects,
       sketchEntityObjects,
+      useSpherePointPicking: true,
+      worldUnitsPerPixel,
+      tolerancePx,
     });
     if (preDimensionHit) {
       return preDimensionHit;
@@ -237,6 +262,8 @@ function pickActiveSketchTarget({
       sketchPointObjects,
       sketchEntityObjects,
       useSpherePointPicking: true,
+      worldUnitsPerPixel,
+      tolerancePx,
     });
     if (pointOrEntityHit) {
       return pointOrEntityHit;
@@ -252,14 +279,18 @@ function pickSketchPointOrEntity({
   sketchPointObjects,
   sketchEntityObjects,
   useSpherePointPicking = false,
+  worldUnitsPerPixel,
+  tolerancePx,
 }: {
   raycaster: THREE.Raycaster;
   sketchPointObjects: THREE.Mesh[];
   sketchEntityObjects: (THREE.Line | THREE.LineLoop)[];
   useSpherePointPicking?: boolean;
+  worldUnitsPerPixel: number;
+  tolerancePx: number;
 }): ViewportPickHit | null {
   if (useSpherePointPicking) {
-    const pointHit = pickSketchPointByRayDistance(raycaster, sketchPointObjects);
+    const pointHit = pickSketchPointByRayDistance(raycaster, sketchPointObjects, worldUnitsPerPixel, tolerancePx);
     if (pointHit) {
       return pointHit;
     }
@@ -338,8 +369,11 @@ function pickSketchConstraint(
 function pickSketchPointByRayDistance(
   raycaster: THREE.Raycaster,
   sketchPointObjects: THREE.Mesh[],
+  worldUnitsPerPixel: number,
+  tolerancePx: number,
 ): ViewportPickHit | null {
-  const pickRadius = 1.8;
+  // Match the user-configured snap tolerance, zoom-aware.
+  const pickRadius = Math.max(1.0, tolerancePx * worldUnitsPerPixel);
   const rayOrigin = raycaster.ray.origin;
   const rayDirection = raycaster.ray.direction;
   let bestPointDistance = pickRadius;

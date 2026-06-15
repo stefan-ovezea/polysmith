@@ -10,6 +10,7 @@ import {
   isDraftDimensionTool,
   type DraftDimensionSession,
 } from "./draftDimensions";
+import type { ResolveSnapOptions } from "./snapResolution";
 
 export interface MutableRef<T> {
   current: T;
@@ -30,10 +31,13 @@ export interface DraftPointerMoveParams {
       world: [number, number, number];
     },
     draftStartLocal?: [number, number] | null,
+    options?: ResolveSnapOptions,
   ) => SketchPreviewPoint;
+  objectSnapLatchRef: MutableRef<string | null>;
   updateDraftSessionFromPoint: (point: [number, number]) => void;
   setSketchSnapLabel: (label: string | null) => void;
   setConstraintPreview: (preview: ConstraintPreviewState | null) => void;
+  setDraftCursorPoint: (point: { x: number; y: number } | null) => void;
 }
 
 export interface DraftPointerMoveState {
@@ -52,9 +56,11 @@ export function resolveDraftPointerMove({
   draftStartRef,
   draftDimensionSessionRef,
   resolveSnappedSketchPoint,
+  objectSnapLatchRef,
   updateDraftSessionFromPoint,
   setSketchSnapLabel,
   setConstraintPreview,
+  setDraftCursorPoint,
 }: DraftPointerMoveParams): DraftPointerMoveState | null {
   const draftStart = draftStartRef.current;
   const rawPoint = resolveSketchPlanePoint(
@@ -68,7 +74,13 @@ export function resolveDraftPointerMove({
     return null;
   }
 
-  const sketchPoint = resolveSnappedSketchPoint(rawPoint, draftStart);
+  const sketchPoint = resolveSnappedSketchPoint(rawPoint, draftStart, {
+    objectSnapLatchKey: objectSnapLatchRef.current,
+  });
+  objectSnapLatchRef.current =
+    sketchPoint.snapFeedbackSource === "object"
+      ? (sketchPoint.snapTargetKey ?? null)
+      : null;
   setSketchSnapLabel(sketchPoint.snapLabel);
 
   if (isDraftDimensionTool(activeSketchTool) && draftDimensionSessionRef.current) {
@@ -76,11 +88,22 @@ export function resolveDraftPointerMove({
   }
 
   const canvasRect = renderer.domElement.getBoundingClientRect();
+  const rawCanvasPoint = {
+    x: event.clientX - canvasRect.left,
+    y: event.clientY - canvasRect.top,
+  };
+  const feedbackPoint = snapFeedbackCanvasPoint({
+    sketchPoint,
+    rawCanvasPoint,
+    camera,
+    renderer,
+  });
+  setDraftCursorPoint(feedbackPoint);
   setConstraintPreview(
     constraintPreviewFromSnap(
       sketchPoint,
-      event.clientX - canvasRect.left,
-      event.clientY - canvasRect.top,
+      feedbackPoint.x,
+      feedbackPoint.y,
     ),
   );
 
@@ -91,5 +114,42 @@ export function resolveDraftPointerMove({
       isDraftDimensionTool(activeSketchTool) && draftDimensionSessionRef.current
         ? draftDimensionSessionRef.current.current
         : sketchPoint.local,
+  };
+}
+
+function snapFeedbackCanvasPoint({
+  sketchPoint,
+  rawCanvasPoint,
+  camera,
+  renderer,
+}: {
+  sketchPoint: SketchPreviewPoint;
+  rawCanvasPoint: { x: number; y: number };
+  camera: THREE.Camera;
+  renderer: THREE.WebGLRenderer;
+}) {
+  if (sketchPoint.snapFeedbackSource !== "object") {
+    return rawCanvasPoint;
+  }
+  return (
+    projectWorldPointToCanvas(sketchPoint.world, camera, renderer) ??
+    rawCanvasPoint
+  );
+}
+
+function projectWorldPointToCanvas(
+  point: [number, number, number],
+  camera: THREE.Camera,
+  renderer: THREE.WebGLRenderer,
+) {
+  const projected = new THREE.Vector3(...point).project(camera);
+  if (projected.z < -1 || projected.z > 1) {
+    return null;
+  }
+  const widthHalf = renderer.domElement.clientWidth / 2;
+  const heightHalf = renderer.domElement.clientHeight / 2;
+  return {
+    x: projected.x * widthHalf + widthHalf,
+    y: -projected.y * heightHalf + heightHalf,
   };
 }

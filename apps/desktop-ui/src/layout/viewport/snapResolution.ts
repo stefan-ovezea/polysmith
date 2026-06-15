@@ -35,6 +35,11 @@ export interface RawSketchPoint {
   world: [number, number, number];
 }
 
+export interface ResolveSnapOptions {
+  dynamicSnapsEnabled?: boolean;
+  objectSnapLatchKey?: string | null;
+}
+
 type TranslateSnapLabel = (
   key: string,
   options?: Record<string, string>,
@@ -45,6 +50,9 @@ export function resolveSnappedSketchPoint({
   draftStartLocal,
   sketchSnapCandidates,
   sketchParameters,
+  sketchConstraints,
+  dynamicSnapsEnabled = true,
+  objectSnapLatchKey = null,
   filter,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
@@ -58,6 +66,9 @@ export function resolveSnappedSketchPoint({
   draftStartLocal?: [number, number] | null;
   sketchSnapCandidates: readonly SketchSnapCandidate[];
   sketchParameters: SketchFeatureParameters | null | undefined;
+  sketchConstraints?: SketchConstraintData[];
+  dynamicSnapsEnabled?: boolean;
+  objectSnapLatchKey?: string | null;
   filter: SelectionFilter;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -86,26 +97,37 @@ export function resolveSnappedSketchPoint({
     activeSketchPlaneFrame,
   });
   const point = gridResult.point;
+  const staticSnap = resolveStaticSnap({
+    candidates: sketchSnapCandidates,
+    point,
+    filter,
+    sketchSnapDistance,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame,
+    includeEndpointMetadata: true,
+    objectSnapLatchKey,
+  });
+  const prioritySnap = priorityStaticSnapPoint(staticSnap);
+  if (prioritySnap) {
+    return prioritySnap;
+  }
+
   const resolvedSnap = chooseResolvedSnap({
-    staticSnap: resolveStaticSnap({
-      candidates: sketchSnapCandidates,
-      point,
-      filter,
-      sketchSnapDistance,
-      activeSketchPlaneId,
-      activeSketchPlaneFrame,
-      includeEndpointMetadata: true,
-    }),
-    dynamicSnap: resolveDynamicSnap({
-      sketchParameters,
-      draftStartLocal,
-      point,
-      filter,
-      sketchSnapDistance,
-      labels,
-      activeSketchPlaneId,
-      activeSketchPlaneFrame,
-    }),
+    staticSnap,
+    dynamicSnap: dynamicSnapsEnabled
+      ? resolveDynamicSnap({
+          sketchParameters,
+          sketchConstraints,
+          draftStartLocal,
+          point,
+          filter,
+          sketchSnapDistance,
+          labels,
+          activeSketchPlaneId,
+          activeSketchPlaneFrame,
+          objectSnapLatchKey,
+        })
+      : null,
   });
   return resolvedSnap ?? unsnappedPreviewPoint(point, gridResult.snapped ? labels.grid : null);
 }
@@ -202,6 +224,7 @@ function resolveStaticSnap({
   activeSketchPlaneId,
   activeSketchPlaneFrame,
   includeEndpointMetadata,
+  objectSnapLatchKey,
 }: {
   candidates: readonly SketchSnapCandidate[];
   point: RawSketchPoint;
@@ -210,7 +233,25 @@ function resolveStaticSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   includeEndpointMetadata: boolean;
+  objectSnapLatchKey?: string | null;
 }): ResolvedStaticSnap | null {
+  const latched = objectSnapLatchKey
+    ? staticSnapCandidateByKey(candidates, objectSnapLatchKey)
+    : null;
+  if (
+    latched &&
+    isStaticSnapCandidateAllowed(latched, filter) &&
+    distanceBetweenPoints(point.local, latched.local) <= sketchSnapDistance
+  ) {
+    return resolvedStaticSnapFromCandidate({
+      candidate: latched,
+      point,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame,
+      includeEndpointMetadata,
+    });
+  }
+
   const closest = closestStaticSnapCandidate(
     candidates,
     point.local,
@@ -220,19 +261,41 @@ function resolveStaticSnap({
   if (!closest || closest.distance > sketchSnapDistance) {
     return null;
   }
+  return resolvedStaticSnapFromCandidate({
+    candidate: closest.candidate,
+    point,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame,
+    includeEndpointMetadata,
+  });
+}
+
+function resolvedStaticSnapFromCandidate({
+  candidate,
+  point,
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  includeEndpointMetadata,
+}: {
+  candidate: SketchSnapCandidate;
+  point: RawSketchPoint;
+  activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
+  includeEndpointMetadata: boolean;
+}): ResolvedStaticSnap {
   return {
     point: previewPointFromStaticCandidate({
-      candidate: closest.candidate,
+      candidate,
       world: sketchLocalToWorld(
         activeSketchPlaneId,
-        closest.candidate.local,
+        candidate.local,
         activeSketchPlaneFrame,
       ),
       includeEndpointMetadata:
-        includeEndpointMetadata && isPriorityStaticSnap(closest.candidate),
+        includeEndpointMetadata && isPriorityStaticSnap(candidate),
     }),
-    distance: closest.distance,
-    isPriority: isPriorityStaticSnap(closest.candidate),
+    distance: distanceBetweenPoints(point.local, candidate.local),
+    isPriority: isPriorityStaticSnap(candidate),
   };
 }
 
@@ -247,6 +310,7 @@ type ResolvedDynamicSnap = {
 
 function resolveDynamicSnap({
   sketchParameters,
+  sketchConstraints,
   draftStartLocal,
   point,
   filter,
@@ -254,8 +318,10 @@ function resolveDynamicSnap({
   labels,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
+  objectSnapLatchKey,
 }: {
   sketchParameters: SketchFeatureParameters | null | undefined;
+  sketchConstraints?: SketchConstraintData[];
   draftStartLocal?: [number, number] | null;
   point: RawSketchPoint;
   filter: SelectionFilter;
@@ -271,8 +337,9 @@ function resolveDynamicSnap({
   };
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
+  objectSnapLatchKey?: string | null;
 }): ResolvedDynamicSnap | null {
-  if (!sketchParameters) {
+  if (!sketchParameters || !hasEnabledDynamicSnap(filter, draftStartLocal)) {
     return null;
   }
   const bestDynamic = dynamicSnapCandidate({
@@ -285,6 +352,8 @@ function resolveDynamicSnap({
     parallelAngleThresholdRadians: 8 * Math.PI / 180,
     labels,
     sketchParameters,
+    constraints: sketchConstraints,
+    objectSnapLatchKey,
   });
   if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
     return null;
@@ -297,6 +366,23 @@ function resolveDynamicSnap({
     }),
     distance: bestDynamic.distance,
   };
+}
+
+function hasEnabledDynamicSnap(
+  filter: SelectionFilter,
+  draftStartLocal?: [number, number] | null,
+) {
+  return (
+    filter.snap_nearest ||
+    filter.snap_intersection ||
+    Boolean(
+      draftStartLocal &&
+        (filter.snap_polar ||
+          filter.snap_tangent ||
+          filter.snap_perpendicular ||
+          filter.snap_parallel),
+    )
+  );
 }
 
 function previewPointFromDynamicSnap({
@@ -312,6 +398,8 @@ function previewPointFromDynamicSnap({
     local: snap.local,
     world: sketchLocalToWorld(activeSketchPlaneId, snap.local, activeSketchPlaneFrame),
     snapLabel: snap.snapLabel,
+    snapFeedbackSource: dynamicSnapFeedbackSource(snap),
+    snapTargetKey: dynamicSnapTargetKey(snap),
     snapMidpointHostLineId: null,
     snapMidpointT: null,
     snapPerpendicularHostLineId: snap.snapPerpendicularHostLineId,
@@ -332,6 +420,8 @@ function unsnappedPreviewPoint(
   return {
     ...point,
     snapLabel,
+    snapFeedbackSource: snapLabel ? "grid" : null,
+    snapTargetKey: null,
     snapMidpointHostLineId: null,
     snapPerpendicularHostLineId: null,
     snapEndpointHostLineId: null,
@@ -407,6 +497,12 @@ function appendCoreSnapCandidates(
         });
         break;
       case "center":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "center",
+        });
+        break;
       default:
         candidates.push({
           local: [candidate.local_x, candidate.local_y],
@@ -500,6 +596,7 @@ function appendLegacyCircleSnapCandidates(
     candidates.push({
       local: [circle.center_x, circle.center_y],
       label: translate("snap.circleCenter"),
+      kind: "center",
     });
   }
 }
@@ -558,6 +655,7 @@ export function dynamicSnapCandidate({
   labels,
   sketchParameters,
   constraints,
+  objectSnapLatchKey,
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
@@ -579,8 +677,25 @@ export function dynamicSnapCandidate({
   sketchParameters?: SketchFeatureParameters | null;
   /** Constraints for speculative WASM solver path. */
   constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
+  objectSnapLatchKey?: string | null;
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
+
+  if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:line-body:")) {
+    const lineId = objectSnapLatchKey.slice("dynamic:line-body:".length);
+    const line = lines.find((candidate) => candidate.line_id === lineId);
+    if (line) {
+      const latchedLineBody = speculativeLineBodySnap({
+        lines: [line],
+        cursor,
+        threshold,
+        snapLabel: labels.onLine,
+      });
+      if (latchedLineBody) {
+        best = latchedLineBody;
+      }
+    }
+  }
 
   if (draftStart) {
     const draftDx = cursor[0] - draftStart[0];
@@ -589,8 +704,6 @@ export function dynamicSnapCandidate({
 
     if (hasDraftMovement && filter.snap_polar) {
       const speculativeResult = speculativeAxisLockSnap({
-        sketchParameters: sketchParameters ?? null,
-        constraints: constraints ?? [],
         draftStart,
         cursor,
         threshold,
@@ -600,33 +713,39 @@ export function dynamicSnapCandidate({
         best = speculativeResult;
       }
     }
-
-    if (hasDraftMovement && filter.snap_tangent) {
-      const spec = speculativeTangentSnap({
-        sketchParameters: sketchParameters ?? null,
-        constraints: constraints ?? [],
-        circles, draftStart, cursor, threshold,
-        snapLabel: labels.tangent,
-      });
-      best = closerDynamicSnap(best, spec);
-    }
   }
 
-  {
+  if (filter.snap_nearest) {
     const spec = speculativeLineBodySnap({
-      sketchParameters: sketchParameters ?? null,
-      constraints: constraints ?? [],
       lines, cursor, threshold,
       snapLabel: labels.onLine,
     });
     best = closerDynamicSnap(best, spec);
   }
 
+  if (draftStart) {
+    const draftDx = cursor[0] - draftStart[0];
+    const draftDy = cursor[1] - draftStart[1];
+    const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
+
+    if (hasDraftMovement && filter.snap_tangent) {
+      const spec = speculativeTangentSnap({
+        sketchParameters: sketchParameters ?? null,
+        constraints: constraints ?? [],
+        circles, draftStart, cursor,
+        threshold: solverSearchThreshold(best, threshold),
+        snapLabel: labels.tangent,
+      });
+      best = closerDynamicSnap(best, spec);
+    }
+  }
+
   if (draftStart && filter.snap_perpendicular) {
     const spec = speculativePerpendicularSnap({
       sketchParameters: sketchParameters ?? null,
       constraints: constraints ?? [],
-      lines, draftStart, cursor, threshold,
+      lines, draftStart, cursor,
+      threshold: solverSearchThreshold(best, threshold),
       snapLabel: labels.perpendicular,
     });
     best = closerDynamicSnap(best, spec);
@@ -636,7 +755,8 @@ export function dynamicSnapCandidate({
     const spec = speculativeParallelSnap({
       sketchParameters: sketchParameters ?? null,
       constraints: constraints ?? [],
-      lines, draftStart, cursor, threshold,
+      lines, draftStart, cursor,
+      threshold: solverSearchThreshold(best, threshold),
       angleThresholdRadians: parallelAngleThresholdRadians,
       snapLabel: labels.parallel,
     });
@@ -648,7 +768,8 @@ export function dynamicSnapCandidate({
     const spec = speculativeIntersectionSnap({
       sketchParameters: sketchParameters ?? null,
       constraints: constraints ?? [],
-      lines, cursor, threshold,
+      lines, cursor,
+      threshold: solverSearchThreshold(best, threshold),
       snapLabel: labels.intersection,
     });
     best = closerDynamicSnap(best, spec);
@@ -659,13 +780,21 @@ export function dynamicSnapCandidate({
     const spec = speculativeTangentThroughLineSnap({
       sketchParameters: sketchParameters ?? null,
       constraints: constraints ?? [],
-      circles, lines, draftStart, cursor, threshold,
+      circles, lines, draftStart, cursor,
+      threshold: solverSearchThreshold(best, threshold),
       snapLabel: labels.tangent,
     });
     best = closerDynamicSnap(best, spec);
   }
 
   return best;
+}
+
+function solverSearchThreshold(
+  best: DynamicSnapResult | null,
+  defaultThreshold: number,
+) {
+  return Math.min(defaultThreshold, best?.distance ?? defaultThreshold);
 }
 
 export function isStaticSnapCandidateAllowed(
@@ -676,6 +805,23 @@ export function isStaticSnapCandidateAllowed(
     return true;
   }
   return filter[selectionFilterKeyForSnapKind(candidate.kind)];
+}
+
+function staticSnapCandidateByKey(
+  candidates: readonly SketchSnapCandidate[],
+  key: string,
+) {
+  return candidates.find((candidate) => staticSnapCandidateKey(candidate) === key) ?? null;
+}
+
+function staticSnapCandidateKey(candidate: SketchSnapCandidate) {
+  const kind = candidate.kind ?? "point";
+  const host =
+    candidate.endpointHostLineId ??
+    candidate.hostLineId ??
+    `${candidate.local[0].toFixed(6)},${candidate.local[1].toFixed(6)}`;
+  const t = candidate.tValue === undefined ? "" : `:${candidate.tValue.toFixed(6)}`;
+  return `static:${kind}:${host}${t}`;
 }
 
 type SketchSnapKind = NonNullable<SketchSnapCandidate["kind"]>;
@@ -730,6 +876,8 @@ export function previewPointFromStaticCandidate({
     local: candidate.local,
     world,
     snapLabel: candidate.label,
+    snapFeedbackSource: "object",
+    snapTargetKey: staticSnapCandidateKey(candidate),
     snapMidpointHostLineId:
       candidate.kind === "midpoint" ? (candidate.hostLineId ?? null) : null,
     snapMidpointT:
@@ -748,23 +896,53 @@ export function previewPointFromStaticCandidate({
   };
 }
 
+function dynamicSnapFeedbackSource(
+  snap: DynamicSnapResult,
+): SketchPreviewPoint["snapFeedbackSource"] {
+  if (
+    snap.snapPerpendicularHostLineId ||
+    snap.snapTangentCircleId ||
+    snap.snapParallelHostLineId ||
+    snap.snapLineBodyHostLineId ||
+    snap.snapIntersectionLineIds
+  ) {
+    return "object";
+  }
+  return null;
+}
+
+function dynamicSnapTargetKey(snap: DynamicSnapResult) {
+  if (snap.snapLineBodyHostLineId) {
+    return `dynamic:line-body:${snap.snapLineBodyHostLineId}`;
+  }
+  if (snap.snapPerpendicularHostLineId) {
+    return `dynamic:perpendicular:${snap.snapPerpendicularHostLineId}`;
+  }
+  if (snap.snapParallelHostLineId) {
+    return `dynamic:parallel:${snap.snapParallelHostLineId}`;
+  }
+  if (snap.snapTangentCircleId) {
+    return `dynamic:tangent:${snap.snapTangentCircleId}`;
+  }
+  if (snap.snapIntersectionLineIds) {
+    return `dynamic:intersection:${snap.snapIntersectionLineIds.join(":")}`;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Speculative WASM solver snap helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Try axis-lock (horizontal / vertical) snap via the planegcs WASM solver.
+ * Try axis-lock (horizontal / vertical) snap with direct geometry math.
  */
 function speculativeAxisLockSnap({
-  sketchParameters,
-  constraints,
   draftStart,
   cursor,
   threshold,
   labels,
 }: {
-  sketchParameters: SketchFeatureParameters | null;
-  constraints: SketchConstraintData[];
   draftStart: [number, number];
   cursor: [number, number];
   threshold: number;
@@ -773,9 +951,6 @@ function speculativeAxisLockSnap({
     axisLockVertical: string;
   };
 }): DynamicSnapResult | null {
-  const bridge = getBridge();
-  if (!bridge || !sketchParameters) return null;
-
   const [sx, sy] = draftStart;
   const [cx, cy] = cursor;
   const draftDx = cx - sx;
@@ -783,60 +958,25 @@ function speculativeAxisLockSnap({
 
   if (Math.hypot(draftDx, draftDy) <= 1e-6) return null;
 
-  // Determine which axis is closer to the current draft direction.
-  const draftAngle = Math.atan2(draftDy, draftDx);
-  let bestSnap: "horizontal_l" | "vertical_l" | null = null;
-  let bestAngleDiff = Infinity;
-
-  for (const [targetAngle, snapType] of [
-    [0, "horizontal_l" as const],
-    [Math.PI / 2, "vertical_l" as const],
-    [Math.PI, "horizontal_l" as const],
-    [-Math.PI / 2, "vertical_l" as const],
-  ] as const) {
-    let diff = draftAngle - targetAngle;
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
-    if (Math.abs(diff) < Math.abs(bestAngleDiff)) {
-      bestAngleDiff = diff;
-      bestSnap = snapType;
-    }
-  }
-
-  if (!bestSnap) return null;
-
-  // Axis lock doesn't target a specific entity — the speculative solve
-  // only needs the virtual line + H/V constraint.
-  const result = speculativeSolve({
-    bridge,
-    params: sketchParameters,
-    constraints,
-    draftStart,
-    cursor,
-    snapType: bestSnap,
-    targetEntityId: "__axis_lock",
-  });
-
-  if (!result?.converged) return null;
-  if (result.distance > threshold) return null;
-
-  const snapLabel =
-    bestSnap === "horizontal_l"
-      ? labels.axisLockHorizontal
-      : labels.axisLockVertical;
-  const axisKind = bestSnap === "horizontal_l" ? "horizontal" : "vertical";
+  const horizontalDistance = Math.abs(draftDy);
+  const verticalDistance = Math.abs(draftDx);
+  const useHorizontal = horizontalDistance <= verticalDistance;
+  const distance = useHorizontal ? horizontalDistance : verticalDistance;
+  if (distance > threshold) return null;
 
   return {
-    local: result.position,
-    snapLabel,
+    local: useHorizontal ? [cx, sy] : [sx, cy],
+    snapLabel: useHorizontal
+      ? labels.axisLockHorizontal
+      : labels.axisLockVertical,
     snapPerpendicularHostLineId: null,
-    snapAxisLock: axisKind,
+    snapAxisLock: useHorizontal ? "horizontal" : "vertical",
     snapTangentCircleId: null,
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
-    distance: result.distance,
+    distance,
   };
 }
 
@@ -1094,30 +1234,23 @@ function speculativeParallelSnap({
 }
 
 /**
- * Try line-body snap via speculative WASM solver on the best TS candidate.
+ * Try line-body snap with direct projection onto the nearest sketch segment.
  */
 function speculativeLineBodySnap({
-  sketchParameters,
-  constraints,
   lines,
   cursor,
   threshold,
   snapLabel,
 }: {
-  sketchParameters: SketchFeatureParameters | null;
-  constraints: SketchConstraintData[];
   lines: readonly SketchSnapLine[];
   cursor: [number, number];
   threshold: number;
   snapLabel: string;
 }): DynamicSnapResult | null {
-  const bridge = getBridge();
-  if (!bridge || !sketchParameters) return null;
-
-  // Fast TS proximity gating.
   let bestLine: (typeof lines)[number] | null = null;
   let bestDist = Infinity;
   let bestT = 0;
+  let bestLocal: [number, number] | null = null;
 
   for (const line of lines) {
     if (line.is_construction) continue;
@@ -1135,28 +1268,14 @@ function speculativeLineBodySnap({
       bestDist = dist;
       bestLine = line;
       bestT = t;
+      bestLocal = [x, y];
     }
   }
 
-  if (!bestLine) return null;
-
-  const result = speculativeSolve({
-    bridge,
-    params: sketchParameters,
-    constraints,
-    // For point_on_line, draftStart is not used — the constraint is on the
-    // cursor point directly. Use cursor as "draft start" so the virtual line
-    // is degenerate (the solver ignores the line for point_on_line_pl).
-    draftStart: cursor,
-    cursor,
-    snapType: "point_on_line_pl",
-    targetEntityId: bestLine.line_id,
-  });
-
-  if (!result?.converged || result.distance > threshold) return null;
+  if (!bestLine || !bestLocal) return null;
 
   return {
-    local: result.position,
+    local: bestLocal,
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
@@ -1165,7 +1284,7 @@ function speculativeLineBodySnap({
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: bestT,
     snapIntersectionLineIds: null,
-    distance: result.distance,
+    distance: bestDist,
   };
 }
 

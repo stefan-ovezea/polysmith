@@ -1,7 +1,9 @@
 # Display Units — Metric / Inch Toggle
 
-> **Planned feature.** Not yet implemented. Extracted from
-> `implementation/NEXT_IMPLEMENTATION_PLAN.md` (Priority 1 — Item A).
+> **Shipped.** Core always works in mm; UI converts at the presentation boundary.
+> Toggle in AppHeader switches between metric (mm, 2 decimal places) and
+> imperial (in, 3 decimal places). Conversion utilities live in
+> `apps/desktop-ui/src/utils/units.ts`.
 
 ## Goal
 

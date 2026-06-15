@@ -357,6 +357,8 @@ export interface SketchPreviewPoint {
   local: [number, number];
   world: [number, number, number];
   snapLabel: string | null;
+  snapFeedbackSource?: "object" | "grid" | null;
+  snapTargetKey?: string | null;
   // When the resolved point snapped to a midpoint snap target, this
   // is the host line's id; the line tool uses it to attach a midpoint
   // anchor after the line is committed. Null for endpoint / origin /
