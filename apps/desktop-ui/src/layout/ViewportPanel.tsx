@@ -237,6 +237,8 @@ export function ViewportPanel({
   onSetCircleToolMode,
   polygonToolMode,
   onSetPolygonToolMode,
+  dimensionToolMode,
+  onSetDimensionToolMode,
   onAddSketchPolygon,
   onAddSketchFillet,
   onSelectSketchEntity,
@@ -3326,6 +3328,7 @@ export function ViewportPanel({
       polygonSides={polygonSides}
       polygonToolMode={polygonToolMode}
       rectangleToolMode={rectangleToolMode}
+      dimensionToolMode={dimensionToolMode}
       selectedConstraint={selectedConstraint}
       selectedEntityDof={selectedEntityDof}
       selectedPrimitiveLabel={selectedPrimitiveLabel}
@@ -3382,6 +3385,7 @@ export function ViewportPanel({
       onSetCircleToolMode={onSetCircleToolMode}
       onSetPolygonToolMode={onSetPolygonToolMode}
       onSetRectangleToolMode={onSetRectangleToolMode}
+      onSetDimensionToolMode={onSetDimensionToolMode}
       onSketchToolConstructionChange={(checked) => {
         sketchToolConstructionRef.current = checked;
         setSketchToolConstruction(checked);

@@ -8,6 +8,7 @@ import type {
 import { formatHotkey } from "@/config";
 import type {
   ArmedSketchConstraint,
+  DimensionToolMode,
   DocumentState,
   SketchDimensionScene,
   SketchTool,
@@ -103,6 +104,7 @@ interface ViewportPanelShellProps {
   polygonSides: number;
   polygonToolMode: PolygonToolMode;
   rectangleToolMode: RectangleToolMode;
+  dimensionToolMode: DimensionToolMode;
   selectedConstraint: SelectedConstraintState | null;
   selectedEntityDof: ViewportState["dof_statuses"][number] | null;
   selectedPrimitiveLabel: string | null;
@@ -141,6 +143,7 @@ interface ViewportPanelShellProps {
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
+  onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onSketchToolConstructionChange: (checked: boolean) => void;
   onSubmitDimensionEdit: () => void | Promise<void>;
   onToggleGrid: () => void;
@@ -196,6 +199,7 @@ export function ViewportPanelShell({
   polygonSides,
   polygonToolMode,
   rectangleToolMode,
+  dimensionToolMode,
   selectedConstraint,
   selectedEntityDof,
   selectedPrimitiveLabel,
@@ -226,6 +230,7 @@ export function ViewportPanelShell({
   onSetCircleToolMode,
   onSetPolygonToolMode,
   onSetRectangleToolMode,
+  onSetDimensionToolMode,
   onSketchToolConstructionChange,
   onSubmitDimensionEdit,
   onToggleGrid,
@@ -311,11 +316,13 @@ export function ViewportPanelShell({
             rectangleToolMode={rectangleToolMode}
             polygonToolMode={polygonToolMode}
             polygonSides={polygonSides}
+            dimensionToolMode={dimensionToolMode}
             onConstructionChange={onSketchToolConstructionChange}
             onSetArcToolMode={onSetArcToolMode}
             onSetCircleToolMode={onSetCircleToolMode}
             onSetRectangleToolMode={onSetRectangleToolMode}
             onSetPolygonToolMode={onSetPolygonToolMode}
+            onSetDimensionToolMode={onSetDimensionToolMode}
             onPolygonSidesChange={onPolygonSidesChange}
           />
         ) : null}

@@ -283,6 +283,8 @@ interface AppHeaderProps
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
   polygonToolMode: "circumscribed" | "inscribed" | "edge";
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
+  onSetDimensionToolMode: (mode: import("@/types").DimensionToolMode) => void;
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
@@ -362,6 +364,8 @@ export function AppHeader({
   onSetCircleToolMode,
   polygonToolMode,
   onSetPolygonToolMode,
+  dimensionToolMode,
+  onSetDimensionToolMode,
   onStart,
   onCreateDocument,
   onExportDocument,
@@ -803,6 +807,8 @@ export function AppHeader({
                 onSetCircleToolMode={onSetCircleToolMode}
                 polygonToolMode={polygonToolMode}
                 onSetPolygonToolMode={onSetPolygonToolMode}
+                dimensionToolMode={dimensionToolMode}
+                onSetDimensionToolMode={onSetDimensionToolMode}
                 onStartSketch={onStartSketch}
                 onFinishSketch={onFinishSketch}
                 onCancelSketchConstraint={onCancelSketchConstraint}

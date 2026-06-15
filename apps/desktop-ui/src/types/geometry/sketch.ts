@@ -447,3 +447,25 @@ type CircleToolMode =
 
 /** Polygon creation modes for the split tool button. */
 type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
+
+/** Dimension tool modes for the split tool button.
+ *  Only "auto" is functional today; the rest are reserved for
+ *  future ISO drawing-sheet dimensioning. */
+export type DimensionToolMode =
+  | "auto"
+  | "linear"
+  | "aligned"
+  | "angular"
+  | "radius"
+  | "diameter"
+  | "ordinate"
+  | "jogged_radial"
+  | "arc_length"
+  | "curve_min_max"
+  | "baseline"
+  | "chain"
+  | "tidy_up"
+  | "arrange"
+  | "flip_arrows"
+  | "match"
+  | "dimension_break";

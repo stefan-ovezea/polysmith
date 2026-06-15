@@ -62,6 +62,8 @@ interface AppTopBarProps {
   setPolygonToolMode: (
     mode: "circumscribed" | "inscribed" | "edge",
   ) => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
+  onSetDimensionToolMode: (mode: import("@/types").DimensionToolMode) => void;
   runAction: RunAction;
   start: AsyncVoid;
   startMirrorPreview: AsyncVoid;
@@ -180,6 +182,8 @@ export function AppTopBar(props: AppTopBarProps) {
       onSetCircleToolMode={props.setCircleToolMode}
       polygonToolMode={props.polygonToolMode}
       onSetPolygonToolMode={props.setPolygonToolMode}
+      dimensionToolMode={props.dimensionToolMode}
+      onSetDimensionToolMode={props.onSetDimensionToolMode}
       onStart={async () => {
         await props.runAction(props.start);
       }}

@@ -11,6 +11,7 @@ import type {
 } from "@/types";
 import type { ArcToolMode } from "./arcDraftPreview";
 import type { CircleToolMode } from "./circleDraftPreview";
+import type { DimensionToolMode } from "@/types";
 import type { MoveGizmoDescriptor } from "./moveGizmo";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 
@@ -128,6 +129,8 @@ export interface ViewportPanelProps {
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   polygonToolMode: PolygonToolMode;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
+  dimensionToolMode: DimensionToolMode;
+  onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onAddSketchPolygon: (
     sides: number,
     mode: string,
