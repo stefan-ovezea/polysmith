@@ -74,13 +74,48 @@ three are now zoom-aware, matching the snap system's existing behaviour.
 
 **Threshold summary:**
 
-| Threshold | Old (fixed wu) | New (zoom-aware) |
-|---|---|---|
-| Point hit detection | `1.8` | `max(1.0, 12 × wuPerPx)` |
-| Line entity hit | `1.75` | `max(0.75, 12 × wuPerPx)` |
-| Relation preview | `2.5` | `20 × wuPerPx` |
+All hit-detection and snap thresholds now use the user-configurable
+`tolerance_px` from the Selection Filter (default 20 px), replacing the
+previously hardcoded constants:
 
-The snap system already used `20 × wuPerPx` via `sketchSnapDistance`.
+| System | Formula |
+|---|---|
+| Snap distance | `tolerance_px × wuPerPx` |
+| Point hit detection | `max(1.0, tolerance_px × wuPerPx)` |
+| Line entity hit | `max(0.75, tolerance_px × wuPerPx)` |
+| Relation preview | `SKETCH_SNAP_DISTANCE_PX × wuPerPx` (still 20 px) |
+
+### Snap tolerance wired to Selection Filter UI
+
+The "Tolerance (px)" input in the Selection & Snap floating panel was
+previously stored in the `SelectionFilter` but never read by the snap
+system — the snap distance used a hardcoded `SKETCH_SNAP_DISTANCE_PX = 20`.
+The hit-detection sphere picker used a separate hardcoded `12 px`, causing
+a mismatch: when `tolerance_px` exceeded 12, snaps would resolve to points
+the hit detector couldn't reach, making the dimension tool unreliable.
+
+**TS (`apps/desktop-ui/src/layout/ViewportPanel.tsx`):**
+- `sketchSnapDistance` changed from `SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel`
+  to `effectiveFilter.tolerance_px * worldUnitsPerPixel`.
+- `intersectSceneTargets` now passes `readStoredFilter().tolerance_px` to
+  `intersectViewportSceneTargets`.
+
+**TS (`apps/desktop-ui/src/layout/selectionFilterState.ts`):**
+- Default `tolerance_px` changed from 10 to 20 to match the previous
+  hardcoded snap distance.
+
+**TS (`apps/desktop-ui/src/layout/viewport/sceneTargetPicking.ts`):**
+- `intersectViewportSceneTargets` accepts `tolerancePx` (default 20) and
+  threads it through `pickActiveSketchTarget` → `pickSketchPointOrEntity`
+  → `pickSketchPointByRayDistance`.
+- `pickSketchPointByRayDistance`: `pickRadius` uses
+  `max(1.0, tolerancePx * worldUnitsPerPixel)` instead of hardcoded `12`.
+- `raycaster.params.Line.threshold`: uses `tolerancePx * worldUnitsPerPixel`
+  instead of hardcoded `12`.
+
+**TS (`apps/desktop-ui/src/layout/viewport/dimensionRelationPreviewSearch.ts`):**
+- Relation preview still uses `SKETCH_SNAP_DISTANCE_PX` (20 px) — a
+  follow-up could wire this to the filter's tolerance as well.
 
 ## 2026-06-04
 

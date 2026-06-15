@@ -36,7 +36,6 @@ import {
   frameCameraToSketchPlane,
   projectWorldPointToViewport,
   SKETCH_PLANE_OFFSET,
-  SKETCH_SNAP_DISTANCE_PX,
   toWorldPoint,
   buildViewCubeGroup,
   createViewCubeScene,
@@ -1670,7 +1669,7 @@ export function ViewportPanel({
       currentGridSpacing: currentGridSpacingRef.current,
       worldUnitsPerPixel,
       gridSnapScreenDistancePx: GRID_SNAP_SCREEN_DISTANCE_PX,
-      sketchSnapDistance: SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel,
+      sketchSnapDistance: effectiveFilter.tolerance_px * worldUnitsPerPixel,
       labels: {
         grid: translate("snap.grid"),
         axisLockHorizontal: translate("snap.axisLockHorizontal"),
@@ -2274,6 +2273,7 @@ export function ViewportPanel({
         edgeLineObjects: edgeLineObjectsRef.current,
         faceMeshes: faceMeshesRef.current,
         meshes: meshesRef.current,
+        tolerancePx: readStoredFilter().tolerance_px,
       });
     }
 
