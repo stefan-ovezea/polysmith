@@ -56,7 +56,7 @@
                 view->selected_sketch_dimension_id.value() == dim_it->id;
             const WorldPoint pc = to_world_point(*feature.sketch_parameters, polygon.center_x, polygon.center_y);
             const WorldPoint pd = to_world_point(*feature.sketch_parameters, polygon.center_x + polygon.radius, polygon.center_y);
-            sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
+            auto prim = ViewportSketchDimensionPrimitive{
                 .dimension_id = dim_it->id,
                 .plane_id = feature.sketch_parameters->plane_id,
                 .kind = "polygon_radius",
@@ -69,7 +69,41 @@
                 .dimension_end_x = pd.x, .dimension_end_y = pd.y, .dimension_end_z = pd.z,
                 .label_x = pd.x, .label_y = pd.y, .label_z = pd.z,
                 .driven = dim_it->driven,
-            });
+            };
+            if (dim_it->label_x.has_value() && dim_it->label_y.has_value()) {
+              const double radius = polygon.radius;
+              if (radius > 1e-6) {
+                const double normal_x = 0.0;
+                const double normal_y = 1.0;
+                const double label_x = polygon.center_x + radius;
+                const double label_y = polygon.center_y;
+                const double raw_offset_x = *dim_it->label_x - label_x;
+                const double raw_offset_y = *dim_it->label_y - label_y;
+                const double along = raw_offset_x * normal_x + raw_offset_y * normal_y;
+                const double offset_x = normal_x * along;
+                const double offset_y = normal_y * along;
+                const WorldPoint shifted_start = to_world_point(
+                    *feature.sketch_parameters,
+                    polygon.center_x + offset_x,
+                    polygon.center_y + offset_y);
+                const WorldPoint shifted_end = to_world_point(
+                    *feature.sketch_parameters,
+                    polygon.center_x + radius + offset_x,
+                    polygon.center_y + offset_y);
+                const WorldPoint shifted_label =
+                    to_world_point(*feature.sketch_parameters, label_x + offset_x, label_y + offset_y);
+                prim.dimension_start_x = shifted_start.x;
+                prim.dimension_start_y = shifted_start.y;
+                prim.dimension_start_z = shifted_start.z;
+                prim.dimension_end_x = shifted_end.x;
+                prim.dimension_end_y = shifted_end.y;
+                prim.dimension_end_z = shifted_end.z;
+                prim.label_x = shifted_label.x;
+                prim.label_y = shifted_label.y;
+                prim.label_z = shifted_label.z;
+              }
+            }
+            sketch_dimensions.push_back(prim);
           }
         }
       }

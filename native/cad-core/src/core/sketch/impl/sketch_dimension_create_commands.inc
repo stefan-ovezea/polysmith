@@ -49,14 +49,21 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
       .entity_id = point_a_id,
       .secondary_entity_id = point_b_id,
       .value = distance,
-      // point_distance is always driven (reference-only) for now.
-      // The value is re-computed from the two point coordinates during
-      // sync_driven_dimensions. Making it driving requires complex
-      // point-movement propagation and is a follow-up.
-      .driven = true,
   });
 
   refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dimension_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
 }
 
 void add_sketch_line_length_dimension(FeatureEntry& feature,

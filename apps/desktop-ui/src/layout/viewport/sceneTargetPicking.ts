@@ -5,6 +5,7 @@ import type { ViewportPickHit } from "./contextMenuState";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import { sketchEntitySelectionHitFromIntersection } from "./sketchClickSelection";
 import { pickSketchProfileId } from "./sketchProfilePicking";
+import { getOrthographicViewHeight } from "./grid";
 
 export function pickVisibleSketchLineScreenSpace({
   event,
@@ -109,6 +110,10 @@ export function intersectViewportSceneTargets({
   raycaster.setFromCamera(pointer, camera);
   raycaster.params.Line = { threshold: 1.75 };
 
+  const worldUnitsPerPixel =
+    getOrthographicViewHeight(camera) /
+    Math.max(renderer.domElement.clientHeight, 1);
+
   const pickProfile = () =>
     pickSketchProfileId({
       profiles: sceneData?.sketchProfiles ?? [],
@@ -126,6 +131,7 @@ export function intersectViewportSceneTargets({
       sketchDimensionObjects,
       sketchConstraintObjects,
       pickProfile,
+      worldUnitsPerPixel,
     });
     if (activeSketchHit) {
       return activeSketchHit;
@@ -196,6 +202,7 @@ function pickActiveSketchTarget({
   sketchDimensionObjects,
   sketchConstraintObjects,
   pickProfile,
+  worldUnitsPerPixel,
 }: {
   activeSketchTool: SketchTool;
   armedSketchConstraintKind: ConstraintType | null;
@@ -205,14 +212,22 @@ function pickActiveSketchTarget({
   sketchDimensionObjects: THREE.Object3D[];
   sketchConstraintObjects: THREE.Object3D[];
   pickProfile: () => string | null;
+  worldUnitsPerPixel: number;
 }): ViewportPickHit | null {
   const checkDimensionsLast = activeSketchTool === "dimension";
 
   if (checkDimensionsLast) {
+    // Use sphere-based point picking so the dimension tool reliably
+    // detects sketch points even when the raycaster misses the tiny
+    // point mesh (common at moderate zoom levels).  Without this,
+    // the raycaster hits the line entity instead → entity_distance
+    // routing → angle-dimension error for unrelated lines.
     const preDimensionHit = pickSketchPointOrEntity({
       raycaster,
       sketchPointObjects,
       sketchEntityObjects,
+      useSpherePointPicking: true,
+      worldUnitsPerPixel,
     });
     if (preDimensionHit) {
       return preDimensionHit;
@@ -237,6 +252,7 @@ function pickActiveSketchTarget({
       sketchPointObjects,
       sketchEntityObjects,
       useSpherePointPicking: true,
+      worldUnitsPerPixel,
     });
     if (pointOrEntityHit) {
       return pointOrEntityHit;
@@ -252,14 +268,16 @@ function pickSketchPointOrEntity({
   sketchPointObjects,
   sketchEntityObjects,
   useSpherePointPicking = false,
+  worldUnitsPerPixel,
 }: {
   raycaster: THREE.Raycaster;
   sketchPointObjects: THREE.Mesh[];
   sketchEntityObjects: (THREE.Line | THREE.LineLoop)[];
   useSpherePointPicking?: boolean;
+  worldUnitsPerPixel: number;
 }): ViewportPickHit | null {
   if (useSpherePointPicking) {
-    const pointHit = pickSketchPointByRayDistance(raycaster, sketchPointObjects);
+    const pointHit = pickSketchPointByRayDistance(raycaster, sketchPointObjects, worldUnitsPerPixel);
     if (pointHit) {
       return pointHit;
     }
@@ -338,8 +356,10 @@ function pickSketchConstraint(
 function pickSketchPointByRayDistance(
   raycaster: THREE.Raycaster,
   sketchPointObjects: THREE.Mesh[],
+  worldUnitsPerPixel: number,
 ): ViewportPickHit | null {
-  const pickRadius = 1.8;
+  // Match the snap system's zoom-aware threshold (~12 px at any zoom).
+  const pickRadius = Math.max(1.0, 12 * worldUnitsPerPixel);
   const rayOrigin = raycaster.ray.origin;
   const rayDirection = raycaster.ray.direction;
   let bestPointDistance = pickRadius;
