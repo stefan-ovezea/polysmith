@@ -72,7 +72,6 @@ The bulk of the original v1 roadmap is shipped. Remaining:
 
 1. **Pattern features** — linear and circular
 2. **Measure tool** — point-to-point, edge length, face area
-3. **Display units toggle** — UI-layer only, architecture designed
 4. **Text tool** — sketched text via OCCT `StdPrs_BRepFont`
 5. **CAM** — beyond the current scaffolding (face milling shipped)
 

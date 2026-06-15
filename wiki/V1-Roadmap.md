@@ -98,7 +98,6 @@ These are rules going forward, not goals to chase:
 |---|---|
 | **Pattern features** | Linear and circular patterns of features/bodies |
 | **Measure tool** | Point-to-point, edge length, face area |
-| **Display units toggle** | Metric/inch. Architecture designed in `Display-Units`. Core always mm; UI converts at presentation boundary. |
 | **Text tool** | Text as sketch entities via OCCT `StdPrs_BRepFont`. Plan in `Text-Tool-Implementation-Plan`. |
 | **Sketch arc constraints & dimension drive** | Arc endpoints are fixed for v1; reshape/dimension-drive follow-up |
 | **Line-arc and arc-arc sketch fillets** | Currently line-line only |
@@ -138,5 +137,4 @@ milling operation exists. The full plan is in [CAM-Development](CAM-Development)
 
 1. **Pattern features** — linear and circular, highest remaining UX impact
 2. **Measure tool** — small, self-contained, high day-to-day value
-3. **Display units toggle** — UI-layer only, architecture already designed
 4. **Text tool** — blocked by font bundling decision but plan is written
