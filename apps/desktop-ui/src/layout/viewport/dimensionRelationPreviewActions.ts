@@ -37,6 +37,7 @@ interface DimensionRelationPreviewActionsContext {
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   pendingAngleIsReflexRef: MutableRef<boolean>;
   pendingReflexAngleRef: MutableRef<number>;
+  worldUnitsPerPixelRef: MutableRef<number>;
   clearPreviewDimension: () => void;
   hideRelationPreviewDimension: (dimensionId: string | null) => void;
   readDimensionPreviewFilter: () => SelectionFilter;
@@ -55,6 +56,7 @@ export function createDimensionRelationPreviewActions({
   activeSketchPlaneFrameRef,
   pendingAngleIsReflexRef,
   pendingReflexAngleRef,
+  worldUnitsPerPixelRef,
   clearPreviewDimension,
   hideRelationPreviewDimension,
   readDimensionPreviewFilter,
@@ -94,6 +96,7 @@ export function createDimensionRelationPreviewActions({
       cursor,
       planeId: activeSketchPlaneIdRef.current ?? "ref-plane-xy",
       planeFrame: activeSketchPlaneFrameRef.current,
+      worldUnitsPerPixel: worldUnitsPerPixelRef.current,
     });
     if (!preview) {
       pendingAngleIsReflexRef.current = false;

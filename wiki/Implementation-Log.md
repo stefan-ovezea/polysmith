@@ -2,6 +2,86 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-06-15
+
+### Point-to-point distance dimension — driving + label drag
+
+Point-to-point distance dimensions (`point_distance`) were previously forced
+driven-only (`driven: true` in C++) with no value editing and no label
+placement drag.  They are now first-class driving dimensions, matching the
+behaviour of other dimension kinds.
+
+**C++ (`native/cad-core/src/core/sketch/impl/`):**
+- `sketch_dimension_create_commands.inc`: changed `point_distance` from
+  `driven: true` to default (driving).  Added over-constraint fallback:
+  if the solver reports conflicts after creation, the dimension falls back
+  to `driven: true` (same pattern as `line_length`, `circle_radius`, etc.).
+- `private_sketch_require_helpers.inc`: added `require_point()` helper
+  (same pattern as existing `require_line` / `require_circle`).
+- `dimension_update.inc`: added `point_distance` update handler — moves
+  `point_b` along the direction vector from `point_a` to satisfy the new
+  distance, then calls `refresh_sketch_derived_state`.
+- `constraint_solver_dimension_constraints.inc`: already had `point_distance`
+  support via `addConstraintP2PDistance` — was previously skipped by the
+  `driven` guard.
+
+**C++ viewport primitive (`native/cad-core/src/core/viewport/impl/`):**
+- `sketch_line_point_distance_dimension_primitives.inc`: updated
+  `make_point_distance_dimension_primitive` to support stored `label_x` /
+  `label_y` offsets, so the label can be dragged perpendicular to the
+  point-to-point line (matching `circle_center_distance` etc.).
+
+### Polygon radius dimension — label drag
+
+**C++ viewport primitive (`native/cad-core/src/core/viewport/impl/`):**
+- `sketch_curve_polygon_emit.inc`: updated the inline `polygon_radius`
+  viewport primitive to support stored `label_x` / `label_y` offsets, so
+  the label can be dragged perpendicular to the radius line.
+
+### Zoom-aware thresholds — hit detection and dimension preview
+
+Three fixed-world-unit thresholds in the TS layer caused intermittent
+failures at low zoom levels (few world units per screen pixel).  All
+three are now zoom-aware, matching the snap system's existing behaviour.
+
+**TS (`apps/desktop-ui/src/layout/viewport/sceneTargetPicking.ts`):**
+- `pickSketchPointByRayDistance`: `pickRadius` changed from fixed `1.8`
+  world units to `Math.max(1.0, 12 * worldUnitsPerPixel)` — ~12 screen
+  pixels at any zoom.
+- `raycaster.params.Line.threshold`: changed from fixed `1.75` to
+  `Math.max(0.75, 12 * worldUnitsPerPixel)` — same zoom-aware formula
+  for line entity picking.
+- `pickActiveSketchTarget`: for the dimension tool, sphere-based point
+  picking is now enabled (`useSpherePointPicking: true`) so point
+  detection is reliable even when the raycaster misses the tiny point
+  mesh at moderate zoom.
+- `worldUnitsPerPixel` computed once in `intersectViewportSceneTargets`
+  from `getOrthographicViewHeight(camera) / renderer.clientHeight` and
+  threaded through `pickActiveSketchTarget` → `pickSketchPointOrEntity`
+  → `pickSketchPointByRayDistance`.
+
+**TS (`apps/desktop-ui/src/layout/viewport/dimensionRelationPreviewSearch.ts` + callers):**
+- Replaced fixed `SKETCH_SNAP_DISTANCE = 2.5` world units with zoom-aware
+  `SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel` (~20 px at any zoom).
+- Affected functions: `parallelLineRelationScore`, `lineCircleRelationScore`,
+  `circleCircleRelationScore`, `buildLineDimensionRelationPreview`,
+  `buildCircleDimensionRelationPreview`.
+- Added `worldUnitsPerPixel` to `PreviewSearchContext` and
+  `PreviewBuildContext` interfaces; threaded through
+  `dimensionRelationPreview.ts` and `dimensionRelationPreviewActions.ts`.
+- Added `worldUnitsPerPixelRef` in ViewportPanel, updated on each
+  `resolveSnappedSketchPoint` call.
+
+**Threshold summary:**
+
+| Threshold | Old (fixed wu) | New (zoom-aware) |
+|---|---|---|
+| Point hit detection | `1.8` | `max(1.0, 12 × wuPerPx)` |
+| Line entity hit | `1.75` | `max(0.75, 12 × wuPerPx)` |
+| Relation preview | `2.5` | `20 × wuPerPx` |
+
+The snap system already used `20 × wuPerPx` via `sketchSnapDistance`.
+
 ## 2026-06-04
 
 ### Angle dimension drag rewrite

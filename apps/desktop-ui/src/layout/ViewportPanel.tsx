@@ -610,6 +610,7 @@ export function ViewportPanel({
     useRef<[number, number, number] | null>(null);
   const pendingAngleIsReflexRef = useRef(false);
   const pendingReflexAngleRef = useRef(0);
+  const worldUnitsPerPixelRef = useRef(1);
   const pendingRelationPlacementMatchRef =
     useRef<DimensionRelationPreview | null>(null);
   const pendingRelationPlacementRetryRef = useRef<number | null>(null);
@@ -1149,6 +1150,7 @@ export function ViewportPanel({
       activeSketchPlaneFrameRef,
       pendingAngleIsReflexRef,
       pendingReflexAngleRef,
+      worldUnitsPerPixelRef,
       clearPreviewDimension,
       hideRelationPreviewDimension,
       readDimensionPreviewFilter,
@@ -1653,6 +1655,7 @@ export function ViewportPanel({
         ? getOrthographicViewHeight(cameraRef.current) /
             Math.max(rendererRef.current.domElement.clientHeight, 1)
         : 1;
+    worldUnitsPerPixelRef.current = worldUnitsPerPixel;
     return resolveSnappedSketchPointFromContext({
       rawPoint,
       draftStartLocal,

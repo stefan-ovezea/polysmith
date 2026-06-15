@@ -108,11 +108,15 @@ export function intersectViewportSceneTargets({
 }): ViewportPickHit | null {
   setPointerNdcFromEvent(pointer, event, renderer);
   raycaster.setFromCamera(pointer, camera);
-  raycaster.params.Line = { threshold: 1.75 };
 
   const worldUnitsPerPixel =
     getOrthographicViewHeight(camera) /
     Math.max(renderer.domElement.clientHeight, 1);
+
+  // Zoom-aware line picking threshold (~12 px at any zoom level).
+  raycaster.params.Line = {
+    threshold: Math.max(0.75, 12 * worldUnitsPerPixel),
+  };
 
   const pickProfile = () =>
     pickSketchProfileId({

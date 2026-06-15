@@ -5,7 +5,7 @@ import type {
   SketchLineEntry,
   SketchPlaneFrame,
 } from "@/types";
-import { SKETCH_SNAP_DISTANCE } from "@/utils";
+import { SKETCH_SNAP_DISTANCE_PX } from "@/utils";
 import {
   areLinesParallel,
   createCircleCenterDistancePreview,
@@ -25,6 +25,7 @@ interface PreviewSearchContext {
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
   allowConstruction: boolean;
+  worldUnitsPerPixel: number;
 }
 
 function betterPreview(
@@ -58,11 +59,14 @@ function parallelLineRelationScore({
   first,
   second,
   cursor,
+  worldUnitsPerPixel,
 }: {
   first: SketchLineEntry;
   second: SketchLineEntry;
   cursor: [number, number];
+  worldUnitsPerPixel: number;
 }) {
+  const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   if (!areLinesParallel(first, second)) {
     return null;
   }
@@ -107,10 +111,10 @@ function parallelLineRelationScore({
     (second.end_y - first.start_y) * dir[1];
   const minAlong =
     Math.min(0, firstLength, secondStartAlong, secondEndAlong) -
-    SKETCH_SNAP_DISTANCE * 2;
+    snapThreshold * 2;
   const maxAlong =
     Math.max(0, firstLength, secondStartAlong, secondEndAlong) +
-    SKETCH_SNAP_DISTANCE * 2;
+    snapThreshold * 2;
   if (cursorAlong < minAlong || cursorAlong > maxAlong) {
     return null;
   }
@@ -119,8 +123,8 @@ function parallelLineRelationScore({
     (cursor[0] - first.start_x) * normal[0] +
     (cursor[1] - first.start_y) * normal[1];
   const withinCorridor =
-    cursorNormal >= -SKETCH_SNAP_DISTANCE &&
-    cursorNormal <= signedDistance + SKETCH_SNAP_DISTANCE;
+    cursorNormal >= -snapThreshold &&
+    cursorNormal <= signedDistance + snapThreshold;
   if (!withinCorridor) {
     return null;
   }
@@ -156,11 +160,14 @@ function lineCircleRelationScore({
   line,
   circle,
   cursor,
+  worldUnitsPerPixel,
 }: {
   line: SketchLineEntry;
   circle: SketchCircleEntry;
   cursor: [number, number];
+  worldUnitsPerPixel: number;
 }) {
+  const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   const closest = distanceToLineSegment([circle.center_x, circle.center_y], line);
   const dx = circle.center_x - closest.local[0];
   const dy = circle.center_y - closest.local[1];
@@ -179,7 +186,7 @@ function lineCircleRelationScore({
   if (
     corridor.t < -0.25 ||
     corridor.t > 1.25 ||
-    corridor.distance > SKETCH_SNAP_DISTANCE * 1.5
+    corridor.distance > snapThreshold * 1.5
   ) {
     return null;
   }
@@ -191,11 +198,14 @@ function circleCircleRelationScore({
   first,
   second,
   cursor,
+  worldUnitsPerPixel,
 }: {
   first: SketchCircleEntry;
   second: SketchCircleEntry;
   cursor: [number, number];
+  worldUnitsPerPixel: number;
 }) {
+  const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   const start: [number, number] = [first.center_x, first.center_y];
   const end: [number, number] = [second.center_x, second.center_y];
   const centerDistance = Math.hypot(end[0] - start[0], end[1] - start[1]);
@@ -207,7 +217,7 @@ function circleCircleRelationScore({
   if (
     corridor.t < -0.25 ||
     corridor.t > 1.25 ||
-    corridor.distance > SKETCH_SNAP_DISTANCE * 1.5
+    corridor.distance > snapThreshold * 1.5
   ) {
     return null;
   }
@@ -223,7 +233,9 @@ export function buildLineDimensionRelationPreview({
   planeId,
   planeFrame,
   allowConstruction,
+  worldUnitsPerPixel,
 }: PreviewSearchContext): DimensionRelationPreviewResult | null {
+  const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   const firstLine = sketchParameters.lines.find(
     (line) => line.line_id === firstEntityId,
   );
@@ -247,8 +259,9 @@ export function buildLineDimensionRelationPreview({
       first: firstLine,
       second: line,
       cursor,
+      worldUnitsPerPixel,
     });
-    if (hit.distance > SKETCH_SNAP_DISTANCE && parallelScore === null) {
+    if (hit.distance > snapThreshold && parallelScore === null) {
       continue;
     }
 
@@ -283,8 +296,9 @@ export function buildLineDimensionRelationPreview({
         line: firstLine,
         circle,
         cursor,
+        worldUnitsPerPixel,
       });
-      if (distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
+      if (distance > snapThreshold && relationScore === null) {
         continue;
       }
       const candidate = buildLineCircleDimensionRelationPreview({
@@ -413,7 +427,9 @@ export function buildCircleDimensionRelationPreview({
   planeId,
   planeFrame,
   allowConstruction,
+  worldUnitsPerPixel,
 }: PreviewSearchContext): DimensionRelationPreviewResult | null {
+  const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   const firstCircle = sketchParameters.circles.find(
     (circle) => circle.circle_id === firstEntityId,
   );
@@ -437,8 +453,9 @@ export function buildCircleDimensionRelationPreview({
       line,
       circle: firstCircle,
       cursor,
+      worldUnitsPerPixel,
     });
-    if (hit.distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
+    if (hit.distance > snapThreshold && relationScore === null) {
       continue;
     }
     const candidate = buildCircleLineDimensionRelationPreview({
@@ -472,8 +489,9 @@ export function buildCircleDimensionRelationPreview({
       first: firstCircle,
       second: circle,
       cursor,
+      worldUnitsPerPixel,
     });
-    if (distance > SKETCH_SNAP_DISTANCE && relationScore === null) {
+    if (distance > snapThreshold && relationScore === null) {
       continue;
     }
     const candidate = buildCircleCircleDimensionRelationPreview({
