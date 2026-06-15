@@ -1099,6 +1099,14 @@ export function ViewportPanel({
     pendingDimensionIdRef.current = null;
     pendingDimSourceEntityIdRef.current = null;
     pendingDimensionPlacementRef.current = false;
+    // Clear the drag ref so a subsequent regroup into a two-entity
+    // dimension doesn't commit stale placement state from the old
+    // single-entity dimension.
+    dimensionLabelDragRef.current = null;
+    clearDimensionToolFirstPick();
+    if (controlsRef.current) {
+      controlsRef.current.enabled = true;
+    }
   }
 
   function setSketchDimensionObjectVisibility(
@@ -2606,7 +2614,11 @@ export function ViewportPanel({
           pointerDown = null;
           return "consumed" as const;
         }
-        finishDimensionPlacement();
+        // Defer placement commit until after entity handling so
+        // two-pick dimension workflows (angle, distance) can regroup
+        // into a two-entity dimension before the old single-entity
+        // placement is committed.  The regroup calls
+        // clearPendingDimensionPlacement which cleans up the drag ref.
         setIsDimensionEditorOpen(false);
         // Fall through to entity handling so two-pick workflows
         // (angle, distance) can process the second click.
@@ -2624,6 +2636,11 @@ export function ViewportPanel({
 
       dimensionLabelDragRef.current = null;
       controls.enabled = true;
+      // Clear the dimension tool's staged first-pick so the next
+      // entity click starts a fresh dimension instead of leaking
+      // a stale two-pick workflow (e.g. "Angle dimension already
+      // exists" when the user only wants a line length dimension).
+      clearDimensionToolFirstPick();
       (renderer.domElement as HTMLCanvasElement).style.cursor = "";
       pointerDown = null;
       if (!dimensionDrag.hasMoved) {
