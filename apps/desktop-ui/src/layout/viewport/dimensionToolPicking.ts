@@ -418,7 +418,14 @@ function dimensionStagedEntityAction({
   }
 
   if (firstEntityId && firstEntityId === entityId) {
-    return { kind: "return", clearFirstEntity: true };
+    // Re-clicking the same entity body (not a point on it) clears the
+    // staged pick.  When the user clicks a *point* on the same entity
+    // (e.g. both endpoints of a line), fall through to the point handler
+    // so it can create a line_length or point_distance dimension.
+    if (hit?.kind === "sketch_entity") {
+      return { kind: "return", clearFirstEntity: true };
+    }
+    return { kind: "continue", firstEntityId };
   }
 
   return {
