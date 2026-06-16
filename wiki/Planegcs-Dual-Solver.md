@@ -126,8 +126,8 @@ pointerup
 | File | Role |
 |---|---|
 | `third_party/planegcs/planegcs/` | C++ sources (GCS.cpp, Geo.cpp, …) |
-| `native/cad-core/src/core/sketch/constraint_solver.h` | C++ wrapper for native planegcs |
-| `native/cad-core/src/core/sketch/constraint_solver.cpp` | C++ wrapper implementation |
+| `native/cad-core/src/core/constraint_solver.h` | C++ wrapper for native planegcs |
+| `native/cad-core/src/core/constraint_solver.cpp` | C++ wrapper implementation |
 | `native/cad-core/CMakeLists.txt` | Builds planegcs as static library |
 | `apps/desktop-ui/src/lib/planegcsBridge.ts` | TS bridge — Polysmith ↔ planegcs mapping, solve, apply |
 | `apps/desktop-ui/src/lib/planegcsSolver.ts` | Lazy singleton, WASM module lifecycle |
@@ -138,7 +138,7 @@ pointerup
 
 When a new constraint kind is added to the C++ planegcs sources:
 
-1. **Update the C++ solver wrapper** — `native/cad-core/src/core/sketch/constraint_solver.cpp`. Add the new constraint kind to `build()` with the appropriate `system_->addConstraint*()` call.
+1. **Update the C++ solver wrapper** — `native/cad-core/src/core/constraint_solver.cpp`. Add the new constraint kind to `build()` with the appropriate `system_->addConstraint*()` call.
 
 2. **Update the TS bridge** — `apps/desktop-ui/src/lib/planegcsBridge.ts`. Add a new `case` in the constraint or dimensional constraint switch blocks mapping the Polysmith kind to the planegcs constraint type.
 
