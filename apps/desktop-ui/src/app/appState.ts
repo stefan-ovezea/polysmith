@@ -53,7 +53,7 @@ export function defaultMoveParameters(
 export const SHOW_DEBUG_MESSAGE_LOG =
   import.meta.env.VITE_SHOW_DEBUG_MESSAGE_LOG === "true";
 
-export type WorkspaceView = "cad" | "slicer" | "cam";
+export type WorkspaceView = "cad" | "slicer" | "cam" | "drawing";
 export type SidebarTab = "hierarchy" | "projects";
 export type PendingUnsavedAction =
   | { kind: "quit" }

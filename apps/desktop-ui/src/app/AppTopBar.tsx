@@ -27,6 +27,7 @@ interface AppTopBarProps {
   canExportToSlicer: boolean;
   showCadView: AsyncVoid;
   showCamView: AsyncVoid;
+  showDrawingView: AsyncVoid;
   showSlicerView: AsyncVoid;
   exportToSlicer: () => Promise<unknown>;
   status: string;
@@ -159,6 +160,10 @@ export function AppTopBar(props: AppTopBarProps) {
         }
         if (view === "cam") {
           void props.showCamView();
+          return;
+        }
+        if (view === "drawing") {
+          void props.showDrawingView();
           return;
         }
         void props.showSlicerView();

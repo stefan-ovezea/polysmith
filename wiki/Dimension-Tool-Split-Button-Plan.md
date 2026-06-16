@@ -1,6 +1,6 @@
 # Dimension Tool — Split Button & Floating Panel Implementation Plan
 
-**Status:** Planning  
+**Status:** Implemented (see [Sketch-Dimension-Implementation-Status](Sketch-Dimension-Implementation-Status.md) for current state)  
 **Author:** CodeWhale (deepseek-v4-pro)  
 **Date:** 2026-06-15
 

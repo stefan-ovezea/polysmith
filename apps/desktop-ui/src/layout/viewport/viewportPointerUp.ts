@@ -143,6 +143,7 @@ interface ViewportPointerUpParams {
   rectangleToolMode: DraftPointerUpCommitOptions["modes"]["rectangle"];
   circleToolMode: DraftPointerUpCommitOptions["modes"]["circle"];
   polygonToolMode: PolygonToolMode;
+  dimensionToolMode: import("@/types").DimensionToolMode;
   polygonSides: number;
   isConstruction: boolean;
   clearPreviews: () => void;
@@ -361,6 +362,7 @@ function handleActiveSketchToolPointerUp(
     createDimensionPolygon: params.createDimensionPolygon,
     selectDimensionPolygon: params.selectDimensionPolygon,
     selectDimensionLine: params.selectDimensionLine,
+    dimensionToolMode: params.dimensionToolMode,
   });
 }
 

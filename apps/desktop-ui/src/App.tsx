@@ -1099,6 +1099,7 @@ function App() {
     handleWorkspaceDropdownOpenChange,
     showCadView,
     showCamView,
+    showDrawingView,
     showSlicerView,
   } = useSlicerWorkspaceActions({
     workspaceView,
@@ -1260,6 +1261,7 @@ function App() {
           canExportToSlicer={canExportToSlicer}
           showCadView={showCadView}
           showCamView={showCamView}
+          showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
           exportToSlicer={exportToSlicer}
           status={status}

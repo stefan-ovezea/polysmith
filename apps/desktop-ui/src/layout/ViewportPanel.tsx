@@ -566,6 +566,7 @@ export function ViewportPanel({
   const rectangleToolModeRef = useRef(rectangleToolMode);
   const circleToolModeRef = useRef(circleToolMode);
   const polygonToolModeRef = useRef(polygonToolMode);
+  const dimensionToolModeRef = useRef(dimensionToolMode);
   const addSketchPolygonRef = useRef(onAddSketchPolygon);
   const addSketchFilletRef = useRef(onAddSketchFillet);
   // Arc placement requires three clicks. The first click goes through
@@ -1311,7 +1312,6 @@ export function ViewportPanel({
     addSketchPointDistanceDimensionRef,
     updateSketchDimensionRef,
     setDimensionToolFirstLine,
-    handleDimensionClick,
   });
 
   function dimensionCoreValue(
@@ -2796,6 +2796,7 @@ export function ViewportPanel({
 	        rectangleToolMode: rectangleToolModeRef.current,
 	        circleToolMode: circleToolModeRef.current,
 	        polygonToolMode: polygonToolModeRef.current,
+	        dimensionToolMode: dimensionToolModeRef.current,
 	        polygonSides: polygonSidesRef.current,
 	        isConstruction: sketchToolConstructionRef.current,
 	        clearPreviews: () => {

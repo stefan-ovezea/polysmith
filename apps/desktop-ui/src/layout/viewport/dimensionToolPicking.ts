@@ -97,6 +97,9 @@ type DimensionEntityPickAction =
   | {
       kind: "select_line";
       lineId: string;
+    }
+  | {
+      kind: "noop";
     };
 
 interface DimensionRegroupAction {
@@ -160,6 +163,7 @@ interface DimensionToolClickContext {
   createPolygon: (polygonId: string) => void;
   selectPolygon: (polygonId: string) => void;
   selectLine: (lineId: string) => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
 }
 
 function entityReferencePointId(entityKind: string | null, entityId: string) {
@@ -267,6 +271,8 @@ function applyEntityPickAction(
     case "select_line":
       context.selectLine(action.lineId);
       return;
+    case "noop":
+      return;
   }
 }
 
@@ -276,6 +282,11 @@ function handleDimensionEntityHit(context: DimensionToolClickContext) {
     return false;
   }
   if (hit.isProjected) {
+    return true;
+  }
+
+  // Arcs don't support dimensions yet — consume the click gracefully.
+  if (hit.entityKind === "arc") {
     return true;
   }
 
@@ -332,6 +343,34 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
 }
 
 export function handleDimensionToolClick(context: DimensionToolClickContext) {
+  // Mode-aware dispatch: "auto" uses the smart-detection logic below.
+  // Specific modes are reserved for future implementation — they fall
+  // through to auto behavior until their case blocks are filled in.
+  switch (context.dimensionToolMode) {
+    case "auto":
+      break;
+    // --- Sketch dimension modes ---
+    case "linear":
+    case "aligned":
+    case "angular":
+    case "radius":
+    case "diameter":
+    case "arc_length":
+      break;
+    // --- Drawing-sheet modes (reserved for ISO dimensioning) ---
+    case "ordinate":
+    case "jogged_radial":
+    case "curve_min_max":
+    case "baseline":
+    case "chain":
+    case "tidy_up":
+    case "arrange":
+    case "flip_arrows":
+    case "match":
+    case "dimension_break":
+      break;
+  }
+
   if (context.hit?.kind === "sketch_dimension") {
     context.clearFirstPick();
     context.handleDimensionClick(context.hit.id);
@@ -533,6 +572,12 @@ function dimensionEntityPickAction({
     return hasUnary
       ? { kind: "select_polygon", polygonId: entityId }
       : { kind: "polygon_dimension", polygonId: entityId };
+  }
+
+  // Arcs and any other unsupported entity kinds: consume the click
+  // without creating a dimension.
+  if (entityKind !== "line") {
+    return { kind: "noop" };
   }
 
   return hasUnary

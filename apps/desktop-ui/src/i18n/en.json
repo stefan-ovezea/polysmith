@@ -178,7 +178,15 @@
     "slicerEmbedFailed": "Slicer view failed: {{error}}",
     "slicerNoExportableBody": "There is no solid body to export.",
     "slicerView": "Slicer View",
-    "slicerWaiting": "Slicer view is waiting for OrcaSlicer."
+    "slicerWaiting": "Slicer view is waiting for OrcaSlicer.",
+    "drawing": "ISO Drawing",
+    "drawingView": "ISO Drawing View"
+  },
+  "drawing": {
+    "placeholder": "ISO Drawing workspace ready — dimension and sheet tools coming soon.",
+    "category": {
+      "sheet": "Sheet"
+    }
   },
   "cam": {
     "profile": "Profile",

@@ -39,7 +39,6 @@ interface DimensionToolActionParams {
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
   >;
   setDimensionToolFirstLine: Dispatch<SetStateAction<string | null>>;
-  handleDimensionClick: (dimensionId: string) => void;
 }
 
 export function createDimensionToolActions({
@@ -59,7 +58,6 @@ export function createDimensionToolActions({
   addSketchPointDistanceDimensionRef,
   updateSketchDimensionRef,
   setDimensionToolFirstLine,
-  handleDimensionClick,
 }: DimensionToolActionParams) {
   function stageUnaryDimension(entityId: string, dimensionId: string) {
     pendingDimensionIdRef.current = dimensionId;
@@ -95,7 +93,6 @@ export function createDimensionToolActions({
   }
 
   function selectDimensionCircle(entityId: string) {
-    handleDimensionClick(`dim-circle-${entityId}`);
     stageFollowUpPick(entityId);
   }
 
@@ -109,7 +106,6 @@ export function createDimensionToolActions({
   }
 
   function selectDimensionLine(entityId: string) {
-    handleDimensionClick(`dim-line-${entityId}`);
     stageFollowUpPick(entityId);
   }
 
@@ -121,7 +117,6 @@ export function createDimensionToolActions({
   }
 
   function selectDimensionPolygon(entityId: string) {
-    handleDimensionClick(`dim-polygon-${entityId}`);
     stageFollowUpPick(entityId);
   }
 

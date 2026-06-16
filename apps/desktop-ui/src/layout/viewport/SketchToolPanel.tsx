@@ -319,17 +319,7 @@ export function SketchToolPanel({
                   { value: "angular", label: translate("toolbar.dimensionAngular") },
                   { value: "radius", label: translate("toolbar.dimensionRadius") },
                   { value: "diameter", label: translate("toolbar.dimensionDiameter") },
-                  { value: "ordinate", label: translate("toolbar.dimensionOrdinate") },
-                  { value: "jogged_radial", label: translate("toolbar.dimensionJoggedRadial") },
                   { value: "arc_length", label: translate("toolbar.dimensionArcLength") },
-                  { value: "curve_min_max", label: translate("toolbar.dimensionCurveMinMax") },
-                  { value: "baseline", label: translate("toolbar.dimensionBaseline") },
-                  { value: "chain", label: translate("toolbar.dimensionChain") },
-                  { value: "tidy_up", label: translate("toolbar.dimensionTidyUp") },
-                  { value: "arrange", label: translate("toolbar.dimensionArrange") },
-                  { value: "flip_arrows", label: translate("toolbar.dimensionFlipArrows") },
-                  { value: "match", label: translate("toolbar.dimensionMatch") },
-                  { value: "dimension_break", label: translate("toolbar.dimensionBreak") },
                 ]}
                 label={translate("viewport.mode")}
                 onChange={(value) => {

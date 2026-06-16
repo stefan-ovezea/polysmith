@@ -94,6 +94,7 @@ export interface ActiveSketchPointerUpContext {
   createDimensionPolygon: (polygonId: string) => void;
   selectDimensionPolygon: (polygonId: string) => void;
   selectDimensionLine: (lineId: string) => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
 }
 
 function dimensionToolHit(hit: ActiveSketchSelectHit) {
@@ -174,6 +175,7 @@ export function handleActiveSketchPointerUpTool(
       createPolygon: context.createDimensionPolygon,
       selectPolygon: context.selectDimensionPolygon,
       selectLine: context.selectDimensionLine,
+      dimensionToolMode: context.dimensionToolMode,
     });
     return true;
   }

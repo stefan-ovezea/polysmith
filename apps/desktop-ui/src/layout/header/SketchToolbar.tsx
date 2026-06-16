@@ -339,17 +339,7 @@ export function SketchToolbar({
           { value: "angular" as const, label: t("toolbar.dimensionAngular") },
           { value: "radius" as const, label: t("toolbar.dimensionRadius") },
           { value: "diameter" as const, label: t("toolbar.dimensionDiameter") },
-          { value: "ordinate" as const, label: t("toolbar.dimensionOrdinate") },
-          { value: "jogged_radial" as const, label: t("toolbar.dimensionJoggedRadial") },
           { value: "arc_length" as const, label: t("toolbar.dimensionArcLength") },
-          { value: "curve_min_max" as const, label: t("toolbar.dimensionCurveMinMax") },
-          { value: "baseline" as const, label: t("toolbar.dimensionBaseline") },
-          { value: "chain" as const, label: t("toolbar.dimensionChain") },
-          { value: "tidy_up" as const, label: t("toolbar.dimensionTidyUp") },
-          { value: "arrange" as const, label: t("toolbar.dimensionArrange") },
-          { value: "flip_arrows" as const, label: t("toolbar.dimensionFlipArrows") },
-          { value: "match" as const, label: t("toolbar.dimensionMatch") },
-          { value: "dimension_break" as const, label: t("toolbar.dimensionBreak") },
         ]}
         value={dimensionToolMode}
         onChange={onSetDimensionToolMode}
