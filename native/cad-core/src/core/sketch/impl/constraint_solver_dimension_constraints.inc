@@ -42,6 +42,28 @@
                 lit2 != line_id_to_index_.end()) {
                 auto gl1 = gcs_lines_[lit1->second];
                 auto gl2 = gcs_lines_[lit2->second];
+
+                // Virtual pivot: stored on dimension for non-intersecting
+                // lines.  Orient both p1→p2 directions away from the pivot
+                // so the signed angle matches what was stored at creation.
+                if (dim.pivot_x.has_value() && dim.pivot_y.has_value()) {
+                    double px = *dim.pivot_x;
+                    double py = *dim.pivot_y;
+                    auto dist = [](double x1, double y1, double x2, double y2) {
+                        double dx = x1 - x2, dy = y1 - y2;
+                        return std::sqrt(dx * dx + dy * dy);
+                    };
+                    // Orient gl1: p1→p2 away from pivot
+                    double d1a = dist(*gl1.p1.x, *gl1.p1.y, px, py);
+                    double d1b = dist(*gl1.p2.x, *gl1.p2.y, px, py);
+                    if (d1a > d1b) std::swap(gl1.p1, gl1.p2);
+                    // Orient gl2: p1→p2 away from pivot
+                    double d2a = dist(*gl2.p1.x, *gl2.p1.y, px, py);
+                    double d2b = dist(*gl2.p2.x, *gl2.p2.y, px, py);
+                    if (d2a > d2b) std::swap(gl2.p1, gl2.p2);
+                    system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
+                    // Fall through to next dimension — this dim is handled.
+                } else {
                 // Detect shared endpoint by comparing coordinate values.
                 auto eq = [](const GCS::Point& a, const GCS::Point& b) {
                     return std::abs(*a.x - *b.x) < 1e-6 &&
@@ -148,6 +170,7 @@
                     }
                 }
                 system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
+                }  // else (not virtual pivot)
             }
         } else if (dim.kind == "point_distance" &&
                    !dim.secondary_entity_id.empty()) {

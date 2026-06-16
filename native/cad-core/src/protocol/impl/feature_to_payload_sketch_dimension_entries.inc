@@ -22,6 +22,14 @@
                            dimension.label_y.has_value()
                                ? json(*dimension.label_y)
                                : json(nullptr)},
+                          {"pivot_x",
+                           dimension.pivot_x.has_value()
+                               ? json(*dimension.pivot_x)
+                               : json(nullptr)},
+                          {"pivot_y",
+                           dimension.pivot_y.has_value()
+                               ? json(*dimension.pivot_y)
+                               : json(nullptr)},
                       });
                     }
                     return dimensions;

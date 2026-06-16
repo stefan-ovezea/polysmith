@@ -177,6 +177,13 @@ function entityReferencePointId(entityKind: string | null, entityId: string) {
 }
 
 function applyDimensionRegroup(context: DimensionToolClickContext) {
+  // Don't regroup when a first entity is already staged for a follow-up
+  // pick (e.g. angle or distance between two entities). Regroup is only
+  // for replacing the source entity BEFORE the user commits to a second pick.
+  if (context.getFirstEntityId() != null) {
+    return;
+  }
+
   const regroupAction = dimensionRegroupAction({
     pendingPlacement: context.pendingPlacement,
     pendingSourceId: context.pendingSourceId,
@@ -374,6 +381,31 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
   if (context.hit?.kind === "sketch_dimension") {
     context.clearFirstPick();
     context.handleDimensionClick(context.hit.id);
+    return true;
+  }
+
+  // When a first entity is already staged, we're in a follow-up pick
+  // for a two-entity dimension (angle, distance).  Skip regroup and
+  // staged-entity handling — go directly to entity/point hit dispatch.
+  const stagedFirstId = context.getFirstEntityId();
+  if (stagedFirstId != null) {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      // Two-entity pick: create angle or distance dimension.
+      context.clearFirstPick();
+      context.createAngleOrDistance(stagedFirstId, context.hit.id);
+      return true;
+    }
+    if (context.hit?.kind === "sketch_point") {
+      // Point pick after entity: create point-to-entity distance.
+      context.clearFirstPick();
+      context.createPointDistance(stagedFirstId, context.hit.id);
+      return true;
+    }
+    // Click on empty space or unsupported hit → clear and restart.
+    context.clearFirstPick();
+    if (context.pendingPlacement) {
+      context.clearPendingPlacement();
+    }
     return true;
   }
 

@@ -89,7 +89,12 @@ void update_angle_dimension(FeatureEntry& feature,
       }
     }
   }
-  if (a_pivot_index < 0 && b_pivot_index < 0) {
+  // Virtual pivot: stored on dimension for non-intersecting lines.
+  // Use the stored pivot for angle computation, but rotate the driven
+  // line around its own endpoint (not the virtual pivot).
+  bool use_virtual_pivot = dimension.pivot_x.has_value() &&
+                           dimension.pivot_y.has_value();
+  if (a_pivot_index < 0 && b_pivot_index < 0 && !use_virtual_pivot) {
     throw std::runtime_error(
         "Angle dimension requires the two lines to share an endpoint "
         "or have one endpoint on the other line");
@@ -99,6 +104,8 @@ void update_angle_dimension(FeatureEntry& feature,
   double a_dx, a_dy, b_dx, b_dy;
   bool drive_a = false;  // true → rotate line A; false → rotate line B
   int driven_pivot_index = 0;
+  double delta = 0.0;
+  double current_signed_for_value = 0.0;
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kTwoPi = 2.0 * kPi;
   double requested = std::fmod(std::abs(value), kTwoPi);
@@ -108,7 +115,75 @@ void update_angle_dimension(FeatureEntry& feature,
   const double target_small_angle =
       requested > kPi ? kTwoPi - requested : requested;
 
-  if (b_pivot_index >= 0) {
+  if (use_virtual_pivot) {
+    // Direction vectors from virtual pivot (for angle computation only).
+    // The rotation is applied around line B's start point, so we compute
+    // the delta from virtual-pivot directions and apply it separately.
+    double vpx = *dimension.pivot_x;
+    double vpy = *dimension.pivot_y;
+    auto vdir = [](double px, double py,
+                   double e0x, double e0y,
+                   double e1x, double e1y) -> std::pair<double, double> {
+      double d0 = std::sqrt((e0x - px)*(e0x - px) + (e0y - py)*(e0y - py));
+      double d1 = std::sqrt((e1x - px)*(e1x - px) + (e1y - py)*(e1y - py));
+      double tx = d0 > d1 ? e0x : e1x;
+      double ty = d0 > d1 ? e0y : e1y;
+      double dx = tx - px, dy = ty - py;
+      double len = std::sqrt(dx*dx + dy*dy);
+      if (len < 1e-12) return {1.0, 0.0};
+      return {dx / len, dy / len};
+    };
+    auto av = vdir(vpx, vpy, a_ends[0].first, a_ends[0].second,
+                                a_ends[1].first, a_ends[1].second);
+    auto bv = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
+                                b_ends[1].first, b_ends[1].second);
+    // Compute signed angle and delta from virtual-pivot directions.
+    current_signed_for_value = std::atan2(
+        av.first * bv.second - av.second * bv.first,
+        av.first * bv.first + av.second * bv.second);
+    auto wrap = [](double angle) {
+      constexpr double kLocPi = 3.14159265358979323846;
+      constexpr double kLocTwoPi = 2.0 * kLocPi;
+      double w = std::fmod(angle, kLocTwoPi);
+      if (w <= -kLocPi) w += kLocTwoPi;
+      else if (w > kLocPi) w -= kLocTwoPi;
+      return w;
+    };
+    const double v_positive_target = wrap(requested);
+    const double v_negative_target = wrap(-requested);
+    const double v_positive_delta = wrap(v_positive_target - current_signed_for_value);
+    const double v_negative_delta = wrap(v_negative_target - current_signed_for_value);
+    delta = std::abs(v_positive_delta) <= std::abs(v_negative_delta)
+                ? v_positive_delta : v_negative_delta;
+
+    constexpr double kLocalAngleConfirmTolerance = 1e-4;
+    if (std::abs(delta) <= kLocalAngleConfirmTolerance) {
+      dimension.value = requested > kPi
+                            ? (current_signed_for_value < 0.0 ? -std::abs(value)
+                                                       : std::abs(value))
+                            : current_signed_for_value;
+      return;
+    }
+
+	    // Rotate line B around the endpoint CLOSER to the virtual pivot
+	    // so the line "swings" from its near end.  Use the FARTHER endpoint
+	    // for the direction vector so it points away from the pivot (same
+	    // sense as the virtual-pivot direction used for delta computation).
+	    {
+	      double d0 = std::sqrt((b_ends[0].first - vpx) * (b_ends[0].first - vpx) +
+	                            (b_ends[0].second - vpy) * (b_ends[0].second - vpy));
+	      double d1 = std::sqrt((b_ends[1].first - vpx) * (b_ends[1].first - vpx) +
+	                            (b_ends[1].second - vpy) * (b_ends[1].second - vpy));
+	      int near_idx = d0 <= d1 ? 0 : 1;
+	      int far_idx = 1 - near_idx;
+	      pivot_x = b_ends[near_idx].first;
+	      pivot_y = b_ends[near_idx].second;
+	      b_dx = b_ends[far_idx].first - pivot_x;
+	      b_dy = b_ends[far_idx].second - pivot_y;
+	      driven_pivot_index = near_idx;
+	    }
+	    drive_a = false;
+  } else if (b_pivot_index >= 0) {
     // Pivot is an endpoint of line B.  Line B rotates.
     pivot_x = b_ends[b_pivot_index].first;
     pivot_y = b_ends[b_pivot_index].second;
@@ -143,6 +218,7 @@ void update_angle_dimension(FeatureEntry& feature,
     driven_pivot_index = a_pivot_index;
   }
 
+  if (!use_virtual_pivot) {
   const double a_length = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_length = std::sqrt(b_dx * b_dx + b_dy * b_dy);
   if (a_length <= kMinimumSketchDimensionValue ||
@@ -172,10 +248,10 @@ void update_angle_dimension(FeatureEntry& feature,
       wrap_signed_angle(positive_target - current_signed);
   const double negative_delta =
       wrap_signed_angle(negative_target - current_signed);
-  const double delta = std::abs(positive_delta) <= std::abs(negative_delta)
-                           ? positive_delta
-                           : negative_delta;
-  const double target_signed = wrap_signed_angle(current_signed + delta);
+  delta = std::abs(positive_delta) <= std::abs(negative_delta)
+              ? positive_delta
+              : negative_delta;
+  current_signed_for_value = current_signed;
 
   constexpr double kAngleConfirmTolerance = 1e-4;
   if (std::abs(delta) <= kAngleConfirmTolerance) {
@@ -185,6 +261,7 @@ void update_angle_dimension(FeatureEntry& feature,
                           : current_signed;
     return;
   }
+  }  // !use_virtual_pivot
 
   const double cos_delta = std::cos(delta);
   const double sin_delta = std::sin(delta);
@@ -226,6 +303,16 @@ void update_angle_dimension(FeatureEntry& feature,
   propagate_connected_point_move(
       parameters, moved_point_id, new_other_x, new_other_y);
 
+  auto final_wrap = [](double angle) {
+    constexpr double kFPi = 3.14159265358979323846;
+    constexpr double kFTwoPi = 2.0 * kFPi;
+    double w = std::fmod(angle, kFTwoPi);
+    if (w <= -kFPi) w += kFTwoPi;
+    else if (w > kFPi) w -= kFTwoPi;
+    return w;
+  };
+  const double target_signed =
+      final_wrap(current_signed_for_value + delta);
   dimension.value = requested > kPi
                         ? (target_signed < 0.0 ? -std::abs(value)
                                                : std::abs(value))

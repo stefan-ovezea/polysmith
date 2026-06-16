@@ -156,10 +156,32 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       }
     }
   }
+  // Pass 3: infinite-line intersection (virtual pivot).
+  // Lines that don't share an endpoint or have an endpoint on the other
+  // still form an angle — their extended lines intersect at a virtual
+  // pivot used for display and angle computation.  The solver enforces
+  // only the direction angle (L2LAngle), so a physical shared point is
+  // not required.
+  double virtual_pivot_x = 0.0, virtual_pivot_y = 0.0;
+  bool use_virtual_pivot = false;
   if (a_pivot_index < 0 && b_pivot_index < 0) {
-    throw std::runtime_error(
-        "Dimension requires the two lines to share an endpoint, "
-        "have one endpoint on the other line, or be parallel");
+    double a_dx_inf = a_ends[1].first - a_ends[0].first;
+    double a_dy_inf = a_ends[1].second - a_ends[0].second;
+    double b_dx_inf = b_ends[1].first - b_ends[0].first;
+    double b_dy_inf = b_ends[1].second - b_ends[0].second;
+    double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+    if (std::abs(det) < 1e-12) {
+      throw std::runtime_error(
+          "Dimension requires the two lines to share an endpoint, "
+          "have one endpoint on the other line, or be parallel");
+    }
+    double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+    virtual_pivot_x = a_ends[0].first + t * a_dx_inf;
+    virtual_pivot_y = a_ends[0].second + t * a_dy_inf;
+    use_virtual_pivot = true;
+    a_pivot_index = -2;  // sentinel: virtual pivot from infinite-line intersection
+    b_pivot_index = -2;
   }
 
   double pivot_x, pivot_y;
@@ -191,7 +213,7 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
         a_dx, a_dy);
     b_dx = b_dir.first;
     b_dy = b_dir.second;
-  } else {
+  } else if (b_pivot_index >= 0) {
     // B's endpoint lies on A's segment.
     pivot_x = b_ends[b_pivot_index].first;
     pivot_y = b_ends[b_pivot_index].second;
@@ -209,6 +231,21 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
         b_dx, b_dy);
     a_dx = a_dir.first;
     a_dy = a_dir.second;
+  } else {
+    // Virtual pivot: direction vectors point away from the infinite-line
+    // intersection along each line (to the farther endpoint).
+    pivot_x = virtual_pivot_x;
+    pivot_y = virtual_pivot_y;
+    auto a_dir = dir_away(pivot_x, pivot_y,
+                          a_ends[0].first, a_ends[0].second,
+                          a_ends[1].first, a_ends[1].second);
+    a_dx = a_dir.first;
+    a_dy = a_dir.second;
+    auto b_dir = dir_away(pivot_x, pivot_y,
+                          b_ends[0].first, b_ends[0].second,
+                          b_ends[1].first, b_ends[1].second);
+    b_dx = b_dir.first;
+    b_dy = b_dir.second;
   }
   // Compute the geometric interior angle using the pivot-aware
   // direction vectors (a_dx/a_dy, b_dx/b_dy) already computed above.
@@ -250,6 +287,12 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   const std::string& second = first_line_id < second_line_id
                                   ? second_line_id
                                   : first_line_id;
+  std::optional<double> stored_pivot_x;
+  std::optional<double> stored_pivot_y;
+  if (use_virtual_pivot) {
+    stored_pivot_x = virtual_pivot_x;
+    stored_pivot_y = virtual_pivot_y;
+  }
   parameters.dimensions.push_back(SketchDimension{
       .id = "dim-angle-" + first + "-" + second,
       .kind = "angle",
@@ -257,6 +300,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       .secondary_entity_id = second_line_id,
       .value = current_angle,
       .is_auto = true,
+      .pivot_x = stored_pivot_x,
+      .pivot_y = stored_pivot_y,
   });
 
   feature.parameters_summary = make_parameters_summary(parameters);
