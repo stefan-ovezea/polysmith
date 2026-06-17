@@ -74,6 +74,13 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
       return std::pair<double, double>{dx / len, dy / len};
     };
+    // Skip a candidate that sits at the pivot — the fallback (1,0)
+    // can win the scoring and turn the inter-line angle into a
+    // single-line angle from horizontal.
+    double len0 = std::sqrt((host0x - px)*(host0x - px) + (host0y - py)*(host0y - py));
+    double len1 = std::sqrt((host1x - px)*(host1x - px) + (host1y - py)*(host1y - py));
+    if (len0 < 1e-9) return unit(host1x, host1y);
+    if (len1 < 1e-9) return unit(host0x, host0y);
     auto d0 = unit(host0x, host0y);
     auto d1 = unit(host1x, host1y);
     auto angle_to_other = [&](const std::pair<double, double>& dir) {

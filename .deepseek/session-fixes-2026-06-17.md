@@ -116,3 +116,54 @@ All regressions stemmed from the virtual-pivot feature (angle dimensions between
 | `vcpkg` | Install eigen3 |
 | `.gitmodules` (planegcs submodule) | Initialized |
 | `node_modules` | pnpm install |
+
+---
+
+## Virtual-Pivot Angle Dimension (crossing/non-touching lines)
+
+### Stale pivot — reference line drifts after drag
+- **Files:**
+  - `native/cad-core/src/core/sketch/impl/private_dimension_sync_helpers.inc`
+  - `native/cad-core/src/core/sketch/impl/constraint_solver_dimension_constraints.inc`
+  - `native/cad-core/src/core/viewport/impl/sketch_angle_dimension_primitive.inc`
+  - `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc`
+- **Fix:** Recompute virtual pivot from current line positions in all 4 consumers (sync, solver, rendering, update). Stored pivot is a serialization artifact only; live geometry drives computations.
+- **Root cause:** Pivot computed once at creation, never updated. Lines moved, pivot stayed stale.
+
+### Crossing point drifts when editing angle value
+- **File:** `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc`
+- **Fix:** Rotate line B around the virtual pivot (not its near endpoint). Both endpoints translate together, keeping the infinite-line intersection fixed.
+- **Root cause:** Rotation center was B's near endpoint; crossing point drifted.
+
+### Lines bound together after 180° round-trip (snap merges point IDs)
+- **File:** `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc`
+- **Fix:** Removed `snap_line_endpoints_to_coincident_geometry` call from the virtual-pivot rotation block. Independent crossing lines must not have their endpoints merged.
+- **Root cause:** At 180° lines become collinear; snap merged B's endpoints with A's, binding them. Subsequent edits rotated both lines together.
+
+### Collinear lines: sync overwrites signed angle to 0 instead of ±π
+- **File:** `native/cad-core/src/core/sketch/impl/private_dimension_sync_helpers.inc`
+- **Fix:** When `cross ≈ 0` for a virtual-pivot dimension, skip the geometry read-back and preserve the stored signed angle.
+- **Root cause:** Both "away-from-pivot" directions collapse to the same unit vector; `atan2` reports 0.
+
+### Collinear lines: update uses wrong reference angle
+- **File:** `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc`
+- **Fix:** When `cross ≈ 0`, use `dimension.value` as `current_signed_for_value` instead of the geometric read-back.
+- **Root cause:** Same as above — geometric measurement is ambiguous for collinear lines.
+
+### Shared-endpoint angle measured from horizontal (choose_host_ray fallback)
+- **Files:**
+  - `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc`
+  - `native/cad-core/src/core/sketch/impl/dimension_angle_commands.inc`
+- **Fix:** In `choose_host_ray` / `dir_toward_smaller_angle`, skip any candidate endpoint that IS the pivot itself. The zero-length fallback `(1,0)` can accidentally win scoring.
+- **Root cause:** Pre-existing bug exposed by pivot recomputation changes.
+
+### Tolerance alignment (creation vs update vs rendering)
+- **Files:**
+  - `native/cad-core/src/core/sketch/impl/dimension_angle_update.inc` (0.01→0.10)
+  - `native/cad-core/src/core/viewport/impl/sketch_angle_dimension_primitive.inc` (0.05→0.10)
+- **Fix:** Aligned endpoint-on-segment tolerance to 0.10 in all three locations.
+
+### Virtual-pivot preview: no quadrant selection
+- **File:** `apps/desktop-ui/src/layout/viewport/dimensionRelationPreviewGeometry.ts`
+- **Fix:** For the virtual-pivot case (`!firstEndpointAtPivot && !secondEndpointAtPivot`), generate 4 candidates (all pairings of both lines' endpoint directions) so cursor hover can select acute/obtuse/reflex angles.
+- **Root cause:** Only 1 candidate was generated; cursor could only flip to reflex.

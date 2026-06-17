@@ -184,11 +184,42 @@ entity.
 
 ---
 
+## Virtual-Pivot Angle Dimension (completed 2026-06-17)
+
+Angle dimensions between lines that don't share an endpoint (crossing lines,
+disjoint lines) use a virtual pivot — the infinite-line intersection.
+
+### Bugs fixed
+- **Stale pivot:** 4 consumers now recompute the pivot from live geometry (sync, solver, rendering, value-update). Stored pivot is serialization-only.
+- **Crossing-point drift:** `update_angle_dimension` now rotates line B around the virtual pivot instead of its near endpoint, keeping the intersection fixed.
+- **Snap binding at 180°:** Removed `snap_line_endpoints_to_coincident_geometry` from virtual-pivot rotation — independent lines must not merge point IDs.
+- **Collinear read-back:** `sync_angle_dimensions` and `update_angle_dimension` now preserve the stored signed angle when lines are collinear (cross ≈ 0), since geometry alone can't distinguish 0 from ±π.
+- **Shared-endpoint regression:** `choose_host_ray` and `dir_toward_smaller_angle` now skip zero-length candidates (pivot = endpoint), preventing the `(1,0)` fallback from winning scoring and turning the inter-line angle into a line-from-horizontal angle.
+- **Tolerance alignment:** Endpoint-on-segment tolerance unified to 0.10 in creation, update, and rendering.
+- **Quadrant selection:** `createLineAnglePreview` now generates 4 candidates for virtual-pivot lines (all endpoint-direction pairings) so cursor hover can select acute/obtuse/reflex angles.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `dimension_angle_update.inc` | Pivot recomputation, rotate around VP, remove snap, collinear guard, choose_host_ray fix, tolerance 0.10 |
+| `dimension_angle_commands.inc` | dir_toward_smaller_angle fix |
+| `private_dimension_sync_helpers.inc` | Pivot recomputation, collinear guard |
+| `constraint_solver_dimension_constraints.inc` | Pivot recomputation for solver orientation |
+| `sketch_angle_dimension_primitive.inc` | Pivot recomputation for rendering, tolerance 0.10 |
+| `dimensionRelationPreviewGeometry.ts` | 4-candidate generation for virtual-pivot preview |
+
+### Build Status
+- ✅ C++ build clean, all 4 test executables pass
+- ✅ TypeScript `tsc --noEmit`: zero errors
+
+---
+
 ## Not Yet Done
 
 | Phase | Feature | Notes |
 |---|---|---|
-| **Testing** | Broader app regression pass | P3.2 verified working in app; full snap/constraint regression still needed |
+| **Testing** | Broader app regression pass | Virtual-pivot angle dims verified; full snap/constraint/drag regression still needed |
 | **P3** | Dimension Drive Mode | New IPC + Append Mode with dimension entity as focus |
 | **P5** | Kinematic Animation | Far future |
 
@@ -257,8 +288,9 @@ entity.
 
 ## Next Session
 
-1. Run a broader app regression pass: drawing + constraints + drag
+1. Run a broader app regression pass: drawing + constraints + drag, including shared-endpoint angle dim editing
 2. Verify DOF badge appears in toolbar when constraints exist
 3. Verify append mode doesn't break existing sketches
 4. Test intersection snap: draw two crossing lines, try to snap to their intersection
 5. Test tangent-through-line snap: draw circle + line, try tangent snap near the line
+6. Test virtual-pivot angle dim: crossing lines, disjoint lines, 180° round-trip, quadrant selection

@@ -46,6 +46,15 @@ void update_angle_dimension(FeatureEntry& feature,
           double h1x, double h1y,
           double other_dx, double other_dy,
           double target_small_angle) {
+    // When the pivot is one of the line's endpoints, unit_from_pivot
+    // returns a fallback (1,0) for the zero-length vector.  That
+    // fallback can accidentally win the scoring, turning the
+    // inter-line angle into a single-line angle from horizontal.
+    // Skip any candidate that sits at the pivot itself.
+    double len0 = std::sqrt((h0x - px) * (h0x - px) + (h0y - py) * (h0y - py));
+    double len1 = std::sqrt((h1x - px) * (h1x - px) + (h1y - py) * (h1y - py));
+    if (len0 < 1e-9) return unit_from_pivot(px, py, h1x, h1y);
+    if (len1 < 1e-9) return unit_from_pivot(px, py, h0x, h0y);
     auto d0 = unit_from_pivot(px, py, h0x, h0y);
     auto d1 = unit_from_pivot(px, py, h1x, h1y);
     auto score = [&](const std::pair<double, double>& dir) {
@@ -155,10 +164,18 @@ void update_angle_dimension(FeatureEntry& feature,
                                 a_ends[1].first, a_ends[1].second);
     auto bv = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
                                 b_ends[1].first, b_ends[1].second);
-    // Compute signed angle and delta from virtual-pivot directions.
-    current_signed_for_value = std::atan2(
-        av.first * bv.second - av.second * bv.first,
-        av.first * bv.first + av.second * bv.second);
+    // Compute signed angle from virtual-pivot directions.
+    // When the lines are collinear (cross ≈ 0), both "away" directions
+    // may point the same way, making the geometric read-back ambiguous.
+    // Trust the stored dimension value so delta computations and
+    // round-trip edits use the correct reference angle.
+    double cross_v = av.first * bv.second - av.second * bv.first;
+    double dot_v   = av.first * bv.first + av.second * bv.second;
+    if (std::abs(cross_v) < 1e-9) {
+      current_signed_for_value = dimension.value;
+    } else {
+      current_signed_for_value = std::atan2(cross_v, dot_v);
+    }
     auto wrap = [](double angle) {
       constexpr double kLocPi = 3.14159265358979323846;
       constexpr double kLocTwoPi = 2.0 * kLocPi;
@@ -216,7 +233,10 @@ void update_angle_dimension(FeatureEntry& feature,
       line_b.end_x   = new_end_x;
       line_b.end_y   = new_end_y;
 
-      snap_line_endpoints_to_coincident_geometry(parameters, line_b);
+      // Do NOT snap endpoints to coincident geometry — these are
+      // independent crossing lines.  Snapping would merge point IDs
+      // when the lines happen to be collinear, binding them together
+      // so that subsequent edits rotate both lines instead of one.
       validate_line(line_b.start_x, line_b.start_y,
                     line_b.end_x, line_b.end_y);
 

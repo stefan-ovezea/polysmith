@@ -115,8 +115,21 @@ void sync_angle_dimensions(SketchFeatureParameters& parameters) {
       b_dy = b_ends[1 - b_pivot].second - py;
     }
 
-    double signed_angle = std::atan2(a_dx * b_dy - a_dy * b_dx,
-                                     a_dx * b_dx + a_dy * b_dy);
+    double cross = a_dx * b_dy - a_dy * b_dx;
+    double dot   = a_dx * b_dx + a_dy * b_dy;
+    double signed_angle = std::atan2(cross, dot);
+
+    // For virtual-pivot dimensions, when the lines are collinear
+    // (cross ≈ 0) both "away-from-pivot" directions may collapse
+    // to the same unit vector, making the signed-angle read-back
+    // ambiguous — atan2 reports 0 when the stored value may be ±π.
+    // Preserve the stored angle so the dimension label and
+    // subsequent edits use the correct reference.
+    if (dim.pivot_x.has_value() && dim.pivot_y.has_value() &&
+        std::abs(cross) < 1e-9) {
+      continue;
+    }
+
     dim.value = signed_angle;
   }
 }
