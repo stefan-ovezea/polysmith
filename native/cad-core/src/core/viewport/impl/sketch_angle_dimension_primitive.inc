@@ -88,8 +88,25 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
 
   // Virtual pivot: stored on dimension for non-intersecting lines.
   if (dimension.pivot_x.has_value() && dimension.pivot_y.has_value()) {
-    double vpx = *dimension.pivot_x;
-    double vpy = *dimension.pivot_y;
+    // Recompute virtual pivot from current line positions so the arc
+    // and reference line track geometry after drags / solves.
+    double vpx, vpy;
+    {
+      double a_dx_inf = a_ends[1].first - a_ends[0].first;
+      double a_dy_inf = a_ends[1].second - a_ends[0].second;
+      double b_dx_inf = b_ends[1].first - b_ends[0].first;
+      double b_dy_inf = b_ends[1].second - b_ends[0].second;
+      double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+      if (std::abs(det) > 1e-12) {
+        double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                    (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+        vpx = a_ends[0].first + t * a_dx_inf;
+        vpy = a_ends[0].second + t * a_dy_inf;
+      } else {
+        vpx = *dimension.pivot_x;
+        vpy = *dimension.pivot_y;
+      }
+    }
     // Direction vectors away from virtual pivot (same as creation).
     auto ad = dir_away(vpx, vpy,
                        a_ends[0].first, a_ends[0].second,
@@ -103,7 +120,7 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     pivot_x = vpx;
     pivot_y = vpy;
   } else {
-  constexpr double kPivotTol = 0.05;
+  constexpr double kPivotTol = 0.10;
   int a_pivot = -1, b_pivot = -1;
 
   // Pass 1: direct endpoint–endpoint match.

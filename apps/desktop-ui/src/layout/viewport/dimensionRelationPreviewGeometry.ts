@@ -415,6 +415,18 @@ export function createLineAnglePreview({
             firstDir: candidate,
             secondDir,
           }))
+      : !firstEndpointAtPivot && !secondEndpointAtPivot
+        // Virtual pivot: neither line touches the pivot.  Pair each
+        // endpoint direction of the first line with every endpoint
+        // direction of the second so the user can hover to select
+        // acute, obtuse, or reflex angles — the same way T‑connections
+        // let you pick which side of the shared endpoint to measure.
+        ? lineEndpointDirections(first, pivot).flatMap((firstCandidate) =>
+            lineEndpointDirections(second, pivot).map((secondCandidate) => ({
+              firstDir: firstCandidate,
+              secondDir: secondCandidate,
+            }))
+          )
         : [
             {
               firstDir,

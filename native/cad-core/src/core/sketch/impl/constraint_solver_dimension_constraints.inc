@@ -47,8 +47,29 @@
                 // lines.  Orient both p1→p2 directions away from the pivot
                 // so the signed angle matches what was stored at creation.
                 if (dim.pivot_x.has_value() && dim.pivot_y.has_value()) {
-                    double px = *dim.pivot_x;
-                    double py = *dim.pivot_y;
+                    // Recompute virtual pivot from current solver point
+                    // positions so the orientation swap uses live geometry.
+                    double px, py;
+                    {
+                        double a0x = *gl1.p1.x, a0y = *gl1.p1.y;
+                        double a1x = *gl1.p2.x, a1y = *gl1.p2.y;
+                        double b0x = *gl2.p1.x, b0y = *gl2.p1.y;
+                        double b1x = *gl2.p2.x, b1y = *gl2.p2.y;
+                        double a_dx_inf = a1x - a0x;
+                        double a_dy_inf = a1y - a0y;
+                        double b_dx_inf = b1x - b0x;
+                        double b_dy_inf = b1y - b0y;
+                        double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+                        if (std::abs(det) > 1e-12) {
+                            double t = ((b0x - a0x) * b_dy_inf -
+                                        (b0y - a0y) * b_dx_inf) / det;
+                            px = a0x + t * a_dx_inf;
+                            py = a0y + t * a_dy_inf;
+                        } else {
+                            px = *dim.pivot_x;
+                            py = *dim.pivot_y;
+                        }
+                    }
                     auto dist = [](double x1, double y1, double x2, double y2) {
                         double dx = x1 - x2, dy = y1 - y2;
                         return std::sqrt(dx * dx + dy * dy);

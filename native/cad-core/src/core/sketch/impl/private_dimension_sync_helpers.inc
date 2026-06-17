@@ -68,8 +68,26 @@ void sync_angle_dimensions(SketchFeatureParameters& parameters) {
         if (len < 1e-12) return {1.0, 0.0};
         return {dx / len, dy / len};
       };
-      px = *dim.pivot_x;
-      py = *dim.pivot_y;
+      // Recompute virtual pivot from current line positions so the arc
+      // center and reference line track geometry after drags / solves.
+      {
+        double a_dx_inf = a_ends[1].first - a_ends[0].first;
+        double a_dy_inf = a_ends[1].second - a_ends[0].second;
+        double b_dx_inf = b_ends[1].first - b_ends[0].first;
+        double b_dy_inf = b_ends[1].second - b_ends[0].second;
+        double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+        if (std::abs(det) > 1e-12) {
+          double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                      (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+          px = a_ends[0].first + t * a_dx_inf;
+          py = a_ends[0].second + t * a_dy_inf;
+          dim.pivot_x = px;
+          dim.pivot_y = py;
+        } else {
+          px = *dim.pivot_x;
+          py = *dim.pivot_y;
+        }
+      }
       auto ad = dir_away(px, py,
                          a_ends[0].first, a_ends[0].second,
                          a_ends[1].first, a_ends[1].second);

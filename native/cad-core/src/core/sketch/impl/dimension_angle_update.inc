@@ -74,7 +74,7 @@ void update_angle_dimension(FeatureEntry& feature,
       if (pt_on_seg(a_ends[i].first, a_ends[i].second,
                     b_ends[0].first, b_ends[0].second,
                     b_ends[1].first, b_ends[1].second,
-                    kCoincidentTolerance)) {
+                    0.10)) {
         a_pivot_index = i; b_pivot_index = -1; break;
       }
     }
@@ -84,7 +84,7 @@ void update_angle_dimension(FeatureEntry& feature,
       if (pt_on_seg(b_ends[j].first, b_ends[j].second,
                     a_ends[0].first, a_ends[0].second,
                     a_ends[1].first, a_ends[1].second,
-                    kCoincidentTolerance)) {
+                    0.10)) {
         a_pivot_index = -1; b_pivot_index = j; break;
       }
     }
@@ -116,11 +116,29 @@ void update_angle_dimension(FeatureEntry& feature,
       requested > kPi ? kTwoPi - requested : requested;
 
   if (use_virtual_pivot) {
-    // Direction vectors from virtual pivot (for angle computation only).
-    // The rotation is applied around line B's start point, so we compute
-    // the delta from virtual-pivot directions and apply it separately.
-    double vpx = *dimension.pivot_x;
-    double vpy = *dimension.pivot_y;
+    // Compute angle delta from virtual-pivot directions, then rotate
+    // line B around the virtual pivot itself so the crossing point
+    // (infinite-line intersection) stays fixed.
+    // Recompute virtual pivot from current line positions.
+    double vpx, vpy;
+    {
+      double a_dx_inf = a_ends[1].first - a_ends[0].first;
+      double a_dy_inf = a_ends[1].second - a_ends[0].second;
+      double b_dx_inf = b_ends[1].first - b_ends[0].first;
+      double b_dy_inf = b_ends[1].second - b_ends[0].second;
+      double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+      if (std::abs(det) > 1e-12) {
+        double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                    (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+        vpx = a_ends[0].first + t * a_dx_inf;
+        vpy = a_ends[0].second + t * a_dy_inf;
+        dimension.pivot_x = vpx;
+        dimension.pivot_y = vpy;
+      } else {
+        vpx = *dimension.pivot_x;
+        vpy = *dimension.pivot_y;
+      }
+    }
     auto vdir = [](double px, double py,
                    double e0x, double e0y,
                    double e1x, double e1y) -> std::pair<double, double> {
@@ -165,24 +183,73 @@ void update_angle_dimension(FeatureEntry& feature,
       return;
     }
 
-    // Rotate line B around the endpoint CLOSER to the virtual pivot
-    // so the line "swings" from its near end.  Use the FARTHER endpoint
-    // for the direction vector so it points away from the pivot (same
-    // sense as the virtual-pivot direction used for delta computation).
+    // Rotate line B around the virtual pivot so the crossing point
+    // (infinite-line intersection) stays fixed.  Unlike the
+    // shared-endpoint case where one endpoint is the natural anchor,
+    // here both endpoints translate together.
     {
-      double d0 = std::sqrt((b_ends[0].first - vpx) * (b_ends[0].first - vpx) +
-                            (b_ends[0].second - vpy) * (b_ends[0].second - vpy));
-      double d1 = std::sqrt((b_ends[1].first - vpx) * (b_ends[1].first - vpx) +
-                            (b_ends[1].second - vpy) * (b_ends[1].second - vpy));
-      int near_idx = d0 <= d1 ? 0 : 1;
-      int far_idx = 1 - near_idx;
-      pivot_x = b_ends[near_idx].first;
-      pivot_y = b_ends[near_idx].second;
-      b_dx = b_ends[far_idx].first - pivot_x;
-      b_dy = b_ends[far_idx].second - pivot_y;
-      driven_pivot_index = near_idx;
+      const double cos_d = std::cos(delta);
+      const double sin_d = std::sin(delta);
+
+      const double b0_dx = b_ends[0].first - vpx;
+      const double b0_dy = b_ends[0].second - vpy;
+      const double b1_dx = b_ends[1].first - vpx;
+      const double b1_dy = b_ends[1].second - vpy;
+
+      const double new_b0_dx = b0_dx * cos_d - b0_dy * sin_d;
+      const double new_b0_dy = b0_dx * sin_d + b0_dy * cos_d;
+      const double new_b1_dx = b1_dx * cos_d - b1_dy * sin_d;
+      const double new_b1_dy = b1_dx * sin_d + b1_dy * cos_d;
+
+      const double new_start_x = vpx + new_b0_dx;
+      const double new_start_y = vpy + new_b0_dy;
+      const double new_end_x   = vpx + new_b1_dx;
+      const double new_end_y   = vpy + new_b1_dy;
+
+      const double previous_start_x = line_b.start_x;
+      const double previous_start_y = line_b.start_y;
+      const double previous_end_x   = line_b.end_x;
+      const double previous_end_y   = line_b.end_y;
+
+      line_b.start_x = new_start_x;
+      line_b.start_y = new_start_y;
+      line_b.end_x   = new_end_x;
+      line_b.end_y   = new_end_y;
+
+      snap_line_endpoints_to_coincident_geometry(parameters, line_b);
+      validate_line(line_b.start_x, line_b.start_y,
+                    line_b.end_x, line_b.end_y);
+
+      if (!points_match(previous_start_x, previous_start_y,
+                        line_b.start_x, line_b.start_y)) {
+        propagate_connected_point_move(parameters,
+            line_b.start_point_id,
+            line_b.start_x, line_b.start_y);
+      }
+      if (!points_match(previous_end_x, previous_end_y,
+                        line_b.end_x, line_b.end_y)) {
+        propagate_connected_point_move(parameters,
+            line_b.end_point_id,
+            line_b.end_x, line_b.end_y);
+      }
     }
-    drive_a = false;
+
+    auto final_wrap = [](double angle) {
+      constexpr double kFPi = 3.14159265358979323846;
+      constexpr double kFTwoPi = 2.0 * kFPi;
+      double w = std::fmod(angle, kFTwoPi);
+      if (w <= -kFPi) w += kFTwoPi;
+      else if (w > kFPi) w -= kFTwoPi;
+      return w;
+    };
+    const double target_signed =
+        final_wrap(current_signed_for_value + delta);
+    dimension.value = requested > kPi
+                          ? (target_signed < 0.0 ? -std::abs(value)
+                                                 : std::abs(value))
+                          : target_signed;
+    refresh_sketch_derived_state(feature);
+    return;
   } else if (b_pivot_index >= 0) {
     // Pivot is an endpoint of line B.  Line B rotates.
     pivot_x = b_ends[b_pivot_index].first;
