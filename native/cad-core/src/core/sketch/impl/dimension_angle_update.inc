@@ -165,24 +165,24 @@ void update_angle_dimension(FeatureEntry& feature,
       return;
     }
 
-	    // Rotate line B around the endpoint CLOSER to the virtual pivot
-	    // so the line "swings" from its near end.  Use the FARTHER endpoint
-	    // for the direction vector so it points away from the pivot (same
-	    // sense as the virtual-pivot direction used for delta computation).
-	    {
-	      double d0 = std::sqrt((b_ends[0].first - vpx) * (b_ends[0].first - vpx) +
-	                            (b_ends[0].second - vpy) * (b_ends[0].second - vpy));
-	      double d1 = std::sqrt((b_ends[1].first - vpx) * (b_ends[1].first - vpx) +
-	                            (b_ends[1].second - vpy) * (b_ends[1].second - vpy));
-	      int near_idx = d0 <= d1 ? 0 : 1;
-	      int far_idx = 1 - near_idx;
-	      pivot_x = b_ends[near_idx].first;
-	      pivot_y = b_ends[near_idx].second;
-	      b_dx = b_ends[far_idx].first - pivot_x;
-	      b_dy = b_ends[far_idx].second - pivot_y;
-	      driven_pivot_index = near_idx;
-	    }
-	    drive_a = false;
+    // Rotate line B around the endpoint CLOSER to the virtual pivot
+    // so the line "swings" from its near end.  Use the FARTHER endpoint
+    // for the direction vector so it points away from the pivot (same
+    // sense as the virtual-pivot direction used for delta computation).
+    {
+      double d0 = std::sqrt((b_ends[0].first - vpx) * (b_ends[0].first - vpx) +
+                            (b_ends[0].second - vpy) * (b_ends[0].second - vpy));
+      double d1 = std::sqrt((b_ends[1].first - vpx) * (b_ends[1].first - vpx) +
+                            (b_ends[1].second - vpy) * (b_ends[1].second - vpy));
+      int near_idx = d0 <= d1 ? 0 : 1;
+      int far_idx = 1 - near_idx;
+      pivot_x = b_ends[near_idx].first;
+      pivot_y = b_ends[near_idx].second;
+      b_dx = b_ends[far_idx].first - pivot_x;
+      b_dy = b_ends[far_idx].second - pivot_y;
+      driven_pivot_index = near_idx;
+    }
+    drive_a = false;
   } else if (b_pivot_index >= 0) {
     // Pivot is an endpoint of line B.  Line B rotates.
     pivot_x = b_ends[b_pivot_index].first;

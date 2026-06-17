@@ -223,24 +223,26 @@ function pickActiveSketchTarget({
   worldUnitsPerPixel: number;
   tolerancePx: number;
 }): ViewportPickHit | null {
+  // Sketch points always get first priority — a vertex the user
+  // wants to drag should never be blocked by an overlapping dimension
+  // arc or label (e.g. angle dimensions sitting on a shared endpoint).
+  const pointHit = pickSketchPointByRayDistance(
+    raycaster, sketchPointObjects, worldUnitsPerPixel, tolerancePx);
+  if (pointHit) {
+    return pointHit;
+  }
+
   const checkDimensionsLast = activeSketchTool === "dimension";
 
   if (checkDimensionsLast) {
-    // Use sphere-based point picking so the dimension tool reliably
-    // detects sketch points even when the raycaster misses the tiny
-    // point mesh (common at moderate zoom levels).  Without this,
-    // the raycaster hits the line entity instead → entity_distance
-    // routing → angle-dimension error for unrelated lines.
-    const preDimensionHit = pickSketchPointOrEntity({
-      raycaster,
-      sketchPointObjects,
-      sketchEntityObjects,
-      useSpherePointPicking: true,
-      worldUnitsPerPixel,
-      tolerancePx,
-    });
-    if (preDimensionHit) {
-      return preDimensionHit;
+    // Dimension tool: check entities before dimensions so the user
+    // can pick lines/circles to create dimensions on them.
+    const [entityHit] = raycaster.intersectObjects(
+      sketchEntityObjects, false);
+    const entityResult =
+      sketchEntitySelectionHitFromIntersection(entityHit);
+    if (entityResult) {
+      return entityResult;
     }
   }
 
@@ -256,18 +258,14 @@ function pickActiveSketchTarget({
     }
   }
 
-  if (!checkDimensionsLast) {
-    const pointOrEntityHit = pickSketchPointOrEntity({
-      raycaster,
-      sketchPointObjects,
-      sketchEntityObjects,
-      useSpherePointPicking: true,
-      worldUnitsPerPixel,
-      tolerancePx,
-    });
-    if (pointOrEntityHit) {
-      return pointOrEntityHit;
-    }
+  // Entities (for non-dimension tools, checked after dimensions so
+  // dimension labels/arcs can still be clicked for editing).
+  const [entityHit] = raycaster.intersectObjects(
+    sketchEntityObjects, false);
+  const entityResult =
+    sketchEntitySelectionHitFromIntersection(entityHit);
+  if (entityResult) {
+    return entityResult;
   }
 
   const profileId = pickProfile();

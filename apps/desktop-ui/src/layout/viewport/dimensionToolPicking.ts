@@ -390,23 +390,41 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
   const stagedFirstId = context.getFirstEntityId();
   if (stagedFirstId != null) {
     if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      // Re-clicking the same entity clears the staged pick
+      // instead of creating a dimension on the same entity twice.
+      if (context.hit.id === stagedFirstId) {
+        context.clearFirstPick();
+        return true;
+      }
       // Two-entity pick: create angle or distance dimension.
       context.clearFirstPick();
       context.createAngleOrDistance(stagedFirstId, context.hit.id);
       return true;
     }
     if (context.hit?.kind === "sketch_point") {
-      // Point pick after entity: create point-to-entity distance.
-      context.clearFirstPick();
-      context.createPointDistance(stagedFirstId, context.hit.id);
-      return true;
+      if (context.getFirstPoint() != null) {
+        // A first point is also staged — fall through to the normal
+        // dispatch (handleDimensionPointHit) which handles point-to-point
+        // dimensions including same-line endpoint length.
+      } else {
+        // Only an entity staged (no point): create point-to-entity distance.
+        context.clearFirstPick();
+        context.createPointDistance(stagedFirstId, context.hit.id);
+        return true;
+      }
     }
     // Click on empty space or unsupported hit → clear and restart.
-    context.clearFirstPick();
-    if (context.pendingPlacement) {
-      context.clearPendingPlacement();
+    // When a point-to-point pick fell through above, don't clear.
+    if (
+      !(context.hit?.kind === "sketch_point" &&
+        context.getFirstPoint() != null)
+    ) {
+      context.clearFirstPick();
+      if (context.pendingPlacement) {
+        context.clearPendingPlacement();
+      }
+      return true;
     }
-    return true;
   }
 
   applyDimensionRegroup(context);

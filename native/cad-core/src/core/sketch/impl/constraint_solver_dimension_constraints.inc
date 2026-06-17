@@ -62,8 +62,8 @@
                     double d2b = dist(*gl2.p2.x, *gl2.p2.y, px, py);
                     if (d2a > d2b) std::swap(gl2.p1, gl2.p2);
                     system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
-                    // Fall through to next dimension — this dim is handled.
-                } else {
+                    continue;
+                }
                 // Detect shared endpoint by comparing coordinate values.
                 auto eq = [](const GCS::Point& a, const GCS::Point& b) {
                     return std::abs(*a.x - *b.x) < 1e-6 &&
@@ -170,7 +170,6 @@
                     }
                 }
                 system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
-                }  // else (not virtual pivot)
             }
         } else if (dim.kind == "point_distance" &&
                    !dim.secondary_entity_id.empty()) {

@@ -18,7 +18,12 @@ list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/../../third_party/occt-instal
 
 find_package(OpenCASCADE REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED)
+# CONFIG first: required for CMake 3.30+ (policy CMP0167) and vcpkg.
+# Fall back to MODULE for older Boost installations without CMake config.
+find_package(Boost CONFIG QUIET)
+if(NOT Boost_FOUND)
+  find_package(Boost MODULE REQUIRED)
+endif()
 
 if(UNIX AND NOT APPLE)
   # Use RPATH instead of RUNPATH so transitive dependencies are found

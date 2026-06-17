@@ -8,12 +8,16 @@ void update_sketch_dimension(FeatureEntry& feature,
     throw std::runtime_error("Only sketch features can update sketch dimensions");
   }
 
-  if (value <= kMinimumSketchDimensionValue) {
-    throw std::runtime_error("Sketch dimensions must be greater than zero");
-  }
-
   auto& parameters = feature.sketch_parameters.value();
   auto& dimension = require_dimension(parameters, dimension_id);
+
+  // Angle dimensions use signed radian values that can be small or
+  // negative — the generic >0 check does not apply.
+  if (dimension.kind != "angle" && dimension.kind != "line_angle") {
+    if (value <= kMinimumSketchDimensionValue) {
+      throw std::runtime_error("Sketch dimensions must be greater than zero");
+    }
+  }
 
   // Driven (reference-only) dimensions show the measured value but do
   // not drive geometry. Silently ignore edit attempts.

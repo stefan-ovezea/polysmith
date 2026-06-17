@@ -457,8 +457,8 @@ function makeDimensionLabelSprite(
   const fontSize = 26;
   context.font = `600 ${fontSize}px "Space Grotesk", sans-serif`;
   const textWidth = Math.ceil(context.measureText(text).width);
-  canvas.width = textWidth + 12;
-  canvas.height = 38;
+  canvas.width = textWidth + 32;
+  canvas.height = 50;
 
   context.font = `600 ${fontSize}px "Space Grotesk", sans-serif`;
   context.clearRect(0, 0, canvas.width, canvas.height);

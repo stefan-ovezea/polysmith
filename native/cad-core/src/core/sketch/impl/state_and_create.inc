@@ -155,6 +155,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.
   sync_all_line_dimensions(*feature.sketch_parameters);
+  sync_angle_dimensions(*feature.sketch_parameters);
 
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.

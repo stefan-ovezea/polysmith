@@ -176,21 +176,8 @@ function sharedLineEndpoint(
     return [second.end_x, second.end_y];
   }
 
-  // No physical shared point found — compute the intersection of the
-  // infinite lines (virtual pivot) for non-parallel, non-touching lines.
-  const dx1 = first.end_x - first.start_x;
-  const dy1 = first.end_y - first.start_y;
-  const dx2 = second.end_x - second.start_x;
-  const dy2 = second.end_y - second.start_y;
-  const det = dx1 * dy2 - dy1 * dx2;
-  if (Math.abs(det) < 1e-12) {
-    return null; // parallel — no angle pivot
-  }
-  const t =
-    ((second.start_x - first.start_x) * dy2 -
-      (second.start_y - first.start_y) * dx2) /
-    det;
-  return [first.start_x + t * dx1, first.start_y + t * dy1];
+  // No physical shared point found.
+  return null;
 }
 
 export function sketchLinesShareEndpoint(
@@ -392,9 +379,23 @@ export function createLineAnglePreview({
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
 }): { dimension: SketchDimensionScene; anglePreview: AnglePreviewState } | null {
-  const pivot = sharedLineEndpoint(first, second);
+  // Try physical shared endpoint first; fall back to infinite-line
+  // intersection (virtual pivot) for non-parallel, non-touching lines.
+  let pivot = sharedLineEndpoint(first, second);
   if (!pivot) {
-    return null;
+    const dx1 = first.end_x - first.start_x;
+    const dy1 = first.end_y - first.start_y;
+    const dx2 = second.end_x - second.start_x;
+    const dy2 = second.end_y - second.start_y;
+    const det = dx1 * dy2 - dy1 * dx2;
+    if (Math.abs(det) < 1e-12) {
+      return null; // parallel — no angle preview
+    }
+    const t =
+      ((second.start_x - first.start_x) * dy2 -
+        (second.start_y - first.start_y) * dx2) /
+      det;
+    pivot = [first.start_x + t * dx1, first.start_y + t * dy1];
   }
   const firstDir = lineDirectionAwayFromPoint(first, pivot);
   const secondDir = lineDirectionAwayFromPoint(second, pivot);
