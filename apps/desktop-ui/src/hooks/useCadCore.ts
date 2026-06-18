@@ -31,6 +31,7 @@ import {
   makeAddSketchAngleDimensionCommand,
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
+  makeAddSketchLineAngleDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
   makeAddSketchPointDistanceDimensionCommand,
   makeAddSketchPolygonRadiusDimensionCommand,
@@ -767,6 +768,12 @@ export function useCadCore() {
     addSketchLineLengthDimension: async (lineId: string) => {
       await sendCoreCommand(
         makeAddSketchLineLengthDimensionCommand(lineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchLineAngleDimension: async (lineId: string) => {
+      await sendCoreCommand(
+        makeAddSketchLineAngleDimensionCommand(lineId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

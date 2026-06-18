@@ -220,6 +220,7 @@ export function ViewportPanel({
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
+  onAddSketchLineAngleDimension,
   onAddSketchCircleRadiusDimension,
   onAddSketchPolygonRadiusDimension,
   onSetSketchLineConstraint,
@@ -706,6 +707,9 @@ export function ViewportPanel({
   const addSketchDistanceDimensionRef = useRef(onAddSketchDistanceDimension);
   const addSketchLineLengthDimensionRef = useRef(
     onAddSketchLineLengthDimension,
+  );
+  const addSketchLineAngleDimensionRef = useRef(
+    onAddSketchLineAngleDimension,
   );
   const addSketchCircleRadiusDimensionRef = useRef(
     onAddSketchCircleRadiusDimension,
@@ -1294,6 +1298,7 @@ export function ViewportPanel({
     createDimensionAngleOrDistance: dimCreateAngleOrDistance,
     createDimensionCircle: dimCreateCircle,
     createDimensionLine: dimCreateLine,
+    createDimensionLineAngle: dimCreateLineAngle,
     createDimensionPointDistance: dimCreatePointDistance,
     createDimensionPolygon: dimCreatePolygon,
     selectDimensionCircle: dimSelectCircle,
@@ -1310,6 +1315,7 @@ export function ViewportPanel({
     pendingRelationPlacementMatchRef,
     addSketchCircleRadiusDimensionRef,
     addSketchLineLengthDimensionRef,
+    addSketchLineAngleDimensionRef,
     addSketchPolygonRadiusDimensionRef,
     addSketchAngleDimensionRef,
     addSketchDistanceDimensionRef,
@@ -1776,6 +1782,7 @@ export function ViewportPanel({
       addSketchAngleDimensionRef,
       addSketchDistanceDimensionRef,
       addSketchLineLengthDimensionRef,
+      addSketchLineAngleDimensionRef,
       addSketchCircleRadiusDimensionRef,
       addSketchPolygonRadiusDimensionRef,
       setSketchLineConstraintRef,
@@ -1832,6 +1839,7 @@ export function ViewportPanel({
       onAddSketchAngleDimension,
       onAddSketchDistanceDimension,
       onAddSketchLineLengthDimension,
+      onAddSketchLineAngleDimension,
       onAddSketchCircleRadiusDimension,
       onAddSketchPolygonRadiusDimension,
       onSetSketchLineConstraint,
@@ -2780,6 +2788,7 @@ export function ViewportPanel({
 	        createDimensionAngleOrDistance: dimCreateAngleOrDistance,
 	        createDimensionPointDistance: dimCreatePointDistance,
 	        createDimensionLine: dimCreateLine,
+		createDimensionLineAngle: dimCreateLineAngle,
 	        createDimensionCircle: dimCreateCircle,
 	        selectDimensionCircle: dimSelectCircle,
 	        createDimensionPolygon: dimCreatePolygon,

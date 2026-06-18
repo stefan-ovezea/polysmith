@@ -55,6 +55,7 @@ export interface AddSketchAngleDimensionCommand {
   payload: {
     first_line_id: string;
     second_line_id: string;
+    value?: number;
   };
 }
 
@@ -79,6 +80,14 @@ export interface AddSketchPointDistanceDimensionCommand {
 export interface AddSketchLineLengthDimensionCommand {
   id: string;
   type: "add_sketch_line_length_dimension";
+  payload: {
+    line_id: string;
+  };
+}
+
+export interface AddSketchLineAngleDimensionCommand {
+  id: string;
+  type: "add_sketch_line_angle_dimension";
   payload: {
     line_id: string;
   };

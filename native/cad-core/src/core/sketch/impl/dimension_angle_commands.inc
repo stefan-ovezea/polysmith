@@ -1,6 +1,7 @@
 void add_sketch_angle_dimension(FeatureEntry& feature,
                                 const std::string& first_line_id,
-                                const std::string& second_line_id) {
+                                const std::string& second_line_id,
+                                std::optional<double> value) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error(
         "Only sketch features can hold angle dimensions");
@@ -305,7 +306,7 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
       .kind = "angle",
       .entity_id = first_line_id,
       .secondary_entity_id = second_line_id,
-      .value = current_angle,
+      .value = value.value_or(current_angle),
       .is_auto = true,
       .pivot_x = stored_pivot_x,
       .pivot_y = stored_pivot_y,

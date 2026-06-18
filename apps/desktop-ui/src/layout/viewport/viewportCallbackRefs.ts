@@ -72,6 +72,9 @@ interface ViewportCallbackRefTargets {
   addSketchLineLengthDimensionRef: MutableRefObject<
     (lineId: string) => Promise<void>
   >;
+  addSketchLineAngleDimensionRef: MutableRefObject<
+    (lineId: string) => Promise<void>
+  >;
   addSketchCircleRadiusDimensionRef: MutableRefObject<
     (circleId: string, displayAs?: string) => Promise<void>
   >;
@@ -224,6 +227,7 @@ interface ViewportCallbackRefValues
   onAddSketchAngleDimension: ViewportCallbackRefTargets["addSketchAngleDimensionRef"]["current"];
   onAddSketchDistanceDimension: ViewportCallbackRefTargets["addSketchDistanceDimensionRef"]["current"];
   onAddSketchLineLengthDimension: ViewportCallbackRefTargets["addSketchLineLengthDimensionRef"]["current"];
+  onAddSketchLineAngleDimension: ViewportCallbackRefTargets["addSketchLineAngleDimensionRef"]["current"];
   onAddSketchCircleRadiusDimension: ViewportCallbackRefTargets["addSketchCircleRadiusDimensionRef"]["current"];
   onAddSketchPolygonRadiusDimension: ViewportCallbackRefTargets["addSketchPolygonRadiusDimensionRef"]["current"];
   onSetSketchLineConstraint: ViewportCallbackRefTargets["setSketchLineConstraintRef"]["current"];
@@ -297,6 +301,8 @@ export function useViewportCallbackRefs(
       values.onAddSketchDistanceDimension;
     refs.addSketchLineLengthDimensionRef.current =
       values.onAddSketchLineLengthDimension;
+    refs.addSketchLineAngleDimensionRef.current =
+      values.onAddSketchLineAngleDimension;
     refs.addSketchCircleRadiusDimensionRef.current =
       values.onAddSketchCircleRadiusDimension;
     refs.addSketchPolygonRadiusDimensionRef.current =

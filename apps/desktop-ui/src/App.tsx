@@ -537,6 +537,7 @@ function App() {
     addSketchAngleDimension,
     addSketchDistanceDimension,
     addSketchLineLengthDimension,
+    addSketchLineAngleDimension,
     addSketchCircleRadiusDimension,
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
@@ -1672,6 +1673,11 @@ function App() {
               onAddSketchLineLengthDimension={async (lineId) => {
                 await runAction(async () => {
                   await addSketchLineLengthDimension(lineId);
+                });
+              }}
+              onAddSketchLineAngleDimension={async (lineId) => {
+                await runAction(async () => {
+                  await addSketchLineAngleDimension(lineId);
                 });
               }}
               onAddSketchCircleRadiusDimension={async (circleId) => {

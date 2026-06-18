@@ -3,7 +3,8 @@
   // angle (radians); subsequent `update_sketch_dimension` calls
   // drive the second line's rotation about the shared endpoint.
   DocumentState add_sketch_angle_dimension(const std::string& first_line_id,
-                                           const std::string& second_line_id);
+                                           const std::string& second_line_id,
+                                           std::optional<double> value = std::nullopt);
   DocumentState add_sketch_distance_dimension(
       const std::string& first_entity_id,
       const std::string& second_entity_id);
@@ -12,6 +13,7 @@
   // delegates to the sketch_feature core helper, selects the new
   // dimension, and bumps the geometry revision.
   DocumentState add_sketch_line_length_dimension(const std::string& line_id);
+  DocumentState add_sketch_line_angle_dimension(const std::string& line_id);
   DocumentState add_sketch_circle_radius_dimension(
       const std::string& circle_id,
       std::optional<std::string> display_as = std::nullopt);

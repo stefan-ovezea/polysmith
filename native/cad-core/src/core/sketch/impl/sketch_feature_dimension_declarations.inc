@@ -6,7 +6,8 @@
 // the coincident tolerance.
 void add_sketch_angle_dimension(FeatureEntry& feature,
                                 const std::string& first_line_id,
-                                const std::string& second_line_id);
+                                const std::string& second_line_id,
+                                std::optional<double> value = std::nullopt);
 void add_sketch_distance_dimension(FeatureEntry& feature,
                                    const std::string& first_entity_id,
                                    const std::string& second_entity_id);
@@ -32,6 +33,8 @@ void delete_sketch_dimension(FeatureEntry& feature,
 // entity's current geometry.
 void add_sketch_line_length_dimension(FeatureEntry& feature,
                                       const std::string& line_id);
+void add_sketch_line_angle_dimension(FeatureEntry& feature,
+                                     const std::string& line_id);
 void add_sketch_circle_radius_dimension(FeatureEntry& feature,
                                         const std::string& circle_id,
                                         std::optional<std::string> display_as = std::nullopt);

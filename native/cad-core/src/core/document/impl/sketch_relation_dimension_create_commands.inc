@@ -1,6 +1,7 @@
 DocumentState DocumentManager::add_sketch_angle_dimension(
     const std::string& first_line_id,
-    const std::string& second_line_id) {
+    const std::string& second_line_id,
+    std::optional<double> value) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -21,7 +22,7 @@ DocumentState DocumentManager::add_sketch_angle_dimension(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::add_sketch_angle_dimension(
-      *feature_it, first_line_id, second_line_id);
+      *feature_it, first_line_id, second_line_id, value);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   const auto dimension_it = std::find_if(

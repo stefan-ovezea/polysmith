@@ -158,6 +158,7 @@ interface DimensionToolClickContext {
   createAngleOrDistance: (firstEntityId: string, secondEntityId: string, forceMode?: "angle" | "distance") => void;
   createPointDistance: (firstPointId: string, secondPointId: string) => void;
   createLine: (lineId: string) => void;
+  createLineAngle: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
   selectCircle: (circleId: string) => void;
   createPolygon: (polygonId: string) => void;
@@ -403,14 +404,24 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
         return true;
       }
       if (stagedFirst === context.hit.id) {
+        // Re-click same line → single-line angle from horizontal.
         context.clearFirstPick();
+        context.createLineAngle(stagedFirst);
         return true;
       }
       // First line: stage without creating a unary dimension.
       context.stageFirstEntity(context.hit.id);
       return true;
     }
-    // Non-line hits in angular mode: consume, no action.
+    // Non-line hits in angular mode: if a line is staged, create
+    // a single-line angle from horizontal (Fusion 360 – style).
+    // Otherwise just clear.
+    const stagedFirst = context.getFirstEntityId();
+    if (stagedFirst != null) {
+      context.clearFirstPick();
+      context.createLineAngle(stagedFirst);
+      return true;
+    }
     context.clearFirstPick();
     return true;
   }

@@ -118,9 +118,18 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
         const double b_dx = b_ends[1 - b_pivot].first - px;
         const double b_dy = b_ends[1 - b_pivot].second - py;
         // Recompute the signed angle from A to B.
-        dimension.value =
+        double signed_angle =
             std::atan2(a_dx * b_dy - a_dy * b_dx,
                        a_dx * b_dx + a_dy * b_dy);
+        // Preserve reflex for driven dimensions: atan2 returns
+        // [-π, π] so reflex values (> π) would be lost.
+        constexpr double kDrivenPi = 3.14159265358979323846;
+        if (std::abs(dimension.value) > kDrivenPi) {
+          double preserved = std::abs(dimension.value);
+          dimension.value = signed_angle < 0.0 ? -preserved : preserved;
+        } else {
+          dimension.value = signed_angle;
+        }
       }
     } else if (dimension.kind == "line_line_distance") {
       const auto& driven_line =

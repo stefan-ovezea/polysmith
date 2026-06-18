@@ -1,3 +1,5 @@
+#include "core/sketch/impl/angle_direction_helpers.inc"
+
 // Build the viewport primitive for an angle dimension between two
 // lines that share an endpoint. We emit a chord-shaped "dimension
 // line" along the imaginary arc between the two outgoing rays so the
@@ -39,41 +41,6 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
                      (py - proj_y) * (py - proj_y)) <= tol;
   };
 
-  auto dir_away = [](double px, double py,
-                     double e0x, double e0y,
-                     double e1x, double e1y) -> std::pair<double, double> {
-    double d0 = std::sqrt((e0x - px) * (e0x - px) + (e0y - py) * (e0y - py));
-    double d1 = std::sqrt((e1x - px) * (e1x - px) + (e1y - py) * (e1y - py));
-    double tx = d0 > d1 ? e0x : e1x, ty = d0 > d1 ? e0y : e1y;
-    double dx = tx - px, dy = ty - py;
-    double len = std::sqrt(dx * dx + dy * dy);
-    if (len < 1e-12) return {1.0, 0.0};
-    return {dx / len, dy / len};
-  };
-  auto dir_toward_target_angle =
-      [](double px, double py,
-         double host0x, double host0y,
-         double host1x, double host1y,
-         double other_dx, double other_dy,
-         double target_angle) -> std::pair<double, double> {
-    auto unit = [&](double x, double y) {
-      double dx = x - px;
-      double dy = y - py;
-      double len = std::sqrt(dx * dx + dy * dy);
-      if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
-      return std::pair<double, double>{dx / len, dy / len};
-    };
-    auto d0 = unit(host0x, host0y);
-    auto d1 = unit(host1x, host1y);
-    auto angle_to_other = [&](const std::pair<double, double>& dir) {
-      const double measured = std::abs(std::atan2(
-          dir.first * other_dy - dir.second * other_dx,
-          dir.first * other_dx + dir.second * other_dy));
-      return std::abs(measured - target_angle);
-    };
-    return angle_to_other(d0) <= angle_to_other(d1) ? d0 : d1;
-  };
-
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kTwoPi = 2.0 * kPi;
   double requested_angle = std::fmod(std::abs(dimension.value), kTwoPi);
@@ -88,8 +55,6 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
 
   // Virtual pivot: stored on dimension for non-intersecting lines.
   if (dimension.pivot_x.has_value() && dimension.pivot_y.has_value()) {
-    // Recompute virtual pivot from current line positions so the arc
-    // and reference line track geometry after drags / solves.
     double vpx, vpy;
     {
       double a_dx_inf = a_ends[1].first - a_ends[0].first;
@@ -107,121 +72,81 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
         vpy = *dimension.pivot_y;
       }
     }
-    // Pick the endpoint-direction pair whose absolute angle matches
-    // the stored dimension value — not just the farther endpoint.
-    {
-      auto unit = [](double x, double y, double px, double py) {
-        double dx = x - px, dy = y - py;
-        double len = std::sqrt(dx * dx + dy * dy);
-        if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
-        return std::pair<double, double>{dx / len, dy / len};
-      };
-      std::pair<double, double> au[2] = {
-          unit(a_ends[0].first, a_ends[0].second, vpx, vpy),
-          unit(a_ends[1].first, a_ends[1].second, vpx, vpy)};
-      std::pair<double, double> bu[2] = {
-          unit(b_ends[0].first, b_ends[0].second, vpx, vpy),
-          unit(b_ends[1].first, b_ends[1].second, vpx, vpy)};
-      auto ad_def = dir_away(vpx, vpy, a_ends[0].first, a_ends[0].second,
-                                          a_ends[1].first, a_ends[1].second);
-      auto bd_def = dir_away(vpx, vpy, b_ends[0].first, b_ends[0].second,
-                                          b_ends[1].first, b_ends[1].second);
-      double best_diff = 1e9;
-      for (int ai = 0; ai < 2; ++ai) {
-        for (int bi = 0; bi < 2; ++bi) {
-          double cross = au[ai].first * bu[bi].second - au[ai].second * bu[bi].first;
-          double dot   = au[ai].first * bu[bi].first + au[ai].second * bu[bi].second;
-          double measured = std::abs(std::atan2(cross, dot));
-          double diff = std::abs(measured - target_angle);
-          bool is_def =
-              (au[ai].first == ad_def.first && au[ai].second == ad_def.second) &&
-              (bu[bi].first == bd_def.first && bu[bi].second == bd_def.second);
-          if (is_def) diff -= 1e-12;
-          if (diff < best_diff) {
-            best_diff = diff;
-            a_dx = au[ai].first; a_dy = au[ai].second;
-            b_dx = bu[bi].first; b_dy = bu[bi].second;
-          }
-        }
-      }
-    }
-    // Arc center stays at the virtual pivot — like the UI preview.
+    auto resolved = resolve_angle_directions(line_a, line_b, vpx, vpy,
+                                             target_angle);
+    a_dx = resolved.a_dx; a_dy = resolved.a_dy;
+    b_dx = resolved.b_dx; b_dy = resolved.b_dy;
     pivot_x = vpx;
     pivot_y = vpy;
   } else {
-  constexpr double kPivotTol = 0.10;
-  int a_pivot = -1, b_pivot = -1;
+    // Shared endpoint or endpoint-on-segment: find the pivot, then
+    // let the unified resolver pick the best direction pair.
+    constexpr double kPivotTol = 0.10;
+    int a_pivot = -1, b_pivot = -1;
 
-  // Pass 1: direct endpoint–endpoint match.
-  for (int i = 0; i < 2 && a_pivot < 0; ++i) {
-    for (int j = 0; j < 2; ++j) {
-      if (std::abs(a_ends[i].first - b_ends[j].first) <= kPivotTol &&
-          std::abs(a_ends[i].second - b_ends[j].second) <= kPivotTol) {
-        a_pivot = i; b_pivot = j; break;
-      }
-    }
-  }
-  // Pass 2: endpoint-on-segment.
-  if (a_pivot < 0) {
     for (int i = 0; i < 2 && a_pivot < 0; ++i) {
-      if (point_on_seg(a_ends[i].first, a_ends[i].second,
-                       b_ends[0].first, b_ends[0].second,
-                       b_ends[1].first, b_ends[1].second, kPivotTol)) {
-        a_pivot = i; b_pivot = -1; break;
+      for (int j = 0; j < 2; ++j) {
+        if (std::abs(a_ends[i].first - b_ends[j].first) <= kPivotTol &&
+            std::abs(a_ends[i].second - b_ends[j].second) <= kPivotTol) {
+          a_pivot = i; b_pivot = j; break;
+        }
       }
     }
-  }
-  if (a_pivot < 0) {
-    for (int j = 0; j < 2 && a_pivot < 0; ++j) {
-      if (point_on_seg(b_ends[j].first, b_ends[j].second,
-                       a_ends[0].first, a_ends[0].second,
-                       a_ends[1].first, a_ends[1].second, kPivotTol)) {
-        a_pivot = -1; b_pivot = j; break;
+    if (a_pivot < 0) {
+      for (int i = 0; i < 2 && a_pivot < 0; ++i) {
+        if (point_on_seg(a_ends[i].first, a_ends[i].second,
+                         b_ends[0].first, b_ends[0].second,
+                         b_ends[1].first, b_ends[1].second, kPivotTol)) {
+          a_pivot = i; b_pivot = -1; break;
+        }
       }
+    }
+    if (a_pivot < 0) {
+      for (int j = 0; j < 2 && a_pivot < 0; ++j) {
+        if (point_on_seg(b_ends[j].first, b_ends[j].second,
+                         a_ends[0].first, a_ends[0].second,
+                         a_ends[1].first, a_ends[1].second, kPivotTol)) {
+          a_pivot = -1; b_pivot = j; break;
+        }
+      }
+    }
+
+    if (a_pivot >= 0 && b_pivot >= 0) {
+      // Shared endpoint — use physical line directions only.
+      pivot_x = a_ends[a_pivot].first;
+      pivot_y = a_ends[a_pivot].second;
+      a_dx = a_ends[1 - a_pivot].first - pivot_x;
+      a_dy = a_ends[1 - a_pivot].second - pivot_y;
+      b_dx = b_ends[1 - b_pivot].first - pivot_x;
+      b_dy = b_ends[1 - b_pivot].second - pivot_y;
+    } else if (a_pivot >= 0) {
+      // A's endpoint on B's segment.
+      pivot_x = a_ends[a_pivot].first;
+      pivot_y = a_ends[a_pivot].second;
+      auto resolved = resolve_angle_directions(line_a, line_b,
+                                               pivot_x, pivot_y,
+                                               target_angle);
+      a_dx = resolved.a_dx; a_dy = resolved.a_dy;
+      b_dx = resolved.b_dx; b_dy = resolved.b_dy;
+    } else if (b_pivot >= 0) {
+      // B's endpoint on A's segment.
+      pivot_x = b_ends[b_pivot].first;
+      pivot_y = b_ends[b_pivot].second;
+      auto resolved = resolve_angle_directions(line_a, line_b,
+                                               pivot_x, pivot_y,
+                                               target_angle);
+      a_dx = resolved.a_dx; a_dy = resolved.a_dy;
+      b_dx = resolved.b_dx; b_dy = resolved.b_dy;
+    } else {
+      pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
+      a_dx = 1.0; a_dy = 0.0;  b_dx = 0.0; b_dy = 1.0;
     }
   }
 
-  if (a_pivot >= 0 && b_pivot >= 0) {
-    pivot_x = a_ends[a_pivot].first;
-    pivot_y = a_ends[a_pivot].second;
-    a_dx = a_ends[1 - a_pivot].first - pivot_x;
-    a_dy = a_ends[1 - a_pivot].second - pivot_y;
-    b_dx = b_ends[1 - b_pivot].first - pivot_x;
-    b_dy = b_ends[1 - b_pivot].second - pivot_y;
-  } else if (a_pivot >= 0) {
-    pivot_x = a_ends[a_pivot].first;
-    pivot_y = a_ends[a_pivot].second;
-    auto ad = dir_away(pivot_x, pivot_y,
-                       a_ends[1 - a_pivot].first, a_ends[1 - a_pivot].second,
-                       a_ends[a_pivot].first, a_ends[a_pivot].second);
-    a_dx = ad.first; a_dy = ad.second;
-    auto bd = dir_toward_target_angle(
-        pivot_x, pivot_y,
-        b_ends[0].first, b_ends[0].second,
-        b_ends[1].first, b_ends[1].second,
-        a_dx, a_dy,
-        target_angle);
-    b_dx = bd.first; b_dy = bd.second;
-  } else if (b_pivot >= 0) {
-    pivot_x = b_ends[b_pivot].first;
-    pivot_y = b_ends[b_pivot].second;
-    auto bd = dir_away(pivot_x, pivot_y,
-                       b_ends[1 - b_pivot].first, b_ends[1 - b_pivot].second,
-                       b_ends[b_pivot].first, b_ends[b_pivot].second);
-    b_dx = bd.first; b_dy = bd.second;
-    auto ad = dir_toward_target_angle(
-        pivot_x, pivot_y,
-        a_ends[0].first, a_ends[0].second,
-        a_ends[1].first, a_ends[1].second,
-        b_dx, b_dy,
-        target_angle);
-    a_dx = ad.first; a_dy = ad.second;
-  } else {
-    // Should not happen — add_sketch_angle_dimension validates first.
-    pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
-    a_dx = 1.0; a_dy = 0.0;  b_dx = 0.0; b_dy = 1.0;
-  }
-  }  // else (not virtual pivot)
+  // Detect reflex angle: the user picked the external angle (> 180°).
+  // Flip the arc sweep direction and negate the bisector so the label
+  // sits on the reflex side of the wedge.
+  const bool is_reflex = std::abs(dimension.value) > kPi;
 
   const double a_len = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_len = std::sqrt(b_dx * b_dx + b_dy * b_dy);
@@ -240,8 +165,12 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     by = a_ux;
     blen = 1.0;
   }
-  const double bisector_ux = bx / blen;
-  const double bisector_uy = by / blen;
+  double bisector_ux = bx / blen;
+  double bisector_uy = by / blen;
+  if (is_reflex) {
+    bisector_ux = -bisector_ux;
+    bisector_uy = -bisector_uy;
+  }
 
   // For virtual-pivot dimensions, the arc center is at the (potentially
   // distant) intersection point.  Use a radius large enough to reach from
@@ -290,8 +219,13 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
       pivot_y + bisector_uy * kLabelRadius);
 
   // Compute arc sweep: from line A direction to line B direction.
+  // For reflex angles the arc sweeps the long way around (CW instead
+  // of CCW or vice versa) to show the external wedge.
   const double sweep_cross = a_ux * b_uy - a_uy * b_ux;
-  const bool arc_ccw = sweep_cross >= 0.0;
+  bool arc_ccw = sweep_cross >= 0.0;
+  if (is_reflex) {
+    arc_ccw = !arc_ccw;
+  }
   const double arc_start_angle = std::atan2(a_uy, a_ux);
   const double arc_end_angle = std::atan2(b_uy, b_ux);
 

@@ -112,6 +112,75 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   }
 }
 
+void add_sketch_line_angle_dimension(FeatureEntry& feature,
+                                     const std::string& line_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can accept sketch dimensions");
+  }
+
+  auto& parameters = *feature.sketch_parameters;
+  auto& line = require_line(parameters, line_id);
+
+  if (line.is_construction) {
+    throw std::runtime_error(
+        "Cannot create a driving dimension on a construction line");
+  }
+
+  const std::string dimension_id = "dim-line-angle-" + line.id;
+  const auto dimension_it = std::find_if(
+      parameters.dimensions.begin(),
+      parameters.dimensions.end(),
+      [&](const SketchDimension& dim) { return dim.id == dimension_id; });
+  if (dimension_it != parameters.dimensions.end()) {
+    // Every non-construction line has an auto line_angle created during
+    // line construction (is_auto = true, expression empty).  When the
+    // user explicitly requests a line_angle via the dimension tool,
+    // convert the existing auto entry to a driving dimension instead
+    // of failing.
+    if (dimension_it->is_auto) {
+      dimension_it->is_auto = false;
+      const double dx = line.end_x - line.start_x;
+      const double dy = line.end_y - line.start_y;
+      dimension_it->value = std::atan2(dy, dx);
+      refresh_sketch_derived_state(feature);
+      // If over-constrained, fall back to driven.
+      if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+          feature.sketch_parameters->solver_dofs < 0) {
+        dimension_it->driven = true;
+        refresh_sketch_derived_state(feature);
+      }
+      return;
+    }
+    throw std::runtime_error(
+        "Line angle dimension already exists: " + dimension_id);
+  }
+
+  const double dx = line.end_x - line.start_x;
+  const double dy = line.end_y - line.start_y;
+  const double angle = std::atan2(dy, dx);
+
+  parameters.dimensions.push_back(SketchDimension{
+      .id = dimension_id,
+      .kind = "line_angle",
+      .entity_id = line.id,
+      .value = angle,
+  });
+
+  refresh_sketch_derived_state(feature);
+
+  // If the solver reports conflicts, over-constrained → make driven.
+  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_dofs < 0) {
+    auto it = std::find_if(
+        parameters.dimensions.begin(), parameters.dimensions.end(),
+        [&](SketchDimension& d) { return d.id == dimension_id; });
+    if (it != parameters.dimensions.end()) {
+      it->driven = true;
+      refresh_sketch_derived_state(feature);
+    }
+  }
+}
+
 void add_sketch_circle_radius_dimension(FeatureEntry& feature,
                                         const std::string& circle_id,
                                         std::optional<std::string> display_as) {

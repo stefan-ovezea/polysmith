@@ -23,11 +23,14 @@ interface DimensionToolActionParams {
   addSketchLineLengthDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
+  addSketchLineAngleDimensionRef: MutableRefObject<
+    (entityId: string) => Promise<void>
+  >;
   addSketchPolygonRadiusDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
   addSketchAngleDimensionRef: MutableRefObject<
-    (firstEntityId: string, secondEntityId: string) => Promise<void>
+    (firstEntityId: string, secondEntityId: string, value?: number) => Promise<void>
   >;
   addSketchDistanceDimensionRef: MutableRefObject<
     (firstEntityId: string, secondEntityId: string) => Promise<void>
@@ -52,6 +55,7 @@ export function createDimensionToolActions({
   pendingRelationPlacementMatchRef,
   addSketchCircleRadiusDimensionRef,
   addSketchLineLengthDimensionRef,
+  addSketchLineAngleDimensionRef,
   addSketchPolygonRadiusDimensionRef,
   addSketchAngleDimensionRef,
   addSketchDistanceDimensionRef,
@@ -105,6 +109,15 @@ export function createDimensionToolActions({
     });
   }
 
+  function createDimensionLineAngle(entityId: string) {
+    stageUnaryDimension(entityId, `dim-line-angle-${entityId}`);
+    stageFollowUpPick(entityId);
+    void addSketchLineAngleDimensionRef.current(entityId).catch(() => {
+      clearUnaryDimensionStage();
+      clearFollowUpPick();
+    });
+  }
+
   function selectDimensionLine(entityId: string) {
     stageFollowUpPick(entityId);
   }
@@ -152,19 +165,16 @@ export function createDimensionToolActions({
         }
       }
       if (forceMode !== "distance") {
-        const isReflex = pendingAngleIsReflexRef.current;
-        const reflexAngle = pendingReflexAngleRef.current;
+        const shouldApply = pendingAngleIsReflexRef.current;
+        const previewAngle = pendingReflexAngleRef.current;
         pendingAngleIsReflexRef.current = false;
         pendingReflexAngleRef.current = 0;
+        // Pass the quadrant angle directly so the dimension is created
+        // with the correct value — no post‑commit update that would
+        // rotate the line.
+        const angleValue = shouldApply ? previewAngle : undefined;
         void addSketchAngleDimensionRef
-          .current(firstEntityId, secondEntityId)
-          .then(() => {
-            if (isReflex) {
-              const ids = [firstEntityId, secondEntityId].sort();
-              const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
-              void updateSketchDimensionRef.current(dimId, reflexAngle);
-            }
-          })
+          .current(firstEntityId, secondEntityId, angleValue)
           .catch(clearRelationPlacementStage);
         return;
       }
@@ -200,6 +210,7 @@ export function createDimensionToolActions({
     createDimensionAngleOrDistance,
     createDimensionCircle,
     createDimensionLine,
+    createDimensionLineAngle,
     createDimensionPointDistance,
     createDimensionPolygon,
     selectDimensionCircle,

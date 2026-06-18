@@ -90,6 +90,7 @@ export interface ActiveSketchPointerUpContext {
     secondPointId: string,
   ) => void;
   createDimensionLine: (lineId: string) => void;
+  createDimensionLineAngle: (lineId: string) => void;
   createDimensionCircle: (circleId: string, label: string) => void;
   selectDimensionCircle: (circleId: string) => void;
   createDimensionPolygon: (polygonId: string) => void;
@@ -171,6 +172,7 @@ export function handleActiveSketchPointerUpTool(
       createAngleOrDistance: context.createDimensionAngleOrDistance,
       createPointDistance: context.createDimensionPointDistance,
       createLine: context.createDimensionLine,
+      createLineAngle: context.createDimensionLineAngle,
       createCircle: context.createDimensionCircle,
       selectCircle: context.selectDimensionCircle,
       createPolygon: context.createDimensionPolygon,
