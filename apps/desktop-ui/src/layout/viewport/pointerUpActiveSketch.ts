@@ -83,6 +83,7 @@ export interface ActiveSketchPointerUpContext {
   createDimensionAngleOrDistance: (
     firstEntityId: string,
     secondEntityId: string,
+    forceMode?: "angle" | "distance",
   ) => void;
   createDimensionPointDistance: (
     firstPointId: string,

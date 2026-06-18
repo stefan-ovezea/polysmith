@@ -964,6 +964,9 @@ export function ViewportPanel({
     draftDimensionSessionRef.current = draftDimensionSession;
   }, [draftDimensionSession]);
   useEffect(() => {
+    dimensionToolModeRef.current = dimensionToolMode;
+  }, [dimensionToolMode]);
+  useEffect(() => {
     if (!draftDimensionSession) {
       return;
     }
@@ -1164,6 +1167,7 @@ export function ViewportPanel({
       clearPreviewDimension,
       hideRelationPreviewDimension,
       readDimensionPreviewFilter,
+      dimensionToolModeRef,
     });
 
   function clearDraftDimGroup() {

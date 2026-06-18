@@ -219,8 +219,6 @@ disjoint lines) use a virtual pivot — the infinite-line intersection.
 
 | Phase | Feature | Notes |
 |---|---|---|
-| **Testing** | Broader app regression pass | Virtual-pivot angle dims verified; full snap/constraint/drag regression still needed |
-| **P3** | Dimension Drive Mode | New IPC + Append Mode with dimension entity as focus |
 | **P5** | Kinematic Animation | Far future |
 
 ### P3.3 — Multi-Constraint Solves (completed 2026-06-10)
@@ -284,7 +282,6 @@ disjoint lines) use a virtual pivot — the infinite-line intersection.
 - ✅ C++ tests: `cad_core_multi_profile_extrude_test` + `cad_core_cam_face_reference_test` both pass
 - ✅ TypeScript `tsc --noEmit`: zero errors
 - ✅ P3.2 verified working in the running app
-- ⚠️ Broader app regression pass still needed
 
 ## Next Session
 

@@ -123,6 +123,7 @@ export function createDimensionToolActions({
   function createDimensionAngleOrDistance(
     firstEntityId: string,
     secondEntityId: string,
+    forceMode?: "angle" | "distance",
   ) {
     pendingDimensionPlacementRef.current = true;
     pendingDimSourceEntityIdRef.current = null;
@@ -130,36 +131,43 @@ export function createDimensionToolActions({
       firstEntityId.startsWith("line-") &&
       secondEntityId.startsWith("line-")
     ) {
-      const relation = pendingRelationPlacementMatchRef.current;
-      if (
-        relation?.kind === "parallel_line_distance" &&
-        ((relation.firstEntityId === firstEntityId &&
-          relation.targetEntityId === secondEntityId) ||
-          (relation.firstEntityId === secondEntityId &&
-            relation.targetEntityId === firstEntityId))
-      ) {
+      // In auto mode, the preview relation determines whether it's a
+      // parallel distance or an angle.  When a mode is forced, skip the
+      // auto-detection.
+      if (forceMode !== "angle") {
+        const relation = pendingRelationPlacementMatchRef.current;
+        if (
+          relation?.kind === "parallel_line_distance" &&
+          ((relation.firstEntityId === firstEntityId &&
+            relation.targetEntityId === secondEntityId) ||
+            (relation.firstEntityId === secondEntityId &&
+              relation.targetEntityId === firstEntityId))
+        ) {
+          pendingAngleIsReflexRef.current = false;
+          pendingReflexAngleRef.current = 0;
+          void addSketchDistanceDimensionRef
+            .current(firstEntityId, secondEntityId)
+            .catch(clearRelationPlacementStage);
+          return;
+        }
+      }
+      if (forceMode !== "distance") {
+        const isReflex = pendingAngleIsReflexRef.current;
+        const reflexAngle = pendingReflexAngleRef.current;
         pendingAngleIsReflexRef.current = false;
         pendingReflexAngleRef.current = 0;
-        void addSketchDistanceDimensionRef
+        void addSketchAngleDimensionRef
           .current(firstEntityId, secondEntityId)
+          .then(() => {
+            if (isReflex) {
+              const ids = [firstEntityId, secondEntityId].sort();
+              const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
+              void updateSketchDimensionRef.current(dimId, reflexAngle);
+            }
+          })
           .catch(clearRelationPlacementStage);
         return;
       }
-      const isReflex = pendingAngleIsReflexRef.current;
-      const reflexAngle = pendingReflexAngleRef.current;
-      pendingAngleIsReflexRef.current = false;
-      pendingReflexAngleRef.current = 0;
-      void addSketchAngleDimensionRef
-        .current(firstEntityId, secondEntityId)
-        .then(() => {
-          if (isReflex) {
-            const ids = [firstEntityId, secondEntityId].sort();
-            const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
-            void updateSketchDimensionRef.current(dimId, reflexAngle);
-          }
-        })
-        .catch(clearRelationPlacementStage);
-      return;
     }
 
     void addSketchDistanceDimensionRef

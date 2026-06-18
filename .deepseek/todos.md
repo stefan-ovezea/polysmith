@@ -15,11 +15,6 @@
 - [ ] **Double-click same line no longer clears staged pick** — UI shortcut in `dimensionToolPicking.ts` bypasses `handleDimensionStagedEntity` which handles the re-click-to-clear case.
 - [ ] **Angle preview appears for unrelated lines** — `sharedLineEndpoint` in `dimensionRelationPreviewGeometry.ts` now returns virtual pivot for ANY non-parallel lines, even ones the user isn't trying to dimension.
 
-## Low Priority
-
-- [ ] **Old `.polysmith` documents fail to load** — New `pivot_x`/`pivot_y` fields in JSON. Parser should handle absent null fields gracefully in `feature_*_dimension_*.inc`.
-- [ ] **`else` → `else if` changes dispatch to wrong branch** — In `dimension_angle_commands.inc`, original `else` assumed `b_pivot_index >= 0`. Verify all three branches (shared, A-on-B, B-on-A) still route correctly.
-
 ## Approach
 
 Most regressions stem from wrapping existing code in new `if/else` blocks and sed-based edits. Recommended fix:

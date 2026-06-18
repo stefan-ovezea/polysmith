@@ -1782,22 +1782,6 @@ Three bugs fixed after initial implementation:
   persist in `.polysmith` files. The first core rendering pass applies saved
   placement to line-line and circle-line distance dimensions.
 
-#### Known Issue: Two-Line Angle Dimension Placement (2026-05-28)
-
-- manual QA showed that the shared-endpoint two-line angle relation preview
-  still does not hand off cleanly to the confirmed angle dimension. The ghost
-  preview can appear at the intended cursor-relative radius, but the committed
-  angle indicator can jump far away near the line ends and become effectively
-  immovable.
-- several incremental fixes were attempted around pending relation placement,
-  label-position persistence, and angle arc radius reconstruction. They did
-  not produce reliable behavior and should not be treated as the final design.
-- follow-up should rewrite angle dimension placement as one explicit model:
-  store a sketch-local angle presentation control point/radius for angle
-  dimensions, have both ghost preview and committed rendering consume that same
-  model, and remove the current after-the-fact inference from generic label
-  placement.
-
 ### 2026-05-31 — Constraint & Trim Stabilisation
 
 #### Core-Driven Drag Preview (ADR-0002)

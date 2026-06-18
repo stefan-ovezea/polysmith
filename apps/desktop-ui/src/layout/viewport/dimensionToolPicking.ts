@@ -155,7 +155,7 @@ interface DimensionToolClickContext {
   stageFirstPoint: (point: DimensionToolFirstPoint) => void;
   deleteSketchDimension: (dimensionId: string) => void;
   handleDimensionClick: (dimensionId: string) => void;
-  createAngleOrDistance: (firstEntityId: string, secondEntityId: string) => void;
+  createAngleOrDistance: (firstEntityId: string, secondEntityId: string, forceMode?: "angle" | "distance") => void;
   createPointDistance: (firstPointId: string, secondPointId: string) => void;
   createLine: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
@@ -382,6 +382,51 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
     context.clearFirstPick();
     context.handleDimensionClick(context.hit.id);
     return true;
+  }
+
+  // --- Mode-specific dispatch for sketch dimension modes ---
+  // When a specific mode is selected, the first click on an entity
+  // stages it without creating a unary dimension (no ghosting /
+  // flashing), and the second click creates the mode-specific
+  // dimension without auto-detection ambiguity.
+  if (context.dimensionToolMode === "angular") {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      if (context.hit.entityKind !== "line") {
+        context.clearFirstPick();
+        return true;  // angles only apply to line pairs
+      }
+      const stagedFirst = context.getFirstEntityId();
+      if (stagedFirst != null && stagedFirst !== context.hit.id) {
+        // Second line: force angle dimension.
+        context.clearFirstPick();
+        context.createAngleOrDistance(stagedFirst, context.hit.id, "angle");
+        return true;
+      }
+      if (stagedFirst === context.hit.id) {
+        context.clearFirstPick();
+        return true;
+      }
+      // First line: stage without creating a unary dimension.
+      context.stageFirstEntity(context.hit.id);
+      return true;
+    }
+    // Non-line hits in angular mode: consume, no action.
+    context.clearFirstPick();
+    return true;
+  }
+
+  if (context.dimensionToolMode === "linear") {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      const stagedFirst = context.getFirstEntityId();
+      if (stagedFirst != null && stagedFirst !== context.hit.id) {
+        // Second entity: force distance (skip angle auto-detection).
+        context.clearFirstPick();
+        context.createAngleOrDistance(stagedFirst, context.hit.id, "distance");
+        return true;
+      }
+    }
+    // Fall through to normal dispatch for unary dimensions (line-length,
+    // circle-radius) which still makes sense in linear mode.
   }
 
   // When a first entity is already staged, we're in a follow-up pick

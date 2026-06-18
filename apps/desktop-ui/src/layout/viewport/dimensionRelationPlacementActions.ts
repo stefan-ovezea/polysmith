@@ -62,6 +62,7 @@ interface RelationPlacementActionsContext {
   createDimensionAngleOrDistance: (
     firstEntityId: string,
     secondEntityId: string,
+    forceMode?: "angle" | "distance",
   ) => void;
   beginDimensionPlacement: (
     dimension: SketchDimensionScene,

@@ -26,6 +26,7 @@ interface PreviewSearchContext {
   planeFrame: SketchPlaneFrame | null;
   allowConstruction: boolean;
   worldUnitsPerPixel: number;
+  dimensionToolMode?: string;
 }
 
 function betterPreview(
@@ -234,6 +235,7 @@ export function buildLineDimensionRelationPreview({
   planeFrame,
   allowConstruction,
   worldUnitsPerPixel,
+  dimensionToolMode,
 }: PreviewSearchContext): DimensionRelationPreviewResult | null {
   const snapThreshold = SKETCH_SNAP_DISTANCE_PX * worldUnitsPerPixel;
   const firstLine = sketchParameters.lines.find(
@@ -273,6 +275,7 @@ export function buildLineDimensionRelationPreview({
       cursor,
       planeId,
       planeFrame,
+      dimensionToolMode,
     });
     if (candidate) {
       const next = betterPreview(
@@ -332,6 +335,7 @@ function buildLineLineDimensionRelationPreview({
   cursor,
   planeId,
   planeFrame,
+  dimensionToolMode,
 }: {
   firstEntityId: string;
   firstLine: SketchLineEntry;
@@ -340,8 +344,12 @@ function buildLineLineDimensionRelationPreview({
   cursor: [number, number];
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
+  dimensionToolMode?: string;
 }): DimensionRelationPreviewResult | null {
-  if (filter.snap_intersection) {
+  // Mode filtering: "angular" skips distance, "linear" skips angle.
+  const tryAngle = dimensionToolMode !== "linear" && filter.snap_intersection;
+  const tryDistance = dimensionToolMode !== "angular" && filter.snap_parallel;
+  if (tryAngle) {
     const anglePreview = createLineAnglePreview({
       first: firstLine,
       second: line,
@@ -362,7 +370,7 @@ function buildLineLineDimensionRelationPreview({
     }
   }
 
-  if (filter.snap_parallel && areLinesParallel(firstLine, line)) {
+  if (tryDistance && areLinesParallel(firstLine, line)) {
     const dimension = createParallelLineDistancePreview({
       first: firstLine,
       second: line,
