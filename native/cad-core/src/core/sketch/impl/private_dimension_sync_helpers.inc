@@ -88,14 +88,45 @@ void sync_angle_dimensions(SketchFeatureParameters& parameters) {
           py = *dim.pivot_y;
         }
       }
-      auto ad = dir_away(px, py,
-                         a_ends[0].first, a_ends[0].second,
-                         a_ends[1].first, a_ends[1].second);
-      a_dx = ad.first; a_dy = ad.second;
-      auto bd = dir_away(px, py,
-                         b_ends[0].first, b_ends[0].second,
-                         b_ends[1].first, b_ends[1].second);
-      b_dx = bd.first; b_dy = bd.second;
+      // Pick the pair closest to the stored angle so the read-back
+      // preserves the quadrant the user selected.
+      {
+        auto unit = [](double x, double y, double px, double py) {
+          double dx = x - px, dy = y - py;
+          double len = std::sqrt(dx * dx + dy * dy);
+          if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+          return std::pair<double, double>{dx / len, dy / len};
+        };
+        std::pair<double, double> au[2] = {
+            unit(a_ends[0].first, a_ends[0].second, px, py),
+            unit(a_ends[1].first, a_ends[1].second, px, py)};
+        std::pair<double, double> bu[2] = {
+            unit(b_ends[0].first, b_ends[0].second, px, py),
+            unit(b_ends[1].first, b_ends[1].second, px, py)};
+        auto ad_def = dir_away(px, py, a_ends[0].first, a_ends[0].second,
+                                       a_ends[1].first, a_ends[1].second);
+        auto bd_def = dir_away(px, py, b_ends[0].first, b_ends[0].second,
+                                       b_ends[1].first, b_ends[1].second);
+        double stored_abs = std::abs(dim.value);
+        double best_diff = 1e9;
+        for (int ai = 0; ai < 2; ++ai) {
+          for (int bi = 0; bi < 2; ++bi) {
+            double cross = au[ai].first * bu[bi].second - au[ai].second * bu[bi].first;
+            double dot   = au[ai].first * bu[bi].first + au[ai].second * bu[bi].second;
+            double measured = std::abs(std::atan2(cross, dot));
+            double diff = std::abs(measured - stored_abs);
+            bool is_def =
+                (au[ai].first == ad_def.first && au[ai].second == ad_def.second) &&
+                (bu[bi].first == bd_def.first && bu[bi].second == bd_def.second);
+            if (is_def) diff -= 1e-12;
+            if (diff < best_diff) {
+              best_diff = diff;
+              a_dx = au[ai].first; a_dy = au[ai].second;
+              b_dx = bu[bi].first; b_dy = bu[bi].second;
+            }
+          }
+        }
+      }
     } else {
       // Find shared endpoint.
       int a_pivot = -1, b_pivot = -1;

@@ -160,21 +160,47 @@ void update_angle_dimension(FeatureEntry& feature,
       if (len < 1e-12) return {1.0, 0.0};
       return {dx / len, dy / len};
     };
-    auto av = vdir(vpx, vpy, a_ends[0].first, a_ends[0].second,
-                                a_ends[1].first, a_ends[1].second);
-    auto bv = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
-                                b_ends[1].first, b_ends[1].second);
-    // Compute signed angle from virtual-pivot directions.
-    // When the lines are collinear (cross ≈ 0), both "away" directions
-    // may point the same way, making the geometric read-back ambiguous.
-    // Trust the stored dimension value so delta computations and
-    // round-trip edits use the correct reference angle.
-    double cross_v = av.first * bv.second - av.second * bv.first;
-    double dot_v   = av.first * bv.first + av.second * bv.second;
-    if (std::abs(cross_v) < 1e-9) {
-      current_signed_for_value = dimension.value;
-    } else {
-      current_signed_for_value = std::atan2(cross_v, dot_v);
+    // Measure current signed angle from the endpoint-direction pair
+    // whose absolute angle is closest to target_small_angle.  This
+    // ensures that when the user picks the supplement quadrant the
+    // delta is ≈ 0 — no unnecessary line rotation.
+    {
+      auto unit = [](double x, double y, double px, double py) {
+        double dx = x - px, dy = y - py;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+        return std::pair<double, double>{dx / len, dy / len};
+      };
+      std::pair<double, double> a_units[2] = {
+          unit(a_ends[0].first, a_ends[0].second, vpx, vpy),
+          unit(a_ends[1].first, a_ends[1].second, vpx, vpy)};
+      std::pair<double, double> b_units[2] = {
+          unit(b_ends[0].first, b_ends[0].second, vpx, vpy),
+          unit(b_ends[1].first, b_ends[1].second, vpx, vpy)};
+      auto av_def = vdir(vpx, vpy, a_ends[0].first, a_ends[0].second,
+                                      a_ends[1].first, a_ends[1].second);
+      auto bv_def = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
+                                      b_ends[1].first, b_ends[1].second);
+      double best_diff = 1e9;
+      for (int ai = 0; ai < 2; ++ai) {
+        for (int bi = 0; bi < 2; ++bi) {
+          double cross = a_units[ai].first * b_units[bi].second -
+                         a_units[ai].second * b_units[bi].first;
+          double dot   = a_units[ai].first * b_units[bi].first +
+                         a_units[ai].second * b_units[bi].second;
+          double measured = std::abs(std::atan2(cross, dot));
+          double diff = std::abs(measured - target_small_angle);
+          bool is_def =
+              (a_units[ai].first == av_def.first && a_units[ai].second == av_def.second) &&
+              (b_units[bi].first == bv_def.first && b_units[bi].second == bv_def.second);
+          if (is_def) diff -= 1e-12;  // prefer dir_away on ties
+          if (cross == 0.0 && dot == 0.0) continue;
+          if (diff < best_diff) {
+            best_diff = diff;
+            current_signed_for_value = std::atan2(cross, dot);
+          }
+        }
+      }
     }
     auto wrap = [](double angle) {
       constexpr double kLocPi = 3.14159265358979323846;

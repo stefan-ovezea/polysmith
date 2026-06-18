@@ -465,21 +465,28 @@ export function createLineAnglePreview({
     cursorLen > 1e-9
       ? [cursorVec[0] / cursorLen, cursorVec[1] / cursorLen]
       : null;
+  // Select the candidate whose angle wedge contains the cursor.
+  // Bisector dot-product breaks for small acute angles because the
+  // acute bisectors sit closer to the line directions than the obtuse
+  // ones.  Cross products with the base directions (firstDir/secondDir
+  // from dir_away) directly identify the quadrant.
+  const cross2d = (a: [number, number], b: [number, number]) =>
+    a[0] * b[1] - a[1] * b[0];
   let selected = candidates[0];
   if (cursorDir && candidates.length > 1) {
-    selected = candidates.reduce((best, candidate) =>
-      cursorDir[0] * candidate.bisector[0] +
-        cursorDir[1] * candidate.bisector[1] >
-      cursorDir[0] * best.bisector[0] + cursorDir[1] * best.bisector[1]
-        ? candidate
-        : best,
-    );
+    const onAPlus = cross2d(firstDir, cursorDir) >= -1e-9;
+    const onBPlus = cross2d(secondDir, cursorDir) >= -1e-9;
+    for (const c of candidates) {
+      const cOnAPlus = c.firstDir[0] * firstDir[0] + c.firstDir[1] * firstDir[1] > 0;
+      const cOnBPlus = c.secondDir[0] * secondDir[0] + c.secondDir[1] * secondDir[1] > 0;
+      if (cOnAPlus === onAPlus && cOnBPlus === onBPlus) { selected = c; break; }
+    }
   }
-  const smallestCandidateAngle = Math.min(
-    ...candidates.map((candidate) => candidate.angle),
-  );
-  const usesAlternateSupplement =
-    Math.abs(selected.angle - smallestCandidateAngle) > 1e-6;
+  // Compare against the core's default (dir_away), not smallestCandidateAngle.
+  // When dir_away yields the obtuse angle but the user picks the acute
+  // quadrant, smallestCandidateAngle doesn't detect the mismatch.
+  const defaultAngle = angleBetweenDirections(firstDir, secondDir);
+  const differsFromDefault = Math.abs(selected.angle - defaultAngle) > 1e-6;
   let useReflex = false;
   if (cursorDir && candidates.length === 1) {
     const dot =
@@ -489,7 +496,7 @@ export function createLineAnglePreview({
   }
 
   const angle = useReflex ? 2 * Math.PI - selected.angle : selected.angle;
-  const shouldApply = usesAlternateSupplement || useReflex;
+  const shouldApply = differsFromDefault || useReflex;
   const resolvedFirstDir = selected.firstDir;
   const resolvedSecondDir = selected.secondDir;
   const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
