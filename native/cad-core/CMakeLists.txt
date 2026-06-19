@@ -52,6 +52,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(planegcs PRIVATE -Wno-register)
 endif()
 
+# --- libdxfrw static library (DXF read/write, DXF-only subset) ---
+set(LIBDXFRW_DIR "${CMAKE_SOURCE_DIR}/../../third_party/libdxfrw")
+add_library(dxfrw STATIC
+  ${LIBDXFRW_DIR}/src/drw_classes.cpp
+  ${LIBDXFRW_DIR}/src/drw_entities.cpp
+  ${LIBDXFRW_DIR}/src/drw_header.cpp
+  ${LIBDXFRW_DIR}/src/drw_objects.cpp
+  ${LIBDXFRW_DIR}/src/intern/drw_dbg.cpp
+  ${LIBDXFRW_DIR}/src/intern/dxfreader.cpp
+  ${LIBDXFRW_DIR}/src/intern/dxfwriter.cpp
+  ${LIBDXFRW_DIR}/src/intern/rscodec.cpp
+  ${LIBDXFRW_DIR}/src/libdxfrw.cpp
+  # Stub replaces iconv-dependent drw_textcodec.cpp
+  src/dxf/drw_textcodec_stub.cpp
+)
+target_include_directories(dxfrw PUBLIC ${LIBDXFRW_DIR}/src)
+
 set(CAD_CORE_SOURCES
   src/core/cam/cam_operation.cpp
   src/core/cam/face_milling.cpp
@@ -94,7 +111,7 @@ target_include_directories(cad_core PRIVATE
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
 
-target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs)
+target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
 
 add_executable(cad_core_sketch_profile_test
   src/core/sketch/constraint_solver.cpp
@@ -136,6 +153,7 @@ target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
 target_link_libraries(cad_core_multi_profile_extrude_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
+  dxfrw
 )
 
 add_executable(cad_core_cam_face_reference_test
@@ -155,6 +173,7 @@ target_include_directories(cad_core_cam_face_reference_test PRIVATE
 target_link_libraries(cad_core_cam_face_reference_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
+  dxfrw
 )
 
 add_executable(cad_core_plugin_feature_test
@@ -174,4 +193,5 @@ target_include_directories(cad_core_plugin_feature_test PRIVATE
 target_link_libraries(cad_core_plugin_feature_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
+  dxfrw
 )
