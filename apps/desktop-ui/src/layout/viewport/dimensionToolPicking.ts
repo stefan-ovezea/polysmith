@@ -156,7 +156,7 @@ interface DimensionToolClickContext {
   deleteSketchDimension: (dimensionId: string) => void;
   handleDimensionClick: (dimensionId: string) => void;
   createAngleOrDistance: (firstEntityId: string, secondEntityId: string, forceMode?: "angle" | "distance") => void;
-  createPointDistance: (firstPointId: string, secondPointId: string) => void;
+  createPointDistance: (firstPointId: string, secondPointId: string, axis?: "x" | "y") => void;
   createLine: (lineId: string) => void;
   createLineAngle: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
@@ -330,9 +330,23 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
   }
   if (pointAction.kind === "point_distance") {
     context.clearFirstPick();
+    // Auto-detect horizontal/vertical based on coordinate difference.
+    let axis: "x" | "y" | undefined;
+    const sketch = context.sketch;
+    if (sketch) {
+      const pA = sketch.points.find(p => p.point_id === pointAction.firstPointId);
+      const pB = sketch.points.find(p => p.point_id === pointAction.secondPointId);
+      if (pA && pB) {
+        const dx = Math.abs(pB.x - pA.x);
+        const dy = Math.abs(pB.y - pA.y);
+        if (dx > dy) axis = "x";
+        else if (dy > dx) axis = "y";
+      }
+    }
     context.createPointDistance(
       pointAction.firstPointId,
       pointAction.secondPointId,
+      axis,
     );
     return true;
   }
@@ -587,11 +601,6 @@ function dimensionPointPickAction({
   firstPointId: string | null;
 }): DimensionPointPickAction {
   if (firstPointId && firstPointId !== pointId) {
-    const lineA = entityIdFromSketchPointId(firstPointId, ["line"]);
-    const lineB = entityIdFromSketchPointId(pointId, ["line"]);
-    if (lineA && lineA === lineB) {
-      return { kind: "line_dimension", lineId: lineA };
-    }
     return {
       kind: "point_distance",
       firstPointId,

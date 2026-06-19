@@ -21,7 +21,8 @@
       const std::string& polygon_id);
   DocumentState add_sketch_point_distance_dimension(
       const std::string& point_a_id,
-      const std::string& point_b_id);
+      const std::string& point_b_id,
+      std::optional<std::string> axis = std::nullopt);
   DocumentState update_sketch_dimension(const std::string& dimension_id,
                                         double value,
                                         std::optional<std::string> expression = std::nullopt);

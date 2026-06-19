@@ -175,7 +175,8 @@ DocumentState DocumentManager::add_sketch_polygon_radius_dimension(
 
 DocumentState DocumentManager::add_sketch_point_distance_dimension(
     const std::string& point_a_id,
-    const std::string& point_b_id) {
+    const std::string& point_b_id,
+    std::optional<std::string> axis) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -196,7 +197,7 @@ DocumentState DocumentManager::add_sketch_point_distance_dimension(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::add_sketch_point_distance_dimension(
-      *feature_it, point_a_id, point_b_id);
+      *feature_it, point_a_id, point_b_id, axis);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
 

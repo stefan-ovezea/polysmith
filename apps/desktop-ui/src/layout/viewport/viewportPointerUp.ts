@@ -122,8 +122,8 @@ interface ViewportPointerUpParams {
   deleteSketchDimension: ActiveSketchPointerUpContext["deleteSketchDimension"];
   createDimensionAngleOrDistance: ActiveSketchPointerUpContext["createDimensionAngleOrDistance"];
   createDimensionPointDistance: ActiveSketchPointerUpContext["createDimensionPointDistance"];
-  createDimensionLine: ActiveSketchPointerUpContext["createDimensionLine"];
   createDimensionLineAngle: ActiveSketchPointerUpContext["createDimensionLineAngle"];
+  createDimensionLine: ActiveSketchPointerUpContext["createDimensionLine"];
   createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
   selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
   createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];

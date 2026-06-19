@@ -74,6 +74,7 @@ export interface AddSketchPointDistanceDimensionCommand {
   payload: {
     point_a_id: string;
     point_b_id: string;
+    axis?: "x" | "y";
   };
 }
 

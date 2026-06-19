@@ -751,9 +751,10 @@ export function useCadCore() {
     addSketchPointDistanceDimension: async (
       pointAId: string,
       pointBId: string,
+      axis?: "x" | "y",
     ) => {
       await sendCoreCommand(
-        makeAddSketchPointDistanceDimensionCommand(pointAId, pointBId),
+        makeAddSketchPointDistanceDimensionCommand(pointAId, pointBId, axis),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

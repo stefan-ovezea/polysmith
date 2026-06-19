@@ -443,6 +443,7 @@ export function makeAddSketchLineAngleDimensionCommand(
 export function makeAddSketchPointDistanceDimensionCommand(
   pointAId: string,
   pointBId: string,
+  axis?: "x" | "y",
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -450,6 +451,7 @@ export function makeAddSketchPointDistanceDimensionCommand(
     payload: {
       point_a_id: pointAId,
       point_b_id: pointBId,
+      ...(axis ? { axis } : {}),
     },
   };
 }

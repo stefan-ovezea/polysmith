@@ -192,6 +192,7 @@ export interface ViewportPanelProps {
   onAddSketchPointDistanceDimension: (
     pointAId: string,
     pointBId: string,
+    axis?: "x" | "y",
   ) => Promise<void>;
   onUpdateSketchDimensionDisplay: (
     dimensionId: string,

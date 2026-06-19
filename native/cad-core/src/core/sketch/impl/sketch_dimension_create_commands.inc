@@ -1,6 +1,7 @@
 void add_sketch_point_distance_dimension(FeatureEntry& feature,
                                          const std::string& point_a_id,
-                                         const std::string& point_b_id) {
+                                         const std::string& point_b_id,
+                                         std::optional<std::string> axis) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch dimensions");
   }
@@ -23,9 +24,16 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
     throw std::runtime_error("Sketch point not found: " + point_b_id);
   }
 
-  const double dx = point_b_it->x - point_a_it->x;
-  const double dy = point_b_it->y - point_a_it->y;
-  const double distance = std::sqrt(dx * dx + dy * dy);
+  double distance;
+  if (axis.has_value() && *axis == "x") {
+    distance = std::abs(point_b_it->x - point_a_it->x);
+  } else if (axis.has_value() && *axis == "y") {
+    distance = std::abs(point_b_it->y - point_a_it->y);
+  } else {
+    const double dx = point_b_it->x - point_a_it->x;
+    const double dy = point_b_it->y - point_a_it->y;
+    distance = std::sqrt(dx * dx + dy * dy);
+  }
 
   if (distance <= kMinimumSketchDimensionValue) {
     throw std::runtime_error("Point distance dimension must be greater than zero");
@@ -40,6 +48,7 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
   if (dimension_it != parameters.dimensions.end()) {
     // Already exists, just update the value for the current geometry.
     dimension_it->value = distance;
+    if (axis.has_value()) dimension_it->display_as = *axis;
     return;
   }
 
@@ -49,6 +58,7 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
       .entity_id = point_a_id,
       .secondary_entity_id = point_b_id,
       .value = distance,
+      .display_as = axis.value_or(""),
   });
 
   refresh_sketch_derived_state(feature);

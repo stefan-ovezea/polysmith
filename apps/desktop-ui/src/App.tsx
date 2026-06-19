@@ -2060,11 +2060,13 @@ function App() {
               onAddSketchPointDistanceDimension={async (
                 pointAId,
                 pointBId,
+                axis?,
               ) => {
                 await runAction(async () => {
                   await addSketchPointDistanceDimension(
                     pointAId,
                     pointBId,
+                    axis,
                   );
                 });
               }}

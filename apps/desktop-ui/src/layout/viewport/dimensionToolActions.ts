@@ -36,7 +36,7 @@ interface DimensionToolActionParams {
     (firstEntityId: string, secondEntityId: string) => Promise<void>
   >;
   addSketchPointDistanceDimensionRef: MutableRefObject<
-    (pointAId: string, pointBId: string) => Promise<void>
+    (pointAId: string, pointBId: string, axis?: "x" | "y") => Promise<void>
   >;
   updateSketchDimensionRef: MutableRefObject<
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
@@ -186,13 +186,13 @@ export function createDimensionToolActions({
       .catch(clearRelationPlacementStage);
   }
 
-  function createDimensionPointDistance(pointAId: string, pointBId: string) {
+  function createDimensionPointDistance(pointAId: string, pointBId: string, axis?: "x" | "y") {
     pendingDimensionIdRef.current =
       `dim-point-distance-${pointAId}-${pointBId}`;
     pendingDimensionPlacementRef.current = true;
     pendingDimSourceEntityIdRef.current = null;
     void addSketchPointDistanceDimensionRef
-      .current(pointAId, pointBId)
+      .current(pointAId, pointBId, axis)
       .catch(() => {
         pendingDimensionIdRef.current = null;
         pendingDimensionPlacementRef.current = false;
