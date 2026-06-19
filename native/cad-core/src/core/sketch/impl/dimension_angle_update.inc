@@ -1,5 +1,3 @@
-#include "core/sketch/impl/angle_direction_helpers.inc"
-
 void update_angle_dimension(FeatureEntry& feature,
                             SketchFeatureParameters& parameters,
                             SketchDimension& dimension,
@@ -35,6 +33,39 @@ void update_angle_dimension(FeatureEntry& feature,
     double proj_x = ax + t*dx, proj_y = ay + t*dy;
     return std::sqrt((px-proj_x)*(px-proj_x) + (py-proj_y)*(py-proj_y)) <= tol;
   };
+  auto unit_from_pivot = [](double px, double py, double x, double y) {
+    double dx = x - px;
+    double dy = y - py;
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+    return std::pair<double, double>{dx / len, dy / len};
+  };
+  auto choose_host_ray =
+      [&](double px, double py,
+          double h0x, double h0y,
+          double h1x, double h1y,
+          double other_dx, double other_dy,
+          double target_small_angle) {
+    // When the pivot is one of the line's endpoints, unit_from_pivot
+    // returns a fallback (1,0) for the zero-length vector.  That
+    // fallback can accidentally win the scoring, turning the
+    // inter-line angle into a single-line angle from horizontal.
+    // Skip any candidate that sits at the pivot itself.
+    double len0 = std::sqrt((h0x - px) * (h0x - px) + (h0y - py) * (h0y - py));
+    double len1 = std::sqrt((h1x - px) * (h1x - px) + (h1y - py) * (h1y - py));
+    if (len0 < 1e-9) return unit_from_pivot(px, py, h1x, h1y);
+    if (len1 < 1e-9) return unit_from_pivot(px, py, h0x, h0y);
+    auto d0 = unit_from_pivot(px, py, h0x, h0y);
+    auto d1 = unit_from_pivot(px, py, h1x, h1y);
+    auto score = [&](const std::pair<double, double>& dir) {
+      const double measured = std::abs(std::atan2(
+          dir.first * other_dy - dir.second * other_dx,
+          dir.first * other_dx + dir.second * other_dy));
+      return std::abs(measured - target_small_angle);
+    };
+    return score(d0) <= score(d1) ? d0 : d1;
+  };
+
   int a_pivot_index = -1;
   int b_pivot_index = -1;
   for (int i = 0; i < 2 && a_pivot_index < 0; ++i) {
@@ -117,12 +148,60 @@ void update_angle_dimension(FeatureEntry& feature,
         vpy = *dimension.pivot_y;
       }
     }
-    // Resolve the best direction pair for the virtual pivot so the
-    // current signed angle measurement matches the quadrant the user
-    // selected — no unnecessary line rotation on commit.
-    auto resolved = resolve_angle_directions(line_a, line_b, vpx, vpy,
-                                             target_small_angle);
-    current_signed_for_value = resolved.signed_angle;
+    auto vdir = [](double px, double py,
+                   double e0x, double e0y,
+                   double e1x, double e1y) -> std::pair<double, double> {
+      double d0 = std::sqrt((e0x - px)*(e0x - px) + (e0y - py)*(e0y - py));
+      double d1 = std::sqrt((e1x - px)*(e1x - px) + (e1y - py)*(e1y - py));
+      double tx = d0 > d1 ? e0x : e1x;
+      double ty = d0 > d1 ? e0y : e1y;
+      double dx = tx - px, dy = ty - py;
+      double len = std::sqrt(dx*dx + dy*dy);
+      if (len < 1e-12) return {1.0, 0.0};
+      return {dx / len, dy / len};
+    };
+    // Measure current signed angle from the endpoint-direction pair
+    // whose absolute angle is closest to target_small_angle.  This
+    // ensures that when the user picks the supplement quadrant the
+    // delta is ≈ 0 — no unnecessary line rotation.
+    {
+      auto unit = [](double x, double y, double px, double py) {
+        double dx = x - px, dy = y - py;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+        return std::pair<double, double>{dx / len, dy / len};
+      };
+      std::pair<double, double> a_units[2] = {
+          unit(a_ends[0].first, a_ends[0].second, vpx, vpy),
+          unit(a_ends[1].first, a_ends[1].second, vpx, vpy)};
+      std::pair<double, double> b_units[2] = {
+          unit(b_ends[0].first, b_ends[0].second, vpx, vpy),
+          unit(b_ends[1].first, b_ends[1].second, vpx, vpy)};
+      auto av_def = vdir(vpx, vpy, a_ends[0].first, a_ends[0].second,
+                                      a_ends[1].first, a_ends[1].second);
+      auto bv_def = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
+                                      b_ends[1].first, b_ends[1].second);
+      double best_diff = 1e9;
+      for (int ai = 0; ai < 2; ++ai) {
+        for (int bi = 0; bi < 2; ++bi) {
+          double cross = a_units[ai].first * b_units[bi].second -
+                         a_units[ai].second * b_units[bi].first;
+          double dot   = a_units[ai].first * b_units[bi].first +
+                         a_units[ai].second * b_units[bi].second;
+          double measured = std::abs(std::atan2(cross, dot));
+          double diff = std::abs(measured - target_small_angle);
+          bool is_def =
+              (a_units[ai].first == av_def.first && a_units[ai].second == av_def.second) &&
+              (b_units[bi].first == bv_def.first && b_units[bi].second == bv_def.second);
+          if (is_def) diff -= 1e-12;  // prefer dir_away on ties
+          if (cross == 0.0 && dot == 0.0) continue;
+          if (diff < best_diff) {
+            best_diff = diff;
+            current_signed_for_value = std::atan2(cross, dot);
+          }
+        }
+      }
+    }
     auto wrap = [](double angle) {
       constexpr double kLocPi = 3.14159265358979323846;
       constexpr double kLocTwoPi = 2.0 * kLocPi;
@@ -219,28 +298,36 @@ void update_angle_dimension(FeatureEntry& feature,
     return;
   } else if (b_pivot_index >= 0) {
     // Pivot is an endpoint of line B.  Line B rotates.
-    // Use physical line directions (pivot → non‑pivot endpoint).
     pivot_x = b_ends[b_pivot_index].first;
     pivot_y = b_ends[b_pivot_index].second;
     int b_other = 1 - b_pivot_index;
     b_dx = b_ends[b_other].first - pivot_x;
     b_dy = b_ends[b_other].second - pivot_y;
-    int a_other = 1 - a_pivot_index;
-    a_dx = a_ends[a_other].first - pivot_x;
-    a_dy = a_ends[a_other].second - pivot_y;
+    const auto a_dir = choose_host_ray(
+        pivot_x, pivot_y,
+        a_ends[0].first, a_ends[0].second,
+        a_ends[1].first, a_ends[1].second,
+        b_dx, b_dy,
+        target_small_angle);
+    a_dx = a_dir.first;
+    a_dy = a_dir.second;
     driven_pivot_index = b_pivot_index;
   } else {
     // Pivot is an endpoint of line A.  Line A rotates.
-    // Use physical line directions (pivot → non‑pivot endpoint).
     drive_a = true;
     pivot_x = a_ends[a_pivot_index].first;
     pivot_y = a_ends[a_pivot_index].second;
     int a_other = 1 - a_pivot_index;
     a_dx = a_ends[a_other].first - pivot_x;
     a_dy = a_ends[a_other].second - pivot_y;
-    int b_other = 1 - b_pivot_index;
-    b_dx = b_ends[b_other].first - pivot_x;
-    b_dy = b_ends[b_other].second - pivot_y;
+    const auto b_dir = choose_host_ray(
+        pivot_x, pivot_y,
+        b_ends[0].first, b_ends[0].second,
+        b_ends[1].first, b_ends[1].second,
+        a_dx, a_dy,
+        target_small_angle);
+    b_dx = b_dir.first;
+    b_dy = b_dir.second;
     driven_pivot_index = a_pivot_index;
   }
 

@@ -175,6 +175,7 @@ export function createDimensionToolActions({
         const angleValue = shouldApply ? previewAngle : undefined;
         void addSketchAngleDimensionRef
           .current(firstEntityId, secondEntityId, angleValue)
+          .then(clearRelationPlacementStage)
           .catch(clearRelationPlacementStage);
         return;
       }

@@ -71,6 +71,7 @@ export interface ViewportPanelProps {
   onAddSketchAngleDimension: (
     firstLineId: string,
     secondLineId: string,
+    value?: number,
   ) => Promise<void>;
   onAddSketchDistanceDimension: (
     firstEntityId: string,

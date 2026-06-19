@@ -1660,9 +1660,9 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
-              onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
+              onAddSketchAngleDimension={async (firstLineId, secondLineId, value?) => {
                 await runActionOrThrow(async () => {
-                  await addSketchAngleDimension(firstLineId, secondLineId);
+                  await addSketchAngleDimension(firstLineId, secondLineId, value);
                 });
               }}
               onAddSketchDistanceDimension={async (firstEntityId, secondEntityId) => {

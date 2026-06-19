@@ -427,20 +427,12 @@ export function createLineAnglePreview({
               secondDir: secondCandidate,
             }))
           )
-        // Both lines share an endpoint at the pivot.  Include the
-        // reverse of each dir_away direction so the user can place
-        // the dimension in any of the 4 angular sectors — internal
-        // angle, supplement (obtuse), or their reflex complements.
-        : (() => {
-            const revFirst: [number, number] = [-firstDir[0], -firstDir[1]];
-            const revSecond: [number, number] = [-secondDir[0], -secondDir[1]];
-            return [
-              { firstDir, secondDir },
-              { firstDir: revFirst, secondDir },
-              { firstDir, secondDir: revSecond },
-              { firstDir: revFirst, secondDir: revSecond },
-            ];
-          })()
+        : [
+            {
+              firstDir,
+              secondDir,
+            },
+          ]
   )
     .map((candidate) => ({
       ...candidate,
@@ -460,13 +452,6 @@ export function createLineAnglePreview({
   if (candidates.length === 0) {
     return null;
   }
-  const sharedEndpoint =
-    first.start_point_id === second.start_point_id ||
-    first.start_point_id === second.end_point_id ||
-    first.end_point_id === second.start_point_id ||
-    first.end_point_id === second.end_point_id;
-  const reflexThreshold = sharedEndpoint ? -0.3 : 0;
-
   const cursorVec = [cursor[0] - pivot[0], cursor[1] - pivot[1]];
   const cursorLen = Math.hypot(cursorVec[0], cursorVec[1]);
   const cursorDir: [number, number] | null =
@@ -474,31 +459,20 @@ export function createLineAnglePreview({
       ? [cursorVec[0] / cursorLen, cursorVec[1] / cursorLen]
       : null;
   // Select the candidate whose angle wedge contains the cursor.
-  //
-  // For crossing / T‑connection lines the cross-product approach below
-  // directly identifies the quadrant.  For shared‑endpoint lines the
-  // four forward / reverse pairs have a different quadrant mapping, so
-  // we use bisector proximity — each of the four bisectors points into
-  // a distinct angular sector.
+  // Bisector dot-product breaks for small acute angles because the
+  // acute bisectors sit closer to the line directions than the obtuse
+  // ones.  Cross products with the base directions (firstDir/secondDir
+  // from dir_away) directly identify the quadrant.
   const cross2d = (a: [number, number], b: [number, number]) =>
     a[0] * b[1] - a[1] * b[0];
   let selected = candidates[0];
   if (cursorDir && candidates.length > 1) {
-    if (sharedEndpoint) {
-      let bestDot = -Infinity;
-      for (const c of candidates) {
-        const d = cursorDir[0] * c.bisector[0] +
-                  cursorDir[1] * c.bisector[1];
-        if (d > bestDot) { bestDot = d; selected = c; }
-      }
-    } else {
-      const onAPlus = cross2d(firstDir, cursorDir) >= -1e-9;
-      const onBPlus = cross2d(secondDir, cursorDir) >= -1e-9;
-      for (const c of candidates) {
-        const cOnAPlus = c.firstDir[0] * firstDir[0] + c.firstDir[1] * firstDir[1] > 0;
-        const cOnBPlus = c.secondDir[0] * secondDir[0] + c.secondDir[1] * secondDir[1] > 0;
-        if (cOnAPlus === onAPlus && cOnBPlus === onBPlus) { selected = c; break; }
-      }
+    const onAPlus = cross2d(firstDir, cursorDir) >= -1e-9;
+    const onBPlus = cross2d(secondDir, cursorDir) >= -1e-9;
+    for (const c of candidates) {
+      const cOnAPlus = c.firstDir[0] * firstDir[0] + c.firstDir[1] * firstDir[1] > 0;
+      const cOnBPlus = c.secondDir[0] * secondDir[0] + c.secondDir[1] * secondDir[1] > 0;
+      if (cOnAPlus === onAPlus && cOnBPlus === onBPlus) { selected = c; break; }
     }
   }
   // Compare against the core's default (dir_away), not smallestCandidateAngle.
@@ -507,29 +481,11 @@ export function createLineAnglePreview({
   const defaultAngle = angleBetweenDirections(firstDir, secondDir);
   const differsFromDefault = Math.abs(selected.angle - defaultAngle) > 1e-6;
   let useReflex = false;
-  if (cursorDir) {
-    if (candidates.length === 1) {
-      // Single candidate (T‑connection): use bisector dot‑product
-      // threshold to detect reflex.
-      const dot =
-        cursorDir[0] * selected.bisector[0] +
-        cursorDir[1] * selected.bisector[1];
-      useReflex = dot < reflexThreshold;
-    } else {
-      // Multiple candidates: the quadrant selection already picked
-      // the right pair.  If both directions are the reverse of the
-      // dir_away defaults the user is in the reflex‑of‑acute
-      // quadrant — toggle reflex.
-      const firstReversed =
-        selected.firstDir[0] * firstDir[0] +
-        selected.firstDir[1] * firstDir[1] < 0;
-      const secondReversed =
-        selected.secondDir[0] * secondDir[0] +
-        selected.secondDir[1] * secondDir[1] < 0;
-      if (firstReversed && secondReversed) {
-        useReflex = true;
-      }
-    }
+  if (cursorDir && candidates.length === 1) {
+    const dot =
+      cursorDir[0] * selected.bisector[0] +
+      cursorDir[1] * selected.bisector[1];
+    useReflex = dot < 0;
   }
 
   const angle = useReflex ? 2 * Math.PI - selected.angle : selected.angle;

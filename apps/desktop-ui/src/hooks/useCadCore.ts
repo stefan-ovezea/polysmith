@@ -741,9 +741,10 @@ export function useCadCore() {
     addSketchAngleDimension: async (
       firstLineId: string,
       secondLineId: string,
+      value?: number,
     ) => {
       await sendCoreCommand(
-        makeAddSketchAngleDimensionCommand(firstLineId, secondLineId),
+        makeAddSketchAngleDimensionCommand(firstLineId, secondLineId, value),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
