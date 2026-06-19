@@ -1,7 +1,7 @@
 # Dimension Tool — Regression Todo List
 
 **Branch:** `dimensions-2`
-**Date:** 2026-06-16
+**Date:** 2026-06-19
 
 ## High Priority
 
@@ -14,6 +14,14 @@
 
 - [ ] **Double-click same line no longer clears staged pick** — UI shortcut in `dimensionToolPicking.ts` bypasses `handleDimensionStagedEntity` which handles the re-click-to-clear case.
 - [ ] **Angle preview appears for unrelated lines** — `sharedLineEndpoint` in `dimensionRelationPreviewGeometry.ts` now returns virtual pivot for ANY non-parallel lines, even ones the user isn't trying to dimension.
+
+## DXF / DWG Support (libdxfrw)
+
+- [ ] **DXF import** — Read DXF files into Polysmith sketches. libdxfrw integrated at `third_party/libdxfrw/`, built as `dxfrw.lib`. Needs DXF entity → SketchEntity mapping layer.
+- [ ] **DXF export** — Write sketch geometry to DXF files. Inverse of import.
+- [ ] **DWG support** — Enable DWG read/write. Requires iconv (`vcpkg install libiconv` on Windows), adding excluded DWG sources to CMake, replacing the `drw_textcodec_stub.cpp` with the real implementation. See `help/dxf-library.md` for full instructions.
+- [ ] **DXF dimension round-trip** — Import/export dimension annotations (not just geometry). libdxfrw has `test_dimensions.cpp` — the DXF dimension entity parser exists.
+- [ ] **Save/load integration** — Wire DXF import/export into the app UI (File > Import/Export menus, or drag-and-drop onto viewport).
 
 ## Approach
 
