@@ -359,6 +359,8 @@ function makeSketchDimension(
           dimension.ref_line_end.z,
         ]
       : undefined,
+
+    displayAs: dimension.display_as || undefined,
   };
 }
 

@@ -2,6 +2,69 @@ import type { SketchFeatureParameters } from "@/types";
 
 type EntityKind = "line" | "circle" | "polygon";
 
+/**
+ * Determine whether the dimension should be horizontal ("x"), vertical
+ * ("y"), or aligned (undefined).  Compares the cursor direction to the
+ * three possible label-placement directions and picks the closest:
+ *   - Cursor perpendicular to the line → aligned (line length)
+ *   - Cursor mostly vertical (|dy| > |dx|) → horizontal dim ("x")
+ *   - Cursor mostly horizontal (|dx| > |dy|) → vertical dim ("y")
+ *
+ * This means: drag perpendicular to the line → aligned; drag up/down
+ * → horizontal dim; drag left/right → vertical dim.
+ */
+export function computePointDistanceAxis(
+  cursor: [number, number],
+  pointA: { x: number; y: number },
+  pointB: { x: number; y: number },
+): "x" | "y" | undefined {
+  const dx = pointB.x - pointA.x;
+  const dy = pointB.y - pointA.y;
+  const ptDist = Math.sqrt(dx * dx + dy * dy);
+  if (ptDist < 1e-6) return undefined;
+
+  const midX = (pointA.x + pointB.x) / 2;
+  const midY = (pointA.y + pointB.y) / 2;
+  const cursorDx = cursor[0] - midX;
+  const cursorDy = cursor[1] - midY;
+  const cursorDist = Math.sqrt(cursorDx * cursorDx + cursorDy * cursorDy);
+  if (cursorDist < 1e-6) return undefined;
+
+  // Three placement-direction angles (where the label sits relative
+  // to the midpoint):
+  //   aligned: perpendicular to the line
+  //   horizontal dim ("x"): label goes vertically (dimension line ∥ X)
+  //   vertical dim ("y"): label goes horizontally (dimension line ∥ Y)
+  const perpAngle = Math.atan2(dx, -dy);  // perpendicular to (dx,dy)
+  const horizPlacementAngle = Math.PI / 2;  // ±90° = vertical offset → "x"
+  const vertPlacementAngle = 0;             // 0° = horizontal offset → "y"
+
+  // Cursor angle from midpoint.
+  const cursorAngle = Math.atan2(cursorDy, cursorDx);
+
+  // Shortest angular distance helper.
+  const angularDist = (a: number, b: number) => {
+    let d = Math.abs(a - b);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    return d;
+  };
+
+  const distToAligned = angularDist(cursorAngle, perpAngle);
+  const distToHoriz = angularDist(cursorAngle, horizPlacementAngle);
+  const distToVert = angularDist(cursorAngle, vertPlacementAngle);
+
+  // If the cursor is closest to the line's perpendicular → aligned.
+  if (distToAligned < distToHoriz && distToAligned < distToVert) {
+    return undefined;
+  }
+
+  // Otherwise pick H or V based on which world-axis direction is closer.
+  if (distToHoriz < distToVert) {
+    return "x";
+  }
+  return "y";
+}
+
 function entityIdFromSketchPointId(
   pointId: string,
   kinds: readonly EntityKind[] = ["line", "circle", "polygon"],
@@ -164,7 +227,11 @@ interface DimensionToolClickContext {
   createPolygon: (polygonId: string) => void;
   selectPolygon: (polygonId: string) => void;
   selectLine: (lineId: string) => void;
+  /** Start linear placement preview for a single line (drag to choose H/V/aligned). */
+  startLinearPlacement: (lineId: string) => void;
   dimensionToolMode: import("@/types").DimensionToolMode;
+  /** Sketch-local cursor position at the time of the click (for axis detection). */
+  cursorLocal?: [number, number];
 }
 
 function entityReferencePointId(entityKind: string | null, entityId: string) {
@@ -330,17 +397,16 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
   }
   if (pointAction.kind === "point_distance") {
     context.clearFirstPick();
-    // Auto-detect horizontal/vertical based on coordinate difference.
+    // Determine H/V vs aligned from cursor position relative to the
+    // point pair — drag direction determines alignment.
     let axis: "x" | "y" | undefined;
     const sketch = context.sketch;
-    if (sketch) {
+    const cursor = context.cursorLocal;
+    if (sketch && cursor) {
       const pA = sketch.points.find(p => p.point_id === pointAction.firstPointId);
       const pB = sketch.points.find(p => p.point_id === pointAction.secondPointId);
       if (pA && pB) {
-        const dx = Math.abs(pB.x - pA.x);
-        const dy = Math.abs(pB.y - pA.y);
-        if (dx > dy) axis = "x";
-        else if (dy > dx) axis = "y";
+        axis = computePointDistanceAxis(cursor, pA, pB);
       }
     }
     context.createPointDistance(
@@ -449,9 +515,13 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
         context.createAngleOrDistance(stagedFirst, context.hit.id, "distance");
         return true;
       }
+      // Single line click: start linear placement with drag‑to‑choose preview.
+      if (context.hit.entityKind === "line") {
+        context.startLinearPlacement(context.hit.id);
+        return true;
+      }
     }
-    // Fall through to normal dispatch for unary dimensions (line-length,
-    // circle-radius) which still makes sense in linear mode.
+    // For non‑line entities or projected geometry, fall through.
   }
 
   // When a first entity is already staged, we're in a follow-up pick

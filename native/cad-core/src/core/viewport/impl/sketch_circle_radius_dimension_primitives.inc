@@ -34,5 +34,6 @@ ViewportSketchDimensionPrimitive make_circle_dimension_primitive(
       .label_y = label.y,
       .label_z = label.z,
       .driven = dimension.driven,
+      .display_as = dimension.display_as,
   };
 }

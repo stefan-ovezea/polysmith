@@ -80,6 +80,7 @@ ViewportSketchDimensionPrimitive make_line_dimension_primitive(
       .label_y = label.y,
       .label_z = label.z,
       .driven = dimension.driven,
+      .display_as = "",
   };
 }
 
@@ -197,5 +198,6 @@ ViewportSketchDimensionPrimitive make_line_angle_dimension_primitive(
       .ref_line_end_y = ref_line_end.y,
       .ref_line_end_z = ref_line_end.z,
       .driven = dimension.driven,
+      .display_as = "",
   };
 }

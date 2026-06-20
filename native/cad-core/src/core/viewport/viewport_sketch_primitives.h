@@ -132,6 +132,10 @@ struct ViewportSketchDimensionPrimitive {
   // When true, this is a reference (driven) dimension. The UI renders
   // it in parentheses like "(35mm)" to distinguish from driving dims.
   bool driven = false;
+
+  // Display variant: for point_distance, "x" = horizontal, "y" = vertical,
+  // "" = Euclidean.  For circle_radius, "radius" or "diameter".
+  std::string display_as;
 };
 
 struct ViewportSketchConstraintPrimitive {

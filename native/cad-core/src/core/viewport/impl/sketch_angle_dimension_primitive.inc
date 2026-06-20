@@ -349,6 +349,7 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     .ref_line_end_y = ref_line_end.y,
     .ref_line_end_z = ref_line_end.z,
     .driven = dimension.driven,
+    .display_as = "",
   };
   if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
     const double raw_dx = *dimension.label_x - pivot_x;

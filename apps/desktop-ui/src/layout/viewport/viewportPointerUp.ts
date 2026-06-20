@@ -124,6 +124,7 @@ interface ViewportPointerUpParams {
   createDimensionPointDistance: ActiveSketchPointerUpContext["createDimensionPointDistance"];
   createDimensionLineAngle: ActiveSketchPointerUpContext["createDimensionLineAngle"];
   createDimensionLine: ActiveSketchPointerUpContext["createDimensionLine"];
+  createDimensionLinear: ActiveSketchPointerUpContext["createDimensionLinear"];
   createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
   selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
   createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];
@@ -316,6 +317,19 @@ function handleActiveSketchToolPointerUp(
   hit: ActiveSketchSelectHit,
   additiveSelection: boolean,
 ) {
+  // Resolve cursor to sketch-local coords for dimension axis detection.
+  let cursorLocal: [number, number] | undefined;
+  if (params.activeSketchPlaneId) {
+    const resolved = resolveSketchPlanePoint(
+      params.event,
+      params.renderer,
+      params.camera,
+      params.activeSketchPlaneId,
+      params.activeSketchPlaneFrameRef.current,
+    );
+    cursorLocal = resolved?.local;
+  }
+
   return handleActiveSketchPointerUpTool({
     activeSketchTool: params.activeSketchToolRef.current,
     hit,
@@ -358,6 +372,7 @@ function handleActiveSketchToolPointerUp(
     createDimensionAngleOrDistance: params.createDimensionAngleOrDistance,
     createDimensionPointDistance: params.createDimensionPointDistance,
     createDimensionLine: params.createDimensionLine,
+    createDimensionLinear: params.createDimensionLinear,
     createDimensionLineAngle: params.createDimensionLineAngle,
     createDimensionCircle: params.createDimensionCircle,
     selectDimensionCircle: params.selectDimensionCircle,
@@ -365,6 +380,7 @@ function handleActiveSketchToolPointerUp(
     selectDimensionPolygon: params.selectDimensionPolygon,
     selectDimensionLine: params.selectDimensionLine,
     dimensionToolMode: params.dimensionToolMode,
+    cursorLocal,
   });
 }
 

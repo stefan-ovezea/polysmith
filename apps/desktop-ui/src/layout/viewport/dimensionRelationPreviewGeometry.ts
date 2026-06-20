@@ -632,3 +632,96 @@ export function createCircleCenterDistancePreview({
     labelPosition: toWorldPoint(planeId, labelLocal, planeFrame),
   };
 }
+
+/**
+ * Build a preview dimension for a single line in "linear" dimension mode.
+ * The `axis` determines the measurement direction:
+ *   - undefined: aligned (line length, dimension parallel to the line)
+ *   - "x": horizontal distance between the line's endpoints
+ *   - "y": vertical distance between the line's endpoints
+ */
+export function buildLinearDimensionPreview({
+  startX,
+  startY,
+  endX,
+  endY,
+  cursor,
+  axis,
+  planeId,
+  planeFrame,
+}: {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  cursor: [number, number];
+  axis: "x" | "y" | undefined;
+  planeId: string;
+  planeFrame: SketchPlaneFrame | null;
+}): SketchDimensionScene {
+  let dimStart: [number, number];
+  let dimEnd: [number, number];
+  let labelLocal: [number, number];
+  const anchorStart: [number, number] = [startX, startY];
+  const anchorEnd: [number, number] = [endX, endY];
+  let kind: SketchDimensionScene["kind"] = "line_length";
+  let value: number;
+
+  if (axis === "x") {
+    const ly = cursor[1];
+    dimStart = [startX, ly];
+    dimEnd = [endX, ly];
+    labelLocal = [(startX + endX) / 2, ly];
+    value = Math.abs(endX - startX);
+    kind = "point_distance";
+  } else if (axis === "y") {
+    const lx = cursor[0];
+    dimStart = [lx, startY];
+    dimEnd = [lx, endY];
+    labelLocal = [lx, (startY + endY) / 2];
+    value = Math.abs(endY - startY);
+    kind = "point_distance";
+  } else {
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    value = length;
+    if (length < 1e-6) {
+      dimStart = [startX, startY];
+      dimEnd = [endX, endY];
+      labelLocal = [(startX + endX) / 2, (startY + endY) / 2];
+    } else {
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      const offset =
+        (cursor[0] - midX) * nx + (cursor[1] - midY) * ny;
+      const clampedOffset = offset >= 0
+        ? Math.max(offset, 2)
+        : Math.min(offset, -2);
+      dimStart = [startX + nx * clampedOffset, startY + ny * clampedOffset];
+      dimEnd = [endX + nx * clampedOffset, endY + ny * clampedOffset];
+      labelLocal = [midX + nx * clampedOffset, midY + ny * clampedOffset];
+    }
+  }
+
+  return {
+    dimensionId: "preview-dim-linear-placement",
+    planeId,
+    kind,
+    entityId: "",
+    label: `${formatDraftDimension(value)} mm`,
+    rawValue: value,
+    unitSuffix: "mm",
+    isSelected: false,
+    anchorStart: toWorldPoint(planeId, anchorStart, planeFrame),
+    anchorEnd: toWorldPoint(planeId, anchorEnd, planeFrame),
+    dimensionStart: toWorldPoint(planeId, dimStart, planeFrame),
+    dimensionEnd: toWorldPoint(planeId, dimEnd, planeFrame),
+    labelPosition: toWorldPoint(planeId, labelLocal, planeFrame),
+    displayAs: axis,
+  };
+}

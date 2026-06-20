@@ -46,6 +46,7 @@ import {
   createCubeRenderTarget,
   createCubeBlitScene,
   disposeCubeBlitScene,
+  resolveSketchPlanePoint,
 } from "@/utils";
 import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { makeGetViewportStateCommand } from "@/lib/ipcProtocol";
@@ -111,6 +112,8 @@ import { handleActiveSketchPointerMove } from "./viewport/activeSketchPointerMov
 import { renderTrimPreviewHighlight } from "./viewport/trimPreviewHighlight";
 import { createDimensionRelationPreviewActions } from "./viewport/dimensionRelationPreviewActions";
 import { createLineAnglePreview } from "./viewport/dimensionRelationPreviewGeometry";
+import { beginLinearPlacement, updateLinearPlacementPreview, cancelLinearPlacement as cancelLinearPlacementPreview, resolveLinearPlacementCommit } from "./viewport/linearDimensionPlacement";
+import type { LinearPlacementState } from "./viewport/linearDimensionPlacement";
 import { createDimensionRelationPlacementActions } from "./viewport/dimensionRelationPlacementActions";
 import { createDimensionToolActions } from "./viewport/dimensionToolActions";
 import {
@@ -306,6 +309,13 @@ export function ViewportPanel({
     id: string;
     x: number;
     y: number;
+  } | null>(null);
+  // Linear placement: when dimension tool is in "linear" mode and user
+  // clicks a line, we defer IPC and show a live preview during drag.
+  const linearPlacementRef = useRef<LinearPlacementState | null>(null);
+  const linearPlacementPreviewRef = useRef<{
+    line: THREE.Object3D;
+    label: THREE.Sprite;
   } | null>(null);
   const [constraintPreview, setConstraintPreviewState] =
     useState<ConstraintPreviewState | null>(null);
@@ -1299,6 +1309,7 @@ export function ViewportPanel({
     createDimensionCircle: dimCreateCircle,
     createDimensionLine: dimCreateLine,
     createDimensionLineAngle: dimCreateLineAngle,
+    createDimensionLinear: dimCreateLinearThin,
     createDimensionPointDistance: dimCreatePointDistance,
     createDimensionPolygon: dimCreatePolygon,
     selectDimensionCircle: dimSelectCircle,
@@ -1323,6 +1334,34 @@ export function ViewportPanel({
     updateSketchDimensionRef,
     setDimensionToolFirstLine,
   });
+
+  // Override the thin createDimensionLinear from dimensionToolActions with
+  // the real implementation that has access to ViewportPanel refs.
+  function startLinearPlacement(lineId: string) {
+    // Run the original thin action (sets refs, marks placement pending).
+    dimCreateLinearThin(lineId);
+
+    // Try to resolve line endpoints now; defer to pointer move if
+    // sketch data isn't available yet.
+    const sketch = sketchLinesRef.current;
+    const line = sketch?.lines.find((l) => l.line_id === lineId);
+
+    linearPlacementRef.current = {
+      lineId,
+      startPointId: line?.start_point_id ?? "",
+      endPointId: line?.end_point_id ?? "",
+      startX: line?.start_x ?? 0,
+      startY: line?.start_y ?? 0,
+      endX: line?.end_x ?? 0,
+      endY: line?.end_y ?? 0,
+      currentAxis: undefined,
+    };
+
+    // Disable orbit controls during placement.
+    controlsRef.current!.enabled = false;
+    const canvas = rendererRef.current?.domElement as HTMLCanvasElement | undefined;
+    if (canvas) canvas.style.cursor = "grabbing";
+  }
 
   function dimensionCoreValue(
     dimension: SketchDimensionScene,
@@ -2541,6 +2580,42 @@ export function ViewportPanel({
         return;
       }
 
+      // Linear placement live preview: update as cursor moves.
+      if (linearPlacementRef.current && activeSketchPlaneIdRef.current) {
+        // Refresh endpoint data in case the sketch state was stale at click time.
+        const sketch = sketchLinesRef.current;
+        const line = sketch?.lines.find((l) => l.line_id === linearPlacementRef.current!.lineId);
+        if (line) {
+          linearPlacementRef.current.startPointId = line.start_point_id;
+          linearPlacementRef.current.endPointId = line.end_point_id;
+          linearPlacementRef.current.startX = line.start_x;
+          linearPlacementRef.current.startY = line.start_y;
+          linearPlacementRef.current.endX = line.end_x;
+          linearPlacementRef.current.endY = line.end_y;
+        }
+
+        const resolved = resolveSketchPlanePoint(
+          event,
+          renderer,
+          camera,
+          activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrameRef.current,
+        );
+        if (resolved && sketchGroupRef.current && line) {
+          updateLinearPlacementPreview(
+            linearPlacementRef.current,
+            resolved.local,
+            activeSketchPlaneIdRef.current,
+            activeSketchPlaneFrameRef.current,
+            config.displayUnits,
+            sketchGroupRef.current,
+            linearPlacementPreviewRef,
+          );
+        }
+        // Always consume the event — user is in placement mode.
+        return;
+      }
+
       if (
         handleEndpointDragPointerMove({
           event,
@@ -2590,11 +2665,11 @@ export function ViewportPanel({
       pointerDown = null;
       if (moveGizmoDragRef.current) {
         moveGizmoDragRef.current = null;
-        controls.enabled = true;
+        controlsRef.current!.enabled = true;
       }
       if (!dimensionLabelDragRef.current?.isPlacement) {
         dimensionLabelDragRef.current = null;
-        controls.enabled = true;
+        controlsRef.current!.enabled = true;
       }
       (renderer.domElement as HTMLCanvasElement).style.cursor = "";
       setSketchSnapLabel(null);
@@ -2649,7 +2724,7 @@ export function ViewportPanel({
       }
 
       dimensionLabelDragRef.current = null;
-      controls.enabled = true;
+      controlsRef.current!.enabled = true;
       // Clear the dimension tool's staged first-pick so the next
       // entity click starts a fresh dimension instead of leaking
       // a stale two-pick workflow (e.g. "Angle dimension already
@@ -2720,6 +2795,37 @@ export function ViewportPanel({
     function handlePointerUp(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
+
+      // Linear placement commit: create the dimension with the chosen axis.
+      if (linearPlacementRef.current) {
+        const state = linearPlacementRef.current;
+        linearPlacementRef.current = null;
+        cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+        controlsRef.current!.enabled = true;
+        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+        const commit = resolveLinearPlacementCommit(state);
+
+        // Predict the dimension ID and set up the normal placement flow
+        // so the user can fine‑tune the label position after creation.
+        if (commit.kind === "line_length") {
+          pendingDimensionIdRef.current = `dim-line-${commit.lineId}`;
+          void addSketchLineLengthDimensionRef.current(commit.lineId);
+        } else {
+          pendingDimensionIdRef.current =
+            `dim-point-distance-${commit.pointAId}-${commit.pointBId}`;
+          void addSketchPointDistanceDimensionRef.current(
+            commit.pointAId,
+            commit.pointBId,
+            commit.axis,
+          );
+        }
+        pendingDimensionPlacementRef.current = true;
+        pendingDimSourceEntityIdRef.current = null;
+        dimensionToolFirstLineRef.current = null;
+        setDimensionToolFirstLine(null);
+        return;
+      }
+
       handleViewportPointerUp({
         event,
         renderer,
@@ -2789,6 +2895,7 @@ export function ViewportPanel({
 	        createDimensionPointDistance: dimCreatePointDistance,
 	        createDimensionLine: dimCreateLine,
 		createDimensionLineAngle: dimCreateLineAngle,
+        createDimensionLinear: startLinearPlacement,
 	        createDimensionCircle: dimCreateCircle,
 	        selectDimensionCircle: dimSelectCircle,
 	        createDimensionPolygon: dimCreatePolygon,
@@ -3099,6 +3206,12 @@ export function ViewportPanel({
     setConstraintPreview(null);
     clearDraftDimensionSession();
     cancelDimensionPlacement();
+    // Also cancel any in-progress linear placement preview.
+    if (linearPlacementRef.current) {
+      linearPlacementRef.current = null;
+      cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+      controlsRef.current!.enabled = true;
+    }
     pendingDimensionPlacementRef.current = false;
     // Reset the dimension tool's pending first-line on every tool
     // switch so it can't leak across tools or sketches.

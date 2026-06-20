@@ -73,6 +73,7 @@ ViewportSketchDimensionPrimitive make_circle_center_distance_dimension_primitive
     }
   }
   primitive.driven = dimension.driven;
+  primitive.display_as = "";
   return primitive;
 }
 
@@ -148,5 +149,6 @@ ViewportSketchDimensionPrimitive make_circle_line_distance_dimension_primitive(
     primitive.label_z = shifted_label.z;
   }
   primitive.driven = dimension.driven;
+  primitive.display_as = "";
   return primitive;
 }

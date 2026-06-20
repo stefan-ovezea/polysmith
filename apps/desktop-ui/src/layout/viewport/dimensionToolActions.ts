@@ -133,6 +133,19 @@ export function createDimensionToolActions({
     stageFollowUpPick(entityId);
   }
 
+  function createDimensionLinear(lineId: string) {
+    // Linear placement: the dimension is NOT created yet.  We stage
+    // the entity for the follow‑up pick (so the relation preview
+    // wire still works for two‑entity picks) and signal that a
+    // linear placement session is active.  The actual preview and
+    // IPC happens in ViewportPanel's pointer‑move / pointer‑up
+    // handlers via LinearPlacementState.
+    stageFollowUpPick(lineId);
+    pendingDimensionPlacementRef.current = true;
+    pendingDimSourceEntityIdRef.current = null;
+    // The caller (ViewportPanel) wires the linear placement ref.
+  }
+
   function createDimensionAngleOrDistance(
     firstEntityId: string,
     secondEntityId: string,
@@ -212,6 +225,7 @@ export function createDimensionToolActions({
     createDimensionCircle,
     createDimensionLine,
     createDimensionLineAngle,
+    createDimensionLinear,
     createDimensionPointDistance,
     createDimensionPolygon,
     selectDimensionCircle,

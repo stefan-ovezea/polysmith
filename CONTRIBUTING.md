@@ -17,8 +17,8 @@ This project is intentionally built with strong architectural boundaries so that
 Please read:
 
 - `README.md`
-- `AGENTS.md`
-- `.deepseek/instructions.md`
+- `CLAUDE.md` — the single authoritative agent instruction file
+- `AGENTS.md` — quick reference for AI-assisted development
 - `wiki/Architecture-Overview.md`
 - `wiki/Contextual-Modeling-Workflow.md`
 - `wiki/IPC-Protocol.md`

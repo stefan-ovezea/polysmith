@@ -1,5 +1,9 @@
 # Active Task: GCS Freeze State Machine, Ripple-Freeze, DOF Feedback, Speculative Inferencing
 
+> **Agent note:** For project architecture, rules, and build commands,
+> read [CLAUDE.md](../CLAUDE.md) first. This file tracks the current
+> implementation task only.
+
 **Started:** 2026-06-09
 **Status:** P1 + P2 + P3.1 + P3.2 + P3.3 + P3.4 complete ✅ (P3.2 verified working in app, C++ build clean, TS type-check clean)
 **Source:** `.deepseek/pastes/` — user-provided GCS architecture document

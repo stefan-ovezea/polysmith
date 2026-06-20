@@ -283,6 +283,10 @@ export interface SketchDimensionScene {
   // When true, this is a reference (driven) dimension — the UI renders
   // it in parentheses like "(35mm)".
   driven?: boolean;
+
+  /** Display variant: "x" = horizontal, "y" = vertical, "" = Euclidean
+   *  for point_distance; "radius" / "diameter" for circle_radius. */
+  displayAs?: string;
 }
 
 export interface SketchConstraintScene {

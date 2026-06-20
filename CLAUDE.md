@@ -1,10 +1,44 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This is the **single authoritative agent instruction file** for this repository.
+All AI coding agents (Claude Code, Codex, DeepSeek, etc.) should read this file
+first at the start of every session. It replaces what was previously scattered
+across AGENTS.md, CONTRIBUTING.md, and `.deepseek/instructions.md`.
+
+The other files still exist for human contributors, but agents should treat
+this file as the binding instruction set.
 
 ## Project Overview
 
 PolySmith is a local-first desktop CAD application for hobbyist 3D-printing workflows — single-part parametric modeling with a strict UI/CAD boundary. Licensed AGPL-3.0-or-later.
+
+## Session Onboarding
+
+At the start of every session, check the current branch and working tree state.
+Then read these wiki pages to understand the system. They are the canonical
+documentation.
+
+### First session — read in this order
+
+1. **[Core-UI Design Principles](wiki/Core-UI-Design-Principles.md)** — **READ FIRST.** What belongs in core vs UI.
+2. **[Architecture Overview](wiki/Architecture-Overview.md)** — UI / Tauri / C++ core layout
+3. **[Contextual Modeling Workflow](wiki/Contextual-Modeling-Workflow.md)** — the binding UX pattern every feature follows
+4. **[IPC Protocol](wiki/IPC-Protocol.md)** — how UI and core communicate
+5. **[Topological Naming Problem](wiki/Topological-Naming-Problem.md)** — the project's mantra
+
+### Return-session quick-ref
+
+- **[Repository Map](wiki/Repository-Map.md)** — directory layout
+- **[AI CAD Command Language](wiki/AI-CAD-Command-Language.md)** — IPC command reference for agents
+- **[Implementation Log](wiki/Implementation-Log.md)** — what's shipped, including platform-specific build fixes
+- **[V1 Roadmap](wiki/V1-Roadmap.md)** — current priorities
+
+### Active Work
+
+Check [`.deepseek/active-task.md`](.deepseek/active-task.md) for the current
+implementation status, completed phases, key files changed, and the next-session
+checklist. This is the living task tracker — read it before starting any code
+work to avoid redoing or breaking completed features.
 
 ## Build & Development Commands
 
@@ -58,6 +92,37 @@ React UI  ──IPC (JSON)──>  Tauri (Rust)  ──stdin/stdout──>  C++ 
 - **Core sends DOCUMENT STATE, not INTERACTION STATE.** If it moves with the mouse, it's UI. If it saves to a file, it's core. Snap candidates, drag previews, and hover highlights are UI-side concerns.
 - **TNP (Topological Naming Problem) is the project's mantra:** Never store a naked OCCT topology index and trust it across recomputes. Every feature referencing 3D geometry must re-resolve against live body shapes on every recompute. On failure, degrade with `dependency_broken` + warning — never crash.
 - **Contextual modeling workflow** is the binding UX pattern for all features: select inputs → invoke action → floating context panel with real geometry preview → confirm (Enter) or cancel (Escape, with undo).
+
+### UI Copy Rules
+
+- **Never expose internal ids in the UI.** Entity ids, feature ids, point ids, etc. are implementation details. User-visible copy describes things by their kind ("Line", "Circle"), their count ("3 selected"), or by user-meaningful labels ("Sketch on XY"). Ids are allowed in debug overlays gated behind a flag, never in default UI.
+- When adding or changing user-visible UI labels, put the English string in `apps/desktop-ui/src/i18n/en.json` and render it through the translation layer. Do not hardcode new labels in React components. You do not need to translate every other locale in the same change; make the label translatable and let missing locales fall back to English.
+
+### UI Theme Rules
+
+- Do not hardcode colors in React components or viewport utilities.
+- Use existing CSS/theme variables, or add a new token to every theme JSON file under `apps/desktop-ui/src/config/themes/` before consuming it.
+- Keep theme-specific palette values, including Catppuccin colors, inside the theme JSON files. Components should remain theme-agnostic.
+- When adding a third-party palette theme, preserve clear attribution in `wiki/Design-System.md` and keep user-visible theme names properly credited.
+
+### Workflow Expectations
+
+When implementing a task:
+1. Explain the plan before writing code
+2. Show which files will be changed
+3. Keep diffs small and reviewable
+4. Avoid unrelated refactors
+5. Add comments where intent is not obvious
+6. Prefer clarity over cleverness — write explicit, readable code
+7. Do not introduce unnecessary abstractions or new dependencies without justification
+
+### Forbidden Behaviors
+
+- No large "vibe-coded" rewrites
+- No silent refactoring across modules
+- No mixing UI logic with CAD logic
+- No bypassing architecture for speed
+- No architectural changes without explicit approval
 
 ## Repository Layout
 
@@ -168,6 +233,48 @@ C++ notes:
 - Use `addMessage("...")` from `useCadCoreStore` to emit messages to the in-app **Logs panel** (toolbar icon). Structured `LogEntry` objects can be sent via `addLogEntry(entry)`.
 - The CAD core writes structured logs to stderr (format: `[timestamp] [level] [source] message`). Tauri forwards unrecognized stderr lines as `cad-core-log` events.
 
+## Build Troubleshooting
+
+### Boost find_package fails on CMake 3.30+
+
+CMake 3.30 removed the built-in `FindBoost` module. Use a fallback pattern:
+```cmake
+find_package(Boost CONFIG QUIET)    # vcpkg provides BoostConfig.cmake
+if(NOT Boost_FOUND)
+  find_package(Boost MODULE REQUIRED)  # fallback for old distros
+endif()
+```
+This is already applied in `native/cad-core/CMakeLists.txt` — preserve this
+pattern if modifying CMake files.
+
+### Eigen3 not found (Windows)
+
+```bash
+vcpkg install eigen3 --triplet x64-windows
+```
+Eigen3 is header-only but must be present in the vcpkg tree.
+
+### planegcs submodule empty
+
+```bash
+git submodule update --init third_party/planegcs
+```
+The submodule is registered in `.gitmodules` but may not be cloned.
+
+### npm package missing
+
+```bash
+pnpm install
+```
+The `@salusoft89/planegcs` WASM package must be materialized in `node_modules`.
+
+### Submodules not initialized after clone
+
+The bootstrap script handles this, but if skipping bootstrap:
+```bash
+git submodule update --init --recursive
+```
+
 ## Wiki Documentation
 
 All project documentation lives in `wiki/` and is mirrored to the GitHub wiki submodule at `polysmith.wiki/`. Edits go to `wiki/` first, then mirrored.
@@ -197,3 +304,18 @@ Key pages for understanding the system:
 - Feature branches from latest `dev`, squash-merge back via PR.
 - Git push/pull/fetch require user permission — never run them autonomously.
 - Prefer `gh` CLI for PR operations when available.
+- At the start of every prompt that may change files, check the current branch and working tree state before editing.
+- Keep feature branches scoped to one implementation or fix.
+- Open implementation PRs as draft until tested and ready for review.
+- After merge, delete the remote and local feature branch.
+
+## Philosophy
+
+PolySmith is built to be **understandable and maintainable by humans first**.
+AI is a tool to accelerate development, not a substitute for ownership.
+
+- Keep changes small and focused.
+- Prefer clarity over cleverness.
+- Preserve architecture boundaries.
+- Do not move CAD logic into the UI.
+- Do not bypass the IPC contract.

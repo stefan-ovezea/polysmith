@@ -69,6 +69,7 @@
                 .dimension_end_x = pd.x, .dimension_end_y = pd.y, .dimension_end_z = pd.z,
                 .label_x = pd.x, .label_y = pd.y, .label_z = pd.z,
                 .driven = dim_it->driven,
+                .display_as = "",
             };
             if (dim_it->label_x.has_value() && dim_it->label_y.has_value()) {
               const double radius = polygon.radius;

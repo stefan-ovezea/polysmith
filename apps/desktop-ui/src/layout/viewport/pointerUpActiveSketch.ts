@@ -91,12 +91,15 @@ export interface ActiveSketchPointerUpContext {
   ) => void;
   createDimensionLine: (lineId: string) => void;
   createDimensionLineAngle: (lineId: string) => void;
+  createDimensionLinear: (lineId: string) => void;
   createDimensionCircle: (circleId: string, label: string) => void;
   selectDimensionCircle: (circleId: string) => void;
   createDimensionPolygon: (polygonId: string) => void;
   selectDimensionPolygon: (polygonId: string) => void;
   selectDimensionLine: (lineId: string) => void;
   dimensionToolMode: import("@/types").DimensionToolMode;
+  /** Sketch-local cursor position at click time (for axis detection). */
+  cursorLocal?: [number, number];
 }
 
 function dimensionToolHit(hit: ActiveSketchSelectHit) {
@@ -173,12 +176,14 @@ export function handleActiveSketchPointerUpTool(
       createPointDistance: context.createDimensionPointDistance,
       createLine: context.createDimensionLine,
       createLineAngle: context.createDimensionLineAngle,
+      startLinearPlacement: context.createDimensionLinear,
       createCircle: context.createDimensionCircle,
       selectCircle: context.selectDimensionCircle,
       createPolygon: context.createDimensionPolygon,
       selectPolygon: context.selectDimensionPolygon,
       selectLine: context.selectDimensionLine,
       dimensionToolMode: context.dimensionToolMode,
+      cursorLocal: context.cursorLocal,
     });
     return true;
   }

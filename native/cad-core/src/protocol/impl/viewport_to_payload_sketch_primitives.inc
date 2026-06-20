@@ -178,6 +178,7 @@ json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primiti
             {"z", primitive.ref_line_end_z},
         }},
       {"driven", primitive.driven},
+      {"display_as", primitive.display_as},
   };
 }
 

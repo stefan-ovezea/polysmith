@@ -233,6 +233,9 @@ export interface ViewportSketchDimension {
   // Reference line (from C++ core, optional)
   ref_line_start?: Vector3;
   ref_line_end?: Vector3;
+
+  // Display variant: "x" = horizontal, "y" = vertical, "" = Euclidean
+  display_as?: string;
 }
 
 export interface ViewportSketchConstraint {
