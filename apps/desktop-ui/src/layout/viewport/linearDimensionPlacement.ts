@@ -35,6 +35,9 @@ export interface LinearPlacementState {
   endX: number;
   endY: number;
   currentAxis: "x" | "y" | undefined;
+  /** Last sketch-local cursor position (for label placement after commit). */
+  lastCursorX: number;
+  lastCursorY: number;
 }
 
 function resolveLinearPlacementLine(
@@ -53,6 +56,8 @@ function resolveLinearPlacementLine(
     endX: line.end_x,
     endY: line.end_y,
     currentAxis: undefined,
+    lastCursorX: 0,
+    lastCursorY: 0,
   };
 }
 
@@ -83,6 +88,8 @@ export function updateLinearPlacementPreview(
     { x: state.endX, y: state.endY },
   );
   state.currentAxis = axis;
+  state.lastCursorX = cursor[0];
+  state.lastCursorY = cursor[1];
 
   const scene = buildLinearDimensionPreview({
     startX: state.startX,
@@ -127,20 +134,47 @@ export function cancelLinearPlacement(
 }
 
 /**
- * Determine what IPC to send based on the final axis.
- * Returns the command type and payload data needed by the caller.
+ * Determine what IPC to send and the sketch-local label position.
  */
 export function resolveLinearPlacementCommit(
   state: LinearPlacementState,
-): { kind: "line_length"; lineId: string }
-   | { kind: "point_distance"; pointAId: string; pointBId: string; axis: "x" | "y" } {
-  if (state.currentAxis === "x" || state.currentAxis === "y") {
+): { kind: "line_length"; lineId: string; labelX: number; labelY: number }
+   | { kind: "point_distance"; pointAId: string; pointBId: string; axis: "x" | "y"; labelX: number; labelY: number } {
+  const midX = (state.startX + state.endX) / 2;
+  const midY = (state.startY + state.endY) / 2;
+
+  if (state.currentAxis === "x") {
     return {
       kind: "point_distance",
       pointAId: state.startPointId,
       pointBId: state.endPointId,
-      axis: state.currentAxis,
+      axis: "x",
+      labelX: midX,
+      labelY: state.lastCursorY,
     };
   }
-  return { kind: "line_length", lineId: state.lineId };
+  if (state.currentAxis === "y") {
+    return {
+      kind: "point_distance",
+      pointAId: state.startPointId,
+      pointBId: state.endPointId,
+      axis: "y",
+      labelX: state.lastCursorX,
+      labelY: midY,
+    };
+  }
+  // Aligned: label offset perpendicular to the line toward the cursor.
+  const dx = state.endX - state.startX;
+  const dy = state.endY - state.startY;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  let labelX = midX;
+  let labelY = midY;
+  if (length > 1e-6) {
+    const nx = -dy / length;
+    const ny = dx / length;
+    const offset = (state.lastCursorX - midX) * nx + (state.lastCursorY - midY) * ny;
+    labelX = midX + nx * offset;
+    labelY = midY + ny * offset;
+  }
+  return { kind: "line_length", lineId: state.lineId, labelX, labelY };
 }

@@ -39,16 +39,21 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
     throw std::runtime_error("Point distance dimension must be greater than zero");
   }
 
-  const std::string dimension_id =
+  const std::string base_dimension_id =
       "dim-point-distance-" + point_a_id + "-" + point_b_id;
+  const std::string axis_suffix =
+      axis.has_value() && !axis->empty() ? ("-" + *axis) : "";
+  const std::string dimension_id = base_dimension_id + axis_suffix;
+
+  // Check for an existing dimension with the SAME axis.  A horizontal
+  // and vertical dimension on the same point pair must be independent.
   const auto dimension_it = std::find_if(
       parameters.dimensions.begin(),
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    // Already exists, just update the value for the current geometry.
+    // Already exists with the same axis — just update the value.
     dimension_it->value = distance;
-    if (axis.has_value()) dimension_it->display_as = *axis;
     return;
   }
 

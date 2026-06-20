@@ -236,6 +236,8 @@ export interface ViewportSketchDimension {
 
   // Display variant: "x" = horizontal, "y" = vertical, "" = Euclidean
   display_as?: string;
+
+  driven?: boolean;
 }
 
 export interface ViewportSketchConstraint {

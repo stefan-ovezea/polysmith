@@ -360,6 +360,7 @@ function makeSketchDimension(
         ]
       : undefined,
 
+    driven: dimension.driven,
     displayAs: dimension.display_as || undefined,
   };
 }

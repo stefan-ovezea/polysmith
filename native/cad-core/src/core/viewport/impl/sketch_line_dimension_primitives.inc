@@ -62,7 +62,7 @@ ViewportSketchDimensionPrimitive make_line_dimension_primitive(
       .plane_id = parameters.plane_id,
       .kind = "line_length",
       .entity_id = line.id,
-      .label = format_dimension_value(dimension.value) + " mm",
+      .label = format_dimension_label(dimension),
       .is_selected = is_selected,
       .anchor_start_x = anchor_start.x,
       .anchor_start_y = anchor_start.y,

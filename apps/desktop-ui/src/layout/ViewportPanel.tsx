@@ -1355,6 +1355,8 @@ export function ViewportPanel({
       endX: line?.end_x ?? 0,
       endY: line?.end_y ?? 0,
       currentAxis: undefined,
+      lastCursorX: 0,
+      lastCursorY: 0,
     };
 
     // Disable orbit controls during placement.
@@ -2805,22 +2807,30 @@ export function ViewportPanel({
         (renderer.domElement as HTMLCanvasElement).style.cursor = "";
         const commit = resolveLinearPlacementCommit(state);
 
-        // Predict the dimension ID and set up the normal placement flow
-        // so the user can fine‑tune the label position after creation.
         if (commit.kind === "line_length") {
-          pendingDimensionIdRef.current = `dim-line-${commit.lineId}`;
-          void addSketchLineLengthDimensionRef.current(commit.lineId);
+          void addSketchLineLengthDimensionRef.current(commit.lineId).then(() => {
+            updateSketchDimensionLabelPositionRef.current(
+              `dim-line-${commit.lineId}`,
+              commit.labelX,
+              commit.labelY,
+            );
+          });
         } else {
-          pendingDimensionIdRef.current =
-            `dim-point-distance-${commit.pointAId}-${commit.pointBId}`;
           void addSketchPointDistanceDimensionRef.current(
             commit.pointAId,
             commit.pointBId,
             commit.axis,
-          );
+          ).then(() => {
+            updateSketchDimensionLabelPositionRef.current(
+              `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`,
+              commit.labelX,
+              commit.labelY,
+            );
+          });
         }
-        pendingDimensionPlacementRef.current = true;
+        pendingDimensionPlacementRef.current = false;
         pendingDimSourceEntityIdRef.current = null;
+        pendingDimensionIdRef.current = null;
         dimensionToolFirstLineRef.current = null;
         setDimensionToolFirstLine(null);
         return;

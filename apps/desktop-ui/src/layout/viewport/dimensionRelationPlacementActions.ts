@@ -131,18 +131,36 @@ export function createDimensionRelationPlacementActions(
     ) {
       return true;
     }
-    const relation = context.pendingRelationPlacementMatchRef.current;
-    if (!relation) {
-      return true;
+
+    let placementDimension: import("@/types").SketchDimensionScene | null = null;
+    let relation: import("./draftDimensions").DimensionRelationPreview | null = null;
+
+    relation = context.pendingRelationPlacementMatchRef.current;
+    if (relation) {
+      placementDimension = findPendingRelationDimension(
+        relation,
+        context.displayedSketchDimensionsRef.current,
+        context.sketchLinesRef.current,
+      );
+    } else {
+      // No relation match — find the dimension by predicted ID instead.
+      // This handles cases where the relation preview was cleared before
+      // placement started (e.g. regroup, empty-space click).
+      const pendingId = context.pendingDimensionIdRef.current;
+      if (pendingId) {
+        for (const dim of context.displayedSketchDimensionsRef.current) {
+          if (dim.dimensionId === pendingId) {
+            placementDimension = dim;
+            break;
+          }
+        }
+      }
     }
-    const placementDimension = findPendingRelationDimension(
-      relation,
-      context.displayedSketchDimensionsRef.current,
-      context.sketchLinesRef.current,
-    );
+
     if (!placementDimension) {
-      return false;
+      return false;  // not in viewport yet, keep retrying
     }
+
     context.pendingRelationPlacementMatchRef.current = null;
     context.pendingDimensionIdRef.current = null;
     context.pendingDimensionPlacementRef.current = false;
