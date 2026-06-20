@@ -226,9 +226,8 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.driven = false;  // reset — may be set below
     refresh_sketch_derived_state(feature);
 
-    // If the solver reports conflicts after the update, over-constrained
-    // → make this dimension driven so the user sees parentheses.
     if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+        feature.sketch_parameters->solver_redundant_count > 0 ||
         feature.sketch_parameters->solver_dofs < 0) {
       dimension.driven = true;
       refresh_sketch_derived_state(feature);

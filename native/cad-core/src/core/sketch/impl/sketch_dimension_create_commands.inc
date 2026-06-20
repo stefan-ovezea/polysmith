@@ -68,8 +68,10 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
 
   refresh_sketch_derived_state(feature);
 
-  // If the solver reports conflicts, over-constrained → make driven.
+  // If the solver reports conflicts, redundants, or negative DOF,
+  // the new constraint is over‑constraining or redundant → make driven.
   if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_redundant_count > 0 ||
       feature.sketch_parameters->solver_dofs < 0) {
     auto it = std::find_if(
         parameters.dimensions.begin(), parameters.dimensions.end(),
@@ -114,9 +116,10 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
 
   refresh_sketch_derived_state(feature);
 
-  // If the solver reports conflicts, over-constrained → make driven.
+  // If solver reports conflicts, redundants, or negative DOF → make driven.
   if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
+       feature.sketch_parameters->solver_redundant_count > 0 ||
+       feature.sketch_parameters->solver_dofs < 0) {
     auto it = std::find_if(
         parameters.dimensions.begin(), parameters.dimensions.end(),
         [&](SketchDimension& d) { return d.id == dimension_id; });
@@ -183,8 +186,9 @@ void add_sketch_line_angle_dimension(FeatureEntry& feature,
 
   refresh_sketch_derived_state(feature);
 
-  // If the solver reports conflicts, over-constrained → make driven.
+  // If solver reports conflicts, redundants, or negative DOF → make driven.
   if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_redundant_count > 0 ||
       feature.sketch_parameters->solver_dofs < 0) {
     auto it = std::find_if(
         parameters.dimensions.begin(), parameters.dimensions.end(),
@@ -231,8 +235,9 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
 
   refresh_sketch_derived_state(feature);
 
-  // If the solver reports conflicts, over-constrained → make driven.
+  // If solver reports conflicts, redundants, or negative DOF → make driven.
   if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_redundant_count > 0 ||
       feature.sketch_parameters->solver_dofs < 0) {
     auto it = std::find_if(
         parameters.dimensions.begin(), parameters.dimensions.end(),
@@ -284,8 +289,9 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
 
   refresh_sketch_derived_state(feature);
 
-  // If the solver reports conflicts, over-constrained → make driven.
+  // If solver reports conflicts, redundants, or negative DOF → make driven.
   if (feature.sketch_parameters->solver_conflicting_count > 0 ||
+      feature.sketch_parameters->solver_redundant_count > 0 ||
       feature.sketch_parameters->solver_dofs < 0) {
     auto it = std::find_if(
         parameters.dimensions.begin(), parameters.dimensions.end(),
