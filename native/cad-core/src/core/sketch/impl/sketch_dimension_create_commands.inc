@@ -103,8 +103,11 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    throw std::runtime_error(
-        "Line length dimension already exists: " + dimension_id);
+    // Already exists — update the value to match current geometry.
+    // This handles race conditions where the TS sends a duplicate
+    // before the previous state update arrives.
+    dimension_it->value = measure_line_length(line);
+    return;
   }
 
   parameters.dimensions.push_back(SketchDimension{

@@ -4,8 +4,7 @@
     // become driving constraints only when the user types a value
     // (non-empty expression).
     for (const auto& dim : params.dimensions) {
-        if (dim.driven) continue;  // reference-only, not a constraint
-        // Auto-dimensions without a user-set expression are display-only.
+        if (dim.driven) continue;
         if (dim.is_auto && dim.expression.empty()) continue;
 
         // Allocate a parameter for the constraint target value.

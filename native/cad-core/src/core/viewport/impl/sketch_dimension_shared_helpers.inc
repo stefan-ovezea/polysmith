@@ -28,7 +28,7 @@ inline std::string format_dimension_label(const SketchDimension& dim,
                                           const std::string& suffix = " mm") {
   std::string label = format_dimension_value(dim.value) + suffix;
   if (dim.driven) {
-    label = "(driven) " + label;
+    label = "(" + label + ")";
   }
   return label;
 }
