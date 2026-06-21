@@ -103,9 +103,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    // Already exists — update the value to match current geometry.
-    // This handles race conditions where the TS sends a duplicate
-    // before the previous state update arrives.
+    // Already exists — update value to match current geometry.
     dimension_it->value = measure_line_length(line);
     return;
   }
