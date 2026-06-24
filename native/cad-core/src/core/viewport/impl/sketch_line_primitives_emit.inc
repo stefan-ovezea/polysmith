@@ -55,7 +55,8 @@
                 line.constraint.value() == "horizontal" ? "H" : "V",
                 is_selected_sketch_entity,
                 /*related_entity_id=*/std::nullopt,
-                /*badge_offset_multiplier=*/has_relation ? 3.0 : 1.0));
+                /*badge_offset_multiplier=*/has_relation ? 3.0 : 1.0,
+                /*driven=*/line.constraint_driven));
           }
         }
       }

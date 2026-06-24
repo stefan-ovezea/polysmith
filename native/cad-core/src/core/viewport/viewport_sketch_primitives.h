@@ -149,6 +149,10 @@ struct ViewportSketchConstraintPrimitive {
   double position_x;
   double position_y;
   double position_z;
+  // When true, this is a reference (driven) constraint.
+  // The UI renders it in parentheses like "(V)" to distinguish
+  // from driving constraints.
+  bool driven = false;
 };
 
 struct ViewportSketchPolygonPrimitive {

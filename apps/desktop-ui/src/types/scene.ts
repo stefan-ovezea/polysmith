@@ -298,6 +298,7 @@ export interface SketchConstraintScene {
   label: string;
   isSelected: boolean;
   position: [number, number, number];
+  driven?: boolean;
 }
 
 export interface SketchProfileScene {

@@ -249,6 +249,7 @@ export interface ViewportSketchConstraint {
   label: string;
   is_selected: boolean;
   position: Vector3;
+  driven?: boolean;
 }
 
 export interface ViewportSketchProfile {

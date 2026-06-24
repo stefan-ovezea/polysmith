@@ -194,6 +194,7 @@ json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primit
            : json(nullptr)},
       {"label", primitive.label},
       {"is_selected", primitive.is_selected},
+      {"driven", primitive.driven},
       {"position",
        {
            {"x", primitive.position_x},

@@ -1,3 +1,6 @@
+// finalize_new_dimension and count_driving_on_point_pair are now in
+// dimensions.inc (included earlier in sketch_feature.cpp).
+
 void add_sketch_point_distance_dimension(FeatureEntry& feature,
                                          const std::string& point_a_id,
                                          const std::string& point_b_id,
@@ -66,21 +69,8 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
       .display_as = axis.value_or(""),
   });
 
-  refresh_sketch_derived_state(feature);
-
-  // If the solver reports conflicts, redundants, or negative DOF,
-  // the new constraint is over‑constraining or redundant → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_redundant_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dimension_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
-  }
+  finalize_new_dimension(feature, parameters, dimension_id,
+                         point_a_id, point_b_id);
 }
 
 void add_sketch_line_length_dimension(FeatureEntry& feature,
@@ -103,7 +93,16 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    // Already exists — update value to match current geometry.
+    // Convert auto dimension to manual driving dimension (mirrors
+    // add_sketch_line_angle_dimension's auto→manual conversion).
+    if (dimension_it->is_auto) {
+      dimension_it->is_auto = false;
+      dimension_it->value = measure_line_length(line);
+      finalize_new_dimension(feature, parameters, dimension_id,
+                             line.start_point_id, line.end_point_id);
+      return;
+    }
+    // Already a manual dimension — update value to match current geometry.
     dimension_it->value = measure_line_length(line);
     return;
   }
@@ -115,20 +114,8 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       .value = measure_line_length(line),
   });
 
-  refresh_sketch_derived_state(feature);
-
-  // If solver reports conflicts, redundants, or negative DOF → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-       feature.sketch_parameters->solver_redundant_count > 0 ||
-       feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dimension_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
-  }
+  finalize_new_dimension(feature, parameters, dimension_id,
+                         line.start_point_id, line.end_point_id);
 }
 
 void add_sketch_line_angle_dimension(FeatureEntry& feature,
@@ -185,20 +172,7 @@ void add_sketch_line_angle_dimension(FeatureEntry& feature,
       .value = angle,
   });
 
-  refresh_sketch_derived_state(feature);
-
-  // If solver reports conflicts, redundants, or negative DOF → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_redundant_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dimension_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
-  }
+  finalize_new_dimension(feature, parameters, dimension_id);
 }
 
 void add_sketch_circle_radius_dimension(FeatureEntry& feature,
@@ -234,20 +208,7 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
       .display_as = display_as.value_or(""),
   });
 
-  refresh_sketch_derived_state(feature);
-
-  // If solver reports conflicts, redundants, or negative DOF → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_redundant_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dimension_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
-  }
+  finalize_new_dimension(feature, parameters, dimension_id);
 }
 
 void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
@@ -288,18 +249,5 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
       .value = polygon_it->radius,
   });
 
-  refresh_sketch_derived_state(feature);
-
-  // If solver reports conflicts, redundants, or negative DOF → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_redundant_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dimension_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
-  }
+  finalize_new_dimension(feature, parameters, dimension_id);
 }

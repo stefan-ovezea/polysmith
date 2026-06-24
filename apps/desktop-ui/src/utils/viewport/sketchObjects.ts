@@ -529,7 +529,12 @@ export function buildSketchDimensionObject(
       ? reformatDimensionLabel(dimension.label, dimension.kind, "in")
       : dimension.label;
   // Driven (reference) dimensions: wrap in parentheses like "(35mm)".
-  if (dimension.driven && !labelText.startsWith("(")) {
+  // Strip any existing parenthesization from the C++ label first
+  // so the TS driven flag is the single source of truth.
+  if (labelText.startsWith("(") && labelText.endsWith(")")) {
+    labelText = labelText.slice(1, -1);
+  }
+  if (dimension.driven) {
     labelText = `(${labelText})`;
   }
   const labelPosition = new THREE.Vector3(...dimension.labelPosition);
@@ -626,8 +631,10 @@ export function buildSketchDimensionObject(
 }
 
 export function buildSketchConstraintObject(constraint: SketchConstraintScene) {
+  // Driven (reference) constraints: wrap label in parentheses like "(V)".
+  const labelText = constraint.driven ? `(${constraint.label})` : constraint.label;
   const badge = makeConstraintBadgeSprite(
-    constraint.label,
+    labelText,
     constraint.isSelected,
   );
   badge.position.set(...constraint.position);

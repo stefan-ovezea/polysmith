@@ -129,74 +129,12 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                 result.conflicting.size(), result.redundant.size());
       }
 
-      // Detect redundant constraints: more than 2 driving constraints
-      // on the same point pair means at least one is redundant (2 points
-      // have only 2 relative DOF — X and Y).  Mark line_length as driven
-      // when H+V already exist on the same endpoints, then re-solve.
-      {
-        bool marked_any = false;
-        // Map: sorted point-id pair → count of driving constraints.
-        std::map<std::pair<std::string, std::string>, int> constraints_per_pair;
-        auto add_pair = [&](const std::string& pa, const std::string& pb) {
-          auto key = std::make_pair(pa, pb);
-          if (key.first > key.second) std::swap(key.first, key.second);
-          constraints_per_pair[key]++;
-        };
-        for (const auto& dim : feature.sketch_parameters->dimensions) {
-          if (dim.driven) continue;
-          if (dim.is_auto && dim.expression.empty()) continue;
-          if (dim.kind == "line_length") {
-            // Resolve line → endpoint IDs.
-            auto lit = std::find_if(
-                feature.sketch_parameters->lines.begin(),
-                feature.sketch_parameters->lines.end(),
-                [&](const SketchLine& l) { return l.id == dim.entity_id; });
-            if (lit != feature.sketch_parameters->lines.end()) {
-              add_pair(lit->start_point_id, lit->end_point_id);
-            }
-          } else if (!dim.secondary_entity_id.empty()) {
-            add_pair(dim.entity_id, dim.secondary_entity_id);
-          }
-        }
-        for (auto& [pair, count] : constraints_per_pair) {
-          if (count > 2) {
-            for (auto& dim : feature.sketch_parameters->dimensions) {
-              if (dim.kind == "line_length" && !dim.driven) {
-                auto lit = std::find_if(
-                    feature.sketch_parameters->lines.begin(),
-                    feature.sketch_parameters->lines.end(),
-                    [&](const SketchLine& l) { return l.id == dim.entity_id; });
-                if (lit != feature.sketch_parameters->lines.end()) {
-                  std::string pa = lit->start_point_id;
-                  std::string pb = lit->end_point_id;
-                  if (pa > pb) std::swap(pa, pb);
-                  if (pair.first == pa && pair.second == pb) {
-                    dim.driven = true;
-                    marked_any = true;
-                    fprintf(stderr,
-                            "[INFO] sketch: dimension %s marked driven "
-                            "(>2 constraints on point pair %s-%s)\n",
-                            dim.id.c_str(), pa.c_str(), pb.c_str());
-                  }
-                }
-              }
-            }
-          }
-        }
-        if (marked_any) {
-          ConstraintSolver solver2;
-          solver2.build(*feature.sketch_parameters);
-          auto result2 = solver2.solve();
-          if (result2.ok()) {
-            solver2.apply(*feature.sketch_parameters);
-          }
-          feature.sketch_parameters->solver_dofs = result2.dofs;
-          feature.sketch_parameters->solver_conflicting_count =
-              static_cast<int>(result2.conflicting.size());
-          feature.sketch_parameters->solver_redundant_count =
-              static_cast<int>(result2.redundant.size());
-        }
-      }
+      // Redundant constraint detection is handled by each dimension/
+      // constraint creation command individually — the command that adds
+      // a new constraint checks solver stats after refresh_sketch_derived_state
+      // and marks its own new entry as driven when over-constrained.
+      // This avoids fragile heuristics and works uniformly for all
+      // dimension kinds (line_length, point_distance, angle, etc.).
 
       // Restore original is_fixed values.
       if (append_mode) {

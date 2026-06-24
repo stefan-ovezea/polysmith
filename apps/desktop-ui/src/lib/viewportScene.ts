@@ -482,6 +482,7 @@ function makeSketchConstraint(
       constraint.position.y,
       constraint.position.z,
     ],
+    driven: constraint.driven,
   };
 }
 

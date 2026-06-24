@@ -2,6 +2,109 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-06-24
+
+### Driven dimension system — unified architecture
+
+Consolidated the driven/reference dimension detection into a single shared
+function (`finalize_new_dimension`) used by every dimension creation command.
+Previously each command duplicated ~30 lines of solver-check + fallback logic.
+
+**C++ — Shared finalization (`dimensions.inc`):**
+- `finalize_new_dimension(feature, params, dimId, [optional pointPair])` —
+  single entry point for post-creation over-constraint detection.  Runs solver,
+  checks `solver_conflicting_count` / `redundant_count` / `dofs < 0`, then
+  falls back to point-pair counting for types that constrain a point pair
+  (line_length, point_distance, circle_center_distance, etc.).
+- `count_driving_on_point_pair` — counts both dimensions AND line H/V
+  constraints on a point pair.  2 points have only 2 relative DOF; >2
+  constraints means at least one is redundant.
+- All creation commands (`add_sketch_line_length_dimension`,
+  `add_sketch_point_distance_dimension`, `add_sketch_line_angle_dimension`,
+  `add_sketch_circle_radius_dimension`, `add_sketch_polygon_radius_dimension`,
+  `add_sketch_distance_dimension`) now call `finalize_new_dimension` instead
+  of duplicating the pattern.
+
+**C++ — Removed heuristic redundant detection (`state_and_create.inc`):**
+- The old heuristic that counted constraints-per-point-pair *inside*
+  `refresh_sketch_derived_state` was removed.  It marked arbitrary existing
+  dimensions as driven, fired even when the solver reported 0 redundants,
+  and conflicted with the per-command checks.  The per-command checks are
+  now the sole authoritative mechanism.
+
+**C++ — `sync_driven_dimensions` respects `display_as`:**
+- `point_distance` driven dimensions with `display_as: "x"` now sync to
+  `abs(dx)` instead of Euclidean distance.  Same for `display_as: "y"`.
+  Previously all point_distance driven dims showed the line length.
+
+**C++ — Constraint `driven` plumbing (`viewport_sketch_primitives.h`):**
+- Added `bool driven = false` to `ViewportSketchConstraintPrimitive`.
+- Added `bool constraint_driven = false` to `SketchLine`.
+- `make_line_constraint_primitive` accepts optional `driven` parameter.
+- IPC serialization includes `driven` for constraint primitives.
+- (Detection of driven constraints not yet wired — plumbing is in place.)
+
+**C++ — Unified linear dimension primitives:**
+- `make_offset_dimension_primitive` — shared helper for all linear dimension
+  types (line_length, point_distance, line_line_distance,
+  circle_center_distance, circle_line_distance).  Handles offset computation,
+  label placement, label-position-override from user drag, and struct
+  population.  Eliminated ~200 lines of duplicated code.
+- `make_point_distance_dimension_primitive`: Euclidean now always has a
+  perpendicular offset (like line_length), fixing missing extension lines
+  and arrows on freshly-created point-to-point dimensions.
+- H/V point_distance dimensions build per-point projections to the dimension
+  line (horizontal at constant Y, vertical at constant X).
+
+**TypeScript — Driven rendering (`sketchObjects.ts`):**
+- `buildSketchDimensionObject`: strips any existing parenthesization from
+  the C++ label, then re-wraps based on the TS `driven` flag.  This makes
+  the TS the single source of truth for parenthesization, robust against
+  ordering issues between label generation and driven-flag setting.
+- `buildSketchConstraintObject`: wraps constraint label in parentheses
+  when `driven` is true (e.g. `(V)`, `(H)`).
+
+**TypeScript — IPC schema (`viewportStateSchema.ts`):**
+- Added `driven: z.boolean().default(false)` to constraint schema.
+- Added `driven?: boolean` to `ViewportSketchConstraint` and
+  `SketchConstraintScene` types.
+- `makeSketchConstraint` copies `driven` from IPC payload.
+
+**TypeScript — Picking fixes (`dimensionToolPicking.ts`):**
+- `computePointDistanceAxis`: won't return `"x"` when horizontal distance is
+  ~0, or `"y"` when vertical distance is ~0.  Fixes "Point distance dimension
+  must be greater than zero" error when clicking two vertically-aligned
+  endpoints in certain order.
+- Point-to-point picking: if both points belong to the same line that already
+  has a `line_length` dimension, selects the existing dimension for editing
+  instead of creating a redundant `point_distance`.
+- Linear mode: `hasUnaryDimension` check before starting linear placement;
+  selects existing dimension if one already exists.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `native/cad-core/src/core/sketch/impl/dimensions.inc` | +`finalize_new_dimension`, +`count_driving_on_point_pair` |
+| `native/cad-core/src/core/sketch/impl/state_and_create.inc` | Removed heuristic redundant detection (~90 lines) |
+| `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` | All creation commands use `finalize_new_dimension` |
+| `native/cad-core/src/core/sketch/impl/dimension_distance_commands.inc` | Uses `finalize_new_dimension` |
+| `native/cad-core/src/core/sketch/impl/private_dimension_relation_sync.inc` | `sync_driven_dimensions` respects `display_as` |
+| `native/cad-core/src/core/sketch/sketch_geometry_types.h` | +`constraint_driven` on `SketchLine` |
+| `native/cad-core/src/core/viewport/viewport_sketch_primitives.h` | +`driven` on constraint primitive |
+| `native/cad-core/src/protocol/impl/viewport_to_payload_sketch_primitives.inc` | +`driven` in constraint serialization |
+| `native/cad-core/src/core/viewport/impl/sketch_line_dimension_primitives.inc` | +`make_offset_dimension_primitive`; `make_line_dimension_primitive` delegates |
+| `native/cad-core/src/core/viewport/impl/sketch_line_point_distance_dimension_primitives.inc` | `point_distance` + `line_line_distance` delegate to shared helper |
+| `native/cad-core/src/core/viewport/impl/sketch_circle_distance_dimension_primitives.inc` | Circle distance primitives delegate to shared helper |
+| `native/cad-core/src/core/viewport/impl/sketch_primitives.inc` | `make_line_constraint_primitive` accepts `driven` param |
+| `native/cad-core/src/core/viewport/impl/sketch_line_primitives_emit.inc` | Passes `line.constraint_driven` |
+| `apps/desktop-ui/src/types/viewport.ts` | +`driven` on `ViewportSketchConstraint` |
+| `apps/desktop-ui/src/types/scene.ts` | +`driven` on `SketchConstraintScene` |
+| `apps/desktop-ui/src/lib/schemas/ipc/viewportStateSchema.ts` | +`driven` in constraint schema |
+| `apps/desktop-ui/src/lib/viewportScene.ts` | `makeSketchConstraint` copies `driven` |
+| `apps/desktop-ui/src/utils/viewport/sketchObjects.ts` | Driven rendering: strip/re-wrap for dims, `(V)` for constraints |
+| `apps/desktop-ui/src/layout/viewport/dimensionToolPicking.ts` | Axis fallback fix; duplicate-dimension blocking |
+
 ## 2026-06-15
 
 ### Point-to-point distance dimension — driving + label drag

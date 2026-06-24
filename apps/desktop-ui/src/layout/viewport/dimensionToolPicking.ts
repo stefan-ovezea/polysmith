@@ -58,11 +58,38 @@ export function computePointDistanceAxis(
     return undefined;
   }
 
-  // Otherwise pick H or V based on which world-axis direction is closer.
+  // Otherwise pick H or V based on which world-axis direction is closer,
+  // but only if that axis actually produces a non-zero distance.
+  const hDist = Math.abs(dx);
+  const vDist = Math.abs(dy);
   if (distToHoriz < distToVert) {
-    return "x";
+    return hDist > 1e-6 ? "x" : "y";
   }
-  return "y";
+  return vDist > 1e-6 ? "y" : "x";
+}
+
+/** Resolve an entity click to a concrete point ID for point-to-point dimensioning. */
+function resolveEntityToPoint(
+  sketch: SketchFeatureParameters | null,
+  entityId: string,
+  entityKind: string | null,
+): string | null {
+  if (!sketch) return null;
+  if (entityKind === "circle") {
+    return `point-circle-${entityId}-center`;
+  }
+  if (entityKind === "polygon") {
+    return `point-polygon-${entityId}-center`;
+  }
+  if (entityKind === "line") {
+    const line = sketch.lines.find(l => l.line_id === entityId);
+    if (!line) return null;
+    // Both endpoints exist — return the start point (the point-to-point
+    // path will measure correctly regardless of which endpoint we pick,
+    // since the user hasn't specified a preference).
+    return line.start_point_id;
+  }
+  return null;
 }
 
 function entityIdFromSketchPointId(
@@ -397,22 +424,22 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
   }
   if (pointAction.kind === "point_distance") {
     context.clearFirstPick();
-    // Determine H/V vs aligned from cursor position relative to the
-    // point pair — drag direction determines alignment.
-    let axis: "x" | "y" | undefined;
-    const sketch = context.sketch;
-    const cursor = context.cursorLocal;
-    if (sketch && cursor) {
-      const pA = sketch.points.find(p => p.point_id === pointAction.firstPointId);
-      const pB = sketch.points.find(p => p.point_id === pointAction.secondPointId);
-      if (pA && pB) {
-        axis = computePointDistanceAxis(cursor, pA, pB);
-      }
+    // If both points belong to the same line and that line already has
+    // a line_length dimension, select the existing dimension instead of
+    // creating a redundant point_distance.
+    const entityA = entityIdFromSketchPointId(pointAction.firstPointId, ["line"]);
+    const entityB = entityIdFromSketchPointId(pointAction.secondPointId, ["line"]);
+    if (entityA && entityA === entityB && hasUnaryDimension(context.sketch, entityA)) {
+      context.createLine(entityA);
+      return true;
     }
+    // Create as Euclidean (aligned) by default.  The user can drag
+    // during placement to position the label; axis can be changed
+    // later via the dimension editor.
     context.createPointDistance(
       pointAction.firstPointId,
       pointAction.secondPointId,
-      axis,
+      /*axis=*/ undefined,
     );
     return true;
   }
@@ -516,8 +543,14 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
         return true;
       }
       // Single line click: start linear placement with drag‑to‑choose preview.
+      // But if the line already has a dimension, select it for editing instead.
       if (context.hit.entityKind === "line") {
-        context.startLinearPlacement(context.hit.id);
+        if (hasUnaryDimension(context.sketch, context.hit.id)) {
+          context.clearFirstPick();
+          context.createLine(context.hit.id);
+        } else {
+          context.startLinearPlacement(context.hit.id);
+        }
         return true;
       }
     }

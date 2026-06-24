@@ -384,6 +384,7 @@ export const viewportStateSchema = z.object({
         y: z.number(),
         z: z.number(),
       }),
+      driven: z.boolean().default(false),
     }),
   ),
   sketch_profiles: z.array(
