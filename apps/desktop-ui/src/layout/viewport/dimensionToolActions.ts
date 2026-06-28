@@ -90,6 +90,10 @@ export function createDimensionToolActions({
     stageFollowUpPick(entityId);
     void addSketchCircleRadiusDimensionRef
       .current(entityId, displayAs)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
       .catch(() => {
         clearUnaryDimensionStage();
         clearFollowUpPick();
@@ -103,19 +107,29 @@ export function createDimensionToolActions({
   function createDimensionLine(entityId: string) {
     stageUnaryDimension(entityId, `dim-line-${entityId}`);
     stageFollowUpPick(entityId);
-    void addSketchLineLengthDimensionRef.current(entityId).catch(() => {
-      clearUnaryDimensionStage();
-      clearFollowUpPick();
-    });
+    void addSketchLineLengthDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
   }
 
   function createDimensionLineAngle(entityId: string) {
     stageUnaryDimension(entityId, `dim-line-angle-${entityId}`);
     stageFollowUpPick(entityId);
-    void addSketchLineAngleDimensionRef.current(entityId).catch(() => {
-      clearUnaryDimensionStage();
-      clearFollowUpPick();
-    });
+    void addSketchLineAngleDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
   }
 
   function selectDimensionLine(entityId: string) {
@@ -124,9 +138,13 @@ export function createDimensionToolActions({
 
   function createDimensionPolygon(entityId: string) {
     stageUnaryDimension(entityId, `dim-polygon-${entityId}`);
-    void addSketchPolygonRadiusDimensionRef.current(entityId).catch(() => {
-      clearUnaryDimensionStage();
-    });
+    void addSketchPolygonRadiusDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+      });
   }
 
   function selectDimensionPolygon(entityId: string) {
@@ -157,9 +175,6 @@ export function createDimensionToolActions({
       firstEntityId.startsWith("line-") &&
       secondEntityId.startsWith("line-")
     ) {
-      // In auto mode, the preview relation determines whether it's a
-      // parallel distance or an angle.  When a mode is forced, skip the
-      // auto-detection.
       if (forceMode !== "angle") {
         const relation = pendingRelationPlacementMatchRef.current;
         if (
@@ -173,6 +188,7 @@ export function createDimensionToolActions({
           pendingReflexAngleRef.current = 0;
           void addSketchDistanceDimensionRef
             .current(firstEntityId, secondEntityId)
+            .then(clearRelationPlacementStage)
             .catch(clearRelationPlacementStage);
           return;
         }
@@ -182,12 +198,10 @@ export function createDimensionToolActions({
         const previewAngle = pendingReflexAngleRef.current;
         pendingAngleIsReflexRef.current = false;
         pendingReflexAngleRef.current = 0;
-        // Pass the quadrant angle directly so the dimension is created
-        // with the correct value — no post‑commit update that would
-        // rotate the line.
         const angleValue = shouldApply ? previewAngle : undefined;
         void addSketchAngleDimensionRef
           .current(firstEntityId, secondEntityId, angleValue)
+          .then(clearRelationPlacementStage)
           .catch(clearRelationPlacementStage);
         return;
       }
@@ -195,6 +209,7 @@ export function createDimensionToolActions({
 
     void addSketchDistanceDimensionRef
       .current(firstEntityId, secondEntityId)
+      .then(clearRelationPlacementStage)
       .catch(clearRelationPlacementStage);
   }
 
@@ -205,9 +220,11 @@ export function createDimensionToolActions({
     pendingDimSourceEntityIdRef.current = null;
     void addSketchPointDistanceDimensionRef
       .current(pointAId, pointBId, axis)
+      .then(() => {
+        pendingDimensionIdRef.current = null;
+      })
       .catch(() => {
         pendingDimensionIdRef.current = null;
-        pendingDimensionPlacementRef.current = false;
       });
   }
 

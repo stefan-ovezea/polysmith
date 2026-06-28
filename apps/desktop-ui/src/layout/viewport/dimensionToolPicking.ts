@@ -105,7 +105,15 @@ function entityIdFromSketchPointId(
   return null;
 }
 
-export function unaryDimensionIdForEntity(entityId: string) {
+/**
+ * Return the dimension ID of the Euclidean (aligned) dimension on an
+ * entity — the one that constrains the overall length / radius.  For
+ * lines this is either a line_length or a point_distance with NO axis
+ * (aligned).  H / V point_distance dimensions are NOT "unary" — they
+ * constrain a single axis and can coexist with each other and with an
+ * aligned dimension on the same endpoints.
+ */
+export function unaryDimensionIdForEntity(entityId: string): string | null {
   if (entityId.startsWith("line-")) {
     return `dim-line-${entityId}`;
   }
@@ -123,9 +131,7 @@ function hasUnaryDimension(
   entityId: string,
 ) {
   const dimensionId = unaryDimensionIdForEntity(entityId);
-  if (!dimensionId) {
-    return false;
-  }
+  if (!dimensionId) return false;
   return (
     sketch?.dimensions.some(
       (dimension) => dimension.dimension_id === dimensionId,
@@ -555,6 +561,21 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
       }
     }
     // For non‑line entities or projected geometry, fall through.
+  }
+
+  // "auto" mode: single-line click always starts the drag‑to‑choose
+  // placement preview (H / V / aligned).  The C++ core handles
+  // idempotency per axis — same axis updates, different axis creates.
+  if (context.dimensionToolMode === "auto") {
+    if (
+      context.hit?.kind === "sketch_entity" &&
+      !context.hit.isProjected &&
+      context.hit.entityKind === "line" &&
+      context.getFirstEntityId() == null
+    ) {
+      context.startLinearPlacement(context.hit.id);
+      return true;
+    }
   }
 
   // When a first entity is already staged, we're in a follow-up pick
