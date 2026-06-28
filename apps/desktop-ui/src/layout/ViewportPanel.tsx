@@ -47,6 +47,7 @@ import {
   createCubeBlitScene,
   disposeCubeBlitScene,
   resolveSketchPlanePoint,
+  buildSketchDimensionObject,
 } from "@/utils";
 import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { makeGetViewportStateCommand } from "@/lib/ipcProtocol";
@@ -54,6 +55,7 @@ import { useCadCoreStore } from "@/state/cadCoreStore";
 import {
   disposeDynamicGrid,
   getOrthographicViewHeight,
+  getSketchGridFrame,
   type ActiveSketchGridPlaneFrame,
   type DynamicGridRef,
 } from "./viewport/grid";
@@ -490,6 +492,10 @@ export function ViewportPanel({
     new Map<string, THREE.Line | THREE.LineLoop>(),
   );
   const sketchDimensionObjectsRef = useRef<Array<THREE.Object3D>>([]);
+  /** dimensionId → {line, label} for in-place mutation during label drag */
+  const dimensionObjectByIdRef = useRef<
+    Map<string, { line: THREE.Group; label: THREE.Sprite }>
+  >(new Map());
   const sketchConstraintObjectsRef = useRef<Array<THREE.Object3D>>([]);
   const sketchPointObjectsRef = useRef<THREE.Mesh[]>([]);
   const sketchPointObjectByIdRef = useRef(new Map<string, THREE.Mesh>());
@@ -1223,6 +1229,7 @@ export function ViewportPanel({
     referencePlaneMeshesRef.current = [];
     sketchEntityObjectsRef.current = [];
     sketchDimensionObjectsRef.current = [];
+    dimensionObjectByIdRef.current.clear();
     sketchConstraintObjectsRef.current = [];
     sketchPointObjectsRef.current = [];
     sketchProfileObjectsRef.current = [];
@@ -1471,6 +1478,51 @@ export function ViewportPanel({
     return true;
   }
 
+  /** Rebuild the Three.js objects for a single dimension in-place —
+   *  disposes the old geometry, builds new geometry from the shifted
+   *  scene data, and swaps it into the sketch group.  Used during
+   *  label drag to avoid full scene rebuilds. */
+  function rebuildDimensionSceneObject(
+    shifted: SketchDimensionScene,
+    displayUnits?: "mm" | "in",
+  ) {
+    const sketchGroup = sketchGroupRef.current;
+    if (!sketchGroup) return;
+
+    const objects = dimensionObjectByIdRef.current.get(shifted.dimensionId);
+    if (!objects) return;
+
+    // Build replacement objects from the shifted dimension data
+    const replacement = buildSketchDimensionObject(shifted, displayUnits);
+
+    // Swap line group: remove old, dispose, add new
+    sketchGroup.remove(objects.line);
+    disposeGroup(objects.line);
+
+    // Swap label sprite: remove old, dispose, add new
+    sketchGroup.remove(objects.label);
+    objects.label.geometry?.dispose();
+    const mat = objects.label.material as THREE.SpriteMaterial;
+    mat?.map?.dispose();
+    mat?.dispose();
+
+    sketchGroup.add(replacement.line);
+    sketchGroup.add(replacement.label);
+
+    // Update refs so the dimension is still findable
+    dimensionObjectByIdRef.current.set(shifted.dimensionId, {
+      line: replacement.line as THREE.Group,
+      label: replacement.label,
+    });
+
+    // Update sketchDimensionObjectsRef (flat array) — swap old entries
+    const all = sketchDimensionObjectsRef.current;
+    const oldLineIdx = all.indexOf(objects.line);
+    const oldLabelIdx = all.indexOf(objects.label);
+    if (oldLineIdx !== -1) all[oldLineIdx] = replacement.line;
+    if (oldLabelIdx !== -1) all[oldLabelIdx] = replacement.label;
+  }
+
   const {
     beginDimensionPlacement,
     cancelDimensionPlacement,
@@ -1491,6 +1543,7 @@ export function ViewportPanel({
     pendingRelationPlacementLabelRef,
     dimensionLabelPositionsRef,
     setDimensionLabelPositions,
+    dimensionObjectByIdRef,
     angleDragRadiiRef,
     setAngleDragRadii,
     anglePlacementPreviewsRef,
@@ -1502,6 +1555,8 @@ export function ViewportPanel({
     angleDimensionFrame,
     clearPreviewDimension,
     setCanvasCursor,
+    rebuildDimensionSceneObject,
+    displayUnits: config.displayUnits,
   });
 
   const {
@@ -3172,6 +3227,7 @@ export function ViewportPanel({
         selectedConstraint: selectedConstraintRef,
         sketchEntityObjects: sketchEntityObjectsRef,
         sketchDimensionObjects: sketchDimensionObjectsRef,
+        dimensionObjectById: dimensionObjectByIdRef,
         sketchProfileObjects: sketchProfileObjectsRef,
         sketchProfileVisuals: sketchProfileVisualsRef,
         sketchProfileStates: sketchProfileStatesRef,

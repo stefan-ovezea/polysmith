@@ -85,6 +85,9 @@ interface ViewportSceneSyncRefs {
   selectedConstraint: MutableRef<SelectedConstraintState | null>;
   sketchEntityObjects: MutableRef<Array<THREE.Line | THREE.LineLoop>>;
   sketchDimensionObjects: MutableRef<THREE.Object3D[]>;
+  dimensionObjectById: MutableRef<
+    Map<string, { line: THREE.Group; label: THREE.Sprite }>
+  >;
   sketchProfileObjects: MutableRef<THREE.Group[]>;
   sketchProfileVisuals: MutableRef<Map<string, SketchProfileVisual>>;
   sketchProfileStates: MutableRef<Map<string, SketchProfileInteractionState>>;
@@ -399,6 +402,7 @@ function addSketchSceneObjectSet(
     sketchEntityObjects: refs.sketchEntityObjects.current,
     sketchEntityObjectById: refs.sketchEntityObjectById.current,
     sketchDimensionObjects: refs.sketchDimensionObjects.current,
+    dimensionObjectById: refs.dimensionObjectById.current,
     sketchConstraintObjects: refs.sketchConstraintObjects.current,
     sketchProfileObjects: refs.sketchProfileObjects.current,
     sketchProfileVisuals: refs.sketchProfileVisuals.current,

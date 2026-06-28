@@ -60,6 +60,32 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
     return;
   }
 
+  // When this is a Euclidean (no axis) distance on two points that are
+  // the endpoints of the same line, a line_length dimension is the
+  // canonical representation.  If one already exists, don't create a
+  // redundant point_distance — silently update the line_length value.
+  if (!axis.has_value() || axis->empty()) {
+    const auto matching_line = std::find_if(
+        parameters.lines.begin(),
+        parameters.lines.end(),
+        [&](const SketchLine& l) {
+          return (l.start_point_id == point_a_id && l.end_point_id == point_b_id) ||
+                 (l.start_point_id == point_b_id && l.end_point_id == point_a_id);
+        });
+    if (matching_line != parameters.lines.end()) {
+      const auto existing_ll = std::find_if(
+          parameters.dimensions.begin(),
+          parameters.dimensions.end(),
+          [&](const SketchDimension& dim) {
+            return dim.kind == "line_length" && dim.entity_id == matching_line->id;
+          });
+      if (existing_ll != parameters.dimensions.end()) {
+        existing_ll->value = distance;
+        return;
+      }
+    }
+  }
+
   parameters.dimensions.push_back(SketchDimension{
       .id = dimension_id,
       .kind = "point_distance",
@@ -105,6 +131,25 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
     // Already a manual dimension — update value to match current geometry.
     dimension_it->value = measure_line_length(line);
     return;
+  }
+
+  // A point_distance (Euclidean, no axis) on the same two endpoints
+  // is semantically identical to a line_length.  If one exists, remove
+  // it so we don't end up with two dimensions constraining the same
+  // point pair.
+  const auto dup_pt = std::find_if(
+      parameters.dimensions.begin(),
+      parameters.dimensions.end(),
+      [&](const SketchDimension& dim) {
+        if (dim.kind != "point_distance") return false;
+        if (!dim.display_as.empty()) return false;
+        const std::string& pa = dim.entity_id;
+        const std::string& pb = dim.secondary_entity_id;
+        return (pa == line.start_point_id && pb == line.end_point_id) ||
+               (pa == line.end_point_id && pb == line.start_point_id);
+      });
+  if (dup_pt != parameters.dimensions.end()) {
+    parameters.dimensions.erase(dup_pt);
   }
 
   parameters.dimensions.push_back(SketchDimension{
