@@ -2659,15 +2659,27 @@ export function ViewportPanel({
           activeSketchPlaneFrameRef.current,
         );
         if (resolved && sketchGroupRef.current && line) {
-          updateLinearPlacementPreview(
-            linearPlacementRef.current,
-            resolved.local,
-            activeSketchPlaneIdRef.current,
-            activeSketchPlaneFrameRef.current,
-            config.displayUnits,
-            sketchGroupRef.current,
-            linearPlacementPreviewRef,
-          );
+          // Check for relation preview candidates first (e.g. angle
+          // between two lines sharing an endpoint).  When the cursor
+          // is near a second entity that forms a valid relation with
+          // the staged first entity, the relation ghost takes priority
+          // over the linear placement preview.
+          const relation = updateDimensionRelationPreview(resolved.local);
+          if (relation) {
+            // Clean up linear placement preview so it doesn't overlap
+            // the relation ghost.
+            cancelLinearPlacementPreview(sketchGroupRef.current, linearPlacementPreviewRef);
+          } else {
+            updateLinearPlacementPreview(
+              linearPlacementRef.current,
+              resolved.local,
+              activeSketchPlaneIdRef.current,
+              activeSketchPlaneFrameRef.current,
+              config.displayUnits,
+              sketchGroupRef.current,
+              linearPlacementPreviewRef,
+            );
+          }
         }
         // Always consume the event — user is in placement mode.
         return;
@@ -2854,7 +2866,17 @@ export function ViewportPanel({
       objectSnapLatchRef.current = null;
 
       // Linear placement commit: create the dimension with the chosen axis.
+      // But first, check if the user clicked on a second entity that forms
+      // a valid relation (e.g. angle between two lines sharing an endpoint).
+      // If a relation preview is active, commit it instead of the linear
+      // placement dimension.
       if (linearPlacementRef.current) {
+        if (commitDimensionRelationPreview()) {
+          // Relation committed — clean up linear placement state.
+          cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+          linearPlacementRef.current = null;
+          return;
+        }
         const state = linearPlacementRef.current;
         linearPlacementRef.current = null;
         cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);

@@ -9,6 +9,7 @@ void clear_sketch_line_constraints(FeatureEntry& feature,
 
   // Clear the inline H/V constraint.
   line.constraint = std::nullopt;
+  line.constraint_driven = false;
 
   // Clear every line‑line relation that involves this line.
   remove_line_relations_for_line(parameters, "equal_length", line_id);

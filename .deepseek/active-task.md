@@ -5,7 +5,30 @@
 
 ## Status
 
-### ✅ Completed This Session
+### ✅ Completed (2026-06-28)
+
+**circle_radius & polygon_radius — idempotent on duplicate:**
+- `add_sketch_circle_radius_dimension`: instead of throwing when dimension already exists,
+  silently updates the value to match current geometry (mirrors `line_length` behaviour)
+- `add_sketch_polygon_radius_dimension`: same idempotent treatment
+
+**Constraint driven detection — wired for H/V constraints:**
+- `set_sketch_line_constraint`: after applying an H/V constraint and running the solver,
+  checks `solver_conflicting_count`, `solver_redundant_count`, `solver_dofs < 0`.
+  If over-constrained, sets `constraint_driven = true` → TS viewport renders `(H)`/`(V)`.
+- `clear_sketch_line_constraints`: resets `constraint_driven = false` on clear.
+- The `constraint_driven` field already existed on `SketchLine`, was already emitted to TS
+  primitives, and was already checked in `count_driving_on_point_pair` — only the assignment
+  was missing.
+
+**Point-pair fallback for distance dimensions:**
+- `add_sketch_distance_dimension`: now passes point pairs to `finalize_new_dimension`:
+  - `line_line_distance` → `start_point_id` from each line
+  - `circle_center_distance` → `"point-circle-{id}-center"` for each circle
+- This lets `finalize_new_dimension`'s step 2 (>2 constraints on 2 DOF pair) catch
+  over-constraint cases the solver might miss.
+
+### ✅ Completed This Session (prior)
 
 **Driven detection — unified architecture:**
 - `finalize_new_dimension()` — single shared function called by all 7 creation commands (`dimensions.inc`)
@@ -29,30 +52,11 @@
 - Point-to-point on same line with existing dim → selects existing instead of creating redundant
 - Linear mode with existing dim → selects instead of duplicating
 
-### ⚠️ Remaining Gaps
+### ⚠️ Remaining Gap
 
-| Dimension type | Solver check | Type-specific fallback | Auto→manual conversion |
-|---|---|---|---|
-| `line_length` | ✅ | ✅ point-pair + H/V | ✅ |
-| `point_distance` | ✅ | ✅ point-pair + H/V | N/A |
-| `line_angle` | ✅ | ❌ none | ✅ |
-| `circle_radius` | ✅ | ❌ none | ❌ (throws if exists) |
-| `polygon_radius` | ✅ | ❌ none | ❌ (throws if exists) |
-| **`angle` (2 lines)** | **❌ no refresh** | **❌ none** | **❌ always `is_auto=true`** |
-| `line_line_distance` | ✅ | ❌ (could use point-pair) | N/A |
-| `circle_center_distance` | ✅ | ❌ (could use point-pair) | N/A |
-| `circle_line_distance` | ✅ | ❌ none | N/A |
-
-**`angle` (2 lines) is the most broken** — `add_sketch_angle_dimension` creates with
-`is_auto=true`, never calls `refresh_sketch_derived_state`, never checks solver.
-Created and forgotten.
-
-**Constraint driven marking** — plumbing exists (`constraint_driven` on `SketchLine`,
-`driven` on primitive, TS rendering) but nothing sets it. The old heuristic that set
-it was removed from `state_and_create.inc`.
-
-**Placement flow** — point_distance creates as Euclidean only; no drag-to-choose axis
-like linear placement has for lines.
+| Dimension type | Issue |
+|---|---|
+| **`angle` (2 lines)** | Creates with `is_auto=true`, never calls `refresh_sketch_derived_state` / `finalize_new_dimension`. Throws on duplicate instead of auto→manual conversion. **PARKED for later.** |
 
 ## Structural Weak Points (for future robustness)
 
@@ -70,28 +74,14 @@ To avoid regressions when adding features:
    - TS: picking logic, placement, IPC command
    - If it constrains a point pair, the fallback is automatic via `count_driving_on_point_pair`
 
-## Key Files
+## Key Files Changed (2026-06-28)
 
-### C++
-- `native/cad-core/src/core/sketch/impl/dimensions.inc` — `finalize_new_dimension`, `count_driving_on_point_pair`
-- `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` — all creation commands
-- `native/cad-core/src/core/sketch/impl/state_and_create.inc` — `refresh_sketch_derived_state` (heuristic removed)
-- `native/cad-core/src/core/sketch/impl/private_dimension_relation_sync.inc` — `sync_driven_dimensions`
-- `native/cad-core/src/core/viewport/impl/sketch_line_dimension_primitives.inc` — `make_offset_dimension_primitive`
-- `native/cad-core/src/core/viewport/impl/sketch_line_point_distance_dimension_primitives.inc` — point_distance + line_line_distance
-- `native/cad-core/src/core/viewport/impl/sketch_circle_distance_dimension_primitives.inc` — circle distance primitives
-- `native/cad-core/src/core/sketch/impl/dimension_angle_commands.inc` — `add_sketch_angle_dimension` (broken)
-
-### TypeScript
-- `apps/desktop-ui/src/layout/viewport/dimensionToolPicking.ts` — picking, axis fix, duplicate blocking
-- `apps/desktop-ui/src/utils/viewport/sketchObjects.ts` — driven rendering for dims + constraints
-- `apps/desktop-ui/src/lib/viewportScene.ts` — `makeSketchConstraint`
-- `apps/desktop-ui/src/lib/schemas/ipc/viewportStateSchema.ts` — constraint `driven` schema
-- `apps/desktop-ui/src/types/viewport.ts`, `scene.ts` — TS types
+- `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` — circle_radius + polygon_radius idempotent
+- `native/cad-core/src/core/sketch/impl/sketch_axis_constraint_commands.inc` — constraint_driven detection
+- `native/cad-core/src/core/sketch/impl/sketch_constraint_clear_commands.inc` — reset constraint_driven on clear
+- `native/cad-core/src/core/sketch/impl/dimension_distance_commands.inc` — point-pair fallback
 
 ## Next Session
 
 1. Fix `angle` (2 lines): add `refresh_sketch_derived_state` call, add solver check + auto→manual conversion
-2. Add auto→manual conversion for `circle_radius`
-3. Wire constraint driven detection (set `constraint_driven = true` when point-pair is over-constrained)
-4. Add point-pair fallback for `line_line_distance` / `circle_center_distance`
+   - File: `native/cad-core/src/core/sketch/impl/dimension_angle_commands.inc`

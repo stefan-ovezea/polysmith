@@ -21,6 +21,9 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   const double previous_end_x = line_it->end_x;
   const double previous_end_y = line_it->end_y;
   line_it->constraint = constraint;
+  // Reset driven flag before re-evaluating — constraints are re-checked
+  // against the solver on every application.
+  line_it->constraint_driven = false;
   apply_line_constraint_respecting_fixed_points(
       *feature.sketch_parameters, *line_it);
   snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, *line_it);
@@ -52,4 +55,17 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   enforce_parallel_relations(*feature.sketch_parameters, line_it->id);
   sync_all_line_dimensions(*feature.sketch_parameters);
   refresh_sketch_with_append_focus(feature, {line_id});
+
+  // If the new constraint over-constrains the system, mark it as driven
+  // so the solver ignores it and the UI renders it in parentheses.
+  if (line_it->constraint.has_value()) {
+    auto& params = *feature.sketch_parameters;
+    if (params.solver_conflicting_count > 0 ||
+        params.solver_redundant_count > 0 ||
+        params.solver_dofs < 0) {
+      line_it->constraint_driven = true;
+      fprintf(stderr, "[INFO] sketch: constraint on %s marked driven "
+              "(solver reported over-constrained)\n", line_id.c_str());
+    }
+  }
 }

@@ -11,12 +11,17 @@ ViewportSketchDimensionPrimitive make_circle_dimension_primitive(
       parameters, circle.center_x + circle.radius + kCircleDimensionOffset,
       circle.center_y);
 
+  const bool show_radius = dimension.display_as == "radius";
+  const std::string prefix = show_radius ? "R " : "⌀ ";
+  const double display_value = show_radius ? dimension.value
+                                           : dimension.value * 2.0;
+
   return ViewportSketchDimensionPrimitive{
       .dimension_id = dimension.id,
       .plane_id = parameters.plane_id,
       .kind = "circle_radius",
       .entity_id = circle.id,
-      .label = "D " + format_dimension_value(dimension.value * 2.0) + " mm",
+      .label = prefix + format_dimension_value(display_value) + " mm",
       .is_selected = is_selected,
       .anchor_start_x = dimension_start.x,
       .anchor_start_y = dimension_start.y,

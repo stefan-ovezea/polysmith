@@ -241,8 +241,10 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    throw std::runtime_error(
-        "Circle radius dimension already exists: " + dimension_id);
+    // Already exists — update value to match current geometry (mirrors
+    // line_length's idempotent behaviour).
+    dimension_it->value = circle.radius;
+    return;
   }
 
   parameters.dimensions.push_back(SketchDimension{
@@ -283,8 +285,10 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
       parameters.dimensions.end(),
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
-    throw std::runtime_error(
-        "Polygon radius dimension already exists: " + dimension_id);
+    // Already exists — update value to match current geometry (mirrors
+    // circle_radius / line_length idempotent behaviour).
+    dimension_it->value = polygon_it->radius;
+    return;
   }
 
   parameters.dimensions.push_back(SketchDimension{
