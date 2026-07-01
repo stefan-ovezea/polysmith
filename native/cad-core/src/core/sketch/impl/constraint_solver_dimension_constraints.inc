@@ -198,11 +198,28 @@
             if (pit1 != point_id_to_index_.end() &&
                 pit2 != point_id_to_index_.end()) {
               if (dim.display_as == "x") {
+                // Preserve current relative X ordering.
+                //
+                // planegcs ConstraintDifference::error() is:
+                //   param2 - param1 - difference
+                // so the enforced constraint is param2 - param1 = val.
+                // Here param1 = entity_id, param2 = secondary_entity_id,
+                // giving secondary.x - entity.x = val.
+                //
+                // dim.value is always the absolute distance.  Match the
+                // signed difference from the current point positions so
+                // the solver does not flip the geometry.
+                double cur_diff =
+                    *gcs_points_[pit2->second].x - *gcs_points_[pit1->second].x;
+                *val_ptr = (cur_diff >= 0.0) ? dim.value : -dim.value;
                 system_->addConstraintDifference(
                     gcs_points_[pit1->second].x,
                     gcs_points_[pit2->second].x,
                     val_ptr);
               } else if (dim.display_as == "y") {
+                double cur_diff =
+                    *gcs_points_[pit2->second].y - *gcs_points_[pit1->second].y;
+                *val_ptr = (cur_diff >= 0.0) ? dim.value : -dim.value;
                 system_->addConstraintDifference(
                     gcs_points_[pit1->second].y,
                     gcs_points_[pit2->second].y,
