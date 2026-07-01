@@ -1,0 +1,1 @@
+- [No console output](no-console-output.md) — Tauri captures stderr; must use structured logger for diagnostics
