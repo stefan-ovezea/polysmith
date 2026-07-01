@@ -549,6 +549,7 @@ function App() {
     deleteSketchFillet,
     deleteSketchDimension,
     toggleSketchDimensionDriven,
+    setSketchLineConstruction,
     addSketchPointDistanceDimension,
     updateSketchDimensionDisplay,
     deleteSketchSelection,
@@ -2061,6 +2062,14 @@ function App() {
               onToggleSketchDimensionDriven={async (dimensionId) => {
                 await runAction(async () => {
                   await toggleSketchDimensionDriven(dimensionId);
+                });
+              }}
+              onSetSketchLineConstruction={async (
+                lineId,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await setSketchLineConstruction(lineId, isConstruction);
                 });
               }}
               onAddSketchPointDistanceDimension={async (

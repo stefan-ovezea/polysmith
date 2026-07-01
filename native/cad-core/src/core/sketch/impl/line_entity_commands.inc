@@ -86,51 +86,10 @@ void set_sketch_line_construction(FeatureEntry &feature,
   }
   line.is_construction = is_construction;
 
-  // Keep the dimension list in sync with the new role: solid lines
-  // get driving length + angle dimensions, construction lines lose
-  // theirs since they're reference-only. Existing user-applied
-  // dimensions on a line are preserved across role changes; we only
-  // manage the automatic entries created at construction time.
-  const std::string auto_dim_id = "dim-line-" + line.id;
-  const std::string auto_angle_dim_id = "dim-line-angle-" + line.id;
-  const auto auto_dim_it = std::find_if(
-      parameters.dimensions.begin(), parameters.dimensions.end(),
-      [&](const SketchDimension &dim) { return dim.id == auto_dim_id; });
-  const auto auto_angle_dim_it = std::find_if(
-      parameters.dimensions.begin(), parameters.dimensions.end(),
-      [&](const SketchDimension &dim) { return dim.id == auto_angle_dim_id; });
-  if (is_construction) {
-    if (auto_dim_it != parameters.dimensions.end()) {
-      parameters.dimensions.erase(auto_dim_it);
-    }
-    if (auto_angle_dim_it != parameters.dimensions.end()) {
-      parameters.dimensions.erase(auto_angle_dim_it);
-    }
-  } else {
-    if (auto_dim_it == parameters.dimensions.end()) {
-      parameters.dimensions.push_back(SketchDimension{
-          .id = auto_dim_id,
-          .kind = "line_length",
-          .entity_id = line.id,
-          .value = measure_line_length(line),
-          .is_auto = true,
-      });
-    }
-    if (auto_angle_dim_it == parameters.dimensions.end()) {
-      const bool constrained_axis = line.constraint.has_value() &&
-                                    (line.constraint.value() == "horizontal" ||
-                                     line.constraint.value() == "vertical");
-      parameters.dimensions.push_back(SketchDimension{
-          .id = auto_angle_dim_id,
-          .kind = "line_angle",
-          .entity_id = line.id,
-          .value =
-              std::atan2(line.end_y - line.start_y, line.end_x - line.start_x),
-          .driven = constrained_axis,
-          .is_auto = true,
-      });
-    }
-  }
+  // Construction is purely a visual / profile-exclusion toggle.
+  // Dimensions and constraints are preserved exactly as-is — they
+  // keep their driving/driven status regardless of the construction
+  // flag (Fusion 360 behaviour).
 
   refresh_sketch_derived_state(feature);
 }

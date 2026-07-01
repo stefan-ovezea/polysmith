@@ -346,6 +346,9 @@ export interface ViewportContextMenuState {
     profileIds: string[];
   } | null;
   dimensionId?: string | null;
+  // Set when right-clicking a single sketch line so the context menu
+  // can offer "Toggle Construction" in addition to Delete.
+  lineId?: string | null;
   // Constraint right-click → Delete:
   // Set when user right-clicks a constraint badge.
   constraintKind?: string;

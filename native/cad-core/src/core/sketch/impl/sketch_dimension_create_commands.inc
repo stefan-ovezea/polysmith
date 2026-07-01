@@ -108,11 +108,6 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   auto& parameters = *feature.sketch_parameters;
   auto& line = require_line(parameters, line_id);
 
-  if (line.is_construction) {
-    throw std::runtime_error(
-        "Cannot create a driving dimension on a construction line");
-  }
-
   const std::string dimension_id = "dim-line-" + line.id;
   const auto dimension_it = std::find_if(
       parameters.dimensions.begin(),
@@ -172,11 +167,6 @@ void add_sketch_line_angle_dimension(FeatureEntry& feature,
   auto& parameters = *feature.sketch_parameters;
   auto& line = require_line(parameters, line_id);
 
-  if (line.is_construction) {
-    throw std::runtime_error(
-        "Cannot create a driving dimension on a construction line");
-  }
-
   const std::string dimension_id = "dim-line-angle-" + line.id;
   const auto dimension_it = std::find_if(
       parameters.dimensions.begin(),
@@ -230,11 +220,6 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
   auto& parameters = *feature.sketch_parameters;
   auto& circle = require_circle(parameters, circle_id);
 
-  if (circle.is_construction) {
-    throw std::runtime_error(
-        "Cannot create a driving dimension on a construction circle");
-  }
-
   const std::string dimension_id = "dim-circle-" + circle.id;
   const auto dimension_it = std::find_if(
       parameters.dimensions.begin(),
@@ -272,11 +257,6 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
 
   if (polygon_it == parameters.polygons.end()) {
     throw std::runtime_error("Sketch polygon not found: " + polygon_id);
-  }
-
-  if (polygon_it->is_construction) {
-    throw std::runtime_error(
-        "Cannot create a driving dimension on a construction polygon");
   }
 
   const std::string dimension_id = "dim-polygon-" + polygon_it->id;

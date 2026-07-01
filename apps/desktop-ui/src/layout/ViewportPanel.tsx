@@ -265,6 +265,7 @@ export function ViewportPanel({
   onDeleteSketchSelection,
   onDeleteSketchDimension,
   onToggleSketchDimensionDriven,
+  onSetSketchLineConstruction,
   onAddSketchPointDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
@@ -614,6 +615,7 @@ export function ViewportPanel({
   const deleteSketchSelectionRef = useRef(onDeleteSketchSelection);
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
   const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
+  const setSketchLineConstructionRef = useRef(onSetSketchLineConstruction);
   const addSketchPointDistanceDimensionRef = useRef(
     onAddSketchPointDistanceDimension,
   );
@@ -3416,6 +3418,7 @@ export function ViewportPanel({
     deleteSketchSelectionRef,
     deleteSketchDimensionRef,
     toggleSketchDimensionDrivenRef,
+    setSketchLineConstructionRef,
     clearSketchConstraintRef,
     updateSketchDimensionDisplayRef,
   });

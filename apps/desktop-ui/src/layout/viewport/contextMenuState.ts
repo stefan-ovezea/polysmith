@@ -204,12 +204,20 @@ function sketchContextMenu({
       ? currentSelection
       : clickedSelection;
 
+  // When right-clicking a single line, also set lineId so the context
+  // menu can offer "Toggle Construction" alongside Delete.
+  const lineId =
+    hit.kind === "sketch_entity" && hit.entityKind === "line" && hit.id
+      ? hit.id
+      : null;
+
   return {
     contextMenu: {
       x,
       y,
       referenceId: null,
       faceId: null,
+      lineId,
       sketchDeleteSelection: selection,
     },
   };

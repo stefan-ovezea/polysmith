@@ -54,6 +54,7 @@ interface ViewportContextMenuActions {
   isLinkedBodyCopy: (featureId: string | null) => boolean;
   toggleDimensionDisplay: () => void | Promise<void>;
   toggleDriven: () => void | Promise<void>;
+  toggleConstruction: () => void | Promise<void>;
   deleteDimension: () => void | Promise<void>;
   deleteConstraint: () => void | Promise<void>;
   deleteSketchSelection: () => void | Promise<void>;
@@ -258,6 +259,7 @@ export function ViewportPanelShell({
             isLinkedBodyCopy={contextMenuActions.isLinkedBodyCopy}
             onToggleDimensionDisplay={contextMenuActions.toggleDimensionDisplay}
             onToggleDriven={contextMenuActions.toggleDriven}
+            onToggleConstruction={contextMenuActions.toggleConstruction}
             onDeleteDimension={contextMenuActions.deleteDimension}
             onDeleteConstraint={contextMenuActions.deleteConstraint}
             onDeleteSketchSelection={contextMenuActions.deleteSketchSelection}
