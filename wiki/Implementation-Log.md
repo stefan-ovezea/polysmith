@@ -2,6 +2,100 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-07-01
+
+### Toggle Driving — right-click context menu on dimensions
+
+Right-click any sketch dimension in the viewport to toggle it between driving
+and driven (reference-only).  Driven dimensions display in parentheses `(25 mm)`
+and do not constrain the planegcs solver — they show the measured value for
+reference.
+
+**C++ (`sketch_dimension_toggle_driven_command.inc`):**
+- `toggle_sketch_dimension_driven(feature, dimension_id)` toggles the `driven`
+  flag and calls `refresh_sketch_derived_state`.
+- New IPC command `toggle_sketch_dimension_driven` with full document-manager
+  wrapper (undo/redo, geometry revision bump).
+
+**TypeScript:**
+- Context menu gains "Toggle Driving" button for dimensions.
+- Full IPC wiring: command factory (`sketchCommands.ts`), hook
+  (`useCadCore.ts`), context menu actions, and `ViewportContextMenu` component.
+
+### Toggle Construction — right-click context menu on sketch lines
+
+Right-click a sketch line to toggle its construction flag.  Construction is
+now purely a visual/profile-exclusion toggle (Fusion 360 behaviour).
+
+**C++ (`line_entity_commands.inc`):**
+- `set_sketch_line_construction` simplified to just flip `is_construction` and
+  refresh.  No more auto-dimension creation/deletion on toggle.
+- Removed restrictions that blocked creating driving dimensions on construction
+  lines, circles, and polygons (`sketch_dimension_create_commands.inc`).
+  Dimensions keep their driving/driven status regardless of construction flag.
+
+**TypeScript:**
+- Context menu shows "Toggle Construction" when right-clicking a single line.
+- `contextMenuState.ts` adds `lineId` to `ViewportContextMenuState` so the menu
+  knows which line was clicked.
+- Reads current state from the document rather than stale `sketchLinesRef`.
+
+### H/V point ordering fix — prevent solver geometry flips
+
+**C++ (`constraint_solver_dimension_constraints.inc`):**
+- planegcs `ConstraintDifference::error()` is `param2 - param1 - difference`,
+  so `addConstraintDifference(p1, p2, val)` enforces `p2 - p1 = val`.
+- H/V point_distance dimensions stored `val = dim.value` (always absolute),
+  but if current geometry had opposite sign, the solver would flip the point
+  ordering — cascading through shared endpoints and corrupting the sketch.
+- Fix: compute the signed difference from current solver-point positions and
+  preserve its sign on the target value.  Makes the constraint trivially
+  satisfied by the current geometry at creation time.
+
+## 2026-06-28
+
+### Circle radius/diameter toggle
+
+- Circle dimension viewport label now toggles between `⌀ 20.00 mm` (diameter)
+  and `R 10.00 mm` (radius) based on `display_as`.  Previously the label was
+  always hardcoded as diameter regardless of the toggle state.
+- C++: `make_circle_dimension_primitive` checks `dimension.display_as`.
+- TS: context menu "Show Radius" / "Show Diameter" already had full wiring;
+  only the C++ primitive label was missing.
+
+### Constraint driven detection — wired for H/V constraints
+
+- `set_sketch_line_constraint` now checks solver stats after applying an H/V
+  constraint.  If over-constrained (`solver_conflicting_count > 0` etc.),
+  sets `constraint_driven = true` → viewport renders `(H)` / `(V)`.
+- `clear_sketch_line_constraints` resets `constraint_driven = false`.
+- The `constraint_driven` field already existed on `SketchLine`, was emitted
+  to TS primitives, and was checked in `count_driving_on_point_pair` — only
+  the assignment was missing.
+
+### circle_radius & polygon_radius — idempotent on duplicate
+
+- `add_sketch_circle_radius_dimension` and `add_sketch_polygon_radius_dimension`
+  no longer throw when the dimension already exists.  Instead they silently
+  update the value to match current geometry (mirrors `line_length` behaviour).
+
+### Point-pair fallback for distance dimensions
+
+- `add_sketch_distance_dimension` now passes point pairs to
+  `finalize_new_dimension`:
+  - `line_line_distance` → `start_point_id` from each line
+  - `circle_center_distance` → `"point-circle-{id}-center"` for each circle
+- Lets `finalize_new_dimension`'s secondary check (>2 constraints on 2 DOF
+  pair) catch cases the solver might miss.
+
+### Angle ghost regression fix
+
+- Auto-mode linear placement was intercepting all single-line clicks, preventing
+  two-entity angle/distance picks.  `handlePointerMove` now checks for relation
+  preview candidates (e.g. angle between two lines sharing an endpoint) alongside
+  the linear placement preview.  `handlePointerUp` commits the relation if active,
+  otherwise commits the linear placement.
+
 ## 2026-06-24
 
 ### Driven dimension system — unified architecture

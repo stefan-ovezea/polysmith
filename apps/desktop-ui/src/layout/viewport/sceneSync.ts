@@ -285,6 +285,8 @@ function sketchDimensionBuildKey(dimension: SketchDimensionScene) {
     dimension.kind,
     dimension.entityId,
     dimension.label,
+    dimension.driven ? "driven" : "",
+    dimension.displayAs ?? "",
     dimension.anchorStart.join(":"),
     dimension.anchorEnd.join(":"),
     dimension.dimensionStart.join(":"),

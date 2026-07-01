@@ -5,6 +5,35 @@
 
 ## Status
 
+### ✅ Completed (2026-07-01) — from other machine
+
+**H/V point ordering fix — prevents geometry flips:**
+- `constraint_solver_dimension_constraints.inc`: planegcs `ConstraintDifference::error()` is
+  `param2 - param1 - difference`, so `addConstraintDifference(p1, p2, val)` enforces
+  `p2 - p1 = val`.  Before this fix, H/V point_distance dims always set `val = dim.value`
+  (absolute), but if the current geometry had the opposite sign (e.g. endPoint left of
+  startPoint for a horizontal dim), the solver would flip the point ordering → cascading
+  corruption through shared endpoints.  Now computes the signed difference from current
+  solver-point positions and preserves its sign on the target value.
+
+**Toggle Driving — right-click context menu on any dimension:**
+- New IPC command `toggle_sketch_dimension_driven` toggles the `driven` flag and
+  refreshes derived state.  Driven dimensions display in parentheses `(value)` and
+  do not constrain the solver.  Works for all dimension kinds.
+- TS: context menu gains "Toggle Driving" button; full IPC wiring through command
+  factory, hook, props, and context menu actions.
+- C++: `toggle_sketch_dimension_driven()` in `sketch_dimension_toggle_driven_command.inc`.
+
+**Toggle Construction — right-click context menu on sketch lines:**
+- Right-click a sketch line → "Toggle Construction" flips `is_construction`.
+  Reads current state from the document (not stale `sketchLinesRef`).
+- Construction is now purely visual / profile-exclusion (Fusion 360 behaviour):
+  `set_sketch_line_construction` just flips the flag — no dimension auto-creation
+  or auto-deletion.  Dimensions keep their driving/driven status regardless of
+  the construction flag.
+- Removed restrictions that blocked creating driving dimensions on construction
+  lines, circles, and polygons.
+
 ### ✅ Completed (2026-06-28)
 
 **circle_radius & polygon_radius — idempotent on duplicate:**
@@ -12,21 +41,25 @@
   silently updates the value to match current geometry (mirrors `line_length` behaviour)
 - `add_sketch_polygon_radius_dimension`: same idempotent treatment
 
+**Circle radius/diameter viewport toggle:**
+- `make_circle_dimension_primitive`: checks `display_as` to build label with "⌀" (diameter)
+  or "R" (radius) prefix, with correct value scaling.
+
 **Constraint driven detection — wired for H/V constraints:**
 - `set_sketch_line_constraint`: after applying an H/V constraint and running the solver,
   checks `solver_conflicting_count`, `solver_redundant_count`, `solver_dofs < 0`.
   If over-constrained, sets `constraint_driven = true` → TS viewport renders `(H)`/`(V)`.
 - `clear_sketch_line_constraints`: resets `constraint_driven = false` on clear.
-- The `constraint_driven` field already existed on `SketchLine`, was already emitted to TS
-  primitives, and was already checked in `count_driving_on_point_pair` — only the assignment
-  was missing.
 
 **Point-pair fallback for distance dimensions:**
 - `add_sketch_distance_dimension`: now passes point pairs to `finalize_new_dimension`:
   - `line_line_distance` → `start_point_id` from each line
   - `circle_center_distance` → `"point-circle-{id}-center"` for each circle
-- This lets `finalize_new_dimension`'s step 2 (>2 constraints on 2 DOF pair) catch
-  over-constraint cases the solver might miss.
+
+**Angle ghost regression fix:**
+- Auto-mode linear placement now checks for relation preview candidates (angle between
+  two lines) during pointerMove; pointerUp commits relation if active instead of
+  always committing linear placement.
 
 ### ✅ Completed This Session (prior)
 
@@ -57,6 +90,7 @@
 | Dimension type | Issue |
 |---|---|
 | **`angle` (2 lines)** | Creates with `is_auto=true`, never calls `refresh_sketch_derived_state` / `finalize_new_dimension`. Throws on duplicate instead of auto→manual conversion. **PARKED for later.** |
+| **Solver alignment** | WASM frontend uses configurable iter/tol (LOOSE: 20/1e-4, EXACT: 200/1e-10). C++ backend uses planegcs hardcoded defaults (100 iter × sketchSize, 1e-10 tol, DogLeg). Need to align or at minimum expose config on C++ side. **TODO.** |
 
 ## Structural Weak Points (for future robustness)
 
@@ -74,12 +108,34 @@ To avoid regressions when adding features:
    - TS: picking logic, placement, IPC command
    - If it constrains a point pair, the fallback is automatic via `count_driving_on_point_pair`
 
+## Key Files Changed (2026-07-01)
+
+- `native/cad-core/src/core/sketch/impl/constraint_solver_dimension_constraints.inc` — H/V point ordering fix
+- `native/cad-core/src/core/sketch/impl/sketch_dimension_toggle_driven_command.inc` — toggle driven (new file)
+- `native/cad-core/src/core/sketch/impl/sketch_entity_dimension_commands.inc` — toggle driven document command
+- `native/cad-core/src/app/impl/sketch_create_dimension_delete_display_command_handlers.inc` — toggle driven IPC dispatch
+- `native/cad-core/src/core/sketch/impl/line_entity_commands.inc` — construction simplified (purely visual)
+- `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` — removed construction restrictions
+- `apps/desktop-ui/src/layout/viewport/ViewportContextMenu.tsx` — Toggle Driving + Toggle Construction buttons
+- `apps/desktop-ui/src/layout/viewport/viewportContextMenuActions.ts` — toggleDriven + toggleConstruction actions
+- `apps/desktop-ui/src/layout/viewport/ViewportPanelShell.tsx` — prop plumbing
+- `apps/desktop-ui/src/layout/viewport/viewportPanelTypes.ts` — type additions
+- `apps/desktop-ui/src/layout/viewport/contextMenuState.ts` — lineId in context menu state
+- `apps/desktop-ui/src/types/viewport.ts` — lineId in ViewportContextMenuState
+- `apps/desktop-ui/src/lib/ipc/sketchCommands.ts` — toggle_driven command factory
+- `apps/desktop-ui/src/types/ipc/sketchCommands.ts` — toggle_driven command type
+- `apps/desktop-ui/src/types/ipc.ts` — IPC command union
+- `apps/desktop-ui/src/hooks/useCadCore.ts` — toggleSketchDimensionDriven hook
+- `apps/desktop-ui/src/App.tsx` — toggleDriven + toggleConstruction wiring
+
 ## Key Files Changed (2026-06-28)
 
 - `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` — circle_radius + polygon_radius idempotent
 - `native/cad-core/src/core/sketch/impl/sketch_axis_constraint_commands.inc` — constraint_driven detection
 - `native/cad-core/src/core/sketch/impl/sketch_constraint_clear_commands.inc` — reset constraint_driven on clear
 - `native/cad-core/src/core/sketch/impl/dimension_distance_commands.inc` — point-pair fallback
+- `native/cad-core/src/core/viewport/impl/sketch_circle_radius_dimension_primitives.inc` — radius/diameter label toggle
+- `apps/desktop-ui/src/layout/ViewportPanel.tsx` — angle ghost regression + relation preview during linear placement
 
 ## Next Session
 

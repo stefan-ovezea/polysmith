@@ -33,9 +33,23 @@ auto-detection ghosts/flashes are distracting during repetitive work.
 
 | Click | Auto / Linear mode | Angular mode |
 | --- | --- | --- |
-| **Line** | Length dimension | Line angles are created with a follow-up click (see below) |
+| **Line** | Length dimension (drag-to-choose H/V/aligned) | Line angles are created with a follow-up click (see below) |
 | **Circle** | Radius / diameter dimension | Same as auto |
 | **Polygon** | Radius dimension | Same as auto |
+
+**Line placement flow (auto/linear mode):** After clicking a line, drag the
+cursor to choose the dimension orientation:
+- **Drag perpendicular** to the line → aligned (line length)
+- **Drag vertically** (up/down from midpoint) → horizontal distance ("x")
+- **Drag horizontally** (left/right from midpoint) → vertical distance ("y")
+
+A live preview updates as you move. Click to commit, Escape to cancel.
+
+**Hovering a second line:** While in linear placement (first line staged),
+hovering over a second line that shares an endpoint shows an **angle ghost**
+preview. Click the second line to create the angle dimension instead of the
+linear dimension. This also works for parallel-line distance and other
+two-entity relations.
 
 After creation, drag the label to position it. Click anywhere on the canvas
 to commit the automatic value.
@@ -158,8 +172,43 @@ solver — they display the measured value but do not drive geometry.
 ## Circle Radius / Diameter Toggle
 
 Right-click a circle dimension label and choose **Show Radius** or
-**Show Diameter** to toggle the display mode. The underlying value is
-always stored as radius.
+**Show Diameter** to toggle the display mode. The viewport label changes:
+- **Radius:** `R 10.00 mm` (stored radius value)
+- **Diameter:** `⌀ 20.00 mm` (radius × 2)
+
+The underlying value is always stored as radius in the data model.
+
+---
+
+## Toggle Driving / Driven
+
+Right-click any dimension label and choose **Toggle Driving** to switch
+between driving and driven (reference-only):
+
+- **Driving** — constrains the solver. Editing the value drives geometry.
+- **Driven (reference)** — displayed in parentheses `(25 mm)`. Shows the
+  measured value but does not constrain geometry. Automatically updates to
+  reflect current geometry.
+
+When a new dimension would over-constrain the system, it is automatically
+marked as driven on creation.
+
+---
+
+## Right-Click Context Menu
+
+Right-clicking different entities in the viewport shows context-specific
+actions:
+
+| Right-click target | Menu items |
+|---|---|
+| **Dimension label** | Show Radius/Diameter (circle only), Toggle Driving, Delete |
+| **Line** | Toggle Construction, Delete |
+| **Constraint icon** | Delete Constraint |
+| **Body** | Move, Copy (linked/standalone), Unlink, Export Mesh |
+| **Face / Reference plane** | Create Sketch |
+
+See `help/right-click.md` for the full reference.
 
 ---
 
@@ -169,10 +218,6 @@ always stored as radius.
   mouse cursor direction — it moves in a slightly different direction than
   expected, reaching a limit and then going backwards. Workaround: drag
   radially outward from the corner, then sideways.
-- **Angular / Linear mode hover preview:** When a first entity is staged
-  in Angular or Linear mode, there is no hover preview between clicks
-  (no unary dimension is created to anchor the preview). The staged
-  entity shows as selected instead.
 - **Supplement angles for shared-endpoint lines:** The quadrant selection
   correctly shows all 4 angles during preview, but the committed dimension
   stores the value as a display-only measurement (auto dimension). Editing

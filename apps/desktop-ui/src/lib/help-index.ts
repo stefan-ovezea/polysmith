@@ -79,7 +79,8 @@ const lineEntry: HelpEntry = {
     ),
     sec(
       "Construction Lines",
-      "Toggle **Construction** in the sketch tool panel. Dashed rendering, excluded from profiles.",
+      "Toggle **Construction** in the sketch tool panel, or right‑click a line and choose **Toggle Construction**. Dashed rendering, excluded from profiles.\n" +
+        "Construction is purely visual (Fusion 360 style) — dimensions and constraints are preserved exactly as‑is.",
     ),
   ],
 };
@@ -238,17 +239,14 @@ const dimensionEntry: HelpEntry = {
   sections: [
     sec(
       "Single‑Entity Dimensions",
-      "Click a **line** → length dimension.\n" +
+      "Click a **line** → drag to choose H/V/aligned placement. Live preview updates as you move the cursor.\n" +
         "Click a **circle** → radius/diameter dimension.\n" +
         "Click a **polygon** → radius dimension.",
     ),
     sec(
-      "Two‑Entity Dimensions",
-      "Click a first entity (line, circle, or polygon) — a single‑entity dimension is created and the entity is staged.\n" +
-        "Click a **second, different entity** to morph into:\n" +
-        "• **Angle** — two lines sharing an endpoint.\n" +
-        "• **Parallel distance** — two parallel lines.\n" +
-        "• **Point‑to‑point** — click two endpoints (line ends, circle centres).",
+      "Two‑Entity Dimensions (Angle / Distance)",
+      "Click a first line to enter linear placement. Hover over a **second line** sharing an endpoint to see an **angle ghost** preview. Click the second line to create the angle dimension.\n" +
+        "Also works for parallel-line distance, point‑to‑point, and circle distance relations.",
     ),
     sec(
       "Placement & Commit",
@@ -262,6 +260,13 @@ const dimensionEntry: HelpEntry = {
       "**Double‑click** a dimension label to re‑open the editor.\n" +
         "Type a new value or expression, then **Enter** to commit.\n" +
         "**Escape** restores the previous value and closes the editor.",
+    ),
+    sec(
+      "Right‑Click Context Menu",
+      "Right‑click a dimension label:\n" +
+        "• **Show Radius / Show Diameter** — toggle circle dimension display (circle only).\n" +
+        "• **Toggle Driving** — switch between driving (constrains geometry) and driven / reference‑only (displayed in parentheses).\n" +
+        "• **Delete** — remove the dimension.",
     ),
     sec(
       "Expressions",
@@ -412,6 +417,48 @@ const projectEntry: HelpEntry = {
 };
 
 // ---------------------------------------------------------------------------
+// Right-click context menu
+// ---------------------------------------------------------------------------
+
+const rightClickEntry: HelpEntry = {
+  title: "Right-Click Context Menu",
+  summary:
+    "Right‑clicking different entities in the viewport opens a context‑sensitive menu with entity‑specific actions.",
+  activation:
+    "Right‑click an entity in the viewport. The menu appears at the cursor position.",
+  shortcuts: [],
+  sections: [
+    sec(
+      "Dimension Right‑Click",
+      "• **Show Radius / Show Diameter** (circle dims only) — toggles between `R 10.00 mm` and `⌀ 20.00 mm`.\n" +
+        "• **Toggle Driving** — switches between driving (constrains solver) and driven / reference‑only (displayed in parentheses).\n" +
+        "• **Delete** — removes the dimension.",
+    ),
+    sec(
+      "Sketch Line Right‑Click",
+      "• **Toggle Construction** — flips the line's construction flag. Construction lines are dashed, excluded from profiles, but keep all dims and constraints.\n" +
+        "• **Delete** — deletes the line and any selected sketch entities.",
+    ),
+    sec(
+      "Constraint Right‑Click",
+      "• **Delete Constraint** — removes the H/V or relation constraint from the sketch.",
+    ),
+    sec(
+      "Body Right‑Click (outside sketch mode)",
+      "• **Move** — activates the move gizmo.\n" +
+        "• **Copy → Linked** — linked copy (source changes propagate).\n" +
+        "• **Copy → Independent** — standalone copy.\n" +
+        "• **Unlink** — breaks link on a linked copy (only shown for linked copies).\n" +
+        "• **Export as Mesh** — opens STL/STEP export.",
+    ),
+    sec(
+      "Face / Reference Plane Right‑Click",
+      "• **Create Sketch** — creates a new sketch on the selected face or reference plane.",
+    ),
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
@@ -427,6 +474,7 @@ export const helpRegistry: Record<string, HelpEntry> = {
   trim: trimEntry,
   project: projectEntry,
   parameters: parametersEntry,
+  "right-click": rightClickEntry,
 };
 
 function allHelpEntries(): HelpEntry[] {
