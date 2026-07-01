@@ -189,6 +189,7 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;
+  onToggleSketchDimensionDriven: (dimensionId: string) => Promise<void>;
   onAddSketchPointDistanceDimension: (
     pointAId: string,
     pointBId: string,

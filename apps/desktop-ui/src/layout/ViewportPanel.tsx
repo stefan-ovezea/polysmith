@@ -264,6 +264,7 @@ export function ViewportPanel({
   onTrimSketchEntity,
   onDeleteSketchSelection,
   onDeleteSketchDimension,
+  onToggleSketchDimensionDriven,
   onAddSketchPointDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
@@ -612,6 +613,7 @@ export function ViewportPanel({
   const trimSketchEntityRef = useRef(onTrimSketchEntity);
   const deleteSketchSelectionRef = useRef(onDeleteSketchSelection);
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
+  const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
   const addSketchPointDistanceDimensionRef = useRef(
     onAddSketchPointDistanceDimension,
   );
@@ -3413,6 +3415,7 @@ export function ViewportPanel({
     unlinkBodyCopyRef,
     deleteSketchSelectionRef,
     deleteSketchDimensionRef,
+    toggleSketchDimensionDrivenRef,
     clearSketchConstraintRef,
     updateSketchDimensionDisplayRef,
   });

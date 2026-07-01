@@ -222,6 +222,14 @@ export interface DeleteSketchDimensionCommand {
   };
 }
 
+export interface ToggleSketchDimensionDrivenCommand {
+  id: string;
+  type: "toggle_sketch_dimension_driven";
+  payload: {
+    dimension_id: string;
+  };
+}
+
 export interface TrimSketchEntityCommand {
   id: string;
   type: "trim_sketch_entity";

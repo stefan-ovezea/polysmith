@@ -675,6 +675,19 @@ export function makeDeleteSketchDimensionCommand(
 }
 
 
+export function makeToggleSketchDimensionDrivenCommand(
+  dimensionId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "toggle_sketch_dimension_driven",
+    payload: {
+      dimension_id: dimensionId,
+    },
+  };
+}
+
+
 export function makeUpdateSketchDimensionDisplayCommand(
   dimensionId: string,
   displayAs: string,

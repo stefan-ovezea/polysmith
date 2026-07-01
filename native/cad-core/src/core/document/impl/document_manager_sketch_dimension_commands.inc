@@ -33,3 +33,4 @@
   DocumentState delete_sketch_dimension(const std::string& dimension_id);
   DocumentState update_sketch_dimension_display(const std::string& dimension_id,
                                                 const std::string& display_as);
+  DocumentState toggle_sketch_dimension_driven(const std::string& dimension_id);

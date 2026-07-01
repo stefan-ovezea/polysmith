@@ -24,6 +24,8 @@ void reify_dimension_expressions(
     const std::vector<struct ParameterEntry>& parameters);
 void delete_sketch_dimension(FeatureEntry& feature,
                              const std::string& dimension_id);
+void toggle_sketch_dimension_driven(FeatureEntry& feature,
+                                    const std::string& dimension_id);
 
 // Single-entity dimension creation (for the Dimension tool clicking a
 // lone line, circle, or polygon that has no auto-dimension — e.g.

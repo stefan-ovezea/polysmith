@@ -548,6 +548,7 @@ function App() {
     updateSketchFilletRadius,
     deleteSketchFillet,
     deleteSketchDimension,
+    toggleSketchDimensionDriven,
     addSketchPointDistanceDimension,
     updateSketchDimensionDisplay,
     deleteSketchSelection,
@@ -2055,6 +2056,11 @@ function App() {
               onDeleteSketchDimension={async (dimensionId) => {
                 await runAction(async () => {
                   await deleteSketchDimension(dimensionId);
+                });
+              }}
+              onToggleSketchDimensionDriven={async (dimensionId) => {
+                await runAction(async () => {
+                  await toggleSketchDimensionDriven(dimensionId);
                 });
               }}
               onAddSketchPointDistanceDimension={async (

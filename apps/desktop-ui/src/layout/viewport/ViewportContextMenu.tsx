@@ -8,6 +8,7 @@ interface ViewportContextMenuProps {
   getCircleDimensionToggleLabel: (dimensionId: string) => string | null;
   isLinkedBodyCopy: (bodyId: string | null | undefined) => boolean;
   onToggleDimensionDisplay: () => void | Promise<void>;
+  onToggleDriven: () => void | Promise<void>;
   onDeleteDimension: () => void | Promise<void>;
   onDeleteConstraint: () => void | Promise<void>;
   onDeleteSketchSelection: () => void | Promise<void>;
@@ -24,6 +25,7 @@ export function ViewportContextMenu({
   getCircleDimensionToggleLabel,
   isLinkedBodyCopy,
   onToggleDimensionDisplay,
+  onToggleDriven,
   onDeleteDimension,
   onDeleteConstraint,
   onDeleteSketchSelection,
@@ -57,6 +59,13 @@ export function ViewportContextMenu({
               {dimensionToggleLabel}
             </button>
           ) : null}
+          <button
+            type="button"
+            className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+            onClick={onToggleDriven}
+          >
+            Toggle Driving
+          </button>
           <button
             type="button"
             className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"

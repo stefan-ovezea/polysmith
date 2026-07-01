@@ -18,3 +18,13 @@
             command.id, polysmith::protocol::to_payload(document)));
     return;
   }
+
+  if (command.type == "toggle_sketch_dimension_driven") {
+    const auto document = document_manager().toggle_sketch_dimension_driven(
+        read_string(command.payload, "dimension_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }

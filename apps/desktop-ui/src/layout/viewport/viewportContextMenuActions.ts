@@ -29,6 +29,7 @@ export function createViewportContextMenuActions({
   unlinkBodyCopyRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
+  toggleSketchDimensionDrivenRef,
   clearSketchConstraintRef,
   updateSketchDimensionDisplayRef,
 }: {
@@ -63,6 +64,7 @@ export function createViewportContextMenuActions({
     (selection: NonNullable<ViewportContextMenuState["sketchDeleteSelection"]>) => Promise<void>
   >;
   deleteSketchDimensionRef: MutableRef<(dimensionId: string) => Promise<void>>;
+  toggleSketchDimensionDrivenRef: MutableRef<(dimensionId: string) => Promise<void>>;
   clearSketchConstraintRef: MutableRef<
     (
       kind: ConstraintType,
@@ -154,6 +156,15 @@ export function createViewportContextMenuActions({
     await deleteSketchDimensionRef.current(dimensionId);
   }
 
+  async function toggleDriven() {
+    const dimensionId = contextMenu?.dimensionId;
+    if (!dimensionId) {
+      return;
+    }
+    setContextMenu(null);
+    await toggleSketchDimensionDrivenRef.current(dimensionId);
+  }
+
   async function deleteConstraint() {
     const kind = contextMenu?.constraintKind;
     const entityId = contextMenu?.constraintEntityId;
@@ -231,6 +242,7 @@ export function createViewportContextMenuActions({
     deleteSketchSelection,
     deleteDimension,
     deleteConstraint,
+    toggleDriven,
     toggleDimensionDisplay,
     getCircleDimensionToggleLabel,
     isLinkedBodyCopy,

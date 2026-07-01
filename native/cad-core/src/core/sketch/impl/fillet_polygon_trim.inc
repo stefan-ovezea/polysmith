@@ -1,5 +1,6 @@
 #include "core/sketch/impl/sketch_fillet_commands.inc"
 #include "core/sketch/impl/sketch_dimension_delete_command.inc"
+#include "core/sketch/impl/sketch_dimension_toggle_driven_command.inc"
 #include "core/sketch/impl/sketch_polygon_commands.inc"
 #include "core/sketch/impl/sketch_dimension_create_commands.inc"
 #include "core/sketch/impl/trim_entity_commands.inc"

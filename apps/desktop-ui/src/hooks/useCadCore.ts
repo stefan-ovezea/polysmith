@@ -14,6 +14,7 @@ import {
   makeUpdateSketchFilletRadiusCommand,
   makeDeleteSketchFilletCommand,
   makeDeleteSketchDimensionCommand,
+  makeToggleSketchDimensionDrivenCommand,
   makeTrimSketchEntityCommand,
   makeUpdateSketchDimensionDisplayCommand,
   makeUpdateSketchDimensionLabelPositionCommand,
@@ -884,6 +885,10 @@ export function useCadCore() {
     },
     deleteSketchDimension: async (dimensionId: string) => {
       await sendCoreCommand(makeDeleteSketchDimensionCommand(dimensionId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    toggleSketchDimensionDriven: async (dimensionId: string) => {
+      await sendCoreCommand(makeToggleSketchDimensionDrivenCommand(dimensionId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchDimensionDisplay: async (

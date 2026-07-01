@@ -53,6 +53,7 @@ interface ViewportContextMenuActions {
   getCircleDimensionToggleLabel: (dimensionId: string | null) => string;
   isLinkedBodyCopy: (featureId: string | null) => boolean;
   toggleDimensionDisplay: () => void | Promise<void>;
+  toggleDriven: () => void | Promise<void>;
   deleteDimension: () => void | Promise<void>;
   deleteConstraint: () => void | Promise<void>;
   deleteSketchSelection: () => void | Promise<void>;
@@ -256,6 +257,7 @@ export function ViewportPanelShell({
             }
             isLinkedBodyCopy={contextMenuActions.isLinkedBodyCopy}
             onToggleDimensionDisplay={contextMenuActions.toggleDimensionDisplay}
+            onToggleDriven={contextMenuActions.toggleDriven}
             onDeleteDimension={contextMenuActions.deleteDimension}
             onDeleteConstraint={contextMenuActions.deleteConstraint}
             onDeleteSketchSelection={contextMenuActions.deleteSketchSelection}
