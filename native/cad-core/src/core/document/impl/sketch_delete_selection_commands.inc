@@ -118,6 +118,47 @@ DocumentState DocumentManager::delete_sketch_selection(
     return document_.value();
   }
 
+  // Collect point IDs that will become orphaned (referenced only by
+  // deleted entities).  MUST run BEFORE erasing lines/circles/arcs —
+  // after the erase the entity lists are empty and we can't find the
+  // endpoints anymore.
+  std::unordered_set<std::string> deleted_point_ids;
+  for (const auto& line : parameters.lines) {
+    if (id_in_set(line_ids, line.id)) {
+      add_id(deleted_point_ids, line.start_point_id);
+      add_id(deleted_point_ids, line.end_point_id);
+    }
+  }
+  for (const auto& circle : parameters.circles) {
+    if (id_in_set(circle_ids, circle.id)) {
+      add_id(deleted_point_ids, "point-circle-" + circle.id + "-center");
+    }
+  }
+  for (const auto& arc : parameters.arcs) {
+    if (id_in_set(arc_ids, arc.id)) {
+      add_id(deleted_point_ids, arc.start_point_id);
+      add_id(deleted_point_ids, arc.end_point_id);
+    }
+  }
+  // Remove points that are still referenced by surviving entities.
+  for (const auto& line : parameters.lines) {
+    if (!id_in_set(line_ids, line.id)) {
+      deleted_point_ids.erase(line.start_point_id);
+      deleted_point_ids.erase(line.end_point_id);
+    }
+  }
+  for (const auto& circle : parameters.circles) {
+    if (!id_in_set(circle_ids, circle.id)) {
+      deleted_point_ids.erase("point-circle-" + circle.id + "-center");
+    }
+  }
+  for (const auto& arc : parameters.arcs) {
+    if (!id_in_set(arc_ids, arc.id)) {
+      deleted_point_ids.erase(arc.start_point_id);
+      deleted_point_ids.erase(arc.end_point_id);
+    }
+  }
+
   push_undo_state();
   clear_redo_stack();
 
@@ -150,7 +191,7 @@ DocumentState DocumentManager::delete_sketch_selection(
 
   const auto deleted_entity = [&](const std::string& id) {
     return id_in_set(line_ids, id) || id_in_set(circle_ids, id) ||
-           id_in_set(arc_ids, id);
+           id_in_set(arc_ids, id) || id_in_set(deleted_point_ids, id);
   };
   parameters.dimensions.erase(
       std::remove_if(parameters.dimensions.begin(),
