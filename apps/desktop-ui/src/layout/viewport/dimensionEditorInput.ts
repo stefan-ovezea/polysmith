@@ -126,19 +126,14 @@ export function updateDimensionEditorDraft({
     return;
   }
 
-  const parsed = parseDimensionEditorValue({
-    dimension,
-    rawValue: trimmed,
-    displayUnits,
-  });
-  if (parsed !== null && parsed > 0) {
-    void updateSketchDimension(
-      dimension.dimensionId,
-      toCoreValue(dimension, parsed),
-    );
-    return;
-  }
-
+  // Numeric values are NOT submitted on every keystroke — that would
+  // commit partial values like "3" while the user is still typing "35",
+  // distorting the geometry.  Numeric values are only committed on
+  // Enter (via submitDimensionEditorValue).
+  //
+  // Expression values (containing letters) still get a 300 ms debounced
+  // preview so the user can see the resolved value while editing a
+  // parameter reference like "width / 2".
   if (/[a-zA-Z_]/.test(trimmed)) {
     scheduleDimensionExpressionPreview({
       dimensionId: dimension.dimensionId,

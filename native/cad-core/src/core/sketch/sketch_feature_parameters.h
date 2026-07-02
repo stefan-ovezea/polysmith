@@ -96,6 +96,12 @@ struct SketchFeatureParameters {
   // -1 = solver hasn't run yet (or no constraints exist).
   int solver_dofs = -1;
 
+  // Whether the last solver pass converged (Success or Converged).
+  // When false, the solver failed to find a solution — typically
+  // because the constraint system is infeasible (contradictory
+  // dimension values) rather than over-constrained.
+  bool solver_ok = true;
+
   // Solver diagnostics from the last solve. Populated by
   // refresh_sketch_derived_state after each solver pass.
   // -1 = solver hasn't run or has no conflicts.

@@ -9,6 +9,22 @@ ConstraintSolver::SolveResult ConstraintSolver::solve(GCS::Algorithm alg) {
     int status = system_->solve(/*isFine=*/true, alg);
     result.status = static_cast<GCS::SolveStatus>(status);
 
+    // DogLeg first (fast, converges reliably on under-constrained
+    // sketches), Levenberg-Marquardt as safety net (conservative,
+    // stays near the initial guess — catches the rare case where
+    // DogLeg leaps to a distant solution).  This matches FreeCAD's
+    // strategy.
+    //
+    // IMPORTANT: Do NOT call initSolution again before the retry — that
+    // would call setReference(), snapshoting the (possibly corrupted)
+    // post-DogLeg parameter values. Instead, call solve() directly; its
+    // internal resetToReference() restores the original parameters from
+    // the first initSolution call above.
+    if (!result.ok() && alg == GCS::DogLeg) {
+        status = system_->solve(/*isFine=*/true, GCS::LevenbergMarquardt);
+        result.status = static_cast<GCS::SolveStatus>(status);
+    }
+
     // Run diagnose to get DOF and conflicting/redundant info.
     system_->diagnose(alg);
     result.dofs = system_->dofsNumber();

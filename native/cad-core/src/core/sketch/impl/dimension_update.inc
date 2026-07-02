@@ -29,6 +29,29 @@ void update_sketch_dimension(FeatureEntry& feature,
   // (plain numeric update).
   dimension.expression = expression.value_or("");
 
+  // Helper: after a dimension edit, check whether the solver detected
+  // over-constraint or simply failed to converge.  When either occurs,
+  // fall back to driven (reference-only).  With DogLeg as the default
+  // solver, failure is a strong signal — DogLeg rarely fails on
+  // under-constrained sketches.
+  //
+  // solver_dofs == -1 means the solver hasn't run yet (default value);
+  // it must not be mistaken for over-constrained (dofs < 0).
+  auto fallback_to_driven = [&]() {
+    auto& p = *feature.sketch_parameters;
+    bool solver_ran = p.solver_dofs != -1;
+    if (solver_ran &&
+        (p.solver_conflicting_count > 0 ||
+         p.solver_redundant_count > 0 ||
+         p.solver_dofs < 0 ||
+         !p.solver_ok)) {
+      dimension.driven = true;
+      refresh_sketch_derived_state(feature);
+      return true;
+    }
+    return false;
+  };
+
   if (dimension.kind == "line_length") {
     const auto line_it = std::find_if(
         parameters.lines.begin(),
@@ -70,6 +93,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     enforce_parallel_relations(parameters, line_it->id);
     sync_all_line_dimensions(parameters);
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
@@ -88,11 +112,37 @@ void update_sketch_dimension(FeatureEntry& feature,
     circle_it->radius = value;
     sync_circle_dimension(parameters, *circle_it);
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
   if (dimension.kind == "angle") {
+    // Angle dimensions are created as auto (display-only).  When the
+    // user explicitly edits the value, clear the auto flag so the
+    // solver constraint activates and prevents sync from overwriting
+    // the edit on the next refresh.
+    dimension.is_auto = false;
+    // Snapshot line coordinates before the geometric edit so we can
+    // roll back if the solver detects over-constraint afterward.
+    struct LineSnapshot { double sx, sy, ex, ey; };
+    std::vector<LineSnapshot> pre_snapshot;
+    pre_snapshot.reserve(parameters.lines.size());
+    for (const auto& l : parameters.lines) {
+      pre_snapshot.push_back({l.start_x, l.start_y, l.end_x, l.end_y});
+    }
     update_angle_dimension(feature, parameters, dimension, value);
+    if (fallback_to_driven() && pre_snapshot.size() == parameters.lines.size()) {
+      // Restore pre-edit positions — the angle constraint was rejected
+      // so the geometry rotation is invalid.
+      for (size_t i = 0; i < pre_snapshot.size(); ++i) {
+        parameters.lines[i].start_x = pre_snapshot[i].sx;
+        parameters.lines[i].start_y = pre_snapshot[i].sy;
+        parameters.lines[i].end_x   = pre_snapshot[i].ex;
+        parameters.lines[i].end_y   = pre_snapshot[i].ey;
+      }
+      // Re-sync so everything is consistent.
+      refresh_sketch_derived_state(feature);
+    }
     return;
   }
 
@@ -136,6 +186,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = target;
     sync_all_line_dimensions(parameters);
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
@@ -154,6 +205,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     driven_circle.center_y = reference_circle.center_y + (dy / length) * value;
     dimension.value = value;
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
@@ -172,6 +224,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     circle.center_y += normal_y * delta;
     dimension.value = value;
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
@@ -195,6 +248,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     sync_all_line_dimensions(parameters);
     dimension.value = value;
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 
@@ -225,13 +279,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = value;
     dimension.driven = false;  // reset — may be set below
     refresh_sketch_derived_state(feature);
-
-    if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-        feature.sketch_parameters->solver_redundant_count > 0 ||
-        feature.sketch_parameters->solver_dofs < 0) {
-      dimension.driven = true;
-      refresh_sketch_derived_state(feature);
-    }
+    fallback_to_driven();
     return;
   }
 
@@ -250,6 +298,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     polygon_it->radius = value;
     dimension.value = value;
     refresh_sketch_derived_state(feature);
+    fallback_to_driven();
     return;
   }
 

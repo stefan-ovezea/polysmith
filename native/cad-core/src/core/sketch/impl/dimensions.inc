@@ -70,10 +70,18 @@ static bool finalize_new_dimension(
     return true;
   };
 
-  // 1) Solver-reported over-constraint.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_redundant_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
+  // 1) Solver-reported over-constraint or failure to converge.
+  // With DogLeg as the default solver, failure is a strong signal —
+  // DogLeg rarely fails on under-constrained sketches.
+  //
+  // solver_dofs == -1 means the solver hasn't run yet (default);
+  // it must not be mistaken for over-constrained.
+  bool solver_ran = feature.sketch_parameters->solver_dofs != -1;
+  if (solver_ran &&
+      (feature.sketch_parameters->solver_conflicting_count > 0 ||
+       feature.sketch_parameters->solver_redundant_count > 0 ||
+       feature.sketch_parameters->solver_dofs < 0 ||
+       !feature.sketch_parameters->solver_ok)) {
     return mark_driven("solver reported over-constrained");
   }
 

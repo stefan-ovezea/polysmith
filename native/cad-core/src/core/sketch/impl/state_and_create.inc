@@ -57,6 +57,64 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         driving_dims > 0;
 
     if (constraints_exist) {
+      // --- Stale dimension cleanup ---
+      // Mark dimensions as driven when their referenced entities no
+      // longer exist (e.g. the line was deleted).  The constraint
+      // solver would silently skip them anyway, but leaving them as
+      // driving with references to ghosts clutters the data model
+      // and confuses the over-constraint detection.
+      for (auto& dim : feature.sketch_parameters->dimensions) {
+        if (dim.driven) continue;
+        if (dim.kind == "line_length" || dim.kind == "line_angle") {
+          bool found = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.entity_id; });
+          if (!found) dim.driven = true;
+        } else if (dim.kind == "circle_radius") {
+          bool found = std::any_of(
+              feature.sketch_parameters->circles.begin(),
+              feature.sketch_parameters->circles.end(),
+              [&](const auto& c) { return c.id == dim.entity_id; });
+          if (!found) dim.driven = true;
+        } else if (!dim.secondary_entity_id.empty()) {
+          // Binary dimensions: check both entity references exist.
+          bool found_primary = false, found_secondary = false;
+          if (dim.kind == "angle") {
+            found_primary = std::any_of(
+                feature.sketch_parameters->lines.begin(),
+                feature.sketch_parameters->lines.end(),
+                [&](const auto& l) { return l.id == dim.entity_id; });
+            found_secondary = std::any_of(
+                feature.sketch_parameters->lines.begin(),
+                feature.sketch_parameters->lines.end(),
+                [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+          } else {
+            // point_distance, circle_center_distance, circle_line_distance, etc.
+            found_primary = std::any_of(
+                feature.sketch_parameters->points.begin(),
+                feature.sketch_parameters->points.end(),
+                [&](const auto& pt) { return pt.id == dim.entity_id; });
+            found_secondary = std::any_of(
+                feature.sketch_parameters->points.begin(),
+                feature.sketch_parameters->points.end(),
+                [&](const auto& pt) { return pt.id == dim.secondary_entity_id; });
+            if (!found_primary || !found_secondary) {
+              // Also check circle center points.
+              auto check_circle_center = [&](const std::string& id) -> bool {
+                for (const auto& c : feature.sketch_parameters->circles) {
+                  if ("point-circle-" + c.id + "-center" == id) return true;
+                }
+                return false;
+              };
+              if (!found_primary) found_primary = check_circle_center(dim.entity_id);
+              if (!found_secondary) found_secondary = check_circle_center(dim.secondary_entity_id);
+            }
+          }
+          if (!found_primary || !found_secondary) dim.driven = true;
+        }
+      }
+
       // --- Append-mode freeze state machine ---
       // When pending_append_focus_ids is non-empty, freeze all existing
       // points before the solve so only the focus entities can move.
@@ -109,15 +167,20 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       solver.build(*feature.sketch_parameters);
       auto result = solver.solve();
       if (result.ok()) {
-        // Snapshot total line length before applying the solver result
-        // so we can detect runaway geometry (e.g. a solver solution
-        // that satisfies constraints mathematically but explodes the
-        // sketch into a degenerate shape).
+        // Snapshot pre-solve line coordinates so we can roll back
+        // if the solver produces runaway geometry (a mathematically
+        // valid solution that explodes the sketch into a degenerate
+        // shape — e.g. flipping a dimension to the far side).
+        struct LineSnapshot { double sx, sy, ex, ey; };
+        std::vector<LineSnapshot> pre_snapshot;
+        pre_snapshot.reserve(feature.sketch_parameters->lines.size());
         double pre_total_length = 0.0;
         for (const auto& line : feature.sketch_parameters->lines) {
           double dx = line.end_x - line.start_x;
           double dy = line.end_y - line.start_y;
           pre_total_length += std::sqrt(dx * dx + dy * dy);
+          pre_snapshot.push_back(
+              {line.start_x, line.start_y, line.end_x, line.end_y});
         }
 
         solver.apply(*feature.sketch_parameters);
@@ -145,17 +208,40 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                   zero_count, zero_ids.c_str(),
                   zero_count > 3 ? " ..." : "");
         }
+
+        bool solver_exploded = false;
         if (pre_total_length > 1.0 &&
             (post_total_length > pre_total_length * 100.0 ||
              post_total_length < pre_total_length / 100.0)) {
           fprintf(stderr,
-                  "ERROR solver may have exploded geometry — "
-                  "total line length %.0f → %.0f mm (%.0fx change)\n",
+                  "ERROR solver exploded geometry — "
+                  "total line length %.0f → %.0f mm (%.0fx change), "
+                  "reverting to pre-solve positions\n",
                   pre_total_length, post_total_length,
                   post_total_length / pre_total_length);
+          solver_exploded = true;
+        }
+
+        // Roll back to pre-solve coordinates when the solver diverges
+        // into a mathematically-valid but geometrically-wrong solution.
+        // The ad-hoc enforce functions below this block will still run
+        // and provide a reasonable fallback.
+        if (solver_exploded && pre_snapshot.size() ==
+            feature.sketch_parameters->lines.size()) {
+          for (size_t i = 0; i < pre_snapshot.size(); ++i) {
+            feature.sketch_parameters->lines[i].start_x =
+                pre_snapshot[i].sx;
+            feature.sketch_parameters->lines[i].start_y =
+                pre_snapshot[i].sy;
+            feature.sketch_parameters->lines[i].end_x =
+                pre_snapshot[i].ex;
+            feature.sketch_parameters->lines[i].end_y =
+                pre_snapshot[i].ey;
+          }
         }
       }
       feature.sketch_parameters->solver_dofs = result.dofs;
+      feature.sketch_parameters->solver_ok = result.ok();
       feature.sketch_parameters->solver_conflicting_count =
           static_cast<int>(result.conflicting.size());
       feature.sketch_parameters->solver_redundant_count =
