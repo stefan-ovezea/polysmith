@@ -29,6 +29,8 @@ export function createViewportContextMenuActions({
   unlinkBodyCopyRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
+  toggleSketchDimensionDrivenRef,
+  setSketchLineConstructionRef,
   clearSketchConstraintRef,
   updateSketchDimensionDisplayRef,
 }: {
@@ -63,6 +65,10 @@ export function createViewportContextMenuActions({
     (selection: NonNullable<ViewportContextMenuState["sketchDeleteSelection"]>) => Promise<void>
   >;
   deleteSketchDimensionRef: MutableRef<(dimensionId: string) => Promise<void>>;
+  toggleSketchDimensionDrivenRef: MutableRef<(dimensionId: string) => Promise<void>>;
+  setSketchLineConstructionRef: MutableRef<
+    (lineId: string, isConstruction: boolean) => Promise<void>
+  >;
   clearSketchConstraintRef: MutableRef<
     (
       kind: ConstraintType,
@@ -154,6 +160,48 @@ export function createViewportContextMenuActions({
     await deleteSketchDimensionRef.current(dimensionId);
   }
 
+  async function toggleDriven() {
+    const dimensionId = contextMenu?.dimensionId;
+    if (!dimensionId) {
+      return;
+    }
+    setContextMenu(null);
+    await toggleSketchDimensionDrivenRef.current(dimensionId);
+  }
+
+  async function toggleConstruction() {
+    const lineId = contextMenu?.lineId;
+    if (!lineId) {
+      return;
+    }
+
+    // Look up the line's current construction state from the document
+    // (always current), not from sketchLinesRef (only updated on line
+    // commits and may be stale / null).
+    let isConstruction = false;
+    if (document) {
+      const activeId = document.active_sketch_feature_id;
+      const feature = activeId
+        ? document.feature_history.find((f) => f.feature_id === activeId)
+        : null;
+      const line = feature?.sketch_parameters?.lines.find(
+        (l) => l.line_id === lineId,
+      );
+      if (line) {
+        isConstruction = line.is_construction;
+      }
+    }
+
+    setContextMenu(null);
+    try {
+      await setSketchLineConstructionRef.current(lineId, !isConstruction);
+    } catch {
+      // Core may reject the command if the line is part of an active
+      // profile used by a downstream extrude / loft / revolve / sweep.
+      // Swallow the error — the menu is already closed.
+    }
+  }
+
   async function deleteConstraint() {
     const kind = contextMenu?.constraintKind;
     const entityId = contextMenu?.constraintEntityId;
@@ -231,6 +279,8 @@ export function createViewportContextMenuActions({
     deleteSketchSelection,
     deleteDimension,
     deleteConstraint,
+    toggleDriven,
+    toggleConstruction,
     toggleDimensionDisplay,
     getCircleDimensionToggleLabel,
     isLinkedBodyCopy,

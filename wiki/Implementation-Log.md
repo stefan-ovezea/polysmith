@@ -2,6 +2,203 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-07-01
+
+### Toggle Driving — right-click context menu on dimensions
+
+Right-click any sketch dimension in the viewport to toggle it between driving
+and driven (reference-only).  Driven dimensions display in parentheses `(25 mm)`
+and do not constrain the planegcs solver — they show the measured value for
+reference.
+
+**C++ (`sketch_dimension_toggle_driven_command.inc`):**
+- `toggle_sketch_dimension_driven(feature, dimension_id)` toggles the `driven`
+  flag and calls `refresh_sketch_derived_state`.
+- New IPC command `toggle_sketch_dimension_driven` with full document-manager
+  wrapper (undo/redo, geometry revision bump).
+
+**TypeScript:**
+- Context menu gains "Toggle Driving" button for dimensions.
+- Full IPC wiring: command factory (`sketchCommands.ts`), hook
+  (`useCadCore.ts`), context menu actions, and `ViewportContextMenu` component.
+
+### Toggle Construction — right-click context menu on sketch lines
+
+Right-click a sketch line to toggle its construction flag.  Construction is
+now purely a visual/profile-exclusion toggle (Fusion 360 behaviour).
+
+**C++ (`line_entity_commands.inc`):**
+- `set_sketch_line_construction` simplified to just flip `is_construction` and
+  refresh.  No more auto-dimension creation/deletion on toggle.
+- Removed restrictions that blocked creating driving dimensions on construction
+  lines, circles, and polygons (`sketch_dimension_create_commands.inc`).
+  Dimensions keep their driving/driven status regardless of construction flag.
+
+**TypeScript:**
+- Context menu shows "Toggle Construction" when right-clicking a single line.
+- `contextMenuState.ts` adds `lineId` to `ViewportContextMenuState` so the menu
+  knows which line was clicked.
+- Reads current state from the document rather than stale `sketchLinesRef`.
+
+### H/V point ordering fix — prevent solver geometry flips
+
+**C++ (`constraint_solver_dimension_constraints.inc`):**
+- planegcs `ConstraintDifference::error()` is `param2 - param1 - difference`,
+  so `addConstraintDifference(p1, p2, val)` enforces `p2 - p1 = val`.
+- H/V point_distance dimensions stored `val = dim.value` (always absolute),
+  but if current geometry had opposite sign, the solver would flip the point
+  ordering — cascading through shared endpoints and corrupting the sketch.
+- Fix: compute the signed difference from current solver-point positions and
+  preserve its sign on the target value.  Makes the constraint trivially
+  satisfied by the current geometry at creation time.
+
+## 2026-06-28
+
+### Circle radius/diameter toggle
+
+- Circle dimension viewport label now toggles between `⌀ 20.00 mm` (diameter)
+  and `R 10.00 mm` (radius) based on `display_as`.  Previously the label was
+  always hardcoded as diameter regardless of the toggle state.
+- C++: `make_circle_dimension_primitive` checks `dimension.display_as`.
+- TS: context menu "Show Radius" / "Show Diameter" already had full wiring;
+  only the C++ primitive label was missing.
+
+### Constraint driven detection — wired for H/V constraints
+
+- `set_sketch_line_constraint` now checks solver stats after applying an H/V
+  constraint.  If over-constrained (`solver_conflicting_count > 0` etc.),
+  sets `constraint_driven = true` → viewport renders `(H)` / `(V)`.
+- `clear_sketch_line_constraints` resets `constraint_driven = false`.
+- The `constraint_driven` field already existed on `SketchLine`, was emitted
+  to TS primitives, and was checked in `count_driving_on_point_pair` — only
+  the assignment was missing.
+
+### circle_radius & polygon_radius — idempotent on duplicate
+
+- `add_sketch_circle_radius_dimension` and `add_sketch_polygon_radius_dimension`
+  no longer throw when the dimension already exists.  Instead they silently
+  update the value to match current geometry (mirrors `line_length` behaviour).
+
+### Point-pair fallback for distance dimensions
+
+- `add_sketch_distance_dimension` now passes point pairs to
+  `finalize_new_dimension`:
+  - `line_line_distance` → `start_point_id` from each line
+  - `circle_center_distance` → `"point-circle-{id}-center"` for each circle
+- Lets `finalize_new_dimension`'s secondary check (>2 constraints on 2 DOF
+  pair) catch cases the solver might miss.
+
+### Angle ghost regression fix
+
+- Auto-mode linear placement was intercepting all single-line clicks, preventing
+  two-entity angle/distance picks.  `handlePointerMove` now checks for relation
+  preview candidates (e.g. angle between two lines sharing an endpoint) alongside
+  the linear placement preview.  `handlePointerUp` commits the relation if active,
+  otherwise commits the linear placement.
+
+## 2026-06-24
+
+### Driven dimension system — unified architecture
+
+Consolidated the driven/reference dimension detection into a single shared
+function (`finalize_new_dimension`) used by every dimension creation command.
+Previously each command duplicated ~30 lines of solver-check + fallback logic.
+
+**C++ — Shared finalization (`dimensions.inc`):**
+- `finalize_new_dimension(feature, params, dimId, [optional pointPair])` —
+  single entry point for post-creation over-constraint detection.  Runs solver,
+  checks `solver_conflicting_count` / `redundant_count` / `dofs < 0`, then
+  falls back to point-pair counting for types that constrain a point pair
+  (line_length, point_distance, circle_center_distance, etc.).
+- `count_driving_on_point_pair` — counts both dimensions AND line H/V
+  constraints on a point pair.  2 points have only 2 relative DOF; >2
+  constraints means at least one is redundant.
+- All creation commands (`add_sketch_line_length_dimension`,
+  `add_sketch_point_distance_dimension`, `add_sketch_line_angle_dimension`,
+  `add_sketch_circle_radius_dimension`, `add_sketch_polygon_radius_dimension`,
+  `add_sketch_distance_dimension`) now call `finalize_new_dimension` instead
+  of duplicating the pattern.
+
+**C++ — Removed heuristic redundant detection (`state_and_create.inc`):**
+- The old heuristic that counted constraints-per-point-pair *inside*
+  `refresh_sketch_derived_state` was removed.  It marked arbitrary existing
+  dimensions as driven, fired even when the solver reported 0 redundants,
+  and conflicted with the per-command checks.  The per-command checks are
+  now the sole authoritative mechanism.
+
+**C++ — `sync_driven_dimensions` respects `display_as`:**
+- `point_distance` driven dimensions with `display_as: "x"` now sync to
+  `abs(dx)` instead of Euclidean distance.  Same for `display_as: "y"`.
+  Previously all point_distance driven dims showed the line length.
+
+**C++ — Constraint `driven` plumbing (`viewport_sketch_primitives.h`):**
+- Added `bool driven = false` to `ViewportSketchConstraintPrimitive`.
+- Added `bool constraint_driven = false` to `SketchLine`.
+- `make_line_constraint_primitive` accepts optional `driven` parameter.
+- IPC serialization includes `driven` for constraint primitives.
+- (Detection of driven constraints not yet wired — plumbing is in place.)
+
+**C++ — Unified linear dimension primitives:**
+- `make_offset_dimension_primitive` — shared helper for all linear dimension
+  types (line_length, point_distance, line_line_distance,
+  circle_center_distance, circle_line_distance).  Handles offset computation,
+  label placement, label-position-override from user drag, and struct
+  population.  Eliminated ~200 lines of duplicated code.
+- `make_point_distance_dimension_primitive`: Euclidean now always has a
+  perpendicular offset (like line_length), fixing missing extension lines
+  and arrows on freshly-created point-to-point dimensions.
+- H/V point_distance dimensions build per-point projections to the dimension
+  line (horizontal at constant Y, vertical at constant X).
+
+**TypeScript — Driven rendering (`sketchObjects.ts`):**
+- `buildSketchDimensionObject`: strips any existing parenthesization from
+  the C++ label, then re-wraps based on the TS `driven` flag.  This makes
+  the TS the single source of truth for parenthesization, robust against
+  ordering issues between label generation and driven-flag setting.
+- `buildSketchConstraintObject`: wraps constraint label in parentheses
+  when `driven` is true (e.g. `(V)`, `(H)`).
+
+**TypeScript — IPC schema (`viewportStateSchema.ts`):**
+- Added `driven: z.boolean().default(false)` to constraint schema.
+- Added `driven?: boolean` to `ViewportSketchConstraint` and
+  `SketchConstraintScene` types.
+- `makeSketchConstraint` copies `driven` from IPC payload.
+
+**TypeScript — Picking fixes (`dimensionToolPicking.ts`):**
+- `computePointDistanceAxis`: won't return `"x"` when horizontal distance is
+  ~0, or `"y"` when vertical distance is ~0.  Fixes "Point distance dimension
+  must be greater than zero" error when clicking two vertically-aligned
+  endpoints in certain order.
+- Point-to-point picking: if both points belong to the same line that already
+  has a `line_length` dimension, selects the existing dimension for editing
+  instead of creating a redundant `point_distance`.
+- Linear mode: `hasUnaryDimension` check before starting linear placement;
+  selects existing dimension if one already exists.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `native/cad-core/src/core/sketch/impl/dimensions.inc` | +`finalize_new_dimension`, +`count_driving_on_point_pair` |
+| `native/cad-core/src/core/sketch/impl/state_and_create.inc` | Removed heuristic redundant detection (~90 lines) |
+| `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc` | All creation commands use `finalize_new_dimension` |
+| `native/cad-core/src/core/sketch/impl/dimension_distance_commands.inc` | Uses `finalize_new_dimension` |
+| `native/cad-core/src/core/sketch/impl/private_dimension_relation_sync.inc` | `sync_driven_dimensions` respects `display_as` |
+| `native/cad-core/src/core/sketch/sketch_geometry_types.h` | +`constraint_driven` on `SketchLine` |
+| `native/cad-core/src/core/viewport/viewport_sketch_primitives.h` | +`driven` on constraint primitive |
+| `native/cad-core/src/protocol/impl/viewport_to_payload_sketch_primitives.inc` | +`driven` in constraint serialization |
+| `native/cad-core/src/core/viewport/impl/sketch_line_dimension_primitives.inc` | +`make_offset_dimension_primitive`; `make_line_dimension_primitive` delegates |
+| `native/cad-core/src/core/viewport/impl/sketch_line_point_distance_dimension_primitives.inc` | `point_distance` + `line_line_distance` delegate to shared helper |
+| `native/cad-core/src/core/viewport/impl/sketch_circle_distance_dimension_primitives.inc` | Circle distance primitives delegate to shared helper |
+| `native/cad-core/src/core/viewport/impl/sketch_primitives.inc` | `make_line_constraint_primitive` accepts `driven` param |
+| `native/cad-core/src/core/viewport/impl/sketch_line_primitives_emit.inc` | Passes `line.constraint_driven` |
+| `apps/desktop-ui/src/types/viewport.ts` | +`driven` on `ViewportSketchConstraint` |
+| `apps/desktop-ui/src/types/scene.ts` | +`driven` on `SketchConstraintScene` |
+| `apps/desktop-ui/src/lib/schemas/ipc/viewportStateSchema.ts` | +`driven` in constraint schema |
+| `apps/desktop-ui/src/lib/viewportScene.ts` | `makeSketchConstraint` copies `driven` |
+| `apps/desktop-ui/src/utils/viewport/sketchObjects.ts` | Driven rendering: strip/re-wrap for dims, `(V)` for constraints |
+| `apps/desktop-ui/src/layout/viewport/dimensionToolPicking.ts` | Axis fallback fix; duplicate-dimension blocking |
+
 ## 2026-06-15
 
 ### Point-to-point distance dimension — driving + label drag
@@ -1781,22 +1978,6 @@ Three bugs fixed after initial implementation:
   dimension label placement metadata so confirmed dimension label placement can
   persist in `.polysmith` files. The first core rendering pass applies saved
   placement to line-line and circle-line distance dimensions.
-
-#### Known Issue: Two-Line Angle Dimension Placement (2026-05-28)
-
-- manual QA showed that the shared-endpoint two-line angle relation preview
-  still does not hand off cleanly to the confirmed angle dimension. The ghost
-  preview can appear at the intended cursor-relative radius, but the committed
-  angle indicator can jump far away near the line ends and become effectively
-  immovable.
-- several incremental fixes were attempted around pending relation placement,
-  label-position persistence, and angle arc radius reconstruction. They did
-  not produce reliable behavior and should not be treated as the final design.
-- follow-up should rewrite angle dimension placement as one explicit model:
-  store a sketch-local angle presentation control point/radius for angle
-  dimensions, have both ghost preview and committed rendering consume that same
-  model, and remove the current after-the-fact inference from generic label
-  placement.
 
 ### 2026-05-31 — Constraint & Trim Stabilisation
 

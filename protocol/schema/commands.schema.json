@@ -122,6 +122,7 @@
         "add_sketch_distance_dimension",
         "add_sketch_point_distance_dimension",
         "add_sketch_line_length_dimension",
+        "add_sketch_line_angle_dimension",
         "add_sketch_circle_radius_dimension",
         "add_sketch_polygon_radius_dimension",
         "add_parameter",

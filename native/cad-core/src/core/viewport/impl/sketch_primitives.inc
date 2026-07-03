@@ -158,7 +158,8 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
     const std::string& label,
     bool is_selected,
     const std::optional<std::string>& related_entity_id = std::nullopt,
-    double badge_offset_multiplier = 1.0) {
+    double badge_offset_multiplier = 1.0,
+    bool driven = false) {
   const double dx = line.end_x - line.start_x;
   const double dy = line.end_y - line.start_y;
   const double length = std::sqrt(dx * dx + dy * dy);
@@ -170,7 +171,7 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
       (line.start_x + line.end_x) / 2.0 + normal_x * offset,
       (line.start_y + line.end_y) / 2.0 + normal_y * offset);
 
-  return ViewportSketchConstraintPrimitive{
+  auto prim = ViewportSketchConstraintPrimitive{
       .constraint_id =
           (kind == "equal_length" || kind == "perpendicular") &&
                   related_entity_id.has_value()
@@ -185,7 +186,9 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
       .position_x = position.x,
       .position_y = position.y,
       .position_z = position.z,
+      .driven = driven,
   };
+  return prim;
 }
 
 ViewportSketchConstraintPrimitive make_point_constraint_primitive(

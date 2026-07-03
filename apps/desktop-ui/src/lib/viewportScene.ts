@@ -359,6 +359,9 @@ function makeSketchDimension(
           dimension.ref_line_end.z,
         ]
       : undefined,
+
+    driven: dimension.driven,
+    displayAs: dimension.display_as || undefined,
   };
 }
 
@@ -479,6 +482,7 @@ function makeSketchConstraint(
       constraint.position.y,
       constraint.position.z,
     ],
+    driven: constraint.driven,
   };
 }
 

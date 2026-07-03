@@ -159,7 +159,14 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
           point_b_it != parameters.points.end()) {
         const double dx = point_b_it->x - point_a_it->x;
         const double dy = point_b_it->y - point_a_it->y;
-        dimension.value = std::sqrt(dx * dx + dy * dy);
+        // Respect display_as: "x" → horizontal distance, "y" → vertical.
+        if (dimension.display_as == "x") {
+          dimension.value = std::abs(dx);
+        } else if (dimension.display_as == "y") {
+          dimension.value = std::abs(dy);
+        } else {
+          dimension.value = std::sqrt(dx * dx + dy * dy);
+        }
       }
     }
     } catch (const std::exception& e) {

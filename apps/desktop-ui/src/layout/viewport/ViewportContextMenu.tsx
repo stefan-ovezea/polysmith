@@ -8,6 +8,8 @@ interface ViewportContextMenuProps {
   getCircleDimensionToggleLabel: (dimensionId: string) => string | null;
   isLinkedBodyCopy: (bodyId: string | null | undefined) => boolean;
   onToggleDimensionDisplay: () => void | Promise<void>;
+  onToggleDriven: () => void | Promise<void>;
+  onToggleConstruction: () => void | Promise<void>;
   onDeleteDimension: () => void | Promise<void>;
   onDeleteConstraint: () => void | Promise<void>;
   onDeleteSketchSelection: () => void | Promise<void>;
@@ -24,6 +26,8 @@ export function ViewportContextMenu({
   getCircleDimensionToggleLabel,
   isLinkedBodyCopy,
   onToggleDimensionDisplay,
+  onToggleDriven,
+  onToggleConstruction,
   onDeleteDimension,
   onDeleteConstraint,
   onDeleteSketchSelection,
@@ -60,6 +64,13 @@ export function ViewportContextMenu({
           <button
             type="button"
             className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+            onClick={onToggleDriven}
+          >
+            Toggle Driving
+          </button>
+          <button
+            type="button"
+            className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
             onClick={onDeleteDimension}
           >
             Delete
@@ -74,13 +85,24 @@ export function ViewportContextMenu({
           Delete Constraint
         </button>
       ) : contextMenu.sketchDeleteSelection ? (
-        <button
-          type="button"
-          className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-          onClick={onDeleteSketchSelection}
-        >
-          Delete
-        </button>
+        <>
+          {contextMenu.lineId ? (
+            <button
+              type="button"
+              className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+              onClick={onToggleConstruction}
+            >
+              Toggle Construction
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+            onClick={onDeleteSketchSelection}
+          >
+            Delete
+          </button>
+        </>
       ) : (
         <>
           {contextMenu.bodyId ? (

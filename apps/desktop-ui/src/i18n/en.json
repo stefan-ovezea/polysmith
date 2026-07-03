@@ -178,7 +178,15 @@
     "slicerEmbedFailed": "Slicer view failed: {{error}}",
     "slicerNoExportableBody": "There is no solid body to export.",
     "slicerView": "Slicer View",
-    "slicerWaiting": "Slicer view is waiting for OrcaSlicer."
+    "slicerWaiting": "Slicer view is waiting for OrcaSlicer.",
+    "drawing": "ISO Drawing",
+    "drawingView": "ISO Drawing View"
+  },
+  "drawing": {
+    "placeholder": "ISO Drawing workspace ready — dimension and sheet tools coming soon.",
+    "category": {
+      "sheet": "Sheet"
+    }
   },
   "cam": {
     "profile": "Profile",
@@ -295,9 +303,24 @@
     "createSketch": "Create Sketch",
     "cylinder": "Cylinder",
     "dimension": "Dimension",
-    "dimensionPointDistance": "Point Distance",
+    "dimensionAuto": "Auto",
+    "dimensionLinear": "Linear",
+    "dimensionAligned": "Aligned",
+    "dimensionAngular": "Angular",
     "dimensionRadius": "Radius",
     "dimensionDiameter": "Diameter",
+    "dimensionOrdinate": "Ordinate",
+    "dimensionJoggedRadial": "Jogged Radial",
+    "dimensionArcLength": "Arc Length",
+    "dimensionCurveMinMax": "Curve Min / Max",
+    "dimensionBaseline": "Baseline",
+    "dimensionChain": "Chain",
+    "dimensionTidyUp": "Tidy Up",
+    "dimensionArrange": "Arrange",
+    "dimensionFlipArrows": "Flip Arrows",
+    "dimensionMatch": "Match",
+    "dimensionBreak": "Break",
+    "dimensionPointDistance": "Point Distance",
     "equalLength": "Equal Length",
     "extrude": "Extrude",
     "fastener": "Fastener",

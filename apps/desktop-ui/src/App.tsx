@@ -192,6 +192,11 @@ function App() {
   const [polygonToolMode, setPolygonToolMode] = useState<
     "circumscribed" | "inscribed" | "edge"
   >("inscribed");
+  // Dimension tool mode for the split tool button dropdown.
+  // Defaults to "auto" which preserves existing sketch dimension behaviour.
+  const [dimensionToolMode, setDimensionToolMode] = useState<
+    import("@/types").DimensionToolMode
+  >("auto");
 
   // Sketch fillet panel session. Mirrors `ActiveEdgeOpAction` (the
   // 3D fillet/chamfer flow) shape-for-shape: it opens the moment
@@ -532,6 +537,7 @@ function App() {
     addSketchAngleDimension,
     addSketchDistanceDimension,
     addSketchLineLengthDimension,
+    addSketchLineAngleDimension,
     addSketchCircleRadiusDimension,
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
@@ -542,6 +548,8 @@ function App() {
     updateSketchFilletRadius,
     deleteSketchFillet,
     deleteSketchDimension,
+    toggleSketchDimensionDriven,
+    setSketchLineConstruction,
     addSketchPointDistanceDimension,
     updateSketchDimensionDisplay,
     deleteSketchSelection,
@@ -1094,6 +1102,7 @@ function App() {
     handleWorkspaceDropdownOpenChange,
     showCadView,
     showCamView,
+    showDrawingView,
     showSlicerView,
   } = useSlicerWorkspaceActions({
     workspaceView,
@@ -1255,6 +1264,7 @@ function App() {
           canExportToSlicer={canExportToSlicer}
           showCadView={showCadView}
           showCamView={showCamView}
+          showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
           exportToSlicer={exportToSlicer}
           status={status}
@@ -1274,6 +1284,8 @@ function App() {
           setCircleToolMode={setCircleToolMode}
           polygonToolMode={polygonToolMode}
           setPolygonToolMode={setPolygonToolMode}
+          dimensionToolMode={dimensionToolMode}
+          onSetDimensionToolMode={setDimensionToolMode}
           runAction={runAction}
           start={start}
           startMirrorPreview={startMirrorPreview}
@@ -1650,9 +1662,9 @@ function App() {
                   await setSketchPointLineAnchor(pointId, hostLineId, t);
                 });
               }}
-              onAddSketchAngleDimension={async (firstLineId, secondLineId) => {
+              onAddSketchAngleDimension={async (firstLineId, secondLineId, value?) => {
                 await runActionOrThrow(async () => {
-                  await addSketchAngleDimension(firstLineId, secondLineId);
+                  await addSketchAngleDimension(firstLineId, secondLineId, value);
                 });
               }}
               onAddSketchDistanceDimension={async (firstEntityId, secondEntityId) => {
@@ -1663,6 +1675,11 @@ function App() {
               onAddSketchLineLengthDimension={async (lineId) => {
                 await runAction(async () => {
                   await addSketchLineLengthDimension(lineId);
+                });
+              }}
+              onAddSketchLineAngleDimension={async (lineId) => {
+                await runAction(async () => {
+                  await addSketchLineAngleDimension(lineId);
                 });
               }}
               onAddSketchCircleRadiusDimension={async (circleId) => {
@@ -1761,6 +1778,8 @@ function App() {
               onSetCircleToolMode={setCircleToolMode}
               polygonToolMode={polygonToolMode}
               onSetPolygonToolMode={setPolygonToolMode}
+              dimensionToolMode={dimensionToolMode}
+              onSetDimensionToolMode={setDimensionToolMode}
               onAddSketchPolygon={async (
                 sides,
                 mode,
@@ -2040,14 +2059,29 @@ function App() {
                   await deleteSketchDimension(dimensionId);
                 });
               }}
+              onToggleSketchDimensionDriven={async (dimensionId) => {
+                await runAction(async () => {
+                  await toggleSketchDimensionDriven(dimensionId);
+                });
+              }}
+              onSetSketchLineConstruction={async (
+                lineId,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await setSketchLineConstruction(lineId, isConstruction);
+                });
+              }}
               onAddSketchPointDistanceDimension={async (
                 pointAId,
                 pointBId,
+                axis?,
               ) => {
                 await runAction(async () => {
                   await addSketchPointDistanceDimension(
                     pointAId,
                     pointBId,
+                    axis,
                   );
                 });
               }}

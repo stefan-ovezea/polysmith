@@ -20,14 +20,16 @@ import { CamMillingToolbar } from "./CamMillingToolbar";
 import { CamTurningToolbar } from "./CamTurningToolbar";
 import { CamPrintingToolbar } from "./CamPrintingToolbar";
 import { CamCuttingToolbar } from "./CamCuttingToolbar";
+import { DrawingToolbar } from "./DrawingToolbar";
 import { ParametersPanel } from "../ParametersPanel";
 import { SelectionFilterPanel } from "../SelectionFilterPanel";
 import { readStoredFilter, writeStoredFilter } from "../selectionFilterState";
 
 const workspaces = ["create", "modify", "construct", "sketch"] as const;
 const camWorkspaces = ["milling", "turning", "printing", "cutting"] as const;
+const drawingWorkspaces = ["sheet"] as const;
 type CamWorkspace = (typeof camWorkspaces)[number];
-type WorkspaceView = "cad" | "slicer" | "cam";
+type WorkspaceView = "cad" | "slicer" | "cam" | "drawing";
 type AppHeaderCreateToolbarProps = Omit<
   CreateToolbarProps,
   "disabled" | "openMenu" | "setOpenMenu"
@@ -283,6 +285,8 @@ interface AppHeaderProps
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
   polygonToolMode: "circumscribed" | "inscribed" | "edge";
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
+  onSetDimensionToolMode: (mode: import("@/types").DimensionToolMode) => void;
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
@@ -362,6 +366,8 @@ export function AppHeader({
   onSetCircleToolMode,
   polygonToolMode,
   onSetPolygonToolMode,
+  dimensionToolMode,
+  onSetDimensionToolMode,
   onStart,
   onCreateDocument,
   onExportDocument,
@@ -450,6 +456,8 @@ export function AppHeader({
     useState<(typeof workspaces)[number]>("create");
   const [activeCamWorkspace, setActiveCamWorkspace] =
     useState<CamWorkspace>("milling");
+  const [activeDrawingWorkspace, setActiveDrawingWorkspace] =
+    useState<(typeof drawingWorkspaces)[number]>("sheet");
   const [openMenu, setOpenMenu] = useState<"box" | "cylinder" | null>(null);
 
   useEffect(() => {
@@ -473,7 +481,9 @@ export function AppHeader({
                 ? t("workspace.cad")
                 : workspaceView === "cam"
                   ? t("workspace.cam")
-                  : t("workspace.slicer")
+                  : workspaceView === "drawing"
+                    ? t("workspace.drawing")
+                    : t("workspace.slicer")
             }
             items={[
               {
@@ -483,6 +493,10 @@ export function AppHeader({
               {
                 label: t("workspace.cam"),
                 onSelect: () => onSetWorkspaceView("cam"),
+              },
+              {
+                label: t("workspace.drawing"),
+                onSelect: () => onSetWorkspaceView("drawing"),
               },
               {
                 label: t("workspace.slicer"),
@@ -526,6 +540,25 @@ export function AppHeader({
                   }}
                 >
                   {t(`cam.category.${workspace}`)}
+                </button>
+              ))}
+            </nav>
+          ) : null}
+          {workspaceView === "drawing" ? (
+            <nav className="flex items-center gap-1 rounded-full p-0.5 cad-subtle-block">
+              {drawingWorkspaces.map((workspace) => (
+                <button
+                  key={workspace}
+                  className={
+                    activeDrawingWorkspace === workspace
+                      ? "cad-ribbon-tab cad-ribbon-tab-active"
+                      : "cad-ribbon-tab"
+                  }
+                  onClick={() => {
+                    setActiveDrawingWorkspace(workspace);
+                  }}
+                >
+                  {t(`drawing.category.${workspace}`)}
                 </button>
               ))}
             </nav>
@@ -803,6 +836,8 @@ export function AppHeader({
                 onSetCircleToolMode={onSetCircleToolMode}
                 polygonToolMode={polygonToolMode}
                 onSetPolygonToolMode={onSetPolygonToolMode}
+                dimensionToolMode={dimensionToolMode}
+                onSetDimensionToolMode={onSetDimensionToolMode}
                 onStartSketch={onStartSketch}
                 onFinishSketch={onFinishSketch}
                 onCancelSketchConstraint={onCancelSketchConstraint}
@@ -844,6 +879,13 @@ export function AppHeader({
           ) : (
             <CamCuttingToolbar disabled={disabled} />
           )}
+        </div>
+      ) : workspaceView === "drawing" ? (
+        <div
+          className="flex items-center justify-between gap-3 px-4 py-1"
+          style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
+        >
+          <DrawingToolbar disabled={disabled} />
         </div>
       ) : null}
     </header>

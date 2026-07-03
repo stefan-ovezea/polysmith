@@ -40,6 +40,9 @@ interface DimensionPlacementActionsContext {
   setDimensionLabelPositions: Dispatch<
     SetStateAction<Record<string, [number, number, number]>>
   >;
+  dimensionObjectByIdRef: MutableRef<
+    Map<string, { line: THREE.Group; label: THREE.Sprite }>
+  >;
   angleDragRadiiRef: MutableRef<Record<string, number>>;
   setAngleDragRadii: Dispatch<SetStateAction<Record<string, number>>>;
   anglePlacementPreviewsRef: MutableRef<Record<string, SketchDimensionScene>>;
@@ -59,6 +62,15 @@ interface DimensionPlacementActionsContext {
   ) => AngleDimensionFrame | null;
   clearPreviewDimension: () => void;
   setCanvasCursor: (cursor: string) => void;
+  displayUnits: "mm" | "in";
+  /** Rebuild the Three.js objects for a single dimension in-place (without
+   *  a full scene rebuild).  Called during label drag so the extension
+   *  lines stretch correctly from their fixed anchors to the moved
+   *  dimension line.  The caller pre-computes the shifted scene data. */
+  rebuildDimensionSceneObject: (
+    shifted: SketchDimensionScene,
+    displayUnits?: "mm" | "in",
+  ) => void;
 }
 
 export function createDimensionPlacementActions({
@@ -73,6 +85,7 @@ export function createDimensionPlacementActions({
   pendingRelationPlacementLabelRef,
   dimensionLabelPositionsRef,
   setDimensionLabelPositions,
+  dimensionObjectByIdRef,
   angleDragRadiiRef,
   setAngleDragRadii,
   anglePlacementPreviewsRef,
@@ -84,7 +97,149 @@ export function createDimensionPlacementActions({
   angleDimensionFrame,
   clearPreviewDimension,
   setCanvasCursor,
+  rebuildDimensionSceneObject,
+  displayUnits,
 }: DimensionPlacementActionsContext) {
+  /** Compute a linearly-shifted copy of `dimension` where every
+   *  geometry point (dimensionStart, dimensionEnd, labelPosition) is
+   *  offset by the same world-space delta as the label, constrained
+   *  to the placement axis.  Anchors stay fixed. */
+  function shiftedLinearDimension(
+    dimension: SketchDimensionScene,
+    newLabel: [number, number, number],
+  ): SketchDimensionScene {
+    const originalLabel = new THREE.Vector3(...dimension.labelPosition);
+    const nextLabel = new THREE.Vector3(...newLabel);
+    let offset = nextLabel.clone().sub(originalLabel);
+
+    const extensionAxis = new THREE.Vector3(...dimension.dimensionStart).sub(
+      new THREE.Vector3(...dimension.anchorStart),
+    );
+    const dimensionDirection = new THREE.Vector3(...dimension.dimensionEnd).sub(
+      new THREE.Vector3(...dimension.dimensionStart),
+    );
+    const placementAxis =
+      extensionAxis.lengthSq() > 1e-8
+        ? extensionAxis.normalize()
+        : getSketchGridFrame(
+            dimension.planeId,
+            activeSketchPlaneFrameRef.current,
+          ).normal
+            .cross(dimensionDirection)
+            .normalize();
+
+    if (placementAxis.lengthSq() > 1e-8) {
+      offset = placementAxis.multiplyScalar(offset.dot(placementAxis));
+    }
+
+    const shiftPoint = (
+      point: [number, number, number],
+    ): [number, number, number] => {
+      const shifted = new THREE.Vector3(...point).add(offset);
+      return [shifted.x, shifted.y, shifted.z];
+    };
+
+    return {
+      ...dimension,
+      dimensionStart: shiftPoint(dimension.dimensionStart),
+      dimensionEnd: shiftPoint(dimension.dimensionEnd),
+      labelPosition: shiftPoint(dimension.labelPosition),
+    };
+  }
+
+  /** Compute a shifted angle-dimension from `frame` + `radius`.
+   *  Mirrors the logic in displayedAngleDimension (viewportDerivedState.ts). */
+  function shiftedAngleDimension(
+    dimension: SketchDimensionScene,
+    frame: AngleDimensionFrame,
+    radius: number,
+  ): SketchDimensionScene {
+    const r = clampAngleRadius(radius);
+    const toTuple = (v: THREE.Vector3): [number, number, number] => [
+      v.x,
+      v.y,
+      v.z,
+    ];
+    return {
+      ...dimension,
+      arcRadius: r,
+      anchorStart: toTuple(
+        frame.pivot
+          .clone()
+          .add(frame.startUnit.clone().multiplyScalar(frame.anchorRadius)),
+      ),
+      anchorEnd: toTuple(
+        frame.pivot
+          .clone()
+          .add(frame.endUnit.clone().multiplyScalar(frame.anchorRadius)),
+      ),
+      dimensionStart: toTuple(
+        frame.pivot
+          .clone()
+          .add(frame.startUnit.clone().multiplyScalar(r)),
+      ),
+      dimensionEnd: toTuple(
+        frame.pivot
+          .clone()
+          .add(frame.endUnit.clone().multiplyScalar(r)),
+      ),
+      labelPosition: toTuple(
+        frame.pivot
+          .clone()
+          .add(frame.bisector.clone().multiplyScalar(r)),
+      ),
+    };
+  }
+
+  /** Re-project a circle-radius dimension label so the endpoints
+   *  trace the radius direction through the circle center. */
+  function shiftedCircleRadiusDimension(
+    dimension: SketchDimensionScene,
+    labelWorld: [number, number, number],
+  ): SketchDimensionScene {
+    const center = new THREE.Vector3(...dimension.dimensionStart)
+      .add(new THREE.Vector3(...dimension.dimensionEnd))
+      .multiplyScalar(0.5);
+    const direction = new THREE.Vector3(...labelWorld).sub(center);
+    const planeNormal = getSketchGridFrame(
+      dimension.planeId,
+      activeSketchPlaneFrameRef.current,
+    ).normal;
+    direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
+    if (direction.lengthSq() <= 1e-8) {
+      return { ...dimension, labelPosition: labelWorld };
+    }
+    direction.normalize();
+    const original = new THREE.Vector3(...dimension.labelPosition);
+    const projected = center
+      .clone()
+      .add(
+        direction
+          .clone()
+          .multiplyScalar(direction.dot(original.clone().sub(center))),
+      );
+    const radius = projected.distanceTo(center);
+    const start = center
+      .clone()
+      .add(direction.clone().multiplyScalar(-radius));
+    const end = center
+      .clone()
+      .add(direction.clone().multiplyScalar(radius));
+    const toTuple = (v: THREE.Vector3): [number, number, number] => [
+      v.x,
+      v.y,
+      v.z,
+    ];
+    return {
+      ...dimension,
+      anchorStart: toTuple(start),
+      anchorEnd: toTuple(end),
+      dimensionStart: toTuple(start),
+      dimensionEnd: toTuple(end),
+      labelPosition: labelWorld,
+    };
+  }
+
   function getDimensionPlacementAxis(dimension: SketchDimensionScene) {
     if (dimension.kind === "angle" || dimension.kind === "line_angle") {
       return angleDimensionFrame(dimension)?.bisector ?? null;
@@ -117,10 +272,34 @@ export function createDimensionPlacementActions({
     dimensionId: string,
     position: [number, number, number],
   ) {
+    // Always keep the ref current so other synchronous readers see the
+    // latest position (e.g. persistDimensionDragLabelPosition on pointer up).
     dimensionLabelPositionsRef.current = {
       ...dimensionLabelPositionsRef.current,
       [dimensionId]: position,
     };
+
+    // During a regular dimension label drag (not placement), rebuild only
+    // the affected dimension's Three.js objects in-place and skip the
+    // React state update.  This avoids the full scene rebuild that would
+    // otherwise fire on every pointer-move pixel.
+    const drag = dimensionLabelDragRef.current;
+    if (drag && !drag.isPlacement) {
+      const original = displayedSketchDimensionsRef.current.find(
+        (d) => d.dimensionId === dimensionId,
+      );
+      if (original) {
+        const shifted =
+          original.kind === "circle_radius"
+            ? shiftedCircleRadiusDimension(original, position)
+            : shiftedLinearDimension(original, position);
+        if (shifted) {
+          rebuildDimensionSceneObject(shifted, displayUnits);
+          return;
+        }
+      }
+    }
+
     setDimensionLabelPositions((current) => ({
       ...current,
       [dimensionId]: position,
@@ -181,6 +360,14 @@ export function createDimensionPlacementActions({
       ...angleDragRadiiRef.current,
       [dimensionId]: radius,
     };
+
+    const drag = dimensionLabelDragRef.current;
+    if (drag && !drag.isPlacement) {
+      const shifted = shiftedAngleDimension(dimension, frame, radius);
+      rebuildDimensionSceneObject(shifted, displayUnits);
+      return;
+    }
+
     setAngleDragRadii((prev) => ({
       ...prev,
       [dimensionId]: radius,

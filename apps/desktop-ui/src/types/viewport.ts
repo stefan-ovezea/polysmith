@@ -233,6 +233,11 @@ export interface ViewportSketchDimension {
   // Reference line (from C++ core, optional)
   ref_line_start?: Vector3;
   ref_line_end?: Vector3;
+
+  // Display variant: "x" = horizontal, "y" = vertical, "" = Euclidean
+  display_as?: string;
+
+  driven?: boolean;
 }
 
 export interface ViewportSketchConstraint {
@@ -244,6 +249,7 @@ export interface ViewportSketchConstraint {
   label: string;
   is_selected: boolean;
   position: Vector3;
+  driven?: boolean;
 }
 
 export interface ViewportSketchProfile {
@@ -340,6 +346,9 @@ export interface ViewportContextMenuState {
     profileIds: string[];
   } | null;
   dimensionId?: string | null;
+  // Set when right-clicking a single sketch line so the context menu
+  // can offer "Toggle Construction" in addition to Delete.
+  lineId?: string | null;
   // Constraint right-click → Delete:
   // Set when user right-clicks a constraint badge.
   constraintKind?: string;

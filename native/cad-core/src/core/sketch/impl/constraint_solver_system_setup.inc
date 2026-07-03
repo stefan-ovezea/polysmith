@@ -2,6 +2,11 @@
     system_ = std::make_unique<GCS::System>();
     system_->clear();
 
+    // Give the solver more iterations than the planegcs default (100).
+    // LM in particular benefits from extra headroom on under-constrained
+    // sketches where the error surface is flat and progress is slow.
+    system_->maxIter = 200;
+
     // Declare parameters. Fixed points are NOT added to unknowns.
     // Circle radii are unknowns so the solver can adjust them to
     // satisfy radius constraints.

@@ -2,6 +2,96 @@ import type { SketchFeatureParameters } from "@/types";
 
 type EntityKind = "line" | "circle" | "polygon";
 
+/**
+ * Determine whether the dimension should be horizontal ("x"), vertical
+ * ("y"), or aligned (undefined).  Compares the cursor direction to the
+ * three possible label-placement directions and picks the closest:
+ *   - Cursor perpendicular to the line → aligned (line length)
+ *   - Cursor mostly vertical (|dy| > |dx|) → horizontal dim ("x")
+ *   - Cursor mostly horizontal (|dx| > |dy|) → vertical dim ("y")
+ *
+ * This means: drag perpendicular to the line → aligned; drag up/down
+ * → horizontal dim; drag left/right → vertical dim.
+ */
+export function computePointDistanceAxis(
+  cursor: [number, number],
+  pointA: { x: number; y: number },
+  pointB: { x: number; y: number },
+): "x" | "y" | undefined {
+  const dx = pointB.x - pointA.x;
+  const dy = pointB.y - pointA.y;
+  const ptDist = Math.sqrt(dx * dx + dy * dy);
+  if (ptDist < 1e-6) return undefined;
+
+  const midX = (pointA.x + pointB.x) / 2;
+  const midY = (pointA.y + pointB.y) / 2;
+  const cursorDx = cursor[0] - midX;
+  const cursorDy = cursor[1] - midY;
+  const cursorDist = Math.sqrt(cursorDx * cursorDx + cursorDy * cursorDy);
+  if (cursorDist < 1e-6) return undefined;
+
+  // Three placement-direction angles (where the label sits relative
+  // to the midpoint):
+  //   aligned: perpendicular to the line
+  //   horizontal dim ("x"): label goes vertically (dimension line ∥ X)
+  //   vertical dim ("y"): label goes horizontally (dimension line ∥ Y)
+  const perpAngle = Math.atan2(dx, -dy);  // perpendicular to (dx,dy)
+  const horizPlacementAngle = Math.PI / 2;  // ±90° = vertical offset → "x"
+  const vertPlacementAngle = 0;             // 0° = horizontal offset → "y"
+
+  // Cursor angle from midpoint.
+  const cursorAngle = Math.atan2(cursorDy, cursorDx);
+
+  // Shortest angular distance helper.
+  const angularDist = (a: number, b: number) => {
+    let d = Math.abs(a - b);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    return d;
+  };
+
+  const distToAligned = angularDist(cursorAngle, perpAngle);
+  const distToHoriz = angularDist(cursorAngle, horizPlacementAngle);
+  const distToVert = angularDist(cursorAngle, vertPlacementAngle);
+
+  // If the cursor is closest to the line's perpendicular → aligned.
+  if (distToAligned < distToHoriz && distToAligned < distToVert) {
+    return undefined;
+  }
+
+  // Otherwise pick H or V based on which world-axis direction is closer,
+  // but only if that axis actually produces a non-zero distance.
+  const hDist = Math.abs(dx);
+  const vDist = Math.abs(dy);
+  if (distToHoriz < distToVert) {
+    return hDist > 1e-6 ? "x" : "y";
+  }
+  return vDist > 1e-6 ? "y" : "x";
+}
+
+/** Resolve an entity click to a concrete point ID for point-to-point dimensioning. */
+function resolveEntityToPoint(
+  sketch: SketchFeatureParameters | null,
+  entityId: string,
+  entityKind: string | null,
+): string | null {
+  if (!sketch) return null;
+  if (entityKind === "circle") {
+    return `point-circle-${entityId}-center`;
+  }
+  if (entityKind === "polygon") {
+    return `point-polygon-${entityId}-center`;
+  }
+  if (entityKind === "line") {
+    const line = sketch.lines.find(l => l.line_id === entityId);
+    if (!line) return null;
+    // Both endpoints exist — return the start point (the point-to-point
+    // path will measure correctly regardless of which endpoint we pick,
+    // since the user hasn't specified a preference).
+    return line.start_point_id;
+  }
+  return null;
+}
+
 function entityIdFromSketchPointId(
   pointId: string,
   kinds: readonly EntityKind[] = ["line", "circle", "polygon"],
@@ -15,7 +105,15 @@ function entityIdFromSketchPointId(
   return null;
 }
 
-export function unaryDimensionIdForEntity(entityId: string) {
+/**
+ * Return the dimension ID of the Euclidean (aligned) dimension on an
+ * entity — the one that constrains the overall length / radius.  For
+ * lines this is either a line_length or a point_distance with NO axis
+ * (aligned).  H / V point_distance dimensions are NOT "unary" — they
+ * constrain a single axis and can coexist with each other and with an
+ * aligned dimension on the same endpoints.
+ */
+export function unaryDimensionIdForEntity(entityId: string): string | null {
   if (entityId.startsWith("line-")) {
     return `dim-line-${entityId}`;
   }
@@ -33,9 +131,7 @@ function hasUnaryDimension(
   entityId: string,
 ) {
   const dimensionId = unaryDimensionIdForEntity(entityId);
-  if (!dimensionId) {
-    return false;
-  }
+  if (!dimensionId) return false;
   return (
     sketch?.dimensions.some(
       (dimension) => dimension.dimension_id === dimensionId,
@@ -97,6 +193,9 @@ type DimensionEntityPickAction =
   | {
       kind: "select_line";
       lineId: string;
+    }
+  | {
+      kind: "noop";
     };
 
 interface DimensionRegroupAction {
@@ -152,14 +251,20 @@ interface DimensionToolClickContext {
   stageFirstPoint: (point: DimensionToolFirstPoint) => void;
   deleteSketchDimension: (dimensionId: string) => void;
   handleDimensionClick: (dimensionId: string) => void;
-  createAngleOrDistance: (firstEntityId: string, secondEntityId: string) => void;
-  createPointDistance: (firstPointId: string, secondPointId: string) => void;
+  createAngleOrDistance: (firstEntityId: string, secondEntityId: string, forceMode?: "angle" | "distance") => void;
+  createPointDistance: (firstPointId: string, secondPointId: string, axis?: "x" | "y") => void;
   createLine: (lineId: string) => void;
+  createLineAngle: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
   selectCircle: (circleId: string) => void;
   createPolygon: (polygonId: string) => void;
   selectPolygon: (polygonId: string) => void;
   selectLine: (lineId: string) => void;
+  /** Start linear placement preview for a single line (drag to choose H/V/aligned). */
+  startLinearPlacement: (lineId: string) => void;
+  dimensionToolMode: import("@/types").DimensionToolMode;
+  /** Sketch-local cursor position at the time of the click (for axis detection). */
+  cursorLocal?: [number, number];
 }
 
 function entityReferencePointId(entityKind: string | null, entityId: string) {
@@ -173,6 +278,13 @@ function entityReferencePointId(entityKind: string | null, entityId: string) {
 }
 
 function applyDimensionRegroup(context: DimensionToolClickContext) {
+  // Don't regroup when a first entity is already staged for a follow-up
+  // pick (e.g. angle or distance between two entities). Regroup is only
+  // for replacing the source entity BEFORE the user commits to a second pick.
+  if (context.getFirstEntityId() != null) {
+    return;
+  }
+
   const regroupAction = dimensionRegroupAction({
     pendingPlacement: context.pendingPlacement,
     pendingSourceId: context.pendingSourceId,
@@ -267,6 +379,8 @@ function applyEntityPickAction(
     case "select_line":
       context.selectLine(action.lineId);
       return;
+    case "noop":
+      return;
   }
 }
 
@@ -276,6 +390,11 @@ function handleDimensionEntityHit(context: DimensionToolClickContext) {
     return false;
   }
   if (hit.isProjected) {
+    return true;
+  }
+
+  // Arcs don't support dimensions yet — consume the click gracefully.
+  if (hit.entityKind === "arc") {
     return true;
   }
 
@@ -311,9 +430,22 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
   }
   if (pointAction.kind === "point_distance") {
     context.clearFirstPick();
+    // If both points belong to the same line and that line already has
+    // a line_length dimension, select the existing dimension instead of
+    // creating a redundant point_distance.
+    const entityA = entityIdFromSketchPointId(pointAction.firstPointId, ["line"]);
+    const entityB = entityIdFromSketchPointId(pointAction.secondPointId, ["line"]);
+    if (entityA && entityA === entityB && hasUnaryDimension(context.sketch, entityA)) {
+      context.createLine(entityA);
+      return true;
+    }
+    // Create as Euclidean (aligned) by default.  The user can drag
+    // during placement to position the label; axis can be changed
+    // later via the dimension editor.
     context.createPointDistance(
       pointAction.firstPointId,
       pointAction.secondPointId,
+      /*axis=*/ undefined,
     );
     return true;
   }
@@ -332,10 +464,161 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
 }
 
 export function handleDimensionToolClick(context: DimensionToolClickContext) {
+  // Mode-aware dispatch: "auto" uses the smart-detection logic below.
+  // Specific modes are reserved for future implementation — they fall
+  // through to auto behavior until their case blocks are filled in.
+  switch (context.dimensionToolMode) {
+    case "auto":
+      break;
+    // --- Sketch dimension modes ---
+    case "linear":
+    case "aligned":
+    case "angular":
+    case "radius":
+    case "diameter":
+    case "arc_length":
+      break;
+    // --- Drawing-sheet modes (reserved for ISO dimensioning) ---
+    case "ordinate":
+    case "jogged_radial":
+    case "curve_min_max":
+    case "baseline":
+    case "chain":
+    case "tidy_up":
+    case "arrange":
+    case "flip_arrows":
+    case "match":
+    case "dimension_break":
+      break;
+  }
+
   if (context.hit?.kind === "sketch_dimension") {
     context.clearFirstPick();
     context.handleDimensionClick(context.hit.id);
     return true;
+  }
+
+  // --- Mode-specific dispatch for sketch dimension modes ---
+  // When a specific mode is selected, the first click on an entity
+  // stages it without creating a unary dimension (no ghosting /
+  // flashing), and the second click creates the mode-specific
+  // dimension without auto-detection ambiguity.
+  if (context.dimensionToolMode === "angular") {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      if (context.hit.entityKind !== "line") {
+        context.clearFirstPick();
+        return true;  // angles only apply to line pairs
+      }
+      const stagedFirst = context.getFirstEntityId();
+      if (stagedFirst != null && stagedFirst !== context.hit.id) {
+        // Second line: force angle dimension.
+        context.clearFirstPick();
+        context.createAngleOrDistance(stagedFirst, context.hit.id, "angle");
+        return true;
+      }
+      if (stagedFirst === context.hit.id) {
+        // Re-click same line → single-line angle from horizontal.
+        context.clearFirstPick();
+        context.createLineAngle(stagedFirst);
+        return true;
+      }
+      // First line: stage without creating a unary dimension.
+      context.stageFirstEntity(context.hit.id);
+      return true;
+    }
+    // Non-line hits in angular mode: if a line is staged, create
+    // a single-line angle from horizontal (Fusion 360 – style).
+    // Otherwise just clear.
+    const stagedFirst = context.getFirstEntityId();
+    if (stagedFirst != null) {
+      context.clearFirstPick();
+      context.createLineAngle(stagedFirst);
+      return true;
+    }
+    context.clearFirstPick();
+    return true;
+  }
+
+  if (context.dimensionToolMode === "linear") {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      const stagedFirst = context.getFirstEntityId();
+      if (stagedFirst != null && stagedFirst !== context.hit.id) {
+        // Second entity: force distance (skip angle auto-detection).
+        context.clearFirstPick();
+        context.createAngleOrDistance(stagedFirst, context.hit.id, "distance");
+        return true;
+      }
+      // Single line click: start linear placement with drag‑to‑choose preview.
+      // But if the line already has a dimension, select it for editing instead.
+      if (context.hit.entityKind === "line") {
+        if (hasUnaryDimension(context.sketch, context.hit.id)) {
+          context.clearFirstPick();
+          context.createLine(context.hit.id);
+        } else {
+          context.startLinearPlacement(context.hit.id);
+        }
+        return true;
+      }
+    }
+    // For non‑line entities or projected geometry, fall through.
+  }
+
+  // "auto" mode: single-line click always starts the drag‑to‑choose
+  // placement preview (H / V / aligned).  The C++ core handles
+  // idempotency per axis — same axis updates, different axis creates.
+  if (context.dimensionToolMode === "auto") {
+    if (
+      context.hit?.kind === "sketch_entity" &&
+      !context.hit.isProjected &&
+      context.hit.entityKind === "line" &&
+      context.getFirstEntityId() == null
+    ) {
+      context.startLinearPlacement(context.hit.id);
+      return true;
+    }
+  }
+
+  // When a first entity is already staged, we're in a follow-up pick
+  // for a two-entity dimension (angle, distance).  Skip regroup and
+  // staged-entity handling — go directly to entity/point hit dispatch.
+  const stagedFirstId = context.getFirstEntityId();
+  if (stagedFirstId != null) {
+    if (context.hit?.kind === "sketch_entity" && !context.hit.isProjected) {
+      // Re-clicking the same entity clears the staged pick
+      // instead of creating a dimension on the same entity twice.
+      if (context.hit.id === stagedFirstId) {
+        context.clearFirstPick();
+        return true;
+      }
+      // Two-entity pick: create angle or distance dimension.
+      context.clearFirstPick();
+      context.createAngleOrDistance(stagedFirstId, context.hit.id);
+      return true;
+    }
+    if (context.hit?.kind === "sketch_point") {
+      if (context.getFirstPoint() != null) {
+        // A first point is also staged — fall through to the normal
+        // dispatch (handleDimensionPointHit) which handles point-to-point
+        // dimensions including same-line endpoint length.
+      } else {
+        // Only an entity staged (no point): create point-to-entity distance.
+        context.clearFirstPick();
+        context.createPointDistance(stagedFirstId, context.hit.id);
+        return true;
+      }
+    }
+    // Click on empty space or unsupported hit → clear and restart.
+    // When a point-to-point pick fell through above, don't clear.
+    if (
+      !(context.hit?.kind === "sketch_point" &&
+        context.getFirstPoint() != null)
+    ) {
+      context.clearFirstPick();
+      if (context.pendingPlacement) {
+        context.clearPendingPlacement();
+      }
+      return true;
+    }
   }
 
   applyDimensionRegroup(context);
@@ -442,11 +725,6 @@ function dimensionPointPickAction({
   firstPointId: string | null;
 }): DimensionPointPickAction {
   if (firstPointId && firstPointId !== pointId) {
-    const lineA = entityIdFromSketchPointId(firstPointId, ["line"]);
-    const lineB = entityIdFromSketchPointId(pointId, ["line"]);
-    if (lineA && lineA === lineB) {
-      return { kind: "line_dimension", lineId: lineA };
-    }
     return {
       kind: "point_distance",
       firstPointId,
@@ -533,6 +811,12 @@ function dimensionEntityPickAction({
     return hasUnary
       ? { kind: "select_polygon", polygonId: entityId }
       : { kind: "polygon_dimension", polygonId: entityId };
+  }
+
+  // Arcs and any other unsupported entity kinds: consume the click
+  // without creating a dimension.
+  if (entityKind !== "line") {
+    return { kind: "noop" };
   }
 
   return hasUnary

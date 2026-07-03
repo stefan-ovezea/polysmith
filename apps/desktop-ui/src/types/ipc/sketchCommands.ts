@@ -55,6 +55,7 @@ export interface AddSketchAngleDimensionCommand {
   payload: {
     first_line_id: string;
     second_line_id: string;
+    value?: number;
   };
 }
 
@@ -73,12 +74,21 @@ export interface AddSketchPointDistanceDimensionCommand {
   payload: {
     point_a_id: string;
     point_b_id: string;
+    axis?: "x" | "y";
   };
 }
 
 export interface AddSketchLineLengthDimensionCommand {
   id: string;
   type: "add_sketch_line_length_dimension";
+  payload: {
+    line_id: string;
+  };
+}
+
+export interface AddSketchLineAngleDimensionCommand {
+  id: string;
+  type: "add_sketch_line_angle_dimension";
   payload: {
     line_id: string;
   };
@@ -207,6 +217,14 @@ export interface DeleteSketchFilletCommand {
 export interface DeleteSketchDimensionCommand {
   id: string;
   type: "delete_sketch_dimension";
+  payload: {
+    dimension_id: string;
+  };
+}
+
+export interface ToggleSketchDimensionDrivenCommand {
+  id: string;
+  type: "toggle_sketch_dimension_driven";
   payload: {
     dimension_id: string;
   };

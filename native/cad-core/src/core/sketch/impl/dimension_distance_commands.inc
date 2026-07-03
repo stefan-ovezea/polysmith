@@ -72,17 +72,16 @@ void add_sketch_distance_dimension(FeatureEntry& feature,
       .secondary_entity_id = reference_entity_id,
       .value = value,
   });
-  refresh_sketch_derived_state(feature);
-
-  // If the solver reports conflicts, over-constrained → make driven.
-  if (feature.sketch_parameters->solver_conflicting_count > 0 ||
-      feature.sketch_parameters->solver_dofs < 0) {
-    auto it = std::find_if(
-        parameters.dimensions.begin(), parameters.dimensions.end(),
-        [&](SketchDimension& d) { return d.id == dim_id; });
-    if (it != parameters.dimensions.end()) {
-      it->driven = true;
-      refresh_sketch_derived_state(feature);
-    }
+  // Point-pair fallback for types that constrain identifiable point pairs.
+  std::optional<std::string> pair_a, pair_b;
+  if (kind == "line_line_distance") {
+    const auto& first_line = require_line(parameters, first_entity_id);
+    const auto& second_line = require_line(parameters, second_entity_id);
+    pair_a = first_line.start_point_id;
+    pair_b = second_line.start_point_id;
+  } else if (kind == "circle_center_distance") {
+    pair_a = "point-circle-" + first_entity_id + "-center";
+    pair_b = "point-circle-" + second_entity_id + "-center";
   }
+  finalize_new_dimension(feature, parameters, dim_id, pair_a, pair_b);
 }

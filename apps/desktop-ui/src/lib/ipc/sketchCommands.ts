@@ -386,6 +386,7 @@ export function makeSetSketchMidpointAnchorCommand(
 export function makeAddSketchAngleDimensionCommand(
   firstLineId: string,
   secondLineId: string,
+  value?: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -393,6 +394,7 @@ export function makeAddSketchAngleDimensionCommand(
     payload: {
       first_line_id: firstLineId,
       second_line_id: secondLineId,
+      ...(value !== undefined ? { value } : {}),
     },
   };
 }
@@ -425,10 +427,23 @@ export function makeAddSketchLineLengthDimensionCommand(
   };
 }
 
+export function makeAddSketchLineAngleDimensionCommand(
+  lineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_line_angle_dimension",
+    payload: {
+      line_id: lineId,
+    },
+  };
+}
+
 
 export function makeAddSketchPointDistanceDimensionCommand(
   pointAId: string,
   pointBId: string,
+  axis?: "x" | "y",
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -436,6 +451,7 @@ export function makeAddSketchPointDistanceDimensionCommand(
     payload: {
       point_a_id: pointAId,
       point_b_id: pointBId,
+      ...(axis ? { axis } : {}),
     },
   };
 }
@@ -652,6 +668,19 @@ export function makeDeleteSketchDimensionCommand(
   return {
     id: crypto.randomUUID(),
     type: "delete_sketch_dimension",
+    payload: {
+      dimension_id: dimensionId,
+    },
+  };
+}
+
+
+export function makeToggleSketchDimensionDrivenCommand(
+  dimensionId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "toggle_sketch_dimension_driven",
     payload: {
       dimension_id: dimensionId,
     },

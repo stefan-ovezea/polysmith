@@ -1,5 +1,5 @@
 import { Checkbox, Dropdown } from "@/lib";
-import type { SketchTool } from "@/types";
+import type { SketchTool, DimensionToolMode } from "@/types";
 import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
 import type { PolygonToolMode } from "./viewportPanelTypes";
@@ -18,11 +18,13 @@ interface SketchToolPanelProps {
   rectangleToolMode: RectangleToolMode;
   polygonToolMode: PolygonToolMode;
   polygonSides: number;
+  dimensionToolMode: DimensionToolMode;
   onConstructionChange: (checked: boolean) => void;
   onSetArcToolMode: (mode: ArcToolMode) => void;
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
+  onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onPolygonSidesChange: (sides: number) => void;
 }
 
@@ -35,14 +37,16 @@ export function SketchToolPanel({
   rectangleToolMode,
   polygonToolMode,
   polygonSides,
+  dimensionToolMode,
   onConstructionChange,
   onSetArcToolMode,
   onSetCircleToolMode,
   onSetRectangleToolMode,
   onSetPolygonToolMode,
+  onSetDimensionToolMode,
   onPolygonSidesChange,
 }: SketchToolPanelProps) {
-  if (!isDrawableSketchTool(activeSketchTool)) {
+  if (!isDrawableSketchTool(activeSketchTool) && activeSketchTool !== "dimension") {
     return null;
   }
 
@@ -50,7 +54,9 @@ export function SketchToolPanel({
     <section className="pointer-events-auto cad-floating-panel absolute right-4 top-4 z-20 w-72 px-5 py-5">
       <p className="cad-kicker">{translate("common.sketchTool")}</p>
       <h2 className="cad-title mt-2">
-        {translate(sketchToolLabelKey(activeSketchTool))}
+        {activeSketchTool === "dimension"
+          ? translate("toolbar.dimension")
+          : translate(sketchToolLabelKey(activeSketchTool))}
       </h2>
       {activeSketchTool === "circle" && (
         <p className="text-xs text-on-surface/50 mt-1">
@@ -104,7 +110,49 @@ export function SketchToolPanel({
           )}
         </p>
       )}
+      {activeSketchTool === "dimension" && (
+        <p className="text-xs text-on-surface/50 mt-1">
+          {translate(
+            `toolbar.dimension${
+              dimensionToolMode === "auto"
+                ? "Auto"
+                : dimensionToolMode === "linear"
+                  ? "Linear"
+                  : dimensionToolMode === "aligned"
+                    ? "Aligned"
+                    : dimensionToolMode === "angular"
+                      ? "Angular"
+                      : dimensionToolMode === "radius"
+                        ? "Radius"
+                        : dimensionToolMode === "diameter"
+                          ? "Diameter"
+                          : dimensionToolMode === "ordinate"
+                            ? "Ordinate"
+                            : dimensionToolMode === "jogged_radial"
+                              ? "JoggedRadial"
+                              : dimensionToolMode === "arc_length"
+                                ? "ArcLength"
+                                : dimensionToolMode === "curve_min_max"
+                                  ? "CurveMinMax"
+                                  : dimensionToolMode === "baseline"
+                                    ? "Baseline"
+                                    : dimensionToolMode === "chain"
+                                      ? "Chain"
+                                      : dimensionToolMode === "tidy_up"
+                                        ? "TidyUp"
+                                        : dimensionToolMode === "arrange"
+                                          ? "Arrange"
+                                          : dimensionToolMode === "flip_arrows"
+                                            ? "FlipArrows"
+                                            : dimensionToolMode === "match"
+                                              ? "Match"
+                                              : "Break"
+            }`,
+          )}
+        </p>
+      )}
       <div className="mt-5 flex flex-col gap-4">
+        {activeSketchTool !== "dimension" && (
         <label className="flex items-center justify-between gap-4 text-sm text-on-surface">
           <span>{translate("common.construction")}</span>
           <Checkbox
@@ -113,6 +161,7 @@ export function SketchToolPanel({
             onCheckedChange={onConstructionChange}
           />
         </label>
+        )}
         {activeSketchTool === "arc" ? (
           <div>
             <p className="cad-kicker">{translate("viewport.mode")}</p>
@@ -254,6 +303,29 @@ export function SketchToolPanel({
                   }}
                 />
               </div>
+            </div>
+          </div>
+        ) : null}
+        {activeSketchTool === "dimension" ? (
+          <div>
+            <p className="cad-kicker">{translate("viewport.mode")}</p>
+            <div className="mt-3">
+              <Dropdown
+                value={dimensionToolMode}
+                options={[
+                  { value: "auto", label: translate("toolbar.dimensionAuto") },
+                  { value: "linear", label: translate("toolbar.dimensionLinear") },
+                  { value: "aligned", label: translate("toolbar.dimensionAligned") },
+                  { value: "angular", label: translate("toolbar.dimensionAngular") },
+                  { value: "radius", label: translate("toolbar.dimensionRadius") },
+                  { value: "diameter", label: translate("toolbar.dimensionDiameter") },
+                  { value: "arc_length", label: translate("toolbar.dimensionArcLength") },
+                ]}
+                label={translate("viewport.mode")}
+                onChange={(value) => {
+                  onSetDimensionToolMode(value as DimensionToolMode);
+                }}
+              />
             </div>
           </div>
         ) : null}

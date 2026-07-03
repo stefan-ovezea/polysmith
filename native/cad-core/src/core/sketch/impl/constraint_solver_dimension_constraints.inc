@@ -4,8 +4,7 @@
     // become driving constraints only when the user types a value
     // (non-empty expression).
     for (const auto& dim : params.dimensions) {
-        if (dim.driven) continue;  // reference-only, not a constraint
-        // Auto-dimensions without a user-set expression are display-only.
+        if (dim.driven) continue;
         if (dim.is_auto && dim.expression.empty()) continue;
 
         // Allocate a parameter for the constraint target value.
@@ -42,6 +41,49 @@
                 lit2 != line_id_to_index_.end()) {
                 auto gl1 = gcs_lines_[lit1->second];
                 auto gl2 = gcs_lines_[lit2->second];
+
+                // Virtual pivot: stored on dimension for non-intersecting
+                // lines.  Orient both p1→p2 directions away from the pivot
+                // so the signed angle matches what was stored at creation.
+                if (dim.pivot_x.has_value() && dim.pivot_y.has_value()) {
+                    // Recompute virtual pivot from current solver point
+                    // positions so the orientation swap uses live geometry.
+                    double px, py;
+                    {
+                        double a0x = *gl1.p1.x, a0y = *gl1.p1.y;
+                        double a1x = *gl1.p2.x, a1y = *gl1.p2.y;
+                        double b0x = *gl2.p1.x, b0y = *gl2.p1.y;
+                        double b1x = *gl2.p2.x, b1y = *gl2.p2.y;
+                        double a_dx_inf = a1x - a0x;
+                        double a_dy_inf = a1y - a0y;
+                        double b_dx_inf = b1x - b0x;
+                        double b_dy_inf = b1y - b0y;
+                        double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+                        if (std::abs(det) > 1e-12) {
+                            double t = ((b0x - a0x) * b_dy_inf -
+                                        (b0y - a0y) * b_dx_inf) / det;
+                            px = a0x + t * a_dx_inf;
+                            py = a0y + t * a_dy_inf;
+                        } else {
+                            px = *dim.pivot_x;
+                            py = *dim.pivot_y;
+                        }
+                    }
+                    auto dist = [](double x1, double y1, double x2, double y2) {
+                        double dx = x1 - x2, dy = y1 - y2;
+                        return std::sqrt(dx * dx + dy * dy);
+                    };
+                    // Orient gl1: p1→p2 away from pivot
+                    double d1a = dist(*gl1.p1.x, *gl1.p1.y, px, py);
+                    double d1b = dist(*gl1.p2.x, *gl1.p2.y, px, py);
+                    if (d1a > d1b) std::swap(gl1.p1, gl1.p2);
+                    // Orient gl2: p1→p2 away from pivot
+                    double d2a = dist(*gl2.p1.x, *gl2.p1.y, px, py);
+                    double d2b = dist(*gl2.p2.x, *gl2.p2.y, px, py);
+                    if (d2a > d2b) std::swap(gl2.p1, gl2.p2);
+                    system_->addConstraintL2LAngle(gl1, gl2, val_ptr);
+                    continue;
+                }
                 // Detect shared endpoint by comparing coordinate values.
                 auto eq = [](const GCS::Point& a, const GCS::Point& b) {
                     return std::abs(*a.x - *b.x) < 1e-6 &&
@@ -155,10 +197,39 @@
             auto pit2 = point_id_to_index_.find(dim.secondary_entity_id);
             if (pit1 != point_id_to_index_.end() &&
                 pit2 != point_id_to_index_.end()) {
+              if (dim.display_as == "x") {
+                // Preserve current relative X ordering.
+                //
+                // planegcs ConstraintDifference::error() is:
+                //   param2 - param1 - difference
+                // so the enforced constraint is param2 - param1 = val.
+                // Here param1 = entity_id, param2 = secondary_entity_id,
+                // giving secondary.x - entity.x = val.
+                //
+                // dim.value is always the absolute distance.  Match the
+                // signed difference from the current point positions so
+                // the solver does not flip the geometry.
+                double cur_diff =
+                    *gcs_points_[pit2->second].x - *gcs_points_[pit1->second].x;
+                *val_ptr = (cur_diff >= 0.0) ? dim.value : -dim.value;
+                system_->addConstraintDifference(
+                    gcs_points_[pit1->second].x,
+                    gcs_points_[pit2->second].x,
+                    val_ptr);
+              } else if (dim.display_as == "y") {
+                double cur_diff =
+                    *gcs_points_[pit2->second].y - *gcs_points_[pit1->second].y;
+                *val_ptr = (cur_diff >= 0.0) ? dim.value : -dim.value;
+                system_->addConstraintDifference(
+                    gcs_points_[pit1->second].y,
+                    gcs_points_[pit2->second].y,
+                    val_ptr);
+              } else {
                 system_->addConstraintP2PDistance(
                     gcs_points_[pit1->second],
                     gcs_points_[pit2->second],
                     val_ptr);
+              }
             }
         } else if (dim.kind == "circle_center_distance" &&
                    !dim.secondary_entity_id.empty()) {

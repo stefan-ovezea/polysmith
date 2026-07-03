@@ -46,6 +46,15 @@ void update_angle_dimension(FeatureEntry& feature,
           double h1x, double h1y,
           double other_dx, double other_dy,
           double target_small_angle) {
+    // When the pivot is one of the line's endpoints, unit_from_pivot
+    // returns a fallback (1,0) for the zero-length vector.  That
+    // fallback can accidentally win the scoring, turning the
+    // inter-line angle into a single-line angle from horizontal.
+    // Skip any candidate that sits at the pivot itself.
+    double len0 = std::sqrt((h0x - px) * (h0x - px) + (h0y - py) * (h0y - py));
+    double len1 = std::sqrt((h1x - px) * (h1x - px) + (h1y - py) * (h1y - py));
+    if (len0 < 1e-9) return unit_from_pivot(px, py, h1x, h1y);
+    if (len1 < 1e-9) return unit_from_pivot(px, py, h0x, h0y);
     auto d0 = unit_from_pivot(px, py, h0x, h0y);
     auto d1 = unit_from_pivot(px, py, h1x, h1y);
     auto score = [&](const std::pair<double, double>& dir) {
@@ -74,7 +83,7 @@ void update_angle_dimension(FeatureEntry& feature,
       if (pt_on_seg(a_ends[i].first, a_ends[i].second,
                     b_ends[0].first, b_ends[0].second,
                     b_ends[1].first, b_ends[1].second,
-                    kCoincidentTolerance)) {
+                    0.10)) {
         a_pivot_index = i; b_pivot_index = -1; break;
       }
     }
@@ -84,12 +93,17 @@ void update_angle_dimension(FeatureEntry& feature,
       if (pt_on_seg(b_ends[j].first, b_ends[j].second,
                     a_ends[0].first, a_ends[0].second,
                     a_ends[1].first, a_ends[1].second,
-                    kCoincidentTolerance)) {
+                    0.10)) {
         a_pivot_index = -1; b_pivot_index = j; break;
       }
     }
   }
-  if (a_pivot_index < 0 && b_pivot_index < 0) {
+  // Virtual pivot: stored on dimension for non-intersecting lines.
+  // Use the stored pivot for angle computation, but rotate the driven
+  // line around its own endpoint (not the virtual pivot).
+  bool use_virtual_pivot = dimension.pivot_x.has_value() &&
+                           dimension.pivot_y.has_value();
+  if (a_pivot_index < 0 && b_pivot_index < 0 && !use_virtual_pivot) {
     throw std::runtime_error(
         "Angle dimension requires the two lines to share an endpoint "
         "or have one endpoint on the other line");
@@ -99,6 +113,8 @@ void update_angle_dimension(FeatureEntry& feature,
   double a_dx, a_dy, b_dx, b_dy;
   bool drive_a = false;  // true → rotate line A; false → rotate line B
   int driven_pivot_index = 0;
+  double delta = 0.0;
+  double current_signed_for_value = 0.0;
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kTwoPi = 2.0 * kPi;
   double requested = std::fmod(std::abs(value), kTwoPi);
@@ -108,7 +124,179 @@ void update_angle_dimension(FeatureEntry& feature,
   const double target_small_angle =
       requested > kPi ? kTwoPi - requested : requested;
 
-  if (b_pivot_index >= 0) {
+  if (use_virtual_pivot) {
+    // Compute angle delta from virtual-pivot directions, then rotate
+    // line B around the virtual pivot itself so the crossing point
+    // (infinite-line intersection) stays fixed.
+    // Recompute virtual pivot from current line positions.
+    double vpx, vpy;
+    {
+      double a_dx_inf = a_ends[1].first - a_ends[0].first;
+      double a_dy_inf = a_ends[1].second - a_ends[0].second;
+      double b_dx_inf = b_ends[1].first - b_ends[0].first;
+      double b_dy_inf = b_ends[1].second - b_ends[0].second;
+      double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+      if (std::abs(det) > 1e-12) {
+        double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                    (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+        vpx = a_ends[0].first + t * a_dx_inf;
+        vpy = a_ends[0].second + t * a_dy_inf;
+        dimension.pivot_x = vpx;
+        dimension.pivot_y = vpy;
+      } else {
+        vpx = *dimension.pivot_x;
+        vpy = *dimension.pivot_y;
+      }
+    }
+    auto vdir = [](double px, double py,
+                   double e0x, double e0y,
+                   double e1x, double e1y) -> std::pair<double, double> {
+      double d0 = std::sqrt((e0x - px)*(e0x - px) + (e0y - py)*(e0y - py));
+      double d1 = std::sqrt((e1x - px)*(e1x - px) + (e1y - py)*(e1y - py));
+      double tx = d0 > d1 ? e0x : e1x;
+      double ty = d0 > d1 ? e0y : e1y;
+      double dx = tx - px, dy = ty - py;
+      double len = std::sqrt(dx*dx + dy*dy);
+      if (len < 1e-12) return {1.0, 0.0};
+      return {dx / len, dy / len};
+    };
+    // Measure current signed angle from the endpoint-direction pair
+    // whose absolute angle is closest to target_small_angle.  This
+    // ensures that when the user picks the supplement quadrant the
+    // delta is ≈ 0 — no unnecessary line rotation.
+    {
+      auto unit = [](double x, double y, double px, double py) {
+        double dx = x - px, dy = y - py;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+        return std::pair<double, double>{dx / len, dy / len};
+      };
+      std::pair<double, double> a_units[2] = {
+          unit(a_ends[0].first, a_ends[0].second, vpx, vpy),
+          unit(a_ends[1].first, a_ends[1].second, vpx, vpy)};
+      std::pair<double, double> b_units[2] = {
+          unit(b_ends[0].first, b_ends[0].second, vpx, vpy),
+          unit(b_ends[1].first, b_ends[1].second, vpx, vpy)};
+      auto av_def = vdir(vpx, vpy, a_ends[0].first, a_ends[0].second,
+                                      a_ends[1].first, a_ends[1].second);
+      auto bv_def = vdir(vpx, vpy, b_ends[0].first, b_ends[0].second,
+                                      b_ends[1].first, b_ends[1].second);
+      double best_diff = 1e9;
+      for (int ai = 0; ai < 2; ++ai) {
+        for (int bi = 0; bi < 2; ++bi) {
+          double cross = a_units[ai].first * b_units[bi].second -
+                         a_units[ai].second * b_units[bi].first;
+          double dot   = a_units[ai].first * b_units[bi].first +
+                         a_units[ai].second * b_units[bi].second;
+          double measured = std::abs(std::atan2(cross, dot));
+          double diff = std::abs(measured - target_small_angle);
+          bool is_def =
+              (a_units[ai].first == av_def.first && a_units[ai].second == av_def.second) &&
+              (b_units[bi].first == bv_def.first && b_units[bi].second == bv_def.second);
+          if (is_def) diff -= 1e-12;  // prefer dir_away on ties
+          if (cross == 0.0 && dot == 0.0) continue;
+          if (diff < best_diff) {
+            best_diff = diff;
+            current_signed_for_value = std::atan2(cross, dot);
+          }
+        }
+      }
+    }
+    auto wrap = [](double angle) {
+      constexpr double kLocPi = 3.14159265358979323846;
+      constexpr double kLocTwoPi = 2.0 * kLocPi;
+      double w = std::fmod(angle, kLocTwoPi);
+      if (w <= -kLocPi) w += kLocTwoPi;
+      else if (w > kLocPi) w -= kLocTwoPi;
+      return w;
+    };
+    const double v_positive_target = wrap(requested);
+    const double v_negative_target = wrap(-requested);
+    const double v_positive_delta = wrap(v_positive_target - current_signed_for_value);
+    const double v_negative_delta = wrap(v_negative_target - current_signed_for_value);
+    delta = std::abs(v_positive_delta) <= std::abs(v_negative_delta)
+                ? v_positive_delta : v_negative_delta;
+
+    constexpr double kLocalAngleConfirmTolerance = 1e-4;
+    if (std::abs(delta) <= kLocalAngleConfirmTolerance) {
+      dimension.value = requested > kPi
+                            ? (current_signed_for_value < 0.0 ? -std::abs(value)
+                                                       : std::abs(value))
+                            : current_signed_for_value;
+      return;
+    }
+
+    // Rotate line B around the virtual pivot so the crossing point
+    // (infinite-line intersection) stays fixed.  Unlike the
+    // shared-endpoint case where one endpoint is the natural anchor,
+    // here both endpoints translate together.
+    {
+      const double cos_d = std::cos(delta);
+      const double sin_d = std::sin(delta);
+
+      const double b0_dx = b_ends[0].first - vpx;
+      const double b0_dy = b_ends[0].second - vpy;
+      const double b1_dx = b_ends[1].first - vpx;
+      const double b1_dy = b_ends[1].second - vpy;
+
+      const double new_b0_dx = b0_dx * cos_d - b0_dy * sin_d;
+      const double new_b0_dy = b0_dx * sin_d + b0_dy * cos_d;
+      const double new_b1_dx = b1_dx * cos_d - b1_dy * sin_d;
+      const double new_b1_dy = b1_dx * sin_d + b1_dy * cos_d;
+
+      const double new_start_x = vpx + new_b0_dx;
+      const double new_start_y = vpy + new_b0_dy;
+      const double new_end_x   = vpx + new_b1_dx;
+      const double new_end_y   = vpy + new_b1_dy;
+
+      const double previous_start_x = line_b.start_x;
+      const double previous_start_y = line_b.start_y;
+      const double previous_end_x   = line_b.end_x;
+      const double previous_end_y   = line_b.end_y;
+
+      line_b.start_x = new_start_x;
+      line_b.start_y = new_start_y;
+      line_b.end_x   = new_end_x;
+      line_b.end_y   = new_end_y;
+
+      // Do NOT snap endpoints to coincident geometry — these are
+      // independent crossing lines.  Snapping would merge point IDs
+      // when the lines happen to be collinear, binding them together
+      // so that subsequent edits rotate both lines instead of one.
+      validate_line(line_b.start_x, line_b.start_y,
+                    line_b.end_x, line_b.end_y);
+
+      if (!points_match(previous_start_x, previous_start_y,
+                        line_b.start_x, line_b.start_y)) {
+        propagate_connected_point_move(parameters,
+            line_b.start_point_id,
+            line_b.start_x, line_b.start_y);
+      }
+      if (!points_match(previous_end_x, previous_end_y,
+                        line_b.end_x, line_b.end_y)) {
+        propagate_connected_point_move(parameters,
+            line_b.end_point_id,
+            line_b.end_x, line_b.end_y);
+      }
+    }
+
+    auto final_wrap = [](double angle) {
+      constexpr double kFPi = 3.14159265358979323846;
+      constexpr double kFTwoPi = 2.0 * kFPi;
+      double w = std::fmod(angle, kFTwoPi);
+      if (w <= -kFPi) w += kFTwoPi;
+      else if (w > kFPi) w -= kFTwoPi;
+      return w;
+    };
+    const double target_signed =
+        final_wrap(current_signed_for_value + delta);
+    dimension.value = requested > kPi
+                          ? (target_signed < 0.0 ? -std::abs(value)
+                                                 : std::abs(value))
+                          : target_signed;
+    refresh_sketch_derived_state(feature);
+    return;
+  } else if (b_pivot_index >= 0) {
     // Pivot is an endpoint of line B.  Line B rotates.
     pivot_x = b_ends[b_pivot_index].first;
     pivot_y = b_ends[b_pivot_index].second;
@@ -143,6 +331,7 @@ void update_angle_dimension(FeatureEntry& feature,
     driven_pivot_index = a_pivot_index;
   }
 
+  if (!use_virtual_pivot) {
   const double a_length = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_length = std::sqrt(b_dx * b_dx + b_dy * b_dy);
   if (a_length <= kMinimumSketchDimensionValue ||
@@ -172,10 +361,10 @@ void update_angle_dimension(FeatureEntry& feature,
       wrap_signed_angle(positive_target - current_signed);
   const double negative_delta =
       wrap_signed_angle(negative_target - current_signed);
-  const double delta = std::abs(positive_delta) <= std::abs(negative_delta)
-                           ? positive_delta
-                           : negative_delta;
-  const double target_signed = wrap_signed_angle(current_signed + delta);
+  delta = std::abs(positive_delta) <= std::abs(negative_delta)
+              ? positive_delta
+              : negative_delta;
+  current_signed_for_value = current_signed;
 
   constexpr double kAngleConfirmTolerance = 1e-4;
   if (std::abs(delta) <= kAngleConfirmTolerance) {
@@ -185,6 +374,7 @@ void update_angle_dimension(FeatureEntry& feature,
                           : current_signed;
     return;
   }
+  }  // !use_virtual_pivot
 
   const double cos_delta = std::cos(delta);
   const double sin_delta = std::sin(delta);
@@ -226,6 +416,16 @@ void update_angle_dimension(FeatureEntry& feature,
   propagate_connected_point_move(
       parameters, moved_point_id, new_other_x, new_other_y);
 
+  auto final_wrap = [](double angle) {
+    constexpr double kFPi = 3.14159265358979323846;
+    constexpr double kFTwoPi = 2.0 * kFPi;
+    double w = std::fmod(angle, kFTwoPi);
+    if (w <= -kFPi) w += kFTwoPi;
+    else if (w > kFPi) w -= kFTwoPi;
+    return w;
+  };
+  const double target_signed =
+      final_wrap(current_signed_for_value + delta);
   dimension.value = requested > kPi
                         ? (target_signed < 0.0 ? -std::abs(value)
                                                : std::abs(value))

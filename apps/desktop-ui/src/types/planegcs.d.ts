@@ -1,7 +1,8 @@
 declare module "@salusoft89/planegcs" {
   export enum Algorithm {
-    LevenbergMarquardt = 0,
-    DogLeg = 1,
+    BFGS = 0,
+    LevenbergMarquardt = 1,
+    DogLeg = 2,
   }
 
   export interface GcsWrapper {

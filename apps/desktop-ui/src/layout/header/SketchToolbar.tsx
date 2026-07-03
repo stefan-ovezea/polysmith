@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from "react";
-import { ConstraintType, SketchTool, ArmedSketchConstraint } from "@/types";
+import { ConstraintType, SketchTool, ArmedSketchConstraint, type DimensionToolMode } from "@/types";
 import { formatHotkey, useAppConfig } from "@/config";
 import type { AppHotkeys, CrosshairMode } from "@/config";
 import { Dropdown, SplitToolButton } from "@/lib";
-import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon } from "./ToolBarIcons";
+import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon, DimensionIcon } from "./ToolBarIcons";
 import { useTranslation } from "react-i18next";
 import { HelpPopover } from "@/layout/HelpPopover";
 import { helpRegistry } from "@/lib/help-index";
@@ -45,6 +45,9 @@ interface SketchToolbarProps {
   onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point") => void;
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
+  // Dimension tool split button mode
+  dimensionToolMode: DimensionToolMode;
+  onSetDimensionToolMode: (mode: DimensionToolMode) => void;
 }
 
 const sketchTools: Array<{
@@ -99,6 +102,8 @@ export function SketchToolbar({
   onSetRectangleToolMode,
   onSetCircleToolMode,
   onSetPolygonToolMode,
+  dimensionToolMode,
+  onSetDimensionToolMode,
 }: SketchToolbarProps) {
   const { config, updateConfig } = useAppConfig();
   const { t } = useTranslation();
@@ -113,7 +118,7 @@ export function SketchToolbar({
       helpTimerRef.current = null;
       setHelpToolId(toolId);
       setHelpAnchor(el);
-    }, 200);
+    }, 800);
   }, []);
 
   const closeHelp = useCallback(() => {
@@ -158,7 +163,7 @@ export function SketchToolbar({
         {activeSketchPlaneId ? t("toolbar.finishSketch") : t("toolbar.createSketch")}
       </button>
       {sketchTools
-        .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon")
+         .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension")
         .map((tool) => (
         <span
           key={tool.id}
@@ -166,6 +171,7 @@ export function SketchToolbar({
           onMouseLeave={closeHelp}
           onFocus={(e) => openHelp(tool.id, e.currentTarget)}
           onBlur={closeHelp}
+          onClick={closeHelp}
         >
         <button
           className={
@@ -206,6 +212,7 @@ export function SketchToolbar({
         onMouseLeave={closeHelp}
         onFocus={(e) => openHelp("rectangle", e.currentTarget)}
         onBlur={closeHelp}
+        onClick={closeHelp}
       >
       <SplitToolButton
         options={[
@@ -234,6 +241,7 @@ export function SketchToolbar({
         onMouseLeave={closeHelp}
         onFocus={(e) => openHelp("arc", e.currentTarget)}
         onBlur={closeHelp}
+        onClick={closeHelp}
       >
       <SplitToolButton
         options={[
@@ -261,6 +269,7 @@ export function SketchToolbar({
         onMouseLeave={closeHelp}
         onFocus={(e) => openHelp("circle", e.currentTarget)}
         onBlur={closeHelp}
+        onClick={closeHelp}
       >
       <SplitToolButton
         options={[
@@ -291,6 +300,7 @@ export function SketchToolbar({
         onMouseLeave={closeHelp}
         onFocus={(e) => openHelp("polygon", e.currentTarget)}
         onBlur={closeHelp}
+        onClick={closeHelp}
       >
       <SplitToolButton
         options={[
@@ -312,6 +322,39 @@ export function SketchToolbar({
         ariaLabel={t("toolbar.polygon")}
       >
         <PolygonIcon />
+      </SplitToolButton>
+      </span>
+      <span
+        onMouseEnter={(e) => openHelp("dimension", e.currentTarget)}
+        onMouseLeave={closeHelp}
+        onFocus={(e) => openHelp("dimension", e.currentTarget)}
+        onBlur={closeHelp}
+        onClick={closeHelp}
+      >
+      <SplitToolButton
+        options={[
+          { value: "auto" as const, label: t("toolbar.dimensionAuto") },
+          { value: "linear" as const, label: t("toolbar.dimensionLinear") },
+          { value: "aligned" as const, label: t("toolbar.dimensionAligned") },
+          { value: "angular" as const, label: t("toolbar.dimensionAngular") },
+          { value: "radius" as const, label: t("toolbar.dimensionRadius") },
+          { value: "diameter" as const, label: t("toolbar.dimensionDiameter") },
+          { value: "arc_length" as const, label: t("toolbar.dimensionArcLength") },
+        ]}
+        value={dimensionToolMode}
+        onChange={onSetDimensionToolMode}
+        onPrimaryAction={() => {
+          onCancelSketchConstraint();
+          void onSetSketchTool("dimension");
+        }}
+        isActive={activeSketchPlaneId ? activeSketchTool === "dimension" : false}
+        disabled={!activeSketchPlaneId}
+        tooltip={toolLabel(
+          sketchTools.find((t) => t.id === "dimension")!,
+        )}
+        ariaLabel={t("toolbar.dimension")}
+      >
+        <DimensionIcon />
       </SplitToolButton>
       </span>
       <div className="h-8 w-px bg-white/10" />

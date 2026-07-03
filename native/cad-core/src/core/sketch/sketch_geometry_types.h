@@ -20,6 +20,9 @@ struct SketchLine {
   double end_x;
   double end_y;
   std::optional<std::string> constraint;
+  // When true, the H/V constraint on this line is a reference (driven)
+  // constraint. The solver ignores it; the UI renders it in parentheses.
+  bool constraint_driven = false;
   // True when the line is a "construction" line (contextual modeling
   // dashed reference geometry). Construction lines participate in
   // snapping and constraints, but are excluded from profile loop

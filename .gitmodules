@@ -11,3 +11,6 @@
 	url = https://github.com/Salusoft89/planegcs.git
 	branch = main
 	ignore = dirty
+[submodule "third_party/libdxfrw"]
+	path = third_party/libdxfrw
+	url = https://github.com/codelibs/libdxfrw.git

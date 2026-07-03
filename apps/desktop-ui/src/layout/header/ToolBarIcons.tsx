@@ -32,7 +32,7 @@ const LineIcon = () => (
   </svg>
 );
 
-const DimensionIcon = () => (
+export const DimensionIcon = () => (
   <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"

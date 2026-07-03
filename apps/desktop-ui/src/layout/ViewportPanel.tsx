@@ -46,6 +46,8 @@ import {
   createCubeRenderTarget,
   createCubeBlitScene,
   disposeCubeBlitScene,
+  resolveSketchPlanePoint,
+  buildSketchDimensionObject,
 } from "@/utils";
 import type { ViewCubeHit, CubeBlitScene } from "@/utils";
 import { makeGetViewportStateCommand } from "@/lib/ipcProtocol";
@@ -53,6 +55,7 @@ import { useCadCoreStore } from "@/state/cadCoreStore";
 import {
   disposeDynamicGrid,
   getOrthographicViewHeight,
+  getSketchGridFrame,
   type ActiveSketchGridPlaneFrame,
   type DynamicGridRef,
 } from "./viewport/grid";
@@ -111,6 +114,8 @@ import { handleActiveSketchPointerMove } from "./viewport/activeSketchPointerMov
 import { renderTrimPreviewHighlight } from "./viewport/trimPreviewHighlight";
 import { createDimensionRelationPreviewActions } from "./viewport/dimensionRelationPreviewActions";
 import { createLineAnglePreview } from "./viewport/dimensionRelationPreviewGeometry";
+import { beginLinearPlacement, updateLinearPlacementPreview, cancelLinearPlacement as cancelLinearPlacementPreview, resolveLinearPlacementCommit } from "./viewport/linearDimensionPlacement";
+import type { LinearPlacementState } from "./viewport/linearDimensionPlacement";
 import { createDimensionRelationPlacementActions } from "./viewport/dimensionRelationPlacementActions";
 import { createDimensionToolActions } from "./viewport/dimensionToolActions";
 import {
@@ -220,6 +225,7 @@ export function ViewportPanel({
   onAddSketchAngleDimension,
   onAddSketchDistanceDimension,
   onAddSketchLineLengthDimension,
+  onAddSketchLineAngleDimension,
   onAddSketchCircleRadiusDimension,
   onAddSketchPolygonRadiusDimension,
   onSetSketchLineConstraint,
@@ -237,6 +243,8 @@ export function ViewportPanel({
   onSetCircleToolMode,
   polygonToolMode,
   onSetPolygonToolMode,
+  dimensionToolMode,
+  onSetDimensionToolMode,
   onAddSketchPolygon,
   onAddSketchFillet,
   onSelectSketchEntity,
@@ -256,6 +264,8 @@ export function ViewportPanel({
   onTrimSketchEntity,
   onDeleteSketchSelection,
   onDeleteSketchDimension,
+  onToggleSketchDimensionDriven,
+  onSetSketchLineConstruction,
   onAddSketchPointDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
@@ -303,6 +313,13 @@ export function ViewportPanel({
     id: string;
     x: number;
     y: number;
+  } | null>(null);
+  // Linear placement: when dimension tool is in "linear" mode and user
+  // clicks a line, we defer IPC and show a live preview during drag.
+  const linearPlacementRef = useRef<LinearPlacementState | null>(null);
+  const linearPlacementPreviewRef = useRef<{
+    line: THREE.Object3D;
+    label: THREE.Sprite;
   } | null>(null);
   const [constraintPreview, setConstraintPreviewState] =
     useState<ConstraintPreviewState | null>(null);
@@ -477,6 +494,10 @@ export function ViewportPanel({
     new Map<string, THREE.Line | THREE.LineLoop>(),
   );
   const sketchDimensionObjectsRef = useRef<Array<THREE.Object3D>>([]);
+  /** dimensionId → {line, label} for in-place mutation during label drag */
+  const dimensionObjectByIdRef = useRef<
+    Map<string, { line: THREE.Group; label: THREE.Sprite }>
+  >(new Map());
   const sketchConstraintObjectsRef = useRef<Array<THREE.Object3D>>([]);
   const sketchPointObjectsRef = useRef<THREE.Mesh[]>([]);
   const sketchPointObjectByIdRef = useRef(new Map<string, THREE.Mesh>());
@@ -564,6 +585,7 @@ export function ViewportPanel({
   const rectangleToolModeRef = useRef(rectangleToolMode);
   const circleToolModeRef = useRef(circleToolMode);
   const polygonToolModeRef = useRef(polygonToolMode);
+  const dimensionToolModeRef = useRef(dimensionToolMode);
   const addSketchPolygonRef = useRef(onAddSketchPolygon);
   const addSketchFilletRef = useRef(onAddSketchFillet);
   // Arc placement requires three clicks. The first click goes through
@@ -592,6 +614,8 @@ export function ViewportPanel({
   const trimSketchEntityRef = useRef(onTrimSketchEntity);
   const deleteSketchSelectionRef = useRef(onDeleteSketchSelection);
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
+  const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
+  const setSketchLineConstructionRef = useRef(onSetSketchLineConstruction);
   const addSketchPointDistanceDimensionRef = useRef(
     onAddSketchPointDistanceDimension,
   );
@@ -703,6 +727,9 @@ export function ViewportPanel({
   const addSketchDistanceDimensionRef = useRef(onAddSketchDistanceDimension);
   const addSketchLineLengthDimensionRef = useRef(
     onAddSketchLineLengthDimension,
+  );
+  const addSketchLineAngleDimensionRef = useRef(
+    onAddSketchLineAngleDimension,
   );
   const addSketchCircleRadiusDimensionRef = useRef(
     onAddSketchCircleRadiusDimension,
@@ -961,6 +988,9 @@ export function ViewportPanel({
     draftDimensionSessionRef.current = draftDimensionSession;
   }, [draftDimensionSession]);
   useEffect(() => {
+    dimensionToolModeRef.current = dimensionToolMode;
+  }, [dimensionToolMode]);
+  useEffect(() => {
     if (!draftDimensionSession) {
       return;
     }
@@ -1161,6 +1191,7 @@ export function ViewportPanel({
       clearPreviewDimension,
       hideRelationPreviewDimension,
       readDimensionPreviewFilter,
+      dimensionToolModeRef,
     });
 
   function clearDraftDimGroup() {
@@ -1202,6 +1233,7 @@ export function ViewportPanel({
     referencePlaneMeshesRef.current = [];
     sketchEntityObjectsRef.current = [];
     sketchDimensionObjectsRef.current = [];
+    dimensionObjectByIdRef.current.clear();
     sketchConstraintObjectsRef.current = [];
     sketchPointObjectsRef.current = [];
     sketchProfileObjectsRef.current = [];
@@ -1287,6 +1319,8 @@ export function ViewportPanel({
     createDimensionAngleOrDistance: dimCreateAngleOrDistance,
     createDimensionCircle: dimCreateCircle,
     createDimensionLine: dimCreateLine,
+    createDimensionLineAngle: dimCreateLineAngle,
+    createDimensionLinear: dimCreateLinearThin,
     createDimensionPointDistance: dimCreatePointDistance,
     createDimensionPolygon: dimCreatePolygon,
     selectDimensionCircle: dimSelectCircle,
@@ -1303,14 +1337,44 @@ export function ViewportPanel({
     pendingRelationPlacementMatchRef,
     addSketchCircleRadiusDimensionRef,
     addSketchLineLengthDimensionRef,
+    addSketchLineAngleDimensionRef,
     addSketchPolygonRadiusDimensionRef,
     addSketchAngleDimensionRef,
     addSketchDistanceDimensionRef,
     addSketchPointDistanceDimensionRef,
     updateSketchDimensionRef,
     setDimensionToolFirstLine,
-    handleDimensionClick,
   });
+
+  // Override the thin createDimensionLinear from dimensionToolActions with
+  // the real implementation that has access to ViewportPanel refs.
+  function startLinearPlacement(lineId: string) {
+    // Run the original thin action (sets refs, marks placement pending).
+    dimCreateLinearThin(lineId);
+
+    // Try to resolve line endpoints now; defer to pointer move if
+    // sketch data isn't available yet.
+    const sketch = sketchLinesRef.current;
+    const line = sketch?.lines.find((l) => l.line_id === lineId);
+
+    linearPlacementRef.current = {
+      lineId,
+      startPointId: line?.start_point_id ?? "",
+      endPointId: line?.end_point_id ?? "",
+      startX: line?.start_x ?? 0,
+      startY: line?.start_y ?? 0,
+      endX: line?.end_x ?? 0,
+      endY: line?.end_y ?? 0,
+      currentAxis: undefined,
+      lastCursorX: 0,
+      lastCursorY: 0,
+    };
+
+    // Disable orbit controls during placement.
+    controlsRef.current!.enabled = false;
+    const canvas = rendererRef.current?.domElement as HTMLCanvasElement | undefined;
+    if (canvas) canvas.style.cursor = "grabbing";
+  }
 
   function dimensionCoreValue(
     dimension: SketchDimensionScene,
@@ -1418,6 +1482,51 @@ export function ViewportPanel({
     return true;
   }
 
+  /** Rebuild the Three.js objects for a single dimension in-place —
+   *  disposes the old geometry, builds new geometry from the shifted
+   *  scene data, and swaps it into the sketch group.  Used during
+   *  label drag to avoid full scene rebuilds. */
+  function rebuildDimensionSceneObject(
+    shifted: SketchDimensionScene,
+    displayUnits?: "mm" | "in",
+  ) {
+    const sketchGroup = sketchGroupRef.current;
+    if (!sketchGroup) return;
+
+    const objects = dimensionObjectByIdRef.current.get(shifted.dimensionId);
+    if (!objects) return;
+
+    // Build replacement objects from the shifted dimension data
+    const replacement = buildSketchDimensionObject(shifted, displayUnits);
+
+    // Swap line group: remove old, dispose, add new
+    sketchGroup.remove(objects.line);
+    disposeGroup(objects.line);
+
+    // Swap label sprite: remove old, dispose, add new
+    sketchGroup.remove(objects.label);
+    objects.label.geometry?.dispose();
+    const mat = objects.label.material as THREE.SpriteMaterial;
+    mat?.map?.dispose();
+    mat?.dispose();
+
+    sketchGroup.add(replacement.line);
+    sketchGroup.add(replacement.label);
+
+    // Update refs so the dimension is still findable
+    dimensionObjectByIdRef.current.set(shifted.dimensionId, {
+      line: replacement.line as THREE.Group,
+      label: replacement.label,
+    });
+
+    // Update sketchDimensionObjectsRef (flat array) — swap old entries
+    const all = sketchDimensionObjectsRef.current;
+    const oldLineIdx = all.indexOf(objects.line);
+    const oldLabelIdx = all.indexOf(objects.label);
+    if (oldLineIdx !== -1) all[oldLineIdx] = replacement.line;
+    if (oldLabelIdx !== -1) all[oldLabelIdx] = replacement.label;
+  }
+
   const {
     beginDimensionPlacement,
     cancelDimensionPlacement,
@@ -1438,6 +1547,7 @@ export function ViewportPanel({
     pendingRelationPlacementLabelRef,
     dimensionLabelPositionsRef,
     setDimensionLabelPositions,
+    dimensionObjectByIdRef,
     angleDragRadiiRef,
     setAngleDragRadii,
     anglePlacementPreviewsRef,
@@ -1449,6 +1559,8 @@ export function ViewportPanel({
     angleDimensionFrame,
     clearPreviewDimension,
     setCanvasCursor,
+    rebuildDimensionSceneObject,
+    displayUnits: config.displayUnits,
   });
 
   const {
@@ -1770,6 +1882,7 @@ export function ViewportPanel({
       addSketchAngleDimensionRef,
       addSketchDistanceDimensionRef,
       addSketchLineLengthDimensionRef,
+      addSketchLineAngleDimensionRef,
       addSketchCircleRadiusDimensionRef,
       addSketchPolygonRadiusDimensionRef,
       setSketchLineConstraintRef,
@@ -1826,6 +1939,7 @@ export function ViewportPanel({
       onAddSketchAngleDimension,
       onAddSketchDistanceDimension,
       onAddSketchLineLengthDimension,
+      onAddSketchLineAngleDimension,
       onAddSketchCircleRadiusDimension,
       onAddSketchPolygonRadiusDimension,
       onSetSketchLineConstraint,
@@ -2527,6 +2641,54 @@ export function ViewportPanel({
         return;
       }
 
+      // Linear placement live preview: update as cursor moves.
+      if (linearPlacementRef.current && activeSketchPlaneIdRef.current) {
+        // Refresh endpoint data in case the sketch state was stale at click time.
+        const sketch = sketchLinesRef.current;
+        const line = sketch?.lines.find((l) => l.line_id === linearPlacementRef.current!.lineId);
+        if (line) {
+          linearPlacementRef.current.startPointId = line.start_point_id;
+          linearPlacementRef.current.endPointId = line.end_point_id;
+          linearPlacementRef.current.startX = line.start_x;
+          linearPlacementRef.current.startY = line.start_y;
+          linearPlacementRef.current.endX = line.end_x;
+          linearPlacementRef.current.endY = line.end_y;
+        }
+
+        const resolved = resolveSketchPlanePoint(
+          event,
+          renderer,
+          camera,
+          activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrameRef.current,
+        );
+        if (resolved && sketchGroupRef.current && line) {
+          // Check for relation preview candidates first (e.g. angle
+          // between two lines sharing an endpoint).  When the cursor
+          // is near a second entity that forms a valid relation with
+          // the staged first entity, the relation ghost takes priority
+          // over the linear placement preview.
+          const relation = updateDimensionRelationPreview(resolved.local);
+          if (relation) {
+            // Clean up linear placement preview so it doesn't overlap
+            // the relation ghost.
+            cancelLinearPlacementPreview(sketchGroupRef.current, linearPlacementPreviewRef);
+          } else {
+            updateLinearPlacementPreview(
+              linearPlacementRef.current,
+              resolved.local,
+              activeSketchPlaneIdRef.current,
+              activeSketchPlaneFrameRef.current,
+              config.displayUnits,
+              sketchGroupRef.current,
+              linearPlacementPreviewRef,
+            );
+          }
+        }
+        // Always consume the event — user is in placement mode.
+        return;
+      }
+
       if (
         handleEndpointDragPointerMove({
           event,
@@ -2576,11 +2738,11 @@ export function ViewportPanel({
       pointerDown = null;
       if (moveGizmoDragRef.current) {
         moveGizmoDragRef.current = null;
-        controls.enabled = true;
+        controlsRef.current!.enabled = true;
       }
       if (!dimensionLabelDragRef.current?.isPlacement) {
         dimensionLabelDragRef.current = null;
-        controls.enabled = true;
+        controlsRef.current!.enabled = true;
       }
       (renderer.domElement as HTMLCanvasElement).style.cursor = "";
       setSketchSnapLabel(null);
@@ -2635,7 +2797,7 @@ export function ViewportPanel({
       }
 
       dimensionLabelDragRef.current = null;
-      controls.enabled = true;
+      controlsRef.current!.enabled = true;
       // Clear the dimension tool's staged first-pick so the next
       // entity click starts a fresh dimension instead of leaking
       // a stale two-pick workflow (e.g. "Angle dimension already
@@ -2706,6 +2868,55 @@ export function ViewportPanel({
     function handlePointerUp(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
+
+      // Linear placement commit: create the dimension with the chosen axis.
+      // But first, check if the user clicked on a second entity that forms
+      // a valid relation (e.g. angle between two lines sharing an endpoint).
+      // If a relation preview is active, commit it instead of the linear
+      // placement dimension.
+      if (linearPlacementRef.current) {
+        if (commitDimensionRelationPreview()) {
+          // Relation committed — clean up linear placement state.
+          cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+          linearPlacementRef.current = null;
+          return;
+        }
+        const state = linearPlacementRef.current;
+        linearPlacementRef.current = null;
+        cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+        controlsRef.current!.enabled = true;
+        (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+        const commit = resolveLinearPlacementCommit(state);
+
+        if (commit.kind === "line_length") {
+          void addSketchLineLengthDimensionRef.current(commit.lineId).then(() => {
+            updateSketchDimensionLabelPositionRef.current(
+              `dim-line-${commit.lineId}`,
+              commit.labelX,
+              commit.labelY,
+            );
+          });
+        } else {
+          void addSketchPointDistanceDimensionRef.current(
+            commit.pointAId,
+            commit.pointBId,
+            commit.axis,
+          ).then(() => {
+            updateSketchDimensionLabelPositionRef.current(
+              `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`,
+              commit.labelX,
+              commit.labelY,
+            );
+          });
+        }
+        pendingDimensionPlacementRef.current = false;
+        pendingDimSourceEntityIdRef.current = null;
+        pendingDimensionIdRef.current = null;
+        dimensionToolFirstLineRef.current = null;
+        setDimensionToolFirstLine(null);
+        return;
+      }
+
       handleViewportPointerUp({
         event,
         renderer,
@@ -2774,6 +2985,8 @@ export function ViewportPanel({
 	        createDimensionAngleOrDistance: dimCreateAngleOrDistance,
 	        createDimensionPointDistance: dimCreatePointDistance,
 	        createDimensionLine: dimCreateLine,
+		createDimensionLineAngle: dimCreateLineAngle,
+        createDimensionLinear: startLinearPlacement,
 	        createDimensionCircle: dimCreateCircle,
 	        selectDimensionCircle: dimSelectCircle,
 	        createDimensionPolygon: dimCreatePolygon,
@@ -2794,6 +3007,7 @@ export function ViewportPanel({
 	        rectangleToolMode: rectangleToolModeRef.current,
 	        circleToolMode: circleToolModeRef.current,
 	        polygonToolMode: polygonToolModeRef.current,
+	        dimensionToolMode: dimensionToolModeRef.current,
 	        polygonSides: polygonSidesRef.current,
 	        isConstruction: sketchToolConstructionRef.current,
 	        clearPreviews: () => {
@@ -3039,6 +3253,7 @@ export function ViewportPanel({
         selectedConstraint: selectedConstraintRef,
         sketchEntityObjects: sketchEntityObjectsRef,
         sketchDimensionObjects: sketchDimensionObjectsRef,
+        dimensionObjectById: dimensionObjectByIdRef,
         sketchProfileObjects: sketchProfileObjectsRef,
         sketchProfileVisuals: sketchProfileVisualsRef,
         sketchProfileStates: sketchProfileStatesRef,
@@ -3083,6 +3298,12 @@ export function ViewportPanel({
     setConstraintPreview(null);
     clearDraftDimensionSession();
     cancelDimensionPlacement();
+    // Also cancel any in-progress linear placement preview.
+    if (linearPlacementRef.current) {
+      linearPlacementRef.current = null;
+      cancelLinearPlacementPreview(sketchGroupRef.current!, linearPlacementPreviewRef);
+      controlsRef.current!.enabled = true;
+    }
     pendingDimensionPlacementRef.current = false;
     // Reset the dimension tool's pending first-line on every tool
     // switch so it can't leak across tools or sketches.
@@ -3196,6 +3417,8 @@ export function ViewportPanel({
     unlinkBodyCopyRef,
     deleteSketchSelectionRef,
     deleteSketchDimensionRef,
+    toggleSketchDimensionDrivenRef,
+    setSketchLineConstructionRef,
     clearSketchConstraintRef,
     updateSketchDimensionDisplayRef,
   });
@@ -3326,6 +3549,7 @@ export function ViewportPanel({
       polygonSides={polygonSides}
       polygonToolMode={polygonToolMode}
       rectangleToolMode={rectangleToolMode}
+      dimensionToolMode={dimensionToolMode}
       selectedConstraint={selectedConstraint}
       selectedEntityDof={selectedEntityDof}
       selectedPrimitiveLabel={selectedPrimitiveLabel}
@@ -3382,6 +3606,7 @@ export function ViewportPanel({
       onSetCircleToolMode={onSetCircleToolMode}
       onSetPolygonToolMode={onSetPolygonToolMode}
       onSetRectangleToolMode={onSetRectangleToolMode}
+      onSetDimensionToolMode={onSetDimensionToolMode}
       onSketchToolConstructionChange={(checked) => {
         sketchToolConstructionRef.current = checked;
         setSketchToolConstruction(checked);

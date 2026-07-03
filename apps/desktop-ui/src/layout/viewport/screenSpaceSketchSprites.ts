@@ -174,6 +174,13 @@ function updateSpriteScale({
     | undefined;
   if (basePosition) {
     sprite.position.set(...basePosition);
+    // Offset the label slightly toward the camera so raycasting
+    // always hits the label before overlapping arc/line geometry
+    // that sits at the same world-space position (e.g. the angle
+    // dimension arc and its label at the bisector).
+    const cameraDir = new THREE.Vector3();
+    camera.getWorldDirection(cameraDir);
+    sprite.position.addScaledVector(cameraDir, -worldUnitsPerPixel * 3);
   }
   sprite.scale.set(
     screenSize.width * scale * viewportScale * worldUnitsPerPixel,

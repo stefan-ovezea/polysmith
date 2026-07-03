@@ -14,6 +14,7 @@ import {
   makeUpdateSketchFilletRadiusCommand,
   makeDeleteSketchFilletCommand,
   makeDeleteSketchDimensionCommand,
+  makeToggleSketchDimensionDrivenCommand,
   makeTrimSketchEntityCommand,
   makeUpdateSketchDimensionDisplayCommand,
   makeUpdateSketchDimensionLabelPositionCommand,
@@ -31,6 +32,7 @@ import {
   makeAddSketchAngleDimensionCommand,
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
+  makeAddSketchLineAngleDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
   makeAddSketchPointDistanceDimensionCommand,
   makeAddSketchPolygonRadiusDimensionCommand,
@@ -740,18 +742,20 @@ export function useCadCore() {
     addSketchAngleDimension: async (
       firstLineId: string,
       secondLineId: string,
+      value?: number,
     ) => {
       await sendCoreCommand(
-        makeAddSketchAngleDimensionCommand(firstLineId, secondLineId),
+        makeAddSketchAngleDimensionCommand(firstLineId, secondLineId, value),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchPointDistanceDimension: async (
       pointAId: string,
       pointBId: string,
+      axis?: "x" | "y",
     ) => {
       await sendCoreCommand(
-        makeAddSketchPointDistanceDimensionCommand(pointAId, pointBId),
+        makeAddSketchPointDistanceDimensionCommand(pointAId, pointBId, axis),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -767,6 +771,12 @@ export function useCadCore() {
     addSketchLineLengthDimension: async (lineId: string) => {
       await sendCoreCommand(
         makeAddSketchLineLengthDimensionCommand(lineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchLineAngleDimension: async (lineId: string) => {
+      await sendCoreCommand(
+        makeAddSketchLineAngleDimensionCommand(lineId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -875,6 +885,10 @@ export function useCadCore() {
     },
     deleteSketchDimension: async (dimensionId: string) => {
       await sendCoreCommand(makeDeleteSketchDimensionCommand(dimensionId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    toggleSketchDimensionDriven: async (dimensionId: string) => {
+      await sendCoreCommand(makeToggleSketchDimensionDrivenCommand(dimensionId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchDimensionDisplay: async (

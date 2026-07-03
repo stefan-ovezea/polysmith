@@ -6,7 +6,8 @@
 // the coincident tolerance.
 void add_sketch_angle_dimension(FeatureEntry& feature,
                                 const std::string& first_line_id,
-                                const std::string& second_line_id);
+                                const std::string& second_line_id,
+                                std::optional<double> value = std::nullopt);
 void add_sketch_distance_dimension(FeatureEntry& feature,
                                    const std::string& first_entity_id,
                                    const std::string& second_entity_id);
@@ -23,6 +24,8 @@ void reify_dimension_expressions(
     const std::vector<struct ParameterEntry>& parameters);
 void delete_sketch_dimension(FeatureEntry& feature,
                              const std::string& dimension_id);
+void toggle_sketch_dimension_driven(FeatureEntry& feature,
+                                    const std::string& dimension_id);
 
 // Single-entity dimension creation (for the Dimension tool clicking a
 // lone line, circle, or polygon that has no auto-dimension — e.g.
@@ -32,6 +35,8 @@ void delete_sketch_dimension(FeatureEntry& feature,
 // entity's current geometry.
 void add_sketch_line_length_dimension(FeatureEntry& feature,
                                       const std::string& line_id);
+void add_sketch_line_angle_dimension(FeatureEntry& feature,
+                                     const std::string& line_id);
 void add_sketch_circle_radius_dimension(FeatureEntry& feature,
                                         const std::string& circle_id,
                                         std::optional<std::string> display_as = std::nullopt);
@@ -39,4 +44,5 @@ void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
                                          const std::string& polygon_id);
 void add_sketch_point_distance_dimension(FeatureEntry& feature,
                                          const std::string& point_a_id,
-                                         const std::string& point_b_id);
+                                         const std::string& point_b_id,
+                                         std::optional<std::string> axis = std::nullopt);

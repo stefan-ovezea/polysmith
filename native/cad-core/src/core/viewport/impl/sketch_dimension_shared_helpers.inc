@@ -22,6 +22,17 @@ std::string format_dimension_value(double value) {
   return text;
 }
 
+// Build a viewport label for a dimension.  Wraps the value in parentheses
+// when the dimension is driven (reference-only), e.g. "(12.35 mm)".
+inline std::string format_dimension_label(const SketchDimension& dim,
+                                          const std::string& suffix = " mm") {
+  std::string label = format_dimension_value(dim.value) + suffix;
+  if (dim.driven) {
+    label = "(" + label + ")";
+  }
+  return label;
+}
+
 // Centroid (in sketch-local 2D coords) of every line midpoint and
 // circle center in the sketch. Used as the "inside" reference when
 // placing line dimensions so the dimension line lands on the side of

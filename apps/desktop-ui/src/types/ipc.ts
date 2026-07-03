@@ -26,6 +26,7 @@ import type {
   AddSketchDistanceDimensionCommand,
   AddSketchPointDistanceDimensionCommand,
   AddSketchLineLengthDimensionCommand,
+  AddSketchLineAngleDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
   SetSketchPointLineAnchorCommand,
@@ -37,6 +38,7 @@ import type {
   UpdateSketchFilletRadiusCommand,
   DeleteSketchFilletCommand,
   DeleteSketchDimensionCommand,
+  ToggleSketchDimensionDrivenCommand,
   TrimSketchEntityCommand,
   TrimPreviewCommand,
   DeleteSketchSelectionCommand,
@@ -773,6 +775,7 @@ export type CoreCommand =
   | SetSketchPointLineAnchorCommand
   | AddSketchAngleDimensionCommand
   | AddSketchLineLengthDimensionCommand
+  | AddSketchLineAngleDimensionCommand
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand
@@ -783,6 +786,7 @@ export type CoreCommand =
   | UpdateSketchFilletRadiusCommand
   | DeleteSketchFilletCommand
   | DeleteSketchDimensionCommand
+  | ToggleSketchDimensionDrivenCommand
   | TrimSketchEntityCommand
   | TrimPreviewCommand
   | DeleteSketchSelectionCommand

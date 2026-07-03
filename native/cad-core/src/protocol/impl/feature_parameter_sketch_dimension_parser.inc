@@ -42,6 +42,14 @@
           dim_payload.at("label_y").is_number()) {
         dimension.label_y = dim_payload.at("label_y").get<double>();
       }
+      if (dim_payload.contains("pivot_x") &&
+          dim_payload.at("pivot_x").is_number()) {
+        dimension.pivot_x = dim_payload.at("pivot_x").get<double>();
+      }
+      if (dim_payload.contains("pivot_y") &&
+          dim_payload.at("pivot_y").is_number()) {
+        dimension.pivot_y = dim_payload.at("pivot_y").get<double>();
+      }
       params.dimensions.push_back(dimension);
     }
     // Backward compat: dimensions from older saves lack the `is_auto`

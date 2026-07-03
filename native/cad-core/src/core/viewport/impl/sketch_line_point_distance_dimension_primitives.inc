@@ -6,74 +6,21 @@ ViewportSketchDimensionPrimitive make_line_line_distance_dimension_primitive(
     bool is_selected) {
   const double ref_dx = reference_line.end_x - reference_line.start_x;
   const double ref_dy = reference_line.end_y - reference_line.start_y;
-  const double ref_length = std::sqrt(ref_dx * ref_dx + ref_dy * ref_dy);
-  if (ref_length <= 1e-6) {
-    return ViewportSketchDimensionPrimitive{};
-  }
-  const double ux = ref_dx / ref_length;
-  const double uy = ref_dy / ref_length;
-  const double midpoint_x = (driven_line.start_x + driven_line.end_x) / 2.0;
-  const double midpoint_y = (driven_line.start_y + driven_line.end_y) / 2.0;
-  const double t =
-      (midpoint_x - reference_line.start_x) * ux +
-      (midpoint_y - reference_line.start_y) * uy;
+  const double ref_len = std::sqrt(ref_dx * ref_dx + ref_dy * ref_dy);
+  if (ref_len <= 1e-6) return ViewportSketchDimensionPrimitive{};
+  const double ux = ref_dx / ref_len, uy = ref_dy / ref_len;
+  const double mid_x = (driven_line.start_x + driven_line.end_x) / 2.0;
+  const double mid_y = (driven_line.start_y + driven_line.end_y) / 2.0;
+  const double t = (mid_x - reference_line.start_x) * ux + (mid_y - reference_line.start_y) * uy;
   const double foot_x = reference_line.start_x + ux * t;
   const double foot_y = reference_line.start_y + uy * t;
-  const WorldPoint start = to_world_point(parameters, foot_x, foot_y);
-  const WorldPoint end = to_world_point(parameters, midpoint_x, midpoint_y);
-  const WorldPoint label = to_world_point(
-      parameters,
-      (foot_x + midpoint_x) / 2.0,
-      (foot_y + midpoint_y) / 2.0);
-  auto primitive = ViewportSketchDimensionPrimitive{
-      .dimension_id = dimension.id,
-      .plane_id = parameters.plane_id,
-      .kind = "line_line_distance",
-      .entity_id = driven_line.id,
-      .label = format_dimension_value(dimension.value) + " mm",
-      .is_selected = is_selected,
-      .anchor_start_x = start.x,
-      .anchor_start_y = start.y,
-      .anchor_start_z = start.z,
-      .anchor_end_x = end.x,
-      .anchor_end_y = end.y,
-      .anchor_end_z = end.z,
-      .dimension_start_x = start.x,
-      .dimension_start_y = start.y,
-      .dimension_start_z = start.z,
-      .dimension_end_x = end.x,
-      .dimension_end_y = end.y,
-      .dimension_end_z = end.z,
-      .label_x = label.x,
-      .label_y = label.y,
-      .label_z = label.z,
-  };
-  if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
-    const double label_x = (foot_x + midpoint_x) / 2.0;
-    const double label_y = (foot_y + midpoint_y) / 2.0;
-    const double raw_offset_x = *dimension.label_x - label_x;
-    const double raw_offset_y = *dimension.label_y - label_y;
-    const double along = raw_offset_x * ux + raw_offset_y * uy;
-    const double offset_x = ux * along;
-    const double offset_y = uy * along;
-    const WorldPoint shifted_start =
-        to_world_point(parameters, foot_x + offset_x, foot_y + offset_y);
-    const WorldPoint shifted_end =
-        to_world_point(parameters, midpoint_x + offset_x, midpoint_y + offset_y);
-    const WorldPoint shifted_label =
-        to_world_point(parameters, label_x + offset_x, label_y + offset_y);
-    primitive.dimension_start_x = shifted_start.x;
-    primitive.dimension_start_y = shifted_start.y;
-    primitive.dimension_start_z = shifted_start.z;
-    primitive.dimension_end_x = shifted_end.x;
-    primitive.dimension_end_y = shifted_end.y;
-    primitive.dimension_end_z = shifted_end.z;
-    primitive.label_x = shifted_label.x;
-    primitive.label_y = shifted_label.y;
-    primitive.label_z = shifted_label.z;
-  }
-  primitive.driven = dimension.driven;
-  return primitive;
+
+  return make_offset_dimension_primitive(
+      foot_x, foot_y, mid_x, mid_y,
+      ux * kLineDimensionOffset, uy * kLineDimensionOffset,
+      dimension.id, parameters.plane_id, "line_line_distance", driven_line.id,
+      format_dimension_label(dimension), is_selected,
+      dimension.driven, "", parameters, &dimension);
 }
 
 ViewportSketchDimensionPrimitive make_point_distance_dimension_primitive(
@@ -82,72 +29,62 @@ ViewportSketchDimensionPrimitive make_point_distance_dimension_primitive(
     const SketchDimension& dimension,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
-  const WorldPoint start = to_world_point(parameters, point_a.x, point_a.y);
-  const WorldPoint end = to_world_point(parameters, point_b.x, point_b.y);
-  const WorldPoint label = to_world_point(
-      parameters,
-      (point_a.x + point_b.x) / 2.0,
-      (point_a.y + point_b.y) / 2.0);
-  auto primitive = ViewportSketchDimensionPrimitive{
-      .dimension_id = dimension.id,
-      .plane_id = parameters.plane_id,
-      .kind = "point_distance",
-      .entity_id = point_a.id,
-      .label = format_dimension_value(dimension.value) + " mm",
-      .is_selected = is_selected,
-      .anchor_start_x = start.x,
-      .anchor_start_y = start.y,
-      .anchor_start_z = start.z,
-      .anchor_end_x = end.x,
-      .anchor_end_y = end.y,
-      .anchor_end_z = end.z,
-      .dimension_start_x = start.x,
-      .dimension_start_y = start.y,
-      .dimension_start_z = start.z,
-      .dimension_end_x = end.x,
-      .dimension_end_y = end.y,
-      .dimension_end_z = end.z,
-      .label_x = label.x,
-      .label_y = label.y,
-      .label_z = label.z,
-      .driven = dimension.driven,
-  };
-  if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
-    const double dx = point_b.x - point_a.x;
-    const double dy = point_b.y - point_a.y;
-    const double length = std::sqrt(dx * dx + dy * dy);
-    if (length > 1e-6) {
-      const double normal_x = -dy / length;
-      const double normal_y = dx / length;
-      const double label_x =
-          (point_a.x + point_b.x) / 2.0;
-      const double label_y =
-          (point_a.y + point_b.y) / 2.0;
-      const double raw_offset_x = *dimension.label_x - label_x;
-      const double raw_offset_y = *dimension.label_y - label_y;
-      const double along = raw_offset_x * normal_x + raw_offset_y * normal_y;
-      const double offset_x = normal_x * along;
-      const double offset_y = normal_y * along;
-      const WorldPoint shifted_start = to_world_point(
-          parameters,
-          point_a.x + offset_x,
-          point_a.y + offset_y);
-      const WorldPoint shifted_end = to_world_point(
-          parameters,
-          point_b.x + offset_x,
-          point_b.y + offset_y);
-      const WorldPoint shifted_label =
-          to_world_point(parameters, label_x + offset_x, label_y + offset_y);
-      primitive.dimension_start_x = shifted_start.x;
-      primitive.dimension_start_y = shifted_start.y;
-      primitive.dimension_start_z = shifted_start.z;
-      primitive.dimension_end_x = shifted_end.x;
-      primitive.dimension_end_y = shifted_end.y;
-      primitive.dimension_end_z = shifted_end.z;
-      primitive.label_x = shifted_label.x;
-      primitive.label_y = shifted_label.y;
-      primitive.label_z = shifted_label.z;
-    }
+  const bool is_h = (dimension.display_as == "x");
+  const bool is_v = (dimension.display_as == "y");
+
+  // H/V dimensions need per-point offsets (not uniform) because the
+  // dimension line must be horizontal/vertical at a constant Y/X while
+  // the anchor points may have different coordinates.
+  auto wp = [&](double x, double y) { return to_world_point(parameters, x, y); };
+  if (is_h) {
+    double ly = dimension.label_y.has_value() ? *dimension.label_y
+                : (point_a.y + point_b.y) / 2.0;
+    auto a1 = wp(point_a.x, point_a.y), a2 = wp(point_b.x, point_b.y);
+    auto d1 = wp(point_a.x, ly),           d2 = wp(point_b.x, ly);
+    auto lb = wp((point_a.x + point_b.x) / 2.0, ly);
+    return ViewportSketchDimensionPrimitive{
+        .dimension_id = dimension.id, .plane_id = parameters.plane_id,
+        .kind = "point_distance", .entity_id = point_a.id,
+        .label = format_dimension_label(dimension), .is_selected = is_selected,
+        .anchor_start_x = a1.x, .anchor_start_y = a1.y, .anchor_start_z = a1.z,
+        .anchor_end_x = a2.x, .anchor_end_y = a2.y, .anchor_end_z = a2.z,
+        .dimension_start_x = d1.x, .dimension_start_y = d1.y, .dimension_start_z = d1.z,
+        .dimension_end_x = d2.x, .dimension_end_y = d2.y, .dimension_end_z = d2.z,
+        .label_x = lb.x, .label_y = lb.y, .label_z = lb.z,
+        .driven = dimension.driven, .display_as = dimension.display_as,
+    };
   }
-  return primitive;
+  if (is_v) {
+    double lx = dimension.label_x.has_value() ? *dimension.label_x
+                : (point_a.x + point_b.x) / 2.0;
+    auto a1 = wp(point_a.x, point_a.y), a2 = wp(point_b.x, point_b.y);
+    auto d1 = wp(lx, point_a.y),           d2 = wp(lx, point_b.y);
+    auto lb = wp(lx, (point_a.y + point_b.y) / 2.0);
+    return ViewportSketchDimensionPrimitive{
+        .dimension_id = dimension.id, .plane_id = parameters.plane_id,
+        .kind = "point_distance", .entity_id = point_a.id,
+        .label = format_dimension_label(dimension), .is_selected = is_selected,
+        .anchor_start_x = a1.x, .anchor_start_y = a1.y, .anchor_start_z = a1.z,
+        .anchor_end_x = a2.x, .anchor_end_y = a2.y, .anchor_end_z = a2.z,
+        .dimension_start_x = d1.x, .dimension_start_y = d1.y, .dimension_start_z = d1.z,
+        .dimension_end_x = d2.x, .dimension_end_y = d2.y, .dimension_end_z = d2.z,
+        .label_x = lb.x, .label_y = lb.y, .label_z = lb.z,
+        .driven = dimension.driven, .display_as = dimension.display_as,
+    };
+  }
+  // Euclidean: offset perpendicular to point-to-point vector.
+  const double dx = point_b.x - point_a.x;
+  const double dy = point_b.y - point_a.y;
+  const double vlen = std::sqrt(dx * dx + dy * dy);
+  double off_x = 0, off_y = kLineDimensionOffset;
+  if (vlen > 1e-6) {
+    off_x = -dy / vlen * kLineDimensionOffset;
+    off_y =  dx / vlen * kLineDimensionOffset;
+  }
+  return make_offset_dimension_primitive(
+      point_a.x, point_a.y, point_b.x, point_b.y,
+      off_x, off_y,
+      dimension.id, parameters.plane_id, "point_distance", point_a.id,
+      format_dimension_label(dimension), is_selected,
+      dimension.driven, dimension.display_as, parameters, &dimension);
 }

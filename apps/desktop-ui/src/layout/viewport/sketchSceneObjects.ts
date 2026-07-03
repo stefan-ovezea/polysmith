@@ -35,6 +35,7 @@ export function addSketchSceneObjects({
   sketchEntityObjects,
   sketchEntityObjectById,
   sketchDimensionObjects,
+  dimensionObjectById,
   sketchConstraintObjects,
   sketchProfileObjects,
   sketchProfileVisuals,
@@ -53,6 +54,7 @@ export function addSketchSceneObjects({
   sketchEntityObjects: Array<THREE.Line | THREE.LineLoop>;
   sketchEntityObjectById: Map<string, THREE.Line | THREE.LineLoop>;
   sketchDimensionObjects: THREE.Object3D[];
+  dimensionObjectById: Map<string, { line: THREE.Group; label: THREE.Sprite }>;
   sketchConstraintObjects: THREE.Object3D[];
   sketchProfileObjects: THREE.Group[];
   sketchProfileVisuals: Map<string, SketchProfileVisual>;
@@ -75,6 +77,7 @@ export function addSketchSceneObjects({
     hiddenRelationPreviewDimensionIds,
     sketchGroup,
     sketchDimensionObjects,
+    dimensionObjectById,
   });
 
   addSketchConstraintObjects({
@@ -168,13 +171,16 @@ function addSketchDimensionObjects({
   hiddenRelationPreviewDimensionIds,
   sketchGroup,
   sketchDimensionObjects,
+  dimensionObjectById,
 }: {
   displayedSketchDimensions: readonly SketchDimensionScene[];
   displayUnits?: "mm" | "in";
   hiddenRelationPreviewDimensionIds: ReadonlySet<string>;
   sketchGroup: THREE.Group;
   sketchDimensionObjects: THREE.Object3D[];
+  dimensionObjectById: Map<string, { line: THREE.Group; label: THREE.Sprite }>;
 }) {
+  dimensionObjectById.clear();
   for (const sketchDimension of displayedSketchDimensions) {
     const sketchDimensionObject = buildSketchDimensionObject(
       sketchDimension,
@@ -188,6 +194,10 @@ function addSketchDimensionObjects({
     sketchDimensionObjects.push(sketchDimensionObject.label);
     sketchGroup.add(sketchDimensionObject.line);
     sketchGroup.add(sketchDimensionObject.label);
+    dimensionObjectById.set(sketchDimension.dimensionId, {
+      line: sketchDimensionObject.line as THREE.Group,
+      label: sketchDimensionObject.label,
+    });
   }
 }
 

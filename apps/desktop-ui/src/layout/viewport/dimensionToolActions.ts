@@ -23,23 +23,25 @@ interface DimensionToolActionParams {
   addSketchLineLengthDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
+  addSketchLineAngleDimensionRef: MutableRefObject<
+    (entityId: string) => Promise<void>
+  >;
   addSketchPolygonRadiusDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
   addSketchAngleDimensionRef: MutableRefObject<
-    (firstEntityId: string, secondEntityId: string) => Promise<void>
+    (firstEntityId: string, secondEntityId: string, value?: number) => Promise<void>
   >;
   addSketchDistanceDimensionRef: MutableRefObject<
     (firstEntityId: string, secondEntityId: string) => Promise<void>
   >;
   addSketchPointDistanceDimensionRef: MutableRefObject<
-    (pointAId: string, pointBId: string) => Promise<void>
+    (pointAId: string, pointBId: string, axis?: "x" | "y") => Promise<void>
   >;
   updateSketchDimensionRef: MutableRefObject<
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
   >;
   setDimensionToolFirstLine: Dispatch<SetStateAction<string | null>>;
-  handleDimensionClick: (dimensionId: string) => void;
 }
 
 export function createDimensionToolActions({
@@ -53,13 +55,13 @@ export function createDimensionToolActions({
   pendingRelationPlacementMatchRef,
   addSketchCircleRadiusDimensionRef,
   addSketchLineLengthDimensionRef,
+  addSketchLineAngleDimensionRef,
   addSketchPolygonRadiusDimensionRef,
   addSketchAngleDimensionRef,
   addSketchDistanceDimensionRef,
   addSketchPointDistanceDimensionRef,
   updateSketchDimensionRef,
   setDimensionToolFirstLine,
-  handleDimensionClick,
 }: DimensionToolActionParams) {
   function stageUnaryDimension(entityId: string, dimensionId: string) {
     pendingDimensionIdRef.current = dimensionId;
@@ -88,6 +90,10 @@ export function createDimensionToolActions({
     stageFollowUpPick(entityId);
     void addSketchCircleRadiusDimensionRef
       .current(entityId, displayAs)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
       .catch(() => {
         clearUnaryDimensionStage();
         clearFollowUpPick();
@@ -95,39 +101,73 @@ export function createDimensionToolActions({
   }
 
   function selectDimensionCircle(entityId: string) {
-    handleDimensionClick(`dim-circle-${entityId}`);
     stageFollowUpPick(entityId);
   }
 
   function createDimensionLine(entityId: string) {
     stageUnaryDimension(entityId, `dim-line-${entityId}`);
     stageFollowUpPick(entityId);
-    void addSketchLineLengthDimensionRef.current(entityId).catch(() => {
-      clearUnaryDimensionStage();
-      clearFollowUpPick();
-    });
+    void addSketchLineLengthDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
+  }
+
+  function createDimensionLineAngle(entityId: string) {
+    stageUnaryDimension(entityId, `dim-line-angle-${entityId}`);
+    stageFollowUpPick(entityId);
+    void addSketchLineAngleDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
   }
 
   function selectDimensionLine(entityId: string) {
-    handleDimensionClick(`dim-line-${entityId}`);
     stageFollowUpPick(entityId);
   }
 
   function createDimensionPolygon(entityId: string) {
     stageUnaryDimension(entityId, `dim-polygon-${entityId}`);
-    void addSketchPolygonRadiusDimensionRef.current(entityId).catch(() => {
-      clearUnaryDimensionStage();
-    });
+    void addSketchPolygonRadiusDimensionRef.current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+      });
   }
 
   function selectDimensionPolygon(entityId: string) {
-    handleDimensionClick(`dim-polygon-${entityId}`);
     stageFollowUpPick(entityId);
+  }
+
+  function createDimensionLinear(lineId: string) {
+    // Linear placement: the dimension is NOT created yet.  We stage
+    // the entity for the follow‑up pick (so the relation preview
+    // wire still works for two‑entity picks) and signal that a
+    // linear placement session is active.  The actual preview and
+    // IPC happens in ViewportPanel's pointer‑move / pointer‑up
+    // handlers via LinearPlacementState.
+    stageFollowUpPick(lineId);
+    pendingDimensionPlacementRef.current = true;
+    pendingDimSourceEntityIdRef.current = null;
+    // The caller (ViewportPanel) wires the linear placement ref.
   }
 
   function createDimensionAngleOrDistance(
     firstEntityId: string,
     secondEntityId: string,
+    forceMode?: "angle" | "distance",
   ) {
     pendingDimensionPlacementRef.current = true;
     pendingDimSourceEntityIdRef.current = null;
@@ -135,53 +175,56 @@ export function createDimensionToolActions({
       firstEntityId.startsWith("line-") &&
       secondEntityId.startsWith("line-")
     ) {
-      const relation = pendingRelationPlacementMatchRef.current;
-      if (
-        relation?.kind === "parallel_line_distance" &&
-        ((relation.firstEntityId === firstEntityId &&
-          relation.targetEntityId === secondEntityId) ||
-          (relation.firstEntityId === secondEntityId &&
-            relation.targetEntityId === firstEntityId))
-      ) {
+      if (forceMode !== "angle") {
+        const relation = pendingRelationPlacementMatchRef.current;
+        if (
+          relation?.kind === "parallel_line_distance" &&
+          ((relation.firstEntityId === firstEntityId &&
+            relation.targetEntityId === secondEntityId) ||
+            (relation.firstEntityId === secondEntityId &&
+              relation.targetEntityId === firstEntityId))
+        ) {
+          pendingAngleIsReflexRef.current = false;
+          pendingReflexAngleRef.current = 0;
+          void addSketchDistanceDimensionRef
+            .current(firstEntityId, secondEntityId)
+            .then(clearRelationPlacementStage)
+            .catch(clearRelationPlacementStage);
+          return;
+        }
+      }
+      if (forceMode !== "distance") {
+        const shouldApply = pendingAngleIsReflexRef.current;
+        const previewAngle = pendingReflexAngleRef.current;
         pendingAngleIsReflexRef.current = false;
         pendingReflexAngleRef.current = 0;
-        void addSketchDistanceDimensionRef
-          .current(firstEntityId, secondEntityId)
+        const angleValue = shouldApply ? previewAngle : undefined;
+        void addSketchAngleDimensionRef
+          .current(firstEntityId, secondEntityId, angleValue)
+          .then(clearRelationPlacementStage)
           .catch(clearRelationPlacementStage);
         return;
       }
-      const isReflex = pendingAngleIsReflexRef.current;
-      const reflexAngle = pendingReflexAngleRef.current;
-      pendingAngleIsReflexRef.current = false;
-      pendingReflexAngleRef.current = 0;
-      void addSketchAngleDimensionRef
-        .current(firstEntityId, secondEntityId)
-        .then(() => {
-          if (isReflex) {
-            const ids = [firstEntityId, secondEntityId].sort();
-            const dimId = `dim-angle-${ids[0]}-${ids[1]}`;
-            void updateSketchDimensionRef.current(dimId, reflexAngle);
-          }
-        })
-        .catch(clearRelationPlacementStage);
-      return;
     }
 
     void addSketchDistanceDimensionRef
       .current(firstEntityId, secondEntityId)
+      .then(clearRelationPlacementStage)
       .catch(clearRelationPlacementStage);
   }
 
-  function createDimensionPointDistance(pointAId: string, pointBId: string) {
+  function createDimensionPointDistance(pointAId: string, pointBId: string, axis?: "x" | "y") {
     pendingDimensionIdRef.current =
       `dim-point-distance-${pointAId}-${pointBId}`;
     pendingDimensionPlacementRef.current = true;
     pendingDimSourceEntityIdRef.current = null;
     void addSketchPointDistanceDimensionRef
-      .current(pointAId, pointBId)
+      .current(pointAId, pointBId, axis)
+      .then(() => {
+        pendingDimensionIdRef.current = null;
+      })
       .catch(() => {
         pendingDimensionIdRef.current = null;
-        pendingDimensionPlacementRef.current = false;
       });
   }
 
@@ -197,6 +240,8 @@ export function createDimensionToolActions({
     createDimensionAngleOrDistance,
     createDimensionCircle,
     createDimensionLine,
+    createDimensionLineAngle,
+    createDimensionLinear,
     createDimensionPointDistance,
     createDimensionPolygon,
     selectDimensionCircle,

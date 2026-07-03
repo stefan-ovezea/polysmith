@@ -35,6 +35,62 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // shift other line endpoints which `rebuild_sketch_points` then
   // mirrors into the points vector.
 
+  // --- Stale dimension cleanup ---
+  // Runs BEFORE the constraints_exist check so orphaned dimensions
+  // (referencing deleted entities) are marked driven before we decide
+  // whether to run the solver.  Without this, an empty sketch with
+  // orphaned driving dims would run the solver on 0 parameters and
+  // incorrectly report dofs=0 ("fully constrained").
+  //
+  // IMPORTANT: check against live lines/circles, NOT the points
+  // array.  rebuild_sketch_points hasn't run yet at this point,
+  // so parameters.points still contains stale entries from
+  // before the deletion.
+  {
+    auto point_is_alive = [&](const std::string& pid) -> bool {
+      for (const auto& l : feature.sketch_parameters->lines) {
+        if (l.start_point_id == pid || l.end_point_id == pid) return true;
+      }
+      for (const auto& c : feature.sketch_parameters->circles) {
+        if ("point-circle-" + c.id + "-center" == pid) return true;
+      }
+      return false;
+    };
+    for (auto& dim : feature.sketch_parameters->dimensions) {
+      if (dim.driven) continue;
+      if (dim.kind == "line_length" || dim.kind == "line_angle") {
+        bool found = std::any_of(
+            feature.sketch_parameters->lines.begin(),
+            feature.sketch_parameters->lines.end(),
+            [&](const auto& l) { return l.id == dim.entity_id; });
+        if (!found) dim.driven = true;
+      } else if (dim.kind == "circle_radius") {
+        bool found = std::any_of(
+            feature.sketch_parameters->circles.begin(),
+            feature.sketch_parameters->circles.end(),
+            [&](const auto& c) { return c.id == dim.entity_id; });
+        if (!found) dim.driven = true;
+      } else if (!dim.secondary_entity_id.empty()) {
+        bool found_primary = false, found_secondary = false;
+        if (dim.kind == "angle") {
+          found_primary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.entity_id; });
+          found_secondary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+        } else {
+          // point_distance, circle_center_distance, circle_line_distance
+          found_primary = point_is_alive(dim.entity_id);
+          found_secondary = point_is_alive(dim.secondary_entity_id);
+        }
+        if (!found_primary || !found_secondary) dim.driven = true;
+      }
+    }
+  }
+
   // --- planegcs constraint solver ---
   // Solve the geometric constraint system before running ad-hoc
   // enforce functions. If the solver succeeds, enforce functions
@@ -109,18 +165,110 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       solver.build(*feature.sketch_parameters);
       auto result = solver.solve();
       if (result.ok()) {
+        // Snapshot pre-solve line coordinates so we can roll back
+        // if the solver produces runaway geometry (a mathematically
+        // valid solution that explodes the sketch into a degenerate
+        // shape — e.g. flipping a dimension to the far side).
+        struct LineSnapshot { double sx, sy, ex, ey; };
+        std::vector<LineSnapshot> pre_snapshot;
+        pre_snapshot.reserve(feature.sketch_parameters->lines.size());
+        double pre_total_length = 0.0;
+        for (const auto& line : feature.sketch_parameters->lines) {
+          double dx = line.end_x - line.start_x;
+          double dy = line.end_y - line.start_y;
+          pre_total_length += std::sqrt(dx * dx + dy * dy);
+          pre_snapshot.push_back(
+              {line.start_x, line.start_y, line.end_x, line.end_y});
+        }
+
         solver.apply(*feature.sketch_parameters);
+
+        // Post-solve sanity checks.
+        double post_total_length = 0.0;
+        int zero_count = 0;
+        std::string zero_ids;
+        for (const auto& line : feature.sketch_parameters->lines) {
+          double dx = line.end_x - line.start_x;
+          double dy = line.end_y - line.start_y;
+          double len = std::sqrt(dx * dx + dy * dy);
+          post_total_length += len;
+          if (len < 1e-6) {
+            if (zero_count < 3) {
+              if (!zero_ids.empty()) zero_ids += ", ";
+              zero_ids += line.id;
+            }
+            zero_count++;
+          }
+        }
+        if (zero_count > 0) {
+          fprintf(stderr,
+                  "ERROR solver produced %d zero-length line(s): %s%s\n",
+                  zero_count, zero_ids.c_str(),
+                  zero_count > 3 ? " ..." : "");
+        }
+
+        bool solver_exploded = false;
+        if (pre_total_length > 1.0 &&
+            (post_total_length > pre_total_length * 100.0 ||
+             post_total_length < pre_total_length / 100.0)) {
+          fprintf(stderr,
+                  "ERROR solver exploded geometry — "
+                  "total line length %.0f → %.0f mm (%.0fx change), "
+                  "reverting to pre-solve positions\n",
+                  pre_total_length, post_total_length,
+                  post_total_length / pre_total_length);
+          solver_exploded = true;
+        }
+
+        // Roll back to pre-solve coordinates when the solver diverges
+        // into a mathematically-valid but geometrically-wrong solution.
+        // The ad-hoc enforce functions below this block will still run
+        // and provide a reasonable fallback.
+        if (solver_exploded && pre_snapshot.size() ==
+            feature.sketch_parameters->lines.size()) {
+          for (size_t i = 0; i < pre_snapshot.size(); ++i) {
+            feature.sketch_parameters->lines[i].start_x =
+                pre_snapshot[i].sx;
+            feature.sketch_parameters->lines[i].start_y =
+                pre_snapshot[i].sy;
+            feature.sketch_parameters->lines[i].end_x =
+                pre_snapshot[i].ex;
+            feature.sketch_parameters->lines[i].end_y =
+                pre_snapshot[i].ey;
+          }
+        }
       }
       feature.sketch_parameters->solver_dofs = result.dofs;
+      feature.sketch_parameters->solver_ok = result.ok();
       feature.sketch_parameters->solver_conflicting_count =
           static_cast<int>(result.conflicting.size());
       feature.sketch_parameters->solver_redundant_count =
           static_cast<int>(result.redundant.size());
-      if (!result.ok()) {
-        fprintf(stderr, "constraint solver: status=%d dofs=%d conflicting=%zu redundant=%zu\n",
-                static_cast<int>(result.status), result.dofs,
-                result.conflicting.size(), result.redundant.size());
+
+      if (result.conflicting.size() > 0 || result.redundant.size() > 0 ||
+          result.dofs < 0) {
+        fprintf(stderr,
+                "ERROR sketch over-constrained — dofs=%d conflicting=%zu redundant=%zu\n",
+                result.dofs, result.conflicting.size(),
+                result.redundant.size());
       }
+      if (!result.ok()) {
+        const char* reason =
+            result.status == GCS::Failed ? "solver failed to converge" :
+            result.status == GCS::SuccessfulSolutionInvalid
+                ? "solution invalid (redundant/conflicting constraints)"
+                : "unknown error";
+        fprintf(stderr,
+                "ERROR sketch solver failed — %s (status=%d, dofs=%d)\n",
+                reason, static_cast<int>(result.status), result.dofs);
+      }
+
+      // Redundant constraint detection is handled by each dimension/
+      // constraint creation command individually — the command that adds
+      // a new constraint checks solver stats after refresh_sketch_derived_state
+      // and marks its own new entry as driven when over-constrained.
+      // This avoids fragile heuristics and works uniformly for all
+      // dimension kinds (line_length, point_distance, angle, etc.).
 
       // Restore original is_fixed values.
       if (append_mode) {
@@ -155,10 +303,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.
   sync_all_line_dimensions(*feature.sketch_parameters);
-
-  // Driven (reference-only) dimensions: re-measure from current geometry
-  // so their displayed values stay correct without driving anything.
-  sync_driven_dimensions(*feature.sketch_parameters);
+  sync_angle_dimensions(*feature.sketch_parameters);
 
   // Force all lines sharing a point ID to agree on its position before
   // we rebuild the deduplicated points list.  Without this pass,
@@ -172,6 +317,12 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
   rebuild_sketch_points(*feature.sketch_parameters);
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
+
+  // Driven (reference-only) dimensions: re-measure from current geometry
+  // so their displayed values stay correct without driving anything.
+  // MUST run after rebuild_sketch_points so point_distance driven dims
+  // read fresh point positions, not stale ones from the previous frame.
+  sync_driven_dimensions(*feature.sketch_parameters);
   // Derived points (projected, quadrant) are derived geometry;
   // force them locked unconditionally even if `sync_fixed_point_flags`
   // happened to copy a transient false from the previous frame.

@@ -52,7 +52,10 @@ The original v1 milestones 0–3 are complete. The codebase now has:
 - Inference engine for auto-creating coincident/concentric constraints at commit time
 - Constraint badge click + Delete / right-click → Delete
 - Dimension tool: single-entity, two-entity (angle, distance, line-line distance,
-  circle-line distance), placement drag, regroup-aware first-click handling
+  circle-line distance), placement drag, regroup-aware first-click handling; split-button
+  dropdown with 7 sketch modes (Auto/Linear/Aligned/Angular/Radius/Diameter/Arc Length)
+  + 10 drawing-sheet modes reserved for ISO Drawing workspace; mode value threaded through
+  full pointer-up pipeline with per-mode switch scaffold. See [Sketch-Dimension-Implementation-Status](Sketch-Dimension-Implementation-Status).
 - Draft dimension visualisation (Three.js-rendered dimension geometry during line
   drafting, replacing HTML-only inputs)
 - On-demand sketch dimensions: auto-dimensions created only when user types a value;
@@ -72,6 +75,8 @@ The original v1 milestones 0–3 are complete. The codebase now has:
   see Known Modeling Issues below for modeled-thread caveats)
 - CAM workspace scaffolding: UI skeleton with Milling/Turning/Printing/Cutting tabs,
   TNP witness resolution for face references, face milling operation
+- ISO Drawing workspace scaffolding: workspace type, dropdown entry, Sheet tab,
+  placeholder toolbar. Reserved for future ISO dimensioning from 3D models.
 - Natural-language AI command bar
 - View cube with cardinal face snaps, sketch-plane rotation arrows, orthographic camera
 - Dynamic grids (zoom-aware millimetric spacing, sketch-plane back grid)
@@ -137,4 +142,7 @@ milling operation exists. The full plan is in [CAM-Development](CAM-Development)
 
 1. **Pattern features** — linear and circular, highest remaining UX impact
 2. **Measure tool** — small, self-contained, high day-to-day value
+3. **Dimension mode implementation** — `radius`/`diameter`/`angular` mode-specific filtering;
+   `linear` horizontal/vertical projection; `arc_length` core support.
+   See [Sketch-Dimension-Implementation-Status](Sketch-Dimension-Implementation-Status).
 4. **Text tool** — blocked by font bundling decision but plan is written

@@ -11,6 +11,7 @@ import type {
 } from "@/types";
 import type { ArcToolMode } from "./arcDraftPreview";
 import type { CircleToolMode } from "./circleDraftPreview";
+import type { DimensionToolMode } from "@/types";
 import type { MoveGizmoDescriptor } from "./moveGizmo";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 
@@ -70,12 +71,14 @@ export interface ViewportPanelProps {
   onAddSketchAngleDimension: (
     firstLineId: string,
     secondLineId: string,
+    value?: number,
   ) => Promise<void>;
   onAddSketchDistanceDimension: (
     firstEntityId: string,
     secondEntityId: string,
   ) => Promise<void>;
   onAddSketchLineLengthDimension: (lineId: string) => Promise<void>;
+  onAddSketchLineAngleDimension: (lineId: string) => Promise<void>;
   onAddSketchCircleRadiusDimension: (
     circleId: string,
     displayAs?: string,
@@ -128,6 +131,8 @@ export interface ViewportPanelProps {
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   polygonToolMode: PolygonToolMode;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
+  dimensionToolMode: DimensionToolMode;
+  onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onAddSketchPolygon: (
     sides: number,
     mode: string,
@@ -184,9 +189,15 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;
+  onToggleSketchDimensionDriven: (dimensionId: string) => Promise<void>;
+  onSetSketchLineConstruction: (
+    lineId: string,
+    isConstruction: boolean,
+  ) => Promise<void>;
   onAddSketchPointDistanceDimension: (
     pointAId: string,
     pointBId: string,
+    axis?: "x" | "y",
   ) => Promise<void>;
   onUpdateSketchDimensionDisplay: (
     dimensionId: string,

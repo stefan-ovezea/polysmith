@@ -66,6 +66,7 @@
 | ✂️ **[Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan)** | Shipped. Reference documentation for the trim engine design. |
 | 🔤 **[Text Tool — Implementation Plan](Text-Tool-Implementation-Plan)** | Planned. Text as sketch entities: font-to-BRep, extrusion, emboss/deboss. |
 | 📏 **[Draft Dimension Visualization](Draft-Dimension-Visualization)** | Shipped. Scene-rendered dimension lines and arcs for sketch draft tools. |
+| 📐 **[Dimension Tool Split Button — Implementation Plan](Dimension-Tool-Split-Button-Plan)** | **Planning.** Split button with 17 dimension type variants (Auto functional, rest placeholders for future ISO drawing use) + floating panel. |
 | 🔧 **[Sketch Tool Implementation](Sketch-Tool-Implementation)** | Guide for adding new drawable sketch shapes |
 | ↕️ **[Sketch Endpoint Drag](Sketch-Endpoint-Drag)** | Endpoint drag with planegcs WASM solver and constraint behaviour |
 

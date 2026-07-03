@@ -83,7 +83,73 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
   const double target_angle =
       requested_angle > kPi ? kTwoPi - requested_angle : requested_angle;
 
-  constexpr double kPivotTol = 0.05;
+  double pivot_x, pivot_y;
+  double a_dx, a_dy, b_dx, b_dy;
+
+  // Virtual pivot: stored on dimension for non-intersecting lines.
+  if (dimension.pivot_x.has_value() && dimension.pivot_y.has_value()) {
+    // Recompute virtual pivot from current line positions so the arc
+    // and reference line track geometry after drags / solves.
+    double vpx, vpy;
+    {
+      double a_dx_inf = a_ends[1].first - a_ends[0].first;
+      double a_dy_inf = a_ends[1].second - a_ends[0].second;
+      double b_dx_inf = b_ends[1].first - b_ends[0].first;
+      double b_dy_inf = b_ends[1].second - b_ends[0].second;
+      double det = a_dx_inf * b_dy_inf - a_dy_inf * b_dx_inf;
+      if (std::abs(det) > 1e-12) {
+        double t = ((b_ends[0].first - a_ends[0].first) * b_dy_inf -
+                    (b_ends[0].second - a_ends[0].second) * b_dx_inf) / det;
+        vpx = a_ends[0].first + t * a_dx_inf;
+        vpy = a_ends[0].second + t * a_dy_inf;
+      } else {
+        vpx = *dimension.pivot_x;
+        vpy = *dimension.pivot_y;
+      }
+    }
+    // Pick the endpoint-direction pair whose absolute angle matches
+    // the stored dimension value — not just the farther endpoint.
+    {
+      auto unit = [](double x, double y, double px, double py) {
+        double dx = x - px, dy = y - py;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
+        return std::pair<double, double>{dx / len, dy / len};
+      };
+      std::pair<double, double> au[2] = {
+          unit(a_ends[0].first, a_ends[0].second, vpx, vpy),
+          unit(a_ends[1].first, a_ends[1].second, vpx, vpy)};
+      std::pair<double, double> bu[2] = {
+          unit(b_ends[0].first, b_ends[0].second, vpx, vpy),
+          unit(b_ends[1].first, b_ends[1].second, vpx, vpy)};
+      auto ad_def = dir_away(vpx, vpy, a_ends[0].first, a_ends[0].second,
+                                          a_ends[1].first, a_ends[1].second);
+      auto bd_def = dir_away(vpx, vpy, b_ends[0].first, b_ends[0].second,
+                                          b_ends[1].first, b_ends[1].second);
+      double best_diff = 1e9;
+      for (int ai = 0; ai < 2; ++ai) {
+        for (int bi = 0; bi < 2; ++bi) {
+          double cross = au[ai].first * bu[bi].second - au[ai].second * bu[bi].first;
+          double dot   = au[ai].first * bu[bi].first + au[ai].second * bu[bi].second;
+          double measured = std::abs(std::atan2(cross, dot));
+          double diff = std::abs(measured - target_angle);
+          bool is_def =
+              (au[ai].first == ad_def.first && au[ai].second == ad_def.second) &&
+              (bu[bi].first == bd_def.first && bu[bi].second == bd_def.second);
+          if (is_def) diff -= 1e-12;
+          if (diff < best_diff) {
+            best_diff = diff;
+            a_dx = au[ai].first; a_dy = au[ai].second;
+            b_dx = bu[bi].first; b_dy = bu[bi].second;
+          }
+        }
+      }
+    }
+    // Arc center stays at the virtual pivot — like the UI preview.
+    pivot_x = vpx;
+    pivot_y = vpy;
+  } else {
+  constexpr double kPivotTol = 0.10;
   int a_pivot = -1, b_pivot = -1;
 
   // Pass 1: direct endpoint–endpoint match.
@@ -114,9 +180,6 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
       }
     }
   }
-
-  double pivot_x, pivot_y;
-  double a_dx, a_dy, b_dx, b_dy;
 
   if (a_pivot >= 0 && b_pivot >= 0) {
     pivot_x = a_ends[a_pivot].first;
@@ -158,6 +221,8 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     pivot_x = a_ends[0].first;  pivot_y = a_ends[0].second;
     a_dx = 1.0; a_dy = 0.0;  b_dx = 0.0; b_dy = 1.0;
   }
+  }  // else (not virtual pivot)
+
   const double a_len = std::sqrt(a_dx * a_dx + a_dy * a_dy);
   const double b_len = std::sqrt(b_dx * b_dx + b_dy * b_dy);
   const double a_ux = a_len > 0.0 ? a_dx / a_len : 1.0;
@@ -178,7 +243,28 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
   const double bisector_ux = bx / blen;
   const double bisector_uy = by / blen;
 
-  const double kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 500.0));
+  // For virtual-pivot dimensions, the arc center is at the (potentially
+  // distant) intersection point.  Use a radius large enough to reach from
+  // the pivot to near the lines so the arc is visible where the lines are.
+  double kArcRadius;
+  if (dimension.pivot_x.has_value() && dimension.pivot_y.has_value()) {
+    // Compute the distance from the virtual pivot to the nearest line
+    // endpoint.  The arc should touch the closer of the two lines.
+    double min_dist_a = std::min(
+        std::sqrt((a_ends[0].first - pivot_x) * (a_ends[0].first - pivot_x) +
+                  (a_ends[0].second - pivot_y) * (a_ends[0].second - pivot_y)),
+        std::sqrt((a_ends[1].first - pivot_x) * (a_ends[1].first - pivot_x) +
+                  (a_ends[1].second - pivot_y) * (a_ends[1].second - pivot_y)));
+    double min_dist_b = std::min(
+        std::sqrt((b_ends[0].first - pivot_x) * (b_ends[0].first - pivot_x) +
+                  (b_ends[0].second - pivot_y) * (b_ends[0].second - pivot_y)),
+        std::sqrt((b_ends[1].first - pivot_x) * (b_ends[1].first - pivot_x) +
+                  (b_ends[1].second - pivot_y) * (b_ends[1].second - pivot_y)));
+    double pivot_to_lines = std::min(min_dist_a, min_dist_b);
+    kArcRadius = std::max(12.0, std::min(pivot_to_lines * 0.85, 500.0));
+  } else {
+    kArcRadius = std::max(8.0, std::min(std::min(a_len, b_len), 500.0));
+  }
   constexpr double kAnchorRadius = 4.0;
   const double kLabelRadius = kArcRadius;
 
@@ -263,6 +349,7 @@ ViewportSketchDimensionPrimitive make_angle_dimension_primitive(
     .ref_line_end_y = ref_line_end.y,
     .ref_line_end_z = ref_line_end.z,
     .driven = dimension.driven,
+    .display_as = "",
   };
   if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
     const double raw_dx = *dimension.label_x - pivot_x;

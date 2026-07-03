@@ -45,10 +45,12 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
   nearest, tangent, perpendicular, parallel, polar, grid, grid-line)
 - DOF counting and entity colouring (blue = fully constrained, red =
   over-constrained, yellow = under-constrained)
-- Dimension tool (single-entity, two-entity angle/distance, placement drag)
+- Dimension tool (single-entity, two-entity angle/distance, drag-to-choose
+  H/V/aligned placement, auto→manual conversion)
 - Draft dimension visualisation (Three.js-rendered during line drafting)
 - On-demand sketch dimensions (typed values create dimensions; drag-only doesn't)
-- Per-dimension radius/diameter toggle and driven (reference) dimensions
+- Per-dimension radius/diameter toggle, driving/driven toggle, and driven
+  (reference) dimensions with automatic over-constraint detection
 - Trim tool (lines, circles→arcs, arcs; core-driven hover preview)
 - Parametric parameters & dimension formulas with cycle detection
 - Endpoint drag with planegcs WASM solver (60 fps local preview, core commit
@@ -297,6 +299,8 @@ apps/
 native/
   cad-core/        C++ CAD core built with CMake
 
+help/              In-app help documentation (Markdown source)
+
 protocol/
   schema/          IPC message schemas
 
@@ -320,7 +324,7 @@ Current focus:
 
 - rounding out the remaining v1 features (patterns, measure tool, display units)
 - CAM workspace: face milling shipped, pocket/contour/drilling next
-- hardening and bug fixing (modeled threads, constraint edge cases)
+- hardening and bug fixing (modeled threads, dimension system consolidation)
 
 ## Wiki
 

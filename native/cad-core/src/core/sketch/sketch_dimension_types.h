@@ -40,6 +40,12 @@ struct SketchDimension {
   // dimension value or constrained geometry.
   std::optional<double> label_x;
   std::optional<double> label_y;
+  // Virtual pivot for angle dimensions between lines that don't share
+  // an endpoint or have an endpoint on the other's segment.  When set,
+  // all pivot-dependent code (render, solver, update) reads from these
+  // instead of recomputing from line endpoint proximity.
+  std::optional<double> pivot_x;
+  std::optional<double> pivot_y;
 };
 
 }  // namespace polysmith::core

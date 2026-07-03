@@ -99,6 +99,10 @@ export function useSlicerWorkspaceActions({
     setWorkspaceView("cam");
   }
 
+  async function showDrawingView() {
+    setWorkspaceView("drawing");
+  }
+
   async function prepareExportedSlicerStl() {
     const exportPath = await prepareOrcaExportPath();
     await exportDocumentStl(exportPath);
@@ -257,6 +261,7 @@ export function useSlicerWorkspaceActions({
     handleWorkspaceDropdownOpenChange,
     showCadView,
     showCamView,
+    showDrawingView,
     showSlicerView,
   };
 }
