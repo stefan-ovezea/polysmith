@@ -236,6 +236,99 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                 pre_snapshot[i].ey;
           }
         }
+
+        // Clean up any zero-length lines the solver produced before
+        // running the ad‑hoc enforce functions below (which throw on
+        // zero‑length geometry — see drive_line_parallel_to_reference,
+        // drive_line_perpendicular_to_reference).
+        {
+          std::vector<std::string> solver_zero_ids;
+          for (const auto &line : feature.sketch_parameters->lines) {
+            if (points_match(line.start_x, line.start_y,
+                             line.end_x, line.end_y)) {
+              solver_zero_ids.push_back(line.id);
+            }
+          }
+          if (!solver_zero_ids.empty()) {
+            for (const auto &zid : solver_zero_ids) {
+              fprintf(stderr, "ERROR deleted solver-produced zero-length line %s\n",
+                      zid.c_str());
+
+              std::string zsp_id;
+              std::string zep_id;
+              for (const auto &line : feature.sketch_parameters->lines) {
+                if (line.id == zid) {
+                  zsp_id = line.start_point_id;
+                  zep_id = line.end_point_id;
+                  break;
+                }
+              }
+              feature.sketch_parameters->constraints.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->constraints.begin(),
+                      feature.sketch_parameters->constraints.end(),
+                      [&](const SketchConstraint &c) {
+                        for (const auto &tid : c.target_ids) {
+                          if (tid == zid || tid == zsp_id || tid == zep_id)
+                            return true;
+                        }
+                        return false;
+                      }),
+                  feature.sketch_parameters->constraints.end());
+              feature.sketch_parameters->dimensions.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->dimensions.begin(),
+                      feature.sketch_parameters->dimensions.end(),
+                      [&](const SketchDimension &d) {
+                        return d.entity_id == zid ||
+                               d.secondary_entity_id == zid;
+                      }),
+                  feature.sketch_parameters->dimensions.end());
+              feature.sketch_parameters->line_relations.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->line_relations.begin(),
+                      feature.sketch_parameters->line_relations.end(),
+                      [&](const SketchLineRelation &rel) {
+                        return rel.first_line_id == zid ||
+                               rel.second_line_id == zid;
+                      }),
+                  feature.sketch_parameters->line_relations.end());
+              feature.sketch_parameters->fillets.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->fillets.begin(),
+                      feature.sketch_parameters->fillets.end(),
+                      [&](const SketchFillet &f) {
+                        return f.line_a_id == zid ||
+                               f.line_b_id == zid;
+                      }),
+                  feature.sketch_parameters->fillets.end());
+              feature.sketch_parameters->midpoint_anchors.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->midpoint_anchors.begin(),
+                      feature.sketch_parameters->midpoint_anchors.end(),
+                      [&](const SketchMidpointAnchor &a) {
+                        return a.line_id == zid;
+                      }),
+                  feature.sketch_parameters->midpoint_anchors.end());
+              feature.sketch_parameters->point_line_anchors.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->point_line_anchors.begin(),
+                      feature.sketch_parameters->point_line_anchors.end(),
+                      [&](const SketchPointLineAnchor &a) {
+                        return a.line_id == zid;
+                      }),
+                  feature.sketch_parameters->point_line_anchors.end());
+              feature.sketch_parameters->lines.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->lines.begin(),
+                      feature.sketch_parameters->lines.end(),
+                      [&](const SketchLine &line) {
+                        return line.id == zid;
+                      }),
+                  feature.sketch_parameters->lines.end());
+            }
+          }
+        }
       }
       feature.sketch_parameters->solver_dofs = result.dofs;
       feature.sketch_parameters->solver_ok = result.ok();
@@ -291,9 +384,18 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // H/V runs first (axis alignment), then relations (inter-line).
   // Any constraint that would destroy geometry is cleared instead.
   enforce_line_HV_constraints(*feature.sketch_parameters);
-  enforce_all_equal_length_relations(*feature.sketch_parameters);
-  enforce_all_perpendicular_relations(*feature.sketch_parameters);
-  enforce_all_parallel_relations(*feature.sketch_parameters);
+  try { enforce_all_equal_length_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR equal-length relation enforcement failed: %s\n", e.what());
+  }
+  try { enforce_all_perpendicular_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR perpendicular relation enforcement failed: %s\n", e.what());
+  }
+  try { enforce_all_parallel_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR parallel relation enforcement failed: %s\n", e.what());
+  }
 
   // Fillets must run *after* the tangent passes (so they see the
   // latest line endpoints) and *before* `rebuild_sketch_points`.
