@@ -186,6 +186,17 @@ Commands (UI → Core) and events (Core → UI) are newline-delimited JSON messa
 
 ## Testing
 
+**Rule: Never commit untested code.** Before committing any C++ or TypeScript
+change, verify it compiles. For C++ changes, run `pnpm core:rebuild` (or at
+minimum `pnpm core:build` if CMake cache is current). For TypeScript changes,
+run `pnpm --filter desktop-ui exec tsc --noEmit`. If a build fails, fix the
+error before committing — never commit code known to be broken.
+
+For logic changes, run the relevant test suite when one exists. If no test
+covers the changed code path, manually verify the fix in the running
+application before committing. A commit message should describe what was
+tested and how.
+
 ### C++ Tests
 
 Tests are standalone executables built by CMake. Run from the build directory:
