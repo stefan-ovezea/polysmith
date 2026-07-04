@@ -254,23 +254,13 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
               fprintf(stderr, "ERROR deleted solver-produced zero-length line %s\n",
                       zid.c_str());
 
-              std::string zsp_id;
-              std::string zep_id;
-              for (const auto &line : feature.sketch_parameters->lines) {
-                if (line.id == zid) {
-                  zsp_id = line.start_point_id;
-                  zep_id = line.end_point_id;
-                  break;
-                }
-              }
               feature.sketch_parameters->constraints.erase(
                   std::remove_if(
                       feature.sketch_parameters->constraints.begin(),
                       feature.sketch_parameters->constraints.end(),
                       [&](const SketchConstraint &c) {
                         for (const auto &tid : c.target_ids) {
-                          if (tid == zid || tid == zsp_id || tid == zep_id)
-                            return true;
+                          if (tid == zid) return true;
                         }
                         return false;
                       }),
