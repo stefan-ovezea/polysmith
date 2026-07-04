@@ -24,18 +24,22 @@ static ViewportSketchDimensionPrimitive make_offset_dimension_primitive(
   double off_x = offset_x;
   double off_y = offset_y;
 
-  // If the dimension has a stored label position, use it to determine
-  // the actual offset (respecting the user's drag placement).
+  // If the dimension has a stored label position (user drag), compute
+  // the user's delta from the default position and apply it.  The delta
+  // is the signed offset along the callers normal direction — geometry
+  // changes shift the default but the users delta stays constant.
   if (dimension && dimension->label_x.has_value() && dimension->label_y.has_value()) {
-    const double raw_off_x = *dimension->label_x - mid_x;
-    const double raw_off_y = *dimension->label_y - mid_y;
+    const double default_label_x = mid_x + offset_x;
+    const double default_label_y = mid_y + offset_y;
+    const double user_delta_x = *dimension->label_x - default_label_x;
+    const double user_delta_y = *dimension->label_y - default_label_y;
     const double off_len = std::sqrt(offset_x * offset_x + offset_y * offset_y);
     if (off_len > 1e-6) {
       const double ux = offset_x / off_len;
       const double uy = offset_y / off_len;
-      const double along = raw_off_x * ux + raw_off_y * uy;
-      off_x = ux * along;
-      off_y = uy * along;
+      const double along = user_delta_x * ux + user_delta_y * uy;
+      off_x = offset_x + ux * along;
+      off_y = offset_y + uy * along;
     }
   }
 

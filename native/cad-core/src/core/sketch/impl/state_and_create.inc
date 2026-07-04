@@ -180,7 +180,6 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           pre_snapshot.push_back(
               {line.start_x, line.start_y, line.end_x, line.end_y});
         }
-
         solver.apply(*feature.sketch_parameters);
 
         // Post-solve sanity checks.

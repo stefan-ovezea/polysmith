@@ -2794,6 +2794,13 @@ export function ViewportPanel({
 
       if (dimensionDrag.hasMoved) {
         persistDimensionDragLabelPosition(dimensionDrag);
+        // Clear the UI cache so future frames use core-computed
+        // positions (stale cache would override after geometry changes).
+        setDimensionLabelPositions((current) => {
+          const next = { ...current };
+          delete next[dimensionDrag.dimensionId];
+          return next;
+        });
       }
 
       dimensionLabelDragRef.current = null;
@@ -2889,24 +2896,32 @@ export function ViewportPanel({
         const commit = resolveLinearPlacementCommit(state);
 
         if (commit.kind === "line_length") {
+          const dimId = `dim-line-${commit.lineId}`;
           void addSketchLineLengthDimensionRef.current(commit.lineId).then(() => {
             updateSketchDimensionLabelPositionRef.current(
-              `dim-line-${commit.lineId}`,
+              dimId,
               commit.labelX,
               commit.labelY,
             );
+            // Adding a new dimension triggers a solver pass that may
+            // move any geometry — clear the entire UI cache.
+            setDimensionLabelPositions({});
           });
         } else {
+          const dimId = `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`;
           void addSketchPointDistanceDimensionRef.current(
             commit.pointAId,
             commit.pointBId,
             commit.axis,
           ).then(() => {
             updateSketchDimensionLabelPositionRef.current(
-              `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`,
+              dimId,
               commit.labelX,
               commit.labelY,
             );
+            // Adding a new dimension triggers a solver pass that may
+            // move any geometry — clear the entire UI cache.
+            setDimensionLabelPositions({});
           });
         }
         pendingDimensionPlacementRef.current = false;

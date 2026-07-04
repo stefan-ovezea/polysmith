@@ -29,6 +29,80 @@ void update_sketch_dimension(FeatureEntry& feature,
   // (plain numeric update).
   dimension.expression = expression.value_or("");
 
+  // Snapshot all stored label positions and their anchor midpoints
+  // before any geometry change, so we can shift them by the same
+  // delta after the solver moves geometry.
+  struct LabelPre { std::string id; double lx, ly; double mx, my; };
+  std::vector<LabelPre> pre_labels;
+  auto find_pt = [&](const std::string& pid) -> std::pair<double,double> {
+    for (const auto& l : parameters.lines) {
+      if (l.start_point_id == pid) return {l.start_x, l.start_y};
+      if (l.end_point_id == pid) return {l.end_x, l.end_y};
+    }
+    for (const auto& c : parameters.circles) {
+      if ("point-circle-" + c.id + "-center" == pid)
+        return {c.center_x, c.center_y};
+    }
+    for (const auto& p : parameters.points) {
+      if (p.id == pid) return {p.x, p.y};
+    }
+    return {0.0, 0.0};
+  };
+  for (const auto& dim : parameters.dimensions) {
+    if (!dim.label_x.has_value() || !dim.label_y.has_value()) continue;
+    double mx = 0, my = 0;
+    bool found = false;
+    if (dim.kind == "line_length" || dim.kind == "line_line_distance") {
+      for (const auto& l : parameters.lines) {
+        if (l.id == dim.entity_id) {
+          mx = (l.start_x + l.end_x) / 2.0;
+          my = (l.start_y + l.end_y) / 2.0;
+          found = true; break;
+        }
+      }
+    } else if (dim.kind == "point_distance" ||
+               dim.kind == "circle_center_distance") {
+      auto pa = find_pt(dim.entity_id);
+      auto pb = find_pt(dim.secondary_entity_id);
+      mx = (pa.first + pb.first) / 2.0;
+      my = (pa.second + pb.second) / 2.0;
+      found = true;
+    }
+    if (found) pre_labels.push_back({dim.id, *dim.label_x, *dim.label_y, mx, my});
+  }
+
+  auto sync_all_labels = [&]() {
+    for (auto& dim : parameters.dimensions) {
+      if (!dim.label_x.has_value()) continue;
+      for (const auto& pre : pre_labels) {
+        if (pre.id != dim.id) continue;
+        double mx = 0, my = 0;
+        bool found = false;
+        if (dim.kind == "line_length" || dim.kind == "line_line_distance") {
+          for (const auto& l : parameters.lines) {
+            if (l.id == dim.entity_id) {
+              mx = (l.start_x + l.end_x) / 2.0;
+              my = (l.start_y + l.end_y) / 2.0;
+              found = true; break;
+            }
+          }
+        } else if (dim.kind == "point_distance" ||
+                   dim.kind == "circle_center_distance") {
+          auto pa = find_pt(dim.entity_id);
+          auto pb = find_pt(dim.secondary_entity_id);
+          mx = (pa.first + pb.first) / 2.0;
+          my = (pa.second + pb.second) / 2.0;
+          found = true;
+        }
+        if (found) {
+          dim.label_x = pre.lx + (mx - pre.mx);
+          dim.label_y = pre.ly + (my - pre.my);
+        }
+        break;
+      }
+    }
+  };
+
   // Helper: after a dimension edit, check whether the solver detected
   // over-constraint or simply failed to converge.  When either occurs,
   // fall back to driven (reference-only).  With DogLeg as the default
@@ -94,6 +168,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     sync_all_line_dimensions(parameters);
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -113,6 +188,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     sync_circle_dimension(parameters, *circle_it);
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -142,7 +218,9 @@ void update_sketch_dimension(FeatureEntry& feature,
       }
       // Re-sync so everything is consistent.
       refresh_sketch_derived_state(feature);
+      sync_all_labels();
     }
+    sync_all_labels();
     return;
   }
 
@@ -187,6 +265,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     sync_all_line_dimensions(parameters);
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -206,6 +285,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -225,6 +305,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -249,6 +330,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -280,6 +362,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.driven = false;  // reset — may be set below
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
@@ -299,6 +382,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    sync_all_labels();
     return;
   }
 
