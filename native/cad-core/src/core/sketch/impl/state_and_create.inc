@@ -81,8 +81,26 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
               feature.sketch_parameters->lines.begin(),
               feature.sketch_parameters->lines.end(),
               [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+        } else if (dim.kind == "line_line_distance") {
+          found_primary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.entity_id; });
+          found_secondary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+        } else if (dim.kind == "circle_line_distance") {
+          found_primary = std::any_of(
+              feature.sketch_parameters->circles.begin(),
+              feature.sketch_parameters->circles.end(),
+              [&](const auto& c) { return c.id == dim.entity_id; });
+          found_secondary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.secondary_entity_id; });
         } else {
-          // point_distance, circle_center_distance, circle_line_distance
+          // point_distance, circle_center_distance
           found_primary = point_is_alive(dim.entity_id);
           found_secondary = point_is_alive(dim.secondary_entity_id);
         }
