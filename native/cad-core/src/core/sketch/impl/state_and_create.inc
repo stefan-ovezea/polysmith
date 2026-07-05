@@ -450,6 +450,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
   rebuild_sketch_points(*feature.sketch_parameters);
+
+  // Derived points (projected, quadrant, arc endpoints) are derived
+  // geometry — lock them by default so new derived points start as fixed.
+  // Must run before sync_fixed_point_flags so the user's explicit
+  // unfix (set_sketch_point_fixed) survives the refresh.
+  enforce_derived_points_fixed(*feature.sketch_parameters);
+
+  // Copy user-set is_fixed values from the previous frame. Must run
+  // AFTER enforce_derived_points_fixed so an explicit unfix overrides
+  // the default lock on derived points.
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
 
   // Driven (reference-only) dimensions: re-measure from current geometry
@@ -457,10 +467,6 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // MUST run after rebuild_sketch_points so point_distance driven dims
   // read fresh point positions, not stale ones from the previous frame.
   sync_driven_dimensions(*feature.sketch_parameters);
-  // Derived points (projected, quadrant) are derived geometry;
-  // force them locked unconditionally even if `sync_fixed_point_flags`
-  // happened to copy a transient false from the previous frame.
-  enforce_derived_points_fixed(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);
   feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
 }

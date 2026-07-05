@@ -5,7 +5,7 @@
               is_sketch_point_selected(point.id);
           sketch_points.push_back(make_sketch_point_primitive(
               point, *feature.sketch_parameters, is_selected_point));
-          if (point.is_fixed) {
+          if (point.is_fixed && point.kind != "projected") {
             sketch_constraints.push_back(make_point_constraint_primitive(
                 point, *feature.sketch_parameters, is_selected_point));
           }

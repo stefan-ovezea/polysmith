@@ -349,14 +349,33 @@ void update_sketch_dimension(FeatureEntry& feature,
       const double sign = (dy >= 0) ? 1.0 : -1.0;
       point_b.y = point_a.y + sign * value;
     } else {
-      // Euclidean — existing behaviour.
+      // Euclidean — check for fixed points before mutating geometry,
+      // matching the line_length update path's behaviour.
+      const bool point_a_fixed = point_is_fixed(parameters, dimension.entity_id);
+      const bool point_b_fixed = point_is_fixed(parameters, dimension.secondary_entity_id);
+      if (point_a_fixed && point_b_fixed) {
+        const double current_length = std::sqrt(dx * dx + dy * dy);
+        if (nearly_equal(current_length, value)) {
+          return;
+        }
+        throw std::runtime_error(
+            "Cannot drive a point distance when both points are fixed");
+      }
+
       const double current_length = std::sqrt(dx * dx + dy * dy);
       if (current_length <= kMinimumSketchDimensionValue) {
         throw std::runtime_error(
             "Point-distance dimension requires distinct points");
       }
+      const double previous_x = point_b.x;
+      const double previous_y = point_b.y;
       point_b.x = point_a.x + (dx / current_length) * value;
       point_b.y = point_a.y + (dy / current_length) * value;
+      // Propagate the moved point through any coincident geometry.
+      if (!points_match(previous_x, previous_y, point_b.x, point_b.y)) {
+        propagate_connected_point_move(
+            parameters, dimension.secondary_entity_id, point_b.x, point_b.y);
+      }
     }
     dimension.value = value;
     dimension.driven = false;  // reset — may be set below

@@ -103,9 +103,9 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
         "point-circle-" + circle.id + "-center", "center", circle.center_x, circle.center_y);
 
     // Derived quadrant points (cardinal directions on the circle).
-    // These are always fixed — they're derived geometry, not independently
-    // movable.  They give the dimension tool stable point IDs for
-    // quadrant / perimeter snaps without needing a new IPC command.
+    // These provide the dimension tool stable point IDs for quadrant /
+    // perimeter snaps.  Not fixed by default — the user can toggle fix
+    // via the constraint tool.
     const double cx = circle.center_x;
     const double cy = circle.center_y;
     const double r = circle.radius;
@@ -114,28 +114,28 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
         .kind = "quadrant",
         .x = cx + r,
         .y = cy,
-        .is_fixed = true,
+        .is_fixed = false,
     });
     parameters.points.push_back(SketchPoint{
         .id = "point-circle-" + circle.id + "-quadrant-1",
         .kind = "quadrant",
         .x = cx,
         .y = cy + r,
-        .is_fixed = true,
+        .is_fixed = false,
     });
     parameters.points.push_back(SketchPoint{
         .id = "point-circle-" + circle.id + "-quadrant-2",
         .kind = "quadrant",
         .x = cx - r,
         .y = cy,
-        .is_fixed = true,
+        .is_fixed = false,
     });
     parameters.points.push_back(SketchPoint{
         .id = "point-circle-" + circle.id + "-quadrant-3",
         .kind = "quadrant",
         .x = cx,
         .y = cy - r,
-        .is_fixed = true,
+        .is_fixed = false,
     });
   }
 
@@ -165,37 +165,11 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   }
 }
 
-// Force every derived point (projected, quadrant) to be is_fixed = true.
-// Runs after `rebuild_sketch_points` + `sync_fixed_point_flags` so it
-// doesn't matter what the previous-frame value was — derived geometry is
-// always locked.
+// Force projected points to stay fixed. Projected points are derived
+// from 3D body geometry — moving them would break the projection link.
 void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
-  // Collect arc endpoint point ids so we can freeze them too.
-  // v1 doesn't support post-creation arc reshape, so arc endpoints
-  // must stay locked to prevent the constraint solver from dragging
-  // them away from their connections.
-  //
-  // EXCEPTION: arc endpoints that are also endpoints of non-construction
-  // lines must stay movable.  Trimming a corner creates arcs whose
-  // endpoints are shared with the trimmed lines — freezing those
-  // endpoints would block the user from editing the line's dimension
-  // (drive_line_length_respecting_fixed_points throws when both
-  // endpoints are fixed).
-  std::unordered_set<std::string> line_endpoint_ids;
-  for (const auto& line : parameters.lines) {
-    if (line.is_construction) continue;
-    line_endpoint_ids.insert(line.start_point_id);
-    line_endpoint_ids.insert(line.end_point_id);
-  }
-  std::unordered_set<std::string> arc_endpoint_ids;
-  for (const auto& arc : parameters.arcs) {
-    arc_endpoint_ids.insert(arc.start_point_id);
-    arc_endpoint_ids.insert(arc.end_point_id);
-  }
   for (auto& point : parameters.points) {
-    if (point.kind == "projected" || point.kind == "quadrant" ||
-        (arc_endpoint_ids.count(point.id) &&
-         !line_endpoint_ids.count(point.id))) {
+    if (point.kind == "projected") {
       point.is_fixed = true;
     }
   }
