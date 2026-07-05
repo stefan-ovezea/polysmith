@@ -30,6 +30,13 @@ export async function handleSketchConstraintPointPickFromContext(
     return;
   }
 
+  // Clear constraint: arm, click a point → unfix it.
+  if (armedSketchConstraint?.kind === "clear") {
+    await context.setSketchPointFixed(context.pointId, false);
+    context.setArmedSketchConstraint(null);
+    return;
+  }
+
   if (!armedSketchConstraint || armedSketchConstraint.kind !== "coincident") {
     await context.selectSketchPoint(context.pointId, context.additive);
     return;
