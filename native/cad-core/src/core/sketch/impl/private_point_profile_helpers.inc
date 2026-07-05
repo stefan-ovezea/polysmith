@@ -174,6 +174,19 @@ void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
   // v1 doesn't support post-creation arc reshape, so arc endpoints
   // must stay locked to prevent the constraint solver from dragging
   // them away from their connections.
+  //
+  // EXCEPTION: arc endpoints that are also endpoints of non-construction
+  // lines must stay movable.  Trimming a corner creates arcs whose
+  // endpoints are shared with the trimmed lines — freezing those
+  // endpoints would block the user from editing the line's dimension
+  // (drive_line_length_respecting_fixed_points throws when both
+  // endpoints are fixed).
+  std::unordered_set<std::string> line_endpoint_ids;
+  for (const auto& line : parameters.lines) {
+    if (line.is_construction) continue;
+    line_endpoint_ids.insert(line.start_point_id);
+    line_endpoint_ids.insert(line.end_point_id);
+  }
   std::unordered_set<std::string> arc_endpoint_ids;
   for (const auto& arc : parameters.arcs) {
     arc_endpoint_ids.insert(arc.start_point_id);
@@ -181,7 +194,8 @@ void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
   }
   for (auto& point : parameters.points) {
     if (point.kind == "projected" || point.kind == "quadrant" ||
-        arc_endpoint_ids.count(point.id)) {
+        (arc_endpoint_ids.count(point.id) &&
+         !line_endpoint_ids.count(point.id))) {
       point.is_fixed = true;
     }
   }

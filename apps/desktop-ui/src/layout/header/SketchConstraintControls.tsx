@@ -13,6 +13,7 @@ const constraintButtons: Array<{
   { kind: "equal_length", labelKey: "toolbar.equalLength" },
   { kind: "perpendicular", labelKey: "toolbar.perpendicular" },
   { kind: "parallel", labelKey: "toolbar.parallel" },
+  { kind: "fixed", labelKey: "toolbar.fix" },
 ];
 
 interface SketchConstraintControlsProps {
@@ -102,6 +103,10 @@ function armedConstraintStatusText(
     return armedSketchConstraint.firstPointId
       ? t("constraints.coincidentSecondPointColon")
       : t("constraints.coincidentFirstPointColon");
+  }
+
+  if (armedSketchConstraint.kind === "fixed") {
+    return t("constraints.fixClickPoint");
   }
 
   if (

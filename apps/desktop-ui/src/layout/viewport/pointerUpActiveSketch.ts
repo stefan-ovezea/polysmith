@@ -113,6 +113,35 @@ function dimensionToolHit(hit: ActiveSketchSelectHit) {
 export function handleActiveSketchPointerUpTool(
   context: ActiveSketchPointerUpContext,
 ) {
+  // Armed constraints must fire regardless of the active sketch tool.
+  // The toolbar switches to "select" on arm, but the IPC round-trip
+  // may not have completed by the time the user clicks.
+  if (
+    context.armedSketchConstraint &&
+    (context.hit?.kind === "sketch_point" ||
+     context.hit?.kind === "sketch_entity")
+  ) {
+    handleActiveSketchSelectHit({
+      hit: context.hit,
+      additiveSelection: context.additiveSelection,
+      armedSketchConstraint: context.armedSketchConstraint,
+      mirrorFocusedSlot: context.mirrorFocusedSlot,
+      inactiveSketchEntityPickEnabled: context.inactiveSketchEntityPickEnabled,
+      sketchEntityObjectById: context.sketchEntityObjectById,
+      sketchPointObjects: context.sketchPointObjects,
+      mirrorEntityPick: context.mirrorEntityPick,
+      selectSketchEntity: context.selectSketchEntity,
+      pickSketchPoint: context.pickSketchPoint,
+      handleDimensionClick: context.handleDimensionClick,
+      setSelectedConstraint: context.setSelectedConstraint,
+      paintSketchEntityMaterials: context.paintSketchEntityMaterials,
+      paintSketchPointMaterials: context.paintSketchPointMaterials,
+      selectSketchProfile: context.selectSketchProfile,
+      addMessage: context.addMessage,
+    });
+    return true;
+  }
+
   if (context.activeSketchTool === "project") {
     handleActiveSketchProjectHit({
       hit: context.hit,

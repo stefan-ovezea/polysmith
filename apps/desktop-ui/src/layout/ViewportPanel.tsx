@@ -2539,6 +2539,7 @@ export function ViewportPanel({
         activeSketchToolRef,
         activeSketchPlaneIdRef,
         activeSketchPlaneFrameRef,
+        armedSketchConstraintRef,
         lineDraftStartRef,
         lastPointerDownTimeRef,
         lastPointerDownPosRef,

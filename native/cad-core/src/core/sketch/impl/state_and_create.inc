@@ -409,6 +409,31 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // latest line endpoints) and *before* `rebuild_sketch_points`.
   enforce_sketch_fillets(*feature.sketch_parameters);
 
+  // Propagate line endpoint positions to any arcs that share those
+  // point IDs.  Trim-created arcs share endpoints with lines; when a
+  // dimension edit moves the line, the arc's cached endpoint coords
+  // must stay in sync so the arc doesn't visually detach.
+  for (auto& arc : feature.sketch_parameters->arcs) {
+    for (const auto& line : feature.sketch_parameters->lines) {
+      if (line.start_point_id == arc.start_point_id) {
+        arc.start_x = line.start_x;
+        arc.start_y = line.start_y;
+      }
+      if (line.end_point_id == arc.start_point_id) {
+        arc.start_x = line.end_x;
+        arc.start_y = line.end_y;
+      }
+      if (line.start_point_id == arc.end_point_id) {
+        arc.end_x = line.start_x;
+        arc.end_y = line.start_y;
+      }
+      if (line.end_point_id == arc.end_point_id) {
+        arc.end_x = line.end_x;
+        arc.end_y = line.end_y;
+      }
+    }
+  }
+
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.
   sync_all_line_dimensions(*feature.sketch_parameters);

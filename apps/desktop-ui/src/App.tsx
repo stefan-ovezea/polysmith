@@ -971,6 +971,7 @@ function App() {
     setSketchTool,
     selectSketchEntity,
     selectSketchPoint,
+    setSketchPointFixed,
     setSketchLineConstraint,
     clearSketchLineConstraints,
     setSketchEqualLengthConstraint,

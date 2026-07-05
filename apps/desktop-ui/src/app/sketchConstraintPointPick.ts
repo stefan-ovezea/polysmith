@@ -12,6 +12,7 @@ export interface SketchConstraintPointPickContext {
     pointId: string,
     otherPointId: string,
   ) => Promise<void>;
+  setSketchPointFixed: (pointId: string, isFixed: boolean) => Promise<void>;
   setArmedSketchConstraint: (constraint: ArmedSketchConstraint) => void;
   addMessage: (message: string) => void;
 }
@@ -20,6 +21,14 @@ export async function handleSketchConstraintPointPickFromContext(
   context: SketchConstraintPointPickContext,
 ) {
   const { armedSketchConstraint } = context;
+
+  // Fix constraint: arm, click a point → fix it, then clear the arm
+  // so the next click doesn't accidentally fix another point.
+  if (armedSketchConstraint?.kind === "fixed") {
+    await context.setSketchPointFixed(context.pointId, true);
+    context.setArmedSketchConstraint(null);
+    return;
+  }
 
   if (!armedSketchConstraint || armedSketchConstraint.kind !== "coincident") {
     await context.selectSketchPoint(context.pointId, context.additive);

@@ -22,6 +22,7 @@ interface SketchToolActionContext extends SketchLineConstraintActions {
     pointId: string,
     additive?: boolean,
   ) => Promise<void>;
+  setSketchPointFixed: (pointId: string, isFixed: boolean) => Promise<void>;
   setSketchCoincidentConstraint: (
     pointId: string,
     otherPointId: string,
@@ -40,6 +41,7 @@ export function createSketchToolActions({
   setSketchTool,
   selectSketchEntity,
   selectSketchPoint,
+  setSketchPointFixed,
   setSketchLineConstraint,
   clearSketchLineConstraints,
   setSketchEqualLengthConstraint,
@@ -96,6 +98,7 @@ export function createSketchToolActions({
       additive,
       armedSketchConstraint,
       selectSketchPoint,
+      setSketchPointFixed,
       setSketchCoincidentConstraint,
       setArmedSketchConstraint,
       addMessage,

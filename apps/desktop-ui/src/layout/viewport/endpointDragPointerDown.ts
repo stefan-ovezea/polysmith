@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import type { SketchFeatureParameters, SketchPlaneFrame } from "@/types";
+import type { ArmedSketchConstraint, SketchFeatureParameters, SketchPlaneFrame } from "@/types";
 import { resolveSketchPlanePoint } from "@/utils";
 import type { EndpointDrag } from "./endpointDrag";
 
@@ -23,6 +23,7 @@ interface BeginEndpointDragPointerDownParams {
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   sketch: SketchFeatureParameters | null;
   endpointDragRef: MutableRef<EndpointDrag | null>;
+  armedSketchConstraint: ArmedSketchConstraint;
 }
 
 export function beginEndpointDragPointerDown({
@@ -35,8 +36,15 @@ export function beginEndpointDragPointerDown({
   activeSketchPlaneFrame,
   sketch,
   endpointDragRef,
+  armedSketchConstraint,
 }: BeginEndpointDragPointerDownParams) {
   if (!hit || !activeSketchPlaneId || !sketch) {
+    return false;
+  }
+
+  // When a constraint is armed (fix, coincident, etc.), clicking a
+  // point should apply the constraint — not start an endpoint drag.
+  if (armedSketchConstraint) {
     return false;
   }
 

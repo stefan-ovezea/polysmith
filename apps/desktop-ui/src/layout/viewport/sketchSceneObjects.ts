@@ -213,9 +213,6 @@ function addSketchConstraintObjects({
   sketchConstraintObjects: THREE.Object3D[];
 }) {
   for (const sketchConstraint of sceneData.sketchConstraints) {
-    if (sketchConstraint.kind === "fixed") {
-      continue;
-    }
     const sketchConstraintObject =
       buildSketchConstraintObject(sketchConstraint);
     sketchConstraintObjects.push(sketchConstraintObject);
