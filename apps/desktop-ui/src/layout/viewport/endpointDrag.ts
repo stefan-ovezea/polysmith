@@ -132,12 +132,15 @@ function endpointDragAnchors(
 
   // Line endpoints: anchored to the opposite endpoint.
   for (const line of params.lines) {
-    if (line.start_point_id !== pointId && line.end_point_id !== pointId) {
+    const isStart = line.start_point_id === pointId || line.start_vertex_id === pointId;
+    const isEnd   = line.end_point_id === pointId   || line.end_vertex_id === pointId;
+    if (!isStart && !isEnd) {
       continue;
     }
-    const anchoredId =
-      line.start_point_id === pointId ? line.end_point_id : line.start_point_id;
-    const anchored = params.points.find((point) => point.point_id === anchoredId);
+    const anchoredId = isStart
+      ? (line.end_vertex_id ?? line.end_point_id)
+      : (line.start_vertex_id ?? line.start_point_id);
+    const anchored = params.points.find((point) => (point.vertex_id ?? point.point_id) === anchoredId);
     if (anchored) {
       anchors.push(anchored);
     }
@@ -265,21 +268,26 @@ export function computeRippleActivePoints(
 ): string[] {
   if (!sketch) return [draggedPointId];
 
+  // Vertex-id lookup: old point_id → new vertex_id
+  const vid = new Map(sketch.points.map((p) => [p.point_id, p.vertex_id ?? p.point_id]));
+
   const active = new Set<string>();
-  active.add(draggedPointId);
+  active.add(vid.get(draggedPointId) ?? draggedPointId);
 
   for (const line of sketch.lines) {
-    if (line.start_point_id === draggedPointId) {
-      active.add(line.end_point_id);
-    } else if (line.end_point_id === draggedPointId) {
-      active.add(line.start_point_id);
+    const isStart = line.start_point_id === draggedPointId || line.start_vertex_id === draggedPointId;
+    const isEnd   = line.end_point_id === draggedPointId   || line.end_vertex_id === draggedPointId;
+    if (isStart) {
+      active.add(vid.get(line.end_point_id) ?? line.end_point_id);
+    } else if (isEnd) {
+      active.add(vid.get(line.start_point_id) ?? line.start_point_id);
     }
   }
 
   // Include circle center if this is a center point.
   const centerMatch = /^point-circle-(.+)-center$/.exec(draggedPointId);
   if (centerMatch) {
-    active.add(draggedPointId); // already added, just being explicit
+    active.add(vid.get(draggedPointId) ?? draggedPointId);
   }
 
   // If the dragged point is a normal point that happens to be a circle
@@ -287,7 +295,7 @@ export function computeRippleActivePoints(
   for (const circle of sketch.circles) {
     const centerId = `point-circle-${circle.circle_id}-center`;
     if (centerId === draggedPointId) {
-      active.add(centerId);
+      active.add(vid.get(centerId) ?? centerId);
     }
   }
 
