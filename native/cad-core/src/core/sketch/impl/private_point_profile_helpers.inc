@@ -170,6 +170,38 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   for (const auto& projected : parameters.projected_points) {
     append_point(projected.id, "projected", projected.x, projected.y);
   }
+
+  // ── Phase 1: populate vertex unification fields ─────────────
+  // Mark projected points and resolve their source metadata from
+  // the projections vector.  geometry_owner_ids is left empty
+  // until Phase 2.
+  for (auto& point : parameters.points) {
+    if (point.kind == "projected") {
+      point.is_projected = true;
+      // Resolve source metadata from the matching SketchProjection.
+      for (const auto& proj : parameters.projections) {
+        if (proj.generated_point_id == point.id ||
+            proj.source_id == point.id) {
+          point.source_type = proj.source_kind;
+          // Extract feature id from source_id (format: <body_id>:<kind>:<index>).
+          const auto colon1 = proj.source_id.find(':');
+          if (colon1 != std::string::npos) {
+            point.source_feature_id = proj.source_id.substr(0, colon1);
+          }
+          break;
+        }
+      }
+      // For projection-generated lines, set geometry_owner_ids.
+      for (const auto& proj : parameters.projections) {
+        for (const auto& line_id : proj.generated_line_ids) {
+          if (line_id == point.id) {
+            point.geometry_owner_ids = {line_id};
+            break;
+          }
+        }
+      }
+    }
+  }
 }
 
 // Force projected points to stay fixed. Projected points are derived

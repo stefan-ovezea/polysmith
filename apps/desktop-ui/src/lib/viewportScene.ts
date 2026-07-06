@@ -858,6 +858,11 @@ export function createViewportScene(
       ],
       isFixed: point.is_fixed,
       isSelected: point.is_selected,
+      geometryOwnerIds: point.geometry_owner_ids,
+      isProjected: point.is_projected,
+      sourceType: point.source_type,
+      sourceFeatureId: point.source_feature_id,
+      sourceEdgeId: point.source_edge_id,
     }));
   const hiddenRectangleDimensionEntityIds =
     rectangleDimensionEntityIds(sketchLines);

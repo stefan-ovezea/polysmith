@@ -240,6 +240,12 @@ export interface SketchPointScene {
   position: [number, number, number];
   isFixed: boolean;
   isSelected: boolean;
+  // ── Vertex unification (Phase 1) ───────────────────────────
+  geometryOwnerIds?: string[];
+  isProjected?: boolean;
+  sourceType?: string;
+  sourceFeatureId?: string;
+  sourceEdgeId?: string;
 }
 
 export interface SketchDimensionScene {

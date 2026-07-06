@@ -87,6 +87,13 @@ struct ViewportSketchPointPrimitive {
   bool is_fixed;
   bool is_selected;
   std::string dof_status;
+
+  // ── Vertex unification fields (Phase 1) ─────────────────────
+  std::vector<std::string> geometry_owner_ids;
+  bool is_projected = false;
+  std::optional<std::string> source_type;
+  std::optional<std::string> source_feature_id;
+  std::optional<std::string> source_edge_id;
 };
 
 struct ViewportSketchDimensionPrimitive {

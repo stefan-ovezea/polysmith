@@ -95,6 +95,25 @@ struct SketchPoint {
   double x;
   double y;
   bool is_fixed;
+
+  // ── Vertex unification fields (Phase 1) ─────────────────────
+  // IDs of the geometry entities (lines, circles, arcs) that own
+  // this vertex.  For a line endpoint this is [line_id]; for a
+  // shared corner it is [line_a_id, line_b_id].  Populated in
+  // Phase 2; empty for now.
+  std::vector<std::string> geometry_owner_ids;
+
+  // True when this point was produced by the Project tool from
+  // 3D body geometry.
+  bool is_projected = false;
+
+  // Source of the projection (only meaningful when is_projected).
+  // e.g. "edge_midpoint", "vertex", "face_center"
+  std::optional<std::string> source_type;
+  // Feature id of the body the projection came from.
+  std::optional<std::string> source_feature_id;
+  // Edge id if the source was an edge midpoint / endpoint.
+  std::optional<std::string> source_edge_id;
 };
 
 // Standalone sketch point produced by the Project tool when the user

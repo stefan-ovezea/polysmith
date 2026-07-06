@@ -199,6 +199,12 @@ export interface ViewportSketchPoint {
   position: Vector3;
   is_fixed: boolean;
   is_selected: boolean;
+  // ── Vertex unification (Phase 1) ───────────────────────────
+  geometry_owner_ids?: string[];
+  is_projected?: boolean;
+  source_type?: string;
+  source_feature_id?: string;
+  source_edge_id?: string;
 }
 
 export interface ViewportSketchDimension {

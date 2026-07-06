@@ -146,6 +146,11 @@ ViewportSketchPointPrimitive make_sketch_point_primitive(
       .position_z = world.z,
       .is_fixed = point.is_fixed,
       .is_selected = is_selected,
+      .geometry_owner_ids = point.geometry_owner_ids,
+      .is_projected = point.is_projected,
+      .source_type = point.source_type,
+      .source_feature_id = point.source_feature_id,
+      .source_edge_id = point.source_edge_id,
   };
 }
 

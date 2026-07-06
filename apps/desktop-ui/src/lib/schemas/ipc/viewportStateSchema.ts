@@ -293,7 +293,13 @@ export const viewportStateSchema = z.object({
       }),
       is_fixed: z.boolean(),
       is_selected: z.boolean(),
-    }),
+      // ── Vertex unification (Phase 1) ───────────────────────
+      geometry_owner_ids: z.array(z.string()).optional().default([]),
+      is_projected: z.boolean().optional().default(false),
+      source_type: z.string().optional(),
+      source_feature_id: z.string().optional(),
+      source_edge_id: z.string().optional(),
+    }).passthrough(),
   ),
   sketch_dimensions: z.array(
     z.object({

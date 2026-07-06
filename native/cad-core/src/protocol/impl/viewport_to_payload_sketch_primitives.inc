@@ -102,7 +102,7 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
 }
 
 json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive) {
-  return {
+  json j = {
       {"point_id", primitive.point_id},
       {"plane_id", primitive.plane_id},
       {"kind", primitive.kind},
@@ -114,7 +114,16 @@ json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive) 
        }},
       {"is_fixed", primitive.is_fixed},
       {"is_selected", primitive.is_selected},
+      {"geometry_owner_ids", primitive.geometry_owner_ids},
+      {"is_projected", primitive.is_projected},
   };
+  if (primitive.source_type.has_value())
+    j["source_type"] = primitive.source_type.value();
+  if (primitive.source_feature_id.has_value())
+    j["source_feature_id"] = primitive.source_feature_id.value();
+  if (primitive.source_edge_id.has_value())
+    j["source_edge_id"] = primitive.source_edge_id.value();
+  return j;
 }
 
 json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primitive) {
