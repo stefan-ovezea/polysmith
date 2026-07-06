@@ -52,13 +52,9 @@ struct DocumentState {
   std::vector<ParameterEntry> parameters;
   DocumentAppearance appearance;
   SelectionFilter selection_filter;
-  // CAM workspace setup. nullopt when no CAM setup exists.
-  // Must be present before any milling operation can be created.
-  std::optional<CamSetup> cam_setup;
-  // CAM tool library. Persisted with the document.
-  std::vector<CamToolDefinition> tool_library;
-  // CAM operations in execution order.
-  std::vector<CamOperationEntry> cam_operations;
+  // CAM workspace data — setups, tool library, operations, post-processor,
+  // and simulation state.  All CAM state lives here; see cam_types.h.
+  CamDocumentData cam;
 };
 
 struct SessionState {

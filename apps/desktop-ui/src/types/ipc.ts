@@ -161,19 +161,14 @@ export * from "./ipc/bodyFeatureCommands";
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
 
-export interface CamSetupStock {
-  width: number;
-  height: number;
-  depth: number;
-  offset_x: number;
-  offset_y: number;
-  offset_z: number;
-}
-
-export interface CamSetupOrigin {
-  x: number;
-  y: number;
-  z: number;
+// CAM data — mirrors polysmith::core::CamDocumentData (cam_types.h).
+// Detailed CAM types live in types/geometry/cam.ts.
+export interface CamDocumentData {
+  setups: Record<string, unknown>[];
+  tool_library: Record<string, unknown>[];
+  operations: Record<string, unknown>[];
+  post_processor: Record<string, unknown> | null;
+  simulation: Record<string, unknown> | null;
 }
 
 export interface DocumentState {
@@ -201,37 +196,7 @@ export interface DocumentState {
   feature_history: FeatureEntry[];
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
-  cam_setup: {
-    setup_id: string;
-    stock: CamSetupStock;
-    wcs_origin: CamSetupOrigin;
-    safety_plane_z: number;
-    axis_count: number;
-    wcs_angle: number;
-  } | null;
-  tool_library: Array<{
-    tool_id: string;
-    name: string;
-    tool_number: number;
-    diameter: number;
-    flute_length: number;
-    overall_length: number;
-    corner_radius: number;
-    spindle_speed: number;
-    feed_rate: number;
-    stepover: number;
-    stepdown: number;
-    type: number;
-  }>;
-  cam_operations: Array<{
-    id: string;
-    name: string;
-    type: number;
-    tool_id: string;
-    body_id: string;
-    face_index: number;
-    face_milling?: { depth: number; stepover: number; angle_deg: number };
-  }>;
+  cam: CamDocumentData;
 }
 
 export interface DocumentAppearance {

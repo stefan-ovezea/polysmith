@@ -327,7 +327,7 @@ function App() {
   const [wcsOrientation, setWcsOrientation] = useState<string>("model");
   const camOperations = useMemo(
     () => buildCamOperations(document),
-    [document?.cam_operations],
+    [(document?.cam as any)?.operations],
   );
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
   const errorLogCount = logs.filter((entry) => entry.level === "error").length;

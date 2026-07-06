@@ -354,7 +354,7 @@ export function AppTopBar(props: AppTopBarProps) {
       onSelectCamOperation={(op) => {
         props.setActiveCamOperation((prev) => (prev === op ? null : op));
       }}
-      hasCamSetup={props.document?.cam_setup != null}
+      hasCamSetup={(props.document?.cam as any)?.setups?.length > 0}
       onCamSetupClick={() => {
         props.setIsCamSetupPanelOpen((prev) => !prev);
       }}

@@ -7,7 +7,7 @@ import type { SavedDocumentBaseline } from "./appState";
 export function buildCamOperations(
   document: DocumentState | null,
 ): CamOperation[] {
-  return (document?.cam_operations ?? []).map((operation) => ({
+  return ((document?.cam as any)?.operations ?? []).map((operation: any) => ({
     id: operation.id,
     name: operation.name,
     type: coreCamOperationTypeToUi(operation.type),

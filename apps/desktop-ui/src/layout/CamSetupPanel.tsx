@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
-import type { CamSetupOrigin, CamSetupStock } from "@/types";
+// Legacy CAM types (being rebuilt on cam_types.h schema).
+interface CamSetupStock {
+  width: number; height: number; depth: number;
+  offset_x: number; offset_y: number; offset_z: number;
+}
+interface CamSetupOrigin { x: number; y: number; z: number; }
 import {
   CamNumberField,
   useCamEscapeCancel,

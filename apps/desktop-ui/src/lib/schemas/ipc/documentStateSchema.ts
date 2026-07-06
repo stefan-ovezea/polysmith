@@ -749,34 +749,19 @@ export const documentStateSchema = z.object({
       error_message: z.string().default(""),
     }),
   ).default([]),
-  cam_setup: z
-    .object({
-      setup_id: z.string(),
-      stock: z.object({
-        width: z.number(), height: z.number(), depth: z.number(),
-        offset_x: z.number(), offset_y: z.number(), offset_z: z.number(),
-      }),
-      wcs_origin: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      safety_plane_z: z.number(),
-      axis_count: z.number(),
-      wcs_angle: z.number().default(0),
-    })
-    .passthrough()
-    .nullable()
-    .default(null),
-  tool_library: z
-    .array(z.object({
-      tool_id: z.string(), name: z.string(), tool_number: z.number(),
-      diameter: z.number(), flute_length: z.number(), overall_length: z.number(),
-      corner_radius: z.number(), spindle_speed: z.number(), feed_rate: z.number(),
-      stepover: z.number(), stepdown: z.number(), type: z.number(),
-    }))
-    .default([]),
-  cam_operations: z
-    .array(z.object({
-      id: z.string(), name: z.string(), type: z.number(), tool_id: z.string(),
-      body_id: z.string(), face_index: z.number(),
-      face_milling: z.object({ depth: z.number(), stepover: z.number(), angle_deg: z.number() }).optional(),
-    }))
-    .default([]),
+  // CAM workspace data — setups, tool library, operations, post-processor,
+  // and simulation.  Mirrors CamDocumentData in cam_types.h.
+  cam: z.object({
+    setups: z.array(z.object({}).passthrough()).default([]),
+    tool_library: z.array(z.object({}).passthrough()).default([]),
+    operations: z.array(z.object({}).passthrough()).default([]),
+    post_processor: z.object({}).passthrough().nullable().default(null),
+    simulation: z.object({}).passthrough().nullable().default(null),
+  }).default({
+    setups: [] as Record<string, unknown>[],
+    tool_library: [] as Record<string, unknown>[],
+    operations: [] as Record<string, unknown>[],
+    post_processor: null as Record<string, unknown> | null,
+    simulation: null as Record<string, unknown> | null,
+  }),
 });

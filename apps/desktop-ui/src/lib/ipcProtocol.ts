@@ -1,8 +1,6 @@
 import type {
   CoreCommand,
   CoreMessage,
-  CamSetupOrigin,
-  CamSetupStock,
   DocumentState,
   DocumentExportResult,
   ErrorEvent,
@@ -287,6 +285,13 @@ export function makeCamSetupCreateCommand(): CoreCommand {
     },
   } as unknown as CoreCommand;
 }
+
+// Legacy CAM types used by the setup panel (being rebuilt on cam_types.h schema).
+interface CamSetupStock {
+  width: number; height: number; depth: number;
+  offset_x: number; offset_y: number; offset_z: number;
+}
+interface CamSetupOrigin { x: number; y: number; z: number; }
 
 export interface CamSetupUpdatePayload {
   stock?: CamSetupStock;

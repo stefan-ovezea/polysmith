@@ -15,19 +15,20 @@ export function addCamSceneObjects({
   showStock: boolean;
   wcsOrientation: string;
 }) {
-  if (!document?.cam_setup) {
+  const setup = (document?.cam as any)?.setups?.[0];
+  if (!setup) {
     return;
   }
 
   addWcsOriginMarker({
-    origin: document.cam_setup.wcs_origin,
+    origin: setup.wcs_origin,
     referenceGroup,
     wcsOrientation,
   });
 
-  if (showStock && document.cam_setup.stock) {
+  if (showStock && setup.stock) {
     addStockBoundingBox({
-      stock: document.cam_setup.stock,
+      stock: setup.stock,
       viewport,
       referenceGroup,
     });
