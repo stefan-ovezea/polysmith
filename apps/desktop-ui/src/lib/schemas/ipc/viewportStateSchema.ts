@@ -302,6 +302,7 @@ export const viewportStateSchema = z.object({
       kind: z.enum([
         "line_length",
         "circle_radius",
+        "arc_radius",
         "polygon_radius",
         "angle",
         "line_angle",

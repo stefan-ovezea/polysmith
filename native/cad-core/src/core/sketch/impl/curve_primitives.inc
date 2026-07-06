@@ -92,18 +92,24 @@ void add_sketch_arc(FeatureEntry& feature,
       .is_construction = is_construction,
   });
 
+  if (!is_construction) {
+    const auto& arc = feature.sketch_parameters->arcs.back();
+    feature.sketch_parameters->dimensions.push_back(SketchDimension{
+        .id = "dim-arc-" + arc.id,
+        .kind = "arc_radius",
+        .entity_id = arc.id,
+        .value = arc.radius,
+        .is_auto = true,
+    });
+  }
+
   refresh_sketch_with_append_focus(
       feature, {"arc-" + std::to_string(arc_index)});
 
-  // After the rebuild above, the arc's endpoint points exist in the
-  // points list. Flag them as fixed so v1 stops the user from dragging
-  // them off the cached arc — the arc's geometry is otherwise frozen
-  // at creation. Editing flows can flip this back to false later.
-  for (auto& point : feature.sketch_parameters->points) {
-    if (point.id == start_point_id || point.id == end_point_id) {
-      point.is_fixed = true;
-    }
-  }
+  // Arc endpoints start unfixed. The arc's shape is cached at creation;
+  // the user can toggle fix on individual endpoints via the constraint
+  // tool if they want to lock them.
+
 }
 
 std::optional<std::tuple<double, double>> find_point_position(

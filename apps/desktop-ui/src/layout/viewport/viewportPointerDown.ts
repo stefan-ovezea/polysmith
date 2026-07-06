@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type {
+  ArmedSketchConstraint,
   SketchDimensionScene,
   SketchFeatureParameters,
   SketchPlaneFrame,
@@ -51,6 +52,7 @@ interface ViewportPointerDownParams {
   activeSketchToolRef: MutableRef<SketchTool>;
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
+  armedSketchConstraintRef: MutableRef<ArmedSketchConstraint>;
   lineDraftStartRef: BeginDraftPointerDownParams["draftStartRef"];
   lastPointerDownTimeRef: UpdateDraftChainBreakParams["lastPointerDownTimeRef"];
   lastPointerDownPosRef: UpdateDraftChainBreakParams["lastPointerDownPosRef"];
@@ -241,6 +243,7 @@ function beginSelectToolPointerDown(params: ViewportPointerDownParams) {
     endpointDragRef: params.endpointDragRef,
     selectionDragRef: params.selectionDragRef,
     intersectSceneTargets: params.intersectSceneTargets,
+    armedSketchConstraint: params.armedSketchConstraintRef.current,
   });
   if (result.clearPointerDown) {
     params.setPointerDown(null);

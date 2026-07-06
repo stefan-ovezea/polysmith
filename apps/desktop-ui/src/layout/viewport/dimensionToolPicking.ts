@@ -1,6 +1,6 @@
 import type { SketchFeatureParameters } from "@/types";
 
-type EntityKind = "line" | "circle" | "polygon";
+type EntityKind = "line" | "circle" | "polygon" | "arc";
 
 /**
  * Determine whether the dimension should be horizontal ("x"), vertical
@@ -95,11 +95,29 @@ function resolveEntityToPoint(
 function entityIdFromSketchPointId(
   pointId: string,
   kinds: readonly EntityKind[] = ["line", "circle", "polygon"],
+  sketch?: SketchFeatureParameters | null,
 ) {
+  // Fast path: regex-based resolution for well-named point IDs.
   for (const kind of kinds) {
     const match = pointId.match(new RegExp(`^point-(${kind}-\\d+)`));
     if (match) {
       return match[1];
+    }
+  }
+  // Fallback for bare point-N IDs (arc endpoints, shared topology):
+  // search entities by their start_point_id / end_point_id fields.
+  if (sketch) {
+    for (const line of sketch.lines) {
+      if (line.start_point_id === pointId || line.end_point_id === pointId)
+        return line.line_id;
+    }
+    for (const arc of (sketch.arcs ?? [])) {
+      if (arc.start_point_id === pointId || arc.end_point_id === pointId)
+        return arc.arc_id;
+    }
+    for (const circle of sketch.circles) {
+      if (`point-circle-${circle.circle_id}-center` === pointId)
+        return circle.circle_id;
     }
   }
   return null;
@@ -122,6 +140,9 @@ export function unaryDimensionIdForEntity(entityId: string): string | null {
   }
   if (entityId.startsWith("polygon-")) {
     return `dim-polygon-${entityId}`;
+  }
+  if (entityId.startsWith("arc-")) {
+    return `dim-arc-${entityId}`;
   }
   return null;
 }
@@ -191,6 +212,14 @@ type DimensionEntityPickAction =
       polygonId: string;
     }
   | {
+      kind: "arc_dimension";
+      arcId: string;
+    }
+  | {
+      kind: "select_arc";
+      arcId: string;
+    }
+  | {
       kind: "select_line";
       lineId: string;
     }
@@ -257,6 +286,8 @@ interface DimensionToolClickContext {
   createLineAngle: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
   selectCircle: (circleId: string) => void;
+  createArc: (arcId: string) => void;
+  selectArc: (arcId: string) => void;
   createPolygon: (polygonId: string) => void;
   selectPolygon: (polygonId: string) => void;
   selectLine: (lineId: string) => void;
@@ -376,6 +407,12 @@ function applyEntityPickAction(
     case "select_polygon":
       context.selectPolygon(action.polygonId);
       return;
+    case "arc_dimension":
+      context.createArc(action.arcId);
+      return;
+    case "select_arc":
+      context.selectArc(action.arcId);
+      return;
     case "select_line":
       context.selectLine(action.lineId);
       return;
@@ -390,11 +427,6 @@ function handleDimensionEntityHit(context: DimensionToolClickContext) {
     return false;
   }
   if (hit.isProjected) {
-    return true;
-  }
-
-  // Arcs don't support dimensions yet — consume the click gracefully.
-  if (hit.entityKind === "arc") {
     return true;
   }
 
@@ -433,8 +465,8 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
     // If both points belong to the same line and that line already has
     // a line_length dimension, select the existing dimension instead of
     // creating a redundant point_distance.
-    const entityA = entityIdFromSketchPointId(pointAction.firstPointId, ["line"]);
-    const entityB = entityIdFromSketchPointId(pointAction.secondPointId, ["line"]);
+    const entityA = entityIdFromSketchPointId(pointAction.firstPointId, ["line"], context.sketch);
+    const entityB = entityIdFromSketchPointId(pointAction.secondPointId, ["line"], context.sketch);
     if (entityA && entityA === entityB && hasUnaryDimension(context.sketch, entityA)) {
       context.createLine(entityA);
       return true;
@@ -803,6 +835,16 @@ function dimensionEntityPickAction({
       : {
           kind: "circle_dimension",
           circleId: entityId,
+          clearFirstPick: false,
+        };
+  }
+
+  if (entityKind === "arc") {
+    return hasUnary
+      ? { kind: "select_arc", arcId: entityId }
+      : {
+          kind: "arc_dimension",
+          arcId: entityId,
           clearFirstPick: false,
         };
   }

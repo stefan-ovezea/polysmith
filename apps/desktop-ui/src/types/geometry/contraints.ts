@@ -24,6 +24,7 @@ export type ConstraintType =
 export type ArmedSketchConstraint =
   | null
   | { kind: "horizontal" | "vertical" | "clear" }
+  | { kind: "fixed" }
   | {
       kind: "equal_length" | "perpendicular" | "parallel";
       firstLineId: string | null;

@@ -32,9 +32,9 @@ ViewportSketchDimensionPrimitive make_point_distance_dimension_primitive(
   const bool is_h = (dimension.display_as == "x");
   const bool is_v = (dimension.display_as == "y");
 
-  // H/V dimensions need per-point offsets (not uniform) because the
-  // dimension line must be horizontal/vertical at a constant Y/X while
-  // the anchor points may have different coordinates.
+  // The stored label_x/label_y are kept current by the solver pass
+  // in refresh_sketch_derived_state, so reading them directly as
+  // absolute positions is safe — they follow geometry changes.
   auto wp = [&](double x, double y) { return to_world_point(parameters, x, y); };
   if (is_h) {
     double ly = dimension.label_y.has_value() ? *dimension.label_y

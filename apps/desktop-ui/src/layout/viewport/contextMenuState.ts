@@ -196,6 +196,30 @@ function sketchContextMenu({
     };
   }
 
+  // When right-clicking a fixed point, show the constraint menu
+  // ("Delete Constraint" → unfix) instead of the generic Delete menu.
+  if (hit.kind === "sketch_point") {
+    const activeId = document?.active_sketch_feature_id;
+    const feature = activeId
+      ? document?.feature_history.find((f) => f.feature_id === activeId)
+      : null;
+    const point = feature?.sketch_parameters?.points.find(
+      (p) => p.point_id === hit.id,
+    );
+    if (point?.is_fixed) {
+      return {
+        contextMenu: {
+          x,
+          y,
+          referenceId: null,
+          faceId: null,
+          constraintKind: "fixed",
+          constraintEntityId: hit.id,
+        },
+      };
+    }
+  }
+
   const currentSelection = currentSketchSelection(document);
   const clickedSelection = clickedSketchSelection(hit);
   const clickedIsSelected = sketchHitIsSelected(hit, currentSelection);

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import type { SketchFeatureParameters, SketchPlaneFrame } from "@/types";
+import type { ArmedSketchConstraint, SketchFeatureParameters, SketchPlaneFrame } from "@/types";
 import type { ViewportPickHit } from "./contextMenuState";
 import type { EndpointDrag } from "./endpointDrag";
 import { beginEndpointDragPointerDown } from "./endpointDragPointerDown";
@@ -21,6 +21,7 @@ interface BeginSelectPointerDownParams {
   endpointDragRef: MutableRef<EndpointDrag | null>;
   selectionDragRef: MutableRef<SelectionDrag | null>;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
+  armedSketchConstraint: ArmedSketchConstraint;
 }
 
 export interface SelectPointerDownResult {
@@ -39,6 +40,7 @@ export function beginSelectPointerDown({
   endpointDragRef,
   selectionDragRef,
   intersectSceneTargets,
+  armedSketchConstraint,
 }: BeginSelectPointerDownParams): SelectPointerDownResult {
   const hit = intersectSceneTargets(event);
 
@@ -54,6 +56,7 @@ export function beginSelectPointerDown({
       activeSketchPlaneFrame,
       sketch,
       endpointDragRef,
+      armedSketchConstraint,
     })
   ) {
     return { handled: true, clearPointerDown: true };

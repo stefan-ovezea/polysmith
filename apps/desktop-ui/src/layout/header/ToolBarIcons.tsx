@@ -833,6 +833,23 @@ export function FeatureKindIcon({ kind }: { kind: string }) {
   }
 }
 
+const FixConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="5" r="2" />
+    <line x1="12" y1="7" x2="12" y2="20" />
+    <line x1="8" y1="10" x2="16" y2="10" />
+  </svg>
+);
+
 export function ConstraintIcon({ kind }: { kind: ConstraintType }) {
   switch (kind) {
     case "horizontal":
@@ -847,6 +864,8 @@ export function ConstraintIcon({ kind }: { kind: ConstraintType }) {
       return <ParallelConstraintIcon />;
     case "equal_length":
       return <EqualLengthConstraintIcon />;
+    case "fixed":
+      return <FixConstraintIcon />;
     case "mirror":
       return <MirrorConstraintIcon />;
     default:

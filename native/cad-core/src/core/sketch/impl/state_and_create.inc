@@ -70,6 +70,18 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             feature.sketch_parameters->circles.end(),
             [&](const auto& c) { return c.id == dim.entity_id; });
         if (!found) dim.driven = true;
+      } else if (dim.kind == "arc_radius") {
+        bool found = std::any_of(
+            feature.sketch_parameters->arcs.begin(),
+            feature.sketch_parameters->arcs.end(),
+            [&](const auto& a) { return a.id == dim.entity_id; });
+        if (!found) dim.driven = true;
+      } else if (dim.kind == "polygon_radius") {
+        bool found = std::any_of(
+            feature.sketch_parameters->polygons.begin(),
+            feature.sketch_parameters->polygons.end(),
+            [&](const auto& p) { return p.id == dim.entity_id; });
+        if (!found) dim.driven = true;
       } else if (!dim.secondary_entity_id.empty()) {
         bool found_primary = false, found_secondary = false;
         if (dim.kind == "angle") {
@@ -81,8 +93,26 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
               feature.sketch_parameters->lines.begin(),
               feature.sketch_parameters->lines.end(),
               [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+        } else if (dim.kind == "line_line_distance") {
+          found_primary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.entity_id; });
+          found_secondary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.secondary_entity_id; });
+        } else if (dim.kind == "circle_line_distance") {
+          found_primary = std::any_of(
+              feature.sketch_parameters->circles.begin(),
+              feature.sketch_parameters->circles.end(),
+              [&](const auto& c) { return c.id == dim.entity_id; });
+          found_secondary = std::any_of(
+              feature.sketch_parameters->lines.begin(),
+              feature.sketch_parameters->lines.end(),
+              [&](const auto& l) { return l.id == dim.secondary_entity_id; });
         } else {
-          // point_distance, circle_center_distance, circle_line_distance
+          // point_distance, circle_center_distance
           found_primary = point_is_alive(dim.entity_id);
           found_secondary = point_is_alive(dim.secondary_entity_id);
         }
@@ -180,7 +210,6 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           pre_snapshot.push_back(
               {line.start_x, line.start_y, line.end_x, line.end_y});
         }
-
         solver.apply(*feature.sketch_parameters);
 
         // Post-solve sanity checks.
@@ -235,6 +264,89 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                 pre_snapshot[i].ex;
             feature.sketch_parameters->lines[i].end_y =
                 pre_snapshot[i].ey;
+          }
+        }
+
+        // Clean up any zero-length lines the solver produced before
+        // running the ad‑hoc enforce functions below (which throw on
+        // zero‑length geometry — see drive_line_parallel_to_reference,
+        // drive_line_perpendicular_to_reference).
+        {
+          std::vector<std::string> solver_zero_ids;
+          for (const auto &line : feature.sketch_parameters->lines) {
+            if (points_match(line.start_x, line.start_y,
+                             line.end_x, line.end_y)) {
+              solver_zero_ids.push_back(line.id);
+            }
+          }
+          if (!solver_zero_ids.empty()) {
+            for (const auto &zid : solver_zero_ids) {
+              fprintf(stderr, "ERROR deleted solver-produced zero-length line %s\n",
+                      zid.c_str());
+
+              feature.sketch_parameters->constraints.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->constraints.begin(),
+                      feature.sketch_parameters->constraints.end(),
+                      [&](const SketchConstraint &c) {
+                        for (const auto &tid : c.target_ids) {
+                          if (tid == zid) return true;
+                        }
+                        return false;
+                      }),
+                  feature.sketch_parameters->constraints.end());
+              feature.sketch_parameters->dimensions.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->dimensions.begin(),
+                      feature.sketch_parameters->dimensions.end(),
+                      [&](const SketchDimension &d) {
+                        return d.entity_id == zid ||
+                               d.secondary_entity_id == zid;
+                      }),
+                  feature.sketch_parameters->dimensions.end());
+              feature.sketch_parameters->line_relations.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->line_relations.begin(),
+                      feature.sketch_parameters->line_relations.end(),
+                      [&](const SketchLineRelation &rel) {
+                        return rel.first_line_id == zid ||
+                               rel.second_line_id == zid;
+                      }),
+                  feature.sketch_parameters->line_relations.end());
+              feature.sketch_parameters->fillets.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->fillets.begin(),
+                      feature.sketch_parameters->fillets.end(),
+                      [&](const SketchFillet &f) {
+                        return f.line_a_id == zid ||
+                               f.line_b_id == zid;
+                      }),
+                  feature.sketch_parameters->fillets.end());
+              feature.sketch_parameters->midpoint_anchors.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->midpoint_anchors.begin(),
+                      feature.sketch_parameters->midpoint_anchors.end(),
+                      [&](const SketchMidpointAnchor &a) {
+                        return a.line_id == zid;
+                      }),
+                  feature.sketch_parameters->midpoint_anchors.end());
+              feature.sketch_parameters->point_line_anchors.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->point_line_anchors.begin(),
+                      feature.sketch_parameters->point_line_anchors.end(),
+                      [&](const SketchPointLineAnchor &a) {
+                        return a.line_id == zid;
+                      }),
+                  feature.sketch_parameters->point_line_anchors.end());
+              feature.sketch_parameters->lines.erase(
+                  std::remove_if(
+                      feature.sketch_parameters->lines.begin(),
+                      feature.sketch_parameters->lines.end(),
+                      [&](const SketchLine &line) {
+                        return line.id == zid;
+                      }),
+                  feature.sketch_parameters->lines.end());
+            }
           }
         }
       }
@@ -292,13 +404,47 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // H/V runs first (axis alignment), then relations (inter-line).
   // Any constraint that would destroy geometry is cleared instead.
   enforce_line_HV_constraints(*feature.sketch_parameters);
-  enforce_all_equal_length_relations(*feature.sketch_parameters);
-  enforce_all_perpendicular_relations(*feature.sketch_parameters);
-  enforce_all_parallel_relations(*feature.sketch_parameters);
+  try { enforce_all_equal_length_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR equal-length relation enforcement failed: %s\n", e.what());
+  }
+  try { enforce_all_perpendicular_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR perpendicular relation enforcement failed: %s\n", e.what());
+  }
+  try { enforce_all_parallel_relations(*feature.sketch_parameters); }
+  catch (const std::exception& e) {
+    fprintf(stderr, "ERROR parallel relation enforcement failed: %s\n", e.what());
+  }
 
   // Fillets must run *after* the tangent passes (so they see the
   // latest line endpoints) and *before* `rebuild_sketch_points`.
   enforce_sketch_fillets(*feature.sketch_parameters);
+
+  // Propagate line endpoint positions to any arcs that share those
+  // point IDs.  Trim-created arcs share endpoints with lines; when a
+  // dimension edit moves the line, the arc's cached endpoint coords
+  // must stay in sync so the arc doesn't visually detach.
+  for (auto& arc : feature.sketch_parameters->arcs) {
+    for (const auto& line : feature.sketch_parameters->lines) {
+      if (line.start_point_id == arc.start_point_id) {
+        arc.start_x = line.start_x;
+        arc.start_y = line.start_y;
+      }
+      if (line.end_point_id == arc.start_point_id) {
+        arc.start_x = line.end_x;
+        arc.start_y = line.end_y;
+      }
+      if (line.start_point_id == arc.end_point_id) {
+        arc.end_x = line.start_x;
+        arc.end_y = line.start_y;
+      }
+      if (line.end_point_id == arc.end_point_id) {
+        arc.end_x = line.end_x;
+        arc.end_y = line.end_y;
+      }
+    }
+  }
 
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.
@@ -316,6 +462,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
   rebuild_sketch_points(*feature.sketch_parameters);
+
+  // Derived points (projected, quadrant, arc endpoints) are derived
+  // geometry — lock them by default so new derived points start as fixed.
+  // Must run before sync_fixed_point_flags so the user's explicit
+  // unfix (set_sketch_point_fixed) survives the refresh.
+  enforce_derived_points_fixed(*feature.sketch_parameters);
+
+  // Copy user-set is_fixed values from the previous frame. Must run
+  // AFTER enforce_derived_points_fixed so an explicit unfix overrides
+  // the default lock on derived points.
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
 
   // Driven (reference-only) dimensions: re-measure from current geometry
@@ -323,10 +479,6 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // MUST run after rebuild_sketch_points so point_distance driven dims
   // read fresh point positions, not stale ones from the previous frame.
   sync_driven_dimensions(*feature.sketch_parameters);
-  // Derived points (projected, quadrant) are derived geometry;
-  // force them locked unconditionally even if `sync_fixed_point_flags`
-  // happened to copy a transient false from the previous frame.
-  enforce_derived_points_fixed(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);
   feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
 }

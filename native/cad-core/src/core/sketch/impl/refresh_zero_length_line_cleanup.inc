@@ -13,22 +13,16 @@
     for (const auto &zid : zero_ids) {
       fprintf(stderr, "ERROR deleted zero-length line %s\n", zid.c_str());
 
-      // Erase constraints that target this line or its endpoints.
-      std::string zsp_id;
-      std::string zep_id;
-      for (const auto &line : p.lines) {
-        if (line.id == zid) {
-          zsp_id = line.start_point_id;
-          zep_id = line.end_point_id;
-          break;
-        }
-      }
+      // Erase constraints that target this line.
+      // NOTE: endpoint IDs are NOT used here — the line's endpoints
+      // may be shared with other surviving lines, and deleting a
+      // coincident constraint on a shared endpoint would break the
+      // other line's geometry.
       p.constraints.erase(
           std::remove_if(p.constraints.begin(), p.constraints.end(),
                          [&](const SketchConstraint &c) {
                            for (const auto &tid : c.target_ids) {
-                             if (tid == zid || tid == zsp_id || tid == zep_id)
-                               return true;
+                             if (tid == zid) return true;
                            }
                            return false;
                          }),

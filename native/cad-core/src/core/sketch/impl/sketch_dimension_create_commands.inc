@@ -61,9 +61,10 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
   }
 
   // When this is a Euclidean (no axis) distance on two points that are
-  // the endpoints of the same line, a line_length dimension is the
-  // canonical representation.  If one already exists, don't create a
-  // redundant point_distance — silently update the line_length value.
+  // the endpoints of the same line, and a line_length dimension already
+  // exists on that line, silently update the existing dimension instead
+  // of creating a redundant point_distance.  If no line_length exists,
+  // a point_distance is created (which supports drag-to-place in the UI).
   if (!axis.has_value() || axis->empty()) {
     const auto matching_line = std::find_if(
         parameters.lines.begin(),

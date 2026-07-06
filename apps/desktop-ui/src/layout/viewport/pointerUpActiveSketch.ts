@@ -94,6 +94,8 @@ export interface ActiveSketchPointerUpContext {
   createDimensionLinear: (lineId: string) => void;
   createDimensionCircle: (circleId: string, label: string) => void;
   selectDimensionCircle: (circleId: string) => void;
+  createDimensionArc: (arcId: string) => void;
+  selectDimensionArc: (arcId: string) => void;
   createDimensionPolygon: (polygonId: string) => void;
   selectDimensionPolygon: (polygonId: string) => void;
   selectDimensionLine: (lineId: string) => void;
@@ -113,6 +115,35 @@ function dimensionToolHit(hit: ActiveSketchSelectHit) {
 export function handleActiveSketchPointerUpTool(
   context: ActiveSketchPointerUpContext,
 ) {
+  // Armed constraints must fire regardless of the active sketch tool.
+  // The toolbar switches to "select" on arm, but the IPC round-trip
+  // may not have completed by the time the user clicks.
+  if (
+    context.armedSketchConstraint &&
+    (context.hit?.kind === "sketch_point" ||
+     context.hit?.kind === "sketch_entity")
+  ) {
+    handleActiveSketchSelectHit({
+      hit: context.hit,
+      additiveSelection: context.additiveSelection,
+      armedSketchConstraint: context.armedSketchConstraint,
+      mirrorFocusedSlot: context.mirrorFocusedSlot,
+      inactiveSketchEntityPickEnabled: context.inactiveSketchEntityPickEnabled,
+      sketchEntityObjectById: context.sketchEntityObjectById,
+      sketchPointObjects: context.sketchPointObjects,
+      mirrorEntityPick: context.mirrorEntityPick,
+      selectSketchEntity: context.selectSketchEntity,
+      pickSketchPoint: context.pickSketchPoint,
+      handleDimensionClick: context.handleDimensionClick,
+      setSelectedConstraint: context.setSelectedConstraint,
+      paintSketchEntityMaterials: context.paintSketchEntityMaterials,
+      paintSketchPointMaterials: context.paintSketchPointMaterials,
+      selectSketchProfile: context.selectSketchProfile,
+      addMessage: context.addMessage,
+    });
+    return true;
+  }
+
   if (context.activeSketchTool === "project") {
     handleActiveSketchProjectHit({
       hit: context.hit,
@@ -179,6 +210,8 @@ export function handleActiveSketchPointerUpTool(
       startLinearPlacement: context.createDimensionLinear,
       createCircle: context.createDimensionCircle,
       selectCircle: context.selectDimensionCircle,
+      createArc: context.createDimensionArc,
+      selectArc: context.selectDimensionArc,
       createPolygon: context.createDimensionPolygon,
       selectPolygon: context.selectDimensionPolygon,
       selectLine: context.selectDimensionLine,

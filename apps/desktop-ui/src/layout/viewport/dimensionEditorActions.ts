@@ -97,6 +97,10 @@ export function createDimensionEditorActions({
       updateSketchDimension,
       toCoreValue: dimensionCoreValue,
     });
+    // Clear the ENTIRE UI label position cache — editing a driving
+    // dimension triggers a solver pass that may move any geometry,
+    // making ALL cached positions stale.
+    setDimensionLabelPositions({});
     finishDimensionPlacement();
     dimensionEditOriginalValueRef.current = null;
     setIsDimensionEditorOpen(false);

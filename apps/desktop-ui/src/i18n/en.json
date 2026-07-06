@@ -325,6 +325,7 @@
     "extrude": "Extrude",
     "fastener": "Fastener",
     "fillet": "Fillet",
+    "fix": "Fix",
     "finishSketch": "Finish Sketch",
     "horizontal": "Horizontal",
     "helix": "Helix",
@@ -780,6 +781,7 @@
   },
   "constraints": {
     "clickLineColon": "{{kind}}: click line",
+    "fixClickPoint": "Fix: click point to lock",
     "coincidentFirstPoint": "Coincident armed · click first point",
     "coincidentFirstPointColon": "Coincident: click first point",
     "coincidentSecondPoint": "Coincident armed · click second point",

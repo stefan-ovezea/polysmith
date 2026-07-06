@@ -2053,5 +2053,71 @@ Three bugs fixed after initial implementation:
 - **Canonical relation IDs:** `set_sketch_equal_length_constraint`,
   `set_sketch_perpendicular_constraint`, and `set_sketch_parallel_constraint`
   now use sorted-pair IDs (`rel-equal-length-A-B` where A < B).  Additionally,
-  `remove_line_relations_for_line` is called for BOTH lines before inserting,
-  guarding against file-load duplicates.
+   `remove_line_relations_for_line` is called for BOTH lines before inserting,
+   guarding against file-load duplicates.
+
+## 2026-07-06
+
+### Point-distance dimension normalization
+
+When the user places a dimension by clicking two endpoints of the same line
+(method B: click point A → click point B → pull), the system now always
+creates or updates a `line_length` dimension on that line instead of a
+`point_distance` dimension.  Previously this conversion only happened when a
+`line_length` dimension already existed on the line; otherwise a `point_distance`
+was created, which had a separate (buggier) update path.
+
+**File:** `native/cad-core/src/core/sketch/impl/sketch_dimension_create_commands.inc`
+
+`add_sketch_point_distance_dimension` now delegates to
+`add_sketch_line_length_dimension` whenever the two points are endpoints of
+the same line and no axis (`x`/`y`) is specified.  The `line_length` path
+already handles idempotency (updates existing, creates if missing) so there
+is no duplicate risk.
+
+### Point-distance update now respects fixed points and propagates moves
+
+The `point_distance` dimension update path had three safety gaps compared to
+the `line_length` path:
+
+1. **No fixed-point check** — it blindly mutated `point_b` even when both
+   points were fixed, accepting any value while the geometry stayed unchanged.
+2. **No propagation** — after moving `point_b`, it never called
+   `propagate_connected_point_move` to sync connected line endpoints.
+3. **Mutated `points[]` instead of `lines[]`** — the canonical geometry
+   storage is the line array; points are rebuilt from lines on every refresh.
+
+**File:** `native/cad-core/src/core/sketch/impl/dimension_update.inc`
+
+The Euclidean (no-axis) branch now:
+- Checks `point_is_fixed` on both points before mutating.  If both are fixed
+  and the value differs, throws `"Cannot drive a point distance when both
+  points are fixed"` (matching `line_length` behaviour).
+- If both are fixed but value matches, returns silently (no-op).
+- After moving `point_b`, calls `propagate_connected_point_move` to keep
+  coincident geometry in sync (matching the `line_length` and `line_angle`
+  update patterns).
+
+### Derived points: removed auto-fix, hide FIX badge for projected points
+
+Circle quadrant points and arc endpoints no longer start with `is_fixed=true`.
+Projected points remain locked internally but no longer show the FIX constraint
+badge in the viewport.
+
+**Rationale:** Quadrants and arc endpoints are derived geometry that the user
+should be free to move or leave alone.  The previous auto-fix behaviour was
+confusing — users couldn't remove the fix constraint (it was re-applied on
+every sketch refresh by `enforce_derived_points_fixed`).
+
+**Files:**
+| File | Change |
+|---|---|
+| `private_point_profile_helpers.inc` | Circle quadrants: `is_fixed=false` (was `true`). `enforce_derived_points_fixed` now only locks `projected` points. |
+| `curve_primitives.inc` | Removed the post-creation loop that set `is_fixed=true` on arc endpoints. |
+| `sketch_point_constraint_emit.inc` | FIX badge emission now skips `projected` points (`point.kind != "projected"`). |
+| `state_and_create.inc` | `enforce_derived_points_fixed` runs *before* `sync_fixed_point_flags` so explicit user unfix survives the refresh. |
+
+**Related fix** — `state_and_create.inc` ordering: previously
+`enforce_derived_points_fixed` ran *after* `sync_fixed_point_flags`,
+unconditionally overwriting any user unfix.  Swapped so the user's explicit
+choice (preserved by `sync_fixed_point_flags`) always wins.

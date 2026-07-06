@@ -151,6 +151,16 @@ export function createDimensionToolActions({
     stageFollowUpPick(entityId);
   }
 
+  function createDimensionArc(entityId: string) {
+    stageUnaryDimension(entityId, `dim-arc-${entityId}`);
+    stageFollowUpPick(entityId);
+    // Arc radius dimension is auto-created by C++; no IPC needed.
+  }
+
+  function selectDimensionArc(entityId: string) {
+    stageFollowUpPick(entityId);
+  }
+
   function createDimensionLinear(lineId: string) {
     // Linear placement: the dimension is NOT created yet.  We stage
     // the entity for the follow‑up pick (so the relation preview
@@ -247,5 +257,7 @@ export function createDimensionToolActions({
     selectDimensionCircle,
     selectDimensionLine,
     selectDimensionPolygon,
+    createDimensionArc,
+    selectDimensionArc,
   };
 }
