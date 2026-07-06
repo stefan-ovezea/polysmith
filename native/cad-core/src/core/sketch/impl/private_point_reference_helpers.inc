@@ -31,7 +31,7 @@ void replace_point_id_references(SketchFeatureParameters& parameters,
     }
   }
 
-  if (SketchPoint* target_point = find_sketch_point(parameters, to_point_id)) {
+  if (SketchVertex* target_point = find_sketch_point(parameters, to_point_id)) {
     target_point->is_fixed = merged_fixed;
   }
 }

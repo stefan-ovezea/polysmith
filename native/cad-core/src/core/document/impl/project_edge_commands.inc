@@ -165,12 +165,12 @@ DocumentState DocumentManager::project_edge_into_sketch(
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
 

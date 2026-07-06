@@ -30,12 +30,12 @@ DocumentState DocumentManager::trim_sketch_entity(
 
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = entity_id;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

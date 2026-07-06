@@ -12,7 +12,7 @@
         .sketch_lines = {},
         .sketch_circles = {},
         .sketch_arcs = {},
-        .sketch_points = {},
+        .sketch_vertices = {},
         .sketch_dimensions = {},
         .sketch_constraints = {},
         .sketch_profiles = {},

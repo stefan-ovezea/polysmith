@@ -51,7 +51,7 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
 
     // Write solved coordinates back to the canonical storage (lines
     // and circles). Do NOT write to params.points[] — that array is
-    // rebuilt from lines/circles by rebuild_sketch_points() later in
+    // rebuilt from lines/circles by rebuild_sketch_vertices() later in
     // refresh_sketch_derived_state.
 
     // Update line endpoints from their points.

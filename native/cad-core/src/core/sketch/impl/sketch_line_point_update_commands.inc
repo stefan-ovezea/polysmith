@@ -80,7 +80,7 @@ void update_sketch_point(FeatureEntry& feature,
   }
 
   auto& parameters = feature.sketch_parameters.value();
-  const SketchPoint* point = find_sketch_point(parameters, point_id);
+  const SketchVertex* point = find_sketch_point(parameters, point_id);
   if (point == nullptr) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }

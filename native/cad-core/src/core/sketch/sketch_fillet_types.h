@@ -34,7 +34,7 @@ namespace polysmith::core {
 struct SketchFillet {
   std::string id;
   // The pre-fillet shared corner. The fillet keeps this point alive
-  // in `parameters.points` (re-emitted by `rebuild_sketch_points`)
+  // in `parameters.vertices` (re-emitted by `rebuild_sketch_vertices`)
   // even when no other line / arc still references it, because
   // delete needs to restore it as the lines' shared endpoint.
   std::string corner_point_id;

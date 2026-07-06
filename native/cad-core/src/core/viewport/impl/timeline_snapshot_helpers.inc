@@ -42,11 +42,11 @@ DocumentState document_at_timeline_cursor(const DocumentState& source) {
     snapshot.active_sketch_plane_id = std::nullopt;
     snapshot.active_sketch_face_id = std::nullopt;
     snapshot.active_sketch_tool = std::nullopt;
-    snapshot.selected_sketch_point_id = std::nullopt;
+    snapshot.selected_sketch_vertex_id = std::nullopt;
     snapshot.selected_sketch_entity_id = std::nullopt;
     snapshot.selected_sketch_dimension_id = std::nullopt;
     snapshot.selected_sketch_profile_id = std::nullopt;
-    snapshot.selected_sketch_point_ids.clear();
+    snapshot.selected_sketch_vertex_ids.clear();
     snapshot.selected_sketch_entity_ids.clear();
     snapshot.selected_sketch_profile_ids.clear();
   }

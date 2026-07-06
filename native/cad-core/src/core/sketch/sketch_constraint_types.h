@@ -22,7 +22,7 @@ struct SketchMidpointAnchor {
 // user starts/ends a draft on another line's body via the line-body
 // snap. Distinct from `SketchMidpointAnchor`, which is a degenerate
 // special case at t=0.5.
-struct SketchPointLineAnchor {
+struct SketchVertexLineAnchor {
   std::string id;
   std::string point_id;
   std::string line_id;

@@ -1,6 +1,6 @@
 // After constraint enforcement, multiple lines that share a point ID may
 // have been driven to different (x, y) coordinates for that shared point.
-// `rebuild_sketch_points` deduplicates by point ID and renders a single
+// `rebuild_sketch_vertices` deduplicates by point ID and renders a single
 // sphere at whichever line's coordinates it encounters first — leaving the
 // other line's endpoint visually orphaned.  This pass forces every shared
 // point to a single canonical position before the rebuild so the sphere

@@ -33,11 +33,11 @@ DocumentState DocumentManager::set_timeline_cursor(int included_action_count) {
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   document_->selected_sketch_profile_ids.clear();
 

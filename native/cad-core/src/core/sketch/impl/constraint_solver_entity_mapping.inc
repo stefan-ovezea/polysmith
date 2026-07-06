@@ -8,7 +8,7 @@
 
         // If this point is a line endpoint or circle center, read the
         // current coordinate from that entity — the point vector may
-        // be stale between rebuild_sketch_points calls.
+        // be stale between rebuild_sketch_vertices calls.
         if (sp.kind == "endpoint") {
             for (const auto& line : params.lines) {
                 if (line.start_point_id == sp.id) {

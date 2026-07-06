@@ -144,19 +144,19 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
           std::abs(signed_circle_line_distance(circle, line));
     } else if (dimension.kind == "point_distance") {
       const auto point_a_it = std::find_if(
-          parameters.points.begin(),
-          parameters.points.end(),
-          [&](const SketchPoint& p) {
+          parameters.vertices.begin(),
+          parameters.vertices.end(),
+          [&](const SketchVertex& p) {
             return p.id == dimension.entity_id;
           });
       const auto point_b_it = std::find_if(
-          parameters.points.begin(),
-          parameters.points.end(),
-          [&](const SketchPoint& p) {
+          parameters.vertices.begin(),
+          parameters.vertices.end(),
+          [&](const SketchVertex& p) {
             return p.id == dimension.secondary_entity_id;
           });
-      if (point_a_it != parameters.points.end() &&
-          point_b_it != parameters.points.end()) {
+      if (point_a_it != parameters.vertices.end() &&
+          point_b_it != parameters.vertices.end()) {
         const double dx = point_b_it->x - point_a_it->x;
         const double dy = point_b_it->y - point_a_it->y;
         // Respect display_as: "x" → horizontal distance, "y" → vertical.

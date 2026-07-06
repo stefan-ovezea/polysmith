@@ -3,7 +3,7 @@
     // pointers stored in GCS::Point objects).
     // We read geometry from lines/circles (canonical storage), not from
     // params.points[] (which is a deduplicated view rebuilt later by
-    // rebuild_sketch_points). This ensures the solver sees the current
+    // rebuild_sketch_vertices). This ensures the solver sees the current
     // geometry even when called between rebuilds (e.g. during drag).
     const size_t num_points = params.points.size();
     const size_t num_circles = params.circles.size();

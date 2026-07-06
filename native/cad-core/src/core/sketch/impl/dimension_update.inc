@@ -43,7 +43,7 @@ void update_sketch_dimension(FeatureEntry& feature,
       if ("point-circle-" + c.id + "-center" == pid)
         return {c.center_x, c.center_y};
     }
-    for (const auto& p : parameters.points) {
+    for (const auto& p : parameters.vertices) {
       if (p.id == pid) return {p.x, p.y};
     }
     return {0.0, 0.0};

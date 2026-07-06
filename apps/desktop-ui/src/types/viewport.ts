@@ -19,7 +19,7 @@ import type {
   SketchArcScene,
   SketchDimensionScene,
   SketchConstraintScene,
-  SketchPointScene,
+  SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
   DocumentState,
@@ -188,7 +188,7 @@ export interface ViewportSketchArc {
   is_preview: boolean;
 }
 
-export interface ViewportSketchPoint {
+export interface ViewportSketchVertex {
   point_id: string;
   /** vertex-N ID from Phase 4 vertex unification. */
   vertex_id?: string;
@@ -296,7 +296,7 @@ export interface ViewportScene {
   sketchArcs: SketchArcScene[];
   sketchDimensions: SketchDimensionScene[];
   sketchConstraints: SketchConstraintScene[];
-  sketchPoints: SketchPointScene[];
+  sketchPoints: SketchVertexScene[];
   sketchProfiles: SketchProfileScene[];
   geometryKey: string;
 }

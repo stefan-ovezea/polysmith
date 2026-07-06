@@ -80,7 +80,7 @@ struct SketchArc {
   std::string end_vertex_id;
   std::string center_vertex_id;
   // Cached shape parameters. Endpoint coordinates duplicate the
-  // owning SketchPoint coordinates, mirroring how SketchLine caches
+  // owning SketchVertex coordinates, mirroring how SketchLine caches
   // its endpoints, so consumers (renderer, profile builder) don't
   // have to chase pointer references for every paint.
   double center_x;
@@ -98,10 +98,10 @@ struct SketchArc {
   bool is_construction = false;
 };
 
-struct SketchPoint {
+struct SketchVertex {
   std::string id;
   // ── Vertex unification (Phase 4) ────────────────────────────
-  // Stable "vertex-N" identifier assigned by rebuild_sketch_points.
+  // Stable "vertex-N" identifier assigned by rebuild_sketch_vertices.
   // This will become the primary point identifier in Phase 6.
   std::string vertex_id;
   std::string kind;
@@ -133,7 +133,7 @@ struct SketchPoint {
 // projects a body vertex onto the active sketch plane. Unlike line /
 // arc / circle endpoints, projected points are not derived from any
 // other sketch entity — they have to be re-emitted by
-// `rebuild_sketch_points` from this list directly. The cached (x, y)
+// `rebuild_sketch_vertices` from this list directly. The cached (x, y)
 // is the projected location in sketch-local coordinates; `source_id`
 // records the body vertex id (`<body>:vertex:<index>`) so the
 // projection is idempotent (clicking the same vertex twice is a

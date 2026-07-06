@@ -227,7 +227,7 @@ export interface SketchArcScene {
   isProjected: boolean;
 }
 
-export interface SketchPointScene {
+export interface SketchVertexScene {
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.
   // "projected" — standalone point placed by the Project tool. The

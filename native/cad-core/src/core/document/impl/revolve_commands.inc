@@ -21,7 +21,7 @@ DocumentState DocumentManager::revolve_profile(
   document_->active_sketch_plane_id = std::nullopt;
   document_->active_sketch_feature_id = std::nullopt;
   document_->active_sketch_tool = std::nullopt;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();

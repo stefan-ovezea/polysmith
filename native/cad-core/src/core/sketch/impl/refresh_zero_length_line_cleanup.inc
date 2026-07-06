@@ -63,7 +63,7 @@
       p.point_line_anchors.erase(
           std::remove_if(
               p.point_line_anchors.begin(), p.point_line_anchors.end(),
-              [&](const SketchPointLineAnchor &a) { return a.line_id == zid; }),
+              [&](const SketchVertexLineAnchor &a) { return a.line_id == zid; }),
           p.point_line_anchors.end());
 
       // Erase the line itself.

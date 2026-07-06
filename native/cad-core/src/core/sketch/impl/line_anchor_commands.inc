@@ -62,7 +62,7 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
   parameters.point_line_anchors.erase(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor &anchor) {
+                     [&](const SketchVertexLineAnchor &anchor) {
                        return anchor.point_id == point_id;
                      }),
       parameters.point_line_anchors.end());
@@ -92,7 +92,7 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
   // that re-projects past the segment's endpoints.
   const double clamped_t = std::max(0.0, std::min(1.0, t));
 
-  parameters.point_line_anchors.push_back(SketchPointLineAnchor{
+  parameters.point_line_anchors.push_back(SketchVertexLineAnchor{
       .id = "point-line-anchor-" + point_id,
       .point_id = point_id,
       .line_id = host_line_id,

@@ -42,11 +42,11 @@ export interface SketchCircleEntry {
   is_construction: boolean;
 }
 
-export interface SketchPointEntry {
+export interface SketchVertexEntry {
   point_id: string;
   /** vertex-N ID from Phase 4 vertex unification. */
   vertex_id?: string;
-  // "endpoint" / "center" / "projected" — see `SketchPointScene`
+  // "endpoint" / "center" / "projected" — see `SketchVertexScene`
   // for the renderer-side meaning of each value.
   kind: "endpoint" | "center" | "projected";
   x: number;
@@ -208,7 +208,7 @@ export interface SketchFeatureParameters {
   arcs: SketchArcEntry[];
   polygons: SketchPolygonEntry[];
   fillets: SketchFilletEntry[];
-  points: SketchPointEntry[];
+  points: SketchVertexEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];
   // Midpoint anchors. Empty on older saves; the schema fills in [].
@@ -253,7 +253,7 @@ export interface SketchPointLineAnchorEntry {
 }
 
 // One standalone sketch point produced by the Project tool. The
-// canonical form is the `SketchPointEntry` re-emitted into the
+// canonical form is the `SketchVertexEntry` re-emitted into the
 // sketch's `points` array (with `kind = "projected"` and
 // `is_fixed = true`); this entry tells the core where to put it.
 // `source_id` is the body vertex id (`<body>:vertex:<index>`) used

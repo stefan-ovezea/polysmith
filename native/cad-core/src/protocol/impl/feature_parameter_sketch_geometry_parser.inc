@@ -98,7 +98,7 @@
   }
   if (payload.contains("points") && payload.at("points").is_array()) {
     for (const auto& point_payload : payload.at("points")) {
-      polysmith::core::SketchPoint point{};
+      polysmith::core::SketchVertex point{};
       point.id = read_string(point_payload, "point_id");
       point.kind = read_string(point_payload, "kind");
       point.x = read_number(point_payload, "x");

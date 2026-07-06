@@ -1,24 +1,24 @@
-SketchPoint* find_sketch_point(SketchFeatureParameters& parameters,
+SketchVertex* find_sketch_point(SketchFeatureParameters& parameters,
                                const std::string& point_id) {
   const auto point_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  return point_it == parameters.points.end() ? nullptr : &(*point_it);
+      parameters.vertices.begin(),
+      parameters.vertices.end(),
+      [&](const SketchVertex& point) { return point.id == point_id; });
+  return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
-const SketchPoint* find_sketch_point(const SketchFeatureParameters& parameters,
+const SketchVertex* find_sketch_point(const SketchFeatureParameters& parameters,
                                      const std::string& point_id) {
   const auto point_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  return point_it == parameters.points.end() ? nullptr : &(*point_it);
+      parameters.vertices.begin(),
+      parameters.vertices.end(),
+      [&](const SketchVertex& point) { return point.id == point_id; });
+  return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
 bool point_is_fixed(const SketchFeatureParameters& parameters,
                     const std::string& point_id) {
-  const SketchPoint* point = find_sketch_point(parameters, point_id);
+  const SketchVertex* point = find_sketch_point(parameters, point_id);
   return point != nullptr && point->is_fixed;
 }
 

@@ -37,9 +37,9 @@ struct DocumentState {
   std::optional<std::string> active_sketch_face_id;
   std::optional<std::string> active_sketch_feature_id;
   std::optional<std::string> active_sketch_tool;
-  std::optional<std::string> selected_sketch_point_id;
+  std::optional<std::string> selected_sketch_vertex_id;
   std::optional<std::string> selected_sketch_entity_id;
-  std::vector<std::string> selected_sketch_point_ids;
+  std::vector<std::string> selected_sketch_vertex_ids;
   std::vector<std::string> selected_sketch_entity_ids;
   std::optional<std::string> selected_sketch_dimension_id;
   std::optional<std::string> selected_sketch_profile_id;

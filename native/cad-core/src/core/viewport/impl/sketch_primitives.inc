@@ -131,13 +131,13 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
   };
 }
 
-ViewportSketchPointPrimitive make_sketch_point_primitive(
-    const SketchPoint& point,
+ViewportSketchVertexPrimitive make_sketch_point_primitive(
+    const SketchVertex& point,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
   const WorldPoint world = to_world_point(parameters, point.x, point.y);
 
-  return ViewportSketchPointPrimitive{
+  return ViewportSketchVertexPrimitive{
       .point_id = point.id,
       .vertex_id = point.vertex_id,
       .plane_id = parameters.plane_id,
@@ -198,7 +198,7 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
 }
 
 ViewportSketchConstraintPrimitive make_point_constraint_primitive(
-    const SketchPoint& point,
+    const SketchVertex& point,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
   const WorldPoint position = to_world_point(

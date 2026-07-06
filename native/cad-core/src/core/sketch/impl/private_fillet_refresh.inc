@@ -64,8 +64,8 @@ void enforce_sketch_fillets(SketchFeatureParameters& parameters) {
     const double corner_y = far_a_y + t * dir_ay;
 
     // Cache the live corner position on the fillet so the next
-    // `rebuild_sketch_points` can re-emit the corner point with
-    // current coords. See `rebuild_sketch_points` for why.
+    // `rebuild_sketch_vertices` can re-emit the corner point with
+    // current coords. See `rebuild_sketch_vertices` for why.
     fillet.corner_x = corner_x;
     fillet.corner_y = corner_y;
 

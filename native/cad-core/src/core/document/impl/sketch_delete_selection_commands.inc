@@ -220,7 +220,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   parameters.point_line_anchors.erase(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor& anchor) {
+                     [&](const SketchVertexLineAnchor& anchor) {
                        return id_in_set(selected_point_ids, anchor.point_id) ||
                               id_in_set(line_ids, anchor.line_id);
                      }),
@@ -245,12 +245,12 @@ DocumentState DocumentManager::delete_sketch_selection(
   refresh_sketch_derived_state(*feature_it);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

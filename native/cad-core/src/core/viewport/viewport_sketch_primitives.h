@@ -52,7 +52,7 @@ struct ViewportSketchCirclePrimitive {
 // re-projecting back through the sketch plane. Endpoint world
 // coordinates are kept alongside `start_point_id` / `end_point_id`
 // so consumers (snapping, highlights) can look up the same shared
-// SketchPoint that lines use without an extra lookup.
+// SketchVertex that lines use without an extra lookup.
 struct ViewportSketchArcPrimitive {
   std::string arc_id;
   std::string start_point_id;
@@ -77,7 +77,7 @@ struct ViewportSketchArcPrimitive {
   std::string dof_status;
 };
 
-struct ViewportSketchPointPrimitive {
+struct ViewportSketchVertexPrimitive {
   std::string point_id;
   // ── Vertex unification (Phase 4) ────────────────────────────
   std::string vertex_id;

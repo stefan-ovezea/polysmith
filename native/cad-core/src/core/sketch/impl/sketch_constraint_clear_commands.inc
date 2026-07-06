@@ -28,7 +28,7 @@ void clear_sketch_line_constraints(FeatureEntry& feature,
   parameters.point_line_anchors.erase(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor& a) {
+                     [&](const SketchVertexLineAnchor& a) {
                        return a.line_id == line_id;
                      }),
       parameters.point_line_anchors.end());

@@ -26,7 +26,7 @@ DocumentState DocumentManager::add_sketch_circle(double center_x,
       is_construction);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->circles.back().id;
   document_->selected_sketch_dimension_id =
@@ -35,7 +35,7 @@ DocumentState DocumentManager::add_sketch_circle(double center_x,
                             feature_it->sketch_parameters->dimensions.back().id);
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   document_->active_sketch_tool = "circle";
   bump_geometry_revision();
@@ -73,13 +73,13 @@ DocumentState DocumentManager::add_sketch_polygon(int sides,
       end_x, end_y, is_construction);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->polygons.back().id;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   document_->active_sketch_tool = "polygon";
   bump_geometry_revision();

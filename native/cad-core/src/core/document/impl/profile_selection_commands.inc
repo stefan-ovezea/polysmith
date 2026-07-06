@@ -21,7 +21,7 @@ DocumentState DocumentManager::select_sketch_profile(const std::string& profile_
   }
 
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   if (additive) {

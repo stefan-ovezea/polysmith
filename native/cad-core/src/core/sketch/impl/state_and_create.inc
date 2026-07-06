@@ -6,7 +6,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Drop anchors whose host line has been deleted.  Anchors whose
   // anchored point is no longer referenced by any live entity are
   // harmless (they are a no‑op during enforcement and the point is
-  // dropped by `rebuild_sketch_points`), but cleaning them up here
+  // dropped by `rebuild_sketch_vertices`), but cleaning them up here
   // keeps the data model tidy and prevents stale viewport sprites.
   auto& p = *feature.sketch_parameters;
   p.midpoint_anchors.erase(
@@ -21,7 +21,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   p.point_line_anchors.erase(
       std::remove_if(p.point_line_anchors.begin(),
                      p.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor& a) {
+                     [&](const SketchVertexLineAnchor& a) {
                        return std::none_of(
                            p.lines.begin(), p.lines.end(),
                            [&](const SketchLine& l) { return l.id == a.line_id; });
@@ -32,7 +32,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   // Re-anchor midpoint-bound points to their host line's current
   // midpoint before rebuilding the points list. The cascade may
-  // shift other line endpoints which `rebuild_sketch_points` then
+  // shift other line endpoints which `rebuild_sketch_vertices` then
   // mirrors into the points vector.
 
   // --- Stale dimension cleanup ---
@@ -43,8 +43,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // incorrectly report dofs=0 ("fully constrained").
   //
   // IMPORTANT: check against live lines/circles, NOT the points
-  // array.  rebuild_sketch_points hasn't run yet at this point,
-  // so parameters.points still contains stale entries from
+  // array.  rebuild_sketch_vertices hasn't run yet at this point,
+  // so parameters.vertices still contains stale entries from
   // before the deletion.
   {
     auto point_is_alive = [&](const std::string& pid) -> bool {
@@ -334,7 +334,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                   std::remove_if(
                       feature.sketch_parameters->point_line_anchors.begin(),
                       feature.sketch_parameters->point_line_anchors.end(),
-                      [&](const SketchPointLineAnchor &a) {
+                      [&](const SketchVertexLineAnchor &a) {
                         return a.line_id == zid;
                       }),
                   feature.sketch_parameters->point_line_anchors.end());
@@ -418,7 +418,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   }
 
   // Fillets must run *after* the tangent passes (so they see the
-  // latest line endpoints) and *before* `rebuild_sketch_points`.
+  // latest line endpoints) and *before* `rebuild_sketch_vertices`.
   enforce_sketch_fillets(*feature.sketch_parameters);
 
   // Propagate line endpoint positions to any arcs that share those
@@ -460,8 +460,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   #include "core/sketch/impl/refresh_mirror_relation_state.inc"
 
-  const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
-  rebuild_sketch_points(*feature.sketch_parameters);
+  const std::vector<SketchVertex> previous_points = feature.sketch_parameters->points;
+  rebuild_sketch_vertices(*feature.sketch_parameters);
 
   // Derived points (projected, quadrant, arc endpoints) are derived
   // geometry — lock them by default so new derived points start as fixed.
@@ -476,7 +476,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.
-  // MUST run after rebuild_sketch_points so point_distance driven dims
+  // MUST run after rebuild_sketch_vertices so point_distance driven dims
   // read fresh point positions, not stale ones from the previous frame.
   sync_driven_dimensions(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);

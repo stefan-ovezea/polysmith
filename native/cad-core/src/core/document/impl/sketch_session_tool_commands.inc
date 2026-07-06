@@ -29,12 +29,12 @@ DocumentState DocumentManager::start_sketch_on_face(
   document_->active_sketch_face_id = face_id;
   document_->active_sketch_feature_id = sketch_feature_id;
   document_->active_sketch_tool = "select";
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -64,12 +64,12 @@ DocumentState DocumentManager::set_sketch_tool(const std::string& tool) {
 
   polysmith::core::set_sketch_tool(*feature_it, tool);
   document_->active_sketch_tool = tool;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }

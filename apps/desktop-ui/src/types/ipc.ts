@@ -145,7 +145,7 @@ import type {
   ViewportSketchConstraint,
   ViewportSketchDimension,
   ViewportSketchLine,
-  ViewportSketchPoint,
+  ViewportSketchVertex,
   ViewportSketchPolygon,
   ViewportSketchProfile,
   ViewportPolygonExtrudePrimitive,
@@ -256,7 +256,7 @@ export interface ViewportState {
   sketch_circles: ViewportSketchCircle[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
-  sketch_points: ViewportSketchPoint[];
+  sketch_points: ViewportSketchVertex[];
   sketch_dimensions: ViewportSketchDimension[];
   sketch_constraints: ViewportSketchConstraint[];
   sketch_profiles: ViewportSketchProfile[];

@@ -39,15 +39,15 @@ json to_payload(const polysmith::core::DocumentState& document) {
        document.active_sketch_tool.has_value()
            ? json(document.active_sketch_tool.value())
            : json(nullptr)},
-      {"selected_sketch_point_id",
-       document.selected_sketch_point_id.has_value()
-           ? json(document.selected_sketch_point_id.value())
+      {"selected_sketch_vertex_id",
+       document.selected_sketch_vertex_id.has_value()
+           ? json(document.selected_sketch_vertex_id.value())
            : json(nullptr)},
       {"selected_sketch_entity_id",
        document.selected_sketch_entity_id.has_value()
            ? json(document.selected_sketch_entity_id.value())
            : json(nullptr)},
-      {"selected_sketch_point_ids", document.selected_sketch_point_ids},
+      {"selected_sketch_vertex_ids", document.selected_sketch_vertex_ids},
       {"selected_sketch_entity_ids", document.selected_sketch_entity_ids},
       {"selected_sketch_dimension_id",
        document.selected_sketch_dimension_id.has_value()

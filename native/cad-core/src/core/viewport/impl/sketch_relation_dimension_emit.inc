@@ -91,13 +91,13 @@
             const auto point_a_it = std::find_if(
                 feature.sketch_parameters->points.begin(),
                 feature.sketch_parameters->points.end(),
-                [&](const SketchPoint& p) {
+                [&](const SketchVertex& p) {
                   return p.id == dimension.entity_id;
                 });
             const auto point_b_it = std::find_if(
                 feature.sketch_parameters->points.begin(),
                 feature.sketch_parameters->points.end(),
-                [&](const SketchPoint& p) {
+                [&](const SketchVertex& p) {
                   return p.id == dimension.secondary_entity_id;
                 });
             if (point_a_it == feature.sketch_parameters->points.end() ||

@@ -123,7 +123,7 @@
   if (payload.contains("point_line_anchors") &&
       payload.at("point_line_anchors").is_array()) {
     for (const auto& anchor_payload : payload.at("point_line_anchors")) {
-      polysmith::core::SketchPointLineAnchor anchor{};
+      polysmith::core::SketchVertexLineAnchor anchor{};
       anchor.id = read_string(anchor_payload, "anchor_id");
       anchor.point_id = read_string(anchor_payload, "point_id");
       anchor.line_id = read_string(anchor_payload, "line_id");

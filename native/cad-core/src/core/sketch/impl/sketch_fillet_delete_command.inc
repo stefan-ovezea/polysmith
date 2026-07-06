@@ -54,7 +54,7 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
                         parameters.arcs.end());
 
   // Remove the fillet record itself; trim points get cleaned up on
-  // the next `rebuild_sketch_points` because nothing references
+  // the next `rebuild_sketch_vertices` because nothing references
   // them anymore.
   parameters.fillets.erase(std::remove_if(parameters.fillets.begin(),
                                           parameters.fillets.end(),

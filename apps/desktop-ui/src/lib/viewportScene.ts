@@ -28,7 +28,7 @@ import type {
   SketchConstraintScene,
   SketchDimensionScene,
   SketchLineScene,
-  SketchPointScene,
+  SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
   SolidFaceScene,
@@ -846,7 +846,7 @@ export function createViewportScene(
   const sketchArcs = viewport.sketch_arcs
     .filter((arc) => isSketchPlaneVisible(arc.plane_id))
     .map((arc) => makeSketchArc(arc, projectedArcIds));
-  const sketchPoints: SketchPointScene[] = viewport.sketch_points
+  const sketchPoints: SketchVertexScene[] = viewport.sketch_points
     .filter((point) => isSketchPlaneVisible(point.plane_id))
     .map((point) => ({
       pointId: point.point_id,

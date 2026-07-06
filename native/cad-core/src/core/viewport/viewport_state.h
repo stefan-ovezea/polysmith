@@ -26,7 +26,7 @@ struct ViewportState {
   std::vector<ViewportSketchCirclePrimitive> sketch_circles;
   std::vector<ViewportSketchPolygonPrimitive> sketch_polygons;
   std::vector<ViewportSketchArcPrimitive> sketch_arcs;
-  std::vector<ViewportSketchPointPrimitive> sketch_points;
+  std::vector<ViewportSketchVertexPrimitive> sketch_vertices;
   std::vector<ViewportSketchDimensionPrimitive> sketch_dimensions;
   std::vector<ViewportSketchConstraintPrimitive> sketch_constraints;
   std::vector<ViewportSketchProfilePrimitive> sketch_profiles;

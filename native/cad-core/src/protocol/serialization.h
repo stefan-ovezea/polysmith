@@ -20,7 +20,7 @@ json to_payload(const polysmith::core::ViewportSolidFace& face);
 json to_payload(const polysmith::core::ViewportSketchLinePrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive);
-json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive);
+json to_payload(const polysmith::core::ViewportSketchVertexPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive);

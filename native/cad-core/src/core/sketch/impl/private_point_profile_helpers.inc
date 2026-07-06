@@ -59,22 +59,22 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   return std::nullopt;
 }
 
-void rebuild_sketch_points(SketchFeatureParameters& parameters) {
-  parameters.points.clear();
+void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
+  parameters.vertices.clear();
 
   const auto append_point = [&](const std::string& point_id,
                                 const std::string& kind,
                                 double x,
                                 double y) {
     const auto existing_it = std::find_if(
-        parameters.points.begin(),
-        parameters.points.end(),
-        [&](const SketchPoint& point) { return point.id == point_id; });
-    if (existing_it != parameters.points.end()) {
+        parameters.vertices.begin(),
+        parameters.vertices.end(),
+        [&](const SketchVertex& point) { return point.id == point_id; });
+    if (existing_it != parameters.vertices.end()) {
       return;
     }
 
-    parameters.points.push_back(SketchPoint{
+    parameters.vertices.push_back(SketchVertex{
         .id = point_id,
         .kind = kind,
         .x = x,
@@ -109,28 +109,28 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
     const double cx = circle.center_x;
     const double cy = circle.center_y;
     const double r = circle.radius;
-    parameters.points.push_back(SketchPoint{
+    parameters.vertices.push_back(SketchVertex{
         .id = "point-circle-" + circle.id + "-quadrant-0",
         .kind = "quadrant",
         .x = cx + r,
         .y = cy,
         .is_fixed = false,
     });
-    parameters.points.push_back(SketchPoint{
+    parameters.vertices.push_back(SketchVertex{
         .id = "point-circle-" + circle.id + "-quadrant-1",
         .kind = "quadrant",
         .x = cx,
         .y = cy + r,
         .is_fixed = false,
     });
-    parameters.points.push_back(SketchPoint{
+    parameters.vertices.push_back(SketchVertex{
         .id = "point-circle-" + circle.id + "-quadrant-2",
         .kind = "quadrant",
         .x = cx - r,
         .y = cy,
         .is_fixed = false,
     });
-    parameters.points.push_back(SketchPoint{
+    parameters.vertices.push_back(SketchVertex{
         .id = "point-circle-" + circle.id + "-quadrant-3",
         .kind = "quadrant",
         .x = cx,
@@ -149,7 +149,7 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   // Re-emit the original corner point of every fillet. After
   // `add_sketch_fillet` mutates lines A and B to reference the new
   // trim points, no line / arc / circle references the original
-  // corner anymore, so without this pass `rebuild_sketch_points`
+  // corner anymore, so without this pass `rebuild_sketch_vertices`
   // would silently drop it. The fillet record carries the cached
   // (`corner_x`, `corner_y`) precisely for this purpose; they're
   // refreshed every recompute by `enforce_sketch_fillets`.
@@ -178,8 +178,8 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   // vertex-ID renaming — consumers can look up the owning entity
   // without regex-parsing the point id.
 
-  auto find_point = [&](const std::string& pid) -> SketchPoint* {
-    for (auto& p : parameters.points) {
+  auto find_point = [&](const std::string& pid) -> SketchVertex* {
+    for (auto& p : parameters.vertices) {
       if (p.id == pid) return &p;
     }
     return nullptr;
@@ -217,7 +217,7 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   }
 
   // ── Phase 1 (kept): projection metadata ─────────────────────
-  for (auto& point : parameters.points) {
+  for (auto& point : parameters.vertices) {
     if (point.kind == "projected") {
       point.is_projected = true;
       for (const auto& proj : parameters.projections) {
@@ -246,7 +246,7 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
   }
 
   // ── Phase 4: assign vertex-N IDs ────────────────────────────
-  for (auto& point : parameters.points) {
+  for (auto& point : parameters.vertices) {
     if (point.vertex_id.empty()) {
       point.vertex_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
     }
@@ -254,7 +254,7 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
 
   // ── Phase 5: populate *_vertex_id on entities ───────────────
   auto vertex_id_of = [&](const std::string& point_id) -> std::string {
-    for (const auto& p : parameters.points)
+    for (const auto& p : parameters.vertices)
       if (p.id == point_id) return p.vertex_id;
     return "";
   };
@@ -276,7 +276,7 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
 // Force projected points to stay fixed. Projected points are derived
 // from 3D body geometry — moving them would break the projection link.
 void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
-  for (auto& point : parameters.points) {
+  for (auto& point : parameters.vertices) {
     if (point.kind == "projected") {
       point.is_fixed = true;
     }
@@ -284,12 +284,12 @@ void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
 }
 
 void sync_fixed_point_flags(SketchFeatureParameters& parameters,
-                            const std::vector<SketchPoint>& previous_points) {
-  for (auto& point : parameters.points) {
+                            const std::vector<SketchVertex>& previous_points) {
+  for (auto& point : parameters.vertices) {
     const auto previous_it = std::find_if(
         previous_points.begin(),
         previous_points.end(),
-        [&](const SketchPoint& previous) { return previous.id == point.id; });
+        [&](const SketchVertex& previous) { return previous.id == point.id; });
     if (previous_it != previous_points.end()) {
       point.is_fixed = previous_it->is_fixed;
     }

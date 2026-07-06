@@ -34,7 +34,7 @@ params.midpoint_anchors.erase(
 params.point_line_anchors.erase(
     std::remove_if(params.point_line_anchors.begin(),
                    params.point_line_anchors.end(),
-                   [&](const SketchPointLineAnchor &a) {
+                   [&](const SketchVertexLineAnchor &a) {
                      return a.line_id == entity_id;
                    }),
     params.point_line_anchors.end());

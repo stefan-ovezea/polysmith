@@ -157,7 +157,7 @@ std::optional<ConstructionPointFeatureParameters> resolve_construction_point_sou
     const auto& sketch = feature.sketch_parameters.value();
     const auto point_it = std::find_if(
         sketch.points.begin(), sketch.points.end(),
-        [&](const SketchPoint& point) { return point.id == source_id; });
+        [&](const SketchVertex& point) { return point.id == source_id; });
     if (point_it == sketch.points.end()) {
       continue;
     }

@@ -12,18 +12,18 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
   auto& parameters = *feature.sketch_parameters;
 
   const auto point_a_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& p) { return p.id == point_a_id; });
+      parameters.vertices.begin(),
+      parameters.vertices.end(),
+      [&](const SketchVertex& p) { return p.id == point_a_id; });
   const auto point_b_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& p) { return p.id == point_b_id; });
+      parameters.vertices.begin(),
+      parameters.vertices.end(),
+      [&](const SketchVertex& p) { return p.id == point_b_id; });
 
-  if (point_a_it == parameters.points.end()) {
+  if (point_a_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_a_id);
   }
-  if (point_b_it == parameters.points.end()) {
+  if (point_b_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_b_id);
   }
 

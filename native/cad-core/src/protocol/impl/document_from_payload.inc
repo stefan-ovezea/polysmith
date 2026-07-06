@@ -50,15 +50,15 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
       read_optional_string(payload, "active_sketch_feature_id");
   document.active_sketch_tool =
       read_optional_string(payload, "active_sketch_tool");
-  document.selected_sketch_point_id =
-      read_optional_string(payload, "selected_sketch_point_id");
+  document.selected_sketch_vertex_id =
+      read_optional_string(payload, "selected_sketch_vertex_id");
   document.selected_sketch_entity_id =
       read_optional_string(payload, "selected_sketch_entity_id");
-  if (payload.contains("selected_sketch_point_ids") &&
-      payload.at("selected_sketch_point_ids").is_array()) {
-    for (const auto& id : payload.at("selected_sketch_point_ids")) {
+  if (payload.contains("selected_sketch_vertex_ids") &&
+      payload.at("selected_sketch_vertex_ids").is_array()) {
+    for (const auto& id : payload.at("selected_sketch_vertex_ids")) {
       if (id.is_string()) {
-        document.selected_sketch_point_ids.push_back(id.get<std::string>());
+        document.selected_sketch_vertex_ids.push_back(id.get<std::string>());
       }
     }
   }

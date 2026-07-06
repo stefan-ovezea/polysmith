@@ -122,9 +122,9 @@ std::optional<std::tuple<double, double>> find_point_position(
       return std::tuple<double, double>{line.end_x, line.end_y};
   }
   const auto point_it = std::find_if(
-      parameters.points.begin(), parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  if (point_it != parameters.points.end())
+      parameters.vertices.begin(), parameters.vertices.end(),
+      [&](const SketchVertex& point) { return point.id == point_id; });
+  if (point_it != parameters.vertices.end())
     return std::tuple<double, double>{point_it->x, point_it->y};
   return std::nullopt;
 }
