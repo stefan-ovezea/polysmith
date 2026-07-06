@@ -15,6 +15,9 @@ struct SketchLine {
   std::string id;
   std::string start_point_id;
   std::string end_point_id;
+  // ── Vertex unification (Phase 5) ────────────────────────────
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   double start_x;
   double start_y;
   double end_x;
@@ -33,6 +36,8 @@ struct SketchLine {
 
 struct SketchCircle {
   std::string id;
+  // ── Vertex unification (Phase 5) ────────────────────────────
+  std::string center_vertex_id;
   double center_x;
   double center_y;
   double radius;
@@ -70,6 +75,10 @@ struct SketchArc {
   std::string id;
   std::string start_point_id;
   std::string end_point_id;
+  // ── Vertex unification (Phase 5) ────────────────────────────
+  std::string start_vertex_id;
+  std::string end_vertex_id;
+  std::string center_vertex_id;
   // Cached shape parameters. Endpoint coordinates duplicate the
   // owning SketchPoint coordinates, mirroring how SketchLine caches
   // its endpoints, so consumers (renderer, profile builder) don't
@@ -91,6 +100,10 @@ struct SketchArc {
 
 struct SketchPoint {
   std::string id;
+  // ── Vertex unification (Phase 4) ────────────────────────────
+  // Stable "vertex-N" identifier assigned by rebuild_sketch_points.
+  // This will become the primary point identifier in Phase 6.
+  std::string vertex_id;
   std::string kind;
   double x;
   double y;
@@ -100,7 +113,7 @@ struct SketchPoint {
   // IDs of the geometry entities (lines, circles, arcs) that own
   // this vertex.  For a line endpoint this is [line_id]; for a
   // shared corner it is [line_a_id, line_b_id].  Populated in
-  // Phase 2; empty for now.
+  // Phase 2.
   std::vector<std::string> geometry_owner_ids;
 
   // True when this point was produced by the Project tool from

@@ -850,6 +850,7 @@ export function createViewportScene(
     .filter((point) => isSketchPlaneVisible(point.plane_id))
     .map((point) => ({
       pointId: point.point_id,
+      vertexId: point.vertex_id,
       kind: point.kind,
       position: [point.position.x, point.position.y, point.position.z] as [
         number,

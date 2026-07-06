@@ -171,19 +171,59 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
     append_point(projected.id, "projected", projected.x, projected.y);
   }
 
-  // ── Phase 1: populate vertex unification fields ─────────────
-  // Mark projected points and resolve their source metadata from
-  // the projections vector.  geometry_owner_ids is left empty
-  // until Phase 2.
+  // ── Phase 2: populate geometry_owner_ids ────────────────────
+  // Walk every point and record which geometry entities
+  // (lines, arcs, circles) own it.  Shared endpoints accumulate
+  // multiple owner ids.  This is the foundation for Phase 4's
+  // vertex-ID renaming — consumers can look up the owning entity
+  // without regex-parsing the point id.
+
+  auto find_point = [&](const std::string& pid) -> SketchPoint* {
+    for (auto& p : parameters.points) {
+      if (p.id == pid) return &p;
+    }
+    return nullptr;
+  };
+
+  // Line endpoints.
+  for (const auto& line : parameters.lines) {
+    if (auto* sp = find_point(line.start_point_id))
+      sp->geometry_owner_ids.push_back(line.id);
+    if (auto* sp = find_point(line.end_point_id))
+      sp->geometry_owner_ids.push_back(line.id);
+  }
+
+  // Arc endpoints and centers.
+  for (const auto& arc : parameters.arcs) {
+    if (auto* sp = find_point(arc.start_point_id))
+      sp->geometry_owner_ids.push_back(arc.id);
+    if (auto* sp = find_point(arc.end_point_id))
+      sp->geometry_owner_ids.push_back(arc.id);
+    const auto center_id = "point-arc-" + arc.id + "-center";
+    if (auto* sp = find_point(center_id))
+      sp->geometry_owner_ids.push_back(arc.id);
+  }
+
+  // Circle centers and quadrants.
+  for (const auto& circle : parameters.circles) {
+    const auto center_id = "point-circle-" + circle.id + "-center";
+    if (auto* sp = find_point(center_id))
+      sp->geometry_owner_ids.push_back(circle.id);
+    for (int q = 0; q < 4; ++q) {
+      const auto qid = "point-circle-" + circle.id + "-quadrant-" + std::to_string(q);
+      if (auto* sp = find_point(qid))
+        sp->geometry_owner_ids.push_back(circle.id);
+    }
+  }
+
+  // ── Phase 1 (kept): projection metadata ─────────────────────
   for (auto& point : parameters.points) {
     if (point.kind == "projected") {
       point.is_projected = true;
-      // Resolve source metadata from the matching SketchProjection.
       for (const auto& proj : parameters.projections) {
         if (proj.generated_point_id == point.id ||
             proj.source_id == point.id) {
           point.source_type = proj.source_kind;
-          // Extract feature id from source_id (format: <body_id>:<kind>:<index>).
           const auto colon1 = proj.source_id.find(':');
           if (colon1 != std::string::npos) {
             point.source_feature_id = proj.source_id.substr(0, colon1);
@@ -191,16 +231,45 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
           break;
         }
       }
-      // For projection-generated lines, set geometry_owner_ids.
+      // Projection-generated lines already handled above; this
+      // catches standalone projected points that map to a line.
       for (const auto& proj : parameters.projections) {
         for (const auto& line_id : proj.generated_line_ids) {
           if (line_id == point.id) {
-            point.geometry_owner_ids = {line_id};
+            if (point.geometry_owner_ids.empty())
+              point.geometry_owner_ids = {line_id};
             break;
           }
         }
       }
     }
+  }
+
+  // ── Phase 4: assign vertex-N IDs ────────────────────────────
+  for (auto& point : parameters.points) {
+    if (point.vertex_id.empty()) {
+      point.vertex_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+    }
+  }
+
+  // ── Phase 5: populate *_vertex_id on entities ───────────────
+  auto vertex_id_of = [&](const std::string& point_id) -> std::string {
+    for (const auto& p : parameters.points)
+      if (p.id == point_id) return p.vertex_id;
+    return "";
+  };
+
+  for (auto& line : parameters.lines) {
+    line.start_vertex_id = vertex_id_of(line.start_point_id);
+    line.end_vertex_id   = vertex_id_of(line.end_point_id);
+  }
+  for (auto& arc : parameters.arcs) {
+    arc.start_vertex_id  = vertex_id_of(arc.start_point_id);
+    arc.end_vertex_id    = vertex_id_of(arc.end_point_id);
+    arc.center_vertex_id = vertex_id_of("point-arc-" + arc.id + "-center");
+  }
+  for (auto& circle : parameters.circles) {
+    circle.center_vertex_id = vertex_id_of("point-circle-" + circle.id + "-center");
   }
 }
 

@@ -79,6 +79,8 @@ struct ViewportSketchArcPrimitive {
 
 struct ViewportSketchPointPrimitive {
   std::string point_id;
+  // ── Vertex unification (Phase 4) ────────────────────────────
+  std::string vertex_id;
   std::string plane_id;
   std::string kind;
   double position_x;

@@ -44,12 +44,20 @@ export interface SketchCircleEntry {
 
 export interface SketchPointEntry {
   point_id: string;
+  /** vertex-N ID from Phase 4 vertex unification. */
+  vertex_id?: string;
   // "endpoint" / "center" / "projected" — see `SketchPointScene`
   // for the renderer-side meaning of each value.
   kind: "endpoint" | "center" | "projected";
   x: number;
   y: number;
   is_fixed: boolean;
+  // ── Vertex unification (Phase 1-2) ─────────────────────────
+  geometry_owner_ids?: string[];
+  is_projected?: boolean;
+  source_type?: string;
+  source_feature_id?: string;
+  source_edge_id?: string;
 }
 
 export interface SketchDimensionEntry {
@@ -76,6 +84,8 @@ export interface SketchDimensionEntry {
   /** Optional sketch-local label placement override. */
   label_x?: number | null;
   label_y?: number | null;
+  /** ID of the constraint this dimension enforces (Phase 3). */
+  constraint_id?: string;
 }
 
 export interface SketchLineRelationEntry {

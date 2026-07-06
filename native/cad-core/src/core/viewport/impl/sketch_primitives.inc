@@ -139,6 +139,7 @@ ViewportSketchPointPrimitive make_sketch_point_primitive(
 
   return ViewportSketchPointPrimitive{
       .point_id = point.id,
+      .vertex_id = point.vertex_id,
       .plane_id = parameters.plane_id,
       .kind = point.kind,
       .position_x = world.x,

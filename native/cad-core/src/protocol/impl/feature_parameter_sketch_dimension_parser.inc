@@ -50,6 +50,10 @@
           dim_payload.at("pivot_y").is_number()) {
         dimension.pivot_y = dim_payload.at("pivot_y").get<double>();
       }
+      if (dim_payload.contains("constraint_id") &&
+          dim_payload.at("constraint_id").is_string()) {
+        dimension.constraint_id = dim_payload.at("constraint_id").get<std::string>();
+      }
       params.dimensions.push_back(dimension);
     }
     // Backward compat: dimensions from older saves lack the `is_auto`

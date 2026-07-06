@@ -190,6 +190,8 @@ export interface ViewportSketchArc {
 
 export interface ViewportSketchPoint {
   point_id: string;
+  /** vertex-N ID from Phase 4 vertex unification. */
+  vertex_id?: string;
   plane_id: string;
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.

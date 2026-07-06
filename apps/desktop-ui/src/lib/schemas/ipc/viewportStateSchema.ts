@@ -284,6 +284,7 @@ export const viewportStateSchema = z.object({
   sketch_points: z.array(
     z.object({
       point_id: z.string(),
+      vertex_id: z.string().optional().default(""),
       plane_id: z.string(),
       kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
       position: z.object({

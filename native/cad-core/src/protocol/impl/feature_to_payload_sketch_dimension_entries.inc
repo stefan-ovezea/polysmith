@@ -30,6 +30,7 @@
                            dimension.pivot_y.has_value()
                                ? json(*dimension.pivot_y)
                                : json(nullptr)},
+                          {"constraint_id", dimension.constraint_id},
                       });
                     }
                     return dimensions;

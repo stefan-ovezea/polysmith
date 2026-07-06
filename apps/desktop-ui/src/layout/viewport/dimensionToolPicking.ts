@@ -104,6 +104,20 @@ function entityIdFromSketchPointId(
       return match[1];
     }
   }
+  // Phase 2: use geometry_owner_ids from the unified vertex model.
+  // This is the preferred path — no regex, no entity-walking.
+  if (sketch) {
+    for (const pt of sketch.points) {
+      if (pt.point_id === pointId && pt.geometry_owner_ids?.length) {
+        const ownerId = pt.geometry_owner_ids[0];
+        // Check if the owner kind matches the requested kinds.
+        for (const kind of kinds) {
+          if (ownerId.startsWith(`${kind}-`)) return ownerId;
+        }
+      }
+    }
+  }
+
   // Fallback for bare point-N IDs (arc endpoints, shared topology):
   // search entities by their start_point_id / end_point_id fields.
   if (sketch) {

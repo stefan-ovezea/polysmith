@@ -236,6 +236,8 @@ export interface SketchPointScene {
   // glance.
   // "quadrant" — derived cardinal point on a circle perimeter.
   pointId: string;
+  /** vertex-N ID from Phase 4 vertex unification. */
+  vertexId?: string;
   kind: "endpoint" | "center" | "projected" | "quadrant";
   position: [number, number, number];
   isFixed: boolean;

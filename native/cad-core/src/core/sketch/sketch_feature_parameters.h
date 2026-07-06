@@ -126,6 +126,11 @@ struct SketchFeatureParameters {
   // Empty vector = normal mode (no freeze, all non-fixed points
   // participate in the solve).
   std::vector<std::string> pending_append_focus_ids;
+
+  // ── Vertex unification (Phase 4) ────────────────────────────
+  // Monotonic counter for assigning vertex-N IDs.  Incremented by
+  // rebuild_sketch_points for every new unique point.
+  int next_vertex_index = 1;
 };
 
 }  // namespace polysmith::core
