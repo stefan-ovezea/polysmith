@@ -24,6 +24,9 @@ export interface SketchLineEntry {
   line_id: string;
   start_point_id: string;
   end_point_id: string;
+  // Vertex unification (Phase 5)
+  start_vertex_id?: string;
+  end_vertex_id?: string;
   start_x: number;
   start_y: number;
   end_x: number;
@@ -36,6 +39,8 @@ export interface SketchLineEntry {
 
 export interface SketchCircleEntry {
   circle_id: string;
+  // Vertex unification (Phase 5)
+  center_vertex_id?: string;
   center_x: number;
   center_y: number;
   radius: number;

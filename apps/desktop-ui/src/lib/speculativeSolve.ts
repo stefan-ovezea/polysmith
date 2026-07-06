@@ -117,18 +117,22 @@ function pushSketchGeometryAndConstraints(
 ): number {
   w.clear_data();
 
+  // Vertex-id lookup: old point_id → new vertex_id
+  const vid = new Map(params.points.map((p) => [p.point_id, p.vertex_id ?? p.point_id]));
+
   const pointIds: string[] = [];
 
   // Push sketch points.
   for (const pt of params.points) {
+    const vtxId = pt.vertex_id ?? pt.point_id;
     w.push_primitive({
-      id: pt.point_id,
+      id: vtxId,
       type: "point",
       x: pt.x,
       y: pt.y,
       fixed: pt.is_fixed,
     });
-    pointIds.push(pt.point_id);
+    pointIds.push(vtxId);
   }
 
   // Push sketch lines.
@@ -136,14 +140,14 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: line.line_id,
       type: "line",
-      p1_id: line.start_point_id,
-      p2_id: line.end_point_id,
+      p1_id: vid.get(line.start_point_id) ?? line.start_point_id,
+      p2_id: vid.get(line.end_point_id) ?? line.end_point_id,
     });
   }
 
   // Push sketch circles.
   for (const circle of params.circles) {
-    const centerId = `point-circle-${circle.circle_id}-center`;
+    const centerId = circle.center_vertex_id ?? vid.get(`point-circle-${circle.circle_id}-center`) ?? `point-circle-${circle.circle_id}-center`;
     w.push_primitive({
       id: circle.circle_id,
       type: "circle",
@@ -175,12 +179,12 @@ function pushSketchGeometryAndConstraints(
       w.push_primitive({
         id: c.constraint_id,
         type: "p2p_coincident",
-        p1_id: c.target_ids[0],
-        p2_id: c.target_ids[1],
+        p1_id: vid.get(c.target_ids[0]) ?? c.target_ids[0],
+        p2_id: vid.get(c.target_ids[1]) ?? c.target_ids[1],
       });
     } else if (c.kind === "concentric" && c.target_ids.length >= 2) {
-      const cid1 = `point-circle-${c.target_ids[0]}-center`;
-      const cid2 = `point-circle-${c.target_ids[1]}-center`;
+      const cid1 = vid.get(`point-circle-${c.target_ids[0]}-center`) ?? `point-circle-${c.target_ids[0]}-center`;
+      const cid2 = vid.get(`point-circle-${c.target_ids[1]}-center`) ?? `point-circle-${c.target_ids[1]}-center`;
       w.push_primitive({
         id: c.constraint_id,
         type: "p2p_coincident",
@@ -234,7 +238,7 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: a.anchor_id,
       type: "point_on_line_pl",
-      p_id: a.point_id,
+      p_id: vid.get(a.point_id) ?? a.point_id,
       l_id: a.line_id,
     });
   }
@@ -242,7 +246,7 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: a.anchor_id,
       type: "point_on_line_pl",
-      p_id: a.point_id,
+      p_id: vid.get(a.point_id) ?? a.point_id,
       l_id: a.line_id,
     });
   }
@@ -259,8 +263,8 @@ function pushSketchGeometryAndConstraints(
           w.push_primitive({
             id: dim.dimension_id,
             type: "p2p_distance",
-            p1_id: line.start_point_id,
-            p2_id: line.end_point_id,
+            p1_id: vid.get(line.start_point_id) ?? line.start_point_id,
+            p2_id: vid.get(line.end_point_id) ?? line.end_point_id,
             distance: dim.value,
           });
         }
@@ -281,8 +285,8 @@ function pushSketchGeometryAndConstraints(
           w.push_primitive({
             id: dim.dimension_id,
             type: "p2p_angle",
-            p1_id: line.start_point_id,
-            p2_id: line.end_point_id,
+            p1_id: vid.get(line.start_point_id) ?? line.start_point_id,
+            p2_id: vid.get(line.end_point_id) ?? line.end_point_id,
             angle: dim.value,
           });
         }
@@ -305,8 +309,8 @@ function pushSketchGeometryAndConstraints(
           w.push_primitive({
             id: dim.dimension_id,
             type: "p2p_distance",
-            p1_id: dim.entity_id,
-            p2_id: dim.secondary_entity_id,
+            p1_id: vid.get(dim.entity_id) ?? dim.entity_id,
+            p2_id: vid.get(dim.secondary_entity_id) ?? dim.secondary_entity_id,
             distance: dim.value,
           });
         }

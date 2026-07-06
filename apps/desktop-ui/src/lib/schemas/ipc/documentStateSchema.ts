@@ -492,6 +492,8 @@ export const documentStateSchema = z.object({
               line_id: z.string(),
               start_point_id: z.string(),
               end_point_id: z.string(),
+              start_vertex_id: z.string().optional().default(""),
+              end_vertex_id: z.string().optional().default(""),
               start_x: z.number(),
               start_y: z.number(),
               end_x: z.number(),
@@ -567,6 +569,7 @@ export const documentStateSchema = z.object({
           circles: z.array(
             z.object({
               circle_id: z.string(),
+              center_vertex_id: z.string().optional().default(""),
               center_x: z.number(),
               center_y: z.number(),
               radius: z.number(),
