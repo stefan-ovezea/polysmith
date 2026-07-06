@@ -1,6 +1,6 @@
       if (view->active_sketch_feature_id.has_value() &&
           view->active_sketch_feature_id.value() == feature.id) {
-        for (const auto& point : feature.sketch_parameters->points) {
+        for (const auto& point : feature.sketch_parameters->vertices) {
           const bool is_selected_point =
               is_sketch_point_selected(point.id);
           sketch_vertices.push_back(make_sketch_point_primitive(

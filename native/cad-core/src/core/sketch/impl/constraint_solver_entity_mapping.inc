@@ -2,7 +2,7 @@
     // coordinate from the owning line/circle if possible; fall back to
     // the point's stored value.
     for (size_t i = 0; i < num_points; ++i) {
-        const auto& sp = params.points[i];
+        const auto& sp = params.vertices[i];
         double px = sp.x;
         double py = sp.y;
 

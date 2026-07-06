@@ -22,7 +22,7 @@ std::optional<NearestPoint> find_nearest_existing_point(
     const std::string& own_point_id) {
   std::optional<NearestPoint> result;
   double best_dist = kCoincidentTolerance;
-  for (const auto& pt : params.points) {
+  for (const auto& pt : params.vertices) {
     if (pt.id == own_point_id) continue;
     const double dx = pt.x - x;
     const double dy = pt.y - y;

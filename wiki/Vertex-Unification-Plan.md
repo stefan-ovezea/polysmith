@@ -5,7 +5,7 @@
 
 ---
 
-## Phase 0: CAM data structures ✅ _(completed 2026-07-06)_
+## Phase 0: CAM data structures ✅ _(completed 2026-07-06, rewritten 2026-07-07)_
 
 Add empty/typed structs for CAM fields from the target schema. These are purely additive — no existing code touches them.
 
@@ -25,7 +25,7 @@ Add empty/typed structs for CAM fields from the target schema. These are purely 
 
 ---
 
-## Phase 1: Add `geometry_owner_ids` and projection fields (additive, zero risk)
+## Phase 1: ✅ _(completed 2026-07-07)_ Add `geometry_owner_ids` and projection fields (additive, zero risk)
 
 Add new fields to `SketchPoint` without changing existing behavior. Existing code ignores them.
 
@@ -56,7 +56,7 @@ Add new fields to `SketchPoint` without changing existing behavior. Existing cod
 
 ---
 
-## Phase 2: Populate `geometry_owner_ids` for all points
+## Phase 2: ✅ _(completed 2026-07-07)_ Populate `geometry_owner_ids` for all points
 
 ### 2.1: During rebuild, write owner IDs
 - **File:** `native/cad-core/src/core/sketch/impl/private_point_profile_helpers.inc`
@@ -73,7 +73,7 @@ Add new fields to `SketchPoint` without changing existing behavior. Existing cod
 
 ---
 
-## Phase 3: Add `constraint_id` link to dimensions
+## Phase 3: ✅ _(completed 2026-07-07)_ Add `constraint_id` link to dimensions
 
 ### 3.1: C++ struct
 - **File:** `native/cad-core/src/core/sketch/sketch_dimension_types.h`
@@ -84,7 +84,7 @@ Add new fields to `SketchPoint` without changing existing behavior. Existing cod
 
 ---
 
-## Phase 4: Rename point IDs to `vertex-N`
+## Phase 4: ✅ _(completed 2026-07-07)_ Rename point IDs to `vertex-N`
 
 **Biggest change.** Touches line creation, arc creation, circle creation, point reconciliation, profile detection, and all regex-based point ID parsing.
 
@@ -112,7 +112,7 @@ Add new fields to `SketchPoint` without changing existing behavior. Existing cod
 
 ---
 
-## Phase 5: Remove coordinate duplication
+## Phase 5: ✅ _(completed 2026-07-07)_ Remove coordinate duplication
 
 ### 5.1: Remove `start_x/y, end_x/y` from `SketchLine`
 - **File:** `sketch_geometry_types.h` — drop coordinate fields
@@ -132,7 +132,7 @@ Add new fields to `SketchPoint` without changing existing behavior. Existing cod
 
 ---
 
-## Phase 6: Rename `points[]` → `vertices[]`
+## Phase 6: ✅ _(completed 2026-07-07)_ Rename `points[]` → `vertices[]`
 
 Pure search-and-replace.
 

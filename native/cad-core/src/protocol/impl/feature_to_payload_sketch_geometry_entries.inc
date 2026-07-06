@@ -102,7 +102,7 @@
                   {"points",
                   [&feature]() {
                     json points = json::array();
-                    for (const auto& point : feature.sketch_parameters->points) {
+                    for (const auto& point : feature.sketch_parameters->vertices) {
                       json pt{
                           {"point_id", point.id},
                           {"vertex_id", point.vertex_id},

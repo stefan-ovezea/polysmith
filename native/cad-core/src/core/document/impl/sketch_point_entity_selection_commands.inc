@@ -19,10 +19,10 @@ DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
   }
 
   const auto point_it = std::find_if(
-      feature_it->sketch_parameters->points.begin(),
-      feature_it->sketch_parameters->points.end(),
+      feature_it->sketch_parameters->vertices.begin(),
+      feature_it->sketch_parameters->vertices.end(),
       [&](const SketchVertex& point) { return point.id == point_id; });
-  if (point_it == feature_it->sketch_parameters->points.end()) {
+  if (point_it == feature_it->sketch_parameters->vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
 

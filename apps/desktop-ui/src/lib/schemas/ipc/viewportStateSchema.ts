@@ -281,7 +281,7 @@ export const viewportStateSchema = z.object({
       }),
     )
     .default([]),
-  sketch_points: z.array(
+  sketch_vertices: z.array(
     z.object({
       point_id: z.string(),
       vertex_id: z.string().optional().default(""),

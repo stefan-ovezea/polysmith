@@ -51,7 +51,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   for (const auto& c : params.circles) map[c.id] = {intrinsic_dof("circle"), 0};
   for (const auto& p : params.polygons) map[p.id] = {intrinsic_dof("polygon"), 0};
   for (const auto& a : params.arcs)    map[a.id] = {intrinsic_dof("arc"), 0};
-  for (const auto& p : params.points)  map[p.id] = {intrinsic_dof("point"), 0};
+  for (const auto& p : params.vertices)  map[p.id] = {intrinsic_dof("point"), 0};
 
   // Inline constraints on lines.
   for (const auto& l : params.lines) {
@@ -102,7 +102,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   }
 
   // Fixed points.
-  for (const auto& p : params.points) {
+  for (const auto& p : params.vertices) {
     if (p.is_fixed && map.count(p.id)) {
       map[p.id].consumed += constraint_cost("fixed");
     }
@@ -126,7 +126,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   for (const auto& a : params.arcs) {
     auto& e = map[a.id]; results.push_back({a.id, "arc", e.total, e.consumed, e.status()});
   }
-  for (const auto& p : params.points) {
+  for (const auto& p : params.vertices) {
     auto& e = map[p.id]; results.push_back({p.id, "point", e.total, e.consumed, e.status()});
   }
   return results;

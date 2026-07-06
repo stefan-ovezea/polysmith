@@ -39,10 +39,10 @@ bool expect(bool condition, const char* message) {
   return false;
 }
 
-const polysmith::core::SketchPoint* find_point(
+const polysmith::core::SketchVertex* find_point(
     const FeatureEntry& feature,
     const char* point_id) {
-  for (const auto& point : feature.sketch_parameters->points) {
+  for (const auto& point : feature.sketch_parameters->vertices) {
     if (point.id == point_id) {
       return &point;
     }
@@ -155,7 +155,7 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                   },
               .circles = {},
-              .points = {},
+              .vertices = {},
               .dimensions = {},
               .line_relations = {},
               .profiles = {},
@@ -184,7 +184,7 @@ bool test_stores_explicit_points_and_profiles_for_rectangles() {
   add_sketch_line(feature, 3, 40.0, 20.0, 0.0, 20.0);
   add_sketch_line(feature, 4, 0.0, 20.0, 0.0, 0.0);
 
-  return expect(feature.sketch_parameters->points.size() == 4,
+  return expect(feature.sketch_parameters->vertices.size() == 4,
                 "expected rectangle sketch to store four explicit points") &&
          expect(feature.sketch_parameters->profiles.size() == 1,
                 "expected rectangle sketch to store one explicit profile") &&
@@ -199,7 +199,7 @@ bool test_redimensioning_preserves_stored_profile_topology() {
 
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
-  return expect(feature.sketch_parameters->points.size() == 4,
+  return expect(feature.sketch_parameters->vertices.size() == 4,
                 "expected redimensioned rectangle to keep four explicit points") &&
          expect(feature.sketch_parameters->profiles.size() == 1,
                 "expected redimensioned rectangle to keep one explicit profile") &&
@@ -213,12 +213,12 @@ bool test_circle_creates_center_point_and_profile() {
 
   // Each circle creates 1 center point + 4 quadrant points = 5 total.
   bool points_ok =
-      expect(feature.sketch_parameters->points.size() == 5,
+      expect(feature.sketch_parameters->vertices.size() == 5,
              "expected circle sketch to store 5 points (1 center + 4 quadrants)");
   // The center point is the first one pushed by rebuild_sketch_points.
   bool center_ok =
-      expect(!feature.sketch_parameters->points.empty() &&
-                 feature.sketch_parameters->points[0].kind == "center",
+      expect(!feature.sketch_parameters->vertices.empty() &&
+                 feature.sketch_parameters->vertices[0].kind == "center",
              "expected first stored circle point to be a center point");
 
   return points_ok && center_ok &&

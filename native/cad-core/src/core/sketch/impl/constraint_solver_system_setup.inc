@@ -12,7 +12,7 @@
     // satisfy radius constraints.
     GCS::VEC_pD unknown_params;
     for (size_t i = 0; i < num_points; ++i) {
-        if (!params.points[i].is_fixed) {
+        if (!params.vertices[i].is_fixed) {
             unknown_params.push_back(&param_storage_[i * 2]);     // x
             unknown_params.push_back(&param_storage_[i * 2 + 1]); // y
         }

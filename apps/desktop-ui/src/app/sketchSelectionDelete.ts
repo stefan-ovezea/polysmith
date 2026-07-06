@@ -10,8 +10,8 @@ export function currentSketchDeleteSelection(
       document?.selected_sketch_entity_id,
     ),
     pointIds: dedupeSelectedIds(
-      document?.selected_sketch_point_ids,
-      document?.selected_sketch_point_id,
+      document?.selected_sketch_vertex_ids,
+      document?.selected_sketch_vertex_id,
     ),
     profileIds: dedupeSelectedIds(
       document?.selected_sketch_profile_ids,

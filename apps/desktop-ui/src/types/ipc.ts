@@ -185,9 +185,9 @@ export interface DocumentState {
   active_sketch_face_id: string | null;
   active_sketch_feature_id: string | null;
   active_sketch_tool: SketchTool | null;
-  selected_sketch_point_id: string | null;
+  selected_sketch_vertex_id: string | null;
   selected_sketch_entity_id: string | null;
-  selected_sketch_point_ids: string[];
+  selected_sketch_vertex_ids: string[];
   selected_sketch_entity_ids: string[];
   selected_sketch_dimension_id: string | null;
   selected_sketch_profile_id: string | null;
@@ -256,7 +256,7 @@ export interface ViewportState {
   sketch_circles: ViewportSketchCircle[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
-  sketch_points: ViewportSketchVertex[];
+  sketch_vertices: ViewportSketchVertex[];
   sketch_dimensions: ViewportSketchDimension[];
   sketch_constraints: ViewportSketchConstraint[];
   sketch_profiles: ViewportSketchProfile[];

@@ -50,7 +50,7 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
     if (!last_result_.ok()) return;
 
     // Write solved coordinates back to the canonical storage (lines
-    // and circles). Do NOT write to params.points[] — that array is
+    // and circles). Do NOT write to params.vertices[] — that array is
     // rebuilt from lines/circles by rebuild_sketch_vertices() later in
     // refresh_sketch_derived_state.
 
@@ -69,7 +69,7 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
     }
 
     // Update circle center positions and radii.
-    size_t radius_base = params.points.size() * 2;
+    size_t radius_base = params.vertices.size() * 2;
     for (size_t i = 0; i < params.circles.size(); ++i) {
         auto& sc = params.circles[i];
         std::string center_point_id =

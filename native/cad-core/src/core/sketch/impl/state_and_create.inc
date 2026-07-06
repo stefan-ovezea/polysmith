@@ -154,8 +154,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       // Snapshot original is_fixed values before any temporary mutation.
       std::vector<bool> saved_fixed;
       if (append_mode) {
-        saved_fixed.reserve(feature.sketch_parameters->points.size());
-        for (const auto& pt : feature.sketch_parameters->points) {
+        saved_fixed.reserve(feature.sketch_parameters->vertices.size());
+        for (const auto& pt : feature.sketch_parameters->vertices) {
           saved_fixed.push_back(pt.is_fixed);
         }
 
@@ -182,7 +182,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         }
 
         // Freeze all points, then unfreeze only the focus set.
-        for (auto& pt : feature.sketch_parameters->points) {
+        for (auto& pt : feature.sketch_parameters->vertices) {
           if (unfrozen_point_ids.count(pt.id)) {
             pt.is_fixed = false;
           } else {
@@ -384,8 +384,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
       // Restore original is_fixed values.
       if (append_mode) {
-        for (size_t i = 0; i < feature.sketch_parameters->points.size(); ++i) {
-          feature.sketch_parameters->points[i].is_fixed = saved_fixed[i];
+        for (size_t i = 0; i < feature.sketch_parameters->vertices.size(); ++i) {
+          feature.sketch_parameters->vertices[i].is_fixed = saved_fixed[i];
         }
         feature.sketch_parameters->pending_append_focus_ids.clear();
       }
@@ -460,7 +460,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   #include "core/sketch/impl/refresh_mirror_relation_state.inc"
 
-  const std::vector<SketchVertex> previous_points = feature.sketch_parameters->points;
+  const std::vector<SketchVertex> previous_points = feature.sketch_parameters->vertices;
   rebuild_sketch_vertices(*feature.sketch_parameters);
 
   // Derived points (projected, quadrant, arc endpoints) are derived

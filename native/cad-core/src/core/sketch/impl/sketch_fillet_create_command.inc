@@ -174,7 +174,7 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
 
   // Trim points are fixed by the fillet's parametric solve — the
   // user can't drag them. Same convention as bare arcs.
-  for (auto &point : feature.sketch_parameters->points) {
+  for (auto &point : feature.sketch_parameters->vertices) {
     if (point.id == trim_a_id || point.id == trim_b_id) {
       point.is_fixed = true;
     }

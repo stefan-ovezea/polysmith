@@ -89,19 +89,19 @@
                     is_selected_dimension));
           } else if (dimension.kind == "point_distance") {
             const auto point_a_it = std::find_if(
-                feature.sketch_parameters->points.begin(),
-                feature.sketch_parameters->points.end(),
+                feature.sketch_parameters->vertices.begin(),
+                feature.sketch_parameters->vertices.end(),
                 [&](const SketchVertex& p) {
                   return p.id == dimension.entity_id;
                 });
             const auto point_b_it = std::find_if(
-                feature.sketch_parameters->points.begin(),
-                feature.sketch_parameters->points.end(),
+                feature.sketch_parameters->vertices.begin(),
+                feature.sketch_parameters->vertices.end(),
                 [&](const SketchVertex& p) {
                   return p.id == dimension.secondary_entity_id;
                 });
-            if (point_a_it == feature.sketch_parameters->points.end() ||
-                point_b_it == feature.sketch_parameters->points.end()) {
+            if (point_a_it == feature.sketch_parameters->vertices.end() ||
+                point_b_it == feature.sketch_parameters->vertices.end()) {
               continue;
             }
             sketch_dimensions.push_back(

@@ -36,7 +36,7 @@ struct SketchFeatureParameters {
   std::vector<SketchCircle> circles;
   std::vector<SketchPolygon> polygons;
   std::vector<SketchArc> arcs;
-  std::vector<SketchVertex> points;
+  std::vector<SketchVertex> vertices;
   std::vector<SketchDimension> dimensions;
   std::vector<SketchLineRelation> line_relations;
   std::vector<SketchConstraint> constraints;

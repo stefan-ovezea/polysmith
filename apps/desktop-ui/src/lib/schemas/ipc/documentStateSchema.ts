@@ -25,9 +25,9 @@ export const documentStateSchema = z.object({
   active_sketch_face_id: z.string().nullable(),
   active_sketch_feature_id: z.string().nullable(),
   active_sketch_tool: z.string().nullable(),
-  selected_sketch_point_id: z.string().nullable(),
+  selected_sketch_vertex_id: z.string().nullable(),
   selected_sketch_entity_id: z.string().nullable(),
-  selected_sketch_point_ids: z.array(z.string()).default([]),
+  selected_sketch_vertex_ids: z.array(z.string()).default([]),
   selected_sketch_entity_ids: z.array(z.string()).default([]),
   selected_sketch_dimension_id: z.string().nullable(),
   selected_sketch_profile_id: z.string().nullable(),
@@ -616,11 +616,18 @@ export const documentStateSchema = z.object({
           points: z.array(
             z.object({
               point_id: z.string(),
+              vertex_id: z.string().optional().default(""),
               kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
               x: z.number(),
               y: z.number(),
               is_fixed: z.boolean(),
-            }),
+              // ── Vertex unification (Phase 1) ───────────────────────
+              geometry_owner_ids: z.array(z.string()).optional().default([]),
+              is_projected: z.boolean().optional().default(false),
+              source_type: z.string().optional(),
+              source_feature_id: z.string().optional(),
+              source_edge_id: z.string().optional(),
+            }).passthrough(),
           ),
           dimensions: z.array(
             z.object({
@@ -764,4 +771,4 @@ export const documentStateSchema = z.object({
     post_processor: null as Record<string, unknown> | null,
     simulation: null as Record<string, unknown> | null,
   }),
-});
+}).passthrough();

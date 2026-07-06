@@ -104,6 +104,6 @@
       point.x = read_number(point_payload, "x");
       point.y = read_number(point_payload, "y");
       point.is_fixed = read_bool(point_payload, "is_fixed");
-      params.points.push_back(point);
+      params.vertices.push_back(point);
     }
   }
