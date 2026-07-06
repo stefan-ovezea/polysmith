@@ -155,6 +155,17 @@ function endpointDragAnchors(
     }
   }
 
+  // Arc center: anchor is the arc's current center.
+  if (anchors.length === 0) {
+    const arcMatch = /^point-arc-(.+)-center$/.exec(pointId);
+    if (arcMatch) {
+      const arc = params.arcs?.find((a) => a.arc_id === arcMatch[1]);
+      if (arc) {
+        anchors.push({ x: arc.center_x, y: arc.center_y });
+      }
+    }
+  }
+
   return anchors;
 }
 

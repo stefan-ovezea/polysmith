@@ -26,6 +26,20 @@ void sync_circle_dimension(SketchFeatureParameters& parameters,
   }
 }
 
+void sync_arc_dimension(SketchFeatureParameters& parameters,
+                         const SketchArc& arc) {
+  const auto dimension_it = std::find_if(
+      parameters.dimensions.begin(),
+      parameters.dimensions.end(),
+      [&](const SketchDimension& dimension) {
+        return dimension.kind == "arc_radius" && dimension.entity_id == arc.id;
+      });
+
+  if (dimension_it != parameters.dimensions.end()) {
+    dimension_it->value = arc.radius;
+  }
+}
+
 void sync_angle_dimensions(SketchFeatureParameters& parameters) {
   for (auto& dim : parameters.dimensions) {
     if (dim.kind != "angle") continue;

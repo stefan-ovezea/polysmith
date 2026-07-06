@@ -385,6 +385,46 @@ void update_sketch_dimension(FeatureEntry& feature,
     return;
   }
 
+  if (dimension.kind == "arc_radius") {
+    const auto arc_it = std::find_if(
+        parameters.arcs.begin(),
+        parameters.arcs.end(),
+        [&](const SketchArc& arc) { return arc.id == dimension.entity_id; });
+
+    if (arc_it == parameters.arcs.end()) {
+      throw std::runtime_error("Sketch arc not found for dimension: " + dimension_id);
+    }
+
+    if (value <= kMinimumSketchDimensionValue) {
+      throw std::runtime_error("Arc radius must be greater than zero");
+    }
+
+    // Preserve the start and end angles; recompute endpoint positions
+    // at the new radius from the center.
+    const double cx = arc_it->center_x;
+    const double cy = arc_it->center_y;
+    const double start_angle = std::atan2(arc_it->start_y - cy, arc_it->start_x - cx);
+    const double end_angle = std::atan2(arc_it->end_y - cy, arc_it->end_x - cx);
+
+    arc_it->radius = value;
+    arc_it->start_x = cx + value * std::cos(start_angle);
+    arc_it->start_y = cy + value * std::sin(start_angle);
+    arc_it->end_x = cx + value * std::cos(end_angle);
+    arc_it->end_y = cy + value * std::sin(end_angle);
+
+    propagate_connected_point_move(parameters, arc_it->start_point_id,
+                                   arc_it->start_x, arc_it->start_y);
+    propagate_connected_point_move(parameters, arc_it->end_point_id,
+                                   arc_it->end_x, arc_it->end_y);
+
+    dimension.value = value;
+    dimension.driven = false;  // reset — may be set below
+    refresh_sketch_derived_state(feature);
+    fallback_to_driven();
+    sync_all_labels();
+    return;
+  }
+
   if (dimension.kind == "polygon_radius") {
     const auto polygon_it = std::find_if(
         parameters.polygons.begin(),

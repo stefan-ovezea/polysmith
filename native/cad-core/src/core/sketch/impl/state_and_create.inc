@@ -70,6 +70,18 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             feature.sketch_parameters->circles.end(),
             [&](const auto& c) { return c.id == dim.entity_id; });
         if (!found) dim.driven = true;
+      } else if (dim.kind == "arc_radius") {
+        bool found = std::any_of(
+            feature.sketch_parameters->arcs.begin(),
+            feature.sketch_parameters->arcs.end(),
+            [&](const auto& a) { return a.id == dim.entity_id; });
+        if (!found) dim.driven = true;
+      } else if (dim.kind == "polygon_radius") {
+        bool found = std::any_of(
+            feature.sketch_parameters->polygons.begin(),
+            feature.sketch_parameters->polygons.end(),
+            [&](const auto& p) { return p.id == dim.entity_id; });
+        if (!found) dim.driven = true;
       } else if (!dim.secondary_entity_id.empty()) {
         bool found_primary = false, found_secondary = false;
         if (dim.kind == "angle") {

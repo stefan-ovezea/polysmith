@@ -127,6 +127,8 @@ interface ViewportPointerUpParams {
   createDimensionLinear: ActiveSketchPointerUpContext["createDimensionLinear"];
   createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
   selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
+  createDimensionArc: ActiveSketchPointerUpContext["createDimensionArc"];
+  selectDimensionArc: ActiveSketchPointerUpContext["selectDimensionArc"];
   createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];
   selectDimensionPolygon: ActiveSketchPointerUpContext["selectDimensionPolygon"];
   selectDimensionLine: ActiveSketchPointerUpContext["selectDimensionLine"];
@@ -376,6 +378,8 @@ function handleActiveSketchToolPointerUp(
     createDimensionLineAngle: params.createDimensionLineAngle,
     createDimensionCircle: params.createDimensionCircle,
     selectDimensionCircle: params.selectDimensionCircle,
+    createDimensionArc: params.createDimensionArc,
+    selectDimensionArc: params.selectDimensionArc,
     createDimensionPolygon: params.createDimensionPolygon,
     selectDimensionPolygon: params.selectDimensionPolygon,
     selectDimensionLine: params.selectDimensionLine,

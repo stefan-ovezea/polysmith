@@ -139,6 +139,13 @@ void rebuild_sketch_points(SketchFeatureParameters& parameters) {
     });
   }
 
+  // Re-emit arc center points so they participate in the shared point graph
+  // (DOF display, snap targets) just like circle centers.
+  for (const auto& arc : parameters.arcs) {
+    append_point(
+        "point-arc-" + arc.id + "-center", "center", arc.center_x, arc.center_y);
+  }
+
   // Re-emit the original corner point of every fillet. After
   // `add_sketch_fillet` mutates lines A and B to reference the new
   // trim points, no line / arc / circle references the original

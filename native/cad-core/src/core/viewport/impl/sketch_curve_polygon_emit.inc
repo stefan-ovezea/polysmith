@@ -5,6 +5,44 @@
             arc,
             *feature.sketch_parameters,
             is_selected_sketch_entity));
+        if (view->active_sketch_feature_id.has_value() &&
+            view->active_sketch_feature_id.value() == feature.id) {
+          const auto dim_it = std::find_if(
+              feature.sketch_parameters->dimensions.begin(),
+              feature.sketch_parameters->dimensions.end(),
+              [&](const SketchDimension& d) {
+                return d.kind == "arc_radius" && d.entity_id == arc.id;
+              });
+          if (dim_it != feature.sketch_parameters->dimensions.end()) {
+            const bool is_selected_dim =
+                view->selected_sketch_dimension_id.has_value() &&
+                view->selected_sketch_dimension_id.value() == dim_it->id;
+            const WorldPoint center =
+                to_world_point(*feature.sketch_parameters, arc.center_x, arc.center_y);
+            const WorldPoint dim_start = to_world_point(
+                *feature.sketch_parameters, arc.center_x, arc.center_y);
+            const WorldPoint dim_end = to_world_point(
+                *feature.sketch_parameters, arc.center_x + arc.radius, arc.center_y);
+            const WorldPoint label = to_world_point(
+                *feature.sketch_parameters,
+                arc.center_x + arc.radius + 18.0, arc.center_y);
+            sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
+                .dimension_id = dim_it->id,
+                .plane_id = feature.sketch_parameters->plane_id,
+                .kind = "arc_radius",
+                .entity_id = arc.id,
+                .label = "R " + format_dimension_value(dim_it->value) + " mm",
+                .is_selected = is_selected_dim,
+                .anchor_start_x = dim_start.x, .anchor_start_y = dim_start.y, .anchor_start_z = dim_start.z,
+                .anchor_end_x = dim_end.x, .anchor_end_y = dim_end.y, .anchor_end_z = dim_end.z,
+                .dimension_start_x = dim_start.x, .dimension_start_y = dim_start.y, .dimension_start_z = dim_start.z,
+                .dimension_end_x = dim_end.x, .dimension_end_y = dim_end.y, .dimension_end_z = dim_end.z,
+                .label_x = label.x, .label_y = label.y, .label_z = label.z,
+                .driven = dim_it->driven,
+                .display_as = "",
+            });
+          }
+        }
       }
 
       for (const auto& circle : feature.sketch_parameters->circles) {

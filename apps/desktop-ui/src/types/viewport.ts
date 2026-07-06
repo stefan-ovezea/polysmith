@@ -207,6 +207,7 @@ export interface ViewportSketchDimension {
   kind:
     | "line_length"
     | "circle_radius"
+    | "arc_radius"
     | "polygon_radius"
     | "angle"
     | "line_angle"

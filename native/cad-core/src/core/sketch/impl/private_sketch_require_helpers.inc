@@ -40,6 +40,20 @@ SketchCircle& require_circle(SketchFeatureParameters& parameters,
   return *circle_it;
 }
 
+SketchArc& require_arc(SketchFeatureParameters& parameters,
+                        const std::string& arc_id) {
+  const auto arc_it = std::find_if(
+      parameters.arcs.begin(),
+      parameters.arcs.end(),
+      [&](const SketchArc& arc) { return arc.id == arc_id; });
+
+  if (arc_it == parameters.arcs.end()) {
+    throw std::runtime_error("Sketch arc not found: " + arc_id);
+  }
+
+  return *arc_it;
+}
+
 SketchPoint& require_point(SketchFeatureParameters& parameters,
                            const std::string& point_id) {
   const auto point_it = std::find_if(

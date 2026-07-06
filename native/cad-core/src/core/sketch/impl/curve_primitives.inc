@@ -92,6 +92,17 @@ void add_sketch_arc(FeatureEntry& feature,
       .is_construction = is_construction,
   });
 
+  if (!is_construction) {
+    const auto& arc = feature.sketch_parameters->arcs.back();
+    feature.sketch_parameters->dimensions.push_back(SketchDimension{
+        .id = "dim-arc-" + arc.id,
+        .kind = "arc_radius",
+        .entity_id = arc.id,
+        .value = arc.radius,
+        .is_auto = true,
+    });
+  }
+
   refresh_sketch_with_append_focus(
       feature, {"arc-" + std::to_string(arc_index)});
 

@@ -168,6 +168,14 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
           dimension.value = std::sqrt(dx * dx + dy * dy);
         }
       }
+    } else if (dimension.kind == "arc_radius") {
+      const auto arc_it = std::find_if(
+          parameters.arcs.begin(),
+          parameters.arcs.end(),
+          [&](const SketchArc& arc) { return arc.id == dimension.entity_id; });
+      if (arc_it != parameters.arcs.end()) {
+        dimension.value = arc_it->radius;
+      }
     }
     } catch (const std::exception& e) {
       fprintf(stderr, "sync_driven_dimensions: skipping %s '%s': %s\n",
