@@ -94,7 +94,7 @@ function resolveEntityToPoint(
 
 function entityIdFromSketchPointId(
   pointId: string,
-  kinds: readonly EntityKind[] = ["line", "circle", "polygon"],
+  kinds: readonly EntityKind[] = ["line", "circle", "polygon", "arc"],
   sketch?: SketchFeatureParameters | null,
 ) {
   // Fast path: regex-based resolution for well-named point IDs.
@@ -739,7 +739,8 @@ function dimensionStagedEntityAction({
   } else if (hit?.kind === "sketch_point") {
     entityId =
       entityIdFromSketchPointId(hit.id, ["line"]) ??
-      entityIdFromSketchPointId(hit.id, ["circle"]);
+      entityIdFromSketchPointId(hit.id, ["circle"]) ??
+      entityIdFromSketchPointId(hit.id, ["arc"]);
   }
 
   if (!entityId) {
