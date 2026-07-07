@@ -65,7 +65,8 @@ export function beginEndpointDragPointerDown({
   }
 
   endpointDragRef.current = {
-    pointId: hit.id,
+    // Send old point_id to the core (vertex migration Step 2: core still expects old IDs)
+    pointId: point.point_id,
     startClientX: event.clientX,
     startClientY: event.clientY,
     startLocalX: rawPoint.local[0],
