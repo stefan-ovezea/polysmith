@@ -397,6 +397,7 @@ export function buildSketchPointObject(point: SketchVertexScene) {
   mesh.renderOrder = 8;
   mesh.position.set(...point.position);
   mesh.userData.sketchPointId = point.pointId;
+  mesh.userData.vertexId = point.vertexId;
   mesh.userData.sketchPointKind = point.kind;
 
   // Override raycast to use a sphere-distance test instead of the
