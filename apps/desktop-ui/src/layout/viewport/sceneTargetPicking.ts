@@ -389,7 +389,7 @@ function pickSketchPointByRayDistance(
     const distance = center.distanceTo(closest);
     if (distance < bestPointDistance) {
       bestPointDistance = distance;
-      bestPointId = (mesh.userData.vertexId ?? mesh.userData.sketchPointId) as string | undefined;
+      bestPointId = mesh.userData.sketchPointId as string | undefined;
       bestPointKind = mesh.userData.sketchPointKind as string | undefined;
     }
   }
