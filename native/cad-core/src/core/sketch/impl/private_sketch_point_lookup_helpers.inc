@@ -3,7 +3,7 @@ SketchVertex* find_sketch_point(SketchFeatureParameters& parameters,
   const auto point_it = std::find_if(
       parameters.vertices.begin(),
       parameters.vertices.end(),
-      [&](const SketchVertex& point) { return point.id == point_id; });
+      [&](const SketchVertex& point) { return point.id == point_id || point.vertex_id == point_id; });
   return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
@@ -12,7 +12,7 @@ const SketchVertex* find_sketch_point(const SketchFeatureParameters& parameters,
   const auto point_it = std::find_if(
       parameters.vertices.begin(),
       parameters.vertices.end(),
-      [&](const SketchVertex& point) { return point.id == point_id; });
+      [&](const SketchVertex& point) { return point.id == point_id || point.vertex_id == point_id; });
   return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
