@@ -154,6 +154,10 @@ export interface SketchArcEntry {
   arc_id: string;
   start_point_id: string;
   end_point_id: string;
+  // Vertex unification (Phase 5)
+  start_vertex_id?: string;
+  end_vertex_id?: string;
+  center_vertex_id?: string;
   center_x: number;
   center_y: number;
   radius: number;

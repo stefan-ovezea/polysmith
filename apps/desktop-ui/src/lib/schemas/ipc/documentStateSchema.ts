@@ -585,6 +585,10 @@ export const documentStateSchema = z.object({
                 arc_id: z.string(),
                 start_point_id: z.string(),
                 end_point_id: z.string(),
+                // Vertex unification (Phase 5)
+                start_vertex_id: z.string().optional().default(""),
+                end_vertex_id: z.string().optional().default(""),
+                center_vertex_id: z.string().optional().default(""),
                 center_x: z.number(),
                 center_y: z.number(),
                 radius: z.number(),

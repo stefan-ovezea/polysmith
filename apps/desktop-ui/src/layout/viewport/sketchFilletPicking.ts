@@ -27,7 +27,9 @@ export function pickSketchFilletCorner({
     (line) =>
       !line.is_construction &&
       (line.start_point_id === cornerPoint.point_id ||
-        line.end_point_id === cornerPoint.point_id),
+        line.start_vertex_id === (cornerPoint.vertex_id ?? cornerPoint.point_id) ||
+        line.end_point_id === cornerPoint.point_id ||
+        line.end_vertex_id === (cornerPoint.vertex_id ?? cornerPoint.point_id)),
   );
   if (incidentLines.length !== 2) {
     return null;

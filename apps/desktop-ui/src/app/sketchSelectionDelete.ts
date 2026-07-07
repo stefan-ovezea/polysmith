@@ -87,7 +87,8 @@ function addLineIdsForPoint(
   pointId: string,
 ) {
   for (const line of sketch.lines) {
-    if (line.start_point_id === pointId || line.end_point_id === pointId) {
+    if (line.start_point_id === pointId || line.end_point_id === pointId ||
+        line.start_vertex_id === pointId || line.end_vertex_id === pointId) {
       entityIds.add(line.line_id);
     }
   }
@@ -99,7 +100,8 @@ function addArcIdsForPoint(
   pointId: string,
 ) {
   for (const arc of sketch.arcs ?? []) {
-    if (arc.start_point_id === pointId || arc.end_point_id === pointId) {
+    if (arc.start_point_id === pointId || arc.end_point_id === pointId ||
+        arc.start_vertex_id === pointId || arc.end_vertex_id === pointId) {
       entityIds.add(arc.arc_id);
     }
   }
@@ -111,7 +113,8 @@ function addCircleIdsForCenterPoint(
   pointId: string,
 ) {
   for (const circle of sketch.circles) {
-    if (`point-circle-${circle.circle_id}-center` === pointId) {
+    if (`point-circle-${circle.circle_id}-center` === pointId ||
+        circle.center_vertex_id === pointId) {
       entityIds.add(circle.circle_id);
     }
   }
