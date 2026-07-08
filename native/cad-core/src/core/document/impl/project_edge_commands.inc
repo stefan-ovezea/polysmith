@@ -84,9 +84,9 @@ DocumentState DocumentManager::project_edge_into_sketch(
     for (size_t i = lines_before;
          i < sketch_it->sketch_parameters->lines.size(); ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
-      polysmith::core::set_sketch_point_fixed(
+      polysmith::core::set_sketch_vertex_fixed(
           *sketch_it, line.start_point_id, true);
-      polysmith::core::set_sketch_point_fixed(
+      polysmith::core::set_sketch_vertex_fixed(
           *sketch_it, line.end_point_id, true);
       record.generated_line_ids.push_back(line.id);
     }

@@ -39,12 +39,12 @@ void restore_fixed_line_endpoints(SketchFeatureParameters& parameters,
                                   double previous_start_y,
                                   double previous_end_x,
                                   double previous_end_y) {
-  if (point_is_fixed(parameters, line.start_point_id)) {
+  if (vertex_is_fixed(parameters, line.start_point_id)) {
     line.start_x = previous_start_x;
     line.start_y = previous_start_y;
   }
 
-  if (point_is_fixed(parameters, line.end_point_id)) {
+  if (vertex_is_fixed(parameters, line.end_point_id)) {
     line.end_x = previous_end_x;
     line.end_y = previous_end_y;
   }
@@ -58,13 +58,13 @@ void snap_line_endpoints_to_coincident_geometry(
     const auto snapped_start =
         find_coincident_endpoint(parameters, line.id, line.start_x, line.start_y);
     if (snapped_start.has_value() &&
-        !point_is_fixed(parameters, line.start_point_id)) {
+        !vertex_is_fixed(parameters, line.start_point_id)) {
       const bool can_snap_start =
           !((line.constraint == "horizontal" &&
-             point_is_fixed(parameters, line.end_point_id) &&
+             vertex_is_fixed(parameters, line.end_point_id) &&
              !nearly_equal(std::get<2>(snapped_start.value()), line.end_y)) ||
             (line.constraint == "vertical" &&
-             point_is_fixed(parameters, line.end_point_id) &&
+             vertex_is_fixed(parameters, line.end_point_id) &&
              !nearly_equal(std::get<1>(snapped_start.value()), line.end_x)));
       if (can_snap_start) {
         const std::string& snapped_point_id = std::get<0>(snapped_start.value());
@@ -84,13 +84,13 @@ void snap_line_endpoints_to_coincident_geometry(
   const auto snapped_end =
       find_coincident_endpoint(parameters, line.id, line.end_x, line.end_y);
   if (snapped_end.has_value() &&
-      !point_is_fixed(parameters, line.end_point_id)) {
+      !vertex_is_fixed(parameters, line.end_point_id)) {
     const bool can_snap_end =
         !((line.constraint == "horizontal" &&
-           point_is_fixed(parameters, line.start_point_id) &&
+           vertex_is_fixed(parameters, line.start_point_id) &&
            !nearly_equal(std::get<2>(snapped_end.value()), line.start_y)) ||
           (line.constraint == "vertical" &&
-           point_is_fixed(parameters, line.start_point_id) &&
+           vertex_is_fixed(parameters, line.start_point_id) &&
            !nearly_equal(std::get<1>(snapped_end.value()), line.start_x)));
     if (can_snap_end) {
       const std::string& snapped_point_id = std::get<0>(snapped_end.value());

@@ -81,7 +81,7 @@
                       kSketchPlaneOffset + kConstraintBadgeOffset);
                   const bool is_sel =
                       is_sketch_point_selected(
-                          circle_center_point_id(circ));
+                          circle_center_vertex_id(circ));
                   sketch_constraints.push_back(
                       ViewportSketchConstraintPrimitive{
                           .constraint_id = c.constraint_id,

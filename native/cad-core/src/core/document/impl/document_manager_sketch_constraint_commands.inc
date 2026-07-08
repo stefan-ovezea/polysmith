@@ -26,7 +26,7 @@
   DocumentState set_sketch_coincident_constraint(const std::string& point_id,
                                                  const std::string& other_point_id);
   DocumentState delete_sketch_coincident_constraint(const std::string& constraint_id);
-  DocumentState set_sketch_point_fixed(const std::string& point_id,
+  DocumentState set_sketch_vertex_fixed(const std::string& point_id,
                                        bool is_fixed);
   // Bind a sketch point to the midpoint of a host line; the solver
   // re-pulls the point on every edit. Pass an empty `host_line_id`

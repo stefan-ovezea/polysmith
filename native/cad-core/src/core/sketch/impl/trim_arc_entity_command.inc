@@ -135,7 +135,7 @@
         live_pt.insert(l.start_point_id); live_pt.insert(l.end_point_id);
       }
       for (const auto& c : params.circles) {
-        live_pt.insert(circle_center_point_id(c));
+        live_pt.insert(circle_center_vertex_id(c));
         // Quadrants still use legacy format (Phase 4.1 will update)
         live_pt.insert("point-circle-" + c.id + "-quadrant-0");
         live_pt.insert("point-circle-" + c.id + "-quadrant-1");

@@ -234,8 +234,8 @@
         } else if (dim.kind == "circle_center_distance" &&
                     !dim.secondary_entity_id.empty()) {
             // Distance between two circle centers (P2P).
-            std::string cid1 = circle_center_point_id_for(params, dim.entity_id);
-            std::string cid2 = circle_center_point_id_for(params, dim.secondary_entity_id);
+            std::string cid1 = circle_center_vertex_id_for(params, dim.entity_id);
+            std::string cid2 = circle_center_vertex_id_for(params, dim.secondary_entity_id);
             auto pit1 = point_id_to_index_.find(cid1);
             auto pit2 = point_id_to_index_.find(cid2);
             if (pit1 != point_id_to_index_.end() &&

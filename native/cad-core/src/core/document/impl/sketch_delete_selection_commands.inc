@@ -130,7 +130,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& circle : parameters.circles) {
     if (id_in_set(circle_ids, circle.id)) {
-      add_id(deleted_point_ids, circle_center_point_id(circle));
+      add_id(deleted_point_ids, circle_center_vertex_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {
@@ -148,7 +148,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& circle : parameters.circles) {
     if (!id_in_set(circle_ids, circle.id)) {
-      deleted_point_ids.erase(circle_center_point_id(circle));
+      deleted_point_ids.erase(circle_center_vertex_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {

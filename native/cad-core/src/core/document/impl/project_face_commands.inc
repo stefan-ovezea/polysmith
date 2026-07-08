@@ -119,10 +119,10 @@ DocumentState DocumentManager::project_face_into_sketch(
     for (size_t i = lines_before; i < sketch_it->sketch_parameters->lines.size();
          ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
-      polysmith::core::set_sketch_point_fixed(*sketch_it,
+      polysmith::core::set_sketch_vertex_fixed(*sketch_it,
                                               line.start_point_id,
                                               true);
-      polysmith::core::set_sketch_point_fixed(*sketch_it,
+      polysmith::core::set_sketch_vertex_fixed(*sketch_it,
                                               line.end_point_id,
                                               true);
       record.generated_line_ids.push_back(line.id);
@@ -141,8 +141,8 @@ DocumentState DocumentManager::project_face_into_sketch(
       for (size_t i = circles_before;
            i < sketch_it->sketch_parameters->circles.size(); ++i) {
         const auto& circle = sketch_it->sketch_parameters->circles[i];
-        polysmith::core::set_sketch_point_fixed(
-            *sketch_it, circle_center_point_id(circle), true);
+        polysmith::core::set_sketch_vertex_fixed(
+            *sketch_it, circle_center_vertex_id(circle), true);
         record.generated_circle_ids.push_back(
             circle.id);
       }
@@ -201,10 +201,10 @@ DocumentState DocumentManager::project_face_into_sketch(
     for (size_t i = lines_before; i < sketch_it->sketch_parameters->lines.size();
          ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
-      polysmith::core::set_sketch_point_fixed(*sketch_it,
+      polysmith::core::set_sketch_vertex_fixed(*sketch_it,
                                               line.start_point_id,
                                               true);
-      polysmith::core::set_sketch_point_fixed(*sketch_it,
+      polysmith::core::set_sketch_vertex_fixed(*sketch_it,
                                               line.end_point_id,
                                               true);
       record.generated_line_ids.push_back(line.id);

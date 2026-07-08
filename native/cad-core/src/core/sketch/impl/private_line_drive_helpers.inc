@@ -62,8 +62,8 @@ void drive_line_length_respecting_fixed_points(
     SketchFeatureParameters& parameters,
     SketchLine& line,
     double value) {
-  const bool start_fixed = point_is_fixed(parameters, line.start_point_id);
-  const bool end_fixed = point_is_fixed(parameters, line.end_point_id);
+  const bool start_fixed = vertex_is_fixed(parameters, line.start_point_id);
+  const bool end_fixed = vertex_is_fixed(parameters, line.end_point_id);
 
   if (start_fixed && end_fixed) {
     if (nearly_equal(measure_line_length(line), value)) {

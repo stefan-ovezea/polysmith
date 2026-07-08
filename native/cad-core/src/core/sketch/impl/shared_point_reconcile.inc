@@ -29,7 +29,7 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
       const auto& l = parameters.lines[refs[r].line_index];
       const std::string& pt =
           refs[r].is_start ? l.start_point_id : l.end_point_id;
-      if (point_is_fixed(parameters, pt)) {
+      if (vertex_is_fixed(parameters, pt)) {
         canonical_ref = r;
         found_authoritative = true;
         break;

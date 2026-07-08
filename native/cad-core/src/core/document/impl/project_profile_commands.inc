@@ -65,9 +65,9 @@ DocumentState DocumentManager::project_profile_into_sketch(
     for (size_t index = lines_before;
          index < sketch_it->sketch_parameters->lines.size(); ++index) {
       const auto& line = sketch_it->sketch_parameters->lines[index];
-      polysmith::core::set_sketch_point_fixed(
+      polysmith::core::set_sketch_vertex_fixed(
           *sketch_it, line.start_point_id, true);
-      polysmith::core::set_sketch_point_fixed(
+      polysmith::core::set_sketch_vertex_fixed(
           *sketch_it, line.end_point_id, true);
       record.generated_line_ids.push_back(line.id);
     }
@@ -88,8 +88,8 @@ DocumentState DocumentManager::project_profile_into_sketch(
     for (size_t index = circles_before;
          index < sketch_it->sketch_parameters->circles.size(); ++index) {
       const auto& circle = sketch_it->sketch_parameters->circles[index];
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, circle_center_point_id(circle), true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, circle_center_vertex_id(circle), true);
       record.generated_circle_ids.push_back(
           circle.id);
     }

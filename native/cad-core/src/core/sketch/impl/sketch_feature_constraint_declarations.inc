@@ -42,7 +42,7 @@ void delete_sketch_coincident_constraint(
 void delete_sketch_mirror_relation(
     FeatureEntry& feature,
     const std::string& relation_id);
-void set_sketch_point_fixed(FeatureEntry& feature,
+void set_sketch_vertex_fixed(FeatureEntry& feature,
                             const std::string& point_id,
                             bool is_fixed);
 // Bind a sketch point to the midpoint of a host line. The point is

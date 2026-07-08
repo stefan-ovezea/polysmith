@@ -20,7 +20,7 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
     frontier.pop_front();
 
     const auto current_point_position = find_point_position(parameters, move.point_id);
-    if (point_is_fixed(parameters, move.point_id) &&
+    if (vertex_is_fixed(parameters, move.point_id) &&
         current_point_position.has_value() &&
         !points_match(std::get<0>(current_point_position.value()),
                       std::get<1>(current_point_position.value()),
@@ -73,14 +73,14 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
       // axis so rectangles and anchored construction lines follow the
       // driving geometry instead of snapping back to stale coordinates.
       const std::string other_endpoint_point_id =
-          endpoint_point_id(line, !endpoint_ref.is_start);
+          endpoint_vertex_id(line, !endpoint_ref.is_start);
       const std::string moved_endpoint_point_id =
-          endpoint_point_id(line, endpoint_ref.is_start);
+          endpoint_vertex_id(line, endpoint_ref.is_start);
       const bool moved_endpoint_anchored =
           point_is_anchored_to_line(parameters, moved_endpoint_point_id);
       const bool moved_point_shared = connected_endpoints.size() > 1;
       const bool other_endpoint_fixed =
-          point_is_fixed(parameters, other_endpoint_point_id);
+          vertex_is_fixed(parameters, other_endpoint_point_id);
       const bool other_endpoint_anchored =
           point_is_anchored_to_line(parameters, other_endpoint_point_id);
 
@@ -123,7 +123,7 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
                         next_other_x,
                         next_other_y)) {
         frontier.push_back({
-            .point_id = endpoint_point_id(line, !endpoint_ref.is_start),
+            .point_id = endpoint_vertex_id(line, !endpoint_ref.is_start),
             .to_x = next_other_x,
             .to_y = next_other_y,
         });

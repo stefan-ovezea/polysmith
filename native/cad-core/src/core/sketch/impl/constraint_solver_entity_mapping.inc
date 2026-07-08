@@ -68,7 +68,7 @@
 
         GCS::Circle gc;
         // Find the center point via the shared vertex-lookup helper.
-        std::string center_point_id = circle_center_point_id(sc);
+        std::string center_point_id = circle_center_vertex_id(sc);
         auto center_it = point_id_to_index_.find(center_point_id);
         if (center_it != point_id_to_index_.end()) {
             gc.center = gcs_points_[center_it->second];

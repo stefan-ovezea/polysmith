@@ -13,8 +13,8 @@
     return;
   }
 
-  if (command.type == "set_sketch_point_fixed") {
-    const auto document = document_manager().set_sketch_point_fixed(
+  if (command.type == "set_sketch_vertex_fixed") {
+    const auto document = document_manager().set_sketch_vertex_fixed(
         read_string(command.payload, "point_id"),
         command.payload.at("is_fixed").get<bool>());
 

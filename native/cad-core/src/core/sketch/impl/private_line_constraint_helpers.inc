@@ -20,8 +20,8 @@ void apply_line_constraint_respecting_fixed_points(
     return;
   }
 
-  const bool start_fixed = point_is_fixed(parameters, line.start_point_id);
-  const bool end_fixed = point_is_fixed(parameters, line.end_point_id);
+  const bool start_fixed = vertex_is_fixed(parameters, line.start_point_id);
+  const bool end_fixed = vertex_is_fixed(parameters, line.end_point_id);
 
   if (line.constraint.value() == "horizontal") {
     if (start_fixed && end_fixed && !nearly_equal(line.start_y, line.end_y)) {

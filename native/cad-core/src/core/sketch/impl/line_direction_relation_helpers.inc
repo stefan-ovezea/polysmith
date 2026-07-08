@@ -30,8 +30,8 @@ void drive_line_perpendicular_to_reference(SketchLine& driven_line,
   const double direction_x = dot_a >= dot_b ? candidate_a_x : candidate_b_x;
   const double direction_y = dot_a >= dot_b ? candidate_a_y : candidate_b_y;
 
-  const bool start_fixed = point_is_fixed(parameters, driven_line.start_point_id);
-  const bool end_fixed = point_is_fixed(parameters, driven_line.end_point_id);
+  const bool start_fixed = vertex_is_fixed(parameters, driven_line.start_point_id);
+  const bool end_fixed = vertex_is_fixed(parameters, driven_line.end_point_id);
   if (start_fixed && end_fixed) {
     throw std::runtime_error(
         "Cannot drive a perpendicular relation when both endpoints are fixed");
@@ -80,8 +80,8 @@ void drive_line_parallel_to_reference(SketchLine& driven_line,
   const double direction_x = dot_a >= dot_b ? candidate_a_x : candidate_b_x;
   const double direction_y = dot_a >= dot_b ? candidate_a_y : candidate_b_y;
 
-  const bool start_fixed = point_is_fixed(parameters, driven_line.start_point_id);
-  const bool end_fixed = point_is_fixed(parameters, driven_line.end_point_id);
+  const bool start_fixed = vertex_is_fixed(parameters, driven_line.start_point_id);
+  const bool end_fixed = vertex_is_fixed(parameters, driven_line.end_point_id);
   if (start_fixed && end_fixed) {
     throw std::runtime_error(
         "Cannot drive a parallel relation when both endpoints are fixed");

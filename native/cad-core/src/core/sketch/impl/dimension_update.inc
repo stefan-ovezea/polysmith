@@ -350,8 +350,8 @@ void update_sketch_dimension(FeatureEntry& feature,
     } else {
       // Euclidean — check for fixed points before mutating geometry,
       // matching the line_length update path's behaviour.
-      const bool point_a_fixed = point_is_fixed(parameters, dimension.entity_id);
-      const bool point_b_fixed = point_is_fixed(parameters, dimension.secondary_entity_id);
+      const bool point_a_fixed = vertex_is_fixed(parameters, dimension.entity_id);
+      const bool point_b_fixed = vertex_is_fixed(parameters, dimension.secondary_entity_id);
       if (point_a_fixed && point_b_fixed) {
         const double current_length = std::sqrt(dx * dx + dy * dy);
         if (nearly_equal(current_length, value)) {

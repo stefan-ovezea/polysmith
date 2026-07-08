@@ -80,7 +80,7 @@ void update_sketch_point(FeatureEntry& feature,
   }
 
   auto& parameters = feature.sketch_parameters.value();
-  const SketchVertex* point = find_sketch_point(parameters, point_id);
+  const SketchVertex* point = find_sketch_vertex(parameters, point_id);
   if (point == nullptr) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
@@ -90,7 +90,7 @@ void update_sketch_point(FeatureEntry& feature,
   }
 
   const std::vector<std::string> affected_line_ids =
-      collect_line_ids_for_point(parameters, point_id);
+      collect_line_ids_for_vertex(parameters, point_id);
 
   if (point->kind == "center") {
     // Circle center: use geometry_owner_ids lookup (Phase 4.2)

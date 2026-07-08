@@ -24,7 +24,7 @@ using polysmith::core::create_sketch_feature;
 using polysmith::core::delete_sketch_fillet;
 using polysmith::core::detect_sketch_profiles;
 using polysmith::core::set_sketch_midpoint_anchor;
-using polysmith::core::set_sketch_point_fixed;
+using polysmith::core::set_sketch_vertex_fixed;
 using polysmith::core::set_sketch_point_line_anchor;
 using polysmith::core::update_sketch_dimension;
 using polysmith::core::update_sketch_fillet_radius;
@@ -233,7 +233,7 @@ bool test_fixed_points_persist_through_rebuilds() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-start", true);
+  set_sketch_vertex_fixed(feature, "point-line-1-start", true);
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
   const auto* fixed_point = find_point(feature, "point-line-1-start");
@@ -248,7 +248,7 @@ bool test_fixed_endpoint_stays_put_when_redimensioning() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-end", true);
+  set_sketch_vertex_fixed(feature, "point-line-1-end", true);
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
   const auto* fixed_point = find_point(feature, "point-line-1-end");
@@ -539,8 +539,8 @@ bool test_rejects_dimension_drive_when_both_endpoints_are_fixed() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-start", true);
-  set_sketch_point_fixed(feature, "point-line-1-end", true);
+  set_sketch_vertex_fixed(feature, "point-line-1-start", true);
+  set_sketch_vertex_fixed(feature, "point-line-1-end", true);
 
   try {
     update_sketch_dimension(feature, "dim-line-line-1", 60.0);

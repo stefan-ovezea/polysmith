@@ -112,8 +112,8 @@ void add_sketch_distance_dimension(FeatureEntry& feature,
     pair_a = first_line.start_point_id;
     pair_b = second_line.start_point_id;
   } else if (kind == "circle_center_distance") {
-    pair_a = circle_center_point_id_for(parameters, first_entity_id);
-    pair_b = circle_center_point_id_for(parameters, second_entity_id);
+    pair_a = circle_center_vertex_id_for(parameters, first_entity_id);
+    pair_b = circle_center_vertex_id_for(parameters, second_entity_id);
   }
   finalize_new_dimension(feature, parameters, dim_id, pair_a, pair_b);
 }

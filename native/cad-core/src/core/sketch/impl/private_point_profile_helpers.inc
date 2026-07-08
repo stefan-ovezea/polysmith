@@ -3,11 +3,11 @@ struct LineEndpointRef {
   bool is_start;
 };
 
-std::string endpoint_point_id(const SketchLine& line, bool is_start) {
+std::string endpoint_vertex_id(const SketchLine& line, bool is_start) {
   return is_start ? line.start_point_id : line.end_point_id;
 }
 
-void set_endpoint_point_id(SketchLine& line,
+void set_endpoint_vertex_id(SketchLine& line,
                            bool is_start,
                            const std::string& point_id) {
   if (is_start) {
@@ -319,7 +319,7 @@ void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
   }
 
   for (auto& circle : parameters.circles) {
-    const auto center_id = circle_center_point_id(circle);
+    const auto center_id = circle_center_vertex_id(circle);
     if (const auto* cv = find_v(center_id)) {
       circle.center_x = cv->x; circle.center_y = cv->y;
     }

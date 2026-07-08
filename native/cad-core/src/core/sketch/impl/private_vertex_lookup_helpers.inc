@@ -39,7 +39,7 @@ inline const polysmith::core::SketchArc* find_arc_for_point(
 // During the Phase 4 transition, this still uses the legacy
 // "point-circle-{id}-center" format.  After Phase 6 (when vertex-N
 // becomes the primary id), this will switch to center_vertex_id.
-inline std::string circle_center_point_id(
+inline std::string circle_center_vertex_id(
     const polysmith::core::SketchCircle& circle) {
   // Phase 6 (future): return circle.center_vertex_id;
   return "point-circle-" + circle.id + "-center";
@@ -47,17 +47,17 @@ inline std::string circle_center_point_id(
 
 // Convenience overload: given a circle ID, find the circle and return
 // its center point ID.
-inline std::string circle_center_point_id_for(
+inline std::string circle_center_vertex_id_for(
     const polysmith::core::SketchFeatureParameters& parameters,
     const std::string& circle_id) {
   for (const auto& circle : parameters.circles) {
-    if (circle.id == circle_id) return circle_center_point_id(circle);
+    if (circle.id == circle_id) return circle_center_vertex_id(circle);
   }
   return "";
 }
 
 // Get the center point ID for an arc.
-inline std::string arc_center_point_id(
+inline std::string arc_center_vertex_id(
     const polysmith::core::SketchArc& arc) {
   // Phase 6 (future): return arc.center_vertex_id;
   return "point-arc-" + arc.id + "-center";

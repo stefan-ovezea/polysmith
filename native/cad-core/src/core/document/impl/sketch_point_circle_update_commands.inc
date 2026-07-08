@@ -1,4 +1,4 @@
-DocumentState DocumentManager::set_sketch_point_fixed(const std::string& point_id,
+DocumentState DocumentManager::set_sketch_vertex_fixed(const std::string& point_id,
                                                       bool is_fixed) {
   require_document();
 
@@ -19,7 +19,7 @@ DocumentState DocumentManager::set_sketch_point_fixed(const std::string& point_i
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::set_sketch_point_fixed(*feature_it, point_id, is_fixed);
+  polysmith::core::set_sketch_vertex_fixed(*feature_it, point_id, is_fixed);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = point_id;

@@ -1,4 +1,4 @@
-SketchVertex* find_sketch_point(SketchFeatureParameters& parameters,
+SketchVertex* find_sketch_vertex(SketchFeatureParameters& parameters,
                                const std::string& point_id) {
   const auto point_it = std::find_if(
       parameters.vertices.begin(),
@@ -7,7 +7,7 @@ SketchVertex* find_sketch_point(SketchFeatureParameters& parameters,
   return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
-const SketchVertex* find_sketch_point(const SketchFeatureParameters& parameters,
+const SketchVertex* find_sketch_vertex(const SketchFeatureParameters& parameters,
                                      const std::string& point_id) {
   const auto point_it = std::find_if(
       parameters.vertices.begin(),
@@ -16,9 +16,9 @@ const SketchVertex* find_sketch_point(const SketchFeatureParameters& parameters,
   return point_it == parameters.vertices.end() ? nullptr : &(*point_it);
 }
 
-bool point_is_fixed(const SketchFeatureParameters& parameters,
+bool vertex_is_fixed(const SketchFeatureParameters& parameters,
                     const std::string& point_id) {
-  const SketchVertex* point = find_sketch_point(parameters, point_id);
+  const SketchVertex* point = find_sketch_vertex(parameters, point_id);
   return point != nullptr && point->is_fixed;
 }
 

@@ -173,7 +173,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           // Focus is a circle → unfreeze its center point.
           for (const auto& circle : feature.sketch_parameters->circles) {
             if (circle.id == focus_id) {
-              unfrozen_point_ids.insert(circle_center_point_id(circle));
+              unfrozen_point_ids.insert(circle_center_vertex_id(circle));
             }
           }
           // Focus is a point explicitly.
@@ -468,7 +468,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Derived points (projected, quadrant, arc endpoints) are derived
   // geometry — lock them by default so new derived points start as fixed.
   // Must run before sync_fixed_point_flags so the user's explicit
-  // unfix (set_sketch_point_fixed) survives the refresh.
+  // unfix (set_sketch_vertex_fixed) survives the refresh.
   enforce_derived_points_fixed(*feature.sketch_parameters);
 
   // Copy user-set is_fixed values from the previous frame. Must run

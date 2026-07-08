@@ -52,8 +52,8 @@
         } else if (sc.kind == "concentric" && sc.target_ids.size() >= 2) {
             // Concentric = center points coincide. Find both circles'
             // center points and add a P2PCoincident between them.
-            std::string cid1 = circle_center_point_id_for(params, sc.target_ids[0]);
-            std::string cid2 = circle_center_point_id_for(params, sc.target_ids[1]);
+            std::string cid1 = circle_center_vertex_id_for(params, sc.target_ids[0]);
+            std::string cid2 = circle_center_vertex_id_for(params, sc.target_ids[1]);
             auto pit1 = point_id_to_index_.find(cid1);
             auto pit2 = point_id_to_index_.find(cid2);
             if (pit1 != point_id_to_index_.end() &&
