@@ -244,6 +244,35 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
   finalize_new_dimension(feature, parameters, dimension_id);
 }
 
+void add_sketch_arc_radius_dimension(FeatureEntry& feature,
+                                     const std::string& arc_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can accept sketch dimensions");
+  }
+
+  auto& parameters = *feature.sketch_parameters;
+  auto& arc = require_arc(parameters, arc_id);
+
+  const std::string dimension_id = "dim-arc-" + arc.id;
+  const auto dimension_it = std::find_if(
+      parameters.dimensions.begin(),
+      parameters.dimensions.end(),
+      [&](const SketchDimension& dim) { return dim.id == dimension_id; });
+  if (dimension_it != parameters.dimensions.end()) {
+    dimension_it->value = arc.radius;
+    return;
+  }
+
+  parameters.dimensions.push_back(SketchDimension{
+      .id = dimension_id,
+      .kind = "arc_radius",
+      .entity_id = arc.id,
+      .value = arc.radius,
+  });
+
+  finalize_new_dimension(feature, parameters, dimension_id);
+}
+
 void add_sketch_polygon_radius_dimension(FeatureEntry& feature,
                                          const std::string& polygon_id) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {

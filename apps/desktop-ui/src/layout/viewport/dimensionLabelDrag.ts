@@ -322,10 +322,10 @@ export function beginDimensionLabelDragPointerDown({
   }
 
   const dragAxis =
-    dimension.kind === "circle_radius"
+    dimension.kind === "circle_radius" || dimension.kind === "arc_radius"
       ? new THREE.Vector3(0, 0, 0)
       : getDimensionPlacementAxis(dimension);
-  if (dimension.kind !== "circle_radius" && !dragAxis) {
+  if (dimension.kind !== "circle_radius" && dimension.kind !== "arc_radius" && !dragAxis) {
     return true;
   }
 
@@ -381,8 +381,9 @@ export function buildDimensionPlacementStart({
   const isAngleKind =
     dimension.kind === "angle" || dimension.kind === "line_angle";
   const originalPosition = dimension.labelPosition;
+  const isCircleOrArc = dimension.kind === "circle_radius" || dimension.kind === "arc_radius";
   const circlePosition =
-    dimension.kind === "circle_radius"
+    isCircleOrArc
       ? circleDimensionLabelNearPoint({
           dimension,
           worldPoint: sketchPoint.world,
@@ -390,12 +391,12 @@ export function buildDimensionPlacementStart({
         })
       : null;
   const dragAxis =
-    dimension.kind === "circle_radius"
+    isCircleOrArc
       ? new THREE.Vector3(0, 0, 0)
       : isAngleKind
       ? null
       : getDimensionPlacementAxis(dimension);
-  if (!isAngleKind && dimension.kind !== "circle_radius" && !dragAxis) {
+  if (!isAngleKind && !isCircleOrArc && !dragAxis) {
     return null;
   }
 
@@ -462,7 +463,7 @@ export function circleDimensionLabelNearPoint({
   worldPoint: [number, number, number];
   planeFrame: ActiveSketchGridPlaneFrame | null;
 }): [number, number, number] | null {
-  if (dimension.kind !== "circle_radius") {
+  if (dimension.kind !== "circle_radius" && dimension.kind !== "arc_radius") {
     return null;
   }
   const projection = circleRadiusDimensionProjection({
@@ -488,13 +489,19 @@ export function circleRadiusDimensionProjection({
   worldPoint: [number, number, number];
   planeFrame: ActiveSketchGridPlaneFrame | null;
 }): CircleRadiusDimensionProjection | null {
-  const center = new THREE.Vector3(...dimension.dimensionStart)
-    .add(new THREE.Vector3(...dimension.dimensionEnd))
-    .multiplyScalar(0.5);
-  const radius =
-    new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-      new THREE.Vector3(...dimension.dimensionEnd),
-    ) * 0.5;
+  // circle_radius: dimensionStart = left edge, dimensionEnd = right edge → center = midpoint
+  // arc_radius:   dimensionStart = center,       dimensionEnd = point on arc → center = dimStart
+  const isArcRadius = dimension.kind === "arc_radius";
+  const center = isArcRadius
+    ? new THREE.Vector3(...dimension.dimensionStart)
+    : new THREE.Vector3(...dimension.dimensionStart)
+        .add(new THREE.Vector3(...dimension.dimensionEnd))
+        .multiplyScalar(0.5);
+  const radius = isArcRadius
+    ? new THREE.Vector3(...dimension.dimensionStart).distanceTo(
+        new THREE.Vector3(...dimension.dimensionEnd))
+    : new THREE.Vector3(...dimension.dimensionStart).distanceTo(
+        new THREE.Vector3(...dimension.dimensionEnd)) * 0.5;
   const direction = new THREE.Vector3(...worldPoint).sub(center);
   const planeNormal = getSketchGridFrame(dimension.planeId, planeFrame).normal;
   direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
@@ -563,7 +570,7 @@ export function dimensionLabelDragMoveUpdate({
     };
   }
 
-  if (dimension?.kind === "circle_radius") {
+  if (dimension?.kind === "circle_radius" || dimension?.kind === "arc_radius") {
     const nextPosition = circleDimensionLabelNearPoint({
       dimension,
       worldPoint,

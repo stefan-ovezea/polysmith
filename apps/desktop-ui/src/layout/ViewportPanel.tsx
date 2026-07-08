@@ -227,6 +227,7 @@ export function ViewportPanel({
   onAddSketchLineLengthDimension,
   onAddSketchLineAngleDimension,
   onAddSketchCircleRadiusDimension,
+  onAddSketchArcRadiusDimension,
   onAddSketchPolygonRadiusDimension,
   onSetSketchLineConstraint,
   onSetSketchPerpendicularConstraint,
@@ -733,6 +734,9 @@ export function ViewportPanel({
   );
   const addSketchCircleRadiusDimensionRef = useRef(
     onAddSketchCircleRadiusDimension,
+  );
+  const addSketchArcRadiusDimensionRef = useRef(
+    onAddSketchArcRadiusDimension,
   );
   const addSketchPolygonRadiusDimensionRef = useRef(
     onAddSketchPolygonRadiusDimension,
@@ -1338,6 +1342,7 @@ export function ViewportPanel({
     pendingRelationPlacementLabelRef,
     pendingRelationPlacementMatchRef,
     addSketchCircleRadiusDimensionRef,
+    addSketchArcRadiusDimensionRef,
     addSketchLineLengthDimensionRef,
     addSketchLineAngleDimensionRef,
     addSketchPolygonRadiusDimensionRef,
@@ -1886,6 +1891,7 @@ export function ViewportPanel({
       addSketchLineLengthDimensionRef,
       addSketchLineAngleDimensionRef,
       addSketchCircleRadiusDimensionRef,
+      addSketchArcRadiusDimensionRef,
       addSketchPolygonRadiusDimensionRef,
       setSketchLineConstraintRef,
       setSketchPerpendicularConstraintRef,
@@ -1943,6 +1949,7 @@ export function ViewportPanel({
       onAddSketchLineLengthDimension,
       onAddSketchLineAngleDimension,
       onAddSketchCircleRadiusDimension,
+      onAddSketchArcRadiusDimension,
       onAddSketchPolygonRadiusDimension,
       onSetSketchLineConstraint,
       onSetSketchPerpendicularConstraint,

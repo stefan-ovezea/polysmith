@@ -33,6 +33,7 @@ import {
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
   makeAddSketchLineAngleDimensionCommand,
+  makeAddSketchArcRadiusDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
   makeAddSketchPointDistanceDimensionCommand,
   makeAddSketchPolygonRadiusDimensionCommand,
@@ -786,6 +787,12 @@ export function useCadCore() {
     ) => {
       await sendCoreCommand(
         makeAddSketchCircleRadiusDimensionCommand(circleId, displayAs),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchArcRadiusDimension: async (arcId: string) => {
+      await sendCoreCommand(
+        makeAddSketchArcRadiusDimensionCommand(arcId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

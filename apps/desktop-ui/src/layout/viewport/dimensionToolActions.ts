@@ -20,6 +20,9 @@ interface DimensionToolActionParams {
   addSketchCircleRadiusDimensionRef: MutableRefObject<
     (entityId: string, displayAs?: string) => Promise<void>
   >;
+  addSketchArcRadiusDimensionRef: MutableRefObject<
+    (entityId: string) => Promise<void>
+  >;
   addSketchLineLengthDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
@@ -54,6 +57,7 @@ export function createDimensionToolActions({
   pendingRelationPlacementLabelRef,
   pendingRelationPlacementMatchRef,
   addSketchCircleRadiusDimensionRef,
+  addSketchArcRadiusDimensionRef,
   addSketchLineLengthDimensionRef,
   addSketchLineAngleDimensionRef,
   addSketchPolygonRadiusDimensionRef,
@@ -154,7 +158,16 @@ export function createDimensionToolActions({
   function createDimensionArc(entityId: string) {
     stageUnaryDimension(entityId, `dim-arc-${entityId}`);
     stageFollowUpPick(entityId);
-    // Arc radius dimension is auto-created by C++; no IPC needed.
+    void addSketchArcRadiusDimensionRef
+      .current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
   }
 
   function selectDimensionArc(entityId: string) {

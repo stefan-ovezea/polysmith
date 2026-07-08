@@ -79,6 +79,7 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onAddSketchLineLengthDimension: (lineId: string) => Promise<void>;
   onAddSketchLineAngleDimension: (lineId: string) => Promise<void>;
+  onAddSketchArcRadiusDimension: (arcId: string) => Promise<void>;
   onAddSketchCircleRadiusDimension: (
     circleId: string,
     displayAs?: string,

@@ -27,6 +27,7 @@ import type {
   AddSketchPointDistanceDimensionCommand,
   AddSketchLineLengthDimensionCommand,
   AddSketchLineAngleDimensionCommand,
+  AddSketchArcRadiusDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
   SetSketchPointLineAnchorCommand,
@@ -741,6 +742,7 @@ export type CoreCommand =
   | AddSketchAngleDimensionCommand
   | AddSketchLineLengthDimensionCommand
   | AddSketchLineAngleDimensionCommand
+  | AddSketchArcRadiusDimensionCommand
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand

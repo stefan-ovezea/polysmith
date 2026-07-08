@@ -82,9 +82,9 @@ function currentSketchSelection(documentState: DocumentState | null) {
       : []),
   ]);
   const pointIds = uniqueIds([
-    ...(documentState?.selected_sketch_point_ids ?? []),
-    ...(documentState?.selected_sketch_point_id
-      ? [documentState.selected_sketch_point_id]
+    ...(documentState?.selected_sketch_vertex_ids ?? []),
+    ...(documentState?.selected_sketch_vertex_id
+      ? [documentState.selected_sketch_vertex_id]
       : []),
   ]);
   const profileIds = uniqueIds([

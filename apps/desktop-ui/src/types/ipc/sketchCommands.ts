@@ -102,6 +102,14 @@ export interface AddSketchCircleRadiusDimensionCommand {
   };
 }
 
+export interface AddSketchArcRadiusDimensionCommand {
+  id: string;
+  type: "add_sketch_arc_radius_dimension";
+  payload: {
+    arc_id: string;
+  };
+}
+
 export interface AddSketchPolygonRadiusDimensionCommand {
   id: string;
   type: "add_sketch_polygon_radius_dimension";

@@ -334,7 +334,7 @@ function deleteSelectedSketchItems({
 
   const entityIds = document?.selected_sketch_entity_ids ?? [];
   const entityId = document?.selected_sketch_entity_id;
-  const pointIds = document?.selected_sketch_point_ids ?? [];
+  const pointIds = document?.selected_sketch_vertex_ids ?? [];
   const profileIds = document?.selected_sketch_profile_ids ?? [];
   const allEntityIds = entityId
     ? entityIds.includes(entityId)

@@ -378,7 +378,7 @@ function sketchSelectionStatusText({
   if (sketchSnapLabel) {
     return `Snap: ${sketchSnapLabel}`;
   }
-  if (document?.selected_sketch_point_id) {
+  if (document?.selected_sketch_vertex_id) {
     return translate("viewport.pointSelected");
   }
   if (document?.selected_sketch_profile_id) {

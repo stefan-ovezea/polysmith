@@ -472,6 +472,19 @@ export function makeAddSketchCircleRadiusDimensionCommand(
 }
 
 
+export function makeAddSketchArcRadiusDimensionCommand(
+  arcId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_arc_radius_dimension",
+    payload: {
+      arc_id: arcId,
+    },
+  };
+}
+
+
 export function makeAddSketchPolygonRadiusDimensionCommand(
   polygonId: string,
 ): CoreCommand {

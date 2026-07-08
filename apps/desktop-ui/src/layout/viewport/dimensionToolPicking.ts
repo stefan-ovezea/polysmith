@@ -860,7 +860,6 @@ function dimensionEntityPickAction({
       : {
           kind: "arc_dimension",
           arcId: entityId,
-          clearFirstPick: false,
         };
   }
 
