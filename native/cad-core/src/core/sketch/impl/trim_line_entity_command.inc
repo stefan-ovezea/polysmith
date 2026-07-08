@@ -105,11 +105,10 @@
       const double rex = segments[last].end_x;
       const double rey = segments[last].end_y;
 
-      const int right_idx = next_index * 10 + 2000;
       params.lines.push_back(SketchLine{
           .id = "line-" + std::to_string(next_index),
-          .start_point_id = "point-trim-" + std::to_string(right_idx) + "-start",
-          .end_point_id   = "point-trim-" + std::to_string(right_idx) + "-end",
+          .start_point_id = "vertex-" + std::to_string(params.next_vertex_index++),
+          .end_point_id   = "vertex-" + std::to_string(params.next_vertex_index++),
           .start_x = rsx,
           .start_y = rsy,
           .end_x = rex,

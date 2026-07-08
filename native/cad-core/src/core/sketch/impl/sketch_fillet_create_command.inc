@@ -114,8 +114,8 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // Allocate generated entity ids. Trim points share the same
   // namespace as line endpoints (point-N), the arc its own (arc-N).
   // The fillet itself uses fillet-N.
-  const std::string trim_a_id = "point-" + std::to_string(trim_a_point_index);
-  const std::string trim_b_id = "point-" + std::to_string(trim_b_point_index);
+  const std::string trim_a_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+  const std::string trim_b_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
   const std::string arc_id = "arc-" + std::to_string(arc_index);
   const std::string fillet_id = "fillet-" + std::to_string(fillet_index);
 

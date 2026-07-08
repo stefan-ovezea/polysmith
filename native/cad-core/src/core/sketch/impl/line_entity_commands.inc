@@ -12,15 +12,16 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   const auto shared_end_point =
       find_coincident_endpoint(*feature.sketch_parameters, "", end_x, end_y);
 
+  auto& params = *feature.sketch_parameters;
   feature.sketch_parameters->lines.push_back(SketchLine{
       .id = "line-" + std::to_string(line_index),
       .start_point_id =
           shared_start_point.has_value()
               ? std::get<0>(shared_start_point.value())
-              : "point-line-" + std::to_string(line_index) + "-start",
+              : "vertex-" + std::to_string(params.next_vertex_index++),
       .end_point_id = shared_end_point.has_value()
                           ? std::get<0>(shared_end_point.value())
-                          : "point-line-" + std::to_string(line_index) + "-end",
+                          : "vertex-" + std::to_string(params.next_vertex_index++),
       .start_x = start_x,
       .start_y = start_y,
       .end_x = end_x,

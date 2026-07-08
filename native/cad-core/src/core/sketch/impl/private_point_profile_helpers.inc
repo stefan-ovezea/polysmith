@@ -245,10 +245,18 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
   }
 
-  // ── Phase 4: assign vertex-N IDs ────────────────────────────
+  // ── Phase 4.1: assign vertex-N IDs ───────────────────────────
+  // New entity-created points already have vertex-N as their id;
+  // old/derived points get vertex-N assigned here.
   for (auto& point : parameters.vertices) {
     if (point.vertex_id.empty()) {
-      point.vertex_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+      if (point.id.rfind("vertex-", 0) == 0) {
+        // Entity creation (Phase 4.1) already assigned vertex-N as id
+        point.vertex_id = point.id;
+      } else {
+        // Legacy point-* format — assign fresh vertex-N
+        point.vertex_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+      }
     }
   }
 
@@ -266,6 +274,7 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   for (auto& arc : parameters.arcs) {
     arc.start_vertex_id  = vertex_id_of(arc.start_point_id);
     arc.end_vertex_id    = vertex_id_of(arc.end_point_id);
+    // Arc center: look up by the point ID format used in build (point-arc-* or vertex-*)
     arc.center_vertex_id = vertex_id_of("point-arc-" + arc.id + "-center");
   }
   for (auto& circle : parameters.circles) {

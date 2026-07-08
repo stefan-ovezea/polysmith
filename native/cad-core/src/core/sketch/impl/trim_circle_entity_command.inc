@@ -66,10 +66,10 @@
           .id = "arc-" + std::to_string(arc_index),
           .start_point_id = shared_start.has_value()
               ? std::get<0>(shared_start.value())
-              : "point-trim-" + std::to_string(start_pt_idx) + "-start",
+              : "vertex-" + std::to_string(params.next_vertex_index++),
           .end_point_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
-              : "point-trim-" + std::to_string(end_pt_idx) + "-end",
+              : "vertex-" + std::to_string(params.next_vertex_index++),
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,
@@ -92,10 +92,10 @@
           .id = "arc-" + std::to_string(arc_index),
           .start_point_id = shared_start.has_value()
               ? std::get<0>(shared_start.value())
-              : "point-trim-" + std::to_string(start_pt_idx) + "-start",
+              : "vertex-" + std::to_string(params.next_vertex_index++),
           .end_point_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
-              : "point-trim-" + std::to_string(end_pt_idx) + "-end",
+              : "vertex-" + std::to_string(params.next_vertex_index++),
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,

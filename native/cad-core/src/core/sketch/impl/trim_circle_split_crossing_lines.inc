@@ -41,7 +41,7 @@
       const int fresh = static_cast<int>(params.lines.size()) * 10 +
                         static_cast<int>(params.arcs.size()) * 10 + 5000;
       const std::string split_pt_id =
-          "point-trim-" + std::to_string(fresh) + "-split";
+          "vertex-" + std::to_string(params.next_vertex_index++);
 
       line.end_x = px;
       line.end_y = py;

@@ -68,14 +68,15 @@ void add_sketch_arc(FeatureEntry& feature,
   const auto shared_end_point = find_coincident_endpoint(
       *feature.sketch_parameters, "", end_x, end_y);
 
+  auto& params = *feature.sketch_parameters;
   const std::string start_point_id =
       shared_start_point.has_value()
           ? std::get<0>(shared_start_point.value())
-          : "point-" + std::to_string(start_point_index);
+          : "vertex-" + std::to_string(params.next_vertex_index++);
   const std::string end_point_id =
       shared_end_point.has_value()
           ? std::get<0>(shared_end_point.value())
-          : "point-" + std::to_string(end_point_index);
+          : "vertex-" + std::to_string(params.next_vertex_index++);
 
   feature.sketch_parameters->arcs.push_back(SketchArc{
       .id = "arc-" + std::to_string(arc_index),

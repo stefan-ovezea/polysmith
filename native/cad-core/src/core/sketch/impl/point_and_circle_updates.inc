@@ -131,7 +131,7 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
     int fresh_counter = static_cast<int>(parameters.lines.size()) * 100;
     for (size_t i = 1; i < affected_lines.size(); ++i) {
       const std::string new_id =
-          "point-line-" + std::to_string(fresh_counter++) + "-start";
+          "vertex-" + std::to_string(parameters.next_vertex_index++);
       auto* line = affected_lines[i];
       if (line->start_point_id == merged_point_id) {
         line->start_point_id = new_id;

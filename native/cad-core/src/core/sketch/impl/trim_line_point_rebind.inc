@@ -12,10 +12,10 @@ const auto shared_end =
 const std::string new_sp =
     shared_start.has_value()
         ? std::get<0>(shared_start.value())
-        : "point-trim-" + std::to_string(fresh_idx) + "-start";
+        : "vertex-" + std::to_string(params.next_vertex_index++);
 const std::string new_ep =
     shared_end.has_value() ? std::get<0>(shared_end.value())
-                           : "point-trim-" + std::to_string(fresh_idx) + "-end";
+                           : "vertex-" + std::to_string(params.next_vertex_index++);
 
 line_it->start_point_id = new_sp;
 line_it->end_point_id = new_ep;
@@ -42,7 +42,7 @@ auto update_shared_pt =
       if (points_match(pt_x, pt_y, new_x, new_y)) {
         pt_id = new_id;
       } else {
-        pt_id = "point-trim-" + std::to_string(next_fresh++) + "-orphan";
+        pt_id = "vertex-" + std::to_string(params.next_vertex_index++);
       }
     };
 
