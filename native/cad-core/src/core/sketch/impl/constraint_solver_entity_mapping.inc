@@ -19,11 +19,9 @@
                 }
             }
         } else if (sp.kind == "center") {
-            for (const auto& circle : params.circles) {
-                std::string center_id = "point-circle-" + circle.id + "-center";
-                if (sp.id == center_id) {
-                    px = circle.center_x; py = circle.center_y; break;
-                }
+            // Phase 4.2: use geometry_owner_ids to find owning entity
+            if (const auto* circle = find_circle_for_point(params, sp.id)) {
+                px = circle->center_x; py = circle->center_y;
             }
         }
 
@@ -69,10 +67,8 @@
         param_storage_.push_back(sc.radius);
 
         GCS::Circle gc;
-        // Find the center point — circles have a dedicated center point.
-        // The center point id is "point-circle-{circle_id}-center"
-        std::string center_point_id =
-            "point-circle-" + sc.id + "-center";
+        // Find the center point via the shared vertex-lookup helper.
+        std::string center_point_id = circle_center_point_id(sc);
         auto center_it = point_id_to_index_.find(center_point_id);
         if (center_it != point_id_to_index_.end()) {
             gc.center = gcs_points_[center_it->second];

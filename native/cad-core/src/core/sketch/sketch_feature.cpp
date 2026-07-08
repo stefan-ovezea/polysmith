@@ -15,6 +15,7 @@
 #include "core/sketch/constraint_solver.h"
 #include "core/sketch/formula_eval.h"
 #include "core/sketch/inference_engine.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/sketch/sketch_profile.h"
 #include "core/sketch/trim_engine.h"
 

@@ -39,6 +39,7 @@
 #include "core/geometry/face_geometry.h"
 #include "core/geometry/feature_shape.h"
 #include "core/sketch/formula_eval.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/geometry/refresh_dependents.h"
 #include "protocol/serialization.h"
 

@@ -208,7 +208,7 @@ void update_sketch_circle(FeatureEntry& feature,
     throw std::runtime_error("Sketch circle not found: " + circle_id);
   }
 
-  const std::string center_point_id = "point-circle-" + circle_it->id + "-center";
+  const std::string center_point_id = circle_center_point_id(*circle_it);
   if (!point_is_fixed(*feature.sketch_parameters, center_point_id)) {
     circle_it->center_x = center_x;
     circle_it->center_y = center_y;

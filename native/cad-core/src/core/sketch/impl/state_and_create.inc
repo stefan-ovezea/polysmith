@@ -51,9 +51,9 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       for (const auto& l : feature.sketch_parameters->lines) {
         if (l.start_point_id == pid || l.end_point_id == pid) return true;
       }
-      for (const auto& c : feature.sketch_parameters->circles) {
-        if ("point-circle-" + c.id + "-center" == pid) return true;
-      }
+      // Phase 4.2: use geometry_owner_ids instead of prefix matching
+      if (find_circle_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
+      if (find_arc_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
       return false;
     };
     for (auto& dim : feature.sketch_parameters->dimensions) {
@@ -173,8 +173,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           // Focus is a circle → unfreeze its center point.
           for (const auto& circle : feature.sketch_parameters->circles) {
             if (circle.id == focus_id) {
-              unfrozen_point_ids.insert(
-                  "point-circle-" + circle.id + "-center");
+              unfrozen_point_ids.insert(circle_center_point_id(circle));
             }
           }
           // Focus is a point explicitly.

@@ -169,7 +169,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       profiles.push_back(SketchProfileRegion{
           .id = profile_id,
           .kind = "polygon",
-          .point_ids = {"point-circle-" + circle->id + "-center"},
+          .point_ids = {circle_center_point_id(*circle)},
           .line_ids = {},
           .points = sample_circle_loop(*circle),
           .inner_loops = hole_it->second,
@@ -183,7 +183,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     profiles.push_back(SketchProfileRegion{
         .id = "profile-circle-" + circle->id,
         .kind = "circle",
-        .point_ids = {"point-circle-" + circle->id + "-center"},
+        .point_ids = {circle_center_point_id(*circle)},
         .line_ids = {},
         .points = {},
         .inner_loops = {},

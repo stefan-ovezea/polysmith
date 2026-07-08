@@ -89,7 +89,7 @@ DocumentState DocumentManager::project_profile_into_sketch(
          index < sketch_it->sketch_parameters->circles.size(); ++index) {
       const auto& circle = sketch_it->sketch_parameters->circles[index];
       polysmith::core::set_sketch_point_fixed(
-          *sketch_it, "point-circle-" + circle.id + "-center", true);
+          *sketch_it, circle_center_point_id(circle), true);
       record.generated_circle_ids.push_back(
           circle.id);
     }

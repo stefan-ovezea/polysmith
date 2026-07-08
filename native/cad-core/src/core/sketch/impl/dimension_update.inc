@@ -39,10 +39,9 @@ void update_sketch_dimension(FeatureEntry& feature,
       if (l.start_point_id == pid) return {l.start_x, l.start_y};
       if (l.end_point_id == pid) return {l.end_x, l.end_y};
     }
-    for (const auto& c : parameters.circles) {
-      if ("point-circle-" + c.id + "-center" == pid)
-        return {c.center_x, c.center_y};
-    }
+    // Phase 4.2: use geometry_owner_ids instead of prefix matching
+    if (const auto* c = find_circle_for_point(parameters, pid))
+      return {c->center_x, c->center_y};
     for (const auto& p : parameters.vertices) {
       if (p.id == pid) return {p.x, p.y};
     }

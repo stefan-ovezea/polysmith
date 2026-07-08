@@ -63,10 +63,9 @@ DocumentState DocumentManager::delete_sketch_selection(
         add_id(arc_ids, arc.id);
       }
     }
-    for (const auto& circle : parameters.circles) {
-      if ("point-circle-" + circle.id + "-center" == point_id) {
-        add_id(circle_ids, circle.id);
-      }
+    // Use geometry_owner_ids to find circle owner (Phase 4.2)
+    if (const auto* circle = find_circle_for_point(parameters, point_id)) {
+      add_id(circle_ids, circle->id);
     }
     for (const auto& projected : parameters.projected_points) {
       if (projected.id == point_id) {
@@ -131,7 +130,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& circle : parameters.circles) {
     if (id_in_set(circle_ids, circle.id)) {
-      add_id(deleted_point_ids, "point-circle-" + circle.id + "-center");
+      add_id(deleted_point_ids, circle_center_point_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {
@@ -149,7 +148,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& circle : parameters.circles) {
     if (!id_in_set(circle_ids, circle.id)) {
-      deleted_point_ids.erase("point-circle-" + circle.id + "-center");
+      deleted_point_ids.erase(circle_center_point_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {

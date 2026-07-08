@@ -1,4 +1,5 @@
 #include "core/sketch/constraint_solver.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
 #include <GCS.h>
 #include <Geo.h>

@@ -72,8 +72,7 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
     size_t radius_base = params.vertices.size() * 2;
     for (size_t i = 0; i < params.circles.size(); ++i) {
         auto& sc = params.circles[i];
-        std::string center_point_id =
-            "point-circle-" + sc.id + "-center";
+        std::string center_point_id = circle_center_point_id(sc);
         auto cit = point_id_to_index_.find(center_point_id);
         if (cit != point_id_to_index_.end()) {
             sc.center_x = param_storage_[cit->second * 2];
