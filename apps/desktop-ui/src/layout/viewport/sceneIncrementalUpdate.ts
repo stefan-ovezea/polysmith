@@ -113,7 +113,7 @@ export function updateEndpointDragSceneObjects({
   }
 
   for (const pointData of sceneData.sketchPoints) {
-    const pointObject = sketchPointObjectById.get(pointData.pointId);
+    const pointObject = sketchPointObjectById.get(pointData.id);
     if (pointObject) {
       pointObject.position.set(
         pointData.position[0],

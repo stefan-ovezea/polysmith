@@ -98,14 +98,21 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     append_point(arc.end_point_id, "endpoint", arc.end_x, arc.end_y);
   }
 
-  for (const auto& circle : parameters.circles) {
-    append_point(
-        "point-circle-" + circle.id + "-center", "center", circle.center_x, circle.center_y);
+  // ── Phase 6: centers use stable vertex-N IDs ──────────────────
+  for (auto& circle : parameters.circles) {
+    // Generate or reuse a stable vertex-N ID for the center.
+    if (circle.center_vertex_id.empty()) {
+      circle.center_vertex_id =
+          "vertex-" + std::to_string(parameters.next_vertex_index++);
+    }
+    append_point(circle.center_vertex_id, "center",
+                 circle.center_x, circle.center_y);
 
     // Derived quadrant points (cardinal directions on the circle).
-    // These provide the dimension tool stable point IDs for quadrant /
-    // perimeter snaps.  Not fixed by default — the user can toggle fix
-    // via the constraint tool.
+    // Quadrants keep the legacy point-circle-*-quadrant-N format for
+    // now — they are regenerated on every rebuild and need stable
+    // predictable IDs for trim live-point tracking.
+    // TODO(phase-6-followup): give quadrants stable vertex-N IDs.
     const double cx = circle.center_x;
     const double cy = circle.center_y;
     const double r = circle.radius;
@@ -139,11 +146,14 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     });
   }
 
-  // Re-emit arc center points so they participate in the shared point graph
-  // (DOF display, snap targets) just like circle centers.
-  for (const auto& arc : parameters.arcs) {
-    append_point(
-        "point-arc-" + arc.id + "-center", "center", arc.center_x, arc.center_y);
+  // Re-emit arc center points with stable vertex-N IDs.
+  for (auto& arc : parameters.arcs) {
+    if (arc.center_vertex_id.empty()) {
+      arc.center_vertex_id =
+          "vertex-" + std::to_string(parameters.next_vertex_index++);
+    }
+    append_point(arc.center_vertex_id, "center",
+                 arc.center_x, arc.center_y);
   }
 
   // Re-emit the original corner point of every fillet. After
@@ -199,16 +209,19 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
       sp->geometry_owner_ids.push_back(arc.id);
     if (auto* sp = find_point(arc.end_point_id))
       sp->geometry_owner_ids.push_back(arc.id);
-    const auto center_id = "point-arc-" + arc.id + "-center";
-    if (auto* sp = find_point(center_id))
-      sp->geometry_owner_ids.push_back(arc.id);
+    // Phase 6: center ID is now center_vertex_id (vertex-N)
+    if (!arc.center_vertex_id.empty())
+      if (auto* sp = find_point(arc.center_vertex_id))
+        sp->geometry_owner_ids.push_back(arc.id);
   }
 
   // Circle centers and quadrants.
   for (const auto& circle : parameters.circles) {
-    const auto center_id = "point-circle-" + circle.id + "-center";
-    if (auto* sp = find_point(center_id))
-      sp->geometry_owner_ids.push_back(circle.id);
+    // Phase 6: center ID is now center_vertex_id (vertex-N)
+    if (!circle.center_vertex_id.empty())
+      if (auto* sp = find_point(circle.center_vertex_id))
+        sp->geometry_owner_ids.push_back(circle.id);
+    // Quadrants still use legacy format (see TODO above).
     for (int q = 0; q < 4; ++q) {
       const auto qid = "point-circle-" + circle.id + "-quadrant-" + std::to_string(q);
       if (auto* sp = find_point(qid))
@@ -272,13 +285,16 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     line.end_vertex_id   = vertex_id_of(line.end_point_id);
   }
   for (auto& arc : parameters.arcs) {
-    arc.start_vertex_id  = vertex_id_of(arc.start_point_id);
-    arc.end_vertex_id    = vertex_id_of(arc.end_point_id);
-    // Arc center: look up by the point ID format used in build (point-arc-* or vertex-*)
-    arc.center_vertex_id = vertex_id_of("point-arc-" + arc.id + "-center");
+    arc.start_vertex_id = vertex_id_of(arc.start_point_id);
+    arc.end_vertex_id   = vertex_id_of(arc.end_point_id);
+    // center_vertex_id already set in the center-emit loop above;
+    // this maps it through the vertex table to keep vertex_id in sync.
+    if (!arc.center_vertex_id.empty())
+      arc.center_vertex_id = vertex_id_of(arc.center_vertex_id);
   }
   for (auto& circle : parameters.circles) {
-    circle.center_vertex_id = vertex_id_of("point-circle-" + circle.id + "-center");
+    if (!circle.center_vertex_id.empty())
+      circle.center_vertex_id = vertex_id_of(circle.center_vertex_id);
   }
 }
 
@@ -311,10 +327,11 @@ void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
     if (const auto* ev = find_v(arc.end_point_id)) {
       arc.end_x = ev->x; arc.end_y = ev->y;
     }
-    // Arc center: use the same ID format as rebuild_sketch_vertices
-    const auto center_id = "point-arc-" + arc.id + "-center";
-    if (const auto* cv = find_v(center_id)) {
-      arc.center_x = cv->x; arc.center_y = cv->y;
+    // Arc center: use center_vertex_id (vertex-N, Phase 6)
+    if (!arc.center_vertex_id.empty()) {
+      if (const auto* cv = find_v(arc.center_vertex_id)) {
+        arc.center_x = cv->x; arc.center_y = cv->y;
+      }
     }
   }
 

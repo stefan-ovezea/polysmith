@@ -289,7 +289,7 @@ function addSketchPointObjects({
     const sketchPointObject = buildSketchPointObject(sketchPoint);
     sketchPointObject.userData.isSelected = sketchPoint.isSelected;
     sketchPointObjects.push(sketchPointObject);
-    sketchPointObjectById.set(sketchPoint.pointId, sketchPointObject);
+    sketchPointObjectById.set(sketchPoint.id, sketchPointObject);
     sketchGroup.add(sketchPointObject);
   }
 }
