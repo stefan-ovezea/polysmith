@@ -49,34 +49,38 @@ ConstraintSolver::SolveResult ConstraintSolver::solve(GCS::Algorithm alg) {
 void ConstraintSolver::apply(SketchFeatureParameters& params) const {
     if (!last_result_.ok()) return;
 
-    // Write solved coordinates back to the canonical storage (lines
-    // and circles). Do NOT write to params.vertices[] — that array is
-    // rebuilt from lines/circles by rebuild_sketch_vertices() later in
-    // refresh_sketch_derived_state.
+    // ── Phase 5: write solved coords to canonical vertices first,
+    // then sync back to entity cached fields ─────────────────────
 
-    // Update line endpoints from their points.
+    // Update line endpoint vertices, then sync cached coords.
     for (auto& sl : params.lines) {
         auto sit = point_id_to_index_.find(sl.start_point_id);
         auto eit = point_id_to_index_.find(sl.end_point_id);
         if (sit != point_id_to_index_.end()) {
-            sl.start_x = param_storage_[sit->second * 2];
-            sl.start_y = param_storage_[sit->second * 2 + 1];
+            params.vertices[sit->second].x = param_storage_[sit->second * 2];
+            params.vertices[sit->second].y = param_storage_[sit->second * 2 + 1];
+            sl.start_x = params.vertices[sit->second].x;
+            sl.start_y = params.vertices[sit->second].y;
         }
         if (eit != point_id_to_index_.end()) {
-            sl.end_x = param_storage_[eit->second * 2];
-            sl.end_y = param_storage_[eit->second * 2 + 1];
+            params.vertices[eit->second].x = param_storage_[eit->second * 2];
+            params.vertices[eit->second].y = param_storage_[eit->second * 2 + 1];
+            sl.end_x = params.vertices[eit->second].x;
+            sl.end_y = params.vertices[eit->second].y;
         }
     }
 
-    // Update circle center positions and radii.
+    // Update circle center vertices, then sync cached coords.
     size_t radius_base = params.vertices.size() * 2;
     for (size_t i = 0; i < params.circles.size(); ++i) {
         auto& sc = params.circles[i];
         std::string center_point_id = circle_center_point_id(sc);
         auto cit = point_id_to_index_.find(center_point_id);
         if (cit != point_id_to_index_.end()) {
-            sc.center_x = param_storage_[cit->second * 2];
-            sc.center_y = param_storage_[cit->second * 2 + 1];
+            params.vertices[cit->second].x = param_storage_[cit->second * 2];
+            params.vertices[cit->second].y = param_storage_[cit->second * 2 + 1];
+            sc.center_x = params.vertices[cit->second].x;
+            sc.center_y = params.vertices[cit->second].y;
         }
         sc.radius = param_storage_[radius_base + i];
     }

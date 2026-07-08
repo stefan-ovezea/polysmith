@@ -282,6 +282,50 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   }
 }
 
+// ── Phase 5: sync entity cached coords from canonical vertices ──
+// After rebuild_sketch_vertices creates/updates the vertex table,
+// copy vertex coordinates back to the entity structs so the cached
+// fields stay in sync.  This makes vertices the single source of
+// truth; entity fields are a read-optimised cache.
+void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
+  // Helper: find a vertex by its primary id.
+  auto find_v = [&](const std::string& vid) -> const SketchVertex* {
+    for (const auto& v : parameters.vertices)
+      if (v.id == vid) return &v;
+    return nullptr;
+  };
+
+  for (auto& line : parameters.lines) {
+    if (const auto* sv = find_v(line.start_point_id)) {
+      line.start_x = sv->x; line.start_y = sv->y;
+    }
+    if (const auto* ev = find_v(line.end_point_id)) {
+      line.end_x = ev->x; line.end_y = ev->y;
+    }
+  }
+
+  for (auto& arc : parameters.arcs) {
+    if (const auto* sv = find_v(arc.start_point_id)) {
+      arc.start_x = sv->x; arc.start_y = sv->y;
+    }
+    if (const auto* ev = find_v(arc.end_point_id)) {
+      arc.end_x = ev->x; arc.end_y = ev->y;
+    }
+    // Arc center: use the same ID format as rebuild_sketch_vertices
+    const auto center_id = "point-arc-" + arc.id + "-center";
+    if (const auto* cv = find_v(center_id)) {
+      arc.center_x = cv->x; arc.center_y = cv->y;
+    }
+  }
+
+  for (auto& circle : parameters.circles) {
+    const auto center_id = circle_center_point_id(circle);
+    if (const auto* cv = find_v(center_id)) {
+      circle.center_x = cv->x; circle.center_y = cv->y;
+    }
+  }
+}
+
 // Force projected points to stay fixed. Projected points are derived
 // from 3D body geometry — moving them would break the projection link.
 void enforce_derived_points_fixed(SketchFeatureParameters& parameters) {
