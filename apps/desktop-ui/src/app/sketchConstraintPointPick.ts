@@ -1,10 +1,10 @@
 import type { ArmedSketchConstraint } from "../types";
 
-export type SketchConstraintPointKind = "endpoint" | "center" | "quadrant";
+export type SketchConstraintVertexKind = "endpoint" | "center" | "quadrant";
 
-export interface SketchConstraintPointPickContext {
+export interface SketchConstraintVertexPickContext {
   vertexId: string;
-  kind: SketchConstraintPointKind;
+  kind: SketchConstraintVertexKind;
   additive: boolean;
   armedSketchConstraint: ArmedSketchConstraint;
   selectSketchPoint: (vertexId: string, additive?: boolean) => Promise<void>;
@@ -17,8 +17,8 @@ export interface SketchConstraintPointPickContext {
   addMessage: (message: string) => void;
 }
 
-export async function handleSketchConstraintPointPickFromContext(
-  context: SketchConstraintPointPickContext,
+export async function handleSketchConstraintVertexPickFromContext(
+  context: SketchConstraintVertexPickContext,
 ) {
   const { armedSketchConstraint } = context;
 

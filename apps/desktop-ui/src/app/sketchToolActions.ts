@@ -3,8 +3,8 @@ import type { Dispatch, SetStateAction } from "react";
 import type { ArmedSketchConstraint, SketchTool } from "../types";
 import { handleSketchConstraintLinePickFromContext } from "./sketchConstraintLinePick";
 import {
-  handleSketchConstraintPointPickFromContext,
-  type SketchConstraintPointKind,
+  handleSketchConstraintVertexPickFromContext,
+  type SketchConstraintVertexKind,
 } from "./sketchConstraintPointPick";
 import type { SketchLineConstraintActions } from "./sketchLineConstraintActions";
 
@@ -30,7 +30,7 @@ interface SketchToolActionContext extends SketchLineConstraintActions {
   addMessage: (message: string) => void;
 }
 
-export type { SketchConstraintPointKind };
+export type { SketchConstraintVertexKind };
 
 export function createSketchToolActions({
   armedSketchConstraint,
@@ -87,12 +87,12 @@ export function createSketchToolActions({
     });
   }
 
-  async function handleSketchConstraintPointPick(
+  async function handleSketchConstraintVertexPick(
     pointId: string,
-    kind: SketchConstraintPointKind,
+    kind: SketchConstraintVertexKind,
     additive = false,
   ) {
-    await handleSketchConstraintPointPickFromContext({
+    await handleSketchConstraintVertexPickFromContext({
       vertexId: pointId,
       kind,
       additive,
@@ -109,7 +109,7 @@ export function createSketchToolActions({
     clearArmedSketchConstraint,
     finishActiveSketch,
     handleSketchConstraintLinePick,
-    handleSketchConstraintPointPick,
+    handleSketchConstraintVertexPick,
     setActiveSketchTool,
   };
 }

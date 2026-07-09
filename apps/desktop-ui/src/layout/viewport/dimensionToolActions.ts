@@ -38,8 +38,8 @@ interface DimensionToolActionParams {
   addSketchDistanceDimensionRef: MutableRefObject<
     (firstEntityId: string, secondEntityId: string) => Promise<void>
   >;
-  addSketchPointDistanceDimensionRef: MutableRefObject<
-    (pointAId: string, pointBId: string, axis?: "x" | "y") => Promise<void>
+  addSketchVertexDistanceDimensionRef: MutableRefObject<
+    (vertexAId: string, vertexBId: string, axis?: "x" | "y") => Promise<void>
   >;
   updateSketchDimensionRef: MutableRefObject<
     (dimensionId: string, value: UpdateDimensionValue) => Promise<void>
@@ -63,7 +63,7 @@ export function createDimensionToolActions({
   addSketchPolygonRadiusDimensionRef,
   addSketchAngleDimensionRef,
   addSketchDistanceDimensionRef,
-  addSketchPointDistanceDimensionRef,
+  addSketchVertexDistanceDimensionRef,
   updateSketchDimensionRef,
   setDimensionToolFirstLine,
 }: DimensionToolActionParams) {
@@ -236,17 +236,17 @@ export function createDimensionToolActions({
       .catch(clearRelationPlacementStage);
   }
 
-  function createDimensionPointDistance(pointAId: string, pointBId: string, axis?: "x" | "y") {
+  function createDimensionVertexDistance(vertexAId: string, vertexBId: string, axis?: "x" | "y") {
     pendingDimensionIdRef.current =
-      `dim-point-distance-${pointAId}-${pointBId}`;
+      `dim-point-distance-${vertexAId}-${vertexBId}`;
     pendingDimensionPlacementRef.current = true;
     pendingDimSourceEntityIdRef.current = null;
-    void addSketchPointDistanceDimensionRef
-      .current(pointAId, pointBId, axis)
+    void addSketchVertexDistanceDimensionRef
+      .current(vertexAId, vertexBId, axis)
       .then(() => {
         pendingDimensionIdRef.current = null;
       })
-      .catch(() => {
+      .catch((err) => {
         pendingDimensionIdRef.current = null;
       });
   }
@@ -265,7 +265,7 @@ export function createDimensionToolActions({
     createDimensionLine,
     createDimensionLineAngle,
     createDimensionLinear,
-    createDimensionPointDistance,
+    createDimensionVertexDistance,
     createDimensionPolygon,
     selectDimensionCircle,
     selectDimensionLine,

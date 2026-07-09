@@ -85,7 +85,7 @@ export interface ActiveSketchPointerUpContext {
     secondEntityId: string,
     forceMode?: "angle" | "distance",
   ) => void;
-  createDimensionPointDistance: (
+  createDimensionVertexDistance: (
     firstPointId: string,
     secondPointId: string,
   ) => void;
@@ -204,7 +204,7 @@ export function handleActiveSketchPointerUpTool(
       deleteSketchDimension: context.deleteSketchDimension,
       handleDimensionClick: context.handleDimensionClick,
       createAngleOrDistance: context.createDimensionAngleOrDistance,
-      createPointDistance: context.createDimensionPointDistance,
+      createVertexDistance: context.createDimensionVertexDistance,
       createLine: context.createDimensionLine,
       createLineAngle: context.createDimensionLineAngle,
       startLinearPlacement: context.createDimensionLinear,

@@ -104,7 +104,7 @@ import { SketchDeleteConfirmationPanel } from "./app/SketchDeleteConfirmationPan
 import { SlicerWorkspace } from "./app/SlicerWorkspace";
 import {
   createSketchToolActions,
-  type SketchConstraintPointKind,
+  type SketchConstraintVertexKind,
 } from "./app/sketchToolActions";
 import {
   useSketchToolLifecycleEffects,
@@ -551,7 +551,7 @@ function App() {
     deleteSketchDimension,
     toggleSketchDimensionDriven,
     setSketchLineConstruction,
-    addSketchPointDistanceDimension,
+    addSketchVertexDistanceDimension,
     updateSketchDimensionDisplay,
     deleteSketchSelection,
     trimSketchEntity,
@@ -961,7 +961,7 @@ function App() {
     clearArmedSketchConstraint,
     finishActiveSketch,
     handleSketchConstraintLinePick,
-    handleSketchConstraintPointPick,
+    handleSketchConstraintVertexPick,
     setActiveSketchTool,
   } = createSketchToolActions({
     armedSketchConstraint,
@@ -1654,14 +1654,14 @@ function App() {
                   );
                 });
               }}
-              onSetSketchMidpointAnchor={async (pointId, hostLineId) => {
+              onSetSketchMidpointAnchor={async (vertexId, hostLineId) => {
                 await runAction(async () => {
-                  await setSketchMidpointAnchor(pointId, hostLineId);
+                  await setSketchMidpointAnchor(vertexId, hostLineId);
                 });
               }}
-              onSetSketchPointLineAnchor={async (pointId, hostLineId, t) => {
+              onSetSketchPointLineAnchor={async (vertexId, hostLineId, t) => {
                 await runAction(async () => {
-                  await setSketchPointLineAnchor(pointId, hostLineId, t);
+                  await setSketchPointLineAnchor(vertexId, hostLineId, t);
                 });
               }}
               onAddSketchAngleDimension={async (firstLineId, secondLineId, value?) => {
@@ -1909,14 +1909,14 @@ function App() {
                   await batchSelectSketchEntities(entityIds, additive);
                 });
               }}
-              onPickSketchPoint={async (pointId, kind, additive) => {
+              onPickSketchPoint={async (vertexId, kind, additive) => {
                 if (constructionPointAction) {
-                  await createConstructionPointFeature(pointId);
+                  await createConstructionPointFeature(vertexId);
                   return;
                 }
                 await runAction(async () => {
-                  await handleSketchConstraintPointPick(
-                    pointId,
+                  await handleSketchConstraintVertexPick(
+                    vertexId,
                     kind,
                     additive,
                   );
@@ -2079,15 +2079,15 @@ function App() {
                   await setSketchLineConstruction(lineId, isConstruction);
                 });
               }}
-              onAddSketchPointDistanceDimension={async (
-                pointAId,
-                pointBId,
+              onAddSketchVertexDistanceDimension={async (
+                vertexAId,
+                vertexBId,
                 axis?,
               ) => {
                 await runAction(async () => {
-                  await addSketchPointDistanceDimension(
-                    pointAId,
-                    pointBId,
+                  await addSketchVertexDistanceDimension(
+                    vertexAId,
+                    vertexBId,
                     axis,
                   );
                 });
@@ -2105,9 +2105,9 @@ function App() {
               }}
               onFinishSketch={finishActiveSketch}
               onSetSketchTool={setActiveSketchTool}
-              onUpdateSketchPoint={async (pointId, x, y) => {
+              onUpdateSketchPoint={async (vertexId, x, y) => {
                 await runAction(async () => {
-                  await updateSketchPoint(pointId, x, y);
+                  await updateSketchPoint(vertexId, x, y);
                 });
               }}
               hiddenFeatureIds={effectiveHiddenFeatureIds}

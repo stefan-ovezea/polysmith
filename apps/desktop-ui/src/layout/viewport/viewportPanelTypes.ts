@@ -195,7 +195,7 @@ export interface ViewportPanelProps {
     lineId: string,
     isConstruction: boolean,
   ) => Promise<void>;
-  onAddSketchPointDistanceDimension: (
+  onAddSketchVertexDistanceDimension: (
     pointAId: string,
     pointBId: string,
     axis?: "x" | "y",

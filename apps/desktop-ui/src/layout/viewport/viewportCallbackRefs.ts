@@ -160,7 +160,7 @@ interface ViewportCallbackRefTargets {
   updateSketchDimensionLabelPositionRef: MutableRefObject<
     (dimensionId: string, labelX: number, labelY: number) => Promise<void>
   >;
-  addSketchPointDistanceDimensionRef: MutableRefObject<
+  addSketchVertexDistanceDimensionRef: MutableRefObject<
     (pointAId: string, pointBId: string) => Promise<void>
   >;
   updateSketchDimensionDisplayRef: MutableRefObject<
@@ -255,7 +255,7 @@ interface ViewportCallbackRefValues
   onSelectSketchDimension: ViewportCallbackRefTargets["selectSketchDimensionRef"]["current"];
   onUpdateSketchDimension: ViewportCallbackRefTargets["updateSketchDimensionRef"]["current"];
   onUpdateSketchDimensionLabelPosition: ViewportCallbackRefTargets["updateSketchDimensionLabelPositionRef"]["current"];
-  onAddSketchPointDistanceDimension: ViewportCallbackRefTargets["addSketchPointDistanceDimensionRef"]["current"];
+  onAddSketchVertexDistanceDimension: ViewportCallbackRefTargets["addSketchVertexDistanceDimensionRef"]["current"];
   onUpdateSketchDimensionDisplay: ViewportCallbackRefTargets["updateSketchDimensionDisplayRef"]["current"];
   onSelectSketchProfile: ViewportCallbackRefTargets["selectSketchProfileRef"]["current"];
   onTrimSketchEntity: ViewportCallbackRefTargets["trimSketchEntityRef"]["current"];
@@ -337,8 +337,8 @@ export function useViewportCallbackRefs(
     refs.updateSketchDimensionRef.current = values.onUpdateSketchDimension;
     refs.updateSketchDimensionLabelPositionRef.current =
       values.onUpdateSketchDimensionLabelPosition;
-    refs.addSketchPointDistanceDimensionRef.current =
-      values.onAddSketchPointDistanceDimension;
+    refs.addSketchVertexDistanceDimensionRef.current =
+      values.onAddSketchVertexDistanceDimension;
     refs.updateSketchDimensionDisplayRef.current =
       values.onUpdateSketchDimensionDisplay;
     refs.selectSketchProfileRef.current = values.onSelectSketchProfile;

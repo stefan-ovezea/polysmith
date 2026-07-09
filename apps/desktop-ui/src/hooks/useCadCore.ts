@@ -578,8 +578,8 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    updateSketchPoint: async (pointId: string, x: number, y: number) => {
-      await sendCoreCommand(makeUpdateSketchVertexCommand(pointId, x, y));
+    updateSketchPoint: async (vertexId: string, x: number, y: number) => {
+      await sendCoreCommand(makeUpdateSketchVertexCommand(vertexId, x, y));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -654,16 +654,16 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     setSketchCoincidentConstraint: async (
-      pointId: string,
-      otherPointId: string,
+      vertexId: string,
+      otherVertexId: string,
     ) => {
       await sendCoreCommand(
-        makeSetSketchCoincidentConstraintCommand(pointId, otherPointId),
+        makeSetSketchCoincidentConstraintCommand(vertexId, otherVertexId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    setSketchPointFixed: async (pointId: string, isFixed: boolean) => {
-      await sendCoreCommand(makeSetSketchVertexFixedCommand(pointId, isFixed));
+    setSketchPointFixed: async (vertexId: string, isFixed: boolean) => {
+      await sendCoreCommand(makeSetSketchVertexFixedCommand(vertexId, isFixed));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteSketchCoincidentConstraint: async (constraintId: string) => {
@@ -724,19 +724,19 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    setSketchMidpointAnchor: async (pointId: string, hostLineId: string) => {
+    setSketchMidpointAnchor: async (vertexId: string, hostLineId: string) => {
       await sendCoreCommand(
-        makeSetSketchMidpointAnchorCommand(pointId, hostLineId),
+        makeSetSketchMidpointAnchorCommand(vertexId, hostLineId),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     setSketchPointLineAnchor: async (
-      pointId: string,
+      vertexId: string,
       hostLineId: string,
       t: number,
     ) => {
       await sendCoreCommand(
-        makeSetSketchVertexLineAnchorCommand(pointId, hostLineId, t),
+        makeSetSketchVertexLineAnchorCommand(vertexId, hostLineId, t),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -750,13 +750,13 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    addSketchPointDistanceDimension: async (
-      pointAId: string,
-      pointBId: string,
+    addSketchVertexDistanceDimension: async (
+      vertexAId: string,
+      vertexBId: string,
       axis?: "x" | "y",
     ) => {
       await sendCoreCommand(
-        makeAddSketchVertexDistanceDimensionCommand(pointAId, pointBId, axis),
+        makeAddSketchVertexDistanceDimensionCommand(vertexAId, vertexBId, axis),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -929,16 +929,16 @@ export function useCadCore() {
     },
     deleteSketchSelection: async (
       entityIds: readonly string[],
-      pointIds: readonly string[],
+      vertexIds: readonly string[],
       profileIds: readonly string[],
     ) => {
       await sendCoreCommand(
-        makeDeleteSketchSelectionCommand(entityIds, pointIds, profileIds),
+        makeDeleteSketchSelectionCommand(entityIds, vertexIds, profileIds),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    selectSketchPoint: async (pointId: string, additive = false) => {
-      await sendCoreCommand(makeSelectSketchVertexCommand(pointId, additive));
+    selectSketchPoint: async (vertexId: string, additive = false) => {
+      await sendCoreCommand(makeSelectSketchVertexCommand(vertexId, additive));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchEntity: async (entityId: string, additive = false) => {

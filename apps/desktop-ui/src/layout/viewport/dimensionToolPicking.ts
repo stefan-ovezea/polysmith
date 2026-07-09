@@ -68,14 +68,14 @@ export function computePointDistanceAxis(
   return vDist > 1e-6 ? "y" : "x";
 }
 
-function entityIdFromSketchPointId(
-  pointId: string,
+function entityIdFromSketchVertexId(
+  vertexId: string,
   kinds: readonly EntityKind[] = ["line", "circle", "polygon", "arc"],
   sketch?: SketchFeatureParameters | null,
 ) {
   // Fast path: regex-based resolution for well-named point IDs.
   for (const kind of kinds) {
-    const match = pointId.match(new RegExp(`^point-(${kind}-\\d+)`));
+    const match = vertexId.match(new RegExp(`^point-(${kind}-\\d+)`));
     if (match) {
       return match[1];
     }
@@ -84,7 +84,7 @@ function entityIdFromSketchPointId(
   // This is the preferred path — no regex, no entity-walking.
   if (sketch) {
     for (const pt of sketch.points) {
-      if (pt.vertex_id === pointId && pt.geometry_owner_ids?.length) {
+      if (pt.vertex_id === vertexId && pt.geometry_owner_ids?.length) {
         const ownerId = pt.geometry_owner_ids[0];
         // Check if the owner kind matches the requested kinds.
         for (const kind of kinds) {
@@ -98,15 +98,15 @@ function entityIdFromSketchPointId(
   // search entities by their start_vertex_id / end_vertex_id fields.
   if (sketch) {
     for (const line of sketch.lines) {
-      if (line.start_vertex_id === pointId || line.end_vertex_id === pointId)
+      if (line.start_vertex_id === vertexId || line.end_vertex_id === vertexId)
         return line.line_id;
     }
     for (const arc of (sketch.arcs ?? [])) {
-      if (arc.start_vertex_id === pointId || arc.end_vertex_id === pointId)
+      if (arc.start_vertex_id === vertexId || arc.end_vertex_id === vertexId)
         return arc.arc_id;
     }
     for (const circle of sketch.circles) {
-      if (`point-circle-${circle.circle_id}-center` === pointId)
+      if (circle.center_vertex_id === vertexId)
         return circle.circle_id;
     }
   }
@@ -157,8 +157,8 @@ type DimensionPointPickAction =
     }
   | {
       kind: "point_distance";
-      firstPointId: string;
-      secondPointId: string;
+      firstVertexId: string;
+      secondVertexId: string;
     }
   | {
       kind: "stage_point";
@@ -175,8 +175,8 @@ type DimensionEntityPickAction =
     }
   | {
       kind: "point_distance_to_entity_reference";
-      firstPointId: string;
-      secondPointId: string;
+      firstVertexId: string;
+      secondVertexId: string;
       deleteDimensionId: string | null;
     }
   | {
@@ -271,7 +271,7 @@ interface DimensionToolClickContext {
   deleteSketchDimension: (dimensionId: string) => void;
   handleDimensionClick: (dimensionId: string) => void;
   createAngleOrDistance: (firstEntityId: string, secondEntityId: string, forceMode?: "angle" | "distance") => void;
-  createPointDistance: (firstPointId: string, secondPointId: string, axis?: "x" | "y") => void;
+  createVertexDistance: (firstVertexId: string, secondVertexId: string, axis?: "x" | "y") => void;
   createLine: (lineId: string) => void;
   createLineAngle: (lineId: string) => void;
   createCircle: (circleId: string, label: string) => void;
@@ -374,7 +374,7 @@ function applyEntityPickAction(
       if (action.deleteDimensionId) {
         context.deleteSketchDimension(action.deleteDimensionId);
       }
-      context.createPointDistance(action.firstPointId, action.secondPointId);
+      context.createVertexDistance(action.firstVertexId, action.secondVertexId);
       return;
     case "line_dimension":
       if (action.clearFirstPick) {
@@ -427,7 +427,7 @@ function handleDimensionEntityHit(context: DimensionToolClickContext) {
       entityId: hit.id,
       entityKind: hit.entityKind,
       firstEntityId,
-      firstPointId: firstPoint?.id ?? null,
+      firstVertexId: firstPoint?.id ?? null,
       hasUnary: hasUnaryDimension(context.sketch, hit.id),
     }),
     context,
@@ -441,9 +441,11 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
     return false;
   }
 
+  const firstId = context.getFirstPoint()?.id ?? null;
+
   const pointAction = dimensionPointPickAction({
-    pointId: hit.id,
-    firstPointId: context.getFirstPoint()?.id ?? null,
+    vertexId: hit.id,
+    firstVertexId: firstId,
   });
   if (pointAction.kind === "line_dimension") {
     context.clearFirstPick();
@@ -455,8 +457,8 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
     // If both points belong to the same line and that line already has
     // a line_length dimension, select the existing dimension instead of
     // creating a redundant point_distance.
-    const entityA = entityIdFromSketchPointId(pointAction.firstPointId, ["line"], context.sketch);
-    const entityB = entityIdFromSketchPointId(pointAction.secondPointId, ["line"], context.sketch);
+    const entityA = entityIdFromSketchVertexId(pointAction.firstVertexId, ["line"], context.sketch);
+    const entityB = entityIdFromSketchVertexId(pointAction.secondVertexId, ["line"], context.sketch);
     if (entityA && entityA === entityB && hasUnaryDimension(context.sketch, entityA)) {
       context.createLine(entityA);
       return true;
@@ -464,9 +466,9 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
     // Create as Euclidean (aligned) by default.  The user can drag
     // during placement to position the label; axis can be changed
     // later via the dimension editor.
-    context.createPointDistance(
-      pointAction.firstPointId,
-      pointAction.secondPointId,
+    context.createVertexDistance(
+      pointAction.firstVertexId,
+      pointAction.secondVertexId,
       /*axis=*/ undefined,
     );
     return true;
@@ -625,7 +627,7 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
       } else {
         // Only an entity staged (no point): create point-to-entity distance.
         context.clearFirstPick();
-        context.createPointDistance(stagedFirstId, context.hit.id);
+        context.createVertexDistance(stagedFirstId, context.hit.id);
         return true;
       }
     }
@@ -686,7 +688,7 @@ function dimensionRegroupAction({
   }
 
   if (hit?.kind === "sketch_point") {
-    const clickedEntityId = entityIdFromSketchPointId(hit.id);
+    const clickedEntityId = entityIdFromSketchVertexId(hit.id);
     if (clickedEntityId && clickedEntityId !== pendingSourceId) {
       return {
         pendingSourceId,
@@ -714,9 +716,9 @@ function dimensionStagedEntityAction({
     entityId = hit.id;
   } else if (hit?.kind === "sketch_point") {
     entityId =
-      entityIdFromSketchPointId(hit.id, ["line"]) ??
-      entityIdFromSketchPointId(hit.id, ["circle"]) ??
-      entityIdFromSketchPointId(hit.id, ["arc"]);
+      entityIdFromSketchVertexId(hit.id, ["line"]) ??
+      entityIdFromSketchVertexId(hit.id, ["circle"]) ??
+      entityIdFromSketchVertexId(hit.id, ["arc"]);
   }
 
   if (!entityId) {
@@ -741,24 +743,24 @@ function dimensionStagedEntityAction({
 }
 
 function dimensionPointPickAction({
-  pointId,
-  firstPointId,
+  vertexId,
+  firstVertexId,
 }: {
-  pointId: string;
-  firstPointId: string | null;
+  vertexId: string;
+  firstVertexId: string | null;
 }): DimensionPointPickAction {
-  if (firstPointId && firstPointId !== pointId) {
+  if (firstVertexId && firstVertexId !== vertexId) {
     return {
       kind: "point_distance",
-      firstPointId,
-      secondPointId: pointId,
+      firstVertexId,
+      secondVertexId: vertexId,
     };
   }
 
   return {
     kind: "stage_point",
-    vertexId: pointId,
-    entityId: entityIdFromSketchPointId(pointId),
+    vertexId: vertexId,
+    entityId: entityIdFromSketchVertexId(vertexId),
   };
 }
 
@@ -766,24 +768,24 @@ function dimensionEntityPickAction({
   entityId,
   entityKind,
   firstEntityId,
-  firstPointId,
+  firstVertexId,
   hasUnary,
 }: {
   entityId: string;
   entityKind: string | null;
   firstEntityId: string | null;
-  firstPointId: string | null;
+  firstVertexId: string | null;
   hasUnary: boolean;
 }): DimensionEntityPickAction {
   if (firstEntityId && firstEntityId !== entityId) {
-    const referencePointId = firstPointId
+    const referenceVertexId = firstVertexId
       ? entityReferencePointId(entityKind, entityId)
       : null;
-    if (firstPointId && referencePointId) {
+    if (firstVertexId && referenceVertexId) {
       return {
         kind: "point_distance_to_entity_reference",
-        firstPointId,
-        secondPointId: referencePointId,
+        firstVertexId,
+        secondVertexId: referenceVertexId,
         deleteDimensionId: null,
       };
     }
@@ -796,9 +798,9 @@ function dimensionEntityPickAction({
   }
 
   if (
-    firstPointId &&
+    firstVertexId &&
     entityKind === "line" &&
-    entityIdFromSketchPointId(firstPointId, ["line"]) === entityId
+    entityIdFromSketchVertexId(firstVertexId, ["line"]) === entityId
   ) {
     return {
       kind: "line_dimension",
@@ -808,7 +810,7 @@ function dimensionEntityPickAction({
   }
 
   if (
-    firstPointId &&
+    firstVertexId &&
     firstEntityId === entityId &&
     entityKind === "circle" &&
     !hasUnary

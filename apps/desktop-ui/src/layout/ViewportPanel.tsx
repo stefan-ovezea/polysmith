@@ -267,7 +267,7 @@ export function ViewportPanel({
   onDeleteSketchDimension,
   onToggleSketchDimensionDriven,
   onSetSketchLineConstruction,
-  onAddSketchPointDistanceDimension,
+  onAddSketchVertexDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
   onUpdateSketchPoint,
@@ -617,8 +617,8 @@ export function ViewportPanel({
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
   const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
   const setSketchLineConstructionRef = useRef(onSetSketchLineConstruction);
-  const addSketchPointDistanceDimensionRef = useRef(
-    onAddSketchPointDistanceDimension,
+  const addSketchVertexDistanceDimensionRef = useRef(
+    onAddSketchVertexDistanceDimension,
   );
   const updateSketchDimensionDisplayRef = useRef(
     onUpdateSketchDimensionDisplay,
@@ -1325,7 +1325,7 @@ export function ViewportPanel({
     createDimensionLine: dimCreateLine,
     createDimensionLineAngle: dimCreateLineAngle,
     createDimensionLinear: dimCreateLinearThin,
-    createDimensionPointDistance: dimCreatePointDistance,
+    createDimensionVertexDistance: dimCreatePointDistance,
     createDimensionPolygon: dimCreatePolygon,
     selectDimensionCircle: dimSelectCircle,
     selectDimensionLine: dimSelectLine,
@@ -1348,7 +1348,7 @@ export function ViewportPanel({
     addSketchPolygonRadiusDimensionRef,
     addSketchAngleDimensionRef,
     addSketchDistanceDimensionRef,
-    addSketchPointDistanceDimensionRef,
+    addSketchVertexDistanceDimensionRef,
     updateSketchDimensionRef,
     setDimensionToolFirstLine,
   });
@@ -1912,7 +1912,7 @@ export function ViewportPanel({
       selectSketchDimensionRef,
       updateSketchDimensionRef,
       updateSketchDimensionLabelPositionRef,
-      addSketchPointDistanceDimensionRef,
+      addSketchVertexDistanceDimensionRef,
       updateSketchDimensionDisplayRef,
       selectSketchProfileRef,
       trimSketchEntityRef,
@@ -1970,7 +1970,7 @@ export function ViewportPanel({
       onSelectSketchDimension,
       onUpdateSketchDimension,
       onUpdateSketchDimensionLabelPosition,
-      onAddSketchPointDistanceDimension,
+      onAddSketchVertexDistanceDimension,
       onUpdateSketchDimensionDisplay,
       onSelectSketchProfile,
       onTrimSketchEntity,
@@ -2919,7 +2919,7 @@ export function ViewportPanel({
           });
         } else {
           const dimId = `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`;
-          void addSketchPointDistanceDimensionRef.current(
+          void addSketchVertexDistanceDimensionRef.current(
             commit.pointAId,
             commit.pointBId,
             commit.axis,
@@ -3008,7 +3008,7 @@ export function ViewportPanel({
 	          void deleteSketchDimensionRef.current(dimensionId);
 	        },
 	        createDimensionAngleOrDistance: dimCreateAngleOrDistance,
-	        createDimensionPointDistance: dimCreatePointDistance,
+	        createDimensionVertexDistance: dimCreatePointDistance,
 	        createDimensionLine: dimCreateLine,
 		createDimensionLineAngle: dimCreateLineAngle,
         createDimensionLinear: startLinearPlacement,
