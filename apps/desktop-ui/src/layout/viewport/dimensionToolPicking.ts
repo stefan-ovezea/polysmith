@@ -349,7 +349,14 @@ function handleDimensionStagedEntity(context: DimensionToolClickContext) {
     if (stagedAction.clearFirstEntity) {
       context.clearFirstEntity();
     }
-    return true;
+    // Only consume the click if a first entity was actually staged.
+    // When no entity is staged and the hit can't be resolved to one
+    // (e.g. bare vertex-N ID before geometry_owner_ids is populated),
+    // fall through so handleDimensionPointHit can stage the point.
+    if (context.getFirstEntityId() != null) {
+      return true;
+    }
+    return false;
   }
   if (stagedAction.firstEntityId) {
     context.stageFirstEntity(stagedAction.firstEntityId);

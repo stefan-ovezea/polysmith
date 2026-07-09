@@ -13,8 +13,7 @@
               [&](const SketchDimension& d) {
                 return d.kind == "arc_radius" && d.entity_id == arc.id;
               });
-          if (dim_it != feature.sketch_parameters->dimensions.end() &&
-              !(dim_it->is_auto && dim_it->expression.empty())) {
+          if (dim_it != feature.sketch_parameters->dimensions.end()) {
             const bool is_selected_dim =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dim_it->id;

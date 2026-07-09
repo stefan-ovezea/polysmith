@@ -11,14 +11,15 @@ void add_sketch_vertex_distance_dimension(FeatureEntry& feature,
 
   auto& parameters = *feature.sketch_parameters;
 
-  const auto point_a_it = std::find_if(
-      parameters.vertices.begin(),
-      parameters.vertices.end(),
-      [&](const SketchVertex& p) { return p.id == point_a_id; });
-  const auto point_b_it = std::find_if(
-      parameters.vertices.begin(),
-      parameters.vertices.end(),
-      [&](const SketchVertex& p) { return p.id == point_b_id; });
+  // Look up by id first, then vertex_id (IPC sends vertex_id which maps to
+  // SketchVertex::vertex_id; p.id can differ for legacy / center vertices).
+  auto find_vertex = [&](const std::string& vid) {
+    auto it = std::find_if(parameters.vertices.begin(), parameters.vertices.end(),
+        [&](const SketchVertex& p) { return p.id == vid || p.vertex_id == vid; });
+    return it;
+  };
+  const auto point_a_it = find_vertex(point_a_id);
+  const auto point_b_it = find_vertex(point_b_id);
 
   if (point_a_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_a_id);
