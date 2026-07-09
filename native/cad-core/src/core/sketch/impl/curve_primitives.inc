@@ -69,19 +69,19 @@ void add_sketch_arc(FeatureEntry& feature,
       *feature.sketch_parameters, "", end_x, end_y);
 
   auto& params = *feature.sketch_parameters;
-  const std::string start_point_id =
+  const std::string start_vertex_id =
       shared_start_point.has_value()
           ? std::get<0>(shared_start_point.value())
           : "vertex-" + std::to_string(params.next_vertex_index++);
-  const std::string end_point_id =
+  const std::string end_vertex_id =
       shared_end_point.has_value()
           ? std::get<0>(shared_end_point.value())
           : "vertex-" + std::to_string(params.next_vertex_index++);
 
   feature.sketch_parameters->arcs.push_back(SketchArc{
       .id = "arc-" + std::to_string(arc_index),
-      .start_point_id = start_point_id,
-      .end_point_id = end_point_id,
+      .start_vertex_id = start_vertex_id,
+      .end_vertex_id = end_vertex_id,
       .center_x = center_x,
       .center_y = center_y,
       .radius = radius,
@@ -117,9 +117,9 @@ std::optional<std::tuple<double, double>> find_point_position(
     const SketchFeatureParameters& parameters,
     const std::string& point_id) {
   for (const auto& line : parameters.lines) {
-    if (line.start_point_id == point_id)
+    if (line.start_vertex_id == point_id)
       return std::tuple<double, double>{line.start_x, line.start_y};
-    if (line.end_point_id == point_id)
+    if (line.end_vertex_id == point_id)
       return std::tuple<double, double>{line.end_x, line.end_y};
   }
   const auto point_it = std::find_if(

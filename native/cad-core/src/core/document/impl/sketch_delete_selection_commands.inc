@@ -54,12 +54,12 @@ DocumentState DocumentManager::delete_sketch_selection(
 
   for (const auto& point_id : selected_point_ids) {
     for (const auto& line : parameters.lines) {
-      if (line.start_point_id == point_id || line.end_point_id == point_id) {
+      if (line.start_vertex_id == point_id || line.end_vertex_id == point_id) {
         add_id(line_ids, line.id);
       }
     }
     for (const auto& arc : parameters.arcs) {
-      if (arc.start_point_id == point_id || arc.end_point_id == point_id) {
+      if (arc.start_vertex_id == point_id || arc.end_vertex_id == point_id) {
         add_id(arc_ids, arc.id);
       }
     }
@@ -124,8 +124,8 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> deleted_point_ids;
   for (const auto& line : parameters.lines) {
     if (id_in_set(line_ids, line.id)) {
-      add_id(deleted_point_ids, line.start_point_id);
-      add_id(deleted_point_ids, line.end_point_id);
+      add_id(deleted_point_ids, line.start_vertex_id);
+      add_id(deleted_point_ids, line.end_vertex_id);
     }
   }
   for (const auto& circle : parameters.circles) {
@@ -135,15 +135,15 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& arc : parameters.arcs) {
     if (id_in_set(arc_ids, arc.id)) {
-      add_id(deleted_point_ids, arc.start_point_id);
-      add_id(deleted_point_ids, arc.end_point_id);
+      add_id(deleted_point_ids, arc.start_vertex_id);
+      add_id(deleted_point_ids, arc.end_vertex_id);
     }
   }
   // Remove points that are still referenced by surviving entities.
   for (const auto& line : parameters.lines) {
     if (!id_in_set(line_ids, line.id)) {
-      deleted_point_ids.erase(line.start_point_id);
-      deleted_point_ids.erase(line.end_point_id);
+      deleted_point_ids.erase(line.start_vertex_id);
+      deleted_point_ids.erase(line.end_vertex_id);
     }
   }
   for (const auto& circle : parameters.circles) {
@@ -153,8 +153,8 @@ DocumentState DocumentManager::delete_sketch_selection(
   }
   for (const auto& arc : parameters.arcs) {
     if (!id_in_set(arc_ids, arc.id)) {
-      deleted_point_ids.erase(arc.start_point_id);
-      deleted_point_ids.erase(arc.end_point_id);
+      deleted_point_ids.erase(arc.start_vertex_id);
+      deleted_point_ids.erase(arc.end_vertex_id);
     }
   }
 

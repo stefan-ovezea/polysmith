@@ -70,8 +70,8 @@ void regenerate_mirror_preview(SketchFeatureParameters &parameters) {
       SketchLine reflected{};
       const std::string suffix = std::to_string(local_line_counter++);
       reflected.id = "pending-mirror-line-" + suffix;
-      reflected.start_point_id = reflected.id + "-start";
-      reflected.end_point_id = reflected.id + "-end";
+      reflected.start_vertex_id = reflected.id + "-start";
+      reflected.end_vertex_id = reflected.id + "-end";
       reflected.start_x = new_start_x;
       reflected.start_y = new_start_y;
       reflected.end_x = new_end_x;

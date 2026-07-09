@@ -19,8 +19,8 @@ static int count_driving_on_point_pair(
       auto lit = std::find_if(parameters.lines.begin(), parameters.lines.end(),
           [&](const SketchLine& l) { return l.id == dim.entity_id; });
       if (lit == parameters.lines.end()) continue;
-      pa = lit->start_point_id;
-      pb = lit->end_point_id;
+      pa = lit->start_vertex_id;
+      pb = lit->end_vertex_id;
     } else if (!dim.secondary_entity_id.empty()) {
       pa = dim.entity_id;
       pb = dim.secondary_entity_id;
@@ -35,7 +35,7 @@ static int count_driving_on_point_pair(
   for (const auto& line : parameters.lines) {
     if (!line.constraint.has_value()) continue;
     if (line.constraint_driven) continue;
-    std::string pa = line.start_point_id, pb = line.end_point_id;
+    std::string pa = line.start_vertex_id, pb = line.end_vertex_id;
     if (pa > pb) std::swap(pa, pb);
     if (pa == pair_a && pb == pair_b) count++;
   }

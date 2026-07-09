@@ -66,9 +66,9 @@ DocumentState DocumentManager::project_profile_into_sketch(
          index < sketch_it->sketch_parameters->lines.size(); ++index) {
       const auto& line = sketch_it->sketch_parameters->lines[index];
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.start_point_id, true);
+          *sketch_it, line.start_vertex_id, true);
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.end_point_id, true);
+          *sketch_it, line.end_vertex_id, true);
       record.generated_line_ids.push_back(line.id);
     }
   };

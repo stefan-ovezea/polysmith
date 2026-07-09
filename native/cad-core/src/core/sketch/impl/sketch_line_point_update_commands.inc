@@ -50,7 +50,7 @@ void update_sketch_line(FeatureEntry& feature,
                     line_it->start_x,
                     line_it->start_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->start_point_id,
+                                   line_it->start_vertex_id,
                                    line_it->start_x,
                                    line_it->start_y);
   }
@@ -59,7 +59,7 @@ void update_sketch_line(FeatureEntry& feature,
                     line_it->end_x,
                     line_it->end_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->end_point_id,
+                                   line_it->end_vertex_id,
                                    line_it->end_x,
                                    line_it->end_y);
   }
@@ -120,9 +120,9 @@ void update_sketch_point(FeatureEntry& feature,
           a.end_x += dx;
           a.end_y += dy;
           // Move connected lines that share the arc's endpoints.
-          propagate_connected_point_move(parameters, a.start_point_id,
+          propagate_connected_point_move(parameters, a.start_vertex_id,
                                          a.start_x, a.start_y);
-          propagate_connected_point_move(parameters, a.end_point_id,
+          propagate_connected_point_move(parameters, a.end_vertex_id,
                                          a.end_x, a.end_y);
           sync_all_line_dimensions(parameters);
           refresh_sketch_derived_state(feature);
