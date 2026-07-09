@@ -224,7 +224,7 @@ export interface SessionState {
 export interface SnapCandidateEntry {
   kind: string;
   entity_id: string;
-  point_id: string;
+  vertex_id: string;
   local_x: number;
   local_y: number;
   label: string;

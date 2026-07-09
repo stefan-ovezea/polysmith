@@ -114,7 +114,7 @@ function commitEndpointDrag({
 }) {
   const snapResult = dragSnapResultRef.current;
   if (snapResult) {
-    void updateSketchPoint(drag.pointId, snapResult.snapX, snapResult.snapY);
+    void updateSketchPoint(drag.vertexId, snapResult.snapX, snapResult.snapY);
     return;
   }
 
@@ -130,6 +130,6 @@ function commitEndpointDrag({
     activeSketchPlaneFrameRef.current,
   );
   if (rawPoint) {
-    void updateSketchPoint(drag.pointId, rawPoint.local[0], rawPoint.local[1]);
+    void updateSketchPoint(drag.vertexId, rawPoint.local[0], rawPoint.local[1]);
   }
 }

@@ -68,30 +68,6 @@ export function computePointDistanceAxis(
   return vDist > 1e-6 ? "y" : "x";
 }
 
-/** Resolve an entity click to a concrete point ID for point-to-point dimensioning. */
-function resolveEntityToPoint(
-  sketch: SketchFeatureParameters | null,
-  entityId: string,
-  entityKind: string | null,
-): string | null {
-  if (!sketch) return null;
-  if (entityKind === "circle") {
-    return `point-circle-${entityId}-center`;
-  }
-  if (entityKind === "polygon") {
-    return `point-polygon-${entityId}-center`;
-  }
-  if (entityKind === "line") {
-    const line = sketch.lines.find(l => l.line_id === entityId);
-    if (!line) return null;
-    // Both endpoints exist — return the start point (the point-to-point
-    // path will measure correctly regardless of which endpoint we pick,
-    // since the user hasn't specified a preference).
-    return line.start_point_id;
-  }
-  return null;
-}
-
 function entityIdFromSketchPointId(
   pointId: string,
   kinds: readonly EntityKind[] = ["line", "circle", "polygon", "arc"],
@@ -108,7 +84,7 @@ function entityIdFromSketchPointId(
   // This is the preferred path — no regex, no entity-walking.
   if (sketch) {
     for (const pt of sketch.points) {
-      if (pt.point_id === pointId && pt.geometry_owner_ids?.length) {
+      if (pt.vertex_id === pointId && pt.geometry_owner_ids?.length) {
         const ownerId = pt.geometry_owner_ids[0];
         // Check if the owner kind matches the requested kinds.
         for (const kind of kinds) {
@@ -119,14 +95,14 @@ function entityIdFromSketchPointId(
   }
 
   // Fallback for bare point-N IDs (arc endpoints, shared topology):
-  // search entities by their start_point_id / end_point_id fields.
+  // search entities by their start_vertex_id / end_vertex_id fields.
   if (sketch) {
     for (const line of sketch.lines) {
-      if (line.start_point_id === pointId || line.end_point_id === pointId)
+      if (line.start_vertex_id === pointId || line.end_vertex_id === pointId)
         return line.line_id;
     }
     for (const arc of (sketch.arcs ?? [])) {
-      if (arc.start_point_id === pointId || arc.end_point_id === pointId)
+      if (arc.start_vertex_id === pointId || arc.end_vertex_id === pointId)
         return arc.arc_id;
     }
     for (const circle of sketch.circles) {
@@ -186,7 +162,7 @@ type DimensionPointPickAction =
     }
   | {
       kind: "stage_point";
-      pointId: string;
+      vertexId: string;
       entityId: string | null;
     };
 
@@ -497,7 +473,7 @@ function handleDimensionPointHit(context: DimensionToolClickContext) {
   }
 
   context.stageFirstPoint({
-    id: pointAction.pointId,
+    id: pointAction.vertexId,
     x: 0,
     y: 0,
   });
@@ -781,7 +757,7 @@ function dimensionPointPickAction({
 
   return {
     kind: "stage_point",
-    pointId,
+    vertexId: pointId,
     entityId: entityIdFromSketchPointId(pointId),
   };
 }

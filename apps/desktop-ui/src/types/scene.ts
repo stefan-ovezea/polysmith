@@ -235,9 +235,8 @@ export interface SketchVertexScene {
   // the user can tell derived geometry from sketched geometry at a
   // glance.
   // "quadrant" — derived cardinal point on a circle perimeter.
+  /** vertex-N ID from Phase 4 vertex unification (canonical). */
   id: string;
-  /** vertex-N ID from Phase 4 vertex unification. */
-  vertexId?: string;
   kind: "endpoint" | "center" | "projected" | "quadrant";
   position: [number, number, number];
   isFixed: boolean;

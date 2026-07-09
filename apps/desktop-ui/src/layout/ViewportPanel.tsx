@@ -675,7 +675,7 @@ export function ViewportPanel({
   // a line draft. The first click of a line stores the start's host
   // (if any); the second click stores the end's host. After the
   // resulting `add_sketch_line` IPC settles, the post-add effect
-  // reads the new line's start_point_id / end_point_id and dispatches
+  // reads the new line's start_vertex_id / end_vertex_id and dispatches
   // `set_sketch_midpoint_anchor` for each side that snapped to a
   // midpoint. The line count baseline at dispatch time guards against
   // misattributing the anchor to a later line.
@@ -1366,8 +1366,8 @@ export function ViewportPanel({
 
     linearPlacementRef.current = {
       lineId,
-      startPointId: line?.start_point_id ?? "",
-      endPointId: line?.end_point_id ?? "",
+      startPointId: line?.start_vertex_id ?? "",
+      endPointId: line?.end_vertex_id ?? "",
       startX: line?.start_x ?? 0,
       startY: line?.start_y ?? 0,
       endX: line?.end_x ?? 0,
@@ -2657,8 +2657,8 @@ export function ViewportPanel({
         const sketch = sketchLinesRef.current;
         const line = sketch?.lines.find((l) => l.line_id === linearPlacementRef.current!.lineId);
         if (line) {
-          linearPlacementRef.current.startPointId = line.start_point_id;
-          linearPlacementRef.current.endPointId = line.end_point_id;
+          linearPlacementRef.current.startPointId = line.start_vertex_id;
+          linearPlacementRef.current.endPointId = line.end_vertex_id;
           linearPlacementRef.current.startX = line.start_x;
           linearPlacementRef.current.startY = line.start_y;
           linearPlacementRef.current.endX = line.end_x;

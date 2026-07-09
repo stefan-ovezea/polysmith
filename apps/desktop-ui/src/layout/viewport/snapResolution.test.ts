@@ -35,14 +35,14 @@ function sketchParameters() {
     plane_id: "ref-plane-xy",
     plane_frame: null,
     points: [
-      { point_id: "p1", x: -10, y: 0, is_fixed: false },
-      { point_id: "p2", x: 10, y: 0, is_fixed: false },
+      { vertex_id: "p1", x: -10, y: 0, is_fixed: false },
+      { vertex_id: "p2", x: 10, y: 0, is_fixed: false },
     ],
     lines: [
       {
         line_id: "l1",
-        start_point_id: "p1",
-        end_point_id: "p2",
+        start_vertex_id: "p1",
+        end_vertex_id: "p2",
         start_x: -10,
         start_y: 0,
         end_x: 10,

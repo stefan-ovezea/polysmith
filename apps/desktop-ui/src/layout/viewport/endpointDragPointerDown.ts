@@ -48,7 +48,7 @@ export function beginEndpointDragPointerDown({
     return false;
   }
 
-  const point = sketch.points?.find((entry) => entry.point_id === hit.id);
+  const point = sketch.points?.find((entry) => entry.vertex_id === hit.id);
   if (!point || point.is_fixed) {
     return false;
   }
@@ -65,8 +65,7 @@ export function beginEndpointDragPointerDown({
   }
 
   endpointDragRef.current = {
-    // Send old point_id to the core (vertex migration Step 2: core still expects old IDs)
-    pointId: point.point_id,
+    vertexId: point.vertex_id,
     startClientX: event.clientX,
     startClientY: event.clientY,
     startLocalX: rawPoint.local[0],

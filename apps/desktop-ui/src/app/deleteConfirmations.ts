@@ -74,7 +74,7 @@ interface SketchSelectionDeleteContext {
   runAction: RunAction;
   deleteSketchSelection: (
     entityIds: string[],
-    pointIds: string[],
+    vertexIds: string[],
     profileIds: string[],
   ) => Promise<void>;
 }
@@ -87,7 +87,7 @@ export function deleteSketchSelectionFromContext({
   runAction(async () => {
     await deleteSketchSelection(
       selection.entityIds,
-      selection.pointIds,
+      selection.vertexIds,
       selection.profileIds,
     );
   });
@@ -143,7 +143,7 @@ export function confirmAndDeleteSketchSelectionFromContext({
 function isEmptySketchDeleteSelection(selection: SketchDeleteSelection) {
   return (
     selection.entityIds.length === 0 &&
-    selection.pointIds.length === 0 &&
+    selection.vertexIds.length === 0 &&
     selection.profileIds.length === 0
   );
 }

@@ -82,7 +82,7 @@ export function handleEndpointDragPointerMove(
   );
 
   params.pendingDragRef.current = {
-    pointId: endpointDrag.pointId,
+    vertexId: endpointDrag.vertexId,
     x: rawPoint.local[0],
     y: rawPoint.local[1],
   };
