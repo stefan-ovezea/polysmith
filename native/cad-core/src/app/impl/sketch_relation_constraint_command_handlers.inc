@@ -25,8 +25,8 @@
 
   if (command.type == "set_sketch_coincident_constraint") {
     const auto document = document_manager().set_sketch_coincident_constraint(
-        read_string(command.payload, "point_id"),
-        read_string(command.payload, "other_point_id"));
+        read_string(command.payload, "vertex_id"),
+        read_string(command.payload, "other_vertex_id"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

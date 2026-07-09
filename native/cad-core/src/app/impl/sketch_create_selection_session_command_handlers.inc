@@ -1,11 +1,11 @@
-  if (command.type == "select_sketch_point") {
+  if (command.type == "select_sketch_vertex") {
     bool additive = false;
     if (command.payload.contains("additive") &&
         command.payload.at("additive").is_boolean()) {
       additive = command.payload.at("additive").get<bool>();
     }
     const auto document = document_manager().select_sketch_point(
-        read_string(command.payload, "point_id"), additive);
+        read_string(command.payload, "vertex_id"), additive);
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
@@ -15,7 +15,7 @@
 
   if (command.type == "set_sketch_vertex_fixed") {
     const auto document = document_manager().set_sketch_vertex_fixed(
-        read_string(command.payload, "point_id"),
+        read_string(command.payload, "vertex_id"),
         command.payload.at("is_fixed").get<bool>());
 
     polysmith::protocol::write_message(

@@ -24,7 +24,7 @@
       host_line_id = command.payload.at("host_line_id").get<std::string>();
     }
     const auto document = document_manager().set_sketch_midpoint_anchor(
-        read_string(command.payload, "point_id"), host_line_id);
+        read_string(command.payload, "vertex_id"), host_line_id);
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
@@ -32,7 +32,7 @@
     return;
   }
 
-  if (command.type == "set_sketch_point_line_anchor") {
+  if (command.type == "set_sketch_vertex_line_anchor") {
     std::string host_line_id;
     if (command.payload.contains("host_line_id") &&
         command.payload.at("host_line_id").is_string()) {
@@ -44,7 +44,7 @@
       t = command.payload.at("t").get<double>();
     }
     const auto document = document_manager().set_sketch_point_line_anchor(
-        read_string(command.payload, "point_id"), host_line_id, t);
+        read_string(command.payload, "vertex_id"), host_line_id, t);
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

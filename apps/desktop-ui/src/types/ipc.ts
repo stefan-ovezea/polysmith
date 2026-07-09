@@ -24,13 +24,13 @@ import type {
   SetSketchMidpointAnchorCommand,
   AddSketchAngleDimensionCommand,
   AddSketchDistanceDimensionCommand,
-  AddSketchPointDistanceDimensionCommand,
+  AddSketchVertexDistanceDimensionCommand,
   AddSketchLineLengthDimensionCommand,
   AddSketchLineAngleDimensionCommand,
   AddSketchArcRadiusDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
-  SetSketchPointLineAnchorCommand,
+  SetSketchVertexLineAnchorCommand,
   AddSketchRectangleCommand,
   AddSketchCircleCommand,
   AddSketchPolygonCommand,
@@ -45,7 +45,7 @@ import type {
   DeleteSketchSelectionCommand,
   SetSketchToolCommand,
   UpdateSketchLineCommand,
-  UpdateSketchPointCommand,
+  UpdateSketchVertexCommand,
   SetSketchLineConstraintCommand,
   ClearSketchLineConstraintsCommand,
   SetSketchEqualLengthConstraintCommand,
@@ -59,14 +59,14 @@ import type {
   SetSketchParallelConstraintCommand,
   SetSketchCoincidentConstraintCommand,
   DeleteSketchCoincidentConstraintCommand,
-  SetSketchPointFixedCommand,
+  SetSketchVertexFixedCommand,
   UpdateSketchCircleCommand,
   UpdateSketchDimensionCommand,
   UpdateSketchDimensionLabelPositionCommand,
   UpdateSketchDimensionDisplayCommand,
   SelectSketchProfileCommand,
   SelectSketchEntityCommand,
-  SelectSketchPointCommand,
+  SelectSketchVertexCommand,
   SelectSketchDimensionCommand,
   FinishSketchCommand,
   ReenterSketchCommand,
@@ -711,7 +711,7 @@ export type CoreCommand =
   | StartSketchOnFaceCommand
   | SetSketchToolCommand
   | UpdateSketchLineCommand
-  | UpdateSketchPointCommand
+  | UpdateSketchVertexCommand
   | SetSketchLineConstraintCommand
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
@@ -725,20 +725,20 @@ export type CoreCommand =
   | SetSketchParallelConstraintCommand
   | SetSketchCoincidentConstraintCommand
   | DeleteSketchCoincidentConstraintCommand
-  | SetSketchPointFixedCommand
+  | SetSketchVertexFixedCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
   | UpdateSketchDimensionLabelPositionCommand
   | UpdateSketchDimensionDisplayCommand
   | SelectSketchProfileCommand
   | AddSketchDistanceDimensionCommand
-  | AddSketchPointDistanceDimensionCommand
+  | AddSketchVertexDistanceDimensionCommand
   | ExtrudeProfileCommand
   | ExtrudeFaceCommand
   | AddSketchLineCommand
   | SetSketchLineConstructionCommand
   | SetSketchMidpointAnchorCommand
-  | SetSketchPointLineAnchorCommand
+  | SetSketchVertexLineAnchorCommand
   | AddSketchAngleDimensionCommand
   | AddSketchLineLengthDimensionCommand
   | AddSketchLineAngleDimensionCommand
@@ -757,7 +757,7 @@ export type CoreCommand =
   | TrimSketchEntityCommand
   | TrimPreviewCommand
   | DeleteSketchSelectionCommand
-  | SelectSketchPointCommand
+  | SelectSketchVertexCommand
   | SelectSketchEntityCommand
   | SelectSketchDimensionCommand
   | FinishSketchCommand

@@ -28,14 +28,14 @@ import {
   makeAddSketchLineCommand,
   makeSetSketchLineConstructionCommand,
   makeSetSketchMidpointAnchorCommand,
-  makeSetSketchPointLineAnchorCommand,
+  makeSetSketchVertexLineAnchorCommand,
   makeAddSketchAngleDimensionCommand,
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
   makeAddSketchLineAngleDimensionCommand,
   makeAddSketchArcRadiusDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
-  makeAddSketchPointDistanceDimensionCommand,
+  makeAddSketchVertexDistanceDimensionCommand,
   makeAddSketchPolygonRadiusDimensionCommand,
   makeAddSketchRectangleCommand,
   makeClearSelectionCommand,
@@ -59,7 +59,7 @@ import {
   makeSelectSketchProfileCommand,
   makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
-  makeSelectSketchPointCommand,
+  makeSelectSketchVertexCommand,
   makeSetTimelineCursorCommand,
   makeRenameFeatureCommand,
   makeSetFeatureSuppressedCommand,
@@ -118,7 +118,7 @@ import {
   makeUpdateMirrorPreviewObjectsCommand,
   makeCommitMirrorPreviewCommand,
   makeCancelMirrorPreviewCommand,
-  makeSetSketchPointFixedCommand,
+  makeSetSketchVertexFixedCommand,
   makeExtrudeFaceCommand,
   makeExtrudeOpenEntitiesCommand,
   makeExtrudeProfileCommand,
@@ -131,7 +131,7 @@ import {
   makeUpdateSketchCircleCommand,
   makeUpdateSketchDimensionCommand,
   makeUpdateSketchLineCommand,
-  makeUpdateSketchPointCommand,
+  makeUpdateSketchVertexCommand,
   makeUpdateBoxFeatureCommand,
   makeUpdateCylinderFeatureCommand,
   makeUpdateExtrudeDepthCommand,
@@ -579,7 +579,7 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchPoint: async (pointId: string, x: number, y: number) => {
-      await sendCoreCommand(makeUpdateSketchPointCommand(pointId, x, y));
+      await sendCoreCommand(makeUpdateSketchVertexCommand(pointId, x, y));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -663,7 +663,7 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     setSketchPointFixed: async (pointId: string, isFixed: boolean) => {
-      await sendCoreCommand(makeSetSketchPointFixedCommand(pointId, isFixed));
+      await sendCoreCommand(makeSetSketchVertexFixedCommand(pointId, isFixed));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteSketchCoincidentConstraint: async (constraintId: string) => {
@@ -736,7 +736,7 @@ export function useCadCore() {
       t: number,
     ) => {
       await sendCoreCommand(
-        makeSetSketchPointLineAnchorCommand(pointId, hostLineId, t),
+        makeSetSketchVertexLineAnchorCommand(pointId, hostLineId, t),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -756,7 +756,7 @@ export function useCadCore() {
       axis?: "x" | "y",
     ) => {
       await sendCoreCommand(
-        makeAddSketchPointDistanceDimensionCommand(pointAId, pointBId, axis),
+        makeAddSketchVertexDistanceDimensionCommand(pointAId, pointBId, axis),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -938,7 +938,7 @@ export function useCadCore() {
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchPoint: async (pointId: string, additive = false) => {
-      await sendCoreCommand(makeSelectSketchPointCommand(pointId, additive));
+      await sendCoreCommand(makeSelectSketchVertexCommand(pointId, additive));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchEntity: async (entityId: string, additive = false) => {

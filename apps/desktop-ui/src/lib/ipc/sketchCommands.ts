@@ -61,16 +61,16 @@ export function makeUpdateSketchLineCommand(
 }
 
 
-export function makeUpdateSketchPointCommand(
-  pointId: string,
+export function makeUpdateSketchVertexCommand(
+  vertexId: string,
   x: number,
   y: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
-    type: "update_sketch_point",
+    type: "update_sketch_vertex",
     payload: {
-      point_id: pointId,
+      vertex_id: vertexId,
       x,
       y,
     },
@@ -224,15 +224,15 @@ export function makeSetSketchParallelConstraintCommand(
 
 
 export function makeSetSketchCoincidentConstraintCommand(
-  pointId: string,
-  otherPointId: string,
+  vertexId: string,
+  otherVertexId: string,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "set_sketch_coincident_constraint",
     payload: {
-      point_id: pointId,
-      other_point_id: otherPointId,
+      vertex_id: vertexId,
+      other_vertex_id: otherVertexId,
     },
   };
 }
@@ -251,15 +251,15 @@ export function makeDeleteSketchCoincidentConstraintCommand(
 }
 
 
-export function makeSetSketchPointFixedCommand(
-  pointId: string,
+export function makeSetSketchVertexFixedCommand(
+  vertexId: string,
   isFixed: boolean,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
-    type: "set_sketch_point_fixed",
+    type: "set_sketch_vertex_fixed",
     payload: {
-      point_id: pointId,
+      vertex_id: vertexId,
       is_fixed: isFixed,
     },
   };
@@ -369,14 +369,14 @@ export function makeSetSketchLineConstructionCommand(
 
 
 export function makeSetSketchMidpointAnchorCommand(
-  pointId: string,
+  vertexId: string,
   hostLineId: string,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "set_sketch_midpoint_anchor",
     payload: {
-      point_id: pointId,
+      vertex_id: vertexId,
       host_line_id: hostLineId,
     },
   };
@@ -440,17 +440,17 @@ export function makeAddSketchLineAngleDimensionCommand(
 }
 
 
-export function makeAddSketchPointDistanceDimensionCommand(
-  pointAId: string,
-  pointBId: string,
+export function makeAddSketchVertexDistanceDimensionCommand(
+  vertexAId: string,
+  vertexBId: string,
   axis?: "x" | "y",
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
-    type: "add_sketch_point_distance_dimension",
+    type: "add_sketch_vertex_distance_dimension",
     payload: {
-      point_a_id: pointAId,
-      point_b_id: pointBId,
+      vertex_a_id: vertexAId,
+      vertex_b_id: vertexBId,
       ...(axis ? { axis } : {}),
     },
   };
@@ -498,16 +498,16 @@ export function makeAddSketchPolygonRadiusDimensionCommand(
 }
 
 
-export function makeSetSketchPointLineAnchorCommand(
-  pointId: string,
+export function makeSetSketchVertexLineAnchorCommand(
+  vertexId: string,
   hostLineId: string,
   t: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
-    type: "set_sketch_point_line_anchor",
+    type: "set_sketch_vertex_line_anchor",
     payload: {
-      point_id: pointId,
+      vertex_id: vertexId,
       host_line_id: hostLineId,
       t,
     },
@@ -611,15 +611,15 @@ export function makeAddSketchArcCommand(
 }
 
 
-export function makeSelectSketchPointCommand(
-  pointId: string,
+export function makeSelectSketchVertexCommand(
+  vertexId: string,
   additive = false,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
-    type: "select_sketch_point",
+    type: "select_sketch_vertex",
     payload: {
-      point_id: pointId,
+      vertex_id: vertexId,
       additive,
     },
   };
@@ -631,7 +631,7 @@ export function makeSelectSketchPointCommand(
 // shared by both lines. v1 fillets are line-line only; line-arc
 // and arc-arc remain follow-ups.
 export function makeAddSketchFilletCommand(
-  cornerPointId: string,
+  cornerVertexId: string,
   lineAId: string,
   lineBId: string,
   radius: number,
@@ -640,7 +640,7 @@ export function makeAddSketchFilletCommand(
     id: crypto.randomUUID(),
     type: "add_sketch_fillet",
     payload: {
-      corner_point_id: cornerPointId,
+      corner_vertex_id: cornerVertexId,
       line_a_id: lineAId,
       line_b_id: lineBId,
       radius,
@@ -735,7 +735,7 @@ export function makeTrimSketchEntityCommand(
 
 export function makeDeleteSketchSelectionCommand(
   entityIds: readonly string[],
-  pointIds: readonly string[],
+  vertexIds: readonly string[],
   profileIds: readonly string[],
 ): CoreCommand {
   return {
@@ -743,7 +743,7 @@ export function makeDeleteSketchSelectionCommand(
     type: "delete_sketch_selection",
     payload: {
       entity_ids: [...entityIds],
-      point_ids: [...pointIds],
+      vertex_ids: [...vertexIds],
       profile_ids: [...profileIds],
     },
   };

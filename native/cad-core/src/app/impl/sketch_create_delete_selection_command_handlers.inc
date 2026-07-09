@@ -10,9 +10,9 @@
         }
       }
     }
-    if (command.payload.contains("point_ids") &&
-        command.payload.at("point_ids").is_array()) {
-      for (const auto& id : command.payload.at("point_ids")) {
+    if (command.payload.contains("vertex_ids") &&
+        command.payload.at("vertex_ids").is_array()) {
+      for (const auto& id : command.payload.at("vertex_ids")) {
         if (id.is_string()) {
           point_ids.push_back(id.get<std::string>());
         }
