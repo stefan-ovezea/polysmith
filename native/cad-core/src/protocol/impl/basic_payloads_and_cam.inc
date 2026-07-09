@@ -199,7 +199,7 @@ json to_payload(const polysmith::core::CamGeometryReferences& geo) {
 
 json to_payload(const polysmith::core::CamPointLocation& loc) {
   return {
-      {"point_id", loc.point_id},
+      {"vertex_id", loc.vertex_id},
       {"position", array3(loc.position)},
       {"surface_normal", array3(loc.surface_normal)},
       {"hole_diameter", loc.hole_diameter.has_value()

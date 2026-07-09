@@ -38,7 +38,7 @@
                          feature.sketch_parameters->midpoint_anchors) {
                       anchors.push_back({
                           {"anchor_id", anchor.id},
-                          {"point_id", anchor.point_id},
+                          {"vertex_id", anchor.vertex_id},
                           {"line_id", anchor.line_id},
                       });
                     }
@@ -51,7 +51,7 @@
                          feature.sketch_parameters->point_line_anchors) {
                       anchors.push_back({
                           {"anchor_id", anchor.id},
-                          {"point_id", anchor.point_id},
+                          {"vertex_id", anchor.vertex_id},
                           {"line_id", anchor.line_id},
                           {"t", anchor.t},
                       });

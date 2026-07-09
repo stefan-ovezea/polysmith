@@ -9,7 +9,7 @@ namespace {
 constexpr double kCoincidentTolerance = 0.01; // mm
 
 struct NearestPoint {
-  std::string point_id;
+  std::string vertex_id;
   double x;
   double y;
 };
@@ -70,12 +70,12 @@ int run_inference_on_new_line(SketchFeatureParameters& params,
       params, line.end_x, line.end_y, line.end_vertex_id);
   if (end_near.has_value() &&
       !constraint_already_exists(params, "coincident",
-          {line.end_vertex_id, end_near->point_id})) {
+          {line.end_vertex_id, end_near->vertex_id})) {
     params.constraints.push_back(SketchConstraint{
         .constraint_id = "constraint-" +
             std::to_string(params.constraints.size() + 1),
         .kind = "coincident",
-        .target_ids = {line.end_vertex_id, end_near->point_id},
+        .target_ids = {line.end_vertex_id, end_near->vertex_id},
     });
     ++count;
   }

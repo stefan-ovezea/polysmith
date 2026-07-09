@@ -558,7 +558,7 @@ export const documentStateSchema = z.object({
                 generated_line_ids: z.array(z.string()).default([]),
                 generated_circle_ids: z.array(z.string()).default([]),
                 generated_arc_ids: z.array(z.string()).default([]),
-                generated_point_id: z.string().default(""),
+                generated_vertex_id: z.string().default(""),
                 dependency_broken: z.boolean().default(false),
                 dependency_warning: z.string().default(""),
               }),

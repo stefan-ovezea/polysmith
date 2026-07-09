@@ -32,8 +32,8 @@ bool refresh_sketch_projections(const DocumentState& prefix,
       }
       const auto local = world_to_sketch_local(
           frame, position->x, position->y, position->z);
-      if (!projection.generated_point_id.empty()) {
-        patch_projected_point(parameters, projection.generated_point_id,
+      if (!projection.generated_vertex_id.empty()) {
+        patch_projected_point(parameters, projection.generated_vertex_id,
                               local.first, local.second);
       }
     } else if (projection.source_kind == "edge") {

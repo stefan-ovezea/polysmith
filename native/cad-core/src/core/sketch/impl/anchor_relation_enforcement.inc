@@ -15,7 +15,7 @@ void enforce_midpoint_anchors(SketchFeatureParameters& parameters) {
     }
     const double mid_x = (host_it->start_x + host_it->end_x) / 2.0;
     const double mid_y = (host_it->start_y + host_it->end_y) / 2.0;
-    propagate_connected_point_move(parameters, anchor.point_id, mid_x, mid_y);
+    propagate_connected_point_move(parameters, anchor.vertex_id, mid_x, mid_y);
   }
 }
 
@@ -36,6 +36,6 @@ void enforce_point_line_anchors(SketchFeatureParameters& parameters) {
         host_it->start_x + anchor.t * (host_it->end_x - host_it->start_x);
     const double ty =
         host_it->start_y + anchor.t * (host_it->end_y - host_it->start_y);
-    propagate_connected_point_move(parameters, anchor.point_id, tx, ty);
+    propagate_connected_point_move(parameters, anchor.vertex_id, tx, ty);
   }
 }

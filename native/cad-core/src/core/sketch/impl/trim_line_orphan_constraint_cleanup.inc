@@ -7,11 +7,10 @@
   }
   for (const auto &c : params.circles) {
     live_pt.insert(circle_center_vertex_id(c));
-    // Quadrants still use legacy format (Phase 4.1 will update)
-    live_pt.insert("point-circle-" + c.id + "-quadrant-0");
-    live_pt.insert("point-circle-" + c.id + "-quadrant-1");
-    live_pt.insert("point-circle-" + c.id + "-quadrant-2");
-    live_pt.insert("point-circle-" + c.id + "-quadrant-3");
+    live_pt.insert("vertex-" + c.id + "-quadrant-0");
+    live_pt.insert("vertex-" + c.id + "-quadrant-1");
+    live_pt.insert("vertex-" + c.id + "-quadrant-2");
+    live_pt.insert("vertex-" + c.id + "-quadrant-3");
   }
   for (const auto &a : params.arcs) {
     live_pt.insert(a.start_vertex_id);

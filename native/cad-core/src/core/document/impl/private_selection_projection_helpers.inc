@@ -30,7 +30,7 @@ bool projection_has_generated_entities(const SketchProjection& projection) {
   return !projection.generated_line_ids.empty() ||
          !projection.generated_circle_ids.empty() ||
          !projection.generated_arc_ids.empty() ||
-         !projection.generated_point_id.empty();
+         !projection.generated_vertex_id.empty();
 }
 
 bool projection_generates_entity(const SketchProjection& projection,

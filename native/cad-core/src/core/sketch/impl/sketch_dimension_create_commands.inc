@@ -70,8 +70,8 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
         parameters.lines.begin(),
         parameters.lines.end(),
         [&](const SketchLine& l) {
-          return (l.start_point_id == point_a_id && l.end_point_id == point_b_id) ||
-                 (l.start_point_id == point_b_id && l.end_point_id == point_a_id);
+          return (l.start_vertex_id == point_a_id && l.end_vertex_id == point_b_id) ||
+                 (l.start_vertex_id == point_b_id && l.end_vertex_id == point_a_id);
         });
     if (matching_line != parameters.lines.end()) {
       const auto existing_ll = std::find_if(
@@ -121,7 +121,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       dimension_it->is_auto = false;
       dimension_it->value = measure_line_length(line);
       finalize_new_dimension(feature, parameters, dimension_id,
-                             line.start_point_id, line.end_point_id);
+                             line.start_vertex_id, line.end_vertex_id);
       return;
     }
     // Already a manual dimension — update value to match current geometry.
@@ -141,8 +141,8 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
         if (!dim.display_as.empty()) return false;
         const std::string& pa = dim.entity_id;
         const std::string& pb = dim.secondary_entity_id;
-        return (pa == line.start_point_id && pb == line.end_point_id) ||
-               (pa == line.end_point_id && pb == line.start_point_id);
+        return (pa == line.start_vertex_id && pb == line.end_vertex_id) ||
+               (pa == line.end_vertex_id && pb == line.start_vertex_id);
       });
   if (dup_pt != parameters.dimensions.end()) {
     parameters.dimensions.erase(dup_pt);
@@ -156,7 +156,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   });
 
   finalize_new_dimension(feature, parameters, dimension_id,
-                         line.start_point_id, line.end_point_id);
+                         line.start_vertex_id, line.end_vertex_id);
 }
 
 void add_sketch_line_angle_dimension(FeatureEntry& feature,

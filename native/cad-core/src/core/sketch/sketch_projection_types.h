@@ -36,7 +36,7 @@ struct SketchProjection {
   std::vector<std::string> generated_arc_ids;
   // For vertex projections only — the `SketchProjectedPoint::id`
   // that was minted. Empty for face / edge projections.
-  std::string generated_point_id;
+  std::string generated_vertex_id;
   bool dependency_broken = false;
   std::string dependency_warning;
 };

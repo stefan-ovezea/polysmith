@@ -1,8 +1,8 @@
 json to_payload(const polysmith::core::ViewportSketchLinePrimitive& primitive) {
   return {
       {"line_id", primitive.line_id},
-      {"start_point_id", primitive.start_point_id},
-      {"end_point_id", primitive.end_point_id},
+      {"start_vertex_id", primitive.start_vertex_id},
+      {"end_vertex_id", primitive.end_vertex_id},
       {"plane_id", primitive.plane_id},
       {"start",
        {
@@ -68,8 +68,8 @@ json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive)
 json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
   return {
       {"arc_id", primitive.arc_id},
-      {"start_point_id", primitive.start_point_id},
-      {"end_point_id", primitive.end_point_id},
+      {"start_vertex_id", primitive.start_vertex_id},
+      {"end_vertex_id", primitive.end_vertex_id},
       {"plane_id", primitive.plane_id},
       {"plane_frame",
        primitive.plane_frame.has_value()
@@ -103,7 +103,7 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
 
 json to_payload(const polysmith::core::ViewportSketchVertexPrimitive& primitive) {
   json j = {
-      {"point_id", primitive.point_id},
+      {"vertex_id", primitive.vertex_id},
       {"vertex_id", primitive.vertex_id},
       {"plane_id", primitive.plane_id},
       {"kind", primitive.kind},

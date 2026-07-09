@@ -23,8 +23,8 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
 
   for (const auto& line : parameters.lines) {
     const bool spans_points =
-        (line.start_point_id == point_id && line.end_point_id == other_point_id) ||
-        (line.start_point_id == other_point_id && line.end_point_id == point_id);
+        (line.start_vertex_id == point_id && line.end_vertex_id == other_point_id) ||
+        (line.start_vertex_id == other_point_id && line.end_vertex_id == point_id);
     if (spans_points) {
       throw std::runtime_error(
           "Cannot make both endpoints of a sketch line coincident");
@@ -119,8 +119,8 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
   // Find all lines sharing the merged point.
   std::vector<SketchLine*> affected_lines;
   for (auto& line : parameters.lines) {
-    if (line.start_point_id == merged_point_id ||
-        line.end_point_id == merged_point_id) {
+    if (line.start_vertex_id == merged_point_id ||
+        line.end_vertex_id == merged_point_id) {
       affected_lines.push_back(&line);
     }
   }
@@ -133,11 +133,11 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
       const std::string new_id =
           "vertex-" + std::to_string(parameters.next_vertex_index++);
       auto* line = affected_lines[i];
-      if (line->start_point_id == merged_point_id) {
-        line->start_point_id = new_id;
+      if (line->start_vertex_id == merged_point_id) {
+        line->start_vertex_id = new_id;
       }
-      if (line->end_point_id == merged_point_id) {
-        line->end_point_id = new_id;
+      if (line->end_vertex_id == merged_point_id) {
+        line->end_vertex_id = new_id;
       }
     }
   }

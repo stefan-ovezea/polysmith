@@ -115,8 +115,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                   {
                       SketchLine{
                           .id = "line-1",
-                          .start_point_id = "point-a",
-                          .end_point_id = "point-b",
+                          .start_vertex_id = "point-a",
+                          .end_vertex_id = "point-b",
                           .start_x = 0.0,
                           .start_y = 0.0,
                           .end_x = 40.0,
@@ -125,8 +125,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-2",
-                          .start_point_id = "point-b",
-                          .end_point_id = "point-c",
+                          .start_vertex_id = "point-b",
+                          .end_vertex_id = "point-c",
                           .start_x = 40.03,
                           .start_y = 0.0,
                           .end_x = 40.0,
@@ -135,8 +135,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-3",
-                          .start_point_id = "point-c",
-                          .end_point_id = "point-d",
+                          .start_vertex_id = "point-c",
+                          .end_vertex_id = "point-d",
                           .start_x = 40.0,
                           .start_y = 20.0,
                           .end_x = 0.0,
@@ -145,8 +145,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-4",
-                          .start_point_id = "point-d",
-                          .end_point_id = "point-a",
+                          .start_vertex_id = "point-d",
+                          .end_vertex_id = "point-a",
                           .start_x = 0.0,
                           .start_y = 20.0,
                           .end_x = 0.0,
@@ -713,7 +713,7 @@ RectWithCorner make_rect_with_top_right_corner(int feature_index) {
       continue;
     }
     const std::string corner_id =
-        start_at_corner ? line.start_point_id : line.end_point_id;
+        start_at_corner ? line.start_vertex_id : line.end_vertex_id;
     if (result.top_right_corner_id.empty()) {
       result.top_right_corner_id = corner_id;
     }

@@ -558,7 +558,7 @@ export function ViewportPanel({
   const endpointDragRef = useRef<EndpointDrag | null>(null);
   // rAF batching for endpoint drag — same pattern as flushMoveGizmoChange.
   const pendingDragRef = useRef<{
-    pointId: string;
+    vertexId: string;
     x: number;
     y: number;
   } | null>(null);

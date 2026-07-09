@@ -49,7 +49,7 @@
             arr.push_back({
                 {"kind", c.kind},
                 {"entity_id", c.entity_id},
-                {"point_id", c.point_id},
+                {"vertex_id", c.vertex_id},
                 {"local_x", c.local_x},
                 {"local_y", c.local_y},
                 {"label", c.label},

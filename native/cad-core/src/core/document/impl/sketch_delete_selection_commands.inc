@@ -212,7 +212,7 @@ DocumentState DocumentManager::delete_sketch_selection(
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor& anchor) {
-                       return id_in_set(selected_point_ids, anchor.point_id) ||
+                       return id_in_set(selected_point_ids, anchor.vertex_id) ||
                               id_in_set(line_ids, anchor.line_id);
                      }),
       parameters.midpoint_anchors.end());
@@ -220,7 +220,7 @@ DocumentState DocumentManager::delete_sketch_selection(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
                      [&](const SketchVertexLineAnchor& anchor) {
-                       return id_in_set(selected_point_ids, anchor.point_id) ||
+                       return id_in_set(selected_point_ids, anchor.vertex_id) ||
                               id_in_set(line_ids, anchor.line_id);
                      }),
       parameters.point_line_anchors.end());
@@ -228,9 +228,9 @@ DocumentState DocumentManager::delete_sketch_selection(
     remove_ids_from_vector(projection.generated_line_ids, line_ids);
     remove_ids_from_vector(projection.generated_circle_ids, circle_ids);
     remove_ids_from_vector(projection.generated_arc_ids, arc_ids);
-    if (!projection.generated_point_id.empty() &&
-        id_in_set(projected_point_ids, projection.generated_point_id)) {
-      projection.generated_point_id.clear();
+    if (!projection.generated_vertex_id.empty() &&
+        id_in_set(projected_point_ids, projection.generated_vertex_id)) {
+      projection.generated_vertex_id.clear();
     }
   }
   parameters.projections.erase(

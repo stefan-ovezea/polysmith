@@ -3,8 +3,8 @@ import type { ArmedSketchConstraint } from "@/types";
 import type { SelectedConstraintState } from "./contextMenuState";
 
 export interface CoincidentLineEndpointFallback {
-  pointId: string;
-  pointKind: "endpoint" | "center" | "quadrant";
+  vertexId: string;
+  vertexKind: "endpoint" | "center" | "quadrant";
   distance: number;
 }
 

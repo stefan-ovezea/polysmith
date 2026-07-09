@@ -809,8 +809,8 @@ export function createViewportScene(
           projectedArcIds.add(id);
           projectedEntityIds.add(id);
         });
-        if (projection.generated_point_id) {
-          projectedFixedPointIds.add(projection.generated_point_id);
+        if (projection.generated_vertex_id) {
+          projectedFixedPointIds.add(projection.generated_vertex_id);
         }
       }
     }

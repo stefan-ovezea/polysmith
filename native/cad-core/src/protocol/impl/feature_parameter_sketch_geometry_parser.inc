@@ -2,8 +2,8 @@
     for (const auto& line_payload : payload.at("lines")) {
       polysmith::core::SketchLine line{};
       line.id = read_string(line_payload, "line_id");
-      line.start_point_id = read_string(line_payload, "start_point_id");
-      line.end_point_id = read_string(line_payload, "end_point_id");
+      line.start_vertex_id = read_string(line_payload, "start_vertex_id");
+      line.end_vertex_id = read_string(line_payload, "end_vertex_id");
       line.start_x = read_number(line_payload, "start_x");
       line.start_y = read_number(line_payload, "start_y");
       line.end_x = read_number(line_payload, "end_x");
@@ -38,8 +38,8 @@
     for (const auto& arc_payload : payload.at("arcs")) {
       polysmith::core::SketchArc arc{};
       arc.id = read_string(arc_payload, "arc_id");
-      arc.start_point_id = read_string(arc_payload, "start_point_id");
-      arc.end_point_id = read_string(arc_payload, "end_point_id");
+      arc.start_vertex_id = read_string(arc_payload, "start_vertex_id");
+      arc.end_vertex_id = read_string(arc_payload, "end_vertex_id");
       arc.center_x = read_number(arc_payload, "center_x");
       arc.center_y = read_number(arc_payload, "center_y");
       arc.radius = read_number(arc_payload, "radius");
@@ -99,7 +99,7 @@
   if (payload.contains("points") && payload.at("points").is_array()) {
     for (const auto& point_payload : payload.at("points")) {
       polysmith::core::SketchVertex point{};
-      point.id = read_string(point_payload, "point_id");
+      point.id = read_string(point_payload, "vertex_id");
       point.kind = read_string(point_payload, "kind");
       point.x = read_number(point_payload, "x");
       point.y = read_number(point_payload, "y");

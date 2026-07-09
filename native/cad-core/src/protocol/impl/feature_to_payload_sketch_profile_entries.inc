@@ -3,7 +3,7 @@
                     json profiles = json::array();
                     for (const auto& profile : feature.sketch_parameters->profiles) {
                       json point_ids = json::array();
-                      for (const auto& point_id : profile.point_ids) {
+                      for (const auto& point_id : profile.vertex_ids) {
                         point_ids.push_back(point_id);
                       }
 
@@ -34,7 +34,7 @@
                       profiles.push_back({
                           {"profile_id", profile.id},
                           {"kind", profile.kind},
-                          {"point_ids", point_ids},
+                          {"vertex_ids", point_ids},
                           {"line_ids", line_ids},
                           {"points", points},
                           {"inner_loops", inner_loops},

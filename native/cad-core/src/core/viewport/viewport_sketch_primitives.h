@@ -50,7 +50,7 @@ struct ViewportSketchCirclePrimitive {
 // endpoints and center in world coordinates plus its radius and ccw
 // flag so the renderer can sample the polyline locally without
 // re-projecting back through the sketch plane. Endpoint world
-// coordinates are kept alongside `start_point_id` / `end_point_id`
+// coordinates are kept alongside `start_vertex_id` / `end_vertex_id`
 // so consumers (snapping, highlights) can look up the same shared
 // SketchVertex that lines use without an extra lookup.
 struct ViewportSketchArcPrimitive {

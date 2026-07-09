@@ -31,7 +31,7 @@ export type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 
 export interface SketchSelection {
   entityIds: string[];
-  pointIds: string[];
+  vertexIds: string[];
   profileIds: string[];
 }
 

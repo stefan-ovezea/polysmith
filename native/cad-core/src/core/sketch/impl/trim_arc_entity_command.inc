@@ -28,8 +28,8 @@
     const auto segments = split_arc_at_intersections(*arc_it, intersections);
     if (segments.empty()) return;
 
-    const std::string old_sp_id = arc_it->start_point_id;
-    const std::string old_ep_id = arc_it->end_point_id;
+    const std::string old_sp_id = arc_it->start_vertex_id;
+    const std::string old_ep_id = arc_it->end_vertex_id;
 
     const int clicked_index = select_clicked_segment(
         segments, *arc_it, click_x, click_y);

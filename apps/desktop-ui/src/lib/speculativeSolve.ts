@@ -117,7 +117,7 @@ function pushSketchGeometryAndConstraints(
 ): number {
   w.clear_data();
 
-  const pointIds: string[] = [];
+  const vertexIds: string[] = [];
 
   // Push sketch points.
   for (const pt of params.points) {
@@ -129,7 +129,7 @@ function pushSketchGeometryAndConstraints(
       y: pt.y,
       fixed: pt.is_fixed,
     });
-    pointIds.push(vtxId);
+    vertexIds.push(vtxId);
   }
 
   // Push sketch lines.
@@ -144,8 +144,7 @@ function pushSketchGeometryAndConstraints(
 
   // Push sketch circles.
   for (const circle of params.circles) {
-    const centerId = circle.center_vertex_id ?? vid.get(`point-circle-${circle.circle_id}-center`) ?? `point-circle-${circle.circle_id}-center`;
-    const centerId = circle.center_vertex_id ?? `point-circle-${circle.circle_id}-center`;
+    const centerId = circle.center_vertex_id;
     w.push_primitive({
       id: circle.circle_id,
       type: "circle",
@@ -319,7 +318,7 @@ function pushSketchGeometryAndConstraints(
     }
   }
 
-  return pointIds.length;
+  return vertexIds.length;
 }
 
 // ---------------------------------------------------------------------------

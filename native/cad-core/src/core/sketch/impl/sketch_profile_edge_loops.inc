@@ -84,8 +84,8 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
 
     // For arc edges, also push the interior samples so the polygon
     // approximates the arc when extruded. Direction matters: if the
-    // loop walk enters at start_point_id we sample forward; if it
-    // enters at end_point_id we sample reversed.
+    // loop walk enters at start_vertex_id we sample forward; if it
+    // enters at end_vertex_id we sample reversed.
     if (edge.kind == ProfileEdge::Kind::Arc) {
       const bool from_start = current_node == edge_nodes[edge_index].first;
       const auto interior = sample_arc_interior(edge, from_start);

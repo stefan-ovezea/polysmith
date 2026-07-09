@@ -55,7 +55,7 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
                         driven_line.start_x,
                         driven_line.start_y)) {
         propagate_connected_point_move(parameters,
-                                       driven_line.start_point_id,
+                                       driven_line.start_vertex_id,
                                        driven_line.start_x,
                                        driven_line.start_y);
       }
@@ -65,7 +65,7 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
                         driven_line.end_x,
                         driven_line.end_y)) {
         propagate_connected_point_move(parameters,
-                                       driven_line.end_point_id,
+                                       driven_line.end_vertex_id,
                                        driven_line.end_x,
                                        driven_line.end_y);
       }

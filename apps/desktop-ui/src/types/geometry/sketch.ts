@@ -282,7 +282,7 @@ export interface SketchProjectionEntry {
   generated_circle_ids: string[];
   generated_arc_ids: string[];
   // Empty unless `source_kind === "vertex"`.
-  generated_point_id: string;
+  generated_vertex_id: string;
   // True when the most recent recompute couldn't re-resolve the
   // source (body deleted, curve type changed). The generated
   // entities stay frozen at their last-known coords; the parent

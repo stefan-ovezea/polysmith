@@ -36,8 +36,8 @@ void update_sketch_dimension(FeatureEntry& feature,
   std::vector<LabelPre> pre_labels;
   auto find_pt = [&](const std::string& pid) -> std::pair<double,double> {
     for (const auto& l : parameters.lines) {
-      if (l.start_point_id == pid) return {l.start_x, l.start_y};
-      if (l.end_point_id == pid) return {l.end_x, l.end_y};
+      if (l.start_vertex_id == pid) return {l.start_x, l.start_y};
+      if (l.end_vertex_id == pid) return {l.end_x, l.end_y};
     }
     // Phase 4.2: use geometry_owner_ids instead of prefix matching
     if (const auto* c = find_circle_for_point(parameters, pid))
@@ -147,7 +147,7 @@ void update_sketch_dimension(FeatureEntry& feature,
                       line_it->start_x,
                       line_it->start_y)) {
       propagate_connected_point_move(parameters,
-                                     line_it->start_point_id,
+                                     line_it->start_vertex_id,
                                      line_it->start_x,
                                      line_it->start_y);
     }
@@ -156,7 +156,7 @@ void update_sketch_dimension(FeatureEntry& feature,
                       line_it->end_x,
                       line_it->end_y)) {
       propagate_connected_point_move(parameters,
-                                     line_it->end_point_id,
+                                     line_it->end_vertex_id,
                                      line_it->end_x,
                                      line_it->end_y);
     }
@@ -257,7 +257,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     // Propagate the moved endpoint through any coincident points.
     if (!points_match(previous_end_x, previous_end_y, line.end_x, line.end_y)) {
       propagate_connected_point_move(
-          parameters, line.end_point_id, line.end_x, line.end_y);
+          parameters, line.end_vertex_id, line.end_x, line.end_y);
     }
 
     dimension.value = target;
@@ -411,9 +411,9 @@ void update_sketch_dimension(FeatureEntry& feature,
     arc_it->end_x = cx + value * std::cos(end_angle);
     arc_it->end_y = cy + value * std::sin(end_angle);
 
-    propagate_connected_point_move(parameters, arc_it->start_point_id,
+    propagate_connected_point_move(parameters, arc_it->start_vertex_id,
                                    arc_it->start_x, arc_it->start_y);
-    propagate_connected_point_move(parameters, arc_it->end_point_id,
+    propagate_connected_point_move(parameters, arc_it->end_vertex_id,
                                    arc_it->end_x, arc_it->end_y);
 
     dimension.value = value;

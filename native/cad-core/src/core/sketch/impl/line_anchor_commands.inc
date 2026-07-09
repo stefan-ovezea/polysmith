@@ -12,7 +12,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.midpoint_anchors.end());
 
@@ -34,7 +34,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
   // round-trips through serialization without churning.
   parameters.midpoint_anchors.push_back(SketchMidpointAnchor{
       .id = "midpoint-anchor-" + point_id,
-      .point_id = point_id,
+      .vertex_id = point_id,
       .line_id = host_line_id,
   });
 
@@ -63,14 +63,14 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
                      [&](const SketchVertexLineAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.point_line_anchors.end());
   parameters.midpoint_anchors.erase(
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.midpoint_anchors.end());
 
@@ -94,7 +94,7 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
 
   parameters.point_line_anchors.push_back(SketchVertexLineAnchor{
       .id = "point-line-anchor-" + point_id,
-      .point_id = point_id,
+      .vertex_id = point_id,
       .line_id = host_line_id,
       .t = clamped_t,
   });

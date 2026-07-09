@@ -3,10 +3,10 @@
       polysmith::core::SketchProfileRegion profile{};
       profile.id = read_string(profile_payload, "profile_id");
       profile.kind = read_string(profile_payload, "kind");
-      if (profile_payload.contains("point_ids") &&
-          profile_payload.at("point_ids").is_array()) {
-        for (const auto& id_value : profile_payload.at("point_ids")) {
-          profile.point_ids.push_back(id_value.get<std::string>());
+      if (profile_payload.contains("vertex_ids") &&
+          profile_payload.at("vertex_ids").is_array()) {
+        for (const auto& id_value : profile_payload.at("vertex_ids")) {
+          profile.vertex_ids.push_back(id_value.get<std::string>());
         }
       }
       if (profile_payload.contains("line_ids") &&

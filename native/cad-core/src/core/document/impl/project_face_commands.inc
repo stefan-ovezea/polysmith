@@ -120,10 +120,10 @@ DocumentState DocumentManager::project_face_into_sketch(
          ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.start_point_id,
+                                              line.start_vertex_id,
                                               true);
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.end_point_id,
+                                              line.end_vertex_id,
                                               true);
       record.generated_line_ids.push_back(line.id);
     }
@@ -202,10 +202,10 @@ DocumentState DocumentManager::project_face_into_sketch(
          ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.start_point_id,
+                                              line.start_vertex_id,
                                               true);
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.end_point_id,
+                                              line.end_vertex_id,
                                               true);
       record.generated_line_ids.push_back(line.id);
     }

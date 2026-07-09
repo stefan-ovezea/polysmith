@@ -4,8 +4,8 @@
                     for (const auto& line : feature.sketch_parameters->lines) {
                       lines.push_back({
                           {"line_id", line.id},
-                          {"start_point_id", line.start_point_id},
-                          {"end_point_id", line.end_point_id},
+                          {"start_vertex_id", line.start_vertex_id},
+                          {"end_vertex_id", line.end_vertex_id},
                           {"start_vertex_id", line.start_vertex_id},
                           {"end_vertex_id", line.end_vertex_id},
                           {"start_x", line.start_x},
@@ -42,8 +42,8 @@
                     for (const auto& arc : feature.sketch_parameters->arcs) {
                       arcs.push_back({
                           {"arc_id", arc.id},
-                          {"start_point_id", arc.start_point_id},
-                          {"end_point_id", arc.end_point_id},
+                          {"start_vertex_id", arc.start_vertex_id},
+                          {"end_vertex_id", arc.end_vertex_id},
                           {"start_vertex_id", arc.start_vertex_id},
                           {"end_vertex_id", arc.end_vertex_id},
                           {"center_vertex_id", arc.center_vertex_id},
@@ -104,7 +104,7 @@
                     json points = json::array();
                     for (const auto& point : feature.sketch_parameters->vertices) {
                       json pt{
-                          {"point_id", point.id},
+                          {"vertex_id", point.id},
                           {"vertex_id", point.vertex_id},
                           {"kind", point.kind},
                           {"x", point.x},

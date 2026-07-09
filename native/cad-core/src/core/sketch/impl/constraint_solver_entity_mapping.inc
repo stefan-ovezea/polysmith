@@ -11,10 +11,10 @@
         // be stale between rebuild_sketch_vertices calls.
         if (sp.kind == "endpoint") {
             for (const auto& line : params.lines) {
-                if (line.start_point_id == sp.id) {
+                if (line.start_vertex_id == sp.id) {
                     px = line.start_x; py = line.start_y; break;
                 }
-                if (line.end_point_id == sp.id) {
+                if (line.end_vertex_id == sp.id) {
                     px = line.end_x; py = line.end_y; break;
                 }
             }
@@ -41,8 +41,8 @@
     line_id_to_index_.clear();
     for (size_t i = 0; i < params.lines.size(); ++i) {
         const auto& sl = params.lines[i];
-        auto start_it = point_id_to_index_.find(sl.start_point_id);
-        auto end_it = point_id_to_index_.find(sl.end_point_id);
+        auto start_it = point_id_to_index_.find(sl.start_vertex_id);
+        auto end_it = point_id_to_index_.find(sl.end_vertex_id);
         if (start_it == point_id_to_index_.end() ||
             end_it == point_id_to_index_.end()) {
             // Missing point reference — skip this line.

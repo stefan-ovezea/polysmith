@@ -4,7 +4,7 @@ struct LineEndpointRef {
 };
 
 std::string endpoint_vertex_id(const SketchLine& line, bool is_start) {
-  return is_start ? line.start_point_id : line.end_point_id;
+  return is_start ? line.start_vertex_id : line.end_vertex_id;
 }
 
 void set_endpoint_vertex_id(SketchLine& line,
@@ -234,7 +234,7 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     if (point.kind == "projected") {
       point.is_projected = true;
       for (const auto& proj : parameters.projections) {
-        if (proj.generated_point_id == point.id ||
+        if (proj.generated_vertex_id == point.id ||
             proj.source_id == point.id) {
           point.source_type = proj.source_kind;
           const auto colon1 = proj.source_id.find(':');

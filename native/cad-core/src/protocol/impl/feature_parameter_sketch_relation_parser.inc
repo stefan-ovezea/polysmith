@@ -38,7 +38,7 @@
     for (const auto& anchor_payload : payload.at("midpoint_anchors")) {
       polysmith::core::SketchMidpointAnchor anchor{};
       anchor.id = read_string(anchor_payload, "anchor_id");
-      anchor.point_id = read_string(anchor_payload, "point_id");
+      anchor.vertex_id = read_string(anchor_payload, "vertex_id");
       anchor.line_id = read_string(anchor_payload, "line_id");
       params.midpoint_anchors.push_back(anchor);
     }
@@ -49,7 +49,7 @@
       payload.at("projected_points").is_array()) {
     for (const auto& point_payload : payload.at("projected_points")) {
       polysmith::core::SketchProjectedPoint projected{};
-      projected.id = read_string(point_payload, "point_id");
+      projected.id = read_string(point_payload, "vertex_id");
       projected.source_id = read_string(point_payload, "source_id");
       projected.x = read_number(point_payload, "x");
       projected.y = read_number(point_payload, "y");
@@ -101,10 +101,10 @@
           }
         }
       }
-      if (projection_payload.contains("generated_point_id") &&
-          projection_payload.at("generated_point_id").is_string()) {
-        projection.generated_point_id =
-            projection_payload.at("generated_point_id").get<std::string>();
+      if (projection_payload.contains("generated_vertex_id") &&
+          projection_payload.at("generated_vertex_id").is_string()) {
+        projection.generated_vertex_id =
+            projection_payload.at("generated_vertex_id").get<std::string>();
       }
       if (projection_payload.contains("dependency_broken") &&
           projection_payload.at("dependency_broken").is_boolean()) {
@@ -125,7 +125,7 @@
     for (const auto& anchor_payload : payload.at("point_line_anchors")) {
       polysmith::core::SketchVertexLineAnchor anchor{};
       anchor.id = read_string(anchor_payload, "anchor_id");
-      anchor.point_id = read_string(anchor_payload, "point_id");
+      anchor.vertex_id = read_string(anchor_payload, "vertex_id");
       anchor.line_id = read_string(anchor_payload, "line_id");
       anchor.t = anchor_payload.contains("t") &&
                          anchor_payload.at("t").is_number()

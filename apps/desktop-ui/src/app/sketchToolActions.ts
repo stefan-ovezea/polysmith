@@ -93,7 +93,7 @@ export function createSketchToolActions({
     additive = false,
   ) {
     await handleSketchConstraintPointPickFromContext({
-      pointId,
+      vertexId: pointId,
       kind,
       additive,
       armedSketchConstraint,

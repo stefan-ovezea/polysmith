@@ -33,12 +33,12 @@ bool vertex_is_fixed(const SketchFeatureParameters& parameters,
 bool point_is_anchored_to_line(const SketchFeatureParameters& parameters,
                                const std::string& point_id) {
   for (const auto& anchor : parameters.midpoint_anchors) {
-    if (anchor.point_id == point_id) {
+    if (anchor.vertex_id == point_id) {
       return true;
     }
   }
   for (const auto& anchor : parameters.point_line_anchors) {
-    if (anchor.point_id == point_id) {
+    if (anchor.vertex_id == point_id) {
       return true;
     }
   }

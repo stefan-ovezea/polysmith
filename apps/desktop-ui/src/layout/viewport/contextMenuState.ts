@@ -81,7 +81,7 @@ function currentSketchSelection(documentState: DocumentState | null) {
       ? [documentState.selected_sketch_entity_id]
       : []),
   ]);
-  const pointIds = uniqueIds([
+  const vertexIds = uniqueIds([
     ...(documentState?.selected_sketch_vertex_ids ?? []),
     ...(documentState?.selected_sketch_vertex_id
       ? [documentState.selected_sketch_vertex_id]
@@ -93,42 +93,42 @@ function currentSketchSelection(documentState: DocumentState | null) {
       ? [documentState.selected_sketch_profile_id]
       : []),
   ]);
-  return { entityIds, pointIds, profileIds };
+  return { entityIds, vertexIds, profileIds };
 }
 
 function hasSketchSelection(selection: {
   entityIds: string[];
-  pointIds: string[];
+  vertexIds: string[];
   profileIds: string[];
 }) {
   return (
     selection.entityIds.length > 0 ||
-    selection.pointIds.length > 0 ||
+    selection.vertexIds.length > 0 ||
     selection.profileIds.length > 0
   );
 }
 
 function clickedSketchSelection(hit: ViewportPickHit) {
   if (hit.kind === "sketch_entity") {
-    return { entityIds: [hit.id], pointIds: [], profileIds: [] };
+    return { entityIds: [hit.id], vertexIds: [], profileIds: [] };
   }
   if (hit.kind === "sketch_point") {
-    return { entityIds: [], pointIds: [hit.id], profileIds: [] };
+    return { entityIds: [], vertexIds: [hit.id], profileIds: [] };
   }
-  return { entityIds: [], pointIds: [], profileIds: [hit.id] };
+  return { entityIds: [], vertexIds: [], profileIds: [hit.id] };
 }
 
 function sketchHitIsSelected(
   hit: ViewportPickHit,
   selection: {
     entityIds: string[];
-    pointIds: string[];
+    vertexIds: string[];
     profileIds: string[];
   },
 ) {
   return (
     (hit.kind === "sketch_entity" && selection.entityIds.includes(hit.id)) ||
-    (hit.kind === "sketch_point" && selection.pointIds.includes(hit.id)) ||
+    (hit.kind === "sketch_point" && selection.vertexIds.includes(hit.id)) ||
     (hit.kind === "sketch_profile" && selection.profileIds.includes(hit.id))
   );
 }

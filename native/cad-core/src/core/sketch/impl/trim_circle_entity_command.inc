@@ -64,10 +64,10 @@
       const auto shared_end   = find_coincident_endpoint(params, "", ex, ey);
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(arc_index),
-          .start_point_id = shared_start.has_value()
+          .start_vertex_id = shared_start.has_value()
               ? std::get<0>(shared_start.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
-          .end_point_id   = shared_end.has_value()
+          .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
           .center_x = cx, .center_y = cy, .radius = r,
@@ -90,10 +90,10 @@
       const auto shared_end   = find_coincident_endpoint(params, "", ex, ey);
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(arc_index),
-          .start_point_id = shared_start.has_value()
+          .start_vertex_id = shared_start.has_value()
               ? std::get<0>(shared_start.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
-          .end_point_id   = shared_end.has_value()
+          .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
           .center_x = cx, .center_y = cy, .radius = r,
@@ -132,18 +132,17 @@
     {
       std::unordered_set<std::string> live_pt;
       for (const auto& l : params.lines) {
-        live_pt.insert(l.start_point_id); live_pt.insert(l.end_point_id);
+        live_pt.insert(l.start_vertex_id); live_pt.insert(l.end_vertex_id);
       }
       for (const auto& c : params.circles) {
         live_pt.insert(circle_center_vertex_id(c));
-        // Quadrants still use legacy format (Phase 4.1 will update)
-        live_pt.insert("point-circle-" + c.id + "-quadrant-0");
-        live_pt.insert("point-circle-" + c.id + "-quadrant-1");
-        live_pt.insert("point-circle-" + c.id + "-quadrant-2");
-        live_pt.insert("point-circle-" + c.id + "-quadrant-3");
+        live_pt.insert("vertex-" + c.id + "-quadrant-0");
+        live_pt.insert("vertex-" + c.id + "-quadrant-1");
+        live_pt.insert("vertex-" + c.id + "-quadrant-2");
+        live_pt.insert("vertex-" + c.id + "-quadrant-3");
       }
       for (const auto& a : params.arcs) {
-        live_pt.insert(a.start_point_id); live_pt.insert(a.end_point_id);
+        live_pt.insert(a.start_vertex_id); live_pt.insert(a.end_vertex_id);
       }
       params.constraints.erase(
           std::remove_if(params.constraints.begin(), params.constraints.end(),

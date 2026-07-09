@@ -69,7 +69,7 @@
     // to lie on the host line. Full parametric position enforcement
     // (t=0.5 for midpoints, t=t for point-line) is a follow-up.
     for (const auto& anchor : params.midpoint_anchors) {
-        auto pit = point_id_to_index_.find(anchor.point_id);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
         auto lit = line_id_to_index_.find(anchor.line_id);
         if (pit != point_id_to_index_.end() &&
             lit != line_id_to_index_.end()) {
@@ -80,7 +80,7 @@
     }
 
     for (const auto& anchor : params.point_line_anchors) {
-        auto pit = point_id_to_index_.find(anchor.point_id);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
         auto lit = line_id_to_index_.find(anchor.line_id);
         if (pit != point_id_to_index_.end() &&
             lit != line_id_to_index_.end()) {
