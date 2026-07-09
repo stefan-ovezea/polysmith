@@ -22,11 +22,9 @@ export interface SketchProfilePoint {
 
 export interface SketchLineEntry {
   line_id: string;
-  start_point_id: string;
-  end_point_id: string;
-  // Vertex unification (Phase 5)
-  start_vertex_id?: string;
-  end_vertex_id?: string;
+  // Vertex unification (Phase 5) — now the canonical endpoint ids
+  start_vertex_id: string;
+  end_vertex_id: string;
   start_x: number;
   start_y: number;
   end_x: number;
@@ -48,9 +46,8 @@ export interface SketchCircleEntry {
 }
 
 export interface SketchVertexEntry {
-  point_id: string;
-  /** vertex-N ID from Phase 4 vertex unification. */
-  vertex_id?: string;
+  /** vertex-N ID from Phase 4 vertex unification (canonical). */
+  vertex_id: string;
   // "endpoint" / "center" / "projected" — see `SketchVertexScene`
   // for the renderer-side meaning of each value.
   kind: "endpoint" | "center" | "projected";
@@ -103,7 +100,7 @@ export interface SketchLineRelationEntry {
 export interface SketchProfileRegionEntry {
   profile_id: string;
   kind: "polygon" | "circle";
-  point_ids: string[];
+  vertex_ids: string[];
   line_ids: string[];
   points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
@@ -127,8 +124,6 @@ export interface PendingMirrorEntry {
   // viewport line / circle primitives).
   generated_lines: Array<{
     line_id: string;
-    start_point_id: string;
-    end_point_id: string;
     start_x: number;
     start_y: number;
     end_x: number;
@@ -145,18 +140,16 @@ export interface PendingMirrorEntry {
 }
 
 // 2D arc entry stored on the sketch feature. Mirrors C++ `SketchArc`.
-// Endpoints share the SketchPoint graph via `start_point_id` /
-// `end_point_id`; `(center_x, center_y, radius, ccw)` are cached so
+// Endpoints share the SketchPoint graph via `start_vertex_id` /
+// `end_vertex_id`; `(center_x, center_y, radius, ccw)` are cached so
 // the renderer can sample without recomputing the circumcircle. v1
 // freezes arc shape at creation; the points are stored with
 // `is_fixed=true` in the points table.
 export interface SketchArcEntry {
   arc_id: string;
-  start_point_id: string;
-  end_point_id: string;
-  // Vertex unification (Phase 5)
-  start_vertex_id?: string;
-  end_vertex_id?: string;
+  // Vertex unification (Phase 5) — now the canonical endpoint ids
+  start_vertex_id: string;
+  end_vertex_id: string;
   center_vertex_id?: string;
   center_x: number;
   center_y: number;
@@ -250,13 +243,13 @@ export interface SketchFeatureParameters {
 
 export interface SketchMidpointAnchorEntry {
   anchor_id: string;
-  point_id: string;
+  vertex_id: string;
   line_id: string;
 }
 
 export interface SketchPointLineAnchorEntry {
   anchor_id: string;
-  point_id: string;
+  vertex_id: string;
   line_id: string;
   t: number;
 }
@@ -268,7 +261,7 @@ export interface SketchPointLineAnchorEntry {
 // `source_id` is the body vertex id (`<body>:vertex:<index>`) used
 // for idempotency.
 export interface SketchProjectedPointEntry {
-  point_id: string;
+  vertex_id: string;
   source_id: string;
   x: number;
   y: number;

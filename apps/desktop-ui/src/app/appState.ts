@@ -315,7 +315,7 @@ export type HoleAction =
 
 export interface SketchDeleteSelection {
   entityIds: string[];
-  pointIds: string[];
+  vertexIds: string[];
   profileIds: string[];
 }
 

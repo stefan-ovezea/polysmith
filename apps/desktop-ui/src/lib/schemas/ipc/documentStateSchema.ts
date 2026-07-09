@@ -490,10 +490,8 @@ export const documentStateSchema = z.object({
           lines: z.array(
             z.object({
               line_id: z.string(),
-              start_point_id: z.string(),
-              end_point_id: z.string(),
-              start_vertex_id: z.string().optional().default(""),
-              end_vertex_id: z.string().optional().default(""),
+              start_vertex_id: z.string(),
+              end_vertex_id: z.string(),
               start_x: z.number(),
               start_y: z.number(),
               end_x: z.number(),
@@ -513,7 +511,7 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 anchor_id: z.string(),
-                point_id: z.string(),
+                vertex_id: z.string(),
                 line_id: z.string(),
               }),
             )
@@ -527,7 +525,7 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 anchor_id: z.string(),
-                point_id: z.string(),
+                vertex_id: z.string(),
                 line_id: z.string(),
                 t: z.number(),
               }),
@@ -539,7 +537,7 @@ export const documentStateSchema = z.object({
           projected_points: z
             .array(
               z.object({
-                point_id: z.string(),
+                vertex_id: z.string(),
                 source_id: z.string(),
                 x: z.number(),
                 y: z.number(),
@@ -583,11 +581,8 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 arc_id: z.string(),
-                start_point_id: z.string(),
-                end_point_id: z.string(),
-                // Vertex unification (Phase 5)
-                start_vertex_id: z.string().optional().default(""),
-                end_vertex_id: z.string().optional().default(""),
+                start_vertex_id: z.string(),
+                end_vertex_id: z.string(),
                 center_vertex_id: z.string().optional().default(""),
                 center_x: z.number(),
                 center_y: z.number(),
@@ -622,8 +617,7 @@ export const documentStateSchema = z.object({
             .default([]),
           points: z.array(
             z.object({
-              point_id: z.string(),
-              vertex_id: z.string().optional().default(""),
+              vertex_id: z.string(),
               kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
               x: z.number(),
               y: z.number(),
@@ -679,7 +673,7 @@ export const documentStateSchema = z.object({
             z.object({
               profile_id: z.string(),
               kind: z.enum(["polygon", "circle"]),
-              point_ids: z.array(z.string()),
+              vertex_ids: z.array(z.string()),
               line_ids: z.array(z.string()),
               points: z.array(
                 z.object({
@@ -706,8 +700,6 @@ export const documentStateSchema = z.object({
               generated_lines: z.array(
                 z.object({
                   line_id: z.string(),
-                  start_point_id: z.string(),
-                  end_point_id: z.string(),
                   start_x: z.number(),
                   start_y: z.number(),
                   end_x: z.number(),

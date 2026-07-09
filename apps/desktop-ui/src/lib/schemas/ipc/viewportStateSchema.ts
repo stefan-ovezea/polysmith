@@ -177,8 +177,8 @@ export const viewportStateSchema = z.object({
   sketch_lines: z.array(
     z.object({
       line_id: z.string(),
-      start_point_id: z.string(),
-      end_point_id: z.string(),
+      start_vertex_id: z.string(),
+      end_vertex_id: z.string(),
       is_construction: z.boolean().default(false),
       plane_id: z.string(),
       start: z.object({
@@ -254,8 +254,8 @@ export const viewportStateSchema = z.object({
     .array(
       z.object({
         arc_id: z.string(),
-        start_point_id: z.string(),
-        end_point_id: z.string(),
+        start_vertex_id: z.string(),
+        end_vertex_id: z.string(),
         plane_id: z.string(),
         plane_frame: planeFrameSchema.nullable().default(null),
         center: z.object({
@@ -283,8 +283,7 @@ export const viewportStateSchema = z.object({
     .default([]),
   sketch_vertices: z.array(
     z.object({
-      point_id: z.string(),
-      vertex_id: z.string().optional().default(""),
+      vertex_id: z.string(),
       plane_id: z.string(),
       kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
       position: z.object({
@@ -541,7 +540,7 @@ export const viewportStateSchema = z.object({
     z.object({
       kind: z.string(),
       entity_id: z.string(),
-      point_id: z.string(),
+      vertex_id: z.string(),
       local_x: z.number(),
       local_y: z.number(),
       label: z.string(),

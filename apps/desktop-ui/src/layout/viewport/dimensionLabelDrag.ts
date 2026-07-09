@@ -44,7 +44,7 @@ type SketchDimensionHit = {
 };
 
 type SketchLineEndpoint = {
-  pointId: string;
+  vertexId: string;
   local: [number, number];
 };
 
@@ -118,12 +118,12 @@ function angleDimensionFrameFromSketchLines({
   }
 
   const aEnds: SketchLineEndpoint[] = [
-    { pointId: lineA.start_point_id, local: [lineA.start_x, lineA.start_y] },
-    { pointId: lineA.end_point_id, local: [lineA.end_x, lineA.end_y] },
+    { vertexId: lineA.start_vertex_id, local: [lineA.start_x, lineA.start_y] },
+    { vertexId: lineA.end_vertex_id, local: [lineA.end_x, lineA.end_y] },
   ];
   const bEnds: SketchLineEndpoint[] = [
-    { pointId: lineB.start_point_id, local: [lineB.start_x, lineB.start_y] },
-    { pointId: lineB.end_point_id, local: [lineB.end_x, lineB.end_y] },
+    { vertexId: lineB.start_vertex_id, local: [lineB.start_x, lineB.start_y] },
+    { vertexId: lineB.end_vertex_id, local: [lineB.end_x, lineB.end_y] },
   ];
 
   const pivot = matchingLinePivot(aEnds, bEnds);
@@ -149,7 +149,7 @@ function matchingLinePivot(
 ): { aIndex: number; bIndex: number } | null {
   for (let aIndex = 0; aIndex < aEnds.length; aIndex++) {
     for (let bIndex = 0; bIndex < bEnds.length; bIndex++) {
-      const samePointId = aEnds[aIndex].pointId === bEnds[bIndex].pointId;
+      const samePointId = aEnds[aIndex].vertexId === bEnds[bIndex].vertexId;
       const dx = aEnds[aIndex].local[0] - bEnds[bIndex].local[0];
       const dy = aEnds[aIndex].local[1] - bEnds[bIndex].local[1];
       if (samePointId || Math.hypot(dx, dy) <= 0.05) {

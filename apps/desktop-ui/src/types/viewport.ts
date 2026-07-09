@@ -128,8 +128,8 @@ export interface ViewportHelixPrimitive {
 
 export interface ViewportSketchLine {
   line_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  start_vertex_id: string;
+  end_vertex_id: string;
   plane_id: string;
   start: Vector3;
   end: Vector3;
@@ -174,8 +174,8 @@ export interface ViewportSketchPolygon {
 // about the sketch plane orientation.
 export interface ViewportSketchArc {
   arc_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  start_vertex_id: string;
+  end_vertex_id: string;
   plane_id: string;
   plane_frame: PlaneFrame | null;
   center: Vector3;
@@ -189,9 +189,8 @@ export interface ViewportSketchArc {
 }
 
 export interface ViewportSketchVertex {
-  point_id: string;
   /** vertex-N ID from Phase 4 vertex unification. */
-  vertex_id?: string;
+  vertex_id: string;
   plane_id: string;
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.
@@ -351,7 +350,7 @@ export interface ViewportContextMenuState {
   bodyId?: string | null;
   sketchDeleteSelection?: {
     entityIds: string[];
-    pointIds: string[];
+    vertexIds: string[];
     profileIds: string[];
   } | null;
   dimensionId?: string | null;

@@ -237,11 +237,11 @@ function handleSketchEntityPick({
       });
       if (fallback) {
         addMessage(
-          `coincident-viewport: line-endpoint fallback ${fallback.pointId} (dist ${fallback.distance.toFixed(3)}wu)`,
+          `coincident-viewport: line-endpoint fallback ${fallback.vertexId} (dist ${fallback.distance.toFixed(3)}wu)`,
         );
         void pickSketchPoint(
-          fallback.pointId,
-          fallback.pointKind,
+          fallback.vertexId,
+          fallback.vertexKind,
           additiveSelection,
         );
         return true;
@@ -403,15 +403,15 @@ export function coincidentLineEndpointFallback({
     return null;
   }
 
-  const pointId = bestMesh.userData.sketchPointId as string | undefined;
-  const pointKind = bestMesh.userData.sketchPointKind as
+  const vertexId = bestMesh.userData.sketchPointId as string | undefined;
+  const vertexKind = bestMesh.userData.sketchPointKind as
     | "endpoint"
     | "center"
     | "quadrant"
     | undefined;
-  if (!pointId || !pointKind) {
+  if (!vertexId || !vertexKind) {
     return null;
   }
 
-  return { pointId, pointKind, distance: bestDistance };
+  return { vertexId, vertexKind, distance: bestDistance };
 }

@@ -151,7 +151,7 @@ function sketchPointBelongsToFeature(
   return (
     pointId != null &&
     (targetFeature?.sketch_parameters?.points.some(
-      (point) => point.point_id === pointId,
+      (point) => point.vertex_id === pointId,
     ) ??
       false)
   );

@@ -204,7 +204,7 @@ function sketchContextMenu({
       ? document?.feature_history.find((f) => f.feature_id === activeId)
       : null;
     const point = feature?.sketch_parameters?.points.find(
-      (p) => p.point_id === hit.id,
+      (p) => p.vertex_id === hit.id,
     );
     if (point?.is_fixed) {
       return {

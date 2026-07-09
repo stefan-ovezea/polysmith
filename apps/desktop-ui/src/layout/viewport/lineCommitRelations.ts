@@ -331,7 +331,7 @@ function dispatchMidpointAnchorRelation(
 ) {
   if (pending.midpointAnchor?.endHostLineId) {
     void actions.setSketchMidpointAnchor(
-      newLine.end_point_id,
+      newLine.end_vertex_id,
       pending.midpointAnchor.endHostLineId,
     );
   }
@@ -360,7 +360,7 @@ function dispatchPointLineAnchorRelation(
     !pending.midpointAnchor?.endHostLineId
   ) {
     void actions.setSketchPointLineAnchor(
-      newLine.end_point_id,
+      newLine.end_vertex_id,
       pending.pointLineAnchor.endHost.lineId,
       pending.pointLineAnchor.endHost.t,
     );

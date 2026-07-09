@@ -264,8 +264,8 @@ function makeSketchArc(
   return {
     isPreview: arc.is_preview,
     arcId: arc.arc_id,
-    startPointId: arc.start_point_id,
-    endPointId: arc.end_point_id,
+    startPointId: arc.start_vertex_id,
+    endPointId: arc.end_vertex_id,
     planeId: arc.plane_id,
     planeFrame: arc.plane_frame,
     center: [arc.center.x, arc.center.y, arc.center.z],
@@ -796,8 +796,8 @@ export function createViewportScene(
           projectedEntityIds.add(id);
           const line = lineById.get(id);
           if (line) {
-            projectedFixedPointIds.add(line.start_point_id);
-            projectedFixedPointIds.add(line.end_point_id);
+            projectedFixedPointIds.add(line.start_vertex_id);
+            projectedFixedPointIds.add(line.end_vertex_id);
           }
         });
         projection.generated_circle_ids.forEach((id) => {
@@ -820,8 +820,8 @@ export function createViewportScene(
     .filter((line) => isSketchPlaneVisible(line.plane_id))
     .map((line) => ({
       lineId: line.line_id,
-      startPointId: line.start_point_id,
-      endPointId: line.end_point_id,
+      startPointId: line.start_vertex_id,
+      endPointId: line.end_vertex_id,
       planeId: line.plane_id,
       start: [line.start.x, line.start.y, line.start.z] as [
         number,
@@ -849,8 +849,7 @@ export function createViewportScene(
   const sketchPoints: SketchVertexScene[] = viewport.sketch_vertices
     .filter((point) => isSketchPlaneVisible(point.plane_id))
     .map((point) => ({
-      id: point.point_id,
-      vertexId: point.vertex_id,
+      id: point.vertex_id,
       kind: point.kind,
       position: [point.position.x, point.position.y, point.position.z] as [
         number,
