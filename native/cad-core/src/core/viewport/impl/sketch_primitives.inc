@@ -6,8 +6,8 @@ ViewportSketchLinePrimitive make_sketch_line_primitive(const SketchLine& line,
 
   return ViewportSketchLinePrimitive{
       .line_id = line.id,
-      .start_point_id = line.start_point_id,
-      .end_point_id = line.end_point_id,
+      .start_vertex_id = line.start_vertex_id,
+      .end_vertex_id = line.end_vertex_id,
       .plane_id = parameters.plane_id,
       .start_x = start.x,
       .start_y = start.y,
@@ -107,8 +107,8 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
 
   return ViewportSketchArcPrimitive{
       .arc_id = arc.id,
-      .start_point_id = arc.start_point_id,
-      .end_point_id = arc.end_point_id,
+      .start_vertex_id = arc.start_vertex_id,
+      .end_vertex_id = arc.end_vertex_id,
       .plane_id = parameters.plane_id,
       .plane_frame = parameters.plane_frame.has_value()
                          ? std::optional<ViewportSketchPlaneFrame>(
@@ -138,7 +138,6 @@ ViewportSketchVertexPrimitive make_sketch_point_primitive(
   const WorldPoint world = to_world_point(parameters, point.x, point.y);
 
   return ViewportSketchVertexPrimitive{
-      .point_id = point.id,
       .vertex_id = point.vertex_id,
       .plane_id = parameters.plane_id,
       .kind = point.kind,

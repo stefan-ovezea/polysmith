@@ -10,7 +10,7 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      if (vertex_is_fixed(parameters, line.end_point_id)) {
+      if (vertex_is_fixed(parameters, line.end_vertex_id)) {
         line.start_y = line.end_y;
       } else {
         line.end_y = line.start_y;
@@ -23,7 +23,7 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      if (vertex_is_fixed(parameters, line.end_point_id)) {
+      if (vertex_is_fixed(parameters, line.end_vertex_id)) {
         line.start_x = line.end_x;
       } else {
         line.end_x = line.start_x;

@@ -152,7 +152,7 @@ struct CamGeometryReferences {
 
 /// Drilling point location with TNP attestation.
 struct CamPointLocation {
-  std::string point_id;
+  std::string vertex_id;
   std::array<double, 3> position = {0.0, 0.0, 0.0};
   std::array<double, 3> surface_normal = {0.0, 0.0, 1.0};
   std::optional<double> hole_diameter;

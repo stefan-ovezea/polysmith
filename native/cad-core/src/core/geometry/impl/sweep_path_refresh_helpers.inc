@@ -1,8 +1,8 @@
 struct SweepPathEntity {
   std::string id;
   std::string kind;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   const SketchLine* line = nullptr;
   const SketchArc* arc = nullptr;
 };
@@ -32,8 +32,8 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
     if (!line.is_construction) {
       entities.push_back(SweepPathEntity{.id = line.id,
                                          .kind = "line",
-                                         .start_point_id = line.start_point_id,
-                                         .end_point_id = line.end_point_id,
+                                         .start_vertex_id = line.start_vertex_id,
+                                         .end_vertex_id = line.end_vertex_id,
                                          .line = &line});
     }
   }
@@ -41,8 +41,8 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
     if (!arc.is_construction) {
       entities.push_back(SweepPathEntity{.id = arc.id,
                                          .kind = "arc",
-                                         .start_point_id = arc.start_point_id,
-                                         .end_point_id = arc.end_point_id,
+                                         .start_vertex_id = arc.start_vertex_id,
+                                         .end_vertex_id = arc.end_vertex_id,
                                          .arc = &arc});
     }
   }
@@ -56,8 +56,8 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
       static_cast<size_t>(std::distance(entities.begin(), seed_it));
   std::unordered_map<std::string, std::vector<size_t>> by_point;
   for (size_t index = 0; index < entities.size(); ++index) {
-    by_point[entities[index].start_point_id].push_back(index);
-    by_point[entities[index].end_point_id].push_back(index);
+    by_point[entities[index].start_vertex_id].push_back(index);
+    by_point[entities[index].end_vertex_id].push_back(index);
   }
 
   std::vector<size_t> stack{seed_index};
@@ -69,7 +69,7 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
       continue;
     }
     for (const auto& point_id :
-         {entities[index].start_point_id, entities[index].end_point_id}) {
+         {entities[index].start_vertex_id, entities[index].end_vertex_id}) {
       for (const size_t connected : by_point[point_id]) {
         if (!component.count(connected)) {
           stack.push_back(connected);
@@ -79,24 +79,24 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
   }
   for (const size_t index : component) {
     const auto& entity = entities[index];
-    if (by_point[entity.start_point_id].size() > 2 ||
-        by_point[entity.end_point_id].size() > 2) {
+    if (by_point[entity.start_vertex_id].size() > 2 ||
+        by_point[entity.end_vertex_id].size() > 2) {
       return {};
     }
   }
 
   size_t start_index = seed_index;
-  std::string current_point = entities[seed_index].start_point_id;
+  std::string current_point = entities[seed_index].start_vertex_id;
   for (const size_t index : component) {
     const auto& entity = entities[index];
-    if (by_point[entity.start_point_id].size() == 1) {
+    if (by_point[entity.start_vertex_id].size() == 1) {
       start_index = index;
-      current_point = entity.start_point_id;
+      current_point = entity.start_vertex_id;
       break;
     }
-    if (by_point[entity.end_point_id].size() == 1) {
+    if (by_point[entity.end_vertex_id].size() == 1) {
       start_index = index;
-      current_point = entity.end_point_id;
+      current_point = entity.end_vertex_id;
       break;
     }
   }
@@ -107,12 +107,12 @@ std::vector<SweepPathEntity> order_sweep_path_entities(
   while (used.size() < component.size()) {
     const auto& entity = entities[current_index];
     SweepPathEntity oriented = entity;
-    if (entity.end_point_id == current_point) {
-      std::swap(oriented.start_point_id, oriented.end_point_id);
+    if (entity.end_vertex_id == current_point) {
+      std::swap(oriented.start_vertex_id, oriented.end_vertex_id);
     }
     ordered.push_back(oriented);
     used.insert(current_index);
-    current_point = oriented.end_point_id;
+    current_point = oriented.end_vertex_id;
 
     std::optional<size_t> next_index;
     for (const size_t connected : by_point[current_point]) {
@@ -137,7 +137,7 @@ std::vector<SweepFeatureParameters::PathSegment> make_sweep_path_segments(
   std::vector<SweepFeatureParameters::PathSegment> segments;
   for (const auto& entity : ordered) {
     if (entity.kind == "line" && entity.line != nullptr) {
-      const bool reversed = entity.start_point_id != entity.line->start_point_id;
+      const bool reversed = entity.start_vertex_id != entity.line->start_vertex_id;
       const auto start = sketch_local_to_world(
           path_frame, reversed ? entity.line->end_x : entity.line->start_x,
           reversed ? entity.line->end_y : entity.line->start_y);
@@ -157,7 +157,7 @@ std::vector<SweepFeatureParameters::PathSegment> make_sweep_path_segments(
       continue;
     }
     if (entity.kind == "arc" && entity.arc != nullptr) {
-      const bool reversed = entity.start_point_id != entity.arc->start_point_id;
+      const bool reversed = entity.start_vertex_id != entity.arc->start_vertex_id;
       const bool ccw = reversed ? !entity.arc->ccw : entity.arc->ccw;
       const double start_x = reversed ? entity.arc->end_x : entity.arc->start_x;
       const double start_y = reversed ? entity.arc->end_y : entity.arc->start_y;

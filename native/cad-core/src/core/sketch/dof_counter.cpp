@@ -75,8 +75,8 @@ std::vector<EntityDofResult> count_sketch_dof(
       const auto& a = params.lines[i];
       const auto& b = params.lines[j];
       int shared = 0;
-      if (a.start_point_id == b.start_point_id || a.start_point_id == b.end_point_id) ++shared;
-      if (a.end_point_id == b.start_point_id || a.end_point_id == b.end_point_id) ++shared;
+      if (a.start_vertex_id == b.start_vertex_id || a.start_vertex_id == b.end_vertex_id) ++shared;
+      if (a.end_vertex_id == b.start_vertex_id || a.end_vertex_id == b.end_vertex_id) ++shared;
       if (shared > 0 && map.count(a.id) && map.count(b.id)) {
         map[a.id].consumed += shared; // 1 per shared point per line
         map[b.id].consumed += shared;
@@ -110,7 +110,7 @@ std::vector<EntityDofResult> count_sketch_dof(
 
   // Midpoint anchors.
   for (const auto& a : params.midpoint_anchors) {
-    if (map.count(a.point_id)) map[a.point_id].consumed += 2;
+    if (map.count(a.vertex_id)) map[a.vertex_id].consumed += 2;
   }
 
   std::vector<EntityDofResult> results;

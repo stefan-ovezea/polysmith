@@ -50,20 +50,20 @@
     if (clicked_index == 0) {
       arc_it->start_x = segments[1].start_x;
       arc_it->start_y = segments[1].start_y;
-      arc_it->start_point_id = arc_shared_pt(
+      arc_it->start_vertex_id = arc_shared_pt(
           arc_it->start_x, arc_it->start_y,
           "vertex-" + std::to_string(params.next_vertex_index++));
     } else if (clicked_index == last) {
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_point_id = arc_shared_pt(
+      arc_it->end_vertex_id = arc_shared_pt(
           arc_it->end_x, arc_it->end_y,
           "vertex-" + std::to_string(params.next_vertex_index++));
     } else {
       // Middle segment deleted — arc splits into two.
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_point_id = arc_shared_pt(
+      arc_it->end_vertex_id = arc_shared_pt(
           arc_it->end_x, arc_it->end_y,
           "vertex-" + std::to_string(params.next_vertex_index++));
 
@@ -72,10 +72,10 @@
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(next_idx),
-          .start_point_id = arc_shared_pt(
+          .start_vertex_id = arc_shared_pt(
               right.start_x, right.start_y,
               "vertex-" + std::to_string(params.next_vertex_index++)),
-          .end_point_id   = arc_shared_pt(
+          .end_vertex_id   = arc_shared_pt(
               last_seg.end_x, last_seg.end_y,
               "vertex-" + std::to_string(params.next_vertex_index++)),
           .center_x = arc_it->center_x,
@@ -132,7 +132,7 @@
     {
       std::unordered_set<std::string> live_pt;
       for (const auto& l : params.lines) {
-        live_pt.insert(l.start_point_id); live_pt.insert(l.end_point_id);
+        live_pt.insert(l.start_vertex_id); live_pt.insert(l.end_vertex_id);
       }
       for (const auto& c : params.circles) {
         live_pt.insert(circle_center_vertex_id(c));
@@ -143,7 +143,7 @@
         live_pt.insert("point-circle-" + c.id + "-quadrant-3");
       }
       for (const auto& a : params.arcs) {
-        live_pt.insert(a.start_point_id); live_pt.insert(a.end_point_id);
+        live_pt.insert(a.start_vertex_id); live_pt.insert(a.end_vertex_id);
       }
       params.constraints.erase(
           std::remove_if(params.constraints.begin(), params.constraints.end(),

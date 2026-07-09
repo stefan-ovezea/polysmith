@@ -10,8 +10,8 @@ namespace polysmith::core {
 
 struct ViewportSketchLinePrimitive {
   std::string line_id;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   std::string plane_id;
   double start_x;
   double start_y;
@@ -55,8 +55,8 @@ struct ViewportSketchCirclePrimitive {
 // SketchVertex that lines use without an extra lookup.
 struct ViewportSketchArcPrimitive {
   std::string arc_id;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   std::string plane_id;
   std::optional<ViewportSketchPlaneFrame> plane_frame;
   double center_x;
@@ -78,8 +78,6 @@ struct ViewportSketchArcPrimitive {
 };
 
 struct ViewportSketchVertexPrimitive {
-  std::string point_id;
-  // ── Vertex unification (Phase 4) ────────────────────────────
   std::string vertex_id;
   std::string plane_id;
   std::string kind;

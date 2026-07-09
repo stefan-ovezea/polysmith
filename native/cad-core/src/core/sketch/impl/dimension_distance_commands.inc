@@ -109,8 +109,8 @@ void add_sketch_distance_dimension(FeatureEntry& feature,
   if (kind == "line_line_distance") {
     const auto& first_line = require_line(parameters, first_entity_id);
     const auto& second_line = require_line(parameters, second_entity_id);
-    pair_a = first_line.start_point_id;
-    pair_b = second_line.start_point_id;
+    pair_a = first_line.start_vertex_id;
+    pair_b = second_line.start_vertex_id;
   } else if (kind == "circle_center_distance") {
     pair_a = circle_center_vertex_id_for(parameters, first_entity_id);
     pair_b = circle_center_vertex_id_for(parameters, second_entity_id);

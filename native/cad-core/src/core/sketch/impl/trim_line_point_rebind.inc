@@ -17,8 +17,8 @@ const std::string new_ep =
     shared_end.has_value() ? std::get<0>(shared_end.value())
                            : "vertex-" + std::to_string(params.next_vertex_index++);
 
-line_it->start_point_id = new_sp;
-line_it->end_point_id = new_ep;
+line_it->start_vertex_id = new_sp;
+line_it->end_vertex_id = new_ep;
 
 // Dissolve all polygon records — a trimmed polygon line breaks
 // the parametric polygon. Remaining lines become independent.
@@ -49,12 +49,12 @@ auto update_shared_pt =
 for (auto &ol : params.lines) {
   if (ol.id == entity_id)
     continue;
-  update_shared_pt(ol.start_point_id, ol.start_x, ol.start_y, old_sp_id, new_sp,
+  update_shared_pt(ol.start_vertex_id, ol.start_x, ol.start_y, old_sp_id, new_sp,
                    line_it->start_x, line_it->start_y);
-  update_shared_pt(ol.end_point_id, ol.end_x, ol.end_y, old_sp_id, new_sp,
+  update_shared_pt(ol.end_vertex_id, ol.end_x, ol.end_y, old_sp_id, new_sp,
                    line_it->start_x, line_it->start_y);
-  update_shared_pt(ol.start_point_id, ol.start_x, ol.start_y, old_ep_id, new_ep,
+  update_shared_pt(ol.start_vertex_id, ol.start_x, ol.start_y, old_ep_id, new_ep,
                    line_it->end_x, line_it->end_y);
-  update_shared_pt(ol.end_point_id, ol.end_x, ol.end_y, old_ep_id, new_ep,
+  update_shared_pt(ol.end_vertex_id, ol.end_x, ol.end_y, old_ep_id, new_ep,
                    line_it->end_x, line_it->end_y);
 }

@@ -145,7 +145,7 @@ std::vector<ArrangementFace> detect_arrangement_faces(
                        face_lines.end());
       faces.push_back(ArrangementFace{
           .points = face_points,
-          .point_ids = face_point_ids,
+          .vertex_ids = face_point_ids,
           .line_ids = face_lines,
           .area = area,
       });

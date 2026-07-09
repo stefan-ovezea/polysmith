@@ -22,16 +22,16 @@
             for (const auto& tid : c.target_ids) {
               for (const auto& line : feature.sketch_parameters->lines) {
                 if (line.id != tid) continue;
-                const std::string& sp = line.start_point_id;
-                const std::string& ep = line.end_point_id;
+                const std::string& sp = line.start_vertex_id;
+                const std::string& ep = line.end_vertex_id;
                 for (const auto& tid2 : c.target_ids) {
                   if (tid2 == tid) continue;
                   for (const auto& line2 : feature.sketch_parameters->lines) {
                     if (line2.id != tid2) continue;
-                    if (line2.start_point_id == sp || line2.end_point_id == sp) {
+                    if (line2.start_vertex_id == sp || line2.end_vertex_id == sp) {
                       shared_point_id = sp; break;
                     }
-                    if (line2.start_point_id == ep || line2.end_point_id == ep) {
+                    if (line2.start_vertex_id == ep || line2.end_vertex_id == ep) {
                       shared_point_id = ep; break;
                     }
                   }

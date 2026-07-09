@@ -37,7 +37,7 @@
       // continues from split point to old end.
       const double old_end_x = line.end_x;
       const double old_end_y = line.end_y;
-      const std::string old_end_id = line.end_point_id;
+      const std::string old_end_id = line.end_vertex_id;
       const int fresh = static_cast<int>(params.lines.size()) * 10 +
                         static_cast<int>(params.arcs.size()) * 10 + 5000;
       const std::string split_pt_id =
@@ -45,14 +45,14 @@
 
       line.end_x = px;
       line.end_y = py;
-      line.end_point_id = split_pt_id;
+      line.end_vertex_id = split_pt_id;
       line.constraint = std::nullopt;
 
       const int next_idx = static_cast<int>(params.lines.size()) + 1;
       params.lines.push_back(SketchLine{
           .id = "line-" + std::to_string(next_idx),
-          .start_point_id = split_pt_id,
-          .end_point_id = old_end_id,
+          .start_vertex_id = split_pt_id,
+          .end_vertex_id = old_end_id,
           .start_x = px,
           .start_y = py,
           .end_x = old_end_x,
@@ -72,11 +72,11 @@
   const std::string split_sp =
       split_line_at_interior_point(asx, asy);
   if (!split_sp.empty()) {
-    params.arcs.back().start_point_id = split_sp;
+    params.arcs.back().start_vertex_id = split_sp;
   }
   const std::string split_ep =
       split_line_at_interior_point(aex, aey);
   if (!split_ep.empty()) {
-    params.arcs.back().end_point_id = split_ep;
+    params.arcs.back().end_vertex_id = split_ep;
   }
 }

@@ -54,8 +54,8 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
 
     // Update line endpoint vertices, then sync cached coords.
     for (auto& sl : params.lines) {
-        auto sit = point_id_to_index_.find(sl.start_point_id);
-        auto eit = point_id_to_index_.find(sl.end_point_id);
+        auto sit = point_id_to_index_.find(sl.start_vertex_id);
+        auto eit = point_id_to_index_.find(sl.end_vertex_id);
         if (sit != point_id_to_index_.end()) {
             params.vertices[sit->second].x = param_storage_[sit->second * 2];
             params.vertices[sit->second].y = param_storage_[sit->second * 2 + 1];

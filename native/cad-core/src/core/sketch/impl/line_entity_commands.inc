@@ -15,11 +15,11 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   auto& params = *feature.sketch_parameters;
   feature.sketch_parameters->lines.push_back(SketchLine{
       .id = "line-" + std::to_string(line_index),
-      .start_point_id =
+      .start_vertex_id =
           shared_start_point.has_value()
               ? std::get<0>(shared_start_point.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
-      .end_point_id = shared_end_point.has_value()
+      .end_vertex_id = shared_end_point.has_value()
                           ? std::get<0>(shared_end_point.value())
                           : "vertex-" + std::to_string(params.next_vertex_index++),
       .start_x = start_x,

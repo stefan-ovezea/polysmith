@@ -12,7 +12,7 @@ namespace polysmith::core {
 // snaps a sketch line endpoint to a midpoint snap target.
 struct SketchMidpointAnchor {
   std::string id;
-  std::string point_id;
+  std::string vertex_id;
   std::string line_id;
 };
 
@@ -24,7 +24,7 @@ struct SketchMidpointAnchor {
 // special case at t=0.5.
 struct SketchVertexLineAnchor {
   std::string id;
-  std::string point_id;
+  std::string vertex_id;
   std::string line_id;
   // Stored fraction along the host line at the time the anchor was
   // created. The solver uses this to keep the bound point at the

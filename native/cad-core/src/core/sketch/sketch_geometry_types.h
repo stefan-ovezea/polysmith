@@ -13,9 +13,8 @@ struct SketchProfilePoint {
 
 struct SketchLine {
   std::string id;
-  std::string start_point_id;
-  std::string end_point_id;
-  // ── Vertex unification (Phase 5) ────────────────────────────
+  // ── Vertex unification ──────────────────────────────────────
+  // Stable "vertex-N" identifiers. These are the canonical endpoint IDs.
   std::string start_vertex_id;
   std::string end_vertex_id;
   double start_x;
@@ -73,9 +72,8 @@ struct SketchPolygon {
 // to worry about the cached params drifting from the endpoints.
 struct SketchArc {
   std::string id;
-  std::string start_point_id;
-  std::string end_point_id;
-  // ── Vertex unification (Phase 5) ────────────────────────────
+  // ── Vertex unification ──────────────────────────────────────
+  // Stable "vertex-N" identifiers. These are the canonical endpoint IDs.
   std::string start_vertex_id;
   std::string end_vertex_id;
   std::string center_vertex_id;

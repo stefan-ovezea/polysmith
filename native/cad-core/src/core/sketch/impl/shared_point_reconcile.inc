@@ -12,8 +12,8 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
 
   for (size_t i = 0; i < parameters.lines.size(); ++i) {
     const auto& line = parameters.lines[i];
-    shared[line.start_point_id].push_back({i, true});
-    shared[line.end_point_id].push_back({i, false});
+    shared[line.start_vertex_id].push_back({i, true});
+    shared[line.end_vertex_id].push_back({i, false});
   }
 
   for (const auto& [point_id, refs] : shared) {
@@ -28,7 +28,7 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
     for (size_t r = 0; r < refs.size(); ++r) {
       const auto& l = parameters.lines[refs[r].line_index];
       const std::string& pt =
-          refs[r].is_start ? l.start_point_id : l.end_point_id;
+          refs[r].is_start ? l.start_vertex_id : l.end_vertex_id;
       if (vertex_is_fixed(parameters, pt)) {
         canonical_ref = r;
         found_authoritative = true;

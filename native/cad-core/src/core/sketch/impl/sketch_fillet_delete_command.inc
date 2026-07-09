@@ -33,11 +33,11 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
       return;
     }
     if (line_start_matches(*line_it, trim_point_id)) {
-      line_it->start_point_id = fillet_copy.corner_point_id;
+      line_it->start_vertex_id = fillet_copy.corner_point_id;
       line_it->start_x = corner_x;
       line_it->start_y = corner_y;
-    } else if (line_it->end_point_id == trim_point_id) {
-      line_it->end_point_id = fillet_copy.corner_point_id;
+    } else if (line_it->end_vertex_id == trim_point_id) {
+      line_it->end_vertex_id = fillet_copy.corner_point_id;
       line_it->end_x = corner_x;
       line_it->end_y = corner_y;
     }

@@ -7,8 +7,8 @@ struct ProfileEdge {
 
   std::string id;
   Kind kind;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   double start_x;
   double start_y;
   double end_x;
@@ -24,8 +24,8 @@ ProfileEdge profile_edge_from_line(const SketchLine& line) {
   return ProfileEdge{
       .id = line.id,
       .kind = ProfileEdge::Kind::Line,
-      .start_point_id = line.start_point_id,
-      .end_point_id = line.end_point_id,
+      .start_vertex_id = line.start_vertex_id,
+      .end_vertex_id = line.end_vertex_id,
       .start_x = line.start_x,
       .start_y = line.start_y,
       .end_x = line.end_x,
@@ -37,8 +37,8 @@ ProfileEdge profile_edge_from_arc(const SketchArc& arc) {
   return ProfileEdge{
       .id = arc.id,
       .kind = ProfileEdge::Kind::Arc,
-      .start_point_id = arc.start_point_id,
-      .end_point_id = arc.end_point_id,
+      .start_vertex_id = arc.start_vertex_id,
+      .end_vertex_id = arc.end_vertex_id,
       .start_x = arc.start_x,
       .start_y = arc.start_y,
       .end_x = arc.end_x,
@@ -52,7 +52,7 @@ ProfileEdge profile_edge_from_arc(const SketchArc& arc) {
 
 std::string edge_node_id(const ProfileEdge& edge, bool is_start) {
   const std::string& point_id =
-      is_start ? edge.start_point_id : edge.end_point_id;
+      is_start ? edge.start_vertex_id : edge.end_vertex_id;
   if (!point_id.empty()) {
     return point_id;
   }

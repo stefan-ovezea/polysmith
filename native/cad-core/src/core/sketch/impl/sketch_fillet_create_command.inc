@@ -19,10 +19,10 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
 
   // Both lines must reference the corner point as one of their
   // endpoints — otherwise the user clicked a point that isn't shared.
-  const bool a_at_start = line_a.start_point_id == corner_point_id;
-  const bool a_at_end = line_a.end_point_id == corner_point_id;
-  const bool b_at_start = line_b.start_point_id == corner_point_id;
-  const bool b_at_end = line_b.end_point_id == corner_point_id;
+  const bool a_at_start = line_a.start_vertex_id == corner_point_id;
+  const bool a_at_end = line_a.end_vertex_id == corner_point_id;
+  const bool b_at_start = line_b.start_vertex_id == corner_point_id;
+  const bool b_at_end = line_b.end_vertex_id == corner_point_id;
   if ((!a_at_start && !a_at_end) || (!b_at_start && !b_at_end)) {
     throw std::runtime_error(
         "Sketch fillet: corner point must be shared by both lines");
@@ -124,20 +124,20 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // the trim position right away. The recompute pass will refresh
   // these on every subsequent edit.
   if (a_at_start) {
-    line_a.start_point_id = trim_a_id;
+    line_a.start_vertex_id = trim_a_id;
     line_a.start_x = trim_a_x;
     line_a.start_y = trim_a_y;
   } else {
-    line_a.end_point_id = trim_a_id;
+    line_a.end_vertex_id = trim_a_id;
     line_a.end_x = trim_a_x;
     line_a.end_y = trim_a_y;
   }
   if (b_at_start) {
-    line_b.start_point_id = trim_b_id;
+    line_b.start_vertex_id = trim_b_id;
     line_b.start_x = trim_b_x;
     line_b.start_y = trim_b_y;
   } else {
-    line_b.end_point_id = trim_b_id;
+    line_b.end_vertex_id = trim_b_id;
     line_b.end_x = trim_b_x;
     line_b.end_y = trim_b_y;
   }
@@ -146,8 +146,8 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // points) and the fillet record.
   parameters.arcs.push_back(SketchArc{
       .id = arc_id,
-      .start_point_id = trim_a_id,
-      .end_point_id = trim_b_id,
+      .start_vertex_id = trim_a_id,
+      .end_vertex_id = trim_b_id,
       .center_x = arc_center_x,
       .center_y = arc_center_y,
       .radius = radius,

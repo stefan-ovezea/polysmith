@@ -67,15 +67,15 @@ int run_inference_on_new_line(SketchFeatureParameters& params,
   // phantom point sink that collects future constraints.
 
   auto end_near = find_nearest_existing_point(
-      params, line.end_x, line.end_y, line.end_point_id);
+      params, line.end_x, line.end_y, line.end_vertex_id);
   if (end_near.has_value() &&
       !constraint_already_exists(params, "coincident",
-          {line.end_point_id, end_near->point_id})) {
+          {line.end_vertex_id, end_near->point_id})) {
     params.constraints.push_back(SketchConstraint{
         .constraint_id = "constraint-" +
             std::to_string(params.constraints.size() + 1),
         .kind = "coincident",
-        .target_ids = {line.end_point_id, end_near->point_id},
+        .target_ids = {line.end_vertex_id, end_near->point_id},
     });
     ++count;
   }

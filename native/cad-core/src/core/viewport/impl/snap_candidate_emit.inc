@@ -10,13 +10,13 @@
         if (filter.snap_endpoint) {
           for (const auto& line : sketch.lines) {
             if (line.is_construction && !filter.select_construction) continue;
-            snap_candidates.push_back({.kind="endpoint",.entity_id=line.id,.point_id=line.start_point_id,.local_x=line.start_x,.local_y=line.start_y,.distance=0,.label="Endpoint"});
-            snap_candidates.push_back({.kind="endpoint",.entity_id=line.id,.point_id=line.end_point_id,.local_x=line.end_x,.local_y=line.end_y,.distance=0,.label="Endpoint"});
+            snap_candidates.push_back({.kind="endpoint",.entity_id=line.id,.vertex_id=line.start_vertex_id,.local_x=line.start_x,.local_y=line.start_y,.distance=0,.label="Endpoint"});
+            snap_candidates.push_back({.kind="endpoint",.entity_id=line.id,.vertex_id=line.end_vertex_id,.local_x=line.end_x,.local_y=line.end_y,.distance=0,.label="Endpoint"});
           }
           for (const auto& arc : sketch.arcs) {
             if (arc.is_construction && !filter.select_construction) continue;
-            snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.point_id=arc.start_point_id,.local_x=arc.start_x,.local_y=arc.start_y,.distance=0,.label="Endpoint"});
-            snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.point_id=arc.end_point_id,.local_x=arc.end_x,.local_y=arc.end_y,.distance=0,.label="Endpoint"});
+            snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.vertex_id=arc.start_vertex_id,.local_x=arc.start_x,.local_y=arc.start_y,.distance=0,.label="Endpoint"});
+            snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.vertex_id=arc.end_vertex_id,.local_x=arc.end_x,.local_y=arc.end_y,.distance=0,.label="Endpoint"});
           }
         }
         // Midpoints
@@ -25,22 +25,22 @@
             if (line.is_construction && !filter.select_construction) continue;
             const double mx = (line.start_x + line.end_x) / 2.0;
             const double my = (line.start_y + line.end_y) / 2.0;
-            snap_candidates.push_back({.kind="midpoint",.entity_id=line.id,.point_id="",.local_x=mx,.local_y=my,.distance=0,.label="Midpoint"});
+            snap_candidates.push_back({.kind="midpoint",.entity_id=line.id,.vertex_id="",.local_x=mx,.local_y=my,.distance=0,.label="Midpoint"});
           }
         }
         // Centers
         if (filter.snap_center) {
           for (const auto& circle : sketch.circles) {
             if (circle.is_construction && !filter.select_construction) continue;
-            snap_candidates.push_back({.kind="center",.entity_id=circle.id,.point_id="",.local_x=circle.center_x,.local_y=circle.center_y,.distance=0,.label="Center"});
+            snap_candidates.push_back({.kind="center",.entity_id=circle.id,.vertex_id="",.local_x=circle.center_x,.local_y=circle.center_y,.distance=0,.label="Center"});
           }
           for (const auto& arc : sketch.arcs) {
             if (arc.is_construction && !filter.select_construction) continue;
-            snap_candidates.push_back({.kind="center",.entity_id=arc.id,.point_id="",.local_x=arc.center_x,.local_y=arc.center_y,.distance=0,.label="Center"});
+            snap_candidates.push_back({.kind="center",.entity_id=arc.id,.vertex_id="",.local_x=arc.center_x,.local_y=arc.center_y,.distance=0,.label="Center"});
           }
           for (const auto& poly : sketch.polygons) {
             if (poly.is_construction && !filter.select_construction) continue;
-            snap_candidates.push_back({.kind="center",.entity_id=poly.id,.point_id="",.local_x=poly.center_x,.local_y=poly.center_y,.distance=0,.label="Center"});
+            snap_candidates.push_back({.kind="center",.entity_id=poly.id,.vertex_id="",.local_x=poly.center_x,.local_y=poly.center_y,.distance=0,.label="Center"});
           }
         }
         // Quadrant points (4 per circle)
@@ -50,10 +50,10 @@
             const double cx = circle.center_x;
             const double cy = circle.center_y;
             const double r = circle.radius;
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.point_id="",.local_x=cx+r,.local_y=cy,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.point_id="",.local_x=cx,.local_y=cy+r,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.point_id="",.local_x=cx-r,.local_y=cy,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.point_id="",.local_x=cx,.local_y=cy-r,.distance=0,.label="Quadrant"});
+            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx+r,.local_y=cy,.distance=0,.label="Quadrant"});
+            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy+r,.distance=0,.label="Quadrant"});
+            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx-r,.local_y=cy,.distance=0,.label="Quadrant"});
+            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy-r,.distance=0,.label="Quadrant"});
           }
         }
         // Intersection points (line-line and line-arc)
@@ -74,7 +74,7 @@
               const double t = ((b.start_x - a.start_x) * b_dy - (b.start_y - a.start_y) * b_dx) / denom;
               const double u = ((b.start_x - a.start_x) * a_dy - (b.start_y - a.start_y) * a_dx) / denom;
               if (t < 0.0 || t > 1.0 || u < 0.0 || u > 1.0) continue;
-              snap_candidates.push_back({.kind="intersection",.entity_id=a.id,.point_id="",.local_x=a.start_x+t*a_dx,.local_y=a.start_y+t*a_dy,.distance=0,.label="Intersection"});
+              snap_candidates.push_back({.kind="intersection",.entity_id=a.id,.vertex_id="",.local_x=a.start_x+t*a_dx,.local_y=a.start_y+t*a_dy,.distance=0,.label="Intersection"});
             }
           }
           // Line-arc intersections
@@ -98,7 +98,7 @@
               for (double sign : {-1.0, 1.0}) {
                 const double t = (-b_val + sign * disc) / (2.0 * a_val);
                 if (t < 0.0 || t > 1.0) continue;
-                snap_candidates.push_back({.kind="intersection",.entity_id=line.id,.point_id="",.local_x=line.start_x+t*dx,.local_y=line.start_y+t*dy,.distance=0,.label="Intersection"});
+                snap_candidates.push_back({.kind="intersection",.entity_id=line.id,.vertex_id="",.local_x=line.start_x+t*dx,.local_y=line.start_y+t*dy,.distance=0,.label="Intersection"});
               }
             }
           }

@@ -49,7 +49,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   {
     auto point_is_alive = [&](const std::string& pid) -> bool {
       for (const auto& l : feature.sketch_parameters->lines) {
-        if (l.start_point_id == pid || l.end_point_id == pid) return true;
+        if (l.start_vertex_id == pid || l.end_vertex_id == pid) return true;
       }
       // Phase 4.2: use geometry_owner_ids instead of prefix matching
       if (find_circle_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
@@ -166,8 +166,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           // Focus is a line → unfreeze both endpoints.
           for (const auto& line : feature.sketch_parameters->lines) {
             if (line.id == focus_id) {
-              unfrozen_point_ids.insert(line.start_point_id);
-              unfrozen_point_ids.insert(line.end_point_id);
+              unfrozen_point_ids.insert(line.start_vertex_id);
+              unfrozen_point_ids.insert(line.end_vertex_id);
             }
           }
           // Focus is a circle → unfreeze its center point.
@@ -426,19 +426,19 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // must stay in sync so the arc doesn't visually detach.
   for (auto& arc : feature.sketch_parameters->arcs) {
     for (const auto& line : feature.sketch_parameters->lines) {
-      if (line.start_point_id == arc.start_point_id) {
+      if (line.start_vertex_id == arc.start_vertex_id) {
         arc.start_x = line.start_x;
         arc.start_y = line.start_y;
       }
-      if (line.end_point_id == arc.start_point_id) {
+      if (line.end_vertex_id == arc.start_vertex_id) {
         arc.start_x = line.end_x;
         arc.start_y = line.end_y;
       }
-      if (line.start_point_id == arc.end_point_id) {
+      if (line.start_vertex_id == arc.end_vertex_id) {
         arc.end_x = line.start_x;
         arc.end_y = line.start_y;
       }
-      if (line.end_point_id == arc.end_point_id) {
+      if (line.end_vertex_id == arc.end_vertex_id) {
         arc.end_x = line.end_x;
         arc.end_y = line.end_y;
       }

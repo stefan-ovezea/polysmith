@@ -11,11 +11,11 @@ void set_endpoint_vertex_id(SketchLine& line,
                            bool is_start,
                            const std::string& point_id) {
   if (is_start) {
-    line.start_point_id = point_id;
+    line.start_vertex_id = point_id;
     return;
   }
 
-  line.end_point_id = point_id;
+  line.end_vertex_id = point_id;
 }
 
 double endpoint_x(const SketchLine& line, bool is_start) {
@@ -42,19 +42,19 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     if (match_line(candidate)) continue;
     if (points_match(candidate.start_x, candidate.start_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.start_point_id, candidate.start_x, candidate.start_y};
+          candidate.start_vertex_id, candidate.start_x, candidate.start_y};
     if (points_match(candidate.end_x, candidate.end_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.end_point_id, candidate.end_x, candidate.end_y};
+          candidate.end_vertex_id, candidate.end_x, candidate.end_y};
   }
   for (const auto& candidate : parameters.arcs) {
     if (match_arc(candidate)) continue;
     if (points_match(candidate.start_x, candidate.start_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.start_point_id, candidate.start_x, candidate.start_y};
+          candidate.start_vertex_id, candidate.start_x, candidate.start_y};
     if (points_match(candidate.end_x, candidate.end_y, x, y))
       return std::tuple<std::string, double, double>{
-          candidate.end_point_id, candidate.end_x, candidate.end_y};
+          candidate.end_vertex_id, candidate.end_x, candidate.end_y};
   }
   return std::nullopt;
 }
@@ -84,8 +84,8 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   };
 
   for (const auto& line : parameters.lines) {
-    append_point(line.start_point_id, "endpoint", line.start_x, line.start_y);
-    append_point(line.end_point_id, "endpoint", line.end_x, line.end_y);
+    append_point(line.start_vertex_id, "endpoint", line.start_x, line.start_y);
+    append_point(line.end_vertex_id, "endpoint", line.end_x, line.end_y);
   }
 
   for (const auto& arc : parameters.arcs) {
@@ -94,8 +94,8 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     // endpoint points just works on arcs without special-casing.
     // Coords come from the cached arc params (which are kept in
     // sync at creation; v1 freezes them after that).
-    append_point(arc.start_point_id, "endpoint", arc.start_x, arc.start_y);
-    append_point(arc.end_point_id, "endpoint", arc.end_x, arc.end_y);
+    append_point(arc.start_vertex_id, "endpoint", arc.start_x, arc.start_y);
+    append_point(arc.end_vertex_id, "endpoint", arc.end_x, arc.end_y);
   }
 
   // ── Phase 6: centers use stable vertex-N IDs ──────────────────
@@ -197,17 +197,17 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
 
   // Line endpoints.
   for (const auto& line : parameters.lines) {
-    if (auto* sp = find_point(line.start_point_id))
+    if (auto* sp = find_point(line.start_vertex_id))
       sp->geometry_owner_ids.push_back(line.id);
-    if (auto* sp = find_point(line.end_point_id))
+    if (auto* sp = find_point(line.end_vertex_id))
       sp->geometry_owner_ids.push_back(line.id);
   }
 
   // Arc endpoints and centers.
   for (const auto& arc : parameters.arcs) {
-    if (auto* sp = find_point(arc.start_point_id))
+    if (auto* sp = find_point(arc.start_vertex_id))
       sp->geometry_owner_ids.push_back(arc.id);
-    if (auto* sp = find_point(arc.end_point_id))
+    if (auto* sp = find_point(arc.end_vertex_id))
       sp->geometry_owner_ids.push_back(arc.id);
     // Phase 6: center ID is now center_vertex_id (vertex-N)
     if (!arc.center_vertex_id.empty())
@@ -281,12 +281,12 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   };
 
   for (auto& line : parameters.lines) {
-    line.start_vertex_id = vertex_id_of(line.start_point_id);
-    line.end_vertex_id   = vertex_id_of(line.end_point_id);
+    line.start_vertex_id = vertex_id_of(line.start_vertex_id);
+    line.end_vertex_id   = vertex_id_of(line.end_vertex_id);
   }
   for (auto& arc : parameters.arcs) {
-    arc.start_vertex_id = vertex_id_of(arc.start_point_id);
-    arc.end_vertex_id   = vertex_id_of(arc.end_point_id);
+    arc.start_vertex_id = vertex_id_of(arc.start_vertex_id);
+    arc.end_vertex_id   = vertex_id_of(arc.end_vertex_id);
     // center_vertex_id already set in the center-emit loop above;
     // this maps it through the vertex table to keep vertex_id in sync.
     if (!arc.center_vertex_id.empty())
@@ -312,19 +312,19 @@ void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
   };
 
   for (auto& line : parameters.lines) {
-    if (const auto* sv = find_v(line.start_point_id)) {
+    if (const auto* sv = find_v(line.start_vertex_id)) {
       line.start_x = sv->x; line.start_y = sv->y;
     }
-    if (const auto* ev = find_v(line.end_point_id)) {
+    if (const auto* ev = find_v(line.end_vertex_id)) {
       line.end_x = ev->x; line.end_y = ev->y;
     }
   }
 
   for (auto& arc : parameters.arcs) {
-    if (const auto* sv = find_v(arc.start_point_id)) {
+    if (const auto* sv = find_v(arc.start_vertex_id)) {
       arc.start_x = sv->x; arc.start_y = sv->y;
     }
-    if (const auto* ev = find_v(arc.end_point_id)) {
+    if (const auto* ev = find_v(arc.end_vertex_id)) {
       arc.end_x = ev->x; arc.end_y = ev->y;
     }
     // Arc center: use center_vertex_id (vertex-N, Phase 6)
