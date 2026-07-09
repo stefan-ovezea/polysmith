@@ -77,12 +77,12 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
       const std::string moved_endpoint_point_id =
           endpoint_vertex_id(line, endpoint_ref.is_start);
       const bool moved_endpoint_anchored =
-          point_is_anchored_to_line(parameters, moved_endpoint_point_id);
+          vertex_is_anchored_to_line(parameters, moved_endpoint_point_id);
       const bool moved_point_shared = connected_endpoints.size() > 1;
       const bool other_endpoint_fixed =
           vertex_is_fixed(parameters, other_endpoint_point_id);
       const bool other_endpoint_anchored =
-          point_is_anchored_to_line(parameters, other_endpoint_point_id);
+          vertex_is_anchored_to_line(parameters, other_endpoint_point_id);
 
       if (line.constraint == "horizontal") {
         if ((moved_endpoint_anchored || moved_point_shared) &&

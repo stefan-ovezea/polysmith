@@ -1,7 +1,7 @@
 // finalize_new_dimension and count_driving_on_point_pair are now in
 // dimensions.inc (included earlier in sketch_feature.cpp).
 
-void add_sketch_point_distance_dimension(FeatureEntry& feature,
+void add_sketch_vertex_distance_dimension(FeatureEntry& feature,
                                          const std::string& point_a_id,
                                          const std::string& point_b_id,
                                          std::optional<std::string> axis) {

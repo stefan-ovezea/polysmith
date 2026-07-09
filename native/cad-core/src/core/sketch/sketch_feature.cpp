@@ -38,7 +38,7 @@ namespace {
 
 #include "core/sketch/impl/state_and_create.inc"
 #include "core/sketch/impl/line_constraints.inc"
-#include "core/sketch/impl/point_and_circle_updates.inc"
+#include "core/sketch/impl/vertex_and_circle_updates.inc"
 #include "core/sketch/impl/dimensions.inc"
 #include "core/sketch/impl/line_primitives.inc"
 #include "core/sketch/impl/mirror.inc"

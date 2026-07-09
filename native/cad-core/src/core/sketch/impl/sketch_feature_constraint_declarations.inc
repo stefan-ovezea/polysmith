@@ -4,7 +4,7 @@ void update_sketch_line(FeatureEntry& feature,
                         double start_y,
                         double end_x,
                         double end_y);
-void update_sketch_point(FeatureEntry& feature,
+void update_sketch_vertex(FeatureEntry& feature,
                          const std::string& point_id,
                          double x,
                          double y);
@@ -57,7 +57,7 @@ void set_sketch_midpoint_anchor(FeatureEntry& feature,
 // `t` in [0, 1]. The solver re-projects the bound point on every
 // edit so it rides along with the host. Pass an empty
 // `host_line_id` to remove an existing anchor for the point.
-void set_sketch_point_line_anchor(FeatureEntry& feature,
+void set_sketch_vertex_line_anchor(FeatureEntry& feature,
                                   const std::string& point_id,
                                   const std::string& host_line_id,
                                   double t);

@@ -13,7 +13,7 @@
   }
 
   if (command.type == "update_sketch_vertex") {
-    const auto document = document_manager().update_sketch_point(
+    const auto document = document_manager().update_sketch_vertex(
         read_string(command.payload, "vertex_id"),
         read_dimension(command.payload, "x"),
         read_dimension(command.payload, "y"));

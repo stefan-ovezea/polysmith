@@ -34,7 +34,7 @@
         return view->selected_sketch_entity_id.has_value() &&
                view->selected_sketch_entity_id.value() == id;
       };
-      const auto is_sketch_point_selected = [&](const std::string& id) {
+      const auto is_sketch_vertex_selected = [&](const std::string& id) {
         if (!view->selected_sketch_vertex_ids.empty()) {
           return std::find(view->selected_sketch_vertex_ids.begin(),
                            view->selected_sketch_vertex_ids.end(),
@@ -58,7 +58,7 @@
 
 #include "core/viewport/impl/sketch_line_relation_emit.inc"
 #include "core/viewport/impl/sketch_curve_polygon_emit.inc"
-#include "core/viewport/impl/sketch_point_constraint_emit.inc"
+#include "core/viewport/impl/sketch_vertex_constraint_emit.inc"
 #include "core/viewport/impl/sketch_profile_emit.inc"
     }
   }

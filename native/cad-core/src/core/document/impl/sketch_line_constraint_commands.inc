@@ -142,7 +142,7 @@ DocumentState DocumentManager::set_sketch_midpoint_anchor(
   return document_.value();
 }
 
-DocumentState DocumentManager::set_sketch_point_line_anchor(
+DocumentState DocumentManager::set_sketch_vertex_line_anchor(
     const std::string& point_id,
     const std::string& host_line_id,
     double t) {
@@ -165,7 +165,7 @@ DocumentState DocumentManager::set_sketch_point_line_anchor(
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::set_sketch_point_line_anchor(
+  polysmith::core::set_sketch_vertex_line_anchor(
       *feature_it, point_id, host_line_id, t);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;

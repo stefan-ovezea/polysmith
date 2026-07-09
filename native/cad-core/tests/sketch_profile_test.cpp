@@ -25,7 +25,7 @@ using polysmith::core::delete_sketch_fillet;
 using polysmith::core::detect_sketch_profiles;
 using polysmith::core::set_sketch_midpoint_anchor;
 using polysmith::core::set_sketch_vertex_fixed;
-using polysmith::core::set_sketch_point_line_anchor;
+using polysmith::core::set_sketch_vertex_line_anchor;
 using polysmith::core::update_sketch_dimension;
 using polysmith::core::update_sketch_fillet_radius;
 using polysmith::core::build_sketch_profile_regions;

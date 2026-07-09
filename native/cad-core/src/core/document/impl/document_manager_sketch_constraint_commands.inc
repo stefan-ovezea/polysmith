@@ -3,7 +3,7 @@
                                    double start_y,
                                    double end_x,
                                    double end_y);
-  DocumentState update_sketch_point(const std::string& point_id,
+  DocumentState update_sketch_vertex(const std::string& point_id,
                                     double x,
                                     double y);
   DocumentState set_sketch_line_constraint(
@@ -35,6 +35,6 @@
                                            const std::string& host_line_id);
   // Bind a sketch point to a host line's body at parametric position
   // `t` in [0, 1]. Pass an empty `host_line_id` to clear the anchor.
-  DocumentState set_sketch_point_line_anchor(const std::string& point_id,
+  DocumentState set_sketch_vertex_line_anchor(const std::string& point_id,
                                              const std::string& host_line_id,
                                              double t);

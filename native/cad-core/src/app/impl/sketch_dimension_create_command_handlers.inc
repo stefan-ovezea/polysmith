@@ -95,7 +95,7 @@
       axis = command.payload.at("axis").get<std::string>();
     }
     const auto document =
-        document_manager().add_sketch_point_distance_dimension(
+        document_manager().add_sketch_vertex_distance_dimension(
             read_string(command.payload, "vertex_a_id"),
             read_string(command.payload, "vertex_b_id"),
             axis);

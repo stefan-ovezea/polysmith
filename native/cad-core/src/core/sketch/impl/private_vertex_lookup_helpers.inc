@@ -41,7 +41,7 @@ inline const polysmith::core::SketchArc* find_arc_for_point(
 inline std::string circle_center_vertex_id(
     const polysmith::core::SketchCircle& circle) {
   if (!circle.center_vertex_id.empty()) return circle.center_vertex_id;
-  return "point-circle-" + circle.id + "-center";
+  return "vertex-" + circle.id + "-center";
 }
 
 // Convenience overload: given a circle ID, find the circle and return
@@ -60,5 +60,5 @@ inline std::string circle_center_vertex_id_for(
 inline std::string arc_center_vertex_id(
     const polysmith::core::SketchArc& arc) {
   if (!arc.center_vertex_id.empty()) return arc.center_vertex_id;
-  return "point-arc-" + arc.id + "-center";
+  return "vertex-" + arc.id + "-center";
 }

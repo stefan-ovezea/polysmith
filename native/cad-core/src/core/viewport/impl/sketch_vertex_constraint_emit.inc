@@ -2,8 +2,8 @@
           view->active_sketch_feature_id.value() == feature.id) {
         for (const auto& point : feature.sketch_parameters->vertices) {
           const bool is_selected_point =
-              is_sketch_point_selected(point.id);
-          sketch_vertices.push_back(make_sketch_point_primitive(
+              is_sketch_vertex_selected(point.id);
+          sketch_vertices.push_back(make_sketch_vertex_primitive(
               point, *feature.sketch_parameters, is_selected_point));
           if (point.is_fixed && point.kind != "projected") {
             sketch_constraints.push_back(make_point_constraint_primitive(
@@ -51,7 +51,7 @@
                     std::get<1>(pt_pos.value()),
                     kSketchPlaneOffset + kConstraintBadgeOffset);
                 const bool is_sel =
-                    is_sketch_point_selected(shared_point_id);
+                    is_sketch_vertex_selected(shared_point_id);
                 sketch_constraints.push_back(
                     ViewportSketchConstraintPrimitive{
                         .constraint_id = c.constraint_id,
@@ -80,7 +80,7 @@
                       circ.center_x, circ.center_y,
                       kSketchPlaneOffset + kConstraintBadgeOffset);
                   const bool is_sel =
-                      is_sketch_point_selected(
+                      is_sketch_vertex_selected(
                           circle_center_vertex_id(circ));
                   sketch_constraints.push_back(
                       ViewportSketchConstraintPrimitive{

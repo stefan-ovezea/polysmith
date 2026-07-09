@@ -4,7 +4,7 @@
         command.payload.at("additive").is_boolean()) {
       additive = command.payload.at("additive").get<bool>();
     }
-    const auto document = document_manager().select_sketch_point(
+    const auto document = document_manager().select_sketch_vertex(
         read_string(command.payload, "vertex_id"), additive);
 
     polysmith::protocol::write_message(

@@ -3,4 +3,4 @@
 #include "core/document/impl/sketch_line_constraint_commands.inc"
 #include "core/document/impl/sketch_mirror_preview_commands.inc"
 #include "core/document/impl/sketch_relation_constraint_commands.inc"
-#include "core/document/impl/sketch_point_circle_update_commands.inc"
+#include "core/document/impl/sketch_vertex_circle_update_commands.inc"

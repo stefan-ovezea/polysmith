@@ -43,7 +43,7 @@
         command.payload.at("t").is_number()) {
       t = command.payload.at("t").get<double>();
     }
-    const auto document = document_manager().set_sketch_point_line_anchor(
+    const auto document = document_manager().set_sketch_vertex_line_anchor(
         read_string(command.payload, "vertex_id"), host_line_id, t);
 
     polysmith::protocol::write_message(

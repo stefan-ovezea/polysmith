@@ -71,7 +71,7 @@ void update_sketch_line(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
-void update_sketch_point(FeatureEntry& feature,
+void update_sketch_vertex(FeatureEntry& feature,
                          const std::string& point_id,
                          double x,
                          double y) {

@@ -37,7 +37,7 @@ DocumentState DocumentManager::update_sketch_line(const std::string& line_id,
   return document_.value();
 }
 
-DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
+DocumentState DocumentManager::update_sketch_vertex(const std::string& point_id,
                                                    double x,
                                                    double y) {
   require_document();
@@ -59,7 +59,7 @@ DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::update_sketch_point(*feature_it, point_id, x, y);
+  polysmith::core::update_sketch_vertex(*feature_it, point_id, x, y);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = point_id;

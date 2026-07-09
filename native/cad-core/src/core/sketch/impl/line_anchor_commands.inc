@@ -46,7 +46,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
 // bound point ride with the host as it moves. Mirrors
 // `set_sketch_midpoint_anchor` byte-for-byte except it also accepts
 // (and clamps) the `t` value and stores it on the anchor record.
-void set_sketch_point_line_anchor(FeatureEntry &feature,
+void set_sketch_vertex_line_anchor(FeatureEntry &feature,
                                   const std::string &point_id,
                                   const std::string &host_line_id, double t) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
@@ -93,7 +93,7 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
   const double clamped_t = std::max(0.0, std::min(1.0, t));
 
   parameters.point_line_anchors.push_back(SketchVertexLineAnchor{
-      .id = "point-line-anchor-" + point_id,
+      .id = "vertex-line-anchor-" + point_id,
       .vertex_id = point_id,
       .line_id = host_line_id,
       .t = clamped_t,

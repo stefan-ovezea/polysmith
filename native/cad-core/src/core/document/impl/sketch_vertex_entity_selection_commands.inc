@@ -1,4 +1,4 @@
-DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
+DocumentState DocumentManager::select_sketch_vertex(const std::string& point_id,
                                                    bool additive) {
   require_document();
 

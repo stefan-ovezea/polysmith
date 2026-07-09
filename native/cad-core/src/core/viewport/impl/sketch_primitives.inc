@@ -131,7 +131,7 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
   };
 }
 
-ViewportSketchVertexPrimitive make_sketch_point_primitive(
+ViewportSketchVertexPrimitive make_sketch_vertex_primitive(
     const SketchVertex& point,
     const SketchFeatureParameters& parameters,
     bool is_selected) {

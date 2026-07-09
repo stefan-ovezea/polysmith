@@ -21,7 +21,7 @@
       const std::string& arc_id);
   DocumentState add_sketch_polygon_radius_dimension(
       const std::string& polygon_id);
-  DocumentState add_sketch_point_distance_dimension(
+  DocumentState add_sketch_vertex_distance_dimension(
       const std::string& point_a_id,
       const std::string& point_b_id,
       std::optional<std::string> axis = std::nullopt);

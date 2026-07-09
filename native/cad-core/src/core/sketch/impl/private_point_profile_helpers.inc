@@ -117,28 +117,28 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     const double cy = circle.center_y;
     const double r = circle.radius;
     parameters.vertices.push_back(SketchVertex{
-        .id = "point-circle-" + circle.id + "-quadrant-0",
+        .id = "vertex-" + circle.id + "-quadrant-0",
         .kind = "quadrant",
         .x = cx + r,
         .y = cy,
         .is_fixed = false,
     });
     parameters.vertices.push_back(SketchVertex{
-        .id = "point-circle-" + circle.id + "-quadrant-1",
+        .id = "vertex-" + circle.id + "-quadrant-1",
         .kind = "quadrant",
         .x = cx,
         .y = cy + r,
         .is_fixed = false,
     });
     parameters.vertices.push_back(SketchVertex{
-        .id = "point-circle-" + circle.id + "-quadrant-2",
+        .id = "vertex-" + circle.id + "-quadrant-2",
         .kind = "quadrant",
         .x = cx - r,
         .y = cy,
         .is_fixed = false,
     });
     parameters.vertices.push_back(SketchVertex{
-        .id = "point-circle-" + circle.id + "-quadrant-3",
+        .id = "vertex-" + circle.id + "-quadrant-3",
         .kind = "quadrant",
         .x = cx,
         .y = cy - r,
@@ -223,7 +223,7 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         sp->geometry_owner_ids.push_back(circle.id);
     // Quadrants still use legacy format (see TODO above).
     for (int q = 0; q < 4; ++q) {
-      const auto qid = "point-circle-" + circle.id + "-quadrant-" + std::to_string(q);
+      const auto qid = "vertex-" + circle.id + "-quadrant-" + std::to_string(q);
       if (auto* sp = find_point(qid))
         sp->geometry_owner_ids.push_back(circle.id);
     }
