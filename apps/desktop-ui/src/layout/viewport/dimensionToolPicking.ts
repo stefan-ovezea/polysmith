@@ -96,18 +96,26 @@ function entityIdFromSketchVertexId(
 
   // Fallback for bare point-N IDs (arc endpoints, shared topology):
   // search entities by their start_vertex_id / end_vertex_id fields.
+  // Respect the `kinds` filter so that a caller asking only for lines
+  // does not accidentally receive an arc or circle id.
   if (sketch) {
-    for (const line of sketch.lines) {
-      if (line.start_vertex_id === vertexId || line.end_vertex_id === vertexId)
-        return line.line_id;
+    if (kinds.includes("line")) {
+      for (const line of sketch.lines) {
+        if (line.start_vertex_id === vertexId || line.end_vertex_id === vertexId)
+          return line.line_id;
+      }
     }
-    for (const arc of (sketch.arcs ?? [])) {
-      if (arc.start_vertex_id === vertexId || arc.end_vertex_id === vertexId)
-        return arc.arc_id;
+    if (kinds.includes("arc")) {
+      for (const arc of (sketch.arcs ?? [])) {
+        if (arc.start_vertex_id === vertexId || arc.end_vertex_id === vertexId)
+          return arc.arc_id;
+      }
     }
-    for (const circle of sketch.circles) {
-      if (circle.center_vertex_id === vertexId)
-        return circle.circle_id;
+    if (kinds.includes("circle")) {
+      for (const circle of sketch.circles) {
+        if (circle.center_vertex_id === vertexId)
+          return circle.circle_id;
+      }
     }
   }
   return null;
