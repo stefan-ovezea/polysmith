@@ -106,6 +106,7 @@ export function createDimensionToolActions({
 
   function selectDimensionCircle(entityId: string) {
     stageFollowUpPick(entityId);
+    void addSketchCircleRadiusDimensionRef.current(entityId);
   }
 
   function createDimensionLine(entityId: string) {
@@ -172,6 +173,7 @@ export function createDimensionToolActions({
 
   function selectDimensionArc(entityId: string) {
     stageFollowUpPick(entityId);
+    void addSketchArcRadiusDimensionRef.current(entityId);
   }
 
   function createDimensionLinear(lineId: string) {
