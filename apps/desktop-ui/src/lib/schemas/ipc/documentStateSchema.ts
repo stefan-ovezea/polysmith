@@ -603,13 +603,13 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 fillet_id: z.string(),
-                corner_point_id: z.string(),
+                corner_vertex_id: z.string(),
                 corner_x: z.number(),
                 corner_y: z.number(),
                 line_a_id: z.string(),
                 line_b_id: z.string(),
-                trim_a_point_id: z.string(),
-                trim_b_point_id: z.string(),
+                trim_a_vertex_id: z.string(),
+                trim_b_vertex_id: z.string(),
                 arc_id: z.string(),
                 radius: z.number(),
               }),
@@ -618,7 +618,7 @@ export const documentStateSchema = z.object({
           points: z.array(
             z.object({
               vertex_id: z.string(),
-              kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
+              kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),
               x: z.number(),
               y: z.number(),
               is_fixed: z.boolean(),

@@ -78,9 +78,9 @@ DocumentState DocumentManager::delete_sketch_selection(
     if (id_in_set(line_ids, fillet.line_a_id) ||
         id_in_set(line_ids, fillet.line_b_id) ||
         id_in_set(arc_ids, fillet.arc_id) ||
-        id_in_set(selected_point_ids, fillet.corner_point_id) ||
-        id_in_set(selected_point_ids, fillet.trim_a_point_id) ||
-        id_in_set(selected_point_ids, fillet.trim_b_point_id)) {
+        id_in_set(selected_point_ids, fillet.corner_vertex_id) ||
+        id_in_set(selected_point_ids, fillet.trim_a_vertex_id) ||
+        id_in_set(selected_point_ids, fillet.trim_b_vertex_id)) {
       add_id(fillet_ids, fillet.id);
     }
   }

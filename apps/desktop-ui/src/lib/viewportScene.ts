@@ -847,7 +847,7 @@ export function createViewportScene(
     .filter((arc) => isSketchPlaneVisible(arc.plane_id))
     .map((arc) => makeSketchArc(arc, projectedArcIds));
   const sketchPoints: SketchVertexScene[] = viewport.sketch_vertices
-    .filter((point) => isSketchPlaneVisible(point.plane_id))
+    .filter((point) => isSketchPlaneVisible(point.plane_id) && point.kind !== "fillet_corner")
     .map((point) => ({
       id: point.vertex_id,
       kind: point.kind,

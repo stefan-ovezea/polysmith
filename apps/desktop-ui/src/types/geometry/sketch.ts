@@ -48,9 +48,9 @@ export interface SketchCircleEntry {
 export interface SketchVertexEntry {
   /** vertex-N ID from Phase 4 vertex unification (canonical). */
   vertex_id: string;
-  // "endpoint" / "center" / "projected" — see `SketchVertexScene`
+  // "endpoint" / "center" / "projected" / "quadrant" / "fillet_corner" — see `SketchVertexScene`
   // for the renderer-side meaning of each value.
-  kind: "endpoint" | "center" | "projected";
+  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
   x: number;
   y: number;
   is_fixed: boolean;
@@ -185,13 +185,13 @@ export interface SketchPolygonEntry {
 // generated geometry kept in sync with `lines` and `arcs`.
 export interface SketchFilletEntry {
   fillet_id: string;
-  corner_point_id: string;
+  corner_vertex_id: string;
   corner_x: number;
   corner_y: number;
   line_a_id: string;
   line_b_id: string;
-  trim_a_point_id: string;
-  trim_b_point_id: string;
+  trim_a_vertex_id: string;
+  trim_b_vertex_id: string;
   arc_id: string;
   radius: number;
 }

@@ -38,8 +38,8 @@ export function pickSketchFilletCorner({
       (line) =>
         (fillet.line_a_id === line.line_id ||
           fillet.line_b_id === line.line_id) &&
-        (fillet.trim_a_point_id === cornerPoint.vertex_id ||
-          fillet.trim_b_point_id === cornerPoint.vertex_id),
+        (fillet.trim_a_vertex_id === cornerPoint.vertex_id ||
+          fillet.trim_b_vertex_id === cornerPoint.vertex_id),
     ),
   );
   if (alreadyFilleted) {

@@ -1,5 +1,5 @@
 DocumentState DocumentManager::add_sketch_fillet(
-    const std::string& corner_point_id,
+    const std::string& corner_vertex_id,
     const std::string& line_a_id,
     const std::string& line_b_id,
     double radius) {
@@ -32,7 +32,7 @@ DocumentState DocumentManager::add_sketch_fillet(
                                      trim_a_point_index,
                                      trim_b_point_index,
                                      next_sketch_arc_id_++,
-                                     corner_point_id,
+                                     corner_vertex_id,
                                      line_a_id,
                                      line_b_id,
                                      radius);

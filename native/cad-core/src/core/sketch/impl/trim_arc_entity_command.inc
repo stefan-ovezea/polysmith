@@ -119,12 +119,12 @@
                          return f.line_a_id == entity_id ||
                                 f.line_b_id == entity_id ||
                                 f.arc_id == entity_id ||
-                                f.corner_point_id == old_sp_id ||
-                                f.corner_point_id == old_ep_id ||
-                                f.trim_a_point_id == old_sp_id ||
-                                f.trim_a_point_id == old_ep_id ||
-                                f.trim_b_point_id == old_sp_id ||
-                                 f.trim_b_point_id == old_ep_id;
+                                f.corner_vertex_id == old_sp_id ||
+                                f.corner_vertex_id == old_ep_id ||
+                                f.trim_a_vertex_id == old_sp_id ||
+                                f.trim_a_vertex_id == old_ep_id ||
+                                f.trim_b_vertex_id == old_sp_id ||
+                                 f.trim_b_vertex_id == old_ep_id;
                        }),
         params.fillets.end());
 

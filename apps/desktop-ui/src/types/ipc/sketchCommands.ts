@@ -192,7 +192,7 @@ export interface AddSketchArcCommand {
 }
 
 // Round a corner shared by two sketch lines into a tangent arc.
-// `corner_point_id` must be an endpoint of both lines; the v1 core
+// `corner_vertex_id` must be an endpoint of both lines; the v1 core
 // rejects mismatches and oversized radii with a structured error.
 export interface AddSketchFilletCommand {
   id: string;

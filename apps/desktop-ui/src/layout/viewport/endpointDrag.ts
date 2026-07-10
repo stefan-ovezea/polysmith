@@ -105,11 +105,10 @@ export function circleCenterDragPreview(
 ): CircleCenterDragPreview | null {
   if (!params) return null;
 
-  const match = /^point-circle-(.+)-center$/.exec(pointId);
-  if (!match) return null;
-
-  const circleId = match[1];
-  const circle = params.circles.find((c) => c.circle_id === circleId);
+  const circle = params.circles.find((c) =>
+    c.center_vertex_id === pointId ||
+    `point-circle-${c.circle_id}-center` === pointId,
+  );
   if (!circle) return null;
 
   return {
@@ -149,23 +148,23 @@ function endpointDragAnchors(
   // Circle center: anchor is the circle's current center (so we get a
   // line from old center → new center).
   if (anchors.length === 0) {
-    const circleMatch = /^point-circle-(.+)-center$/.exec(pointId);
-    if (circleMatch) {
-      const circle = params.circles.find((c) => c.circle_id === circleMatch[1]);
-      if (circle) {
-        anchors.push({ x: circle.center_x, y: circle.center_y });
-      }
+    const circle = params.circles.find((c) =>
+      c.center_vertex_id === pointId ||
+      `point-circle-${c.circle_id}-center` === pointId,
+    );
+    if (circle) {
+      anchors.push({ x: circle.center_x, y: circle.center_y });
     }
   }
 
   // Arc center: anchor is the arc's current center.
   if (anchors.length === 0) {
-    const arcMatch = /^point-arc-(.+)-center$/.exec(pointId);
-    if (arcMatch) {
-      const arc = params.arcs?.find((a) => a.arc_id === arcMatch[1]);
-      if (arc) {
-        anchors.push({ x: arc.center_x, y: arc.center_y });
-      }
+    const arc = params.arcs?.find((a) =>
+      a.center_vertex_id === pointId ||
+      `point-arc-${a.arc_id}-center` === pointId,
+    );
+    if (arc) {
+      anchors.push({ x: arc.center_x, y: arc.center_y });
     }
   }
 
@@ -281,19 +280,14 @@ export function computeRippleActivePoints(
     }
   }
 
-  // Include circle center if this is a center point.
-  const centerMatch = /^point-circle-(.+)-center$/.exec(draggedPointId);
-  if (centerMatch) {
+  // Include circle center if this is a center point (support both
+  // vertex-N and legacy point-circle-*-center ID formats).
+  const isCircleCenter = sketch.circles.some((c) =>
+    c.center_vertex_id === draggedPointId ||
+    `point-circle-${c.circle_id}-center` === draggedPointId,
+  );
+  if (isCircleCenter) {
     active.add(draggedPointId);
-  }
-
-  // If the dragged point is a normal point that happens to be a circle
-  // center, check if there's a circle whose center id matches.
-  for (const circle of sketch.circles) {
-    const centerId = `point-circle-${circle.circle_id}-center`;
-    if (centerId === draggedPointId) {
-      active.add(centerId);
-    }
   }
 
   return Array.from(active);

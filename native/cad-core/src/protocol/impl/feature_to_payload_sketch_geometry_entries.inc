@@ -66,13 +66,13 @@
                     for (const auto& fillet : feature.sketch_parameters->fillets) {
                       fillets.push_back({
                           {"fillet_id", fillet.id},
-                          {"corner_point_id", fillet.corner_point_id},
+                          {"corner_vertex_id", fillet.corner_vertex_id},
                           {"corner_x", fillet.corner_x},
                           {"corner_y", fillet.corner_y},
                           {"line_a_id", fillet.line_a_id},
                           {"line_b_id", fillet.line_b_id},
-                          {"trim_a_point_id", fillet.trim_a_point_id},
-                          {"trim_b_point_id", fillet.trim_b_point_id},
+                          {"trim_a_vertex_id", fillet.trim_a_vertex_id},
+                          {"trim_b_vertex_id", fillet.trim_b_vertex_id},
                           {"arc_id", fillet.arc_id},
                           {"radius", fillet.radius},
                       });

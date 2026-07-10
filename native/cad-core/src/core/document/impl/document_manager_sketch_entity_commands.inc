@@ -54,7 +54,7 @@
   // shared by both lines; the relationship is parametric (see
   // `SketchFillet` in feature.h) so the fillet survives subsequent
   // sketch edits and has its own update / delete commands.
-  DocumentState add_sketch_fillet(const std::string& corner_point_id,
+  DocumentState add_sketch_fillet(const std::string& corner_vertex_id,
                                   const std::string& line_a_id,
                                   const std::string& line_b_id,
                                   double radius);

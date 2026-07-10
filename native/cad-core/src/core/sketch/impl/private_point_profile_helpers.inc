@@ -163,9 +163,14 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   // would silently drop it. The fillet record carries the cached
   // (`corner_x`, `corner_y`) precisely for this purpose; they're
   // refreshed every recompute by `enforce_sketch_fillets`.
+  // Fillet corner vertices are internal bookkeeping — the fillet
+  // needs to remember the original corner id so delete can restore
+  // it, but the corner should not render as a visible point.
+  // Marking them `kind = "fillet_corner"` lets the frontend skip
+  // them in the scene while keeping the data round-trip safe.
   for (const auto& fillet : parameters.fillets) {
-    append_point(fillet.corner_point_id,
-                 "endpoint",
+    append_point(fillet.corner_vertex_id,
+                 "fillet_corner",
                  fillet.corner_x,
                  fillet.corner_y);
   }

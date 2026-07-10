@@ -33,17 +33,17 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
       return;
     }
     if (line_start_matches(*line_it, trim_point_id)) {
-      line_it->start_vertex_id = fillet_copy.corner_point_id;
+      line_it->start_vertex_id = fillet_copy.corner_vertex_id;
       line_it->start_x = corner_x;
       line_it->start_y = corner_y;
     } else if (line_it->end_vertex_id == trim_point_id) {
-      line_it->end_vertex_id = fillet_copy.corner_point_id;
+      line_it->end_vertex_id = fillet_copy.corner_vertex_id;
       line_it->end_x = corner_x;
       line_it->end_y = corner_y;
     }
   };
-  restore_line(fillet_copy.line_a_id, fillet_copy.trim_a_point_id);
-  restore_line(fillet_copy.line_b_id, fillet_copy.trim_b_point_id);
+  restore_line(fillet_copy.line_a_id, fillet_copy.trim_a_vertex_id);
+  restore_line(fillet_copy.line_b_id, fillet_copy.trim_b_vertex_id);
 
   // Remove the generated arc.
   parameters.arcs.erase(std::remove_if(parameters.arcs.begin(),

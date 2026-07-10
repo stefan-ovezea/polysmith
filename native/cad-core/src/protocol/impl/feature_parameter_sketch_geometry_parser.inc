@@ -62,13 +62,22 @@
     for (const auto& fillet_payload : payload.at("fillets")) {
       polysmith::core::SketchFillet fillet{};
       fillet.id = read_string(fillet_payload, "fillet_id");
-      fillet.corner_point_id = read_string(fillet_payload, "corner_point_id");
+      // Accept both "corner_vertex_id" (new) and "corner_point_id" (old saves).
+      fillet.corner_vertex_id = fillet_payload.contains("corner_vertex_id")
+          ? read_string(fillet_payload, "corner_vertex_id")
+          : read_string(fillet_payload, "corner_point_id");
       fillet.corner_x = read_number(fillet_payload, "corner_x");
       fillet.corner_y = read_number(fillet_payload, "corner_y");
       fillet.line_a_id = read_string(fillet_payload, "line_a_id");
       fillet.line_b_id = read_string(fillet_payload, "line_b_id");
-      fillet.trim_a_point_id = read_string(fillet_payload, "trim_a_point_id");
-      fillet.trim_b_point_id = read_string(fillet_payload, "trim_b_point_id");
+      // Accept both "trim_a_vertex_id" (new) and "trim_a_point_id" (old saves).
+      fillet.trim_a_vertex_id = fillet_payload.contains("trim_a_vertex_id")
+          ? read_string(fillet_payload, "trim_a_vertex_id")
+          : read_string(fillet_payload, "trim_a_point_id");
+      // Accept both "trim_b_vertex_id" (new) and "trim_b_point_id" (old saves).
+      fillet.trim_b_vertex_id = fillet_payload.contains("trim_b_vertex_id")
+          ? read_string(fillet_payload, "trim_b_vertex_id")
+          : read_string(fillet_payload, "trim_b_point_id");
       fillet.arc_id = read_string(fillet_payload, "arc_id");
       fillet.radius = read_number(fillet_payload, "radius");
       params.fillets.push_back(fillet);

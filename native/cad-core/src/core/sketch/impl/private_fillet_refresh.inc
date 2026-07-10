@@ -16,13 +16,13 @@ void enforce_sketch_fillets(SketchFeatureParameters& parameters) {
     // Identify which end of each line is the trim point. `is_start_a`
     // / `is_start_b` capture this so we know which fields to update
     // when we push the new trim coords back onto the line.
-    const bool is_start_a = line_a_it->start_vertex_id == fillet.trim_a_point_id;
-    const bool is_end_a = line_a_it->end_vertex_id == fillet.trim_a_point_id;
+    const bool is_start_a = line_a_it->start_vertex_id == fillet.trim_a_vertex_id;
+    const bool is_end_a = line_a_it->end_vertex_id == fillet.trim_a_vertex_id;
     if (!is_start_a && !is_end_a) {
       continue;
     }
-    const bool is_start_b = line_b_it->start_vertex_id == fillet.trim_b_point_id;
-    const bool is_end_b = line_b_it->end_vertex_id == fillet.trim_b_point_id;
+    const bool is_start_b = line_b_it->start_vertex_id == fillet.trim_b_vertex_id;
+    const bool is_end_b = line_b_it->end_vertex_id == fillet.trim_b_vertex_id;
     if (!is_start_b && !is_end_b) {
       continue;
     }

@@ -12,7 +12,7 @@
 //
 // Validation in `add_sketch_fillet` is strict because a malformed
 // fillet would corrupt the lines:
-//   - both lines must reference `corner_point_id` as one of their
+//   - both lines must reference `corner_vertex_id` as one of their
 //     endpoints
 //   - the two lines must not be parallel (cross product within
 //     `kCoincidentTolerance`)
@@ -24,7 +24,7 @@ void add_sketch_fillet(FeatureEntry& feature,
                        int trim_a_point_index,
                        int trim_b_point_index,
                        int arc_index,
-                       const std::string& corner_point_id,
+                       const std::string& corner_vertex_id,
                        const std::string& line_a_id,
                        const std::string& line_b_id,
                        double radius);
