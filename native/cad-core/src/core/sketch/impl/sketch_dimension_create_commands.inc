@@ -231,6 +231,7 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
     // Already exists — update value to match current geometry (mirrors
     // line_length's idempotent behaviour).
     dimension_it->value = circle.radius;
+    dimension_it->is_auto = false;
     return;
   }
 
@@ -261,6 +262,7 @@ void add_sketch_arc_radius_dimension(FeatureEntry& feature,
       [&](const SketchDimension& dim) { return dim.id == dimension_id; });
   if (dimension_it != parameters.dimensions.end()) {
     dimension_it->value = arc.radius;
+    dimension_it->is_auto = false;
     return;
   }
 

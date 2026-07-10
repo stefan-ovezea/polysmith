@@ -13,7 +13,7 @@
               [&](const SketchDimension& d) {
                 return d.kind == "arc_radius" && d.entity_id == arc.id;
               });
-          if (dim_it != feature.sketch_parameters->dimensions.end()) {
+          if (dim_it != feature.sketch_parameters->dimensions.end() && !dim_it->is_auto) {
             const bool is_selected_dim =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dim_it->id;
@@ -61,7 +61,7 @@
                 return dimension.kind == "circle_radius" &&
                        dimension.entity_id == circle.id;
               });
-          if (dimension_it != feature.sketch_parameters->dimensions.end()) {
+          if (dimension_it != feature.sketch_parameters->dimensions.end() && !dimension_it->is_auto) {
             const bool is_selected_dimension =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dimension_it->id;
@@ -88,7 +88,7 @@
               [&](const SketchDimension& d) {
                 return d.kind == "polygon_radius" && d.entity_id == polygon.id;
               });
-          if (dim_it != feature.sketch_parameters->dimensions.end()) {
+          if (dim_it != feature.sketch_parameters->dimensions.end() && !dim_it->is_auto) {
             const bool is_selected_dim =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dim_it->id;
