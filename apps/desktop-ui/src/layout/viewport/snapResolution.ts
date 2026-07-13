@@ -38,6 +38,12 @@ export interface RawSketchPoint {
 export interface ResolveSnapOptions {
   dynamicSnapsEnabled?: boolean;
   objectSnapLatchKey?: string | null;
+  /** When false, inference alignment snaps (H/V alignment with existing
+   *  sketch vertices) are not resolved — only used for visual guides.
+   *  Defaults to true (inference snaps active). Set to false during
+   *  pointer-up commit to prevent inference from pulling committed
+   *  coordinates away from the user's intended click position. */
+  inferenceSnapsEnabled?: boolean;
 }
 
 type TranslateSnapLabel = (
@@ -53,6 +59,7 @@ export function resolveSnappedSketchPoint({
   sketchConstraints,
   dynamicSnapsEnabled = true,
   objectSnapLatchKey = null,
+  inferenceSnapsEnabled = true,
   filter,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
@@ -69,6 +76,7 @@ export function resolveSnappedSketchPoint({
   sketchConstraints?: SketchConstraintData[];
   dynamicSnapsEnabled?: boolean;
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
   filter: SelectionFilter;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -126,6 +134,7 @@ export function resolveSnappedSketchPoint({
           activeSketchPlaneId,
           activeSketchPlaneFrame,
           objectSnapLatchKey,
+          inferenceSnapsEnabled,
         })
       : null,
   });
@@ -319,6 +328,7 @@ function resolveDynamicSnap({
   activeSketchPlaneId,
   activeSketchPlaneFrame,
   objectSnapLatchKey,
+  inferenceSnapsEnabled = true,
 }: {
   sketchParameters: SketchFeatureParameters | null | undefined;
   sketchConstraints?: SketchConstraintData[];
@@ -338,6 +348,7 @@ function resolveDynamicSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
 }): ResolvedDynamicSnap | null {
   if (!sketchParameters || !hasEnabledDynamicSnap(filter, draftStartLocal)) {
     return null;
@@ -354,6 +365,7 @@ function resolveDynamicSnap({
     sketchParameters,
     constraints: sketchConstraints,
     objectSnapLatchKey,
+    inferenceSnapsEnabled,
   });
   if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
     return null;
@@ -394,6 +406,7 @@ function previewPointFromDynamicSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
 }): SketchPreviewPoint {
+  const hasInferenceGuides = snap.inferenceGuideLines.length > 0;
   return {
     local: snap.local,
     world: sketchLocalToWorld(activeSketchPlaneId, snap.local, activeSketchPlaneFrame),
@@ -410,6 +423,7 @@ function previewPointFromDynamicSnap({
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
     snapIntersectionLineIds: snap.snapIntersectionLineIds,
+    inferenceLines: hasInferenceGuides ? snap.inferenceGuideLines : undefined,
   };
 }
 
@@ -612,6 +626,17 @@ interface DynamicSnapResult {
   snapLineBodyT: number | null;
   snapIntersectionLineIds: [string, string] | null;
   distance: number;
+  /** When the cursor aligned with an existing sketch vertex via H/V
+   *  inference, holds the alignment direction and the source point. */
+  snapInferenceKind: "horizontal" | "vertical" | null;
+  snapInferenceFrom: [number, number] | null;
+  /** Guide lines showing all inference alignments (including weaker
+   *  ones that didn't win the snap contest). Rendered as dotted lines. */
+  inferenceGuideLines: Array<{
+    from: [number, number];
+    draft: [number, number];
+    axis: "horizontal" | "vertical";
+  }>;
 }
 
 interface SketchSnapLine {
@@ -644,6 +669,122 @@ function closerDynamicSnap(
   return current;
 }
 
+/**
+ * Collect all sketch vertices that can serve as inference alignment
+ * sources: line endpoints and circle centers.
+ */
+function collectInferenceVertices(
+  lines: readonly SketchSnapLine[],
+  circles: readonly SketchSnapCircle[],
+): Array<[number, number]> {
+  const vertices: Array<[number, number]> = [];
+  for (const line of lines) {
+    if (line.is_construction) continue;
+    vertices.push([line.start_x, line.start_y]);
+    vertices.push([line.end_x, line.end_y]);
+  }
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+    vertices.push([circle.center_x, circle.center_y]);
+  }
+  return vertices;
+}
+
+/**
+ * Try alignment inference snap: when the cursor is horizontally or
+ * vertically aligned with an existing sketch vertex (not the draft
+ * start), snap the cursor to that alignment and emit guide line info.
+ * This provides the "inference line" / "tracking" alignment visual.
+ */
+function speculativeAlignmentInferenceSnap({
+  draftStart,
+  cursor,
+  lines,
+  circles,
+  threshold,
+  labels,
+}: {
+  draftStart: [number, number];
+  cursor: [number, number];
+  lines: readonly SketchSnapLine[];
+  circles: readonly SketchSnapCircle[];
+  threshold: number;
+  labels: {
+    axisLockHorizontal: string;
+    axisLockVertical: string;
+  };
+}): DynamicSnapResult | null {
+  const vertices = collectInferenceVertices(lines, circles);
+  if (vertices.length === 0) return null;
+
+  const [sx, sy] = draftStart;
+  const [cx, cy] = cursor;
+
+  // Find the closest H or V alignment among all existing vertices.
+  let bestDist = Infinity;
+  let bestLocal: [number, number] | null = null;
+  let bestAxis: "horizontal" | "vertical" | null = null;
+  let bestFrom: [number, number] | null = null;
+  const allGuides: DynamicSnapResult["inferenceGuideLines"] = [];
+
+  for (const [vx, vy] of vertices) {
+    // Skip vertices too close to the draft start (that's axis-lock)
+    const distToStart = Math.hypot(vx - sx, vy - sy);
+    if (distToStart < 1e-6) continue;
+
+    const hDist = Math.abs(cy - vy); // cursor Y aligned with vertex Y
+    const vDist = Math.abs(cx - vx); // cursor X aligned with vertex X
+
+    // Check horizontal alignment (cursor.y ≈ vertex.y)
+    if (hDist <= threshold) {
+      const draft: [number, number] = [cx, vy]; // snap cursor to (cursor.x, vertex.y)
+      allGuides.push({ from: [vx, vy], draft, axis: "horizontal" });
+      if (hDist < bestDist) {
+        bestDist = hDist;
+        bestLocal = draft;
+        bestAxis = "horizontal";
+        bestFrom = [vx, vy];
+      }
+    }
+
+    // Check vertical alignment (cursor.x ≈ vertex.x)
+    if (vDist <= threshold) {
+      const draft: [number, number] = [vx, cy]; // snap cursor to (vertex.x, cursor.y)
+      allGuides.push({ from: [vx, vy], draft, axis: "vertical" });
+      if (vDist < bestDist) {
+        bestDist = vDist;
+        bestLocal = draft;
+        bestAxis = "vertical";
+        bestFrom = [vx, vy];
+      }
+    }
+  }
+
+  if (!bestLocal || !bestAxis || !bestFrom) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel:
+      bestAxis === "horizontal"
+        ? labels.axisLockHorizontal
+        : labels.axisLockVertical,
+    snapPerpendicularHostLineId: null,
+    // NOT snapAxisLock — inference alignment is placement-only guidance,
+    // not a constraint. Setting snapAxisLock would force the new line
+    // horizontal/vertical, which is wrong for point-to-point alignment.
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: bestAxis,
+    snapInferenceFrom: bestFrom,
+    inferenceGuideLines: allGuides,
+    distance: bestDist,
+  };
+}
+
 export function dynamicSnapCandidate({
   lines,
   circles,
@@ -656,6 +797,7 @@ export function dynamicSnapCandidate({
   sketchParameters,
   constraints,
   objectSnapLatchKey,
+  inferenceSnapsEnabled = true,
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
@@ -678,6 +820,7 @@ export function dynamicSnapCandidate({
   /** Constraints for speculative WASM solver path. */
   constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
 
@@ -703,14 +846,44 @@ export function dynamicSnapCandidate({
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
     if (hasDraftMovement && filter.snap_polar) {
-      const speculativeResult = speculativeAxisLockSnap({
+      // Axis-lock (H/V from draft start) always takes snap priority over
+      // inference. The H/V constraint badge and snap coordinates come from
+      // axis-lock; inference only provides the dotted guide lines.
+      const axisLockSnap = speculativeAxisLockSnap({
         draftStart,
         cursor,
         threshold,
         labels,
       });
-      if (speculativeResult) {
-        best = speculativeResult;
+
+      // Inference alignment — H/V alignment with existing sketch vertices.
+      // Only active during pointer move (preview), NOT during pointer-up
+      // commit. Inference is a visual guide; it must not pull committed
+      // coordinates away from the user's intended click position.
+      if (inferenceSnapsEnabled) {
+        const inferenceSnap = speculativeAlignmentInferenceSnap({
+          draftStart,
+          cursor,
+          lines,
+          circles,
+          threshold,
+          labels,
+        });
+        if (inferenceSnap && inferenceSnap.inferenceGuideLines.length > 0) {
+          if (axisLockSnap) {
+            // Axis-lock wins the snap; attach inference guides to it so
+            // both the H/V badge AND the dotted lines display together.
+            axisLockSnap.inferenceGuideLines = inferenceSnap.inferenceGuideLines;
+            best = axisLockSnap;
+          } else {
+            // No axis-lock — inference still provides useful visual guides.
+            best = inferenceSnap;
+          }
+        } else if (axisLockSnap) {
+          best = axisLockSnap;
+        }
+      } else if (axisLockSnap) {
+        best = axisLockSnap;
       }
     }
   }
@@ -976,6 +1149,9 @@ function speculativeAxisLockSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance,
   };
 }
@@ -1055,6 +1231,9 @@ function speculativeTangentSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1140,6 +1319,9 @@ function speculativePerpendicularSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1229,6 +1411,9 @@ function speculativeParallelSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1284,6 +1469,9 @@ function speculativeLineBodySnap({
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: bestT,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: bestDist,
   };
 }
@@ -1391,6 +1579,9 @@ function speculativeIntersectionSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: [bestPair.line1.line_id, bestPair.line2.line_id],
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1497,6 +1688,9 @@ function speculativeTangentThroughLineSnap({
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }

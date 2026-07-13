@@ -8,7 +8,10 @@ import {
 } from "@/utils";
 import { buildArcDraftPreview, type ArcToolMode } from "./arcDraftPreview";
 import { buildCircleDraftPreview, type CircleToolMode } from "./circleDraftPreview";
-import { buildDraftLinePreview } from "./draftLinePreview";
+import {
+  buildDraftLinePreview,
+  buildInferenceGuideLines,
+} from "./draftLinePreview";
 import { formatDraftDimension } from "./draftDimensions";
 import {
   buildRectangleDraftPreview,
@@ -31,10 +34,12 @@ export interface DraftPointerPreviewControls {
     line: THREE.Object3D;
     label: THREE.Sprite;
   } | null>;
+  previewInferenceRef: MutableRef<THREE.Line[]>;
   clearPreviewLine: () => void;
   clearPreviewCircle: () => void;
   clearPreviewArc: () => void;
   clearPreviewDimension: () => void;
+  clearPreviewInference: () => void;
 }
 
 interface DraftPointerPreviewParams extends DraftPointerPreviewControls {
@@ -44,6 +49,11 @@ interface DraftPointerPreviewParams extends DraftPointerPreviewControls {
   draftStart: [number, number];
   draftPreviewLocal: [number, number];
   sketchGroup: THREE.Group;
+  /** Inference guide lines to render as dotted alignment hints. */
+  inferenceLines?: Array<{
+    from: [number, number];
+    draft: [number, number];
+  }>;
 }
 
 export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
@@ -51,6 +61,7 @@ export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
   params.clearPreviewCircle();
   params.clearPreviewArc();
   params.clearPreviewDimension();
+  params.clearPreviewInference();
 
   if (params.activeSketchTool === "arc") {
     renderArcPointerPreview(params);
@@ -247,6 +258,8 @@ function renderLinePointerPreview({
   sketchGroup,
   isConstruction,
   previewLineRef,
+  previewInferenceRef,
+  inferenceLines,
 }: DraftPointerPreviewParams) {
   const preview = buildDraftLinePreview({
     points: [draftStart, draftPreviewLocal],
@@ -256,4 +269,15 @@ function renderLinePointerPreview({
   });
   previewLineRef.current = preview;
   sketchGroup.add(preview);
+
+  // Render inference / tracking guide lines as dotted alignment hints.
+  if (inferenceLines && inferenceLines.length > 0) {
+    const guides = buildInferenceGuideLines({
+      guides: inferenceLines,
+      planeId: activeSketchPlaneId,
+      planeFrame: activeSketchPlaneFrame,
+    });
+    guides.forEach((g) => sketchGroup.add(g));
+    previewInferenceRef.current = guides;
+  }
 }
