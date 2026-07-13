@@ -26,18 +26,18 @@ DocumentState DocumentManager::update_sketch_line(const std::string& line_id,
       *feature_it, line_id, start_x, start_y, end_x, end_y);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = line_id;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
 }
 
-DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
+DocumentState DocumentManager::update_sketch_vertex(const std::string& point_id,
                                                    double x,
                                                    double y) {
   require_document();
@@ -59,15 +59,15 @@ DocumentState DocumentManager::update_sketch_point(const std::string& point_id,
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::update_sketch_point(*feature_it, point_id, x, y);
+  polysmith::core::update_sketch_vertex(*feature_it, point_id, x, y);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_vertex_id = point_id;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

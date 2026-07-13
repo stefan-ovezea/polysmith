@@ -47,7 +47,7 @@ void set_sketch_equal_length_constraint(
 
   if (!points_match(previous_end_x, previous_end_y, line.end_x, line.end_y)) {
     propagate_connected_point_move(
-        parameters, line.end_point_id, line.end_x, line.end_y);
+        parameters, line.end_vertex_id, line.end_x, line.end_y);
   }
 
   sync_all_line_dimensions(parameters);

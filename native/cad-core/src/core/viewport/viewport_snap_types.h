@@ -10,7 +10,7 @@ namespace polysmith::core {
 struct SnapCandidate {
   std::string kind;
   std::string entity_id;
-  std::string point_id;
+  std::string vertex_id;
   double local_x;
   double local_y;
   double distance;

@@ -99,8 +99,8 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   //     whose endpoints happen to be near each other aren't mistaken
   //     for a shared vertex.
   bool share_point_id = false;
-  for (const auto& id_a : {line_a.start_point_id, line_a.end_point_id}) {
-    for (const auto& id_b : {line_b.start_point_id, line_b.end_point_id}) {
+  for (const auto& id_a : {line_a.start_vertex_id, line_a.end_vertex_id}) {
+    for (const auto& id_b : {line_b.start_vertex_id, line_b.end_vertex_id}) {
       if (id_a == id_b) { share_point_id = true; break; }
     }
     if (share_point_id) break;

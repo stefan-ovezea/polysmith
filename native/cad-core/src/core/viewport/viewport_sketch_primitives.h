@@ -10,8 +10,8 @@ namespace polysmith::core {
 
 struct ViewportSketchLinePrimitive {
   std::string line_id;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   std::string plane_id;
   double start_x;
   double start_y;
@@ -50,13 +50,13 @@ struct ViewportSketchCirclePrimitive {
 // endpoints and center in world coordinates plus its radius and ccw
 // flag so the renderer can sample the polyline locally without
 // re-projecting back through the sketch plane. Endpoint world
-// coordinates are kept alongside `start_point_id` / `end_point_id`
+// coordinates are kept alongside `start_vertex_id` / `end_vertex_id`
 // so consumers (snapping, highlights) can look up the same shared
-// SketchPoint that lines use without an extra lookup.
+// SketchVertex that lines use without an extra lookup.
 struct ViewportSketchArcPrimitive {
   std::string arc_id;
-  std::string start_point_id;
-  std::string end_point_id;
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   std::string plane_id;
   std::optional<ViewportSketchPlaneFrame> plane_frame;
   double center_x;
@@ -77,8 +77,8 @@ struct ViewportSketchArcPrimitive {
   std::string dof_status;
 };
 
-struct ViewportSketchPointPrimitive {
-  std::string point_id;
+struct ViewportSketchVertexPrimitive {
+  std::string vertex_id;
   std::string plane_id;
   std::string kind;
   double position_x;
@@ -87,6 +87,13 @@ struct ViewportSketchPointPrimitive {
   bool is_fixed;
   bool is_selected;
   std::string dof_status;
+
+  // ── Vertex unification fields (Phase 1) ─────────────────────
+  std::vector<std::string> geometry_owner_ids;
+  bool is_projected = false;
+  std::optional<std::string> source_type;
+  std::optional<std::string> source_feature_id;
+  std::optional<std::string> source_edge_id;
 };
 
 struct ViewportSketchDimensionPrimitive {

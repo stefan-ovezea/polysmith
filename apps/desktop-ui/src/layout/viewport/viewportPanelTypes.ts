@@ -31,7 +31,7 @@ export type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 
 export interface SketchSelection {
   entityIds: string[];
-  pointIds: string[];
+  vertexIds: string[];
   profileIds: string[];
 }
 
@@ -79,6 +79,7 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onAddSketchLineLengthDimension: (lineId: string) => Promise<void>;
   onAddSketchLineAngleDimension: (lineId: string) => Promise<void>;
+  onAddSketchArcRadiusDimension: (arcId: string) => Promise<void>;
   onAddSketchCircleRadiusDimension: (
     circleId: string,
     displayAs?: string,
@@ -194,7 +195,7 @@ export interface ViewportPanelProps {
     lineId: string,
     isConstruction: boolean,
   ) => Promise<void>;
-  onAddSketchPointDistanceDimension: (
+  onAddSketchVertexDistanceDimension: (
     pointAId: string,
     pointBId: string,
     axis?: "x" | "y",

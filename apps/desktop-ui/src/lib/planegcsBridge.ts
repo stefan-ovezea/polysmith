@@ -171,15 +171,16 @@ export class PlanegcsBridge {
     for (const pt of params.points) {
       // When activeSet is provided, freeze all points NOT in the active set.
       // Otherwise use the stored is_fixed value.
-      const frozen = activeSet ? !activeSet.has(pt.point_id) : pt.is_fixed;
+      const vtxId = pt.vertex_id;
+      const frozen = activeSet ? !activeSet.has(vtxId) : pt.is_fixed;
       w.push_primitive({
-        id: pt.point_id,
+        id: vtxId,
         type: "point",
         x: pt.x,
         y: pt.y,
         fixed: frozen,
       });
-      this._pointIds.push(pt.point_id);
+      this._pointIds.push(vtxId);
     }
 
     // ---- 2. Push lines -------------------------------------------------
@@ -187,20 +188,37 @@ export class PlanegcsBridge {
       w.push_primitive({
         id: line.line_id,
         type: "line",
-        p1_id: line.start_point_id,
-        p2_id: line.end_point_id,
+        p1_id: line.start_vertex_id,
+        p2_id: line.end_vertex_id,
       });
     }
 
     // ---- 3. Push circles -----------------------------------------------
     for (const circle of params.circles) {
-      const centerId = `point-circle-${circle.circle_id}-center`;
+      const centerId = circle.center_vertex_id ?? `point-circle-${circle.circle_id}-center`;
       w.push_primitive({
         id: circle.circle_id,
         type: "circle",
         c_id: centerId,
         radius: circle.radius,
       });
+    }
+
+    // ---- 3b. Push arcs --------------------------------------------------
+    for (const arc of params.arcs ?? []) {
+      const centerId = arc.center_vertex_id ?? `point-arc-${arc.arc_id}-center`;
+      const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+      const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+      w.push_primitive({
+        id: arc.arc_id,
+        type: "arc",
+        c_id: centerId,
+        radius: arc.radius,
+        start_id: arc.start_vertex_id,
+        end_id: arc.end_vertex_id,
+        start_angle: startAngle,
+        end_angle: endAngle,
+      } as any);
     }
 
     // ---- 4. Constraints ------------------------------------------------
@@ -220,6 +238,15 @@ export class PlanegcsBridge {
           l_id: line.line_id,
         });
       }
+    }
+
+    // 4a2. Arc rules — required constraint for each arc
+    for (const arc of params.arcs ?? []) {
+      w.push_primitive({
+        id: `c-arc-rules-${arc.arc_id}`,
+        type: "arc_rules",
+        a_id: arc.arc_id,
+      } as any);
     }
 
     // 4b. Coincident / concentric constraints
@@ -291,7 +318,7 @@ export class PlanegcsBridge {
       w.push_primitive({
         id: a.anchor_id,
         type: "point_on_line_pl",
-        p_id: a.point_id,
+        p_id: a.vertex_id,
         l_id: a.line_id,
       });
     }
@@ -301,7 +328,7 @@ export class PlanegcsBridge {
       w.push_primitive({
         id: a.anchor_id,
         type: "point_on_line_pl",
-        p_id: a.point_id,
+        p_id: a.vertex_id,
         l_id: a.line_id,
       });
     }
@@ -321,8 +348,8 @@ export class PlanegcsBridge {
             w.push_primitive({
               id: dim.dimension_id,
               type: "p2p_distance",
-              p1_id: line.start_point_id,
-              p2_id: line.end_point_id,
+              p1_id: line.start_vertex_id,
+              p2_id: line.end_vertex_id,
               distance: dim.value,
             });
           }
@@ -334,8 +361,8 @@ export class PlanegcsBridge {
             w.push_primitive({
               id: dim.dimension_id,
               type: "p2p_angle",
-              p1_id: line.start_point_id,
-              p2_id: line.end_point_id,
+              p1_id: line.start_vertex_id,
+              p2_id: line.end_vertex_id,
               angle: dim.value,
             });
           }
@@ -458,8 +485,8 @@ export class PlanegcsBridge {
     output: SolveOutput,
   ): void {
     for (const line of params.lines) {
-      const sp = output.points.find((p) => p.id === line.start_point_id);
-      const ep = output.points.find((p) => p.id === line.end_point_id);
+      const sp = output.points.find((p) => p.id === line.start_vertex_id);
+      const ep = output.points.find((p) => p.id === line.end_vertex_id);
       if (sp) {
         line.start_x = sp.x;
         line.start_y = sp.y;
@@ -471,7 +498,7 @@ export class PlanegcsBridge {
     }
 
     for (const circle of params.circles) {
-      const centerId = `point-circle-${circle.circle_id}-center`;
+      const centerId = circle.center_vertex_id ?? `point-circle-${circle.circle_id}-center`;
       const cp = output.points.find((p) => p.id === centerId);
       if (cp) {
         circle.center_x = cp.x;

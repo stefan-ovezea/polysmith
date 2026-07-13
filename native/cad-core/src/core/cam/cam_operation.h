@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "core/cam/cam_types.h"
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Dir.hxx>
@@ -96,64 +97,7 @@ inline constexpr double kMaxNormalAngle = 0.087;  // ~5 degrees
 // Score threshold above which a candidate is considered a match.
 inline constexpr double kScoreThreshold = 0.7;
 
-// ── CAM Setup & Stock ──────────────────────────────────────────
-//
-// Setup is document-level configuration, not a regular operation.
-// It must exist before any milling operation can be created.
-// Stock defines the raw material bounding box the part is cut from.
-
-struct CamStockDefinition {
-  // Bounding box dimensions (mm).
-  double width = 100.0;
-  double height = 100.0;
-  double depth = 20.0;
-  // Extra material beyond the part bounds on each axis.
-  double offsetX = 5.0;
-  double offsetY = 5.0;
-  double offsetZ = 5.0;
-};
-
-struct CamSetup {
-  std::string id;
-  CamStockDefinition stock;
-  // Work Coordinate System origin in world coordinates.
-  double wcsOriginX = 0.0;
-  double wcsOriginY = 0.0;
-  double wcsOriginZ = 0.0;
-  // Z height for rapid moves between operations.
-  double safetyPlaneZ = 10.0;
-  // 3-axis only for v1.
-  int axisCount = 3;
-  // Rotation of the XY plane around Z, in degrees.
-  // Aligns X/Y with part geometry for fixturing.
-  double wcsAngle = 0.0;
-};
-
-// ── Tool library ──────────────────────────────────────────────
-
-struct CamToolDefinition {
-  std::string id;
-  std::string name;
-  int toolNumber = 1;
-
-  // Geometry (mm).
-  double diameter = 6.0;
-  double fluteLength = 20.0;
-  double overallLength = 60.0;
-  double cornerRadius = 0.0;
-
-  // Cutting data (defaults, overridable per-operation).
-  double spindleSpeed = 12000;   // RPM
-  double feedRate = 1000;        // mm/min
-  double stepover = 2.0;         // mm
-  double stepdown = 1.0;         // mm
-
-  // Type hint for UI grouping.
-  enum class Type { EndMill, BallMill, Drill, VBit, FaceMill, ChamferMill, ThreadMill };
-  Type type = Type::EndMill;
-};
-
-// ── Toolpath (generated geometry, not serialized) ──────────────
+// ── Toolpath (runtime, not serialized) ────────────────────────────
 
 struct CamToolpathPoint {
   double x = 0.0;
@@ -173,51 +117,5 @@ struct CamToolpath {
   double minZ = 0.0, maxZ = 0.0;
   int totalPoints = 0;
 };
-
-// ── CAM operation types ────────────────────────────────────────
-
-enum class CamOperationType {
-  FaceMilling,
-  Pocket,
-  Contour,
-  Drill,
-  AdaptiveClearing
-};
-
-// ── Face milling parameters ────────────────────────────────────
-
-struct FaceMillingParams {
-  double depth = 0.5;         // mm — depth of cut
-  double stepover = 2.0;      // mm — distance between passes
-  double angleDeg = 0.0;      // degrees — zigzag angle (0 = along X)
-};
-
-// ── Unified CAM operation ──────────────────────────────────────
-
-struct CamOperationEntry {
-  std::string id;
-  std::string name;
-  CamOperationType type = CamOperationType::FaceMilling;
-  std::string toolId;
-  // TNP witness data for the target face.
-  std::string bodyId;
-  int faceIndex = -1;
-  std::vector<std::array<double, 3>> samplePoints;
-  double capturedArea = 0.0;
-  std::array<double, 3> capturedNormal = {0.0, 0.0, 1.0};
-  // Per-type parameters.
-  std::optional<FaceMillingParams> faceMilling;
-  // Cached toolpath — invalidated when inputs change.
-  bool toolpathValid = false;
-};
-
-// ── Toolpath generation (declared here, implemented per-operation) ─
-
-struct DocumentState;
-struct CamOperationEntry;
-
-CamToolpath generate_face_milling_toolpath(
-    const CamOperationEntry& op,
-    const DocumentState& document);
 
 }  // namespace polysmith::core

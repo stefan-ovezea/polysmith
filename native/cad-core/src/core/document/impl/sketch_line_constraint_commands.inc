@@ -25,12 +25,12 @@ DocumentState DocumentManager::set_sketch_line_constraint(
   document_->selected_feature_id = feature_it->id;
   // Deselect after constraint op — the last-updated line may not be
   // the one the user cares about.
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -63,11 +63,11 @@ DocumentState DocumentManager::clear_sketch_line_constraints(
   // Deselect after constraint op — the last-updated line may not be
   // the one the user cares about.
   document_->selected_sketch_entity_id = std::nullopt;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -102,11 +102,11 @@ DocumentState DocumentManager::set_sketch_line_construction(
   // Deselect after constraint op — the last-updated line may not be
   // the one the user cares about.
   document_->selected_sketch_entity_id = std::nullopt;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -142,7 +142,7 @@ DocumentState DocumentManager::set_sketch_midpoint_anchor(
   return document_.value();
 }
 
-DocumentState DocumentManager::set_sketch_point_line_anchor(
+DocumentState DocumentManager::set_sketch_vertex_line_anchor(
     const std::string& point_id,
     const std::string& host_line_id,
     double t) {
@@ -165,7 +165,7 @@ DocumentState DocumentManager::set_sketch_point_line_anchor(
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::set_sketch_point_line_anchor(
+  polysmith::core::set_sketch_vertex_line_anchor(
       *feature_it, point_id, host_line_id, t);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
@@ -201,12 +201,12 @@ DocumentState DocumentManager::set_sketch_equal_length_constraint(
   document_->selected_feature_id = feature_it->id;
   // Deselect after constraint op — the last-updated line may not be
   // the one the user cares about.
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -240,12 +240,12 @@ DocumentState DocumentManager::set_sketch_perpendicular_constraint(
   document_->selected_feature_id = feature_it->id;
   // Deselect after constraint op — the last-updated line may not be
   // the one the user cares about.
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

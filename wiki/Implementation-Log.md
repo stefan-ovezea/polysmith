@@ -2,6 +2,91 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-07-06
+
+### Phase 0: CAM data structures — vertex unification groundwork
+
+Added all target-schema CAM types and IPC plumbing as an additive,
+zero-risk first step of the [Vertex Unification Plan](Vertex-Unification-Plan).
+
+**C++ (`native/cad-core/src/core/cam/cam_types.h` — new):**
+- `polysmith::core::cam` namespace with `CamSetup`, `ToolEntry`, `CamOperation`,
+  `GeometryReference`, `FaceAttestation`, `EdgeAttestation`, `ToolpathCache`,
+  `CamStockDefinition`, `MachineAxes`, `WcsOrigin`, `CamOperationParameters`,
+  `CamOperationDependencies`, `ToolpathBounds` — all matching the target schema
+  in `deepseek_json_20260706_beba85.json`.
+- Types live in a `cam` sub-namespace to avoid collisions with the existing
+  `CamSetup`/`CamStockDefinition`/`CamOperationEntry` types in `cam_operation.h`.
+
+**C++ (`document_state.h`):**
+- Added `std::vector<cam::CamSetup> cam_setups` (multiple setups, replaces
+  single `cam_setup` optional once migration completes).
+- Added `std::vector<cam::CamOperation> cam_operations_v2` alongside the
+  legacy `cam_operations` vector.
+- Legacy fields preserved — existing code continues to work unchanged.
+
+**C++ serialization (`serialization.h`, `basic_payloads_and_cam.inc`,**
+**`document_session_to_payload.inc`, `document_from_payload.inc`):**
+- Full `to_payload` / `from_payload` for all `cam::` types (~250 lines).
+- Document state events now emit `cam_setups` and `cam_operations_v2` arrays.
+- Document loader reads both old and new formats; absent fields default to empty.
+
+**TypeScript (`documentStateSchema.ts`, `types/ipc.ts`, `types/geometry/cam.ts`):**
+- Zod validation for `cam_setups` and `cam_operations_v2` with full field defaults.
+- `DocumentState` interface extended with `CamSetupV2[]` and `CamOperationV2[]`.
+- Standalone `cam.ts` type definitions mirroring the C++ structs.
+
+**Design:** All changes are purely additive — no existing code paths modified.
+The new types sit alongside legacy types; migration will happen gradually through
+Phases 1-6.
+
+## 2026-07-07
+
+### Vertex Unification — Phases 1-6 complete
+
+The migration from `points[]` to `vertices[]` with `vertex-N` IDs, explicit
+`geometry_owner_ids`, and `*_vertex_id` entity references has landed across
+the entire codebase (88 files, 6 commits).
+
+**Phase 1 — geometry_owner_ids + projection fields on SketchPoint:**
+- `SketchPoint` gains `geometry_owner_ids`, `is_projected`, `source_type`,
+  `source_feature_id`, `source_edge_id`.
+- `rebuild_sketch_points` resolves projection metadata from `SketchProjection`
+  records.
+- Viewport primitives and feature serialization emit the new fields.
+- TS types updated (`ViewportSketchVertex`, `SketchVertexScene`,
+  `SketchVertexEntry`, Zod schema).
+
+**Phase 2 — Populate geometry_owner_ids:**
+- `rebuild_sketch_points` post-pass walks lines/arcs/circles, pushes owner
+  IDs onto matching points. Shared endpoints accumulate multiple owners.
+- `dimensionToolPicking.ts`: `geometryOwnerIds` as preferred resolution
+  path before regex fallback.
+
+**Phase 3 — constraint_id on SketchDimension:**
+- Field added with empty default, emitted in serialization and parser.
+
+**Phase 4 — vertex-N IDs:**
+- `SketchVertex::vertex_id` assigned by `rebuild_sketch_points` using
+  `next_vertex_index` counter on `SketchFeatureParameters`.
+- Flows through viewport primitives, feature serialization, and all TS types.
+
+**Phase 5 — *_vertex_id on entities:**
+- `SketchLine::start_vertex_id` / `end_vertex_id`.
+- `SketchCircle::center_vertex_id`.
+- `SketchArc::start_vertex_id` / `end_vertex_id` / `center_vertex_id`.
+- Populated in `rebuild_sketch_points` by looking up vertex IDs from points.
+
+**Phase 6 — Rename points[] → vertices[], SketchPoint → SketchVertex:**
+- Mechanical rename across ~36 C++ files and 6 TS files.
+- `parameters.vertices`, `ViewportSketchVertexPrimitive`,
+  `sketch_vertices`, `selected_sketch_vertex_id`.
+- TS: `SketchVertexEntry`, `SketchVertexScene`, `ViewportSketchVertex`.
+
+All changes additive — old coordinate fields preserved, new fields have
+empty defaults. CAM types rewritten to target schema in Phase 0 rewrite
+(`cam_types.h` with full `CamDocumentData`).
+
 ## 2026-07-01
 
 ### Toggle Driving — right-click context menu on dimensions

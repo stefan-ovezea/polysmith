@@ -79,6 +79,6 @@ void enforce_tangent_line_circle_relations(
       continue;
     }
     propagate_connected_point_move(
-        parameters, line_it->end_point_id, tx, ty);
+        parameters, line_it->end_vertex_id, tx, ty);
   }
 }

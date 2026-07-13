@@ -71,9 +71,9 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     for (const auto& face : arrangement_faces) {
       profiles.push_back(SketchProfileRegion{
           .id = make_polygon_profile_id(face.line_ids) + "-" +
-                make_polygon_profile_id(face.point_ids),
+                make_polygon_profile_id(face.vertex_ids),
           .kind = "polygon",
-          .point_ids = face.point_ids,
+          .vertex_ids = face.vertex_ids,
           .line_ids = face.line_ids,
           .points = face.points,
           .inner_loops = {},
@@ -89,7 +89,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
         profiles.push_back(SketchProfileRegion{
             .id = make_polygon_profile_id(loop->edge_ids),
             .kind = "polygon",
-            .point_ids = loop->point_ids,
+            .vertex_ids = loop->vertex_ids,
             // `line_ids` historically held line ids; with arcs in the
             // mix this field carries mixed line + arc edge ids. The
             // downstream UI uses it to compute "which entities does
@@ -169,7 +169,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       profiles.push_back(SketchProfileRegion{
           .id = profile_id,
           .kind = "polygon",
-          .point_ids = {"point-circle-" + circle->id + "-center"},
+          .vertex_ids = {circle_center_vertex_id(*circle)},
           .line_ids = {},
           .points = sample_circle_loop(*circle),
           .inner_loops = hole_it->second,
@@ -183,7 +183,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     profiles.push_back(SketchProfileRegion{
         .id = "profile-circle-" + circle->id,
         .kind = "circle",
-        .point_ids = {"point-circle-" + circle->id + "-center"},
+        .vertex_ids = {circle_center_vertex_id(*circle)},
         .line_ids = {},
         .points = {},
         .inner_loops = {},

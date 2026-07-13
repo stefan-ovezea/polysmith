@@ -30,12 +30,12 @@ DocumentState DocumentManager::select_sketch_dimension(
   }
 
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = dimension_it->entity_id;
   document_->selected_sketch_dimension_id = dimension_it->id;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }

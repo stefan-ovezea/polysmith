@@ -26,8 +26,8 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
     const std::string end_key = edge_node_id(edge, false);
     const auto [start_it, inserted_start] = nodes.emplace(start_key, start);
     const auto [end_it, inserted_end] = nodes.emplace(end_key, end);
-    const bool start_uses_fallback_key = edge.start_point_id.empty();
-    const bool end_uses_fallback_key = edge.end_point_id.empty();
+    const bool start_uses_fallback_key = edge.start_vertex_id.empty();
+    const bool end_uses_fallback_key = edge.end_vertex_id.empty();
     if ((!inserted_start && start_uses_fallback_key &&
          !points_match(start_it->second, start)) ||
         (!inserted_end && end_uses_fallback_key &&
@@ -84,8 +84,8 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
 
     // For arc edges, also push the interior samples so the polygon
     // approximates the arc when extruded. Direction matters: if the
-    // loop walk enters at start_point_id we sample forward; if it
-    // enters at end_point_id we sample reversed.
+    // loop walk enters at start_vertex_id we sample forward; if it
+    // enters at end_vertex_id we sample reversed.
     if (edge.kind == ProfileEdge::Kind::Arc) {
       const bool from_start = current_node == edge_nodes[edge_index].first;
       const auto interior = sample_arc_interior(edge, from_start);
@@ -120,7 +120,7 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
 
   return EdgeLoopCandidate{
       .points = ordered_points,
-      .point_ids = ordered_point_ids,
+      .vertex_ids = ordered_point_ids,
       .edge_ids = ordered_edge_ids,
   };
 }

@@ -148,13 +148,13 @@ std::vector<LineSegment> solid_line_segments(
     const SketchFeatureParameters& parameters) {
   std::map<std::string, SketchProfilePoint> point_by_id;
   for (const auto& line : parameters.lines) {
-    if (!line.start_point_id.empty()) {
-      point_by_id.emplace(line.start_point_id,
+    if (!line.start_vertex_id.empty()) {
+      point_by_id.emplace(line.start_vertex_id,
                           SketchProfilePoint{.x = line.start_x,
                                              .y = line.start_y});
     }
-    if (!line.end_point_id.empty()) {
-      point_by_id.emplace(line.end_point_id,
+    if (!line.end_vertex_id.empty()) {
+      point_by_id.emplace(line.end_vertex_id,
                           SketchProfilePoint{.x = line.end_x,
                                              .y = line.end_y});
     }
@@ -176,9 +176,9 @@ std::vector<LineSegment> solid_line_segments(
       continue;
     }
     const SketchProfilePoint start =
-        endpoint(line.start_point_id, line.start_x, line.start_y);
+        endpoint(line.start_vertex_id, line.start_x, line.start_y);
     const SketchProfilePoint end =
-        endpoint(line.end_point_id, line.end_x, line.end_y);
+        endpoint(line.end_vertex_id, line.end_x, line.end_y);
     if (points_match(start, end)) {
       continue;
     }

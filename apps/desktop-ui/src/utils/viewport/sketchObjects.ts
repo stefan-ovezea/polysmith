@@ -7,7 +7,7 @@ import {
   SketchDimensionScene,
   SketchLineScene,
   SketchPlaneFrame,
-  SketchPointScene,
+  SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
 } from "@/types";
@@ -373,7 +373,7 @@ export function buildSketchArcObject(
   return sketchArc;
 }
 
-export function buildSketchPointObject(point: SketchPointScene) {
+export function buildSketchPointObject(point: SketchVertexScene) {
   // Projected points get a slightly larger sphere in a cyan-violet
   // to read as "derived from a body vertex" — matches the CAD
   // visual convention. Endpoint / center keep the original look.
@@ -396,7 +396,7 @@ export function buildSketchPointObject(point: SketchPointScene) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.renderOrder = 8;
   mesh.position.set(...point.position);
-  mesh.userData.sketchPointId = point.pointId;
+  mesh.userData.sketchPointId = point.id;
   mesh.userData.sketchPointKind = point.kind;
 
   // Override raycast to use a sphere-distance test instead of the

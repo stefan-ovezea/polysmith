@@ -1,6 +1,7 @@
 #include "core/sketch/sketch_profile.h"
 
 #include "core/document/feature.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
 #include <algorithm>
 #include <cmath>

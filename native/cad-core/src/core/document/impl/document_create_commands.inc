@@ -13,7 +13,7 @@ DocumentState DocumentManager::create_document() {
       .active_sketch_face_id = std::nullopt,
       .active_sketch_feature_id = std::nullopt,
       .active_sketch_tool = std::nullopt,
-      .selected_sketch_point_id = std::nullopt,
+      .selected_sketch_vertex_id = std::nullopt,
       .selected_sketch_entity_id = std::nullopt,
       .selected_sketch_dimension_id = std::nullopt,
       .selected_sketch_profile_id = std::nullopt,

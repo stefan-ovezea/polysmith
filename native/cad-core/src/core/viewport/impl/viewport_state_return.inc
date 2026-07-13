@@ -12,7 +12,7 @@
       .sketch_circles = sketch_circles,
       .sketch_polygons = sketch_polygons,
       .sketch_arcs = sketch_arcs,
-      .sketch_points = sketch_points,
+      .sketch_vertices = sketch_vertices,
       .sketch_dimensions = sketch_dimensions,
       .sketch_constraints = sketch_constraints,
       .sketch_profiles = sketch_profiles,

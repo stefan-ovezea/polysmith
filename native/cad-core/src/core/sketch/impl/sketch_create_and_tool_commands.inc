@@ -7,7 +7,7 @@ FeatureEntry create_sketch_feature(
       .active_tool = "select",
       .lines = {},
       .circles = {},
-      .points = {},
+      .vertices = {},
       .dimensions = {},
       .line_relations = {},
       .profiles = {},

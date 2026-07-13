@@ -12,7 +12,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.midpoint_anchors.end());
 
@@ -34,7 +34,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
   // round-trips through serialization without churning.
   parameters.midpoint_anchors.push_back(SketchMidpointAnchor{
       .id = "midpoint-anchor-" + point_id,
-      .point_id = point_id,
+      .vertex_id = point_id,
       .line_id = host_line_id,
   });
 
@@ -46,7 +46,7 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
 // bound point ride with the host as it moves. Mirrors
 // `set_sketch_midpoint_anchor` byte-for-byte except it also accepts
 // (and clamps) the `t` value and stores it on the anchor record.
-void set_sketch_point_line_anchor(FeatureEntry &feature,
+void set_sketch_vertex_line_anchor(FeatureEntry &feature,
                                   const std::string &point_id,
                                   const std::string &host_line_id, double t) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
@@ -62,15 +62,15 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
   parameters.point_line_anchors.erase(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                     [&](const SketchVertexLineAnchor &anchor) {
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.point_line_anchors.end());
   parameters.midpoint_anchors.erase(
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor &anchor) {
-                       return anchor.point_id == point_id;
+                       return anchor.vertex_id == point_id;
                      }),
       parameters.midpoint_anchors.end());
 
@@ -92,9 +92,9 @@ void set_sketch_point_line_anchor(FeatureEntry &feature,
   // that re-projects past the segment's endpoints.
   const double clamped_t = std::max(0.0, std::min(1.0, t));
 
-  parameters.point_line_anchors.push_back(SketchPointLineAnchor{
-      .id = "point-line-anchor-" + point_id,
-      .point_id = point_id,
+  parameters.point_line_anchors.push_back(SketchVertexLineAnchor{
+      .id = "vertex-line-anchor-" + point_id,
+      .vertex_id = point_id,
       .line_id = host_line_id,
       .t = clamped_t,
   });

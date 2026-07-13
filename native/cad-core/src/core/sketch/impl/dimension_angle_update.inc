@@ -269,13 +269,13 @@ void update_angle_dimension(FeatureEntry& feature,
       if (!points_match(previous_start_x, previous_start_y,
                         line_b.start_x, line_b.start_y)) {
         propagate_connected_point_move(parameters,
-            line_b.start_point_id,
+            line_b.start_vertex_id,
             line_b.start_x, line_b.start_y);
       }
       if (!points_match(previous_end_x, previous_end_y,
                         line_b.end_x, line_b.end_y)) {
         propagate_connected_point_move(parameters,
-            line_b.end_point_id,
+            line_b.end_vertex_id,
             line_b.end_x, line_b.end_y);
       }
     }
@@ -411,8 +411,8 @@ void update_angle_dimension(FeatureEntry& feature,
                 driven_line.end_x, driven_line.end_y);
 
   const std::string moved_point_id =
-      driven_pivot_index == 0 ? driven_line.end_point_id
-                              : driven_line.start_point_id;
+      driven_pivot_index == 0 ? driven_line.end_vertex_id
+                              : driven_line.start_vertex_id;
   propagate_connected_point_move(
       parameters, moved_point_id, new_other_x, new_other_y);
 

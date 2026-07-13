@@ -39,8 +39,8 @@ DocumentState DocumentManager::add_sketch_angle_dimension(
     document_->selected_sketch_entity_id = dimension_it->entity_id;
     document_->selected_sketch_dimension_id = dimension_it->id;
     document_->selected_sketch_entity_ids.clear();
-    document_->selected_sketch_point_id = std::nullopt;
-    document_->selected_sketch_point_ids.clear();
+    document_->selected_sketch_vertex_id = std::nullopt;
+    document_->selected_sketch_vertex_ids.clear();
     document_->selected_sketch_profile_id = std::nullopt;
     document_->selected_sketch_profile_ids.clear();
   }
@@ -92,8 +92,8 @@ DocumentState DocumentManager::add_sketch_distance_dimension(
     document_->selected_sketch_entity_id = dimension_it->entity_id;
     document_->selected_sketch_dimension_id = dimension_it->id;
     document_->selected_sketch_entity_ids.clear();
-    document_->selected_sketch_point_id = std::nullopt;
-    document_->selected_sketch_point_ids.clear();
+    document_->selected_sketch_vertex_id = std::nullopt;
+    document_->selected_sketch_vertex_ids.clear();
     document_->selected_sketch_profile_id = std::nullopt;
     document_->selected_sketch_profile_ids.clear();
   }

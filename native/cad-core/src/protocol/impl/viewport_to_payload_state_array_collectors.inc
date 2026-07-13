@@ -57,9 +57,9 @@
     sketch_arcs.push_back(to_payload(arc));
   }
 
-  json sketch_points = json::array();
-  for (const auto& point : viewport.sketch_points) {
-    sketch_points.push_back(to_payload(point));
+  json sketch_vertices = json::array();
+  for (const auto& point : viewport.sketch_vertices) {
+    sketch_vertices.push_back(to_payload(point));
   }
 
   json sketch_dimensions = json::array();

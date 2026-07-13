@@ -54,14 +54,14 @@ SketchArc& require_arc(SketchFeatureParameters& parameters,
   return *arc_it;
 }
 
-SketchPoint& require_point(SketchFeatureParameters& parameters,
+SketchVertex& require_point(SketchFeatureParameters& parameters,
                            const std::string& point_id) {
   const auto point_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& p) { return p.id == point_id; });
+      parameters.vertices.begin(),
+      parameters.vertices.end(),
+      [&](const SketchVertex& p) { return p.id == point_id; });
 
-  if (point_it == parameters.points.end()) {
+  if (point_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
 

@@ -19,7 +19,7 @@ import type {
   SketchArcScene,
   SketchDimensionScene,
   SketchConstraintScene,
-  SketchPointScene,
+  SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
   DocumentState,
@@ -128,8 +128,8 @@ export interface ViewportHelixPrimitive {
 
 export interface ViewportSketchLine {
   line_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  start_vertex_id: string;
+  end_vertex_id: string;
   plane_id: string;
   start: Vector3;
   end: Vector3;
@@ -174,8 +174,8 @@ export interface ViewportSketchPolygon {
 // about the sketch plane orientation.
 export interface ViewportSketchArc {
   arc_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  start_vertex_id: string;
+  end_vertex_id: string;
   plane_id: string;
   plane_frame: PlaneFrame | null;
   center: Vector3;
@@ -188,17 +188,24 @@ export interface ViewportSketchArc {
   is_preview: boolean;
 }
 
-export interface ViewportSketchPoint {
-  point_id: string;
+export interface ViewportSketchVertex {
+  /** vertex-N ID from Phase 4 vertex unification. */
+  vertex_id: string;
   plane_id: string;
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.
   // "projected" — Project-tool result; locked, drawn distinctly.
   // "quadrant" — derived cardinal point on a circle perimeter.
-  kind: "endpoint" | "center" | "projected" | "quadrant";
+  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
   position: Vector3;
   is_fixed: boolean;
   is_selected: boolean;
+  // ── Vertex unification (Phase 1) ───────────────────────────
+  geometry_owner_ids?: string[];
+  is_projected?: boolean;
+  source_type?: string;
+  source_feature_id?: string;
+  source_edge_id?: string;
 }
 
 export interface ViewportSketchDimension {
@@ -288,7 +295,7 @@ export interface ViewportScene {
   sketchArcs: SketchArcScene[];
   sketchDimensions: SketchDimensionScene[];
   sketchConstraints: SketchConstraintScene[];
-  sketchPoints: SketchPointScene[];
+  sketchPoints: SketchVertexScene[];
   sketchProfiles: SketchProfileScene[];
   geometryKey: string;
 }
@@ -343,7 +350,7 @@ export interface ViewportContextMenuState {
   bodyId?: string | null;
   sketchDeleteSelection?: {
     entityIds: string[];
-    pointIds: string[];
+    vertexIds: string[];
     profileIds: string[];
   } | null;
   dimensionId?: string | null;

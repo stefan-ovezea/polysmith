@@ -3,7 +3,7 @@ FeatureEntry create_sketch_feature(
     const std::string& plane_id,
     std::optional<SketchFeatureParameters::SketchPlaneFrame> plane_frame = std::nullopt);
 // Re-run the post-edit sketch recompute pipeline (anchors, fillets,
-// rebuild_sketch_points, projected-point lock, profile detection).
+// rebuild_sketch_vertices, projected-point lock, profile detection).
 // Most public mutators in sketch_feature.cpp call this internally; the
 // Project tool's `project_vertex_into_sketch` path needs to call it
 // directly because it appends to `projected_points` *after* every

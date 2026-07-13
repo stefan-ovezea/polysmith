@@ -15,12 +15,12 @@ DocumentState DocumentManager::select_feature(const std::string& feature_id) {
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }
@@ -37,12 +37,12 @@ DocumentState DocumentManager::select_reference(const std::string& reference_id)
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }
@@ -86,12 +86,12 @@ DocumentState DocumentManager::start_sketch_on_plane(
   document_->active_sketch_face_id = std::nullopt;
   document_->active_sketch_feature_id = sketch_feature_id;
   document_->active_sketch_tool = "select";
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -118,12 +118,12 @@ DocumentState DocumentManager::select_face(const std::string& face_id) {
   document_->selected_face_id = face_id;
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }
@@ -175,12 +175,12 @@ DocumentState DocumentManager::select_edge(const std::string& edge_id,
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = std::nullopt;
   document_->selected_vertex_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }
@@ -229,12 +229,12 @@ DocumentState DocumentManager::select_vertex(const std::string& vertex_id,
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();
 }

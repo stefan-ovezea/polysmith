@@ -40,8 +40,8 @@
 
     // Capture old point IDs *before* vector mutations (push_back
     // may invalidate the line iterator, making later reads garbage).
-    const std::string old_sp_id = line_it->start_point_id;
-    const std::string old_ep_id = line_it->end_point_id;
+    const std::string old_sp_id = line_it->start_vertex_id;
+    const std::string old_ep_id = line_it->end_vertex_id;
 
     // If all non-clicked segments are zero-length (intersections at
     // line endpoints), the trim is effectively a full delete.
@@ -105,11 +105,10 @@
       const double rex = segments[last].end_x;
       const double rey = segments[last].end_y;
 
-      const int right_idx = next_index * 10 + 2000;
       params.lines.push_back(SketchLine{
           .id = "line-" + std::to_string(next_index),
-          .start_point_id = "point-trim-" + std::to_string(right_idx) + "-start",
-          .end_point_id   = "point-trim-" + std::to_string(right_idx) + "-end",
+          .start_vertex_id = "vertex-" + std::to_string(params.next_vertex_index++),
+          .end_vertex_id   = "vertex-" + std::to_string(params.next_vertex_index++),
           .start_x = rsx,
           .start_y = rsy,
           .end_x = rex,

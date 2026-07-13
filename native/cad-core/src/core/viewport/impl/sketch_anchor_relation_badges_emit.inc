@@ -42,14 +42,14 @@
             continue;
           }
           const bool is_selected =
-              is_sketch_entity_selected(anchor.point_id);
+              is_sketch_entity_selected(anchor.vertex_id);
           sketch_constraints.push_back(make_line_constraint_primitive(
               *host_it,
               feature.sketch_parameters->plane_id,
               "midpoint",
               "M",
               is_selected,
-              anchor.point_id));
+              anchor.vertex_id));
         }
 
         // Point-line anchors render a "/" badge at the anchor's
@@ -78,13 +78,13 @@
               anchor_x + normal_x * kConstraintBadgeOffset,
               anchor_y + normal_y * kConstraintBadgeOffset);
           const bool is_selected =
-              is_sketch_entity_selected(anchor.point_id);
+              is_sketch_entity_selected(anchor.vertex_id);
           sketch_constraints.push_back(ViewportSketchConstraintPrimitive{
-              .constraint_id = "constraint-on_line-" + anchor.point_id,
+              .constraint_id = "constraint-on_line-" + anchor.vertex_id,
               .plane_id = feature.sketch_parameters->plane_id,
               .kind = "on_line",
               .entity_id = host_it->id,
-              .related_entity_id = anchor.point_id,
+              .related_entity_id = anchor.vertex_id,
               .label = "/",
               .is_selected = is_selected,
               .position_x = position.x,

@@ -39,15 +39,15 @@ json to_payload(const polysmith::core::DocumentState& document) {
        document.active_sketch_tool.has_value()
            ? json(document.active_sketch_tool.value())
            : json(nullptr)},
-      {"selected_sketch_point_id",
-       document.selected_sketch_point_id.has_value()
-           ? json(document.selected_sketch_point_id.value())
+      {"selected_sketch_vertex_id",
+       document.selected_sketch_vertex_id.has_value()
+           ? json(document.selected_sketch_vertex_id.value())
            : json(nullptr)},
       {"selected_sketch_entity_id",
        document.selected_sketch_entity_id.has_value()
            ? json(document.selected_sketch_entity_id.value())
            : json(nullptr)},
-      {"selected_sketch_point_ids", document.selected_sketch_point_ids},
+      {"selected_sketch_vertex_ids", document.selected_sketch_vertex_ids},
       {"selected_sketch_entity_ids", document.selected_sketch_entity_ids},
       {"selected_sketch_dimension_id",
        document.selected_sketch_dimension_id.has_value()
@@ -133,39 +133,7 @@ json to_payload(const polysmith::core::DocumentState& document) {
               {"tolerance_px", sf.tolerance_px},
           };
         }()},
-       {"cam_setup",
-        document.cam_setup.has_value()
-            ? to_payload(document.cam_setup.value())
-            : json(nullptr)},
-       {"tool_library", [&document]() {
-          json tools = json::array();
-          for (const auto& tool : document.tool_library) {
-            tools.push_back(to_payload(tool));
-          }
-          return tools;
-        }()},
-       {"cam_operations", [&document]() {
-          json ops = json::array();
-          for (const auto& op : document.cam_operations) {
-            json opJson = {
-                {"id", op.id},
-                {"name", op.name},
-                {"type", static_cast<int>(op.type)},
-                {"tool_id", op.toolId},
-                {"body_id", op.bodyId},
-                {"face_index", op.faceIndex},
-            };
-            if (op.faceMilling.has_value()) {
-              opJson["face_milling"] = {
-                  {"depth", op.faceMilling->depth},
-                  {"stepover", op.faceMilling->stepover},
-                  {"angle_deg", op.faceMilling->angleDeg},
-              };
-            }
-            ops.push_back(opJson);
-          }
-          return ops;
-        }()},
+       {"cam", to_payload(document.cam)},
    };
 }
 

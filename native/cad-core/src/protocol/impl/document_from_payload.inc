@@ -50,15 +50,15 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
       read_optional_string(payload, "active_sketch_feature_id");
   document.active_sketch_tool =
       read_optional_string(payload, "active_sketch_tool");
-  document.selected_sketch_point_id =
-      read_optional_string(payload, "selected_sketch_point_id");
+  document.selected_sketch_vertex_id =
+      read_optional_string(payload, "selected_sketch_vertex_id");
   document.selected_sketch_entity_id =
       read_optional_string(payload, "selected_sketch_entity_id");
-  if (payload.contains("selected_sketch_point_ids") &&
-      payload.at("selected_sketch_point_ids").is_array()) {
-    for (const auto& id : payload.at("selected_sketch_point_ids")) {
+  if (payload.contains("selected_sketch_vertex_ids") &&
+      payload.at("selected_sketch_vertex_ids").is_array()) {
+    for (const auto& id : payload.at("selected_sketch_vertex_ids")) {
       if (id.is_string()) {
-        document.selected_sketch_point_ids.push_back(id.get<std::string>());
+        document.selected_sketch_vertex_ids.push_back(id.get<std::string>());
       }
     }
   }
@@ -203,33 +203,12 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
       filter.tolerance_px = sf.at("tolerance_px").get<int>();
   }
 
-  // CAM setup (absent in older documents — stays nullopt)
-  if (payload.contains("cam_setup") && payload.at("cam_setup").is_object()) {
-    document.cam_setup = setup_from_payload(payload.at("cam_setup"));
-  }
-
-  // CAM tool library (absent in older documents — stays empty)
-  if (payload.contains("tool_library") && payload.at("tool_library").is_array()) {
-    for (const auto& tool_json : payload.at("tool_library")) {
-      if (!tool_json.is_object()) continue;
-      polysmith::core::CamToolDefinition tool;
-      if (tool_json.contains("tool_id")) tool.id = tool_json["tool_id"].get<std::string>();
-      if (tool_json.contains("name")) tool.name = tool_json["name"].get<std::string>();
-      if (tool_json.contains("tool_number")) tool.toolNumber = tool_json["tool_number"].get<int>();
-      if (tool_json.contains("diameter")) tool.diameter = tool_json["diameter"].get<double>();
-      if (tool_json.contains("flute_length")) tool.fluteLength = tool_json["flute_length"].get<double>();
-      if (tool_json.contains("overall_length")) tool.overallLength = tool_json["overall_length"].get<double>();
-      if (tool_json.contains("corner_radius")) tool.cornerRadius = tool_json["corner_radius"].get<double>();
-      if (tool_json.contains("spindle_speed")) tool.spindleSpeed = tool_json["spindle_speed"].get<double>();
-      if (tool_json.contains("feed_rate")) tool.feedRate = tool_json["feed_rate"].get<double>();
-      if (tool_json.contains("stepover")) tool.stepover = tool_json["stepover"].get<double>();
-      if (tool_json.contains("stepdown")) tool.stepdown = tool_json["stepdown"].get<double>();
-      if (tool_json.contains("type")) {
-        tool.type = static_cast<polysmith::core::CamToolDefinition::Type>(tool_json["type"].get<int>());
-      }
-      document.tool_library.push_back(tool);
-    }
-  }
+  // CAM data — loaded from the "cam" key in target-schema documents.
+  // Older documents used "cam_setup" / "tool_library" / "cam_operations"
+  // keys; those are no longer supported.  CAM deserialization will be
+  // implemented when the CAM workspace is re-built on the new types.
+  // For now, documents start with an empty default CamDocumentData.
+  (void)payload;
 
   return document;
 }

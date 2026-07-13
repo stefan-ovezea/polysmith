@@ -4,7 +4,7 @@
                     for (const auto& point :
                          feature.sketch_parameters->projected_points) {
                       projected.push_back({
-                          {"point_id", point.id},
+                          {"vertex_id", point.id},
                           {"source_id", point.source_id},
                           {"x", point.x},
                           {"y", point.y},
@@ -45,8 +45,8 @@
                           {"generated_line_ids", line_ids},
                           {"generated_circle_ids", circle_ids},
                           {"generated_arc_ids", arc_ids},
-                          {"generated_point_id",
-                           projection.generated_point_id},
+                          {"generated_vertex_id",
+                           projection.generated_vertex_id},
                           {"dependency_broken", projection.dependency_broken},
                           {"dependency_warning",
                            projection.dependency_warning},

@@ -46,6 +46,12 @@ struct SketchDimension {
   // instead of recomputing from line endpoint proximity.
   std::optional<double> pivot_x;
   std::optional<double> pivot_y;
+
+  // ── Vertex unification (Phase 3) ────────────────────────────
+  // ID of the planegcs / SketchConstraint that this dimension
+  // enforces.  Empty for display-only (auto) dimensions and until
+  // the constraint system is refactored in Phase 4.
+  std::string constraint_id;
 };
 
 }  // namespace polysmith::core

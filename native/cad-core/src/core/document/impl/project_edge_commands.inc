@@ -84,10 +84,10 @@ DocumentState DocumentManager::project_edge_into_sketch(
     for (size_t i = lines_before;
          i < sketch_it->sketch_parameters->lines.size(); ++i) {
       const auto& line = sketch_it->sketch_parameters->lines[i];
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, line.start_point_id, true);
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, line.end_point_id, true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, line.start_vertex_id, true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, line.end_vertex_id, true);
       record.generated_line_ids.push_back(line.id);
     }
   } else if (edge_geometry->kind == "circle" || edge_geometry->kind == "arc") {
@@ -165,12 +165,12 @@ DocumentState DocumentManager::project_edge_into_sketch(
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
 

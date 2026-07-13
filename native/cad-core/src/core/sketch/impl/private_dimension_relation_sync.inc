@@ -10,7 +10,7 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      if (point_is_fixed(parameters, line.end_point_id)) {
+      if (vertex_is_fixed(parameters, line.end_vertex_id)) {
         line.start_y = line.end_y;
       } else {
         line.end_y = line.start_y;
@@ -23,7 +23,7 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
                 "(would create zero-length line)\n", line.id.c_str());
         continue;
       }
-      if (point_is_fixed(parameters, line.end_point_id)) {
+      if (vertex_is_fixed(parameters, line.end_vertex_id)) {
         line.start_x = line.end_x;
       } else {
         line.end_x = line.start_x;
@@ -130,33 +130,49 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
       dimension.value =
           std::abs(signed_line_line_distance(driven_line, reference_line));
     } else if (dimension.kind == "circle_center_distance") {
-      const auto& driven_circle =
-          require_circle(parameters, dimension.entity_id);
-      const auto& reference_circle =
-          require_circle(parameters, dimension.secondary_entity_id);
-      dimension.value =
-          distance_between_circles(driven_circle, reference_circle);
+      auto get_cc = [&](const std::string& id) -> std::pair<double,double> {
+        if (id.rfind("arc-", 0) == 0) {
+          const auto& a = require_arc(parameters, id);
+          return {a.center_x, a.center_y};
+        }
+        const auto& c = require_circle(parameters, id);
+        return {c.center_x, c.center_y};
+      };
+      const auto [dcx, dcy] = get_cc(dimension.entity_id);
+      const auto [rcx, rcy] = get_cc(dimension.secondary_entity_id);
+      const double dx = dcx - rcx, dy = dcy - rcy;
+      dimension.value = std::sqrt(dx * dx + dy * dy);
     } else if (dimension.kind == "circle_line_distance") {
-      const auto& circle = require_circle(parameters, dimension.entity_id);
+      double cx, cy;
+      if (dimension.entity_id.rfind("arc-", 0) == 0) {
+        const auto& a = require_arc(parameters, dimension.entity_id);
+        cx = a.center_x; cy = a.center_y;
+      } else {
+        const auto& c = require_circle(parameters, dimension.entity_id);
+        cx = c.center_x; cy = c.center_y;
+      }
       const auto& line =
           require_line(parameters, dimension.secondary_entity_id);
       dimension.value =
-          std::abs(signed_circle_line_distance(circle, line));
+          std::abs(-(line.end_y - line.start_y) * (cx - line.start_x) +
+                    (line.end_x - line.start_x) * (cy - line.start_y)) /
+          std::sqrt((line.end_x - line.start_x) * (line.end_x - line.start_x) +
+                    (line.end_y - line.start_y) * (line.end_y - line.start_y));
     } else if (dimension.kind == "point_distance") {
       const auto point_a_it = std::find_if(
-          parameters.points.begin(),
-          parameters.points.end(),
-          [&](const SketchPoint& p) {
+          parameters.vertices.begin(),
+          parameters.vertices.end(),
+          [&](const SketchVertex& p) {
             return p.id == dimension.entity_id;
           });
       const auto point_b_it = std::find_if(
-          parameters.points.begin(),
-          parameters.points.end(),
-          [&](const SketchPoint& p) {
+          parameters.vertices.begin(),
+          parameters.vertices.end(),
+          [&](const SketchVertex& p) {
             return p.id == dimension.secondary_entity_id;
           });
-      if (point_a_it != parameters.points.end() &&
-          point_b_it != parameters.points.end()) {
+      if (point_a_it != parameters.vertices.end() &&
+          point_b_it != parameters.vertices.end()) {
         const double dx = point_b_it->x - point_a_it->x;
         const double dy = point_b_it->y - point_a_it->y;
         // Respect display_as: "x" → horizontal distance, "y" → vertical.

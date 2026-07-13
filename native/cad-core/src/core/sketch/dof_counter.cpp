@@ -51,7 +51,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   for (const auto& c : params.circles) map[c.id] = {intrinsic_dof("circle"), 0};
   for (const auto& p : params.polygons) map[p.id] = {intrinsic_dof("polygon"), 0};
   for (const auto& a : params.arcs)    map[a.id] = {intrinsic_dof("arc"), 0};
-  for (const auto& p : params.points)  map[p.id] = {intrinsic_dof("point"), 0};
+  for (const auto& p : params.vertices)  map[p.id] = {intrinsic_dof("point"), 0};
 
   // Inline constraints on lines.
   for (const auto& l : params.lines) {
@@ -75,8 +75,8 @@ std::vector<EntityDofResult> count_sketch_dof(
       const auto& a = params.lines[i];
       const auto& b = params.lines[j];
       int shared = 0;
-      if (a.start_point_id == b.start_point_id || a.start_point_id == b.end_point_id) ++shared;
-      if (a.end_point_id == b.start_point_id || a.end_point_id == b.end_point_id) ++shared;
+      if (a.start_vertex_id == b.start_vertex_id || a.start_vertex_id == b.end_vertex_id) ++shared;
+      if (a.end_vertex_id == b.start_vertex_id || a.end_vertex_id == b.end_vertex_id) ++shared;
       if (shared > 0 && map.count(a.id) && map.count(b.id)) {
         map[a.id].consumed += shared; // 1 per shared point per line
         map[b.id].consumed += shared;
@@ -102,7 +102,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   }
 
   // Fixed points.
-  for (const auto& p : params.points) {
+  for (const auto& p : params.vertices) {
     if (p.is_fixed && map.count(p.id)) {
       map[p.id].consumed += constraint_cost("fixed");
     }
@@ -110,7 +110,7 @@ std::vector<EntityDofResult> count_sketch_dof(
 
   // Midpoint anchors.
   for (const auto& a : params.midpoint_anchors) {
-    if (map.count(a.point_id)) map[a.point_id].consumed += 2;
+    if (map.count(a.vertex_id)) map[a.vertex_id].consumed += 2;
   }
 
   std::vector<EntityDofResult> results;
@@ -126,7 +126,7 @@ std::vector<EntityDofResult> count_sketch_dof(
   for (const auto& a : params.arcs) {
     auto& e = map[a.id]; results.push_back({a.id, "arc", e.total, e.consumed, e.status()});
   }
-  for (const auto& p : params.points) {
+  for (const auto& p : params.vertices) {
     auto& e = map[p.id]; results.push_back({p.id, "point", e.total, e.consumed, e.status()});
   }
   return results;

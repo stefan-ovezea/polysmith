@@ -1,6 +1,6 @@
 void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
                        int trim_a_point_index, int trim_b_point_index,
-                       int arc_index, const std::string &corner_point_id,
+                       int arc_index, const std::string &corner_vertex_id,
                        const std::string &line_a_id,
                        const std::string &line_b_id, double radius) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
@@ -19,10 +19,10 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
 
   // Both lines must reference the corner point as one of their
   // endpoints — otherwise the user clicked a point that isn't shared.
-  const bool a_at_start = line_a.start_point_id == corner_point_id;
-  const bool a_at_end = line_a.end_point_id == corner_point_id;
-  const bool b_at_start = line_b.start_point_id == corner_point_id;
-  const bool b_at_end = line_b.end_point_id == corner_point_id;
+  const bool a_at_start = line_a.start_vertex_id == corner_vertex_id;
+  const bool a_at_end = line_a.end_vertex_id == corner_vertex_id;
+  const bool b_at_start = line_b.start_vertex_id == corner_vertex_id;
+  const bool b_at_end = line_b.end_vertex_id == corner_vertex_id;
   if ((!a_at_start && !a_at_end) || (!b_at_start && !b_at_end)) {
     throw std::runtime_error(
         "Sketch fillet: corner point must be shared by both lines");
@@ -34,12 +34,12 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   for (const auto &existing : parameters.fillets) {
     const bool a_collides =
         (existing.line_a_id == line_a_id || existing.line_b_id == line_a_id) &&
-        (existing.trim_a_point_id == corner_point_id ||
-         existing.trim_b_point_id == corner_point_id);
+        (existing.trim_a_vertex_id == corner_vertex_id ||
+         existing.trim_b_vertex_id == corner_vertex_id);
     const bool b_collides =
         (existing.line_a_id == line_b_id || existing.line_b_id == line_b_id) &&
-        (existing.trim_a_point_id == corner_point_id ||
-         existing.trim_b_point_id == corner_point_id);
+        (existing.trim_a_vertex_id == corner_vertex_id ||
+         existing.trim_b_vertex_id == corner_vertex_id);
     if (a_collides || b_collides) {
       throw std::runtime_error(
           "Sketch fillet: this corner is already filleted");
@@ -114,8 +114,8 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // Allocate generated entity ids. Trim points share the same
   // namespace as line endpoints (point-N), the arc its own (arc-N).
   // The fillet itself uses fillet-N.
-  const std::string trim_a_id = "point-" + std::to_string(trim_a_point_index);
-  const std::string trim_b_id = "point-" + std::to_string(trim_b_point_index);
+  const std::string trim_a_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+  const std::string trim_b_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
   const std::string arc_id = "arc-" + std::to_string(arc_index);
   const std::string fillet_id = "fillet-" + std::to_string(fillet_index);
 
@@ -124,20 +124,20 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // the trim position right away. The recompute pass will refresh
   // these on every subsequent edit.
   if (a_at_start) {
-    line_a.start_point_id = trim_a_id;
+    line_a.start_vertex_id = trim_a_id;
     line_a.start_x = trim_a_x;
     line_a.start_y = trim_a_y;
   } else {
-    line_a.end_point_id = trim_a_id;
+    line_a.end_vertex_id = trim_a_id;
     line_a.end_x = trim_a_x;
     line_a.end_y = trim_a_y;
   }
   if (b_at_start) {
-    line_b.start_point_id = trim_b_id;
+    line_b.start_vertex_id = trim_b_id;
     line_b.start_x = trim_b_x;
     line_b.start_y = trim_b_y;
   } else {
-    line_b.end_point_id = trim_b_id;
+    line_b.end_vertex_id = trim_b_id;
     line_b.end_x = trim_b_x;
     line_b.end_y = trim_b_y;
   }
@@ -146,8 +146,8 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   // points) and the fillet record.
   parameters.arcs.push_back(SketchArc{
       .id = arc_id,
-      .start_point_id = trim_a_id,
-      .end_point_id = trim_b_id,
+      .start_vertex_id = trim_a_id,
+      .end_vertex_id = trim_b_id,
       .center_x = arc_center_x,
       .center_y = arc_center_y,
       .radius = radius,
@@ -159,24 +159,16 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
   });
   parameters.fillets.push_back(SketchFillet{
       .id = fillet_id,
-      .corner_point_id = corner_point_id,
+      .corner_vertex_id = corner_vertex_id,
       .corner_x = corner_x,
       .corner_y = corner_y,
       .line_a_id = line_a_id,
       .line_b_id = line_b_id,
-      .trim_a_point_id = trim_a_id,
-      .trim_b_point_id = trim_b_id,
+      .trim_a_vertex_id = trim_a_id,
+      .trim_b_vertex_id = trim_b_id,
       .arc_id = arc_id,
       .radius = radius,
   });
 
   refresh_sketch_derived_state(feature);
-
-  // Trim points are fixed by the fillet's parametric solve — the
-  // user can't drag them. Same convention as bare arcs.
-  for (auto &point : feature.sketch_parameters->points) {
-    if (point.id == trim_a_id || point.id == trim_b_id) {
-      point.is_fixed = true;
-    }
-  }
 }

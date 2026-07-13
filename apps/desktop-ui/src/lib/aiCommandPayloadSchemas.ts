@@ -279,7 +279,7 @@ export const commandPayloadSchemas = {
     .strict(),
   add_sketch_fillet: z
     .object({
-      corner_point_id: stringField,
+      corner_vertex_id: stringField,
       line_a_id: stringField,
       line_b_id: stringField,
       radius: numberField,

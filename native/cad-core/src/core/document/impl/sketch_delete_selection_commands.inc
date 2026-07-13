@@ -54,19 +54,18 @@ DocumentState DocumentManager::delete_sketch_selection(
 
   for (const auto& point_id : selected_point_ids) {
     for (const auto& line : parameters.lines) {
-      if (line.start_point_id == point_id || line.end_point_id == point_id) {
+      if (line.start_vertex_id == point_id || line.end_vertex_id == point_id) {
         add_id(line_ids, line.id);
       }
     }
     for (const auto& arc : parameters.arcs) {
-      if (arc.start_point_id == point_id || arc.end_point_id == point_id) {
+      if (arc.start_vertex_id == point_id || arc.end_vertex_id == point_id) {
         add_id(arc_ids, arc.id);
       }
     }
-    for (const auto& circle : parameters.circles) {
-      if ("point-circle-" + circle.id + "-center" == point_id) {
-        add_id(circle_ids, circle.id);
-      }
+    // Use geometry_owner_ids to find circle owner (Phase 4.2)
+    if (const auto* circle = find_circle_for_point(parameters, point_id)) {
+      add_id(circle_ids, circle->id);
     }
     for (const auto& projected : parameters.projected_points) {
       if (projected.id == point_id) {
@@ -79,9 +78,9 @@ DocumentState DocumentManager::delete_sketch_selection(
     if (id_in_set(line_ids, fillet.line_a_id) ||
         id_in_set(line_ids, fillet.line_b_id) ||
         id_in_set(arc_ids, fillet.arc_id) ||
-        id_in_set(selected_point_ids, fillet.corner_point_id) ||
-        id_in_set(selected_point_ids, fillet.trim_a_point_id) ||
-        id_in_set(selected_point_ids, fillet.trim_b_point_id)) {
+        id_in_set(selected_point_ids, fillet.corner_vertex_id) ||
+        id_in_set(selected_point_ids, fillet.trim_a_vertex_id) ||
+        id_in_set(selected_point_ids, fillet.trim_b_vertex_id)) {
       add_id(fillet_ids, fillet.id);
     }
   }
@@ -125,37 +124,37 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> deleted_point_ids;
   for (const auto& line : parameters.lines) {
     if (id_in_set(line_ids, line.id)) {
-      add_id(deleted_point_ids, line.start_point_id);
-      add_id(deleted_point_ids, line.end_point_id);
+      add_id(deleted_point_ids, line.start_vertex_id);
+      add_id(deleted_point_ids, line.end_vertex_id);
     }
   }
   for (const auto& circle : parameters.circles) {
     if (id_in_set(circle_ids, circle.id)) {
-      add_id(deleted_point_ids, "point-circle-" + circle.id + "-center");
+      add_id(deleted_point_ids, circle_center_vertex_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {
     if (id_in_set(arc_ids, arc.id)) {
-      add_id(deleted_point_ids, arc.start_point_id);
-      add_id(deleted_point_ids, arc.end_point_id);
+      add_id(deleted_point_ids, arc.start_vertex_id);
+      add_id(deleted_point_ids, arc.end_vertex_id);
     }
   }
   // Remove points that are still referenced by surviving entities.
   for (const auto& line : parameters.lines) {
     if (!id_in_set(line_ids, line.id)) {
-      deleted_point_ids.erase(line.start_point_id);
-      deleted_point_ids.erase(line.end_point_id);
+      deleted_point_ids.erase(line.start_vertex_id);
+      deleted_point_ids.erase(line.end_vertex_id);
     }
   }
   for (const auto& circle : parameters.circles) {
     if (!id_in_set(circle_ids, circle.id)) {
-      deleted_point_ids.erase("point-circle-" + circle.id + "-center");
+      deleted_point_ids.erase(circle_center_vertex_id(circle));
     }
   }
   for (const auto& arc : parameters.arcs) {
     if (!id_in_set(arc_ids, arc.id)) {
-      deleted_point_ids.erase(arc.start_point_id);
-      deleted_point_ids.erase(arc.end_point_id);
+      deleted_point_ids.erase(arc.start_vertex_id);
+      deleted_point_ids.erase(arc.end_vertex_id);
     }
   }
 
@@ -213,15 +212,15 @@ DocumentState DocumentManager::delete_sketch_selection(
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
                      [&](const SketchMidpointAnchor& anchor) {
-                       return id_in_set(selected_point_ids, anchor.point_id) ||
+                       return id_in_set(selected_point_ids, anchor.vertex_id) ||
                               id_in_set(line_ids, anchor.line_id);
                      }),
       parameters.midpoint_anchors.end());
   parameters.point_line_anchors.erase(
       std::remove_if(parameters.point_line_anchors.begin(),
                      parameters.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor& anchor) {
-                       return id_in_set(selected_point_ids, anchor.point_id) ||
+                     [&](const SketchVertexLineAnchor& anchor) {
+                       return id_in_set(selected_point_ids, anchor.vertex_id) ||
                               id_in_set(line_ids, anchor.line_id);
                      }),
       parameters.point_line_anchors.end());
@@ -229,9 +228,9 @@ DocumentState DocumentManager::delete_sketch_selection(
     remove_ids_from_vector(projection.generated_line_ids, line_ids);
     remove_ids_from_vector(projection.generated_circle_ids, circle_ids);
     remove_ids_from_vector(projection.generated_arc_ids, arc_ids);
-    if (!projection.generated_point_id.empty() &&
-        id_in_set(projected_point_ids, projection.generated_point_id)) {
-      projection.generated_point_id.clear();
+    if (!projection.generated_vertex_id.empty() &&
+        id_in_set(projected_point_ids, projection.generated_vertex_id)) {
+      projection.generated_vertex_id.clear();
     }
   }
   parameters.projections.erase(
@@ -245,12 +244,12 @@ DocumentState DocumentManager::delete_sketch_selection(
   refresh_sketch_derived_state(*feature_it);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

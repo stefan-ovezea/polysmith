@@ -25,9 +25,9 @@ export const documentStateSchema = z.object({
   active_sketch_face_id: z.string().nullable(),
   active_sketch_feature_id: z.string().nullable(),
   active_sketch_tool: z.string().nullable(),
-  selected_sketch_point_id: z.string().nullable(),
+  selected_sketch_vertex_id: z.string().nullable(),
   selected_sketch_entity_id: z.string().nullable(),
-  selected_sketch_point_ids: z.array(z.string()).default([]),
+  selected_sketch_vertex_ids: z.array(z.string()).default([]),
   selected_sketch_entity_ids: z.array(z.string()).default([]),
   selected_sketch_dimension_id: z.string().nullable(),
   selected_sketch_profile_id: z.string().nullable(),
@@ -490,8 +490,8 @@ export const documentStateSchema = z.object({
           lines: z.array(
             z.object({
               line_id: z.string(),
-              start_point_id: z.string(),
-              end_point_id: z.string(),
+              start_vertex_id: z.string(),
+              end_vertex_id: z.string(),
               start_x: z.number(),
               start_y: z.number(),
               end_x: z.number(),
@@ -511,7 +511,7 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 anchor_id: z.string(),
-                point_id: z.string(),
+                vertex_id: z.string(),
                 line_id: z.string(),
               }),
             )
@@ -525,7 +525,7 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 anchor_id: z.string(),
-                point_id: z.string(),
+                vertex_id: z.string(),
                 line_id: z.string(),
                 t: z.number(),
               }),
@@ -537,7 +537,7 @@ export const documentStateSchema = z.object({
           projected_points: z
             .array(
               z.object({
-                point_id: z.string(),
+                vertex_id: z.string(),
                 source_id: z.string(),
                 x: z.number(),
                 y: z.number(),
@@ -558,7 +558,7 @@ export const documentStateSchema = z.object({
                 generated_line_ids: z.array(z.string()).default([]),
                 generated_circle_ids: z.array(z.string()).default([]),
                 generated_arc_ids: z.array(z.string()).default([]),
-                generated_point_id: z.string().default(""),
+                generated_vertex_id: z.string().default(""),
                 dependency_broken: z.boolean().default(false),
                 dependency_warning: z.string().default(""),
               }),
@@ -567,6 +567,7 @@ export const documentStateSchema = z.object({
           circles: z.array(
             z.object({
               circle_id: z.string(),
+              center_vertex_id: z.string().optional().default(""),
               center_x: z.number(),
               center_y: z.number(),
               radius: z.number(),
@@ -580,8 +581,9 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 arc_id: z.string(),
-                start_point_id: z.string(),
-                end_point_id: z.string(),
+                start_vertex_id: z.string(),
+                end_vertex_id: z.string(),
+                center_vertex_id: z.string().optional().default(""),
                 center_x: z.number(),
                 center_y: z.number(),
                 radius: z.number(),
@@ -601,13 +603,13 @@ export const documentStateSchema = z.object({
             .array(
               z.object({
                 fillet_id: z.string(),
-                corner_point_id: z.string(),
+                corner_vertex_id: z.string(),
                 corner_x: z.number(),
                 corner_y: z.number(),
                 line_a_id: z.string(),
                 line_b_id: z.string(),
-                trim_a_point_id: z.string(),
-                trim_b_point_id: z.string(),
+                trim_a_vertex_id: z.string(),
+                trim_b_vertex_id: z.string(),
                 arc_id: z.string(),
                 radius: z.number(),
               }),
@@ -615,12 +617,18 @@ export const documentStateSchema = z.object({
             .default([]),
           points: z.array(
             z.object({
-              point_id: z.string(),
-              kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
+              vertex_id: z.string(),
+              kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),
               x: z.number(),
               y: z.number(),
               is_fixed: z.boolean(),
-            }),
+              // ── Vertex unification (Phase 1) ───────────────────────
+              geometry_owner_ids: z.array(z.string()).optional().default([]),
+              is_projected: z.boolean().optional().default(false),
+              source_type: z.string().optional(),
+              source_feature_id: z.string().optional(),
+              source_edge_id: z.string().optional(),
+            }).passthrough(),
           ),
           dimensions: z.array(
             z.object({
@@ -665,7 +673,7 @@ export const documentStateSchema = z.object({
             z.object({
               profile_id: z.string(),
               kind: z.enum(["polygon", "circle"]),
-              point_ids: z.array(z.string()),
+              vertex_ids: z.array(z.string()),
               line_ids: z.array(z.string()),
               points: z.array(
                 z.object({
@@ -692,8 +700,6 @@ export const documentStateSchema = z.object({
               generated_lines: z.array(
                 z.object({
                   line_id: z.string(),
-                  start_point_id: z.string(),
-                  end_point_id: z.string(),
                   start_x: z.number(),
                   start_y: z.number(),
                   end_x: z.number(),
@@ -749,34 +755,19 @@ export const documentStateSchema = z.object({
       error_message: z.string().default(""),
     }),
   ).default([]),
-  cam_setup: z
-    .object({
-      setup_id: z.string(),
-      stock: z.object({
-        width: z.number(), height: z.number(), depth: z.number(),
-        offset_x: z.number(), offset_y: z.number(), offset_z: z.number(),
-      }),
-      wcs_origin: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      safety_plane_z: z.number(),
-      axis_count: z.number(),
-      wcs_angle: z.number().default(0),
-    })
-    .passthrough()
-    .nullable()
-    .default(null),
-  tool_library: z
-    .array(z.object({
-      tool_id: z.string(), name: z.string(), tool_number: z.number(),
-      diameter: z.number(), flute_length: z.number(), overall_length: z.number(),
-      corner_radius: z.number(), spindle_speed: z.number(), feed_rate: z.number(),
-      stepover: z.number(), stepdown: z.number(), type: z.number(),
-    }))
-    .default([]),
-  cam_operations: z
-    .array(z.object({
-      id: z.string(), name: z.string(), type: z.number(), tool_id: z.string(),
-      body_id: z.string(), face_index: z.number(),
-      face_milling: z.object({ depth: z.number(), stepover: z.number(), angle_deg: z.number() }).optional(),
-    }))
-    .default([]),
-});
+  // CAM workspace data — setups, tool library, operations, post-processor,
+  // and simulation.  Mirrors CamDocumentData in cam_types.h.
+  cam: z.object({
+    setups: z.array(z.object({}).passthrough()).default([]),
+    tool_library: z.array(z.object({}).passthrough()).default([]),
+    operations: z.array(z.object({}).passthrough()).default([]),
+    post_processor: z.object({}).passthrough().nullable().default(null),
+    simulation: z.object({}).passthrough().nullable().default(null),
+  }).default({
+    setups: [] as Record<string, unknown>[],
+    tool_library: [] as Record<string, unknown>[],
+    operations: [] as Record<string, unknown>[],
+    post_processor: null as Record<string, unknown> | null,
+    simulation: null as Record<string, unknown> | null,
+  }),
+}).passthrough();

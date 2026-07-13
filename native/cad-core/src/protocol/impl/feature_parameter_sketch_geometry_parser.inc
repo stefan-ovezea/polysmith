@@ -2,8 +2,8 @@
     for (const auto& line_payload : payload.at("lines")) {
       polysmith::core::SketchLine line{};
       line.id = read_string(line_payload, "line_id");
-      line.start_point_id = read_string(line_payload, "start_point_id");
-      line.end_point_id = read_string(line_payload, "end_point_id");
+      line.start_vertex_id = read_string(line_payload, "start_vertex_id");
+      line.end_vertex_id = read_string(line_payload, "end_vertex_id");
       line.start_x = read_number(line_payload, "start_x");
       line.start_y = read_number(line_payload, "start_y");
       line.end_x = read_number(line_payload, "end_x");
@@ -38,8 +38,8 @@
     for (const auto& arc_payload : payload.at("arcs")) {
       polysmith::core::SketchArc arc{};
       arc.id = read_string(arc_payload, "arc_id");
-      arc.start_point_id = read_string(arc_payload, "start_point_id");
-      arc.end_point_id = read_string(arc_payload, "end_point_id");
+      arc.start_vertex_id = read_string(arc_payload, "start_vertex_id");
+      arc.end_vertex_id = read_string(arc_payload, "end_vertex_id");
       arc.center_x = read_number(arc_payload, "center_x");
       arc.center_y = read_number(arc_payload, "center_y");
       arc.radius = read_number(arc_payload, "radius");
@@ -62,13 +62,22 @@
     for (const auto& fillet_payload : payload.at("fillets")) {
       polysmith::core::SketchFillet fillet{};
       fillet.id = read_string(fillet_payload, "fillet_id");
-      fillet.corner_point_id = read_string(fillet_payload, "corner_point_id");
+      // Accept both "corner_vertex_id" (new) and "corner_point_id" (old saves).
+      fillet.corner_vertex_id = fillet_payload.contains("corner_vertex_id")
+          ? read_string(fillet_payload, "corner_vertex_id")
+          : read_string(fillet_payload, "corner_point_id");
       fillet.corner_x = read_number(fillet_payload, "corner_x");
       fillet.corner_y = read_number(fillet_payload, "corner_y");
       fillet.line_a_id = read_string(fillet_payload, "line_a_id");
       fillet.line_b_id = read_string(fillet_payload, "line_b_id");
-      fillet.trim_a_point_id = read_string(fillet_payload, "trim_a_point_id");
-      fillet.trim_b_point_id = read_string(fillet_payload, "trim_b_point_id");
+      // Accept both "trim_a_vertex_id" (new) and "trim_a_point_id" (old saves).
+      fillet.trim_a_vertex_id = fillet_payload.contains("trim_a_vertex_id")
+          ? read_string(fillet_payload, "trim_a_vertex_id")
+          : read_string(fillet_payload, "trim_a_point_id");
+      // Accept both "trim_b_vertex_id" (new) and "trim_b_point_id" (old saves).
+      fillet.trim_b_vertex_id = fillet_payload.contains("trim_b_vertex_id")
+          ? read_string(fillet_payload, "trim_b_vertex_id")
+          : read_string(fillet_payload, "trim_b_point_id");
       fillet.arc_id = read_string(fillet_payload, "arc_id");
       fillet.radius = read_number(fillet_payload, "radius");
       params.fillets.push_back(fillet);
@@ -98,12 +107,12 @@
   }
   if (payload.contains("points") && payload.at("points").is_array()) {
     for (const auto& point_payload : payload.at("points")) {
-      polysmith::core::SketchPoint point{};
-      point.id = read_string(point_payload, "point_id");
+      polysmith::core::SketchVertex point{};
+      point.id = read_string(point_payload, "vertex_id");
       point.kind = read_string(point_payload, "kind");
       point.x = read_number(point_payload, "x");
       point.y = read_number(point_payload, "y");
       point.is_fixed = read_bool(point_payload, "is_fixed");
-      params.points.push_back(point);
+      params.vertices.push_back(point);
     }
   }

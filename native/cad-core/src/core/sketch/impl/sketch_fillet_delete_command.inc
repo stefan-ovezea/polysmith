@@ -33,17 +33,17 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
       return;
     }
     if (line_start_matches(*line_it, trim_point_id)) {
-      line_it->start_point_id = fillet_copy.corner_point_id;
+      line_it->start_vertex_id = fillet_copy.corner_vertex_id;
       line_it->start_x = corner_x;
       line_it->start_y = corner_y;
-    } else if (line_it->end_point_id == trim_point_id) {
-      line_it->end_point_id = fillet_copy.corner_point_id;
+    } else if (line_it->end_vertex_id == trim_point_id) {
+      line_it->end_vertex_id = fillet_copy.corner_vertex_id;
       line_it->end_x = corner_x;
       line_it->end_y = corner_y;
     }
   };
-  restore_line(fillet_copy.line_a_id, fillet_copy.trim_a_point_id);
-  restore_line(fillet_copy.line_b_id, fillet_copy.trim_b_point_id);
+  restore_line(fillet_copy.line_a_id, fillet_copy.trim_a_vertex_id);
+  restore_line(fillet_copy.line_b_id, fillet_copy.trim_b_vertex_id);
 
   // Remove the generated arc.
   parameters.arcs.erase(std::remove_if(parameters.arcs.begin(),
@@ -54,7 +54,7 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
                         parameters.arcs.end());
 
   // Remove the fillet record itself; trim points get cleaned up on
-  // the next `rebuild_sketch_points` because nothing references
+  // the next `rebuild_sketch_vertices` because nothing references
   // them anymore.
   parameters.fillets.erase(std::remove_if(parameters.fillets.begin(),
                                           parameters.fillets.end(),

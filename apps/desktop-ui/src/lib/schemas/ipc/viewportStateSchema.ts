@@ -177,8 +177,8 @@ export const viewportStateSchema = z.object({
   sketch_lines: z.array(
     z.object({
       line_id: z.string(),
-      start_point_id: z.string(),
-      end_point_id: z.string(),
+      start_vertex_id: z.string(),
+      end_vertex_id: z.string(),
       is_construction: z.boolean().default(false),
       plane_id: z.string(),
       start: z.object({
@@ -254,8 +254,8 @@ export const viewportStateSchema = z.object({
     .array(
       z.object({
         arc_id: z.string(),
-        start_point_id: z.string(),
-        end_point_id: z.string(),
+        start_vertex_id: z.string(),
+        end_vertex_id: z.string(),
         plane_id: z.string(),
         plane_frame: planeFrameSchema.nullable().default(null),
         center: z.object({
@@ -281,11 +281,11 @@ export const viewportStateSchema = z.object({
       }),
     )
     .default([]),
-  sketch_points: z.array(
+  sketch_vertices: z.array(
     z.object({
-      point_id: z.string(),
+      vertex_id: z.string(),
       plane_id: z.string(),
-      kind: z.enum(["endpoint", "center", "projected", "quadrant"]),
+      kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),
       position: z.object({
         x: z.number(),
         y: z.number(),
@@ -293,7 +293,13 @@ export const viewportStateSchema = z.object({
       }),
       is_fixed: z.boolean(),
       is_selected: z.boolean(),
-    }),
+      // ── Vertex unification (Phase 1) ───────────────────────
+      geometry_owner_ids: z.array(z.string()).optional().default([]),
+      is_projected: z.boolean().optional().default(false),
+      source_type: z.string().optional(),
+      source_feature_id: z.string().optional(),
+      source_edge_id: z.string().optional(),
+    }).passthrough(),
   ),
   sketch_dimensions: z.array(
     z.object({
@@ -534,7 +540,7 @@ export const viewportStateSchema = z.object({
     z.object({
       kind: z.string(),
       entity_id: z.string(),
-      point_id: z.string(),
+      vertex_id: z.string(),
       local_x: z.number(),
       local_y: z.number(),
       label: z.string(),

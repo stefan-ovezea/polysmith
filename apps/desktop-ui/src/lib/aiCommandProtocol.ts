@@ -656,8 +656,8 @@ export function buildCadStateSummary(
         plane_id: activeSketch.sketch_parameters.plane_id,
         lines: activeSketch.sketch_parameters.lines.map((line) => ({
           id: line.line_id,
-          start_point_id: line.start_point_id,
-          end_point_id: line.end_point_id,
+          start_vertex_id: line.start_vertex_id,
+          end_vertex_id: line.end_vertex_id,
           start: [line.start_x, line.start_y],
           end: [line.end_x, line.end_y],
           is_construction: line.is_construction,
@@ -670,14 +670,14 @@ export function buildCadStateSummary(
         })),
         arcs: activeSketch.sketch_parameters.arcs.map((arc) => ({
           id: arc.arc_id,
-          start_point_id: arc.start_point_id,
-          end_point_id: arc.end_point_id,
+          start_vertex_id: arc.start_vertex_id,
+          end_vertex_id: arc.end_vertex_id,
           center: [arc.center_x, arc.center_y],
           radius: arc.radius,
           is_construction: arc.is_construction,
         })),
         points: activeSketch.sketch_parameters.points.map((point) => ({
-          id: point.point_id,
+          id: point.vertex_id,
           kind: point.kind,
           position: [point.x, point.y],
           is_fixed: point.is_fixed,

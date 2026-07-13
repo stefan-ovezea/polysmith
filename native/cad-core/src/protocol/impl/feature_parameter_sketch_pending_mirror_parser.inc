@@ -22,8 +22,8 @@
       for (const auto& line_payload : pm.at("generated_lines")) {
         polysmith::core::SketchLine line{};
         line.id = read_string(line_payload, "line_id");
-        line.start_point_id = read_string(line_payload, "start_point_id");
-        line.end_point_id = read_string(line_payload, "end_point_id");
+        line.start_vertex_id = read_string(line_payload, "start_vertex_id");
+        line.end_vertex_id = read_string(line_payload, "end_vertex_id");
         line.start_x = read_number(line_payload, "start_x");
         line.start_y = read_number(line_payload, "start_y");
         line.end_x = read_number(line_payload, "end_x");

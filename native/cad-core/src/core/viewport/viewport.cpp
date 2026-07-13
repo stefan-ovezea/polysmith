@@ -44,6 +44,7 @@
 #include "core/geometry/feature_shape.h"
 #include "core/geometry/refresh_dependents.h"
 #include "core/sketch/sketch_profile.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
 namespace polysmith::core {
 namespace {

@@ -117,18 +117,19 @@ function pushSketchGeometryAndConstraints(
 ): number {
   w.clear_data();
 
-  const pointIds: string[] = [];
+  const vertexIds: string[] = [];
 
   // Push sketch points.
   for (const pt of params.points) {
+    const vtxId = pt.vertex_id;
     w.push_primitive({
-      id: pt.point_id,
+      id: vtxId,
       type: "point",
       x: pt.x,
       y: pt.y,
       fixed: pt.is_fixed,
     });
-    pointIds.push(pt.point_id);
+    vertexIds.push(vtxId);
   }
 
   // Push sketch lines.
@@ -136,14 +137,14 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: line.line_id,
       type: "line",
-      p1_id: line.start_point_id,
-      p2_id: line.end_point_id,
+      p1_id: line.start_vertex_id,
+      p2_id: line.end_vertex_id,
     });
   }
 
   // Push sketch circles.
   for (const circle of params.circles) {
-    const centerId = `point-circle-${circle.circle_id}-center`;
+    const centerId = circle.center_vertex_id;
     w.push_primitive({
       id: circle.circle_id,
       type: "circle",
@@ -234,7 +235,7 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: a.anchor_id,
       type: "point_on_line_pl",
-      p_id: a.point_id,
+      p_id: a.vertex_id,
       l_id: a.line_id,
     });
   }
@@ -242,7 +243,7 @@ function pushSketchGeometryAndConstraints(
     w.push_primitive({
       id: a.anchor_id,
       type: "point_on_line_pl",
-      p_id: a.point_id,
+      p_id: a.vertex_id,
       l_id: a.line_id,
     });
   }
@@ -259,8 +260,8 @@ function pushSketchGeometryAndConstraints(
           w.push_primitive({
             id: dim.dimension_id,
             type: "p2p_distance",
-            p1_id: line.start_point_id,
-            p2_id: line.end_point_id,
+            p1_id: line.start_vertex_id,
+            p2_id: line.end_vertex_id,
             distance: dim.value,
           });
         }
@@ -281,8 +282,8 @@ function pushSketchGeometryAndConstraints(
           w.push_primitive({
             id: dim.dimension_id,
             type: "p2p_angle",
-            p1_id: line.start_point_id,
-            p2_id: line.end_point_id,
+            p1_id: line.start_vertex_id,
+            p2_id: line.end_vertex_id,
             angle: dim.value,
           });
         }
@@ -317,7 +318,7 @@ function pushSketchGeometryAndConstraints(
     }
   }
 
-  return pointIds.length;
+  return vertexIds.length;
 }
 
 // ---------------------------------------------------------------------------

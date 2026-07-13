@@ -34,7 +34,7 @@ params.midpoint_anchors.erase(
 params.point_line_anchors.erase(
     std::remove_if(params.point_line_anchors.begin(),
                    params.point_line_anchors.end(),
-                   [&](const SketchPointLineAnchor &a) {
+                   [&](const SketchVertexLineAnchor &a) {
                      return a.line_id == entity_id;
                    }),
     params.point_line_anchors.end());
@@ -77,11 +77,11 @@ params.fillets.erase(std::remove_if(params.fillets.begin(),
                                       return f.line_a_id == entity_id ||
                                              f.line_b_id == entity_id ||
                                              f.arc_id == entity_id ||
-                                             f.corner_point_id == old_sp_id ||
-                                             f.corner_point_id == old_ep_id ||
-                                             f.trim_a_point_id == old_sp_id ||
-                                             f.trim_a_point_id == old_ep_id ||
-                                             f.trim_b_point_id == old_sp_id ||
-                                             f.trim_b_point_id == old_ep_id;
+                                             f.corner_vertex_id == old_sp_id ||
+                                             f.corner_vertex_id == old_ep_id ||
+                                             f.trim_a_vertex_id == old_sp_id ||
+                                             f.trim_a_vertex_id == old_ep_id ||
+                                             f.trim_b_vertex_id == old_sp_id ||
+                                             f.trim_b_vertex_id == old_ep_id;
                                     }),
                      params.fillets.end());

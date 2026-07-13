@@ -1,4 +1,4 @@
-DocumentState DocumentManager::set_sketch_point_fixed(const std::string& point_id,
+DocumentState DocumentManager::set_sketch_vertex_fixed(const std::string& point_id,
                                                       bool is_fixed) {
   require_document();
 
@@ -19,15 +19,15 @@ DocumentState DocumentManager::set_sketch_point_fixed(const std::string& point_i
 
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::set_sketch_point_fixed(*feature_it, point_id, is_fixed);
+  polysmith::core::set_sketch_vertex_fixed(*feature_it, point_id, is_fixed);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = point_id;
+  document_->selected_sketch_vertex_id = point_id;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();
@@ -60,12 +60,12 @@ DocumentState DocumentManager::update_sketch_circle(const std::string& circle_id
       *feature_it, circle_id, center_x, center_y, radius);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = circle_id;
   document_->selected_sketch_dimension_id = "dim-circle-" + circle_id;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

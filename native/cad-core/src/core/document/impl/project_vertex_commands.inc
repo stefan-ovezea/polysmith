@@ -27,11 +27,11 @@ DocumentState DocumentManager::project_vertex_into_sketch(
   push_undo_state();
   clear_redo_stack();
 
-  const std::string point_id = "projected-point-" +
+  const std::string projected_id = "projected-point-" +
                                std::to_string(next_sketch_projected_point_id_++);
   sketch_it->sketch_parameters->projected_points.push_back(
       SketchProjectedPoint{
-          .id = point_id,
+          .id = projected_id,
           .source_id = vertex_id,
           .x = local.first,
           .y = local.second,
@@ -39,13 +39,13 @@ DocumentState DocumentManager::project_vertex_into_sketch(
 
   // Live-link record. Same shape as face / edge but only points to a
   // single `SketchProjectedPoint`; `refresh_sketch_projections` uses
-  // `generated_point_id` to find and patch the cached (x, y).
+  // `generated_vertex_id` to find and patch the cached (x, y).
   SketchProjection projection_record;
   projection_record.id =
       "projection-" + std::to_string(next_sketch_projection_id_++);
   projection_record.source_id = vertex_id;
   projection_record.source_kind = "vertex";
-  projection_record.generated_point_id = point_id;
+  projection_record.generated_vertex_id = projected_id;
   sketch_it->sketch_parameters->projections.push_back(
       std::move(projection_record));
 
@@ -55,12 +55,12 @@ DocumentState DocumentManager::project_vertex_into_sketch(
   refresh_sketch_derived_state(*sketch_it);
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
 

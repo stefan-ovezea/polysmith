@@ -11,7 +11,7 @@ import type { SketchConstraintData } from "@/lib/planegcsBridge";
 import type { ResolveSnapOptions } from "./snapResolution";
 
 export interface EndpointDrag {
-  pointId: string;
+  vertexId: string;
   startClientX: number;
   startClientY: number;
   startLocalX: number;
@@ -105,11 +105,10 @@ export function circleCenterDragPreview(
 ): CircleCenterDragPreview | null {
   if (!params) return null;
 
-  const match = /^point-circle-(.+)-center$/.exec(pointId);
-  if (!match) return null;
-
-  const circleId = match[1];
-  const circle = params.circles.find((c) => c.circle_id === circleId);
+  const circle = params.circles.find((c) =>
+    c.center_vertex_id === pointId ||
+    `point-circle-${c.circle_id}-center` === pointId,
+  );
   if (!circle) return null;
 
   return {
@@ -132,37 +131,53 @@ function endpointDragAnchors(
 
   // Line endpoints: anchored to the opposite endpoint.
   for (const line of params.lines) {
-    if (line.start_point_id !== pointId && line.end_point_id !== pointId) {
+    const isStart = line.start_vertex_id === pointId;
+    const isEnd   = line.end_vertex_id === pointId;
+    if (!isStart && !isEnd) {
       continue;
     }
-    const anchoredId =
-      line.start_point_id === pointId ? line.end_point_id : line.start_point_id;
-    const anchored = params.points.find((point) => point.point_id === anchoredId);
+    const anchoredId = isStart
+      ? line.end_vertex_id
+      : line.start_vertex_id;
+    const anchored = params.points.find((point) => point.vertex_id === anchoredId);
     if (anchored) {
       anchors.push(anchored);
+    }
+  }
+
+  // Arc endpoints: anchored to the opposite arc endpoint.
+  if (params.arcs) {
+    for (const arc of params.arcs) {
+      const isStart = arc.start_vertex_id === pointId;
+      const isEnd   = arc.end_vertex_id === pointId;
+      if (!isStart && !isEnd) continue;
+      anchors.push({
+        x: isStart ? arc.end_x : arc.start_x,
+        y: isStart ? arc.end_y : arc.start_y,
+      });
     }
   }
 
   // Circle center: anchor is the circle's current center (so we get a
   // line from old center → new center).
   if (anchors.length === 0) {
-    const circleMatch = /^point-circle-(.+)-center$/.exec(pointId);
-    if (circleMatch) {
-      const circle = params.circles.find((c) => c.circle_id === circleMatch[1]);
-      if (circle) {
-        anchors.push({ x: circle.center_x, y: circle.center_y });
-      }
+    const circle = params.circles.find((c) =>
+      c.center_vertex_id === pointId ||
+      `point-circle-${c.circle_id}-center` === pointId,
+    );
+    if (circle) {
+      anchors.push({ x: circle.center_x, y: circle.center_y });
     }
   }
 
   // Arc center: anchor is the arc's current center.
   if (anchors.length === 0) {
-    const arcMatch = /^point-arc-(.+)-center$/.exec(pointId);
-    if (arcMatch) {
-      const arc = params.arcs?.find((a) => a.arc_id === arcMatch[1]);
-      if (arc) {
-        anchors.push({ x: arc.center_x, y: arc.center_y });
-      }
+    const arc = params.arcs?.find((a) =>
+      a.center_vertex_id === pointId ||
+      `point-arc-${a.arc_id}-center` === pointId,
+    );
+    if (arc) {
+      anchors.push({ x: arc.center_x, y: arc.center_y });
     }
   }
 
@@ -242,7 +257,7 @@ export function buildCircleDragPreviewObject({
 }
 
 export interface PendingEndpointDragFrame {
-  pointId: string;
+  vertexId: string;
   x: number;
   y: number;
 }
@@ -269,26 +284,32 @@ export function computeRippleActivePoints(
   active.add(draggedPointId);
 
   for (const line of sketch.lines) {
-    if (line.start_point_id === draggedPointId) {
-      active.add(line.end_point_id);
-    } else if (line.end_point_id === draggedPointId) {
-      active.add(line.start_point_id);
+    if (line.start_vertex_id === draggedPointId) {
+      active.add(line.end_vertex_id);
+    } else if (line.end_vertex_id === draggedPointId) {
+      active.add(line.start_vertex_id);
     }
   }
 
-  // Include circle center if this is a center point.
-  const centerMatch = /^point-circle-(.+)-center$/.exec(draggedPointId);
-  if (centerMatch) {
-    active.add(draggedPointId); // already added, just being explicit
+  // Arc endpoints: unfreeze the opposite arc endpoint.
+  if (sketch.arcs) {
+    for (const arc of sketch.arcs) {
+      if (arc.start_vertex_id === draggedPointId) {
+        active.add(arc.end_vertex_id);
+      } else if (arc.end_vertex_id === draggedPointId) {
+        active.add(arc.start_vertex_id);
+      }
+    }
   }
 
-  // If the dragged point is a normal point that happens to be a circle
-  // center, check if there's a circle whose center id matches.
-  for (const circle of sketch.circles) {
-    const centerId = `point-circle-${circle.circle_id}-center`;
-    if (centerId === draggedPointId) {
-      active.add(centerId);
-    }
+  // Include circle center if this is a center point (support both
+  // vertex-N and legacy point-circle-*-center ID formats).
+  const isCircleCenter = sketch.circles.some((c) =>
+    c.center_vertex_id === draggedPointId ||
+    `point-circle-${c.circle_id}-center` === draggedPointId,
+  );
+  if (isCircleCenter) {
+    active.add(draggedPointId);
   }
 
   return Array.from(active);
@@ -318,7 +339,7 @@ export function resolveEndpointDragFrame({
   constraints?: SketchConstraintData[];
 }) {
   const world = toWorldPoint(planeId, [next.x, next.y], planeFrame);
-  const anchorLocal = endpointDragAnchorLocal(sketch, next.pointId);
+  const anchorLocal = endpointDragAnchorLocal(sketch, next.vertexId);
   const sketchPoint = resolveSnappedSketchPoint(
     {
       local: [next.x, next.y],
@@ -337,20 +358,29 @@ export function resolveEndpointDragFrame({
   let solverUsed = false;
   const gcsBridge = getBridge();
   if (gcsBridge && sketch) {
+    // Strip H/V constraints from lines during drag preview so the
+    // solver allows free diagonal movement.  The H/V constraints are
+    // re-applied on commit by the C++ core (propagate_connected_point_move
+    // → refresh_sketch_derived_state).
+    const unconstrainedLines = sketch.lines.map((l) => ({
+      ...l,
+      constraint: null as "horizontal" | "vertical" | null,
+    }));
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
+      lines: unconstrainedLines,
       points: sketch.points.map((p) =>
-        p.point_id === next.pointId
+        p.vertex_id === next.vertexId
           ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }
           : p,
       ),
     };
-    const activePointIds = computeRippleActivePoints(sketch, next.pointId);
+    const activePointIds = computeRippleActivePoints(sketch, next.vertexId);
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {
       activePointIds,
     });
     if (result.ok) {
-      const solved = result.points.find((p) => p.id === next.pointId);
+      const solved = result.points.find((p) => p.id === next.vertexId);
       if (solved) {
         finalLocal = [solved.x, solved.y];
         solverUsed = true;
@@ -361,7 +391,7 @@ export function resolveEndpointDragFrame({
   const previewLines: THREE.Line[] = buildEndpointDragPreviewLines({
     segments: endpointDragPreviewSegments(
       sketch,
-      next.pointId,
+      next.vertexId,
       finalLocal,
     ),
     planeId,
@@ -370,7 +400,7 @@ export function resolveEndpointDragFrame({
   });
 
   // Circle center drag: add a dashed circle outline at the preview position.
-  const circlePreview = circleCenterDragPreview(sketch, next.pointId, finalLocal);
+  const circlePreview = circleCenterDragPreview(sketch, next.vertexId, finalLocal);
   if (circlePreview) {
     previewLines.push(
       buildCircleDragPreviewObject({

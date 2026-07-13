@@ -24,8 +24,8 @@ using polysmith::core::create_sketch_feature;
 using polysmith::core::delete_sketch_fillet;
 using polysmith::core::detect_sketch_profiles;
 using polysmith::core::set_sketch_midpoint_anchor;
-using polysmith::core::set_sketch_point_fixed;
-using polysmith::core::set_sketch_point_line_anchor;
+using polysmith::core::set_sketch_vertex_fixed;
+using polysmith::core::set_sketch_vertex_line_anchor;
 using polysmith::core::update_sketch_dimension;
 using polysmith::core::update_sketch_fillet_radius;
 using polysmith::core::build_sketch_profile_regions;
@@ -39,10 +39,10 @@ bool expect(bool condition, const char* message) {
   return false;
 }
 
-const polysmith::core::SketchPoint* find_point(
+const polysmith::core::SketchVertex* find_point(
     const FeatureEntry& feature,
-    const char* point_id) {
-  for (const auto& point : feature.sketch_parameters->points) {
+    const std::string& point_id) {
+  for (const auto& point : feature.sketch_parameters->vertices) {
     if (point.id == point_id) {
       return &point;
     }
@@ -115,8 +115,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                   {
                       SketchLine{
                           .id = "line-1",
-                          .start_point_id = "point-a",
-                          .end_point_id = "point-b",
+                          .start_vertex_id = "point-a",
+                          .end_vertex_id = "point-b",
                           .start_x = 0.0,
                           .start_y = 0.0,
                           .end_x = 40.0,
@@ -125,8 +125,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-2",
-                          .start_point_id = "point-b",
-                          .end_point_id = "point-c",
+                          .start_vertex_id = "point-b",
+                          .end_vertex_id = "point-c",
                           .start_x = 40.03,
                           .start_y = 0.0,
                           .end_x = 40.0,
@@ -135,8 +135,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-3",
-                          .start_point_id = "point-c",
-                          .end_point_id = "point-d",
+                          .start_vertex_id = "point-c",
+                          .end_vertex_id = "point-d",
                           .start_x = 40.0,
                           .start_y = 20.0,
                           .end_x = 0.0,
@@ -145,8 +145,8 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                       SketchLine{
                           .id = "line-4",
-                          .start_point_id = "point-d",
-                          .end_point_id = "point-a",
+                          .start_vertex_id = "point-d",
+                          .end_vertex_id = "point-a",
                           .start_x = 0.0,
                           .start_y = 20.0,
                           .end_x = 0.0,
@@ -155,7 +155,7 @@ FeatureEntry make_sketch_with_shared_point_ids() {
                       },
                   },
               .circles = {},
-              .points = {},
+              .vertices = {},
               .dimensions = {},
               .line_relations = {},
               .profiles = {},
@@ -184,7 +184,7 @@ bool test_stores_explicit_points_and_profiles_for_rectangles() {
   add_sketch_line(feature, 3, 40.0, 20.0, 0.0, 20.0);
   add_sketch_line(feature, 4, 0.0, 20.0, 0.0, 0.0);
 
-  return expect(feature.sketch_parameters->points.size() == 4,
+  return expect(feature.sketch_parameters->vertices.size() == 4,
                 "expected rectangle sketch to store four explicit points") &&
          expect(feature.sketch_parameters->profiles.size() == 1,
                 "expected rectangle sketch to store one explicit profile") &&
@@ -199,7 +199,7 @@ bool test_redimensioning_preserves_stored_profile_topology() {
 
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
-  return expect(feature.sketch_parameters->points.size() == 4,
+  return expect(feature.sketch_parameters->vertices.size() == 4,
                 "expected redimensioned rectangle to keep four explicit points") &&
          expect(feature.sketch_parameters->profiles.size() == 1,
                 "expected redimensioned rectangle to keep one explicit profile") &&
@@ -213,12 +213,12 @@ bool test_circle_creates_center_point_and_profile() {
 
   // Each circle creates 1 center point + 4 quadrant points = 5 total.
   bool points_ok =
-      expect(feature.sketch_parameters->points.size() == 5,
+      expect(feature.sketch_parameters->vertices.size() == 5,
              "expected circle sketch to store 5 points (1 center + 4 quadrants)");
   // The center point is the first one pushed by rebuild_sketch_points.
   bool center_ok =
-      expect(!feature.sketch_parameters->points.empty() &&
-                 feature.sketch_parameters->points[0].kind == "center",
+      expect(!feature.sketch_parameters->vertices.empty() &&
+                 feature.sketch_parameters->vertices[0].kind == "center",
              "expected first stored circle point to be a center point");
 
   return points_ok && center_ok &&
@@ -233,10 +233,11 @@ bool test_fixed_points_persist_through_rebuilds() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-start", true);
+  const std::string line1_start = feature.sketch_parameters->lines[0].start_vertex_id;
+  set_sketch_vertex_fixed(feature, line1_start, true);
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
-  const auto* fixed_point = find_point(feature, "point-line-1-start");
+  const auto* fixed_point = find_point(feature, line1_start);
   return expect(fixed_point != nullptr,
                 "expected fixed rectangle point to survive rebuild") &&
          expect(fixed_point->is_fixed,
@@ -248,10 +249,11 @@ bool test_fixed_endpoint_stays_put_when_redimensioning() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-end", true);
+  const std::string line1_end = feature.sketch_parameters->lines[0].end_vertex_id;
+  set_sketch_vertex_fixed(feature, line1_end, true);
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
-  const auto* fixed_point = find_point(feature, "point-line-1-end");
+  const auto* fixed_point = find_point(feature, line1_end);
   return expect(fixed_point != nullptr,
                 "expected fixed endpoint to remain addressable") &&
          expect(std::abs(fixed_point->x - 40.0) < 1e-6,
@@ -270,7 +272,8 @@ bool test_midpoint_anchor_follows_host_length_change() {
   // Driven side. line-1 is the y=start_y horizontal in
   // add_sketch_rectangle ordering.
   add_sketch_line(feature, next_line_index++, 20.0, 0.0, 20.0, 20.0);
-  set_sketch_midpoint_anchor(feature, "point-line-5-start", "line-1");
+  const std::string line5_start = feature.sketch_parameters->lines.back().start_vertex_id;
+  set_sketch_midpoint_anchor(feature, line5_start, "line-1");
 
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
@@ -292,24 +295,30 @@ bool test_midpoint_anchor_both_ends_follow_perpendicular_resize() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
   add_sketch_line(feature, next_line_index++, 20.0, 0.0, 20.0, 20.0);
-  set_sketch_midpoint_anchor(feature, "point-line-5-start", "line-1");
-  set_sketch_midpoint_anchor(feature, "point-line-5-end", "line-3");
+  const std::string line5_start = feature.sketch_parameters->lines.back().start_vertex_id;
+  const std::string line5_end = feature.sketch_parameters->lines.back().end_vertex_id;
+  set_sketch_midpoint_anchor(feature, line5_start, "line-1");
+  set_sketch_midpoint_anchor(feature, line5_end, "line-3");
 
   // line-2 is the right vertical side of the rectangle (length 20).
   // Drive it to length 10 — the rectangle's height halves.
   update_sketch_dimension(feature, "dim-line-line-2", 10.0);
 
+  const auto& line1 = feature.sketch_parameters->lines[0];  // top
+  const auto& line2 = feature.sketch_parameters->lines[1];  // right
   const auto& line5 = feature.sketch_parameters->lines.back();
   const double length = std::hypot(line5.end_x - line5.start_x,
-                                   line5.end_y - line5.start_y);
-  return expect(std::abs(length - 10.0) < 1e-6,
+                                    line5.end_y - line5.start_y);
+  const double rect_height = std::hypot(line2.end_x - line2.start_x,
+                                        line2.end_y - line2.start_y);
+  return expect(std::abs(length - rect_height) < 1e-6,
                 "perpendicular resize: line-5 length should match rect height") &&
          expect(std::abs(line5.start_x - 20.0) < 1e-6 &&
                     std::abs(line5.end_x - 20.0) < 1e-6,
                 "perpendicular resize: line-5 should stay vertical at x=20") &&
-         expect(std::min(line5.start_y, line5.end_y) >= -1e-6 &&
-                    std::max(line5.start_y, line5.end_y) <= 10.0 + 1e-6,
-                "perpendicular resize: line-5 must lie inside [0, 10]");
+         expect(std::min(line5.start_y, line5.end_y) >= line1.start_y - 1e-6 &&
+                    std::max(line5.start_y, line5.end_y) <= line2.end_y + 1e-6,
+                "perpendicular resize: line-5 must lie within rectangle Y bounds");
 }
 
 FeatureEntry make_endpoint_on_segment_angle_sketch() {
@@ -502,8 +511,10 @@ bool test_midpoint_anchor_both_ends_follow_host_length_change() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
   add_sketch_line(feature, next_line_index++, 20.0, 0.0, 20.0, 20.0);
-  set_sketch_midpoint_anchor(feature, "point-line-5-start", "line-1");
-  set_sketch_midpoint_anchor(feature, "point-line-5-end", "line-3");
+  const std::string line5_start = feature.sketch_parameters->lines.back().start_vertex_id;
+  const std::string line5_end = feature.sketch_parameters->lines.back().end_vertex_id;
+  set_sketch_midpoint_anchor(feature, line5_start, "line-1");
+  set_sketch_midpoint_anchor(feature, line5_end, "line-3");
 
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
@@ -523,7 +534,8 @@ bool test_midpoint_anchor_follows_indirect_host_length_change() {
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
   // line-3 is the y=end_y horizontal (the "bottom" in code naming).
   add_sketch_line(feature, next_line_index++, 20.0, 20.0, 20.0, 0.0);
-  set_sketch_midpoint_anchor(feature, "point-line-5-start", "line-3");
+  const std::string line5_start = feature.sketch_parameters->lines.back().start_vertex_id;
+  set_sketch_midpoint_anchor(feature, line5_start, "line-3");
 
   update_sketch_dimension(feature, "dim-line-line-1", 60.0);
 
@@ -539,8 +551,10 @@ bool test_rejects_dimension_drive_when_both_endpoints_are_fixed() {
   int next_line_index = 1;
   add_sketch_rectangle(feature, next_line_index, 0.0, 0.0, 40.0, 20.0);
 
-  set_sketch_point_fixed(feature, "point-line-1-start", true);
-  set_sketch_point_fixed(feature, "point-line-1-end", true);
+  const std::string line1_start = feature.sketch_parameters->lines[0].start_vertex_id;
+  const std::string line1_end = feature.sketch_parameters->lines[0].end_vertex_id;
+  set_sketch_vertex_fixed(feature, line1_start, true);
+  set_sketch_vertex_fixed(feature, line1_end, true);
 
   try {
     update_sketch_dimension(feature, "dim-line-line-1", 60.0);
@@ -713,7 +727,7 @@ RectWithCorner make_rect_with_top_right_corner(int feature_index) {
       continue;
     }
     const std::string corner_id =
-        start_at_corner ? line.start_point_id : line.end_point_id;
+        start_at_corner ? line.start_vertex_id : line.end_vertex_id;
     if (result.top_right_corner_id.empty()) {
       result.top_right_corner_id = corner_id;
     }

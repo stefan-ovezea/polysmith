@@ -113,94 +113,61 @@ SessionState DocumentManager::get_session_state() const {
   };
 }
 
-// ── CAM Setup ──────────────────────────────────────────────────
+// ── CAM ─────────────────────────────────────────────────────
+//
+// CAM workspace is being rebuilt on new target-schema types
+// (cam_types.h).  All state lives in DocumentState::cam.
+// These methods are stubs — they return the current document
+// unchanged.  Real implementations will be added when the CAM
+// workspace is rewritten.
 
-DocumentState DocumentManager::cam_setup_create(const CamSetup& setup) {
+DocumentState DocumentManager::cam_setup_create(const CamSetup&) {
   require_document();
-  document_->cam_setup = setup;
-  bump_geometry_revision();
   return document_.value();
 }
 
 std::optional<CamSetup> DocumentManager::cam_setup_get() const {
-  if (!document_.has_value()) return std::nullopt;
-  return document_->cam_setup;
+  if (!document_.has_value() || document_->cam.setups.empty())
+    return std::nullopt;
+  return document_->cam.setups[0];
 }
 
-DocumentState DocumentManager::cam_setup_update(const CamSetup& setup) {
+DocumentState DocumentManager::cam_setup_update(const CamSetup&) {
   require_document();
-  document_->cam_setup = setup;
-  bump_geometry_revision();
   return document_.value();
 }
 
-// ── CAM Tool Library ───────────────────────────────────────────
-
-DocumentState DocumentManager::cam_tool_add(const CamToolDefinition& tool) {
+DocumentState DocumentManager::cam_tool_add(const ToolEntry&) {
   require_document();
-  document_->tool_library.push_back(tool);
   return document_.value();
 }
 
-DocumentState DocumentManager::cam_tool_update(const std::string& toolId,
-                                                const CamToolDefinition& tool) {
+DocumentState DocumentManager::cam_tool_update(const std::string&, const ToolEntry&) {
   require_document();
-  for (auto& t : document_->tool_library) {
-    if (t.id == toolId) {
-      t = tool;
-      break;
-    }
-  }
   return document_.value();
 }
 
-DocumentState DocumentManager::cam_tool_delete(const std::string& toolId) {
+DocumentState DocumentManager::cam_tool_delete(const std::string&) {
   require_document();
-  auto& tools = document_->tool_library;
-  tools.erase(std::remove_if(tools.begin(), tools.end(),
-                             [&](const CamToolDefinition& t) { return t.id == toolId; }),
-              tools.end());
   return document_.value();
 }
 
-std::vector<CamToolDefinition> DocumentManager::cam_tool_list() const {
+std::vector<ToolEntry> DocumentManager::cam_tool_list() const {
   if (!document_.has_value()) return {};
-  return document_->tool_library;
+  return document_->cam.tool_library;
 }
 
-// ── CAM Operations ─────────────────────────────────────────────
-
-DocumentState DocumentManager::cam_operation_add(const CamOperationEntry& op) {
+DocumentState DocumentManager::cam_operation_add(const CamOperation&) {
   require_document();
-  document_->cam_operations.push_back(op);
-  bump_geometry_revision();
   return document_.value();
 }
 
-DocumentState DocumentManager::cam_operation_update(
-    const std::string& operation_id, const CamOperationEntry& updated) {
+DocumentState DocumentManager::cam_operation_update(const std::string&, const CamOperation&) {
   require_document();
-  for (auto& op : document_->cam_operations) {
-    if (op.id == operation_id) {
-      // Preserve TNP witness data, update user-editable fields.
-      op.name = updated.name;
-      op.toolId = updated.toolId;
-      op.faceMilling = updated.faceMilling;
-      bump_geometry_revision();
-      return document_.value();
-    }
-  }
   return document_.value();
 }
 
-DocumentState DocumentManager::cam_operation_delete(const std::string& operation_id) {
+DocumentState DocumentManager::cam_operation_delete(const std::string&) {
   require_document();
-  auto& ops = document_->cam_operations;
-  ops.erase(
-      std::remove_if(ops.begin(), ops.end(),
-                     [&](const CamOperationEntry& op) { return op.id == operation_id; }),
-      ops.end());
-  bump_geometry_revision();
   return document_.value();
 }
-

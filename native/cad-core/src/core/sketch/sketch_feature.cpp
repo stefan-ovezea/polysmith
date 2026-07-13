@@ -15,6 +15,7 @@
 #include "core/sketch/constraint_solver.h"
 #include "core/sketch/formula_eval.h"
 #include "core/sketch/inference_engine.h"
+#include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/sketch/sketch_profile.h"
 #include "core/sketch/trim_engine.h"
 
@@ -37,7 +38,7 @@ namespace {
 
 #include "core/sketch/impl/state_and_create.inc"
 #include "core/sketch/impl/line_constraints.inc"
-#include "core/sketch/impl/point_and_circle_updates.inc"
+#include "core/sketch/impl/vertex_and_circle_updates.inc"
 #include "core/sketch/impl/dimensions.inc"
 #include "core/sketch/impl/line_primitives.inc"
 #include "core/sketch/impl/mirror.inc"

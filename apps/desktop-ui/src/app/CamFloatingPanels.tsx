@@ -43,7 +43,7 @@ export function CamFloatingPanels({
   const setupPanel = isSetupPanelOpen ? (
     <CamSetupPanel
       initialSetup={{
-        stock: document?.cam_setup?.stock ?? {
+        stock: (document?.cam as any)?.setups?.[0]?.stock ?? {
           width: 120,
           height: 120,
           depth: 20,
@@ -51,9 +51,9 @@ export function CamFloatingPanels({
           offset_y: 5,
           offset_z: 5,
         },
-        wcs_origin: document?.cam_setup?.wcs_origin ?? { x: 0, y: 0, z: 0 },
-        safety_plane_z: document?.cam_setup?.safety_plane_z ?? 10,
-        wcs_angle: document?.cam_setup?.wcs_angle ?? 0,
+        wcs_origin: (document?.cam as any)?.setups?.[0]?.wcs_origin ?? { x: 0, y: 0, z: 0 },
+        safety_plane_z: (document?.cam as any)?.setups?.[0]?.safety_plane_z ?? 10,
+        wcs_angle: (document?.cam as any)?.setups?.[0]?.wcs_angle ?? 0,
         orientation_mode: "model",
         origin_mode: "model",
       }}
@@ -121,18 +121,19 @@ function buildFaceMillingPanel({
   | "camOperationUpdate"
   | "camOperationDelete"
 >) {
-  if (!document?.cam_operations || !selectedOperationId) {
+  const ops = (document?.cam as any)?.operations;
+  if (!ops || !selectedOperationId) {
     return null;
   }
 
-  const operation = document.cam_operations.find(
-    (candidate) => candidate.id === selectedOperationId && candidate.type === 0,
+  const operation = ops.find(
+    (candidate: any) => candidate.id === selectedOperationId && candidate.type === 0,
   );
   if (!operation) {
     return null;
   }
 
-  const tools: ToolOption[] = (document.tool_library ?? []).map((tool) => ({
+  const tools: ToolOption[] = ((document?.cam as any)?.tool_library ?? []).map((tool: any) => ({
     tool_id: tool.tool_id,
     name: tool.name,
     diameter: tool.diameter,

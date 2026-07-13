@@ -1,6 +1,6 @@
 // After constraint enforcement, multiple lines that share a point ID may
 // have been driven to different (x, y) coordinates for that shared point.
-// `rebuild_sketch_points` deduplicates by point ID and renders a single
+// `rebuild_sketch_vertices` deduplicates by point ID and renders a single
 // sphere at whichever line's coordinates it encounters first — leaving the
 // other line's endpoint visually orphaned.  This pass forces every shared
 // point to a single canonical position before the rebuild so the sphere
@@ -12,8 +12,8 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
 
   for (size_t i = 0; i < parameters.lines.size(); ++i) {
     const auto& line = parameters.lines[i];
-    shared[line.start_point_id].push_back({i, true});
-    shared[line.end_point_id].push_back({i, false});
+    shared[line.start_vertex_id].push_back({i, true});
+    shared[line.end_vertex_id].push_back({i, false});
   }
 
   for (const auto& [point_id, refs] : shared) {
@@ -28,8 +28,8 @@ void reconcile_shared_point_positions(SketchFeatureParameters& parameters) {
     for (size_t r = 0; r < refs.size(); ++r) {
       const auto& l = parameters.lines[refs[r].line_index];
       const std::string& pt =
-          refs[r].is_start ? l.start_point_id : l.end_point_id;
-      if (point_is_fixed(parameters, pt)) {
+          refs[r].is_start ? l.start_vertex_id : l.end_vertex_id;
+      if (vertex_is_fixed(parameters, pt)) {
         canonical_ref = r;
         found_authoritative = true;
         break;

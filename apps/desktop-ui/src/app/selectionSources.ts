@@ -188,5 +188,5 @@ export function currentPointSourceId(
   if (selectedVertexId) {
     return selectedVertexId;
   }
-  return documentState?.selected_sketch_point_id ?? null;
+  return documentState?.selected_sketch_vertex_id ?? null;
 }

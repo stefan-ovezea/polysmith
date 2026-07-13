@@ -9,9 +9,9 @@ export function currentSketchDeleteSelection(
       document?.selected_sketch_entity_ids,
       document?.selected_sketch_entity_id,
     ),
-    pointIds: dedupeSelectedIds(
-      document?.selected_sketch_point_ids,
-      document?.selected_sketch_point_id,
+    vertexIds: dedupeSelectedIds(
+      document?.selected_sketch_vertex_ids,
+      document?.selected_sketch_vertex_id,
     ),
     profileIds: dedupeSelectedIds(
       document?.selected_sketch_profile_ids,
@@ -73,7 +73,7 @@ function sketchEntityIdsForDeleteSelection(
   sketch: NonNullable<FeatureEntry["sketch_parameters"]>,
 ) {
   const entityIds = new Set(selection.entityIds);
-  for (const pointId of selection.pointIds) {
+  for (const pointId of selection.vertexIds) {
     addLineIdsForPoint(entityIds, sketch, pointId);
     addArcIdsForPoint(entityIds, sketch, pointId);
     addCircleIdsForCenterPoint(entityIds, sketch, pointId);
@@ -87,7 +87,7 @@ function addLineIdsForPoint(
   pointId: string,
 ) {
   for (const line of sketch.lines) {
-    if (line.start_point_id === pointId || line.end_point_id === pointId) {
+    if (line.start_vertex_id === pointId || line.end_vertex_id === pointId) {
       entityIds.add(line.line_id);
     }
   }
@@ -99,7 +99,7 @@ function addArcIdsForPoint(
   pointId: string,
 ) {
   for (const arc of sketch.arcs ?? []) {
-    if (arc.start_point_id === pointId || arc.end_point_id === pointId) {
+    if (arc.start_vertex_id === pointId || arc.end_vertex_id === pointId) {
       entityIds.add(arc.arc_id);
     }
   }
@@ -111,7 +111,8 @@ function addCircleIdsForCenterPoint(
   pointId: string,
 ) {
   for (const circle of sketch.circles) {
-    if (`point-circle-${circle.circle_id}-center` === pointId) {
+    if (`point-circle-${circle.circle_id}-center` === pointId ||
+        circle.center_vertex_id === pointId) {
       entityIds.add(circle.circle_id);
     }
   }

@@ -37,9 +37,9 @@ struct DocumentState {
   std::optional<std::string> active_sketch_face_id;
   std::optional<std::string> active_sketch_feature_id;
   std::optional<std::string> active_sketch_tool;
-  std::optional<std::string> selected_sketch_point_id;
+  std::optional<std::string> selected_sketch_vertex_id;
   std::optional<std::string> selected_sketch_entity_id;
-  std::vector<std::string> selected_sketch_point_ids;
+  std::vector<std::string> selected_sketch_vertex_ids;
   std::vector<std::string> selected_sketch_entity_ids;
   std::optional<std::string> selected_sketch_dimension_id;
   std::optional<std::string> selected_sketch_profile_id;
@@ -52,13 +52,9 @@ struct DocumentState {
   std::vector<ParameterEntry> parameters;
   DocumentAppearance appearance;
   SelectionFilter selection_filter;
-  // CAM workspace setup. nullopt when no CAM setup exists.
-  // Must be present before any milling operation can be created.
-  std::optional<CamSetup> cam_setup;
-  // CAM tool library. Persisted with the document.
-  std::vector<CamToolDefinition> tool_library;
-  // CAM operations in execution order.
-  std::vector<CamOperationEntry> cam_operations;
+  // CAM workspace data — setups, tool library, operations, post-processor,
+  // and simulation state.  All CAM state lives here; see cam_types.h.
+  CamDocumentData cam;
 };
 
 struct SessionState {

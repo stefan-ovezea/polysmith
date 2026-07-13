@@ -1,7 +1,7 @@
 // finalize_new_dimension and count_driving_on_point_pair are now in
 // dimensions.inc (included earlier in sketch_feature.cpp).
 
-void add_sketch_point_distance_dimension(FeatureEntry& feature,
+void add_sketch_vertex_distance_dimension(FeatureEntry& feature,
                                          const std::string& point_a_id,
                                          const std::string& point_b_id,
                                          std::optional<std::string> axis) {
@@ -11,19 +11,20 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
 
   auto& parameters = *feature.sketch_parameters;
 
-  const auto point_a_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& p) { return p.id == point_a_id; });
-  const auto point_b_it = std::find_if(
-      parameters.points.begin(),
-      parameters.points.end(),
-      [&](const SketchPoint& p) { return p.id == point_b_id; });
+  // Look up by id first, then vertex_id (IPC sends vertex_id which maps to
+  // SketchVertex::vertex_id; p.id can differ for legacy / center vertices).
+  auto find_vertex = [&](const std::string& vid) {
+    auto it = std::find_if(parameters.vertices.begin(), parameters.vertices.end(),
+        [&](const SketchVertex& p) { return p.id == vid || p.vertex_id == vid; });
+    return it;
+  };
+  const auto point_a_it = find_vertex(point_a_id);
+  const auto point_b_it = find_vertex(point_b_id);
 
-  if (point_a_it == parameters.points.end()) {
+  if (point_a_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_a_id);
   }
-  if (point_b_it == parameters.points.end()) {
+  if (point_b_it == parameters.vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_b_id);
   }
 
@@ -70,8 +71,8 @@ void add_sketch_point_distance_dimension(FeatureEntry& feature,
         parameters.lines.begin(),
         parameters.lines.end(),
         [&](const SketchLine& l) {
-          return (l.start_point_id == point_a_id && l.end_point_id == point_b_id) ||
-                 (l.start_point_id == point_b_id && l.end_point_id == point_a_id);
+          return (l.start_vertex_id == point_a_id && l.end_vertex_id == point_b_id) ||
+                 (l.start_vertex_id == point_b_id && l.end_vertex_id == point_a_id);
         });
     if (matching_line != parameters.lines.end()) {
       const auto existing_ll = std::find_if(
@@ -121,7 +122,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
       dimension_it->is_auto = false;
       dimension_it->value = measure_line_length(line);
       finalize_new_dimension(feature, parameters, dimension_id,
-                             line.start_point_id, line.end_point_id);
+                             line.start_vertex_id, line.end_vertex_id);
       return;
     }
     // Already a manual dimension — update value to match current geometry.
@@ -141,8 +142,8 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
         if (!dim.display_as.empty()) return false;
         const std::string& pa = dim.entity_id;
         const std::string& pb = dim.secondary_entity_id;
-        return (pa == line.start_point_id && pb == line.end_point_id) ||
-               (pa == line.end_point_id && pb == line.start_point_id);
+        return (pa == line.start_vertex_id && pb == line.end_vertex_id) ||
+               (pa == line.end_vertex_id && pb == line.start_vertex_id);
       });
   if (dup_pt != parameters.dimensions.end()) {
     parameters.dimensions.erase(dup_pt);
@@ -156,7 +157,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   });
 
   finalize_new_dimension(feature, parameters, dimension_id,
-                         line.start_point_id, line.end_point_id);
+                         line.start_vertex_id, line.end_vertex_id);
 }
 
 void add_sketch_line_angle_dimension(FeatureEntry& feature,
@@ -230,6 +231,7 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
     // Already exists — update value to match current geometry (mirrors
     // line_length's idempotent behaviour).
     dimension_it->value = circle.radius;
+    dimension_it->is_auto = false;
     return;
   }
 
@@ -239,6 +241,36 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
       .entity_id = circle.id,
       .value = circle.radius,
       .display_as = display_as.value_or(""),
+  });
+
+  finalize_new_dimension(feature, parameters, dimension_id);
+}
+
+void add_sketch_arc_radius_dimension(FeatureEntry& feature,
+                                     const std::string& arc_id) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can accept sketch dimensions");
+  }
+
+  auto& parameters = *feature.sketch_parameters;
+  auto& arc = require_arc(parameters, arc_id);
+
+  const std::string dimension_id = "dim-arc-" + arc.id;
+  const auto dimension_it = std::find_if(
+      parameters.dimensions.begin(),
+      parameters.dimensions.end(),
+      [&](const SketchDimension& dim) { return dim.id == dimension_id; });
+  if (dimension_it != parameters.dimensions.end()) {
+    dimension_it->value = arc.radius;
+    dimension_it->is_auto = false;
+    return;
+  }
+
+  parameters.dimensions.push_back(SketchDimension{
+      .id = dimension_id,
+      .kind = "arc_radius",
+      .entity_id = arc.id,
+      .value = arc.radius,
   });
 
   finalize_new_dimension(feature, parameters, dimension_id);

@@ -6,8 +6,8 @@ ViewportSketchLinePrimitive make_sketch_line_primitive(const SketchLine& line,
 
   return ViewportSketchLinePrimitive{
       .line_id = line.id,
-      .start_point_id = line.start_point_id,
-      .end_point_id = line.end_point_id,
+      .start_vertex_id = line.start_vertex_id,
+      .end_vertex_id = line.end_vertex_id,
       .plane_id = parameters.plane_id,
       .start_x = start.x,
       .start_y = start.y,
@@ -107,8 +107,8 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
 
   return ViewportSketchArcPrimitive{
       .arc_id = arc.id,
-      .start_point_id = arc.start_point_id,
-      .end_point_id = arc.end_point_id,
+      .start_vertex_id = arc.start_vertex_id,
+      .end_vertex_id = arc.end_vertex_id,
       .plane_id = parameters.plane_id,
       .plane_frame = parameters.plane_frame.has_value()
                          ? std::optional<ViewportSketchPlaneFrame>(
@@ -131,14 +131,14 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
   };
 }
 
-ViewportSketchPointPrimitive make_sketch_point_primitive(
-    const SketchPoint& point,
+ViewportSketchVertexPrimitive make_sketch_vertex_primitive(
+    const SketchVertex& point,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
   const WorldPoint world = to_world_point(parameters, point.x, point.y);
 
-  return ViewportSketchPointPrimitive{
-      .point_id = point.id,
+  return ViewportSketchVertexPrimitive{
+      .vertex_id = point.vertex_id,
       .plane_id = parameters.plane_id,
       .kind = point.kind,
       .position_x = world.x,
@@ -146,6 +146,11 @@ ViewportSketchPointPrimitive make_sketch_point_primitive(
       .position_z = world.z,
       .is_fixed = point.is_fixed,
       .is_selected = is_selected,
+      .geometry_owner_ids = point.geometry_owner_ids,
+      .is_projected = point.is_projected,
+      .source_type = point.source_type,
+      .source_feature_id = point.source_feature_id,
+      .source_edge_id = point.source_edge_id,
   };
 }
 
@@ -192,7 +197,7 @@ ViewportSketchConstraintPrimitive make_line_constraint_primitive(
 }
 
 ViewportSketchConstraintPrimitive make_point_constraint_primitive(
-    const SketchPoint& point,
+    const SketchVertex& point,
     const SketchFeatureParameters& parameters,
     bool is_selected) {
   const WorldPoint position = to_world_point(

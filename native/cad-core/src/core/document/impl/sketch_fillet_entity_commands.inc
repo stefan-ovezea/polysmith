@@ -1,5 +1,5 @@
 DocumentState DocumentManager::add_sketch_fillet(
-    const std::string& corner_point_id,
+    const std::string& corner_vertex_id,
     const std::string& line_a_id,
     const std::string& line_b_id,
     double radius) {
@@ -32,13 +32,13 @@ DocumentState DocumentManager::add_sketch_fillet(
                                      trim_a_point_index,
                                      trim_b_point_index,
                                      next_sketch_arc_id_++,
-                                     corner_point_id,
+                                     corner_vertex_id,
                                      line_a_id,
                                      line_b_id,
                                      radius);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id =
       feature_it->sketch_parameters->fillets.back().id;
   document_->selected_sketch_dimension_id = std::nullopt;

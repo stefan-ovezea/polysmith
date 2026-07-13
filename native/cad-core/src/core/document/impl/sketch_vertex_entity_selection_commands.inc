@@ -1,4 +1,4 @@
-DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
+DocumentState DocumentManager::select_sketch_vertex(const std::string& point_id,
                                                    bool additive) {
   require_document();
 
@@ -19,10 +19,10 @@ DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
   }
 
   const auto point_it = std::find_if(
-      feature_it->sketch_parameters->points.begin(),
-      feature_it->sketch_parameters->points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  if (point_it == feature_it->sketch_parameters->points.end()) {
+      feature_it->sketch_parameters->vertices.begin(),
+      feature_it->sketch_parameters->vertices.end(),
+      [&](const SketchVertex& point) { return point.id == point_id; });
+  if (point_it == feature_it->sketch_parameters->vertices.end()) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
 
@@ -33,7 +33,7 @@ DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   if (additive) {
-    auto& point_ids = document_->selected_sketch_point_ids;
+    auto& point_ids = document_->selected_sketch_vertex_ids;
     const auto existing =
         std::find(point_ids.begin(), point_ids.end(), point_id);
     if (existing == point_ids.end()) {
@@ -42,12 +42,12 @@ DocumentState DocumentManager::select_sketch_point(const std::string& point_id,
       point_ids.erase(existing);
     }
   } else {
-    document_->selected_sketch_point_ids = {point_id};
+    document_->selected_sketch_vertex_ids = {point_id};
   }
-  document_->selected_sketch_point_id =
-      document_->selected_sketch_point_ids.empty()
+  document_->selected_sketch_vertex_id =
+      document_->selected_sketch_vertex_ids.empty()
           ? std::nullopt
-          : std::make_optional(document_->selected_sketch_point_ids.back());
+          : std::make_optional(document_->selected_sketch_vertex_ids.back());
   return document_.value();
 }
 
@@ -100,8 +100,8 @@ DocumentState DocumentManager::select_sketch_entity(
       });
 
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_ids.clear();
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_ids.clear();
+  document_->selected_sketch_vertex_id = std::nullopt;
   if (additive) {
     auto& entity_ids = document_->selected_sketch_entity_ids;
     const auto existing =
@@ -132,6 +132,6 @@ DocumentState DocumentManager::select_sketch_entity(
           : std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   return document_.value();
 }

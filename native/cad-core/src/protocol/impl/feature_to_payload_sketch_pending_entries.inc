@@ -16,8 +16,8 @@
                           for (const auto& line : pm.generated_lines) {
                             generated_lines.push_back({
                                 {"line_id", line.id},
-                                {"start_point_id", line.start_point_id},
-                                {"end_point_id", line.end_point_id},
+                                {"start_vertex_id", line.start_vertex_id},
+                                {"end_vertex_id", line.end_vertex_id},
                                 {"start_x", line.start_x},
                                 {"start_y", line.start_y},
                                 {"end_x", line.end_x},

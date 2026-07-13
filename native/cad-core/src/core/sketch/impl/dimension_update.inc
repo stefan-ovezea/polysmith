@@ -36,14 +36,13 @@ void update_sketch_dimension(FeatureEntry& feature,
   std::vector<LabelPre> pre_labels;
   auto find_pt = [&](const std::string& pid) -> std::pair<double,double> {
     for (const auto& l : parameters.lines) {
-      if (l.start_point_id == pid) return {l.start_x, l.start_y};
-      if (l.end_point_id == pid) return {l.end_x, l.end_y};
+      if (l.start_vertex_id == pid) return {l.start_x, l.start_y};
+      if (l.end_vertex_id == pid) return {l.end_x, l.end_y};
     }
-    for (const auto& c : parameters.circles) {
-      if ("point-circle-" + c.id + "-center" == pid)
-        return {c.center_x, c.center_y};
-    }
-    for (const auto& p : parameters.points) {
+    // Phase 4.2: use geometry_owner_ids instead of prefix matching
+    if (const auto* c = find_circle_for_point(parameters, pid))
+      return {c->center_x, c->center_y};
+    for (const auto& p : parameters.vertices) {
       if (p.id == pid) return {p.x, p.y};
     }
     return {0.0, 0.0};
@@ -127,6 +126,10 @@ void update_sketch_dimension(FeatureEntry& feature,
   };
 
   if (dimension.kind == "line_length") {
+    // When the user explicitly edits a line_length dimension, clear the
+    // auto flag so the solver constraint activates (matching the angle
+    // kind at line 199).
+    dimension.is_auto = false;
     const auto line_it = std::find_if(
         parameters.lines.begin(),
         parameters.lines.end(),
@@ -148,7 +151,7 @@ void update_sketch_dimension(FeatureEntry& feature,
                       line_it->start_x,
                       line_it->start_y)) {
       propagate_connected_point_move(parameters,
-                                     line_it->start_point_id,
+                                     line_it->start_vertex_id,
                                      line_it->start_x,
                                      line_it->start_y);
     }
@@ -157,7 +160,7 @@ void update_sketch_dimension(FeatureEntry& feature,
                       line_it->end_x,
                       line_it->end_y)) {
       propagate_connected_point_move(parameters,
-                                     line_it->end_point_id,
+                                     line_it->end_vertex_id,
                                      line_it->end_x,
                                      line_it->end_y);
     }
@@ -258,7 +261,7 @@ void update_sketch_dimension(FeatureEntry& feature,
     // Propagate the moved endpoint through any coincident points.
     if (!points_match(previous_end_x, previous_end_y, line.end_x, line.end_y)) {
       propagate_connected_point_move(
-          parameters, line.end_point_id, line.end_x, line.end_y);
+          parameters, line.end_vertex_id, line.end_x, line.end_y);
     }
 
     dimension.value = target;
@@ -270,18 +273,42 @@ void update_sketch_dimension(FeatureEntry& feature,
   }
 
   if (dimension.kind == "circle_center_distance") {
-    auto& driven_circle = require_circle(parameters, dimension.entity_id);
-    const auto& reference_circle =
-        require_circle(parameters, dimension.secondary_entity_id);
-    const double dx = driven_circle.center_x - reference_circle.center_x;
-    const double dy = driven_circle.center_y - reference_circle.center_y;
+    // Driven entity may be a circle or an arc.
+    const bool driven_is_arc =
+        dimension.entity_id.rfind("arc-", 0) == 0;
+    const bool ref_is_arc =
+        dimension.secondary_entity_id.rfind("arc-", 0) == 0;
+    double driven_cx, driven_cy, ref_cx, ref_cy;
+    if (driven_is_arc) {
+      const auto& a = require_arc(parameters, dimension.entity_id);
+      driven_cx = a.center_x; driven_cy = a.center_y;
+    } else {
+      const auto& c = require_circle(parameters, dimension.entity_id);
+      driven_cx = c.center_x; driven_cy = c.center_y;
+    }
+    if (ref_is_arc) {
+      const auto& a = require_arc(parameters, dimension.secondary_entity_id);
+      ref_cx = a.center_x; ref_cy = a.center_y;
+    } else {
+      const auto& c = require_circle(parameters, dimension.secondary_entity_id);
+      ref_cx = c.center_x; ref_cy = c.center_y;
+    }
+    const double dx = driven_cx - ref_cx;
+    const double dy = driven_cy - ref_cy;
     const double length = std::sqrt(dx * dx + dy * dy);
     if (length <= kMinimumSketchDimensionValue) {
       throw std::runtime_error(
-          "Circle-center distance requires distinct circle centers");
+          "Curve-center distance requires distinct centers");
     }
-    driven_circle.center_x = reference_circle.center_x + (dx / length) * value;
-    driven_circle.center_y = reference_circle.center_y + (dy / length) * value;
+    const double new_cx = ref_cx + (dx / length) * value;
+    const double new_cy = ref_cy + (dy / length) * value;
+    if (driven_is_arc) {
+      auto& a = require_arc(parameters, dimension.entity_id);
+      a.center_x = new_cx; a.center_y = new_cy;
+    } else {
+      auto& c = require_circle(parameters, dimension.entity_id);
+      c.center_x = new_cx; c.center_y = new_cy;
+    }
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
@@ -290,9 +317,22 @@ void update_sketch_dimension(FeatureEntry& feature,
   }
 
   if (dimension.kind == "circle_line_distance") {
-    auto& circle = require_circle(parameters, dimension.entity_id);
+    // The curve (entity_id) may be a circle or an arc.
+    const bool is_arc = dimension.entity_id.rfind("arc-", 0) == 0;
+    double cx, cy;
+    if (is_arc) {
+      const auto& a = require_arc(parameters, dimension.entity_id);
+      cx = a.center_x; cy = a.center_y;
+    } else {
+      const auto& c = require_circle(parameters, dimension.entity_id);
+      cx = c.center_x; cy = c.center_y;
+    }
     const auto& line = require_line(parameters, dimension.secondary_entity_id);
-    const double current_signed = signed_circle_line_distance(circle, line);
+    const double current_signed =
+        (-(line.end_y - line.start_y) * (cx - line.start_x) +
+          (line.end_x - line.start_x) * (cy - line.start_y)) /
+        std::sqrt((line.end_x - line.start_x) * (line.end_x - line.start_x) +
+                  (line.end_y - line.start_y) * (line.end_y - line.start_y));
     const double direction = current_signed < 0.0 ? -1.0 : 1.0;
     const double dx = line.end_x - line.start_x;
     const double dy = line.end_y - line.start_y;
@@ -300,8 +340,15 @@ void update_sketch_dimension(FeatureEntry& feature,
     const double normal_x = -dy / length;
     const double normal_y = dx / length;
     const double delta = direction * value - current_signed;
-    circle.center_x += normal_x * delta;
-    circle.center_y += normal_y * delta;
+    cx += normal_x * delta;
+    cy += normal_y * delta;
+    if (is_arc) {
+      auto& a = require_arc(parameters, dimension.entity_id);
+      a.center_x = cx; a.center_y = cy;
+    } else {
+      auto& c = require_circle(parameters, dimension.entity_id);
+      c.center_x = cx; c.center_y = cy;
+    }
     dimension.value = value;
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
@@ -351,8 +398,8 @@ void update_sketch_dimension(FeatureEntry& feature,
     } else {
       // Euclidean — check for fixed points before mutating geometry,
       // matching the line_length update path's behaviour.
-      const bool point_a_fixed = point_is_fixed(parameters, dimension.entity_id);
-      const bool point_b_fixed = point_is_fixed(parameters, dimension.secondary_entity_id);
+      const bool point_a_fixed = vertex_is_fixed(parameters, dimension.entity_id);
+      const bool point_b_fixed = vertex_is_fixed(parameters, dimension.secondary_entity_id);
       if (point_a_fixed && point_b_fixed) {
         const double current_length = std::sqrt(dx * dx + dy * dy);
         if (nearly_equal(current_length, value)) {
@@ -412,9 +459,9 @@ void update_sketch_dimension(FeatureEntry& feature,
     arc_it->end_x = cx + value * std::cos(end_angle);
     arc_it->end_y = cy + value * std::sin(end_angle);
 
-    propagate_connected_point_move(parameters, arc_it->start_point_id,
+    propagate_connected_point_move(parameters, arc_it->start_vertex_id,
                                    arc_it->start_x, arc_it->start_y);
-    propagate_connected_point_move(parameters, arc_it->end_point_id,
+    propagate_connected_point_move(parameters, arc_it->end_vertex_id,
                                    arc_it->end_x, arc_it->end_y);
 
     dimension.value = value;

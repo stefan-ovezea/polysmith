@@ -26,8 +26,8 @@ export function pickSketchFilletCorner({
   const incidentLines = sketch.lines.filter(
     (line) =>
       !line.is_construction &&
-      (line.start_point_id === cornerPoint.point_id ||
-        line.end_point_id === cornerPoint.point_id),
+      (line.start_vertex_id === cornerPoint.vertex_id ||
+        line.end_vertex_id === cornerPoint.vertex_id),
   );
   if (incidentLines.length !== 2) {
     return null;
@@ -38,8 +38,8 @@ export function pickSketchFilletCorner({
       (line) =>
         (fillet.line_a_id === line.line_id ||
           fillet.line_b_id === line.line_id) &&
-        (fillet.trim_a_point_id === cornerPoint.point_id ||
-          fillet.trim_b_point_id === cornerPoint.point_id),
+        (fillet.trim_a_vertex_id === cornerPoint.vertex_id ||
+          fillet.trim_b_vertex_id === cornerPoint.vertex_id),
     ),
   );
   if (alreadyFilleted) {
@@ -47,7 +47,7 @@ export function pickSketchFilletCorner({
   }
 
   return {
-    cornerPointId: cornerPoint.point_id,
+    cornerPointId: cornerPoint.vertex_id,
     lineAId: incidentLines[0].line_id,
     lineBId: incidentLines[1].line_id,
   };

@@ -1,6 +1,6 @@
 struct EdgeLoopCandidate {
   std::vector<SketchProfilePoint> points;
-  std::vector<std::string> point_ids;
+  std::vector<std::string> vertex_ids;
   std::vector<std::string> edge_ids;
 };
 
@@ -18,7 +18,7 @@ struct ArrangementEdge {
 
 struct ArrangementFace {
   std::vector<SketchProfilePoint> points;
-  std::vector<std::string> point_ids;
+  std::vector<std::string> vertex_ids;
   std::vector<std::string> line_ids;
   double area;
 };

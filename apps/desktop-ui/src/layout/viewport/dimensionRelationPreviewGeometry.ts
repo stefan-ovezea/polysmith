@@ -114,16 +114,16 @@ function sharedLineEndpoint(
   first: SketchLineEntry,
   second: SketchLineEntry,
 ): [number, number] | null {
-  if (first.start_point_id === second.start_point_id) {
+  if (first.start_vertex_id === second.start_vertex_id) {
     return [first.start_x, first.start_y];
   }
-  if (first.start_point_id === second.end_point_id) {
+  if (first.start_vertex_id === second.end_vertex_id) {
     return [first.start_x, first.start_y];
   }
-  if (first.end_point_id === second.start_point_id) {
+  if (first.end_vertex_id === second.start_vertex_id) {
     return [first.end_x, first.end_y];
   }
-  if (first.end_point_id === second.end_point_id) {
+  if (first.end_vertex_id === second.end_vertex_id) {
     return [first.end_x, first.end_y];
   }
 

@@ -24,8 +24,8 @@ ViewportSketchDimensionPrimitive make_line_line_distance_dimension_primitive(
 }
 
 ViewportSketchDimensionPrimitive make_point_distance_dimension_primitive(
-    const SketchPoint& point_a,
-    const SketchPoint& point_b,
+    const SketchVertex& point_a,
+    const SketchVertex& point_b,
     const SketchDimension& dimension,
     const SketchFeatureParameters& parameters,
     bool is_selected) {

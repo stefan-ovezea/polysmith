@@ -12,7 +12,7 @@ interface MutableRef<T> {
 
 interface SketchDeleteSelection {
   entityIds: string[];
-  pointIds: string[];
+  vertexIds: string[];
   profileIds: string[];
 }
 
@@ -334,7 +334,7 @@ function deleteSelectedSketchItems({
 
   const entityIds = document?.selected_sketch_entity_ids ?? [];
   const entityId = document?.selected_sketch_entity_id;
-  const pointIds = document?.selected_sketch_point_ids ?? [];
+  const vertexIds = document?.selected_sketch_vertex_ids ?? [];
   const profileIds = document?.selected_sketch_profile_ids ?? [];
   const allEntityIds = entityId
     ? entityIds.includes(entityId)
@@ -342,10 +342,10 @@ function deleteSelectedSketchItems({
       : [...entityIds, entityId]
     : entityIds;
 
-  if (allEntityIds.length > 0 || pointIds.length > 0 || profileIds.length > 0) {
+  if (allEntityIds.length > 0 || vertexIds.length > 0 || profileIds.length > 0) {
     void deleteSketchSelection({
       entityIds: allEntityIds,
-      pointIds,
+      vertexIds,
       profileIds,
     });
     return;

@@ -36,7 +36,7 @@ void set_sketch_line_constraint(FeatureEntry& feature,
                     line_it->start_x,
                     line_it->start_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->start_point_id,
+                                   line_it->start_vertex_id,
                                    line_it->start_x,
                                    line_it->start_y);
   }
@@ -45,7 +45,7 @@ void set_sketch_line_constraint(FeatureEntry& feature,
                     line_it->end_x,
                     line_it->end_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->end_point_id,
+                                   line_it->end_vertex_id,
                                    line_it->end_x,
                                    line_it->end_y);
   }

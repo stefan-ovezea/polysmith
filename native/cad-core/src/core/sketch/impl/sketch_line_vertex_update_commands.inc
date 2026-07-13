@@ -50,7 +50,7 @@ void update_sketch_line(FeatureEntry& feature,
                     line_it->start_x,
                     line_it->start_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->start_point_id,
+                                   line_it->start_vertex_id,
                                    line_it->start_x,
                                    line_it->start_y);
   }
@@ -59,7 +59,7 @@ void update_sketch_line(FeatureEntry& feature,
                     line_it->end_x,
                     line_it->end_y)) {
     propagate_connected_point_move(*feature.sketch_parameters,
-                                   line_it->end_point_id,
+                                   line_it->end_vertex_id,
                                    line_it->end_x,
                                    line_it->end_y);
   }
@@ -71,7 +71,7 @@ void update_sketch_line(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
-void update_sketch_point(FeatureEntry& feature,
+void update_sketch_vertex(FeatureEntry& feature,
                          const std::string& point_id,
                          double x,
                          double y) {
@@ -80,7 +80,7 @@ void update_sketch_point(FeatureEntry& feature,
   }
 
   auto& parameters = feature.sketch_parameters.value();
-  const SketchPoint* point = find_sketch_point(parameters, point_id);
+  const SketchVertex* point = find_sketch_vertex(parameters, point_id);
   if (point == nullptr) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
@@ -90,65 +90,46 @@ void update_sketch_point(FeatureEntry& feature,
   }
 
   const std::vector<std::string> affected_line_ids =
-      collect_line_ids_for_point(parameters, point_id);
+      collect_line_ids_for_vertex(parameters, point_id);
 
   if (point->kind == "center") {
-    // Circle center points: "point-circle-<id>-center"
-    {
-      const std::string prefix = "point-circle-";
-      const std::string suffix = "-center";
-      if (point_id.rfind(prefix, 0) == 0 &&
-          point_id.size() > prefix.size() + suffix.size() &&
-          point_id.substr(point_id.size() - suffix.size()) == suffix) {
-        const std::string circle_id =
-            point_id.substr(prefix.size(),
-                            point_id.size() - prefix.size() - suffix.size());
-        const auto circle_it = std::find_if(
-            parameters.circles.begin(),
-            parameters.circles.end(),
-            [&](const SketchCircle& c) { return c.id == circle_id; });
-        if (circle_it != parameters.circles.end()) {
-          circle_it->center_x = x;
-          circle_it->center_y = y;
+    // Circle center: use geometry_owner_ids lookup (Phase 4.2)
+    if (const auto* circle = find_circle_for_point(parameters, point_id)) {
+      // Need mutable access to update coords
+      for (auto& c : parameters.circles) {
+        if (c.id == circle->id) {
+          c.center_x = x;
+          c.center_y = y;
           refresh_sketch_derived_state(feature);
           return;
         }
       }
+      throw std::runtime_error("Circle not found for center point: " + point_id);
     }
 
-    // Arc center points: "point-arc-<id>-center"
-    {
-      const std::string prefix = "point-arc-";
-      const std::string suffix = "-center";
-      if (point_id.rfind(prefix, 0) == 0 &&
-          point_id.size() > prefix.size() + suffix.size() &&
-          point_id.substr(point_id.size() - suffix.size()) == suffix) {
-        const std::string arc_id =
-            point_id.substr(prefix.size(),
-                            point_id.size() - prefix.size() - suffix.size());
-        const auto arc_it = std::find_if(
-            parameters.arcs.begin(),
-            parameters.arcs.end(),
-            [&](const SketchArc& a) { return a.id == arc_id; });
-        if (arc_it != parameters.arcs.end()) {
-          const double dx = x - arc_it->center_x;
-          const double dy = y - arc_it->center_y;
-          arc_it->center_x = x;
-          arc_it->center_y = y;
-          arc_it->start_x += dx;
-          arc_it->start_y += dy;
-          arc_it->end_x += dx;
-          arc_it->end_y += dy;
+    // Arc center: use geometry_owner_ids lookup (Phase 4.2)
+    if (const auto* arc = find_arc_for_point(parameters, point_id)) {
+      for (auto& a : parameters.arcs) {
+        if (a.id == arc->id) {
+          const double dx = x - a.center_x;
+          const double dy = y - a.center_y;
+          a.center_x = x;
+          a.center_y = y;
+          a.start_x += dx;
+          a.start_y += dy;
+          a.end_x += dx;
+          a.end_y += dy;
           // Move connected lines that share the arc's endpoints.
-          propagate_connected_point_move(parameters, arc_it->start_point_id,
-                                         arc_it->start_x, arc_it->start_y);
-          propagate_connected_point_move(parameters, arc_it->end_point_id,
-                                         arc_it->end_x, arc_it->end_y);
+          propagate_connected_point_move(parameters, a.start_vertex_id,
+                                         a.start_x, a.start_y);
+          propagate_connected_point_move(parameters, a.end_vertex_id,
+                                         a.end_x, a.end_y);
           sync_all_line_dimensions(parameters);
           refresh_sketch_derived_state(feature);
           return;
         }
       }
+      throw std::runtime_error("Arc not found for center point: " + point_id);
     }
 
     throw std::runtime_error("Unsupported sketch center point: " + point_id);

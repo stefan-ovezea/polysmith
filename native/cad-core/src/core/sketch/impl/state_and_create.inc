@@ -6,7 +6,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Drop anchors whose host line has been deleted.  Anchors whose
   // anchored point is no longer referenced by any live entity are
   // harmless (they are a no‑op during enforcement and the point is
-  // dropped by `rebuild_sketch_points`), but cleaning them up here
+  // dropped by `rebuild_sketch_vertices`), but cleaning them up here
   // keeps the data model tidy and prevents stale viewport sprites.
   auto& p = *feature.sketch_parameters;
   p.midpoint_anchors.erase(
@@ -21,7 +21,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   p.point_line_anchors.erase(
       std::remove_if(p.point_line_anchors.begin(),
                      p.point_line_anchors.end(),
-                     [&](const SketchPointLineAnchor& a) {
+                     [&](const SketchVertexLineAnchor& a) {
                        return std::none_of(
                            p.lines.begin(), p.lines.end(),
                            [&](const SketchLine& l) { return l.id == a.line_id; });
@@ -32,7 +32,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   // Re-anchor midpoint-bound points to their host line's current
   // midpoint before rebuilding the points list. The cascade may
-  // shift other line endpoints which `rebuild_sketch_points` then
+  // shift other line endpoints which `rebuild_sketch_vertices` then
   // mirrors into the points vector.
 
   // --- Stale dimension cleanup ---
@@ -43,17 +43,17 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // incorrectly report dofs=0 ("fully constrained").
   //
   // IMPORTANT: check against live lines/circles, NOT the points
-  // array.  rebuild_sketch_points hasn't run yet at this point,
-  // so parameters.points still contains stale entries from
+  // array.  rebuild_sketch_vertices hasn't run yet at this point,
+  // so parameters.vertices still contains stale entries from
   // before the deletion.
   {
     auto point_is_alive = [&](const std::string& pid) -> bool {
       for (const auto& l : feature.sketch_parameters->lines) {
-        if (l.start_point_id == pid || l.end_point_id == pid) return true;
+        if (l.start_vertex_id == pid || l.end_vertex_id == pid) return true;
       }
-      for (const auto& c : feature.sketch_parameters->circles) {
-        if ("point-circle-" + c.id + "-center" == pid) return true;
-      }
+      // Phase 4.2: use geometry_owner_ids instead of prefix matching
+      if (find_circle_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
+      if (find_arc_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
       return false;
     };
     for (auto& dim : feature.sketch_parameters->dimensions) {
@@ -154,8 +154,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       // Snapshot original is_fixed values before any temporary mutation.
       std::vector<bool> saved_fixed;
       if (append_mode) {
-        saved_fixed.reserve(feature.sketch_parameters->points.size());
-        for (const auto& pt : feature.sketch_parameters->points) {
+        saved_fixed.reserve(feature.sketch_parameters->vertices.size());
+        for (const auto& pt : feature.sketch_parameters->vertices) {
           saved_fixed.push_back(pt.is_fixed);
         }
 
@@ -166,15 +166,14 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           // Focus is a line → unfreeze both endpoints.
           for (const auto& line : feature.sketch_parameters->lines) {
             if (line.id == focus_id) {
-              unfrozen_point_ids.insert(line.start_point_id);
-              unfrozen_point_ids.insert(line.end_point_id);
+              unfrozen_point_ids.insert(line.start_vertex_id);
+              unfrozen_point_ids.insert(line.end_vertex_id);
             }
           }
           // Focus is a circle → unfreeze its center point.
           for (const auto& circle : feature.sketch_parameters->circles) {
             if (circle.id == focus_id) {
-              unfrozen_point_ids.insert(
-                  "point-circle-" + circle.id + "-center");
+              unfrozen_point_ids.insert(circle_center_vertex_id(circle));
             }
           }
           // Focus is a point explicitly.
@@ -182,7 +181,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         }
 
         // Freeze all points, then unfreeze only the focus set.
-        for (auto& pt : feature.sketch_parameters->points) {
+        for (auto& pt : feature.sketch_parameters->vertices) {
           if (unfrozen_point_ids.count(pt.id)) {
             pt.is_fixed = false;
           } else {
@@ -334,7 +333,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                   std::remove_if(
                       feature.sketch_parameters->point_line_anchors.begin(),
                       feature.sketch_parameters->point_line_anchors.end(),
-                      [&](const SketchPointLineAnchor &a) {
+                      [&](const SketchVertexLineAnchor &a) {
                         return a.line_id == zid;
                       }),
                   feature.sketch_parameters->point_line_anchors.end());
@@ -384,8 +383,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
       // Restore original is_fixed values.
       if (append_mode) {
-        for (size_t i = 0; i < feature.sketch_parameters->points.size(); ++i) {
-          feature.sketch_parameters->points[i].is_fixed = saved_fixed[i];
+        for (size_t i = 0; i < feature.sketch_parameters->vertices.size(); ++i) {
+          feature.sketch_parameters->vertices[i].is_fixed = saved_fixed[i];
         }
         feature.sketch_parameters->pending_append_focus_ids.clear();
       }
@@ -418,7 +417,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   }
 
   // Fillets must run *after* the tangent passes (so they see the
-  // latest line endpoints) and *before* `rebuild_sketch_points`.
+  // latest line endpoints) and *before* `rebuild_sketch_vertices`.
   enforce_sketch_fillets(*feature.sketch_parameters);
 
   // Propagate line endpoint positions to any arcs that share those
@@ -427,19 +426,19 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // must stay in sync so the arc doesn't visually detach.
   for (auto& arc : feature.sketch_parameters->arcs) {
     for (const auto& line : feature.sketch_parameters->lines) {
-      if (line.start_point_id == arc.start_point_id) {
+      if (line.start_vertex_id == arc.start_vertex_id) {
         arc.start_x = line.start_x;
         arc.start_y = line.start_y;
       }
-      if (line.end_point_id == arc.start_point_id) {
+      if (line.end_vertex_id == arc.start_vertex_id) {
         arc.start_x = line.end_x;
         arc.start_y = line.end_y;
       }
-      if (line.start_point_id == arc.end_point_id) {
+      if (line.start_vertex_id == arc.end_vertex_id) {
         arc.end_x = line.start_x;
         arc.end_y = line.start_y;
       }
-      if (line.end_point_id == arc.end_point_id) {
+      if (line.end_vertex_id == arc.end_vertex_id) {
         arc.end_x = line.end_x;
         arc.end_y = line.end_y;
       }
@@ -460,13 +459,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   #include "core/sketch/impl/refresh_mirror_relation_state.inc"
 
-  const std::vector<SketchPoint> previous_points = feature.sketch_parameters->points;
-  rebuild_sketch_points(*feature.sketch_parameters);
+  const std::vector<SketchVertex> previous_points = feature.sketch_parameters->vertices;
+  rebuild_sketch_vertices(*feature.sketch_parameters);
+
+  // ── Phase 5: entity cached coords now mirror canonical vertices ──
+  sync_entity_coords_from_vertices(*feature.sketch_parameters);
 
   // Derived points (projected, quadrant, arc endpoints) are derived
   // geometry — lock them by default so new derived points start as fixed.
   // Must run before sync_fixed_point_flags so the user's explicit
-  // unfix (set_sketch_point_fixed) survives the refresh.
+  // unfix (set_sketch_vertex_fixed) survives the refresh.
   enforce_derived_points_fixed(*feature.sketch_parameters);
 
   // Copy user-set is_fixed values from the previous frame. Must run
@@ -476,7 +478,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.
-  // MUST run after rebuild_sketch_points so point_distance driven dims
+  // MUST run after rebuild_sketch_vertices so point_distance driven dims
   // read fresh point positions, not stale ones from the previous frame.
   sync_driven_dimensions(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);

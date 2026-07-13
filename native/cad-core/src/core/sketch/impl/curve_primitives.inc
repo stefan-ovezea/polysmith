@@ -68,19 +68,20 @@ void add_sketch_arc(FeatureEntry& feature,
   const auto shared_end_point = find_coincident_endpoint(
       *feature.sketch_parameters, "", end_x, end_y);
 
-  const std::string start_point_id =
+  auto& params = *feature.sketch_parameters;
+  const std::string start_vertex_id =
       shared_start_point.has_value()
           ? std::get<0>(shared_start_point.value())
-          : "point-" + std::to_string(start_point_index);
-  const std::string end_point_id =
+          : "vertex-" + std::to_string(params.next_vertex_index++);
+  const std::string end_vertex_id =
       shared_end_point.has_value()
           ? std::get<0>(shared_end_point.value())
-          : "point-" + std::to_string(end_point_index);
+          : "vertex-" + std::to_string(params.next_vertex_index++);
 
   feature.sketch_parameters->arcs.push_back(SketchArc{
       .id = "arc-" + std::to_string(arc_index),
-      .start_point_id = start_point_id,
-      .end_point_id = end_point_id,
+      .start_vertex_id = start_vertex_id,
+      .end_vertex_id = end_vertex_id,
       .center_x = center_x,
       .center_y = center_y,
       .radius = radius,
@@ -116,15 +117,15 @@ std::optional<std::tuple<double, double>> find_point_position(
     const SketchFeatureParameters& parameters,
     const std::string& point_id) {
   for (const auto& line : parameters.lines) {
-    if (line.start_point_id == point_id)
+    if (line.start_vertex_id == point_id)
       return std::tuple<double, double>{line.start_x, line.start_y};
-    if (line.end_point_id == point_id)
+    if (line.end_vertex_id == point_id)
       return std::tuple<double, double>{line.end_x, line.end_y};
   }
   const auto point_it = std::find_if(
-      parameters.points.begin(), parameters.points.end(),
-      [&](const SketchPoint& point) { return point.id == point_id; });
-  if (point_it != parameters.points.end())
+      parameters.vertices.begin(), parameters.vertices.end(),
+      [&](const SketchVertex& point) { return point.id == point_id; });
+  if (point_it != parameters.vertices.end())
     return std::tuple<double, double>{point_it->x, point_it->y};
   return std::nullopt;
 }

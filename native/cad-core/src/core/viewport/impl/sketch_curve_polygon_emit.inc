@@ -13,7 +13,7 @@
               [&](const SketchDimension& d) {
                 return d.kind == "arc_radius" && d.entity_id == arc.id;
               });
-          if (dim_it != feature.sketch_parameters->dimensions.end()) {
+          if (dim_it != feature.sketch_parameters->dimensions.end() && !dim_it->is_auto) {
             const bool is_selected_dim =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dim_it->id;
@@ -21,11 +21,22 @@
                 to_world_point(*feature.sketch_parameters, arc.center_x, arc.center_y);
             const WorldPoint dim_start = to_world_point(
                 *feature.sketch_parameters, arc.center_x, arc.center_y);
+            // Compute arc midpoint so the leader points toward the curved
+            // surface, not toward the opening between start and end.
+            const double sa = std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+            const double ea = std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+            double sweep = arc.ccw
+                ? std::fmod(ea - sa + 2.0 * M_PI, 2.0 * M_PI)
+                : std::fmod(sa - ea + 2.0 * M_PI, 2.0 * M_PI);
+            double ma = arc.ccw ? sa + sweep * 0.5 : sa - sweep * 0.5;
+            const double mid_x = arc.center_x + arc.radius * std::cos(ma);
+            const double mid_y = arc.center_y + arc.radius * std::sin(ma);
             const WorldPoint dim_end = to_world_point(
-                *feature.sketch_parameters, arc.center_x + arc.radius, arc.center_y);
+                *feature.sketch_parameters, mid_x, mid_y);
             const WorldPoint label = to_world_point(
                 *feature.sketch_parameters,
-                arc.center_x + arc.radius + 18.0, arc.center_y);
+                arc.center_x + (mid_x - arc.center_x) * 0.5,
+                arc.center_y + (mid_y - arc.center_y) * 0.5);
             sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
                 .dimension_id = dim_it->id,
                 .plane_id = feature.sketch_parameters->plane_id,
@@ -61,7 +72,7 @@
                 return dimension.kind == "circle_radius" &&
                        dimension.entity_id == circle.id;
               });
-          if (dimension_it != feature.sketch_parameters->dimensions.end()) {
+          if (dimension_it != feature.sketch_parameters->dimensions.end() && !dimension_it->is_auto) {
             const bool is_selected_dimension =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dimension_it->id;
@@ -88,7 +99,7 @@
               [&](const SketchDimension& d) {
                 return d.kind == "polygon_radius" && d.entity_id == polygon.id;
               });
-          if (dim_it != feature.sketch_parameters->dimensions.end()) {
+          if (dim_it != feature.sketch_parameters->dimensions.end() && !dim_it->is_auto) {
             const bool is_selected_dim =
                 view->selected_sketch_dimension_id.has_value() &&
                 view->selected_sketch_dimension_id.value() == dim_it->id;

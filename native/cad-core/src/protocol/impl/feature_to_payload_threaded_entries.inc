@@ -53,7 +53,7 @@
                  {"handedness", feature.helix_parameters->handedness},
                  {"start_angle_degrees",
                   feature.helix_parameters->start_angle_degrees},
-                 {"points", feature.helix_parameters->points},
+                  {"points", feature.helix_parameters->points},
              }
            : json(nullptr)},
       {"thread_parameters",

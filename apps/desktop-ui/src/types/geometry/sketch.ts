@@ -22,8 +22,9 @@ export interface SketchProfilePoint {
 
 export interface SketchLineEntry {
   line_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  // Vertex unification (Phase 5) — now the canonical endpoint ids
+  start_vertex_id: string;
+  end_vertex_id: string;
   start_x: number;
   start_y: number;
   end_x: number;
@@ -36,20 +37,29 @@ export interface SketchLineEntry {
 
 export interface SketchCircleEntry {
   circle_id: string;
+  // Vertex unification (Phase 5)
+  center_vertex_id?: string;
   center_x: number;
   center_y: number;
   radius: number;
   is_construction: boolean;
 }
 
-export interface SketchPointEntry {
-  point_id: string;
-  // "endpoint" / "center" / "projected" — see `SketchPointScene`
+export interface SketchVertexEntry {
+  /** vertex-N ID from Phase 4 vertex unification (canonical). */
+  vertex_id: string;
+  // "endpoint" / "center" / "projected" / "quadrant" / "fillet_corner" — see `SketchVertexScene`
   // for the renderer-side meaning of each value.
-  kind: "endpoint" | "center" | "projected";
+  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
   x: number;
   y: number;
   is_fixed: boolean;
+  // ── Vertex unification (Phase 1-2) ─────────────────────────
+  geometry_owner_ids?: string[];
+  is_projected?: boolean;
+  source_type?: string;
+  source_feature_id?: string;
+  source_edge_id?: string;
 }
 
 export interface SketchDimensionEntry {
@@ -76,6 +86,8 @@ export interface SketchDimensionEntry {
   /** Optional sketch-local label placement override. */
   label_x?: number | null;
   label_y?: number | null;
+  /** ID of the constraint this dimension enforces (Phase 3). */
+  constraint_id?: string;
 }
 
 export interface SketchLineRelationEntry {
@@ -88,7 +100,7 @@ export interface SketchLineRelationEntry {
 export interface SketchProfileRegionEntry {
   profile_id: string;
   kind: "polygon" | "circle";
-  point_ids: string[];
+  vertex_ids: string[];
   line_ids: string[];
   points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
@@ -112,8 +124,6 @@ export interface PendingMirrorEntry {
   // viewport line / circle primitives).
   generated_lines: Array<{
     line_id: string;
-    start_point_id: string;
-    end_point_id: string;
     start_x: number;
     start_y: number;
     end_x: number;
@@ -130,15 +140,17 @@ export interface PendingMirrorEntry {
 }
 
 // 2D arc entry stored on the sketch feature. Mirrors C++ `SketchArc`.
-// Endpoints share the SketchPoint graph via `start_point_id` /
-// `end_point_id`; `(center_x, center_y, radius, ccw)` are cached so
+// Endpoints share the SketchPoint graph via `start_vertex_id` /
+// `end_vertex_id`; `(center_x, center_y, radius, ccw)` are cached so
 // the renderer can sample without recomputing the circumcircle. v1
 // freezes arc shape at creation; the points are stored with
 // `is_fixed=true` in the points table.
 export interface SketchArcEntry {
   arc_id: string;
-  start_point_id: string;
-  end_point_id: string;
+  // Vertex unification (Phase 5) — now the canonical endpoint ids
+  start_vertex_id: string;
+  end_vertex_id: string;
+  center_vertex_id?: string;
   center_x: number;
   center_y: number;
   radius: number;
@@ -173,13 +185,13 @@ export interface SketchPolygonEntry {
 // generated geometry kept in sync with `lines` and `arcs`.
 export interface SketchFilletEntry {
   fillet_id: string;
-  corner_point_id: string;
+  corner_vertex_id: string;
   corner_x: number;
   corner_y: number;
   line_a_id: string;
   line_b_id: string;
-  trim_a_point_id: string;
-  trim_b_point_id: string;
+  trim_a_vertex_id: string;
+  trim_b_vertex_id: string;
   arc_id: string;
   radius: number;
 }
@@ -198,7 +210,7 @@ export interface SketchFeatureParameters {
   arcs: SketchArcEntry[];
   polygons: SketchPolygonEntry[];
   fillets: SketchFilletEntry[];
-  points: SketchPointEntry[];
+  points: SketchVertexEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];
   // Midpoint anchors. Empty on older saves; the schema fills in [].
@@ -231,25 +243,25 @@ export interface SketchFeatureParameters {
 
 export interface SketchMidpointAnchorEntry {
   anchor_id: string;
-  point_id: string;
+  vertex_id: string;
   line_id: string;
 }
 
 export interface SketchPointLineAnchorEntry {
   anchor_id: string;
-  point_id: string;
+  vertex_id: string;
   line_id: string;
   t: number;
 }
 
 // One standalone sketch point produced by the Project tool. The
-// canonical form is the `SketchPointEntry` re-emitted into the
+// canonical form is the `SketchVertexEntry` re-emitted into the
 // sketch's `points` array (with `kind = "projected"` and
 // `is_fixed = true`); this entry tells the core where to put it.
 // `source_id` is the body vertex id (`<body>:vertex:<index>`) used
 // for idempotency.
 export interface SketchProjectedPointEntry {
-  point_id: string;
+  vertex_id: string;
   source_id: string;
   x: number;
   y: number;
@@ -270,7 +282,7 @@ export interface SketchProjectionEntry {
   generated_circle_ids: string[];
   generated_arc_ids: string[];
   // Empty unless `source_kind === "vertex"`.
-  generated_point_id: string;
+  generated_vertex_id: string;
   // True when the most recent recompute couldn't re-resolve the
   // source (body deleted, curve type changed). The generated
   // entities stay frozen at their last-known coords; the parent

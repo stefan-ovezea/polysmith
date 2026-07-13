@@ -77,16 +77,27 @@
     return;
   }
 
-  if (command.type == "add_sketch_point_distance_dimension") {
+  if (command.type == "add_sketch_arc_radius_dimension") {
+    const auto document =
+        document_manager().add_sketch_arc_radius_dimension(
+            read_string(command.payload, "arc_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "add_sketch_vertex_distance_dimension") {
     std::optional<std::string> axis;
     if (command.payload.contains("axis") &&
         command.payload.at("axis").is_string()) {
       axis = command.payload.at("axis").get<std::string>();
     }
     const auto document =
-        document_manager().add_sketch_point_distance_dimension(
-            read_string(command.payload, "point_a_id"),
-            read_string(command.payload, "point_b_id"),
+        document_manager().add_sketch_vertex_distance_dimension(
+            read_string(command.payload, "vertex_a_id"),
+            read_string(command.payload, "vertex_b_id"),
             axis);
 
     polysmith::protocol::write_message(

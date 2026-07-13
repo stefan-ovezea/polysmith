@@ -1,4 +1,4 @@
-#include "core/sketch/impl/sketch_line_point_update_commands.inc"
+#include "core/sketch/impl/sketch_line_vertex_update_commands.inc"
 #include "core/sketch/impl/sketch_axis_constraint_commands.inc"
 #include "core/sketch/impl/sketch_equal_length_constraint_commands.inc"
 #include "core/sketch/impl/sketch_perpendicular_constraint_commands.inc"

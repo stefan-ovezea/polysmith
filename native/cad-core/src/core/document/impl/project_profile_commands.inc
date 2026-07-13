@@ -65,10 +65,10 @@ DocumentState DocumentManager::project_profile_into_sketch(
     for (size_t index = lines_before;
          index < sketch_it->sketch_parameters->lines.size(); ++index) {
       const auto& line = sketch_it->sketch_parameters->lines[index];
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, line.start_point_id, true);
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, line.end_point_id, true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, line.start_vertex_id, true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, line.end_vertex_id, true);
       record.generated_line_ids.push_back(line.id);
     }
   };
@@ -88,8 +88,8 @@ DocumentState DocumentManager::project_profile_into_sketch(
     for (size_t index = circles_before;
          index < sketch_it->sketch_parameters->circles.size(); ++index) {
       const auto& circle = sketch_it->sketch_parameters->circles[index];
-      polysmith::core::set_sketch_point_fixed(
-          *sketch_it, "point-circle-" + circle.id + "-center", true);
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, circle_center_vertex_id(circle), true);
       record.generated_circle_ids.push_back(
           circle.id);
     }
@@ -147,12 +147,12 @@ DocumentState DocumentManager::project_profile_into_sketch(
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
 

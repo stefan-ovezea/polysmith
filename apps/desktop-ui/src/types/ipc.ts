@@ -24,12 +24,13 @@ import type {
   SetSketchMidpointAnchorCommand,
   AddSketchAngleDimensionCommand,
   AddSketchDistanceDimensionCommand,
-  AddSketchPointDistanceDimensionCommand,
+  AddSketchVertexDistanceDimensionCommand,
   AddSketchLineLengthDimensionCommand,
   AddSketchLineAngleDimensionCommand,
+  AddSketchArcRadiusDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
-  SetSketchPointLineAnchorCommand,
+  SetSketchVertexLineAnchorCommand,
   AddSketchRectangleCommand,
   AddSketchCircleCommand,
   AddSketchPolygonCommand,
@@ -44,7 +45,7 @@ import type {
   DeleteSketchSelectionCommand,
   SetSketchToolCommand,
   UpdateSketchLineCommand,
-  UpdateSketchPointCommand,
+  UpdateSketchVertexCommand,
   SetSketchLineConstraintCommand,
   ClearSketchLineConstraintsCommand,
   SetSketchEqualLengthConstraintCommand,
@@ -58,14 +59,14 @@ import type {
   SetSketchParallelConstraintCommand,
   SetSketchCoincidentConstraintCommand,
   DeleteSketchCoincidentConstraintCommand,
-  SetSketchPointFixedCommand,
+  SetSketchVertexFixedCommand,
   UpdateSketchCircleCommand,
   UpdateSketchDimensionCommand,
   UpdateSketchDimensionLabelPositionCommand,
   UpdateSketchDimensionDisplayCommand,
   SelectSketchProfileCommand,
   SelectSketchEntityCommand,
-  SelectSketchPointCommand,
+  SelectSketchVertexCommand,
   SelectSketchDimensionCommand,
   FinishSketchCommand,
   ReenterSketchCommand,
@@ -145,7 +146,7 @@ import type {
   ViewportSketchConstraint,
   ViewportSketchDimension,
   ViewportSketchLine,
-  ViewportSketchPoint,
+  ViewportSketchVertex,
   ViewportSketchPolygon,
   ViewportSketchProfile,
   ViewportPolygonExtrudePrimitive,
@@ -161,19 +162,14 @@ export * from "./ipc/bodyFeatureCommands";
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
 
-export interface CamSetupStock {
-  width: number;
-  height: number;
-  depth: number;
-  offset_x: number;
-  offset_y: number;
-  offset_z: number;
-}
-
-export interface CamSetupOrigin {
-  x: number;
-  y: number;
-  z: number;
+// CAM data — mirrors polysmith::core::CamDocumentData (cam_types.h).
+// Detailed CAM types live in types/geometry/cam.ts.
+export interface CamDocumentData {
+  setups: Record<string, unknown>[];
+  tool_library: Record<string, unknown>[];
+  operations: Record<string, unknown>[];
+  post_processor: Record<string, unknown> | null;
+  simulation: Record<string, unknown> | null;
 }
 
 export interface DocumentState {
@@ -190,9 +186,9 @@ export interface DocumentState {
   active_sketch_face_id: string | null;
   active_sketch_feature_id: string | null;
   active_sketch_tool: SketchTool | null;
-  selected_sketch_point_id: string | null;
+  selected_sketch_vertex_id: string | null;
   selected_sketch_entity_id: string | null;
-  selected_sketch_point_ids: string[];
+  selected_sketch_vertex_ids: string[];
   selected_sketch_entity_ids: string[];
   selected_sketch_dimension_id: string | null;
   selected_sketch_profile_id: string | null;
@@ -201,37 +197,7 @@ export interface DocumentState {
   feature_history: FeatureEntry[];
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
-  cam_setup: {
-    setup_id: string;
-    stock: CamSetupStock;
-    wcs_origin: CamSetupOrigin;
-    safety_plane_z: number;
-    axis_count: number;
-    wcs_angle: number;
-  } | null;
-  tool_library: Array<{
-    tool_id: string;
-    name: string;
-    tool_number: number;
-    diameter: number;
-    flute_length: number;
-    overall_length: number;
-    corner_radius: number;
-    spindle_speed: number;
-    feed_rate: number;
-    stepover: number;
-    stepdown: number;
-    type: number;
-  }>;
-  cam_operations: Array<{
-    id: string;
-    name: string;
-    type: number;
-    tool_id: string;
-    body_id: string;
-    face_index: number;
-    face_milling?: { depth: number; stepover: number; angle_deg: number };
-  }>;
+  cam: CamDocumentData;
 }
 
 export interface DocumentAppearance {
@@ -258,7 +224,7 @@ export interface SessionState {
 export interface SnapCandidateEntry {
   kind: string;
   entity_id: string;
-  point_id: string;
+  vertex_id: string;
   local_x: number;
   local_y: number;
   label: string;
@@ -291,7 +257,7 @@ export interface ViewportState {
   sketch_circles: ViewportSketchCircle[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
-  sketch_points: ViewportSketchPoint[];
+  sketch_vertices: ViewportSketchVertex[];
   sketch_dimensions: ViewportSketchDimension[];
   sketch_constraints: ViewportSketchConstraint[];
   sketch_profiles: ViewportSketchProfile[];
@@ -745,7 +711,7 @@ export type CoreCommand =
   | StartSketchOnFaceCommand
   | SetSketchToolCommand
   | UpdateSketchLineCommand
-  | UpdateSketchPointCommand
+  | UpdateSketchVertexCommand
   | SetSketchLineConstraintCommand
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
@@ -759,23 +725,24 @@ export type CoreCommand =
   | SetSketchParallelConstraintCommand
   | SetSketchCoincidentConstraintCommand
   | DeleteSketchCoincidentConstraintCommand
-  | SetSketchPointFixedCommand
+  | SetSketchVertexFixedCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
   | UpdateSketchDimensionLabelPositionCommand
   | UpdateSketchDimensionDisplayCommand
   | SelectSketchProfileCommand
   | AddSketchDistanceDimensionCommand
-  | AddSketchPointDistanceDimensionCommand
+  | AddSketchVertexDistanceDimensionCommand
   | ExtrudeProfileCommand
   | ExtrudeFaceCommand
   | AddSketchLineCommand
   | SetSketchLineConstructionCommand
   | SetSketchMidpointAnchorCommand
-  | SetSketchPointLineAnchorCommand
+  | SetSketchVertexLineAnchorCommand
   | AddSketchAngleDimensionCommand
   | AddSketchLineLengthDimensionCommand
   | AddSketchLineAngleDimensionCommand
+  | AddSketchArcRadiusDimensionCommand
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand
@@ -790,7 +757,7 @@ export type CoreCommand =
   | TrimSketchEntityCommand
   | TrimPreviewCommand
   | DeleteSketchSelectionCommand
-  | SelectSketchPointCommand
+  | SelectSketchVertexCommand
   | SelectSketchEntityCommand
   | SelectSketchDimensionCommand
   | FinishSketchCommand

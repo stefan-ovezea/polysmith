@@ -51,10 +51,9 @@
             }
         } else if (sc.kind == "concentric" && sc.target_ids.size() >= 2) {
             // Concentric = center points coincide. Find both circles'
-            // center points (naming convention: point-circle-{id}-center)
-            // and add a P2PCoincident between them.
-            std::string cid1 = "point-circle-" + sc.target_ids[0] + "-center";
-            std::string cid2 = "point-circle-" + sc.target_ids[1] + "-center";
+            // center points and add a P2PCoincident between them.
+            std::string cid1 = circle_center_vertex_id_for(params, sc.target_ids[0]);
+            std::string cid2 = circle_center_vertex_id_for(params, sc.target_ids[1]);
             auto pit1 = point_id_to_index_.find(cid1);
             auto pit2 = point_id_to_index_.find(cid2);
             if (pit1 != point_id_to_index_.end() &&
@@ -70,7 +69,7 @@
     // to lie on the host line. Full parametric position enforcement
     // (t=0.5 for midpoints, t=t for point-line) is a follow-up.
     for (const auto& anchor : params.midpoint_anchors) {
-        auto pit = point_id_to_index_.find(anchor.point_id);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
         auto lit = line_id_to_index_.find(anchor.line_id);
         if (pit != point_id_to_index_.end() &&
             lit != line_id_to_index_.end()) {
@@ -81,7 +80,7 @@
     }
 
     for (const auto& anchor : params.point_line_anchors) {
-        auto pit = point_id_to_index_.find(anchor.point_id);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
         auto lit = line_id_to_index_.find(anchor.line_id);
         if (pit != point_id_to_index_.end() &&
             lit != line_id_to_index_.end()) {

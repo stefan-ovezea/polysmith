@@ -273,6 +273,11 @@ export function buildSketchDimensionGeometry(
         }
       }
     }
+  } else if (dimension.kind === "arc_radius" || dimension.kind === "circle_radius") {
+    // Radius dimension: single leader from arc surface inward toward center.
+    // No arrows or extension lines.
+    const labelPos = new THREE.Vector3(...dimension.labelPosition);
+    addSegment(anchorEnd, anchorStart);
   } else {
     addSegment(
       anchorStart,

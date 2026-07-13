@@ -1,8 +1,8 @@
 json to_payload(const polysmith::core::ViewportSketchLinePrimitive& primitive) {
   return {
       {"line_id", primitive.line_id},
-      {"start_point_id", primitive.start_point_id},
-      {"end_point_id", primitive.end_point_id},
+      {"start_vertex_id", primitive.start_vertex_id},
+      {"end_vertex_id", primitive.end_vertex_id},
       {"plane_id", primitive.plane_id},
       {"start",
        {
@@ -68,8 +68,8 @@ json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive)
 json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
   return {
       {"arc_id", primitive.arc_id},
-      {"start_point_id", primitive.start_point_id},
-      {"end_point_id", primitive.end_point_id},
+      {"start_vertex_id", primitive.start_vertex_id},
+      {"end_vertex_id", primitive.end_vertex_id},
       {"plane_id", primitive.plane_id},
       {"plane_frame",
        primitive.plane_frame.has_value()
@@ -101,9 +101,9 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
   };
 }
 
-json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive) {
-  return {
-      {"point_id", primitive.point_id},
+json to_payload(const polysmith::core::ViewportSketchVertexPrimitive& primitive) {
+  json j = {
+      {"vertex_id", primitive.vertex_id},
       {"plane_id", primitive.plane_id},
       {"kind", primitive.kind},
       {"position",
@@ -114,7 +114,16 @@ json to_payload(const polysmith::core::ViewportSketchPointPrimitive& primitive) 
        }},
       {"is_fixed", primitive.is_fixed},
       {"is_selected", primitive.is_selected},
+      {"geometry_owner_ids", primitive.geometry_owner_ids},
+      {"is_projected", primitive.is_projected},
   };
+  if (primitive.source_type.has_value())
+    j["source_type"] = primitive.source_type.value();
+  if (primitive.source_feature_id.has_value())
+    j["source_feature_id"] = primitive.source_feature_id.value();
+  if (primitive.source_edge_id.has_value())
+    j["source_edge_id"] = primitive.source_edge_id.value();
+  return j;
 }
 
 json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primitive) {

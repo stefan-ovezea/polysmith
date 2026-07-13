@@ -43,7 +43,7 @@ export interface SetSketchMidpointAnchorCommand {
   id: string;
   type: "set_sketch_midpoint_anchor";
   payload: {
-    point_id: string;
+    vertex_id: string;
     // Empty string clears any existing anchor for the point.
     host_line_id: string;
   };
@@ -68,12 +68,12 @@ export interface AddSketchDistanceDimensionCommand {
   };
 }
 
-export interface AddSketchPointDistanceDimensionCommand {
+export interface AddSketchVertexDistanceDimensionCommand {
   id: string;
-  type: "add_sketch_point_distance_dimension";
+  type: "add_sketch_vertex_distance_dimension";
   payload: {
-    point_a_id: string;
-    point_b_id: string;
+    vertex_a_id: string;
+    vertex_b_id: string;
     axis?: "x" | "y";
   };
 }
@@ -102,6 +102,14 @@ export interface AddSketchCircleRadiusDimensionCommand {
   };
 }
 
+export interface AddSketchArcRadiusDimensionCommand {
+  id: string;
+  type: "add_sketch_arc_radius_dimension";
+  payload: {
+    arc_id: string;
+  };
+}
+
 export interface AddSketchPolygonRadiusDimensionCommand {
   id: string;
   type: "add_sketch_polygon_radius_dimension";
@@ -110,11 +118,11 @@ export interface AddSketchPolygonRadiusDimensionCommand {
   };
 }
 
-export interface SetSketchPointLineAnchorCommand {
+export interface SetSketchVertexLineAnchorCommand {
   id: string;
-  type: "set_sketch_point_line_anchor";
+  type: "set_sketch_vertex_line_anchor";
   payload: {
-    point_id: string;
+    vertex_id: string;
     // Empty string clears any existing anchor for the point.
     host_line_id: string;
     // Parametric position along the host line, clamped to [0, 1] by
@@ -184,13 +192,13 @@ export interface AddSketchArcCommand {
 }
 
 // Round a corner shared by two sketch lines into a tangent arc.
-// `corner_point_id` must be an endpoint of both lines; the v1 core
+// `corner_vertex_id` must be an endpoint of both lines; the v1 core
 // rejects mismatches and oversized radii with a structured error.
 export interface AddSketchFilletCommand {
   id: string;
   type: "add_sketch_fillet";
   payload: {
-    corner_point_id: string;
+    corner_vertex_id: string;
     line_a_id: string;
     line_b_id: string;
     radius: number;
@@ -255,7 +263,7 @@ export interface DeleteSketchSelectionCommand {
   type: "delete_sketch_selection";
   payload: {
     entity_ids: string[];
-    point_ids: string[];
+    vertex_ids: string[];
     profile_ids: string[];
   };
 }
@@ -280,11 +288,11 @@ export interface UpdateSketchLineCommand {
   };
 }
 
-export interface UpdateSketchPointCommand {
+export interface UpdateSketchVertexCommand {
   id: string;
-  type: "update_sketch_point";
+  type: "update_sketch_vertex";
   payload: {
-    point_id: string;
+    vertex_id: string;
     x: number;
     y: number;
   };
@@ -388,8 +396,8 @@ export interface SetSketchCoincidentConstraintCommand {
   id: string;
   type: "set_sketch_coincident_constraint";
   payload: {
-    point_id: string;
-    other_point_id: string;
+    vertex_id: string;
+    other_vertex_id: string;
   };
 }
 
@@ -401,11 +409,11 @@ export interface DeleteSketchCoincidentConstraintCommand {
   };
 }
 
-export interface SetSketchPointFixedCommand {
+export interface SetSketchVertexFixedCommand {
   id: string;
-  type: "set_sketch_point_fixed";
+  type: "set_sketch_vertex_fixed";
   payload: {
-    point_id: string;
+    vertex_id: string;
     is_fixed: boolean;
   };
 }
@@ -467,11 +475,11 @@ export interface SelectSketchEntityCommand {
   };
 }
 
-export interface SelectSketchPointCommand {
+export interface SelectSketchVertexCommand {
   id: string;
-  type: "select_sketch_point";
+  type: "select_sketch_vertex";
   payload: {
-    point_id: string;
+    vertex_id: string;
     additive: boolean;
   };
 }

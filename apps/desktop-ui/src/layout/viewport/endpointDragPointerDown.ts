@@ -48,7 +48,7 @@ export function beginEndpointDragPointerDown({
     return false;
   }
 
-  const point = sketch.points?.find((entry) => entry.point_id === hit.id);
+  const point = sketch.points?.find((entry) => entry.vertex_id === hit.id);
   if (!point || point.is_fixed) {
     return false;
   }
@@ -65,7 +65,7 @@ export function beginEndpointDragPointerDown({
   }
 
   endpointDragRef.current = {
-    pointId: hit.id,
+    vertexId: point.vertex_id,
     startClientX: event.clientX,
     startClientY: event.clientY,
     startLocalX: rawPoint.local[0],

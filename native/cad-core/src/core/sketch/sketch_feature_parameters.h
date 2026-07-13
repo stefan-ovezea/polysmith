@@ -36,12 +36,12 @@ struct SketchFeatureParameters {
   std::vector<SketchCircle> circles;
   std::vector<SketchPolygon> polygons;
   std::vector<SketchArc> arcs;
-  std::vector<SketchPoint> points;
+  std::vector<SketchVertex> vertices;
   std::vector<SketchDimension> dimensions;
   std::vector<SketchLineRelation> line_relations;
   std::vector<SketchConstraint> constraints;
   std::vector<SketchMidpointAnchor> midpoint_anchors;
-  std::vector<SketchPointLineAnchor> point_line_anchors;
+  std::vector<SketchVertexLineAnchor> point_line_anchors;
   // Parametric corner fillets. Each entry's `arc_id` and trim point
   // ids reference real entities in `arcs` / `points`; the recompute
   // pass keeps those entities in sync with the fillet's `radius` and
@@ -49,7 +49,7 @@ struct SketchFeatureParameters {
   std::vector<SketchFillet> fillets;
   // Free-standing points placed by the Project tool (one per
   // projected body vertex). Re-emitted into `points` by every
-  // `rebuild_sketch_points` pass with `kind = "projected"` and
+  // `rebuild_sketch_vertices` pass with `kind = "projected"` and
   // `is_fixed = true` so the user can't drag them; deduplicated by
   // `source_id` so a second click on the same vertex is a no-op.
   std::vector<SketchProjectedPoint> projected_points;
@@ -126,6 +126,11 @@ struct SketchFeatureParameters {
   // Empty vector = normal mode (no freeze, all non-fixed points
   // participate in the solve).
   std::vector<std::string> pending_append_focus_ids;
+
+  // ── Vertex unification (Phase 4) ────────────────────────────
+  // Monotonic counter for assigning vertex-N IDs.  Incremented by
+  // rebuild_sketch_vertices for every new unique point.
+  int next_vertex_index = 1;
 };
 
 }  // namespace polysmith::core

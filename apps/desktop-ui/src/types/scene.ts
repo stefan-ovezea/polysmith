@@ -227,7 +227,7 @@ export interface SketchArcScene {
   isProjected: boolean;
 }
 
-export interface SketchPointScene {
+export interface SketchVertexScene {
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.
   // "projected" — standalone point placed by the Project tool. The
@@ -235,11 +235,19 @@ export interface SketchPointScene {
   // the user can tell derived geometry from sketched geometry at a
   // glance.
   // "quadrant" — derived cardinal point on a circle perimeter.
-  pointId: string;
-  kind: "endpoint" | "center" | "projected" | "quadrant";
+  // "fillet_corner" — internal fillet bookkeeping vertex, filtered from scene.
+  /** vertex-N ID from Phase 4 vertex unification (canonical). */
+  id: string;
+  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
   position: [number, number, number];
   isFixed: boolean;
   isSelected: boolean;
+  // ── Vertex unification (Phase 1) ───────────────────────────
+  geometryOwnerIds?: string[];
+  isProjected?: boolean;
+  sourceType?: string;
+  sourceFeatureId?: string;
+  sourceEdgeId?: string;
 }
 
 export interface SketchDimensionScene {

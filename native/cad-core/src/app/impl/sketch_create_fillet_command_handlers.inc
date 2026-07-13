@@ -1,6 +1,6 @@
   if (command.type == "add_sketch_fillet") {
     const auto document = document_manager().add_sketch_fillet(
-        read_string(command.payload, "corner_point_id"),
+        read_string(command.payload, "corner_vertex_id"),
         read_string(command.payload, "line_a_id"),
         read_string(command.payload, "line_b_id"),
         read_dimension(command.payload, "radius"));

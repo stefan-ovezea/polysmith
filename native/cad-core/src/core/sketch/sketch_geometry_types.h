@@ -13,8 +13,10 @@ struct SketchProfilePoint {
 
 struct SketchLine {
   std::string id;
-  std::string start_point_id;
-  std::string end_point_id;
+  // ── Vertex unification ──────────────────────────────────────
+  // Stable "vertex-N" identifiers. These are the canonical endpoint IDs.
+  std::string start_vertex_id;
+  std::string end_vertex_id;
   double start_x;
   double start_y;
   double end_x;
@@ -33,6 +35,8 @@ struct SketchLine {
 
 struct SketchCircle {
   std::string id;
+  // ── Vertex unification (Phase 5) ────────────────────────────
+  std::string center_vertex_id;
   double center_x;
   double center_y;
   double radius;
@@ -68,10 +72,13 @@ struct SketchPolygon {
 // to worry about the cached params drifting from the endpoints.
 struct SketchArc {
   std::string id;
-  std::string start_point_id;
-  std::string end_point_id;
+  // ── Vertex unification ──────────────────────────────────────
+  // Stable "vertex-N" identifiers. These are the canonical endpoint IDs.
+  std::string start_vertex_id;
+  std::string end_vertex_id;
+  std::string center_vertex_id;
   // Cached shape parameters. Endpoint coordinates duplicate the
-  // owning SketchPoint coordinates, mirroring how SketchLine caches
+  // owning SketchVertex coordinates, mirroring how SketchLine caches
   // its endpoints, so consumers (renderer, profile builder) don't
   // have to chase pointer references for every paint.
   double center_x;
@@ -89,19 +96,42 @@ struct SketchArc {
   bool is_construction = false;
 };
 
-struct SketchPoint {
+struct SketchVertex {
   std::string id;
+  // ── Vertex unification (Phase 4) ────────────────────────────
+  // Stable "vertex-N" identifier assigned by rebuild_sketch_vertices.
+  // This will become the primary point identifier in Phase 6.
+  std::string vertex_id;
   std::string kind;
   double x;
   double y;
   bool is_fixed;
+
+  // ── Vertex unification fields (Phase 1) ─────────────────────
+  // IDs of the geometry entities (lines, circles, arcs) that own
+  // this vertex.  For a line endpoint this is [line_id]; for a
+  // shared corner it is [line_a_id, line_b_id].  Populated in
+  // Phase 2.
+  std::vector<std::string> geometry_owner_ids;
+
+  // True when this point was produced by the Project tool from
+  // 3D body geometry.
+  bool is_projected = false;
+
+  // Source of the projection (only meaningful when is_projected).
+  // e.g. "edge_midpoint", "vertex", "face_center"
+  std::optional<std::string> source_type;
+  // Feature id of the body the projection came from.
+  std::optional<std::string> source_feature_id;
+  // Edge id if the source was an edge midpoint / endpoint.
+  std::optional<std::string> source_edge_id;
 };
 
 // Standalone sketch point produced by the Project tool when the user
 // projects a body vertex onto the active sketch plane. Unlike line /
 // arc / circle endpoints, projected points are not derived from any
 // other sketch entity — they have to be re-emitted by
-// `rebuild_sketch_points` from this list directly. The cached (x, y)
+// `rebuild_sketch_vertices` from this list directly. The cached (x, y)
 // is the projected location in sketch-local coordinates; `source_id`
 // records the body vertex id (`<body>:vertex:<index>`) so the
 // projection is idempotent (clicking the same vertex twice is a

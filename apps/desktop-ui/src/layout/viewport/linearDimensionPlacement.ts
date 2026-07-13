@@ -49,8 +49,8 @@ function resolveLinearPlacementLine(
   if (!line) return null;
   return {
     lineId,
-    startPointId: line.start_point_id,
-    endPointId: line.end_point_id,
+    startPointId: line.start_vertex_id,
+    endPointId: line.end_vertex_id,
     startX: line.start_x,
     startY: line.start_y,
     endX: line.end_x,

@@ -121,7 +121,7 @@ interface ViewportPointerUpParams {
   stageDimensionFirstPoint: ActiveSketchPointerUpContext["stageDimensionFirstPoint"];
   deleteSketchDimension: ActiveSketchPointerUpContext["deleteSketchDimension"];
   createDimensionAngleOrDistance: ActiveSketchPointerUpContext["createDimensionAngleOrDistance"];
-  createDimensionPointDistance: ActiveSketchPointerUpContext["createDimensionPointDistance"];
+  createDimensionVertexDistance: ActiveSketchPointerUpContext["createDimensionVertexDistance"];
   createDimensionLineAngle: ActiveSketchPointerUpContext["createDimensionLineAngle"];
   createDimensionLine: ActiveSketchPointerUpContext["createDimensionLine"];
   createDimensionLinear: ActiveSketchPointerUpContext["createDimensionLinear"];
@@ -372,7 +372,7 @@ function handleActiveSketchToolPointerUp(
     stageDimensionFirstPoint: params.stageDimensionFirstPoint,
     deleteSketchDimension: params.deleteSketchDimension,
     createDimensionAngleOrDistance: params.createDimensionAngleOrDistance,
-    createDimensionPointDistance: params.createDimensionPointDistance,
+    createDimensionVertexDistance: params.createDimensionVertexDistance,
     createDimensionLine: params.createDimensionLine,
     createDimensionLinear: params.createDimensionLinear,
     createDimensionLineAngle: params.createDimensionLineAngle,

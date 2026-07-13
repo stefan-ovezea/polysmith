@@ -23,17 +23,17 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
 
   for (const auto& line : parameters.lines) {
     const bool spans_points =
-        (line.start_point_id == point_id && line.end_point_id == other_point_id) ||
-        (line.start_point_id == other_point_id && line.end_point_id == point_id);
+        (line.start_vertex_id == point_id && line.end_vertex_id == other_point_id) ||
+        (line.start_vertex_id == other_point_id && line.end_vertex_id == point_id);
     if (spans_points) {
       throw std::runtime_error(
           "Cannot make both endpoints of a sketch line coincident");
     }
   }
 
-  auto affected_line_ids = collect_line_ids_for_point(parameters, point_id);
+  auto affected_line_ids = collect_line_ids_for_vertex(parameters, point_id);
   const auto other_line_ids =
-      collect_line_ids_for_point(parameters, other_point_id);
+      collect_line_ids_for_vertex(parameters, other_point_id);
   for (const auto& line_id : other_line_ids) {
     if (std::find(affected_line_ids.begin(), affected_line_ids.end(), line_id) ==
         affected_line_ids.end()) {
@@ -119,8 +119,8 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
   // Find all lines sharing the merged point.
   std::vector<SketchLine*> affected_lines;
   for (auto& line : parameters.lines) {
-    if (line.start_point_id == merged_point_id ||
-        line.end_point_id == merged_point_id) {
+    if (line.start_vertex_id == merged_point_id ||
+        line.end_vertex_id == merged_point_id) {
       affected_lines.push_back(&line);
     }
   }
@@ -131,13 +131,13 @@ void delete_sketch_coincident_constraint(FeatureEntry& feature,
     int fresh_counter = static_cast<int>(parameters.lines.size()) * 100;
     for (size_t i = 1; i < affected_lines.size(); ++i) {
       const std::string new_id =
-          "point-line-" + std::to_string(fresh_counter++) + "-start";
+          "vertex-" + std::to_string(parameters.next_vertex_index++);
       auto* line = affected_lines[i];
-      if (line->start_point_id == merged_point_id) {
-        line->start_point_id = new_id;
+      if (line->start_vertex_id == merged_point_id) {
+        line->start_vertex_id = new_id;
       }
-      if (line->end_point_id == merged_point_id) {
-        line->end_point_id = new_id;
+      if (line->end_vertex_id == merged_point_id) {
+        line->end_vertex_id = new_id;
       }
     }
   }
@@ -169,7 +169,7 @@ void delete_sketch_mirror_relation(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
-void set_sketch_point_fixed(FeatureEntry& feature,
+void set_sketch_vertex_fixed(FeatureEntry& feature,
                             const std::string& point_id,
                             bool is_fixed) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
@@ -177,7 +177,7 @@ void set_sketch_point_fixed(FeatureEntry& feature,
   }
 
   auto& parameters = feature.sketch_parameters.value();
-  SketchPoint* point = find_sketch_point(parameters, point_id);
+  SketchVertex* point = find_sketch_vertex(parameters, point_id);
   if (point == nullptr) {
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
@@ -208,8 +208,8 @@ void update_sketch_circle(FeatureEntry& feature,
     throw std::runtime_error("Sketch circle not found: " + circle_id);
   }
 
-  const std::string center_point_id = "point-circle-" + circle_it->id + "-center";
-  if (!point_is_fixed(*feature.sketch_parameters, center_point_id)) {
+  const std::string center_point_id = circle_center_vertex_id(*circle_it);
+  if (!vertex_is_fixed(*feature.sketch_parameters, center_point_id)) {
     circle_it->center_x = center_x;
     circle_it->center_y = center_y;
   }

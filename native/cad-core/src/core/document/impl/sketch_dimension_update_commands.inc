@@ -44,12 +44,12 @@ DocumentState DocumentManager::update_sketch_dimension(
   polysmith::core::update_sketch_dimension(*feature_it, dimension_id, value, expression);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   if (feature_it->sketch_parameters.has_value()) {
     const auto updated_dimension_it = std::find_if(
@@ -106,12 +106,12 @@ DocumentState DocumentManager::update_sketch_dimension_label_position(
   dimension_it->label_x = label_x;
   dimension_it->label_y = label_y;
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_point_id = std::nullopt;
+  document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = dimension_it->entity_id;
   document_->selected_sketch_dimension_id = dimension_it->id;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
-  document_->selected_sketch_point_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
   return document_.value();

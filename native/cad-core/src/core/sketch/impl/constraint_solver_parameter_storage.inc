@@ -2,10 +2,10 @@
     // Pre-count to avoid reallocation (which would invalidate double*
     // pointers stored in GCS::Point objects).
     // We read geometry from lines/circles (canonical storage), not from
-    // params.points[] (which is a deduplicated view rebuilt later by
-    // rebuild_sketch_points). This ensures the solver sees the current
+    // params.vertices[] (which is a deduplicated view rebuilt later by
+    // rebuild_sketch_vertices). This ensures the solver sees the current
     // geometry even when called between rebuilds (e.g. during drag).
-    const size_t num_points = params.points.size();
+    const size_t num_points = params.vertices.size();
     const size_t num_circles = params.circles.size();
     // Count driving dimensions for parameter reservation.
     // Manual dims always drive; auto dims drive only with expression.
