@@ -3541,11 +3541,13 @@ export function ViewportPanel({
     crosshairCanvasClass,
     crosshairGuideSize,
     isSketchDrawingCursor,
+    isSnapping,
     usesCrosshairGuide,
   } = computeViewportCrosshairState({
     activeSketchPlaneId,
     activeSketchTool,
     crosshairMode: config.viewport.crosshair,
+    isSnapping: sketchSnapLabel !== null,
     viewportSize,
   });
   const isSketchMode = Boolean(activeSketchPlaneId);
@@ -3582,6 +3584,7 @@ export function ViewportPanel({
       hostRef={hostRef}
       isDimensionEditorOpen={isDimensionEditorOpen}
       isSketchDrawingCursor={isSketchDrawingCursor}
+      isSnapping={isSnapping}
       isSketchMode={isSketchMode}
       lineCount={lineCount}
       lineDraftActive={Boolean(lineDraftStartRef.current)}

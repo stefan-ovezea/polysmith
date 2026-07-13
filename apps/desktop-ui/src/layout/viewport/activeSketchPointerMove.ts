@@ -77,6 +77,9 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
 
   const { draftStart, draftPreviewLocal, sketchPoint } = draftMove;
   if (!draftStart) {
+    // Tool is armed but no line started yet — snap feedback (crosshair
+    // position, snap label, constraint preview) already updated by
+    // resolveDraftPointerMove. Just clear hover and skip the rubber-band.
     params.hoverActions.setHoveredPrimitive(null);
     params.hoverActions.setHoveredReference(null);
     return;

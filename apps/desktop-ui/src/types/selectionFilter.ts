@@ -16,6 +16,9 @@ export interface SelectionFilter {
   snap_grid_line: boolean;
   snap_polar: boolean;
   polar_angle_degrees: number;
+  /** Maximum angle (degrees) at which the draft direction is considered
+   *  parallel to an existing line for auto-parallel constraint creation. */
+  parallel_angle_degrees: number;
   magnetic_pull: boolean;
   tolerance_px: number;
 }

@@ -213,10 +213,14 @@ function gridSnappedLocalPoint(
 ): [number, number] {
   const nearestX = Math.round(local[0] / spacing) * spacing;
   const nearestY = Math.round(local[1] / spacing) * spacing;
-  return [
-    Math.abs(local[0] - nearestX) <= threshold ? nearestX : local[0],
-    Math.abs(local[1] - nearestY) <= threshold ? nearestY : local[1],
-  ];
+  const nearX = Math.abs(local[0] - nearestX) <= threshold;
+  const nearY = Math.abs(local[1] - nearestY) <= threshold;
+  // Only snap when BOTH axes are within threshold — snap to the
+  // nearest grid intersection, not to a single grid line.
+  if (nearX && nearY) {
+    return [nearestX, nearestY];
+  }
+  return [local[0], local[1]];
 }
 
 type ResolvedStaticSnap = {
@@ -360,7 +364,8 @@ function resolveDynamicSnap({
     draftStart: draftStartLocal,
     cursor: point.local,
     threshold: sketchSnapDistance,
-    parallelAngleThresholdRadians: 8 * Math.PI / 180,
+    parallelAngleThresholdRadians:
+      (filter.parallel_angle_degrees ?? 8) * Math.PI / 180,
     labels,
     sketchParameters,
     constraints: sketchConstraints,
@@ -823,6 +828,10 @@ export function dynamicSnapCandidate({
   inferenceSnapsEnabled?: boolean;
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
+  // Inference guide lines are collected independently so they survive
+  // even when a later snap (parallel, perpendicular, etc.) wins via
+  // closerDynamicSnap and replaces `best`.
+  let inferenceGuides: DynamicSnapResult["inferenceGuideLines"] = [];
 
   if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:line-body:")) {
     const lineId = objectSnapLatchKey.slice("dynamic:line-body:".length);
@@ -870,10 +879,9 @@ export function dynamicSnapCandidate({
           labels,
         });
         if (inferenceSnap && inferenceSnap.inferenceGuideLines.length > 0) {
+          inferenceGuides = inferenceSnap.inferenceGuideLines;
           if (axisLockSnap) {
-            // Axis-lock wins the snap; attach inference guides to it so
-            // both the H/V badge AND the dotted lines display together.
-            axisLockSnap.inferenceGuideLines = inferenceSnap.inferenceGuideLines;
+            // Axis-lock wins the snap; inference provides visual guides.
             best = axisLockSnap;
           } else {
             // No axis-lock — inference still provides useful visual guides.
@@ -958,6 +966,13 @@ export function dynamicSnapCandidate({
       snapLabel: labels.tangent,
     });
     best = closerDynamicSnap(best, spec);
+  }
+
+  // Attach inference guide lines to whichever snap won, so dotted
+  // alignment hints display even when a parallel/perpendicular/tangent
+  // snap overrides the inference snap position.
+  if (best && inferenceGuides.length > 0 && best.inferenceGuideLines.length === 0) {
+    best.inferenceGuideLines = inferenceGuides;
   }
 
   return best;
@@ -1372,6 +1387,20 @@ function speculativeParallelSnap({
     const dot = (draftDx * ldx + draftDy * ldy) / (mag1 * mag2);
     const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
     if (Math.min(angle, Math.PI - angle) >= angleThresholdRadians) continue;
+
+    // Skip host lines the draft start already lies on — the new line
+    // is collinear with the host (shares the same infinite line).
+    // A parallel constraint would be redundant.
+    const startProj =
+      ((draftStart[0] - line.start_x) * ldx +
+       (draftStart[1] - line.start_y) * ldy) / lenSq;
+    const startOnHostX = line.start_x + startProj * ldx;
+    const startOnHostY = line.start_y + startProj * ldy;
+    const startDistToHost = Math.hypot(
+      draftStart[0] - startOnHostX,
+      draftStart[1] - startOnHostY,
+    );
+    if (startDistToHost <= 1e-3) continue;
 
     const len = Math.sqrt(lenSq);
     const ux = ldx / len;

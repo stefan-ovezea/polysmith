@@ -20,6 +20,7 @@ export const defaultSelectionFilter: SelectionFilter = {
   snap_grid_line: true,
   snap_polar: true,
   polar_angle_degrees: 15,
+  parallel_angle_degrees: 8,
   magnetic_pull: true,
   tolerance_px: 20,
 };

@@ -564,6 +564,7 @@ export const viewportStateSchema = z.object({
     snap_grid_line: z.boolean(),
     snap_polar: z.boolean(),
     polar_angle_degrees: z.number(),
+    parallel_angle_degrees: z.number().default(8),
     magnetic_pull: z.boolean(),
     tolerance_px: z.number(),
   }),

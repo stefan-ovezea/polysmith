@@ -128,13 +128,15 @@ function snapFeedbackCanvasPoint({
   camera: THREE.Camera;
   renderer: THREE.WebGLRenderer;
 }) {
-  if (sketchPoint.snapFeedbackSource !== "object") {
-    return rawCanvasPoint;
+  // Project any snap (object, grid) to canvas so the crosshair follows
+  // the snapped position, not the raw cursor.
+  if (sketchPoint.snapFeedbackSource) {
+    return (
+      projectWorldPointToCanvas(sketchPoint.world, camera, renderer) ??
+      rawCanvasPoint
+    );
   }
-  return (
-    projectWorldPointToCanvas(sketchPoint.world, camera, renderer) ??
-    rawCanvasPoint
-  );
+  return rawCanvasPoint;
 }
 
 function projectWorldPointToCanvas(
