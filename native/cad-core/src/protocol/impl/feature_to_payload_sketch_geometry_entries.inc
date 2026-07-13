@@ -6,8 +6,6 @@
                           {"line_id", line.id},
                           {"start_vertex_id", line.start_vertex_id},
                           {"end_vertex_id", line.end_vertex_id},
-                          {"start_vertex_id", line.start_vertex_id},
-                          {"end_vertex_id", line.end_vertex_id},
                           {"start_x", line.start_x},
                           {"start_y", line.start_y},
                           {"end_x", line.end_x},
@@ -42,8 +40,6 @@
                     for (const auto& arc : feature.sketch_parameters->arcs) {
                       arcs.push_back({
                           {"arc_id", arc.id},
-                          {"start_vertex_id", arc.start_vertex_id},
-                          {"end_vertex_id", arc.end_vertex_id},
                           {"start_vertex_id", arc.start_vertex_id},
                           {"end_vertex_id", arc.end_vertex_id},
                           {"center_vertex_id", arc.center_vertex_id},
@@ -105,7 +101,6 @@
                     for (const auto& point : feature.sketch_parameters->vertices) {
                       json pt{
                           {"vertex_id", point.id},
-                          {"vertex_id", point.vertex_id},
                           {"kind", point.kind},
                           {"x", point.x},
                           {"y", point.y},

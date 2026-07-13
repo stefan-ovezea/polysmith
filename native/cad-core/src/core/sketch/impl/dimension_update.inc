@@ -126,6 +126,10 @@ void update_sketch_dimension(FeatureEntry& feature,
   };
 
   if (dimension.kind == "line_length") {
+    // When the user explicitly edits a line_length dimension, clear the
+    // auto flag so the solver constraint activates (matching the angle
+    // kind at line 199).
+    dimension.is_auto = false;
     const auto line_it = std::find_if(
         parameters.lines.begin(),
         parameters.lines.end(),

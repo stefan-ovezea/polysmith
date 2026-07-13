@@ -104,7 +104,6 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
 json to_payload(const polysmith::core::ViewportSketchVertexPrimitive& primitive) {
   json j = {
       {"vertex_id", primitive.vertex_id},
-      {"vertex_id", primitive.vertex_id},
       {"plane_id", primitive.plane_id},
       {"kind", primitive.kind},
       {"position",

@@ -271,11 +271,9 @@ export function computeRippleActivePoints(
   active.add(draggedPointId);
 
   for (const line of sketch.lines) {
-    const isStart = line.start_vertex_id === draggedPointId;
-    const isEnd   = line.end_vertex_id === draggedPointId;
-    if (isStart) {
+    if (line.start_vertex_id === draggedPointId) {
       active.add(line.end_vertex_id);
-    } else if (isEnd) {
+    } else if (line.end_vertex_id === draggedPointId) {
       active.add(line.start_vertex_id);
     }
   }
@@ -336,8 +334,17 @@ export function resolveEndpointDragFrame({
   let solverUsed = false;
   const gcsBridge = getBridge();
   if (gcsBridge && sketch) {
+    // Strip H/V constraints from lines during drag preview so the
+    // solver allows free diagonal movement.  The H/V constraints are
+    // re-applied on commit by the C++ core (propagate_connected_point_move
+    // → refresh_sketch_derived_state).
+    const unconstrainedLines = sketch.lines.map((l) => ({
+      ...l,
+      constraint: null as "horizontal" | "vertical" | null,
+    }));
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
+      lines: unconstrainedLines,
       points: sketch.points.map((p) =>
         p.vertex_id === next.vertexId
           ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }
