@@ -429,7 +429,7 @@ function runInferenceAndReadCursor(
   sketchPointCount: number,
   cursor: [number, number],
 ): SpeculativeSolveResult {
-  w.set_max_iterations(5);
+  w.set_max_iterations(12);
   w.set_convergence_threshold(1e-3);
   const status = w.solve(1); // LevenbergMarquardt = 1
 
@@ -480,8 +480,8 @@ function runInferenceAndReadCursor(
  * runs a fast INFERENCE solve, and returns the solved cursor position.
  *
  * The WASM solver is fully rebuilt on each call (clear_data + push all).
- * For typical sketch sizes (10–50 parameters) with 5 iterations, this
- * completes in ~0.02–0.05ms — well within the 16ms frame budget even
+ * For typical sketch sizes (10–50 parameters) with 12 iterations, this
+ * completes in ~0.05–0.1ms — well within the 16ms frame budget even
  * when checking 6+ snap types per frame.
  */
 export function speculativeSolve({

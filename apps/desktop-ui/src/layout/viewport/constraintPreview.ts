@@ -4,6 +4,7 @@ export type ConstraintPreviewKind =
   | "midpoint"
   | "perpendicular"
   | "on_line"
+  | "on_circle"
   | "horizontal"
   | "vertical"
   | "tangent"
@@ -33,6 +34,9 @@ export function constraintPreviewFromSnap(
   }
   if (sketchPoint.snapLineBodyHostLineId) {
     return { kind: "on_line", x, y };
+  }
+  if (sketchPoint.snapCircleBodyHostCircleId) {
+    return { kind: "on_circle", x, y };
   }
   if (sketchPoint.snapPerpendicularHostLineId) {
     return { kind: "perpendicular", x, y };

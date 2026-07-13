@@ -1812,6 +1812,7 @@ export function ViewportPanel({
         axisLockHorizontal: translate("snap.axisLockHorizontal"),
         axisLockVertical: translate("snap.axisLockVertical"),
         onLine: translate("snap.onLine"),
+        onCircle: translate("snap.onCircle"),
         tangent: translate("snap.tangent"),
         perpendicular: translate("snap.perpendicular"),
         parallel: translate("snap.parallel"),

@@ -406,6 +406,11 @@ export interface SketchPreviewPoint {
   // so the bound point rides with the host as it edits.
   snapLineBodyHostLineId?: string | null;
   snapLineBodyT?: number | null;
+  // When the cursor snapped to the nearest point on a circle's perimeter,
+  // this holds the host circle id and the angle (in radians) of the snapped
+  // point relative to the circle center.
+  snapCircleBodyHostCircleId?: string | null;
+  snapCircleBodyAngle?: number | null;
   // When the cursor was within the angular threshold of the world X
   // or Y axis relative to the draft start, the resolver pulls the
   // off-axis coordinate onto the start to lock the segment flat. The

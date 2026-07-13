@@ -173,6 +173,8 @@ function constraintPreviewGlyph(kind: ConstraintPreviewState["kind"]) {
       return "\u2225";
     case "on_line":
       return "/";
+    case "on_circle":
+      return "c";
   }
 }
 

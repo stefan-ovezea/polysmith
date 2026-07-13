@@ -89,6 +89,7 @@ export function resolveSnappedSketchPoint({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -344,6 +345,7 @@ function resolveDynamicSnap({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -424,6 +426,8 @@ function previewPointFromDynamicSnap({
     snapEndpointHostLineId: null,
     snapLineBodyHostLineId: snap.snapLineBodyHostLineId,
     snapLineBodyT: snap.snapLineBodyT,
+    snapCircleBodyHostCircleId: snap.snapCircleBodyHostCircleId,
+    snapCircleBodyAngle: snap.snapCircleBodyAngle,
     snapAxisLock: snap.snapAxisLock,
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
@@ -629,6 +633,8 @@ interface DynamicSnapResult {
   snapParallelHostLineId: string | null;
   snapLineBodyHostLineId: string | null;
   snapLineBodyT: number | null;
+  snapCircleBodyHostCircleId?: string | null;
+  snapCircleBodyAngle?: number | null;
   snapIntersectionLineIds: [string, string] | null;
   distance: number;
   /** When the cursor aligned with an existing sketch vertex via H/V
@@ -815,6 +821,7 @@ export function dynamicSnapCandidate({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -845,6 +852,22 @@ export function dynamicSnapCandidate({
       });
       if (latchedLineBody) {
         best = latchedLineBody;
+      }
+    }
+  }
+
+  if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:circle-body:")) {
+    const circleId = objectSnapLatchKey.slice("dynamic:circle-body:".length);
+    const circle = circles.find((candidate) => candidate.circle_id === circleId);
+    if (circle) {
+      const latchedCircleBody = speculativeCircleBodySnap({
+        circles: [circle],
+        cursor,
+        threshold,
+        snapLabel: labels.onCircle,
+      });
+      if (latchedCircleBody) {
+        best = latchedCircleBody;
       }
     }
   }
@@ -902,6 +925,12 @@ export function dynamicSnapCandidate({
       snapLabel: labels.onLine,
     });
     best = closerDynamicSnap(best, spec);
+
+    const circleSpec = speculativeCircleBodySnap({
+      circles, cursor, threshold,
+      snapLabel: labels.onCircle,
+    });
+    best = closerDynamicSnap(best, circleSpec);
   }
 
   if (draftStart) {
@@ -914,10 +943,16 @@ export function dynamicSnapCandidate({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
         circles, draftStart, cursor,
-        threshold: solverSearchThreshold(best, threshold),
+        threshold,
         snapLabel: labels.tangent,
       });
-      best = closerDynamicSnap(best, spec);
+      // Tangent overrides circle-body snap on the same circle —
+      // the cursor is "near the perimeter" but the user wants a tangent.
+      if (spec && best?.snapCircleBodyHostCircleId === spec.snapTangentCircleId) {
+        best = spec;
+      } else {
+        best = closerDynamicSnap(best, spec);
+      }
     }
   }
 
@@ -1092,6 +1127,7 @@ function dynamicSnapFeedbackSource(
     snap.snapTangentCircleId ||
     snap.snapParallelHostLineId ||
     snap.snapLineBodyHostLineId ||
+    snap.snapCircleBodyHostCircleId ||
     snap.snapIntersectionLineIds
   ) {
     return "object";
@@ -1102,6 +1138,9 @@ function dynamicSnapFeedbackSource(
 function dynamicSnapTargetKey(snap: DynamicSnapResult) {
   if (snap.snapLineBodyHostLineId) {
     return `dynamic:line-body:${snap.snapLineBodyHostLineId}`;
+  }
+  if (snap.snapCircleBodyHostCircleId) {
+    return `dynamic:circle-body:${snap.snapCircleBodyHostCircleId}`;
   }
   if (snap.snapPerpendicularHostLineId) {
     return `dynamic:perpendicular:${snap.snapPerpendicularHostLineId}`;
@@ -1497,6 +1536,66 @@ function speculativeLineBodySnap({
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: bestT,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
+    distance: bestDist,
+  };
+}
+
+/**
+ * Try circle-body snap: project the cursor onto the nearest point on
+ * each circle's perimeter. Pure TS geometry — no solver needed.
+ */
+function speculativeCircleBodySnap({
+  circles,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  circles: readonly SketchSnapCircle[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  let bestCircle: (typeof circles)[number] | null = null;
+  let bestDist = Infinity;
+  let bestAngle = 0;
+  let bestLocal: [number, number] | null = null;
+
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+    const dx = cursor[0] - circle.center_x;
+    const dy = cursor[1] - circle.center_y;
+    const distFromCenter = Math.hypot(dx, dy);
+    if (distFromCenter < 1e-12) continue;
+    const angle = Math.atan2(dy, dx);
+    const x = circle.center_x + circle.radius * Math.cos(angle);
+    const y = circle.center_y + circle.radius * Math.sin(angle);
+    const dist = Math.hypot(cursor[0] - x, cursor[1] - y);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestCircle = circle;
+      bestAngle = angle;
+      bestLocal = [x, y];
+    }
+  }
+
+  if (!bestCircle || !bestLocal) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapCircleBodyHostCircleId: bestCircle.circle_id,
+    snapCircleBodyAngle: bestAngle,
     snapIntersectionLineIds: null,
     snapInferenceKind: null,
     snapInferenceFrom: null,
