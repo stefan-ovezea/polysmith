@@ -233,7 +233,7 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     expect(latched.snapTargetKey).toBe("static:endpoint:a");
   });
 
-  it("resolves tangent-to-circle snap via speculative solver", () => {
+  it("resolves tangent-to-circle snap via pure TS geometry", () => {
     const withCircle = {
       ...sketchParameters(),
       circles: [
@@ -251,12 +251,7 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     //   alpha = asin(3/5) ≈ 0.6435
     //   tp1 = [4*cos(0.6435), 4*sin(0.6435)] ≈ [3.2, 2.4]
     //   tp2 = [4*cos(-0.6435), 4*sin(-0.6435)] ≈ [3.2, -2.4]
-    speculativeSolveMock.mockReturnValue({
-      converged: true,
-      position: [3.2, 2.4],
-      distance: 0.1,
-      solverStatus: 0,
-    });
+    // Cursor at [3.3, 2.3] is closest to tp1 → snap to that tangent line.
 
     const result = resolveSnappedSketchPoint({
       rawPoint: { local: [3.3, 2.3], world: [3.3, 0, 2.3] },
@@ -284,7 +279,9 @@ describe("resolveSnappedSketchPoint performance guards", () => {
 
     expect(result.snapLabel).toBe("Tangent");
     expect(result.snapTangentCircleId).toBe("c1");
-    expect(speculativeSolveMock).toHaveBeenCalled();
+    // Snapped position should be on the tangent line from draftStart through tp1
+    expect(result.local[0]).toBeCloseTo(3.216, 1);
+    expect(result.local[1]).toBeCloseTo(2.412, 1);
   });
 
   it("resolves perpendicular-to-line snap via speculative solver", () => {

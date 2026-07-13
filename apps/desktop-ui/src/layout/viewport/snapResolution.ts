@@ -8,7 +8,22 @@ import type {
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
 import { speculativeSolve, speculativeMultiSolve } from "@/lib/speculativeSolve";
+import { useCadCoreStore } from "@/state/cadCoreStore";
+import { useToastStore } from "@/state/toastStore";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
+
+// Diagnostic logger for tangent snap. Each gate fires at most once per
+// 5 seconds (cooldown) so you can see retries after moving the cursor.
+const _gateCooldowns = new Map<string, number>();
+function _snapDebug(gate: string, detail: string) {
+  const now = Date.now();
+  const last = _gateCooldowns.get(gate) ?? 0;
+  if (now - last < 5000) return;
+  _gateCooldowns.set(gate, now);
+  const msg = `[tangent] ${gate}: ${detail}`;
+  try { useCadCoreStore.getState().addMessage(msg); } catch (_) { /* ok */ }
+  try { useToastStore.getState().pushToast("info", msg); } catch (_) { /* ok */ }
+}
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -123,7 +138,7 @@ export function resolveSnappedSketchPoint({
 
   const resolvedSnap = chooseResolvedSnap({
     staticSnap,
-    dynamicSnap: dynamicSnapsEnabled
+    dynamicSnap: dynamicSnapsEnabled !== false
       ? resolveDynamicSnap({
           sketchParameters,
           sketchConstraints,
@@ -856,7 +871,7 @@ export function dynamicSnapCandidate({
     }
   }
 
-  if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:circle-body:")) {
+  if (filter.snap_nearest && filter.snap_circle_body && objectSnapLatchKey?.startsWith("dynamic:circle-body:")) {
     const circleId = objectSnapLatchKey.slice("dynamic:circle-body:".length);
     const circle = circles.find((candidate) => candidate.circle_id === circleId);
     if (circle) {
@@ -926,11 +941,13 @@ export function dynamicSnapCandidate({
     });
     best = closerDynamicSnap(best, spec);
 
-    const circleSpec = speculativeCircleBodySnap({
-      circles, cursor, threshold,
-      snapLabel: labels.onCircle,
-    });
-    best = closerDynamicSnap(best, circleSpec);
+    if (filter.snap_circle_body) {
+      const circleSpec = speculativeCircleBodySnap({
+        circles, cursor, threshold,
+        snapLabel: labels.onCircle,
+      });
+      best = closerDynamicSnap(best, circleSpec);
+    }
   }
 
   if (draftStart) {
@@ -938,7 +955,11 @@ export function dynamicSnapCandidate({
     const draftDy = cursor[1] - draftStart[1];
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
+    // diagnostic: show why tangent gate passes/fails
+    _snapDebug("gate", `hasDraftStart=1 hasMovement=${hasDraftMovement} snap_tangent=${filter.snap_tangent} circles=${circles.length}`);
+
     if (hasDraftMovement && filter.snap_tangent) {
+      _snapDebug("enter", `circles=${circles.length}`);
       const spec = speculativeTangentSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
@@ -946,12 +967,17 @@ export function dynamicSnapCandidate({
         threshold,
         snapLabel: labels.tangent,
       });
-      // Tangent overrides circle-body snap on the same circle —
-      // the cursor is "near the perimeter" but the user wants a tangent.
-      if (spec && best?.snapCircleBodyHostCircleId === spec.snapTangentCircleId) {
-        best = spec;
-      } else {
-        best = closerDynamicSnap(best, spec);
+      // Tangent is a deliberate geometric relationship — when it fires
+      // during line drafting, it takes priority over the generic
+      // "nearest point on circle" snap, regardless of which circle won
+      // the circle-body proximity check. For non-circle-body snaps
+      // (line-body, axis-lock, null) we fall back to distance comparison.
+      if (spec) {
+        if (best?.snapCircleBodyHostCircleId != null) {
+          best = spec;
+        } else {
+          best = closerDynamicSnap(best, spec);
+        }
       }
     }
   }
@@ -1231,12 +1257,12 @@ function speculativeTangentSnap({
   threshold: number;
   snapLabel: string;
 }): DynamicSnapResult | null {
-  const bridge = getBridge();
-  if (!bridge || !sketchParameters) return null;
-
-  // Fast TS proximity gating — find the best circle.
+  // Pure TS geometry — find tangent points for each circle, pick the one
+  // nearest to the cursor. No WASM solver needed; the TS math is exact.
   let bestCircle: (typeof circles)[number] | null = null;
   let bestDist = Infinity;
+  let bestTpX = 0;
+  let bestTpY = 0;
 
   for (const circle of circles) {
     if (circle.is_construction) continue;
@@ -1256,27 +1282,36 @@ function speculativeTangentSnap({
       if (tpDist < bestDist) {
         bestDist = tpDist;
         bestCircle = circle;
+        bestTpX = tpX;
+        bestTpY = tpY;
       }
     }
   }
 
-  if (!bestCircle || bestDist > threshold) return null;
+  if (!bestCircle) {
+    _snapDebug("no_circle", `circles=${circles.length}`);
+    return null;
+  }
 
-  // Refine with speculative solver on the best circle only.
-  const result = speculativeSolve({
-    bridge,
-    params: sketchParameters,
-    constraints,
-    draftStart,
-    cursor,
-    snapType: "tangent_lc",
-    targetEntityId: bestCircle.circle_id,
-  });
+  // Project the cursor onto the tangent line (draftStart → tangent point).
+  // The snapped position lies on the exact tangent line.
+  const tdx = bestTpX - draftStart[0];
+  const tdy = bestTpY - draftStart[1];
+  const tLenSq = tdx * tdx + tdy * tdy;
+  if (tLenSq < 1e-12) return null;
 
-  if (!result?.converged || result.distance > threshold) return null;
+  const t = ((cursor[0] - draftStart[0]) * tdx + (cursor[1] - draftStart[1]) * tdy) / tLenSq;
+  // Clamp t so the snap point stays on the "far side" of the tangent point
+  // (the user is drawing away from the draft start, past the tangent point).
+  const clampedT = Math.max(t, 1.0);
+  const snapX = draftStart[0] + clampedT * tdx;
+  const snapY = draftStart[1] + clampedT * tdy;
+
+  const snapDist = Math.hypot(snapX - cursor[0], snapY - cursor[1]);
+  if (snapDist > threshold) return null;
 
   return {
-    local: result.position,
+    local: [snapX, snapY],
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
@@ -1288,7 +1323,7 @@ function speculativeTangentSnap({
     snapInferenceKind: null,
     snapInferenceFrom: null,
     inferenceGuideLines: [],
-    distance: result.distance,
+    distance: snapDist,
   };
 }
 

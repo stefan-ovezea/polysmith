@@ -8,6 +8,7 @@ export interface SelectionFilter {
   snap_center: boolean;
   snap_intersection: boolean;
   snap_nearest: boolean;
+  snap_circle_body: boolean;
   snap_quadrant: boolean;
   snap_perpendicular: boolean;
   snap_parallel: boolean;

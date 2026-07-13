@@ -556,6 +556,7 @@ export const viewportStateSchema = z.object({
     snap_center: z.boolean(),
     snap_intersection: z.boolean(),
     snap_nearest: z.boolean(),
+    snap_circle_body: z.boolean().optional().default(true),
     snap_quadrant: z.boolean(),
     snap_perpendicular: z.boolean(),
     snap_parallel: z.boolean(),
