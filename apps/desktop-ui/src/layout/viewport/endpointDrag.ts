@@ -145,6 +145,19 @@ function endpointDragAnchors(
     }
   }
 
+  // Arc endpoints: anchored to the opposite arc endpoint.
+  if (params.arcs) {
+    for (const arc of params.arcs) {
+      const isStart = arc.start_vertex_id === pointId;
+      const isEnd   = arc.end_vertex_id === pointId;
+      if (!isStart && !isEnd) continue;
+      anchors.push({
+        x: isStart ? arc.end_x : arc.start_x,
+        y: isStart ? arc.end_y : arc.start_y,
+      });
+    }
+  }
+
   // Circle center: anchor is the circle's current center (so we get a
   // line from old center → new center).
   if (anchors.length === 0) {
@@ -275,6 +288,17 @@ export function computeRippleActivePoints(
       active.add(line.end_vertex_id);
     } else if (line.end_vertex_id === draggedPointId) {
       active.add(line.start_vertex_id);
+    }
+  }
+
+  // Arc endpoints: unfreeze the opposite arc endpoint.
+  if (sketch.arcs) {
+    for (const arc of sketch.arcs) {
+      if (arc.start_vertex_id === draggedPointId) {
+        active.add(arc.end_vertex_id);
+      } else if (arc.end_vertex_id === draggedPointId) {
+        active.add(arc.start_vertex_id);
+      }
     }
   }
 

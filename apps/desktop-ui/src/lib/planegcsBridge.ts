@@ -204,6 +204,23 @@ export class PlanegcsBridge {
       });
     }
 
+    // ---- 3b. Push arcs --------------------------------------------------
+    for (const arc of params.arcs ?? []) {
+      const centerId = arc.center_vertex_id ?? `point-arc-${arc.arc_id}-center`;
+      const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+      const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+      w.push_primitive({
+        id: arc.arc_id,
+        type: "arc",
+        c_id: centerId,
+        radius: arc.radius,
+        start_id: arc.start_vertex_id,
+        end_id: arc.end_vertex_id,
+        start_angle: startAngle,
+        end_angle: endAngle,
+      } as any);
+    }
+
     // ---- 4. Constraints ------------------------------------------------
 
     // 4a. Inline H/V on lines
@@ -221,6 +238,15 @@ export class PlanegcsBridge {
           l_id: line.line_id,
         });
       }
+    }
+
+    // 4a2. Arc rules — required constraint for each arc
+    for (const arc of params.arcs ?? []) {
+      w.push_primitive({
+        id: `c-arc-rules-${arc.arc_id}`,
+        type: "arc_rules",
+        a_id: arc.arc_id,
+      } as any);
     }
 
     // 4b. Coincident / concentric constraints
