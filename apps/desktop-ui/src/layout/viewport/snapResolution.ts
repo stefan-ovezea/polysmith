@@ -34,7 +34,8 @@ export interface SketchSnapCandidate {
     | "center"
     | "intersection"
     | "nearest"
-    | "tangent";
+    | "tangent"
+    | "quadrant";
   hostLineId?: string;
   tValue?: number;
   endpointHostLineId?: string;
@@ -329,7 +330,7 @@ function resolvedStaticSnapFromCandidate({
 }
 
 function isPriorityStaticSnap(candidate: SketchSnapCandidate) {
-  return candidate.kind === "endpoint" || candidate.kind === "midpoint";
+  return candidate.kind === "endpoint" || candidate.kind === "midpoint" || candidate.kind === "quadrant";
 }
 
 type ResolvedDynamicSnap = {
@@ -377,6 +378,7 @@ function resolveDynamicSnap({
   const bestDynamic = dynamicSnapCandidate({
     lines: sketchParameters.lines,
     circles: sketchParameters.circles,
+    arcs: sketchParameters.arcs,
     filter,
     draftStart: draftStartLocal,
     cursor: point.local,
@@ -541,6 +543,13 @@ function appendCoreSnapCandidates(
           kind: "center",
         });
         break;
+      case "quadrant":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "quadrant",
+        });
+        break;
       default:
         candidates.push({
           local: [candidate.local_x, candidate.local_y],
@@ -682,6 +691,19 @@ interface SketchSnapCircle {
   is_construction: boolean;
 }
 
+interface SketchSnapArc {
+  arc_id: string;
+  center_x: number;
+  center_y: number;
+  radius: number;
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  ccw: boolean;
+  is_construction: boolean;
+}
+
 function closerDynamicSnap(
   current: DynamicSnapResult | null,
   candidate: DynamicSnapResult | null,
@@ -702,6 +724,7 @@ function closerDynamicSnap(
 function collectInferenceVertices(
   lines: readonly SketchSnapLine[],
   circles: readonly SketchSnapCircle[],
+  arcs: readonly SketchSnapArc[],
 ): Array<[number, number]> {
   const vertices: Array<[number, number]> = [];
   for (const line of lines) {
@@ -712,6 +735,12 @@ function collectInferenceVertices(
   for (const circle of circles) {
     if (circle.is_construction) continue;
     vertices.push([circle.center_x, circle.center_y]);
+  }
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    vertices.push([arc.center_x, arc.center_y]);
+    vertices.push([arc.start_x, arc.start_y]);
+    vertices.push([arc.end_x, arc.end_y]);
   }
   return vertices;
 }
@@ -727,6 +756,7 @@ function speculativeAlignmentInferenceSnap({
   cursor,
   lines,
   circles,
+  arcs,
   threshold,
   labels,
 }: {
@@ -734,13 +764,14 @@ function speculativeAlignmentInferenceSnap({
   cursor: [number, number];
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
   threshold: number;
   labels: {
     axisLockHorizontal: string;
     axisLockVertical: string;
   };
 }): DynamicSnapResult | null {
-  const vertices = collectInferenceVertices(lines, circles);
+  const vertices = collectInferenceVertices(lines, circles, arcs);
   if (vertices.length === 0) return null;
 
   const [sx, sy] = draftStart;
@@ -814,6 +845,7 @@ function speculativeAlignmentInferenceSnap({
 export function dynamicSnapCandidate({
   lines,
   circles,
+  arcs,
   filter,
   draftStart,
   cursor,
@@ -827,6 +859,7 @@ export function dynamicSnapCandidate({
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
   filter: SelectionFilter;
   draftStart: [number, number] | null | undefined;
   cursor: [number, number];
@@ -913,6 +946,7 @@ export function dynamicSnapCandidate({
           cursor,
           lines,
           circles,
+          arcs,
           threshold,
           labels,
         });
@@ -948,6 +982,14 @@ export function dynamicSnapCandidate({
       });
       best = closerDynamicSnap(best, circleSpec);
     }
+
+    if (filter.snap_arc_body) {
+      const arcSpec = speculativeArcBodySnap({
+        arcs, cursor, threshold,
+        snapLabel: labels.onCircle,
+      });
+      best = closerDynamicSnap(best, arcSpec);
+    }
   }
 
   if (draftStart) {
@@ -963,7 +1005,7 @@ export function dynamicSnapCandidate({
       const spec = speculativeTangentSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
-        circles, draftStart, cursor,
+        circles, arcs, draftStart, cursor,
         threshold,
         snapLabel: labels.tangent,
       });
@@ -1082,6 +1124,7 @@ const SNAP_FILTER_KEY_BY_KIND = {
   intersection: "snap_intersection",
   nearest: "snap_nearest",
   tangent: "snap_tangent",
+  quadrant: "snap_quadrant",
 } satisfies Record<SketchSnapKind, keyof SelectionFilter>;
 
 function selectionFilterKeyForSnapKind(kind: SketchSnapKind) {
@@ -1244,6 +1287,7 @@ function speculativeTangentSnap({
   sketchParameters,
   constraints,
   circles,
+  arcs,
   draftStart,
   cursor,
   threshold,
@@ -1252,6 +1296,7 @@ function speculativeTangentSnap({
   sketchParameters: SketchFeatureParameters | null;
   constraints: SketchConstraintData[];
   circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
   draftStart: [number, number];
   cursor: [number, number];
   threshold: number;
@@ -1288,8 +1333,44 @@ function speculativeTangentSnap({
     }
   }
 
-  if (!bestCircle) {
-    _snapDebug("no_circle", `circles=${circles.length}`);
+  // Arc tangents — compute tangent points on the full circle containing each
+  // arc, then keep only those whose angle falls within the arc's sweep.
+  let bestArc: (typeof arcs)[number] | null = null;
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    const pcDx = arc.center_x - draftStart[0];
+    const pcDy = arc.center_y - draftStart[1];
+    const pcDist = Math.hypot(pcDx, pcDy);
+    if (pcDist <= arc.radius + 1e-9) continue;
+
+    const alpha = Math.asin(arc.radius / pcDist);
+    const baseAngle = Math.atan2(pcDy, pcDx);
+    const tangentLen = Math.sqrt(pcDist * pcDist - arc.radius * arc.radius);
+    const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+    const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+    for (const sign of [1, -1]) {
+      const tpDir = baseAngle + sign * alpha;
+      const tpX = draftStart[0] + tangentLen * Math.cos(tpDir);
+      const tpY = draftStart[1] + tangentLen * Math.sin(tpDir);
+      // Check whether the tangent point's angle from the circle center
+      // lies within the arc sweep.  tpDir is the angle from the *draft
+      // start*, not from the center — compute the center-relative angle
+      // from the tangent point coordinates.
+      const tpAngle = Math.atan2(tpY - arc.center_y, tpX - arc.center_x);
+      if (!angleInArcSweep(tpAngle, startAngle, endAngle, arc.ccw)) continue;
+      const tpDist = Math.hypot(cursor[0] - tpX, cursor[1] - tpY);
+      if (tpDist < bestDist) {
+        bestDist = tpDist;
+        bestCircle = null; // clear circle winner
+        bestArc = arc;
+        bestTpX = tpX;
+        bestTpY = tpY;
+      }
+    }
+  }
+
+  if (!bestCircle && !bestArc) {
+    _snapDebug("no_circle", `circles=${circles.length} arcs=${arcs.length}`);
     return null;
   }
 
@@ -1315,7 +1396,7 @@ function speculativeTangentSnap({
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
-    snapTangentCircleId: bestCircle.circle_id,
+    snapTangentCircleId: bestCircle?.circle_id ?? bestArc?.arc_id ?? null,
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
@@ -1630,6 +1711,85 @@ function speculativeCircleBodySnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapCircleBodyHostCircleId: bestCircle.circle_id,
+    snapCircleBodyAngle: bestAngle,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
+    distance: bestDist,
+  };
+}
+
+
+/** True when angle `a` lies within the arc sweep from start to end,
+ *  respecting the ccw flag. All angles are in [-π, π]. */
+function angleInArcSweep(
+  a: number, startAngle: number, endAngle: number, ccw: boolean,
+): boolean {
+  // Normalize all angles to [0, 2π)
+  const norm = (angle: number) => ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const na = norm(a);
+  const ns = norm(startAngle);
+  const ne = norm(endAngle);
+  if (ccw) {
+    if (ns <= ne) return na >= ns && na <= ne;
+    return na >= ns || na <= ne;
+  }
+  // CW
+  if (ns >= ne) return na <= ns && na >= ne;
+  return na <= ns || na >= ne;
+}
+
+function speculativeArcBodySnap({
+  arcs,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  arcs: readonly SketchSnapArc[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  let bestArc: (typeof arcs)[number] | null = null;
+  let bestDist = Infinity;
+  let bestAngle = 0;
+  let bestLocal: [number, number] | null = null;
+
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    const dx = cursor[0] - arc.center_x;
+    const dy = cursor[1] - arc.center_y;
+    const distFromCenter = Math.hypot(dx, dy);
+    if (distFromCenter < 1e-12) continue;
+    const angle = Math.atan2(dy, dx);
+    const x = arc.center_x + arc.radius * Math.cos(angle);
+    const y = arc.center_y + arc.radius * Math.sin(angle);
+    const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+    const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+    if (!angleInArcSweep(angle, startAngle, endAngle, arc.ccw)) continue;
+    const dist = Math.hypot(cursor[0] - x, cursor[1] - y);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestArc = arc;
+      bestAngle = angle;
+      bestLocal = [x, y];
+    }
+  }
+
+  if (!bestArc || !bestLocal) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapCircleBodyHostCircleId: bestArc.arc_id,
     snapCircleBodyAngle: bestAngle,
     snapIntersectionLineIds: null,
     snapInferenceKind: null,

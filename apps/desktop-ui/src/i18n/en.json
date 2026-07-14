@@ -149,6 +149,7 @@
     "midpoint": "Midpoint",
     "nearest": "Nearest (lines)",
     "circleBody": "Circle perimeter",
+    "arcBody": "Arc perimeter",
     "parallel": "Parallel",
     "parallelAngle": "Parallel angle",
     "perpendicular": "Perpendicular",

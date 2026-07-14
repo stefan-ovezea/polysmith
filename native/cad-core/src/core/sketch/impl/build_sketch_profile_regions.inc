@@ -36,27 +36,67 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       });
   auto line_segments = solid_line_segments(parameters);
   const bool use_circle_arrangement_profiles =
-      !has_solid_arcs && has_solid_lines && !solid_circles.empty() &&
+      has_solid_lines && !solid_circles.empty() &&
       any_line_intersects_circle_boundary(line_segments, solid_circles);
 
-  if (!has_solid_arcs) {
-    std::vector<ArrangementFace> arrangement_faces;
-    if (use_circle_arrangement_profiles) {
-      auto segments = line_segments;
-      for (const auto* circle : solid_circles) {
-        auto circle_segments = circle_boundary_segments(*circle);
-        // Split circle boundary segments at tangent-line endpoints so the
-        // arrangement graph connects lines to the circle (see
-        // split_circle_segments_at_line_endpoints for details).
-        split_circle_segments_at_line_endpoints(circle_segments, *circle,
-                                                parameters.lines);
-        segments.insert(segments.end(), circle_segments.begin(),
-                        circle_segments.end());
-      }
-      arrangement_faces = detect_arrangement_faces(segments);
-    } else {
-      arrangement_faces = detect_line_arrangement_faces(parameters);
+  // Build a common arrangement for lines + circles + arcs.  Circles and
+  // arcs are both approximated as polygon segments so that tangent lines
+  // (which don't share vertex IDs with the host curve) still connect
+  // through the shared coordinate graph.
+  const bool use_arrangement =
+      has_solid_lines &&
+      (!solid_circles.empty() || has_solid_arcs);
+
+  if (use_arrangement) {
+    auto segments = line_segments;
+
+    // Circle boundary polygons.
+    for (const auto* circle : solid_circles) {
+      auto circle_segments = circle_boundary_segments(*circle);
+      split_circle_segments_at_line_endpoints(circle_segments, *circle,
+                                              parameters.lines);
+      segments.insert(segments.end(), circle_segments.begin(),
+                      circle_segments.end());
     }
+
+    // Arc boundary polygons — sample only the arc's sweep, not the full
+    // circle, so the arrangement correctly treats the arc as an open curve.
+    for (const auto& arc : parameters.arcs) {
+      if (arc.is_construction) continue;
+      if (arc.radius <= kProfileTolerance) continue;
+
+      const double start_angle = std::atan2(arc.start_y - arc.center_y,
+                                             arc.start_x - arc.center_x);
+      const double end_angle   = std::atan2(arc.end_y   - arc.center_y,
+                                             arc.end_x   - arc.center_x);
+      double sweep = end_angle - start_angle;
+      if (arc.ccw) {
+        while (sweep <= 0.0) sweep += 2.0 * kPi;
+      } else {
+        while (sweep >= 0.0) sweep -= 2.0 * kPi;
+      }
+
+      constexpr int kArcSegments = 64;
+      std::vector<SketchProfilePoint> pts;
+      pts.reserve(kArcSegments + 1);
+      for (int i = 0; i <= kArcSegments; ++i) {
+        const double t = static_cast<double>(i) / kArcSegments;
+        const double a = start_angle + sweep * t;
+        pts.push_back(SketchProfilePoint{
+            .x = arc.center_x + arc.radius * std::cos(a),
+            .y = arc.center_y + arc.radius * std::sin(a),
+        });
+      }
+      for (size_t i = 0; i < pts.size() - 1; ++i) {
+        segments.push_back(LineSegment{
+            .line_id = arc.id,
+            .start = pts[i],
+            .end = pts[i + 1],
+        });
+      }
+    }
+
+    const auto arrangement_faces = detect_arrangement_faces(segments);
 
     auto unsplit_source_circle_id =
         [&](const ArrangementFace& face) -> std::optional<std::string> {
@@ -88,33 +128,161 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           .radius = 0.0,
       });
     }
-  } else {
-    for (const auto& component : split_edge_components(solid_edges)) {
-      if (const auto loop = detect_edge_loop(component); loop.has_value()) {
-        profiles.push_back(SketchProfileRegion{
-            .id = make_polygon_profile_id(loop->edge_ids),
-            .kind = "polygon",
-            .vertex_ids = loop->vertex_ids,
-            // `line_ids` historically held line ids; with arcs in the
-            // mix this field carries mixed line + arc edge ids. The
-            // downstream UI uses it to compute "which entities does
-            // this profile depend on" for cascade-delete, which works
-            // as long as the ids resolve to entities.
-            .line_ids = loop->edge_ids,
-            .points = loop->points,
-            .inner_loops = {},
-            .source_circle_id = std::nullopt,
-            .center_x = 0.0,
-            .center_y = 0.0,
-            .radius = 0.0,
-        });
+  } else if (!has_solid_arcs) {
+    const auto arrangement_faces =
+        detect_line_arrangement_faces(parameters);
+    for (const auto& face : arrangement_faces) {
+      profiles.push_back(SketchProfileRegion{
+          .id = make_polygon_profile_id(face.line_ids) + "-" +
+                make_polygon_profile_id(face.vertex_ids),
+          .kind = "polygon",
+          .vertex_ids = face.vertex_ids,
+          .line_ids = face.line_ids,
+          .points = face.points,
+          .inner_loops = {},
+          .source_circle_id = std::nullopt,
+          .center_x = 0.0,
+          .center_y = 0.0,
+          .radius = 0.0,
+      });
+    }
+  }
+
+  // Split arc edges at line endpoints that lie on the arc, so tangent
+  // lines connect to the arc in the edge-loop graph (same principle as
+  // split_circle_segments_at_line_endpoints for circles).
+  {
+    auto norm_angle = [](double a) {
+      a = std::fmod(a, 2.0 * kPi);
+      if (a < 0.0) a += 2.0 * kPi;
+      return a;
+    };
+    auto angle_in_sweep = [&](double a, double ns, double ne, bool ccw) {
+      double na = norm_angle(a);
+      if (ccw) {
+        if (ns <= ne) return na >= ns && na <= ne;
+        return na >= ns || na <= ne;
       }
+      if (ns >= ne) return na <= ns && na >= ne;
+      return na <= ns || na >= ne;
+    };
+
+    std::vector<ProfileEdge> split_arc_edges;
+    for (const auto& edge : solid_edges) {
+      if (edge.kind != ProfileEdge::Kind::Arc) continue;
+
+      const double ns = norm_angle(std::atan2(edge.start_y - edge.center_y, edge.start_x - edge.center_x));
+      const double ne = norm_angle(std::atan2(edge.end_y   - edge.center_y, edge.end_x   - edge.center_x));
+
+      // Collect split points (angles of line endpoints on this arc).
+      std::vector<double> split_angles;
+      for (const auto& line : parameters.lines) {
+        if (line.is_construction) continue;
+        for (bool is_start : {true, false}) {
+          const double px = is_start ? line.start_x : line.end_x;
+          const double py = is_start ? line.start_y : line.end_y;
+          const double dx = px - edge.center_x;
+          const double dy = py - edge.center_y;
+          const double dist = std::sqrt(dx * dx + dy * dy);
+          if (std::abs(dist - edge.radius) > kProfileTolerance) continue;
+          const double pt_angle = std::atan2(py - edge.center_y, px - edge.center_x);
+          if (!angle_in_sweep(pt_angle, ns, ne, edge.ccw)) continue;
+          if (points_match(SketchProfilePoint{.x=px,.y=py},
+                           SketchProfilePoint{.x=edge.start_x,.y=edge.start_y}) ||
+              points_match(SketchProfilePoint{.x=px,.y=py},
+                           SketchProfilePoint{.x=edge.end_x,.y=edge.end_y})) continue;
+          split_angles.push_back(pt_angle);
+        }
+      }
+
+      if (split_angles.empty()) {
+        split_arc_edges.push_back(edge);
+        continue;
+      }
+
+      // Sort by angular position along the sweep.
+      const double sns = ns;
+      const bool sccw = edge.ccw;
+      std::sort(split_angles.begin(), split_angles.end(),
+                [&](double a, double b) {
+                  auto dist_from_start = [sns, sccw](double ang) {
+                    double da = std::fmod(ang, 2.0 * kPi) - sns;
+                    if (da < 0.0) da += 2.0 * kPi;
+                    if (sccw) { while (da < 0.0) da += 2.0 * kPi; }
+                    else      { while (da > 0.0) da -= 2.0 * kPi; }
+                    return da;
+                  };
+                  return dist_from_start(a) < dist_from_start(b);
+                });
+      // Deduplicate.
+      split_angles.erase(std::unique(split_angles.begin(), split_angles.end(),
+                                     [](double a, double b) {
+                                       auto n = [](double v) {
+                                         v = std::fmod(v, 2.0 * kPi);
+                                         return v < 0.0 ? v + 2.0 * kPi : v;
+                                       };
+                                       return std::abs(n(a) - n(b)) < 1e-12;
+                                     }),
+                         split_angles.end());
+
+      // Build edge pieces.
+      double prev_x = edge.start_x;
+      double prev_y = edge.start_y;
+      for (double a : split_angles) {
+        const double sx = edge.center_x + edge.radius * std::cos(a);
+        const double sy = edge.center_y + edge.radius * std::sin(a);
+        split_arc_edges.push_back(ProfileEdge{
+            .id = edge.id, .kind = ProfileEdge::Kind::Arc,
+            .start_vertex_id = "", .end_vertex_id = "",
+            .start_x = prev_x, .start_y = prev_y,
+            .end_x = sx, .end_y = sy,
+            .center_x = edge.center_x, .center_y = edge.center_y,
+            .radius = edge.radius, .ccw = edge.ccw,
+        });
+        prev_x = sx;
+        prev_y = sy;
+      }
+      split_arc_edges.push_back(ProfileEdge{
+          .id = edge.id, .kind = ProfileEdge::Kind::Arc,
+          .start_vertex_id = "", .end_vertex_id = "",
+          .start_x = prev_x, .start_y = prev_y,
+          .end_x = edge.end_x, .end_y = edge.end_y,
+          .center_x = edge.center_x, .center_y = edge.center_y,
+          .radius = edge.radius, .ccw = edge.ccw,
+      });
+    }
+    // Replace arc edges with split versions, keeping line edges as-is.
+    std::vector<ProfileEdge> new_edges;
+    for (const auto& edge : solid_edges) {
+      if (edge.kind != ProfileEdge::Kind::Arc) {
+        new_edges.push_back(edge);
+      }
+    }
+    new_edges.insert(new_edges.end(), split_arc_edges.begin(), split_arc_edges.end());
+    solid_edges = std::move(new_edges);
+  }
+
+  // Arc / line edge-loop profiles (when solid arcs are present).
+  for (const auto& component : split_edge_components(solid_edges)) {
+    if (const auto loop = detect_edge_loop(component); loop.has_value()) {
+      profiles.push_back(SketchProfileRegion{
+          .id = make_polygon_profile_id(loop->edge_ids),
+          .kind = "polygon",
+          .vertex_ids = loop->vertex_ids,
+          .line_ids = loop->edge_ids,
+          .points = loop->points,
+          .inner_loops = {},
+          .source_circle_id = std::nullopt,
+          .center_x = 0.0,
+          .center_y = 0.0,
+          .radius = 0.0,
+      });
     }
   }
 
   apply_nested_polygon_holes(profiles);
 
-  if (use_circle_arrangement_profiles) {
+  if (use_arrangement) {
     return profiles;
   }
 

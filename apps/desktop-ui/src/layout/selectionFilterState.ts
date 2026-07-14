@@ -13,6 +13,7 @@ export const defaultSelectionFilter: SelectionFilter = {
   snap_intersection: true,
   snap_nearest: true,
   snap_circle_body: true,
+  snap_arc_body: true,
   snap_quadrant: true,
   snap_perpendicular: true,
   snap_parallel: true,

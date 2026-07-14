@@ -9,7 +9,8 @@ export type ConstraintPreviewKind =
   | "vertical"
   | "tangent"
   | "endpoint"
-  | "parallel";
+  | "parallel"
+  | "quadrant";
 
 export interface ConstraintPreviewState {
   kind: ConstraintPreviewKind;
@@ -52,6 +53,9 @@ export function constraintPreviewFromSnap(
   }
   if (sketchPoint.snapTangentCircleId) {
     return { kind: "tangent", x, y };
+  }
+  if (sketchPoint.snapTargetKey?.startsWith("static:quadrant:")) {
+    return { kind: "quadrant", x, y };
   }
   return null;
 }

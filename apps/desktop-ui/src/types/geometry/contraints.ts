@@ -16,6 +16,9 @@ export type ConstraintType =
   // A point bound to a host line's body at parametric position `t`.
   // Rendered as a "/" badge at the bound point's position.
   | "on_line"
+  // Cardinal (quadrant) point badge on circles and arcs.
+  // Rendered as a "Q" badge at the quadrant position.
+  | "quadrant"
   // Mirror tool (technically an editing op, not a constraint, but
   // it shares the armed-sketch-constraint flow: pick axis line,
   // pick entities, each pick mirrors immediately).

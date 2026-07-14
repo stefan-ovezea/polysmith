@@ -29,15 +29,25 @@ void enforce_tangent_line_circle_relations(
         [&](const SketchCircle& circle) {
           return circle.id == relation.second_line_id;
         });
-    if (circle_it == parameters.circles.end()) {
+    const auto arc_it = std::find_if(
+        parameters.arcs.begin(),
+        parameters.arcs.end(),
+        [&](const SketchArc& arc) {
+          return arc.id == relation.second_line_id;
+        });
+    if (circle_it == parameters.circles.end() &&
+        arc_it == parameters.arcs.end()) {
       continue;
     }
 
     const double sx = line_it->start_x;
     const double sy = line_it->start_y;
-    const double cx = circle_it->center_x;
-    const double cy = circle_it->center_y;
-    const double r = circle_it->radius;
+    const double cx = circle_it != parameters.circles.end()
+                          ? circle_it->center_x : arc_it->center_x;
+    const double cy = circle_it != parameters.circles.end()
+                          ? circle_it->center_y : arc_it->center_y;
+    const double r = circle_it != parameters.circles.end()
+                         ? circle_it->radius : arc_it->radius;
     const double dx = cx - sx;
     const double dy = cy - sy;
     const double d_squared = dx * dx + dy * dy;
