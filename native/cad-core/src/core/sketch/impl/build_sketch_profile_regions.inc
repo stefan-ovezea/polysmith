@@ -45,6 +45,11 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       auto segments = line_segments;
       for (const auto* circle : solid_circles) {
         auto circle_segments = circle_boundary_segments(*circle);
+        // Split circle boundary segments at tangent-line endpoints so the
+        // arrangement graph connects lines to the circle (see
+        // split_circle_segments_at_line_endpoints for details).
+        split_circle_segments_at_line_endpoints(circle_segments, *circle,
+                                                parameters.lines);
         segments.insert(segments.end(), circle_segments.begin(),
                         circle_segments.end());
       }

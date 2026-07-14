@@ -28,7 +28,12 @@ void validate_parameters(const ExtrudeFeatureParameters& parameters) {
   }
   const auto validate_side = [](const ExtrudeFeatureParameters::SideParameters& side,
                                 const std::string& label) {
-    if (side.distance <= 0.0) {
+    // Zero distance would build a degenerate face-only shape with no
+    // volume to boolean against. Negative distances are allowed —
+    // resolved_side_distance() treats them as a signal to fall back
+    // to std::abs(depth) so the user can flip extrusion direction
+    // by entering a negative depth value.
+    if (side.distance == 0.0) {
       throw std::runtime_error(label + " distance must be greater than zero");
     }
     if (side.start_offset < 0.0) {

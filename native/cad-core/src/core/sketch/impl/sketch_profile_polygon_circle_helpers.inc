@@ -65,14 +65,39 @@ SketchProfilePoint polygon_centroid(
     return SketchProfilePoint{.x = 0.0, .y = 0.0};
   }
 
-  double x = 0.0;
-  double y = 0.0;
-  for (const auto& point : polygon) {
-    x += point.x;
-    y += point.y;
+  // Use the geometric (area-weighted) centroid rather than the vertex
+  // average.  The vertex average is biased toward densely-sampled
+  // edges (e.g. a circle arc in a wedge profile) and can land outside
+  // the polygon's interior, breaking the nesting logic in
+  // apply_nested_polygon_holes.
+  double signed_area = 0.0;
+  double cx = 0.0;
+  double cy = 0.0;
+
+  for (size_t i = 0; i < polygon.size(); ++i) {
+    const size_t j = (i + 1) % polygon.size();
+    const double cross =
+        polygon[i].x * polygon[j].y - polygon[j].x * polygon[i].y;
+    signed_area += cross;
+    cx += (polygon[i].x + polygon[j].x) * cross;
+    cy += (polygon[i].y + polygon[j].y) * cross;
   }
-  const double count = static_cast<double>(polygon.size());
-  return SketchProfilePoint{.x = x / count, .y = y / count};
+
+  // Fall back to vertex average if the polygon is degenerate (zero or
+  // near-zero area).
+  if (std::abs(signed_area) <= kProfileTolerance * kProfileTolerance) {
+    double x = 0.0;
+    double y = 0.0;
+    for (const auto& point : polygon) {
+      x += point.x;
+      y += point.y;
+    }
+    const double count = static_cast<double>(polygon.size());
+    return SketchProfilePoint{.x = x / count, .y = y / count};
+  }
+
+  const double factor = 1.0 / (3.0 * signed_area);
+  return SketchProfilePoint{.x = cx * factor, .y = cy * factor};
 }
 
 bool circle_contains_circle(const SketchCircle& outer,
@@ -240,4 +265,73 @@ bool any_line_intersects_circle_boundary(
     }
   }
   return false;
+}
+
+// Split circle boundary segments at line endpoints that lie on the circle
+// boundary. Tangent lines have endpoints on the mathematical circle that may
+// not intersect any polygon chord (chords are slightly inside the true circle
+// arc).  Without splitting, the arrangement graph never connects the line to
+// the circle and the line-circle-line wedge region is missed.
+void split_circle_segments_at_line_endpoints(
+    std::vector<LineSegment>& circle_segments,
+    const SketchCircle& circle,
+    const std::vector<SketchLine>& lines) {
+  if (circle_segments.empty()) {
+    return;
+  }
+
+  for (const auto& line : lines) {
+    if (line.is_construction) {
+      continue;
+    }
+
+    // Check both endpoints of every solid line.
+    const SketchProfilePoint endpoints[2] = {
+        {.x = line.start_x, .y = line.start_y},
+        {.x = line.end_x, .y = line.end_y}};
+
+    for (const auto& endpoint : endpoints) {
+      const double dx = endpoint.x - circle.center_x;
+      const double dy = endpoint.y - circle.center_y;
+      const double dist = std::sqrt(dx * dx + dy * dy);
+      if (std::abs(dist - circle.radius) > kProfileTolerance) {
+        continue;
+      }
+
+      // Find the circle segment that contains this endpoint.
+      // Compute angle and locate the segment whose arc covers it.
+      const double angle = std::atan2(dy, dx);
+      const double angle_norm =
+          angle < 0.0 ? angle + 2.0 * kPi : angle;
+      const double seg_width = 2.0 * kPi / circle_segments.size();
+      int seg_index =
+          static_cast<int>(std::floor(angle_norm / seg_width));
+      if (seg_index < 0) seg_index += circle_segments.size();
+      if (seg_index >= static_cast<int>(circle_segments.size())) {
+        seg_index = 0;
+      }
+
+      auto& seg = circle_segments[seg_index];
+
+      // Skip if the endpoint already coincides with a segment vertex.
+      if (points_match(endpoint, seg.start) ||
+          points_match(endpoint, seg.end)) {
+        continue;
+      }
+
+      // Split the segment at the endpoint.
+      const auto original_end = seg.end;
+      seg.end = endpoint;
+      circle_segments.push_back(LineSegment{
+          .line_id = circle.id,
+          .start = endpoint,
+          .end = original_end,
+      });
+
+      // After the push_back, circle_segments might have reallocated,
+      // so the `seg` reference is invalid. That's fine — we only
+      // modify one segment per endpoint and break out of the loop
+      // for this endpoint.
+    }
+  }
 }
