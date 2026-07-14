@@ -59,8 +59,11 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
                       circle_segments.end());
     }
 
-    // Arc boundary polygons — sample only the arc's sweep, not the full
-    // circle, so the arrangement correctly treats the arc as an open curve.
+    // Arc boundary polygons — sample only the arc's sweep and split
+    // at line endpoints so tangent lines connect through shared
+    // coordinates (same strategy as split_circle_segments_at_line_endpoints
+    // for circles).  Without the split the line endpoint and nearest
+    // polyline vertex may be further apart than kProfileTolerance.
     for (const auto& arc : parameters.arcs) {
       if (arc.is_construction) continue;
       if (arc.radius <= kProfileTolerance) continue;
@@ -76,9 +79,53 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
         while (sweep >= 0.0) sweep -= 2.0 * kPi;
       }
 
+      // Collect tangent point angles for this arc.
+      auto norm = [](double a) {
+        a = std::fmod(a, 2.0 * kPi);
+        return a < 0.0 ? a + 2.0 * kPi : a;
+      };
+      auto in_sweep = [&](double a) {
+        const double ns = norm(start_angle);
+        const double ne = norm(end_angle);
+        const double na = norm(a);
+        if (arc.ccw) {
+          if (ns <= ne) return na >= ns && na <= ne;
+          return na >= ns || na <= ne;
+        }
+        if (ns >= ne) return na <= ns && na >= ne;
+        return na <= ns || na >= ne;
+      };
+
+      std::vector<double> split_angles;
+      for (const auto& line : parameters.lines) {
+        if (line.is_construction) continue;
+        {
+          const double px = line.start_x;
+          const double py = line.start_y;
+          const double dx = px - arc.center_x;
+          const double dy = py - arc.center_y;
+          const double dist = std::sqrt(dx * dx + dy * dy);
+          if (std::abs(dist - arc.radius) <= kProfileTolerance) {
+            const double a = std::atan2(dy, dx);
+            if (in_sweep(a)) split_angles.push_back(a);
+          }
+        }
+        {
+          const double px = line.end_x;
+          const double py = line.end_y;
+          const double dx = px - arc.center_x;
+          const double dy = py - arc.center_y;
+          const double dist = std::sqrt(dx * dx + dy * dy);
+          if (std::abs(dist - arc.radius) > kProfileTolerance) continue;
+          const double a = std::atan2(dy, dx);
+          if (!in_sweep(a)) continue;
+          split_angles.push_back(a);
+        }
+      }
+
       constexpr int kArcSegments = 64;
       std::vector<SketchProfilePoint> pts;
-      pts.reserve(kArcSegments + 1);
+      pts.reserve(kArcSegments + 1 + split_angles.size());
       for (int i = 0; i <= kArcSegments; ++i) {
         const double t = static_cast<double>(i) / kArcSegments;
         const double a = start_angle + sweep * t;
@@ -87,6 +134,56 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
             .y = arc.center_y + arc.radius * std::sin(a),
         });
       }
+
+      // Insert split points sorted by angular position along the sweep.
+      if (!split_angles.empty()) {
+        std::sort(split_angles.begin(), split_angles.end(),
+                  [&](double a, double b) {
+                    auto dist = [&](double ang) {
+                      double da = norm(ang) - norm(start_angle);
+                      if (arc.ccw) { while (da < 0.0) da += 2.0 * kPi; }
+                      else         { while (da > 0.0) da -= 2.0 * kPi; }
+                      return da;
+                    };
+                    return dist(a) < dist(b);
+                  });
+        // Deduplicate and filter those already at endpoints.
+        split_angles.erase(
+            std::unique(split_angles.begin(), split_angles.end(),
+                        [&](double a, double b) {
+                          return std::abs(norm(a) - norm(b)) < 1e-12;
+                        }),
+            split_angles.end());
+        // Insert each split point as a new vertex.
+        std::vector<SketchProfilePoint> merged;
+        merged.reserve(pts.size() + split_angles.size());
+        size_t si = 0;
+        for (const auto& pt : pts) {
+          // Insert any split angles that fall between the previous and
+          // current sample point along the sweep direction.
+          double pt_a = std::atan2(pt.y - arc.center_y, pt.x - arc.center_x);
+          while (si < split_angles.size()) {
+            auto dist = [&](double ang) {
+              double da = norm(ang) - norm(start_angle);
+              if (arc.ccw) { while (da < 0.0) da += 2.0 * kPi; }
+              else         { while (da > 0.0) da -= 2.0 * kPi; }
+              return da;
+            };
+            if (dist(split_angles[si]) < dist(pt_a) + 1e-12) {
+              merged.push_back(SketchProfilePoint{
+                  .x = arc.center_x + arc.radius * std::cos(split_angles[si]),
+                  .y = arc.center_y + arc.radius * std::sin(split_angles[si]),
+              });
+              ++si;
+            } else {
+              break;
+            }
+          }
+          merged.push_back(pt);
+        }
+        pts = std::move(merged);
+      }
+
       for (size_t i = 0; i < pts.size() - 1; ++i) {
         segments.push_back(LineSegment{
             .line_id = arc.id,
