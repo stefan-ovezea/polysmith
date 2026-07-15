@@ -37,12 +37,13 @@ const snapTypeRows: FilterRow[] = [
   { key: "snap_center", labelKey: "selectionFilter.center" },
   { key: "snap_intersection", labelKey: "selectionFilter.intersection" },
   { key: "snap_nearest", labelKey: "selectionFilter.nearest" },
+  { key: "snap_circle_body", labelKey: "selectionFilter.circleBody" },
+  { key: "snap_arc_body", labelKey: "selectionFilter.arcBody" },
   { key: "snap_quadrant", labelKey: "selectionFilter.quadrant" },
   { key: "snap_perpendicular", labelKey: "selectionFilter.perpendicular" },
   { key: "snap_parallel", labelKey: "selectionFilter.parallel" },
   { key: "snap_tangent", labelKey: "selectionFilter.tangent" },
   { key: "snap_grid", labelKey: "selectionFilter.grid" },
-  { key: "snap_grid_line", labelKey: "selectionFilter.gridLine" },
   { key: "snap_polar", labelKey: "selectionFilter.polar" },
 ];
 
@@ -136,6 +137,16 @@ export function SelectionFilterPanel({
     onChange(next);
   }
 
+  function handleParallelAngle(val: string) {
+    const degrees = Number.parseInt(val, 10);
+    if (Number.isNaN(degrees) || degrees <= 0 || degrees > 45) {
+      return;
+    }
+    const next = { ...draft, parallel_angle_degrees: degrees };
+    setDraft(next);
+    onChange(next);
+  }
+
   function renderCheckboxRow(row: FilterRow) {
     return (
       <label
@@ -198,6 +209,25 @@ export function SelectionFilterPanel({
                 min={5}
                 max={90}
                 step={5}
+              />
+              <span className="text-on-surface-muted">
+                {t("selectionFilter.degreesShort")}
+              </span>
+            </span>
+          </label>
+          <label className="mt-3 flex items-center justify-between gap-4 rounded-xl px-2 py-2 text-sm text-on-surface">
+            <span className="text-on-surface-muted">
+              {t("selectionFilter.parallelAngle")}
+            </span>
+            <span className="flex items-center gap-1">
+              <input
+                className="cad-input w-16 text-right text-sm"
+                type="number"
+                value={draft.parallel_angle_degrees}
+                onChange={(event) => handleParallelAngle(event.target.value)}
+                min={1}
+                max={45}
+                step={1}
               />
               <span className="text-on-surface-muted">
                 {t("selectionFilter.degreesShort")}

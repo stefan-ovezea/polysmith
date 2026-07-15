@@ -27,6 +27,23 @@
             const double my = (line.start_y + line.end_y) / 2.0;
             snap_candidates.push_back({.kind="midpoint",.entity_id=line.id,.vertex_id="",.local_x=mx,.local_y=my,.distance=0,.label="Midpoint"});
           }
+          for (const auto& arc : sketch.arcs) {
+            if (arc.is_construction && !filter.select_construction) continue;
+            const double r = arc.radius;
+            const double start_angle = std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+            const double end_angle   = std::atan2(arc.end_y   - arc.center_y, arc.end_x   - arc.center_x);
+            double sweep = end_angle - start_angle;
+            if (arc.ccw) {
+              while (sweep <= 0.0) sweep += 2.0 * M_PI;
+            } else {
+              while (sweep >= 0.0) sweep -= 2.0 * M_PI;
+            }
+            const double mid_angle = start_angle + sweep * 0.5;
+            snap_candidates.push_back({.kind="midpoint",.entity_id=arc.id,.vertex_id="",
+                .local_x=arc.center_x + r * std::cos(mid_angle),
+                .local_y=arc.center_y + r * std::sin(mid_angle),
+                .distance=0,.label="Midpoint"});
+          }
         }
         // Centers
         if (filter.snap_center) {
@@ -43,7 +60,7 @@
             snap_candidates.push_back({.kind="center",.entity_id=poly.id,.vertex_id="",.local_x=poly.center_x,.local_y=poly.center_y,.distance=0,.label="Center"});
           }
         }
-        // Quadrant points (4 per circle)
+        // Quadrant points (4 per circle, plus cardinal points within arc sweeps)
         if (filter.snap_quadrant) {
           for (const auto& circle : sketch.circles) {
             if (circle.is_construction && !filter.select_construction) continue;
@@ -54,6 +71,45 @@
             snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy+r,.distance=0,.label="Quadrant"});
             snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx-r,.local_y=cy,.distance=0,.label="Quadrant"});
             snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy-r,.distance=0,.label="Quadrant"});
+          }
+          for (const auto& arc : sketch.arcs) {
+            if (arc.is_construction && !filter.select_construction) continue;
+            const double cx = arc.center_x;
+            const double cy = arc.center_y;
+            const double r = arc.radius;
+            // Normalise to [0, 2π) so angles at the ±π boundary don't
+            // bounce and break the sweep test.
+            auto norm = [](double angle) {
+              angle = std::fmod(angle, 2.0 * M_PI);
+              if (angle < 0.0) angle += 2.0 * M_PI;
+              return angle;
+            };
+            const double ns = norm(std::atan2(arc.start_y - cy, arc.start_x - cx));
+            const double ne = norm(std::atan2(arc.end_y   - cy, arc.end_x   - cx));
+            // Cardinal angles in sketch-plane coords: 0°=east, 90°=north, 180°=west, 270°=south.
+            const double cardinals[4] = {0.0, M_PI_2, M_PI, M_PI + M_PI_2};
+            for (const double angle : cardinals) {
+              const double a = norm(angle);
+              // Check whether `a` lies within the sweep from start to end.
+              bool on_arc = false;
+              if (arc.ccw) {
+                if (ns <= ne) {
+                  on_arc = a >= ns && a <= ne;
+                } else {
+                  on_arc = a >= ns || a <= ne;
+                }
+              } else {
+                if (ns >= ne) {
+                  on_arc = a <= ns && a >= ne;
+                } else {
+                  on_arc = a <= ns || a >= ne;
+                }
+              }
+              if (!on_arc) continue;
+              snap_candidates.push_back({.kind="quadrant",.entity_id=arc.id,.vertex_id="",
+                  .local_x=cx + r * std::cos(a),.local_y=cy + r * std::sin(a),
+                  .distance=0,.label="Quadrant"});
+            }
           }
         }
         // Intersection points (line-line and line-arc)
@@ -75,6 +131,53 @@
               const double u = ((b.start_x - a.start_x) * a_dy - (b.start_y - a.start_y) * a_dx) / denom;
               if (t < 0.0 || t > 1.0 || u < 0.0 || u > 1.0) continue;
               snap_candidates.push_back({.kind="intersection",.entity_id=a.id,.vertex_id="",.local_x=a.start_x+t*a_dx,.local_y=a.start_y+t*a_dy,.distance=0,.label="Intersection"});
+            }
+          }
+          // Arc-arc intersections
+          for (size_t i = 0; i < sketch.arcs.size(); ++i) {
+            const auto& a = sketch.arcs[i];
+            if (a.is_construction && !filter.select_construction) continue;
+            for (size_t j = i + 1; j < sketch.arcs.size(); ++j) {
+              const auto& b = sketch.arcs[j];
+              if (b.is_construction && !filter.select_construction) continue;
+              const double dx = b.center_x - a.center_x;
+              const double dy = b.center_y - a.center_y;
+              const double d = std::hypot(dx, dy);
+              if (d < 1e-12) continue;                      // concentric
+              if (d > a.radius + b.radius + 1e-12) continue; // too far
+              if (d < std::abs(a.radius - b.radius) - 1e-12) continue; // one inside other
+              const double d2 = d * d;
+              const double r1sq = a.radius * a.radius;
+              const double r2sq = b.radius * b.radius;
+              const double a_val = (r1sq - r2sq + d2) / (2.0 * d);
+              const double h_sq = r1sq - a_val * a_val;
+              if (h_sq < 0.0) continue;
+              const double h = std::sqrt(h_sq > 0.0 ? h_sq : 0.0);
+              const double px = a.center_x + a_val * dx / d;
+              const double py = a.center_y + a_val * dy / d;
+              for (double sign : {-1.0, 1.0}) {
+                double ix = px + sign * h * (-dy / d);
+                double iy = py + sign * h * ( dx / d);
+                // Check intersection lies on both arcs.
+                auto angle_on_arc = [](const auto& arc, double x, double y) {
+                  double angle = std::atan2(y - arc.center_y, x - arc.center_x);
+                  double start_a = std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+                  double end_a   = std::atan2(arc.end_y   - arc.center_y, arc.end_x   - arc.center_x);
+                  double sweep = end_a - start_a;
+                  if (arc.ccw) {
+                    while (sweep <= 0.0) sweep += 2.0 * M_PI;
+                    double da = angle - start_a;
+                    while (da < 0.0) da += 2.0 * M_PI;
+                    return da <= sweep;
+                  }
+                  while (sweep >= 0.0) sweep -= 2.0 * M_PI;
+                  double da = angle - start_a;
+                  while (da > 0.0) da -= 2.0 * M_PI;
+                  return da >= sweep;
+                };
+                if (!angle_on_arc(a, ix, iy) || !angle_on_arc(b, ix, iy)) continue;
+                snap_candidates.push_back({.kind="intersection",.entity_id=a.id,.vertex_id="",.local_x=ix,.local_y=iy,.distance=0,.label="Intersection"});
+              }
             }
           }
           // Line-arc intersections

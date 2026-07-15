@@ -412,6 +412,8 @@ export function ViewportPanel({
   // user is between clicks 2 and 3 (or, in center+start+end mode, a
   // dashed circle while between clicks 1 and 2).
   const previewArcRef = useRef<THREE.Line | null>(null);
+  /** Inference / tracking guide lines (dotted alignment hints). */
+  const previewInferenceRef = useRef<THREE.Line[]>([]);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
   /** Latest trim_preview_result payload from the core (null when idle). */
@@ -1099,6 +1101,7 @@ export function ViewportPanel({
     clearPreviewArc,
     clearPreviewCircle,
     clearPreviewDimension,
+    clearPreviewInference,
     clearPreviewLine,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
@@ -1110,6 +1113,7 @@ export function ViewportPanel({
     previewLineRef,
     previewCircleRef,
     previewArcRef,
+    previewInferenceRef,
     trimSegmentHighlightRef,
     trimArcHighlightRef,
     previewDimensionRef,
@@ -1251,6 +1255,7 @@ export function ViewportPanel({
     previewLineRef.current = null;
     previewCircleRef.current = null;
     previewArcRef.current = null;
+    previewInferenceRef.current = [];
   }
 
   const {
@@ -1617,6 +1622,7 @@ export function ViewportPanel({
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewDimension();
+    clearPreviewInference();
     clearDraftDimensionSession();
     setSketchSnapLabel(null);
     setConstraintPreview(null);
@@ -1636,6 +1642,7 @@ export function ViewportPanel({
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewDimension();
+    clearPreviewInference();
     renderDraftPointerPreview({
       activeSketchTool: session.tool,
       activeSketchPlaneId,
@@ -1654,10 +1661,12 @@ export function ViewportPanel({
       previewCircleRef,
       previewArcRef,
       previewDimensionRef,
+      previewInferenceRef,
       clearPreviewLine,
       clearPreviewCircle,
       clearPreviewArc,
       clearPreviewDimension,
+      clearPreviewInference,
     });
   }
 
@@ -1790,6 +1799,7 @@ export function ViewportPanel({
       sketchConstraints: sketchConstraintsRef.current,
       dynamicSnapsEnabled: options?.dynamicSnapsEnabled,
       objectSnapLatchKey: options?.objectSnapLatchKey,
+      inferenceSnapsEnabled: options?.inferenceSnapsEnabled,
       filter: effectiveFilter,
       activeSketchPlaneId,
       activeSketchPlaneFrame,
@@ -1802,6 +1812,7 @@ export function ViewportPanel({
         axisLockHorizontal: translate("snap.axisLockHorizontal"),
         axisLockVertical: translate("snap.axisLockVertical"),
         onLine: translate("snap.onLine"),
+        onCircle: translate("snap.onCircle"),
         tangent: translate("snap.tangent"),
         perpendicular: translate("snap.perpendicular"),
         parallel: translate("snap.parallel"),
@@ -2486,10 +2497,12 @@ export function ViewportPanel({
         previewCircleRef,
         previewArcRef,
         previewDimensionRef,
+        previewInferenceRef,
         clearPreviewLine,
         clearPreviewCircle,
         clearPreviewArc,
         clearPreviewDimension,
+        clearPreviewInference,
         clearTrimSegmentHighlight,
         clearTrimArcHighlight,
         updateTrimSegmentHighlight,
@@ -3037,12 +3050,13 @@ export function ViewportPanel({
 	        dimensionToolMode: dimensionToolModeRef.current,
 	        polygonSides: polygonSidesRef.current,
 	        isConstruction: sketchToolConstructionRef.current,
-	        clearPreviews: () => {
-	          clearPreviewLine();
-	          clearPreviewCircle();
-	          clearPreviewArc();
-	          clearPreviewDimension();
-	        },
+        clearPreviews: () => {
+          clearPreviewLine();
+          clearPreviewCircle();
+          clearPreviewArc();
+          clearPreviewDimension();
+          clearPreviewInference();
+        },
 	        clearDraftDimensionSession,
 	        suppressDimensionEditorAfterSketchCommit,
 	        scheduleDimensionDeletion,
@@ -3321,6 +3335,7 @@ export function ViewportPanel({
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewDimension();
+    clearPreviewInference();
     setSketchSnapLabel(null);
     setConstraintPreview(null);
     clearDraftDimensionSession();
@@ -3527,11 +3542,13 @@ export function ViewportPanel({
     crosshairCanvasClass,
     crosshairGuideSize,
     isSketchDrawingCursor,
+    isSnapping,
     usesCrosshairGuide,
   } = computeViewportCrosshairState({
     activeSketchPlaneId,
     activeSketchTool,
     crosshairMode: config.viewport.crosshair,
+    isSnapping: sketchSnapLabel !== null,
     viewportSize,
   });
   const isSketchMode = Boolean(activeSketchPlaneId);
@@ -3568,6 +3585,7 @@ export function ViewportPanel({
       hostRef={hostRef}
       isDimensionEditorOpen={isDimensionEditorOpen}
       isSketchDrawingCursor={isSketchDrawingCursor}
+      isSnapping={isSnapping}
       isSketchMode={isSketchMode}
       lineCount={lineCount}
       lineDraftActive={Boolean(lineDraftStartRef.current)}

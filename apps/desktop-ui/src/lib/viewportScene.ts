@@ -603,16 +603,36 @@ function profileContainmentPoint(profile: SketchProfileScene): [number, number] 
   if (profile.profilePoints.length === 0) {
     return [0, 0];
   }
-  const sum = profile.profilePoints.reduce(
-    (accumulator, point) =>
-      [accumulator[0] + point[0], accumulator[1] + point[1]] as [
-        number,
-        number,
-      ],
-    [0, 0] as [number, number],
-  );
-  const count = profile.profilePoints.length;
-  return [sum[0] / count, sum[1] / count];
+
+  // Geometric (area-weighted) centroid.  The vertex average is biased
+  // toward densely-sampled edges (e.g. a circle arc in a wedge profile)
+  // and can land outside the polygon, breaking the nesting logic in
+  // withDisplayProfileHoles and apply_nested_polygon_holes (C++).
+  let signedArea = 0;
+  let cx = 0;
+  let cy = 0;
+
+  for (let i = 0; i < profile.profilePoints.length; i += 1) {
+    const j = (i + 1) % profile.profilePoints.length;
+    const [xi, yi] = profile.profilePoints[i];
+    const [xj, yj] = profile.profilePoints[j];
+    const cross = xi * yj - xj * yi;
+    signedArea += cross;
+    cx += (xi + xj) * cross;
+    cy += (yi + yj) * cross;
+  }
+
+  if (Math.abs(signedArea) <= 1e-8) {
+    // Degenerate polygon — fall back to vertex average.
+    const sum = profile.profilePoints.reduce(
+      (acc, [x, y]) => [acc[0] + x, acc[1] + y] as [number, number],
+      [0, 0] as [number, number],
+    );
+    return [sum[0] / profile.profilePoints.length, sum[1] / profile.profilePoints.length];
+  }
+
+  const factor = 1 / (3 * signedArea);
+  return [cx * factor, cy * factor];
 }
 
 function loopAlreadyPresent(

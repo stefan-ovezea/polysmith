@@ -77,6 +77,32 @@ export function CrosshairGuideOverlay({
   );
 }
 
+interface SnapCursorOverlayProps {
+  pointer: { x: number; y: number } | null;
+  visible: boolean;
+}
+
+/** Small square overlay at the snap point — replaces the crosshair
+ *  guide when the pointer is snapped to a sketch point. */
+export function SnapCursorOverlay({
+  pointer,
+  visible,
+}: SnapCursorOverlayProps) {
+  if (!visible || !pointer) {
+    return null;
+  }
+
+  return (
+    <div
+      className="cad-snap-cursor"
+      style={{
+        left: pointer.x,
+        top: pointer.y,
+      }}
+    />
+  );
+}
+
 export function SelectionRectangleOverlay({
   overlay,
 }: {
@@ -147,6 +173,10 @@ function constraintPreviewGlyph(kind: ConstraintPreviewState["kind"]) {
       return "\u2225";
     case "on_line":
       return "/";
+    case "on_circle":
+      return "c";
+    case "quadrant":
+      return "Q";
   }
 }
 

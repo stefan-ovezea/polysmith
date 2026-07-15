@@ -19,11 +19,17 @@ vi.mock("@/lib/speculativeSolve", () => ({
   speculativeMultiSolve: speculativeMultiSolveMock,
 }));
 
+vi.mock("@/lib/planegcsSolver", () => ({
+  getBridge: () => ({ wrapper: {} }),
+  ensureBridge: vi.fn(),
+}));
+
 const labels = {
   grid: "Grid",
   axisLockHorizontal: "Horizontal",
   axisLockVertical: "Vertical",
   onLine: "On line",
+  onCircle: "On circle",
   tangent: "Tangent",
   perpendicular: "Perpendicular",
   parallel: "Parallel",
@@ -225,5 +231,95 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     expect(latched.snapLabel).toBe("Endpoint A");
     expect(latched.local).toEqual([0, 0]);
     expect(latched.snapTargetKey).toBe("static:endpoint:a");
+  });
+
+  it("resolves tangent-to-circle snap via pure TS geometry", () => {
+    const withCircle = {
+      ...sketchParameters(),
+      circles: [
+        {
+          circle_id: "c1",
+          center_x: 5,
+          center_y: 0,
+          radius: 3,
+          is_construction: false,
+        },
+      ],
+    };
+    // Tangent points from [0,0] to circle center [5,0] radius 3:
+    //   tangentLen = sqrt(5²-3²) = 4
+    //   alpha = asin(3/5) ≈ 0.6435
+    //   tp1 = [4*cos(0.6435), 4*sin(0.6435)] ≈ [3.2, 2.4]
+    //   tp2 = [4*cos(-0.6435), 4*sin(-0.6435)] ≈ [3.2, -2.4]
+    // Cursor at [3.3, 2.3] is closest to tp1 → snap to that tangent line.
+
+    const result = resolveSnappedSketchPoint({
+      rawPoint: { local: [3.3, 2.3], world: [3.3, 0, 2.3] },
+      draftStartLocal: [0, 0],
+      sketchSnapCandidates: [],
+      sketchParameters: withCircle,
+      sketchConstraints: [],
+      dynamicSnapsEnabled: true,
+      filter: {
+        ...defaultSelectionFilter,
+        snap_nearest: false,
+        snap_polar: false,
+        snap_perpendicular: false,
+        snap_parallel: false,
+        snap_intersection: false,
+      },
+      activeSketchPlaneId: "ref-plane-xy",
+      activeSketchPlaneFrame: null,
+      currentGridSpacing: 10,
+      worldUnitsPerPixel: 1,
+      gridSnapScreenDistancePx: 0,
+      sketchSnapDistance: 5,
+      labels,
+    });
+
+    expect(result.snapLabel).toBe("Tangent");
+    expect(result.snapTangentCircleId).toBe("c1");
+    // Snapped position should be on the tangent line from draftStart through tp1
+    expect(result.local[0]).toBeCloseTo(3.216, 1);
+    expect(result.local[1]).toBeCloseTo(2.412, 1);
+  });
+
+  it("resolves perpendicular-to-line snap via speculative solver", () => {
+    // draftStart at [0, 0], cursor at [0, 5], line from [-10, 0] to [10, 0]
+    // draftStart IS on the line (y=0), cursor foot is [0,0] on the segment
+    speculativeSolveMock.mockReturnValue({
+      converged: true,
+      position: [0, 5],
+      distance: 0.1,
+      solverStatus: 0,
+    });
+
+    const result = resolveSnappedSketchPoint({
+      rawPoint: { local: [0.1, 4.9], world: [0.1, 0, 4.9] },
+      draftStartLocal: [0, 0],
+      sketchSnapCandidates: [],
+      sketchParameters: sketchParameters(),
+      sketchConstraints: [],
+      dynamicSnapsEnabled: true,
+      filter: {
+        ...defaultSelectionFilter,
+        snap_nearest: false,
+        snap_polar: false,
+        snap_parallel: false,
+        snap_tangent: false,
+        snap_intersection: false,
+      },
+      activeSketchPlaneId: "ref-plane-xy",
+      activeSketchPlaneFrame: null,
+      currentGridSpacing: 10,
+      worldUnitsPerPixel: 1,
+      gridSnapScreenDistancePx: 0,
+      sketchSnapDistance: 5,
+      labels,
+    });
+
+    expect(result.snapLabel).toBe("Perpendicular");
+    expect(result.snapPerpendicularHostLineId).toBe("l1");
+    expect(speculativeSolveMock).toHaveBeenCalled();
   });
 });

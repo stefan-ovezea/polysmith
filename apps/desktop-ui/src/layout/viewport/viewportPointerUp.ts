@@ -92,6 +92,7 @@ interface ViewportPointerUpParams {
       world: [number, number, number];
     },
     draftStartLocal?: Point2d | null,
+    options?: { inferenceSnapsEnabled?: boolean },
   ) => SketchPreviewPoint;
   setSketchSnapLabel: (label: string | null) => void;
   selectSketchProfile: ActiveSketchPointerUpContext["selectSketchProfile"];
@@ -420,6 +421,7 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
   const sketchPoint = params.resolveSnappedSketchPoint(
     rawPoint,
     params.lineDraftStartRef.current,
+    { inferenceSnapsEnabled: false },
   );
   params.setSketchSnapLabel(sketchPoint.snapLabel);
   commitDraftPointerUp({

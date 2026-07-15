@@ -75,8 +75,11 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     return;
   }
 
-  const { draftStart, draftPreviewLocal } = draftMove;
+  const { draftStart, draftPreviewLocal, sketchPoint } = draftMove;
   if (!draftStart) {
+    // Tool is armed but no line started yet — snap feedback (crosshair
+    // position, snap label, constraint preview) already updated by
+    // resolveDraftPointerMove. Just clear hover and skip the rubber-band.
     params.hoverActions.setHoveredPrimitive(null);
     params.hoverActions.setHoveredReference(null);
     return;
@@ -94,6 +97,10 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     draftStart,
     draftPreviewLocal,
     sketchGroup,
+    inferenceLines: sketchPoint.inferenceLines?.map((gl) => ({
+      from: gl.from,
+      draft: gl.draft,
+    })),
     arcToolMode: params.arcToolMode,
     circleToolMode: params.circleToolMode,
     rectangleToolMode: params.rectangleToolMode,
@@ -105,9 +112,11 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     previewCircleRef: params.previewCircleRef,
     previewArcRef: params.previewArcRef,
     previewDimensionRef: params.previewDimensionRef,
+    previewInferenceRef: params.previewInferenceRef,
     clearPreviewLine: params.clearPreviewLine,
     clearPreviewCircle: params.clearPreviewCircle,
     clearPreviewArc: params.clearPreviewArc,
     clearPreviewDimension: params.clearPreviewDimension,
+    clearPreviewInference: params.clearPreviewInference,
   });
 }

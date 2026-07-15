@@ -154,6 +154,38 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
     append_point(arc.center_vertex_id, "center",
                  arc.center_x, arc.center_y);
+
+    // Emit quadrant points for cardinal angles that lie within the
+    // arc's sweep, so they get a visible "Q" badge in the viewport.
+    auto norm = [](double a) {
+      a = std::fmod(a, 2.0 * M_PI);
+      if (a < 0.0) a += 2.0 * M_PI;
+      return a;
+    };
+    const double ns = norm(std::atan2(arc.start_y - arc.center_y,
+                                      arc.start_x - arc.center_x));
+    const double ne = norm(std::atan2(arc.end_y - arc.center_y,
+                                      arc.end_x - arc.center_x));
+    const double cardinals[4] = {0.0, M_PI_2, M_PI, M_PI + M_PI_2};
+    for (int q = 0; q < 4; ++q) {
+      const double a = norm(cardinals[q]);
+      bool on_arc = false;
+      if (arc.ccw) {
+        if (ns <= ne) { on_arc = a >= ns && a <= ne; }
+        else          { on_arc = a >= ns || a <= ne; }
+      } else {
+        if (ns >= ne) { on_arc = a <= ns && a >= ne; }
+        else          { on_arc = a <= ns || a >= ne; }
+      }
+      if (!on_arc) continue;
+      parameters.vertices.push_back(SketchVertex{
+          .id = "vertex-" + arc.id + "-quadrant-" + std::to_string(q),
+          .kind = "quadrant",
+          .x = arc.center_x + arc.radius * std::cos(cardinals[q]),
+          .y = arc.center_y + arc.radius * std::sin(cardinals[q]),
+          .is_fixed = false,
+      });
+    }
   }
 
   // Re-emit the original corner point of every fillet. After
@@ -231,6 +263,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
       const auto qid = "vertex-" + circle.id + "-quadrant-" + std::to_string(q);
       if (auto* sp = find_point(qid))
         sp->geometry_owner_ids.push_back(circle.id);
+    }
+  }
+
+  // Arc quadrants.
+  for (const auto& arc : parameters.arcs) {
+    for (int q = 0; q < 4; ++q) {
+      const auto qid = "vertex-" + arc.id + "-quadrant-" + std::to_string(q);
+      if (auto* sp = find_point(qid))
+        sp->geometry_owner_ids.push_back(arc.id);
     }
   }
 

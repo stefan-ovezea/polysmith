@@ -32,6 +32,7 @@ import {
   DimensionToolHint,
   GridToggleToolbar,
   SelectionRectangleOverlay,
+  SnapCursorOverlay,
   ViewportBlockingOverlay,
   ViewportStatusPanel,
 } from "./ViewportOverlays";
@@ -98,6 +99,7 @@ interface ViewportPanelShellProps {
   hostRef: RefObject<HTMLDivElement | null>;
   isDimensionEditorOpen: boolean;
   isSketchDrawingCursor: boolean;
+  isSnapping: boolean;
   isSketchMode: boolean;
   lineCount: number;
   lineDraftActive: boolean;
@@ -193,6 +195,7 @@ export function ViewportPanelShell({
   hostRef,
   isDimensionEditorOpen,
   isSketchDrawingCursor,
+  isSnapping,
   isSketchMode,
   lineCount,
   lineDraftActive,
@@ -290,7 +293,11 @@ export function ViewportPanelShell({
         <CrosshairGuideOverlay
           pointer={crosshairPointer}
           size={crosshairGuideSize}
-          visible={isSketchDrawingCursor}
+          visible={isSketchDrawingCursor && !isSnapping}
+        />
+        <SnapCursorOverlay
+          pointer={crosshairPointer}
+          visible={isSnapping}
         />
         <SelectionRectangleOverlay overlay={selectionRect} />
         <ConstraintPreviewBadge preview={constraintPreview} />

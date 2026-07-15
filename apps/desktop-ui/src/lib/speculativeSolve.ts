@@ -119,7 +119,9 @@ function pushSketchGeometryAndConstraints(
 
   const vertexIds: string[] = [];
 
-  // Push sketch points.
+  // Push sketch points — ALL fixed. The speculative solver must NOT move
+  // existing geometry (circles, lines, endpoints). Only the virtual cursor
+  // is free; the solver satisfies constraints by moving the cursor alone.
   for (const pt of params.points) {
     const vtxId = pt.vertex_id;
     w.push_primitive({
@@ -127,7 +129,7 @@ function pushSketchGeometryAndConstraints(
       type: "point",
       x: pt.x,
       y: pt.y,
-      fixed: pt.is_fixed,
+      fixed: true,
     });
     vertexIds.push(vtxId);
   }
@@ -144,7 +146,9 @@ function pushSketchGeometryAndConstraints(
 
   // Push sketch circles.
   for (const circle of params.circles) {
-    const centerId = circle.center_vertex_id;
+    // Fall back to legacy point-circle-*-center format when the
+    // vertex-N center_vertex_id is empty (matches planegcsBridge.ts).
+    const centerId = circle.center_vertex_id || `point-circle-${circle.circle_id}-center`;
     w.push_primitive({
       id: circle.circle_id,
       type: "circle",
@@ -382,13 +386,15 @@ function pushSpeculativeConstraint(
       });
       break;
     case "tangent_lc":
+      // Hard constraint (not temporary) — tangent needs full enforcement.
+      // The cursor is the only free point; draftStart is fixed. Temporary
+      // (soft) constraints don't reduce DOF and produce non-tangent results.
       w.push_primitive({
         id: constraintId,
         type: "tangent_lc",
         l_id: VIRTUAL_LINE_ID,
         c_id: targetEntityId,
-        temporary: true,
-      } as any);
+      });
       break;
     case "perpendicular_ll":
       w.push_primitive({
@@ -429,7 +435,7 @@ function runInferenceAndReadCursor(
   sketchPointCount: number,
   cursor: [number, number],
 ): SpeculativeSolveResult {
-  w.set_max_iterations(5);
+  w.set_max_iterations(12);
   w.set_convergence_threshold(1e-3);
   const status = w.solve(1); // LevenbergMarquardt = 1
 
@@ -480,8 +486,8 @@ function runInferenceAndReadCursor(
  * runs a fast INFERENCE solve, and returns the solved cursor position.
  *
  * The WASM solver is fully rebuilt on each call (clear_data + push all).
- * For typical sketch sizes (10–50 parameters) with 5 iterations, this
- * completes in ~0.02–0.05ms — well within the 16ms frame budget even
+ * For typical sketch sizes (10–50 parameters) with 12 iterations, this
+ * completes in ~0.05–0.1ms — well within the 16ms frame budget even
  * when checking 6+ snap types per frame.
  */
 export function speculativeSolve({

@@ -71,3 +71,37 @@ export function buildDashedDraftHint({
   preview.computeLineDistances();
   return preview;
 }
+
+/**
+ * Build inference guide lines that show alignment with existing sketch
+ * vertices. Each guide is a dotted line from an existing vertex to the
+ * projected draft position (inference line / tracking guide).
+ */
+export function buildInferenceGuideLines({
+  guides,
+  planeId,
+  planeFrame,
+}: {
+  guides: Array<{ from: [number, number]; draft: [number, number] }>;
+  planeId: string;
+  planeFrame: SketchPlaneFrame | null;
+}): THREE.Line[] {
+  const material = new THREE.LineDashedMaterial({
+    color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
+    transparent: true,
+    opacity: 0.42,
+    dashSize: 0.7,
+    gapSize: 0.5,
+  });
+  return guides.map((guide) => {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(...toWorldPoint(planeId, guide.from, planeFrame)),
+        new THREE.Vector3(...toWorldPoint(planeId, guide.draft, planeFrame)),
+      ]),
+      material,
+    );
+    line.computeLineDistances();
+    return line;
+  });
+}

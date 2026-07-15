@@ -6,6 +6,9 @@ interface ViewportCrosshairStateContext {
   activeSketchPlaneId: string | null;
   activeSketchTool: SketchTool;
   crosshairMode: CrosshairMode;
+  /** Whether the current pointer position has snapped to a sketch
+   *  point (endpoint, grid, midpoint, etc.). */
+  isSnapping: boolean;
   viewportSize: {
     width: number;
     height: number;
@@ -16,6 +19,7 @@ export function computeViewportCrosshairState({
   activeSketchPlaneId,
   activeSketchTool,
   crosshairMode,
+  isSnapping,
   viewportSize,
 }: ViewportCrosshairStateContext) {
   const isSketchDrawingCursor =
@@ -43,6 +47,7 @@ export function computeViewportCrosshairState({
     crosshairCanvasClass,
     crosshairGuideSize,
     isSketchDrawingCursor,
+    isSnapping,
     usesCrosshairGuide,
   };
 }

@@ -720,6 +720,19 @@ button:not(:disabled),
     transform: translateY(-50%);
   }
 
+  /* Small square overlay shown when snapped to a sketch point.
+   * Replaces the full crosshair guide. */
+  .cad-snap-cursor {
+    position: absolute;
+    z-index: 19;
+    pointer-events: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-primary-edge-active, #4fc3f7);
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 0 4px var(--cad-accent-glow-soft));
+  }
+
   .cad-checkbox {
     position: relative;
     display: inline-flex;

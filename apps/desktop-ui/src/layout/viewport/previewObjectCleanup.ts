@@ -20,6 +20,7 @@ interface ViewportPreviewActionsContext {
   previewLineRef: MutableRef<THREE.Line | null>;
   previewCircleRef: MutableRef<THREE.LineLoop | null>;
   previewArcRef: MutableRef<THREE.Line | null>;
+  previewInferenceRef: MutableRef<THREE.Line[]>;
   trimSegmentHighlightRef: MutableRef<THREE.Line | null>;
   trimArcHighlightRef: MutableRef<THREE.Line | null>;
   previewDimensionRef: MutableRef<PreviewDimensionObject | null>;
@@ -36,6 +37,7 @@ export function createViewportPreviewActions({
   previewLineRef,
   previewCircleRef,
   previewArcRef,
+  previewInferenceRef,
   trimSegmentHighlightRef,
   trimArcHighlightRef,
   previewDimensionRef,
@@ -199,11 +201,24 @@ export function createViewportPreviewActions({
     previewDimensionRef.current = null;
   }
 
+  function clearPreviewInference() {
+    const sketchGroup = sketchGroupRef.current;
+    for (const line of previewInferenceRef.current) {
+      if (sketchGroup) {
+        sketchGroup.remove(line);
+      }
+      line.geometry.dispose();
+      disposeMaterial(line.material);
+    }
+    previewInferenceRef.current = [];
+  }
+
   return {
     clearDragPreviewLines,
     clearPreviewArc,
     clearPreviewCircle,
     clearPreviewDimension,
+    clearPreviewInference,
     clearPreviewLine,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,

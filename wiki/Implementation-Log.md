@@ -2206,3 +2206,109 @@ every sketch refresh by `enforce_derived_points_fixed`).
 `enforce_derived_points_fixed` ran *after* `sync_fixed_point_flags`,
 unconditionally overwriting any user unfix.  Swapped so the user's explicit
 choice (preserved by `sync_fixed_point_flags`) always wins.
+
+## 2026-07-13
+
+### Feature: Inference / tracking guide lines during line drafting
+
+Added alignment inference snap showing dotted guide lines from existing sketch
+vertices when the cursor aligns horizontally or vertically during line creation.
+Inspired by the tracking/inference system found in parametric CAD sketchers.
+
+**Snap logic (`snapResolution.ts`):**
+- New `speculativeAlignmentInferenceSnap()` checking H/V alignment of cursor
+  against all line endpoints and circle centers.
+- Wired into `dynamicSnapCandidate()`, gated by `filter.snap_polar` and a new
+  `inferenceSnapsEnabled` flag.
+- Inference snap fires alongside axis-lock but never sets `snapAxisLock`
+  (placement-only guidance, not a constraint).
+- Axis-lock takes priority for snap coordinates; inference provides only the
+  dotted guide lines. When both fire, axis-lock's result gets the inference
+  guides attached so both the H/V badge and dotted lines display together.
+- Inference guides collected independently and survive when a later snap
+  (parallel, perpendicular) wins via `closerDynamicSnap`.
+- `inferenceSnapsEnabled: false` passed during pointer-up commit so inference
+  never pulls committed coordinates away from the user's click.
+
+**Visual rendering:**
+- `buildInferenceGuideLines()` in `draftLinePreview.ts` — dotted THREE.Line
+  objects at 42% opacity with subtle dash pattern.
+- Threaded through: `SketchPreviewPoint.inferenceLines` →
+  `resolveDraftPointerMove` → `handleActiveSketchPointerMove` →
+  `renderLinePointerPreview`.
+- `previewInferenceRef` + `clearPreviewInference` wired through all cleanup
+  paths.
+
+### Feature: Snap cursor overlay
+
+Replaced the full crosshair guide with a small square overlay when the cursor
+snaps to a sketch point (endpoint, grid, midpoint, etc.).
+
+- `SnapCursorOverlay` component in `ViewportOverlays.tsx` — 14×14px outlined
+  square at the snap position.
+- `CrosshairGuideOverlay` hides when snapping; `SnapCursorOverlay` shows.
+- `isSnapping` boolean derived from `sketchSnapLabel !== null`, threaded
+  through `computeViewportCrosshairState` → `ViewportPanelShell`.
+
+### Fix: Crosshair follows all snap sources
+
+`snapFeedbackCanvasPoint` previously only projected object snaps
+(`snapFeedbackSource === "object"`) to canvas; grid snaps returned raw
+cursor position. Now projects any snap source (truthy `snapFeedbackSource`).
+
+### Fix: Static snaps active before line start
+
+`handleDraftToolPointerMove` no longer returns when `draftStart` is null.
+Snap resolution already runs in `resolveDraftPointerMove` (static snaps like
+endpoint/grid work without draft start). Crosshair and snap label already
+updated — just skipping the rubber-band preview.
+
+### Fix: Grid snap only to intersections
+
+`gridSnappedLocalPoint` previously snapped X and Y independently — if cursor X
+was near a grid line, it snapped X regardless of Y. Now only snaps when BOTH
+axes are within threshold, snapping to the nearest grid intersection.
+
+### Fix: Remove dead `snap_grid_line` toggle
+
+`snap_grid_line` was defined in types, serialized through C++ protocol, shown
+in the UI panel as "Grid line", but never checked in any snap resolution code.
+Removed from `SelectionFilterPanel` UI.
+
+### Feature: Parallel angle threshold configurable
+
+- Added `parallel_angle_degrees` to `SelectionFilter` type (default 8°, range
+  1–45°) with UI input in the snap panel.
+- `dynamicSnapCandidate` reads `filter.parallel_angle_degrees` instead of the
+  hardcoded `8 * Math.PI / 180`.
+- ZOD schema uses `.default(8)` so C++ core (which doesn't know this field)
+  doesn't break deserialization.
+
+### Fix: Parallel snap skips collinear host lines
+
+`speculativeParallelSnap` now checks perpendicular distance from draft start
+to each host line. If the start lies on the host line (distance ≤ 0.001mm),
+the line is collinear — a parallel constraint would be redundant. Skips that
+host. Covers both connected and non-connected collinear cases.
+
+**Files changed (14):**
+| File | Change |
+|---|---|
+| `types/viewport.ts` | Added `inferenceLines` to `SketchPreviewPoint` |
+| `types/selectionFilter.ts` | Added `parallel_angle_degrees` |
+| `snapResolution.ts` | Inference snap, collinear-skip, grid-intersection snap, parallel angle config |
+| `draftLinePreview.ts` | `buildInferenceGuideLines()` |
+| `draftPointerPreview.ts` | Inference line rendering + `previewInferenceRef` |
+| `draftPointerMove.ts` | Grid snap projection fix |
+| `activeSketchPointerMove.ts` | Snap before first click, inference data pass-through |
+| `viewportPointerUp.ts` | `inferenceSnapsEnabled: false` on commit |
+| `previewObjectCleanup.ts` | `clearPreviewInference()` |
+| `viewportCrosshairState.ts` | `isSnapping` boolean |
+| `ViewportOverlays.tsx` | `SnapCursorOverlay` component |
+| `ViewportPanelShell.tsx` | Conditional crosshair vs snap cursor |
+| `ViewportPanel.tsx` | Wiring for all of the above |
+| `SelectionFilterPanel.tsx` | Parallel angle input, remove grid_line toggle |
+| `selectionFilterState.ts` | Default `parallel_angle_degrees: 8` |
+| `i18n/en.json` | `parallelAngle` label |
+| `viewporStateSchema.ts` | `parallel_angle_degrees` with `.default(8)` |
+| `styles.css` | `cad-snap-cursor` CSS |

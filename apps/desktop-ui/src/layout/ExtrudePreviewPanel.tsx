@@ -196,7 +196,11 @@ export function ExtrudePreviewPanel({
       next.side2 = nextSide;
     }
     if (patch.distance !== undefined && sideKey === "side1") {
-      const signedDistance = Number(depth) < 0 ? -nextSide.distance : nextSide.distance;
+      // The user-typed distance already carries its own sign; the core
+      // resolves negative side distances through resolved_side_distance()
+      // which falls back to std::abs(depth) and uses depth < 0 for the
+      // extrusion direction sign.
+      const signedDistance = nextSide.distance;
       updateAdvanced(next, signedDistance);
       setDepth(String(signedDistance));
       if (phase === "active" && signedDistance !== 0) {
@@ -290,23 +294,22 @@ export function ExtrudePreviewPanel({
           {t("panels.extrude.extentType")}
           {renderExtentTypeSelect(sideKey, side)}
         </label>
-        {side.extent_type === "distance" ? (
-          <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-            {t("forms.distanceMm")}
-            <input
-              ref={sideKey === "side1" ? primaryDistanceInputRef : undefined}
-              className={problemInputClass}
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={side.distance}
-              disabled={disabled}
-              onChange={(event) => {
-                updateSide(sideKey, {
-                  distance: readNumberInputValue(event.currentTarget),
-                });
-              }}
-            />
+          {side.extent_type === "distance" ? (
+            <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+              {t("forms.distanceMm")}
+              <input
+                ref={sideKey === "side1" ? primaryDistanceInputRef : undefined}
+                className={problemInputClass}
+                type="number"
+                step="0.01"
+                value={side.distance}
+                disabled={disabled}
+                onChange={(event) => {
+                  updateSide(sideKey, {
+                    distance: readNumberInputValue(event.currentTarget),
+                  });
+                }}
+              />
           </label>
         ) : null}
         {(side.extent_type === "through_all" ||

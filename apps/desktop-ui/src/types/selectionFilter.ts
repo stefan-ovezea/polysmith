@@ -8,6 +8,8 @@ export interface SelectionFilter {
   snap_center: boolean;
   snap_intersection: boolean;
   snap_nearest: boolean;
+  snap_circle_body: boolean;
+  snap_arc_body: boolean;
   snap_quadrant: boolean;
   snap_perpendicular: boolean;
   snap_parallel: boolean;
@@ -16,6 +18,9 @@ export interface SelectionFilter {
   snap_grid_line: boolean;
   snap_polar: boolean;
   polar_angle_degrees: number;
+  /** Maximum angle (degrees) at which the draft direction is considered
+   *  parallel to an existing line for auto-parallel constraint creation. */
+  parallel_angle_degrees: number;
   magnetic_pull: boolean;
   tolerance_px: number;
 }

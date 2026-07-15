@@ -8,7 +8,22 @@ import type {
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
 import { speculativeSolve, speculativeMultiSolve } from "@/lib/speculativeSolve";
+import { useCadCoreStore } from "@/state/cadCoreStore";
+import { useToastStore } from "@/state/toastStore";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
+
+// Diagnostic logger for tangent snap. Each gate fires at most once per
+// 5 seconds (cooldown) so you can see retries after moving the cursor.
+const _gateCooldowns = new Map<string, number>();
+function _snapDebug(gate: string, detail: string) {
+  const now = Date.now();
+  const last = _gateCooldowns.get(gate) ?? 0;
+  if (now - last < 5000) return;
+  _gateCooldowns.set(gate, now);
+  const msg = `[tangent] ${gate}: ${detail}`;
+  try { useCadCoreStore.getState().addMessage(msg); } catch (_) { /* ok */ }
+  try { useToastStore.getState().pushToast("info", msg); } catch (_) { /* ok */ }
+}
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -19,7 +34,8 @@ export interface SketchSnapCandidate {
     | "center"
     | "intersection"
     | "nearest"
-    | "tangent";
+    | "tangent"
+    | "quadrant";
   hostLineId?: string;
   tValue?: number;
   endpointHostLineId?: string;
@@ -38,6 +54,12 @@ export interface RawSketchPoint {
 export interface ResolveSnapOptions {
   dynamicSnapsEnabled?: boolean;
   objectSnapLatchKey?: string | null;
+  /** When false, inference alignment snaps (H/V alignment with existing
+   *  sketch vertices) are not resolved — only used for visual guides.
+   *  Defaults to true (inference snaps active). Set to false during
+   *  pointer-up commit to prevent inference from pulling committed
+   *  coordinates away from the user's intended click position. */
+  inferenceSnapsEnabled?: boolean;
 }
 
 type TranslateSnapLabel = (
@@ -53,6 +75,7 @@ export function resolveSnappedSketchPoint({
   sketchConstraints,
   dynamicSnapsEnabled = true,
   objectSnapLatchKey = null,
+  inferenceSnapsEnabled = true,
   filter,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
@@ -69,6 +92,7 @@ export function resolveSnappedSketchPoint({
   sketchConstraints?: SketchConstraintData[];
   dynamicSnapsEnabled?: boolean;
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
   filter: SelectionFilter;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -81,6 +105,7 @@ export function resolveSnappedSketchPoint({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -114,7 +139,7 @@ export function resolveSnappedSketchPoint({
 
   const resolvedSnap = chooseResolvedSnap({
     staticSnap,
-    dynamicSnap: dynamicSnapsEnabled
+    dynamicSnap: dynamicSnapsEnabled !== false
       ? resolveDynamicSnap({
           sketchParameters,
           sketchConstraints,
@@ -126,6 +151,7 @@ export function resolveSnappedSketchPoint({
           activeSketchPlaneId,
           activeSketchPlaneFrame,
           objectSnapLatchKey,
+          inferenceSnapsEnabled,
         })
       : null,
   });
@@ -204,10 +230,14 @@ function gridSnappedLocalPoint(
 ): [number, number] {
   const nearestX = Math.round(local[0] / spacing) * spacing;
   const nearestY = Math.round(local[1] / spacing) * spacing;
-  return [
-    Math.abs(local[0] - nearestX) <= threshold ? nearestX : local[0],
-    Math.abs(local[1] - nearestY) <= threshold ? nearestY : local[1],
-  ];
+  const nearX = Math.abs(local[0] - nearestX) <= threshold;
+  const nearY = Math.abs(local[1] - nearestY) <= threshold;
+  // Only snap when BOTH axes are within threshold — snap to the
+  // nearest grid intersection, not to a single grid line.
+  if (nearX && nearY) {
+    return [nearestX, nearestY];
+  }
+  return [local[0], local[1]];
 }
 
 type ResolvedStaticSnap = {
@@ -300,7 +330,7 @@ function resolvedStaticSnapFromCandidate({
 }
 
 function isPriorityStaticSnap(candidate: SketchSnapCandidate) {
-  return candidate.kind === "endpoint" || candidate.kind === "midpoint";
+  return candidate.kind === "endpoint" || candidate.kind === "midpoint" || candidate.kind === "quadrant";
 }
 
 type ResolvedDynamicSnap = {
@@ -319,6 +349,7 @@ function resolveDynamicSnap({
   activeSketchPlaneId,
   activeSketchPlaneFrame,
   objectSnapLatchKey,
+  inferenceSnapsEnabled = true,
 }: {
   sketchParameters: SketchFeatureParameters | null | undefined;
   sketchConstraints?: SketchConstraintData[];
@@ -330,6 +361,7 @@ function resolveDynamicSnap({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -338,6 +370,7 @@ function resolveDynamicSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
 }): ResolvedDynamicSnap | null {
   if (!sketchParameters || !hasEnabledDynamicSnap(filter, draftStartLocal)) {
     return null;
@@ -345,15 +378,18 @@ function resolveDynamicSnap({
   const bestDynamic = dynamicSnapCandidate({
     lines: sketchParameters.lines,
     circles: sketchParameters.circles,
+    arcs: sketchParameters.arcs,
     filter,
     draftStart: draftStartLocal,
     cursor: point.local,
     threshold: sketchSnapDistance,
-    parallelAngleThresholdRadians: 8 * Math.PI / 180,
+    parallelAngleThresholdRadians:
+      (filter.parallel_angle_degrees ?? 8) * Math.PI / 180,
     labels,
     sketchParameters,
     constraints: sketchConstraints,
     objectSnapLatchKey,
+    inferenceSnapsEnabled,
   });
   if (!bestDynamic || bestDynamic.distance > sketchSnapDistance) {
     return null;
@@ -394,6 +430,7 @@ function previewPointFromDynamicSnap({
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
 }): SketchPreviewPoint {
+  const hasInferenceGuides = snap.inferenceGuideLines.length > 0;
   return {
     local: snap.local,
     world: sketchLocalToWorld(activeSketchPlaneId, snap.local, activeSketchPlaneFrame),
@@ -406,10 +443,13 @@ function previewPointFromDynamicSnap({
     snapEndpointHostLineId: null,
     snapLineBodyHostLineId: snap.snapLineBodyHostLineId,
     snapLineBodyT: snap.snapLineBodyT,
+    snapCircleBodyHostCircleId: snap.snapCircleBodyHostCircleId,
+    snapCircleBodyAngle: snap.snapCircleBodyAngle,
     snapAxisLock: snap.snapAxisLock,
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
     snapIntersectionLineIds: snap.snapIntersectionLineIds,
+    inferenceLines: hasInferenceGuides ? snap.inferenceGuideLines : undefined,
   };
 }
 
@@ -501,6 +541,13 @@ function appendCoreSnapCandidates(
           local: [candidate.local_x, candidate.local_y],
           label: candidate.label,
           kind: "center",
+        });
+        break;
+      case "quadrant":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "quadrant",
         });
         break;
       default:
@@ -610,8 +657,21 @@ interface DynamicSnapResult {
   snapParallelHostLineId: string | null;
   snapLineBodyHostLineId: string | null;
   snapLineBodyT: number | null;
+  snapCircleBodyHostCircleId?: string | null;
+  snapCircleBodyAngle?: number | null;
   snapIntersectionLineIds: [string, string] | null;
   distance: number;
+  /** When the cursor aligned with an existing sketch vertex via H/V
+   *  inference, holds the alignment direction and the source point. */
+  snapInferenceKind: "horizontal" | "vertical" | null;
+  snapInferenceFrom: [number, number] | null;
+  /** Guide lines showing all inference alignments (including weaker
+   *  ones that didn't win the snap contest). Rendered as dotted lines. */
+  inferenceGuideLines: Array<{
+    from: [number, number];
+    draft: [number, number];
+    axis: "horizontal" | "vertical";
+  }>;
 }
 
 interface SketchSnapLine {
@@ -631,6 +691,19 @@ interface SketchSnapCircle {
   is_construction: boolean;
 }
 
+interface SketchSnapArc {
+  arc_id: string;
+  center_x: number;
+  center_y: number;
+  radius: number;
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  ccw: boolean;
+  is_construction: boolean;
+}
+
 function closerDynamicSnap(
   current: DynamicSnapResult | null,
   candidate: DynamicSnapResult | null,
@@ -644,9 +717,135 @@ function closerDynamicSnap(
   return current;
 }
 
+/**
+ * Collect all sketch vertices that can serve as inference alignment
+ * sources: line endpoints and circle centers.
+ */
+function collectInferenceVertices(
+  lines: readonly SketchSnapLine[],
+  circles: readonly SketchSnapCircle[],
+  arcs: readonly SketchSnapArc[],
+): Array<[number, number]> {
+  const vertices: Array<[number, number]> = [];
+  for (const line of lines) {
+    if (line.is_construction) continue;
+    vertices.push([line.start_x, line.start_y]);
+    vertices.push([line.end_x, line.end_y]);
+  }
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+    vertices.push([circle.center_x, circle.center_y]);
+  }
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    vertices.push([arc.center_x, arc.center_y]);
+    vertices.push([arc.start_x, arc.start_y]);
+    vertices.push([arc.end_x, arc.end_y]);
+  }
+  return vertices;
+}
+
+/**
+ * Try alignment inference snap: when the cursor is horizontally or
+ * vertically aligned with an existing sketch vertex (not the draft
+ * start), snap the cursor to that alignment and emit guide line info.
+ * This provides the "inference line" / "tracking" alignment visual.
+ */
+function speculativeAlignmentInferenceSnap({
+  draftStart,
+  cursor,
+  lines,
+  circles,
+  arcs,
+  threshold,
+  labels,
+}: {
+  draftStart: [number, number];
+  cursor: [number, number];
+  lines: readonly SketchSnapLine[];
+  circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
+  threshold: number;
+  labels: {
+    axisLockHorizontal: string;
+    axisLockVertical: string;
+  };
+}): DynamicSnapResult | null {
+  const vertices = collectInferenceVertices(lines, circles, arcs);
+  if (vertices.length === 0) return null;
+
+  const [sx, sy] = draftStart;
+  const [cx, cy] = cursor;
+
+  // Find the closest H or V alignment among all existing vertices.
+  let bestDist = Infinity;
+  let bestLocal: [number, number] | null = null;
+  let bestAxis: "horizontal" | "vertical" | null = null;
+  let bestFrom: [number, number] | null = null;
+  const allGuides: DynamicSnapResult["inferenceGuideLines"] = [];
+
+  for (const [vx, vy] of vertices) {
+    // Skip vertices too close to the draft start (that's axis-lock)
+    const distToStart = Math.hypot(vx - sx, vy - sy);
+    if (distToStart < 1e-6) continue;
+
+    const hDist = Math.abs(cy - vy); // cursor Y aligned with vertex Y
+    const vDist = Math.abs(cx - vx); // cursor X aligned with vertex X
+
+    // Check horizontal alignment (cursor.y ≈ vertex.y)
+    if (hDist <= threshold) {
+      const draft: [number, number] = [cx, vy]; // snap cursor to (cursor.x, vertex.y)
+      allGuides.push({ from: [vx, vy], draft, axis: "horizontal" });
+      if (hDist < bestDist) {
+        bestDist = hDist;
+        bestLocal = draft;
+        bestAxis = "horizontal";
+        bestFrom = [vx, vy];
+      }
+    }
+
+    // Check vertical alignment (cursor.x ≈ vertex.x)
+    if (vDist <= threshold) {
+      const draft: [number, number] = [vx, cy]; // snap cursor to (vertex.x, cursor.y)
+      allGuides.push({ from: [vx, vy], draft, axis: "vertical" });
+      if (vDist < bestDist) {
+        bestDist = vDist;
+        bestLocal = draft;
+        bestAxis = "vertical";
+        bestFrom = [vx, vy];
+      }
+    }
+  }
+
+  if (!bestLocal || !bestAxis || !bestFrom) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel:
+      bestAxis === "horizontal"
+        ? labels.axisLockHorizontal
+        : labels.axisLockVertical,
+    snapPerpendicularHostLineId: null,
+    // NOT snapAxisLock — inference alignment is placement-only guidance,
+    // not a constraint. Setting snapAxisLock would force the new line
+    // horizontal/vertical, which is wrong for point-to-point alignment.
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: bestAxis,
+    snapInferenceFrom: bestFrom,
+    inferenceGuideLines: allGuides,
+    distance: bestDist,
+  };
+}
+
 export function dynamicSnapCandidate({
   lines,
   circles,
+  arcs,
   filter,
   draftStart,
   cursor,
@@ -656,9 +855,11 @@ export function dynamicSnapCandidate({
   sketchParameters,
   constraints,
   objectSnapLatchKey,
+  inferenceSnapsEnabled = true,
 }: {
   lines: readonly SketchSnapLine[];
   circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
   filter: SelectionFilter;
   draftStart: [number, number] | null | undefined;
   cursor: [number, number];
@@ -668,6 +869,7 @@ export function dynamicSnapCandidate({
     axisLockHorizontal: string;
     axisLockVertical: string;
     onLine: string;
+    onCircle: string;
     tangent: string;
     perpendicular: string;
     parallel: string;
@@ -678,8 +880,13 @@ export function dynamicSnapCandidate({
   /** Constraints for speculative WASM solver path. */
   constraints?: import("@/lib/planegcsBridge").SketchConstraintData[];
   objectSnapLatchKey?: string | null;
+  inferenceSnapsEnabled?: boolean;
 }): DynamicSnapResult | null {
   let best: DynamicSnapResult | null = null;
+  // Inference guide lines are collected independently so they survive
+  // even when a later snap (parallel, perpendicular, etc.) wins via
+  // closerDynamicSnap and replaces `best`.
+  let inferenceGuides: DynamicSnapResult["inferenceGuideLines"] = [];
 
   if (filter.snap_nearest && objectSnapLatchKey?.startsWith("dynamic:line-body:")) {
     const lineId = objectSnapLatchKey.slice("dynamic:line-body:".length);
@@ -697,20 +904,66 @@ export function dynamicSnapCandidate({
     }
   }
 
+  if (filter.snap_nearest && filter.snap_circle_body && objectSnapLatchKey?.startsWith("dynamic:circle-body:")) {
+    const circleId = objectSnapLatchKey.slice("dynamic:circle-body:".length);
+    const circle = circles.find((candidate) => candidate.circle_id === circleId);
+    if (circle) {
+      const latchedCircleBody = speculativeCircleBodySnap({
+        circles: [circle],
+        cursor,
+        threshold,
+        snapLabel: labels.onCircle,
+      });
+      if (latchedCircleBody) {
+        best = latchedCircleBody;
+      }
+    }
+  }
+
   if (draftStart) {
     const draftDx = cursor[0] - draftStart[0];
     const draftDy = cursor[1] - draftStart[1];
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
     if (hasDraftMovement && filter.snap_polar) {
-      const speculativeResult = speculativeAxisLockSnap({
+      // Axis-lock (H/V from draft start) always takes snap priority over
+      // inference. The H/V constraint badge and snap coordinates come from
+      // axis-lock; inference only provides the dotted guide lines.
+      const axisLockSnap = speculativeAxisLockSnap({
         draftStart,
         cursor,
         threshold,
         labels,
       });
-      if (speculativeResult) {
-        best = speculativeResult;
+
+      // Inference alignment — H/V alignment with existing sketch vertices.
+      // Only active during pointer move (preview), NOT during pointer-up
+      // commit. Inference is a visual guide; it must not pull committed
+      // coordinates away from the user's intended click position.
+      if (inferenceSnapsEnabled) {
+        const inferenceSnap = speculativeAlignmentInferenceSnap({
+          draftStart,
+          cursor,
+          lines,
+          circles,
+          arcs,
+          threshold,
+          labels,
+        });
+        if (inferenceSnap && inferenceSnap.inferenceGuideLines.length > 0) {
+          inferenceGuides = inferenceSnap.inferenceGuideLines;
+          if (axisLockSnap) {
+            // Axis-lock wins the snap; inference provides visual guides.
+            best = axisLockSnap;
+          } else {
+            // No axis-lock — inference still provides useful visual guides.
+            best = inferenceSnap;
+          }
+        } else if (axisLockSnap) {
+          best = axisLockSnap;
+        }
+      } else if (axisLockSnap) {
+        best = axisLockSnap;
       }
     }
   }
@@ -721,6 +974,22 @@ export function dynamicSnapCandidate({
       snapLabel: labels.onLine,
     });
     best = closerDynamicSnap(best, spec);
+
+    if (filter.snap_circle_body) {
+      const circleSpec = speculativeCircleBodySnap({
+        circles, cursor, threshold,
+        snapLabel: labels.onCircle,
+      });
+      best = closerDynamicSnap(best, circleSpec);
+    }
+
+    if (filter.snap_arc_body) {
+      const arcSpec = speculativeArcBodySnap({
+        arcs, cursor, threshold,
+        snapLabel: labels.onCircle,
+      });
+      best = closerDynamicSnap(best, arcSpec);
+    }
   }
 
   if (draftStart) {
@@ -728,15 +997,30 @@ export function dynamicSnapCandidate({
     const draftDy = cursor[1] - draftStart[1];
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
+    // diagnostic: show why tangent gate passes/fails
+    _snapDebug("gate", `hasDraftStart=1 hasMovement=${hasDraftMovement} snap_tangent=${filter.snap_tangent} circles=${circles.length}`);
+
     if (hasDraftMovement && filter.snap_tangent) {
+      _snapDebug("enter", `circles=${circles.length}`);
       const spec = speculativeTangentSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
-        circles, draftStart, cursor,
-        threshold: solverSearchThreshold(best, threshold),
+        circles, arcs, draftStart, cursor,
+        threshold,
         snapLabel: labels.tangent,
       });
-      best = closerDynamicSnap(best, spec);
+      // Tangent is a deliberate geometric relationship — when it fires
+      // during line drafting, it takes priority over the generic
+      // "nearest point on circle" snap, regardless of which circle won
+      // the circle-body proximity check. For non-circle-body snaps
+      // (line-body, axis-lock, null) we fall back to distance comparison.
+      if (spec) {
+        if (best?.snapCircleBodyHostCircleId != null) {
+          best = spec;
+        } else {
+          best = closerDynamicSnap(best, spec);
+        }
+      }
     }
   }
 
@@ -787,6 +1071,13 @@ export function dynamicSnapCandidate({
     best = closerDynamicSnap(best, spec);
   }
 
+  // Attach inference guide lines to whichever snap won, so dotted
+  // alignment hints display even when a parallel/perpendicular/tangent
+  // snap overrides the inference snap position.
+  if (best && inferenceGuides.length > 0 && best.inferenceGuideLines.length === 0) {
+    best.inferenceGuideLines = inferenceGuides;
+  }
+
   return best;
 }
 
@@ -833,6 +1124,7 @@ const SNAP_FILTER_KEY_BY_KIND = {
   intersection: "snap_intersection",
   nearest: "snap_nearest",
   tangent: "snap_tangent",
+  quadrant: "snap_quadrant",
 } satisfies Record<SketchSnapKind, keyof SelectionFilter>;
 
 function selectionFilterKeyForSnapKind(kind: SketchSnapKind) {
@@ -904,6 +1196,7 @@ function dynamicSnapFeedbackSource(
     snap.snapTangentCircleId ||
     snap.snapParallelHostLineId ||
     snap.snapLineBodyHostLineId ||
+    snap.snapCircleBodyHostCircleId ||
     snap.snapIntersectionLineIds
   ) {
     return "object";
@@ -914,6 +1207,9 @@ function dynamicSnapFeedbackSource(
 function dynamicSnapTargetKey(snap: DynamicSnapResult) {
   if (snap.snapLineBodyHostLineId) {
     return `dynamic:line-body:${snap.snapLineBodyHostLineId}`;
+  }
+  if (snap.snapCircleBodyHostCircleId) {
+    return `dynamic:circle-body:${snap.snapCircleBodyHostCircleId}`;
   }
   if (snap.snapPerpendicularHostLineId) {
     return `dynamic:perpendicular:${snap.snapPerpendicularHostLineId}`;
@@ -976,6 +1272,9 @@ function speculativeAxisLockSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance,
   };
 }
@@ -988,6 +1287,7 @@ function speculativeTangentSnap({
   sketchParameters,
   constraints,
   circles,
+  arcs,
   draftStart,
   cursor,
   threshold,
@@ -996,17 +1296,18 @@ function speculativeTangentSnap({
   sketchParameters: SketchFeatureParameters | null;
   constraints: SketchConstraintData[];
   circles: readonly SketchSnapCircle[];
+  arcs: readonly SketchSnapArc[];
   draftStart: [number, number];
   cursor: [number, number];
   threshold: number;
   snapLabel: string;
 }): DynamicSnapResult | null {
-  const bridge = getBridge();
-  if (!bridge || !sketchParameters) return null;
-
-  // Fast TS proximity gating — find the best circle.
+  // Pure TS geometry — find tangent points for each circle, pick the one
+  // nearest to the cursor. No WASM solver needed; the TS math is exact.
   let bestCircle: (typeof circles)[number] | null = null;
   let bestDist = Infinity;
+  let bestTpX = 0;
+  let bestTpY = 0;
 
   for (const circle of circles) {
     if (circle.is_construction) continue;
@@ -1026,36 +1327,84 @@ function speculativeTangentSnap({
       if (tpDist < bestDist) {
         bestDist = tpDist;
         bestCircle = circle;
+        bestTpX = tpX;
+        bestTpY = tpY;
       }
     }
   }
 
-  if (!bestCircle || bestDist > threshold) return null;
+  // Arc tangents — compute tangent points on the full circle containing each
+  // arc, then keep only those whose angle falls within the arc's sweep.
+  let bestArc: (typeof arcs)[number] | null = null;
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    const pcDx = arc.center_x - draftStart[0];
+    const pcDy = arc.center_y - draftStart[1];
+    const pcDist = Math.hypot(pcDx, pcDy);
+    if (pcDist <= arc.radius + 1e-9) continue;
 
-  // Refine with speculative solver on the best circle only.
-  const result = speculativeSolve({
-    bridge,
-    params: sketchParameters,
-    constraints,
-    draftStart,
-    cursor,
-    snapType: "tangent_lc",
-    targetEntityId: bestCircle.circle_id,
-  });
+    const alpha = Math.asin(arc.radius / pcDist);
+    const baseAngle = Math.atan2(pcDy, pcDx);
+    const tangentLen = Math.sqrt(pcDist * pcDist - arc.radius * arc.radius);
+    const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+    const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+    for (const sign of [1, -1]) {
+      const tpDir = baseAngle + sign * alpha;
+      const tpX = draftStart[0] + tangentLen * Math.cos(tpDir);
+      const tpY = draftStart[1] + tangentLen * Math.sin(tpDir);
+      // Check whether the tangent point's angle from the circle center
+      // lies within the arc sweep.  tpDir is the angle from the *draft
+      // start*, not from the center — compute the center-relative angle
+      // from the tangent point coordinates.
+      const tpAngle = Math.atan2(tpY - arc.center_y, tpX - arc.center_x);
+      if (!angleInArcSweep(tpAngle, startAngle, endAngle, arc.ccw)) continue;
+      const tpDist = Math.hypot(cursor[0] - tpX, cursor[1] - tpY);
+      if (tpDist < bestDist) {
+        bestDist = tpDist;
+        bestCircle = null; // clear circle winner
+        bestArc = arc;
+        bestTpX = tpX;
+        bestTpY = tpY;
+      }
+    }
+  }
 
-  if (!result?.converged || result.distance > threshold) return null;
+  if (!bestCircle && !bestArc) {
+    _snapDebug("no_circle", `circles=${circles.length} arcs=${arcs.length}`);
+    return null;
+  }
+
+  // Project the cursor onto the tangent line (draftStart → tangent point).
+  // The snapped position lies on the exact tangent line.
+  const tdx = bestTpX - draftStart[0];
+  const tdy = bestTpY - draftStart[1];
+  const tLenSq = tdx * tdx + tdy * tdy;
+  if (tLenSq < 1e-12) return null;
+
+  const t = ((cursor[0] - draftStart[0]) * tdx + (cursor[1] - draftStart[1]) * tdy) / tLenSq;
+  // Clamp t so the snap point stays on the "far side" of the tangent point
+  // (the user is drawing away from the draft start, past the tangent point).
+  const clampedT = Math.max(t, 1.0);
+  const snapX = draftStart[0] + clampedT * tdx;
+  const snapY = draftStart[1] + clampedT * tdy;
+
+  const snapDist = Math.hypot(snapX - cursor[0], snapY - cursor[1]);
+  if (snapDist > threshold) return null;
 
   return {
-    local: result.position,
+    local: [snapX, snapY],
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
-    snapTangentCircleId: bestCircle.circle_id,
+    snapTangentCircleId: bestCircle?.circle_id ?? bestArc?.arc_id ?? null,
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
-    distance: result.distance,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
+    distance: snapDist,
   };
 }
 
@@ -1140,6 +1489,9 @@ function speculativePerpendicularSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1191,6 +1543,20 @@ function speculativeParallelSnap({
     const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
     if (Math.min(angle, Math.PI - angle) >= angleThresholdRadians) continue;
 
+    // Skip host lines the draft start already lies on — the new line
+    // is collinear with the host (shares the same infinite line).
+    // A parallel constraint would be redundant.
+    const startProj =
+      ((draftStart[0] - line.start_x) * ldx +
+       (draftStart[1] - line.start_y) * ldy) / lenSq;
+    const startOnHostX = line.start_x + startProj * ldx;
+    const startOnHostY = line.start_y + startProj * ldy;
+    const startDistToHost = Math.hypot(
+      draftStart[0] - startOnHostX,
+      draftStart[1] - startOnHostY,
+    );
+    if (startDistToHost <= 1e-3) continue;
+
     const len = Math.sqrt(lenSq);
     const ux = ldx / len;
     const uy = ldy / len;
@@ -1229,6 +1595,9 @@ function speculativeParallelSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1284,6 +1653,148 @@ function speculativeLineBodySnap({
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: bestT,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
+    distance: bestDist,
+  };
+}
+
+/**
+ * Try circle-body snap: project the cursor onto the nearest point on
+ * each circle's perimeter. Pure TS geometry — no solver needed.
+ */
+function speculativeCircleBodySnap({
+  circles,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  circles: readonly SketchSnapCircle[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  let bestCircle: (typeof circles)[number] | null = null;
+  let bestDist = Infinity;
+  let bestAngle = 0;
+  let bestLocal: [number, number] | null = null;
+
+  for (const circle of circles) {
+    if (circle.is_construction) continue;
+    const dx = cursor[0] - circle.center_x;
+    const dy = cursor[1] - circle.center_y;
+    const distFromCenter = Math.hypot(dx, dy);
+    if (distFromCenter < 1e-12) continue;
+    const angle = Math.atan2(dy, dx);
+    const x = circle.center_x + circle.radius * Math.cos(angle);
+    const y = circle.center_y + circle.radius * Math.sin(angle);
+    const dist = Math.hypot(cursor[0] - x, cursor[1] - y);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestCircle = circle;
+      bestAngle = angle;
+      bestLocal = [x, y];
+    }
+  }
+
+  if (!bestCircle || !bestLocal) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapCircleBodyHostCircleId: bestCircle.circle_id,
+    snapCircleBodyAngle: bestAngle,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
+    distance: bestDist,
+  };
+}
+
+
+/** True when angle `a` lies within the arc sweep from start to end,
+ *  respecting the ccw flag. All angles are in [-π, π]. */
+function angleInArcSweep(
+  a: number, startAngle: number, endAngle: number, ccw: boolean,
+): boolean {
+  // Normalize all angles to [0, 2π)
+  const norm = (angle: number) => ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const na = norm(a);
+  const ns = norm(startAngle);
+  const ne = norm(endAngle);
+  if (ccw) {
+    if (ns <= ne) return na >= ns && na <= ne;
+    return na >= ns || na <= ne;
+  }
+  // CW
+  if (ns >= ne) return na <= ns && na >= ne;
+  return na <= ns || na >= ne;
+}
+
+function speculativeArcBodySnap({
+  arcs,
+  cursor,
+  threshold,
+  snapLabel,
+}: {
+  arcs: readonly SketchSnapArc[];
+  cursor: [number, number];
+  threshold: number;
+  snapLabel: string;
+}): DynamicSnapResult | null {
+  let bestArc: (typeof arcs)[number] | null = null;
+  let bestDist = Infinity;
+  let bestAngle = 0;
+  let bestLocal: [number, number] | null = null;
+
+  for (const arc of arcs) {
+    if (arc.is_construction) continue;
+    const dx = cursor[0] - arc.center_x;
+    const dy = cursor[1] - arc.center_y;
+    const distFromCenter = Math.hypot(dx, dy);
+    if (distFromCenter < 1e-12) continue;
+    const angle = Math.atan2(dy, dx);
+    const x = arc.center_x + arc.radius * Math.cos(angle);
+    const y = arc.center_y + arc.radius * Math.sin(angle);
+    const startAngle = Math.atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+    const endAngle = Math.atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+    if (!angleInArcSweep(angle, startAngle, endAngle, arc.ccw)) continue;
+    const dist = Math.hypot(cursor[0] - x, cursor[1] - y);
+    if (dist > threshold) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestArc = arc;
+      bestAngle = angle;
+      bestLocal = [x, y];
+    }
+  }
+
+  if (!bestArc || !bestLocal) return null;
+
+  return {
+    local: bestLocal,
+    snapLabel,
+    snapPerpendicularHostLineId: null,
+    snapAxisLock: null,
+    snapTangentCircleId: null,
+    snapParallelHostLineId: null,
+    snapLineBodyHostLineId: null,
+    snapLineBodyT: null,
+    snapCircleBodyHostCircleId: bestArc.arc_id,
+    snapCircleBodyAngle: bestAngle,
+    snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: bestDist,
   };
 }
@@ -1391,6 +1902,9 @@ function speculativeIntersectionSnap({
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
     snapIntersectionLineIds: [bestPair.line1.line_id, bestPair.line2.line_id],
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }
@@ -1497,6 +2011,9 @@ function speculativeTangentThroughLineSnap({
     snapLineBodyHostLineId: bestLine.line_id,
     snapLineBodyT: null,
     snapIntersectionLineIds: null,
+    snapInferenceKind: null,
+    snapInferenceFrom: null,
+    inferenceGuideLines: [],
     distance: result.distance,
   };
 }

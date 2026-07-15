@@ -4,11 +4,13 @@ export type ConstraintPreviewKind =
   | "midpoint"
   | "perpendicular"
   | "on_line"
+  | "on_circle"
   | "horizontal"
   | "vertical"
   | "tangent"
   | "endpoint"
-  | "parallel";
+  | "parallel"
+  | "quadrant";
 
 export interface ConstraintPreviewState {
   kind: ConstraintPreviewKind;
@@ -34,6 +36,9 @@ export function constraintPreviewFromSnap(
   if (sketchPoint.snapLineBodyHostLineId) {
     return { kind: "on_line", x, y };
   }
+  if (sketchPoint.snapCircleBodyHostCircleId) {
+    return { kind: "on_circle", x, y };
+  }
   if (sketchPoint.snapPerpendicularHostLineId) {
     return { kind: "perpendicular", x, y };
   }
@@ -48,6 +53,9 @@ export function constraintPreviewFromSnap(
   }
   if (sketchPoint.snapTangentCircleId) {
     return { kind: "tangent", x, y };
+  }
+  if (sketchPoint.snapTargetKey?.startsWith("static:quadrant:")) {
+    return { kind: "quadrant", x, y };
   }
   return null;
 }
