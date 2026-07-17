@@ -173,7 +173,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
         body_id + ":face:" + std::to_string(i - 1);
 
     TopLoc_Location location;
-    const Handle(Poly_Triangulation) triangulation =
+    const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
     if (triangulation.IsNull()) {
       // No tessellation for this face — skip rather than emit a face

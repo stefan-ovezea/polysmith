@@ -33,7 +33,7 @@ void tessellate_shape_to_arrays(const TopoDS_Shape& shape,
        face_explorer.Next()) {
     const TopoDS_Face face = TopoDS::Face(face_explorer.Current());
     TopLoc_Location location;
-    const Handle(Poly_Triangulation) triangulation =
+    const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
     if (triangulation.IsNull()) {
       continue;

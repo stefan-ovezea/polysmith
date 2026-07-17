@@ -13,10 +13,87 @@ endif()
 # Place binaries directly in build/ (not build/Debug/) so Tauri finds them
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-# Tell CMake where OCCT is installed
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/../../third_party/occt-install")
-
-find_package(OpenCASCADE REQUIRED)
+# ---- OpenCASCADE ---------------------------------------------------------
+# On Windows we use the vendored precompiled OCCT 8.0.0 and bypass its
+# CMake config (which references VTK/TBB/FFMPEG targets not available
+# as CMake packages).  On other platforms we use find_package normally.
+if(WIN32)
+  set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/opencascade-8.0.0-vc14-64")
+  add_library(occt_iface INTERFACE)
+  target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
+  target_link_libraries(occt_iface INTERFACE
+    # FoundationClasses
+    TKernel TKMath
+    # ModelingData
+    TKG2d TKG3d TKGeomBase TKBRep
+    # ModelingAlgorithms
+    TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing TKBool
+    TKHLR TKHelix TKFillet TKOffset TKFeat TKMesh TKXMesh TKExpress
+    # ApplicationFramework
+    TKCDF TKLCAF TKCAF TKBinL TKXmlL TKBin TKXml
+    TKStdL TKStd TKTObj TKBinTObj TKXmlTObj TKVCAF
+    # DataExchange
+    TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
+    TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEGLTF TKDEPLY
+  )
+  # Delay-load OCCT DLLs so they load on first API call, AFTER main()
+  # sends the hello handshake.  OCCT 8.0 DllMain corrupts the CRT stdout
+  # layer when loaded during process startup.
+  target_link_options(occt_iface INTERFACE
+    /DELAYLOAD:TKernel.dll
+    /DELAYLOAD:TKMath.dll
+    /DELAYLOAD:TKG2d.dll
+    /DELAYLOAD:TKG3d.dll
+    /DELAYLOAD:TKGeomBase.dll
+    /DELAYLOAD:TKBRep.dll
+    /DELAYLOAD:TKGeomAlgo.dll
+    /DELAYLOAD:TKTopAlgo.dll
+    /DELAYLOAD:TKPrim.dll
+    /DELAYLOAD:TKBO.dll
+    /DELAYLOAD:TKShHealing.dll
+    /DELAYLOAD:TKBool.dll
+    /DELAYLOAD:TKHLR.dll
+    /DELAYLOAD:TKHelix.dll
+    /DELAYLOAD:TKFillet.dll
+    /DELAYLOAD:TKOffset.dll
+    /DELAYLOAD:TKFeat.dll
+    /DELAYLOAD:TKMesh.dll
+    /DELAYLOAD:TKXMesh.dll
+    /DELAYLOAD:TKExpress.dll
+    /DELAYLOAD:TKCDF.dll
+    /DELAYLOAD:TKLCAF.dll
+    /DELAYLOAD:TKCAF.dll
+    /DELAYLOAD:TKBinL.dll
+    /DELAYLOAD:TKXmlL.dll
+    /DELAYLOAD:TKBin.dll
+    /DELAYLOAD:TKXml.dll
+    /DELAYLOAD:TKStdL.dll
+    /DELAYLOAD:TKStd.dll
+    /DELAYLOAD:TKTObj.dll
+    /DELAYLOAD:TKBinTObj.dll
+    /DELAYLOAD:TKXmlTObj.dll
+    /DELAYLOAD:TKVCAF.dll
+    /DELAYLOAD:TKDE.dll
+    /DELAYLOAD:TKXSBase.dll
+    /DELAYLOAD:TKDESTEP.dll
+    /DELAYLOAD:TKXCAF.dll
+    /DELAYLOAD:TKDEIGES.dll
+    /DELAYLOAD:TKDESTL.dll
+    /DELAYLOAD:TKDEVRML.dll
+    /DELAYLOAD:TKRWMesh.dll
+    /DELAYLOAD:TKDECascade.dll
+    /DELAYLOAD:TKBinXCAF.dll
+    /DELAYLOAD:TKXmlXCAF.dll
+    /DELAYLOAD:TKDEOBJ.dll
+    /DELAYLOAD:TKDEGLTF.dll
+    /DELAYLOAD:TKDEPLY.dll
+  )
+  target_link_libraries(occt_iface INTERFACE delayimp)
+  set(OpenCASCADE_LIBRARIES occt_iface)
+else()
+  find_package(OpenCASCADE REQUIRED)
+endif()
 find_package(Eigen3 REQUIRED)
 # CONFIG first: required for CMake 3.30+ (policy CMP0167) and vcpkg.
 # Fall back to MODULE for older Boost installations without CMake config.
@@ -112,6 +189,38 @@ target_include_directories(cad_core PRIVATE
 )
 
 target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
+# Delay-load OCCT DLLs on Windows — OCCT 8.0 DllMain corrupts the CRT
+# stdout layer when loaded during process startup.  Delaying lets main()
+# send the hello handshake before OCCT initialises.
+if(WIN32)
+  target_link_options(cad_core PRIVATE
+    /DELAYLOAD:TKernel.dll /DELAYLOAD:TKMath.dll
+    /DELAYLOAD:TKG2d.dll /DELAYLOAD:TKG3d.dll
+    /DELAYLOAD:TKGeomBase.dll /DELAYLOAD:TKBRep.dll
+    /DELAYLOAD:TKGeomAlgo.dll /DELAYLOAD:TKTopAlgo.dll
+    /DELAYLOAD:TKPrim.dll /DELAYLOAD:TKBO.dll
+    /DELAYLOAD:TKShHealing.dll /DELAYLOAD:TKBool.dll
+    /DELAYLOAD:TKHLR.dll /DELAYLOAD:TKHelix.dll
+    /DELAYLOAD:TKFillet.dll /DELAYLOAD:TKOffset.dll
+    /DELAYLOAD:TKFeat.dll /DELAYLOAD:TKMesh.dll
+    /DELAYLOAD:TKXMesh.dll /DELAYLOAD:TKExpress.dll
+    /DELAYLOAD:TKCDF.dll /DELAYLOAD:TKLCAF.dll
+    /DELAYLOAD:TKCAF.dll /DELAYLOAD:TKBinL.dll
+    /DELAYLOAD:TKXmlL.dll /DELAYLOAD:TKBin.dll
+    /DELAYLOAD:TKXml.dll /DELAYLOAD:TKStdL.dll
+    /DELAYLOAD:TKStd.dll /DELAYLOAD:TKTObj.dll
+    /DELAYLOAD:TKBinTObj.dll /DELAYLOAD:TKXmlTObj.dll
+    /DELAYLOAD:TKVCAF.dll /DELAYLOAD:TKDE.dll
+    /DELAYLOAD:TKXSBase.dll /DELAYLOAD:TKDESTEP.dll
+    /DELAYLOAD:TKXCAF.dll /DELAYLOAD:TKDEIGES.dll
+    /DELAYLOAD:TKDESTL.dll /DELAYLOAD:TKDEVRML.dll
+    /DELAYLOAD:TKRWMesh.dll /DELAYLOAD:TKDECascade.dll
+    /DELAYLOAD:TKBinXCAF.dll /DELAYLOAD:TKXmlXCAF.dll
+    /DELAYLOAD:TKDEOBJ.dll /DELAYLOAD:TKDEGLTF.dll
+    /DELAYLOAD:TKDEPLY.dll
+  )
+  target_link_libraries(cad_core PRIVATE delayimp)
+endif()
 
 add_executable(cad_core_sketch_profile_test
   src/core/sketch/constraint_solver.cpp

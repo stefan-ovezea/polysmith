@@ -90,15 +90,30 @@ pub fn start_cad_core_process(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // Prepend OCCT DLL directory to PATH so the child process finds TKernel.dll etc.
+    // Prepend OCCT and 3rdparty DLL directories to PATH so the child
+    // process finds TKernel.dll, freetype.dll, zlib.dll etc.
     #[cfg(target_os = "windows")]
     {
-        let occt_bin = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../third_party/occt-install/win64/vc14/bin");
-        if occt_bin.exists() {
-            let separator = if cfg!(windows) { ";" } else { ":" };
+        let third_party = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../third_party");
+        let occt_bin = third_party.join("opencascade-8.0.0-vc14-64/win64/vc14/bin");
+        let dylib_dirs = [
+            occt_bin,
+            third_party.join("3rdparty-vc14-64/freetype-2.13.3-x64/bin"),
+            third_party.join("3rdparty-vc14-64/zlib-1.2.8-vc14-64/bin"),
+            third_party.join("3rdparty-vc14-64/tbb-2021.13.0-x64/bin"),
+            third_party.join("3rdparty-vc14-64/jemalloc-vc14-64/bin"),
+            third_party.join("3rdparty-vc14-64/freeimage-3.18.0-x64/bin"),
+            third_party.join("3rdparty-vc14-64/lzma-5.2.2-vc14-64/bin"),
+        ];
+        let extra_path = dylib_dirs.iter()
+            .filter(|d| d.exists())
+            .map(|d| d.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";");
+        if !extra_path.is_empty() {
             let existing_path = std::env::var("PATH").unwrap_or_default();
-            cmd.env("PATH", format!("{}{}{}", occt_bin.display(), separator, existing_path));
+            cmd.env("PATH", format!("{extra_path};{existing_path}"));
         }
     }
 

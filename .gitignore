@@ -17,7 +17,7 @@ third_party/occt-build/
 third_party/occt-install/
 third_party/freetype-build/
 third_party/freetype-install/
-
+third_party/
 .env
 claude-ds.sh
 wiki/.git-wiki/

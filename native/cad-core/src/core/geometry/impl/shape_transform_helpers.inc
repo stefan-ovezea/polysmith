@@ -48,8 +48,8 @@ TopoDS_Shape apply_draft_angle(const TopoDS_Shape& shape,
     for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More();
          explorer.Next()) {
       const TopoDS_Face face = TopoDS::Face(explorer.Current());
-      const Handle(Geom_Plane) surface =
-          Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(face));
+      const occ::handle<Geom_Plane> surface =
+          occ::down_cast<Geom_Plane>(BRep_Tool::Surface(face));
       if (surface.IsNull()) {
         continue;
       }

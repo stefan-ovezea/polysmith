@@ -6,6 +6,13 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#define NOMINMAX
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#endif
+
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <TopoDS_Shape.hxx>
 
@@ -72,8 +79,12 @@ void CadCoreApp::handle_command_line(const std::string& line) {
 }
 
 void CadCoreApp::run() {
-  init_occt();
+  // Send the hello handshake BEFORE any OCCT code.  With /DELAYLOAD
+  // the OCCT DLLs load on the first API call (init_occt), and their
+  // DllMain corrupts the CRT stdout layer.  We must send hello while
+  // stdout is still clean.
   polysmith::protocol::write_message(polysmith::protocol::make_hello_event());
+  init_occt();
 
   std::string line;
   while (std::getline(std::cin, line)) {
