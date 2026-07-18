@@ -15,6 +15,12 @@
           profile.line_ids.push_back(id_value.get<std::string>());
         }
       }
+      if (profile_payload.contains("ordered_edge_ids") &&
+          profile_payload.at("ordered_edge_ids").is_array()) {
+        for (const auto& id_value : profile_payload.at("ordered_edge_ids")) {
+          profile.ordered_edge_ids.push_back(id_value.get<std::string>());
+        }
+      }
       if (profile_payload.contains("points") &&
           profile_payload.at("points").is_array()) {
         for (const auto& pt_payload : profile_payload.at("points")) {

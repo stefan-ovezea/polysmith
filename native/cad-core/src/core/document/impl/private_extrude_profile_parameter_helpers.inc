@@ -16,7 +16,7 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
           : std::nullopt;
 
   if (profile.kind == "polygon") {
-    return ExtrudeFeatureParameters{
+    ExtrudeFeatureParameters params{
         .sketch_feature_id = sketch_feature.id,
         .profile_id = profile.id,
         .profile_ids = {profile.id},
@@ -32,6 +32,24 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
         .inner_loops = profile.inner_loops,
         .depth = depth,
     };
+
+    if (!profile.ordered_edge_ids.empty()) {
+      params.sketch_edge_ids = profile.ordered_edge_ids;
+      // Copy the sketch geometry that the wire builder needs so it can
+      // reconstruct exact OCCT curves (lines → GC_MakeSegment, arcs →
+      // GC_MakeArcOfCircle, circles → gp_Circ) from the profile boundary.
+      for (const auto& line : sketch.lines) {
+        if (!line.is_construction) params.sketch_lines.push_back(line);
+      }
+      for (const auto& arc : sketch.arcs) {
+        if (!arc.is_construction) params.sketch_arcs.push_back(arc);
+      }
+      for (const auto& circle : sketch.circles) {
+        if (!circle.is_construction) params.sketch_circles.push_back(circle);
+      }
+    }
+
+    return params;
   }
 
   if (profile.kind == "circle") {
@@ -99,6 +117,19 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
       .depth = depth,
   };
 
+  if (!first.ordered_edge_ids.empty()) {
+    parameters.sketch_edge_ids = first.ordered_edge_ids;
+    for (const auto& line : sketch.lines) {
+      if (!line.is_construction) parameters.sketch_lines.push_back(line);
+    }
+    for (const auto& arc : sketch.arcs) {
+      if (!arc.is_construction) parameters.sketch_arcs.push_back(arc);
+    }
+    for (const auto& circle : sketch.circles) {
+      if (!circle.is_construction) parameters.sketch_circles.push_back(circle);
+    }
+  }
+
   for (size_t index = 1; index < profiles.size(); ++index) {
     const auto& profile = profiles[index];
     parameters.additional_profile_points.push_back(
@@ -127,6 +158,10 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.inner_loops = source.inner_loops;
   target.additional_profile_points = source.additional_profile_points;
   target.additional_inner_loops = source.additional_inner_loops;
+  target.sketch_edge_ids = source.sketch_edge_ids;
+  target.sketch_lines = source.sketch_lines;
+  target.sketch_arcs = source.sketch_arcs;
+  target.sketch_circles = source.sketch_circles;
 }
 
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {

@@ -148,6 +148,42 @@ TopoDS_Shape build_single_depth_extrude(
   }
   if (parameters.profile_kind == "polygon" ||
       parameters.profile_kind == "open_chain") {
+    // When the extrude was sourced from a sketch profile and the
+    // profile region carries ordered edge IDs, bypass the polygon
+    // wire path and build exact OCCT edges (lines via GC_MakeSegment,
+    // arcs via GC_MakeArcOfCircle, circles via gp_Circ). This avoids
+    // facet artifacts on curved profiles that the polygon path would
+    // introduce.
+    if (!parameters.sketch_edge_ids.empty() &&
+        (!parameters.sketch_lines.empty() || !parameters.sketch_arcs.empty() ||
+         !parameters.sketch_circles.empty())) {
+      // When every edge on the boundary belongs to the same circle,
+      // route through the dedicated cylinder builder — it is simpler
+      // and more robust than building a wire + face + prism.
+      if (parameters.sketch_lines.empty() && parameters.sketch_arcs.empty() &&
+          parameters.sketch_circles.size() == 1) {
+        const auto& c = parameters.sketch_circles.front();
+        const bool all_same_circle = std::all_of(
+            parameters.sketch_edge_ids.begin(),
+            parameters.sketch_edge_ids.end(),
+            [&](const std::string& id) { return id == c.id; });
+        if (all_same_circle) {
+          ExtrudeFeatureParameters circle_params = parameters;
+          circle_params.profile_kind = "circle";
+          circle_params.start_x = c.center_x;
+          circle_params.start_y = c.center_y;
+          circle_params.radius = c.radius;
+          return make_circle_extrude_shape(circle_params,
+                                           parameters.side1.taper_angle_degrees);
+        }
+      }
+      try {
+        return make_wire_extrude_shape(parameters);
+      } catch (const std::exception&) {
+        // Wire path failed — fall through to the polygon path so the
+        // user still gets geometry instead of an opaque error.
+      }
+    }
     return make_polygon_prism_shape(parameters);
   }
   throw std::runtime_error("Unsupported extrude profile kind: " +

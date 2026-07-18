@@ -12,6 +12,11 @@
                         line_ids.push_back(line_id);
                       }
 
+                      json ordered_edge_ids = json::array();
+                      for (const auto& edge_id : profile.ordered_edge_ids) {
+                        ordered_edge_ids.push_back(edge_id);
+                      }
+
                       json points = json::array();
                       for (const auto& point : profile.points) {
                         points.push_back({
@@ -36,6 +41,7 @@
                           {"kind", profile.kind},
                           {"vertex_ids", point_ids},
                           {"line_ids", line_ids},
+                          {"ordered_edge_ids", ordered_edge_ids},
                           {"points", points},
                           {"inner_loops", inner_loops},
                           {"source_circle_id",

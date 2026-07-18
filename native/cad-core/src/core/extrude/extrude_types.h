@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/document/plane_frame.h"
+#include "core/sketch/sketch_geometry_types.h"
 #include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
@@ -42,6 +43,13 @@ struct ExtrudeFeatureParameters {
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
   std::vector<std::vector<SketchProfilePoint>> additional_profile_points;
   std::vector<std::vector<std::vector<SketchProfilePoint>>> additional_inner_loops;
+  // Sketch wire data — when non-empty, build_extrude_shape uses exact OCCT
+  // curves (GC_MakeSegment / GC_MakeArcOfCircle / gp_Circ) instead of
+  // polygon-approximating the boundary with BRepBuilderAPI_MakePolygon.
+  std::vector<std::string> sketch_edge_ids;  // in boundary walk order
+  std::vector<SketchLine> sketch_lines;
+  std::vector<SketchArc> sketch_arcs;
+  std::vector<SketchCircle> sketch_circles;
   double depth;
   // "one_side", "symmetric", or "two_sides".
   std::string extent_mode = "one_side";

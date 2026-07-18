@@ -35,6 +35,7 @@
 #include <gp_Vec.hxx>
 #include <Geom_Plane.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeSegment.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
 #include <TopExp_Explorer.hxx>
@@ -51,6 +52,7 @@ namespace {
 
 #include "core/geometry/impl/shape_frame_helpers.inc"
 #include "core/geometry/impl/profile_face_helpers.inc"
+#include "core/geometry/impl/sketch_wire_extrude.inc"
 #include "core/geometry/impl/extrude_shape_helpers.inc"
 }  // namespace
 
