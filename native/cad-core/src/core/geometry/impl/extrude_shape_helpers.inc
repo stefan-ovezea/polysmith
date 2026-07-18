@@ -143,6 +143,14 @@ TopoDS_Shape build_single_depth_extrude(
     if (parameters.thin.enabled) {
       return make_polygon_prism_shape(make_polygon_source(parameters));
     }
+    // When this circle carries sketch data (populated by the profile
+    // param builder) and the mode is cut/join, route through the wire
+    // path so the shape shares the same construction method as the
+    // target body — OCCT 8 booleans need geometrically compatible inputs.
+    if (!parameters.sketch_edge_ids.empty() &&
+        parameters.mode != "new_body") {
+      return make_wire_extrude_shape(parameters);
+    }
     return make_circle_extrude_shape(parameters,
                                      parameters.side1.taper_angle_degrees);
   }
@@ -190,7 +198,14 @@ TopoDS_Shape build_single_depth_extrude(
           }
           if (all_belong) { owner = &c; break; }
         }
-        if (owner != nullptr) {
+        // Only use the dedicated cylinder path when there are no inner
+        // loops (holes) and no additional profiles.  With inner loops
+        // we must go through the wire path so the face builder can
+        // subtract them from the outer face; with additional profiles
+        // (multi-profile selections) the cylinder shortcut would drop
+        // every curve beyond the first.
+        if (owner != nullptr && parameters.inner_loops.empty() &&
+            parameters.additional_profile_points.empty()) {
           ExtrudeFeatureParameters circle_params = parameters;
           circle_params.profile_kind = "circle";
           circle_params.start_x = owner->center_x;

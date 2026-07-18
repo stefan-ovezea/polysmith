@@ -53,7 +53,7 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
   }
 
   if (profile.kind == "circle") {
-    return ExtrudeFeatureParameters{
+    ExtrudeFeatureParameters params{
         .sketch_feature_id = sketch_feature.id,
         .profile_id = profile.id,
         .profile_ids = {profile.id},
@@ -68,6 +68,28 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
         .profile_points = {},
         .depth = depth,
     };
+
+    // Carry the sketch geometry so that cut/join modes can route this
+    // circle through the wire path (matching the target body's
+    // construction method for OCCT 8 boolean compatibility).
+    if (profile.source_circle_id.has_value()) {
+      for (const auto& circle : sketch.circles) {
+        if (circle.id == profile.source_circle_id.value() &&
+            !circle.is_construction) {
+          params.sketch_circles.push_back(circle);
+          params.sketch_edge_ids.push_back(circle.id);
+          break;
+        }
+      }
+      for (const auto& line : sketch.lines) {
+        if (!line.is_construction) params.sketch_lines.push_back(line);
+      }
+      for (const auto& arc : sketch.arcs) {
+        if (!arc.is_construction) params.sketch_arcs.push_back(arc);
+      }
+    }
+
+    return params;
   }
 
   return std::nullopt;
@@ -117,18 +139,15 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
       .depth = depth,
   };
 
-  if (!first.ordered_edge_ids.empty()) {
-    parameters.sketch_edge_ids = first.ordered_edge_ids;
-    for (const auto& line : sketch.lines) {
-      if (!line.is_construction) parameters.sketch_lines.push_back(line);
-    }
-    for (const auto& arc : sketch.arcs) {
-      if (!arc.is_construction) parameters.sketch_arcs.push_back(arc);
-    }
-    for (const auto& circle : sketch.circles) {
-      if (!circle.is_construction) parameters.sketch_circles.push_back(circle);
-    }
-  }
+  // The wire-path builder (make_wire_extrude_shape / cylinder shortcut)
+  // handles only the primary profile boundary and its inner loops.
+  // Additional profiles stored in additional_profile_points are ignored
+  // by those paths, so populating sketch curve data here would cause
+  // the shape builder to enter the wire dispatch and silently drop every
+  // curve beyond the first.  Leave sketch_edge_ids / sketch_lines /
+  // sketch_arcs / sketch_circles empty so that build_single_depth_extrude
+  // falls through to make_polygon_prism_shape, which correctly builds a
+  // compound of independent prisms for every profile in the group.
 
   for (size_t index = 1; index < profiles.size(); ++index) {
     const auto& profile = profiles[index];

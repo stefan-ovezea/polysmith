@@ -73,6 +73,7 @@ DocumentState DocumentManager::extrude_profiles(
       preserve_extrude_source_geometry(*extrude_parameters, source);
     }
     extrude_parameters->depth = depth;
+    extrude_parameters->side1.distance = std::abs(depth);
     extrude_parameters->target_body_id = target_body_id;
     if (automatic_mode) {
       apply_automatic_extrude_mode(*document_,

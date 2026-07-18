@@ -318,6 +318,7 @@ export function useExtrudeFeatureActions({
   useEffect(() => {
     syncExtrudeProfileSelection({
       extrudeAction,
+      document,
       selectedSketchProfileIds,
       selectedSketchProfileIdsKey,
       selectedExtrudableFaceId,
@@ -329,7 +330,7 @@ export function useExtrudeFeatureActions({
       setExtrudeAction,
       runAction,
     });
-  }, [extrudeAction, selectedSketchProfileIdsKey, selectedExtrudableFaceId]);
+  }, [extrudeAction, document, selectedSketchProfileIdsKey, selectedExtrudableFaceId]);
 
   return {
     createExtrudeFromSelectedFace,
