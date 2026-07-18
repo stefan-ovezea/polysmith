@@ -247,10 +247,14 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     }
   }
 
-  // Split arc edges at line endpoints that lie on the arc, so tangent
-  // lines connect to the arc in the edge-loop graph (same principle as
-  // split_circle_segments_at_line_endpoints for circles).
-  {
+  // When the arrangement path is active the arrangement already
+  // handles all profile regions including arcs — the edge-loop pass
+  // only creates duplicate profiles that confuse hole nesting.
+  if (!use_arrangement) {
+    // Split arc edges at line endpoints that lie on the arc, so tangent
+    // lines connect to the arc in the edge-loop graph (same principle as
+    // split_circle_segments_at_line_endpoints for circles).
+    {
     auto norm_angle = [](double a) {
       a = std::fmod(a, 2.0 * kPi);
       if (a < 0.0) a += 2.0 * kPi;
@@ -379,6 +383,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       });
     }
   }
+  }  // if (!use_arrangement)
 
   apply_nested_polygon_holes(profiles);
 
