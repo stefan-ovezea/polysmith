@@ -173,19 +173,13 @@ TopoDS_Shape make_wire_extrude_shape(
     throw std::runtime_error("Failed to build face from sketch wire");
   }
 
-  // Inner loops (holes).  Build a simple polygon wire for each loop
-  // rather than going through make_profile_wire — that function picks
-  // its own normal which can disagree with the outer wire's frame.
+  // Inner loops (holes).  Use make_profile_wire which auto-detects
+  // circular loops and builds a proper gp_Circ wire — avoiding the
+  // faceted look of a polygon-approximated hole.
   for (const auto& loop : parameters.inner_loops) {
     if (loop.size() < 3) continue;
     try {
-      BRepBuilderAPI_MakePolygon hole_builder;
-      for (const auto& pt : loop) {
-        hole_builder.Add(to_world_point(parameters, pt.x, pt.y));
-      }
-      hole_builder.Close();
-      if (!hole_builder.IsDone()) continue;
-      TopoDS_Wire hole_wire = hole_builder.Wire();
+      TopoDS_Wire hole_wire = make_profile_wire(parameters, loop);
       hole_wire.Reverse();
       face_maker.Add(hole_wire);
     } catch (const std::exception&) {
