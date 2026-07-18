@@ -36,6 +36,37 @@ TopoDS_Shape make_polygon_prism_shape(const ExtrudeFeatureParameters& parameters
   return compound;
 }
 
+// When the primary profile is built via the exact-curve path (wire or
+// cylinder builder) but the extrude also carries additional profiles,
+// build each additional profile as a polygon prism and combine them
+// with the primary into one compound.
+TopoDS_Shape wrap_with_additional_profiles(
+    const ExtrudeFeatureParameters& parameters,
+    const TopoDS_Shape& primary_shape) {
+  if (parameters.additional_profile_points.empty()) {
+    return primary_shape;
+  }
+  TopoDS_Compound compound;
+  BRep_Builder builder;
+  builder.MakeCompound(compound);
+  builder.Add(compound, primary_shape);
+  for (size_t index = 0; index < parameters.additional_profile_points.size();
+       ++index) {
+    std::vector<SketchProfilePoint> profile_points;
+    std::vector<std::vector<SketchProfilePoint>> inner_loops =
+        index < parameters.additional_inner_loops.size()
+            ? parameters.additional_inner_loops[index]
+            : std::vector<std::vector<SketchProfilePoint>>{};
+    apply_closed_thin_profile(parameters,
+                              parameters.additional_profile_points[index],
+                              profile_points,
+                              inner_loops);
+    builder.Add(compound,
+                make_polygon_prism_shape(parameters, profile_points, inner_loops));
+  }
+  return compound;
+}
+
 std::vector<SketchProfilePoint> sample_circle_points(double center_x,
                                                      double center_y,
                                                      double radius) {
@@ -199,27 +230,30 @@ TopoDS_Shape build_single_depth_extrude(
           if (all_belong) { owner = &c; break; }
         }
         // Only use the dedicated cylinder path when there are no inner
-        // loops (holes) and no additional profiles.  With inner loops
-        // we must go through the wire path so the face builder can
-        // subtract them from the outer face; with additional profiles
-        // (multi-profile selections) the cylinder shortcut would drop
-        // every curve beyond the first.
-        if (owner != nullptr && parameters.inner_loops.empty() &&
-            parameters.additional_profile_points.empty()) {
+        // loops (holes).  With inner loops we must go through the wire
+        // path so the face builder can subtract them from the outer face.
+        // Additional profiles (multi-profile selections) are wrapped
+        // separately by wrap_with_additional_profiles after the primary
+        // shape is built.
+        if (owner != nullptr && parameters.inner_loops.empty()) {
           ExtrudeFeatureParameters circle_params = parameters;
           circle_params.profile_kind = "circle";
           circle_params.start_x = owner->center_x;
           circle_params.start_y = owner->center_y;
           circle_params.radius = owner->radius;
-          return make_circle_extrude_shape(circle_params,
-                                           parameters.side1.taper_angle_degrees);
+          return wrap_with_additional_profiles(
+              parameters,
+              make_circle_extrude_shape(circle_params,
+                                        parameters.side1.taper_angle_degrees));
         }
       }
       try {
-        return make_wire_extrude_shape(parameters);
+        return wrap_with_additional_profiles(
+            parameters, make_wire_extrude_shape(parameters));
       } catch (const std::exception&) {
-        // Wire path failed — fall through to the polygon path so the
-        // user still gets geometry instead of an opaque error.
+        // Wire path failed — fall through to the polygon path (which
+        // handles both primary and additional profiles) so the user
+        // still gets geometry instead of an opaque error.
       }
     }
     return make_polygon_prism_shape(parameters);
