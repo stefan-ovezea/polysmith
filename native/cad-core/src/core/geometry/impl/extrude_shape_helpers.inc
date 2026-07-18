@@ -157,22 +157,45 @@ TopoDS_Shape build_single_depth_extrude(
     if (!parameters.sketch_edge_ids.empty() &&
         (!parameters.sketch_lines.empty() || !parameters.sketch_arcs.empty() ||
          !parameters.sketch_circles.empty())) {
-      // When every edge on the boundary belongs to the same circle,
-      // route through the dedicated cylinder builder — it is simpler
+      // When every edge on this profile boundary belongs to the same
+      // circle, route through the dedicated cylinder builder — simpler
       // and more robust than building a wire + face + prism.
-      if (parameters.sketch_lines.empty() && parameters.sketch_arcs.empty() &&
-          parameters.sketch_circles.size() == 1) {
-        const auto& c = parameters.sketch_circles.front();
-        const bool all_same_circle = std::all_of(
+      // We inspect the actual edge IDs on this profile, not the global
+      // sketch geometry (which may contain lines/arcs from other
+      // profiles in the same sketch).
+      if (!parameters.sketch_edge_ids.empty() &&
+          !parameters.sketch_circles.empty()) {
+        // Collect the set of distinct edge IDs on this boundary.
+        std::set<std::string> distinct_ids(
             parameters.sketch_edge_ids.begin(),
-            parameters.sketch_edge_ids.end(),
-            [&](const std::string& id) { return id == c.id; });
-        if (all_same_circle) {
+            parameters.sketch_edge_ids.end());
+        // Find which circle (if any) owns every edge on this boundary.
+        const SketchCircle* owner = nullptr;
+        for (const auto& c : parameters.sketch_circles) {
+          if (distinct_ids.size() == 1 &&
+              *distinct_ids.begin() == c.id) {
+            owner = &c;
+            break;
+          }
+          // Also handle the common case where the boundary edges are a
+          // mix of the circle's own id plus ids of split arc segments
+          // that all belong to the same circle.
+          bool all_belong = true;
+          for (const auto& id : distinct_ids) {
+            if (id != c.id) {
+              // Could also be a line/arc id — skip this circle.
+              all_belong = false;
+              break;
+            }
+          }
+          if (all_belong) { owner = &c; break; }
+        }
+        if (owner != nullptr) {
           ExtrudeFeatureParameters circle_params = parameters;
           circle_params.profile_kind = "circle";
-          circle_params.start_x = c.center_x;
-          circle_params.start_y = c.center_y;
-          circle_params.radius = c.radius;
+          circle_params.start_x = owner->center_x;
+          circle_params.start_y = owner->center_y;
+          circle_params.radius = owner->radius;
           return make_circle_extrude_shape(circle_params,
                                            parameters.side1.taper_angle_degrees);
         }
