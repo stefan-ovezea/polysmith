@@ -33,8 +33,9 @@ TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape) {
     if (!unified.IsNull()) {
       return unified;
     }
-  } catch (const std::exception&) {
-    // Keep the original boolean result if OCCT cannot merge domains.
+    fprintf(stderr, "[WARN] unify_same_domain: Build() succeeded but Shape() is null — keeping original\n");
+  } catch (const std::exception& e) {
+    fprintf(stderr, "[WARN] unify_same_domain: exception: %s — keeping original\n", e.what());
   }
   return shape;
 }

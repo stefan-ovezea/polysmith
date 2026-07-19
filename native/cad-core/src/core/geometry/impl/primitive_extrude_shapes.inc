@@ -49,5 +49,8 @@ TopoDS_Shape build_extrude_shape(const ExtrudeFeatureParameters& parameters) {
   } catch (const Standard_Failure&) {
     throw std::runtime_error(
         "Extrude preview failed. Adjust the extent, taper, or source profile.");
+  } catch (const std::exception& e) {
+    throw std::runtime_error(
+        std::string("Extrude preview failed (OCCT): ") + e.what());
   }
 }

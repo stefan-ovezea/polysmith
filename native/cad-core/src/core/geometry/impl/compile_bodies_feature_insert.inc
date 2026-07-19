@@ -36,9 +36,9 @@
         } else {
           throw std::runtime_error("Unknown extrude mode: " + mode);
         }
-      } catch (const std::exception&) {
-        // Swallow boolean failures — fall back to a fresh body so the
-        // user still sees their geometry instead of an opaque error.
+      } catch (const std::exception& e) {
+        fprintf(stderr, "[WARN] Boolean %s on body '%s' failed: %s — falling back to fresh body\n",
+                mode.c_str(), target_id.c_str(), e.what());
         combined = shape;
       }
 

@@ -169,6 +169,7 @@ TopoDS_Shape apply_hole(const TopoDS_Shape& body_shape,
     }
     TopoDS_Shape result = BRepAlgoAPI_Cut(body_shape, cutter).Shape();
     if (result.IsNull()) {
+      fprintf(stderr, "[WARN] Hole cut produced null shape — keeping original body\n");
       return body_shape;
     }
     result = unify_same_domain(result);

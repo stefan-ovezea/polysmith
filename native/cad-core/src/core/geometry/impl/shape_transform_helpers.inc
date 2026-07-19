@@ -78,5 +78,8 @@ TopoDS_Shape apply_draft_angle(const TopoDS_Shape& shape,
     throw std::runtime_error(
         "Extrude taper failed. Reduce the taper angle, increase the distance, "
         "or use a wider profile.");
+  } catch (const std::exception& e) {
+    throw std::runtime_error(
+        std::string("Extrude taper failed (OCCT): ") + e.what());
   }
 }
