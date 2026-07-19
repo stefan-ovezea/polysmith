@@ -51,7 +51,70 @@
                              }},
                         }
                       : json(nullptr)},
-                 {"profile_kind", feature.extrude_parameters->profile_kind},
+                  {"sketch_edge_ids",
+                   [&feature]() {
+                     json ids = json::array();
+                     for (const auto& id :
+                          feature.extrude_parameters->sketch_edge_ids) {
+                       ids.push_back(id);
+                     }
+                     return ids;
+                   }()},
+                  {"sketch_lines",
+                   [&feature]() {
+                     json lines = json::array();
+                     for (const auto& line :
+                          feature.extrude_parameters->sketch_lines) {
+                       lines.push_back({
+                           {"line_id", line.id},
+                           {"start_x", line.start_x},
+                           {"start_y", line.start_y},
+                           {"end_x", line.end_x},
+                           {"end_y", line.end_y},
+                           {"start_vertex_id", line.start_vertex_id},
+                           {"end_vertex_id", line.end_vertex_id},
+                           {"is_construction", line.is_construction},
+                           {"constraint", line.constraint},
+                       });
+                     }
+                     return lines;
+                   }()},
+                  {"sketch_arcs",
+                   [&feature]() {
+                     json arcs = json::array();
+                     for (const auto& arc :
+                          feature.extrude_parameters->sketch_arcs) {
+                       arcs.push_back({
+                           {"arc_id", arc.id},
+                           {"center_x", arc.center_x},
+                           {"center_y", arc.center_y},
+                           {"start_x", arc.start_x},
+                           {"start_y", arc.start_y},
+                           {"end_x", arc.end_x},
+                           {"end_y", arc.end_y},
+                           {"radius", arc.radius},
+                           {"ccw", arc.ccw},
+                           {"is_construction", arc.is_construction},
+                       });
+                     }
+                     return arcs;
+                   }()},
+                  {"sketch_circles",
+                   [&feature]() {
+                     json circles = json::array();
+                     for (const auto& circ :
+                          feature.extrude_parameters->sketch_circles) {
+                       circles.push_back({
+                           {"circle_id", circ.id},
+                           {"center_x", circ.center_x},
+                           {"center_y", circ.center_y},
+                           {"radius", circ.radius},
+                           {"is_construction", circ.is_construction},
+                       });
+                     }
+                     return circles;
+                   }()},
+                  {"profile_kind", feature.extrude_parameters->profile_kind},
                  {"start_x", feature.extrude_parameters->start_x},
                  {"start_y", feature.extrude_parameters->start_y},
                  {"width", feature.extrude_parameters->width},

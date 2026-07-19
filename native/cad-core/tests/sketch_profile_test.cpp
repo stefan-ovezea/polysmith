@@ -879,7 +879,123 @@ bool test_fillet_rejects_oversized_radius() {
     threw = true;
   }
   return expect(threw,
-                "expected oversized fillet radius to throw a structured error");
+                 "expected oversized fillet radius to throw a structured error");
+}
+
+// Reproduces the chamfered-rectangle + circle geometry from part.json.
+// Verifies that no spurious arc-only "sliver" profiles are generated.
+bool test_chamfered_rect_with_circle_produces_no_spurious_profiles() {
+  FeatureEntry feature = create_sketch_feature(30, "ref-plane-xy");
+
+  // Build a 100×80 rectangle centred at origin with all 4 corners filleted
+  // (radius 5). Use add_sketch_rectangle then fillet each corner.
+  int li=1; add_sketch_rectangle(feature, li,
+                        -50.0, -40.0, 50.0, 40.0);
+
+  // Find the four corner point ids and the four line ids.
+  const auto& lines = feature.sketch_parameters->lines;
+  const auto& points = feature.sketch_parameters->vertices;
+  std::string corner_bl, corner_br, corner_tr, corner_tl;
+  std::string line_bottom, line_right, line_top, line_left;
+  for (const auto& pt : points) {
+    if (std::abs(pt.x + 50.0) < 0.01 && std::abs(pt.y + 40.0) < 0.01)
+      corner_bl = pt.id;
+    else if (std::abs(pt.x - 50.0) < 0.01 && std::abs(pt.y + 40.0) < 0.01)
+      corner_br = pt.id;
+    else if (std::abs(pt.x - 50.0) < 0.01 && std::abs(pt.y - 40.0) < 0.01)
+      corner_tr = pt.id;
+    else if (std::abs(pt.x + 50.0) < 0.01 && std::abs(pt.y - 40.0) < 0.01)
+      corner_tl = pt.id;
+  }
+  for (const auto& ln : lines) {
+    const bool near_y_m40 = std::abs(ln.start_y + 40.0) < 0.01 &&
+                            std::abs(ln.end_y + 40.0) < 0.01;
+    const bool near_y_p40 = std::abs(ln.start_y - 40.0) < 0.01 &&
+                            std::abs(ln.end_y - 40.0) < 0.01;
+    const bool near_x_m50 = std::abs(ln.start_x + 50.0) < 0.01 &&
+                            std::abs(ln.end_x + 50.0) < 0.01;
+    const bool near_x_p50 = std::abs(ln.start_x - 50.0) < 0.01 &&
+                            std::abs(ln.end_x - 50.0) < 0.01;
+    if (near_y_m40) line_bottom = ln.id;
+    else if (near_x_p50) line_right = ln.id;
+    else if (near_y_p40) line_top = ln.id;
+    else if (near_x_m50) line_left = ln.id;
+  }
+
+  if (corner_bl.empty() || corner_br.empty() || corner_tr.empty() ||
+      corner_tl.empty() || line_bottom.empty() || line_right.empty() ||
+      line_top.empty() || line_left.empty()) {
+    return expect(false, "failed to locate rectangle corners / lines");
+  }
+
+  // Fillet all four corners (radius 5).
+  add_sketch_fillet(feature, 1, 100, 101, 1,
+                    corner_bl, line_bottom, line_left, 5.0);
+  add_sketch_fillet(feature, 2, 102, 103, 2,
+                    corner_br, line_bottom, line_right, 5.0);
+  add_sketch_fillet(feature, 3, 104, 105, 3,
+                    corner_tr, line_right, line_top, 5.0);
+  add_sketch_fillet(feature, 4, 106, 107, 4,
+                    corner_tl, line_top, line_left, 5.0);
+
+  // Add central circle (radius ~19.259 as in part.json).
+  add_sketch_circle(feature, /*circle_index=*/1, 0.0, 0.0, 19.258849974576425);
+
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(feature.sketch_parameters.value());
+
+  const auto& profiles = feature.sketch_parameters->profiles;
+
+  // We expect exactly 2 profiles: outer chamfered rectangle + circle.
+  if (!expect(profiles.size() >= 2,
+              "expected at least 2 profiles (outer rect + circle)")) {
+    return false;
+  }
+
+  // Count polygon profiles and circle profiles.
+  int polygon_count = 0;
+  int circle_count = 0;
+  for (const auto& p : profiles) {
+    if (p.kind == "polygon") ++polygon_count;
+    else if (p.kind == "circle") ++circle_count;
+  }
+
+  // There must be exactly one circle-kind profile.
+  if (!expect(circle_count == 1,
+              "expected exactly one circle-kind profile")) {
+    return false;
+  }
+
+  // There must be exactly one polygon profile (the outer rect).
+  if (!expect(polygon_count == 1,
+              "expected exactly one polygon profile, no arc-only slivers")) {
+    for (const auto& p : profiles) {
+      if (p.kind != "polygon") continue;
+      std::cerr << "  polygon line_ids:";
+      for (const auto& lid : p.line_ids) std::cerr << " " << lid;
+      std::cerr << std::endl;
+    }
+    return false;
+  }
+
+  // The sole polygon must contain all four arcs and all four lines.
+  const auto& poly = [&]() -> const polysmith::core::SketchProfileRegion& {
+    for (const auto& p : profiles)
+      if (p.kind == "polygon") return p;
+    return profiles.front();  // unreachable if polygon_count == 1
+  }();
+  int arc_count = 0;
+  int line_count = 0;
+  for (const auto& lid : poly.line_ids) {
+    if (lid.rfind("arc-", 0) == 0) ++arc_count;
+    else if (lid.rfind("line-", 0) == 0) ++line_count;
+  }
+  if (!expect(arc_count == 4,
+              "expected 4 arc ids in outer polygon")) return false;
+  if (!expect(line_count == 4,
+              "expected 4 line ids in outer polygon")) return false;
+
+  return true;
 }
 
 }  // namespace
@@ -949,6 +1065,9 @@ int main() {
     return EXIT_FAILURE;
   }
   if (!test_fillet_rejects_oversized_radius()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_chamfered_rect_with_circle_produces_no_spurious_profiles()) {
     return EXIT_FAILURE;
   }
 

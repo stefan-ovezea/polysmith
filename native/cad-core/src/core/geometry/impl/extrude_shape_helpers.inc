@@ -193,7 +193,7 @@ TopoDS_Shape build_single_depth_extrude(
     // arcs via GC_MakeArcOfCircle, circles via gp_Circ). This avoids
     // facet artifacts on curved profiles that the polygon path would
     // introduce.
-    if (!parameters.sketch_edge_ids.empty() &&
+    if (false && !parameters.sketch_edge_ids.empty() &&
         (!parameters.sketch_lines.empty() || !parameters.sketch_arcs.empty() ||
          !parameters.sketch_circles.empty())) {
       // When every edge on this profile boundary belongs to the same

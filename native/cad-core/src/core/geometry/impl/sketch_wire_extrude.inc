@@ -18,7 +18,11 @@ TopoDS_Edge make_arc_edge(const SketchArc& arc,
   const gp_Pnt end    = to_world_point(frame, arc.end_x, arc.end_y);
   const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
   const gp_Circ circle(gp_Ax2(center, normal), arc.radius);
-  GC_MakeArcOfCircle arc_maker(circle, start, end, arc.ccw);
+  // The OCCT circle built with gp_Ax2(center, normal) has its parameter
+  // CCW opposite to the sketch CCW (Y_direction = (0,0,-1) vs sketch +Z
+  // for ref-plane-xy).  The caller already oriented start/end to match the
+  // wire traversal direction; negating ccw picks the correct minor arc.
+  GC_MakeArcOfCircle arc_maker(circle, start, end, !arc.ccw);
   if (!arc_maker.IsDone()) {
     throw std::runtime_error("Failed to create arc of circle");
   }
@@ -137,7 +141,28 @@ TopoDS_Wire make_sketch_wire(
         parameters.sketch_arcs.begin(), parameters.sketch_arcs.end(),
         [&](const SketchArc& a) { return a.id == edge_id; });
     if (arc_it != parameters.sketch_arcs.end()) {
-      wire_builder.Add(make_arc_edge(*arc_it, frame));
+      // The stored arc direction (start→end) may not match the wire
+      // traversal direction (group_start→last_pt).  When it doesn't,
+      // swap endpoints and invert ccw so the edge goes the right way
+      // and OCCT never has to reverse it internally — reversed edges
+      // can confuse BRepBuilderAPI_MakeFace's interior determination.
+      const auto& gp_start = pts[group_start];
+      const auto& gp_end   = pts[last_pt];
+      constexpr double kTol = 0.01;
+      const bool stored_matches =
+          std::abs(gp_start.x - arc_it->start_x) <= kTol &&
+          std::abs(gp_start.y - arc_it->start_y) <= kTol;
+      if (stored_matches) {
+        wire_builder.Add(make_arc_edge(*arc_it, frame));
+      } else {
+        SketchArc oriented = *arc_it;
+        oriented.start_x = gp_start.x;
+        oriented.start_y = gp_start.y;
+        oriented.end_x   = gp_end.x;
+        oriented.end_y   = gp_end.y;
+        oriented.ccw     = !oriented.ccw;
+        wire_builder.Add(make_arc_edge(oriented, frame));
+      }
       group_start = group_end + 1;
       continue;
     }
@@ -147,7 +172,22 @@ TopoDS_Wire make_sketch_wire(
         parameters.sketch_lines.begin(), parameters.sketch_lines.end(),
         [&](const SketchLine& l) { return l.id == edge_id; });
     if (line_it != parameters.sketch_lines.end()) {
-      wire_builder.Add(make_line_edge(*line_it, frame));
+      const auto& gp_start = pts[group_start];
+      const auto& gp_end   = pts[last_pt];
+      constexpr double kTol = 0.01;
+      const bool stored_matches =
+          std::abs(gp_start.x - line_it->start_x) <= kTol &&
+          std::abs(gp_start.y - line_it->start_y) <= kTol;
+      if (stored_matches) {
+        wire_builder.Add(make_line_edge(*line_it, frame));
+      } else {
+        SketchLine oriented = *line_it;
+        oriented.start_x = gp_start.x;
+        oriented.start_y = gp_start.y;
+        oriented.end_x   = gp_end.x;
+        oriented.end_y   = gp_end.y;
+        wire_builder.Add(make_line_edge(oriented, frame));
+      }
       group_start = group_end + 1;
       continue;
     }
