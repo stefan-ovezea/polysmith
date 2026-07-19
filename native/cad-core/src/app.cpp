@@ -18,7 +18,7 @@
 
 #include <BRepAdaptor_Surface.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>

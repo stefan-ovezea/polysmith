@@ -33,7 +33,7 @@ TopoDS_Shape apply_fillet(const TopoDS_Shape& body_shape,
     return body_shape;
   }
 
-  TopTools_IndexedMapOfShape edge_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
 
   try {
@@ -73,7 +73,7 @@ TopoDS_Shape apply_chamfer(const TopoDS_Shape& body_shape,
     return body_shape;
   }
 
-  TopTools_IndexedMapOfShape edge_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
 
   try {
@@ -116,7 +116,7 @@ TopoDS_Shape apply_shell(const TopoDS_Shape& body_shape,
     return body_shape;
   }
 
-  TopTools_IndexedMapOfShape face_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
   TopExp::MapShapes(body_shape, TopAbs_FACE, face_map);
 
   try {

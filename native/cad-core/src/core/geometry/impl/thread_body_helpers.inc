@@ -7,7 +7,7 @@ std::optional<ThreadAxis> resolve_thread_axis(
     if (body_it == body_shapes.end() || body_it->second.IsNull()) {
       return std::nullopt;
     }
-    TopTools_IndexedMapOfShape edge_map;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
     TopExp::MapShapes(body_it->second, TopAbs_EDGE, edge_map);
     const int one_based = parsed->index + 1;
     if (one_based < 1 || one_based > edge_map.Extent()) {

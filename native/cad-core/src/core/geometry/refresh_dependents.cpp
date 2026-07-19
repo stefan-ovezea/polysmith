@@ -14,7 +14,7 @@
 #include <GeomAbs_SurfaceType.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax3.hxx>

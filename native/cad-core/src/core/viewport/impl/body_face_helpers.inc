@@ -160,7 +160,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     return;
   }
 
-  TopTools_IndexedMapOfShape face_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
   TopExp::MapShapes(body_shape, TopAbs_FACE, face_map);
 
   for (int i = 1; i <= face_map.Extent(); ++i) {
