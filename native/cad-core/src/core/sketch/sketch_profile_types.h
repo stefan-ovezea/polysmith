@@ -12,6 +12,7 @@ struct SketchProfileRegion {
   std::string kind;
   std::vector<std::string> vertex_ids;
   std::vector<std::string> line_ids;
+  std::vector<std::string> ordered_edge_ids;
   std::vector<SketchProfilePoint> points;
   // Inner loops cut out of this profile region. v1 uses this for the
   // common "circle inside polygon" case so selecting the outer area
