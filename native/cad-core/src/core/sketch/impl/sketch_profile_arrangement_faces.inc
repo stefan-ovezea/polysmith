@@ -140,11 +140,6 @@ std::vector<ArrangementFace> detect_arrangement_faces(
       if (area <= kProfileTolerance) {
         continue;
       }
-      // Save the boundary-walk order before deduplicating into the
-      // unique-set `line_ids` field. The ordered version lets downstream
-      // extrude builders reconstruct exact OCCT wire curves (lines,
-      // arcs, circles) instead of falling back to polygon faces.
-      const std::vector<std::string> ordered_ids = face_lines;
       std::sort(face_lines.begin(), face_lines.end());
       face_lines.erase(std::unique(face_lines.begin(), face_lines.end()),
                        face_lines.end());
@@ -152,7 +147,6 @@ std::vector<ArrangementFace> detect_arrangement_faces(
           .points = face_points,
           .vertex_ids = face_point_ids,
           .line_ids = face_lines,
-          .ordered_line_ids = ordered_ids,
           .area = area,
       });
     }

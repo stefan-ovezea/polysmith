@@ -78,15 +78,6 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       } else {
         while (sweep >= 0.0) sweep -= 2.0 * kPi;
       }
-      // The raw ccw flag from arc creation can point to the major arc
-      // (> 180°) when the anchor is near the centre.  Clamp sweep to
-      // the minor arc so the arrangement follows the actual drawn shape.
-      if (sweep > kPi) {
-        sweep -= 2.0 * kPi;
-      } else if (sweep < -kPi) {
-        sweep += 2.0 * kPi;
-      }
-      const bool effective_ccw = sweep >= 0.0;
 
       // Collect tangent point angles for this arc.
       auto norm = [](double a) {
@@ -97,7 +88,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
         const double ns = norm(start_angle);
         const double ne = norm(end_angle);
         const double na = norm(a);
-        if (effective_ccw) {
+        if (arc.ccw) {
           if (ns <= ne) return na >= ns && na <= ne;
           return na >= ns || na <= ne;
         }
@@ -150,8 +141,8 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
                   [&](double a, double b) {
                     auto dist = [&](double ang) {
                       double da = norm(ang) - norm(start_angle);
-                      if (effective_ccw) { while (da < 0.0) da += 2.0 * kPi; }
-                      else              { while (da > 0.0) da -= 2.0 * kPi; }
+                      if (arc.ccw) { while (da < 0.0) da += 2.0 * kPi; }
+                      else         { while (da > 0.0) da -= 2.0 * kPi; }
                       return da;
                     };
                     return dist(a) < dist(b);
@@ -174,8 +165,8 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           while (si < split_angles.size()) {
             auto dist = [&](double ang) {
               double da = norm(ang) - norm(start_angle);
-              if (effective_ccw) { while (da < 0.0) da += 2.0 * kPi; }
-              else              { while (da > 0.0) da -= 2.0 * kPi; }
+              if (arc.ccw) { while (da < 0.0) da += 2.0 * kPi; }
+              else         { while (da > 0.0) da -= 2.0 * kPi; }
               return da;
             };
             if (dist(split_angles[si]) < dist(pt_a) + 1e-12) {
@@ -220,25 +211,12 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     };
 
     for (const auto& face : arrangement_faces) {
-      // A polygon face composed solely of arc segments is an arrangement
-      // byproduct — the arcs are parts of a larger boundary and cannot
-      // form an independent closed region.  Skip these so they don't
-      // become spurious holes via apply_nested_polygon_holes.
-      bool only_arcs =
-          !face.line_ids.empty() &&
-          std::all_of(face.line_ids.begin(), face.line_ids.end(),
-                      [](const std::string& lid) {
-                        return lid.size() >= 4 && lid.substr(0, 4) == "arc-";
-                      });
-      if (only_arcs) continue;
-
       profiles.push_back(SketchProfileRegion{
           .id = make_polygon_profile_id(face.line_ids) + "-" +
                 make_polygon_profile_id(face.vertex_ids),
           .kind = "polygon",
           .vertex_ids = face.vertex_ids,
           .line_ids = face.line_ids,
-          .ordered_edge_ids = face.ordered_line_ids,
           .points = face.points,
           .inner_loops = {},
           .source_circle_id = unsplit_source_circle_id(face),
@@ -257,7 +235,6 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           .kind = "polygon",
           .vertex_ids = face.vertex_ids,
           .line_ids = face.line_ids,
-          .ordered_edge_ids = face.ordered_line_ids,
           .points = face.points,
           .inner_loops = {},
           .source_circle_id = std::nullopt,
@@ -268,14 +245,10 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     }
   }
 
-  // When the arrangement path is active the arrangement already
-  // handles all profile regions including arcs — the edge-loop pass
-  // only creates duplicate profiles that confuse hole nesting.
-  if (!use_arrangement) {
-    // Split arc edges at line endpoints that lie on the arc, so tangent
-    // lines connect to the arc in the edge-loop graph (same principle as
-    // split_circle_segments_at_line_endpoints for circles).
-    {
+  // Split arc edges at line endpoints that lie on the arc, so tangent
+  // lines connect to the arc in the edge-loop graph (same principle as
+  // split_circle_segments_at_line_endpoints for circles).
+  {
     auto norm_angle = [](double a) {
       a = std::fmod(a, 2.0 * kPi);
       if (a < 0.0) a += 2.0 * kPi;
@@ -394,7 +367,6 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           .kind = "polygon",
           .vertex_ids = loop->vertex_ids,
           .line_ids = loop->edge_ids,
-          .ordered_edge_ids = loop->edge_ids,
           .points = loop->points,
           .inner_loops = {},
           .source_circle_id = std::nullopt,
@@ -404,7 +376,6 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       });
     }
   }
-  }  // if (!use_arrangement)
 
   apply_nested_polygon_holes(profiles);
 
@@ -470,7 +441,6 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           .kind = "polygon",
           .vertex_ids = {circle_center_vertex_id(*circle)},
           .line_ids = {},
-          .ordered_edge_ids = {circle->id},
           .points = sample_circle_loop(*circle),
           .inner_loops = hole_it->second,
           .source_circle_id = circle->id,
