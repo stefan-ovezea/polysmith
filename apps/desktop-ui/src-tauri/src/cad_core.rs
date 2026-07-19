@@ -115,6 +115,15 @@ pub fn start_cad_core_process(
             let existing_path = std::env::var("PATH").unwrap_or_default();
             cmd.env("PATH", format!("{extra_path};{existing_path}"));
         }
+
+        // OCCT 8.0 resource files (STEP/IGES/STL definitions, fonts, shaders).
+        // The precompiled binary uses the legacy data/ layout; CASROOT tells
+        // OCCT where to find it.  CSF_OCCTResourcePath is the 8.0-era
+        // replacement but CASROOT is still supported for compatibility.
+        let occt_root = third_party.join("opencascade-8.0.0-vc14-64");
+        if occt_root.join("data").exists() {
+            cmd.env("CASROOT", occt_root.display().to_string());
+        }
     }
 
     let mut child = cmd.spawn()
