@@ -223,7 +223,6 @@ TopoDS_Shape build_thread_cutter(const ThreadAxis& axis,
   } catch (const Standard_Failure&) {
     return TopoDS_Shape{};
   } catch (const std::exception& e) {
-    fprintf(stderr, "[WARN] OCCT pipe build error: %s\n", e.what());
     return TopoDS_Shape{};
   }
 }
@@ -241,7 +240,6 @@ TopoDS_Shape apply_thread(const TopoDS_Shape& body_shape,
   } catch (const Standard_Failure&) {
     return body_shape;
   } catch (const std::exception& e) {
-    fprintf(stderr, "[WARN] OCCT thread cut error: %s\n", e.what());
     return body_shape;
   }
 }

@@ -102,8 +102,7 @@ TopoDS_Shape apply_fastener_drive_cut(const TopoDS_Shape& shape,
     return cut_shape.IsNull() ? shape : cut_shape;
   } catch (const Standard_Failure&) {
     return shape;
-  } catch (const std::exception& e) {
-    fprintf(stderr, "[WARN] OCCT fastener cut error: %s\n", e.what());
+  } catch (const std::exception&) {
     return shape;
   }
 }

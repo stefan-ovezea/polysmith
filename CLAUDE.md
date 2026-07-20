@@ -237,12 +237,56 @@ C++ notes:
 - MSVC treats `const char*` ↔ `unsigned char*` as an error. Match types exactly.
 - OCCT DLLs on Windows live at `third_party/occt-install/win64/vc14/bin`. Tauri prepends this to `PATH` when spawning the core.
 
-## Debugging
+## Debugging & Logging
 
-- This is a **Tauri desktop app** — there is no F12 DevTools console.
-- `console.log` output is captured and discarded by Tauri. **Never use `console.log` for debugging.**
-- Use `addMessage("...")` from `useCadCoreStore` to emit messages to the in-app **Logs panel** (toolbar icon). Structured `LogEntry` objects can be sent via `addLogEntry(entry)`.
-- The CAD core writes structured logs to stderr (format: `[timestamp] [level] [source] message`). Tauri forwards unrecognized stderr lines as `cad-core-log` events.
+This is a **Tauri desktop app** — there is no F12 DevTools console and no terminal
+output visible to the user. All diagnostic output must go through the in-app
+**Logs panel** (toolbar icon, expandable sidebar). Never use `console.log`,
+`printf`, `fprintf(stderr, ...)`, `std::cerr`, or `std::cout` for permanent
+diagnostics — they are either discarded or surfaced as raw stderr events the
+user cannot filter.
+
+### Logging from TypeScript (UI layer)
+
+Two functions available from `useCadCoreStore`:
+
+```ts
+// Simple text message — appears in Logs panel immediately.
+const addMessage = useCadCoreStore((state) => state.addMessage);
+addMessage("export started");
+
+// Structured log entry — level-filterable, carries source + timestamp.
+// Use makeUiLogEntry from @/lib for correct structure.
+import { makeUiLogEntry } from "@/lib";
+const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
+addLogEntry(makeUiLogEntry("info", "desktop_ui", "export started"));
+```
+
+`LogLevel`: `"debug"` | `"info"` | `"warn"` | `"error"`.
+`LogEntry`: `{ level, source, message, timestamp }` (defined in `src/types/ipc.ts`).
+
+### Logging from C++ (CAD core)
+
+Use the project's structured logger (`core/diagnostics/logger.h`), **not** raw
+`fprintf` or `std::cerr`:
+
+```cpp
+#include "core/diagnostics/logger.h"
+
+polysmith::core::log_info("source_tag", "message");
+polysmith::core::log_warn("source_tag", "message");
+polysmith::core::log_error("source_tag", "message");
+polysmith::core::log_debug("source_tag", "message");
+```
+
+This writes both to stderr (for Tauri's stderr bridge) **and** emits a
+structured `log` IPC event that the UI routes to the Logs panel with proper
+level/source/timestamp metadata.
+
+Raw stderr output (from `fprintf(stderr, ...)` or uncaught exception messages)
+is captured by Tauri and forwarded as `cad-core-log` events, but without
+structured metadata — level defaults to `"info"` and source is unknown.
+Prefer the logger API.
 
 ## Build Troubleshooting
 
@@ -313,8 +357,10 @@ Key pages for understanding the system:
 
 - `dev` is the default development branch; `main` is production/stable.
 - Feature branches from latest `dev`, squash-merge back via PR.
-- Git push/pull/fetch require user permission — never run them autonomously.
-- Prefer `gh` CLI for PR operations when available.
+- **No git mutations without approval.** `git commit`, `git checkout`, `git rm`, `git reset`, `git stash`, `git revert`, `git cherry-pick`, `git add`, and any other command that changes the working tree, index, or branch state must be approved by the user before execution. Read-only commands (`git status`, `git log`, `git diff`, `git show`) are exempt.
+- Prefer `gh` CLI for PR operations when available — also requires approval.
+- **Never commit without asking first.** Every `git commit` must be approved by the user before execution.
+- **Never commit untested code.** Code must be verified by at least a successful build (`pnpm core:rebuild` or equivalent) before it can be committed. If the build environment is unavailable, state that clearly instead of committing blind.
 - At the start of every prompt that may change files, check the current branch and working tree state before editing.
 - Keep feature branches scoped to one implementation or fix.
 - Open implementation PRs as draft until tested and ready for review.

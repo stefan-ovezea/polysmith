@@ -33,9 +33,7 @@ TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape) {
     if (!unified.IsNull()) {
       return unified;
     }
-    fprintf(stderr, "[WARN] unify_same_domain: Build() succeeded but Shape() is null — keeping original\n");
-  } catch (const std::exception& e) {
-    fprintf(stderr, "[WARN] unify_same_domain: exception: %s — keeping original\n", e.what());
+  } catch (const std::exception&) {
   }
   return shape;
 }

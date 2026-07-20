@@ -43,8 +43,7 @@ TopoDS_Shape deserialize_shape_snapshot(const std::string& serialized_shape) {
     BRepTools::Read(shape, stream, builder);
   } catch (const Standard_Failure&) {
     return TopoDS_Shape{};
-  } catch (const std::exception& e) {
-    fprintf(stderr, "[WARN] OCCT deserialization error: %s\n", e.what());
+  } catch (const std::exception&) {
     return TopoDS_Shape{};
   }
   return shape;
