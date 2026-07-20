@@ -20,7 +20,7 @@ void tessellate_shape_to_arrays(const TopoDS_Shape& shape,
                                     /*deflection=*/0.1,
                                     /*isRelative=*/false,
                                     /*angularDeflection=*/0.5,
-                                    /*isInParallel=*/true);
+                                    /*isInParallel=*/false);
     if (!mesher.IsDone()) {
       return;
     }

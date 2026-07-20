@@ -152,7 +152,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
                                     /*deflection=*/0.1,
                                     /*isRelative=*/false,
                                     /*angularDeflection=*/0.5,
-                                    /*isInParallel=*/true);
+                                    /*isInParallel=*/false);
     if (!mesher.IsDone()) {
       return;
     }

@@ -7,7 +7,7 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
                                   kLinearDeflection,
                                   /*isRelative=*/false,
                                   kAngularDeflection,
-                                  /*isInParallel=*/true);
+                                  /*isInParallel=*/false);
   if (!mesher.IsDone()) {
     throw std::runtime_error("BRepMesh_IncrementalMesh failed");
   }
