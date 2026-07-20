@@ -5,13 +5,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# MSVC needs _USE_MATH_DEFINES for M_PI
+# MSVC needs _USE_MATH_DEFINES for M_PI and /EHsc for exception
+# handling — without it, Boost defines BOOST_NO_EXCEPTIONS which makes
+# boost::throw_exception an unresolved external.
 if(MSVC)
   add_compile_definitions(_USE_MATH_DEFINES)
+  add_compile_options(/EHsc)
 endif()
 
-# Place binaries directly in build/ (not build/Debug/) so Tauri finds them
+# Place binaries directly in build/ (not build/Release/) so Tauri finds them.
+# Must be CACHE variables for Visual Studio multi-config generator.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+foreach(CONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG} ${CMAKE_BINARY_DIR} CACHE PATH "" FORCE)
+endforeach()
 
 # ---- OpenCASCADE ---------------------------------------------------------
 # On Windows we use the vendored precompiled OCCT 8.0.0 and bypass its
@@ -37,70 +44,21 @@ if(WIN32)
     TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
     TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEGLTF TKDEPLY
   )
-  # Delay-load OCCT DLLs so they load on first API call, AFTER main()
-  # sends the hello handshake.  OCCT 8.0 DllMain corrupts the CRT stdout
-  # layer when loaded during process startup.
-  target_link_options(occt_iface INTERFACE
-    /DELAYLOAD:TKernel.dll
-    /DELAYLOAD:TKMath.dll
-    /DELAYLOAD:TKG2d.dll
-    /DELAYLOAD:TKG3d.dll
-    /DELAYLOAD:TKGeomBase.dll
-    /DELAYLOAD:TKBRep.dll
-    /DELAYLOAD:TKGeomAlgo.dll
-    /DELAYLOAD:TKTopAlgo.dll
-    /DELAYLOAD:TKPrim.dll
-    /DELAYLOAD:TKBO.dll
-    /DELAYLOAD:TKShHealing.dll
-    /DELAYLOAD:TKBool.dll
-    /DELAYLOAD:TKHLR.dll
-    /DELAYLOAD:TKHelix.dll
-    /DELAYLOAD:TKFillet.dll
-    /DELAYLOAD:TKOffset.dll
-    /DELAYLOAD:TKFeat.dll
-    /DELAYLOAD:TKMesh.dll
-    /DELAYLOAD:TKXMesh.dll
-    /DELAYLOAD:TKExpress.dll
-    /DELAYLOAD:TKCDF.dll
-    /DELAYLOAD:TKLCAF.dll
-    /DELAYLOAD:TKCAF.dll
-    /DELAYLOAD:TKBinL.dll
-    /DELAYLOAD:TKXmlL.dll
-    /DELAYLOAD:TKBin.dll
-    /DELAYLOAD:TKXml.dll
-    /DELAYLOAD:TKStdL.dll
-    /DELAYLOAD:TKStd.dll
-    /DELAYLOAD:TKTObj.dll
-    /DELAYLOAD:TKBinTObj.dll
-    /DELAYLOAD:TKXmlTObj.dll
-    /DELAYLOAD:TKVCAF.dll
-    /DELAYLOAD:TKDE.dll
-    /DELAYLOAD:TKXSBase.dll
-    /DELAYLOAD:TKDESTEP.dll
-    /DELAYLOAD:TKXCAF.dll
-    /DELAYLOAD:TKDEIGES.dll
-    /DELAYLOAD:TKDESTL.dll
-    /DELAYLOAD:TKDEVRML.dll
-    /DELAYLOAD:TKRWMesh.dll
-    /DELAYLOAD:TKDECascade.dll
-    /DELAYLOAD:TKBinXCAF.dll
-    /DELAYLOAD:TKXmlXCAF.dll
-    /DELAYLOAD:TKDEOBJ.dll
-    /DELAYLOAD:TKDEGLTF.dll
-    /DELAYLOAD:TKDEPLY.dll
-  )
-  target_link_libraries(occt_iface INTERFACE delayimp)
+  # Delay-load OCCT DLLs — applied only to cad_core (main IPC process).
+  # OCCT 8.0 DllMain corrupts the CRT stdout layer when loaded during
+  # process startup; delaying lets main() send the hello handshake first.
+  # Test executables don't need this — they don't use IPC.
   set(OpenCASCADE_LIBRARIES occt_iface)
 else()
   find_package(OpenCASCADE REQUIRED)
 endif()
 find_package(Eigen3 REQUIRED)
-# CONFIG first: required for CMake 3.30+ (policy CMP0167) and vcpkg.
-# Fall back to MODULE for older Boost installations without CMake config.
-find_package(Boost CONFIG QUIET)
-if(NOT Boost_FOUND)
-  find_package(Boost MODULE REQUIRED)
+# CMake 3.30+ removed FindBoost.cmake (CMP0167).  vcpkg provides
+# BoostConfig.cmake, so use CONFIG mode explicitly.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.30")
+  cmake_policy(SET CMP0167 NEW)
 endif()
+find_package(Boost CONFIG REQUIRED)
 
 if(UNIX AND NOT APPLE)
   # Use RPATH instead of RUNPATH so transitive dependencies are found
@@ -122,7 +80,7 @@ target_include_directories(planegcs PUBLIC
   ${PLANEGCS_DIR}/headers
   ${Boost_INCLUDE_DIRS}
 )
-target_link_libraries(planegcs PUBLIC Eigen3::Eigen)
+target_link_libraries(planegcs PUBLIC Eigen3::Eigen Boost::headers)
 target_compile_definitions(planegcs PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
 # planegcs uses 'register' keyword (removed in C++17) in some Eigen internals
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -221,6 +179,14 @@ if(WIN32)
   )
   target_link_libraries(cad_core PRIVATE delayimp)
 endif()
+
+# Tauri looks for cad_core.exe in build/ (not build/Release/).
+add_custom_command(TARGET cad_core POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:cad_core>
+    ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:cad_core>
+  COMMENT "Copying cad_core to build/ for Tauri"
+)
 
 add_executable(cad_core_sketch_profile_test
   src/core/sketch/constraint_solver.cpp
