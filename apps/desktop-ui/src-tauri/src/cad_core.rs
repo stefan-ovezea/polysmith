@@ -124,6 +124,15 @@ pub fn start_cad_core_process(
         if occt_root.join("data").exists() {
             cmd.env("CASROOT", occt_root.display().to_string());
         }
+        // OCCT 8.0 STEP writer needs explicit resource path — the env.bat
+        // normally derives CSF_OCCTResourcePath from CASROOT, but we don't
+        // source env.bat, so set it directly.
+        let occt_src = third_party.join("opencascade-8.0.0.p1-vc14-64/src");
+        if occt_src.exists() {
+            cmd.env("CSF_OCCTResourcePath", occt_src.display().to_string());
+            cmd.env("CSF_STEPDefaults",
+                    occt_src.join("XSTEPResource").display().to_string());
+        }
     }
 
     let mut child = cmd.spawn()

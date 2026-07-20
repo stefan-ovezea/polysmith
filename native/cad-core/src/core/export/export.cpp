@@ -188,23 +188,25 @@ ExportResult export_document_as_step(const DocumentState& document,
     throw std::runtime_error("No solid features are available to export");
   }
 
-  BRep_Builder builder;
-  TopoDS_Compound compound;
-  builder.MakeCompound(compound);
-
-  for (const auto& shape : shapes) {
-    // Heal the shape before adding to compound — OCCT 8.0 STEP transfer
-    // crashes on some unhealed shapes from BRepPrimAPI_MakePrism.
-    ShapeFix_Shape fixer(shape);
-    fixer.Perform();
-    builder.Add(compound, fixer.Shape());
-  }
+  // OCCT 8.0: tessellate + heal each shape before STEP transfer.
+  constexpr double kLinearDeflection = 0.1;
+  constexpr double kAngularDeflection = 0.5;
 
   STEPControl_Writer writer;
-  const IFSelect_ReturnStatus transfer_status =
-      writer.Transfer(compound, STEPControl_AsIs);
-  if (transfer_status != IFSelect_RetDone) {
-    throw std::runtime_error("STEP transfer failed");
+  for (const auto& shape : shapes) {
+    ShapeFix_Shape fixer(shape);
+    fixer.Perform();
+    const TopoDS_Shape& healed = fixer.Shape();
+    BRepMesh_IncrementalMesh mesher(healed,
+                                    kLinearDeflection,
+                                    /*isRelative=*/false,
+                                    kAngularDeflection,
+                                    /*isInParallel=*/false);
+    const IFSelect_ReturnStatus transfer_status =
+        writer.Transfer(healed, STEPControl_AsIs);
+    if (transfer_status != IFSelect_RetDone) {
+      throw std::runtime_error("STEP transfer failed for a shape");
+    }
   }
 
   const IFSelect_ReturnStatus write_status = writer.Write(file_path.c_str());
