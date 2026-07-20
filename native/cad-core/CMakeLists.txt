@@ -18,7 +18,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 # CMake config (which references VTK/TBB/FFMPEG targets not available
 # as CMake packages).  On other platforms we use find_package normally.
 if(WIN32)
-  set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/opencascade-8.0.0-vc14-64")
+  set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/opencascade-8.0.0.p1-vc14-64")
   add_library(occt_iface INTERFACE)
   target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
   target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
