@@ -21,37 +21,29 @@ foreach(CONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
 endforeach()
 
 # ---- OpenCASCADE ---------------------------------------------------------
-# On Windows we use the vendored precompiled OCCT 8.0.0 and bypass its
-# CMake config (which references VTK/TBB/FFMPEG targets not available
-# as CMake packages).  On other platforms we use find_package normally.
-if(WIN32)
-  set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/opencascade-8.0.0.p1-vc14-64")
-  add_library(occt_iface INTERFACE)
-  target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
-  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
-  target_link_libraries(occt_iface INTERFACE
-    # FoundationClasses
-    TKernel TKMath
-    # ModelingData
-    TKG2d TKG3d TKGeomBase TKBRep
-    # ModelingAlgorithms
-    TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing TKBool
-    TKHLR TKHelix TKFillet TKOffset TKFeat TKMesh TKXMesh TKExpress
-    # ApplicationFramework
-    TKCDF TKLCAF TKCAF TKBinL TKXmlL TKBin TKXml
-    TKStdL TKStd TKTObj TKBinTObj TKXmlTObj TKVCAF
-    # DataExchange
-    TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
-    TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEGLTF TKDEPLY
-  )
-  # Delay-load OCCT DLLs — applied only to cad_core (main IPC process).
-  # OCCT 8.0 DllMain corrupts the CRT stdout layer when loaded during
-  # process startup; delaying lets main() send the hello handshake first.
-  # Test executables don't need this — they don't use IPC.
-  set(OpenCASCADE_LIBRARIES occt_iface)
-else()
-  find_package(OpenCASCADE REQUIRED)
-endif()
+# Self-built OCCT 8 at third_party/occt8-build.  Use a manual INTERFACE
+# target — avoids cmake install issues (per-module target files are only
+# generated during install, which partially failed due to locked DLLs).
+set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
+add_library(occt_iface INTERFACE)
+target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
+target_link_libraries(occt_iface INTERFACE
+  # FoundationClasses
+  TKernel TKMath
+  # ModelingData
+  TKG2d TKG3d TKGeomBase TKBRep
+  # ModelingAlgorithms
+  TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing TKBool
+  TKHLR TKHelix TKFillet TKOffset TKFeat TKMesh TKExpress TKXMesh
+  # ApplicationFramework
+  TKCDF TKLCAF TKCAF TKBinL TKXmlL TKBin TKXml
+  TKStdL TKStd TKTObj TKBinTObj TKXmlTObj TKVCAF
+  # DataExchange
+  TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
+  TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEPLY
+)
+set(OpenCASCADE_LIBRARIES occt_iface)
 find_package(Eigen3 REQUIRED)
 # CMake 3.30+ removed FindBoost.cmake (CMP0167).  vcpkg provides
 # BoostConfig.cmake, so use CONFIG mode explicitly.
@@ -147,38 +139,6 @@ target_include_directories(cad_core PRIVATE
 )
 
 target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
-# Delay-load OCCT DLLs on Windows — OCCT 8.0 DllMain corrupts the CRT
-# stdout layer when loaded during process startup.  Delaying lets main()
-# send the hello handshake before OCCT initialises.
-if(WIN32)
-  target_link_options(cad_core PRIVATE
-    /DELAYLOAD:TKernel.dll /DELAYLOAD:TKMath.dll
-    /DELAYLOAD:TKG2d.dll /DELAYLOAD:TKG3d.dll
-    /DELAYLOAD:TKGeomBase.dll /DELAYLOAD:TKBRep.dll
-    /DELAYLOAD:TKGeomAlgo.dll /DELAYLOAD:TKTopAlgo.dll
-    /DELAYLOAD:TKPrim.dll /DELAYLOAD:TKBO.dll
-    /DELAYLOAD:TKShHealing.dll /DELAYLOAD:TKBool.dll
-    /DELAYLOAD:TKHLR.dll /DELAYLOAD:TKHelix.dll
-    /DELAYLOAD:TKFillet.dll /DELAYLOAD:TKOffset.dll
-    /DELAYLOAD:TKFeat.dll /DELAYLOAD:TKMesh.dll
-    /DELAYLOAD:TKXMesh.dll /DELAYLOAD:TKExpress.dll
-    /DELAYLOAD:TKCDF.dll /DELAYLOAD:TKLCAF.dll
-    /DELAYLOAD:TKCAF.dll /DELAYLOAD:TKBinL.dll
-    /DELAYLOAD:TKXmlL.dll /DELAYLOAD:TKBin.dll
-    /DELAYLOAD:TKXml.dll /DELAYLOAD:TKStdL.dll
-    /DELAYLOAD:TKStd.dll /DELAYLOAD:TKTObj.dll
-    /DELAYLOAD:TKBinTObj.dll /DELAYLOAD:TKXmlTObj.dll
-    /DELAYLOAD:TKVCAF.dll /DELAYLOAD:TKDE.dll
-    /DELAYLOAD:TKXSBase.dll /DELAYLOAD:TKDESTEP.dll
-    /DELAYLOAD:TKXCAF.dll /DELAYLOAD:TKDEIGES.dll
-    /DELAYLOAD:TKDESTL.dll /DELAYLOAD:TKDEVRML.dll
-    /DELAYLOAD:TKRWMesh.dll /DELAYLOAD:TKDECascade.dll
-    /DELAYLOAD:TKBinXCAF.dll /DELAYLOAD:TKXmlXCAF.dll
-    /DELAYLOAD:TKDEOBJ.dll /DELAYLOAD:TKDEGLTF.dll
-    /DELAYLOAD:TKDEPLY.dll
-  )
-  target_link_libraries(cad_core PRIVATE delayimp)
-endif()
 
 # Tauri looks for cad_core.exe in build/ (not build/Release/).
 add_custom_command(TARGET cad_core POST_BUILD

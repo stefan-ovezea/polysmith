@@ -18,8 +18,8 @@
     "core:rebuild": "pnpm core:configure && pnpm core:build",
     "deps:sync": "git submodule update --init --recursive",
     "occt:configure": "node scripts/configure-occt.mjs",
-    "occt:build": "cmake --build third_party/occt-build --config Release",
-    "occt:install": "cmake --install third_party/occt-build --config Release",
+    "occt:build": "cmake --build third_party/occt8-build --config Release",
+    "occt:install": "cmake --install third_party/occt8-build --config Release",
     "occt:rebuild": "pnpm deps:sync && pnpm occt:configure && pnpm occt:build && pnpm occt:install",
     "bootstrap": "pnpm deps:sync && pnpm install && pnpm occt:configure && pnpm occt:build && pnpm occt:install && pnpm core:configure && pnpm core:build"
   }

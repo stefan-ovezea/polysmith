@@ -47,7 +47,7 @@ fn main() {
         let third_party = manifest_dir.join("../../../third_party");
 
         let dll_sources: &[PathBuf] = &[
-            third_party.join("opencascade-8.0.0.p1-vc14-64/win64/vc14/bin"),
+            third_party.join("occt8-build/win64/vc14/bin"),
             third_party.join("3rdparty-vc14-64/freetype-2.13.3-x64/bin"),
             third_party.join("3rdparty-vc14-64/zlib-1.2.8-vc14-64/bin"),
             third_party.join("3rdparty-vc14-64/tbb-2021.13.0-x64/bin"),

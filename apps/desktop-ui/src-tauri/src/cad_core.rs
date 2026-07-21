@@ -96,7 +96,7 @@ pub fn start_cad_core_process(
     {
         let third_party = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../../third_party");
-        let occt_bin = third_party.join("opencascade-8.0.0.p1-vc14-64/win64/vc14/bin");
+        let occt_bin = third_party.join("occt8-build/win64/vc14/bin");
         let dylib_dirs = [
             occt_bin,
             third_party.join("3rdparty-vc14-64/freetype-2.13.3-x64/bin"),
@@ -116,22 +116,10 @@ pub fn start_cad_core_process(
             cmd.env("PATH", format!("{extra_path};{existing_path}"));
         }
 
-        // OCCT 8.0 resource files (STEP/IGES/STL definitions, fonts, shaders).
-        // The precompiled binary uses the legacy data/ layout; CASROOT tells
-        // OCCT where to find it.  CSF_OCCTResourcePath is the 8.0-era
-        // replacement but CASROOT is still supported for compatibility.
-        let occt_root = third_party.join("opencascade-8.0.0.p1-vc14-64");
-        if occt_root.join("data").exists() {
-            cmd.env("CASROOT", occt_root.display().to_string());
-        }
-        // OCCT 8.0 STEP writer needs explicit resource path — the env.bat
-        // normally derives CSF_OCCTResourcePath from CASROOT, but we don't
-        // source env.bat, so set it directly.
-        let occt_src = third_party.join("opencascade-8.0.0.p1-vc14-64/src");
+        // OCCT 8.0 resource files from self-built build tree.
+        let occt_src = third_party.join("occt8-build/src");
         if occt_src.exists() {
             cmd.env("CSF_OCCTResourcePath", occt_src.display().to_string());
-            cmd.env("CSF_STEPDefaults",
-                    occt_src.join("XSTEPResource").display().to_string());
         }
     }
 
