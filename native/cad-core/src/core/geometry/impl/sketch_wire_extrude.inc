@@ -32,10 +32,14 @@ TopoDS_Edge make_arc_edge(const SketchArc& arc,
 // Build a circle-arc edge spanning two points on a sketch circle.
 // `p1` and `p2` are the profile boundary points in sketch-local
 // coordinates; the circle centre and radius come from the sketch data.
+// `hint_point` (optional) is an interior sample point that lies on the
+// correct arc; when provided it disambiguates the arc sense by checking
+// which direction puts the arc through the hint point.
 TopoDS_Edge make_circle_arc_edge(const SketchCircle& circle,
                                   const SketchProfilePoint& p1,
                                   const SketchProfilePoint& p2,
-                                  const PlaneFrame& frame) {
+                                  const PlaneFrame& frame,
+                                  const SketchProfilePoint* hint_point = nullptr) {
   const gp_Pnt center = to_world_point(frame, circle.center_x, circle.center_y);
   const gp_Pnt start  = to_world_point(frame, p1.x, p1.y);
   const gp_Pnt end    = to_world_point(frame, p2.x, p2.y);
@@ -48,10 +52,30 @@ TopoDS_Edge make_circle_arc_edge(const SketchCircle& circle,
   const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
   const gp_Circ circ(gp_Ax2(center, normal), circle.radius);
 
-  // Try both arc senses.  The arrangement traverses outer boundaries
-  // counter-clockwise; a circle-arc segment on that boundary therefore
-  // runs clockwise relative to the circle's own CCW orientation.
-  // Try clockwise first so we pick the interior (short) arc.
+  // When a hint point is available, determine the correct arc sense
+  // by checking which arc's midpoint is closer to the hint point.
+  if (hint_point != nullptr) {
+    const gp_Pnt hint = to_world_point(frame, hint_point->x, hint_point->y);
+    double best_dist = std::numeric_limits<double>::max();
+    TopoDS_Edge best_edge;
+
+    for (bool ccw : {false, true}) {
+      GC_MakeArcOfCircle arc_maker(circ, start, end, ccw);
+      if (!arc_maker.IsDone()) continue;
+      const Handle(Geom_TrimmedCurve)& curve = arc_maker.Value();
+      double mid_param = (curve->FirstParameter() + curve->LastParameter()) * 0.5;
+      gp_Pnt mid;
+      curve->D0(mid_param, mid);
+      const double dist = mid.SquareDistance(hint);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_edge = BRepBuilderAPI_MakeEdge(curve);
+      }
+    }
+    if (!best_edge.IsNull()) return best_edge;
+  }
+
+  // Fallback: try both arc senses, preferring the shorter (CW) arc.
   for (bool ccw : {false, true}) {
     GC_MakeArcOfCircle arc_maker(circ, start, end, ccw);
     if (arc_maker.IsDone()) {
@@ -126,8 +150,12 @@ TopoDS_Wire make_sketch_wire(
         const gp_Circ circ(gp_Ax2(center, normal), circle_it->radius);
         wire_builder.Add(BRepBuilderAPI_MakeEdge(circ));
       } else {
+        const SketchProfilePoint* hint = nullptr;
+        if (group_end > group_start + 1) {
+          hint = &pts[(group_start + group_end) / 2];
+        }
         const TopoDS_Edge edge = make_circle_arc_edge(
-            *circle_it, pts[group_start], pts[last_pt], frame);
+            *circle_it, pts[group_start], pts[last_pt], frame, hint);
         if (!edge.IsNull()) {
           wire_builder.Add(edge);
         }

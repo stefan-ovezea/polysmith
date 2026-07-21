@@ -37,6 +37,8 @@
 #include <Geom_Plane.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GC_MakeSegment.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <limits>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
 #include <TopExp_Explorer.hxx>
