@@ -61,8 +61,56 @@ TopoDS_Shape wrap_with_additional_profiles(
                               parameters.additional_profile_points[index],
                               profile_points,
                               inner_loops);
-    builder.Add(compound,
-                make_polygon_prism_shape(parameters, profile_points, inner_loops));
+
+    // Before falling back to the polygon path, check whether the outer
+    // points form a circle.  When they do, build a true analytic cylinder
+    // (or a cylindrical face with polygonal holes) — this avoids facet
+    // artifacts that the polygon approximation would introduce.
+    TopoDS_Shape shape;
+    if (!parameters.thin.enabled) {
+      const auto circle = detect_circle_loop(profile_points);
+      if (circle.has_value()) {
+        if (inner_loops.empty()) {
+          // Pure circle — use the cylinder builder directly.
+          const gp_Pnt center = to_world_point(
+              parameters, circle->center_x, circle->center_y);
+          const double abs_depth = std::abs(parameters.depth);
+          const double sign = parameters.depth >= 0.0 ? 1.0 : -1.0;
+          const gp_Dir axis_dir = profile_wire_normal(parameters);
+          const gp_Ax2 axis(center, gp_Dir(axis_dir.X() * sign,
+                                           axis_dir.Y() * sign,
+                                           axis_dir.Z() * sign));
+          shape = BRepPrimAPI_MakeCylinder(axis, circle->radius, abs_depth)
+                      .Shape();
+        } else {
+          // Circle with inner loops — build an exact circular face and
+          // extrude it.  make_profile_wire already detects circular loops
+          // (both outer and inner) and builds gp_Circ wires for them, so
+          // holes get the same exact-circle treatment.
+          BRepBuilderAPI_MakeFace face_builder(
+              make_profile_wire(parameters, profile_points));
+          for (const auto& loop : inner_loops) {
+            if (loop.size() < 3) continue;
+            TopoDS_Wire hole = make_profile_wire(parameters, loop);
+            hole.Reverse();
+            face_builder.Add(hole);
+          }
+          if (face_builder.IsDone()) {
+            const gp_Vec direction = parameters.plane_frame.has_value()
+                ? extrusion_vector(parameters.plane_frame.value(),
+                                   parameters.depth)
+                : extrusion_vector(parameters.plane_id, parameters.depth);
+            shape = BRepPrimAPI_MakePrism(face_builder.Face(), direction)
+                        .Shape();
+          }
+        }
+      }
+    }
+
+    if (shape.IsNull()) {
+      shape = make_polygon_prism_shape(parameters, profile_points, inner_loops);
+    }
+    builder.Add(compound, shape);
   }
   return compound;
 }
