@@ -40,6 +40,23 @@ TopoDS_Shape make_polygon_prism_shape(const ExtrudeFeatureParameters& parameters
 // cylinder builder) but the extrude also carries additional profiles,
 // build each additional profile as a polygon prism and combine them
 // with the primary into one compound.
+//
+// IMPORTANT: Do NOT replace this with a bare BRepPrimAPI_MakeCylinder for
+// circular additional profiles.  make_polygon_prism_shape internally calls
+// make_profile_wire, which detects circular point clouds via
+// detect_circle_loop and builds an exact gp_Circ wire.  That path:
+//
+//   a) respects the PlaneFrame coordinate transform (sketches on
+//      non-origin planes),
+//   b) handles thin-wall mode correctly,
+//   c) correctly processes inner loops (holes),
+//   d) shares the same extrusion-vector computation as the primary path,
+//      avoiding axis-mismatch regressions.
+//
+// A direct BRepPrimAPI_MakeCylinder shortcut would need to re-derive all
+// of the above, which is fragile and easy to get wrong.  The regression
+// test extrude_quality_test.cpp verifies that extruded circles produce
+// analytic Geom_CylindricalSurface faces through this path.
 TopoDS_Shape wrap_with_additional_profiles(
     const ExtrudeFeatureParameters& parameters,
     const TopoDS_Shape& primary_shape) {
