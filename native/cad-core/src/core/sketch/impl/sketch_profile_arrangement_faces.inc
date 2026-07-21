@@ -140,6 +140,7 @@ std::vector<ArrangementFace> detect_arrangement_faces(
       if (area <= kProfileTolerance) {
         continue;
       }
+      std::vector<std::string> ordered_face_lines = face_lines;
       std::sort(face_lines.begin(), face_lines.end());
       face_lines.erase(std::unique(face_lines.begin(), face_lines.end()),
                        face_lines.end());
@@ -147,6 +148,7 @@ std::vector<ArrangementFace> detect_arrangement_faces(
           .points = face_points,
           .vertex_ids = face_point_ids,
           .line_ids = face_lines,
+          .ordered_line_ids = ordered_face_lines,
           .area = area,
       });
     }

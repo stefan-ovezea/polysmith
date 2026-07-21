@@ -20,5 +20,6 @@ struct ArrangementFace {
   std::vector<SketchProfilePoint> points;
   std::vector<std::string> vertex_ids;
   std::vector<std::string> line_ids;
+  std::vector<std::string> ordered_line_ids;
   double area;
 };

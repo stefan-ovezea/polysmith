@@ -97,6 +97,7 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
         ordered_points.push_back(interior[i]);
         ordered_point_ids.push_back(
             "arc-sample-" + edge.id + "-" + std::to_string(i));
+        ordered_edge_ids.push_back(edge.id);
       }
     }
 
