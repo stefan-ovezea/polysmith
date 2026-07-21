@@ -1,71 +1,45 @@
 TopoDS_Shape make_polygon_prism_shape(const ExtrudeFeatureParameters& parameters) {
+  TopoDS_Compound compound;
+  BRep_Builder builder;
+  builder.MakeCompound(compound);
+
   if (parameters.profile_kind == "open_chain") {
     const std::vector<SketchProfilePoint> wall = make_open_thin_wall(parameters);
-    return make_polygon_prism_shape(parameters, wall, {});
+    builder.Add(compound, make_polygon_prism_shape(parameters, wall, {}));
+    return compound;
   }
 
-  // Build a fused face from all profiles (primary + additional) so that
-  // overlapping regions produce a single extruded body without internal
-  // seam edges.  Faces are built, fused in 2D via BRepAlgoAPI_Fuse, then
-  // the combined face is extruded once.
-  TopoDS_Shape combined_face;
-
-  auto build_face = [&](const std::vector<SketchProfilePoint>& pts,
-                        const std::vector<std::vector<SketchProfilePoint>>& loops) {
-    BRepBuilderAPI_MakeFace face_builder(make_profile_wire(parameters, pts));
-    for (const auto& loop : loops) {
-      if (loop.size() < 3) continue;
-      TopoDS_Wire hole = make_profile_wire(parameters, loop);
-      hole.Reverse();
-      face_builder.Add(hole);
-    }
-    return face_builder.IsDone() ? TopoDS_Shape(face_builder.Face()) : TopoDS_Shape{};
-  };
-
-  {
-    std::vector<SketchProfilePoint> pts;
-    std::vector<std::vector<SketchProfilePoint>> loops = parameters.inner_loops;
-    apply_closed_thin_profile(parameters, parameters.profile_points, pts, loops);
-    combined_face = build_face(pts, loops);
-  }
-
-  for (size_t i = 0; i < parameters.additional_profile_points.size(); ++i) {
-    std::vector<SketchProfilePoint> pts;
-    std::vector<std::vector<SketchProfilePoint>> loops =
-        i < parameters.additional_inner_loops.size()
-            ? parameters.additional_inner_loops[i]
+  std::vector<SketchProfilePoint> primary_points;
+  std::vector<std::vector<SketchProfilePoint>> primary_inner_loops =
+      parameters.inner_loops;
+  apply_closed_thin_profile(parameters,
+                            parameters.profile_points,
+                            primary_points,
+                            primary_inner_loops);
+  builder.Add(compound,
+              make_polygon_prism_shape(parameters, primary_points, primary_inner_loops));
+  for (size_t index = 0; index < parameters.additional_profile_points.size();
+       ++index) {
+    std::vector<SketchProfilePoint> profile_points;
+    std::vector<std::vector<SketchProfilePoint>> inner_loops =
+        index < parameters.additional_inner_loops.size()
+            ? parameters.additional_inner_loops[index]
             : std::vector<std::vector<SketchProfilePoint>>{};
     apply_closed_thin_profile(parameters,
-                              parameters.additional_profile_points[i],
-                              pts, loops);
-    TopoDS_Shape face = build_face(pts, loops);
-    if (combined_face.IsNull()) {
-      combined_face = face;
-    } else if (!face.IsNull()) {
-      combined_face = fuse_shapes(combined_face, face);
-    }
+                              parameters.additional_profile_points[index],
+                              profile_points,
+                              inner_loops);
+    builder.Add(compound,
+                make_polygon_prism_shape(parameters, profile_points, inner_loops));
   }
 
-  if (combined_face.IsNull()) {
-    throw std::runtime_error("Failed to build profile face");
-  }
-
-  const gp_Vec direction = parameters.plane_frame.has_value()
-      ? extrusion_vector(parameters.plane_frame.value(), parameters.depth)
-      : extrusion_vector(parameters.plane_id, parameters.depth);
-
-  const TopoDS_Shape shape =
-      BRepPrimAPI_MakePrism(combined_face, direction).Shape();
-  if (shape.IsNull()) {
-    throw std::runtime_error("Failed to build polygon extrude");
-  }
-  return shape;
+  return compound;
 }
 
 // When the primary profile is built via the exact-curve path (wire or
 // cylinder builder) but the extrude also carries additional profiles,
-// fuse them into a single solid via BRepAlgoAPI_Fuse so the body compiler
-// receives one watertight shape without internal seam edges.
+// build each additional profile as a polygon prism and combine them
+// with the primary into one compound.
 //
 // IMPORTANT: Do NOT replace this with a bare BRepPrimAPI_MakeCylinder for
 // circular additional profiles.  make_polygon_prism_shape internally calls
@@ -89,7 +63,10 @@ TopoDS_Shape wrap_with_additional_profiles(
   if (parameters.additional_profile_points.empty()) {
     return primary_shape;
   }
-  TopoDS_Shape combined = primary_shape;
+  TopoDS_Compound compound;
+  BRep_Builder builder;
+  builder.MakeCompound(compound);
+  builder.Add(compound, primary_shape);
   for (size_t index = 0; index < parameters.additional_profile_points.size();
        ++index) {
     std::vector<SketchProfilePoint> profile_points;
@@ -101,11 +78,10 @@ TopoDS_Shape wrap_with_additional_profiles(
                               parameters.additional_profile_points[index],
                               profile_points,
                               inner_loops);
-    TopoDS_Shape prism =
-        make_polygon_prism_shape(parameters, profile_points, inner_loops);
-    combined = fuse_shapes(combined, prism);
+    builder.Add(compound,
+                make_polygon_prism_shape(parameters, profile_points, inner_loops));
   }
-  return combined;
+  return compound;
 }
 
 std::vector<SketchProfilePoint> sample_circle_points(double center_x,
