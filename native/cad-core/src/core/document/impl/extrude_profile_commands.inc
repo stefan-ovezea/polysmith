@@ -95,9 +95,25 @@ DocumentState DocumentManager::extrude_profiles(
 
   push_undo_state();
   clear_redo_stack();
-  for (const auto& extrude_parameters : extrude_parameter_groups) {
+
+  // When multiple profile groups are extruded as new_body, create only the
+  // first as new_body and join the remaining groups to it so the user gets
+  // one unified body instead of separate bodies per group.
+  std::string first_feature_id;
+  for (size_t gi = 0; gi < extrude_parameter_groups.size(); ++gi) {
+    auto params = extrude_parameter_groups[gi];
+    if (gi > 0 && params.mode == "new_body") {
+      params.mode = "join";
+      params.operation = "join";
+      params.target_body_id = first_feature_id;
+      normalize_extrude_operation_mode(params);
+      normalize_extrude_parameters(*document_, params);
+    }
     document_->feature_history.push_back(
-        create_extrude_feature(next_feature_id_++, extrude_parameters));
+        create_extrude_feature(next_feature_id_++, params));
+    if (gi == 0) {
+      first_feature_id = document_->feature_history.back().id;
+    }
   }
   document_->selected_feature_id = document_->feature_history.back().id;
   document_->selected_reference_id = std::nullopt;
