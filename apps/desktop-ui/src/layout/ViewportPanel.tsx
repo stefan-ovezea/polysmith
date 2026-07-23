@@ -1689,6 +1689,11 @@ export function ViewportPanel({
     if (!session) {
       return;
     }
+    // Arc is committed via 3 clicks, not via the dimension session.
+    // Enter key keeps the tool armed but does not add geometry.
+    if (session.tool === "arc") {
+      return;
+    }
     const [startX, startY] = session.start;
     const [endX, endY] = session.current;
     clearPreviewLine();
@@ -3169,11 +3174,7 @@ export function ViewportPanel({
       requestRender(viewCubeAnimatingRef.current ? 320 : 0);
     };
     const onContextMenu = (event: MouseEvent) => {
-      if (
-        draftDimensionSessionRef.current ||
-        (activeSketchToolRef.current === "arc" &&
-          lineDraftStartRef.current !== null)
-      ) {
+      if (draftDimensionSessionRef.current) {
         event.preventDefault();
         // Cancel the rubber band / chain break — keep tool armed
         lineDraftStartRef.current = null;
