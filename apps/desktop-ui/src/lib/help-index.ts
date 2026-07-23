@@ -49,8 +49,9 @@ const lineEntry: HelpEntry = {
     sc("L", "Select mode", "Activate Line tool"),
     sc("Tab", "Dimension field focus", "Cycle to next field (Length → Angle)"),
     sc("Shift+Tab", "Dimension field focus", "Cycle to previous field"),
-    sc("Enter", "Dimension field focus", "Commit line, exit to Select"),
-    sc("Escape", "Any draft state", "Cancel draft, exit to Select"),
+    sc("Enter", "Dimension field focus", "Commit line, keep Line tool armed"),
+    sc("Right-click", "Rubber band active", "Cancel rubber band / break chain, keep tool armed"),
+    sc("Escape", "Any draft state", "Cancel draft, dearm tool → Select"),
     sc("Shift (hold)", "During placement", "Lock to horizontal/vertical axis"),
     sc("Double-click", "At endpoint", "Break chain, stay in line tool"),
   ],
@@ -58,7 +59,7 @@ const lineEntry: HelpEntry = {
     sec(
       "Interaction Modes",
       "**Click-Click:** Click start → move → click end. Chains automatically.\n" +
-        "**Click-Type:** Click start → move → type Length/Angle → Enter to commit and exit, or click to commit and chain.\n" +
+        "**Click-Type:** Click start → move → type Length/Angle → Enter to commit and keep tool armed, or click to commit and chain.\n" +
         "**Click-Constrain:** Hold Shift to lock to the nearest axis.",
     ),
     sec(
@@ -69,7 +70,7 @@ const lineEntry: HelpEntry = {
     sec(
       "Chaining",
       "Click commits continue chaining: the endpoint becomes the next start.\n" +
-        "**Double-click** at the endpoint breaks the chain. The tool stays active but unchained.",
+        "**Double-click** or **right-click** while the rubber band is visible breaks the chain. The tool stays active but unchained.",
     ),
     sec(
       "Parameter Expressions",
@@ -97,8 +98,9 @@ const circleEntry: HelpEntry = {
     "Click the **Circle** button in the sketch toolbar, or press `C`.",
   shortcuts: [
     sc("C", "Select mode", "Activate Circle tool"),
-    sc("Enter", "Dimension field", "Commit, exit to Select"),
-    sc("Escape", "Draft state", "Cancel, exit to Select"),
+    sc("Enter", "Dimension field", "Commit, keep Circle tool armed"),
+    sc("Right-click", "Rubber band active", "Cancel rubber band, keep tool armed"),
+    sc("Escape", "Draft state", "Cancel, dearm tool → Select"),
   ],
   sections: [
     sec(
@@ -131,8 +133,9 @@ const rectangleEntry: HelpEntry = {
     "Click the **Rectangle** button in the sketch toolbar, or press `R`.",
   shortcuts: [
     sc("R", "Select mode", "Activate Rectangle tool"),
-    sc("Enter", "Dimension field", "Commit, exit to Select"),
-    sc("Escape", "Draft state", "Cancel, exit to Select"),
+    sc("Enter", "Dimension field", "Commit, keep Rectangle tool armed"),
+    sc("Right-click", "Rubber band active", "Cancel rubber band, keep tool armed"),
+    sc("Escape", "Draft state", "Cancel, dearm tool → Select"),
   ],
   sections: [
     sec(
@@ -314,8 +317,9 @@ const polygonEntry: HelpEntry = {
   activation:
     "Click the **Polygon** button in the sketch toolbar.",
   shortcuts: [
-    sc("Enter", "Draft state", "Commit polygon, exit to Select"),
-    sc("Escape", "Draft state", "Cancel, exit to Select"),
+    sc("Enter", "Draft state", "Commit polygon, keep Polygon tool armed"),
+    sc("Right-click", "Rubber band active", "Cancel rubber band, keep tool armed"),
+    sc("Escape", "Draft state", "Cancel, dearm tool → Select"),
   ],
   sections: [
     sec(
@@ -423,11 +427,18 @@ const projectEntry: HelpEntry = {
 const rightClickEntry: HelpEntry = {
   title: "Right-Click Context Menu",
   summary:
-    "Right‑clicking different entities in the viewport opens a context‑sensitive menu with entity‑specific actions.",
+    "Right‑click behaviour depends on context: during sketch drafting it cancels the rubber band without dearming; otherwise it opens a context‑sensitive menu.",
   activation:
-    "Right‑click an entity in the viewport. The menu appears at the cursor position.",
+    "Right‑click the viewport. If a rubber-band preview is visible (draft active), the draft is cancelled and the tool stays armed. Otherwise a context menu appears.",
   shortcuts: [],
   sections: [
+    sec(
+      "Sketch Draft Cancel (right‑click while rubber band is visible)",
+      "Cancels the current rubber band / breaks the polyline chain. The tool stays **armed** — the next click starts a fresh independent entity.\n" +
+        "• Equivalent to Escape but without switching to Select mode.\n" +
+        "• Works for Line, Rectangle, Circle, Arc, and Polygon tools.\n" +
+        "• Has no effect when no draft is active (drawing hasn't started).",
+    ),
     sec(
       "Dimension Right‑Click",
       "• **Show Radius / Show Diameter** (circle dims only) — toggles between `R 10.00 mm` and `⌀ 20.00 mm`.\n" +
