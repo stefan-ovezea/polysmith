@@ -153,12 +153,10 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
   for (const auto& circle : sketch.circles) {
     if (!circle.is_construction) parameters.sketch_circles.push_back(circle);
   }
-  // Use the ordered edge IDs from the first profile that carries them.
-  for (const auto& profile : profiles) {
-    if (!profile.ordered_edge_ids.empty()) {
-      parameters.sketch_edge_ids = profile.ordered_edge_ids;
-      break;
-    }
+  // Use the ordered edge IDs from the first profile only, so
+  // sketch_edge_ids always matches profile_points (also from first).
+  if (!first.ordered_edge_ids.empty()) {
+    parameters.sketch_edge_ids = first.ordered_edge_ids;
   }
 
   for (size_t index = 1; index < profiles.size(); ++index) {

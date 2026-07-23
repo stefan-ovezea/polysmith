@@ -25,19 +25,46 @@
       }
       const TopoDS_Shape target_shape = body_shapes[target_id];
 
-      TopoDS_Shape combined;
-      try {
-        if (mode == "join") {
-          combined = BRepAlgoAPI_Fuse(target_shape, shape).Shape();
-        } else if (mode == "cut") {
-          combined = BRepAlgoAPI_Cut(target_shape, shape).Shape();
-        } else if (mode == "intersect") {
-          combined = BRepAlgoAPI_Common(target_shape, shape).Shape();
-        } else {
-          throw std::runtime_error("Unknown extrude mode: " + mode);
+      TopoDS_Shape combined = target_shape;
+
+      // When shape is a compound (multi-profile extrusion wraps
+      // primary + additional profile prisms together), explode and
+      // apply the boolean for each child solid in sequence.  Passing
+      // the whole compound to BRepAlgoAPI_Fuse/Cut may only fuse the
+      // first child, leaving extra solids as separate bodies.
+      if (shape.ShapeType() == TopAbs_COMPOUND) {
+        TopExp_Explorer exp(shape, TopAbs_SOLID);
+        for (; exp.More(); exp.Next()) {
+          try {
+            if (mode == "join") {
+              combined = BRepAlgoAPI_Fuse(combined, exp.Current()).Shape();
+            } else if (mode == "cut") {
+              combined = BRepAlgoAPI_Cut(combined, exp.Current()).Shape();
+            } else if (mode == "intersect") {
+              combined =
+                  BRepAlgoAPI_Common(combined, exp.Current()).Shape();
+            } else {
+              throw std::runtime_error("Unknown extrude mode: " + mode);
+            }
+          } catch (const std::exception&) {
+            // skip failing child — don't lose the accumulated result
+          }
         }
-      } catch (const std::exception&) {
-        combined = shape;
+      } else {
+        // Single-solid path (unchanged logic).
+        try {
+          if (mode == "join") {
+            combined = BRepAlgoAPI_Fuse(target_shape, shape).Shape();
+          } else if (mode == "cut") {
+            combined = BRepAlgoAPI_Cut(target_shape, shape).Shape();
+          } else if (mode == "intersect") {
+            combined = BRepAlgoAPI_Common(target_shape, shape).Shape();
+          } else {
+            throw std::runtime_error("Unknown extrude mode: " + mode);
+          }
+        } catch (const std::exception&) {
+          combined = shape;
+        }
       }
 
       if (combined.IsNull()) {
@@ -84,7 +111,32 @@
         body_order.push_back(target_id);
       }
     } else {
-      body_shapes[feature.id] = shape;
+      TopoDS_Shape final_shape = shape;
+      if (final_shape.ShapeType() == TopAbs_COMPOUND) {
+        // When shape is a compound (multi-profile or additional-profile
+        // extrusion), fuse the children together into one solid so the
+        // viewport, selection system, and downstream consumers see one
+        // body instead of separate selectable prisms.
+        TopExp_Explorer exp(final_shape, TopAbs_SOLID);
+        if (exp.More()) {
+          TopoDS_Shape fused = exp.Current();
+          exp.Next();
+          for (; exp.More(); exp.Next()) {
+            try {
+              TopoDS_Shape result = BRepAlgoAPI_Fuse(fused, exp.Current()).Shape();
+              if (!result.IsNull()) {
+                fused = result;
+              }
+            } catch (const std::exception&) {
+              // keep the accumulated result, skip the failing child
+            }
+          }
+          if (!fused.IsNull()) {
+            final_shape = unify_same_domain(fused);
+          }
+        }
+      }
+      body_shapes[feature.id] = final_shape;
       body_frames[feature.id] = initial_frame_for_feature(feature);
       body_order.push_back(feature.id);
     }

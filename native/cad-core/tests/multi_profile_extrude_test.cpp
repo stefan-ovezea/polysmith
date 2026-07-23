@@ -3,6 +3,9 @@
 #include <string>
 #include <vector>
 
+#include <TopExp_Explorer.hxx>
+#include <TopAbs.hxx>
+
 #include "core/geometry/body_compiler.h"
 #include "core/document/document.h"
 #include "core/document/feature.h"
@@ -18,7 +21,7 @@ bool expect(bool condition, const char* message) {
   if (condition) {
     return true;
   }
-  std::cerr << message << "\n";
+  std::cout << "  FAIL: " << message << "\n";
   return false;
 }
 
@@ -191,27 +194,134 @@ bool test_automatic_mode_cuts_intersecting_existing_body() {
                 "expected automatic intersecting extrude to target cut");
 }
 
+bool test_new_body_touching_profiles_produces_one_body() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_rectangle(10.0, 0.0, 20.0, 10.0);
+
+  const std::vector<std::string> ids = profile_ids(document);
+  if (!expect(ids.size() == 2,
+              "expected two sketch profiles before new_body extrude")) {
+    return false;
+  }
+
+  document = manager.extrude_profiles(ids, 5.0, "new_body");
+  const auto compiled = compile_bodies(document);
+
+  // Verify the body shape is a single fused solid, not a compound of
+  // separate prisms that would appear as independent selectable parts.
+  int solid_count = 0;
+  if (!compiled.bodies.empty()) {
+    for (TopExp_Explorer exp(compiled.bodies.front().shape, TopAbs_SOLID);
+         exp.More(); exp.Next()) {
+      ++solid_count;
+    }
+  }
+
+  return expect(extrude_feature_count(document) == 1,
+                "expected touching new_body profiles to share one feature") &&
+         expect(compiled.bodies.size() == 1,
+                "expected touching new_body profiles to produce one body") &&
+         expect(solid_count == 1,
+                "expected fused body to contain exactly one solid");
+}
+
+bool test_join_adjacent_compound_into_existing_body() {
+  DocumentManager manager;
+  manager.create_document();
+  // Create a standalone body first.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(0.0, 0.0, 5.0, 10.0);
+  std::vector<std::string> ids = profile_ids(document);
+  document = manager.extrude_profiles(ids, 5.0, "new_body");
+
+  // Create two touching profiles on the same plane and extrude with
+  // automatic mode — touches the existing body so auto-detects join.
+  // Exercises the face-fused multi-profile solid joining into target.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(5.0, 0.0, 15.0, 10.0);
+  document = manager.add_sketch_rectangle(15.0, 0.0, 25.0, 10.0);
+
+  ids = profile_ids(document);
+  if (!expect(ids.size() == 2,
+              "expected two sketch profiles for join-into-existing")) {
+    return false;
+  }
+
+  // Automatic mode (empty string) — body contact detection should
+  // promote this to a join targeting the existing body.
+  document = manager.extrude_profiles(ids, 5.0, "");
+  const auto compiled = compile_bodies(document);
+  const auto& last = document.feature_history.back();
+  return expect(compiled.bodies.size() == 1,
+                "expected auto-detected join to fuse into one body") &&
+         expect(last.extrude_parameters.has_value() &&
+                    last.extrude_parameters->mode == "join" &&
+                    last.extrude_parameters->target_body_id.has_value(),
+                "expected auto mode to target the existing body");
+}
+
+bool test_cut_adjacent_compound_from_existing_body() {
+  DocumentManager manager;
+  manager.create_document();
+  // Create a standalone body first — wide enough to contain the cut.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(0.0, 0.0, 30.0, 10.0);
+  std::vector<std::string> ids = profile_ids(document);
+  document = manager.extrude_profiles(ids, 5.0, "new_body");
+
+  // Create two touching profiles inside the existing body and extrude
+  // with automatic mode — intersects so auto-detects cut.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(5.0, 0.0, 15.0, 10.0);
+  document = manager.add_sketch_rectangle(15.0, 0.0, 25.0, 10.0);
+
+  ids = profile_ids(document);
+  if (!expect(ids.size() == 2,
+              "expected two sketch profiles for cut-from-existing")) {
+    return false;
+  }
+
+  // Automatic mode (empty string) — body intersection detection should
+  // promote this to a cut targeting the existing body.
+  document = manager.extrude_profiles(ids, 5.0, "");
+  const auto compiled = compile_bodies(document);
+  const auto& last = document.feature_history.back();
+  return expect(compiled.bodies.size() == 1,
+                "expected auto-detected cut to keep one body") &&
+         expect(last.extrude_parameters.has_value() &&
+                    last.extrude_parameters->mode == "cut" &&
+                    last.extrude_parameters->target_body_id.has_value(),
+                "expected auto mode intersecting to target cut");
+}
+
 }  // namespace
 
+#define RUN_TEST(name)                                  \
+  do {                                                  \
+    std::cout << "Running " #name "...\n";              \
+    if (!name()) {                                      \
+      std::cout << "  -> " #name " FAILED\n";           \
+      return 1;                                         \
+    }                                                   \
+    std::cout << "  -> " #name " passed\n";             \
+  } while (0)
+
 int main() {
-  if (!test_new_body_splits_disconnected_profiles()) {
-    return 1;
-  }
-  if (!test_join_groups_touching_profiles_without_merging_distant_profiles()) {
-    return 1;
-  }
-  if (!test_join_adjacent_profiles_creates_one_body_feature()) {
-    return 1;
-  }
-  if (!test_automatic_mode_joins_adjacent_profiles()) {
-    return 1;
-  }
-  if (!test_automatic_mode_joins_touching_existing_body()) {
-    return 1;
-  }
-  if (!test_automatic_mode_cuts_intersecting_existing_body()) {
-    return 1;
-  }
+  RUN_TEST(test_new_body_splits_disconnected_profiles);
+  RUN_TEST(test_join_groups_touching_profiles_without_merging_distant_profiles);
+  RUN_TEST(test_join_adjacent_profiles_creates_one_body_feature);
+  RUN_TEST(test_automatic_mode_joins_adjacent_profiles);
+  RUN_TEST(test_automatic_mode_joins_touching_existing_body);
+  RUN_TEST(test_automatic_mode_cuts_intersecting_existing_body);
+  RUN_TEST(test_new_body_touching_profiles_produces_one_body);
+  RUN_TEST(test_join_adjacent_compound_into_existing_body);
+  RUN_TEST(test_cut_adjacent_compound_from_existing_body);
 
   std::cout << "multi_profile_extrude_test passed\n";
   return 0;
