@@ -3169,6 +3169,27 @@ export function ViewportPanel({
       requestRender(viewCubeAnimatingRef.current ? 320 : 0);
     };
     const onContextMenu = (event: MouseEvent) => {
+      if (draftDimensionSessionRef.current) {
+        event.preventDefault();
+        // Cancel the rubber band / chain break — keep tool armed
+        lineDraftStartRef.current = null;
+        arcSecondPointRef.current = null;
+        rectSecondPointRef.current = null;
+        circleSecondPointRef.current = null;
+        clearPreviewLine();
+        clearPreviewCircle();
+        clearPreviewArc();
+        clearPreviewDimension();
+        clearPreviewInference();
+        clearDraftDimensionSession();
+        setSketchSnapLabel(null);
+        setConstraintPreview(null);
+        dragSnapResultRef.current = null;
+        setHoveredSketchEntity(null);
+        setHoveredSketchPoint(null);
+        requestRender();
+        return;
+      }
       handleContextMenu(event);
       requestRender();
     };
