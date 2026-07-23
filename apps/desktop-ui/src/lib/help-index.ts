@@ -292,7 +292,8 @@ const arcEntry: HelpEntry = {
     "Click the **Arc** button in the sketch toolbar.",
   shortcuts: [
     sc("Enter", "Draft state", "Commit arc, exit to Select"),
-    sc("Escape", "Draft state", "Cancel, exit to Select"),
+    sc("Right-click", "Rubber band active", "Cancel rubber band, keep tool armed"),
+    sc("Escape", "Draft state", "Cancel, dearm tool → Select"),
   ],
   sections: [
     sec(

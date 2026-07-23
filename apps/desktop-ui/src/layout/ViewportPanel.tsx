@@ -3169,7 +3169,11 @@ export function ViewportPanel({
       requestRender(viewCubeAnimatingRef.current ? 320 : 0);
     };
     const onContextMenu = (event: MouseEvent) => {
-      if (draftDimensionSessionRef.current) {
+      if (
+        draftDimensionSessionRef.current ||
+        (activeSketchToolRef.current === "arc" &&
+          lineDraftStartRef.current !== null)
+      ) {
         event.preventDefault();
         // Cancel the rubber band / chain break — keep tool armed
         lineDraftStartRef.current = null;
