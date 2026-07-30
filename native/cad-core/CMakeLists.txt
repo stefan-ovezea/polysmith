@@ -26,8 +26,14 @@ endforeach()
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
 add_library(occt_iface INTERFACE)
-target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
-target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
+target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/include/opencascade")
+if(WIN32)
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
+elseif(APPLE)
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/mac64/clang/lib")
+else()
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/lin64/gcc/lib")
+endif()
 target_link_libraries(occt_iface INTERFACE
   # FoundationClasses
   TKernel TKMath
