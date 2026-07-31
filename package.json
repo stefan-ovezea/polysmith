@@ -13,7 +13,7 @@
     "ui:build": "pnpm --filter desktop-ui build",
     "ui:install": "pnpm install",
     "build:release": "node scripts/build-release.mjs",
-    "core:configure": "cmake -S native/cad-core -B native/cad-core/build -DCMAKE_TOOLCHAIN_FILE=C:/SRC/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_PREFIX_PATH=C:/SRC/vcpkg/installed/x64-windows",
+    "core:configure": "node scripts/configure-core.mjs",
     "core:build": "cmake --build native/cad-core/build --config Release",
     "core:rebuild": "pnpm core:configure && pnpm core:build",
     "deps:sync": "git submodule update --init --recursive",
