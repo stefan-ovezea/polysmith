@@ -196,17 +196,19 @@ function sketchContextMenu({
     };
   }
 
-  // When right-clicking a fixed point, show the constraint menu
+  const clickedSelection = clickedSketchSelection(hit);
+
+  // When right-clicking a fixed vertex, show the constraint menu
   // ("Delete Constraint" → unfix) instead of the generic Delete menu.
   if (hit.kind === "sketch_point") {
     const activeId = document?.active_sketch_feature_id;
     const feature = activeId
       ? document?.feature_history.find((f) => f.feature_id === activeId)
       : null;
-    const point = feature?.sketch_parameters?.points.find(
+    const vertex = feature?.sketch_parameters?.vertices.find(
       (p) => p.vertex_id === hit.id,
     );
-    if (point?.is_fixed) {
+    if (vertex?.is_fixed) {
       return {
         contextMenu: {
           x,
@@ -215,13 +217,13 @@ function sketchContextMenu({
           faceId: null,
           constraintKind: "fixed",
           constraintEntityId: hit.id,
+          sketchDeleteSelection: clickedSelection,
         },
       };
     }
   }
 
   const currentSelection = currentSketchSelection(document);
-  const clickedSelection = clickedSketchSelection(hit);
   const clickedIsSelected = sketchHitIsSelected(hit, currentSelection);
   const selection =
     clickedIsSelected && hasSketchSelection(currentSelection)

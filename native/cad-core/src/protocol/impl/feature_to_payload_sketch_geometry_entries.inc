@@ -95,26 +95,26 @@
                      }
                      return polygons;
                    }()},
-                  {"points",
+                  {"vertices",
                   [&feature]() {
-                    json points = json::array();
-                    for (const auto& point : feature.sketch_parameters->vertices) {
+                    json vertices = json::array();
+                    for (const auto& vtx : feature.sketch_parameters->vertices) {
                       json pt{
-                          {"vertex_id", point.id},
-                          {"kind", point.kind},
-                          {"x", point.x},
-                          {"y", point.y},
-                          {"is_fixed", point.is_fixed},
-                          {"geometry_owner_ids", point.geometry_owner_ids},
-                          {"is_projected", point.is_projected},
+                          {"vertex_id", vtx.id},
+                          {"kind", vtx.kind},
+                          {"x", vtx.x},
+                          {"y", vtx.y},
+                          {"is_fixed", vtx.is_fixed},
+                          {"geometry_owner_ids", vtx.geometry_owner_ids},
+                          {"is_projected", vtx.is_projected},
                       };
-                      if (point.source_type.has_value())
-                        pt["source_type"] = point.source_type.value();
-                      if (point.source_feature_id.has_value())
-                        pt["source_feature_id"] = point.source_feature_id.value();
-                      if (point.source_edge_id.has_value())
-                        pt["source_edge_id"] = point.source_edge_id.value();
-                      points.push_back(std::move(pt));
+                      if (vtx.source_type.has_value())
+                        pt["source_type"] = vtx.source_type.value();
+                      if (vtx.source_feature_id.has_value())
+                        pt["source_feature_id"] = vtx.source_feature_id.value();
+                      if (vtx.source_edge_id.has_value())
+                        pt["source_edge_id"] = vtx.source_edge_id.value();
+                      vertices.push_back(std::move(pt));
                     }
-                    return points;
+                    return vertices;
                   }()},

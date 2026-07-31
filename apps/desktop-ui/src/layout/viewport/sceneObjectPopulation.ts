@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import type {
   CutPreviewScene,
+  SceneVertex,
   PrimitiveInteractionState,
   PrimitiveVisual,
   ReferencePlaneInteractionState,
@@ -21,6 +22,7 @@ import {
   buildReferencePlaneObject,
   buildReferencePointObject,
   buildSceneEdgeObject,
+  buildSceneVertexObject,
   buildSolidFaceObject,
 } from "@/utils";
 
@@ -100,22 +102,26 @@ export function addReferenceSceneObjects({
 export function addSolidSceneObjects({
   faces,
   edges,
+  vertices,
   cutPreviews,
   contentGroup,
   faceMeshes,
   solidFaceVisuals,
   solidFaceStates,
   edgeLineObjects,
+  vertexObjects,
   cutPreviewObjects,
 }: {
   faces: readonly SolidFaceScene[];
   edges: readonly SceneEdge[];
+  vertices: readonly SceneVertex[];
   cutPreviews: readonly CutPreviewScene[];
   contentGroup: THREE.Group;
   faceMeshes: THREE.Mesh[];
   solidFaceVisuals: Map<string, SolidFaceVisual>;
   solidFaceStates: Map<string, SolidFaceInteractionState>;
   edgeLineObjects: THREE.Line[];
+  vertexObjects: THREE.Mesh[];
   cutPreviewObjects: THREE.Mesh[];
 }) {
   for (const face of faces) {
@@ -133,6 +139,12 @@ export function addSolidSceneObjects({
     const edgeLine = buildSceneEdgeObject(edge);
     edgeLineObjects.push(edgeLine);
     contentGroup.add(edgeLine);
+  }
+
+  for (const vertex of vertices) {
+    const vertexMesh = buildSceneVertexObject(vertex);
+    vertexObjects.push(vertexMesh);
+    contentGroup.add(vertexMesh);
   }
 
   for (const preview of cutPreviews) {

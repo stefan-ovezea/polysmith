@@ -15,7 +15,7 @@
   DocumentState select_vertex(const std::string& vertex_id, bool additive);
   DocumentState select_sketch_profile(const std::string& profile_id,
                                       bool additive = false);
-  DocumentState select_sketch_vertex(const std::string& point_id,
+  DocumentState select_sketch_vertex(const std::string& vertex_id,
                                     bool additive = false);
   DocumentState select_sketch_entity(const std::string& entity_id,
                                      bool additive = false);

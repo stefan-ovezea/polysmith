@@ -105,14 +105,14 @@
       params.polygons.push_back(polygon);
     }
   }
-  if (payload.contains("points") && payload.at("points").is_array()) {
-    for (const auto& point_payload : payload.at("points")) {
-      polysmith::core::SketchVertex point{};
-      point.id = read_string(point_payload, "vertex_id");
-      point.kind = read_string(point_payload, "kind");
-      point.x = read_number(point_payload, "x");
-      point.y = read_number(point_payload, "y");
-      point.is_fixed = read_bool(point_payload, "is_fixed");
-      params.vertices.push_back(point);
+  if (payload.contains("vertices") && payload.at("vertices").is_array()) {
+    for (const auto& vtx_payload : payload.at("vertices")) {
+      polysmith::core::SketchVertex vtx{};
+      vtx.id = read_string(vtx_payload, "vertex_id");
+      vtx.kind = read_string(vtx_payload, "kind");
+      vtx.x = read_number(vtx_payload, "x");
+      vtx.y = read_number(vtx_payload, "y");
+      vtx.is_fixed = read_bool(vtx_payload, "is_fixed");
+      params.vertices.push_back(vtx);
     }
   }

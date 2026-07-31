@@ -206,6 +206,13 @@
             }
           }
         }
+        // Projected vertices (body vertex projections onto the sketch)
+        for (const auto& vertex : sketch.vertices) {
+          if (vertex.kind == "projected") {
+            snap_candidates.push_back({.kind="projected",.entity_id="",.vertex_id=vertex.id,.local_x=vertex.x,.local_y=vertex.y,.distance=0,.label="Projected vertex"});
+          }
+        }
+
         // grid_line, polar, tangent, nearest, and perpendicular are
         // cursor-position-dependent and handled by the TS dynamic snap
         // path — they are not pre-computed here.

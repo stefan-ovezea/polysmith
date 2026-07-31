@@ -319,6 +319,44 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
   }
 
+  // Build a map from legacy id -> unified vertex-N so we can
+  // patch projected_points and projection records below.
+  std::unordered_map<std::string, std::string> legacy_to_unified;
+  for (const auto& pt : parameters.vertices) {
+    if (!pt.vertex_id.empty() && pt.id != pt.vertex_id) {
+      legacy_to_unified[pt.id] = pt.vertex_id;
+    }
+  }
+
+  // Unify: set id = vertex_id so every vertex has a single canonical
+  // identifier.  This completes the point-to-vertex migration.
+  for (auto& pt : parameters.vertices) {
+    auto it = legacy_to_unified.find(pt.id);
+    if (it != legacy_to_unified.end()) {
+      pt.id = it->second;
+    }
+  }
+
+  // Patch projected_points so their ids stay in sync.  Otherwise the
+  // next rebuild would emit duplicate vertices (append_point matches
+  // by id, and projected.id would no longer match the unified id).
+  for (auto& projected : parameters.projected_points) {
+    auto it = legacy_to_unified.find(projected.id);
+    if (it != legacy_to_unified.end()) {
+      projected.id = it->second;
+    }
+  }
+
+  // Patch projection records that reference these projected points.
+  for (auto& proj : parameters.projections) {
+    if (!proj.generated_vertex_id.empty()) {
+      auto it = legacy_to_unified.find(proj.generated_vertex_id);
+      if (it != legacy_to_unified.end()) {
+        proj.generated_vertex_id = it->second;
+      }
+    }
+  }
+
   // ── Phase 5: populate *_vertex_id on entities ───────────────
   auto vertex_id_of = [&](const std::string& point_id) -> std::string {
     for (const auto& p : parameters.vertices)

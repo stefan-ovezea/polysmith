@@ -3313,6 +3313,7 @@ export function ViewportPanel({
         solidFaceVisuals: solidFaceVisualsRef,
         solidFaceStates: solidFaceStatesRef,
         edgeLineObjects: edgeLineObjectsRef,
+        vertexObjects: vertexObjectsRef,
         cutPreviewObjects: cutPreviewObjectsRef,
         toolpathLines: toolpathLinesRef,
         moveGizmoObjects: moveGizmoObjectsRef,
@@ -3493,7 +3494,7 @@ export function ViewportPanel({
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
-  const pointCount = sketchFeature?.sketch_parameters?.points.length ?? 0;
+  const pointCount = sketchFeature?.sketch_parameters?.vertices.length ?? 0;
   const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   const {

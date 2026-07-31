@@ -676,11 +676,11 @@ export function buildCadStateSummary(
           radius: arc.radius,
           is_construction: arc.is_construction,
         })),
-        points: activeSketch.sketch_parameters.points.map((point) => ({
-          id: point.vertex_id,
-          kind: point.kind,
-          position: [point.x, point.y],
-          is_fixed: point.is_fixed,
+        vertices: activeSketch.sketch_parameters.vertices.map((vtx) => ({
+          id: vtx.vertex_id,
+          kind: vtx.kind,
+          position: [vtx.x, vtx.y],
+          is_fixed: vtx.is_fixed,
         })),
         profiles: activeSketch.sketch_parameters.profiles.map((profile) => ({
           id: profile.profile_id,

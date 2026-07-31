@@ -122,7 +122,7 @@ function pushSketchGeometryAndConstraints(
   // Push sketch points — ALL fixed. The speculative solver must NOT move
   // existing geometry (circles, lines, endpoints). Only the virtual cursor
   // is free; the solver satisfies constraints by moving the cursor alone.
-  for (const pt of params.points) {
+  for (const pt of params.vertices) {
     const vtxId = pt.vertex_id;
     w.push_primitive({
       id: vtxId,

@@ -1,4 +1,5 @@
 import {
+  SceneVertex,
   CutPreviewScene,
   SceneEdge,
   ScenePrimitive,
@@ -8,7 +9,7 @@ import {
 import * as THREE from "three";
 
 import { themeColor } from "./themeColor";
-import { applyEdgeVisualColor } from "./visualState";
+import { applyEdgeVisualColor, applyVertexVisualColor } from "./visualState";
 
 export function shapeFromProfileLoops(
   outerLoop: readonly (readonly [number, number])[],
@@ -292,7 +293,7 @@ export function buildSceneEdgeObject(edge: SceneEdge): THREE.Line {
     // `polygonOffset` plus a small `polygonOffsetUnits` keeps the line
     // visually on top of the face fill at the same depth (otherwise
     // edges z-fight with the surface they sit on).
-    depthTest: true,
+    depthTest: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -316,6 +317,30 @@ export function buildSceneEdgeObject(edge: SceneEdge): THREE.Line {
 // Build the translucent red overlay mesh for a cut preview. The overlay
 // is non-pickable (`raycast = no-op`) so the user keeps picking the
 // underlying booleaned body's faces and edges, not this preview.
+const vertexGeometry = new THREE.SphereGeometry(1, 8, 6);
+
+export function buildSceneVertexObject(vertex: SceneVertex): THREE.Mesh {
+  const material = new THREE.MeshBasicMaterial({
+    transparent: true,
+    depthTest: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  });
+  applyVertexVisualColor(material, {
+    isSelected: vertex.isSelected,
+    isHovered: false,
+  });
+
+  const mesh = new THREE.Mesh(vertexGeometry, material);
+  mesh.position.set(vertex.position[0], vertex.position[1], vertex.position[2]);
+  mesh.userData.vertexId = vertex.vertexId;
+  mesh.userData.isSelected = vertex.isSelected;
+  mesh.renderOrder = 1;
+  mesh.scale.setScalar(0.25);
+  return mesh;
+}
+
 export function buildCutPreviewObject(preview: CutPreviewScene): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(

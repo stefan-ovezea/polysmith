@@ -615,7 +615,7 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
-          points: z.array(
+          vertices: z.array(
             z.object({
               vertex_id: z.string(),
               kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),

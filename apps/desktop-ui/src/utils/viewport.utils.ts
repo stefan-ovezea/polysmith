@@ -10,6 +10,7 @@ export {
   buildCutPreviewObject,
   buildPrimitiveObject,
   buildSceneEdgeObject,
+  buildSceneVertexObject,
   buildSolidFaceObject,
 } from "./viewport/primitiveObjects";
 export {
