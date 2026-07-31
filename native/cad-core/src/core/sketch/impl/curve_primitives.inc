@@ -12,10 +12,29 @@ void add_sketch_circle(FeatureEntry& feature,
     throw std::runtime_error("Sketch circles must have non-zero radius");
   }
 
+  // Reuse an existing point id when the circle center lands on a
+  // projected vertex or another entity's endpoint.  Mirrors
+  // add_sketch_line / add_sketch_arc behaviour so that circles
+  // centered on projected geometry stay attached on reload.
+  const auto shared_center = find_coincident_endpoint(
+      *feature.sketch_parameters, "", center_x, center_y);
+  auto& params = *feature.sketch_parameters;
+  const std::string center_vertex_id =
+      shared_center.has_value()
+          ? std::get<0>(shared_center.value())
+          : "vertex-" + std::to_string(params.next_vertex_index++);
+  // Use the matched point's exact coordinates for the center so the
+  // circle doesn't drift from the snap target.
+  const double snapped_center_x =
+      shared_center.has_value() ? std::get<1>(shared_center.value()) : center_x;
+  const double snapped_center_y =
+      shared_center.has_value() ? std::get<2>(shared_center.value()) : center_y;
+
   feature.sketch_parameters->circles.push_back(SketchCircle{
       .id = "circle-" + std::to_string(circle_index),
-      .center_x = center_x,
-      .center_y = center_y,
+      .center_vertex_id = center_vertex_id,
+      .center_x = snapped_center_x,
+      .center_y = snapped_center_y,
       .radius = radius,
       .is_construction = is_construction,
   });
@@ -78,17 +97,44 @@ void add_sketch_arc(FeatureEntry& feature,
           ? std::get<0>(shared_end_point.value())
           : "vertex-" + std::to_string(params.next_vertex_index++);
 
+  // Use the matched point's exact coordinates for start/end so the
+  // arc's cached position doesn't drift from the snap target.
+  const double snapped_arc_start_x =
+      shared_start_point.has_value() ? std::get<1>(shared_start_point.value()) : start_x;
+  const double snapped_arc_start_y =
+      shared_start_point.has_value() ? std::get<2>(shared_start_point.value()) : start_y;
+  const double snapped_arc_end_x =
+      shared_end_point.has_value() ? std::get<1>(shared_end_point.value()) : end_x;
+  const double snapped_arc_end_y =
+      shared_end_point.has_value() ? std::get<2>(shared_end_point.value()) : end_y;
+
+  // Reuse an existing point id when the arc center lands on a
+  // projected vertex or another entity's endpoint — same rationale
+  // as circle centers and line endpoints.
+  const auto shared_arc_center = find_coincident_endpoint(
+      params, "", center_x, center_y);
+  const std::string arc_center_vertex_id =
+      shared_arc_center.has_value()
+          ? std::get<0>(shared_arc_center.value())
+          : "vertex-" + std::to_string(params.next_vertex_index++);
+  // Use the matched point's exact coordinates for the center.
+  const double snapped_arc_center_x =
+      shared_arc_center.has_value() ? std::get<1>(shared_arc_center.value()) : center_x;
+  const double snapped_arc_center_y =
+      shared_arc_center.has_value() ? std::get<2>(shared_arc_center.value()) : center_y;
+
   feature.sketch_parameters->arcs.push_back(SketchArc{
       .id = "arc-" + std::to_string(arc_index),
       .start_vertex_id = start_vertex_id,
       .end_vertex_id = end_vertex_id,
-      .center_x = center_x,
-      .center_y = center_y,
+      .center_vertex_id = arc_center_vertex_id,
+      .center_x = snapped_arc_center_x,
+      .center_y = snapped_arc_center_y,
       .radius = radius,
-      .start_x = start_x,
-      .start_y = start_y,
-      .end_x = end_x,
-      .end_y = end_y,
+      .start_x = snapped_arc_start_x,
+      .start_y = snapped_arc_start_y,
+      .end_x = snapped_arc_end_x,
+      .end_y = snapped_arc_end_y,
       .ccw = ccw,
       .is_construction = is_construction,
   });

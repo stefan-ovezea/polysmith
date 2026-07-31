@@ -13,6 +13,19 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
       find_coincident_endpoint(*feature.sketch_parameters, "", end_x, end_y);
 
   auto& params = *feature.sketch_parameters;
+  // When the endpoint snaps to an existing point (projected vertex,
+  // line endpoint, etc.), use the matched point's exact coordinates
+  // instead of the caller's values.  This prevents sub-tolerance drift
+  // that would otherwise surface as deformed geometry on reload.
+  const double snapped_start_x =
+      shared_start_point.has_value() ? std::get<1>(shared_start_point.value()) : start_x;
+  const double snapped_start_y =
+      shared_start_point.has_value() ? std::get<2>(shared_start_point.value()) : start_y;
+  const double snapped_end_x =
+      shared_end_point.has_value() ? std::get<1>(shared_end_point.value()) : end_x;
+  const double snapped_end_y =
+      shared_end_point.has_value() ? std::get<2>(shared_end_point.value()) : end_y;
+
   feature.sketch_parameters->lines.push_back(SketchLine{
       .id = "line-" + std::to_string(line_index),
       .start_vertex_id =
@@ -22,11 +35,12 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
       .end_vertex_id = shared_end_point.has_value()
                           ? std::get<0>(shared_end_point.value())
                           : "vertex-" + std::to_string(params.next_vertex_index++),
-      .start_x = start_x,
-      .start_y = start_y,
-      .end_x = end_x,
-      .end_y = end_y,
-      .constraint = infer_constraint_hint(start_x, start_y, end_x, end_y),
+      .start_x = snapped_start_x,
+      .start_y = snapped_start_y,
+      .end_x = snapped_end_x,
+      .end_y = snapped_end_y,
+      .constraint = infer_constraint_hint(snapped_start_x, snapped_start_y,
+                                          snapped_end_x, snapped_end_y),
       .is_construction = is_construction,
   });
   auto &line = feature.sketch_parameters->lines.back();

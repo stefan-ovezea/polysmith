@@ -56,6 +56,16 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
       return std::tuple<std::string, double, double>{
           candidate.end_vertex_id, candidate.end_x, candidate.end_y};
   }
+
+  // Check projected points so lines/arcs drawn near a projected
+  // vertex snap to it directly instead of creating a separate
+  // vertex and a redundant coincident constraint.
+  for (const auto& projected : parameters.projected_points) {
+    if (points_match(projected.x, projected.y, x, y))
+      return std::tuple<std::string, double, double>{
+          projected.id, projected.x, projected.y};
+  }
+
   return std::nullopt;
 }
 
@@ -82,6 +92,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         .is_fixed = false,
     });
   };
+
+  // Projected points must come FIRST so their freshly-patched
+  // coordinates (from refresh_sketch_projections) are authoritative
+  // when a line/arc endpoint shares the same vertex ID.  append_point
+  // keeps the first-seen entry, so projecting-first means the source
+  // geometry drives the sketch entity.
+  for (const auto& projected : parameters.projected_points) {
+    append_point(projected.id, "projected", projected.x, projected.y);
+  }
 
   for (const auto& line : parameters.lines) {
     append_point(line.start_vertex_id, "endpoint", line.start_x, line.start_y);
@@ -207,16 +226,9 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                  fillet.corner_y);
   }
 
-  // Free-standing points placed by the Project tool. Same machinery
-  // as the fillet corner re-emit above: nothing else references
-  // these ids, so without this loop they would vanish on the next
-  // recompute. Marked `kind = "projected"` so the renderer / hit
-  // testing can give them a distinct visual (a small cross, similar
-  // to common CAD behavior). `is_fixed` is forced true below by
-  // `enforce_derived_points_fixed` so the user can't drag them.
-  for (const auto& projected : parameters.projected_points) {
-    append_point(projected.id, "projected", projected.x, projected.y);
-  }
+  // Projected points are now emitted at the top of rebuild_sketch_vertices
+  // (before lines) so their freshly-refreshed coordinates take priority
+  // over cached entity coordinates when a vertex ID is shared.
 
   // ── Phase 2: populate geometry_owner_ids ────────────────────
   // Walk every point and record which geometry entities
