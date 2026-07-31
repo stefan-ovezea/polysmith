@@ -93,6 +93,14 @@ React UI  ──IPC (JSON)──>  Tauri (Rust)  ──stdin/stdout──>  C++ 
 - **TNP (Topological Naming Problem) is the project's mantra:** Never store a naked OCCT topology index and trust it across recomputes. Every feature referencing 3D geometry must re-resolve against live body shapes on every recompute. On failure, degrade with `dependency_broken` + warning — never crash.
 - **Contextual modeling workflow** is the binding UX pattern for all features: select inputs → invoke action → floating context panel with real geometry preview → confirm (Enter) or cancel (Escape, with undo).
 
+### Diagnostics Rule
+
+- **ALL diagnostic output MUST go through the structured logger.** This is a Tauri desktop app — there is no terminal. Never use `fprintf(stderr, ...)`, `printf`, `std::cerr`, `std::cout`, or `console.log`. Always use `polysmith::core::log_info/log_warn/log_error/log_debug("tag", "message")` in C++, or `addMessage` / `addLogEntry` in TypeScript. These appear in the in-app Logs panel the user can actually see. This is non-negotiable — the user cannot see stderr.
+
+### No Untested Commits
+
+- **Never commit code that has not been exercised.** Diagnostic logging, speculative fixes, debug scaffolding — all of it stays uncommitted until the user has run the app and confirmed the change works correctly. A successful compile is not enough; the change must be observed doing its job at runtime. Commit only after the user confirms the fix resolves the issue.
+
 ### UI Copy Rules
 
 - **Never expose internal ids in the UI.** Entity ids, feature ids, point ids, etc. are implementation details. User-visible copy describes things by their kind ("Line", "Circle"), their count ("3 selected"), or by user-meaningful labels ("Sketch on XY"). Ids are allowed in debug overlays gated behind a flag, never in default UI.
