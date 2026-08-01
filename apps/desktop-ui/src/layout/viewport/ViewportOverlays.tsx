@@ -471,3 +471,54 @@ function lineConstraintLabel(
   }
   return translate("toolbar.parallel");
 }
+
+// ── Grid Scale Indicator ───────────────────────────────────────────
+
+interface GridScaleIndicatorProps {
+  spacing: number;
+  visible: boolean;
+  translate: ViewportTranslate;
+}
+
+export function GridScaleIndicator({
+  spacing,
+  visible,
+  translate,
+}: GridScaleIndicatorProps) {
+  if (!visible || !Number.isFinite(spacing) || spacing <= 0) {
+    return null;
+  }
+
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount }, (_, i) => i);
+
+  return (
+    <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col items-start gap-0.5">
+      <div
+        className="flex items-end"
+        style={{ width: 64, height: 12, gap: 0 }}
+      >
+        {ticks.map((i) => (
+          <div
+            key={i}
+            className="flex-1"
+            style={{
+              height: i === 0 || i === tickCount - 1 ? 12 : i === Math.floor(tickCount / 2) ? 10 : 7,
+              borderLeft: "1px solid var(--color-on-surface-dim, #7a7a7c)",
+            }}
+          />
+        ))}
+      </div>
+      <span className="text-[10px] leading-none text-on-surface-dim select-none">
+        {translate("viewport.gridScale", { spacing: formatGridSpacing(spacing) })}
+      </span>
+    </div>
+  );
+}
+
+function formatGridSpacing(spacing: number): string {
+  if (spacing >= 1) {
+    return String(Math.round(spacing));
+  }
+  return spacing.toFixed(1);
+}

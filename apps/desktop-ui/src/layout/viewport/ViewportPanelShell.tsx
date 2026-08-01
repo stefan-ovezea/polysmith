@@ -30,6 +30,7 @@ import {
   ConstraintPreviewBadge,
   CrosshairGuideOverlay,
   DimensionToolHint,
+  GridScaleIndicator,
   GridToggleToolbar,
   SelectionRectangleOverlay,
   SnapCursorOverlay,
@@ -77,6 +78,7 @@ interface ViewportPanelShellProps {
   circleToolMode: CircleToolMode;
   constraintPreview: ConstraintPreviewState | null;
   contextMenu: import("@/types").ViewportContextMenuState | null;
+  currentGridSpacing: number;
   contextMenuActions: ViewportContextMenuActions;
   crosshairCanvasClass: string;
   crosshairGuideSize: number;
@@ -176,6 +178,7 @@ export function ViewportPanelShell({
   constraintPreview,
   contextMenu,
   contextMenuActions,
+  currentGridSpacing,
   crosshairCanvasClass,
   crosshairGuideSize,
   crosshairPointer,
@@ -375,6 +378,11 @@ export function ViewportPanelShell({
           message={translate("viewport.startingCore")}
           variant="starting"
           visible={status === "starting"}
+        />
+        <GridScaleIndicator
+          spacing={currentGridSpacing}
+          translate={translate}
+          visible={hasActiveDocument}
         />
         <ViewportStatusPanel
           activeSketchPlaneId={activeSketchPlaneId}

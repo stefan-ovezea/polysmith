@@ -458,6 +458,7 @@ export function ViewportPanel({
   // null for the first / independent line (defaults to horizontal, 0 rad).
   const previousLineAngleRef = useRef<number | null>(null);
   const currentGridSpacingRef = useRef(10);
+  const [currentGridSpacing, setCurrentGridSpacing] = useState(10);
   const draftDimensionSessionRef = useRef<DraftDimensionSession | null>(null);
   const draftDimensionInputRefs = useRef<
     Partial<Record<DraftDimensionField, HTMLInputElement | null>>
@@ -2302,7 +2303,14 @@ export function ViewportPanel({
         activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
         showViewportGrid: showViewportGridRef.current,
         showSketchGrid: showSketchGridRef.current,
+        worldUnitsPerPixel:
+          getOrthographicViewHeight(camera) /
+          Math.max(renderer.domElement.clientHeight, 1),
       });
+      // Sync grid spacing state for the scale indicator overlay.
+      if (currentGridSpacingRef.current !== currentGridSpacing) {
+        setCurrentGridSpacing(currentGridSpacingRef.current);
+      }
       updateScreenSpaceSketchSprites({
         renderer,
         camera,
@@ -3592,6 +3600,7 @@ export function ViewportPanel({
       circleToolMode={circleToolMode}
       constraintPreview={constraintPreview}
       contextMenu={contextMenu}
+      currentGridSpacing={currentGridSpacing}
       contextMenuActions={contextMenuActions}
       crosshairCanvasClass={crosshairCanvasClass}
       crosshairGuideSize={crosshairGuideSize}
