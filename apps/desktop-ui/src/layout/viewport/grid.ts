@@ -128,7 +128,9 @@ export function buildAxisLines(
 ): THREE.LineSegments {
   const positions: number[] = [];
   const colors: number[] = [];
-  const origin = frame.origin.clone();
+  // Offset axis lines slightly toward the camera so they render
+  // on top of the grid and don't z-fight with the major line at u=0/v=0.
+  const origin = frame.origin.clone().addScaledVector(frame.normal, 0.001);
   const L = AXIS_LINE_HALF_LENGTH;
 
   // X axis (red)
