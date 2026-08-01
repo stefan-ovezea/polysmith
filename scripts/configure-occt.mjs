@@ -106,7 +106,7 @@ function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
 }
 
 function cmakeBuild(buildDir, config = "Release") {
-  run("cmake", ["--build", buildDir, "--config", config]);
+  run("cmake", ["--build", buildDir, "--config", config, "--parallel"]);
 }
 
 function cmakeInstall(buildDir, config = "Release") {

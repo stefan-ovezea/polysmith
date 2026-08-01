@@ -408,15 +408,24 @@ function hasEnabledDynamicSnap(
   filter: SelectionFilter,
   draftStartLocal?: [number, number] | null,
 ) {
+  // All dynamic snaps are relative to the draft line (axis-lock
+  // constrains direction from start, body snaps constrain the second
+  // point onto geometry, tangent/perpendicular/parallel define the
+  // line angle from start). Without a draft start — placing the first
+  // point of a line — none of these are meaningful. Returning false
+  // here prevents body snaps from overriding grid snap for the first
+  // click, which would otherwise pull the cursor onto nearby geometry
+  // bodies instead of snapping to the grid.
+  if (!draftStartLocal) return false;
+
   return (
     filter.snap_nearest ||
     filter.snap_intersection ||
     Boolean(
-      draftStartLocal &&
-        (filter.snap_polar ||
-          filter.snap_tangent ||
-          filter.snap_perpendicular ||
-          filter.snap_parallel),
+      filter.snap_polar ||
+      filter.snap_tangent ||
+      filter.snap_perpendicular ||
+      filter.snap_parallel,
     )
   );
 }
@@ -548,6 +557,19 @@ function appendCoreSnapCandidates(
           local: [candidate.local_x, candidate.local_y],
           label: candidate.label,
           kind: "quadrant",
+        });
+        break;
+      // Projected vertices (from 3D body geometry projected onto the
+      // sketch plane). Treated as priority snaps (same tier as endpoints)
+      // so that axis-lock / H-V constraint snaps never override them.
+      // Exact coordinates are used so the C++ core's find_coincident_endpoint
+      // (kCoincidentTolerance = 0.01 mm) always matches and reuses the
+      // existing projected vertex instead of creating a duplicate.
+      case "projected":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "endpoint",
         });
         break;
       default:
