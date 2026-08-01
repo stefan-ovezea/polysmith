@@ -16,13 +16,19 @@ function orientPlaneMesh(
   orientation: ReferencePlaneScene["orientation"],
 ) {
   if (orientation === "xy") {
-    mesh.rotation.x = -Math.PI / 2;
+    // PlaneGeometry is already XZ (normal=Y). For XY (normal=Z), no
+    // rotation needed — PlaneGeometry faces +Z in Three.js, which IS
+    // the XY plane in our Z-up CAD convention.
     return;
   }
 
   if (orientation === "yz") {
     mesh.rotation.y = Math.PI / 2;
+    return;
   }
+
+  // xz — make PlaneGeometry face +Y (normal of XZ plane in Z-up)
+  mesh.rotation.x = -Math.PI / 2;
 }
 
 export function buildReferencePlaneObject(plane: ReferencePlaneScene) {
@@ -76,10 +82,10 @@ export function buildReferencePlaneObject(plane: ReferencePlaneScene) {
     const offset = REFERENCE_PLANE_MARGIN + REFERENCE_PLANE_RENDER_SIZE / 2;
     const renderPosition: [number, number, number] =
       plane.orientation === "xy"
-        ? [offset, 0, offset]
+        ? [offset, offset, 0]
         : plane.orientation === "yz"
           ? [0, offset, offset]
-          : [offset, offset, 0];
+          : [offset, 0, offset];
     mesh.position.set(...renderPosition);
     edges.position.copy(mesh.position);
   }

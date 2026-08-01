@@ -97,8 +97,8 @@ TopoDS_Wire make_sketch_wire(
   } else if (parameters.plane_id == "ref-plane-xy") {
     frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
                        .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
-                       .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
-                       .normal_x=0,.normal_y=1,.normal_z=0};
+                       .y_axis_x=0,.y_axis_y=1,.y_axis_z=0,
+                       .normal_x=0,.normal_y=0,.normal_z=1};
   } else if (parameters.plane_id == "ref-plane-yz") {
     frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
                        .x_axis_x=0,.x_axis_y=1,.x_axis_z=0,
@@ -107,8 +107,8 @@ TopoDS_Wire make_sketch_wire(
   } else {
     frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
                        .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
-                       .y_axis_x=0,.y_axis_y=1,.y_axis_z=0,
-                       .normal_x=0,.normal_y=0,.normal_z=1};
+                       .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
+                       .normal_x=0,.normal_y=1,.normal_z=0};
   }
 
   const auto& pts = parameters.profile_points;

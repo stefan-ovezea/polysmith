@@ -47,7 +47,7 @@ function resolveSketchPlaneAxes(
   if (planeId === "ref-plane-xy") {
     return {
       xAxis: [1, 0, 0],
-      yAxis: [0, 0, 1],
+      yAxis: [0, 1, 0],
     };
   }
 
@@ -60,7 +60,7 @@ function resolveSketchPlaneAxes(
 
   return {
     xAxis: [1, 0, 0],
-    yAxis: [0, 1, 0],
+    yAxis: [0, 0, 1],
   };
 }
 

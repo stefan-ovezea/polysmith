@@ -44,17 +44,12 @@ const FeatureEntry *find_feature(const DocumentState &document,
   return nullptr;
 }
 
-// Hardcoded frames for the three origin reference planes. The basis
-// vectors mirror the existing conventions used by `feature_shape.cpp`
-// (`to_world_point` and `extrusion_vector`) so a sketch / extrude
-// rendered against one of these frames lands at the same world
-// position it always has — extending `start_sketch_on_plane` with a
-// plane_frame must not move legacy sketches.
+// Hardcoded frames for the three origin reference planes.
 //
-// Mapping (kept in lockstep with `feature_shape.cpp::to_world_point`):
-//   ref-plane-xy: local (x, y) -> world (x, 0, y), normal (0, 1, 0)
+// Mapping (CAD-standard Z-up convention):
+//   ref-plane-xy: local (x, y) -> world (x, y, 0), normal (0, 0, 1)
 //   ref-plane-yz: local (x, y) -> world (0, x, y), normal (1, 0, 0)
-//   ref-plane-xz: local (x, y) -> world (x, y, 0), normal (0, 0, 1)
+//   ref-plane-xz: local (x, y) -> world (x, 0, y), normal (0, 1, 0)
 std::optional<PlaneFrame> origin_plane_frame(const std::string &reference_id) {
   if (reference_id == "ref-plane-xy") {
     return PlaneFrame{
@@ -65,11 +60,11 @@ std::optional<PlaneFrame> origin_plane_frame(const std::string &reference_id) {
         .x_axis_y = 0.0,
         .x_axis_z = 0.0,
         .y_axis_x = 0.0,
-        .y_axis_y = 0.0,
-        .y_axis_z = 1.0,
+        .y_axis_y = 1.0,
+        .y_axis_z = 0.0,
         .normal_x = 0.0,
-        .normal_y = 1.0,
-        .normal_z = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
     };
   }
   if (reference_id == "ref-plane-yz") {
@@ -97,11 +92,11 @@ std::optional<PlaneFrame> origin_plane_frame(const std::string &reference_id) {
         .x_axis_y = 0.0,
         .x_axis_z = 0.0,
         .y_axis_x = 0.0,
-        .y_axis_y = 1.0,
-        .y_axis_z = 0.0,
+        .y_axis_y = 0.0,
+        .y_axis_z = 1.0,
         .normal_x = 0.0,
-        .normal_y = 0.0,
-        .normal_z = 1.0,
+        .normal_y = 1.0,
+        .normal_z = 0.0,
     };
   }
   return std::nullopt;

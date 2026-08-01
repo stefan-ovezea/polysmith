@@ -120,14 +120,14 @@ WorldPoint to_world_point(const std::string& plane_id,
                           double local_y,
                           double offset = kSketchPlaneOffset) {
   if (plane_id == "ref-plane-xy") {
-    return WorldPoint{.x = local_x, .y = offset, .z = local_y};
+    return WorldPoint{.x = local_x, .y = local_y, .z = offset};
   }
 
   if (plane_id == "ref-plane-yz") {
     return WorldPoint{.x = offset, .y = local_x, .z = local_y};
   }
 
-  return WorldPoint{.x = local_x, .y = local_y, .z = offset};
+  return WorldPoint{.x = local_x, .y = offset, .z = local_y};
 }
 
 WorldPoint to_world_point(const SketchFeatureParameters& parameters,
@@ -189,11 +189,11 @@ ViewportSolidFace::PlaneFrame make_face_frame_for_plane(const std::string& plane
                             0.0,
                             0.0,
                             0.0,
-                            0.0,
                             1.0,
                             0.0,
-                            1.0,
-                            0.0);
+                            0.0,
+                            0.0,
+                            1.0);
   }
 
   if (plane_id == "ref-plane-yz") {
@@ -218,9 +218,9 @@ ViewportSolidFace::PlaneFrame make_face_frame_for_plane(const std::string& plane
                           0.0,
                           0.0,
                           0.0,
+                          0.0,
                           1.0,
                           0.0,
-                          0.0,
-                          0.0,
-                          1.0);
+                          1.0,
+                          0.0);
 }

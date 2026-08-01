@@ -4,13 +4,13 @@ gp_Dir plane_normal(const ExtrudeFeatureParameters& parameters) {
     return gp_Dir(frame.normal_x, frame.normal_y, frame.normal_z);
   }
   if (parameters.plane_id == "ref-plane-xy") {
-    return gp_Dir(0.0, 1.0, 0.0);
+    return gp_Dir(0.0, 0.0, 1.0);
   }
   if (parameters.plane_id == "ref-plane-yz") {
     return gp_Dir(1.0, 0.0, 0.0);
   }
   if (parameters.plane_id == "ref-plane-xz") {
-    return gp_Dir(0.0, 0.0, 1.0);
+    return gp_Dir(0.0, 1.0, 0.0);
   }
   throw std::runtime_error("Unsupported sketch plane for shape: " +
                            parameters.plane_id);
@@ -28,13 +28,13 @@ gp_Dir profile_wire_normal(const LoftSectionParameters& section) {
     return gp_Dir(x, y, z);
   }
   if (section.plane_id == "ref-plane-xy") {
-    return gp_Dir(0.0, -1.0, 0.0);
+    return gp_Dir(0.0, 0.0, -1.0);
   }
   if (section.plane_id == "ref-plane-yz") {
     return gp_Dir(1.0, 0.0, 0.0);
   }
   if (section.plane_id == "ref-plane-xz") {
-    return gp_Dir(0.0, 0.0, 1.0);
+    return gp_Dir(0.0, 1.0, 0.0);
   }
   throw std::runtime_error("Unsupported sketch plane for loft: " +
                            section.plane_id);
@@ -52,17 +52,17 @@ gp_Dir profile_wire_normal(const ExtrudeFeatureParameters& parameters) {
     return gp_Dir(x, y, z);
   }
   if (parameters.plane_id == "ref-plane-xy") {
-    // Sketch-local coordinates on XY are mapped as (x, z) in world space.
-    // The local wire normal is therefore X x Z = -Y, while extrusion still
-    // uses +Y. Exact circle wires must follow the local wire orientation so
+    // Sketch-local coordinates on XY are mapped as (x, y) in world space.
+    // The local wire normal is therefore X x Y = Z, but we use -Z so that
     // hole reversal matches polygon loops built from the same sketch points.
-    return gp_Dir(0.0, -1.0, 0.0);
+    // Extrusion uses +Z (the plane normal).
+    return gp_Dir(0.0, 0.0, -1.0);
   }
   if (parameters.plane_id == "ref-plane-yz") {
     return gp_Dir(1.0, 0.0, 0.0);
   }
   if (parameters.plane_id == "ref-plane-xz") {
-    return gp_Dir(0.0, 0.0, 1.0);
+    return gp_Dir(0.0, 1.0, 0.0);
   }
   throw std::runtime_error("Unsupported sketch plane for shape: " +
                            parameters.plane_id);
@@ -80,13 +80,13 @@ gp_Dir profile_wire_normal(const RevolveFeatureParameters& parameters) {
     return gp_Dir(x, y, z);
   }
   if (parameters.plane_id == "ref-plane-xy") {
-    return gp_Dir(0.0, -1.0, 0.0);
+    return gp_Dir(0.0, 0.0, -1.0);
   }
   if (parameters.plane_id == "ref-plane-yz") {
     return gp_Dir(1.0, 0.0, 0.0);
   }
   if (parameters.plane_id == "ref-plane-xz") {
-    return gp_Dir(0.0, 0.0, 1.0);
+    return gp_Dir(0.0, 1.0, 0.0);
   }
   throw std::runtime_error("Unsupported sketch plane for revolve: " +
                            parameters.plane_id);
@@ -104,13 +104,13 @@ gp_Dir profile_wire_normal(const SweepFeatureParameters& parameters) {
     return gp_Dir(x, y, z);
   }
   if (parameters.plane_id == "ref-plane-xy") {
-    return gp_Dir(0.0, -1.0, 0.0);
+    return gp_Dir(0.0, 0.0, -1.0);
   }
   if (parameters.plane_id == "ref-plane-yz") {
     return gp_Dir(1.0, 0.0, 0.0);
   }
   if (parameters.plane_id == "ref-plane-xz") {
-    return gp_Dir(0.0, 0.0, 1.0);
+    return gp_Dir(0.0, 1.0, 0.0);
   }
   throw std::runtime_error("Unsupported sketch plane for sweep: " +
                            parameters.plane_id);

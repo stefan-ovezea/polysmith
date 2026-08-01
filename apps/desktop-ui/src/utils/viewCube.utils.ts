@@ -29,10 +29,10 @@ const CUBE_VIEWPORT_MARGIN = 16;
 const ANIMATION_DURATION = 300;
 
 const FACE_NORMALS: Record<CubeFace, THREE.Vector3> = {
-  TOP: new THREE.Vector3(0, 1, 0),
-  BOTTOM: new THREE.Vector3(0, -1, 0),
-  FRONT: new THREE.Vector3(0, 0, 1),
-  BACK: new THREE.Vector3(0, 0, -1),
+  TOP: new THREE.Vector3(0, 0, 1),
+  BOTTOM: new THREE.Vector3(0, 0, -1),
+  FRONT: new THREE.Vector3(0, -1, 0),
+  BACK: new THREE.Vector3(0, 1, 0),
   RIGHT: new THREE.Vector3(1, 0, 0),
   LEFT: new THREE.Vector3(-1, 0, 0),
 };
@@ -142,7 +142,7 @@ export function buildViewCubeGroup(): THREE.Group {
   const arrowMutedColor = viewCubeColor("--cad-viewcube-arrow-muted", "#5d6d70");
 
   // -- faces ----------------------------------------------------------------
-  // Labels follow mechanical CAD convention: +Z = TOP, -Y = FRONT.
+  // Labels follow CAD convention: +Z = TOP, -Y = FRONT.
   const faceConfigs: Array<{
     face: CubeFace;
     label: string;
@@ -166,30 +166,30 @@ export function buildViewCubeGroup(): THREE.Group {
     },
     {
       face: "TOP",
-      label: "BACK",
-      position: [0, FACE_OFFSET, 0],
-      rotation: [-Math.PI / 2, 0, 0],
+      label: "TOP",
+      position: [0, 0, FACE_OFFSET],
+      rotation: [0, 0, 0],
       color: colors.TOP,
     },
     {
       face: "BOTTOM",
-      label: "FRONT",
-      position: [0, -FACE_OFFSET, 0],
-      rotation: [Math.PI / 2, 0, 0],
+      label: "BOTTOM",
+      position: [0, 0, -FACE_OFFSET],
+      rotation: [0, Math.PI, 0],
       color: colors.BOTTOM,
     },
     {
       face: "FRONT",
-      label: "TOP",
-      position: [0, 0, FACE_OFFSET],
-      rotation: [0, 0, 0],
+      label: "FRONT",
+      position: [0, -FACE_OFFSET, 0],
+      rotation: [Math.PI / 2, 0, 0],
       color: colors.FRONT,
     },
     {
       face: "BACK",
-      label: "BOTTOM",
-      position: [0, 0, -FACE_OFFSET],
-      rotation: [0, Math.PI, 0],
+      label: "BACK",
+      position: [0, FACE_OFFSET, 0],
+      rotation: [-Math.PI / 2, 0, 0],
       color: colors.BACK,
     },
   ];
@@ -225,68 +225,68 @@ export function buildViewCubeGroup(): THREE.Group {
     size: [number, number, number];
     position: [number, number, number];
   }> = [
-    // 4 edges along X at Y=0.5
+    // 4 edges along X (between Z=±0.5 and Y=±0.5)
     {
-      faces: ["TOP", "FRONT"],
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, 0.5],
-    },
-    {
-      faces: ["TOP", "BACK"],
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, -0.5],
-    },
-    {
-      faces: ["BOTTOM", "FRONT"],
+      faces: ["TOP", "FRONT"],       // +Z ∩ -Y
       size: [CUBE_SIZE + et * 0.5, et, et],
       position: [0, -0.5, 0.5],
     },
     {
-      faces: ["BOTTOM", "BACK"],
+      faces: ["TOP", "BACK"],        // +Z ∩ +Y
+      size: [CUBE_SIZE + et * 0.5, et, et],
+      position: [0, 0.5, 0.5],
+    },
+    {
+      faces: ["BOTTOM", "FRONT"],    // -Z ∩ -Y
       size: [CUBE_SIZE + et * 0.5, et, et],
       position: [0, -0.5, -0.5],
     },
-    // 4 edges along Y at X=±0.5, Z=±0.5
     {
-      faces: ["FRONT", "RIGHT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, 0.5],
+      faces: ["BOTTOM", "BACK"],     // -Z ∩ +Y
+      size: [CUBE_SIZE + et * 0.5, et, et],
+      position: [0, 0.5, -0.5],
     },
+    // 4 edges along Z (between X=±0.5 and Y=±0.5)
     {
-      faces: ["FRONT", "LEFT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, 0.5],
-    },
-    {
-      faces: ["BACK", "RIGHT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, -0.5],
-    },
-    {
-      faces: ["BACK", "LEFT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, -0.5],
-    },
-    // 4 edges along Z at Y=±0.5, X=±0.5
-    {
-      faces: ["TOP", "RIGHT"],
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [0.5, 0.5, 0],
-    },
-    {
-      faces: ["TOP", "LEFT"],
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [-0.5, 0.5, 0],
-    },
-    {
-      faces: ["BOTTOM", "RIGHT"],
+      faces: ["FRONT", "RIGHT"],      // -Y ∩ +X, edge runs along Z
       size: [et, et, CUBE_SIZE + et * 0.5],
       position: [0.5, -0.5, 0],
     },
     {
-      faces: ["BOTTOM", "LEFT"],
+      faces: ["FRONT", "LEFT"],       // -Y ∩ -X, edge runs along Z
       size: [et, et, CUBE_SIZE + et * 0.5],
       position: [-0.5, -0.5, 0],
+    },
+    {
+      faces: ["BACK", "RIGHT"],       // +Y ∩ +X, edge runs along Z
+      size: [et, et, CUBE_SIZE + et * 0.5],
+      position: [0.5, 0.5, 0],
+    },
+    {
+      faces: ["BACK", "LEFT"],        // +Y ∩ -X, edge runs along Z
+      size: [et, et, CUBE_SIZE + et * 0.5],
+      position: [-0.5, 0.5, 0],
+    },
+    // 4 edges along Y (between X=±0.5 and Z=±0.5)
+    {
+      faces: ["TOP", "RIGHT"],        // +Z ∩ +X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [0.5, 0, 0.5],
+    },
+    {
+      faces: ["TOP", "LEFT"],         // +Z ∩ -X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [-0.5, 0, 0.5],
+    },
+    {
+      faces: ["BOTTOM", "RIGHT"],     // -Z ∩ +X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [0.5, 0, -0.5],
+    },
+    {
+      faces: ["BOTTOM", "LEFT"],      // -Z ∩ -X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [-0.5, 0, -0.5],
     },
   ];
 
@@ -396,6 +396,7 @@ export function createViewCubeCamera(): THREE.OrthographicCamera {
     0.05,
     10,
   );
+  camera.up.set(0, 0, 1);
   camera.position.set(1.4, 0.8, 1.4);
   camera.lookAt(0, 0, 0);
   return camera;
@@ -582,9 +583,9 @@ export function isCardinalCubeDirection(direction: THREE.Vector3): boolean {
 }
 
 function getDefaultUpForDirection(direction: THREE.Vector3): THREE.Vector3 {
-  const worldUp = new THREE.Vector3(0, 1, 0);
+  const worldUp = new THREE.Vector3(0, 0, 1);
   if (Math.abs(direction.dot(worldUp)) > 0.95) {
-    return new THREE.Vector3(0, 0, -1);
+    return new THREE.Vector3(0, 1, 0);
   }
   return worldUp;
 }

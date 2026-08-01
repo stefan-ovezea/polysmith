@@ -24,10 +24,10 @@ std::string plane_id_from_frame(
   }
 
   if (abs_y >= abs_x && abs_y >= abs_z) {
-    return "ref-plane-xy";
+    return "ref-plane-xz";
   }
 
-  return "ref-plane-xz";
+  return "ref-plane-xy";
 }
 
 std::string plane_id_from_frame(const PlaneFrame& plane_frame) {
@@ -40,10 +40,10 @@ std::string plane_id_from_frame(const PlaneFrame& plane_frame) {
   }
 
   if (abs_y >= abs_x && abs_y >= abs_z) {
-    return "ref-plane-xy";
+    return "ref-plane-xz";
   }
 
-  return "ref-plane-xz";
+  return "ref-plane-xy";
 }
 
 PlaneFrame make_plane_frame(

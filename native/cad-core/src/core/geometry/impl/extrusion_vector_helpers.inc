@@ -1,6 +1,6 @@
 gp_Vec extrusion_vector(const std::string& plane_id, double depth) {
   if (plane_id == "ref-plane-xy") {
-    return gp_Vec(0.0, depth, 0.0);
+    return gp_Vec(0.0, 0.0, depth);
   }
 
   if (plane_id == "ref-plane-yz") {
@@ -8,7 +8,7 @@ gp_Vec extrusion_vector(const std::string& plane_id, double depth) {
   }
 
   if (plane_id == "ref-plane-xz") {
-    return gp_Vec(0.0, 0.0, depth);
+    return gp_Vec(0.0, depth, 0.0);
   }
 
   throw std::runtime_error("Unsupported sketch plane for shape: " + plane_id);

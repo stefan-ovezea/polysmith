@@ -10,14 +10,14 @@ const DIMENSION_EDITOR_MARGIN = 20;
 
 export function legacySketchPlane(planeId: string) {
   if (planeId === "ref-plane-xy") {
-    return new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET);
+    return new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
   }
 
   if (planeId === "ref-plane-yz") {
     return new THREE.Plane(new THREE.Vector3(1, 0, 0), -SKETCH_PLANE_OFFSET);
   }
 
-  return new THREE.Plane(new THREE.Vector3(0, 0, 1), -SKETCH_PLANE_OFFSET);
+  return new THREE.Plane(new THREE.Vector3(0, 1, 0), -SKETCH_PLANE_OFFSET);
 }
 
 function frameVector(vector: { x: number; y: number; z: number }) {
@@ -42,9 +42,12 @@ export function frameCamera(
 ) {
   const distance = Math.max(maxDimension * 1.8, 160);
   const viewHeight = Math.max(maxDimension * 2.4, 120);
+  // CAD isometric default view: looking down at the XY plane from
+  // front-right-above, so X points to the lower-left screen corner
+  // and Y points to the lower-right (Z-up convention).
   camera.position.set(
-    center[0] + distance,
-    center[1] + distance * 0.8,
+    center[0] + distance * 0.7,
+    center[1] + distance * 0.5,
     center[2] + distance,
   );
   camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
@@ -69,12 +72,12 @@ export function frameCameraToSketchPlane(
     const origin = frameVector(planeFrame.origin);
     const normal = frameVector(planeFrame.normal).normalize();
 
-    // CAD-style up: prefer world Y; if the face normal is vertical, fall
-    // back to world -Z so the sketch reads top-down without rolling.
-    const worldUp = new THREE.Vector3(0, 1, 0);
+    // CAD-style up: prefer world Z; if the face normal is nearly vertical,
+    // fall back to world -Y so the sketch reads top-down without rolling.
+    const worldUp = new THREE.Vector3(0, 0, 1);
     const up =
       Math.abs(normal.dot(worldUp)) > 0.95
-        ? new THREE.Vector3(0, 0, -1)
+        ? new THREE.Vector3(0, -1, 0)
         : worldUp.clone();
 
     camera.position.copy(origin.clone().add(normal.multiplyScalar(distance)));
@@ -85,8 +88,8 @@ export function frameCameraToSketchPlane(
   }
 
   if (activePlaneId === "ref-plane-xy") {
-    camera.position.set(0, distance, 0);
-    camera.up.set(0, 0, -1);
+    camera.position.set(0, 0, distance);
+    camera.up.set(0, 1, 0);
     controls.target.set(0, 0, 0);
     controls.update();
     return;
@@ -100,8 +103,8 @@ export function frameCameraToSketchPlane(
     return;
   }
 
-  camera.position.set(0, 0, distance);
-  camera.up.set(0, 1, 0);
+  camera.position.set(0, distance, 0);
+  camera.up.set(0, 0, 1);
   controls.target.set(0, 0, 0);
   controls.update();
 }
@@ -149,8 +152,8 @@ export function resolveSketchPlanePoint(
 
   if (activePlaneId === "ref-plane-xy") {
     return {
-      local: [hitPoint.x, hitPoint.z] as [number, number],
-      world: [hitPoint.x, SKETCH_PLANE_OFFSET, hitPoint.z] as [
+      local: [hitPoint.x, hitPoint.y] as [number, number],
+      world: [hitPoint.x, hitPoint.y, SKETCH_PLANE_OFFSET] as [
         number,
         number,
         number,
@@ -170,8 +173,8 @@ export function resolveSketchPlanePoint(
   }
 
   return {
-    local: [hitPoint.x, hitPoint.y] as [number, number],
-    world: [hitPoint.x, hitPoint.y, SKETCH_PLANE_OFFSET] as [
+    local: [hitPoint.x, hitPoint.z] as [number, number],
+    world: [hitPoint.x, SKETCH_PLANE_OFFSET, hitPoint.z] as [
       number,
       number,
       number,
@@ -198,14 +201,14 @@ export function toWorldPoint(
     ];
   }
   if (planeId === "ref-plane-xy") {
-    return [local[0], SKETCH_PLANE_OFFSET, local[1]];
+    return [local[0], local[1], SKETCH_PLANE_OFFSET];
   }
 
   if (planeId === "ref-plane-yz") {
     return [SKETCH_PLANE_OFFSET, local[0], local[1]];
   }
 
-  return [local[0], local[1], SKETCH_PLANE_OFFSET];
+  return [local[0], SKETCH_PLANE_OFFSET, local[1]];
 }
 
 export function distanceBetweenPoints(

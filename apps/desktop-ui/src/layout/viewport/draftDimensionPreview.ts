@@ -77,7 +77,7 @@ export function buildDraftDimensionPreview({
   const arrowPositions: number[] = [];
   const arrowIndices: number[] = [];
   const arrows = { arrowPositions, arrowIndices };
-  const planeNormal = planeNormalFromFrame(planeFrame);
+  const planeNormal = planeNormalFromFrame(planeId, planeFrame);
   const startVector = new THREE.Vector3(...startWorld);
   const endVector = new THREE.Vector3(...endWorld);
   const lineDirection = endVector.clone().sub(startVector).normalize();
@@ -164,16 +164,25 @@ export function buildDraftDimensionPreview({
   };
 }
 
-function planeNormalFromFrame(planeFrame: SketchPlaneFrame | null) {
-  if (!planeFrame) {
-    return new THREE.Vector3(0, 1, 0);
+function planeNormalFromFrame(
+  planeId: string,
+  planeFrame: SketchPlaneFrame | null,
+) {
+  if (planeFrame) {
+    return new THREE.Vector3(
+      planeFrame.normal.x,
+      planeFrame.normal.y,
+      planeFrame.normal.z,
+    );
   }
 
-  return new THREE.Vector3(
-    planeFrame.normal.x,
-    planeFrame.normal.y,
-    planeFrame.normal.z,
-  );
+  if (planeId === "ref-plane-xy") {
+    return new THREE.Vector3(0, 0, 1);
+  }
+  if (planeId === "ref-plane-yz") {
+    return new THREE.Vector3(1, 0, 0);
+  }
+  return new THREE.Vector3(0, 1, 0);
 }
 
 function addLengthDimension({
