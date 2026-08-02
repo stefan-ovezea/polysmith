@@ -319,10 +319,13 @@ export function buildViewCubeGroup(): THREE.Group {
   ];
 
   for (const [sx, sy, sz] of cornerSigns) {
+    // In cube-local space: X→RIGHT/LEFT, Y→BACK/FRONT, Z→TOP/BOTTOM.
+    // The position is (sx*0.5, sy*0.5, sz*0.5) — sy is the local Y
+    // axis (BACK/FRONT), sz is the local Z axis (TOP/BOTTOM).
     const faces: [CubeFace, CubeFace, CubeFace] = [
       sx > 0 ? "RIGHT" : "LEFT",
-      sy > 0 ? "TOP" : "BOTTOM",
-      sz > 0 ? "FRONT" : "BACK",
+      sy > 0 ? "BACK" : "FRONT",
+      sz > 0 ? "TOP" : "BOTTOM",
     ];
     const geometry = new THREE.SphereGeometry(CORNER_RADIUS, 16, 12);
     const material = new THREE.MeshBasicMaterial({ color: cornerColor });
@@ -472,7 +475,27 @@ export function syncCubeCamera(
     .copy(mainCamera.position)
     .sub(controlsTarget)
     .normalize();
-  cubeCamera.position.copy(dir.multiplyScalar(2));
+
+  cubeCamera.position.copy(dir.clone().multiplyScalar(2));
+
+  // Sync the cube camera's up to the main camera's up so the cube
+  // renders with the same orientation the user sees on the model.
+  // A fixed Z-up makes the cube faces misalign with the model when
+  // the main camera's up has been tilted by prior view transitions.
+  const upDotView = Math.abs(dir.dot(mainCamera.up));
+  if (upDotView > 0.99) {
+    // Main camera up is nearly parallel to the view direction —
+    // a degenerate state.  Fall back to a world reference.
+    const zUp = new THREE.Vector3(0, 0, 1);
+    cubeCamera.up.copy(
+      Math.abs(dir.dot(zUp)) > 0.99
+        ? new THREE.Vector3(0, 1, 0)
+        : zUp,
+    );
+  } else {
+    cubeCamera.up.copy(mainCamera.up);
+  }
+
   cubeCamera.lookAt(0, 0, 0);
 }
 
@@ -611,10 +634,16 @@ export function getQuantizedCubeUp(
   projectedCurrentUp.normalize();
   let bestUp = baseUp.clone();
   let bestDot = -Infinity;
-  for (let step = 0; step < 4; step += 1) {
+  // Use 45° steps (8 candidates) instead of 90° so the quantized up
+  // stays within ~22.5° of the current projected up.  Coarse 90°
+  // quantization can pick an up nearly 45° away after a diagonal
+  // view transition, causing the camera to roll significantly during
+  // the next animation — the roll changes the effective rotation axis
+  // and makes edge clicks orbit around the wrong world axis.
+  for (let step = 0; step < 8; step += 1) {
     const candidate = baseUp
       .clone()
-      .applyAxisAngle(axis, step * (Math.PI / 2))
+      .applyAxisAngle(axis, step * (Math.PI / 4))
       .normalize();
     const dot = candidate.dot(projectedCurrentUp);
     if (dot > bestDot) {
@@ -646,7 +675,27 @@ export function animateCameraTowardTarget(
 
   camera.position.lerpVectors(startPosition, targetPosition, ease);
   if (startUp && targetUp) {
-    camera.up.lerpVectors(startUp, targetUp, ease).normalize();
+    // Spherical-linear interpolate the up so it follows a consistent
+    // arc instead of passing through degenerate intermediate values.
+    // Linear nlerp can cross through a direction parallel to the view
+    // direction, causing the sketch axes to flip momentarily.
+    const upCross = new THREE.Vector3()
+      .crossVectors(startUp, targetUp);
+    const upCrossLen = upCross.length();
+    if (upCrossLen > 1e-6) {
+      const upAngle = Math.acos(
+        THREE.MathUtils.clamp(startUp.dot(targetUp), -1, 1),
+      );
+      camera.up
+        .copy(startUp)
+        .applyAxisAngle(
+          upCross.divideScalar(upCrossLen),
+          upAngle * ease,
+        )
+        .normalize();
+    } else {
+      camera.up.lerpVectors(startUp, targetUp, ease).normalize();
+    }
   }
   camera.lookAt(controls.target);
   controls.update();
