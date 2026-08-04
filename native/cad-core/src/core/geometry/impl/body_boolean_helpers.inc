@@ -29,12 +29,6 @@ TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape,
                                        /*UnifyEdges=*/true,
                                        /*UnifyFaces=*/unify_faces,
                                        /*ConcatBSplines=*/false);
-    // Default tolerances (Precision::Confusion = 1e-7) are too tight
-    // for boolean results in OCCT 8, where floating-point drift can
-    // leave nominally coplanar faces just far enough apart that the
-    // unifier skips them.  Use the same tolerances as SimplifyResult.
-    unify.SetLinearTolerance(1e-5);
-    unify.SetAngularTolerance(1e-5);
     unify.Build();
     const TopoDS_Shape unified = unify.Shape();
     if (!unified.IsNull()) {
