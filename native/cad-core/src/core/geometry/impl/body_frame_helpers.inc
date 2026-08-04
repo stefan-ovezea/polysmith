@@ -106,8 +106,8 @@ BodyLocalFrame frame_from_plane_frame(const PlaneFrame& frame) {
 BodyLocalFrame frame_from_plane_id(const std::string& plane_id) {
   if (plane_id == "ref-plane-xy") {
     return frame_from_axes(gp_Vec(1.0, 0.0, 0.0),
-                           gp_Vec(0.0, 0.0, 1.0),
-                           gp_Vec(0.0, 1.0, 0.0));
+                           gp_Vec(0.0, 1.0, 0.0),
+                           gp_Vec(0.0, 0.0, 1.0));
   }
   if (plane_id == "ref-plane-yz") {
     return frame_from_axes(gp_Vec(0.0, 1.0, 0.0),
@@ -116,8 +116,8 @@ BodyLocalFrame frame_from_plane_id(const std::string& plane_id) {
   }
   if (plane_id == "ref-plane-xz") {
     return frame_from_axes(gp_Vec(1.0, 0.0, 0.0),
-                           gp_Vec(0.0, 1.0, 0.0),
-                           gp_Vec(0.0, 0.0, 1.0));
+                           gp_Vec(0.0, 0.0, 1.0),
+                           gp_Vec(0.0, 1.0, 0.0));
   }
   return default_body_local_frame();
 }

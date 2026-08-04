@@ -442,8 +442,8 @@ export function ViewportPanel({
   const viewCubeAnimStartRef = useRef(0);
   const viewCubeAnimStartPosRef = useRef(new THREE.Vector3());
   const viewCubeAnimTargetPosRef = useRef(new THREE.Vector3());
-  const viewCubeAnimStartUpRef = useRef(new THREE.Vector3(0, 1, 0));
-  const viewCubeAnimTargetUpRef = useRef(new THREE.Vector3(0, 1, 0));
+  const viewCubeAnimStartUpRef = useRef(new THREE.Vector3(0, 0, 1));
+  const viewCubeAnimTargetUpRef = useRef(new THREE.Vector3(0, 0, 1));
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
@@ -2144,6 +2144,7 @@ export function ViewportPanel({
       -10000,
       10000,
     );
+    camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     const contentGroup = new THREE.Group();
     const referenceGroup = new THREE.Group();

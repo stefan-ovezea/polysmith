@@ -1,9 +1,9 @@
       } else if (parameters.profile_kind == "circle") {
-        if (parameters.plane_id != "ref-plane-xy") {
+        if (parameters.plane_id != "ref-plane-xz") {
           continue;
         }
 
-        if (parameters.plane_id == "ref-plane-xy") {
+        if (parameters.plane_id == "ref-plane-xz") {
           cylinders.push_back(ViewportCylinderPrimitive{
               .id = feature.id,
               .label = feature.name,

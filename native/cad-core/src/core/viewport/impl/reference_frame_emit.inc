@@ -12,8 +12,8 @@
       .label = "XY Plane",
       .orientation = "xy",
       .center_x = reference_extent / 2.0,
-      .center_y = 0.0,
-      .center_z = reference_extent / 2.0,
+      .center_y = reference_extent / 2.0,
+      .center_z = 0.0,
       .width = reference_extent,
       .height = reference_extent,
       .is_selected = view->selected_reference_id.has_value() &&
@@ -42,8 +42,8 @@
       .label = "XZ Plane",
       .orientation = "xz",
       .center_x = reference_extent / 2.0,
-      .center_y = reference_extent / 2.0,
-      .center_z = 0.0,
+      .center_y = 0.0,
+      .center_z = reference_extent / 2.0,
       .width = reference_extent,
       .height = reference_extent,
       .is_selected = view->selected_reference_id.has_value() &&

@@ -128,9 +128,7 @@ export function buildAxisLines(
 ): THREE.LineSegments {
   const positions: number[] = [];
   const colors: number[] = [];
-  // Offset axis lines slightly toward the camera so they render
-  // on top of the grid and don't z-fight with the major line at u=0/v=0.
-  const origin = frame.origin.clone().addScaledVector(frame.normal, 0.001);
+  const origin = frame.origin.clone();
   const L = AXIS_LINE_HALF_LENGTH;
 
   // X axis (red)
@@ -298,24 +296,24 @@ export function getSketchGridFrame(
     return {
       origin: new THREE.Vector3(
         0,
-        0,
         SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
+        0,
       ),
       xAxis: new THREE.Vector3(1, 0, 0),
-      yAxis: new THREE.Vector3(0, 1, 0),
-      normal: new THREE.Vector3(0, 0, 1),
+      yAxis: new THREE.Vector3(0, 0, 1),
+      normal: new THREE.Vector3(0, 1, 0),
     };
   }
 
   return {
     origin: new THREE.Vector3(
       0,
-      SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
       0,
+      SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
     ),
     xAxis: new THREE.Vector3(1, 0, 0),
-    yAxis: new THREE.Vector3(0, 0, 1),
-    normal: new THREE.Vector3(0, 1, 0),
+    yAxis: new THREE.Vector3(0, 1, 0),
+    normal: new THREE.Vector3(0, 0, 1),
   };
 }
 
@@ -359,12 +357,12 @@ export function worldPointToSketchLocal(
     return [delta.dot(xAxis), delta.dot(yAxis)];
   }
   if (planeId === "ref-plane-xy") {
-    return [world[0], world[2]];
+    return [world[0], world[1]];
   }
   if (planeId === "ref-plane-yz") {
     return [world[1], world[2]];
   }
-  return [world[0], world[1]];
+  return [world[0], world[2]];
 }
 
 function fallbackGridBounds(

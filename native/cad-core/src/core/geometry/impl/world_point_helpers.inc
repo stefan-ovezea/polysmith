@@ -1,6 +1,6 @@
 gp_Pnt to_world_point(const std::string& plane_id, double local_x, double local_y) {
   if (plane_id == "ref-plane-xy") {
-    return gp_Pnt(local_x, 0.0, local_y);
+    return gp_Pnt(local_x, local_y, 0.0);
   }
 
   if (plane_id == "ref-plane-yz") {
@@ -8,7 +8,7 @@ gp_Pnt to_world_point(const std::string& plane_id, double local_x, double local_
   }
 
   if (plane_id == "ref-plane-xz") {
-    return gp_Pnt(local_x, local_y, 0.0);
+    return gp_Pnt(local_x, 0.0, local_y);
   }
 
   throw std::runtime_error("Unsupported sketch plane for shape: " + plane_id);
