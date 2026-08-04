@@ -7,6 +7,21 @@
 
 namespace polysmith::core {
 
+struct ViewportSketchPlaneFrame {
+  double origin_x;
+  double origin_y;
+  double origin_z;
+  double x_axis_x;
+  double x_axis_y;
+  double x_axis_z;
+  double y_axis_x;
+  double y_axis_y;
+  double y_axis_z;
+  double normal_x;
+  double normal_y;
+  double normal_z;
+};
+
 struct ViewportBoxPrimitive {
   std::string id;
   std::string label;
@@ -30,23 +45,10 @@ struct ViewportCylinderPrimitive {
   double center_x;
   double center_y;
   double center_z;
+  std::string plane_id;
+  std::optional<ViewportSketchPlaneFrame> plane_frame;
   bool is_selected;
   std::optional<std::string> appearance_color;
-};
-
-struct ViewportSketchPlaneFrame {
-  double origin_x;
-  double origin_y;
-  double origin_z;
-  double x_axis_x;
-  double x_axis_y;
-  double x_axis_z;
-  double y_axis_x;
-  double y_axis_y;
-  double y_axis_z;
-  double normal_x;
-  double normal_y;
-  double normal_z;
 };
 
 struct ViewportPolygonExtrudePrimitive {

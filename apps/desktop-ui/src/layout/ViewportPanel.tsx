@@ -7,6 +7,7 @@ import {
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
 import {
   applyTheme,
   useAppConfig,
@@ -873,6 +874,22 @@ export function ViewportPanel({
       updateSketchDimension: updateSketchDimensionRef.current,
     });
   }, [sketchFeature]);
+  // React to view-setting-changed events dispatched by the View panel
+  // so edge visibility toggles take effect immediately without waiting
+  // for the next viewport rebuild.
+  useEffect(() => {
+    const handler = () => {
+      const hidden = getShowHiddenEdges();
+      for (const line of edgeLineObjectsRef.current) {
+        const mat = line.material as THREE.LineBasicMaterial;
+        mat.depthTest = !hidden;
+        mat.polygonOffset = !hidden;
+        mat.needsUpdate = true;
+      }
+    };
+    window.addEventListener("view-setting-changed", handler);
+    return () => window.removeEventListener("view-setting-changed", handler);
+  }, []);
   // Keep planegcs constraint data ref in sync with the viewport state
   // so the drag rAF can read it without render-cycle stale closures.
   useEffect(() => {

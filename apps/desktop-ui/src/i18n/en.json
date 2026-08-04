@@ -132,6 +132,12 @@
     "selectionReady": "Selection ready",
     "title": "Materials"
   },
+  "view": {
+    "button": "View",
+    "title": "View",
+    "showHiddenEdges": "Show hidden edges",
+    "showHiddenEdgesHint": "When enabled, edges on the far side of a body render through the solid surface"
+  },
   "selectionFilter": {
     "button": "Snap",
     "center": "Center",

@@ -167,7 +167,9 @@ TopoDS_Shape apply_hole(const TopoDS_Shape& body_shape,
     if (cutter.IsNull()) {
       return body_shape;
     }
-    TopoDS_Shape result = BRepAlgoAPI_Cut(body_shape, cutter).Shape();
+    BRepAlgoAPI_Cut cut_op(body_shape, cutter);
+    cut_op.SimplifyResult();
+    TopoDS_Shape result = cut_op.Shape();
     if (result.IsNull()) {
       return body_shape;
     }

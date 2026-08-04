@@ -11,6 +11,16 @@ import * as THREE from "three";
 import { themeColor } from "./themeColor";
 import { applyEdgeVisualColor, applyVertexVisualColor } from "./visualState";
 
+// ── View settings (toggled via View panel) ────────────────────────────
+let _showHiddenEdges = false;
+/** When true, body edges ignore the depth buffer and render through solids. */
+export function setShowHiddenEdges(show: boolean) {
+  _showHiddenEdges = show;
+}
+export function getShowHiddenEdges() {
+  return _showHiddenEdges;
+}
+
 export function shapeFromProfileLoops(
   outerLoop: readonly (readonly [number, number])[],
   innerLoops: readonly (readonly (readonly [number, number])[])[],
@@ -102,6 +112,13 @@ export function makePlaneTransformMatrix(planeId: string, offset = 0) {
     0,
     1,
   );
+}
+
+function planeNormalForId(planeId: string): THREE.Vector3 {
+  if (planeId === "ref-plane-xy") return new THREE.Vector3(0, 0, 1);
+  if (planeId === "ref-plane-yz") return new THREE.Vector3(1, 0, 0);
+  if (planeId === "ref-plane-xz") return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 1, 0); // default: Y-up (no rotation)
 }
 
 export function makePlaneTransformMatrixFromFrame(
@@ -196,6 +213,10 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
     color: themeColor("--color-cad-edge", "#2a2a2c"),
     transparent: true,
     opacity: 0.9,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 
   let geometry: THREE.BufferGeometry;
@@ -210,6 +231,24 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       48,
       48,
     );
+    // THREE.CylinderGeometry builds along the Y axis.  In CAD Z-up
+    // convention the cylinder axis should be the plane normal, so we
+    // rotate the geometry so that its local Y aligns with the plane
+    // normal direction in world space.
+    const normal = primitive.planeFrame
+      ? new THREE.Vector3(
+          primitive.planeFrame.normal[0],
+          primitive.planeFrame.normal[1],
+          primitive.planeFrame.normal[2],
+        ).normalize()
+      : planeNormalForId(primitive.planeId);
+    if (normal.lengthSq() > 0.001 && Math.abs(normal.y - 1.0) > 0.001) {
+      const cylinderAxis = new THREE.Vector3(0, 1, 0);
+      const rotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(
+        new THREE.Quaternion().setFromUnitVectors(cylinderAxis, normal),
+      );
+      geometry.applyMatrix4(rotationMatrix);
+    }
   } else if (primitive.kind === "polygon_extrude") {
     const shape = shapeFromProfileLoops(
       primitive.profilePoints,
@@ -275,17 +314,18 @@ export function buildSceneEdgeObject(edge: SceneEdge): THREE.Line {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
 
+  // When showHiddenEdges is ON, depthTest is disabled so edges on the
+  // far side of the body render through the solid (wireframe overlay).
+  // Default is OFF: edges behind the body are properly occluded.
+  const depthTest = !_showHiddenEdges;
   const material = new THREE.LineBasicMaterial({
     transparent: true,
     linewidth: 1, // most browsers ignore this; selection still reads via color
-    // depthTest stays ON so edges on the far side of an opaque body
-    // are occluded by the surface, matching common CAD workflows. With it off, the
-    // wireframe shows through the body and reads as transparency.
-    // `polygonOffset` plus a small `polygonOffsetUnits` keeps the line
-    // visually on top of the face fill at the same depth (otherwise
-    // edges z-fight with the surface they sit on).
-    depthTest: false,
-    polygonOffset: true,
+    depthTest,
+    // `polygonOffset` plus negative offsets keep the line visually on
+    // top of the face fill at the same depth (otherwise edges z-fight
+    // with the surface they sit on). Only meaningful when depthTest is on.
+    polygonOffset: depthTest,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });

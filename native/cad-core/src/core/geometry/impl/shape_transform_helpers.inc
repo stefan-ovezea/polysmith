@@ -16,7 +16,9 @@ TopoDS_Shape fuse_shapes(const TopoDS_Shape& first, const TopoDS_Shape& second) 
   if (second.IsNull()) {
     return first;
   }
-  const TopoDS_Shape fused = BRepAlgoAPI_Fuse(first, second).Shape();
+  BRepAlgoAPI_Fuse fuse_op(first, second);
+  fuse_op.SimplifyResult();
+  const TopoDS_Shape fused = fuse_op.Shape();
   return fused.IsNull() ? first : fused;
 }
 

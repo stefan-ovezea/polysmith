@@ -9,8 +9,8 @@ TopoDS_Shape build_box_shape(const BoxFeatureParameters& parameters) {
 }
 
 TopoDS_Shape build_cylinder_shape(const CylinderFeatureParameters& parameters) {
-  const gp_Ax2 axis(gp_Pnt(parameters.radius, 0.0, parameters.radius),
-                    gp_Dir(0.0, 1.0, 0.0));
+  const gp_Ax2 axis(gp_Pnt(0.0, 0.0, 0.0),
+                    gp_Dir(0.0, 0.0, 1.0));
   const TopoDS_Shape shape =
       BRepPrimAPI_MakeCylinder(axis, parameters.radius, parameters.height).Shape();
   if (shape.IsNull()) {

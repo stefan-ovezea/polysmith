@@ -122,6 +122,17 @@ void apply_nested_polygon_holes(std::vector<SketchProfileRegion>& profiles) {
       continue;
     }
 
+    // Circle-derived arrangement faces (faces whose boundary consists
+    // solely of one circle's polygon segments) are standalone selectable
+    // regions — not anonymous holes.  Nesting circles inside polygons is
+    // handled explicitly by the circle-in-polygon logic in
+    // build_sketch_profile_regions (lines ~410-490).  Auto-nesting them
+    // here would hide the circle region as a hole of the arrangement
+    // wedge, preventing the user from selecting the wedge as a solid.
+    if (inner.source_circle_id.has_value()) {
+      continue;
+    }
+
     const SketchProfilePoint inner_center = polygon_centroid(inner.points);
     const double inner_area = std::abs(polygon_signed_area(inner.points));
     SketchProfileRegion* containing_profile = nullptr;

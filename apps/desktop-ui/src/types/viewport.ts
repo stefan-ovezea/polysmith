@@ -49,6 +49,8 @@ export interface ViewportCylinderPrimitive {
   height: number;
   x_offset: number;
   center: Vector3;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
   is_selected: boolean;
   appearance_color: string | null;
 }

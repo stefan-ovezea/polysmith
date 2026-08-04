@@ -40,16 +40,16 @@ TopoDS_Shape build_fastener_shape(const FastenerFeatureParameters& parameters) {
   TopoDS_Shape head;
   if (parameters.head_type == "flat") {
     head = BRepPrimAPI_MakeCone(
-               gp_Ax2(gp_Pnt(shaft_radius, parameters.length, shaft_radius),
-                      gp_Dir(0.0, 1.0, 0.0)),
+               gp_Ax2(gp_Pnt(shaft_radius, shaft_radius, parameters.length),
+                      gp_Dir(0.0, 0.0, 1.0)),
                shaft_radius,
                head_radius,
                head_height)
                .Shape();
   } else {
     head = BRepPrimAPI_MakeCylinder(
-               gp_Ax2(gp_Pnt(shaft_radius, parameters.length, shaft_radius),
-                      gp_Dir(0.0, 1.0, 0.0)),
+               gp_Ax2(gp_Pnt(shaft_radius, shaft_radius, parameters.length),
+                      gp_Dir(0.0, 0.0, 1.0)),
                head_radius,
                head_height)
                .Shape();

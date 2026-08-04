@@ -66,6 +66,7 @@ import { ActiveBodyOperationPanels } from "./app/ActiveBodyOperationPanels";
 import { AppTopBar } from "./app/AppTopBar";
 import { ActiveMirrorPanel } from "./app/ActiveMirrorPanel";
 import { ActiveMaterialsPanel } from "./app/ActiveMaterialsPanel";
+import { ActiveViewPanel } from "./app/ActiveViewPanel";
 import { ActiveHolePanel } from "./app/ActiveHolePanel";
 import { ActiveProfileFeaturePanels } from "./app/ActiveProfileFeaturePanels";
 import { ActiveThreadedFeaturePanels } from "./app/ActiveThreadedFeaturePanels";
@@ -313,6 +314,7 @@ function App() {
   const [parametersPanelOpen, setParametersPanelOpen] = useState(false);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [materialsPanelOpen, setMaterialsPanelOpen] = useState(false);
+  const [viewPanelOpen, setViewPanelOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("cad");
   const [slicerStatus, setSlicerStatus] = useState<string | null>(null);
   const [hasOrcaEmbedSession, setHasOrcaEmbedSession] = useState(false);
@@ -1351,6 +1353,8 @@ function App() {
           setFilterPanelOpen={setFilterPanelOpen}
           materialsPanelOpen={materialsPanelOpen}
           setMaterialsPanelOpen={setMaterialsPanelOpen}
+          viewPanelOpen={viewPanelOpen}
+          setViewPanelOpen={setViewPanelOpen}
           updateSelectionFilter={updateSelectionFilter}
           activeCamOperation={activeCamOperation}
           setActiveCamOperation={setActiveCamOperation}
@@ -2127,6 +2131,7 @@ function App() {
                 clearFaceColor={clearFaceColor}
                 clearAppearanceOverrides={clearAppearanceOverrides}
               />
+              <ActiveViewPanel isOpen={viewPanelOpen} />
               <PendingExtrudePreview
                 disabled={status !== "connected"}
                 document={document}

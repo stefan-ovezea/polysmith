@@ -235,7 +235,9 @@ TopoDS_Shape apply_thread(const TopoDS_Shape& body_shape,
     return body_shape;
   }
   try {
-    const TopoDS_Shape result = BRepAlgoAPI_Cut(body_shape, cutter).Shape();
+    BRepAlgoAPI_Cut cut_op(body_shape, cutter);
+    cut_op.SimplifyResult();
+    const TopoDS_Shape result = cut_op.Shape();
     return result.IsNull() ? body_shape : unify_same_domain(result);
   } catch (const Standard_Failure&) {
     return body_shape;

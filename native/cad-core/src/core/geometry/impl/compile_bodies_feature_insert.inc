@@ -37,12 +37,17 @@
         for (; exp.More(); exp.Next()) {
           try {
             if (mode == "join") {
-              combined = BRepAlgoAPI_Fuse(combined, exp.Current()).Shape();
+              BRepAlgoAPI_Fuse fuse_op(combined, exp.Current());
+              fuse_op.SimplifyResult();
+              combined = fuse_op.Shape();
             } else if (mode == "cut") {
-              combined = BRepAlgoAPI_Cut(combined, exp.Current()).Shape();
+              BRepAlgoAPI_Cut cut_op(combined, exp.Current());
+              cut_op.SimplifyResult();
+              combined = cut_op.Shape();
             } else if (mode == "intersect") {
-              combined =
-                  BRepAlgoAPI_Common(combined, exp.Current()).Shape();
+              BRepAlgoAPI_Common common_op(combined, exp.Current());
+              common_op.SimplifyResult();
+              combined = common_op.Shape();
             } else {
               throw std::runtime_error("Unknown extrude mode: " + mode);
             }
@@ -54,11 +59,17 @@
         // Single-solid path (unchanged logic).
         try {
           if (mode == "join") {
-            combined = BRepAlgoAPI_Fuse(target_shape, shape).Shape();
+            BRepAlgoAPI_Fuse fuse_op(target_shape, shape);
+            fuse_op.SimplifyResult();
+            combined = fuse_op.Shape();
           } else if (mode == "cut") {
-            combined = BRepAlgoAPI_Cut(target_shape, shape).Shape();
+            BRepAlgoAPI_Cut cut_op(target_shape, shape);
+            cut_op.SimplifyResult();
+            combined = cut_op.Shape();
           } else if (mode == "intersect") {
-            combined = BRepAlgoAPI_Common(target_shape, shape).Shape();
+            BRepAlgoAPI_Common common_op(target_shape, shape);
+            common_op.SimplifyResult();
+            combined = common_op.Shape();
           } else {
             throw std::runtime_error("Unknown extrude mode: " + mode);
           }
@@ -123,7 +134,9 @@
           exp.Next();
           for (; exp.More(); exp.Next()) {
             try {
-              TopoDS_Shape result = BRepAlgoAPI_Fuse(fused, exp.Current()).Shape();
+              BRepAlgoAPI_Fuse fuse_op(fused, exp.Current());
+              fuse_op.SimplifyResult();
+              TopoDS_Shape result = fuse_op.Shape();
               if (!result.IsNull()) {
                 fused = result;
               }

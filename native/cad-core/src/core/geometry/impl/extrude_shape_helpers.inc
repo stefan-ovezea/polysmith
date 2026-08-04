@@ -145,10 +145,10 @@ TopoDS_Shape make_circle_extrude_shape(
   const double sign = signed_depth >= 0.0 ? 1.0 : -1.0;
   const gp_Dir axis_direction =
       parameters.plane_id == "ref-plane-xy"
-          ? gp_Dir(0.0, sign, 0.0)
+          ? gp_Dir(0.0, 0.0, sign)
           : parameters.plane_id == "ref-plane-yz"
                 ? gp_Dir(sign, 0.0, 0.0)
-                : gp_Dir(0.0, 0.0, sign);
+                : gp_Dir(0.0, sign, 0.0);
   const gp_Ax2 axis(center, axis_direction);
   const TopoDS_Shape shape =
       !has_tapered_radius
