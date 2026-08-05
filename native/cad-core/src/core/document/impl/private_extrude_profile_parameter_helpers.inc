@@ -49,6 +49,9 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
       }
     }
 
+    // Carry exact arc descriptors so the wire builder never guesses.
+    params.arc_descriptors = profile.arc_descriptors;
+
     return params;
   }
 
@@ -191,6 +194,7 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.sketch_lines = source.sketch_lines;
   target.sketch_arcs = source.sketch_arcs;
   target.sketch_circles = source.sketch_circles;
+  target.arc_descriptors = source.arc_descriptors;
 }
 
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {

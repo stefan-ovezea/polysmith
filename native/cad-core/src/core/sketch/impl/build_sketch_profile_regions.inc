@@ -1,3 +1,90 @@
+// Compute exact arc descriptors for every contiguous run of circle edges
+// in a profile boundary.  The arrangement graph already knows which part of
+// each circle belongs to the face; this function extracts the angle range
+// and direction so the wire builder can construct an exact
+// GC_MakeArcOfCircle without guessing from polygon samples.
+std::vector<SketchArcDescriptor> compute_arc_descriptors(
+    const std::vector<SketchProfilePoint>& points,
+    const std::vector<std::string>& ordered_edge_ids,
+    const std::vector<const SketchCircle*>& solid_circles) {
+  std::vector<SketchArcDescriptor> descriptors;
+  if (points.size() < 2 || ordered_edge_ids.size() != points.size()) {
+    return descriptors;
+  }
+
+  const size_t N = points.size();
+
+  auto circle_by_id = [&](const std::string& eid) -> const SketchCircle* {
+    for (const auto* c : solid_circles) {
+      if (c->id == eid) return c;
+    }
+    return nullptr;
+  };
+
+  size_t group_start = 0;
+  while (group_start < N) {
+    size_t group_end = group_start;
+    while (group_end + 1 < N &&
+           ordered_edge_ids[group_end + 1] == ordered_edge_ids[group_start]) {
+      ++group_end;
+    }
+
+    const auto& eid = ordered_edge_ids[group_start];
+    const SketchCircle* circle = circle_by_id(eid);
+
+    // Only emit a descriptor for multi-segment circle groups (real arcs).
+    if (circle != nullptr && group_end > group_start) {
+      const size_t last_pt = (group_end + 1) % N;
+      const auto& p_start = points[group_start];
+      const auto& p_end   = points[last_pt];
+
+      double a1 = std::atan2(p_start.y - circle->center_y,
+                             p_start.x - circle->center_x);
+      double a2 = std::atan2(p_end.y - circle->center_y,
+                             p_end.x - circle->center_x);
+
+      // Normalise both angles to [0, 2π).
+      auto norm = [](double a) {
+        while (a < 0) a += 2.0 * kPi;
+        while (a >= 2.0 * kPi) a -= 2.0 * kPi;
+        return a;
+      };
+      a1 = norm(a1);
+      a2 = norm(a2);
+
+      // Determine direction: sample the midpoint of the group and check
+      // whether it lies on the CCW or CW arc.
+      const auto& p_mid = points[(group_start + group_end) / 2];
+      double a_mid = norm(std::atan2(p_mid.y - circle->center_y,
+                                     p_mid.x - circle->center_x));
+
+      // On the CCW arc from a1 to a2, the midpoint angle should be
+      // between a1 and a2 (mod 2π).  If the sample midpoint doesn't
+      // lie there, the arc is CW.
+      bool ccw;
+      if (a1 <= a2) {
+        ccw = (a_mid >= a1 && a_mid <= a2);
+      } else {
+        ccw = (a_mid >= a1 || a_mid <= a2);
+      }
+
+      descriptors.push_back(SketchArcDescriptor{
+          .circle_id = circle->id,
+          .center_x = circle->center_x,
+          .center_y = circle->center_y,
+          .radius = circle->radius,
+          .start_angle_rad = ccw ? a1 : a2,
+          .end_angle_rad   = ccw ? a2 : a1,
+          .ccw = true,  // always CCW after normalising start/end order
+      });
+    }
+
+    group_start = group_end + 1;
+  }
+
+  return descriptors;
+}
+
 std::vector<SketchProfileRegion> build_sketch_profile_regions(
     const SketchFeatureParameters& parameters) {
   std::vector<SketchProfileRegion> profiles;
@@ -245,6 +332,8 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
           .center_x = 0.0,
           .center_y = 0.0,
           .radius = 0.0,
+          .arc_descriptors = compute_arc_descriptors(
+              face.points, face.ordered_line_ids, solid_circles),
       });
     }
   } else if (!has_solid_arcs) {

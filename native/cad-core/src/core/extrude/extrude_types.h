@@ -50,6 +50,11 @@ struct ExtrudeFeatureParameters {
   std::vector<SketchLine> sketch_lines;
   std::vector<SketchArc> sketch_arcs;
   std::vector<SketchCircle> sketch_circles;
+  // Exact arc descriptors for every contiguous run of circle edges in
+  // sketch_edge_ids.  Populated by make_extrude_parameters_for_profile;
+  // used by make_sketch_wire to build exact GC_MakeArcOfCircle edges
+  // without guessing from polygon samples.
+  std::vector<SketchArcDescriptor> arc_descriptors;
   double depth;
   // "one_side", "symmetric", or "two_sides".
   std::string extent_mode = "one_side";

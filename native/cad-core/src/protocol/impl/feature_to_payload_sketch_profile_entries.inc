@@ -36,6 +36,19 @@
                         inner_loops.push_back(loop_payload);
                       }
 
+                      json arc_descriptors = json::array();
+                      for (const auto& desc : profile.arc_descriptors) {
+                        arc_descriptors.push_back({
+                            {"circle_id", desc.circle_id},
+                            {"center_x", desc.center_x},
+                            {"center_y", desc.center_y},
+                            {"radius", desc.radius},
+                            {"start_angle_rad", desc.start_angle_rad},
+                            {"end_angle_rad", desc.end_angle_rad},
+                            {"ccw", desc.ccw},
+                        });
+                      }
+
                       profiles.push_back({
                           {"profile_id", profile.id},
                           {"kind", profile.kind},
@@ -44,6 +57,7 @@
                           {"ordered_edge_ids", ordered_edge_ids},
                           {"points", points},
                           {"inner_loops", inner_loops},
+                          {"arc_descriptors", arc_descriptors},
                           {"source_circle_id",
                            profile.source_circle_id.has_value()
                                ? json(profile.source_circle_id.value())

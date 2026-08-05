@@ -302,15 +302,48 @@ TopoDS_Wire make_sketch_wire(
         const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
         const gp_Circ circ(gp_Ax2(center, normal), circle_it->radius);
         wire_builder.Add(BRepBuilderAPI_MakeEdge(circ));
-      } else {
-        const SketchProfilePoint* hint = nullptr;
-        if (group_end > group_start + 1) {
-          hint = &pts[(group_start + group_end) / 2];
+      } else if (group_end > group_start) {
+        // Try exact arc descriptor first (emitted by the profile
+        // builder).  When available it tells us the exact angle range
+        // and direction — no guessing, no hint-based disambiguation.
+        const SketchArcDescriptor* desc = nullptr;
+        for (const auto& d : parameters.arc_descriptors) {
+          if (d.circle_id == edge_id &&
+              std::abs(d.start_angle_rad -
+                  std::atan2(seg_start.y - d.center_y,
+                             seg_start.x - d.center_x)) < 1e-6 &&
+              std::abs(d.end_angle_rad -
+                  std::atan2(seg_end.y - d.center_y,
+                             seg_end.x - d.center_x)) < 1e-6) {
+            desc = &d;
+            break;
+          }
         }
-        const TopoDS_Edge edge = make_circle_arc_edge(
-            *circle_it, seg_start, seg_end, frame, hint);
-        if (!edge.IsNull()) {
-          wire_builder.Add(edge);
+        if (desc != nullptr) {
+          // Build the exact arc from the descriptor — no hint needed.
+          const gp_Pnt center = to_world_point(frame,
+              desc->center_x, desc->center_y);
+          const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
+          const gp_Circ circ(gp_Ax2(center, normal), desc->radius);
+          GC_MakeArcOfCircle arc_maker(
+              circ,
+              to_world_point(frame, seg_start.x, seg_start.y),
+              to_world_point(frame, seg_end.x, seg_end.y),
+              true);
+          if (arc_maker.IsDone()) {
+            wire_builder.Add(BRepBuilderAPI_MakeEdge(arc_maker.Value()));
+          }
+        } else {
+          // Legacy path: no descriptor — fall back to hint-based guessing.
+          const SketchProfilePoint* hint = nullptr;
+          if (group_end > group_start + 1) {
+            hint = &pts[(group_start + group_end) / 2];
+          }
+          const TopoDS_Edge edge = make_circle_arc_edge(
+              *circle_it, seg_start, seg_end, frame, hint);
+          if (!edge.IsNull()) {
+            wire_builder.Add(edge);
+          }
         }
       }
       group_start = group_end + 1;

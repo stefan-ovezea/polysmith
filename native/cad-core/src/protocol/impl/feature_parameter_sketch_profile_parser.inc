@@ -48,6 +48,21 @@
       profile.center_x = read_number(profile_payload, "center_x");
       profile.center_y = read_number(profile_payload, "center_y");
       profile.radius = read_number(profile_payload, "radius");
+      if (profile_payload.contains("arc_descriptors") &&
+          profile_payload.at("arc_descriptors").is_array()) {
+        for (const auto& desc_payload : profile_payload.at("arc_descriptors")) {
+          profile.arc_descriptors.push_back(
+              polysmith::core::SketchArcDescriptor{
+                  .circle_id = desc_payload.at("circle_id").get<std::string>(),
+                  .center_x = desc_payload.at("center_x").get<double>(),
+                  .center_y = desc_payload.at("center_y").get<double>(),
+                  .radius = desc_payload.at("radius").get<double>(),
+                  .start_angle_rad = desc_payload.at("start_angle_rad").get<double>(),
+                  .end_angle_rad = desc_payload.at("end_angle_rad").get<double>(),
+                  .ccw = desc_payload.at("ccw").get<bool>(),
+              });
+        }
+      }
       params.profiles.push_back(profile);
     }
   }
