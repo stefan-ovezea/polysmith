@@ -55,6 +55,18 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     if (points_match(candidate.end_x, candidate.end_y, x, y))
       return std::tuple<std::string, double, double>{
           candidate.end_vertex_id, candidate.end_x, candidate.end_y};
+    // Arc centres don't have dedicated vertex IDs yet, but the
+    // vertices scan below will catch any existing vertex (e.g. a
+    // circle centre or quadrant) at the same position.
+  }
+
+  // Circle centres are reusable vertices — a line endpoint placed at
+  // the circle centre should share the centre vertex so deleting the
+  // line doesn't orphan a coincident constraint.
+  for (const auto& circle : parameters.circles) {
+    if (points_match(circle.center_x, circle.center_y, x, y))
+      return std::tuple<std::string, double, double>{
+          circle.center_vertex_id, circle.center_x, circle.center_y};
   }
 
   // Check projected points so lines/arcs drawn near a projected
@@ -64,6 +76,16 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     if (points_match(projected.x, projected.y, x, y))
       return std::tuple<std::string, double, double>{
           projected.id, projected.x, projected.y};
+  }
+
+  // The vertices list aggregates all sketch vertices — line/arc
+  // endpoints, circle centres, circle quadrants, and projected
+  // points.  Checking it last catches quadrant vertices and any
+  // future vertex kinds without needing individual geometry loops.
+  for (const auto& vertex : parameters.vertices) {
+    if (points_match(vertex.x, vertex.y, x, y))
+      return std::tuple<std::string, double, double>{
+          vertex.id, vertex.x, vertex.y};
   }
 
   return std::nullopt;

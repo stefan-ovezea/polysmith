@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/diagnostics/logger.h"
+
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>

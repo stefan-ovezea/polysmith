@@ -458,6 +458,7 @@ function previewPointFromDynamicSnap({
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
     snapIntersectionLineIds: snap.snapIntersectionLineIds,
+    snapTangentPoint: snap.snapTangentPoint,
     inferenceLines: hasInferenceGuides ? snap.inferenceGuideLines : undefined,
   };
 }
@@ -694,6 +695,11 @@ interface DynamicSnapResult {
     draft: [number, number];
     axis: "horizontal" | "vertical";
   }>;
+  /** When tangent snap fires, the exact contact point on the circle
+   *  where the tangent line touches. Used at commit time to set the
+   *  next polyline segment's start to the solver-resolved endpoint
+   *  rather than the cursor-projected snap position. */
+  snapTangentPoint?: [number, number] | null;
 }
 
 interface SketchSnapLine {
@@ -1413,12 +1419,13 @@ function speculativeTangentSnap({
   const snapDist = Math.hypot(snapX - cursor[0], snapY - cursor[1]);
   if (snapDist > threshold) return null;
 
+  const tangentCircleId = bestCircle?.circle_id ?? bestArc?.arc_id ?? null;
   return {
     local: [snapX, snapY],
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
-    snapTangentCircleId: bestCircle?.circle_id ?? bestArc?.arc_id ?? null,
+    snapTangentCircleId: tangentCircleId,
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
@@ -1427,6 +1434,9 @@ function speculativeTangentSnap({
     snapInferenceFrom: null,
     inferenceGuideLines: [],
     distance: snapDist,
+    // Preserve the exact tangent contact point so the polyline chain
+    // starts the next segment from the solver-resolved position.
+    snapTangentPoint: tangentCircleId ? [bestTpX, bestTpY] : null,
   };
 }
 

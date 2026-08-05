@@ -267,10 +267,13 @@ TopoDS_Shape build_single_depth_extrude(
       try {
         return wrap_with_additional_profiles(
             parameters, make_wire_extrude_shape(parameters));
-      } catch (const std::exception&) {
+      } catch (const std::exception& e) {
         // Wire path failed — fall through to the polygon path (which
         // handles both primary and additional profiles) so the user
         // still gets geometry instead of an opaque error.
+        polysmith::core::log_debug("extrude_shape",
+            "Wire path failed for profile " + parameters.profile_id +
+            " — falling back to polygon: " + std::string(e.what()));
       }
     }
     return make_polygon_prism_shape(parameters);

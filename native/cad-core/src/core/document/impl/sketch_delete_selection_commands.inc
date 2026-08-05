@@ -208,6 +208,22 @@ DocumentState DocumentManager::delete_sketch_selection(
                               deleted_entity(relation.second_line_id);
                      }),
       parameters.line_relations.end());
+  // Coincident / concentric / symmetric constraints that reference a
+  // deleted vertex must be removed too.  Without this, a coincident
+  // constraint linking a line endpoint to a circle quadrant survives
+  // the line's deletion and leaves a dangling vertex-5 reference.
+  parameters.constraints.erase(
+      std::remove_if(parameters.constraints.begin(),
+                     parameters.constraints.end(),
+                     [&](const SketchConstraint& constraint) {
+                       return std::any_of(
+                           constraint.target_ids.begin(),
+                           constraint.target_ids.end(),
+                           [&](const std::string& target_id) {
+                             return deleted_entity(target_id);
+                           });
+                     }),
+      parameters.constraints.end());
   parameters.midpoint_anchors.erase(
       std::remove_if(parameters.midpoint_anchors.begin(),
                      parameters.midpoint_anchors.end(),
