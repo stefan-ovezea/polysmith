@@ -346,3 +346,63 @@ void split_circle_segments_at_line_endpoints(
     }
   }
 }
+
+// Split circle boundary segments at arc endpoints that lie on the circle
+// boundary.  Arcs that start or end on a circle (common when the arc tool
+// snaps to circle quadrants) need their endpoints to become vertices in
+// the circle's polygon boundary so the arrangement graph connects them.
+// Without this, the arc and circle don't share vertices and the closed
+// regions between them are not detected.
+void split_circle_segments_at_arc_endpoints(
+    std::vector<LineSegment>& circle_segments,
+    const SketchCircle& circle,
+    const std::vector<SketchArc>& arcs) {
+  if (circle_segments.empty()) {
+    return;
+  }
+
+  for (const auto& arc : arcs) {
+    if (arc.is_construction) {
+      continue;
+    }
+
+    const SketchProfilePoint endpoints[2] = {
+        {.x = arc.start_x, .y = arc.start_y},
+        {.x = arc.end_x, .y = arc.end_y}};
+
+    for (const auto& endpoint : endpoints) {
+      const double dx = endpoint.x - circle.center_x;
+      const double dy = endpoint.y - circle.center_y;
+      const double dist = std::sqrt(dx * dx + dy * dy);
+      if (std::abs(dist - circle.radius) > kProfileTolerance) {
+        continue;
+      }
+
+      const double angle = std::atan2(dy, dx);
+      const double angle_norm =
+          angle < 0.0 ? angle + 2.0 * kPi : angle;
+      const double seg_width = 2.0 * kPi / circle_segments.size();
+      int seg_index =
+          static_cast<int>(std::floor(angle_norm / seg_width));
+      if (seg_index < 0) seg_index += circle_segments.size();
+      if (seg_index >= static_cast<int>(circle_segments.size())) {
+        seg_index = 0;
+      }
+
+      auto& seg = circle_segments[seg_index];
+
+      if (points_match(endpoint, seg.start) ||
+          points_match(endpoint, seg.end)) {
+        continue;
+      }
+
+      const auto original_end = seg.end;
+      seg.end = endpoint;
+      circle_segments.push_back(LineSegment{
+          .line_id = circle.id,
+          .start = endpoint,
+          .end = original_end,
+      });
+    }
+  }
+}

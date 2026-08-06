@@ -48,17 +48,24 @@ std::vector<ArrangementFace> detect_arrangement_faces(
       if (start_node == end_node) {
         continue;
       }
-      const int low = std::min(start_node, end_node);
-      const int high = std::max(start_node, end_node);
-      const std::string key = std::to_string(low) + ":" + std::to_string(high);
-      if (edge_keys.contains(key)) {
-        continue;
+      // For directed segments, each sub-edge is a distinct directed edge;
+      // don't deduplicate by node pair because the reverse direction is
+      // not equivalent.
+      if (!segments[index].directed) {
+        const int low = std::min(start_node, end_node);
+        const int high = std::max(start_node, end_node);
+        const std::string key =
+            std::to_string(low) + ":" + std::to_string(high);
+        if (edge_keys.contains(key)) {
+          continue;
+        }
+        edge_keys.insert(key);
       }
-      edge_keys.insert(key);
       edges.push_back(ArrangementEdge{
           .line_id = segments[index].line_id,
           .start_node = start_node,
           .end_node = end_node,
+          .directed = segments[index].directed,
       });
     }
   }
@@ -66,7 +73,9 @@ std::vector<ArrangementFace> detect_arrangement_faces(
   std::vector<std::vector<int>> adjacency(nodes.size());
   for (const auto& edge : edges) {
     adjacency[edge.start_node].push_back(edge.end_node);
-    adjacency[edge.end_node].push_back(edge.start_node);
+    if (!edge.directed) {
+      adjacency[edge.end_node].push_back(edge.start_node);
+    }
   }
   for (size_t node_index = 0; node_index < adjacency.size(); ++node_index) {
     auto& neighbors = adjacency[node_index];
@@ -83,7 +92,9 @@ std::vector<ArrangementFace> detect_arrangement_faces(
   std::map<std::pair<int, int>, std::string> line_for_directed_edge;
   for (const auto& edge : edges) {
     line_for_directed_edge[{edge.start_node, edge.end_node}] = edge.line_id;
-    line_for_directed_edge[{edge.end_node, edge.start_node}] = edge.line_id;
+    if (!edge.directed) {
+      line_for_directed_edge[{edge.end_node, edge.start_node}] = edge.line_id;
+    }
   }
 
   std::set<std::pair<int, int>> visited;

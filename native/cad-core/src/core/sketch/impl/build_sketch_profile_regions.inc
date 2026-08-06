@@ -142,6 +142,8 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       auto circle_segments = circle_boundary_segments(*circle);
       split_circle_segments_at_line_endpoints(circle_segments, *circle,
                                               parameters.lines);
+      split_circle_segments_at_arc_endpoints(circle_segments, *circle,
+                                              parameters.arcs);
       segments.insert(segments.end(), circle_segments.begin(),
                       circle_segments.end());
     }
@@ -285,6 +287,7 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
             .line_id = arc.id,
             .start = pts[i],
             .end = pts[i + 1],
+            .directed = true,
         });
       }
     }

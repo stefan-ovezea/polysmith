@@ -8,12 +8,17 @@ struct LineSegment {
   std::string line_id;
   SketchProfilePoint start;
   SketchProfilePoint end;
+  // When true, this edge can only be traversed from start to end in
+  // the face-detection graph.  Used for sampled arcs so the arrangement
+  // never produces faces that walk the arc backwards.
+  bool directed = false;
 };
 
 struct ArrangementEdge {
   std::string line_id;
   int start_node;
   int end_node;
+  bool directed = false;
 };
 
 struct ArrangementFace {
