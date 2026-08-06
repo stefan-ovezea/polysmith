@@ -78,8 +78,41 @@ TopoDS_Shape wrap_with_additional_profiles(
                               parameters.additional_profile_points[index],
                               profile_points,
                               inner_loops);
-    builder.Add(compound,
-                make_polygon_prism_shape(parameters, profile_points, inner_loops));
+
+    // When this additional profile carries wire-path data, use the
+    // exact-curve wire builder so it matches the primary profile's
+    // quality — no faceted polygon fallback for the second wedge.
+    bool used_wire = false;
+    if (index < parameters.additional_sketch_edge_ids.size() &&
+        !parameters.additional_sketch_edge_ids[index].empty()) {
+      ExtrudeFeatureParameters wire_params = parameters;
+      wire_params.profile_points = profile_points;
+      wire_params.inner_loops = inner_loops;
+      wire_params.sketch_edge_ids =
+          parameters.additional_sketch_edge_ids[index];
+      if (index < parameters.additional_arc_descriptors.size()) {
+        wire_params.arc_descriptors =
+            parameters.additional_arc_descriptors[index];
+      }
+      wire_params.additional_profile_points.clear();
+      wire_params.additional_inner_loops.clear();
+      wire_params.additional_sketch_edge_ids.clear();
+      wire_params.additional_arc_descriptors.clear();
+      try {
+        builder.Add(compound, make_wire_extrude_shape(wire_params));
+        used_wire = true;
+      } catch (const std::exception& e) {
+        polysmith::core::log_debug("extrude_shape",
+            "Additional profile wire path failed — "
+            "falling back to polygon: " + std::string(e.what()));
+      }
+    }
+
+    if (!used_wire) {
+      builder.Add(compound,
+                  make_polygon_prism_shape(parameters, profile_points,
+                                           inner_loops));
+    }
   }
   return compound;
 }

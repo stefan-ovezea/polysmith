@@ -167,6 +167,10 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
     parameters.additional_profile_points.push_back(
         profile_boundary_points(profile));
     parameters.additional_inner_loops.push_back(profile.inner_loops);
+    parameters.additional_sketch_edge_ids.push_back(
+        profile.ordered_edge_ids);
+    parameters.additional_arc_descriptors.push_back(
+        profile.arc_descriptors);
   }
 
   return parameters;
@@ -190,6 +194,8 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.inner_loops = source.inner_loops;
   target.additional_profile_points = source.additional_profile_points;
   target.additional_inner_loops = source.additional_inner_loops;
+  target.additional_sketch_edge_ids = source.additional_sketch_edge_ids;
+  target.additional_arc_descriptors = source.additional_arc_descriptors;
   target.sketch_edge_ids = source.sketch_edge_ids;
   target.sketch_lines = source.sketch_lines;
   target.sketch_arcs = source.sketch_arcs;

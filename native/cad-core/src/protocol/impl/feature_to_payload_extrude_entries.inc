@@ -175,6 +175,38 @@
                     }
                     return profiles;
                  }()},
+                 {"additional_sketch_edge_ids",
+                  [&feature]() {
+                    json profiles = json::array();
+                    for (const auto& ids :
+                         feature.extrude_parameters->additional_sketch_edge_ids) {
+                      json arr = json::array();
+                      for (const auto& id : ids) arr.push_back(id);
+                      profiles.push_back(arr);
+                    }
+                    return profiles;
+                  }()},
+                 {"additional_arc_descriptors",
+                  [&feature]() {
+                    json profiles = json::array();
+                    for (const auto& descs :
+                         feature.extrude_parameters->additional_arc_descriptors) {
+                      json arr = json::array();
+                      for (const auto& desc : descs) {
+                        arr.push_back({
+                            {"circle_id", desc.circle_id},
+                            {"center_x", desc.center_x},
+                            {"center_y", desc.center_y},
+                            {"radius", desc.radius},
+                            {"start_angle_rad", desc.start_angle_rad},
+                            {"end_angle_rad", desc.end_angle_rad},
+                            {"ccw", desc.ccw},
+                        });
+                      }
+                      profiles.push_back(arr);
+                    }
+                    return profiles;
+                  }()},
                  {"depth", feature.extrude_parameters->depth},
                  {"extent_mode", feature.extrude_parameters->extent_mode},
                  {"side1",

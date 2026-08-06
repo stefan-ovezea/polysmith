@@ -123,6 +123,38 @@ parse_extrude_parameters_from_payload(const json& payload) {
       params.additional_inner_loops.push_back(std::move(loops));
     }
   }
+  if (payload.contains("additional_sketch_edge_ids") &&
+      payload.at("additional_sketch_edge_ids").is_array()) {
+    for (const auto& profile_payload :
+         payload.at("additional_sketch_edge_ids")) {
+      std::vector<std::string> ids;
+      for (const auto& id_value : profile_payload) {
+        ids.push_back(id_value.get<std::string>());
+      }
+      params.additional_sketch_edge_ids.push_back(std::move(ids));
+    }
+  }
+  if (payload.contains("additional_arc_descriptors") &&
+      payload.at("additional_arc_descriptors").is_array()) {
+    for (const auto& profile_payload :
+         payload.at("additional_arc_descriptors")) {
+      std::vector<polysmith::core::SketchArcDescriptor> descs;
+      for (const auto& desc_payload : profile_payload) {
+        descs.push_back(polysmith::core::SketchArcDescriptor{
+            .circle_id = desc_payload.at("circle_id").get<std::string>(),
+            .center_x = desc_payload.at("center_x").get<double>(),
+            .center_y = desc_payload.at("center_y").get<double>(),
+            .radius = desc_payload.at("radius").get<double>(),
+            .start_angle_rad =
+                desc_payload.at("start_angle_rad").get<double>(),
+            .end_angle_rad =
+                desc_payload.at("end_angle_rad").get<double>(),
+            .ccw = desc_payload.at("ccw").get<bool>(),
+        });
+      }
+      params.additional_arc_descriptors.push_back(std::move(descs));
+    }
+  }
   params.depth = read_number(payload, "depth");
   params.extent_mode =
       read_optional_string_value(payload, "extent_mode", params.extent_mode);

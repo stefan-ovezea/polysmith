@@ -43,6 +43,11 @@ struct ExtrudeFeatureParameters {
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
   std::vector<std::vector<SketchProfilePoint>> additional_profile_points;
   std::vector<std::vector<std::vector<SketchProfilePoint>>> additional_inner_loops;
+  // Wire-path data for additional profiles — when non-empty,
+  // wrap_with_additional_profiles uses the exact-curve wire builder
+  // instead of polygon approximation for the corresponding profile.
+  std::vector<std::vector<std::string>> additional_sketch_edge_ids;
+  std::vector<std::vector<SketchArcDescriptor>> additional_arc_descriptors;
   // Sketch wire data — when non-empty, build_extrude_shape uses exact OCCT
   // curves (GC_MakeSegment / GC_MakeArcOfCircle / gp_Circ) instead of
   // polygon-approximating the boundary with BRepBuilderAPI_MakePolygon.
