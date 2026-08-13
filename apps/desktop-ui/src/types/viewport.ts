@@ -336,7 +336,10 @@ export interface SolidFaceInteractionState {
 
 export interface SketchProfileVisual {
   fillMaterial: THREE.MeshBasicMaterial;
+  /** Edge materials for the profile's outer contour. */
   edgeMaterials: THREE.LineBasicMaterial[];
+  /** Edge materials for the profile's inner loops (holes). */
+  holeEdgeMaterials: THREE.LineBasicMaterial[];
 }
 
 export interface SketchProfileInteractionState {

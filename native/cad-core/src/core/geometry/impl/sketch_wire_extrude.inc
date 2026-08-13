@@ -13,16 +13,35 @@ TopoDS_Edge make_line_edge(const SketchLine& line,
 // Build a single OCCT arc edge from a sketch arc.
 TopoDS_Edge make_arc_edge(const SketchArc& arc,
                           const PlaneFrame& frame) {
+  gp_Pnt start = to_world_point(frame, arc.start_x, arc.start_y);
+  gp_Pnt end   = to_world_point(frame, arc.end_x, arc.end_y);
   const gp_Pnt center = to_world_point(frame, arc.center_x, arc.center_y);
-  const gp_Pnt start  = to_world_point(frame, arc.start_x, arc.start_y);
-  const gp_Pnt end    = to_world_point(frame, arc.end_x, arc.end_y);
   const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
-  const gp_Circ circle(gp_Ax2(center, normal), arc.radius);
-  // The OCCT circle built with gp_Ax2(center, normal) has its parameter
-  // CCW opposite to the sketch CCW (Y_direction = (0,0,-1) vs sketch +Z
-  // for ref-plane-xy).  The caller already oriented start/end to match the
-  // wire traversal direction; negating ccw picks the correct minor arc.
-  GC_MakeArcOfCircle arc_maker(circle, start, end, !arc.ccw);
+  const gp_Ax2 ax2(center, normal);
+  const gp_Circ circle(ax2, arc.radius);
+
+  // OCCT's gp_Ax2 picks its own local X/Y axes (Y = N × X), so the local
+  // parameter angle is NOT the sketch angle.  GC_MakeArcOfCircle walks
+  // from the first point to the second in the LOCAL orientation and the
+  // geometric span is fixed by the endpoint order — the sense flag only
+  // shifts the parameter range, it does not pick the other arc.  Measure
+  // the local parameter span and swap the endpoints when it is the major
+  // arc so the edge always follows the minor (fillet) arc.
+  const gp_Dir local_x = ax2.XDirection();
+  const gp_Dir local_y = ax2.YDirection();
+  constexpr double kPi = 3.14159265358979323846;
+  auto local_angle = [&](const gp_Pnt& p) {
+    const gp_Vec v(center, p);
+    return std::atan2(v.Dot(local_y), v.Dot(local_x));
+  };
+  double span = local_angle(end) - local_angle(start);
+  while (span <= 0.0) span += 2.0 * kPi;
+  while (span > 2.0 * kPi) span -= 2.0 * kPi;
+  if (span > kPi) {
+    std::swap(start, end);
+  }
+
+  GC_MakeArcOfCircle arc_maker(circle, start, end, true);
   if (!arc_maker.IsDone()) {
     throw std::runtime_error("Failed to create arc of circle");
   }
@@ -234,8 +253,12 @@ TopoDS_Wire make_sketch_wire(
   };
 
   BRepBuilderAPI_MakeWire wire_builder;
+  std::set<std::string> emitted_edge_ids;
 
   // Group consecutive segments by edge ID and create one edge per group.
+  // A single entity can appear in multiple groups when its chain was
+  // split by a touching line endpoint (the walk lists each chain piece);
+  // emitting it once per piece would duplicate the edge in the wire.
   size_t group_start = 0;
   while (group_start < N) {
     size_t group_end = group_start;
@@ -245,6 +268,12 @@ TopoDS_Wire make_sketch_wire(
 
     const size_t last_pt = (group_end + 1) % N;
     const auto& edge_id = ids[group_start];
+
+    if (emitted_edge_ids.contains(edge_id)) {
+      group_start = group_end + 1;
+      continue;
+    }
+    emitted_edge_ids.insert(edge_id);
 
     // Resolve the start and end points, projecting onto adjacent circles
     // so that line-arc joints are watertight.
@@ -351,25 +380,17 @@ TopoDS_Wire make_sketch_wire(
     }
 
     // --- Try arc lookup ---
+    //
+    // Anchor the edge to the STORED entity geometry rather than the walk
+    // sample points: the walk only supplies the edge order.  A reversed
+    // walk (loop normalized to CCW by detect_edge_loop) would otherwise
+    // anchor the arc to an interior sample and produce a sliver edge,
+    // breaking wire closure.
     auto arc_it = std::find_if(
         parameters.sketch_arcs.begin(), parameters.sketch_arcs.end(),
         [&](const SketchArc& a) { return a.id == edge_id; });
     if (arc_it != parameters.sketch_arcs.end()) {
-      constexpr double kTol = 0.01;
-      const bool stored_matches =
-          std::abs(seg_start.x - arc_it->start_x) <= kTol &&
-          std::abs(seg_start.y - arc_it->start_y) <= kTol;
-      if (stored_matches) {
-        wire_builder.Add(make_arc_edge(*arc_it, frame));
-      } else {
-        SketchArc oriented = *arc_it;
-        oriented.start_x = seg_start.x;
-        oriented.start_y = seg_start.y;
-        oriented.end_x   = seg_end.x;
-        oriented.end_y   = seg_end.y;
-        oriented.ccw     = !oriented.ccw;
-        wire_builder.Add(make_arc_edge(oriented, frame));
-      }
+      wire_builder.Add(make_arc_edge(*arc_it, frame));
       group_start = group_end + 1;
       continue;
     }
@@ -379,20 +400,7 @@ TopoDS_Wire make_sketch_wire(
         parameters.sketch_lines.begin(), parameters.sketch_lines.end(),
         [&](const SketchLine& l) { return l.id == edge_id; });
     if (line_it != parameters.sketch_lines.end()) {
-      constexpr double kTol = 0.01;
-      const bool stored_matches =
-          std::abs(seg_start.x - line_it->start_x) <= kTol &&
-          std::abs(seg_start.y - line_it->start_y) <= kTol;
-      if (stored_matches) {
-        wire_builder.Add(make_line_edge(*line_it, frame));
-      } else {
-        SketchLine oriented = *line_it;
-        oriented.start_x = seg_start.x;
-        oriented.start_y = seg_start.y;
-        oriented.end_x   = seg_end.x;
-        oriented.end_y   = seg_end.y;
-        wire_builder.Add(make_line_edge(oriented, frame));
-      }
+      wire_builder.Add(make_line_edge(*line_it, frame));
       group_start = group_end + 1;
       continue;
     }
@@ -407,6 +415,47 @@ TopoDS_Wire make_sketch_wire(
   return wire_builder.Wire();
 }
 
+// Approximate the signed area of a planar wire by summing the chord
+// polygons of its edges, walked in the wire's edge order.  Positive =
+// CCW in the world XY sense.  Used to orient hole wires opposite to the
+// outer boundary — BRepBuilderAPI_MakeFace treats a wire with the SAME
+// orientation as the outer boundary as an island, not a hole.
+double signed_wire_area(const TopoDS_Wire& wire) {
+  constexpr int kSamplesPerEdge = 24;
+  double area = 0.0;
+  gp_Pnt previous;
+  gp_Pnt first_point;
+  bool has_previous = false;
+  bool has_first = false;
+  for (TopExp_Explorer ex(wire, TopAbs_EDGE); ex.More(); ex.Next()) {
+    const TopoDS_Edge& edge = TopoDS::Edge(ex.Current());
+    BRepAdaptor_Curve curve(edge);
+    const double first = curve.FirstParameter();
+    const double last = curve.LastParameter();
+    for (int i = 0; i <= kSamplesPerEdge; ++i) {
+      const double t = first + (last - first) *
+                                  static_cast<double>(i) / kSamplesPerEdge;
+      gp_Pnt p;
+      curve.D0(t, p);
+      if (!has_first) {
+        first_point = p;
+        has_first = true;
+      }
+      if (has_previous) {
+        area += previous.X() * p.Y() - p.X() * previous.Y();
+      }
+      previous = p;
+      has_previous = true;
+    }
+  }
+  // Close the loop: the wire is a closed boundary, so the last sampled
+  // point connects back to the first.
+  if (has_previous && has_first) {
+    area += previous.X() * first_point.Y() - first_point.X() * previous.Y();
+  }
+  return 0.5 * area;
+}
+
 TopoDS_Shape make_wire_extrude_shape(
     const ExtrudeFeatureParameters& parameters) {
   const TopoDS_Wire wire = make_sketch_wire(parameters);
@@ -418,18 +467,39 @@ TopoDS_Shape make_wire_extrude_shape(
 
   // Inner loops (holes).  Use make_profile_wire which auto-detects
   // circular loops and builds a proper gp_Circ wire — avoiding the
-  // faceted look of a polygon-approximated hole.
+  // faceted look of a polygon-approximated hole.  A hole wire must be
+  // oriented OPPOSITE to the FACE's actual normal (a same-orientation
+  // wire becomes an island).  The face's normal depends on how the
+  // outer wire was built (a single gp_Circ edge produces +Z while the
+  // multi-edge line/arc wire produces -Z), so measure the face normal
+  // and compare the hole's world signed area against it.  Note that
+  // TopoDS_Shape::Reverse() mutates the shape in place in this OCCT
+  // build.
+  double face_normal_z = 0.0;
+  {
+    const TopoDS_Face diag_face = face_maker.Face();
+    if (!diag_face.IsNull()) {
+      const Handle(Geom_Surface) surf = BRep_Tool::Surface(diag_face);
+      if (!surf.IsNull() && surf->IsKind(STANDARD_TYPE(Geom_Plane))) {
+        const Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(surf);
+        gp_Dir n = plane->Axis().Direction();
+        if (diag_face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        face_normal_z = n.Z();
+      }
+    }
+  }
   for (const auto& loop : parameters.inner_loops) {
     if (loop.size() < 3) continue;
     try {
       TopoDS_Wire hole_wire = make_profile_wire(parameters, loop);
-      hole_wire.Reverse();
+      if (signed_wire_area(hole_wire) * face_normal_z > 0.0) {
+        hole_wire.Reverse();
+      }
       face_maker.Add(hole_wire);
     } catch (const std::exception&) {
       // Skip this hole — a bad inner loop shouldn't kill the whole face.
     }
   }
-
   const gp_Vec direction =
       extrusion_vector(parameters, parameters.depth);
   const TopoDS_Shape prism = BRepPrimAPI_MakePrism(

@@ -43,6 +43,7 @@
 #include <limits>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>

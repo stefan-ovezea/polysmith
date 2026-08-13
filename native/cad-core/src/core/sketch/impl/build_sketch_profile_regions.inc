@@ -245,12 +245,24 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
                     };
                     return dist(a) < dist(b);
                   });
-        // Deduplicate and filter those already at endpoints.
+        // Deduplicate and drop split angles that coincide with the arc's
+        // own endpoints — the first and last sample points are already
+        // exact, and re-inserting them creates zero-length segments plus
+        // a phantom closing segment when the CW-sweep sort places the
+        // end angle before the start angle.
         split_angles.erase(
             std::unique(split_angles.begin(), split_angles.end(),
                         [&](double a, double b) {
                           return std::abs(norm(a) - norm(b)) < 1e-12;
                         }),
+            split_angles.end());
+        split_angles.erase(
+            std::remove_if(split_angles.begin(), split_angles.end(),
+                           [&](double a) {
+                             return std::abs(norm(a) - norm(start_angle)) <
+                                        1e-12 ||
+                                    std::abs(norm(a) - norm(end_angle)) < 1e-12;
+                           }),
             split_angles.end());
         // Insert each split point as a new vertex.
         std::vector<SketchProfilePoint> merged;
@@ -282,12 +294,18 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
         pts = std::move(merged);
       }
 
+      // Arc segments are UNDIRECTED in the arrangement graph.  Directed
+      // arcs (added to kill one spurious-arc-face case) made every face
+      // with mixed arc directions unwalkable — e.g. any rounded
+      // rectangle whose fillet arcs don't all point the same way around
+      // the boundary.  Spurious arc faces are instead excluded by the
+      // arc-only / curve-only filters and the negative-area exterior
+      // rejection in the walker.
       for (size_t i = 0; i < pts.size() - 1; ++i) {
         segments.push_back(LineSegment{
             .line_id = arc.id,
             .start = pts[i],
             .end = pts[i + 1],
-            .directed = true,
         });
       }
     }
@@ -321,6 +339,21 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
                         return lid.size() >= 4 && lid.substr(0, 4) == "arc-";
                       });
       if (only_arcs) continue;
+
+      // Faces bounded solely by curve entities (arcs and/or circles)
+      // with no line edges are arrangement artifacts of overlapping
+      // curves — e.g. the lens between a trimmed circle's remnant arc
+      // and the circle entity itself.  Designed profile regions are
+      // always delimited by drawn lines.  The circle-interior face
+      // (single unsplit circle id) is exempt and handled below.
+      if (!unsplit_source_circle_id(face).has_value()) {
+        const bool has_line = std::any_of(
+            face.line_ids.begin(), face.line_ids.end(),
+            [](const std::string& lid) {
+              return lid.size() >= 5 && lid.substr(0, 5) == "line-";
+            });
+        if (!has_line) continue;
+      }
 
       profiles.push_back(SketchProfileRegion{
           .id = make_polygon_profile_id(face.line_ids) + "-" +
@@ -363,6 +396,15 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
   // Split arc edges at line endpoints that lie on the arc, so tangent
   // lines connect to the arc in the edge-loop graph (same principle as
   // split_circle_segments_at_line_endpoints for circles).
+  //
+  // The edge-loop pass runs whenever solid arcs are present.  The
+  // arrangement handles faces whose arcs all point one way around the
+  // boundary, but faces with mixed arc directions (e.g. a rectangle with
+  // filleted corners) cannot be walked through directed arc chains — the
+  // edge-loop graph chains by shared vertex id and does not care about
+  // arc direction, so it supplies those faces.  Pure-line sketches are
+  // fully handled by the line arrangement and never reach this pass.
+  if (has_solid_arcs) {
   {
     auto norm_angle = [](double a) {
       a = std::fmod(a, 2.0 * kPi);
@@ -474,9 +516,31 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     solid_edges = std::move(new_edges);
   }
 
-  // Arc / line edge-loop profiles (when solid arcs are present).
+  // Arc / line edge-loop profiles (when solid arcs are present).  Skip
+  // any loop whose edge-id set matches a profile the arrangement already
+  // emitted — the arrangement version carries arc descriptors for the
+  // exact-curve wire path, so it wins.
+  std::set<std::string> existing_edge_sets;
+  auto edge_set_key = [](const std::vector<std::string>& ids) {
+    std::vector<std::string> sorted = ids;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+    std::string key;
+    for (const auto& id : sorted) {
+      key += id + "|";
+    }
+    return key;
+  };
+  for (const auto& profile : profiles) {
+    existing_edge_sets.insert(edge_set_key(profile.line_ids));
+  }
   for (const auto& component : split_edge_components(solid_edges)) {
     if (const auto loop = detect_edge_loop(component); loop.has_value()) {
+      const std::string key = edge_set_key(loop->edge_ids);
+      if (existing_edge_sets.contains(key)) {
+        continue;
+      }
+      existing_edge_sets.insert(key);
       profiles.push_back(SketchProfileRegion{
           .id = make_polygon_profile_id(loop->edge_ids),
           .kind = "polygon",
@@ -492,10 +556,98 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
       });
     }
   }
+  }  // if (has_solid_arcs)
 
   apply_nested_polygon_holes(profiles);
 
+  // Circle-derived arrangement faces inside a larger polygon are nested
+  // as its inner loop (hole) — standard CAD behaviour: extruding the
+  // outer profile produces a slab with the round hole, while the circle
+  // stays separately selectable as its own profile.  The non-arrangement
+  // path does this in the circle section below; this covers sketches
+  // that go through the arrangement (lines + arcs + circles).
   if (use_arrangement) {
+    for (size_t circle_index = 0; circle_index < profiles.size();
+         ++circle_index) {
+      const auto& circle_face = profiles[circle_index];
+      if (!circle_face.source_circle_id.has_value() ||
+          circle_face.points.size() < 3) {
+        continue;
+      }
+      const auto circle_it = std::find_if(
+          solid_circles.begin(), solid_circles.end(),
+          [&](const SketchCircle* c) {
+            return c->id == circle_face.source_circle_id.value();
+          });
+      if (circle_it == solid_circles.end()) {
+        continue;
+      }
+      const SketchProfilePoint center{.x = (*circle_it)->center_x,
+                                      .y = (*circle_it)->center_y};
+      const double circle_area =
+          std::abs(polygon_signed_area(circle_face.points));
+
+      // Clean-bore rule: a circle whose centre lies inside a LARGER
+      // circle face has no effect on the OUTER polygon's holes — the
+      // bigger circle already removes the material around it.  It is
+      // instead nested into the larger circle's own profile (pass below),
+      // so selecting the larger circle as a solid extrudes a boss with
+      // the smaller circles as holes.
+      bool inside_larger_circle = false;
+      SketchProfileRegion* enclosing_circle = nullptr;
+      double enclosing_circle_area = std::numeric_limits<double>::max();
+      for (size_t other_index = 0; other_index < profiles.size();
+           ++other_index) {
+        if (other_index == circle_index) continue;
+        const auto& other = profiles[other_index];
+        if (!other.source_circle_id.has_value() ||
+            other.points.size() < 3) {
+          continue;
+        }
+        const double other_area =
+            std::abs(polygon_signed_area(other.points));
+        if (other_area <= circle_area + kProfileTolerance) continue;
+        if (point_in_polygon(center, other.points)) {
+          inside_larger_circle = true;
+          if (other_area < enclosing_circle_area) {
+            enclosing_circle = &profiles[other_index];
+            enclosing_circle_area = other_area;
+          }
+        }
+      }
+      if (inside_larger_circle) {
+        // Nest into the SMALLEST enclosing circle profile: extruding the
+        // bigger circle produces a boss with this circle as a hole.
+        enclosing_circle->inner_loops.push_back(circle_face.points);
+        enclosing_circle->id += "-hole-" +
+                                circle_face.source_circle_id.value();
+        continue;
+      }
+
+      SketchProfileRegion* containing = nullptr;
+      double containing_area = std::numeric_limits<double>::max();
+      for (auto& candidate : profiles) {
+        if (&candidate == &profiles[circle_index] ||
+            candidate.kind != "polygon" ||
+            candidate.source_circle_id.has_value()) {
+          continue;
+        }
+        const double candidate_area =
+            std::abs(polygon_signed_area(candidate.points));
+        if (candidate_area <= circle_area + kProfileTolerance ||
+            candidate_area >= containing_area) {
+          continue;
+        }
+        if (point_in_polygon(center, candidate.points)) {
+          containing = &candidate;
+          containing_area = candidate_area;
+        }
+      }
+      if (containing != nullptr) {
+        containing->inner_loops.push_back(circle_face.points);
+        containing->id += "-hole-" + circle_face.source_circle_id.value();
+      }
+    }
     return profiles;
   }
 

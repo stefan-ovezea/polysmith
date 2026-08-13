@@ -116,7 +116,13 @@ std::optional<EdgeLoopCandidate> detect_edge_loop(
   }
 
   if (area < 0.0) {
+    // Reverse all three lists in lockstep — the wire builder consumes
+    // ordered_edge_ids[i] together with points[i], so reversing only the
+    // points misaligns every edge with its coordinates and produces a
+    // garbage wire (partial sliver extrusions).
     std::reverse(ordered_points.begin(), ordered_points.end());
+    std::reverse(ordered_point_ids.begin(), ordered_point_ids.end());
+    std::reverse(ordered_edge_ids.begin(), ordered_edge_ids.end());
   }
 
   return EdgeLoopCandidate{

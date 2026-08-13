@@ -695,6 +695,17 @@ function withDisplayProfileHoles(
       if (loopAlreadyPresent(nextLoops, containmentPoint)) {
         continue;
       }
+      // Skip candidates that sit inside one of the profile's existing
+      // holes — a hole nested inside another hole breaks the earcut
+      // triangulation of the fill mesh (the hole region is already
+      // covered by the larger hole anyway).
+      if (
+        nextLoops.some((loop) =>
+          pointInPolygon2d(containmentPoint, loop),
+        )
+      ) {
+        continue;
+      }
       nextLoops.push(contour);
     }
 

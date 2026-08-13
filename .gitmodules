@@ -12,3 +12,6 @@
 [submodule "third_party/occt8"]
 	path = third_party/occt8
 	url = https://github.com/fovezea/OCCT8.git
+[submodule "third_party/deepseek-vision-mcp"]
+	path = third_party/deepseek-vision-mcp
+	url = https://github.com/kgamv/deepseek-vision-mcp.git

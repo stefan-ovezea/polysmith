@@ -262,8 +262,27 @@ function pickActiveSketchTarget({
   // dimension labels/arcs can still be clicked for editing).
   const [entityHit] = raycaster.intersectObjects(
     sketchEntityObjects, false);
-  const entityResult =
+  let entityResult =
     sketchEntitySelectionHitFromIntersection(entityHit);
+  if (entityResult) {
+    // Circle/arc entities only claim hits very close to their outline:
+    // the curve's interior belongs to the enclosing profile (the
+    // extrudable surface).  Without this, small circles can never show
+    // their profile on hover because the whole region sits inside the
+    // zoom-aware line-pick tolerance.  The dimension-tool branch above
+    // keeps the generous tolerance so radius dimensions still work.
+    const entityKind = entityHit.object.userData.sketchEntityKind;
+    if (entityKind === "circle" || entityKind === "arc") {
+      const closestApproach = entityHit.distance;
+      const rayPoint = raycaster.ray.origin
+        .clone()
+        .addScaledVector(raycaster.ray.direction, closestApproach);
+      const lateralDistance = rayPoint.distanceTo(entityHit.point);
+      if (lateralDistance > 2 * worldUnitsPerPixel) {
+        entityResult = null;
+      }
+    }
+  }
   if (entityResult) {
     return entityResult;
   }

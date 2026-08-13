@@ -10,7 +10,7 @@
         "${workspaceFolder}/native/cad-core/src/**",
         "${workspaceFolder}/third_party",
         "${workspaceFolder}/third_party/nlohmann",
-        "${workspaceFolder}/third_party/occt-install/include"
+        "${workspaceFolder}/third_party/occt8-install/include"
       ],
       "browse": {
         "path": [

@@ -90,10 +90,13 @@ std::vector<ArrangementFace> detect_arrangement_faces(
   }
 
   std::map<std::pair<int, int>, std::string> line_for_directed_edge;
+  std::set<std::pair<int, int>> directed_edge_set;
   for (const auto& edge : edges) {
     line_for_directed_edge[{edge.start_node, edge.end_node}] = edge.line_id;
     if (!edge.directed) {
       line_for_directed_edge[{edge.end_node, edge.start_node}] = edge.line_id;
+    } else {
+      directed_edge_set.insert({edge.start_node, edge.end_node});
     }
   }
 
@@ -111,26 +114,70 @@ std::vector<ArrangementFace> detect_arrangement_faces(
       std::vector<std::string> face_lines;
       std::pair<int, int> current = directed;
       bool closed = false;
+      bool used_directed_edge = false;
+      // Track the walk locally: a walk that dead-ends (directed arc
+      // chains, tangent junctions) must not poison the global visited
+      // set, otherwise the pairs it consumed can no longer be walked by
+      // the walk that actually closes the face.
+      std::set<std::pair<int, int>> walk_visited;
       for (size_t guard = 0; guard < edges.size() * 4 + 8; ++guard) {
-        if (visited.contains(current)) {
+        if (walk_visited.contains(current)) {
           break;
         }
-        visited.insert(current);
+        walk_visited.insert(current);
+        if (directed_edge_set.contains(current)) {
+          used_directed_edge = true;
+        }
         face_nodes.push_back(current.first);
         face_lines.push_back(line_for_directed_edge[current]);
 
         const int at = current.second;
         const int from = current.first;
         const auto& neighbors = adjacency[at];
-        const auto reverse_it = std::find(neighbors.begin(), neighbors.end(), from);
-        if (reverse_it == neighbors.end() || neighbors.empty()) {
+        if (neighbors.empty()) {
           break;
         }
-        const size_t reverse_index =
-            static_cast<size_t>(std::distance(neighbors.begin(), reverse_it));
-        const size_t next_index =
-            (reverse_index + neighbors.size() - 1) % neighbors.size();
-        current = {at, neighbors[next_index]};
+
+        // Face walk with the interior on the left: among the edges
+        // leaving `at`, take the one with the smallest counter-clockwise
+        // turn from the incoming direction (the reverse edge has turn 0
+        // and is excluded).  At tangent junctions a candidate continuing
+        // the incoming edge's own curve (same edge id) wins when its turn
+        // is within a few degrees of the best — polyline sampling makes
+        // a straight-on tangent line nearly indistinguishable from the
+        // curve continuation by angle alone, and without this preference
+        // the walker would leave a circle at its tangent point instead of
+        // tracing the circle interior.
+        const auto& origin = nodes[at];
+        const double incoming_angle =
+            std::atan2(origin.y - nodes[from].y, origin.x - nodes[from].x);
+        const std::string incoming_id = line_for_directed_edge[current];
+        int next_node = -1;
+        double best_left = std::numeric_limits<double>::max();
+        bool best_is_same_id = false;
+        for (const int candidate : neighbors) {
+          const double angle =
+              std::atan2(nodes[candidate].y - origin.y,
+                         nodes[candidate].x - origin.x);
+          double left = angle - incoming_angle;
+          while (left <= 0.0) left += 2.0 * kPi;
+          while (left > 2.0 * kPi) left -= 2.0 * kPi;
+          const bool same_id =
+              !incoming_id.empty() &&
+              line_for_directed_edge[{at, candidate}] == incoming_id;
+          constexpr double kTangentTieBreak = 5.0 * kPi / 180.0;
+          if (next_node < 0 || left < best_left ||
+              (same_id && !best_is_same_id &&
+               left - best_left <= kTangentTieBreak)) {
+            best_left = left;
+            next_node = candidate;
+            best_is_same_id = same_id;
+          }
+        }
+        if (next_node < 0) {
+          break;
+        }
+        current = {at, next_node};
         if (current == directed) {
           closed = true;
           break;
@@ -140,6 +187,7 @@ std::vector<ArrangementFace> detect_arrangement_faces(
       if (!closed || face_nodes.size() < 3) {
         continue;
       }
+      visited.insert(walk_visited.begin(), walk_visited.end());
 
       std::vector<SketchProfilePoint> face_points;
       std::vector<std::string> face_point_ids;
@@ -148,8 +196,20 @@ std::vector<ArrangementFace> detect_arrangement_faces(
         face_point_ids.push_back(make_node_key(nodes[node]));
       }
       const double area = polygon_signed_area(face_points);
-      if (area <= kProfileTolerance) {
+      // A CW walk of an undirected cycle is the unbounded exterior face —
+      // drop it.  A face whose walk was forced through a directed arc can
+      // only be walked in one orientation, which may be CW; normalise it
+      // to CCW so downstream consumers see positive orientation.
+      if (area < 0.0 && !used_directed_edge) {
         continue;
+      }
+      if (std::abs(area) <= kProfileTolerance) {
+        continue;
+      }
+      if (area < 0.0) {
+        std::reverse(face_points.begin(), face_points.end());
+        std::reverse(face_point_ids.begin(), face_point_ids.end());
+        std::reverse(face_lines.begin(), face_lines.end());
       }
       std::vector<std::string> ordered_face_lines = face_lines;
       std::sort(face_lines.begin(), face_lines.end());
@@ -160,7 +220,7 @@ std::vector<ArrangementFace> detect_arrangement_faces(
           .vertex_ids = face_point_ids,
           .line_ids = face_lines,
           .ordered_line_ids = ordered_face_lines,
-          .area = area,
+          .area = std::abs(area),
       });
     }
   }
