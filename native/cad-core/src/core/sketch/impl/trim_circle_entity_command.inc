@@ -42,7 +42,10 @@
     // For 2 segments this is the opposite; for 3+ we build the arc
     // that spans all non-clicked segments going CCW.
     const int N = static_cast<int>(segments.size());
-    const int arc_index = params.arcs.size() + 1;
+    std::vector<std::string> arc_ids;
+    arc_ids.reserve(params.arcs.size());
+    for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
+    const int arc_index = next_trim_entity_index(arc_ids);
     const int start_pt_idx = arc_index * 2;
     const int end_pt_idx = arc_index * 2 + 1;
     const double cx = circle_it->center_x, cy = circle_it->center_y;

@@ -116,4 +116,10 @@ int select_clicked_segment(
 
 constexpr double kTrimCoincidentTolerance = 0.01;  // mm
 
+// Next free numeric suffix for an entity id created by a trim split:
+// one past the highest trailing integer among the existing ids.  The
+// old size-based scheme (entities.size() + 1) reused ids after trims
+// deleted entities, corrupting wire/profile id matching.
+int next_trim_entity_index(const std::vector<std::string>& ids);
+
 }  // namespace polysmith::core

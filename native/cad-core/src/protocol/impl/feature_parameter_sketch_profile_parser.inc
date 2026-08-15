@@ -48,6 +48,28 @@
       profile.center_x = read_number(profile_payload, "center_x");
       profile.center_y = read_number(profile_payload, "center_y");
       profile.radius = read_number(profile_payload, "radius");
+      if (profile_payload.contains("boundary_edges") &&
+          profile_payload.at("boundary_edges").is_array()) {
+        for (const auto& edge_payload : profile_payload.at("boundary_edges")) {
+          profile.boundary_edges.push_back(
+              polysmith::core::ProfileBoundaryEdge{
+                  .entity_id =
+                      read_string(edge_payload, "entity_id"),
+                  .entity_kind =
+                      read_string(edge_payload, "entity_kind"),
+                  .param_start = read_number(edge_payload, "param_start"),
+                  .param_end = read_number(edge_payload, "param_end"),
+                  .start_x = read_number(edge_payload, "start_x"),
+                  .start_y = read_number(edge_payload, "start_y"),
+                  .end_x = read_number(edge_payload, "end_x"),
+                  .end_y = read_number(edge_payload, "end_y"),
+                  .center_x = read_number(edge_payload, "center_x"),
+                  .center_y = read_number(edge_payload, "center_y"),
+                  .radius = read_number(edge_payload, "radius"),
+                  .ccw = read_bool(edge_payload, "ccw"),
+              });
+        }
+      }
       if (profile_payload.contains("arc_descriptors") &&
           profile_payload.at("arc_descriptors").is_array()) {
         for (const auto& desc_payload : profile_payload.at("arc_descriptors")) {

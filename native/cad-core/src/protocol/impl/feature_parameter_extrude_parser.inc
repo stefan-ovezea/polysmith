@@ -155,6 +155,41 @@ parse_extrude_parameters_from_payload(const json& payload) {
       params.additional_arc_descriptors.push_back(std::move(descs));
     }
   }
+
+  auto parse_boundary_edges =
+      [](const json& edges_payload)
+      -> std::vector<polysmith::core::ProfileBoundaryEdge> {
+    std::vector<polysmith::core::ProfileBoundaryEdge> edges;
+    for (const auto& edge_payload : edges_payload) {
+      edges.push_back(polysmith::core::ProfileBoundaryEdge{
+          .entity_id = edge_payload.at("entity_id").get<std::string>(),
+          .entity_kind = edge_payload.at("entity_kind").get<std::string>(),
+          .param_start = edge_payload.at("param_start").get<double>(),
+          .param_end = edge_payload.at("param_end").get<double>(),
+          .start_x = edge_payload.at("start_x").get<double>(),
+          .start_y = edge_payload.at("start_y").get<double>(),
+          .end_x = edge_payload.at("end_x").get<double>(),
+          .end_y = edge_payload.at("end_y").get<double>(),
+          .center_x = edge_payload.at("center_x").get<double>(),
+          .center_y = edge_payload.at("center_y").get<double>(),
+          .radius = edge_payload.at("radius").get<double>(),
+          .ccw = edge_payload.at("ccw").get<bool>(),
+      });
+    }
+    return edges;
+  };
+
+  if (payload.contains("additional_boundary_edges") &&
+      payload.at("additional_boundary_edges").is_array()) {
+    for (const auto& group_payload : payload.at("additional_boundary_edges")) {
+      params.additional_boundary_edges.push_back(
+          parse_boundary_edges(group_payload));
+    }
+  }
+  if (payload.contains("boundary_edges") &&
+      payload.at("boundary_edges").is_array()) {
+    params.boundary_edges = parse_boundary_edges(payload.at("boundary_edges"));
+  }
   params.depth = read_number(payload, "depth");
   params.extent_mode =
       read_optional_string_value(payload, "extent_mode", params.extent_mode);

@@ -2312,3 +2312,74 @@ host. Covers both connected and non-connected collinear cases.
 | `i18n/en.json` | `parallelAngle` label |
 | `viewporStateSchema.ts` | `parallel_angle_degrees` with `.default(8)` |
 | `styles.css` | `cad-snap-cursor` CSS |
+
+## 2026-08-15
+
+### Surface detection rebuild — exact-curve planar arrangement
+
+The profile (surface) detection pipeline had accumulated overlapping patches
+(polyline circle/arc approximation, quantized node keys, tangent tie-breaks,
+curve-only face filters, circle-face synthesis, an edge-loop fallback) and
+broke on small changes. It was replaced by a single exact-curve planar
+arrangement in `sketch_profile_exact.inc`:
+
+- **Exact geometry end-to-end.** Lines (t ∈ [0,1]), circles and arcs (angle,
+  stored sweep) are never polygon-approximated. Split parameters come from
+  the trim engine's analytic intersection functions plus endpoint-on-curve
+  touch records; node identity uses (entity, param) pairs unified through
+  shared intersection/touch records and shared vertex ids — no coordinate
+  quantization.
+- **Face walk.** Interior-on-left DCEL traversal with exact tangent
+  directions. Two tangent-junction rules keep trim-corner wedges closing:
+  a line arriving at a tangent point switches onto the tangent curve, and a
+  candidate continuing the same curve wins near-ties (exact tangent
+  directions differ by fractions of a degree at line-circle junctions).
+  Signed area is integrated exactly (shoelace for lines, closed form for
+  circular arcs); the exterior and degenerate tangent pairings are
+  discarded.
+- **Every bounded closed region is a profile.** The curve-only lens filter
+  and the circle-profile synthesis hack are gone; the region between a
+  remnant arc and a circle is a legitimate profile. Holes attach to the
+  smallest-area containing face (clean-bore / boss-with-holes behaviour
+  falls out naturally).
+- **Exact boundary edges.** Profiles carry `boundary_edges` (entity id,
+  curve kind, exact parameter range, endpoints, center/radius, walk
+  direction). The wire builder (`make_sketch_wire_exact`) builds one exact
+  OCCT edge per boundary edge — no entity dedup, descriptor matching, or
+  hint guessing. The legacy grouping path is retained as a fallback for
+  saved documents without `boundary_edges`.
+- **Deleted files:** `sketch_profile_arrangement_faces.inc`,
+  `sketch_profile_edge_loops.inc`, `sketch_profile_edge_helpers.inc`,
+  `sketch_profile_polygon_circle_helpers.inc`,
+  `sketch_profile_topology_types.inc`.
+
+### Fixes landed alongside the rebuild
+
+- **Trim entity-id collisions.** Trim-created entities were numbered with
+  `entities.size() + 1`, which reuses ids after trims delete entities;
+  duplicate ids corrupted wire/profile matching (open wires extruding as
+  uncapped shells). Replaced with `next_trim_entity_index()` — one past the
+  highest existing numeric suffix.
+- **Selection: entities beat profiles near curves.** The fixed 2px
+  circle/arc outline pick rule (which made trim-created arcs unselectable
+  inside their bulge) was replaced by an exact 2D cursor-to-curve distance
+  gate, zoom-aware and capped at r/2 so small-circle profiles stay
+  reachable on interior hover. Trim keeps its entity-first priority.
+- **Auto join/cut detection hardened.** The OCCT booleans used by
+  `find_touching_body_for_extrude` / `find_intersecting_body_for_extrude`
+  are flaky on compounds and exactly-touching faces (a face-to-face touch
+  can be "absorbed" into a full-volume common, or miss compounds
+  entirely). Both checks now fall back to bounding-box analysis: a
+  non-degenerate box-overlap volume (above 1e-3 mm³ noise) means genuine
+  overlap; a zero-volume coincident slab means touching.
+
+**Known limitation:** coincident overlapping edges (e.g. two adjacent
+rectangles sharing a side drawn as separate lines) are ambiguous for the
+exact arrangement and may merge faces; the multi-profile tests use
+corner-touching geometry instead.
+
+**Tests:** all four C++ suites pass. `extrude_quality_test` gained
+end-to-end coverage for the trimmed-corner sketch (detection + full-slab
+extrusion + trim complement selection + trim id uniqueness); the lens test
+now asserts the arc/circle region is a real profile; the multi-profile
+tests use corner-touching rectangles per the limitation above.

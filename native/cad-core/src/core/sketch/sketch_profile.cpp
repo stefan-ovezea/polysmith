@@ -1,6 +1,7 @@
 #include "core/sketch/sketch_profile.h"
 
 #include "core/document/feature.h"
+#include "core/sketch/trim_engine.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
 #include <algorithm>
@@ -18,7 +19,6 @@ namespace polysmith::core {
 namespace {
 
 #include "core/sketch/impl/sketch_profile_basic_helpers.inc"
-#include "core/sketch/impl/sketch_profile_edge_helpers.inc"
 #include "core/sketch/impl/sketch_profile_topology.inc"
 
 }  // namespace

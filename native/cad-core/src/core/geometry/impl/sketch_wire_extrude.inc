@@ -185,6 +185,86 @@ const SketchCircle* find_circle_for_edge(
   return it != circles.end() ? &(*it) : nullptr;
 }
 
+// Exact wire from the profile's boundary_edges list: one OCCT edge per
+// boundary edge, anchored to the entity's exact parametric geometry.
+// Circular pieces are built via GC_MakeArcOfCircle with the sense
+// disambiguated by comparing the arc midpoint against the expected
+// midpoint in the walk's parametric direction (the local parameter
+// direction of gp_Ax2 may be mirrored relative to the sketch frame).
+// Full circles (span ≈ 2π) become a single gp_Circ edge.
+TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
+                                   const PlaneFrame& frame) {
+  constexpr double kExactPi = 3.14159265358979323846;
+  BRepBuilderAPI_MakeWire wire_builder;
+  for (const auto& be : parameters.boundary_edges) {
+    if (be.entity_kind == "line") {
+      const gp_Pnt p1 = to_world_point(frame, be.start_x, be.start_y);
+      const gp_Pnt p2 = to_world_point(frame, be.end_x, be.end_y);
+      GC_MakeSegment seg(p1, p2);
+      if (!seg.IsDone()) {
+        throw std::runtime_error("Failed to create exact line edge");
+      }
+      wire_builder.Add(BRepBuilderAPI_MakeEdge(seg.Value()));
+      continue;
+    }
+
+    const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
+    const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
+    const gp_Circ circ(gp_Ax2(center, normal), be.radius);
+
+    // Full circle: one analytic edge.
+    if (std::abs(std::abs(be.param_end - be.param_start) - 2.0 * kExactPi) <
+        1e-9) {
+      wire_builder.Add(BRepBuilderAPI_MakeEdge(circ));
+      continue;
+    }
+
+    const gp_Pnt p1 = to_world_point(frame, be.start_x, be.start_y);
+    const gp_Pnt p2 = to_world_point(frame, be.end_x, be.end_y);
+
+    // Expected midpoint in the walk's parametric direction (sketch
+    // space → world).  Disambiguates the arc sense without relying on
+    // the local parameter convention of gp_Ax2.
+    const double mid_angle = 0.5 * (be.param_start + be.param_end);
+    const gp_Pnt mid_expected = to_world_point(
+        frame, be.center_x + be.radius * std::cos(mid_angle),
+        be.center_y + be.radius * std::sin(mid_angle));
+
+    TopoDS_Edge edge;
+    bool made = false;
+    for (const bool swap : {false, true}) {
+      GC_MakeArcOfCircle arc_maker(circ, swap ? p2 : p1, swap ? p1 : p2,
+                                   true);
+      if (!arc_maker.IsDone()) continue;
+      const Handle(Geom_TrimmedCurve)& curve = arc_maker.Value();
+      const double mid_param =
+          (curve->FirstParameter() + curve->LastParameter()) * 0.5;
+      gp_Pnt mid_actual;
+      curve->D0(mid_param, mid_actual);
+      constexpr double kMidTol = 1e-4;  // mm (endpoints are exact)
+      if (mid_actual.SquareDistance(mid_expected) <= kMidTol * kMidTol) {
+        edge = BRepBuilderAPI_MakeEdge(curve);
+        made = true;
+        break;
+      }
+    }
+    if (!made) {
+      // Degenerate span fallback — build whatever arc we can so the
+      // wire still closes.
+      GC_MakeArcOfCircle arc_maker(circ, p1, p2, true);
+      if (!arc_maker.IsDone()) {
+        throw std::runtime_error("Failed to create exact arc edge");
+      }
+      edge = BRepBuilderAPI_MakeEdge(arc_maker.Value());
+    }
+    wire_builder.Add(edge);
+  }
+  if (!wire_builder.IsDone()) {
+    throw std::runtime_error("Failed to build exact sketch wire");
+  }
+  return wire_builder.Wire();
+}
+
 // Build a closed OCCT wire from the profile boundary points and ordered
 // edge IDs. Consecutive segments sharing the same edge ID are merged into
 // a single curve span so that a tessellated arc or circle produces one
@@ -194,6 +274,10 @@ const SketchCircle* find_circle_for_edge(
 // onto the adjacent circle — this eliminates the floating-point gaps that
 // arise when line endpoints come from polygon samples that are slightly
 // off the analytic circle.
+//
+// Legacy path: used when the profile carries no boundary_edges (old
+// saved documents).  New profiles always carry boundary_edges and use
+// make_sketch_wire_exact instead.
 TopoDS_Wire make_sketch_wire(
     const ExtrudeFeatureParameters& parameters) {
   PlaneFrame frame;
@@ -214,6 +298,12 @@ TopoDS_Wire make_sketch_wire(
                        .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
                        .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
                        .normal_x=0,.normal_y=1,.normal_z=0};
+  }
+
+  // Exact-curve path: profiles built by the exact arrangement detector
+  // carry boundary_edges — one exact OCCT edge per boundary edge.
+  if (!parameters.boundary_edges.empty()) {
+    return make_sketch_wire_exact(parameters, frame);
   }
 
   const auto raw_pts = deduplicate_adjacent_points(parameters.profile_points);

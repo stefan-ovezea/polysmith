@@ -67,7 +67,10 @@
           arc_it->end_x, arc_it->end_y,
           "vertex-" + std::to_string(params.next_vertex_index++));
 
-      const int next_idx = static_cast<int>(params.arcs.size()) + 1;
+      std::vector<std::string> arc_ids;
+      arc_ids.reserve(params.arcs.size());
+      for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
+      const int next_idx = next_trim_entity_index(arc_ids);
       const auto& right = segments[clicked_index + 1];
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{

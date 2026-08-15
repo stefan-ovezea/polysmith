@@ -21,6 +21,28 @@ struct SketchArcDescriptor {
   bool ccw;                 // true = arc traverses CCW from start to end
 };
 
+// One exact boundary edge of a profile region, in walk order.  The
+// wire builder consumes this list directly — every edge is anchored to
+// its entity's exact parametric geometry, so no grouping, dedup or
+// hint-based guessing is needed downstream.
+struct ProfileBoundaryEdge {
+  std::string entity_id;
+  std::string entity_kind;   // "line" | "circle" | "arc"
+  // Line: t in [0, 1].  Circle/arc: sketch angle in the entity's sweep
+  // frame (may be lifted beyond 2π; the span's sign follows the walk).
+  double param_start;
+  double param_end;
+  double start_x;
+  double start_y;
+  double end_x;
+  double end_y;
+  // Circular pieces only.
+  double center_x = 0.0;
+  double center_y = 0.0;
+  double radius = 0.0;
+  bool ccw = true;           // walk direction around the centre
+};
+
 struct SketchProfileRegion {
   std::string id;
   std::string kind;
@@ -41,6 +63,10 @@ struct SketchProfileRegion {
   // ordered_edge_ids.  Empty for legacy profiles; populated by
   // build_sketch_profile_regions so make_sketch_wire never guesses.
   std::vector<SketchArcDescriptor> arc_descriptors;
+  // Exact boundary edges (new exact-curve detector).  Empty for legacy
+  // profiles restored from old saves — the wire builder then falls back
+  // to the legacy grouping/descriptor path.
+  std::vector<ProfileBoundaryEdge> boundary_edges;
 };
 
 }  // namespace polysmith::core

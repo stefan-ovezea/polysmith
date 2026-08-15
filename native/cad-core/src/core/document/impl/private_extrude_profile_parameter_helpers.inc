@@ -51,6 +51,8 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
 
     // Carry exact arc descriptors so the wire builder never guesses.
     params.arc_descriptors = profile.arc_descriptors;
+    // Exact boundary edges — the wire builder's primary input.
+    params.boundary_edges = profile.boundary_edges;
 
     return params;
   }
@@ -161,6 +163,7 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
   if (!first.ordered_edge_ids.empty()) {
     parameters.sketch_edge_ids = first.ordered_edge_ids;
   }
+  parameters.boundary_edges = first.boundary_edges;
 
   for (size_t index = 1; index < profiles.size(); ++index) {
     const auto& profile = profiles[index];
@@ -171,6 +174,8 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
         profile.ordered_edge_ids);
     parameters.additional_arc_descriptors.push_back(
         profile.arc_descriptors);
+    parameters.additional_boundary_edges.push_back(
+        profile.boundary_edges);
   }
 
   return parameters;
@@ -196,11 +201,13 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.additional_inner_loops = source.additional_inner_loops;
   target.additional_sketch_edge_ids = source.additional_sketch_edge_ids;
   target.additional_arc_descriptors = source.additional_arc_descriptors;
+  target.additional_boundary_edges = source.additional_boundary_edges;
   target.sketch_edge_ids = source.sketch_edge_ids;
   target.sketch_lines = source.sketch_lines;
   target.sketch_arcs = source.sketch_arcs;
   target.sketch_circles = source.sketch_circles;
   target.arc_descriptors = source.arc_descriptors;
+  target.boundary_edges = source.boundary_edges;
 }
 
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {

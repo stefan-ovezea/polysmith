@@ -207,6 +207,54 @@
                     }
                     return profiles;
                   }()},
+                 {"additional_boundary_edges",
+                  [&feature]() {
+                    json groups = json::array();
+                    for (const auto& edges :
+                         feature.extrude_parameters->additional_boundary_edges) {
+                      json arr = json::array();
+                      for (const auto& edge : edges) {
+                        arr.push_back({
+                            {"entity_id", edge.entity_id},
+                            {"entity_kind", edge.entity_kind},
+                            {"param_start", edge.param_start},
+                            {"param_end", edge.param_end},
+                            {"start_x", edge.start_x},
+                            {"start_y", edge.start_y},
+                            {"end_x", edge.end_x},
+                            {"end_y", edge.end_y},
+                            {"center_x", edge.center_x},
+                            {"center_y", edge.center_y},
+                            {"radius", edge.radius},
+                            {"ccw", edge.ccw},
+                        });
+                      }
+                      groups.push_back(arr);
+                    }
+                    return groups;
+                  }()},
+                 {"boundary_edges",
+                  [&feature]() {
+                    json arr = json::array();
+                    for (const auto& edge :
+                         feature.extrude_parameters->boundary_edges) {
+                      arr.push_back({
+                          {"entity_id", edge.entity_id},
+                          {"entity_kind", edge.entity_kind},
+                          {"param_start", edge.param_start},
+                          {"param_end", edge.param_end},
+                          {"start_x", edge.start_x},
+                          {"start_y", edge.start_y},
+                          {"end_x", edge.end_x},
+                          {"end_y", edge.end_y},
+                          {"center_x", edge.center_x},
+                          {"center_y", edge.center_y},
+                          {"radius", edge.radius},
+                          {"ccw", edge.ccw},
+                      });
+                    }
+                    return arr;
+                  }()},
                  {"depth", feature.extrude_parameters->depth},
                  {"extent_mode", feature.extrude_parameters->extent_mode},
                  {"side1",

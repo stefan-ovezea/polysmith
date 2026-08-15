@@ -49,6 +49,24 @@
                         });
                       }
 
+                      json boundary_edges = json::array();
+                      for (const auto& edge : profile.boundary_edges) {
+                        boundary_edges.push_back({
+                            {"entity_id", edge.entity_id},
+                            {"entity_kind", edge.entity_kind},
+                            {"param_start", edge.param_start},
+                            {"param_end", edge.param_end},
+                            {"start_x", edge.start_x},
+                            {"start_y", edge.start_y},
+                            {"end_x", edge.end_x},
+                            {"end_y", edge.end_y},
+                            {"center_x", edge.center_x},
+                            {"center_y", edge.center_y},
+                            {"radius", edge.radius},
+                            {"ccw", edge.ccw},
+                        });
+                      }
+
                       profiles.push_back({
                           {"profile_id", profile.id},
                           {"kind", profile.kind},
@@ -58,6 +76,7 @@
                           {"points", points},
                           {"inner_loops", inner_loops},
                           {"arc_descriptors", arc_descriptors},
+                          {"boundary_edges", boundary_edges},
                           {"source_circle_id",
                            profile.source_circle_id.has_value()
                                ? json(profile.source_circle_id.value())

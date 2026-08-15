@@ -99,7 +99,10 @@
       line_it->end_y = segments[clicked_index - 1].end_y;
 
       // Right portion: new line from intersection after deleted segment to end.
-      const int next_index = static_cast<int>(params.lines.size()) + 1;
+      std::vector<std::string> line_ids;
+      line_ids.reserve(params.lines.size());
+      for (const auto& line : params.lines) line_ids.push_back(line.id);
+      const int next_index = next_trim_entity_index(line_ids);
       const double rsx = segments[clicked_index + 1].start_x;
       const double rsy = segments[clicked_index + 1].start_y;
       const double rex = segments[last].end_x;

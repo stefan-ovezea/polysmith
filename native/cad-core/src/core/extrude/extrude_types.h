@@ -48,6 +48,7 @@ struct ExtrudeFeatureParameters {
   // instead of polygon approximation for the corresponding profile.
   std::vector<std::vector<std::string>> additional_sketch_edge_ids;
   std::vector<std::vector<SketchArcDescriptor>> additional_arc_descriptors;
+  std::vector<std::vector<ProfileBoundaryEdge>> additional_boundary_edges;
   // Sketch wire data — when non-empty, build_extrude_shape uses exact OCCT
   // curves (GC_MakeSegment / GC_MakeArcOfCircle / gp_Circ) instead of
   // polygon-approximating the boundary with BRepBuilderAPI_MakePolygon.
@@ -60,6 +61,7 @@ struct ExtrudeFeatureParameters {
   // used by make_sketch_wire to build exact GC_MakeArcOfCircle edges
   // without guessing from polygon samples.
   std::vector<SketchArcDescriptor> arc_descriptors;
+  std::vector<ProfileBoundaryEdge> boundary_edges;
   double depth;
   // "one_side", "symmetric", or "two_sides".
   std::string extent_mode = "one_side";

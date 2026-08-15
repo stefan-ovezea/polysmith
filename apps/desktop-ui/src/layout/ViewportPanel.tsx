@@ -2432,6 +2432,8 @@ export function ViewportPanel({
         raycaster,
         sceneData: sceneDataRef.current,
         activeSketchPlaneId,
+        activeSketchPlaneFrame:
+          activeSketchPlaneFrameRef.current ?? activeSketchPlaneFrame,
         activeSketchTool: activeSketchToolRef.current,
         armedSketchConstraintKind: armedSketchConstraintRef.current?.kind ?? null,
         inactiveSketchEntityPickEnabled:

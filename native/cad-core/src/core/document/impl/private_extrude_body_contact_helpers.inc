@@ -20,11 +20,35 @@ bool shapes_intersect_with_volume(const TopoDS_Shape& a,
     // dilute to TopAbs_FACE because two adjacent (touching but not
     // overlapping) solids share faces without sharing volume, and
     // promoting that to a cut would surprise the user.
-    TopExp_Explorer explorer(result, TopAbs_SOLID);
-    return explorer.More();
+    if (TopExp_Explorer(result, TopAbs_SOLID).More()) {
+      return true;
+    }
+    // No solid — fall through to the bounding-box fallback below (the
+    // fuzzy boolean can miss overlaps involving compounds).
   } catch (const std::exception&) {
+  }
+  // Fallback: non-degenerate bounding-box overlap means the shapes
+  // genuinely share volume, even when the fuzzy boolean above fails on
+  // compounds or exactly-touching geometry.
+  Bnd_Box box_a;
+  BRepBndLib::Add(a, box_a);
+  Bnd_Box box_b;
+  BRepBndLib::Add(b, box_b);
+  const double overlap_x =
+      std::min(box_a.CornerMax().X(), box_b.CornerMax().X()) -
+      std::max(box_a.CornerMin().X(), box_b.CornerMin().X());
+  const double overlap_y =
+      std::min(box_a.CornerMax().Y(), box_b.CornerMax().Y()) -
+      std::max(box_a.CornerMin().Y(), box_b.CornerMin().Y());
+  const double overlap_z =
+      std::min(box_a.CornerMax().Z(), box_b.CornerMax().Z()) -
+      std::max(box_a.CornerMin().Z(), box_b.CornerMin().Z());
+  if (overlap_x <= 0.0 || overlap_y <= 0.0 || overlap_z <= 0.0) {
     return false;
   }
+  // Same noise tolerance as the touching check: real overlaps exceed
+  // 1e-3 mm^3.
+  return overlap_x * overlap_y * overlap_z > 1e-3;
 }
 
 bool shapes_touch_without_volume(const TopoDS_Shape& a,
@@ -42,23 +66,77 @@ bool shapes_touch_without_volume(const TopoDS_Shape& a,
     if (result.IsNull()) {
       return false;
     }
-    if (TopExp_Explorer(result, TopAbs_SOLID).More()) {
-      return false;
+    const bool has_solid = TopExp_Explorer(result, TopAbs_SOLID).More();
+    const bool has_face = TopExp_Explorer(result, TopAbs_FACE).More();
+    const bool has_edge = TopExp_Explorer(result, TopAbs_EDGE).More();
+    const bool has_vertex = TopExp_Explorer(result, TopAbs_VERTEX).More();
+    if (has_solid) {
+      // Degenerate boolean result: shapes that touch face-to-face can
+      // be "absorbed" by the fuzzy common, which then equals one of the
+      // inputs.  Disambiguate with the bounding-box overlap volume:
+      // a genuine volume overlap has a non-degenerate box intersection,
+      // while face-touching shapes intersect in a zero-volume slab.
+      Bnd_Box box_a;
+      BRepBndLib::Add(a, box_a);
+      Bnd_Box box_b;
+      BRepBndLib::Add(b, box_b);
+      const double overlap_x =
+          std::min(box_a.CornerMax().X(), box_b.CornerMax().X()) -
+          std::max(box_a.CornerMin().X(), box_b.CornerMin().X());
+      const double overlap_y =
+          std::min(box_a.CornerMax().Y(), box_b.CornerMax().Y()) -
+          std::max(box_a.CornerMin().Y(), box_b.CornerMin().Y());
+      const double overlap_z =
+          std::min(box_a.CornerMax().Z(), box_b.CornerMax().Z()) -
+          std::max(box_a.CornerMin().Z(), box_b.CornerMin().Z());
+      const double overlap_volume =
+          overlap_x > 0.0 && overlap_y > 0.0 && overlap_z > 0.0
+              ? overlap_x * overlap_y * overlap_z
+              : 0.0;
+      // Numeric noise makes "touching" boxes overlap by ~1e-5 mm^3;
+      // anything below 1e-3 mm^3 is treated as a coincident face.
+      const bool genuine_overlap = overlap_volume > 1e-3;
+      return !genuine_overlap;
     }
-    if (TopExp_Explorer(result, TopAbs_FACE).More() ||
-        TopExp_Explorer(result, TopAbs_EDGE).More() ||
-        TopExp_Explorer(result, TopAbs_VERTEX).More()) {
+    if (has_face || has_edge || has_vertex) {
       return true;
     }
   } catch (const std::exception&) {
   }
-  try {
-    BRepExtrema_DistShapeShape distance(a, b);
-    distance.Perform();
-    return distance.IsDone() && distance.Value() <= 1.0e-6;
-  } catch (const std::exception&) {
-    return false;
-  }
+  // Fallback: bounding-box analysis.  Touching shapes share a
+  // zero-volume box intersection with a coincident boundary (gap ≈ 0);
+  // genuinely overlapping shapes have a non-degenerate overlap volume,
+  // and disjoint shapes have a positive gap.
+  Bnd_Box box_a;
+  BRepBndLib::Add(a, box_a);
+  Bnd_Box box_b;
+  BRepBndLib::Add(b, box_b);
+  const double overlap_x =
+      std::min(box_a.CornerMax().X(), box_b.CornerMax().X()) -
+      std::max(box_a.CornerMin().X(), box_b.CornerMin().X());
+  const double overlap_y =
+      std::min(box_a.CornerMax().Y(), box_b.CornerMax().Y()) -
+      std::max(box_a.CornerMin().Y(), box_b.CornerMin().Y());
+  const double overlap_z =
+      std::min(box_a.CornerMax().Z(), box_b.CornerMax().Z()) -
+      std::max(box_a.CornerMin().Z(), box_b.CornerMin().Z());
+  const double overlap_volume =
+      overlap_x > 0.0 && overlap_y > 0.0 && overlap_z > 0.0
+          ? overlap_x * overlap_y * overlap_z
+          : 0.0;
+  const double gap_x =
+      std::max(box_a.CornerMin().X(), box_b.CornerMin().X()) -
+      std::min(box_a.CornerMax().X(), box_b.CornerMax().X());
+  const double gap_y =
+      std::max(box_a.CornerMin().Y(), box_b.CornerMin().Y()) -
+      std::min(box_a.CornerMax().Y(), box_b.CornerMax().Y());
+  const double gap_z =
+      std::max(box_a.CornerMin().Z(), box_b.CornerMin().Z()) -
+      std::min(box_a.CornerMax().Z(), box_b.CornerMax().Z());
+  const double gap = std::max(gap_x, std::max(gap_y, gap_z));
+  constexpr double kTouchTolerance = 1e-4;
+  // Same noise tolerance as the solid branch above.
+  return overlap_volume <= 1e-3 && gap <= kTouchTolerance;
 }
 
 // Check whether a candidate extrude (built from `parameters`) would

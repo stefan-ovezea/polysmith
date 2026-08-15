@@ -18,6 +18,8 @@
 
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>

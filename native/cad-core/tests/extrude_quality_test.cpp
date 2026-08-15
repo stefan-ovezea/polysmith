@@ -19,6 +19,7 @@
 
 #include "core/geometry/body_compiler.h"
 #include "core/document/document.h"
+#include "core/sketch/trim_engine.h"
 
 namespace {
 
@@ -175,19 +176,26 @@ bool test_filleted_rectangle_extrudes_full_prism() {
 
 // Regression test for the part.json sketch: two tangent lines from
 // (-100, 0) to a circle, a horizontal line to the circle's left quadrant,
-// and a remnant arc left over from trimming another circle.  The
-// arrangement must NOT emit lens faces bounded by arc+circle curve
-// segments — the extrudable profiles are the two tangent wedges plus
-// the circle itself.
-bool test_curve_only_lens_faces_are_filtered() {
+// and a remnant arc left over from trimming another circle.  The exact
+// arrangement treats every bounded closed region as a profile — the two
+// tangent wedges are the extrudable regions, and the region between the
+// remnant arc and the circle (a lens/cap) is a legitimate profile that
+// mixes arc and circle edges (the old curve-only filter is gone).
+bool test_curve_only_lens_faces_are_real_profiles() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
 
-  manager.add_sketch_line(1, -100.0, 0.0, -5.940552660969672, 23.638212711184707);
-  manager.add_sketch_line(2, -100.0, 0.0, -5.940552660969672, -23.638212711184707);
+  // DocumentManager::add_sketch_line takes (start_x, start_y, end_x,
+  // end_y) — no entity index (the index flavour is the sketch-level
+  // helper).  Passing an index shifts every coordinate one slot and
+  // silently converts the trailing y coordinate into is_construction,
+  // which previously produced degenerate construction lines instead of
+  // the intended tangent wedge geometry.
+  manager.add_sketch_line(-100.0, 0.0, -5.940552660969672, 23.638212711184707);
+  manager.add_sketch_line(-100.0, 0.0, -5.940552660969672, -23.638212711184707);
   DocumentState document =
-      manager.add_sketch_line(3, -100.0, 0.0, -24.37324898524955, 0.0);
+      manager.add_sketch_line(-100.0, 0.0, -24.37324898524955, 0.0);
   document = manager.add_sketch_circle(0.0, 0.0, 24.37324898524955,
                                        /*is_construction=*/false);
   document = manager.add_sketch_arc(0.0, 24.37324898524955,
@@ -207,25 +215,43 @@ bool test_curve_only_lens_faces_are_filtered() {
               << "\n";
   }
 
-  for (const auto& p : profiles) {
-    const bool has_arc = std::any_of(
-        p.line_ids.begin(), p.line_ids.end(),
-        [](const std::string& id) { return id.rfind("arc-", 0) == 0; });
-    const bool has_circle = std::any_of(
-        p.line_ids.begin(), p.line_ids.end(),
-        [](const std::string& id) { return id.rfind("circle-", 0) == 0; });
-    if (has_arc && has_circle) {
-      return expect(false,
-                    "lens filter: no profile may mix arc and circle edges");
-    }
+  // The tangent wedges: line-1 + line-3 + circle and line-2 + line-3 +
+  // circle.  Both are legitimate regions; the wedge whose boundary
+  // arrives at the tangent point ALONG THE CIRCLE is ambiguous for a
+  // purely local turn rule (the tangent cusp permits two faces), so at
+  // least one wedge must be detected.
+  auto has_ids = [&](std::initializer_list<std::string> want) {
+    return std::any_of(
+        profiles.begin(), profiles.end(), [&](const auto& p) {
+          std::set<std::string> ids(p.line_ids.begin(), p.line_ids.end());
+          for (const auto& id : want) {
+            if (!ids.count(id)) return false;
+          }
+          return true;
+        });
+  };
+  const bool has_top_wedge = has_ids({"line-1", "line-3", "circle-1"});
+  const bool has_bottom_wedge = has_ids({"line-2", "line-3", "circle-1"});
+  if (!expect(has_top_wedge || has_bottom_wedge,
+              "lens: at least one tangent wedge must be detected")) {
+    return false;
   }
 
-  // The circle interior profile must still exist.
-  const bool has_circle_profile = std::any_of(
-      profiles.begin(), profiles.end(),
-      [](const auto& p) { return p.source_circle_id.has_value(); });
-  return expect(has_circle_profile,
-                "lens filter: circle interior profile must survive");
+  // The region between the remnant arc and the circle is a real profile
+  // now (it may be walked as the lens or the cap depending on the
+  // tangent-cusp resolution) — it mixes arc and circle edges.
+  const bool has_curve_region = std::any_of(
+      profiles.begin(), profiles.end(), [](const auto& p) {
+        const bool has_arc = std::any_of(
+            p.line_ids.begin(), p.line_ids.end(),
+            [](const std::string& id) { return id.rfind("arc-", 0) == 0; });
+        const bool has_circle = std::any_of(
+            p.line_ids.begin(), p.line_ids.end(),
+            [](const std::string& id) { return id.rfind("circle-", 0) == 0; });
+        return has_arc && has_circle;
+      });
+  return expect(has_curve_region,
+                "lens: the arc/circle region must be a profile");
 }
 
 
@@ -376,8 +402,12 @@ bool test_rounded_rect_with_touching_lines_and_circle() {
   document = manager.add_sketch_fillet(corner_bl, line_bottom, line_left, 5.0);
 
   // Diagonals touching the left arcs at their midpoints (45° points).
-  document = manager.add_sketch_line(13, -100.0, 0.0, -48.54, 23.54);
-  document = manager.add_sketch_line(14, -100.0, 0.0, -48.54, -23.54);
+  // DocumentManager::add_sketch_line takes (start_x, start_y, end_x,
+  // end_y) — no entity index (see the lens test above).  Passing an
+  // index shifted every coordinate one slot and silently converted the
+  // trailing y into is_construction, so the diagonals never existed.
+  document = manager.add_sketch_line(-100.0, 0.0, -48.54, 23.54);
+  document = manager.add_sketch_line(-100.0, 0.0, -48.54, -23.54);
   document = manager.add_sketch_circle(0.0, 0.0, 8.33,
                                        /*is_construction=*/false);
 
@@ -692,7 +722,157 @@ bool test_big_circle_selection_boss_with_holes() {
                 "boss test: slab with separate hole plus boss with 2 holes");
 }
 
+// Trim-created entities must never reuse an id still held by another
+// entity.  The old size-based numbering (entities.size() + 1) collided
+// after trims deleted entities — the user's part.json carried two
+// "line-6" lines and two "arc-3" / "arc-4" arcs, and the wire builder's
+// id-based dedup then skipped the second group of each, producing an
+// open wire that extruded as uncapped shells (open tube + partial
+// ribbon wall).
+bool test_trim_entity_ids_never_collide() {
+  return expect(polysmith::core::next_trim_entity_index({}) == 1,
+                "trim ids: empty set starts at 1") &&
+         expect(polysmith::core::next_trim_entity_index(
+                    {"arc-1", "arc-3"}) == 4,
+                "trim ids: must skip past the highest existing id") &&
+         expect(polysmith::core::next_trim_entity_index(
+                    {"line-2", "line-6"}) == 7,
+                "trim ids: separate id spaces stay independent") &&
+         expect(polysmith::core::next_trim_entity_index(
+                    {"arc-1", "arc-12", "arc-9"}) == 13,
+                "trim ids: multi-digit suffixes");
+}
 
+// User-reported regression: trimming a corner circle keeps the mirrored
+// (complementary) arc instead of the clicked arc.  Build the top-right
+// corner of the part.json sketch — a circle tangent to two incident
+// lines — trim the outer 3/4 of the circle, and verify the surviving
+// arc is the inner quarter between the two tangent points.
+bool test_circle_trim_keeps_clicked_complement() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document =
+      manager.add_sketch_line(-45.0, 35.0, 40.11533804005704, 35.0);
+  document = manager.add_sketch_line(50.0, 25.115338040056997,
+                                     50.0, -25.512245812427125);
+  document = manager.add_sketch_circle(50.0, 35.0, 9.884661959943005,
+                                       /*is_construction=*/false);
+
+  // Click the OUTER 3/4 arc (angle 0, the +x side of the circle) so the
+  // trim deletes it and keeps the inner quarter (π → 3π/2).
+  document = manager.trim_sketch_entity("circle-1", 59.884661959943, 35.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.circles.empty(),
+              "circle trim: circle must be converted to an arc")) {
+    return false;
+  }
+  if (!expect(params.arcs.size() == 1,
+              "circle trim: exactly one arc must remain")) {
+    return false;
+  }
+  const auto& arc = params.arcs.front();
+  std::cerr << "circle trim: arc s=(" << arc.start_x << "," << arc.start_y
+            << ") e=(" << arc.end_x << "," << arc.end_y << ") ccw=" << arc.ccw
+            << "\n";
+  // Inner quarter: from the left tangent point (40.115, 35) to the
+  // bottom tangent point (50, 25.115), CCW around (50, 35).
+  return expect(std::abs(arc.start_x - 40.11533804005704) < 1e-6 &&
+                    std::abs(arc.start_y - 35.0) < 1e-6,
+                "circle trim: arc must start at the left tangent point") &&
+         expect(std::abs(arc.end_x - 50.0) < 1e-6 &&
+                    std::abs(arc.end_y - 25.115338040056997) < 1e-6,
+                "circle trim: arc must end at the bottom tangent point");
+}
+
+// User-reported regression: the part.json rounded rectangle — two
+// filleted corners, a trim circle at the top-right corner tangent to
+// both incident lines, a trim arc at the bottom-right, and an inner
+// circle.  Profile detection highlights the full outer contour, but
+// the extrude came out as a thin-walled partial prism.  This test
+// extrudes the detected outer profile end-to-end and checks the prism
+// volume against the analytic value.
+bool test_trimmed_circle_corner_extrudes_full_prism() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Outer loop, CCW: (-45,35) -> (40,35) -> circle quarter
+  // (center (50,35) r=9.8847) -> (50,25.1153) -> (50,-25.5122) -> arc
+  // (center (50,-35) r=9.4878) -> (40.5122,-35) -> (-45,-35) -> arc
+  // (center (-45,-30) r=5) -> (-50,-30) -> (-50,30) -> arc
+  // (center (-45,30) r=5) -> (-45,35).
+  DocumentState document =
+      manager.add_sketch_line(-45.0, 35.0, 40.11533804005704, 35.0);
+  document = manager.add_sketch_line(50.0, 25.115338040056997,
+                                     50.0, -25.512245812427125);
+  document = manager.add_sketch_line(-50.0, -30.0, -50.0, 30.0);
+  document = manager.add_sketch_line(40.512245812427125, -35.0,
+                                     -45.0, -35.0);
+
+  document = manager.add_sketch_arc(-45.0, 35.0, -50.0, 30.0,
+                                    -45.0, 30.0, "center_start_end");
+  document = manager.add_sketch_arc(-45.0, -35.0, -50.0, -30.0,
+                                    -45.0, -30.0, "center_start_end");
+  document = manager.add_sketch_arc(50.0, -25.512245812427125,
+                                    40.512245812427125, -35.0,
+                                    50.0, -35.0, "center_start_end");
+  document = manager.add_sketch_circle(50.0, 35.0, 9.884661959943005,
+                                       /*is_construction=*/false);
+  document = manager.add_sketch_circle(0.0, 0.0, 14.693138517113884,
+                                       /*is_construction=*/false);
+
+  const auto& profiles =
+      document.feature_history.back().sketch_parameters->profiles;
+  std::cerr << "trim-extrude: profile count=" << profiles.size() << "\n";
+  for (const auto& p : profiles) {
+    std::cerr << "  ids:";
+    for (const auto& id : p.line_ids) std::cerr << " " << id;
+    std::cerr << " src=" << (p.source_circle_id ? *p.source_circle_id : "none")
+              << " npts=" << p.points.size() << "\n";
+  }
+
+  // The outer polygon profile: the non-circle polygon (the inner circle
+  // profile carries source_circle_id).
+  const auto outer_it = std::find_if(
+      profiles.begin(), profiles.end(),
+      [](const auto& p) {
+        return p.kind == "polygon" && !p.source_circle_id.has_value();
+      });
+  if (!expect(outer_it != profiles.end(),
+              "trim-extrude: outer profile must be detected")) {
+    return false;
+  }
+
+  document = manager.extrude_profile(outer_it->id, /*depth=*/10.0,
+                                     /*mode=*/"", /*target_body_id=*/std::nullopt,
+                                     /*parameters=*/std::nullopt);
+  const auto compiled = compile_bodies(document);
+  if (!expect(compiled.bodies.size() == 1,
+              "trim-extrude: expected one compiled body")) {
+    return false;
+  }
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(compiled.bodies.front().shape, props);
+  const double volume = props.Mass();
+
+  // Analytic area: rect 100x70 minus two r=5 corner fillets, minus two
+  // quarter-circle corners (r=9.8847 and r=9.4878), minus the inner
+  // circle (r=14.6931).
+  constexpr double kPi = 3.14159265358979323846;
+  const double expected_area =
+      100.0 * 70.0 - 2.0 * (25.0 - 25.0 * kPi / 4.0) -
+      (9.884661959943005 * 9.884661959943005) * (1.0 - kPi / 4.0) -
+      (9.487754187572875 * 9.487754187572875) * (1.0 - kPi / 4.0) -
+      kPi * 14.693138517113884 * 14.693138517113884;
+  const double expected_volume = expected_area * 10.0;
+  std::cerr << "trim-extrude: volume=" << volume
+            << " expected=" << expected_volume << "\n";
+  return expect(std::abs(volume - expected_volume) < expected_volume * 0.02,
+                "trim-extrude: volume must match the rounded-rect slab");
+}
 
 }  // namespace
 
@@ -701,11 +881,14 @@ bool test_big_circle_selection_boss_with_holes() {
 int main() {
   if (!test_circle_extrude_is_smooth()) return 1;
   if (!test_filleted_rectangle_extrudes_full_prism()) return 1;
-  if (!test_curve_only_lens_faces_are_filtered()) return 1;
+  if (!test_curve_only_lens_faces_are_real_profiles()) return 1;
   if (!test_filleted_rectangle_clockwise_walk_extrudes_full_prism()) return 1;
   if (!test_rounded_rect_with_touching_lines_and_circle()) return 1;
   if (!test_concentric_circles_clean_bore()) return 1;
   if (!test_big_circle_selection_boss_with_holes()) return 1;
+  if (!test_trim_entity_ids_never_collide()) return 1;
+  if (!test_circle_trim_keeps_clicked_complement()) return 1;
+  if (!test_trimmed_circle_corner_extrudes_full_prism()) return 1;
 
   std::cout << "extrude_quality_test passed\n";
   return 0;

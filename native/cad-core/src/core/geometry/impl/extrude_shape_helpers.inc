@@ -94,10 +94,15 @@ TopoDS_Shape wrap_with_additional_profiles(
         wire_params.arc_descriptors =
             parameters.additional_arc_descriptors[index];
       }
+      if (index < parameters.additional_boundary_edges.size()) {
+        wire_params.boundary_edges =
+            parameters.additional_boundary_edges[index];
+      }
       wire_params.additional_profile_points.clear();
       wire_params.additional_inner_loops.clear();
       wire_params.additional_sketch_edge_ids.clear();
       wire_params.additional_arc_descriptors.clear();
+      wire_params.additional_boundary_edges.clear();
       try {
         builder.Add(compound, make_wire_extrude_shape(wire_params));
         used_wire = true;
