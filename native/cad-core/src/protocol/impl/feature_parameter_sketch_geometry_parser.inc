@@ -21,6 +21,10 @@
     for (const auto& circle_payload : payload.at("circles")) {
       polysmith::core::SketchCircle circle{};
       circle.id = read_string(circle_payload, "circle_id");
+      // Older saves predate the vertex-id model — leave empty and let
+      // rebuild_sketch_vertices regenerate.
+      circle.center_vertex_id =
+          read_optional_string(circle_payload, "center_vertex_id").value_or("");
       circle.center_x = read_number(circle_payload, "center_x");
       circle.center_y = read_number(circle_payload, "center_y");
       circle.radius = read_number(circle_payload, "radius");
@@ -40,6 +44,8 @@
       arc.id = read_string(arc_payload, "arc_id");
       arc.start_vertex_id = read_string(arc_payload, "start_vertex_id");
       arc.end_vertex_id = read_string(arc_payload, "end_vertex_id");
+      arc.center_vertex_id =
+          read_optional_string(arc_payload, "center_vertex_id").value_or("");
       arc.center_x = read_number(arc_payload, "center_x");
       arc.center_y = read_number(arc_payload, "center_y");
       arc.radius = read_number(arc_payload, "radius");

@@ -6,6 +6,7 @@
 // plane-frame coordinate mapping.
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 
 #include <BRepGProp.hxx>
@@ -729,6 +730,70 @@ bool test_big_circle_selection_boss_with_holes() {
 // id-based dedup then skipped the second group of each, producing an
 // open wire that extruded as uncapped shells (open tube + partial
 // ribbon wall).
+// User-reported: a sketch on a face with projected corner points, a
+// redrawn rectangle and a center circle — after save + reload the
+// circle jumped from the center onto a corner point.  The payload
+// parser dropped the circle's center_vertex_id and did not restore
+// next_vertex_index, so the first vertex rebuild after load
+// re-assigned "vertex-1" to the circle center and adopted the corner
+// vertex's coordinates.  This test round-trips a rectangle + circle
+// through save/load and verifies the center survives, including
+// across a post-load edit that triggers a vertex rebuild.
+bool test_load_preserves_circle_center_vertex() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_circle(20.0, 10.0, 4.0,
+                                       /*is_construction=*/false);
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_circle_reload_test.json";
+  manager.save_document_to_path(path.string());
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  DocumentState loaded = loaded_manager.load_document_from_path(path.string());
+
+  const auto& sketch = loaded.feature_history.back().sketch_parameters;
+  if (!expect(sketch.has_value(), "circle reload: sketch present")) {
+    return false;
+  }
+  const auto circle_it = std::find_if(
+      sketch->circles.begin(), sketch->circles.end(),
+      [](const auto& c) { return c.id == "circle-1"; });
+  if (!expect(circle_it != sketch->circles.end(),
+              "circle reload: circle present")) {
+    return false;
+  }
+  if (!expect(std::abs(circle_it->center_x - 20.0) < 1e-9 &&
+                  std::abs(circle_it->center_y - 10.0) < 1e-9,
+              "circle reload: center must survive the round-trip")) {
+    std::cerr << "  got center=(" << circle_it->center_x << ","
+              << circle_it->center_y << ")\n";
+    return false;
+  }
+  if (!expect(!circle_it->center_vertex_id.empty(),
+              "circle reload: center_vertex_id must be restored")) {
+    return false;
+  }
+
+  // Trigger a vertex rebuild (any sketch edit runs
+  // refresh_sketch_derived_state) and re-verify the center — this is
+  // where the old collision moved the circle onto a corner.
+  loaded = loaded_manager.add_sketch_circle(50.0, 10.0, 2.0,
+                                            /*is_construction=*/false);
+  const auto& sketch2 = loaded.feature_history.back().sketch_parameters;
+  const auto circle_after = std::find_if(
+      sketch2->circles.begin(), sketch2->circles.end(),
+      [](const auto& c) { return c.id == "circle-1"; });
+  return expect(circle_after != sketch2->circles.end() &&
+                    std::abs(circle_after->center_x - 20.0) < 1e-9 &&
+                    std::abs(circle_after->center_y - 10.0) < 1e-9,
+                "circle reload: center must survive a post-load rebuild");
+}
+
 bool test_trim_entity_ids_never_collide() {
   return expect(polysmith::core::next_trim_entity_index({}) == 1,
                 "trim ids: empty set starts at 1") &&
@@ -886,6 +951,7 @@ int main() {
   if (!test_rounded_rect_with_touching_lines_and_circle()) return 1;
   if (!test_concentric_circles_clean_bore()) return 1;
   if (!test_big_circle_selection_boss_with_holes()) return 1;
+  if (!test_load_preserves_circle_center_vertex()) return 1;
   if (!test_trim_entity_ids_never_collide()) return 1;
   if (!test_circle_trim_keeps_clicked_complement()) return 1;
   if (!test_trimmed_circle_corner_extrudes_full_prism()) return 1;
