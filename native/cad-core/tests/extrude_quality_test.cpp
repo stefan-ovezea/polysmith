@@ -26,6 +26,7 @@
 #include "core/geometry/body_compiler.h"
 #include "core/document/document.h"
 #include "core/sketch/trim_engine.h"
+#include "sketch_test_utils.h"
 
 namespace {
 
@@ -744,6 +745,129 @@ bool test_big_circle_selection_boss_with_holes() {
 // vertex's coordinates.  This test round-trips a rectangle + circle
 // through save/load and verifies the center survives, including
 // across a post-load edit that triggers a vertex rebuild.
+// User-reported: an arc drawn with the arc tool (three_point), a chord
+// line closing one side, and two tangent lines from (-100,0) touching
+// the arc — the region between the tangent lines and the arc was not
+// generating a surface.  The exact detector must produce both faces:
+// the lens between the arc and the chord line, and the tangent wedge.
+bool test_arc_tool_tangent_wedge_profiles() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(-100.0, 0.0, -27.027, 27.905);
+  manager.add_sketch_line(-100.0, 0.0, -27.027, -27.905);
+  DocumentState document =
+      manager.add_sketch_line(0.0, 25.0, 0.0, -25.0);
+  // Arc tool (three_point): major arc from (0,25) to (0,-25) bulging
+  // left through the anchor.
+  document = manager.add_sketch_arc(0.0, 25.0, 0.0, -25.0,
+                                    -46.231, 0.0, "three_point",
+                                    /*is_construction=*/false);
+
+  // The exact detector must produce both faces at the tangent
+  // junctions: the tangent wedge (arc + both tangent lines) and the
+  // lens between the arc and the chord line.
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"arc-1", "line-1", "line-2"}, "polygon"},
+      {{"arc-1", "line-3"}, "polygon"},
+  };
+  std::string reason;
+  const bool matched =
+      polysmith::test::profiles_match(document, expected, &reason);
+  return expect(
+      matched,
+      ("arc tool: wedge + lens profiles must both be detected — " + reason)
+          .c_str());
+}
+
+// Regression for "Sketch profile not found: profile-poly-arc-1-line-3-…":
+// the lens between the arc and the chord must survive a save/load round
+// trip and remain selectable + extrudable.  Load refreshes every
+// sketch's derived state (replacing stored profiles with freshly
+// detected ones), and the saved selection is cleared — a stale saved
+// selection would otherwise dangle and throw on the next command.
+bool test_arc_tool_lens_save_load() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(-100.0, 0.0, -27.027, 27.905);
+  manager.add_sketch_line(-100.0, 0.0, -27.027, -27.905);
+  DocumentState document = manager.add_sketch_line(0.0, 25.0, 0.0, -25.0);
+  document = manager.add_sketch_arc(0.0, 25.0, 0.0, -25.0,
+                                    -46.231, 0.0, "three_point",
+                                    /*is_construction=*/false);
+
+  const auto find_lens = [](const DocumentState& state) {
+    for (const auto& feature : state.feature_history) {
+      if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+        continue;
+      }
+      const auto& sketch = feature.sketch_parameters.value();
+      for (const auto& profile : sketch.profiles) {
+        std::set<std::string> ids(profile.line_ids.begin(),
+                                  profile.line_ids.end());
+        if (ids == std::set<std::string>{"arc-1", "line-3"}) {
+          return profile.id;
+        }
+      }
+    }
+    return std::string();
+  };
+
+  const std::string lens_id = find_lens(document);
+  if (!expect(!lens_id.empty(), "arc lens: must be detected before save")) {
+    return false;
+  }
+  document = manager.select_sketch_profile(lens_id, /*additive=*/false);
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_arc_lens_reload_test.json";
+  manager.save_document_to_path(path.string());
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  DocumentState loaded = loaded_manager.load_document_from_path(path.string());
+
+  // The load refresh regenerates profiles — the saved selection must
+  // have been cleared so it cannot dangle.
+  if (!expect(loaded.selected_sketch_profile_ids.empty(),
+              "arc lens: saved selection must be cleared on load")) {
+    return false;
+  }
+
+  const std::string reloaded_lens_id = find_lens(loaded);
+  if (!expect(!reloaded_lens_id.empty(),
+              "arc lens: must be re-detected after load")) {
+    return false;
+  }
+
+  // Re-select the lens and extrude it — the user-reported flow.
+  loaded = loaded_manager.select_sketch_profile(reloaded_lens_id,
+                                                /*additive=*/false);
+  try {
+    loaded = loaded_manager.extrude_profile(
+        reloaded_lens_id, /*depth=*/10.0, /*mode=*/"",
+        /*target_body_id=*/std::nullopt, /*parameters=*/std::nullopt);
+  } catch (const std::exception& error) {
+    std::cerr << "arc lens extrude threw: " << error.what() << "\n";
+    return expect(false, "arc lens: extrude after load must not throw");
+  }
+
+  const auto compiled = compile_bodies(loaded);
+  if (!expect(compiled.bodies.size() == 1,
+              "arc lens: expected exactly one compiled body")) {
+    return false;
+  }
+  // The lens is the major circular segment (circle c=(-16.356,0),
+  // r=29.875 cut by the chord x=0) — area ≈ 2327, depth 10.
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(compiled.bodies.front().shape, props);
+  const double volume = props.Mass();
+  std::cerr << "arc lens extrude: volume=" << volume << "\n";
+  return expect(volume > 23100.0 && volume < 23500.0,
+                "arc lens: extruded volume must match the lens area");
+}
+
 bool test_load_preserves_circle_center_vertex() {
   DocumentManager manager;
   manager.create_document();
@@ -1342,6 +1466,31 @@ bool test_trimmed_circle_corner_extrudes_full_prism() {
               << " npts=" << p.points.size() << "\n";
   }
 
+  // Assert the COMPLETE region set — every profile listed above must
+  // exist, not just the outer polygon.  A 2026-08 face-walk change
+  // silently dropped the circle-1 full-circle profile while the old
+  // assertion (outer polygon + volume only) stayed green.
+  // Full circles in a mixed sketch are polygon-kind regions carrying
+  // source_circle_id (the "circle" kind is reserved for circles-only
+  // sketches) — assert that classification exactly.
+  const std::vector<polysmith::test::ExpectedProfile> expected_profiles = {
+      {{"circle-1"}, "polygon", /*has_source_circle_id=*/true},
+      {{"circle-2"}, "polygon", /*has_source_circle_id=*/true},
+      {{"arc-1", "arc-2", "arc-3", "circle-1", "line-1", "line-2",
+        "line-3", "line-4"},
+       "polygon"},
+  };
+  std::string profile_reason;
+  const bool full_set_detected =
+      polysmith::test::profiles_match(document, expected_profiles,
+                                      &profile_reason);
+  if (!expect(full_set_detected,
+              ("trim-extrude: full profile set must be detected — " +
+               profile_reason)
+                  .c_str())) {
+    return false;
+  }
+
   // The outer polygon profile: the non-circle polygon (the inner circle
   // profile carries source_circle_id).
   const auto outer_it = std::find_if(
@@ -1396,6 +1545,8 @@ int main() {
   if (!test_big_circle_selection_boss_with_holes()) return 1;
   if (!test_load_preserves_circle_center_vertex()) return 1;
   if (!test_trim_entity_ids_never_collide()) return 1;
+  if (!test_arc_tool_tangent_wedge_profiles()) return 1;
+  if (!test_arc_tool_lens_save_load()) return 1;
   if (!test_circle_trim_keeps_clicked_complement()) return 1;
   if (!test_cw_arc_trim_splits_at_all_intersections()) return 1;
   if (!test_dangling_line_does_not_block_trimmed_region_profile()) return 1;

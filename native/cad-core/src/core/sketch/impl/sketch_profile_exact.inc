@@ -693,6 +693,14 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     if (half_edges[h].used) continue;  // dangling-curve pieces
     out_edges[half_edges[h].node_start].push_back(h);
   }
+  // Permanent diagnostic: PS_TRACE_FACES=1 dumps every face-walk step
+  // (incoming edge, each candidate's turn, the winner) to the
+  // structured log under tag "exact_profiles".  The arrangement walk
+  // is the most regression-prone code in the profile detector — this
+  // trace turns a face-walk bisection from hours into minutes, so it
+  // stays in the source instead of being re-added per debugging
+  // session.
+  const bool kTraceFaces = std::getenv("PS_TRACE_FACES") != nullptr;
 
   std::vector<ExactFace> faces;
   for (int start = 0; start < nh; ++start) {
@@ -702,6 +710,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     std::set<int> walk_seen;
     int cur = start;
     bool closed = false;
+    if (kTraceFaces) {
+      log_debug("exact_profiles",
+                "face walk start=" + std::to_string(start));
+    }
     const int guard = 2 * nh + 4;
     for (int step = 0; step < guard; ++step) {
       if (half_edges[cur].used || walk_seen.count(cur)) break;
@@ -719,13 +731,13 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       double best_cw = -1.0;
       bool best_is_same_id = false;
       // CCW turn of a candidate measured from the reverse of the
-      // incoming tangent, wrapped to (0, 2π].
+      // incoming tangent — raw atan2 value in (-π, π]; normalized into
+      // [0, 2π) in the candidate loop below.
       const double rx0 = -d_in_x, ry0 = -d_in_y;
       auto cw_of = [&](double dcx, double dcy) {
-        double cw = std::atan2(rx0 * dcy - ry0 * dcx, rx0 * dcx + ry0 * dcy);
-        if (cw <= 0.0) cw += 2.0 * kExactPi;
-        return cw;
+        return std::atan2(rx0 * dcy - ry0 * dcx, rx0 * dcx + ry0 * dcy);
       };
+      constexpr double kUturnWrapEps = 2.0 * kExactPi / 180.0;
       constexpr double kUturnEps = 2.0 * kExactPi / 180.0;
       constexpr double kTangentTieBreak = 5.0 * kExactPi / 180.0;
 
@@ -745,8 +757,25 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       //     must stay on the curve.
       const bool incoming_is_line =
           curves[h.curve].kind == ExactCurve::Kind::kLine;
+      // Which side of the incoming curve the walk's interior lies on.
+      // For a curve arrival, the curve center is LEFT of the incoming
+      // direction exactly when this walk is the curve's inside face
+      // (holds for CCW and CW entities alike).  Meaningless for line
+      // arrivals.
+      const bool center_left =
+          incoming_is_line
+              ? false
+              : d_in_x * (curves[h.curve].cy - nodes[at].y) -
+                        d_in_y * (curves[h.curve].cx - nodes[at].x) > 0.0;
       std::vector<double> cand_cw;
       std::vector<int> cand_idx;
+      if (kTraceFaces) {
+        log_debug("exact_profiles",
+                  "face walk step incoming=" + curves[h.curve].id +
+                      " fwd=" + std::to_string(h.forward) +
+                      " line=" + std::to_string(incoming_is_line) +
+                      " node=" + std::to_string(at));
+      }
       for (const int cand : out_edges[at]) {
         if (cand == h.twin) continue;
         const ExactHalfEdge& ch = half_edges[cand];
@@ -754,9 +783,42 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         double d_c_x, d_c_y;
         exact_curve_tangent(cc, ch.param_start, d_c_x, d_c_y);
         if (!ch.forward) { d_c_x = -d_c_x; d_c_y = -d_c_y; }
-        const double cw = cw_of(d_c_x, d_c_y);
+        // Normalize the turn into [0, 2π) — the largest-turn rule is
+        // the standard first-edge-clockwise-from-the-reverse DCEL rule,
+        // and atan2 reports clockwise turns as negative values.  Same-
+        // curve continuations also report ±π from an exact zero cross
+        // product; normalizing makes the straight continuation beat
+        // competing turns consistently.
+        // Exception: a LINE whose turn is a tiny epsilon of either
+        // sign while arriving FORWARD along a curve's INSIDE face is
+        // the tangent U-turn back through the node (exact tangencies
+        // produce cw about +/-1e-6, hand-drawn ones up to a degree
+        // off) — it must stay small so the same-curve continuation
+        // (cw = π) wins and the lens face stays closed.  The curve's
+        // OUTSIDE face turns onto that tangent line (the tangent
+        // wedge) and keeps the U-turn normalization; its U-turn may
+        // also be met arriving backward (wedge) — neither applies the
+        // exception, so both normalize to 2π.
+        const double raw_cw = cw_of(d_c_x, d_c_y);
+        double cw = raw_cw;
+        if (cw <= kUturnWrapEps) {
+          const bool tangent_uturn_line =
+              cc.kind == ExactCurve::Kind::kLine && !incoming_is_line &&
+              h.forward && center_left && cw >= -kUturnWrapEps;
+          if (!tangent_uturn_line) {
+            cw += 2.0 * kExactPi;
+          }
+        }
         cand_cw.push_back(cw);
         cand_idx.push_back(cand);
+        if (kTraceFaces) {
+          log_debug("exact_profiles",
+                    "face walk cand id=" + cc.id +
+                        " kind=" + std::to_string(static_cast<int>(cc.kind)) +
+                        " fwd=" + std::to_string(ch.forward) +
+                        " raw=" + std::to_string(raw_cw) +
+                        " cw=" + std::to_string(cw));
+        }
         // A line arriving at the node switches onto the tangent curve.
         if (incoming_is_line &&
             cc.kind != ExactCurve::Kind::kLine &&
@@ -778,10 +840,6 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         // that U-turn, so only the inside face (curve center on the
         // left of the incoming direction) is forced through here.
         // (Line arrivals are handled by rule 1.)
-        const ExactCurve& inc = curves[h.curve];
-        const bool center_left =
-            d_in_x * (inc.cy - nodes[at].y) -
-                d_in_y * (inc.cx - nodes[at].x) > 0.0;
         if (center_left) {
           bool has_line_uturn = false;
           for (size_t ci = 0; ci < cand_idx.size(); ++ci) {
@@ -796,7 +854,7 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             }
           }
           if (has_line_uturn) {
-            const std::string incoming_id = inc.id;
+            const std::string incoming_id = curves[h.curve].id;
             for (size_t ci = 0; ci < cand_idx.size(); ++ci) {
               const double cw = cand_cw[ci];
               const ExactCurve& cc = curves[half_edges[cand_idx[ci]].curve];
@@ -828,10 +886,42 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             best_is_same_id = same_id;
           }
         }
+        // Same-entity preference, order-independent: when the winner
+        // belongs to another entity and a same-entity candidate turns
+        // nearly as sharply, stay on the entity.  The competing turns
+        // at a tangent junction differ by ~1e-3 rad whose sign depends
+        // on how the sketch was drawn, so this must not depend on
+        // half-edge evaluation order.
+        if (!best_is_same_id) {
+          int rescued = -1;
+          double rescued_cw = 0.0;
+          for (size_t ci = 0; ci < cand_idx.size(); ++ci) {
+            const ExactCurve& cc = curves[half_edges[cand_idx[ci]].curve];
+            if (cc.id != incoming_id) continue;
+            if (best_cw - cand_cw[ci] <= kTangentTieBreak &&
+                (rescued < 0 || cand_cw[ci] > rescued_cw)) {
+              rescued = cand_idx[ci];
+              rescued_cw = cand_cw[ci];
+            }
+          }
+          if (rescued >= 0) {
+            best = rescued;
+            best_cw = rescued_cw;
+          }
+        }
       }
       if (best < 0) break;
+      if (kTraceFaces) {
+        log_debug("exact_profiles",
+                  "face walk pick=" + curves[half_edges[best].curve].id);
+      }
       cur = best;
       if (cur == start) { closed = true; break; }
+    }
+    if (kTraceFaces) {
+      log_debug("exact_profiles",
+                "face walk end closed=" + std::to_string(closed) +
+                    " edges=" + std::to_string(walk.size()));
     }
     if (!closed) continue;
 

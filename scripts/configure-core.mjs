@@ -10,6 +10,7 @@
  * Called from `pnpm core:configure`.
  */
 
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -69,16 +70,34 @@ console.log("=== PolySmith — CAD core configuration ===\n");
 console.log(`Platform : ${process.platform}`);
 
 const args = ["-S", coreSrc, "-B", coreBuild];
+let vcpkgRoot = "";
 
 if (isWindows) {
-  const vcpkgRoot = process.env.VCPKG_ROOT || "C:/SRC/vcpkg";
-  const vcpkgInstalled = process.env.VCPKG_INSTALLED || "C:/SRC/vcpkg/installed/x64-windows";
+  // Auto-detect the vcpkg root that has the packages we need (Boost, Eigen3).
+  // VS 2022 sets VCPKG_ROOT to its own bundled copy which lacks packages;
+  // only use it as a last resort, not as the first choice.
+  vcpkgRoot = (existsSync("C:/vcpkg/scripts/buildsystems/vcpkg.cmake") ? "C:/vcpkg" : "")
+    || (existsSync("C:/SRC/vcpkg/scripts/buildsystems/vcpkg.cmake") ? "C:/SRC/vcpkg" : "")
+    || process.env.VCPKG_ROOT
+    || "";
+  const vcpkgInstalled = process.env.VCPKG_INSTALLED || `${vcpkgRoot}/installed/x64-windows`;
 
+  // VS 2022 auto-injects its bundled vcpkg toolchain, which can shadow
+  // our explicit -DCMAKE_TOOLCHAIN_FILE.  Set VCPKG_ROOT in the
+  // environment so the toolchain (whichever one loads) finds the right
+  // installed packages.
   args.push(`-DCMAKE_TOOLCHAIN_FILE=${vcpkgRoot}/scripts/buildsystems/vcpkg.cmake`);
   args.push(`-DCMAKE_PREFIX_PATH=${vcpkgInstalled}`);
+  // Belt-and-suspenders: explicit package hints so find_package works
+  // even if the wrong vcpkg toolchain loads first.
+  args.push(`-DBoost_DIR=${vcpkgInstalled}/share/boost`);
+  args.push(`-DEigen3_DIR=${vcpkgInstalled}/share/eigen3`);
 }
 
-run("cmake", args);
+// VS 2022 auto-injects its bundled vcpkg toolchain.  Set VCPKG_ROOT
+// in the process environment so the toolchain (whichever one loads)
+// finds the correct installed packages.
+run("cmake", args, isWindows ? { env: { VCPKG_ROOT: vcpkgRoot } } : {});
 
 console.log("\n✅  CAD core configured successfully.");
 console.log("    Next: pnpm core:build");

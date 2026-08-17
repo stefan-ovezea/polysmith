@@ -26,7 +26,9 @@ endforeach()
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
 add_library(occt_iface INTERFACE)
-target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/include/opencascade")
+# inc/ is the build-tree header location — works on both platforms without
+# requiring cmake --install (which fails on Windows due to locked DLLs).
+target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
 if(WIN32)
   target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
 elseif(APPLE)
@@ -155,6 +157,11 @@ add_custom_command(TARGET cad_core POST_BUILD
 )
 
 add_executable(cad_core_sketch_profile_test
+  # Sketch code logs through the structured logger (e.g. the
+  # PS_TRACE_FACES face-walk trace); this target is built without the
+  # protocol/OCCT dependency chain, so tests/logger_stub.cpp supplies
+  # the logger symbols as a plain stderr writer.
+  tests/logger_stub.cpp
   src/core/sketch/constraint_solver.cpp
   src/core/sketch/dof_counter.cpp
   src/core/sketch/formula_eval.cpp

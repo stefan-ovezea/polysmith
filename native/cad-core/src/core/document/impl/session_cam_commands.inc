@@ -125,6 +125,25 @@ DocumentState DocumentManager::load_document_from_path(
     }
   }
 
+  // Rebuild sketch derived state (solver + profile regions) for every
+  // sketch feature.  Saved profiles are restored verbatim by the
+  // payload parser and may predate geometry edits or detection fixes —
+  // without a refresh a loaded sketch keeps its stale stored profiles
+  // and the extrudable regions never regenerate (user-reported: the
+  // tangent-line wedge surface missing after reload).  Safe now that
+  // the parser restores center_vertex_id and next_vertex_index —
+  // vertex ids can no longer collide during the rebuild.
+  for (auto& feature : document_->feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      polysmith::core::refresh_sketch_derived_state(feature);
+    }
+  }
+  // The refresh replaces every profile with fresh ids — the saved
+  // selection would otherwise dangle and surface as
+  // "Sketch profile not found" on the next command.
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+
   if (document_) {
     bump_geometry_revision();
   }
