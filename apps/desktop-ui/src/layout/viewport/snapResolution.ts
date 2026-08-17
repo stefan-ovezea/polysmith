@@ -8,22 +8,7 @@ import type {
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
 import { speculativeSolve, speculativeMultiSolve } from "@/lib/speculativeSolve";
-import { useCadCoreStore } from "@/state/cadCoreStore";
-import { useToastStore } from "@/state/toastStore";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
-
-// Diagnostic logger for tangent snap. Each gate fires at most once per
-// 5 seconds (cooldown) so you can see retries after moving the cursor.
-const _gateCooldowns = new Map<string, number>();
-function _snapDebug(gate: string, detail: string) {
-  const now = Date.now();
-  const last = _gateCooldowns.get(gate) ?? 0;
-  if (now - last < 5000) return;
-  _gateCooldowns.set(gate, now);
-  const msg = `[tangent] ${gate}: ${detail}`;
-  try { useCadCoreStore.getState().addMessage(msg); } catch (_) { /* ok */ }
-  try { useToastStore.getState().pushToast("info", msg); } catch (_) { /* ok */ }
-}
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -1025,11 +1010,7 @@ export function dynamicSnapCandidate({
     const draftDy = cursor[1] - draftStart[1];
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
-    // diagnostic: show why tangent gate passes/fails
-    _snapDebug("gate", `hasDraftStart=1 hasMovement=${hasDraftMovement} snap_tangent=${filter.snap_tangent} circles=${circles.length}`);
-
     if (hasDraftMovement && filter.snap_tangent) {
-      _snapDebug("enter", `circles=${circles.length}`);
       const spec = speculativeTangentSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
@@ -1398,7 +1379,6 @@ function speculativeTangentSnap({
   }
 
   if (!bestCircle && !bestArc) {
-    _snapDebug("no_circle", `circles=${circles.length} arcs=${arcs.length}`);
     return null;
   }
 
