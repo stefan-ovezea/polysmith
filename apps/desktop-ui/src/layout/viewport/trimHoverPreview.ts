@@ -584,12 +584,20 @@ function computeArcTrimPreview({
       if (adjustedCursor < start) {
         adjustedCursor += full;
       }
-    } else if (adjustedCursor > start) {
-      adjustedCursor -= full;
-    }
-    if (adjustedCursor >= start - 1e-10 && adjustedCursor <= end + 1e-10) {
-      hoveredSegment = index;
-      break;
+      if (adjustedCursor >= start - 1e-10 && adjustedCursor <= end + 1e-10) {
+        hoveredSegment = index;
+        break;
+      }
+    } else {
+      // CW segments are descending (end < start); the ascending
+      // interval test is empty for them.
+      if (adjustedCursor > start) {
+        adjustedCursor -= full;
+      }
+      if (adjustedCursor <= start + 1e-10 && adjustedCursor >= end - 1e-10) {
+        hoveredSegment = index;
+        break;
+      }
     }
   }
   if (hoveredSegment < 0) {

@@ -1,5 +1,6 @@
 #include "core/document/document.h"
 #include "core/sketch/sketch_feature.h"
+#include "core/sketch/sketch_profile.h"
 
 #include <algorithm>
 #include <array>

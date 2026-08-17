@@ -126,12 +126,20 @@ int select_clicked_segment(const std::vector<TrimSegment> &segments,
         e -= k2Pi;
     }
     double ta = test_angle;
-    if (ccw && ta < s)
-      ta += k2Pi;
-    if (!ccw && ta > s)
-      ta -= k2Pi;
-    if (ta >= s - kAngTol && ta <= e + kAngTol)
-      return static_cast<int>(i);
+    if (ccw) {
+      if (ta < s)
+        ta += k2Pi;
+      if (ta >= s - kAngTol && ta <= e + kAngTol)
+        return static_cast<int>(i);
+    } else {
+      // CW intervals are descending (e < s) and test_angle was already
+      // normalized into the sweep once above.  Re-shifting per segment
+      // here would push clicks on later segments out of range, and
+      // testing [s, e] ascending is an empty interval — so test the
+      // reversed range instead.
+      if (ta <= s + kAngTol && ta >= e - kAngTol)
+        return static_cast<int>(i);
+    }
   }
 
   // Distance fallback.

@@ -618,6 +618,51 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     h.node_end = rep[h.node_end];
   }
 
+  // Drop dangling curves before the face walk.  A line or arc whose
+  // endpoint node is touched by no other curve cannot bound any closed
+  // region, and its half-edges steal face walks at T-junctions: the
+  // leftmost-turn rule diverts onto the dead end and the real face
+  // never closes (user-reported: after trimming arc pieces away, a
+  // leftover line dangling into the remaining region kept the whole
+  // region from becoming a profile).  Curves whose end was split away
+  // by a later trim become dangling exactly this way.
+  {
+    std::vector<std::set<int>> node_curves(nodes.size());
+    for (const auto& h : half_edges) {
+      node_curves[h.node_start].insert(h.curve);
+      node_curves[h.node_end].insert(h.curve);
+    }
+    std::vector<bool> curve_dropped(nc, false);
+    for (int i = 0; i < nc; ++i) {
+      const ExactCurve& c = curves[i];
+      if (c.kind == ExactCurve::Kind::kCircle) continue;
+      const double p_start =
+          (c.kind == ExactCurve::Kind::kLine) ? 0.0 : c.sweep_start;
+      const double p_end =
+          (c.kind == ExactCurve::Kind::kLine) ? 1.0 : c.sweep_end;
+      int start_node = -1;
+      int end_node = -1;
+      for (const auto& h : half_edges) {
+        if (h.curve != i || !h.forward) continue;
+        if (std::abs(h.param_start - p_start) <= kExactParamEps) {
+          start_node = h.node_start;
+        }
+        if (std::abs(h.param_end - p_end) <= kExactParamEps) {
+          end_node = h.node_end;
+        }
+      }
+      if (start_node >= 0 && node_curves[start_node].size() <= 1) {
+        curve_dropped[i] = true;
+      }
+      if (end_node >= 0 && node_curves[end_node].size() <= 1) {
+        curve_dropped[i] = true;
+      }
+    }
+    for (auto& h : half_edges) {
+      if (curve_dropped[h.curve]) h.used = true;
+    }
+  }
+
   // 5. Face walk: interior on the left.  At each node the next edge is
   // the one immediately clockwise from the reverse of the incoming edge
   // (equivalently the largest CCW turn measured from the reverse tangent)
@@ -625,6 +670,7 @@ std::vector<SketchProfileRegion> build_exact_profiles(
   const int nh = static_cast<int>(half_edges.size());
   std::vector<std::vector<int>> out_edges(nodes.size());
   for (int h = 0; h < nh; ++h) {
+    if (half_edges[h].used) continue;  // dangling-curve pieces
     out_edges[half_edges[h].node_start].push_back(h);
   }
 

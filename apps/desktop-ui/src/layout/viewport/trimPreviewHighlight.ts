@@ -1,4 +1,9 @@
-import type { TrimPreviewResultEvent, ViewportScene } from "@/types";
+import type {
+  SketchArcScene,
+  SketchCircleScene,
+  TrimPreviewResultEvent,
+  ViewportScene,
+} from "@/types";
 import type { TrimLineHighlightSegment } from "./trimHoverPreview";
 
 type TrimPreviewPayload = NonNullable<TrimPreviewResultEvent["payload"]>;
@@ -92,7 +97,7 @@ function renderCurveTrimPreview(
 
   const points = data.full_circle || data.full_arc
     ? sampleFullCurve(curve.center, curve.radius)
-    : sampleCurveSegment(data, hoveredIndex, curve.center, curve.radius);
+    : sampleCurveSegment(data, hoveredIndex, curve);
   if (!points) {
     actions.clearTrimArcHighlight();
     return;
@@ -119,18 +124,25 @@ function sampleFullCurve(
 function sampleCurveSegment(
   data: TrimPreviewPayload,
   hoveredIndex: number,
-  center: [number, number, number],
-  radius: number,
+  curve: SketchCircleScene | SketchArcScene,
 ): Array<[number, number, number]> | null {
   const segment = data.segments?.[hoveredIndex];
   if (segment?.param_start == null || segment.param_end == null) {
     return null;
   }
 
-  const end = segment.param_end <= segment.param_start
-    ? segment.param_end + 2 * Math.PI
-    : segment.param_end;
-  return sampleCurveAngles(center, radius, segment.param_start, end);
+  // Circles and CCW arcs carry ascending parameter ranges (a wrap
+  // segment stores param_end < param_start and renders through +2π).
+  // CW arcs carry descending ranges — sampling them ascending draws
+  // the complement (the "long arc"), so keep the stored direction.
+  const ccw = "ccw" in curve ? curve.ccw : true;
+  let end = segment.param_end;
+  if (ccw) {
+    if (end <= segment.param_start) end += 2 * Math.PI;
+  } else if (end >= segment.param_start) {
+    end -= 2 * Math.PI;
+  }
+  return sampleCurveAngles(curve.center, curve.radius, segment.param_start, end);
 }
 
 function sampleCurveAngles(

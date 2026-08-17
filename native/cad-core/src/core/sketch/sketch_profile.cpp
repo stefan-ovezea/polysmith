@@ -26,4 +26,12 @@ namespace {
 #include "core/sketch/impl/build_sketch_profile_regions.inc"
 #include "core/sketch/impl/detect_sketch_profiles.inc"
 
+void refresh_sketch_profiles(FeatureEntry& feature) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    return;
+  }
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(*feature.sketch_parameters);
+}
+
 }  // namespace polysmith::core

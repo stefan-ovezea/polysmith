@@ -5,9 +5,14 @@
 // make_polygon_prism_shape path and breaks multi-profile / thin-wall /
 // plane-frame coordinate mapping.
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <set>
+
+#include <nlohmann/json.hpp>
 
 #include <BRepGProp.hxx>
 #include <BRep_Tool.hxx>
@@ -852,6 +857,241 @@ bool test_circle_trim_keeps_clicked_complement() {
                 "circle trim: arc must end at the bottom tangent point");
 }
 
+// User-reported regression: the trim tool stopped working on CW arcs
+// (part.json: arc-1 from (50,30) to (50,-30) through (78.38,0),
+// ccw=false).  The CW sweep branches in the trim engine rejected
+// intersections on the sweep portion crossing the +x axis and the
+// segment-selection angle test used an empty interval, so a click on
+// the arc threw "Click position does not correspond to any segment".
+// Reproduce the sketch — the arc plus its two tangent lines and the
+// horizontal leg ending on the arc — and verify clicks between the
+// real intersections trim exactly the expected piece.
+bool test_cw_arc_trim_splits_at_all_intersections() {
+  const double kCx = 48.333333333333336;
+  const double kCy = 0.0;
+  const double kR = 30.046260628866577;
+  const double kQuadX = 78.37959396219992;  // rightmost point on the arc
+  const double kTanX = 58.181818181818215;  // upper tangent point
+  const double kTanY = 28.38635453817456;
+
+  // Click points as arc angles: the midpoint of the top segment
+  // (arc start -> upper tangent) and — after that trim moves the arc
+  // start down to the tangent — the midpoint of the middle segment
+  // (rightmost point -> lower tangent), which sits below the +x axis.
+  const double a_start = std::atan2(30.0, 50.0 - kCx);
+  const double a_tan = std::atan2(kTanY, kTanX - kCx);
+  const double top_click_a = 0.5 * (a_start + a_tan);
+  const double top_click_x = kCx + kR * std::cos(top_click_a);
+  const double top_click_y = kCy + kR * std::sin(top_click_a);
+  const double right_click_a = -0.5 * a_tan;
+  const double right_click_x = kCx + kR * std::cos(right_click_a);
+  const double right_click_y = kCy + kR * std::sin(right_click_a);
+
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_arc(
+      50.0, 30.0, 50.0, -30.0, kQuadX, 0.0, "three_point");
+  document = manager.add_sketch_line(50.0, 0.0, kQuadX, 0.0);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, kTanY);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, -kTanY);
+
+  // Sanity: the three-point arc must come out CW, like part.json.
+  const auto& arcs_before =
+      document.feature_history.back().sketch_parameters->arcs;
+  if (!expect(arcs_before.size() == 1 && !arcs_before.front().ccw,
+              "cw arc trim: three-point arc must be stored ccw=false")) {
+    return false;
+  }
+
+  // Clicking the top segment (arc start -> upper tangent) deletes that
+  // segment: the arc's start must move down to the tangent point.
+  document = manager.trim_sketch_entity("arc-1", top_click_x, top_click_y);
+
+  {
+    const auto& params =
+        document.feature_history.back().sketch_parameters.value();
+    if (!expect(params.arcs.size() == 1,
+                "cw arc trim: one arc must remain after an end trim")) {
+      return false;
+    }
+    const auto& arc = params.arcs.front();
+    std::cerr << "cw arc trim: s=(" << arc.start_x << "," << arc.start_y
+              << ") e=(" << arc.end_x << "," << arc.end_y << ") ccw=" << arc.ccw
+              << "\n";
+    if (!expect(std::abs(arc.start_x - kTanX) < 1e-6 &&
+                    std::abs(arc.start_y - kTanY) < 1e-6,
+                "cw arc trim: arc must start at the upper tangent point") ||
+        !expect(std::abs(arc.end_x - 50.0) < 1e-6 &&
+                    std::abs(arc.end_y + 30.0) < 1e-6,
+                "cw arc trim: arc must still end at (50,-30)")) {
+      return false;
+    }
+  }
+
+  // Clicking the middle segment (rightmost point -> lower tangent)
+  // splits the remaining arc into two: the upper piece ends at the
+  // rightmost point, the lower piece starts at the lower tangent.
+  document = manager.trim_sketch_entity("arc-1", right_click_x, right_click_y);
+
+  {
+    const auto& params =
+        document.feature_history.back().sketch_parameters.value();
+    if (!expect(params.arcs.size() == 2,
+                "cw arc trim: middle trim must split the arc into two")) {
+      return false;
+    }
+    const auto& upper = params.arcs.front();
+    const auto& lower = params.arcs.back();
+    return expect(std::abs(upper.start_x - kTanX) < 1e-6 &&
+                      std::abs(upper.start_y - kTanY) < 1e-6 &&
+                      std::abs(upper.end_x - kQuadX) < 1e-6 &&
+                      std::abs(upper.end_y) < 1e-6,
+                  "cw arc trim: upper piece must run tangent -> rightmost") &&
+           expect(std::abs(lower.start_x - kTanX) < 1e-6 &&
+                      std::abs(lower.start_y + kTanY) < 1e-6 &&
+                      std::abs(lower.end_x - 50.0) < 1e-6 &&
+                      std::abs(lower.end_y + 30.0) < 1e-6,
+                  "cw arc trim: lower piece must run lower tangent -> (50,-30)");
+  }
+}
+
+// User-reported regression: after trimming the arc-1 pieces between
+// the two tangent lines, the remaining geometry — arc stubs from the
+// rectangle corners to the tangent points, the two tangent lines, and
+// the shared right edge — must still form a closed region next to the
+// rectangle.  The leftover horizontal line whose far endpoint used to
+// sit on the trimmed-away arc is now dangling into that region; it
+// must not prevent the region from becoming a profile.
+bool test_dangling_line_does_not_block_trimmed_region_profile() {
+  const double kTanX = 58.181818181818215;
+  const double kTanY = 28.38635453817456;
+
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Rectangle + the leftover line-7 whose far end (78.38, 0) used to
+  // lie on the now-trimmed arc.
+  DocumentState document = manager.add_sketch_line(-50.0, 30.0, 50.0, 30.0);
+  document = manager.add_sketch_line(50.0, 30.0, 50.0, -30.0);
+  document = manager.add_sketch_line(50.0, -30.0, -50.0, -30.0);
+  document = manager.add_sketch_line(-50.0, -30.0, -50.0, 30.0);
+  document = manager.add_sketch_line(50.0, 0.0, 78.37959396219992, 0.0);
+  // Tangent lines and the two arc stubs (center (48.3333, 0),
+  // r = 30.0463, both CW).
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, kTanY);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, -kTanY);
+  document = manager.add_sketch_arc(50.0, 30.0, kTanX, kTanY,
+                                    48.333333333333336, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_arc(kTanX, -kTanY, 50.0, -30.0,
+                                    48.333333333333336, 0.0,
+                                    "center_start_end");
+
+  const auto& params =
+      document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.profiles.size() == 2,
+              "dangling line: rectangle and trimmed region must both be profiles")) {
+    return false;
+  }
+
+  // The trimmed region: tangent lines + both arc stubs + the shared
+  // right edge of the rectangle.
+  // In this document's id space the tangent lines are line-6/line-7
+  // (line-5 is the dangling horizontal).
+  const auto region_it = std::find_if(
+      params.profiles.begin(), params.profiles.end(),
+      [](const auto& p) {
+        return std::find(p.line_ids.begin(), p.line_ids.end(), "line-6") !=
+               p.line_ids.end();
+      });
+  if (!expect(region_it != params.profiles.end(),
+              "dangling line: region profile must exist")) {
+    return false;
+  }
+  std::set<std::string> edge_ids;
+  for (const auto& be : region_it->boundary_edges) {
+    edge_ids.insert(be.entity_id);
+  }
+  return expect(edge_ids.size() == 5 &&
+                    edge_ids.count("line-2") && edge_ids.count("line-6") &&
+                    edge_ids.count("line-7") && edge_ids.count("arc-1") &&
+                    edge_ids.count("arc-2"),
+                "dangling line: region boundary must be the two tangent lines, "
+                "the two arc stubs and the right edge");
+}
+
+// User-reported regression: after saving and reloading the trimmed
+// sketch, the surface next to the tangent lines was still missing —
+// the loader restored the file's stale profile list verbatim instead
+// of recomputing it.  Simulate a stale save (profiles stripped from
+// the JSON) and verify the load path rebuilds them from geometry.
+bool test_load_recomputes_stale_profiles() {
+  const double kTanX = 58.181818181818215;
+  const double kTanY = 28.38635453817456;
+
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_line(-50.0, 30.0, 50.0, 30.0);
+  document = manager.add_sketch_line(50.0, 30.0, 50.0, -30.0);
+  document = manager.add_sketch_line(50.0, -30.0, -50.0, -30.0);
+  document = manager.add_sketch_line(-50.0, -30.0, -50.0, 30.0);
+  document = manager.add_sketch_line(50.0, 0.0, 78.37959396219992, 0.0);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, kTanY);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, -kTanY);
+  document = manager.add_sketch_arc(50.0, 30.0, kTanX, kTanY,
+                                    48.333333333333336, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_arc(kTanX, -kTanY, 50.0, -30.0,
+                                    48.333333333333336, 0.0,
+                                    "center_start_end");
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_stale_profiles_reload_test.json";
+  manager.save_document_to_path(path.string());
+
+  // Strip the saved profile list — what an older build's file looks
+  // like after the arrangement pipeline could not see a region.
+  {
+    std::ifstream in(path.string());
+    nlohmann::json payload = nlohmann::json::parse(in);
+    in.close();
+    auto& history = payload["feature_history"];
+    if (!expect(history.is_array() && !history.empty(),
+                "stale reload: saved file must carry feature history")) {
+      return false;
+    }
+    auto& sketch = history.back()["sketch_parameters"];
+    sketch["profiles"] = nlohmann::json::array();
+    std::ofstream out(path.string());
+    out << payload.dump(2);
+    out.close();
+  }
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  DocumentState loaded =
+      loaded_manager.load_document_from_path(path.string());
+
+  const auto& params =
+      loaded.feature_history.back().sketch_parameters.value();
+  if (!expect(params.profiles.size() == 2,
+              "stale reload: profiles must be recomputed on load")) {
+    return false;
+  }
+  return expect(std::any_of(params.profiles.begin(), params.profiles.end(),
+                            [](const auto& p) {
+                              return std::find(p.line_ids.begin(),
+                                               p.line_ids.end(),
+                                               "line-6") != p.line_ids.end();
+                            }),
+                "stale reload: trimmed region must be a profile after load");
+}
+
 // User-reported regression: the part.json rounded rectangle — two
 // filleted corners, a trim circle at the top-right corner tangent to
 // both incident lines, a trim arc at the bottom-right, and an inner
@@ -954,6 +1194,9 @@ int main() {
   if (!test_load_preserves_circle_center_vertex()) return 1;
   if (!test_trim_entity_ids_never_collide()) return 1;
   if (!test_circle_trim_keeps_clicked_complement()) return 1;
+  if (!test_cw_arc_trim_splits_at_all_intersections()) return 1;
+  if (!test_dangling_line_does_not_block_trimmed_region_profile()) return 1;
+  if (!test_load_recomputes_stale_profiles()) return 1;
   if (!test_trimmed_circle_corner_extrudes_full_prism()) return 1;
 
   std::cout << "extrude_quality_test passed\n";

@@ -35,4 +35,11 @@ std::vector<SketchProfileRegion> build_sketch_profile_regions(
     const SketchFeatureParameters& parameters);
 DetectedSketchProfiles detect_sketch_profiles(const FeatureEntry& feature);
 
+// Recompute a sketch feature's profile list from its current geometry
+// (the exact-curve arrangement).  Used by the document loader: saved
+// files can carry stale profile lists (saved before an arrangement
+// fix, or saved while a region was invisible to the old pipeline) and
+// must not be trusted verbatim.
+void refresh_sketch_profiles(FeatureEntry& feature);
+
 }  // namespace polysmith::core
