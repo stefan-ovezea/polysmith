@@ -16,6 +16,8 @@
     "core:configure": "node scripts/configure-core.mjs",
     "core:build": "cmake --build native/cad-core/build --config Release --parallel 2",
     "core:rebuild": "pnpm core:configure && pnpm core:build",
+    "test:core": "node scripts/run-core-tests.mjs",
+    "test": "pnpm test:core",
     "deps:sync": "git submodule update --init --recursive",
     "occt:configure": "node scripts/configure-occt.mjs",
     "occt:build": "cmake --build third_party/occt8-build --config Release --parallel 2",

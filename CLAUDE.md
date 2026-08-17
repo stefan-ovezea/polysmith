@@ -56,6 +56,9 @@ pnpm ui:dev
 pnpm core:rebuild                    # configure + build
 pnpm core:build                      # build only (if CMake cache is current)
 
+# Run every C++ test suite (the regression safety net — run before committing)
+pnpm test:core
+
 # Rebuild OpenCascade (rarely needed)
 pnpm occt:rebuild
 
@@ -207,16 +210,48 @@ tested and how.
 
 ### C++ Tests
 
-Tests are standalone executables built by CMake. Run from the build directory:
+Tests are standalone executables built by CMake (sketch profile, multi-profile
+extrude, extrude quality, CAM face reference, plugin feature). Run ALL of them
+with one command — it handles the OCCT DLL path:
 
 ```bash
-cd native/cad-core/build
-./cad_core_sketch_profile_test
-./cad_core_multi_profile_extrude_test
-./cad_core_cam_face_reference_test
+pnpm test:core
 ```
 
 Rebuild tests with `pnpm core:rebuild` (they link against the full CAD core + OCCT).
+
+### Regression Prevention (binding)
+
+Profile detection and sketch geometry are the most regression-prone code in
+the project — bugs there resurface as "Sketch profile not found", missing
+surfaces, or wrong extrude volumes, and manual app testing is slow. These
+rules exist to keep regressions from reaching the user:
+
+- **Test before fix.** Every bug fix to sketch/profile/geometry logic must
+  ship with a C++ regression test that reproduces the bug — it must fail
+  before the fix and pass after. Add it to the matching suite in
+  `native/cad-core/tests/`, following the existing test style.
+- **Assert the complete region set.** Profile-detection tests must assert
+  the FULL expected profile set (exact entity-id set + kind per region)
+  using `polysmith::test::profiles_match` from
+  `native/cad-core/tests/sketch_test_utils.h` — never just the presence of
+  one profile. Precedent: a 2026-08 face-walk change silently removed a
+  full-circle profile and the suite stayed green because the trim test only
+  asserted the outer polygon.
+- **Face-walk changes require all suites.** Any change to
+  `sketch_profile_exact.inc` (arrangement, face walk, tangency/epsilon
+  rules) must pass `pnpm test:core` in full — a walk-rule tweak that fixes
+  one face commonly breaks another.
+- **No tangency heuristic without both epsilon signs.** Tangency,
+  epsilon, and tie-break changes are floating-point traps; a regression
+  test must cover both signs of the deviation (e.g., the tangent line
+  drawn slightly to either side of exact tangency).
+- **Use the built-in face-walk trace.** The face walk has a permanent
+  env-gated diagnostic: `PS_TRACE_FACES=1` dumps every walk step to the
+  structured log under tag `exact_profiles`. Use it to diagnose face
+  detection issues before adding one-off debug scaffolding.
+- **Name the suites in the commit message.** State which suites ran and
+  what was verified, per the never-commit-untested-code rule above.
 
 ### TypeScript
 
