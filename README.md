@@ -10,7 +10,7 @@ Three layers with clear ownership:
 |---|---|---|
 | **UI** | React + TypeScript | Presentation, user input, command dispatch |
 | **Shell** | Tauri (Rust) | Window management, file dialogs, spawning the C++ core |
-| **CAD Core** | C++ + OpenCascade | All geometry, feature history, document state, modeling operations |
+| **CAD Core** | C++20 + OpenCascade 8 | All geometry, feature history, document state, modeling operations |
 
 Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is a **separate process** — crash isolation, clean boundaries. The core is the single source of truth; React never owns CAD state.
 
@@ -20,7 +20,9 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
 - Document model: feature history tree, undo/redo, core-owned selection
 - 2D sketch system: lines, rectangles, circles, arcs, polygons, points,
   dimensions, geometric + dimensional constraints, closed-profile detection
-  with inner-loop/hole support
+  with inner-loop/hole support (exact-curve arrangement — every bounded
+  region, including line/arc/circle lens and tangent-wedge faces, is a
+  selectable profile)
 - Contextual modeling workflow: select → invoke → floating panel → real
   geometry preview → confirm/cancel
 - Extrude (New Body, Join, Cut) with one-side/symmetric/two-side extent,
@@ -84,7 +86,7 @@ The bulk of the original v1 roadmap is shipped. Remaining items:
 
 ## Cross-Platform
 
-Must compile on Windows (MSVC) and POSIX (Linux/macOS, GCC/Clang). OCCT DLLs vendored, FreeType as git submodule.
+Must compile on Windows (MSVC) and POSIX (Linux/macOS, GCC/Clang). OpenCascade 8 and FreeType are vendored as git submodules.
 
 ## Rules for Contributions
 
@@ -195,7 +197,7 @@ For other distributions, follow the [Tauri v2 prerequisites guide](https://v2.ta
    ```
 5. Install **WebView2 Runtime** (Tauri requirement) — pre-installed on Windows 11.
 
-Run all PolySmith commands from the **x64 Native Tools Command Prompt for VS 2022** so MSVC is on `PATH`. The CMake configure step (`pnpm core:configure`) needs the vcpkg toolchain — pass it manually on first configure:
+Run all PolySmith commands from the **x64 Native Tools Command Prompt for VS 2022** so MSVC is on `PATH`. `pnpm core:configure` auto-detects the vcpkg root (checks `C:\vcpkg`, `C:\SRC\vcpkg`, then `VCPKG_ROOT`) — pass the toolchain manually only if detection fails:
 
 ```powershell
 cmake -S native/cad-core -B native/cad-core/build `
@@ -215,9 +217,9 @@ This single command runs:
 ```bash
 pnpm deps:sync         # sync git submodules
 pnpm install           # install JS deps
-pnpm occt:configure    # configure OpenCascade
-pnpm occt:build        # build OpenCascade
-pnpm occt:install      # install OpenCascade to third_party/occt-install
+pnpm occt:configure    # configure OpenCascade 8 (third_party/occt8)
+pnpm occt:build        # build OpenCascade 8 (third_party/occt8-build)
+pnpm occt:install      # install OpenCascade 8 to third_party/occt8-install
 pnpm core:configure    # configure native CAD core
 pnpm core:build        # build native CAD core (native/cad-core/build/cad_core)
 ```
@@ -238,6 +240,7 @@ This starts the Vite frontend and the Tauri desktop shell. `pnpm dev` expects `n
 | -------------------------------------- | -------------------------------------------- |
 | Run UI only (no Tauri, no CAD core)    | `pnpm ui:dev`                                |
 | Rebuild the C++ CAD core after changes | `pnpm core:rebuild`                          |
+| Run every C++ test suite (regression net) | `pnpm test:core`                           |
 | Rebuild OpenCascade (rare)             | `pnpm occt:rebuild`                          |
 | Type-check the UI                      | `pnpm --filter desktop-ui exec tsc --noEmit` |
 
@@ -307,7 +310,7 @@ protocol/
 wiki/              Canonical documentation (mirrored to polysmith.wiki/)
 
 third_party/
-  occt/            Vendored OpenCascade 7.8 source
+  occt8/           Vendored OpenCascade 8 source
   freetype/        FreeType (for OCCT font rendering)
   planegcs/        2D geometric constraint solver (from FreeCAD)
 ```
@@ -324,7 +327,7 @@ Current focus:
 
 - rounding out the remaining v1 features (patterns, measure tool, display units)
 - CAM workspace: face milling shipped, pocket/contour/drilling next
-- hardening and bug fixing (modeled threads, dimension system consolidation)
+- hardening and bug fixing (OpenCascade 8 migration, exact-curve profile detection, dimension system consolidation)
 
 ## Wiki
 
