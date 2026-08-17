@@ -16,7 +16,9 @@ TopoDS_Shape fuse_shapes(const TopoDS_Shape& first, const TopoDS_Shape& second) 
   if (second.IsNull()) {
     return first;
   }
-  const TopoDS_Shape fused = BRepAlgoAPI_Fuse(first, second).Shape();
+  BRepAlgoAPI_Fuse fuse_op(first, second);
+  fuse_op.SimplifyResult();
+  const TopoDS_Shape fused = fuse_op.Shape();
   return fused.IsNull() ? first : fused;
 }
 
@@ -48,8 +50,8 @@ TopoDS_Shape apply_draft_angle(const TopoDS_Shape& shape,
     for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More();
          explorer.Next()) {
       const TopoDS_Face face = TopoDS::Face(explorer.Current());
-      const Handle(Geom_Plane) surface =
-          Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(face));
+      const occ::handle<Geom_Plane> surface =
+          occ::down_cast<Geom_Plane>(BRep_Tool::Surface(face));
       if (surface.IsNull()) {
         continue;
       }
@@ -78,5 +80,8 @@ TopoDS_Shape apply_draft_angle(const TopoDS_Shape& shape,
     throw std::runtime_error(
         "Extrude taper failed. Reduce the taper angle, increase the distance, "
         "or use a wider profile.");
+  } catch (const std::exception& e) {
+    throw std::runtime_error(
+        std::string("Extrude taper failed (OCCT): ") + e.what());
   }
 }

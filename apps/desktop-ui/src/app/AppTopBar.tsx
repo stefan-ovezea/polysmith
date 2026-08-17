@@ -137,6 +137,8 @@ interface AppTopBarProps {
   setFilterPanelOpen: Dispatch<SetStateAction<boolean>>;
   materialsPanelOpen: boolean;
   setMaterialsPanelOpen: Dispatch<SetStateAction<boolean>>;
+  viewPanelOpen: boolean;
+  setViewPanelOpen: Dispatch<SetStateAction<boolean>>;
   updateSelectionFilter: (filter: SelectionFilterUpdate) => Promise<void>;
   activeCamOperation: CamOperationType | null;
   setActiveCamOperation: Dispatch<SetStateAction<CamOperationType | null>>;
@@ -348,6 +350,10 @@ export function AppTopBar(props: AppTopBarProps) {
       materialsPanelOpen={props.materialsPanelOpen}
       onToggleMaterialsPanel={() => {
         props.setMaterialsPanelOpen((current) => !current);
+      }}
+      viewPanelOpen={props.viewPanelOpen}
+      onToggleViewPanel={() => {
+        props.setViewPanelOpen((current) => !current);
       }}
       onUpdateSelectionFilter={props.updateSelectionFilter}
       activeCamOperation={props.activeCamOperation}

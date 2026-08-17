@@ -139,7 +139,7 @@ function endpointDragAnchors(
     const anchoredId = isStart
       ? line.end_vertex_id
       : line.start_vertex_id;
-    const anchored = params.points.find((point) => point.vertex_id === anchoredId);
+    const anchored = params.vertices.find((point) => point.vertex_id === anchoredId);
     if (anchored) {
       anchors.push(anchored);
     }
@@ -369,7 +369,7 @@ export function resolveEndpointDragFrame({
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
       lines: unconstrainedLines,
-      points: sketch.points.map((p) =>
+      vertices: sketch.vertices.map((p) =>
         p.vertex_id === next.vertexId
           ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }
           : p,

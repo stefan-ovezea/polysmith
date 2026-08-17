@@ -19,14 +19,15 @@ std::optional<ParsedEdgeId> parse_edge_id(const std::string& id) {
   return parsed;
 }
 
-TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape) {
+TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape,
+                              bool unify_faces = true) {
   if (shape.IsNull()) {
     return shape;
   }
   try {
     ShapeUpgrade_UnifySameDomain unify(shape,
                                        /*UnifyEdges=*/true,
-                                       /*UnifyFaces=*/true,
+                                       /*UnifyFaces=*/unify_faces,
                                        /*ConcatBSplines=*/false);
     unify.Build();
     const TopoDS_Shape unified = unify.Shape();
@@ -34,7 +35,6 @@ TopoDS_Shape unify_same_domain(const TopoDS_Shape& shape) {
       return unified;
     }
   } catch (const std::exception&) {
-    // Keep the original boolean result if OCCT cannot merge domains.
   }
   return shape;
 }

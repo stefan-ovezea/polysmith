@@ -51,7 +51,7 @@ DocumentState DocumentManager::extrude_profiles(
   if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
       (mode == "join" && target_body_id.has_value())) {
     profile_groups.push_back(selected_profiles);
-  } else if (automatic_mode || mode == "join") {
+  } else if (automatic_mode || mode == "join" || mode == "new_body") {
     profile_groups = group_touching_profiles(selected_profiles);
   } else {
     for (const auto& profile : selected_profiles) {
@@ -73,6 +73,7 @@ DocumentState DocumentManager::extrude_profiles(
       preserve_extrude_source_geometry(*extrude_parameters, source);
     }
     extrude_parameters->depth = depth;
+    extrude_parameters->side1.distance = std::abs(depth);
     extrude_parameters->target_body_id = target_body_id;
     if (automatic_mode) {
       apply_automatic_extrude_mode(*document_,

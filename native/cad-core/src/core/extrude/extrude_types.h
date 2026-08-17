@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/document/plane_frame.h"
+#include "core/sketch/sketch_geometry_types.h"
 #include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
@@ -42,6 +43,25 @@ struct ExtrudeFeatureParameters {
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
   std::vector<std::vector<SketchProfilePoint>> additional_profile_points;
   std::vector<std::vector<std::vector<SketchProfilePoint>>> additional_inner_loops;
+  // Wire-path data for additional profiles — when non-empty,
+  // wrap_with_additional_profiles uses the exact-curve wire builder
+  // instead of polygon approximation for the corresponding profile.
+  std::vector<std::vector<std::string>> additional_sketch_edge_ids;
+  std::vector<std::vector<SketchArcDescriptor>> additional_arc_descriptors;
+  std::vector<std::vector<ProfileBoundaryEdge>> additional_boundary_edges;
+  // Sketch wire data — when non-empty, build_extrude_shape uses exact OCCT
+  // curves (GC_MakeSegment / GC_MakeArcOfCircle / gp_Circ) instead of
+  // polygon-approximating the boundary with BRepBuilderAPI_MakePolygon.
+  std::vector<std::string> sketch_edge_ids;  // in boundary walk order
+  std::vector<SketchLine> sketch_lines;
+  std::vector<SketchArc> sketch_arcs;
+  std::vector<SketchCircle> sketch_circles;
+  // Exact arc descriptors for every contiguous run of circle edges in
+  // sketch_edge_ids.  Populated by make_extrude_parameters_for_profile;
+  // used by make_sketch_wire to build exact GC_MakeArcOfCircle edges
+  // without guessing from polygon samples.
+  std::vector<SketchArcDescriptor> arc_descriptors;
+  std::vector<ProfileBoundaryEdge> boundary_edges;
   double depth;
   // "one_side", "symmetric", or "two_sides".
   std::string extent_mode = "one_side";

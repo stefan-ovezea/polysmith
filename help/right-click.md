@@ -1,12 +1,46 @@
-# Right-Click Context Menu
+# Right-Click
 
-Right-clicking different entities in the viewport opens a context-sensitive
-menu. This document tracks all context menu functions for reference during
-development and testing.
+Right-clicking in the viewport has two distinct behaviours depending on
+whether a sketch draft tool is currently active.
 
 ---
 
-## Context: Dimension Label
+## Context: Sketch Draft Active (Line, Rectangle, Circle, Arc, Polygon)
+
+**Trigger:** Right-click while a rubber-band preview is visible (i.e. a
+draft dimension session is active).
+
+| Action | Behavior |
+|---|---|
+| **Cancel Draft** | Cancels the current rubber band / breaks the polyline chain. The tool stays **armed** — the next click starts a fresh independent entity from a new start point. Equivalent to Escape but without dearming the tool. |
+
+**Comparison with other commit/cancel actions:**
+
+| Input | Result |
+|---|---|
+| **Right-click** | Cancel rubber band, keep tool armed |
+| **Escape** | Cancel rubber band, dearm tool → Select mode |
+| **Enter** | Commit draft at current position, keep tool armed |
+
+**Implementation:** The `onContextMenu` handler in ViewportPanel checks
+`draftDimensionSessionRef.current`. When non-null, it resets all draft state
+(`lineDraftStartRef`, previews, draft session, snap/constraint state,
+hovered entities) but does **not** call `setSketchToolRef("select")`.
+
+**Files:**
+- TS: `ViewportPanel.tsx` → `onContextMenu` handler (lines ~3171–3195)
+
+---
+
+## Context: Context Menu (no draft active)
+
+Right-clicking different entities in the viewport when no draft is active
+opens a context-sensitive menu. This document tracks all context menu
+functions for reference during development and testing.
+
+---
+
+### Context: Dimension Label
 
 **Trigger:** Right-click a dimension label or dimension geometry in the
 active sketch.
@@ -23,7 +57,7 @@ active sketch.
 
 ---
 
-## Context: Sketch Line
+### Context: Sketch Line
 
 **Trigger:** Right-click a sketch line entity in the active sketch.
 
@@ -43,7 +77,7 @@ active sketch.
 
 ---
 
-## Context: Constraint Icon
+### Context: Constraint Icon
 
 **Trigger:** Right-click an H/V constraint badge or relation icon in the
 active sketch.
@@ -54,7 +88,7 @@ active sketch.
 
 ---
 
-## Context: Sketch Selection (multi-select delete)
+### Context: Sketch Selection (multi-select delete)
 
 **Trigger:** Right-click when one or more sketch entities are selected
 (lines, points, or profiles), or right-click a single entity that is part
@@ -66,7 +100,7 @@ of a multi-selection.
 
 ---
 
-## Context: Body (3D solid)
+### Context: Body (3D solid)
 
 **Trigger:** Right-click a 3D body in the viewport (outside sketch mode).
 
@@ -80,7 +114,7 @@ of a multi-selection.
 
 ---
 
-## Context: Face / Reference Plane
+### Context: Face / Reference Plane
 
 **Trigger:** Right-click a solid face or reference plane.
 
@@ -90,7 +124,7 @@ of a multi-selection.
 
 ---
 
-## State Tracking
+### State Tracking
 
 The context menu state is built in `contextMenuState.ts` → `buildViewportContextMenuState()`.
 It receives the hit-test result and document state, and returns a

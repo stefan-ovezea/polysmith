@@ -107,7 +107,9 @@ TopoDS_Shape cut_plugin_shape(TopoDS_Shape base, const TopoDS_Shape& cutter) {
   if (base.IsNull() || cutter.IsNull()) {
     return base;
   }
-  TopoDS_Shape next = BRepAlgoAPI_Cut(base, cutter).Shape();
+  BRepAlgoAPI_Cut cut_op(base, cutter);
+  cut_op.SimplifyResult();
+  TopoDS_Shape next = cut_op.Shape();
   return next.IsNull() ? base : next;
 }
 
@@ -118,7 +120,9 @@ TopoDS_Shape fuse_plugin_shape(TopoDS_Shape base, const TopoDS_Shape& addition) 
   if (addition.IsNull()) {
     return base;
   }
-  TopoDS_Shape next = BRepAlgoAPI_Fuse(base, addition).Shape();
+  BRepAlgoAPI_Fuse fuse_op(base, addition);
+  fuse_op.SimplifyResult();
+  TopoDS_Shape next = fuse_op.Shape();
   return next.IsNull() ? base : next;
 }
 

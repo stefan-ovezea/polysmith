@@ -67,7 +67,10 @@
           arc_it->end_x, arc_it->end_y,
           "vertex-" + std::to_string(params.next_vertex_index++));
 
-      const int next_idx = static_cast<int>(params.arcs.size()) + 1;
+      std::vector<std::string> arc_ids;
+      arc_ids.reserve(params.arcs.size());
+      for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
+      const int next_idx = next_trim_entity_index(arc_ids);
       const auto& right = segments[clicked_index + 1];
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{
@@ -78,6 +81,9 @@
           .end_vertex_id   = arc_shared_pt(
               last_seg.end_x, last_seg.end_y,
               "vertex-" + std::to_string(params.next_vertex_index++)),
+          // The split keeps the source arc's center — share its center
+          // vertex id instead of minting a second one at the same spot.
+          .center_vertex_id = arc_it->center_vertex_id,
           .center_x = arc_it->center_x,
           .center_y = arc_it->center_y,
           .radius   = arc_it->radius,

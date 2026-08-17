@@ -20,6 +20,53 @@ parse_extrude_parameters_from_payload(const json& payload) {
   if (payload.contains("plane_frame") && !payload.at("plane_frame").is_null()) {
     params.plane_frame = plane_frame_from_payload(payload.at("plane_frame"));
   }
+  if (payload.contains("sketch_edge_ids") && payload.at("sketch_edge_ids").is_array()) {
+    for (const auto& id_value : payload.at("sketch_edge_ids")) {
+      params.sketch_edge_ids.push_back(id_value.get<std::string>());
+    }
+  }
+  if (payload.contains("sketch_lines") && payload.at("sketch_lines").is_array()) {
+    for (const auto& line_payload : payload.at("sketch_lines")) {
+      polysmith::core::SketchLine line{};
+      line.id = read_string(line_payload, "line_id");
+      line.start_x = read_number(line_payload, "start_x");
+      line.start_y = read_number(line_payload, "start_y");
+      line.end_x = read_number(line_payload, "end_x");
+      line.end_y = read_number(line_payload, "end_y");
+      line.start_vertex_id = read_string(line_payload, "start_vertex_id");
+      line.end_vertex_id = read_string(line_payload, "end_vertex_id");
+      line.is_construction = read_optional_bool_value(line_payload, "is_construction", false);
+      line.constraint = read_optional_string_value(line_payload, "constraint", "");
+      params.sketch_lines.push_back(std::move(line));
+    }
+  }
+  if (payload.contains("sketch_arcs") && payload.at("sketch_arcs").is_array()) {
+    for (const auto& arc_payload : payload.at("sketch_arcs")) {
+      polysmith::core::SketchArc arc{};
+      arc.id = read_string(arc_payload, "arc_id");
+      arc.center_x = read_number(arc_payload, "center_x");
+      arc.center_y = read_number(arc_payload, "center_y");
+      arc.start_x = read_number(arc_payload, "start_x");
+      arc.start_y = read_number(arc_payload, "start_y");
+      arc.end_x = read_number(arc_payload, "end_x");
+      arc.end_y = read_number(arc_payload, "end_y");
+      arc.radius = read_number(arc_payload, "radius");
+      arc.ccw = read_optional_bool_value(arc_payload, "ccw", true);
+      arc.is_construction = read_optional_bool_value(arc_payload, "is_construction", false);
+      params.sketch_arcs.push_back(std::move(arc));
+    }
+  }
+  if (payload.contains("sketch_circles") && payload.at("sketch_circles").is_array()) {
+    for (const auto& circ_payload : payload.at("sketch_circles")) {
+      polysmith::core::SketchCircle circ{};
+      circ.id = read_string(circ_payload, "circle_id");
+      circ.center_x = read_number(circ_payload, "center_x");
+      circ.center_y = read_number(circ_payload, "center_y");
+      circ.radius = read_number(circ_payload, "radius");
+      circ.is_construction = read_optional_bool_value(circ_payload, "is_construction", false);
+      params.sketch_circles.push_back(std::move(circ));
+    }
+  }
   params.profile_kind = read_string(payload, "profile_kind");
   params.start_x = read_number(payload, "start_x");
   params.start_y = read_number(payload, "start_y");
@@ -75,6 +122,73 @@ parse_extrude_parameters_from_payload(const json& payload) {
       }
       params.additional_inner_loops.push_back(std::move(loops));
     }
+  }
+  if (payload.contains("additional_sketch_edge_ids") &&
+      payload.at("additional_sketch_edge_ids").is_array()) {
+    for (const auto& profile_payload :
+         payload.at("additional_sketch_edge_ids")) {
+      std::vector<std::string> ids;
+      for (const auto& id_value : profile_payload) {
+        ids.push_back(id_value.get<std::string>());
+      }
+      params.additional_sketch_edge_ids.push_back(std::move(ids));
+    }
+  }
+  if (payload.contains("additional_arc_descriptors") &&
+      payload.at("additional_arc_descriptors").is_array()) {
+    for (const auto& profile_payload :
+         payload.at("additional_arc_descriptors")) {
+      std::vector<polysmith::core::SketchArcDescriptor> descs;
+      for (const auto& desc_payload : profile_payload) {
+        descs.push_back(polysmith::core::SketchArcDescriptor{
+            .circle_id = desc_payload.at("circle_id").get<std::string>(),
+            .center_x = desc_payload.at("center_x").get<double>(),
+            .center_y = desc_payload.at("center_y").get<double>(),
+            .radius = desc_payload.at("radius").get<double>(),
+            .start_angle_rad =
+                desc_payload.at("start_angle_rad").get<double>(),
+            .end_angle_rad =
+                desc_payload.at("end_angle_rad").get<double>(),
+            .ccw = desc_payload.at("ccw").get<bool>(),
+        });
+      }
+      params.additional_arc_descriptors.push_back(std::move(descs));
+    }
+  }
+
+  auto parse_boundary_edges =
+      [](const json& edges_payload)
+      -> std::vector<polysmith::core::ProfileBoundaryEdge> {
+    std::vector<polysmith::core::ProfileBoundaryEdge> edges;
+    for (const auto& edge_payload : edges_payload) {
+      edges.push_back(polysmith::core::ProfileBoundaryEdge{
+          .entity_id = edge_payload.at("entity_id").get<std::string>(),
+          .entity_kind = edge_payload.at("entity_kind").get<std::string>(),
+          .param_start = edge_payload.at("param_start").get<double>(),
+          .param_end = edge_payload.at("param_end").get<double>(),
+          .start_x = edge_payload.at("start_x").get<double>(),
+          .start_y = edge_payload.at("start_y").get<double>(),
+          .end_x = edge_payload.at("end_x").get<double>(),
+          .end_y = edge_payload.at("end_y").get<double>(),
+          .center_x = edge_payload.at("center_x").get<double>(),
+          .center_y = edge_payload.at("center_y").get<double>(),
+          .radius = edge_payload.at("radius").get<double>(),
+          .ccw = edge_payload.at("ccw").get<bool>(),
+      });
+    }
+    return edges;
+  };
+
+  if (payload.contains("additional_boundary_edges") &&
+      payload.at("additional_boundary_edges").is_array()) {
+    for (const auto& group_payload : payload.at("additional_boundary_edges")) {
+      params.additional_boundary_edges.push_back(
+          parse_boundary_edges(group_payload));
+    }
+  }
+  if (payload.contains("boundary_edges") &&
+      payload.at("boundary_edges").is_array()) {
+    params.boundary_edges = parse_boundary_edges(payload.at("boundary_edges"));
   }
   params.depth = read_number(payload, "depth");
   params.extent_mode =

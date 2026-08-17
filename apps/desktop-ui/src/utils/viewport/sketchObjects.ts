@@ -47,7 +47,7 @@ function resolveSketchPlaneAxes(
   if (planeId === "ref-plane-xy") {
     return {
       xAxis: [1, 0, 0],
-      yAxis: [0, 0, 1],
+      yAxis: [0, 1, 0],
     };
   }
 
@@ -60,7 +60,7 @@ function resolveSketchPlaneAxes(
 
   return {
     xAxis: [1, 0, 0],
-    yAxis: [0, 1, 0],
+    yAxis: [0, 0, 1],
   };
 }
 
@@ -659,8 +659,12 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     depthTest: false,
   });
   const edgeMaterials: THREE.LineBasicMaterial[] = [];
+  const holeEdgeMaterials: THREE.LineBasicMaterial[] = [];
 
-  const makeEdgeLoop = (points: Array<[number, number]>) => {
+  const makeEdgeLoop = (
+    points: Array<[number, number]>,
+    isHole: boolean,
+  ) => {
     const geometry = new THREE.BufferGeometry().setFromPoints(
       points.map((point) => new THREE.Vector3(point[0], point[1], 0)),
     );
@@ -672,7 +676,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
       depthTest: false,
       depthWrite: false,
     });
-    edgeMaterials.push(material);
+    (isHole ? holeEdgeMaterials : edgeMaterials).push(material);
     const line = new THREE.LineLoop(geometry, material);
     line.renderOrder = 7;
     line.userData.sketchProfileId = profile.profileId;
@@ -702,7 +706,10 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     ).getPoints(96);
     group.add(mesh);
     group.add(
-      makeEdgeLoop(points.map((point) => [point.x, point.y] as [number, number])),
+      makeEdgeLoop(
+        points.map((point) => [point.x, point.y] as [number, number]),
+        false,
+      ),
     );
     group.applyMatrix4(
       profile.planeFrame
@@ -718,6 +725,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
       visual: {
         fillMaterial,
         edgeMaterials,
+        holeEdgeMaterials,
       },
     };
   }
@@ -728,6 +736,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
       visual: {
         fillMaterial,
         edgeMaterials,
+        holeEdgeMaterials,
       },
     };
   }
@@ -739,9 +748,9 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
   mesh.renderOrder = 6;
   mesh.userData.sketchProfileId = profile.profileId;
   group.add(mesh);
-  group.add(makeEdgeLoop(profile.profilePoints));
+  group.add(makeEdgeLoop(profile.profilePoints, false));
   for (const loop of profile.innerLoops) {
-    group.add(makeEdgeLoop(loop));
+    group.add(makeEdgeLoop(loop, true));
   }
   group.applyMatrix4(
     profile.planeFrame
@@ -762,6 +771,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     visual: {
       fillMaterial,
       edgeMaterials,
+      holeEdgeMaterials,
     },
   };
 }

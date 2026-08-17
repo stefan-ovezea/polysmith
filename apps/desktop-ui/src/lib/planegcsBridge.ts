@@ -168,7 +168,7 @@ export class PlanegcsBridge {
       : null;
 
     // ---- 1. Push points ------------------------------------------------
-    for (const pt of params.points) {
+    for (const pt of params.vertices) {
       // When activeSet is provided, freeze all points NOT in the active set.
       // Otherwise use the stored is_fixed value.
       const vtxId = pt.vertex_id;

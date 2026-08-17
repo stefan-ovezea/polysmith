@@ -1,7 +1,7 @@
 import type { SketchTool } from "@/types";
 import { distanceBetweenPoints } from "@/utils";
 
-export type DraftDimensionTool = "line" | "rectangle" | "circle" | "polygon";
+export type DraftDimensionTool = "line" | "rectangle" | "circle" | "polygon" | "arc";
 export type DraftDimensionField =
   | "length"
   | "width"
@@ -136,7 +136,8 @@ export function isDraftDimensionTool(
     tool === "line" ||
     tool === "rectangle" ||
     tool === "circle" ||
-    tool === "polygon"
+    tool === "polygon" ||
+    tool === "arc"
   );
 }
 
@@ -189,7 +190,7 @@ export function draftSessionValues(
     tool === "line" ? Math.abs(lineAngleDeg).toFixed(2) : "0";
   return {
     length:
-      tool === "line"
+      tool === "line" || tool === "arc"
         ? formatDraftDimension(radius)
         : formatDraftDimension(length),
     width: formatDraftDimension(width),
@@ -213,6 +214,9 @@ export function draftSessionFields(
   }
   if (tool === "line") {
     return ["length", "angle"];
+  }
+  if (tool === "arc") {
+    return ["length"];
   }
   return ["length"];
 }

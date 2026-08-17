@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "deepseek-vision": {
+      "command": "./third_party/deepseek-vision-mcp/.venv/bin/python3",
+      "args": ["./third_party/deepseek-vision-mcp/server.py"],
+      "env": {
+        "OLLAMA_VISION_MODEL": "qwen3.5-vision:latest"
+      }
+    }
+  }
+}

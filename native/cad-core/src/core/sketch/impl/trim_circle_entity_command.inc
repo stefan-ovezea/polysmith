@@ -42,7 +42,10 @@
     // For 2 segments this is the opposite; for 3+ we build the arc
     // that spans all non-clicked segments going CCW.
     const int N = static_cast<int>(segments.size());
-    const int arc_index = params.arcs.size() + 1;
+    std::vector<std::string> arc_ids;
+    arc_ids.reserve(params.arcs.size());
+    for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
+    const int arc_index = next_trim_entity_index(arc_ids);
     const int start_pt_idx = arc_index * 2;
     const int end_pt_idx = arc_index * 2 + 1;
     const double cx = circle_it->center_x, cy = circle_it->center_y;
@@ -70,6 +73,9 @@
           .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
+          // The arc keeps the circle's center — share its center vertex
+          // id instead of minting a second one at the same spot.
+          .center_vertex_id = circle_it->center_vertex_id,
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,
@@ -96,6 +102,9 @@
           .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
+          // The arc keeps the circle's center — share its center vertex
+          // id instead of minting a second one at the same spot.
+          .center_vertex_id = circle_it->center_vertex_id,
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,

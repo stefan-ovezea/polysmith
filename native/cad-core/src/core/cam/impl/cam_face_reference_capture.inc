@@ -9,7 +9,7 @@ std::optional<CamFaceReference> capture_face_reference(
     return std::nullopt;
   }
 
-  TopTools_IndexedMapOfShape faceMap;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
   TopExp::MapShapes(bodyShape, TopAbs_FACE, faceMap);
   const int oneBased = faceIndex + 1;
   if (oneBased < 1 || oneBased > faceMap.Extent()) {

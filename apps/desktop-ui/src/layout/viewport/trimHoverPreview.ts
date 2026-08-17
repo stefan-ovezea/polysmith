@@ -60,12 +60,12 @@ export function trimWorldPointToLocal(
     ];
   }
   if (planeId === "ref-plane-xy") {
-    return [px, pz];
+    return [px, py];
   }
   if (planeId === "ref-plane-yz") {
     return [py, pz];
   }
-  return [px, py];
+  return [px, pz];
 }
 
 export function handleSketchTrimClick({
@@ -122,12 +122,12 @@ function toWorldPoint(
     ];
   }
   if (planeId === "ref-plane-xy") {
-    return [ux, 0, uy];
+    return [ux, uy, 0];
   }
   if (planeId === "ref-plane-yz") {
     return [0, ux, uy];
   }
-  return [ux, uy, 0];
+  return [ux, 0, uy];
 }
 
 function sampleTrimArcPoints({
@@ -584,12 +584,20 @@ function computeArcTrimPreview({
       if (adjustedCursor < start) {
         adjustedCursor += full;
       }
-    } else if (adjustedCursor > start) {
-      adjustedCursor -= full;
-    }
-    if (adjustedCursor >= start - 1e-10 && adjustedCursor <= end + 1e-10) {
-      hoveredSegment = index;
-      break;
+      if (adjustedCursor >= start - 1e-10 && adjustedCursor <= end + 1e-10) {
+        hoveredSegment = index;
+        break;
+      }
+    } else {
+      // CW segments are descending (end < start); the ascending
+      // interval test is empty for them.
+      if (adjustedCursor > start) {
+        adjustedCursor -= full;
+      }
+      if (adjustedCursor <= start + 1e-10 && adjustedCursor >= end - 1e-10) {
+        hoveredSegment = index;
+        break;
+      }
     }
   }
   if (hoveredSegment < 0) {

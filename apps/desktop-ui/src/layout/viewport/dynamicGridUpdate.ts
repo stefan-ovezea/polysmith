@@ -6,6 +6,8 @@ import {
   GRID_SKETCH_PADDING_MULTIPLIER,
   GRID_WORLD_PADDING_MULTIPLIER,
   buildDynamicGrid,
+  buildAxisLines,
+  buildAxisTickLabels,
   disposeDynamicGrid,
   getCardinalGridFrame,
   getGridViewBounds,
@@ -33,6 +35,7 @@ export function updateDynamicGrids({
   activeSketchPlaneFrame,
   showViewportGrid,
   showSketchGrid,
+  worldUnitsPerPixel = 1,
 }: {
   scene: THREE.Scene;
   sceneData: ViewportScene | null;
@@ -45,6 +48,7 @@ export function updateDynamicGrids({
   activeSketchPlaneFrame: ActiveSketchGridPlaneFrame | null;
   showViewportGrid: boolean;
   showSketchGrid: boolean;
+  worldUnitsPerPixel?: number;
 }) {
   if (!sceneData) {
     clearDynamicGrid(scene, worldGridRef);
@@ -88,6 +92,7 @@ export function updateDynamicGrids({
         cardinalFrame ? "cardinal" : "floor"
       }:${spacing}:${worldBounds.minU}:${worldBounds.maxU}:${worldBounds.minV}:${worldBounds.maxV}`,
       () => {
+        const group = new THREE.Group();
         const worldGrid = buildDynamicGrid(
           worldFrame,
           spacing,
@@ -98,7 +103,8 @@ export function updateDynamicGrids({
           0.34,
         );
         worldGrid.renderOrder = -10;
-        return worldGrid;
+        group.add(worldGrid);
+        return group;
       },
     );
     clearDynamicGrid(scene, sketchGridRef);
@@ -128,6 +134,7 @@ export function updateDynamicGrids({
     sketchGridRef,
     `sketch:${activeSketchPlaneId}:${spacing}:${sketchBounds.minU}:${sketchBounds.maxU}:${sketchBounds.minV}:${sketchBounds.maxV}`,
     () => {
+      const group = new THREE.Group();
       const sketchGrid = buildDynamicGrid(
         sketchFrame,
         spacing,
@@ -138,7 +145,30 @@ export function updateDynamicGrids({
         0.48,
       );
       sketchGrid.renderOrder = -9;
-      return sketchGrid;
+      group.add(sketchGrid);
+
+      // Infinite coordinate axes on top of the sketch grid
+      const axes = buildAxisLines(
+        sketchFrame,
+        new THREE.Color(themeColor("--color-axis-x", "#ff6b7a")),
+        new THREE.Color(themeColor("--color-axis-y", "#2bd978")),
+        0.72,
+      );
+      axes.renderOrder = -8;
+      group.add(axes);
+
+      // Axis tick labels at major intervals
+      const tickLabels = buildAxisTickLabels(
+        sketchFrame,
+        spacing,
+        sketchBounds,
+        new THREE.Color(themeColor("--color-axis-x", "#ff6b7a")),
+        new THREE.Color(themeColor("--color-axis-y", "#2bd978")),
+        worldUnitsPerPixel,
+      );
+      tickLabels.renderOrder = -7;
+      group.add(tickLabels);
+      return group;
     },
   );
 }
@@ -147,7 +177,7 @@ function ensureDynamicGrid(
   scene: THREE.Scene,
   ref: MutableRef<DynamicGridRef | null>,
   key: string,
-  buildLine: () => THREE.LineSegments,
+  buildGroup: () => THREE.Group,
 ) {
   const current = ref.current;
   if (current?.key === key) {
@@ -159,8 +189,7 @@ function ensureDynamicGrid(
     disposeDynamicGrid(current);
   }
 
-  const group = new THREE.Group();
-  group.add(buildLine());
+  const group = buildGroup();
   scene.add(group);
   ref.current = { key, group };
 }

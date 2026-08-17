@@ -49,6 +49,8 @@ export interface ViewportCylinderPrimitive {
   height: number;
   x_offset: number;
   center: Vector3;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
   is_selected: boolean;
   appearance_color: string | null;
 }
@@ -334,7 +336,10 @@ export interface SolidFaceInteractionState {
 
 export interface SketchProfileVisual {
   fillMaterial: THREE.MeshBasicMaterial;
+  /** Edge materials for the profile's outer contour. */
   edgeMaterials: THREE.LineBasicMaterial[];
+  /** Edge materials for the profile's inner loops (holes). */
+  holeEdgeMaterials: THREE.LineBasicMaterial[];
 }
 
 export interface SketchProfileInteractionState {
@@ -423,6 +428,11 @@ export interface SketchPreviewPoint {
   // `tangent_line_circle` relation between the new line and the
   // circle so the line stays tangent through later edits.
   snapTangentCircleId?: string | null;
+  /** When tangent snap fires, the exact contact point [x, y] on the
+   *  circle where the tangent line touches. Used at commit time to
+   *  set the next polyline segment start to the solver-resolved
+   *  position rather than the cursor-projected snap position. */
+  snapTangentPoint?: [number, number] | null;
   // When the cursor landed on a parallel projection from the draft
   // start relative to an existing line, this holds the host line id.
   // The post-commit step uses it to apply a

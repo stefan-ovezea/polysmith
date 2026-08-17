@@ -4,7 +4,7 @@
 #include <BRep_Tool.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Vertex.hxx>
@@ -81,7 +81,7 @@ std::optional<EdgeGeometry> compute_edge_geometry(
     return std::nullopt;
   }
 
-  TopTools_IndexedMapOfShape edge_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body->shape, TopAbs_EDGE, edge_map);
 
   const int one_based = parsed->index + 1;
@@ -162,7 +162,7 @@ std::optional<EdgePoint> compute_vertex_position(
     return std::nullopt;
   }
 
-  TopTools_IndexedMapOfShape vertex_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> vertex_map;
   TopExp::MapShapes(body->shape, TopAbs_VERTEX, vertex_map);
 
   const int one_based = parsed->index + 1;

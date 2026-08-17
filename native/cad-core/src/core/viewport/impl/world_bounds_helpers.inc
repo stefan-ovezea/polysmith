@@ -19,8 +19,8 @@ void include_world_point_for_plane(const std::string& plane_id,
       };
 
   if (plane_id == "ref-plane-xy") {
-    include_point(local_x, 0.0, local_y);
-    include_point(local_x, depth, local_y);
+    include_point(local_x, local_y, 0.0);
+    include_point(local_x, local_y, depth);
     return;
   }
 
@@ -30,8 +30,8 @@ void include_world_point_for_plane(const std::string& plane_id,
     return;
   }
 
-  include_point(local_x, local_y, 0.0);
-  include_point(local_x, local_y, depth);
+  include_point(local_x, 0.0, local_y);
+  include_point(local_x, depth, local_y);
 }
 
 void include_world_point_for_frame(

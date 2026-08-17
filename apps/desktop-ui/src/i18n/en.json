@@ -132,6 +132,12 @@
     "selectionReady": "Selection ready",
     "title": "Materials"
   },
+  "view": {
+    "button": "View",
+    "title": "View",
+    "showHiddenEdges": "Show hidden edges",
+    "showHiddenEdgesHint": "When enabled, edges on the far side of a body render through the solid surface"
+  },
   "selectionFilter": {
     "button": "Snap",
     "center": "Center",
@@ -855,6 +861,7 @@
     "hideGrid": "Hide grid",
     "hideSketchGrid": "Hide sketch grid",
     "hideViewportGrid": "Hide viewport grid",
+    "gridScale": "{{spacing}} mm",
     "lineChainActive": "Line chain active · click to continue or press Escape",
     "mode": "Mode",
     "noActiveDocument": "No active document to render.",

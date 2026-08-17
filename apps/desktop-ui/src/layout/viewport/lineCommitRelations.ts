@@ -16,6 +16,10 @@ export interface LineCommitSnapPoint {
   snapAxisLock?: "horizontal" | "vertical" | null;
   snapTangentCircleId?: string | null;
   snapParallelHostLineId?: string | null;
+  /** Exact tangent contact point [x, y] on the circle. Set when
+   *  tangent snap fires; used to position the next polyline segment
+   *  start at the solver-resolved endpoint. */
+  snapTangentPoint?: [number, number] | null;
 }
 
 export interface PendingLineCommitRelations {

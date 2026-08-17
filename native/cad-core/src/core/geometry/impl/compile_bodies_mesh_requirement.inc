@@ -32,6 +32,13 @@
         any_boolean = true;
         break;
       }
+      // Sketch-wire profiles use exact OCCT curves (arcs, circles)
+      // that the legacy polygon renderer can't faithfully reproduce.
+      // Force the mesh path so curved surfaces tessellate properly.
+      if (!feature.extrude_parameters->sketch_edge_ids.empty()) {
+        any_boolean = true;
+        break;
+      }
       // Profile holes, multi-profile, thin, and side-based extrudes are
       // real native-core topology. The legacy three.js polygon-extrude
       // preview can show simple prisms, but OCCT tessellation is the

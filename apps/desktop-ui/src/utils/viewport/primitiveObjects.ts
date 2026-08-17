@@ -1,4 +1,5 @@
 import {
+  SceneVertex,
   CutPreviewScene,
   SceneEdge,
   ScenePrimitive,
@@ -8,7 +9,17 @@ import {
 import * as THREE from "three";
 
 import { themeColor } from "./themeColor";
-import { applyEdgeVisualColor } from "./visualState";
+import { applyEdgeVisualColor, applyVertexVisualColor } from "./visualState";
+
+// ── View settings (toggled via View panel) ────────────────────────────
+let _showHiddenEdges = false;
+/** When true, body edges ignore the depth buffer and render through solids. */
+export function setShowHiddenEdges(show: boolean) {
+  _showHiddenEdges = show;
+}
+export function getShowHiddenEdges() {
+  return _showHiddenEdges;
+}
 
 export function shapeFromProfileLoops(
   outerLoop: readonly (readonly [number, number])[],
@@ -48,13 +59,13 @@ export function makePlaneTransformMatrix(planeId: string, offset = 0) {
       0,
       0,
       0,
+      1,
+      0,
+      0,
+      0,
       0,
       1,
       offset,
-      0,
-      1,
-      0,
-      0,
       0,
       0,
       0,
@@ -89,18 +100,25 @@ export function makePlaneTransformMatrix(planeId: string, offset = 0) {
     0,
     0,
     0,
-    1,
-    0,
-    0,
-    0,
     0,
     1,
     offset,
+    0,
+    1,
+    0,
+    0,
     0,
     0,
     0,
     1,
   );
+}
+
+function planeNormalForId(planeId: string): THREE.Vector3 {
+  if (planeId === "ref-plane-xy") return new THREE.Vector3(0, 0, 1);
+  if (planeId === "ref-plane-yz") return new THREE.Vector3(1, 0, 0);
+  if (planeId === "ref-plane-xz") return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 1, 0); // default: Y-up (no rotation)
 }
 
 export function makePlaneTransformMatrixFromFrame(
@@ -187,23 +205,18 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
     roughness: 0.55,
     transparent: false,
     opacity: 1,
-    // Render both sides because `makePlaneTransformMatrix` for
-    // `ref-plane-xy` has determinant -1 (it swaps Y and Z without
-    // negating one), which flips the winding of every triangle in a
-    // legacy `polygon_extrude`. Without DoubleSide the front faces
-    // get culled and the user sees through to the inside walls - the
-    // "first extrude on XY plane looks transparent" bug. The proper
-    // fix is to make that matrix a rotation (det +1) and update
-    // `toWorldPoint`'s ref-plane-xy branch to match, but every site
-    // that pairs the two would need to flip its sign too. DoubleSide
-    // costs a few extra fragments and three.js auto-flips normals
-    // for back-facing fragments so PBR lighting stays correct.
+    // DoubleSide so interior walls are visible when the camera
+    // is inside a cut or looking through open faces.
     side: THREE.DoubleSide,
   });
   const edgeMaterial = new THREE.LineBasicMaterial({
     color: themeColor("--color-cad-edge", "#2a2a2c"),
     transparent: true,
     opacity: 0.9,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 
   let geometry: THREE.BufferGeometry;
@@ -218,6 +231,24 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       48,
       48,
     );
+    // THREE.CylinderGeometry builds along the Y axis.  In CAD Z-up
+    // convention the cylinder axis should be the plane normal, so we
+    // rotate the geometry so that its local Y aligns with the plane
+    // normal direction in world space.
+    const normal = primitive.planeFrame
+      ? new THREE.Vector3(
+          primitive.planeFrame.normal[0],
+          primitive.planeFrame.normal[1],
+          primitive.planeFrame.normal[2],
+        ).normalize()
+      : planeNormalForId(primitive.planeId);
+    if (normal.lengthSq() > 0.001 && Math.abs(normal.y - 1.0) > 0.001) {
+      const cylinderAxis = new THREE.Vector3(0, 1, 0);
+      const rotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(
+        new THREE.Quaternion().setFromUnitVectors(cylinderAxis, normal),
+      );
+      geometry.applyMatrix4(rotationMatrix);
+    }
   } else if (primitive.kind === "polygon_extrude") {
     const shape = shapeFromProfileLoops(
       primitive.profilePoints,
@@ -283,17 +314,18 @@ export function buildSceneEdgeObject(edge: SceneEdge): THREE.Line {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
 
+  // When showHiddenEdges is ON, depthTest is disabled so edges on the
+  // far side of the body render through the solid (wireframe overlay).
+  // Default is OFF: edges behind the body are properly occluded.
+  const depthTest = !_showHiddenEdges;
   const material = new THREE.LineBasicMaterial({
     transparent: true,
     linewidth: 1, // most browsers ignore this; selection still reads via color
-    // depthTest stays ON so edges on the far side of an opaque body
-    // are occluded by the surface, matching common CAD workflows. With it off, the
-    // wireframe shows through the body and reads as transparency.
-    // `polygonOffset` plus a small `polygonOffsetUnits` keeps the line
-    // visually on top of the face fill at the same depth (otherwise
-    // edges z-fight with the surface they sit on).
-    depthTest: true,
-    polygonOffset: true,
+    depthTest,
+    // `polygonOffset` plus negative offsets keep the line visually on
+    // top of the face fill at the same depth (otherwise edges z-fight
+    // with the surface they sit on). Only meaningful when depthTest is on.
+    polygonOffset: depthTest,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
@@ -316,6 +348,30 @@ export function buildSceneEdgeObject(edge: SceneEdge): THREE.Line {
 // Build the translucent red overlay mesh for a cut preview. The overlay
 // is non-pickable (`raycast = no-op`) so the user keeps picking the
 // underlying booleaned body's faces and edges, not this preview.
+const vertexGeometry = new THREE.SphereGeometry(1, 8, 6);
+
+export function buildSceneVertexObject(vertex: SceneVertex): THREE.Mesh {
+  const material = new THREE.MeshBasicMaterial({
+    transparent: true,
+    depthTest: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  });
+  applyVertexVisualColor(material, {
+    isSelected: vertex.isSelected,
+    isHovered: false,
+  });
+
+  const mesh = new THREE.Mesh(vertexGeometry, material);
+  mesh.position.set(vertex.position[0], vertex.position[1], vertex.position[2]);
+  mesh.userData.vertexId = vertex.vertexId;
+  mesh.userData.isSelected = vertex.isSelected;
+  mesh.renderOrder = 1;
+  mesh.scale.setScalar(0.25);
+  return mesh;
+}
+
 export function buildCutPreviewObject(preview: CutPreviewScene): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(

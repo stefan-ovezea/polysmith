@@ -21,6 +21,35 @@ json to_payload(const polysmith::core::ViewportBoxPrimitive& primitive) {
 }
 
 json to_payload(const polysmith::core::ViewportCylinderPrimitive& primitive) {
+  json plane_frame_json = nullptr;
+  if (primitive.plane_frame.has_value()) {
+    plane_frame_json = {
+        {"origin",
+         {
+             {"x", primitive.plane_frame->origin_x},
+             {"y", primitive.plane_frame->origin_y},
+             {"z", primitive.plane_frame->origin_z},
+         }},
+        {"x_axis",
+         {
+             {"x", primitive.plane_frame->x_axis_x},
+             {"y", primitive.plane_frame->x_axis_y},
+             {"z", primitive.plane_frame->x_axis_z},
+         }},
+        {"y_axis",
+         {
+             {"x", primitive.plane_frame->y_axis_x},
+             {"y", primitive.plane_frame->y_axis_y},
+             {"z", primitive.plane_frame->y_axis_z},
+         }},
+        {"normal",
+         {
+             {"x", primitive.plane_frame->normal_x},
+             {"y", primitive.plane_frame->normal_y},
+             {"z", primitive.plane_frame->normal_z},
+         }},
+    };
+  }
   return {
       {"primitive_id", primitive.id},
       {"label", primitive.label},
@@ -33,6 +62,8 @@ json to_payload(const polysmith::core::ViewportCylinderPrimitive& primitive) {
            {"y", primitive.center_y},
            {"z", primitive.center_z},
       }},
+      {"plane_id", primitive.plane_id},
+      {"plane_frame", plane_frame_json},
       {"is_selected", primitive.is_selected},
       {"appearance_color",
        primitive.appearance_color.has_value()

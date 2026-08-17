@@ -56,6 +56,9 @@ pnpm ui:dev
 pnpm core:rebuild                    # configure + build
 pnpm core:build                      # build only (if CMake cache is current)
 
+# Run every C++ test suite (the regression safety net — run before committing)
+pnpm test:core
+
 # Rebuild OpenCascade (rarely needed)
 pnpm occt:rebuild
 
@@ -92,6 +95,14 @@ React UI  ──IPC (JSON)──>  Tauri (Rust)  ──stdin/stdout──>  C++ 
 - **Core sends DOCUMENT STATE, not INTERACTION STATE.** If it moves with the mouse, it's UI. If it saves to a file, it's core. Snap candidates, drag previews, and hover highlights are UI-side concerns.
 - **TNP (Topological Naming Problem) is the project's mantra:** Never store a naked OCCT topology index and trust it across recomputes. Every feature referencing 3D geometry must re-resolve against live body shapes on every recompute. On failure, degrade with `dependency_broken` + warning — never crash.
 - **Contextual modeling workflow** is the binding UX pattern for all features: select inputs → invoke action → floating context panel with real geometry preview → confirm (Enter) or cancel (Escape, with undo).
+
+### Diagnostics Rule
+
+- **ALL diagnostic output MUST go through the structured logger.** This is a Tauri desktop app — there is no terminal. Never use `fprintf(stderr, ...)`, `printf`, `std::cerr`, `std::cout`, or `console.log`. Always use `polysmith::core::log_info/log_warn/log_error/log_debug("tag", "message")` in C++, or `addMessage` / `addLogEntry` in TypeScript. These appear in the in-app Logs panel the user can actually see. This is non-negotiable — the user cannot see stderr.
+
+### No Untested Commits
+
+- **Never commit code that has not been exercised.** Diagnostic logging, speculative fixes, debug scaffolding — all of it stays uncommitted until the user has run the app and confirmed the change works correctly. A successful compile is not enough; the change must be observed doing its job at runtime. Commit only after the user confirms the fix resolves the issue.
 
 ### UI Copy Rules
 
@@ -199,16 +210,48 @@ tested and how.
 
 ### C++ Tests
 
-Tests are standalone executables built by CMake. Run from the build directory:
+Tests are standalone executables built by CMake (sketch profile, multi-profile
+extrude, extrude quality, CAM face reference, plugin feature). Run ALL of them
+with one command — it handles the OCCT DLL path:
 
 ```bash
-cd native/cad-core/build
-./cad_core_sketch_profile_test
-./cad_core_multi_profile_extrude_test
-./cad_core_cam_face_reference_test
+pnpm test:core
 ```
 
 Rebuild tests with `pnpm core:rebuild` (they link against the full CAD core + OCCT).
+
+### Regression Prevention (binding)
+
+Profile detection and sketch geometry are the most regression-prone code in
+the project — bugs there resurface as "Sketch profile not found", missing
+surfaces, or wrong extrude volumes, and manual app testing is slow. These
+rules exist to keep regressions from reaching the user:
+
+- **Test before fix.** Every bug fix to sketch/profile/geometry logic must
+  ship with a C++ regression test that reproduces the bug — it must fail
+  before the fix and pass after. Add it to the matching suite in
+  `native/cad-core/tests/`, following the existing test style.
+- **Assert the complete region set.** Profile-detection tests must assert
+  the FULL expected profile set (exact entity-id set + kind per region)
+  using `polysmith::test::profiles_match` from
+  `native/cad-core/tests/sketch_test_utils.h` — never just the presence of
+  one profile. Precedent: a 2026-08 face-walk change silently removed a
+  full-circle profile and the suite stayed green because the trim test only
+  asserted the outer polygon.
+- **Face-walk changes require all suites.** Any change to
+  `sketch_profile_exact.inc` (arrangement, face walk, tangency/epsilon
+  rules) must pass `pnpm test:core` in full — a walk-rule tweak that fixes
+  one face commonly breaks another.
+- **No tangency heuristic without both epsilon signs.** Tangency,
+  epsilon, and tie-break changes are floating-point traps; a regression
+  test must cover both signs of the deviation (e.g., the tangent line
+  drawn slightly to either side of exact tangency).
+- **Use the built-in face-walk trace.** The face walk has a permanent
+  env-gated diagnostic: `PS_TRACE_FACES=1` dumps every walk step to the
+  structured log under tag `exact_profiles`. Use it to diagnose face
+  detection issues before adding one-off debug scaffolding.
+- **Name the suites in the commit message.** State which suites ran and
+  what was verified, per the never-commit-untested-code rule above.
 
 ### TypeScript
 
@@ -237,12 +280,56 @@ C++ notes:
 - MSVC treats `const char*` ↔ `unsigned char*` as an error. Match types exactly.
 - OCCT DLLs on Windows live at `third_party/occt-install/win64/vc14/bin`. Tauri prepends this to `PATH` when spawning the core.
 
-## Debugging
+## Debugging & Logging
 
-- This is a **Tauri desktop app** — there is no F12 DevTools console.
-- `console.log` output is captured and discarded by Tauri. **Never use `console.log` for debugging.**
-- Use `addMessage("...")` from `useCadCoreStore` to emit messages to the in-app **Logs panel** (toolbar icon). Structured `LogEntry` objects can be sent via `addLogEntry(entry)`.
-- The CAD core writes structured logs to stderr (format: `[timestamp] [level] [source] message`). Tauri forwards unrecognized stderr lines as `cad-core-log` events.
+This is a **Tauri desktop app** — there is no F12 DevTools console and no terminal
+output visible to the user. All diagnostic output must go through the in-app
+**Logs panel** (toolbar icon, expandable sidebar). Never use `console.log`,
+`printf`, `fprintf(stderr, ...)`, `std::cerr`, or `std::cout` for permanent
+diagnostics — they are either discarded or surfaced as raw stderr events the
+user cannot filter.
+
+### Logging from TypeScript (UI layer)
+
+Two functions available from `useCadCoreStore`:
+
+```ts
+// Simple text message — appears in Logs panel immediately.
+const addMessage = useCadCoreStore((state) => state.addMessage);
+addMessage("export started");
+
+// Structured log entry — level-filterable, carries source + timestamp.
+// Use makeUiLogEntry from @/lib for correct structure.
+import { makeUiLogEntry } from "@/lib";
+const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
+addLogEntry(makeUiLogEntry("info", "desktop_ui", "export started"));
+```
+
+`LogLevel`: `"debug"` | `"info"` | `"warn"` | `"error"`.
+`LogEntry`: `{ level, source, message, timestamp }` (defined in `src/types/ipc.ts`).
+
+### Logging from C++ (CAD core)
+
+Use the project's structured logger (`core/diagnostics/logger.h`), **not** raw
+`fprintf` or `std::cerr`:
+
+```cpp
+#include "core/diagnostics/logger.h"
+
+polysmith::core::log_info("source_tag", "message");
+polysmith::core::log_warn("source_tag", "message");
+polysmith::core::log_error("source_tag", "message");
+polysmith::core::log_debug("source_tag", "message");
+```
+
+This writes both to stderr (for Tauri's stderr bridge) **and** emits a
+structured `log` IPC event that the UI routes to the Logs panel with proper
+level/source/timestamp metadata.
+
+Raw stderr output (from `fprintf(stderr, ...)` or uncaught exception messages)
+is captured by Tauri and forwarded as `cad-core-log` events, but without
+structured metadata — level defaults to `"info"` and source is unknown.
+Prefer the logger API.
 
 ## Build Troubleshooting
 
@@ -313,8 +400,10 @@ Key pages for understanding the system:
 
 - `dev` is the default development branch; `main` is production/stable.
 - Feature branches from latest `dev`, squash-merge back via PR.
-- Git push/pull/fetch require user permission — never run them autonomously.
-- Prefer `gh` CLI for PR operations when available.
+- **No git mutations without approval.** `git commit`, `git checkout`, `git rm`, `git reset`, `git stash`, `git revert`, `git cherry-pick`, `git add`, and any other command that changes the working tree, index, or branch state must be approved by the user before execution. Read-only commands (`git status`, `git log`, `git diff`, `git show`) are exempt.
+- Prefer `gh` CLI for PR operations when available — also requires approval.
+- **Never commit without asking first.** Every `git commit` must be approved by the user before execution.
+- **Never commit untested code.** Code must be verified by at least a successful build (`pnpm core:rebuild` or equivalent) before it can be committed. If the build environment is unavailable, state that clearly instead of committing blind.
 - At the start of every prompt that may change files, check the current branch and working tree state before editing.
 - Keep feature branches scoped to one implementation or fix.
 - Open implementation PRs as draft until tested and ready for review.

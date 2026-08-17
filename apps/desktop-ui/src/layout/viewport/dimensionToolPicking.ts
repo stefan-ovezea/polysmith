@@ -83,7 +83,7 @@ function entityIdFromSketchVertexId(
   // Phase 2: use geometry_owner_ids from the unified vertex model.
   // This is the preferred path — no regex, no entity-walking.
   if (sketch) {
-    for (const pt of sketch.points) {
+    for (const pt of sketch.vertices) {
       if (pt.vertex_id === vertexId && pt.geometry_owner_ids?.length) {
         const ownerId = pt.geometry_owner_ids[0];
         // Check if the owner kind matches the requested kinds.

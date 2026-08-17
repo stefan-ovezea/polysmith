@@ -210,7 +210,7 @@ export interface SketchFeatureParameters {
   arcs: SketchArcEntry[];
   polygons: SketchPolygonEntry[];
   fillets: SketchFilletEntry[];
-  points: SketchVertexEntry[];
+  vertices: SketchVertexEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];
   // Midpoint anchors. Empty on older saves; the schema fills in [].

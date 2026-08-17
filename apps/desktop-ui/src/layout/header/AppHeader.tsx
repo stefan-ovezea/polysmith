@@ -333,6 +333,8 @@ interface AppHeaderProps
   onToggleFilterPanel: () => void;
   materialsPanelOpen: boolean;
   onToggleMaterialsPanel: () => void;
+  viewPanelOpen: boolean;
+  onToggleViewPanel: () => void;
   onUpdateSelectionFilter: (filter: SelectionFilterUpdate) => Promise<void>;
   // CAM workspace
   activeCamOperation: CamOperationType | null;
@@ -434,6 +436,8 @@ export function AppHeader({
   onToggleFilterPanel,
   materialsPanelOpen,
   onToggleMaterialsPanel,
+  viewPanelOpen,
+  onToggleViewPanel,
   onUpdateSelectionFilter,
   activeCamOperation,
   onSelectCamOperation,
@@ -601,6 +605,18 @@ export function AppHeader({
                 title={t("materials.title")}
               >
                 {t("materials.button")}
+              </button>
+              <button
+                type="button"
+                className={
+                  viewPanelOpen
+                    ? "cad-ribbon-action cad-ribbon-action-primary h-9 px-3 leading-none"
+                    : "cad-ribbon-action h-9 px-3 leading-none"
+                }
+                onClick={onToggleViewPanel}
+                title={t("view.title")}
+              >
+                {t("view.button")}
               </button>
               {filterPanelOpen ? (
                 <div className="absolute left-0 top-[calc(100%+0.75rem)]">

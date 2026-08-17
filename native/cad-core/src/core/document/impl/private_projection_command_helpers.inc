@@ -72,12 +72,12 @@ FaceOutlinePoint sketch_local_to_world(const SketchFeatureParameters& sketch,
     };
   }
   if (sketch.plane_id == "ref-plane-xy") {
-    return FaceOutlinePoint{.x = local_x, .y = 0.0, .z = local_y};
+    return FaceOutlinePoint{.x = local_x, .y = local_y, .z = 0.0};
   }
   if (sketch.plane_id == "ref-plane-yz") {
     return FaceOutlinePoint{.x = 0.0, .y = local_x, .z = local_y};
   }
-  return FaceOutlinePoint{.x = local_x, .y = local_y, .z = 0.0};
+  return FaceOutlinePoint{.x = local_x, .y = 0.0, .z = local_y};
 }
 
 FaceOutlinePoint sketch_normal(const SketchFeatureParameters& sketch) {
@@ -90,9 +90,9 @@ FaceOutlinePoint sketch_normal(const SketchFeatureParameters& sketch) {
     return FaceOutlinePoint{.x = 1.0, .y = 0.0, .z = 0.0};
   }
   if (sketch.plane_id == "ref-plane-xz") {
-    return FaceOutlinePoint{.x = 0.0, .y = 0.0, .z = 1.0};
+    return FaceOutlinePoint{.x = 0.0, .y = 1.0, .z = 0.0};
   }
-  return FaceOutlinePoint{.x = 0.0, .y = 1.0, .z = 0.0};
+  return FaceOutlinePoint{.x = 0.0, .y = 0.0, .z = 1.0};
 }
 
 bool normals_parallel(const FaceOutlinePoint& left,

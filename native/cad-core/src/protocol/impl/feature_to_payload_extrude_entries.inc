@@ -51,7 +51,70 @@
                              }},
                         }
                       : json(nullptr)},
-                 {"profile_kind", feature.extrude_parameters->profile_kind},
+                  {"sketch_edge_ids",
+                   [&feature]() {
+                     json ids = json::array();
+                     for (const auto& id :
+                          feature.extrude_parameters->sketch_edge_ids) {
+                       ids.push_back(id);
+                     }
+                     return ids;
+                   }()},
+                  {"sketch_lines",
+                   [&feature]() {
+                     json lines = json::array();
+                     for (const auto& line :
+                          feature.extrude_parameters->sketch_lines) {
+                       lines.push_back({
+                           {"line_id", line.id},
+                           {"start_x", line.start_x},
+                           {"start_y", line.start_y},
+                           {"end_x", line.end_x},
+                           {"end_y", line.end_y},
+                           {"start_vertex_id", line.start_vertex_id},
+                           {"end_vertex_id", line.end_vertex_id},
+                           {"is_construction", line.is_construction},
+                           {"constraint", line.constraint},
+                       });
+                     }
+                     return lines;
+                   }()},
+                  {"sketch_arcs",
+                   [&feature]() {
+                     json arcs = json::array();
+                     for (const auto& arc :
+                          feature.extrude_parameters->sketch_arcs) {
+                       arcs.push_back({
+                           {"arc_id", arc.id},
+                           {"center_x", arc.center_x},
+                           {"center_y", arc.center_y},
+                           {"start_x", arc.start_x},
+                           {"start_y", arc.start_y},
+                           {"end_x", arc.end_x},
+                           {"end_y", arc.end_y},
+                           {"radius", arc.radius},
+                           {"ccw", arc.ccw},
+                           {"is_construction", arc.is_construction},
+                       });
+                     }
+                     return arcs;
+                   }()},
+                  {"sketch_circles",
+                   [&feature]() {
+                     json circles = json::array();
+                     for (const auto& circ :
+                          feature.extrude_parameters->sketch_circles) {
+                       circles.push_back({
+                           {"circle_id", circ.id},
+                           {"center_x", circ.center_x},
+                           {"center_y", circ.center_y},
+                           {"radius", circ.radius},
+                           {"is_construction", circ.is_construction},
+                       });
+                     }
+                     return circles;
+                   }()},
+                  {"profile_kind", feature.extrude_parameters->profile_kind},
                  {"start_x", feature.extrude_parameters->start_x},
                  {"start_y", feature.extrude_parameters->start_y},
                  {"width", feature.extrude_parameters->width},
@@ -112,6 +175,86 @@
                     }
                     return profiles;
                  }()},
+                 {"additional_sketch_edge_ids",
+                  [&feature]() {
+                    json profiles = json::array();
+                    for (const auto& ids :
+                         feature.extrude_parameters->additional_sketch_edge_ids) {
+                      json arr = json::array();
+                      for (const auto& id : ids) arr.push_back(id);
+                      profiles.push_back(arr);
+                    }
+                    return profiles;
+                  }()},
+                 {"additional_arc_descriptors",
+                  [&feature]() {
+                    json profiles = json::array();
+                    for (const auto& descs :
+                         feature.extrude_parameters->additional_arc_descriptors) {
+                      json arr = json::array();
+                      for (const auto& desc : descs) {
+                        arr.push_back({
+                            {"circle_id", desc.circle_id},
+                            {"center_x", desc.center_x},
+                            {"center_y", desc.center_y},
+                            {"radius", desc.radius},
+                            {"start_angle_rad", desc.start_angle_rad},
+                            {"end_angle_rad", desc.end_angle_rad},
+                            {"ccw", desc.ccw},
+                        });
+                      }
+                      profiles.push_back(arr);
+                    }
+                    return profiles;
+                  }()},
+                 {"additional_boundary_edges",
+                  [&feature]() {
+                    json groups = json::array();
+                    for (const auto& edges :
+                         feature.extrude_parameters->additional_boundary_edges) {
+                      json arr = json::array();
+                      for (const auto& edge : edges) {
+                        arr.push_back({
+                            {"entity_id", edge.entity_id},
+                            {"entity_kind", edge.entity_kind},
+                            {"param_start", edge.param_start},
+                            {"param_end", edge.param_end},
+                            {"start_x", edge.start_x},
+                            {"start_y", edge.start_y},
+                            {"end_x", edge.end_x},
+                            {"end_y", edge.end_y},
+                            {"center_x", edge.center_x},
+                            {"center_y", edge.center_y},
+                            {"radius", edge.radius},
+                            {"ccw", edge.ccw},
+                        });
+                      }
+                      groups.push_back(arr);
+                    }
+                    return groups;
+                  }()},
+                 {"boundary_edges",
+                  [&feature]() {
+                    json arr = json::array();
+                    for (const auto& edge :
+                         feature.extrude_parameters->boundary_edges) {
+                      arr.push_back({
+                          {"entity_id", edge.entity_id},
+                          {"entity_kind", edge.entity_kind},
+                          {"param_start", edge.param_start},
+                          {"param_end", edge.param_end},
+                          {"start_x", edge.start_x},
+                          {"start_y", edge.start_y},
+                          {"end_x", edge.end_x},
+                          {"end_y", edge.end_y},
+                          {"center_x", edge.center_x},
+                          {"center_y", edge.center_y},
+                          {"radius", edge.radius},
+                          {"ccw", edge.ccw},
+                      });
+                    }
+                    return arr;
+                  }()},
                  {"depth", feature.extrude_parameters->depth},
                  {"extent_mode", feature.extrude_parameters->extent_mode},
                  {"side1",

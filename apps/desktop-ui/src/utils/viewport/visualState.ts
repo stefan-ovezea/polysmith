@@ -188,6 +188,11 @@ export function applySketchProfileVisualState(
       material.opacity = 0.98;
       material.linewidth = state.isSelected ? 3 : 2.5;
     }
+    // Inner-loop (hole) outlines stay neutral: highlighting them makes
+    // it look like the contained circle profile is hovered/selected too.
+    for (const material of visual.holeEdgeMaterials) {
+      material.opacity = 0;
+    }
     return;
   }
 

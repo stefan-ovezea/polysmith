@@ -55,7 +55,39 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     if (points_match(candidate.end_x, candidate.end_y, x, y))
       return std::tuple<std::string, double, double>{
           candidate.end_vertex_id, candidate.end_x, candidate.end_y};
+    // Arc centres don't have dedicated vertex IDs yet, but the
+    // vertices scan below will catch any existing vertex (e.g. a
+    // circle centre or quadrant) at the same position.
   }
+
+  // Circle centres are reusable vertices — a line endpoint placed at
+  // the circle centre should share the centre vertex so deleting the
+  // line doesn't orphan a coincident constraint.
+  for (const auto& circle : parameters.circles) {
+    if (points_match(circle.center_x, circle.center_y, x, y))
+      return std::tuple<std::string, double, double>{
+          circle.center_vertex_id, circle.center_x, circle.center_y};
+  }
+
+  // Check projected points so lines/arcs drawn near a projected
+  // vertex snap to it directly instead of creating a separate
+  // vertex and a redundant coincident constraint.
+  for (const auto& projected : parameters.projected_points) {
+    if (points_match(projected.x, projected.y, x, y))
+      return std::tuple<std::string, double, double>{
+          projected.id, projected.x, projected.y};
+  }
+
+  // The vertices list aggregates all sketch vertices — line/arc
+  // endpoints, circle centres, circle quadrants, and projected
+  // points.  Checking it last catches quadrant vertices and any
+  // future vertex kinds without needing individual geometry loops.
+  for (const auto& vertex : parameters.vertices) {
+    if (points_match(vertex.x, vertex.y, x, y))
+      return std::tuple<std::string, double, double>{
+          vertex.id, vertex.x, vertex.y};
+  }
+
   return std::nullopt;
 }
 
@@ -83,6 +115,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     });
   };
 
+  // Projected points must come FIRST so their freshly-patched
+  // coordinates (from refresh_sketch_projections) are authoritative
+  // when a line/arc endpoint shares the same vertex ID.  append_point
+  // keeps the first-seen entry, so projecting-first means the source
+  // geometry drives the sketch entity.
+  for (const auto& projected : parameters.projected_points) {
+    append_point(projected.id, "projected", projected.x, projected.y);
+  }
+
   for (const auto& line : parameters.lines) {
     append_point(line.start_vertex_id, "endpoint", line.start_x, line.start_y);
     append_point(line.end_vertex_id, "endpoint", line.end_x, line.end_y);
@@ -97,6 +138,33 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     append_point(arc.start_vertex_id, "endpoint", arc.start_x, arc.start_y);
     append_point(arc.end_vertex_id, "endpoint", arc.end_x, arc.end_y);
   }
+
+  // Emit a quadrant vertex unless a vertex with the same id already
+  // exists (a line endpoint drawn onto a quadrant point carries the
+  // legacy "vertex-<entity>-quadrant-N" id) — pushing a second record
+  // with the same id corrupts the vertex model.  Ownership is recorded
+  // here so sweep-external arc quadrants never claim their arc.
+  auto emit_quadrant = [&](const std::string& quadrant_id,
+                           const std::string& owner_id,
+                           double qx,
+                           double qy) {
+    const auto existing_it = std::find_if(
+        parameters.vertices.begin(),
+        parameters.vertices.end(),
+        [&](const SketchVertex& v) { return v.id == quadrant_id; });
+    if (existing_it != parameters.vertices.end()) {
+      existing_it->geometry_owner_ids.push_back(owner_id);
+      return;
+    }
+    parameters.vertices.push_back(SketchVertex{
+        .id = quadrant_id,
+        .kind = "quadrant",
+        .x = qx,
+        .y = qy,
+        .is_fixed = false,
+        .geometry_owner_ids = {owner_id},
+    });
+  };
 
   // ── Phase 6: centers use stable vertex-N IDs ──────────────────
   for (auto& circle : parameters.circles) {
@@ -116,34 +184,10 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     const double cx = circle.center_x;
     const double cy = circle.center_y;
     const double r = circle.radius;
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-0",
-        .kind = "quadrant",
-        .x = cx + r,
-        .y = cy,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-1",
-        .kind = "quadrant",
-        .x = cx,
-        .y = cy + r,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-2",
-        .kind = "quadrant",
-        .x = cx - r,
-        .y = cy,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-3",
-        .kind = "quadrant",
-        .x = cx,
-        .y = cy - r,
-        .is_fixed = false,
-    });
+    emit_quadrant("vertex-" + circle.id + "-quadrant-0", circle.id, cx + r, cy);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-1", circle.id, cx, cy + r);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-2", circle.id, cx - r, cy);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-3", circle.id, cx, cy - r);
   }
 
   // Re-emit arc center points with stable vertex-N IDs.
@@ -178,13 +222,10 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         else          { on_arc = a <= ns || a >= ne; }
       }
       if (!on_arc) continue;
-      parameters.vertices.push_back(SketchVertex{
-          .id = "vertex-" + arc.id + "-quadrant-" + std::to_string(q),
-          .kind = "quadrant",
-          .x = arc.center_x + arc.radius * std::cos(cardinals[q]),
-          .y = arc.center_y + arc.radius * std::sin(cardinals[q]),
-          .is_fixed = false,
-      });
+      emit_quadrant("vertex-" + arc.id + "-quadrant-" + std::to_string(q),
+                    arc.id,
+                    arc.center_x + arc.radius * std::cos(cardinals[q]),
+                    arc.center_y + arc.radius * std::sin(cardinals[q]));
     }
   }
 
@@ -207,16 +248,9 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                  fillet.corner_y);
   }
 
-  // Free-standing points placed by the Project tool. Same machinery
-  // as the fillet corner re-emit above: nothing else references
-  // these ids, so without this loop they would vanish on the next
-  // recompute. Marked `kind = "projected"` so the renderer / hit
-  // testing can give them a distinct visual (a small cross, similar
-  // to common CAD behavior). `is_fixed` is forced true below by
-  // `enforce_derived_points_fixed` so the user can't drag them.
-  for (const auto& projected : parameters.projected_points) {
-    append_point(projected.id, "projected", projected.x, projected.y);
-  }
+  // Projected points are now emitted at the top of rebuild_sketch_vertices
+  // (before lines) so their freshly-refreshed coordinates take priority
+  // over cached entity coordinates when a vertex ID is shared.
 
   // ── Phase 2: populate geometry_owner_ids ────────────────────
   // Walk every point and record which geometry entities
@@ -252,27 +286,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         sp->geometry_owner_ids.push_back(arc.id);
   }
 
-  // Circle centers and quadrants.
+  // Circle centers (quadrants were attributed at emission time — see
+  // emit_quadrant above — so sweep-external arc quadrants never claim
+  // their arc, e.g. a line endpoint that keeps a legacy quadrant id
+  // after the arc piece through that point was trimmed away).
   for (const auto& circle : parameters.circles) {
     // Phase 6: center ID is now center_vertex_id (vertex-N)
     if (!circle.center_vertex_id.empty())
       if (auto* sp = find_point(circle.center_vertex_id))
         sp->geometry_owner_ids.push_back(circle.id);
-    // Quadrants still use legacy format (see TODO above).
-    for (int q = 0; q < 4; ++q) {
-      const auto qid = "vertex-" + circle.id + "-quadrant-" + std::to_string(q);
-      if (auto* sp = find_point(qid))
-        sp->geometry_owner_ids.push_back(circle.id);
-    }
-  }
-
-  // Arc quadrants.
-  for (const auto& arc : parameters.arcs) {
-    for (int q = 0; q < 4; ++q) {
-      const auto qid = "vertex-" + arc.id + "-quadrant-" + std::to_string(q);
-      if (auto* sp = find_point(qid))
-        sp->geometry_owner_ids.push_back(arc.id);
-    }
   }
 
   // ── Phase 1 (kept): projection metadata ─────────────────────
@@ -315,6 +337,44 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
       } else {
         // Legacy point-* format — assign fresh vertex-N
         point.vertex_id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+      }
+    }
+  }
+
+  // Build a map from legacy id -> unified vertex-N so we can
+  // patch projected_points and projection records below.
+  std::unordered_map<std::string, std::string> legacy_to_unified;
+  for (const auto& pt : parameters.vertices) {
+    if (!pt.vertex_id.empty() && pt.id != pt.vertex_id) {
+      legacy_to_unified[pt.id] = pt.vertex_id;
+    }
+  }
+
+  // Unify: set id = vertex_id so every vertex has a single canonical
+  // identifier.  This completes the point-to-vertex migration.
+  for (auto& pt : parameters.vertices) {
+    auto it = legacy_to_unified.find(pt.id);
+    if (it != legacy_to_unified.end()) {
+      pt.id = it->second;
+    }
+  }
+
+  // Patch projected_points so their ids stay in sync.  Otherwise the
+  // next rebuild would emit duplicate vertices (append_point matches
+  // by id, and projected.id would no longer match the unified id).
+  for (auto& projected : parameters.projected_points) {
+    auto it = legacy_to_unified.find(projected.id);
+    if (it != legacy_to_unified.end()) {
+      projected.id = it->second;
+    }
+  }
+
+  // Patch projection records that reference these projected points.
+  for (auto& proj : parameters.projections) {
+    if (!proj.generated_vertex_id.empty()) {
+      auto it = legacy_to_unified.find(proj.generated_vertex_id);
+      if (it != legacy_to_unified.end()) {
+        proj.generated_vertex_id = it->second;
       }
     }
   }

@@ -1,11 +1,17 @@
 import * as THREE from "three";
 
-import type { ConstraintType, SketchTool, ViewportScene } from "@/types";
+import type {
+  ConstraintType,
+  SketchPlaneFrame,
+  SketchTool,
+  ViewportScene,
+} from "@/types";
 import type { ViewportPickHit } from "./contextMenuState";
-import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
+import { resolveSketchPlanePoint, setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import { sketchEntitySelectionHitFromIntersection } from "./sketchClickSelection";
 import { pickSketchProfileId } from "./sketchProfilePicking";
 import { getOrthographicViewHeight } from "./grid";
+import { trimWorldPointToLocal } from "./trimHoverPreview";
 
 export function pickVisibleSketchLineScreenSpace({
   event,
@@ -71,6 +77,7 @@ export function intersectViewportSceneTargets({
   raycaster,
   sceneData,
   activeSketchPlaneId,
+  activeSketchPlaneFrame,
   activeSketchTool,
   armedSketchConstraintKind,
   inactiveSketchEntityPickEnabled,
@@ -93,6 +100,7 @@ export function intersectViewportSceneTargets({
   raycaster: THREE.Raycaster;
   sceneData: ViewportScene | null;
   activeSketchPlaneId: string | null;
+  activeSketchPlaneFrame: SketchPlaneFrame | null;
   activeSketchTool: SketchTool;
   armedSketchConstraintKind: ConstraintType | null;
   inactiveSketchEntityPickEnabled: boolean;
@@ -128,6 +136,10 @@ export function intersectViewportSceneTargets({
     });
 
   if (activeSketchPlaneId) {
+    // Cursor position on the active sketch plane — used by the exact
+    // circle/arc curve-distance gate.
+    const planePoint = resolveSketchPlanePoint(
+      event, renderer, camera, activeSketchPlaneId, activeSketchPlaneFrame);
     const activeSketchHit = pickActiveSketchTarget({
       activeSketchTool,
       armedSketchConstraintKind,
@@ -139,6 +151,8 @@ export function intersectViewportSceneTargets({
       pickProfile,
       worldUnitsPerPixel,
       tolerancePx,
+      sceneData,
+      cursorLocal: planePoint ? planePoint.local : null,
     });
     if (activeSketchHit) {
       return activeSketchHit;
@@ -200,6 +214,61 @@ export function intersectViewportSceneTargets({
   });
 }
 
+// Exact distance from the sketch-plane cursor to a circle/arc entity's
+// analytic curve (2D sketch coordinates).  Arcs measured in the stored
+// sweep use the radial distance; outside the sweep the nearer endpoint
+// distance.  This replaces the old fixed 2px outline rule with a
+// zoom-aware, geometry-exact gate.
+function exactDistanceToCurve(
+  entity: {
+    planeId: string;
+    planeFrame: {
+      origin: { x: number; y: number; z: number };
+      x_axis: { x: number; y: number; z: number };
+      y_axis: { x: number; y: number; z: number };
+    } | null;
+    center: [number, number, number];
+    radius: number;
+    start?: [number, number, number];
+    end?: [number, number, number];
+    ccw?: boolean;
+  },
+  cursorLocal: [number, number],
+): number {
+  const [cx, cy] = trimWorldPointToLocal(
+    entity.center, entity.planeId, entity.planeFrame);
+  const [mx, my] = cursorLocal;
+  const radial = Math.hypot(mx - cx, my - cy);
+  if (!entity.start || !entity.end || entity.ccw === undefined) {
+    return Math.abs(radial - entity.radius);
+  }
+  const [sx, sy] = trimWorldPointToLocal(
+    entity.start, entity.planeId, entity.planeFrame);
+  const [ex, ey] = trimWorldPointToLocal(
+    entity.end, entity.planeId, entity.planeFrame);
+  const startAngle = Math.atan2(sy - cy, sx - cx);
+  const endAngle = Math.atan2(ey - cy, ex - cx);
+  let angle = Math.atan2(my - cy, mx - cx);
+  let inSweep: boolean;
+  if (entity.ccw) {
+    let s = startAngle;
+    let e = endAngle;
+    if (angle < s) angle += 2 * Math.PI;
+    if (e <= s) e += 2 * Math.PI;
+    inSweep = angle >= s - 1e-9 && angle <= e + 1e-9;
+  } else {
+    let s = startAngle;
+    let e = endAngle;
+    if (angle > s) angle -= 2 * Math.PI;
+    if (e >= s) e -= 2 * Math.PI;
+    inSweep = angle <= s + 1e-9 && angle >= e - 1e-9;
+  }
+  if (!inSweep) {
+    return Math.min(Math.hypot(mx - sx, my - sy), Math.hypot(mx - ex, my - ey));
+  }
+  return Math.abs(radial - entity.radius);
+}
+
 function pickActiveSketchTarget({
   activeSketchTool,
   armedSketchConstraintKind,
@@ -211,6 +280,8 @@ function pickActiveSketchTarget({
   pickProfile,
   worldUnitsPerPixel,
   tolerancePx,
+  sceneData,
+  cursorLocal,
 }: {
   activeSketchTool: SketchTool;
   armedSketchConstraintKind: ConstraintType | null;
@@ -222,21 +293,21 @@ function pickActiveSketchTarget({
   pickProfile: () => string | null;
   worldUnitsPerPixel: number;
   tolerancePx: number;
+  sceneData: ViewportScene | null;
+  cursorLocal: [number, number] | null;
 }): ViewportPickHit | null {
-  // Sketch points always get first priority — a vertex the user
-  // wants to drag should never be blocked by an overlapping dimension
-  // arc or label (e.g. angle dimensions sitting on a shared endpoint).
-  const pointHit = pickSketchPointByRayDistance(
-    raycaster, sketchPointObjects, worldUnitsPerPixel, tolerancePx);
-  if (pointHit) {
-    return pointHit;
-  }
-
   const checkDimensionsLast = activeSketchTool === "dimension";
 
-  if (checkDimensionsLast) {
+  if (checkDimensionsLast || activeSketchTool === "trim") {
     // Dimension tool: check entities before dimensions so the user
     // can pick lines/circles to create dimensions on them.
+    // Trim tool: entities must win over sketch points, dimension
+    // labels and constraints — the zoom-aware point-pick radius
+    // otherwise swallows a circle's outline around its center and
+    // quadrant vertices, making the red trim highlight unreachable
+    // except in the gaps between vertices.  The 2px outline rule for
+    // circle/arc entities is deliberately skipped here too: the trim
+    // tool has no profile hover to protect.
     const [entityHit] = raycaster.intersectObjects(
       sketchEntityObjects, false);
     const entityResult =
@@ -244,6 +315,15 @@ function pickActiveSketchTarget({
     if (entityResult) {
       return entityResult;
     }
+  }
+
+  // Sketch points always get first priority — a vertex the user
+  // wants to drag should never be blocked by an overlapping dimension
+  // arc or label (e.g. angle dimensions sitting on a shared endpoint).
+  const pointHit = pickSketchPointByRayDistance(
+    raycaster, sketchPointObjects, worldUnitsPerPixel, tolerancePx);
+  if (pointHit) {
+    return pointHit;
   }
 
   const dimensionHit = pickSketchDimension(raycaster, sketchDimensionObjects);
@@ -262,8 +342,38 @@ function pickActiveSketchTarget({
   // dimension labels/arcs can still be clicked for editing).
   const [entityHit] = raycaster.intersectObjects(
     sketchEntityObjects, false);
-  const entityResult =
+  let entityResult =
     sketchEntitySelectionHitFromIntersection(entityHit);
+  if (entityResult) {
+    // Circle/arc entities claim the pick only when the cursor lies on
+    // the analytic curve (within the zoom-aware tolerance): the curve's
+    // interior belongs to the enclosing profile (the extrudable
+    // surface).  The gate is geometry-exact, so hovering ON an arc
+    // anywhere along its length selects the arc — the old fixed 2px
+    // chord-distance rule rejected interior bulge positions and made
+    // trim-created arcs unselectable.  Small circles cap the gate at
+    // r/2 so their profiles stay reachable on interior hover.  The
+    // dimension/trim branches above keep the generous tolerance.
+    const entityKind = entityHit.object.userData.sketchEntityKind;
+    if (entityKind === "circle" || entityKind === "arc") {
+      const entityId =
+        entityHit.object.userData.sketchEntityId as string | undefined;
+      const sceneEntity = entityKind === "circle"
+          ? sceneData?.sketchCircles.find((c) => c.circleId === entityId)
+          : sceneData?.sketchArcs.find((a) => a.arcId === entityId);
+      if (!sceneEntity || !cursorLocal) {
+        entityResult = null;
+      } else {
+        const distance = exactDistanceToCurve(sceneEntity, cursorLocal);
+        const gate = Math.max(
+          0.75,
+          Math.min(tolerancePx * worldUnitsPerPixel, sceneEntity.radius / 2));
+        if (distance > gate) {
+          entityResult = null;
+        }
+      }
+    }
+  }
   if (entityResult) {
     return entityResult;
   }

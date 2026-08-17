@@ -33,7 +33,7 @@ start point."
 3. **Type** a value into the Length or Angle field.
 4. **Tab** to switch between fields. The preview updates live.
 5. **Commit** the line:
-   - **Enter** — commits the line and exits to Select mode.
+   - **Enter** — commits the line at the current position and keeps the Line tool armed.
    - **Click** on the canvas — commits the line and continues chaining.
 
 Parameter names can be typed into dimension fields (e.g. `width`). They
@@ -86,13 +86,18 @@ Chaining continues until the user breaks the chain or exits the tool.
 
 ### Breaking the Chain
 
-**Double-click** at the current endpoint to end the chain. The line tool
-stays active but unchained — the next click starts a fresh independent
-line from a new start point.
+**Double-click** at the current endpoint to end the chain, or
+**right-click** while the rubber band is visible. The line tool stays
+active but unchained — the next click starts a fresh independent line
+from a new start point.
 
-**Mechanism:** Two clicks within 300ms and 6px at the same location while
-a draft is active. The zero-length line guard also prevents degenerate
-geometry.
+**Double-click mechanism:** Two clicks within 300ms and 6px at the same
+location while a draft is active. The zero-length line guard also prevents
+degenerate geometry.
+
+**Right-click mechanism:** Cancels the current rubber band (draft start,
+preview, dimension session) without switching to Select mode — equivalent
+to Escape without dearming the tool.
 
 ---
 
@@ -100,7 +105,8 @@ geometry.
 
 | Action                           | Result |
 |----------------------------------|--------|
-| **Enter** (in a dimension field) | Commits the line, switches to Select mode |
+| **Enter** (in a dimension field) | Commits the line at the current position, keeps the Line tool armed |
+| **Right-click** (rubber band active) | Cancels the rubber band / breaks the chain, keeps the Line tool armed |
 | **Escape**                       | Cancels the current draft, switches to Select mode |
 | **Click another tool**           | Cancels the draft, activates the new tool |
 | **Hotkey for another tool**      | Same as clicking |
@@ -114,7 +120,8 @@ geometry.
 | `L`                  | Select mode             | Activate Line tool |
 | `Tab`                | Dimension field focus   | Cycle to the next field (Length → Angle → Length) |
 | `Shift+Tab`          | Dimension field focus   | Cycle to the previous field |
-| `Enter`              | Dimension field focus   | Commit line, exit to Select |
+| `Enter`              | Dimension field focus   | Commit line, keep Line tool armed |
+| `Right-click`        | Rubber band active      | Cancel rubber band / break chain, keep Line tool armed |
 | `Escape`             | Any draft state         | Cancel draft, exit to Select |
 | `Shift` (hold)       | During placement        | Lock to horizontal/vertical axis |
 
@@ -205,8 +212,10 @@ into the corresponding draft field.
 handlePointerDown  → create first-point draft session
 handlePointerMove  → update preview + dimension labels
 handlePointerUp    → commit via add_sketch_line IPC
-                  → chain: new draft from endpoint
-                  → or exit: switch to select mode
+                   → chain: new draft from endpoint (click)
+                   → or: keep tool armed, unchain (double-click / right-click)
+Escape             → cancel draft, switch to select mode
+Enter              → commit current position, keep tool armed
 ```
 
 ### Double-Click Detection

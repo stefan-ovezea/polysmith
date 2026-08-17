@@ -65,12 +65,12 @@ function profileLocalPoint(
     return null;
   }
   if (profile.planeId === "ref-plane-xy") {
-    return [hitPoint.x, hitPoint.z];
+    return [hitPoint.x, hitPoint.y];
   }
   if (profile.planeId === "ref-plane-yz") {
     return [hitPoint.y, hitPoint.z];
   }
-  return [hitPoint.x, hitPoint.y];
+  return [hitPoint.x, hitPoint.z];
 }
 
 function containsProfilePoint(

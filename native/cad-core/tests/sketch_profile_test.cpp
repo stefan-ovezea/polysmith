@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <array>
+#include <algorithm>
 #include <iostream>
 #include <exception>
 
@@ -882,6 +883,306 @@ bool test_fillet_rejects_oversized_radius() {
                 "expected oversized fillet radius to throw a structured error");
 }
 
+
+// Reproduces the chamfered-rectangle + circle geometry from part.json.
+// Verifies that no spurious arc-only "sliver" profiles are generated.
+bool test_chamfered_rect_with_circle_produces_no_spurious_profiles() {
+  FeatureEntry feature = create_sketch_feature(30, "ref-plane-xy");
+
+  // Build a 100×80 rectangle centred at origin with all 4 corners filleted
+  // (radius 5). Use add_sketch_rectangle then fillet each corner.
+  int li=1; add_sketch_rectangle(feature, li,
+                        -50.0, -40.0, 50.0, 40.0);
+
+  // Find the four corner point ids and the four line ids.
+  const auto& lines = feature.sketch_parameters->lines;
+  const auto& points = feature.sketch_parameters->vertices;
+  std::string corner_bl, corner_br, corner_tr, corner_tl;
+  std::string line_bottom, line_right, line_top, line_left;
+  for (const auto& pt : points) {
+    if (std::abs(pt.x + 50.0) < 0.01 && std::abs(pt.y + 40.0) < 0.01)
+      corner_bl = pt.id;
+    else if (std::abs(pt.x - 50.0) < 0.01 && std::abs(pt.y + 40.0) < 0.01)
+      corner_br = pt.id;
+    else if (std::abs(pt.x - 50.0) < 0.01 && std::abs(pt.y - 40.0) < 0.01)
+      corner_tr = pt.id;
+    else if (std::abs(pt.x + 50.0) < 0.01 && std::abs(pt.y - 40.0) < 0.01)
+      corner_tl = pt.id;
+  }
+  for (const auto& ln : lines) {
+    const bool near_y_m40 = std::abs(ln.start_y + 40.0) < 0.01 &&
+                            std::abs(ln.end_y + 40.0) < 0.01;
+    const bool near_y_p40 = std::abs(ln.start_y - 40.0) < 0.01 &&
+                            std::abs(ln.end_y - 40.0) < 0.01;
+    const bool near_x_m50 = std::abs(ln.start_x + 50.0) < 0.01 &&
+                            std::abs(ln.end_x + 50.0) < 0.01;
+    const bool near_x_p50 = std::abs(ln.start_x - 50.0) < 0.01 &&
+                            std::abs(ln.end_x - 50.0) < 0.01;
+    if (near_y_m40) line_bottom = ln.id;
+    else if (near_x_p50) line_right = ln.id;
+    else if (near_y_p40) line_top = ln.id;
+    else if (near_x_m50) line_left = ln.id;
+  }
+
+  if (corner_bl.empty() || corner_br.empty() || corner_tr.empty() ||
+      corner_tl.empty() || line_bottom.empty() || line_right.empty() ||
+      line_top.empty() || line_left.empty()) {
+    return expect(false, "failed to locate rectangle corners / lines");
+  }
+
+  // Fillet all four corners (radius 5).
+  add_sketch_fillet(feature, 1, 100, 101, 1,
+                    corner_bl, line_bottom, line_left, 5.0);
+  add_sketch_fillet(feature, 2, 102, 103, 2,
+                    corner_br, line_bottom, line_right, 5.0);
+  add_sketch_fillet(feature, 3, 104, 105, 3,
+                    corner_tr, line_right, line_top, 5.0);
+  add_sketch_fillet(feature, 4, 106, 107, 4,
+                    corner_tl, line_top, line_left, 5.0);
+
+  // Add central circle (radius ~19.259 as in part.json).
+  add_sketch_circle(feature, /*circle_index=*/1, 0.0, 0.0, 19.258849974576425);
+
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(feature.sketch_parameters.value());
+
+  const auto& profiles = feature.sketch_parameters->profiles;
+
+  // Expect exactly 2 profiles: the outer filleted rectangle and the
+  // circle.  The circle is represented as a polygon profile with
+  // source_circle_id set (the cylinder shortcut consumes it) — the
+  // circle "kind" is only emitted when the arrangement path is inactive.
+  if (!expect(profiles.size() == 2,
+              "expected exactly 2 profiles (outer rect + circle)")) {
+    return false;
+  }
+
+  int polygon_count = 0;
+  int circle_count = 0;
+  for (const auto& p : profiles) {
+    if (p.kind == "polygon" && p.source_circle_id.has_value()) {
+      ++circle_count;
+    } else if (p.kind == "polygon") {
+      ++polygon_count;
+    }
+  }
+
+  if (!expect(circle_count == 1,
+              "expected exactly one circle profile")) {
+    return false;
+  }
+
+  // There must be exactly one outer polygon profile (no arc-only
+  // slivers from the arrangement).
+  if (!expect(polygon_count == 1,
+              "expected exactly one outer polygon profile, no arc-only slivers")) {
+    for (const auto& p : profiles) {
+      if (p.kind != "polygon" || p.source_circle_id.has_value()) continue;
+      std::cerr << "  polygon line_ids:";
+      for (const auto& lid : p.line_ids) std::cerr << " " << lid;
+      std::cerr << std::endl;
+    }
+    return false;
+  }
+
+  // The outer polygon must contain all four arcs and all four lines.
+  // line_ids carries one entry per boundary sample, so count unique ids.
+  const auto& poly =
+      [&]() -> const polysmith::core::SketchProfileRegion& {
+    for (const auto& p : profiles)
+      if (p.kind == "polygon" && !p.source_circle_id.has_value()) return p;
+    return profiles.front();  // unreachable if polygon_count == 1
+  }();
+  std::vector<std::string> unique_ids;
+  for (const auto& lid : poly.line_ids) {
+    if (std::find(unique_ids.begin(), unique_ids.end(), lid) ==
+        unique_ids.end()) {
+      unique_ids.push_back(lid);
+    }
+  }
+  int arc_count = 0;
+  int line_count = 0;
+  for (const auto& lid : unique_ids) {
+    if (lid.rfind("arc-", 0) == 0) ++arc_count;
+    else if (lid.rfind("line-", 0) == 0) ++line_count;
+  }
+  if (!expect(arc_count == 4,
+              "expected 4 arc ids in outer polygon")) return false;
+  if (!expect(line_count == 4,
+              "expected 4 line ids in outer polygon")) return false;
+
+  return true;
+}
+
+// User-reported regression: a rectangle whose corners are filleted must
+// still be detected as one extrudable profile (the fillet arcs do not
+// all point the same way around the boundary, so the directed-arc
+// arrangement cannot walk the face — the edge-loop fallback must).
+bool test_filleted_rectangle_detects_single_extrudable_profile() {
+  FeatureEntry feature = create_sketch_feature(34, "ref-plane-xy");
+  int li = 1;
+  add_sketch_rectangle(feature, li, 0.0, 0.0, 100.0, 80.0);
+  const auto& lines = feature.sketch_parameters->lines;
+  const auto& points = feature.sketch_parameters->vertices;
+  std::string corner_bl, corner_br, corner_tr, corner_tl;
+  std::string line_bottom, line_right, line_top, line_left;
+  for (const auto& pt : points) {
+    if (std::abs(pt.x - 0.0) < 0.01 && std::abs(pt.y - 0.0) < 0.01)
+      corner_bl = pt.id;
+    else if (std::abs(pt.x - 100.0) < 0.01 && std::abs(pt.y - 0.0) < 0.01)
+      corner_br = pt.id;
+    else if (std::abs(pt.x - 100.0) < 0.01 && std::abs(pt.y - 80.0) < 0.01)
+      corner_tr = pt.id;
+    else if (std::abs(pt.x - 0.0) < 0.01 && std::abs(pt.y - 80.0) < 0.01)
+      corner_tl = pt.id;
+  }
+  for (const auto& ln : lines) {
+    const bool near_y_0 = std::abs(ln.start_y - 0.0) < 0.01 &&
+                          std::abs(ln.end_y - 0.0) < 0.01;
+    const bool near_y_80 = std::abs(ln.start_y - 80.0) < 0.01 &&
+                           std::abs(ln.end_y - 80.0) < 0.01;
+    const bool near_x_0 = std::abs(ln.start_x - 0.0) < 0.01 &&
+                          std::abs(ln.end_x - 0.0) < 0.01;
+    const bool near_x_100 = std::abs(ln.start_x - 100.0) < 0.01 &&
+                            std::abs(ln.end_x - 100.0) < 0.01;
+    if (near_y_0) line_bottom = ln.id;
+    else if (near_x_100) line_right = ln.id;
+    else if (near_y_80) line_top = ln.id;
+    else if (near_x_0) line_left = ln.id;
+  }
+  if (corner_bl.empty() || corner_br.empty() || corner_tr.empty() ||
+      corner_tl.empty() || line_bottom.empty() || line_right.empty() ||
+      line_top.empty() || line_left.empty()) {
+    return expect(false, "filleted rect: failed to locate corners / lines");
+  }
+
+  add_sketch_fillet(feature, 1, 100, 101, 1,
+                    corner_bl, line_bottom, line_left, 5.0);
+  add_sketch_fillet(feature, 2, 102, 103, 2,
+                    corner_br, line_bottom, line_right, 5.0);
+  add_sketch_fillet(feature, 3, 104, 105, 3,
+                    corner_tr, line_right, line_top, 5.0);
+  add_sketch_fillet(feature, 4, 106, 107, 4,
+                    corner_tl, line_top, line_left, 5.0);
+
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(feature.sketch_parameters.value());
+
+  const auto& profiles = feature.sketch_parameters->profiles;
+  return expect(profiles.size() == 1,
+                "filleted rectangle should detect exactly one profile") &&
+         expect(profiles.front().kind == "polygon",
+                "filleted rectangle profile should be a polygon");
+}
+
+// User-reported regression (part.json): a rounded rectangle where two
+// corners are fillets and the other two are trimmed with circle/arc
+// geometry — a circle tangent to both incident lines at the top-right
+// corner and an arc at the bottom-right.  The arrangement face walker
+// must trace the outer boundary through the circle's polyline even
+// though every chord vertex of the boundary turns right; otherwise the
+// outer profile is lost and only the standalone circle faces remain.
+bool test_trimmed_circle_corner_detects_outer_profile() {
+  FeatureEntry feature = create_sketch_feature(35, "ref-plane-xy");
+
+  // Outer loop, walked CCW: (-45,35) -> (40,35) -> circle quarter
+  // (center (50,35) r=10) -> (50,25) -> (50,-25) -> arc (center
+  // (50,-35) r=10) -> (40,-35) -> (-45,-35) -> arc (center (-45,-30)
+  // r=5) -> (-50,-30) -> (-50,30) -> arc (center (-45,30) r=5) ->
+  // (-45,35).
+  add_sketch_line(feature, 1, -45.0, 35.0, 40.0, 35.0);    // top
+  add_sketch_line(feature, 2, 50.0, 25.0, 50.0, -25.0);    // right
+  add_sketch_line(feature, 3, -50.0, -30.0, -50.0, 30.0);  // left
+  add_sketch_line(feature, 4, 40.0, -35.0, -45.0, -35.0);  // bottom
+
+  // Two fillet corners (top-left, bottom-left), r=5.
+  add_sketch_arc(feature, 1, 100, 101, -45.0, 35.0, -50.0, 30.0,
+                 -45.0, 30.0, 5.0, /*ccw=*/true);
+  add_sketch_arc(feature, 2, 102, 103, -45.0, -35.0, -50.0, -30.0,
+                 -45.0, -30.0, 5.0, /*ccw=*/false);
+
+  // Trimmed corners: a circle tangent to the top and right lines at the
+  // top-right corner, and an arc at the bottom-right corner.
+  add_sketch_arc(feature, 3, 104, 105, 50.0, -25.0, 40.0, -35.0,
+                 50.0, -35.0, 10.0, /*ccw=*/true);
+  add_sketch_circle(feature, 1, 50.0, 35.0, 10.0);
+
+  // Inner circle (unrelated to the boundary; nests as a hole).
+  add_sketch_circle(feature, 2, 0.0, 0.0, 14.693138517113884);
+
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(feature.sketch_parameters.value());
+
+  const auto& profiles = feature.sketch_parameters->profiles;
+
+  // Expect 3 profiles: outer loop, the trim-circle face, the inner
+  // circle face.
+  if (!expect(profiles.size() == 3,
+              "trimmed-corner sketch should detect exactly 3 profiles")) {
+    for (const auto& p : profiles) {
+      std::cerr << "  profile " << p.id << " kind=" << p.kind << " ids:";
+      for (const auto& lid : p.line_ids) std::cerr << " " << lid;
+      std::cerr << "\n";
+    }
+    return false;
+  }
+
+  int outer_count = 0;
+  int circle_count = 0;
+  for (const auto& p : profiles) {
+    if (p.kind == "polygon" && !p.source_circle_id.has_value()) {
+      ++outer_count;
+    } else if (p.source_circle_id.has_value()) {
+      ++circle_count;
+    }
+  }
+  if (!expect(circle_count == 2, "expected two circle profiles")) {
+    return false;
+  }
+  if (!expect(outer_count == 1, "expected exactly one outer polygon profile")) {
+    return false;
+  }
+
+  // The outer profile must carry all 8 boundary entities: 4 lines,
+  // 3 arcs, and the trimmed circle.
+  const polysmith::core::SketchProfileRegion& outer =
+      [&]() -> const polysmith::core::SketchProfileRegion& {
+    for (const auto& p : profiles) {
+      if (p.kind == "polygon" && !p.source_circle_id.has_value()) return p;
+    }
+    return profiles.front();
+  }();
+  std::vector<std::string> unique_ids;
+  for (const auto& lid : outer.line_ids) {
+    if (std::find(unique_ids.begin(), unique_ids.end(), lid) ==
+        unique_ids.end()) {
+      unique_ids.push_back(lid);
+    }
+  }
+  int line_count = 0;
+  int arc_count = 0;
+  int boundary_circle_count = 0;
+  for (const auto& lid : unique_ids) {
+    if (lid.rfind("line-", 0) == 0) ++line_count;
+    else if (lid.rfind("arc-", 0) == 0) ++arc_count;
+    else if (lid.rfind("circle-", 0) == 0) ++boundary_circle_count;
+  }
+  if (!expect(line_count == 4, "outer profile should include all 4 lines")) {
+    return false;
+  }
+  if (!expect(arc_count == 3, "outer profile should include all 3 arcs")) {
+    return false;
+  }
+  if (!expect(boundary_circle_count == 1,
+              "outer profile should include the trimmed circle")) {
+    return false;
+  }
+
+  // The inner circle must nest as a hole of the outer profile.
+  return expect(outer.inner_loops.size() == 1,
+                "inner circle should nest as a hole of the outer profile");
+}
+
 }  // namespace
 
 int main() {
@@ -949,6 +1250,15 @@ int main() {
     return EXIT_FAILURE;
   }
   if (!test_fillet_rejects_oversized_radius()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_chamfered_rect_with_circle_produces_no_spurious_profiles()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_filleted_rectangle_detects_single_extrudable_profile()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_trimmed_circle_corner_detects_outer_profile()) {
     return EXIT_FAILURE;
   }
 

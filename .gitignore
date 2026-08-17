@@ -15,9 +15,13 @@ native/cad-core/build-release/
 
 third_party/occt-build/
 third_party/occt-install/
+third_party/occt8-build/
+third_party/occt8-install/
 third_party/freetype-build/
 third_party/freetype-install/
-
+third_party/*
+!third_party/deepseek-vision-mcp/
+third_party/deepseek-vision-mcp/.venv/
 .env
 claude-ds.sh
 wiki/.git-wiki/

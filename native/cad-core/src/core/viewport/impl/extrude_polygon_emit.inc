@@ -55,13 +55,13 @@
         }
 
         double face_center_x = (min_x + max_x) / 2.0;
-        double face_center_y = parameters.depth;
-        double face_center_z = (min_z + max_z) / 2.0;
+        double face_center_y = (min_y + max_y) / 2.0;
+        double face_center_z = parameters.depth;
         double face_width = max_x - min_x;
-        double face_height = max_z - min_z;
+        double face_height = max_y - min_y;
         double face_normal_x = 0.0;
-        double face_normal_y = 1.0;
-        double face_normal_z = 0.0;
+        double face_normal_y = 0.0;
+        double face_normal_z = 1.0;
         if (parameters.plane_frame.has_value()) {
           const auto& frame = parameters.plane_frame.value();
           const double local_center_x = (min_x + max_x) / 2.0;
@@ -116,12 +116,12 @@
           face_normal_y = 0.0;
         } else if (parameters.plane_id == "ref-plane-xz") {
           face_center_x = (min_x + max_x) / 2.0;
-          face_center_y = (min_y + max_y) / 2.0;
-          face_center_z = parameters.depth;
+          face_center_y = parameters.depth;
+          face_center_z = (min_z + max_z) / 2.0;
           face_width = max_x - min_x;
-          face_height = max_y - min_y;
-          face_normal_y = 0.0;
-          face_normal_z = 1.0;
+          face_height = max_z - min_z;
+          face_normal_y = 1.0;
+          face_normal_z = 0.0;
         }
 
         solid_faces.push_back(make_solid_face(

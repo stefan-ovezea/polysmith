@@ -23,6 +23,13 @@ export interface CylinderScenePrimitive {
   radius: number;
   height: number;
   position: [number, number, number];
+  planeId: string;
+  planeFrame: {
+    origin: [number, number, number];
+    xAxis: [number, number, number];
+    yAxis: [number, number, number];
+    normal: [number, number, number];
+  } | null;
   isSelected: boolean;
   appearanceColor: string | null;
 }

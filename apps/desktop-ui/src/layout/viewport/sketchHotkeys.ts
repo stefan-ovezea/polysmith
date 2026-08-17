@@ -277,8 +277,7 @@ function handleSketchToolHotkey(
 
   if (
     matchesHotkey(event, sketchToolbarHotkeys.toggleConstruction) &&
-    (isDraftDimensionTool(activeSketchToolRef.current) ||
-      activeSketchToolRef.current === "arc")
+    isDraftDimensionTool(activeSketchToolRef.current)
   ) {
     event.preventDefault();
     setSketchToolConstruction((prev) => {

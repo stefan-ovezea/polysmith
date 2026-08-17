@@ -7,7 +7,7 @@ FaceResolutionResult resolve_face_reference(
     return result;
   }
 
-  TopTools_IndexedMapOfShape faceMap;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
   TopExp::MapShapes(bodyShape, TopAbs_FACE, faceMap);
 
   // Score every face.

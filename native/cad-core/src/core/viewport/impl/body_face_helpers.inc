@@ -152,7 +152,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
                                     /*deflection=*/0.1,
                                     /*isRelative=*/false,
                                     /*angularDeflection=*/0.5,
-                                    /*isInParallel=*/true);
+                                    /*isInParallel=*/false);
     if (!mesher.IsDone()) {
       return;
     }
@@ -160,7 +160,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     return;
   }
 
-  TopTools_IndexedMapOfShape face_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
   TopExp::MapShapes(body_shape, TopAbs_FACE, face_map);
 
   for (int i = 1; i <= face_map.Extent(); ++i) {
@@ -173,7 +173,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
         body_id + ":face:" + std::to_string(i - 1);
 
     TopLoc_Location location;
-    const Handle(Poly_Triangulation) triangulation =
+    const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
     if (triangulation.IsNull()) {
       // No tessellation for this face — skip rather than emit a face

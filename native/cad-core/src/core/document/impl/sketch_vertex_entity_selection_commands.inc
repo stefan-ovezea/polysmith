@@ -1,4 +1,4 @@
-DocumentState DocumentManager::select_sketch_vertex(const std::string& point_id,
+DocumentState DocumentManager::select_sketch_vertex(const std::string& vertex_id,
                                                    bool additive) {
   require_document();
 
@@ -18,12 +18,12 @@ DocumentState DocumentManager::select_sketch_vertex(const std::string& point_id,
     throw std::runtime_error("Active sketch feature not found");
   }
 
-  const auto point_it = std::find_if(
+  const auto vertex_it = std::find_if(
       feature_it->sketch_parameters->vertices.begin(),
       feature_it->sketch_parameters->vertices.end(),
-      [&](const SketchVertex& point) { return point.id == point_id; });
-  if (point_it == feature_it->sketch_parameters->vertices.end()) {
-    throw std::runtime_error("Sketch point not found: " + point_id);
+      [&](const SketchVertex& vtx) { return vtx.id == vertex_id; });
+  if (vertex_it == feature_it->sketch_parameters->vertices.end()) {
+    throw std::runtime_error("Sketch vertex not found: " + vertex_id);
   }
 
   document_->selected_feature_id = feature_it->id;
@@ -33,16 +33,16 @@ DocumentState DocumentManager::select_sketch_vertex(const std::string& point_id,
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();
   if (additive) {
-    auto& point_ids = document_->selected_sketch_vertex_ids;
+    auto& vertex_ids = document_->selected_sketch_vertex_ids;
     const auto existing =
-        std::find(point_ids.begin(), point_ids.end(), point_id);
-    if (existing == point_ids.end()) {
-      point_ids.push_back(point_id);
+        std::find(vertex_ids.begin(), vertex_ids.end(), vertex_id);
+    if (existing == vertex_ids.end()) {
+      vertex_ids.push_back(vertex_id);
     } else {
-      point_ids.erase(existing);
+      vertex_ids.erase(existing);
     }
   } else {
-    document_->selected_sketch_vertex_ids = {point_id};
+    document_->selected_sketch_vertex_ids = {vertex_id};
   }
   document_->selected_sketch_vertex_id =
       document_->selected_sketch_vertex_ids.empty()

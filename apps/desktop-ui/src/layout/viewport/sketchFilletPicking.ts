@@ -15,7 +15,7 @@ export function pickSketchFilletCorner({
   localPoint: readonly [number, number];
   tolerance?: number;
 }): SketchFilletCornerPick | null {
-  const cornerPoint = sketch.points.find(
+  const cornerPoint = sketch.vertices.find(
     (point) =>
       Math.hypot(point.x - localPoint[0], point.y - localPoint[1]) <= tolerance,
   );

@@ -67,7 +67,7 @@ export function buildDynamicGrid(
   bounds: GridPlaneBounds,
   minorColor: THREE.Color,
   majorColor: THREE.Color,
-  axisColor: THREE.Color,
+  _axisColor: THREE.Color,
   opacity: number,
 ): THREE.LineSegments {
   const positions: number[] = [];
@@ -76,12 +76,7 @@ export function buildDynamicGrid(
   const end = new THREE.Vector3();
 
   for (let u = bounds.minU; u <= bounds.maxU + spacing * 0.5; u += spacing) {
-    const uColor =
-      Math.abs(u) < spacing * 0.25
-        ? axisColor
-        : isGridMajorLine(u, spacing)
-          ? majorColor
-          : minorColor;
+    const uColor = isGridMajorLine(u, spacing) ? majorColor : minorColor;
 
     start
       .copy(frame.origin)
@@ -95,12 +90,7 @@ export function buildDynamicGrid(
   }
 
   for (let v = bounds.minV; v <= bounds.maxV + spacing * 0.5; v += spacing) {
-    const vColor =
-      Math.abs(v) < spacing * 0.25
-        ? axisColor
-        : isGridMajorLine(v, spacing)
-          ? majorColor
-          : minorColor;
+    const vColor = isGridMajorLine(v, spacing) ? majorColor : minorColor;
 
     start
       .copy(frame.origin)
@@ -126,6 +116,130 @@ export function buildDynamicGrid(
     depthWrite: false,
   });
   return new THREE.LineSegments(geometry, material);
+}
+
+const AXIS_LINE_HALF_LENGTH = 100000;
+
+export function buildAxisLines(
+  frame: GridPlaneFrame,
+  xColor: THREE.Color,
+  yColor: THREE.Color,
+  opacity: number,
+): THREE.LineSegments {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const origin = frame.origin.clone();
+  const L = AXIS_LINE_HALF_LENGTH;
+
+  // X axis (red)
+  const xNeg = origin.clone().addScaledVector(frame.xAxis, -L);
+  const xPos = origin.clone().addScaledVector(frame.xAxis, L);
+  positions.push(xNeg.x, xNeg.y, xNeg.z, xPos.x, xPos.y, xPos.z);
+  colors.push(xColor.r, xColor.g, xColor.b, xColor.r, xColor.g, xColor.b);
+
+  // Y axis (green)
+  const yNeg = origin.clone().addScaledVector(frame.yAxis, -L);
+  const yPos = origin.clone().addScaledVector(frame.yAxis, L);
+  positions.push(yNeg.x, yNeg.y, yNeg.z, yPos.x, yPos.y, yPos.z);
+  colors.push(yColor.r, yColor.g, yColor.b, yColor.r, yColor.g, yColor.b);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+  });
+  return new THREE.LineSegments(geometry, material);
+}
+
+const AXIS_LABEL_TARGET_PX = 28;
+
+export function buildAxisTickLabels(
+  frame: GridPlaneFrame,
+  spacing: number,
+  bounds: GridPlaneBounds,
+  xColor: THREE.Color,
+  yColor: THREE.Color,
+  worldUnitsPerPixel: number,
+): THREE.Group {
+  const group = new THREE.Group();
+  const majorStep = spacing * GRID_MAJOR_EVERY;
+  // Size labels so they appear at a consistent screen height (~14 px)
+  // regardless of zoom level.  The 2× factor accounts for the canvas
+  // texture aspect ratio (128×64 canvas → the sprite is twice as wide
+  // as it is tall).
+  const labelScale = worldUnitsPerPixel * AXIS_LABEL_TARGET_PX;
+
+  // X-axis labels — snap to majorStep multiples
+  const firstU = Math.ceil(bounds.minU / majorStep) * majorStep;
+  for (let u = firstU; u <= bounds.maxU + spacing * 0.5; u += majorStep) {
+    if (Math.abs(u) < spacing * 0.25) continue; // skip origin
+    group.add(makeAxisLabelSprite(
+      frame, u, 0, formatAxisLabel(u), xColor, labelScale,
+    ));
+  }
+
+  // Y-axis labels — snap to majorStep multiples
+  const firstV = Math.ceil(bounds.minV / majorStep) * majorStep;
+  for (let v = firstV; v <= bounds.maxV + spacing * 0.5; v += majorStep) {
+    if (Math.abs(v) < spacing * 0.25) continue; // skip origin
+    group.add(makeAxisLabelSprite(
+      frame, 0, v, formatAxisLabel(v), yColor, labelScale,
+    ));
+  }
+
+  return group;
+}
+
+function formatAxisLabel(value: number): string {
+  if (Math.abs(value) >= 1000) {
+    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+  }
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(1);
+}
+
+function makeAxisLabelSprite(
+  frame: GridPlaneFrame,
+  u: number,
+  v: number,
+  text: string,
+  color: THREE.Color,
+  scale: number,
+): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = "36px Inter, system-ui, sans-serif";
+  ctx.fillStyle = `rgb(${Math.round(color.r * 255)},${Math.round(color.g * 255)},${Math.round(color.b * 255)})`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 64, 32);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  const pos = frame.origin.clone()
+    .addScaledVector(frame.xAxis, u)
+    .addScaledVector(frame.yAxis, v);
+  // Offset labels slightly from the axis line
+  pos.addScaledVector(frame.yAxis, scale * 0.54);
+  sprite.position.copy(pos);
+  sprite.scale.set(scale * 2, scale, 1);
+  return sprite;
 }
 
 export function disposeDynamicGrid(grid: DynamicGridRef | null): void {
@@ -182,24 +296,24 @@ export function getSketchGridFrame(
     return {
       origin: new THREE.Vector3(
         0,
-        0,
         SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
+        0,
       ),
       xAxis: new THREE.Vector3(1, 0, 0),
-      yAxis: new THREE.Vector3(0, 1, 0),
-      normal: new THREE.Vector3(0, 0, 1),
+      yAxis: new THREE.Vector3(0, 0, 1),
+      normal: new THREE.Vector3(0, 1, 0),
     };
   }
 
   return {
     origin: new THREE.Vector3(
       0,
-      SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
       0,
+      SKETCH_PLANE_OFFSET - SKETCH_GRID_BACK_OFFSET,
     ),
     xAxis: new THREE.Vector3(1, 0, 0),
-    yAxis: new THREE.Vector3(0, 0, 1),
-    normal: new THREE.Vector3(0, 1, 0),
+    yAxis: new THREE.Vector3(0, 1, 0),
+    normal: new THREE.Vector3(0, 0, 1),
   };
 }
 
@@ -243,12 +357,12 @@ export function worldPointToSketchLocal(
     return [delta.dot(xAxis), delta.dot(yAxis)];
   }
   if (planeId === "ref-plane-xy") {
-    return [world[0], world[2]];
+    return [world[0], world[1]];
   }
   if (planeId === "ref-plane-yz") {
     return [world[1], world[2]];
   }
-  return [world[0], world[1]];
+  return [world[0], world[2]];
 }
 
 function fallbackGridBounds(

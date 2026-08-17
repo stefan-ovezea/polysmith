@@ -8,12 +8,12 @@ BodyBounds bounds_for_shape(const TopoDS_Shape& shape) {
     if (bounds.IsVoid()) {
       return BodyBounds{};
     }
-    Standard_Real min_x = 0.0;
-    Standard_Real min_y = 0.0;
-    Standard_Real min_z = 0.0;
-    Standard_Real max_x = 0.0;
-    Standard_Real max_y = 0.0;
-    Standard_Real max_z = 0.0;
+    double min_x = 0.0;
+    double min_y = 0.0;
+    double min_z = 0.0;
+    double max_x = 0.0;
+    double max_y = 0.0;
+    double max_z = 0.0;
     bounds.Get(min_x, min_y, min_z, max_x, max_y, max_z);
     return BodyBounds{
         .center_x = (min_x + max_x) * 0.5,

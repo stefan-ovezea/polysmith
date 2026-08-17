@@ -9,7 +9,7 @@
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 
 #include "core/document/document.h"

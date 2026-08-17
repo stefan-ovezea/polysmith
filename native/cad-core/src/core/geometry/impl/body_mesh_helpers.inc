@@ -7,7 +7,7 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
                                   kLinearDeflection,
                                   /*isRelative=*/false,
                                   kAngularDeflection,
-                                  /*isInParallel=*/true);
+                                  /*isInParallel=*/false);
   if (!mesher.IsDone()) {
     throw std::runtime_error("BRepMesh_IncrementalMesh failed");
   }
@@ -17,7 +17,7 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
        face_explorer.Next()) {
     const TopoDS_Face& face = TopoDS::Face(face_explorer.Current());
     TopLoc_Location location;
-    const Handle(Poly_Triangulation) triangulation =
+    const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
     if (triangulation.IsNull()) {
       continue;

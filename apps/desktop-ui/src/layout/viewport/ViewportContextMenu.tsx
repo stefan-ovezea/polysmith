@@ -77,13 +77,24 @@ export function ViewportContextMenu({
           </button>
         </>
       ) : contextMenu.constraintKind ? (
-        <button
-          type="button"
-          className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-          onClick={onDeleteConstraint}
-        >
-          Delete Constraint
-        </button>
+        <>
+          <button
+            type="button"
+            className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+            onClick={onDeleteConstraint}
+          >
+            Delete Constraint
+          </button>
+          {contextMenu.sketchDeleteSelection ? (
+            <button
+              type="button"
+              className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+              onClick={onDeleteSketchSelection}
+            >
+              Delete
+            </button>
+          ) : null}
+        </>
       ) : contextMenu.sketchDeleteSelection ? (
         <>
           {contextMenu.lineId ? (

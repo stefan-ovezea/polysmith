@@ -36,6 +36,92 @@ TopoDS_Shape make_polygon_prism_shape(const ExtrudeFeatureParameters& parameters
   return compound;
 }
 
+// When the primary profile is built via the exact-curve path (wire or
+// cylinder builder) but the extrude also carries additional profiles,
+// build each additional profile as a polygon prism and combine them
+// with the primary into one compound.
+//
+// IMPORTANT: Do NOT replace this with a bare BRepPrimAPI_MakeCylinder for
+// circular additional profiles.  make_polygon_prism_shape internally calls
+// make_profile_wire, which detects circular point clouds via
+// detect_circle_loop and builds an exact gp_Circ wire.  That path:
+//
+//   a) respects the PlaneFrame coordinate transform (sketches on
+//      non-origin planes),
+//   b) handles thin-wall mode correctly,
+//   c) correctly processes inner loops (holes),
+//   d) shares the same extrusion-vector computation as the primary path,
+//      avoiding axis-mismatch regressions.
+//
+// A direct BRepPrimAPI_MakeCylinder shortcut would need to re-derive all
+// of the above, which is fragile and easy to get wrong.  The regression
+// test extrude_quality_test.cpp verifies that extruded circles produce
+// analytic Geom_CylindricalSurface faces through this path.
+TopoDS_Shape wrap_with_additional_profiles(
+    const ExtrudeFeatureParameters& parameters,
+    const TopoDS_Shape& primary_shape) {
+  if (parameters.additional_profile_points.empty()) {
+    return primary_shape;
+  }
+  TopoDS_Compound compound;
+  BRep_Builder builder;
+  builder.MakeCompound(compound);
+  builder.Add(compound, primary_shape);
+  for (size_t index = 0; index < parameters.additional_profile_points.size();
+       ++index) {
+    std::vector<SketchProfilePoint> profile_points;
+    std::vector<std::vector<SketchProfilePoint>> inner_loops =
+        index < parameters.additional_inner_loops.size()
+            ? parameters.additional_inner_loops[index]
+            : std::vector<std::vector<SketchProfilePoint>>{};
+    apply_closed_thin_profile(parameters,
+                              parameters.additional_profile_points[index],
+                              profile_points,
+                              inner_loops);
+
+    // When this additional profile carries wire-path data, use the
+    // exact-curve wire builder so it matches the primary profile's
+    // quality — no faceted polygon fallback for the second wedge.
+    bool used_wire = false;
+    if (index < parameters.additional_sketch_edge_ids.size() &&
+        !parameters.additional_sketch_edge_ids[index].empty()) {
+      ExtrudeFeatureParameters wire_params = parameters;
+      wire_params.profile_points = profile_points;
+      wire_params.inner_loops = inner_loops;
+      wire_params.sketch_edge_ids =
+          parameters.additional_sketch_edge_ids[index];
+      if (index < parameters.additional_arc_descriptors.size()) {
+        wire_params.arc_descriptors =
+            parameters.additional_arc_descriptors[index];
+      }
+      if (index < parameters.additional_boundary_edges.size()) {
+        wire_params.boundary_edges =
+            parameters.additional_boundary_edges[index];
+      }
+      wire_params.additional_profile_points.clear();
+      wire_params.additional_inner_loops.clear();
+      wire_params.additional_sketch_edge_ids.clear();
+      wire_params.additional_arc_descriptors.clear();
+      wire_params.additional_boundary_edges.clear();
+      try {
+        builder.Add(compound, make_wire_extrude_shape(wire_params));
+        used_wire = true;
+      } catch (const std::exception& e) {
+        polysmith::core::log_debug("extrude_shape",
+            "Additional profile wire path failed — "
+            "falling back to polygon: " + std::string(e.what()));
+      }
+    }
+
+    if (!used_wire) {
+      builder.Add(compound,
+                  make_polygon_prism_shape(parameters, profile_points,
+                                           inner_loops));
+    }
+  }
+  return compound;
+}
+
 std::vector<SketchProfilePoint> sample_circle_points(double center_x,
                                                      double center_y,
                                                      double radius) {
@@ -97,10 +183,10 @@ TopoDS_Shape make_circle_extrude_shape(
   const double sign = signed_depth >= 0.0 ? 1.0 : -1.0;
   const gp_Dir axis_direction =
       parameters.plane_id == "ref-plane-xy"
-          ? gp_Dir(0.0, sign, 0.0)
+          ? gp_Dir(0.0, 0.0, sign)
           : parameters.plane_id == "ref-plane-yz"
                 ? gp_Dir(sign, 0.0, 0.0)
-                : gp_Dir(0.0, 0.0, sign);
+                : gp_Dir(0.0, sign, 0.0);
   const gp_Ax2 axis(center, axis_direction);
   const TopoDS_Shape shape =
       !has_tapered_radius
@@ -143,11 +229,91 @@ TopoDS_Shape build_single_depth_extrude(
     if (parameters.thin.enabled) {
       return make_polygon_prism_shape(make_polygon_source(parameters));
     }
+    // When this circle carries sketch data (populated by the profile
+    // param builder) and the mode is cut/join, route through the wire
+    // path so the shape shares the same construction method as the
+    // target body — OCCT 8 booleans need geometrically compatible inputs.
+    if (!parameters.sketch_edge_ids.empty() &&
+        parameters.mode != "new_body") {
+      return make_wire_extrude_shape(parameters);
+    }
     return make_circle_extrude_shape(parameters,
                                      parameters.side1.taper_angle_degrees);
   }
   if (parameters.profile_kind == "polygon" ||
       parameters.profile_kind == "open_chain") {
+    // When the extrude was sourced from a sketch profile and the
+    // profile region carries ordered edge IDs, bypass the polygon
+    // wire path and build exact OCCT edges (lines via GC_MakeSegment,
+    // arcs via GC_MakeArcOfCircle, circles via gp_Circ). This avoids
+    // facet artifacts on curved profiles that the polygon path would
+    // introduce.
+    if (!parameters.sketch_edge_ids.empty() &&
+        (!parameters.sketch_lines.empty() || !parameters.sketch_arcs.empty() ||
+         !parameters.sketch_circles.empty())) {
+      // When every edge on this profile boundary belongs to the same
+      // circle, route through the dedicated cylinder builder — simpler
+      // and more robust than building a wire + face + prism.
+      // We inspect the actual edge IDs on this profile, not the global
+      // sketch geometry (which may contain lines/arcs from other
+      // profiles in the same sketch).
+      if (!parameters.sketch_edge_ids.empty() &&
+          !parameters.sketch_circles.empty()) {
+        // Collect the set of distinct edge IDs on this boundary.
+        std::set<std::string> distinct_ids(
+            parameters.sketch_edge_ids.begin(),
+            parameters.sketch_edge_ids.end());
+        // Find which circle (if any) owns every edge on this boundary.
+        const SketchCircle* owner = nullptr;
+        for (const auto& c : parameters.sketch_circles) {
+          if (distinct_ids.size() == 1 &&
+              *distinct_ids.begin() == c.id) {
+            owner = &c;
+            break;
+          }
+          // Also handle the common case where the boundary edges are a
+          // mix of the circle's own id plus ids of split arc segments
+          // that all belong to the same circle.
+          bool all_belong = true;
+          for (const auto& id : distinct_ids) {
+            if (id != c.id) {
+              // Could also be a line/arc id — skip this circle.
+              all_belong = false;
+              break;
+            }
+          }
+          if (all_belong) { owner = &c; break; }
+        }
+        // Only use the dedicated cylinder path when there are no inner
+        // loops (holes).  With inner loops we must go through the wire
+        // path so the face builder can subtract them from the outer face.
+        // Additional profiles (multi-profile selections) are wrapped
+        // separately by wrap_with_additional_profiles after the primary
+        // shape is built.
+        if (owner != nullptr && parameters.inner_loops.empty()) {
+          ExtrudeFeatureParameters circle_params = parameters;
+          circle_params.profile_kind = "circle";
+          circle_params.start_x = owner->center_x;
+          circle_params.start_y = owner->center_y;
+          circle_params.radius = owner->radius;
+          return wrap_with_additional_profiles(
+              parameters,
+              make_circle_extrude_shape(circle_params,
+                                        parameters.side1.taper_angle_degrees));
+        }
+      }
+      try {
+        return wrap_with_additional_profiles(
+            parameters, make_wire_extrude_shape(parameters));
+      } catch (const std::exception& e) {
+        // Wire path failed — fall through to the polygon path (which
+        // handles both primary and additional profiles) so the user
+        // still gets geometry instead of an opaque error.
+        polysmith::core::log_debug("extrude_shape",
+            "Wire path failed for profile " + parameters.profile_id +
+            " — falling back to polygon: " + std::string(e.what()));
+      }
+    }
     return make_polygon_prism_shape(parameters);
   }
   throw std::runtime_error("Unsupported extrude profile kind: " +

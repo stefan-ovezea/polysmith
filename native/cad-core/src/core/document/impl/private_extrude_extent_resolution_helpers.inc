@@ -6,12 +6,12 @@ gp_Vec extrude_normal_vector(const ExtrudeFeatureParameters& params,
                   params.plane_frame->normal_z * side_sign);
   }
   if (params.plane_id == "ref-plane-xy") {
-    return gp_Vec(0.0, side_sign, 0.0);
+    return gp_Vec(0.0, 0.0, side_sign);
   }
   if (params.plane_id == "ref-plane-yz") {
     return gp_Vec(side_sign, 0.0, 0.0);
   }
-  return gp_Vec(0.0, 0.0, side_sign);
+  return gp_Vec(0.0, side_sign, 0.0);
 }
 
 gp_Pnt extrude_plane_origin(const ExtrudeFeatureParameters& params) {

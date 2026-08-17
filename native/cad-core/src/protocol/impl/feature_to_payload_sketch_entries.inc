@@ -2,6 +2,8 @@
        feature.sketch_parameters.has_value()
            ? json{
                  {"plane_id", feature.sketch_parameters->plane_id},
+                 {"next_vertex_index",
+                  feature.sketch_parameters->next_vertex_index},
                  {"plane_frame",
                   feature.sketch_parameters->plane_frame.has_value()
                       ? json{

@@ -4,9 +4,12 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <vector>
+
+#include "core/diagnostics/logger.h"
 
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -35,8 +38,12 @@
 #include <gp_Vec.hxx>
 #include <Geom_Plane.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeSegment.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <limits>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
@@ -51,6 +58,7 @@ namespace {
 
 #include "core/geometry/impl/shape_frame_helpers.inc"
 #include "core/geometry/impl/profile_face_helpers.inc"
+#include "core/geometry/impl/sketch_wire_extrude.inc"
 #include "core/geometry/impl/extrude_shape_helpers.inc"
 }  // namespace
 

@@ -7,7 +7,7 @@ std::optional<ThreadAxis> resolve_thread_axis(
     if (body_it == body_shapes.end() || body_it->second.IsNull()) {
       return std::nullopt;
     }
-    TopTools_IndexedMapOfShape edge_map;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
     TopExp::MapShapes(body_it->second, TopAbs_EDGE, edge_map);
     const int one_based = parsed->index + 1;
     if (one_based < 1 || one_based > edge_map.Extent()) {
@@ -222,6 +222,8 @@ TopoDS_Shape build_thread_cutter(const ThreadAxis& axis,
     return pipe.Shape();
   } catch (const Standard_Failure&) {
     return TopoDS_Shape{};
+  } catch (const std::exception& e) {
+    return TopoDS_Shape{};
   }
 }
 
@@ -233,9 +235,13 @@ TopoDS_Shape apply_thread(const TopoDS_Shape& body_shape,
     return body_shape;
   }
   try {
-    const TopoDS_Shape result = BRepAlgoAPI_Cut(body_shape, cutter).Shape();
+    BRepAlgoAPI_Cut cut_op(body_shape, cutter);
+    cut_op.SimplifyResult();
+    const TopoDS_Shape result = cut_op.Shape();
     return result.IsNull() ? body_shape : unify_same_domain(result);
   } catch (const Standard_Failure&) {
+    return body_shape;
+  } catch (const std::exception& e) {
     return body_shape;
   }
 }

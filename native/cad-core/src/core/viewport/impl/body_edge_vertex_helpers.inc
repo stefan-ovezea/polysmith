@@ -140,7 +140,7 @@ bool is_nonsemantic_circle_seam_vertex(const TopoDS_Shape& body_shape,
   if (body_shape.IsNull() || vertex.IsNull()) {
     return false;
   }
-  TopTools_IndexedMapOfShape edge_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
   bool found_incident_edge = false;
   for (int i = 1; i <= edge_map.Extent(); ++i) {
@@ -172,7 +172,7 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
     return;
   }
 
-  TopTools_IndexedMapOfShape edge_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
 
   for (int i = 1; i <= edge_map.Extent(); ++i) {
@@ -219,7 +219,7 @@ void enumerate_body_vertices(
     return;
   }
 
-  TopTools_IndexedMapOfShape vertex_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> vertex_map;
   TopExp::MapShapes(body_shape, TopAbs_VERTEX, vertex_map);
 
   for (int i = 1; i <= vertex_map.Extent(); ++i) {

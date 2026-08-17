@@ -13,7 +13,7 @@
  * Called from `pnpm occt:configure`.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -25,9 +25,9 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const isWindows = process.platform === "win32";
 
-const occtSrc = join(root, "third_party", "occt");
-const occtBuild = join(root, "third_party", "occt-build");
-const occtInstall = join(root, "third_party", "occt-install");
+const occtSrc = join(root, "third_party", "occt8");
+const occtBuild = join(root, "third_party", "occt8-build");
+const occtInstall = join(root, "third_party", "occt8-install");
 const freetypeSrc = join(root, "third_party", "freetype");
 const freetypeBuild = join(root, "third_party", "freetype-build");
 const freetypeInstall = join(root, "third_party", "freetype-install");
@@ -74,14 +74,27 @@ function run(command, args, opts = {}) {
 }
 
 function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
+  // Nuke stale cache from a different generator to avoid "does not match"
+  // errors when switching between NMake and Visual Studio.
+  const cacheFile = join(buildDir, "CMakeCache.txt");
+  if (existsSync(cacheFile)) {
+    const cache = readFileSync(cacheFile, "utf-8");
+    if (isWindows && cache.includes("NMake Makefiles")) {
+      console.log(`  →  Cleaning stale NMake cache in ${buildDir}`);
+      rmSync(buildDir, { recursive: true, force: true });
+    }
+  }
+
   const args = [
     "-S", srcDir,
     "-B", buildDir,
   ];
 
-  // generator — NMake on Windows, default (Unix Makefiles) elsewhere
+  // generator — Visual Studio on Windows (produces .lib + .dll),
+  // default (Unix Makefiles) elsewhere
   if (isWindows) {
-    args.push("-G", "NMake Makefiles");
+    args.push("-G", "Visual Studio 17 2022");
+    args.push("-A", "x64");
   }
 
   for (const [key, value] of Object.entries(defines)) {
@@ -93,7 +106,7 @@ function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
 }
 
 function cmakeBuild(buildDir, config = "Release") {
-  run("cmake", ["--build", buildDir, "--config", config]);
+  run("cmake", ["--build", buildDir, "--config", config, "--parallel"]);
 }
 
 function cmakeInstall(buildDir, config = "Release") {
@@ -181,15 +194,31 @@ const occtDefines = {
   CMAKE_BUILD_TYPE: "Release",
   CMAKE_INSTALL_PREFIX: occtInstall,
 
-  // Neither the CAD core nor the desktop app use TCL/TK.
-  // Disabling avoids build errors on platforms where TCL libraries
-  // are missing or incompatible.
+  // Neither the CAD core nor the desktop app use TCL/TK/Draw.
   USE_TCL: "OFF",
   USE_TK: "OFF",
+  USE_VTK: "OFF",
   BUILD_MODULE_Draw: "OFF",
+
+  // Disable 3rdparty deps not needed for PolySmith — avoids build
+  // failures when they're not installed on the build machine.
+  USE_TBB: "OFF",
+  USE_FFMPEG: "OFF",
+  USE_OPENVR: "OFF",
+  USE_OPENGL: "OFF",
+  USE_GLES2: "OFF",
+  USE_D3D: "OFF",
+  USE_XLIB: "OFF",
 
   // Only enable FreeType if we have it (system or vendored).
   USE_FREETYPE: freetypeDir || systemFreetypeAvailable() ? "ON" : "OFF",
+  // FreeImage needed for image/texture support in data exchange.
+  USE_FREEIMAGE: isWindows ? "OFF" : "OFF",
+  // RapidJSON needed for glTF export — we don't use it but it's
+  // pulled in by default in 8.0; disable to simplify the build.
+  USE_RAPIDJSON: "OFF",
+  // Draco mesh compression — not needed.
+  USE_DRACO: "OFF",
 };
 
 const occtExtraArgs = [];

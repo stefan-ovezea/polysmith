@@ -42,6 +42,39 @@ DocumentState DocumentManager::load_document_from_path(
 
   DocumentState loaded = polysmith::protocol::document_from_payload(payload);
 
+  // Saved profile lists can be stale — saved by an older build whose
+  // arrangement missed a region, or saved mid-edit.  Recompute every
+  // sketch's profiles from its geometry so surfaces are selectable and
+  // extrudable immediately after load.
+  for (auto& feature : loaded.feature_history) {
+    if (feature.kind == "sketch") {
+      polysmith::core::refresh_sketch_profiles(feature);
+    }
+  }
+  // Drop profile selections whose ids no longer exist after the
+  // recompute (ids embed the entity set, which can change).
+  if (loaded.selected_sketch_profile_id.has_value() ||
+      !loaded.selected_sketch_profile_ids.empty()) {
+    std::set<std::string> live_ids;
+    for (const auto& feature : loaded.feature_history) {
+      if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+        continue;
+      }
+      for (const auto& profile : feature.sketch_parameters->profiles) {
+        live_ids.insert(profile.id);
+      }
+    }
+    if (loaded.selected_sketch_profile_id.has_value() &&
+        !live_ids.count(loaded.selected_sketch_profile_id.value())) {
+      loaded.selected_sketch_profile_id.reset();
+    }
+    loaded.selected_sketch_profile_ids.erase(
+        std::remove_if(loaded.selected_sketch_profile_ids.begin(),
+                       loaded.selected_sketch_profile_ids.end(),
+                       [&](const std::string& id) { return !live_ids.count(id); }),
+        loaded.selected_sketch_profile_ids.end());
+  }
+
   // Replace the live document with the loaded one. Clear undo/redo, since
   // their previous contents reference a different document timeline.
   document_ = loaded;
@@ -91,6 +124,25 @@ DocumentState DocumentManager::load_document_from_path(
           trailing_integer(projection.id) + 1);
     }
   }
+
+  // Rebuild sketch derived state (solver + profile regions) for every
+  // sketch feature.  Saved profiles are restored verbatim by the
+  // payload parser and may predate geometry edits or detection fixes —
+  // without a refresh a loaded sketch keeps its stale stored profiles
+  // and the extrudable regions never regenerate (user-reported: the
+  // tangent-line wedge surface missing after reload).  Safe now that
+  // the parser restores center_vertex_id and next_vertex_index —
+  // vertex ids can no longer collide during the rebuild.
+  for (auto& feature : document_->feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      polysmith::core::refresh_sketch_derived_state(feature);
+    }
+  }
+  // The refresh replaces every profile with fresh ids — the saved
+  // selection would otherwise dangle and surface as
+  // "Sketch profile not found" on the next command.
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
 
   if (document_) {
     bump_geometry_revision();

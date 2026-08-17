@@ -57,6 +57,18 @@ double read_optional_number(const json& payload,
   return payload.at(key).get<double>();
 }
 
+bool read_optional_bool_value(const json& payload,
+                              const char* key,
+                              bool fallback) {
+  if (!payload.is_object() || !payload.contains(key) || payload.at(key).is_null()) {
+    return fallback;
+  }
+  if (!payload.at(key).is_boolean()) {
+    throw std::runtime_error(std::string("Field is not a bool: ") + key);
+  }
+  return payload.at(key).get<bool>();
+}
+
 std::string read_optional_string_value(const json& payload,
                                        const char* key,
                                        const std::string& fallback) {

@@ -83,7 +83,7 @@ std::optional<TopoDS_Face> resolve_face_for_appearance(
     return std::nullopt;
   }
 
-  TopTools_IndexedMapOfShape face_map;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
   TopExp::MapShapes(body_it->shape, TopAbs_FACE, face_map);
   const int one_based = index + 1;
   if (one_based < 1 || one_based > face_map.Extent()) {

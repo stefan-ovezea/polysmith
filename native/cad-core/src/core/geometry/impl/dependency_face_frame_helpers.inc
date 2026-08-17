@@ -91,7 +91,7 @@ std::optional<PlaneFrame> resolve_face_frame(const DocumentState &document,
     if (body.id != body_id || body.shape.IsNull()) {
       continue;
     }
-    TopTools_IndexedMapOfShape face_map;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
     TopExp::MapShapes(body.shape, TopAbs_FACE, face_map);
     const int one_based = face_index + 1;
     if (one_based < 1 || one_based > face_map.Extent()) {
@@ -173,7 +173,7 @@ std::optional<PlaneFrame> resolve_body_face_frame(const DocumentState &document,
     if (body.id != body_id || body.shape.IsNull()) {
       continue;
     }
-    TopTools_IndexedMapOfShape face_map;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
     TopExp::MapShapes(body.shape, TopAbs_FACE, face_map);
     const int one_based = face_index + 1;
     if (one_based < 1 || one_based > face_map.Extent()) {

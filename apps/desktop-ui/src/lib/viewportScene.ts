@@ -81,6 +81,31 @@ function makeCylinderPrimitive(
     radius: cylinder.radius,
     height: cylinder.height,
     position: [cylinder.center.x, cylinder.center.y, cylinder.center.z],
+    planeId: cylinder.plane_id,
+    planeFrame: cylinder.plane_frame
+      ? {
+          origin: [
+            cylinder.plane_frame.origin.x,
+            cylinder.plane_frame.origin.y,
+            cylinder.plane_frame.origin.z,
+          ],
+          xAxis: [
+            cylinder.plane_frame.x_axis.x,
+            cylinder.plane_frame.x_axis.y,
+            cylinder.plane_frame.x_axis.z,
+          ],
+          yAxis: [
+            cylinder.plane_frame.y_axis.x,
+            cylinder.plane_frame.y_axis.y,
+            cylinder.plane_frame.y_axis.z,
+          ],
+          normal: [
+            cylinder.plane_frame.normal.x,
+            cylinder.plane_frame.normal.y,
+            cylinder.plane_frame.normal.z,
+          ],
+        }
+      : null,
     isSelected: cylinder.is_selected,
     appearanceColor: cylinder.appearance_color ?? null,
   };
@@ -668,6 +693,17 @@ function withDisplayProfileHoles(
         continue;
       }
       if (loopAlreadyPresent(nextLoops, containmentPoint)) {
+        continue;
+      }
+      // Skip candidates that sit inside one of the profile's existing
+      // holes — a hole nested inside another hole breaks the earcut
+      // triangulation of the fill mesh (the hole region is already
+      // covered by the larger hole anyway).
+      if (
+        nextLoops.some((loop) =>
+          pointInPolygon2d(containmentPoint, loop),
+        )
+      ) {
         continue;
       }
       nextLoops.push(contour);

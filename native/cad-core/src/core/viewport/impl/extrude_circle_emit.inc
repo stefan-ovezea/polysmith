@@ -1,9 +1,9 @@
       } else if (parameters.profile_kind == "circle") {
-        if (parameters.plane_id != "ref-plane-xy") {
+        if (parameters.plane_id != "ref-plane-xz") {
           continue;
         }
 
-        if (parameters.plane_id == "ref-plane-xy") {
+        if (parameters.plane_id == "ref-plane-xz") {
           cylinders.push_back(ViewportCylinderPrimitive{
               .id = feature.id,
               .label = feature.name,
@@ -13,6 +13,12 @@
               .center_x = parameters.start_x,
               .center_y = parameters.depth / 2.0,
               .center_z = parameters.start_y,
+              .plane_id = parameters.plane_id,
+              .plane_frame = parameters.plane_frame.has_value()
+                                 ? std::optional<ViewportSketchPlaneFrame>(
+                                       make_sketch_plane_frame(
+                                           parameters.plane_frame.value()))
+                                 : std::nullopt,
               .is_selected = is_selected,
               .appearance_color = body_appearance_color(*view, feature.id),
           });
@@ -29,6 +35,8 @@
               .center_x = parameters.start_x,
               .center_y = parameters.depth / 2.0,
               .center_z = parameters.start_y,
+              .plane_id = parameters.plane_id,
+              .plane_frame = std::nullopt,
               .is_selected = is_selected,
               .appearance_color = body_appearance_color(*view, feature.id),
           });

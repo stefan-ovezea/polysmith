@@ -5,25 +5,60 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# MSVC needs _USE_MATH_DEFINES for M_PI
+# MSVC needs _USE_MATH_DEFINES for M_PI and /EHsc for exception
+# handling — without it, Boost defines BOOST_NO_EXCEPTIONS which makes
+# boost::throw_exception an unresolved external.
 if(MSVC)
   add_compile_definitions(_USE_MATH_DEFINES)
+  add_compile_options(/EHsc)
 endif()
 
-# Place binaries directly in build/ (not build/Debug/) so Tauri finds them
+# Place binaries directly in build/ (not build/Release/) so Tauri finds them.
+# Must be CACHE variables for Visual Studio multi-config generator.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+foreach(CONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG} ${CMAKE_BINARY_DIR} CACHE PATH "" FORCE)
+endforeach()
 
-# Tell CMake where OCCT is installed
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/../../third_party/occt-install")
-
-find_package(OpenCASCADE REQUIRED)
-find_package(Eigen3 REQUIRED)
-# CONFIG first: required for CMake 3.30+ (policy CMP0167) and vcpkg.
-# Fall back to MODULE for older Boost installations without CMake config.
-find_package(Boost CONFIG QUIET)
-if(NOT Boost_FOUND)
-  find_package(Boost MODULE REQUIRED)
+# ---- OpenCASCADE ---------------------------------------------------------
+# Self-built OCCT 8 at third_party/occt8-build.  Use a manual INTERFACE
+# target — avoids cmake install issues (per-module target files are only
+# generated during install, which partially failed due to locked DLLs).
+set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
+add_library(occt_iface INTERFACE)
+# inc/ is the build-tree header location — works on both platforms without
+# requiring cmake --install (which fails on Windows due to locked DLLs).
+target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+if(WIN32)
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
+elseif(APPLE)
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/mac64/clang/lib")
+else()
+  target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/lin64/gcc/lib")
 endif()
+target_link_libraries(occt_iface INTERFACE
+  # FoundationClasses
+  TKernel TKMath
+  # ModelingData
+  TKG2d TKG3d TKGeomBase TKBRep
+  # ModelingAlgorithms
+  TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing TKBool
+  TKHLR TKHelix TKFillet TKOffset TKFeat TKMesh TKExpress TKXMesh
+  # ApplicationFramework
+  TKCDF TKLCAF TKCAF TKBinL TKXmlL TKBin TKXml
+  TKStdL TKStd TKTObj TKBinTObj TKXmlTObj TKVCAF
+  # DataExchange
+  TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
+  TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEPLY
+)
+set(OpenCASCADE_LIBRARIES occt_iface)
+find_package(Eigen3 REQUIRED)
+# CMake 3.30+ removed FindBoost.cmake (CMP0167).  vcpkg provides
+# BoostConfig.cmake, so use CONFIG mode explicitly.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.30")
+  cmake_policy(SET CMP0167 NEW)
+endif()
+find_package(Boost CONFIG REQUIRED)
 
 if(UNIX AND NOT APPLE)
   # Use RPATH instead of RUNPATH so transitive dependencies are found
@@ -45,7 +80,7 @@ target_include_directories(planegcs PUBLIC
   ${PLANEGCS_DIR}/headers
   ${Boost_INCLUDE_DIRS}
 )
-target_link_libraries(planegcs PUBLIC Eigen3::Eigen)
+target_link_libraries(planegcs PUBLIC Eigen3::Eigen Boost::headers)
 target_compile_definitions(planegcs PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
 # planegcs uses 'register' keyword (removed in C++17) in some Eigen internals
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -113,7 +148,20 @@ target_include_directories(cad_core PRIVATE
 
 target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
 
+# Tauri looks for cad_core.exe in build/ (not build/Release/).
+add_custom_command(TARGET cad_core POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:cad_core>
+    ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:cad_core>
+  COMMENT "Copying cad_core to build/ for Tauri"
+)
+
 add_executable(cad_core_sketch_profile_test
+  # Sketch code logs through the structured logger (e.g. the
+  # PS_TRACE_FACES face-walk trace); this target is built without the
+  # protocol/OCCT dependency chain, so tests/logger_stub.cpp supplies
+  # the logger symbols as a plain stderr writer.
+  tests/logger_stub.cpp
   src/core/sketch/constraint_solver.cpp
   src/core/sketch/dof_counter.cpp
   src/core/sketch/formula_eval.cpp
@@ -191,6 +239,26 @@ target_include_directories(cad_core_plugin_feature_test PRIVATE
 )
 
 target_link_libraries(cad_core_plugin_feature_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_extrude_quality_test
+  ${CAD_CORE_SOURCES}
+  tests/extrude_quality_test.cpp
+)
+
+target_include_directories(cad_core_extrude_quality_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_extrude_quality_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

@@ -175,4 +175,5 @@ function startViewCubeFaceAnimation({
   viewCubeAnimTargetUpRef.current.copy(targetUp);
   viewCubeAnimStartRef.current = performance.now();
   viewCubeAnimatingRef.current = true;
+  controls.enabled = false;
 }

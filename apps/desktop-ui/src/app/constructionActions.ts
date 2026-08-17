@@ -144,7 +144,8 @@ export function createConstructionActions({
       try {
         await documentPromise;
       } catch (error) {
-        addMessage(`tangent plane error: ${String(error)}`);
+        // Awaited-feature guard — silent (the old debug message is gone).
+        void error;
       }
     });
   }

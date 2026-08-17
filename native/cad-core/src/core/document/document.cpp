@@ -1,5 +1,6 @@
 #include "core/document/document.h"
 #include "core/sketch/sketch_feature.h"
+#include "core/sketch/sketch_profile.h"
 
 #include <algorithm>
 #include <array>
@@ -18,6 +19,8 @@
 
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -26,7 +29,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>

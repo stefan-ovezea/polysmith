@@ -12,8 +12,10 @@
           .height = parameters.height,
           .x_offset = current_x_offset,
           .center_x = current_x_offset + diameter / 2.0,
-          .center_y = parameters.height / 2.0,
-          .center_z = diameter / 2.0,
+          .center_y = diameter / 2.0,
+          .center_z = parameters.height / 2.0,
+          .plane_id = "ref-plane-xy",
+          .plane_frame = std::nullopt,
           .is_selected = is_selected,
           .appearance_color = body_appearance_color(*view, feature.id),
       });
@@ -24,23 +26,23 @@
           "Top",
           "planar",
           current_x_offset + diameter / 2.0,
-          parameters.height,
           diameter / 2.0,
+          parameters.height,
+          0.0,
           0.0,
           1.0,
-          0.0,
           make_plane_frame(current_x_offset + diameter / 2.0,
-                           parameters.height,
                            diameter / 2.0,
+                           parameters.height,
                            1.0,
                            0.0,
                            0.0,
                            0.0,
-                           0.0,
                            1.0,
                            0.0,
-                           1.0,
-                           0.0),
+                           0.0,
+                           0.0,
+                           1.0),
           diameter,
           diameter,
           parameters.radius,
@@ -53,23 +55,23 @@
           "Bottom",
           "planar",
           current_x_offset + diameter / 2.0,
-          0.0,
           diameter / 2.0,
           0.0,
-          -1.0,
           0.0,
+          0.0,
+          -1.0,
           make_plane_frame(current_x_offset + diameter / 2.0,
-                           0.0,
                            diameter / 2.0,
+                           0.0,
+                           1.0,
+                           0.0,
+                           0.0,
+                           0.0,
                            1.0,
                            0.0,
                            0.0,
                            0.0,
-                           0.0,
-                           1.0,
-                           0.0,
-                           -1.0,
-                           0.0),
+                           -1.0),
           diameter,
           diameter,
           parameters.radius,
@@ -78,11 +80,11 @@
 
       current_x_offset += diameter + kBoxSpacing;
       scene_width = std::max(scene_width, current_x_offset - kBoxSpacing);
-      if (parameters.height > max_height) {
-        max_height = parameters.height;
+      if (diameter > max_height) {
+        max_height = diameter;
       }
-      if (diameter > max_depth) {
-        max_depth = diameter;
+      if (parameters.height > max_depth) {
+        max_depth = parameters.height;
       }
       continue;
     }

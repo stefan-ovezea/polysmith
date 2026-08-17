@@ -279,9 +279,7 @@ function commitOrCancelDraft({
 >) {
   if (event.key === "Enter") {
     event.preventDefault();
-    void Promise.resolve(commitDraftDimensionSession(session)).then(() => {
-      void selectTool();
-    });
+    void Promise.resolve(commitDraftDimensionSession(session));
     return true;
   }
   if (event.key === "Escape") {

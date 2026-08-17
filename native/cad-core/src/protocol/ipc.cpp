@@ -1,16 +1,20 @@
 #include "protocol/ipc.h"
 
-#include <iostream>
+#include <cstdio>
 #include <stdexcept>
 
 namespace polysmith::protocol {
 
 void write_message(const json& message) {
-  std::cout << message.dump() << std::endl;
+  const std::string str = message.dump() + "\n";
+  fwrite(str.data(), 1, str.size(), stdout);
+  fflush(stdout);
 }
 
 void write_log(const std::string& message) {
-  std::cerr << message << std::endl;
+  const std::string str = message + "\n";
+  fwrite(str.data(), 1, str.size(), stderr);
+  fflush(stderr);
 }
 
 CommandMessage parse_command(const std::string& line) {

@@ -54,49 +54,21 @@ DocumentState DocumentManager::update_extrude_profiles(
                                             selected_profiles.front(),
                                             depth);
   } else {
-    const auto& first = selected_profiles.front();
-    const std::string plane_id =
-        sketch.plane_frame.has_value() ? plane_id_from_frame(sketch.plane_frame.value())
-                                       : sketch.plane_id;
-    const std::optional<PlaneFrame> plane_frame =
-        sketch.plane_frame.has_value()
-            ? std::optional<PlaneFrame>(make_plane_frame(sketch.plane_frame.value()))
-            : std::nullopt;
-    std::vector<std::string> ids;
-    for (const auto& profile : selected_profiles) {
-      ids.push_back(profile.id);
-    }
-    next_parameters = ExtrudeFeatureParameters{
-        .sketch_feature_id = sketch_it->id,
-        .profile_id = ids.front(),
-        .profile_ids = ids,
-        .plane_id = plane_id,
-        .plane_frame = plane_frame,
-        .profile_kind = "polygon",
-        .start_x = 0.0,
-        .start_y = 0.0,
-        .width = 0.0,
-        .height = 0.0,
-        .radius = 0.0,
-        .profile_points = first.kind == "circle"
-                              ? sample_circle_profile_points(first)
-                              : first.points,
-        .inner_loops = first.inner_loops,
-        .depth = depth,
-    };
-    for (size_t index = 1; index < selected_profiles.size(); ++index) {
-      const auto& profile = selected_profiles[index];
-      next_parameters->additional_profile_points.push_back(
-          profile.kind == "circle" ? sample_circle_profile_points(profile)
-                                   : profile.points);
-      next_parameters->additional_inner_loops.push_back(profile.inner_loops);
-    }
+    // Delegate to the shared parameter builder — it handles multi-profile
+    // groups, sets up additional profiles and inner loops, and deliberately
+    // leaves sketch curve data empty so the shape builder routes through
+    // the polygon-prism path (which handles every profile in the group).
+    next_parameters =
+        make_extrude_parameters_for_profiles(*sketch_it,
+                                             selected_profiles,
+                                             depth);
   }
   if (!next_parameters.has_value()) {
     throw std::runtime_error("Sketch profile not found");
   }
   next_parameters->mode = mode;
   next_parameters->target_body_id = target_body_id;
+  next_parameters->side1.distance = std::abs(depth);
   extrude_it->extrude_parameters = next_parameters.value();
   extrude_it->parameters_summary =
       extrude_it->extrude_parameters->profile_id + " · " +

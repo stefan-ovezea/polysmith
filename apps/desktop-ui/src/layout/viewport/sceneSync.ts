@@ -78,6 +78,7 @@ interface ViewportSceneSyncRefs {
   solidFaceVisuals: MutableRef<Map<string, SolidFaceVisual>>;
   solidFaceStates: MutableRef<Map<string, SolidFaceInteractionState>>;
   edgeLineObjects: MutableRef<THREE.Line[]>;
+  vertexObjects: MutableRef<THREE.Mesh[]>;
   cutPreviewObjects: MutableRef<THREE.Mesh[]>;
   toolpathLines: MutableRef<THREE.Line[]>;
   moveGizmoObjects: MutableRef<THREE.Object3D[]>;
@@ -350,12 +351,14 @@ function addModelSceneObjects(
   addSolidSceneObjects({
     faces: sceneData.solidFaces,
     edges: sceneData.edges,
+    vertices: sceneData.vertices,
     cutPreviews: sceneData.cutPreviews,
     contentGroup,
     faceMeshes: refs.faceMeshes.current,
     solidFaceVisuals: refs.solidFaceVisuals.current,
     solidFaceStates: refs.solidFaceStates.current,
     edgeLineObjects: refs.edgeLineObjects.current,
+    vertexObjects: refs.vertexObjects.current,
     cutPreviewObjects: refs.cutPreviewObjects.current,
   });
 

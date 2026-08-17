@@ -8,22 +8,7 @@ import type {
 import { distanceBetweenPoints, toWorldPoint } from "@/utils";
 import { getBridge } from "@/lib/planegcsSolver";
 import { speculativeSolve, speculativeMultiSolve } from "@/lib/speculativeSolve";
-import { useCadCoreStore } from "@/state/cadCoreStore";
-import { useToastStore } from "@/state/toastStore";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
-
-// Diagnostic logger for tangent snap. Each gate fires at most once per
-// 5 seconds (cooldown) so you can see retries after moving the cursor.
-const _gateCooldowns = new Map<string, number>();
-function _snapDebug(gate: string, detail: string) {
-  const now = Date.now();
-  const last = _gateCooldowns.get(gate) ?? 0;
-  if (now - last < 5000) return;
-  _gateCooldowns.set(gate, now);
-  const msg = `[tangent] ${gate}: ${detail}`;
-  try { useCadCoreStore.getState().addMessage(msg); } catch (_) { /* ok */ }
-  try { useToastStore.getState().pushToast("info", msg); } catch (_) { /* ok */ }
-}
 
 export interface SketchSnapCandidate {
   local: [number, number];
@@ -408,15 +393,24 @@ function hasEnabledDynamicSnap(
   filter: SelectionFilter,
   draftStartLocal?: [number, number] | null,
 ) {
+  // All dynamic snaps are relative to the draft line (axis-lock
+  // constrains direction from start, body snaps constrain the second
+  // point onto geometry, tangent/perpendicular/parallel define the
+  // line angle from start). Without a draft start — placing the first
+  // point of a line — none of these are meaningful. Returning false
+  // here prevents body snaps from overriding grid snap for the first
+  // click, which would otherwise pull the cursor onto nearby geometry
+  // bodies instead of snapping to the grid.
+  if (!draftStartLocal) return false;
+
   return (
     filter.snap_nearest ||
     filter.snap_intersection ||
     Boolean(
-      draftStartLocal &&
-        (filter.snap_polar ||
-          filter.snap_tangent ||
-          filter.snap_perpendicular ||
-          filter.snap_parallel),
+      filter.snap_polar ||
+      filter.snap_tangent ||
+      filter.snap_perpendicular ||
+      filter.snap_parallel,
     )
   );
 }
@@ -449,6 +443,7 @@ function previewPointFromDynamicSnap({
     snapTangentCircleId: snap.snapTangentCircleId,
     snapParallelHostLineId: snap.snapParallelHostLineId,
     snapIntersectionLineIds: snap.snapIntersectionLineIds,
+    snapTangentPoint: snap.snapTangentPoint,
     inferenceLines: hasInferenceGuides ? snap.inferenceGuideLines : undefined,
   };
 }
@@ -548,6 +543,19 @@ function appendCoreSnapCandidates(
           local: [candidate.local_x, candidate.local_y],
           label: candidate.label,
           kind: "quadrant",
+        });
+        break;
+      // Projected vertices (from 3D body geometry projected onto the
+      // sketch plane). Treated as priority snaps (same tier as endpoints)
+      // so that axis-lock / H-V constraint snaps never override them.
+      // Exact coordinates are used so the C++ core's find_coincident_endpoint
+      // (kCoincidentTolerance = 0.01 mm) always matches and reuses the
+      // existing projected vertex instead of creating a duplicate.
+      case "projected":
+        candidates.push({
+          local: [candidate.local_x, candidate.local_y],
+          label: candidate.label,
+          kind: "endpoint",
         });
         break;
       default:
@@ -672,6 +680,11 @@ interface DynamicSnapResult {
     draft: [number, number];
     axis: "horizontal" | "vertical";
   }>;
+  /** When tangent snap fires, the exact contact point on the circle
+   *  where the tangent line touches. Used at commit time to set the
+   *  next polyline segment's start to the solver-resolved endpoint
+   *  rather than the cursor-projected snap position. */
+  snapTangentPoint?: [number, number] | null;
 }
 
 interface SketchSnapLine {
@@ -997,11 +1010,7 @@ export function dynamicSnapCandidate({
     const draftDy = cursor[1] - draftStart[1];
     const hasDraftMovement = Math.hypot(draftDx, draftDy) > 1e-6;
 
-    // diagnostic: show why tangent gate passes/fails
-    _snapDebug("gate", `hasDraftStart=1 hasMovement=${hasDraftMovement} snap_tangent=${filter.snap_tangent} circles=${circles.length}`);
-
     if (hasDraftMovement && filter.snap_tangent) {
-      _snapDebug("enter", `circles=${circles.length}`);
       const spec = speculativeTangentSnap({
         sketchParameters: sketchParameters ?? null,
         constraints: constraints ?? [],
@@ -1370,7 +1379,6 @@ function speculativeTangentSnap({
   }
 
   if (!bestCircle && !bestArc) {
-    _snapDebug("no_circle", `circles=${circles.length} arcs=${arcs.length}`);
     return null;
   }
 
@@ -1391,12 +1399,13 @@ function speculativeTangentSnap({
   const snapDist = Math.hypot(snapX - cursor[0], snapY - cursor[1]);
   if (snapDist > threshold) return null;
 
+  const tangentCircleId = bestCircle?.circle_id ?? bestArc?.arc_id ?? null;
   return {
     local: [snapX, snapY],
     snapLabel,
     snapPerpendicularHostLineId: null,
     snapAxisLock: null,
-    snapTangentCircleId: bestCircle?.circle_id ?? bestArc?.arc_id ?? null,
+    snapTangentCircleId: tangentCircleId,
     snapParallelHostLineId: null,
     snapLineBodyHostLineId: null,
     snapLineBodyT: null,
@@ -1405,6 +1414,9 @@ function speculativeTangentSnap({
     snapInferenceFrom: null,
     inferenceGuideLines: [],
     distance: snapDist,
+    // Preserve the exact tangent contact point so the polyline chain
+    // starts the next segment from the solver-resolved position.
+    snapTangentPoint: tangentCircleId ? [bestTpX, bestTpY] : null,
   };
 }
 

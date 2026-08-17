@@ -7,6 +7,7 @@ import {
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
 import {
   applyTheme,
   useAppConfig,
@@ -442,8 +443,8 @@ export function ViewportPanel({
   const viewCubeAnimStartRef = useRef(0);
   const viewCubeAnimStartPosRef = useRef(new THREE.Vector3());
   const viewCubeAnimTargetPosRef = useRef(new THREE.Vector3());
-  const viewCubeAnimStartUpRef = useRef(new THREE.Vector3(0, 1, 0));
-  const viewCubeAnimTargetUpRef = useRef(new THREE.Vector3(0, 1, 0));
+  const viewCubeAnimStartUpRef = useRef(new THREE.Vector3(0, 0, 1));
+  const viewCubeAnimTargetUpRef = useRef(new THREE.Vector3(0, 0, 1));
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lineDraftStartRef = useRef<[number, number] | null>(null);
@@ -458,6 +459,7 @@ export function ViewportPanel({
   // null for the first / independent line (defaults to horizontal, 0 rad).
   const previousLineAngleRef = useRef<number | null>(null);
   const currentGridSpacingRef = useRef(10);
+  const [currentGridSpacing, setCurrentGridSpacing] = useState(10);
   const draftDimensionSessionRef = useRef<DraftDimensionSession | null>(null);
   const draftDimensionInputRefs = useRef<
     Partial<Record<DraftDimensionField, HTMLInputElement | null>>
@@ -872,6 +874,22 @@ export function ViewportPanel({
       updateSketchDimension: updateSketchDimensionRef.current,
     });
   }, [sketchFeature]);
+  // React to view-setting-changed events dispatched by the View panel
+  // so edge visibility toggles take effect immediately without waiting
+  // for the next viewport rebuild.
+  useEffect(() => {
+    const handler = () => {
+      const hidden = getShowHiddenEdges();
+      for (const line of edgeLineObjectsRef.current) {
+        const mat = line.material as THREE.LineBasicMaterial;
+        mat.depthTest = !hidden;
+        mat.polygonOffset = !hidden;
+        mat.needsUpdate = true;
+      }
+    };
+    window.addEventListener("view-setting-changed", handler);
+    return () => window.removeEventListener("view-setting-changed", handler);
+  }, []);
   // Keep planegcs constraint data ref in sync with the viewport state
   // so the drag rAF can read it without render-cycle stale closures.
   useEffect(() => {
@@ -1689,6 +1707,11 @@ export function ViewportPanel({
     if (!session) {
       return;
     }
+    // Arc is committed via 3 clicks, not via the dimension session.
+    // Enter key keeps the tool armed but does not add geometry.
+    if (session.tool === "arc") {
+      return;
+    }
     const [startX, startY] = session.start;
     const [endX, endY] = session.current;
     clearPreviewLine();
@@ -2138,6 +2161,7 @@ export function ViewportPanel({
       -10000,
       10000,
     );
+    camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     const contentGroup = new THREE.Group();
     const referenceGroup = new THREE.Group();
@@ -2297,7 +2321,14 @@ export function ViewportPanel({
         activeSketchPlaneFrame: activeSketchPlaneFrameRef.current,
         showViewportGrid: showViewportGridRef.current,
         showSketchGrid: showSketchGridRef.current,
+        worldUnitsPerPixel:
+          getOrthographicViewHeight(camera) /
+          Math.max(renderer.domElement.clientHeight, 1),
       });
+      // Sync grid spacing state for the scale indicator overlay.
+      if (currentGridSpacingRef.current !== currentGridSpacing) {
+        setCurrentGridSpacing(currentGridSpacingRef.current);
+      }
       updateScreenSpaceSketchSprites({
         renderer,
         camera,
@@ -2401,6 +2432,8 @@ export function ViewportPanel({
         raycaster,
         sceneData: sceneDataRef.current,
         activeSketchPlaneId,
+        activeSketchPlaneFrame:
+          activeSketchPlaneFrameRef.current ?? activeSketchPlaneFrame,
         activeSketchTool: activeSketchToolRef.current,
         armedSketchConstraintKind: armedSketchConstraintRef.current?.kind ?? null,
         inactiveSketchEntityPickEnabled:
@@ -3169,6 +3202,27 @@ export function ViewportPanel({
       requestRender(viewCubeAnimatingRef.current ? 320 : 0);
     };
     const onContextMenu = (event: MouseEvent) => {
+      if (draftDimensionSessionRef.current) {
+        event.preventDefault();
+        // Cancel the rubber band / chain break — keep tool armed
+        lineDraftStartRef.current = null;
+        arcSecondPointRef.current = null;
+        rectSecondPointRef.current = null;
+        circleSecondPointRef.current = null;
+        clearPreviewLine();
+        clearPreviewCircle();
+        clearPreviewArc();
+        clearPreviewDimension();
+        clearPreviewInference();
+        clearDraftDimensionSession();
+        setSketchSnapLabel(null);
+        setConstraintPreview(null);
+        dragSnapResultRef.current = null;
+        setHoveredSketchEntity(null);
+        setHoveredSketchPoint(null);
+        requestRender();
+        return;
+      }
       handleContextMenu(event);
       requestRender();
     };
@@ -3287,6 +3341,7 @@ export function ViewportPanel({
         solidFaceVisuals: solidFaceVisualsRef,
         solidFaceStates: solidFaceStatesRef,
         edgeLineObjects: edgeLineObjectsRef,
+        vertexObjects: vertexObjectsRef,
         cutPreviewObjects: cutPreviewObjectsRef,
         toolpathLines: toolpathLinesRef,
         moveGizmoObjects: moveGizmoObjectsRef,
@@ -3467,7 +3522,7 @@ export function ViewportPanel({
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
-  const pointCount = sketchFeature?.sketch_parameters?.points.length ?? 0;
+  const pointCount = sketchFeature?.sketch_parameters?.vertices.length ?? 0;
   const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   const {
@@ -3565,6 +3620,7 @@ export function ViewportPanel({
       circleToolMode={circleToolMode}
       constraintPreview={constraintPreview}
       contextMenu={contextMenu}
+      currentGridSpacing={currentGridSpacing}
       contextMenuActions={contextMenuActions}
       crosshairCanvasClass={crosshairCanvasClass}
       crosshairGuideSize={crosshairGuideSize}

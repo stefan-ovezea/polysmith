@@ -165,6 +165,11 @@ export interface LineDraftCommitOptions {
   endHostLineId: string | null;
   endLineBodyHost: LineBodyHost | null;
   snapEndpointHostLineId: string | null | undefined;
+  /** Exact tangent contact point from snap resolution. When set,
+   *  the next polyline segment starts from this point instead of
+   *  `committedEnd`, because the C++ tangent enforcer will move
+   *  the line's endpoint to this exact point during the solve. */
+  endTangentPoint: Point2d | null | undefined;
   refs: {
     chainBreakRequested: MutableRef<boolean>;
     draftStart: MutableRef<Point2d | null>;
@@ -445,6 +450,7 @@ function commitLineDraft({
   endHostLineId,
   endLineBodyHost,
   snapEndpointHostLineId,
+  endTangentPoint,
   refs,
   scheduleDraftDimensionExpressionUpdate,
   clearDraftDimensionSession,
@@ -463,7 +469,15 @@ function commitLineDraft({
     scheduleDraftDimensionExpressionUpdate();
     clearDraftDimensionSession();
   } else {
-    refs.draftStart.current = committedEnd;
+    // When the end has a tangent constraint, the C++ core's
+    // enforce_tangent_line_circle_relations will move the endpoint
+    // to the exact tangent contact point during the solve. Both the
+    // next draft start AND the next line's dimension session must
+    // use that resolved position so the polyline chain stays
+    // watertight and dimension values are computed from the correct
+    // origin.
+    const nextDraftStart = endTangentPoint ?? committedEnd;
+    refs.draftStart.current = nextDraftStart;
 
     const dx = committedEnd[0] - start[0];
     const dy = committedEnd[1] - start[1];
@@ -482,8 +496,8 @@ function commitLineDraft({
     scheduleDraftDimensionExpressionUpdate();
     const oldSession = refs.draftDimensionSession.current;
     const nextLineSession = createDraftDimensionSession(
-      committedEnd,
-      committedEnd,
+      nextDraftStart,
+      nextDraftStart,
     );
     clearDraftDimGroup();
     refs.draftDimensionSession.current = nextLineSession;
@@ -666,6 +680,7 @@ export function commitDraftPointerUp({
     endHostLineId,
     endLineBodyHost,
     snapEndpointHostLineId: sketchPoint.snapEndpointHostLineId,
+    endTangentPoint: sketchPoint.snapTangentPoint,
     refs,
     scheduleDraftDimensionExpressionUpdate: () => {
       scheduleDraftDimensionExpressionUpdate("line");

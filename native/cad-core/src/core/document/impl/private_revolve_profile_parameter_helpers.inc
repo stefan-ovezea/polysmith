@@ -11,13 +11,13 @@ std::array<double, 3> revolve_sketch_local_to_world(
     };
   }
   if (sketch.plane_id == "ref-plane-xy") {
-    return {local_x, 0.0, local_y};
+    return {local_x, local_y, 0.0};
   }
   if (sketch.plane_id == "ref-plane-yz") {
     return {0.0, local_x, local_y};
   }
   if (sketch.plane_id == "ref-plane-xz") {
-    return {local_x, local_y, 0.0};
+    return {local_x, 0.0, local_y};
   }
   throw std::runtime_error("Unsupported sketch plane: " + sketch.plane_id);
 }

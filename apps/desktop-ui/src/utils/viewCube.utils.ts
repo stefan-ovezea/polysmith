@@ -29,10 +29,10 @@ const CUBE_VIEWPORT_MARGIN = 16;
 const ANIMATION_DURATION = 300;
 
 const FACE_NORMALS: Record<CubeFace, THREE.Vector3> = {
-  TOP: new THREE.Vector3(0, 1, 0),
-  BOTTOM: new THREE.Vector3(0, -1, 0),
-  FRONT: new THREE.Vector3(0, 0, 1),
-  BACK: new THREE.Vector3(0, 0, -1),
+  TOP: new THREE.Vector3(0, 0, 1),
+  BOTTOM: new THREE.Vector3(0, 0, -1),
+  FRONT: new THREE.Vector3(0, -1, 0),
+  BACK: new THREE.Vector3(0, 1, 0),
   RIGHT: new THREE.Vector3(1, 0, 0),
   LEFT: new THREE.Vector3(-1, 0, 0),
 };
@@ -142,7 +142,7 @@ export function buildViewCubeGroup(): THREE.Group {
   const arrowMutedColor = viewCubeColor("--cad-viewcube-arrow-muted", "#5d6d70");
 
   // -- faces ----------------------------------------------------------------
-  // Labels follow mechanical CAD convention: +Z = TOP, -Y = FRONT.
+  // Labels follow CAD convention: +Z = TOP, -Y = FRONT.
   const faceConfigs: Array<{
     face: CubeFace;
     label: string;
@@ -166,30 +166,30 @@ export function buildViewCubeGroup(): THREE.Group {
     },
     {
       face: "TOP",
-      label: "BACK",
-      position: [0, FACE_OFFSET, 0],
-      rotation: [-Math.PI / 2, 0, 0],
+      label: "TOP",
+      position: [0, 0, FACE_OFFSET],
+      rotation: [0, 0, 0],
       color: colors.TOP,
     },
     {
       face: "BOTTOM",
-      label: "FRONT",
-      position: [0, -FACE_OFFSET, 0],
-      rotation: [Math.PI / 2, 0, 0],
+      label: "BOTTOM",
+      position: [0, 0, -FACE_OFFSET],
+      rotation: [0, Math.PI, 0],
       color: colors.BOTTOM,
     },
     {
       face: "FRONT",
-      label: "TOP",
-      position: [0, 0, FACE_OFFSET],
-      rotation: [0, 0, 0],
+      label: "FRONT",
+      position: [0, -FACE_OFFSET, 0],
+      rotation: [Math.PI / 2, 0, 0],
       color: colors.FRONT,
     },
     {
       face: "BACK",
-      label: "BOTTOM",
-      position: [0, 0, -FACE_OFFSET],
-      rotation: [0, Math.PI, 0],
+      label: "BACK",
+      position: [0, FACE_OFFSET, 0],
+      rotation: [-Math.PI / 2, 0, 0],
       color: colors.BACK,
     },
   ];
@@ -225,68 +225,68 @@ export function buildViewCubeGroup(): THREE.Group {
     size: [number, number, number];
     position: [number, number, number];
   }> = [
-    // 4 edges along X at Y=0.5
+    // 4 edges along X (between Z=±0.5 and Y=±0.5)
     {
-      faces: ["TOP", "FRONT"],
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, 0.5],
-    },
-    {
-      faces: ["TOP", "BACK"],
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, -0.5],
-    },
-    {
-      faces: ["BOTTOM", "FRONT"],
+      faces: ["TOP", "FRONT"],       // +Z ∩ -Y
       size: [CUBE_SIZE + et * 0.5, et, et],
       position: [0, -0.5, 0.5],
     },
     {
-      faces: ["BOTTOM", "BACK"],
+      faces: ["TOP", "BACK"],        // +Z ∩ +Y
+      size: [CUBE_SIZE + et * 0.5, et, et],
+      position: [0, 0.5, 0.5],
+    },
+    {
+      faces: ["BOTTOM", "FRONT"],    // -Z ∩ -Y
       size: [CUBE_SIZE + et * 0.5, et, et],
       position: [0, -0.5, -0.5],
     },
-    // 4 edges along Y at X=±0.5, Z=±0.5
     {
-      faces: ["FRONT", "RIGHT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, 0.5],
+      faces: ["BOTTOM", "BACK"],     // -Z ∩ +Y
+      size: [CUBE_SIZE + et * 0.5, et, et],
+      position: [0, 0.5, -0.5],
     },
+    // 4 edges along Z (between X=±0.5 and Y=±0.5)
     {
-      faces: ["FRONT", "LEFT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, 0.5],
-    },
-    {
-      faces: ["BACK", "RIGHT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, -0.5],
-    },
-    {
-      faces: ["BACK", "LEFT"],
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, -0.5],
-    },
-    // 4 edges along Z at Y=±0.5, X=±0.5
-    {
-      faces: ["TOP", "RIGHT"],
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [0.5, 0.5, 0],
-    },
-    {
-      faces: ["TOP", "LEFT"],
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [-0.5, 0.5, 0],
-    },
-    {
-      faces: ["BOTTOM", "RIGHT"],
+      faces: ["FRONT", "RIGHT"],      // -Y ∩ +X, edge runs along Z
       size: [et, et, CUBE_SIZE + et * 0.5],
       position: [0.5, -0.5, 0],
     },
     {
-      faces: ["BOTTOM", "LEFT"],
+      faces: ["FRONT", "LEFT"],       // -Y ∩ -X, edge runs along Z
       size: [et, et, CUBE_SIZE + et * 0.5],
       position: [-0.5, -0.5, 0],
+    },
+    {
+      faces: ["BACK", "RIGHT"],       // +Y ∩ +X, edge runs along Z
+      size: [et, et, CUBE_SIZE + et * 0.5],
+      position: [0.5, 0.5, 0],
+    },
+    {
+      faces: ["BACK", "LEFT"],        // +Y ∩ -X, edge runs along Z
+      size: [et, et, CUBE_SIZE + et * 0.5],
+      position: [-0.5, 0.5, 0],
+    },
+    // 4 edges along Y (between X=±0.5 and Z=±0.5)
+    {
+      faces: ["TOP", "RIGHT"],        // +Z ∩ +X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [0.5, 0, 0.5],
+    },
+    {
+      faces: ["TOP", "LEFT"],         // +Z ∩ -X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [-0.5, 0, 0.5],
+    },
+    {
+      faces: ["BOTTOM", "RIGHT"],     // -Z ∩ +X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [0.5, 0, -0.5],
+    },
+    {
+      faces: ["BOTTOM", "LEFT"],      // -Z ∩ -X, edge runs along Y
+      size: [et, CUBE_SIZE + et * 0.5, et],
+      position: [-0.5, 0, -0.5],
     },
   ];
 
@@ -319,10 +319,13 @@ export function buildViewCubeGroup(): THREE.Group {
   ];
 
   for (const [sx, sy, sz] of cornerSigns) {
+    // In cube-local space: X→RIGHT/LEFT, Y→BACK/FRONT, Z→TOP/BOTTOM.
+    // The position is (sx*0.5, sy*0.5, sz*0.5) — sy is the local Y
+    // axis (BACK/FRONT), sz is the local Z axis (TOP/BOTTOM).
     const faces: [CubeFace, CubeFace, CubeFace] = [
       sx > 0 ? "RIGHT" : "LEFT",
-      sy > 0 ? "TOP" : "BOTTOM",
-      sz > 0 ? "FRONT" : "BACK",
+      sy > 0 ? "BACK" : "FRONT",
+      sz > 0 ? "TOP" : "BOTTOM",
     ];
     const geometry = new THREE.SphereGeometry(CORNER_RADIUS, 16, 12);
     const material = new THREE.MeshBasicMaterial({ color: cornerColor });
@@ -396,6 +399,7 @@ export function createViewCubeCamera(): THREE.OrthographicCamera {
     0.05,
     10,
   );
+  camera.up.set(0, 0, 1);
   camera.position.set(1.4, 0.8, 1.4);
   camera.lookAt(0, 0, 0);
   return camera;
@@ -471,7 +475,27 @@ export function syncCubeCamera(
     .copy(mainCamera.position)
     .sub(controlsTarget)
     .normalize();
-  cubeCamera.position.copy(dir.multiplyScalar(2));
+
+  cubeCamera.position.copy(dir.clone().multiplyScalar(2));
+
+  // Sync the cube camera's up to the main camera's up so the cube
+  // renders with the same orientation the user sees on the model.
+  // A fixed Z-up makes the cube faces misalign with the model when
+  // the main camera's up has been tilted by prior view transitions.
+  const upDotView = Math.abs(dir.dot(mainCamera.up));
+  if (upDotView > 0.99) {
+    // Main camera up is nearly parallel to the view direction —
+    // a degenerate state.  Fall back to a world reference.
+    const zUp = new THREE.Vector3(0, 0, 1);
+    cubeCamera.up.copy(
+      Math.abs(dir.dot(zUp)) > 0.99
+        ? new THREE.Vector3(0, 1, 0)
+        : zUp,
+    );
+  } else {
+    cubeCamera.up.copy(mainCamera.up);
+  }
+
   cubeCamera.lookAt(0, 0, 0);
 }
 
@@ -582,9 +606,9 @@ export function isCardinalCubeDirection(direction: THREE.Vector3): boolean {
 }
 
 function getDefaultUpForDirection(direction: THREE.Vector3): THREE.Vector3 {
-  const worldUp = new THREE.Vector3(0, 1, 0);
+  const worldUp = new THREE.Vector3(0, 0, 1);
   if (Math.abs(direction.dot(worldUp)) > 0.95) {
-    return new THREE.Vector3(0, 0, -1);
+    return new THREE.Vector3(0, 1, 0);
   }
   return worldUp;
 }
@@ -610,10 +634,16 @@ export function getQuantizedCubeUp(
   projectedCurrentUp.normalize();
   let bestUp = baseUp.clone();
   let bestDot = -Infinity;
-  for (let step = 0; step < 4; step += 1) {
+  // Use 45° steps (8 candidates) instead of 90° so the quantized up
+  // stays within ~22.5° of the current projected up.  Coarse 90°
+  // quantization can pick an up nearly 45° away after a diagonal
+  // view transition, causing the camera to roll significantly during
+  // the next animation — the roll changes the effective rotation axis
+  // and makes edge clicks orbit around the wrong world axis.
+  for (let step = 0; step < 8; step += 1) {
     const candidate = baseUp
       .clone()
-      .applyAxisAngle(axis, step * (Math.PI / 2))
+      .applyAxisAngle(axis, step * (Math.PI / 4))
       .normalize();
     const dot = candidate.dot(projectedCurrentUp);
     if (dot > bestDot) {
@@ -645,7 +675,27 @@ export function animateCameraTowardTarget(
 
   camera.position.lerpVectors(startPosition, targetPosition, ease);
   if (startUp && targetUp) {
-    camera.up.lerpVectors(startUp, targetUp, ease).normalize();
+    // Spherical-linear interpolate the up so it follows a consistent
+    // arc instead of passing through degenerate intermediate values.
+    // Linear nlerp can cross through a direction parallel to the view
+    // direction, causing the sketch axes to flip momentarily.
+    const upCross = new THREE.Vector3()
+      .crossVectors(startUp, targetUp);
+    const upCrossLen = upCross.length();
+    if (upCrossLen > 1e-6) {
+      const upAngle = Math.acos(
+        THREE.MathUtils.clamp(startUp.dot(targetUp), -1, 1),
+      );
+      camera.up
+        .copy(startUp)
+        .applyAxisAngle(
+          upCross.divideScalar(upCrossLen),
+          upAngle * ease,
+        )
+        .normalize();
+    } else {
+      camera.up.lerpVectors(startUp, targetUp, ease).normalize();
+    }
   }
   camera.lookAt(controls.target);
   controls.update();

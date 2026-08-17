@@ -74,6 +74,8 @@ std::string serialize_shape_snapshot(const TopoDS_Shape& shape) {
     BRepTools::Write(shape, stream);
   } catch (const Standard_Failure&) {
     throw std::runtime_error("Could not serialize copied body shape");
+  } catch (const std::exception& e) {
+    throw std::runtime_error(std::string("OCCT serialization error: ") + e.what());
   }
   return stream.str();
 }

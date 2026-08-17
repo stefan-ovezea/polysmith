@@ -89,24 +89,24 @@
               .id = feature.id,
               .label = feature.name,
               .width = parameters.width,
-              .height = parameters.depth,
-              .depth = parameters.height,
+              .height = parameters.height,
+              .depth = parameters.depth,
               .x_offset = parameters.start_x,
               .center_x = parameters.start_x + parameters.width / 2.0,
-              .center_y = parameters.depth / 2.0,
-              .center_z = parameters.start_y + parameters.height / 2.0,
+              .center_y = parameters.start_y + parameters.height / 2.0,
+              .center_z = parameters.depth / 2.0,
               .is_selected = is_selected,
               .appearance_color = body_appearance_color(*view, feature.id),
           });
           face_center_x = parameters.start_x + parameters.width / 2.0;
-          face_center_y = parameters.depth;
-          face_center_z = parameters.start_y + parameters.height / 2.0;
-          face_normal_y = 1.0;
+          face_center_y = parameters.start_y + parameters.height / 2.0;
+          face_center_z = parameters.depth;
+          face_normal_z = 1.0;
           face_origin_x = face_center_x;
           face_origin_y = face_center_y;
           face_origin_z = face_center_z;
-          max_height = std::max(max_height, parameters.depth);
-          max_depth = std::max(max_depth, parameters.start_y + parameters.height);
+          max_height = std::max(max_height, parameters.start_y + parameters.height);
+          max_depth = std::max(max_depth, parameters.depth);
           scene_width = std::max(scene_width, parameters.start_x + parameters.width);
         } else if (parameters.plane_id == "ref-plane-yz") {
           boxes.push_back(ViewportBoxPrimitive{
@@ -137,24 +137,24 @@
               .id = feature.id,
               .label = feature.name,
               .width = parameters.width,
-              .height = parameters.height,
-              .depth = parameters.depth,
+              .height = parameters.depth,
+              .depth = parameters.height,
               .x_offset = parameters.start_x,
               .center_x = parameters.start_x + parameters.width / 2.0,
-              .center_y = parameters.start_y + parameters.height / 2.0,
-              .center_z = parameters.depth / 2.0,
+              .center_y = parameters.depth / 2.0,
+              .center_z = parameters.start_y + parameters.height / 2.0,
               .is_selected = is_selected,
               .appearance_color = body_appearance_color(*view, feature.id),
           });
           face_center_x = parameters.start_x + parameters.width / 2.0;
-          face_center_y = parameters.start_y + parameters.height / 2.0;
-          face_center_z = parameters.depth;
-          face_normal_z = 1.0;
+          face_center_y = parameters.depth;
+          face_center_z = parameters.start_y + parameters.height / 2.0;
+          face_normal_y = 1.0;
           face_origin_x = face_center_x;
           face_origin_y = face_center_y;
           face_origin_z = face_center_z;
-          max_height = std::max(max_height, parameters.start_y + parameters.height);
-          max_depth = std::max(max_depth, parameters.depth);
+          max_height = std::max(max_height, parameters.depth);
+          max_depth = std::max(max_depth, parameters.start_y + parameters.height);
           scene_width = std::max(scene_width, parameters.start_x + parameters.width);
         }
         solid_faces.push_back(make_solid_face(
