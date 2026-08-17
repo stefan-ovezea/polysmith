@@ -81,6 +81,9 @@
           .end_vertex_id   = arc_shared_pt(
               last_seg.end_x, last_seg.end_y,
               "vertex-" + std::to_string(params.next_vertex_index++)),
+          // The split keeps the source arc's center — share its center
+          // vertex id instead of minting a second one at the same spot.
+          .center_vertex_id = arc_it->center_vertex_id,
           .center_x = arc_it->center_x,
           .center_y = arc_it->center_y,
           .radius   = arc_it->radius,

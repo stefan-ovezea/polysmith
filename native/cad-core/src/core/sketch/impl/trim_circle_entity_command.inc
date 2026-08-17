@@ -73,6 +73,9 @@
           .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
+          // The arc keeps the circle's center — share its center vertex
+          // id instead of minting a second one at the same spot.
+          .center_vertex_id = circle_it->center_vertex_id,
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,
@@ -99,6 +102,9 @@
           .end_vertex_id   = shared_end.has_value()
               ? std::get<0>(shared_end.value())
               : "vertex-" + std::to_string(params.next_vertex_index++),
+          // The arc keeps the circle's center — share its center vertex
+          // id instead of minting a second one at the same spot.
+          .center_vertex_id = circle_it->center_vertex_id,
           .center_x = cx, .center_y = cy, .radius = r,
           .start_x = sx, .start_y = sy,
           .end_x = ex, .end_y = ey,

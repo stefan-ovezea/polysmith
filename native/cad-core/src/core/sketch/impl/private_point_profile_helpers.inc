@@ -139,6 +139,33 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     append_point(arc.end_vertex_id, "endpoint", arc.end_x, arc.end_y);
   }
 
+  // Emit a quadrant vertex unless a vertex with the same id already
+  // exists (a line endpoint drawn onto a quadrant point carries the
+  // legacy "vertex-<entity>-quadrant-N" id) — pushing a second record
+  // with the same id corrupts the vertex model.  Ownership is recorded
+  // here so sweep-external arc quadrants never claim their arc.
+  auto emit_quadrant = [&](const std::string& quadrant_id,
+                           const std::string& owner_id,
+                           double qx,
+                           double qy) {
+    const auto existing_it = std::find_if(
+        parameters.vertices.begin(),
+        parameters.vertices.end(),
+        [&](const SketchVertex& v) { return v.id == quadrant_id; });
+    if (existing_it != parameters.vertices.end()) {
+      existing_it->geometry_owner_ids.push_back(owner_id);
+      return;
+    }
+    parameters.vertices.push_back(SketchVertex{
+        .id = quadrant_id,
+        .kind = "quadrant",
+        .x = qx,
+        .y = qy,
+        .is_fixed = false,
+        .geometry_owner_ids = {owner_id},
+    });
+  };
+
   // ── Phase 6: centers use stable vertex-N IDs ──────────────────
   for (auto& circle : parameters.circles) {
     // Generate or reuse a stable vertex-N ID for the center.
@@ -157,34 +184,10 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     const double cx = circle.center_x;
     const double cy = circle.center_y;
     const double r = circle.radius;
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-0",
-        .kind = "quadrant",
-        .x = cx + r,
-        .y = cy,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-1",
-        .kind = "quadrant",
-        .x = cx,
-        .y = cy + r,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-2",
-        .kind = "quadrant",
-        .x = cx - r,
-        .y = cy,
-        .is_fixed = false,
-    });
-    parameters.vertices.push_back(SketchVertex{
-        .id = "vertex-" + circle.id + "-quadrant-3",
-        .kind = "quadrant",
-        .x = cx,
-        .y = cy - r,
-        .is_fixed = false,
-    });
+    emit_quadrant("vertex-" + circle.id + "-quadrant-0", circle.id, cx + r, cy);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-1", circle.id, cx, cy + r);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-2", circle.id, cx - r, cy);
+    emit_quadrant("vertex-" + circle.id + "-quadrant-3", circle.id, cx, cy - r);
   }
 
   // Re-emit arc center points with stable vertex-N IDs.
@@ -219,13 +222,10 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         else          { on_arc = a <= ns || a >= ne; }
       }
       if (!on_arc) continue;
-      parameters.vertices.push_back(SketchVertex{
-          .id = "vertex-" + arc.id + "-quadrant-" + std::to_string(q),
-          .kind = "quadrant",
-          .x = arc.center_x + arc.radius * std::cos(cardinals[q]),
-          .y = arc.center_y + arc.radius * std::sin(cardinals[q]),
-          .is_fixed = false,
-      });
+      emit_quadrant("vertex-" + arc.id + "-quadrant-" + std::to_string(q),
+                    arc.id,
+                    arc.center_x + arc.radius * std::cos(cardinals[q]),
+                    arc.center_y + arc.radius * std::sin(cardinals[q]));
     }
   }
 
@@ -286,27 +286,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         sp->geometry_owner_ids.push_back(arc.id);
   }
 
-  // Circle centers and quadrants.
+  // Circle centers (quadrants were attributed at emission time — see
+  // emit_quadrant above — so sweep-external arc quadrants never claim
+  // their arc, e.g. a line endpoint that keeps a legacy quadrant id
+  // after the arc piece through that point was trimmed away).
   for (const auto& circle : parameters.circles) {
     // Phase 6: center ID is now center_vertex_id (vertex-N)
     if (!circle.center_vertex_id.empty())
       if (auto* sp = find_point(circle.center_vertex_id))
         sp->geometry_owner_ids.push_back(circle.id);
-    // Quadrants still use legacy format (see TODO above).
-    for (int q = 0; q < 4; ++q) {
-      const auto qid = "vertex-" + circle.id + "-quadrant-" + std::to_string(q);
-      if (auto* sp = find_point(qid))
-        sp->geometry_owner_ids.push_back(circle.id);
-    }
-  }
-
-  // Arc quadrants.
-  for (const auto& arc : parameters.arcs) {
-    for (int q = 0; q < 4; ++q) {
-      const auto qid = "vertex-" + arc.id + "-quadrant-" + std::to_string(q);
-      if (auto* sp = find_point(qid))
-        sp->geometry_owner_ids.push_back(arc.id);
-    }
   }
 
   // ── Phase 1 (kept): projection metadata ─────────────────────

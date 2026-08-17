@@ -1092,6 +1092,209 @@ bool test_load_recomputes_stale_profiles() {
                 "stale reload: trimmed region must be a profile after load");
 }
 
+// Vertex-model follow-ups after arc trims:
+// - A line drawn to an arc's quadrant point keeps the legacy
+//   "vertex-<arc>-quadrant-N" id on its endpoint.  Once the arc pieces
+//   through that point are trimmed away, the vertex must lose the arc
+//   from its owners, and the vertices list must never carry two
+//   records with the same id.
+// - The arc produced by a middle-segment trim shares the source arc's
+//   center vertex id instead of minting a second vertex at the same
+//   spot.
+bool test_trim_vertex_owners_and_center_sharing() {
+  const double kQuadX = 78.37959396219992;
+  const double kTanX = 58.181818181818215;
+  const double kTanY = 28.38635453817456;
+  const double kCx = 48.333333333333336;
+  const double kR = 30.046260628866577;
+
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_arc(
+      50.0, 30.0, 50.0, -30.0, kQuadX, 0.0, "three_point");
+  document = manager.add_sketch_line(50.0, 0.0, kQuadX, 0.0);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, kTanY);
+  document = manager.add_sketch_line(140.0, 0.0, kTanX, -kTanY);
+
+  const auto& params =
+      document.feature_history.back().sketch_parameters.value();
+  const std::string kQuadId = "vertex-arc-1-quadrant-0";
+
+  // Pre-trim: the horizontal line's endpoint snapped to the arc's
+  // quadrant vertex id (the arc's endpoint point indices consumed
+  // line ids 1-2, so the first added line is line-3) and the id
+  // appears exactly once — the quadrant emission must not push a
+  // second record with the same id.
+  const auto horizontal_line = std::find_if(
+      params.lines.begin(), params.lines.end(),
+      [&](const auto& l) { return l.end_vertex_id == kQuadId; });
+  if (!expect(horizontal_line != params.lines.end(),
+              "vertex purge: line endpoint must snap to the arc quadrant id")) {
+    return false;
+  }
+  const std::string kLineId = horizontal_line->id;
+  {
+    const auto quad_count = std::count_if(
+        params.vertices.begin(), params.vertices.end(),
+        [&](const auto& v) { return v.id == kQuadId; });
+    if (!expect(quad_count == 1,
+                "vertex purge: quadrant id must appear exactly once")) {
+      return false;
+    }
+    const auto quad = std::find_if(
+        params.vertices.begin(), params.vertices.end(),
+        [&](const auto& v) { return v.id == kQuadId; });
+    if (!expect(quad != params.vertices.end() &&
+                    std::find(quad->geometry_owner_ids.begin(),
+                              quad->geometry_owner_ids.end(),
+                              "arc-1") != quad->geometry_owner_ids.end(),
+                "vertex purge: in-sweep quadrant must be owned by the arc")) {
+      return false;
+    }
+  }
+
+  // Trim the arc piece between the upper tangent and the rightmost
+  // point (angle +0.6184) — splits the arc and moves line-1's far end
+  // off the surviving arcs.
+  const double click_a = 0.5 * std::atan2(kTanY, kTanX - kCx);
+  document = manager.trim_sketch_entity(
+      "arc-1", kCx + kR * std::cos(click_a), kR * std::sin(click_a));
+
+  {
+    const auto& arcs = document.feature_history.back().sketch_parameters->arcs;
+    if (!expect(arcs.size() == 2,
+                "vertex purge: middle trim must split the arc into two")) {
+      return false;
+    }
+    if (!expect(arcs.front().center_vertex_id == arcs.back().center_vertex_id &&
+                    !arcs.front().center_vertex_id.empty(),
+                "vertex purge: split arc must share the source center vertex")) {
+      return false;
+    }
+  }
+
+  // Trim the piece between the rightmost point and the lower tangent
+  // (angle -0.6184) on the second arc — the user's final stub state.
+  document = manager.trim_sketch_entity(
+      "arc-2", kCx + kR * std::cos(-click_a), kR * std::sin(-click_a));
+
+  {
+    const auto& p =
+        document.feature_history.back().sketch_parameters.value();
+
+    // No duplicate vertex ids anywhere.
+    std::set<std::string> seen;
+    bool duplicate = false;
+    for (const auto& v : p.vertices) {
+      if (!seen.insert(v.id).second) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!expect(!duplicate, "vertex purge: no duplicate vertex ids")) {
+      return false;
+    }
+
+    // The quadrant-named endpoint survives (line-1 still ends there)
+    // but no arc owns it anymore — the arcs no longer pass through it.
+    const auto quad = std::find_if(
+        p.vertices.begin(), p.vertices.end(),
+        [&](const auto& v) { return v.id == kQuadId; });
+    if (!expect(quad != p.vertices.end(),
+                "vertex purge: line endpoint vertex must survive")) {
+      return false;
+    }
+    if (!expect(std::find(quad->geometry_owner_ids.begin(),
+                          quad->geometry_owner_ids.end(),
+                          kLineId) != quad->geometry_owner_ids.end() &&
+                    std::find(quad->geometry_owner_ids.begin(),
+                              quad->geometry_owner_ids.end(),
+                              "arc-1") == quad->geometry_owner_ids.end() &&
+                    std::find(quad->geometry_owner_ids.begin(),
+                              quad->geometry_owner_ids.end(),
+                              "arc-2") == quad->geometry_owner_ids.end(),
+                "vertex purge: stale arc ownership must be removed")) {
+      return false;
+    }
+
+    // Both arcs share one center vertex, owned by both.
+    const auto& arcs = p.arcs;
+    if (!expect(arcs.size() == 2 &&
+                    arcs.front().center_vertex_id == arcs.back().center_vertex_id,
+                "vertex purge: arc stubs must share one center vertex")) {
+      return false;
+    }
+    const auto center = std::find_if(
+        p.vertices.begin(), p.vertices.end(),
+        [&](const auto& v) { return v.id == arcs.front().center_vertex_id; });
+    return expect(center != p.vertices.end() &&
+                      std::find(center->geometry_owner_ids.begin(),
+                                center->geometry_owner_ids.end(),
+                                "arc-1") != center->geometry_owner_ids.end() &&
+                      std::find(center->geometry_owner_ids.begin(),
+                                center->geometry_owner_ids.end(),
+                                "arc-2") != center->geometry_owner_ids.end(),
+                  "vertex purge: center vertex must be owned by both arcs");
+  }
+}
+
+// User-reported regression: a rectangle with a lens on each side and
+// tangent lines off the right lens.  The left lens (CCW arc) becomes a
+// profile but the right lens (CW arc, same shape mirrored) does not.
+bool test_cw_and_ccw_lenses_both_detected() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_line(-50.0, 30.0, 50.0, 30.0);
+  document = manager.add_sketch_line(50.0, 30.0, 50.0, -30.0);
+  document = manager.add_sketch_line(50.0, -30.0, -50.0, -30.0);
+  document = manager.add_sketch_line(-50.0, -30.0, -50.0, 30.0);
+  // Right lens: CW three-point arc bulging right through (83.26, 0).
+  document = manager.add_sketch_arc(
+      50.0, 30.0, 50.0, -30.0, 83.26017531979984, 0.0, "three_point");
+  // Left lens: CCW three-point arc bulging left through (-79.20, 0).
+  document = manager.add_sketch_arc(
+      -50.0, 30.0, -50.0, -30.0, -79.20227239775588, 0.0, "three_point");
+  // Tangent lines off the right lens.
+  document = manager.add_sketch_line(
+      160.0, 0.0, 61.60942799355632, 28.934560160641915);
+  document = manager.add_sketch_line(
+      160.0, 0.0, 61.60942799355632, -28.934560160641887);
+
+  const auto& params =
+      document.feature_history.back().sketch_parameters.value();
+  for (const auto& p : params.profiles) {
+    std::cerr << "lenses: profile:";
+    for (const auto& id : p.line_ids) std::cerr << " " << id;
+    std::cerr << "\n";
+  }
+  if (!expect(params.profiles.size() == 4,
+              "lenses: rectangle, both lenses and the tangent region "
+              "must all be profiles")) {
+    return false;
+  }
+  auto has = [&](const std::vector<std::string>& ids) {
+    std::set<std::string> want(ids.begin(), ids.end());
+    return std::any_of(params.profiles.begin(), params.profiles.end(),
+                       [&](const auto& p) {
+                         std::set<std::string> got(p.line_ids.begin(),
+                                                   p.line_ids.end());
+                         return got == want;
+                       });
+  };
+  return expect(has({"line-1", "line-2", "line-3", "line-4"}),
+                "lenses: rectangle profile") &&
+         expect(has({"arc-1", "line-2"}),
+                "lenses: right (CW) lens must be a profile") &&
+         expect(has({"arc-2", "line-4"}),
+                "lenses: left (CCW) lens must be a profile") &&
+         expect(has({"arc-1", "line-9", "line-10"}),
+                "lenses: tangent region must be a profile");
+}
+
 // User-reported regression: the part.json rounded rectangle — two
 // filleted corners, a trim circle at the top-right corner tangent to
 // both incident lines, a trim arc at the bottom-right, and an inner
@@ -1197,6 +1400,8 @@ int main() {
   if (!test_cw_arc_trim_splits_at_all_intersections()) return 1;
   if (!test_dangling_line_does_not_block_trimmed_region_profile()) return 1;
   if (!test_load_recomputes_stale_profiles()) return 1;
+  if (!test_trim_vertex_owners_and_center_sharing()) return 1;
+  if (!test_cw_and_ccw_lenses_both_detected()) return 1;
   if (!test_trimmed_circle_corner_extrudes_full_prism()) return 1;
 
   std::cout << "extrude_quality_test passed\n";

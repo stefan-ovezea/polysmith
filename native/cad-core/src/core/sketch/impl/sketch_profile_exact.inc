@@ -490,8 +490,18 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const ExactCurve& c = curves[curve];
     const double p = canonical_param(c, param);
     auto& list = node_lookup[curve];
+    const SketchProfilePoint pp = exact_curve_point(c, p);
     for (const auto& [known, n] : list) {
-      if (std::abs(known - p) <= kExactParamEps) return n;
+      // Geometric identity: tangent double-roots from the quadratic
+      // solver can land ~1e-8 in param apart (far above
+      // kExactParamEps) — sliver pieces and duplicate nodes at the
+      // same point break the face walk.  Treat points within profile
+      // tolerance as one node.
+      const SketchProfilePoint kp = exact_curve_point(c, known);
+      if (std::abs(kp.x - pp.x) <= kProfileTolerance &&
+          std::abs(kp.y - pp.y) <= kProfileTolerance) {
+        return n;
+      }
     }
     const SketchProfilePoint raw = exact_curve_point(c, p);
     const int index = static_cast<int>(nodes.size());
@@ -586,15 +596,25 @@ std::vector<SketchProfileRegion> build_exact_profiles(
   for (const auto& u : unions) {
     const ExactCurve& ca = curves[u.curve_a];
     const ExactCurve& cb = curves[u.curve_b];
+    // Geometric node lookup (matches ensure_node): union params carry
+    // the same tangent-double-root noise, so resolve by point.
+    const SketchProfilePoint upa =
+        exact_curve_point(ca, canonical_param(ca, u.param_a));
+    const SketchProfilePoint upb =
+        exact_curve_point(cb, canonical_param(cb, u.param_b));
     int na = -1;
     for (const auto& [p, n] : node_lookup[u.curve_a]) {
-      if (std::abs(p - canonical_param(ca, u.param_a)) <= kExactParamEps) {
+      const SketchProfilePoint pp = exact_curve_point(ca, p);
+      if (std::abs(pp.x - upa.x) <= kProfileTolerance &&
+          std::abs(pp.y - upa.y) <= kProfileTolerance) {
         na = n; break;
       }
     }
     int nb = -1;
     for (const auto& [p, n] : node_lookup[u.curve_b]) {
-      if (std::abs(p - canonical_param(cb, u.param_b)) <= kExactParamEps) {
+      const SketchProfilePoint pp = exact_curve_point(cb, p);
+      if (std::abs(pp.x - upb.x) <= kProfileTolerance &&
+          std::abs(pp.y - upb.y) <= kProfileTolerance) {
         nb = n; break;
       }
     }
@@ -745,6 +765,50 @@ std::vector<SketchProfileRegion> build_exact_profiles(
           best_cw = cw;
           best_is_same_id = false;
           break;
+        }
+      }
+
+      if (best < 0 && !incoming_is_line) {
+        // 3. A curve's INSIDE face arriving at a tangent junction
+        // stays on its curve: the anti-parallel candidate (cw ≈ 0/2π)
+        // is the tangent LINE doubling back, and taking it strands the
+        // walk on the wedge digon while the inside boundary continues
+        // straight along the curve (cw ≈ π).  The OUTSIDE face turns
+        // onto the tangent line — the largest-cw rule already picks
+        // that U-turn, so only the inside face (curve center on the
+        // left of the incoming direction) is forced through here.
+        // (Line arrivals are handled by rule 1.)
+        const ExactCurve& inc = curves[h.curve];
+        const bool center_left =
+            d_in_x * (inc.cy - nodes[at].y) -
+                d_in_y * (inc.cx - nodes[at].x) > 0.0;
+        if (center_left) {
+          bool has_line_uturn = false;
+          for (size_t ci = 0; ci < cand_idx.size(); ++ci) {
+            if (curves[half_edges[cand_idx[ci]].curve].kind !=
+                ExactCurve::Kind::kLine) {
+              continue;
+            }
+            const double cw = cand_cw[ci];
+            if (std::min(cw, 2.0 * kExactPi - cw) <= kUturnEps) {
+              has_line_uturn = true;
+              break;
+            }
+          }
+          if (has_line_uturn) {
+            const std::string incoming_id = inc.id;
+            for (size_t ci = 0; ci < cand_idx.size(); ++ci) {
+              const double cw = cand_cw[ci];
+              const ExactCurve& cc = curves[half_edges[cand_idx[ci]].curve];
+              if (cc.id == incoming_id &&
+                  std::abs(cw - kExactPi) <= kTangentTieBreak) {
+                best = cand_idx[ci];
+                best_cw = cw;
+                best_is_same_id = true;
+                break;
+              }
+            }
+          }
         }
       }
 
