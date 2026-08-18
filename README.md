@@ -313,6 +313,7 @@ third_party/
   occt8/           Vendored OpenCascade 8 source
   freetype/        FreeType (for OCCT font rendering)
   planegcs/        2D geometric constraint solver (from FreeCAD)
+  OndselSolver/    Assembly constraint solver (from FreeCAD/Ondsel; planned for parts assembly)
 ```
 
 ## Current Status
