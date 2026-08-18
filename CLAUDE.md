@@ -79,7 +79,7 @@ Three layers with strict ownership boundaries:
 |---|---|---|
 | **UI** | React + TypeScript (Vite) | Presentation, user input, command dispatch |
 | **Shell** | Tauri (Rust) | Window management, file dialogs, spawning the C++ core process |
-| **CAD Core** | C++20 + OpenCascade 7.8 | All geometry, feature history, document state, modeling operations |
+| **CAD Core** | C++20 + OpenCascade 8 | All geometry, feature history, document state, modeling operations |
 
 The CAD core runs as a **separate process** spawned by Tauri. Communication is via newline-delimited JSON over `stdin`/`stdout`. The core is the single source of truth; React never owns CAD state.
 
@@ -173,10 +173,11 @@ native/cad-core/           C++ CAD core (CMake project)
 protocol/schema/           IPC JSON schemas (commands, events)
 wiki/                      Canonical documentation (mirrored to polysmith.wiki git submodule)
 third_party/
-  occt/                    Vendored OpenCascade 7.8 source (git submodule)
+  occt8/                   Vendored OpenCascade 8 source (git submodule)
   freetype/                FreeType (git submodule)
   planegcs/                2D geometric constraint solver from FreeCAD (git submodule)
   planegcs-validation/     Planegcs test suite (git submodule)
+  OndselSolver/            Assembly constraint solver from FreeCAD/Ondsel (git submodule; planned for parts assembly)
 scripts/                   Build scripts (configure-occt.mjs, build-release.mjs)
 ```
 
@@ -262,8 +263,9 @@ pnpm --filter desktop-ui exec tsc --noEmit
 
 ## Key Dependencies
 
-- **OpenCascade 7.8** — geometry kernel, vendored as a git submodule at `third_party/occt/`
+- **OpenCascade 8** — geometry kernel, vendored as a git submodule at `third_party/occt8/`
 - **planegcs** — 2D geometric constraint solver (ported from FreeCAD), built as a static library linked into the CAD core
+- **OndselSolver** — 3D assembly constraint solver from FreeCAD/Ondsel, vendored as a git submodule at `third_party/OndselSolver` (registered, not yet built or linked — planned for parts assembly)
 - **Eigen3** — linear algebra (used by planegcs)
 - **Boost** — graph and math libraries (used by planegcs constraint solving)
 - **nlohmann/json** — JSON parsing in the C++ core (header-only, vendored)
@@ -278,7 +280,7 @@ Must compile on Windows (MSVC) and POSIX (Linux/macOS, GCC/Clang).
 C++ notes:
 - `M_PI` is not standard — define `_USE_MATH_DEFINES` before `<cmath>` on MSVC.
 - MSVC treats `const char*` ↔ `unsigned char*` as an error. Match types exactly.
-- OCCT DLLs on Windows live at `third_party/occt-install/win64/vc14/bin`. Tauri prepends this to `PATH` when spawning the core.
+- OCCT DLLs on Windows live at `third_party/occt8-install/win64/vc14/bin`. Tauri prepends this to `PATH` when spawning the core.
 
 ## Debugging & Logging
 

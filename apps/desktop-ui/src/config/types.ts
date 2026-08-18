@@ -26,6 +26,7 @@ export interface AppHotkeys {
     circle: HotkeyBinding;
     dimension: HotkeyBinding;
     trim: HotkeyBinding;
+    move: HotkeyBinding;
     toggleConstruction: HotkeyBinding;
   };
 }

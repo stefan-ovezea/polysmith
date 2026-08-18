@@ -56,7 +56,8 @@ void validate_constraint(const std::optional<std::string>& constraint) {
 void validate_tool(const std::string& tool) {
   if (tool != "select" && tool != "line" && tool != "rectangle" &&
       tool != "circle" && tool != "polygon" && tool != "arc" && tool != "fillet" &&
-      tool != "trim" && tool != "project" && tool != "dimension") {
+      tool != "trim" && tool != "project" && tool != "dimension" &&
+      tool != "move") {
     throw std::runtime_error("Unsupported sketch tool: " + tool + " (validate_tool)");
   }
 }

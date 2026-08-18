@@ -513,6 +513,7 @@ function App() {
     cancelMirrorPreview,
     setSketchPointFixed,
     updateSketchPoint,
+    moveSketchEntities,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
     selectSketchProfile,
@@ -2112,6 +2113,11 @@ function App() {
               onUpdateSketchPoint={async (vertexId, x, y) => {
                 await runAction(async () => {
                   await updateSketchPoint(vertexId, x, y);
+                });
+              }}
+              onMoveSketchEntities={async (params) => {
+                await runAction(async () => {
+                  await moveSketchEntities(params);
                 });
               }}
               hiddenFeatureIds={effectiveHiddenFeatureIds}

@@ -38,6 +38,7 @@ import {
   ViewportStatusPanel,
 } from "./ViewportOverlays";
 import { ViewportContextMenu } from "./ViewportContextMenu";
+import { SketchMovePanel } from "./SketchMovePanel";
 import {
   DimensionEditorOverlay,
   DraftDimensionFieldEditors,
@@ -60,6 +61,7 @@ interface ViewportContextMenuActions {
   deleteDimension: () => void | Promise<void>;
   deleteConstraint: () => void | Promise<void>;
   deleteSketchSelection: () => void | Promise<void>;
+  moveCopy: () => void | Promise<void>;
   moveBody: () => void | Promise<void>;
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
@@ -80,6 +82,16 @@ interface ViewportPanelShellProps {
   contextMenu: import("@/types").ViewportContextMenuState | null;
   currentGridSpacing: number;
   contextMenuActions: ViewportContextMenuActions;
+  /** Move/Copy dialog — open while the Move tool is armed. */
+  sketchMovePanelOpen: boolean;
+  sketchMovePanelValues: { dx: number; dy: number; angleDeg: number };
+  onSketchMovePanelValuesChange: (values: {
+    dx: number;
+    dy: number;
+    angleDeg: number;
+  }) => void;
+  onSketchMovePanelCommit: () => void | Promise<void>;
+  onSketchMovePanelCancel: () => void | Promise<void>;
   crosshairCanvasClass: string;
   crosshairGuideSize: number;
   crosshairPointer: { x: number; y: number } | null;
@@ -179,6 +191,11 @@ export function ViewportPanelShell({
   contextMenu,
   contextMenuActions,
   currentGridSpacing,
+  sketchMovePanelOpen,
+  sketchMovePanelValues,
+  onSketchMovePanelValuesChange,
+  onSketchMovePanelCommit,
+  onSketchMovePanelCancel,
   crosshairCanvasClass,
   crosshairGuideSize,
   crosshairPointer,
@@ -269,11 +286,20 @@ export function ViewportPanelShell({
             onDeleteDimension={contextMenuActions.deleteDimension}
             onDeleteConstraint={contextMenuActions.deleteConstraint}
             onDeleteSketchSelection={contextMenuActions.deleteSketchSelection}
+            onMoveCopy={contextMenuActions.moveCopy}
             onMoveBody={contextMenuActions.moveBody}
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}
             onExportBodyMesh={contextMenuActions.exportBodyMesh}
             onCreateSketch={contextMenuActions.createSketch}
+          />
+        ) : null}
+        {sketchMovePanelOpen ? (
+          <SketchMovePanel
+            values={sketchMovePanelValues}
+            onValuesChange={onSketchMovePanelValuesChange}
+            onCommit={onSketchMovePanelCommit}
+            onCancel={onSketchMovePanelCancel}
           />
         ) : null}
         <canvas

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,6 +15,7 @@ import {
 } from "@/config";
 import type {
   DocumentState,
+  SketchConstraintScene,
   SketchTool,
   ViewportState,
   SketchDimensionScene,
@@ -79,6 +81,24 @@ import {
 import { type EndpointDrag } from "./viewport/endpointDrag";
 import { handleEndpointDragPointerMove } from "./viewport/endpointDragPointerMove";
 import { finishEndpointDragPointerUp } from "./viewport/endpointDragPointerUp";
+import { handleSketchMovePointerMove } from "./viewport/sketchMovePointerMove";
+import { finishSketchMovePointerUp } from "./viewport/sketchMovePointerUp";
+import type {
+  PendingSketchMove,
+  SketchMoveDrag,
+  SketchMoveFrameResult,
+  SketchMoveRingState,
+} from "./viewport/sketchMoveTool";
+import {
+  buildSketchMoveRingObject,
+  createPendingSketchMove,
+  disposeSketchMoveRingObject,
+  sketchMoveConstraintDeltas,
+  sketchMoveRingRadius,
+  sketchMoveRingStateForSelection,
+  solvePendingSketchMove,
+} from "./viewport/sketchMoveTool";
+import { applySolvedPointsToSketchScene } from "./viewport/sketchPreviewSceneUpdate";
 import {
   handleViewCubeDragPointerMove,
   handleViewCubeHoverPointerMove,
@@ -272,6 +292,7 @@ export function ViewportPanel({
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
   onUpdateSketchPoint,
+  onMoveSketchEntities,
   onFinishSketch,
   moveGizmo = null,
   onMoveGizmoChange,
@@ -582,6 +603,46 @@ export function ViewportPanel({
   // arrives.  Keeps the drag preview alive across the async IPC gap
   // so the user doesn't see the entity snap back to its old position.
   const pendingEndpointCommitRef = useRef(false);
+  // Live-preview flags: set while an endpoint-drag or Move-tool preview is
+  // mutating committed scene objects (mid-drag viewport_state syncs must
+  // not overwrite the preview), plus a one-shot force-rebuild flag that
+  // restores committed geometry after a cancelled preview.
+  const dragPreviewMutatingRef = useRef(false);
+  const moveDragPreviewActiveRef = useRef(false);
+  const forceSceneRebuildRef = useRef(false);
+  // Scene constraint data for badge-follow deltas during live previews.
+  const sceneConstraintsRef = useRef<readonly SketchConstraintScene[]>([]);
+
+  // Sketch Move tool state.
+  const sketchMoveDragRef = useRef<SketchMoveDrag | null>(null);
+  // Rotation-ring group, live during a move drag.
+  const sketchMoveRingGroupRef = useRef<THREE.Group | null>(null);
+  // Fusion-style persistent manipulator: rotation ring shown while the
+  // Move tool is armed with a selection; grabbing the ring rotates.
+  const persistentRingGroupRef = useRef<THREE.Group | null>(null);
+  const persistentRingPickablesRef = useRef<THREE.Object3D[]>([]);
+  const persistentRingStateRef = useRef<SketchMoveRingState | null>(null);
+  // Move/Copy dialog state: the pending transform accumulated by drags
+  // and the numeric fields, committed on OK / reverted on Cancel.
+  const pendingSketchMoveRef = useRef<PendingSketchMove | null>(null);
+  const [movePanelValues, setMovePanelValues] = useState({
+    dx: 0,
+    dy: 0,
+    angleDeg: 0,
+  });
+  // rAF batching for the Move tool — same pattern as endpoint drag.
+  const pendingMoveDragRef = useRef<{
+    x: number;
+    y: number;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
+  const pendingMoveDragFrameRef = useRef<number | null>(null);
+  // Last resolved Move frame — committed on pointer-up.
+  const moveFrameResultRef = useRef<SketchMoveFrameResult | null>(null);
+  // Set on Move commit; cleared when the next viewport rebuild arrives
+  // (keeps the preview alive across the async IPC gap).
+  const pendingMoveCommitRef = useRef(false);
 
   const [selectionRect, setSelectionRect] =
     useState<SelectionRectOverlay | null>(null);
@@ -610,6 +671,7 @@ export function ViewportPanel({
   );
   const pickSketchPointRef = useRef(onPickSketchPoint);
   const updateSketchPointRef = useRef(onUpdateSketchPoint);
+  const moveSketchEntitiesRef = useRef(onMoveSketchEntities);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
   const updateSketchDimensionLabelPositionRef = useRef(
@@ -903,6 +965,33 @@ export function ViewportPanel({
       }),
     );
   }, [viewport?.sketch_constraints]);
+  // Scene constraint data ref, for constraint-badge deltas during the
+  // live drag/Move previews (same stale-closure avoidance).
+  useEffect(() => {
+    sceneConstraintsRef.current = sceneData?.sketchConstraints ?? [];
+  }, [sceneData?.sketchConstraints]);
+
+  // Arming the Move tool opens the Move/Copy dialog: capture the pending
+  // state from the current selection (the context-menu action selects
+  // the target first; the sceneData dependency re-runs when the
+  // selection lands).  A dialog opened without a selection gets its
+  // pending state from the first drag instead.
+  useEffect(() => {
+    if (activeSketchTool !== "move" || pendingSketchMoveRef.current) {
+      return;
+    }
+    const state = sketchMoveRingStateForSelection(
+      sketchLinesRef.current,
+      sceneDataRef.current,
+    );
+    if (!state) {
+      return;
+    }
+    pendingSketchMoveRef.current = createPendingSketchMove(
+      sketchLinesRef.current,
+      state.entityIds,
+    );
+  }, [activeSketchTool, sceneData]);
   const {
     selectedPrimitiveLabel,
     selectedReference,
@@ -1823,6 +1912,7 @@ export function ViewportPanel({
       dynamicSnapsEnabled: options?.dynamicSnapsEnabled,
       objectSnapLatchKey: options?.objectSnapLatchKey,
       inferenceSnapsEnabled: options?.inferenceSnapsEnabled,
+      excludeEntityIds: options?.excludeEntityIds,
       filter: effectiveFilter,
       activeSketchPlaneId,
       activeSketchPlaneFrame,
@@ -1943,6 +2033,7 @@ export function ViewportPanel({
       inactiveSketchEntityPickEnabledRef,
       pickSketchPointRef,
       updateSketchPointRef,
+      moveSketchEntitiesRef,
       selectSketchDimensionRef,
       updateSketchDimensionRef,
       updateSketchDimensionLabelPositionRef,
@@ -2001,6 +2092,7 @@ export function ViewportPanel({
       inactiveSketchEntityPickEnabled,
       onPickSketchPoint,
       onUpdateSketchPoint,
+      onMoveSketchEntities,
       onSelectSketchDimension,
       onUpdateSketchDimension,
       onUpdateSketchDimensionLabelPosition,
@@ -2608,6 +2700,15 @@ export function ViewportPanel({
         sketchLinesRef,
         endpointDragRef,
         selectionDragRef,
+        sketchMoveDragRef,
+        sketchMoveRingGroupRef,
+        pendingSketchMoveRef,
+        persistentRingGroupRef,
+        persistentRingPickablesRef,
+        persistentRingStateRef,
+        sketchGroupRef,
+        sceneDataRef,
+        restorePreviewScene,
         intersectSceneTargets,
         displayedSketchDimensionsRef,
         suppressNextDimensionEditorOpenRef,
@@ -2755,15 +2856,47 @@ export function ViewportPanel({
           activeSketchPlaneFrameRef,
           sketchLinesRef,
           sketchConstraintsRef,
+          sceneConstraintsRef,
           pendingDragRef,
           pendingDragFrameRef,
           dragSnapResultRef,
           dragCursorRef,
-          dragPreviewLinesRef,
-          sketchGroupRef,
+          dragPreviewMutatingRef,
+          sketchEntityObjectByIdRef,
+          sketchPointObjectByIdRef,
+          sketchConstraintObjectsRef,
+          sketchProfileObjectsRef,
           resolveSnappedSketchPoint,
           setSketchSnapLabel,
-          clearDragPreviewLines,
+          requestRender,
+        })
+      ) {
+        return;
+      }
+
+      if (
+        handleSketchMovePointerMove({
+          event,
+          renderer,
+          camera,
+          sketchMoveDragRef,
+          pendingSketchMoveRef,
+          activeSketchPlaneIdRef,
+          activeSketchPlaneFrameRef,
+          sketchLinesRef,
+          sketchConstraintsRef,
+          sceneConstraintsRef,
+          pendingMoveDragRef,
+          pendingMoveDragFrameRef,
+          moveFrameResultRef,
+          moveDragPreviewActiveRef,
+          sketchEntityObjectByIdRef,
+          sketchPointObjectByIdRef,
+          sketchConstraintObjectsRef,
+          sketchProfileObjectsRef,
+          resolveSnappedSketchPoint,
+          setSketchSnapLabel,
+          reportMoveValues: setMovePanelValues,
           requestRender,
         })
       ) {
@@ -2795,6 +2928,16 @@ export function ViewportPanel({
       if (moveGizmoDragRef.current) {
         moveGizmoDragRef.current = null;
         controlsRef.current!.enabled = true;
+      }
+      // Defensive: if a live preview was mutating scene objects and the
+      // pointer-up got lost, restore committed geometry.
+      if (
+        endpointDragRef.current ||
+        dragPreviewMutatingRef.current ||
+        moveDragPreviewActiveRef.current
+      ) {
+        endpointDragRef.current = null;
+        restorePreviewScene();
       }
       if (!dimensionLabelDragRef.current?.isPlacement) {
         dimensionLabelDragRef.current = null;
@@ -2896,7 +3039,6 @@ export function ViewportPanel({
         pendingEndpointCommitRef,
         dragCursorRef,
         updateSketchPoint: updateSketchPointRef.current,
-        clearDragPreviewLines,
         setConstraintPreview,
         setSketchSnapLabel,
         setHoveredSketchEntity,
@@ -2904,6 +3046,26 @@ export function ViewportPanel({
         setPointerDown: (point) => {
           pointerDown = point;
         },
+        restorePreviewScene,
+      });
+    }
+
+    function finishSketchMovePointerUpFromViewport(event: PointerEvent) {
+      return finishSketchMovePointerUp({
+        event,
+        renderer,
+        controls,
+        sketchMoveDragRef,
+        sketchMoveRingGroupRef,
+        pendingSketchMoveRef,
+        setSketchSnapLabel,
+        setHoveredSketchEntity,
+        setHoveredSketchPoint,
+        setPointerDown: (point) => {
+          pointerDown = point;
+        },
+        restorePreviewScene,
+        reportMoveValues: setMovePanelValues,
       });
     }
 
@@ -3006,6 +3168,7 @@ export function ViewportPanel({
         moveGizmoDragRef,
         finishDimensionLabelDragPointerUp,
         finishEndpointDragPointerUp: finishEndpointDragPointerUpFromViewport,
+        finishSketchMovePointerUp: finishSketchMovePointerUpFromViewport,
         finishViewCubePointerUp: finishViewCubePointerUpFromViewport,
         draftStartedOnPointerDownRef,
         draftDimensionSessionRef,
@@ -3307,8 +3470,163 @@ export function ViewportPanel({
     };
   }, [activeSketchPlaneId]);
 
+  // Latest scene-sync arguments, so imperative paths (restorePreviewScene)
+  // can re-run the sync without render-cycle stale closures.
+  const sceneSyncArgsRef = useRef<Parameters<typeof syncViewportScene>[0] | null>(
+    null,
+  );
+
+  const runSceneSync = useCallback(() => {
+    const args = sceneSyncArgsRef.current;
+    if (!args) {
+      return;
+    }
+    syncViewportScene(args);
+    requestViewportRenderRef.current?.();
+  }, []);
+
+  // Rebuilds the persistent manipulator ring from the current selection
+  // (Fusion-style): shown while the Move tool is armed and something
+  // movable is selected; follows the selection after moves and commits.
+  const updatePersistentMoveRing = useCallback(() => {
+    disposeSketchMoveRingObject(persistentRingGroupRef.current);
+    persistentRingGroupRef.current = null;
+    persistentRingPickablesRef.current = [];
+    persistentRingStateRef.current = null;
+    const planeId = activeSketchPlaneIdRef.current;
+    if (
+      activeSketchToolRef.current !== "move" ||
+      !planeId ||
+      sketchMoveDragRef.current
+    ) {
+      return;
+    }
+    const state = sketchMoveRingStateForSelection(
+      sketchLinesRef.current,
+      sceneDataRef.current,
+    );
+    const sketchGroup = sketchGroupRef.current;
+    if (!state || !sketchGroup) {
+      return;
+    }
+    const centerWorld = toWorldPoint(
+      planeId,
+      state.centerLocal,
+      activeSketchPlaneFrameRef.current,
+    );
+    const ring = buildSketchMoveRingObject({
+      centerWorld,
+      radius: sketchMoveRingRadius(sketchLinesRef.current, state.vertexIds),
+      planeFrame: activeSketchPlaneFrameRef.current,
+    });
+    sketchGroup.add(ring.group);
+    persistentRingGroupRef.current = ring.group;
+    persistentRingPickablesRef.current = ring.pickables;
+    persistentRingStateRef.current = state;
+  }, []);
+
+  // Applies the Move/Copy dialog's pending transform to the real scene
+  // objects (solved from the base positions) — used by drag frames, the
+  // numeric fields, and re-applies after scene rebuilds while the dialog
+  // is open.
+  const applyPendingSketchMovePreview = useCallback(() => {
+    const pending = pendingSketchMoveRef.current;
+    const planeId = activeSketchPlaneIdRef.current;
+    if (!pending || !planeId) {
+      return;
+    }
+    if (pending.dx === 0 && pending.dy === 0 && pending.angleDeg === 0) {
+      return; // zero transform — the committed scene already matches
+    }
+    const solvedPoints = solvePendingSketchMove({
+      pending,
+      sketch: sketchLinesRef.current,
+      constraints: sketchConstraintsRef.current,
+    });
+    moveDragPreviewActiveRef.current = true;
+    applySolvedPointsToSketchScene({
+      solvedPoints,
+      sketch: sketchLinesRef.current,
+      planeId,
+      planeFrame: activeSketchPlaneFrameRef.current,
+      sketchEntityObjectById: sketchEntityObjectByIdRef.current,
+      sketchPointObjectById: sketchPointObjectByIdRef.current,
+      sketchConstraintObjects: sketchConstraintObjectsRef.current,
+      sketchProfileObjects: sketchProfileObjectsRef.current,
+      constraintDeltas: sketchMoveConstraintDeltas({
+        sceneConstraints: sceneConstraintsRef.current,
+        sketch: sketchLinesRef.current,
+        entityIds: pending.entityIds,
+        vertexIds: pending.vertexIds,
+        baseVertexPositions: pending.baseVertexPositions,
+        dx: pending.dx,
+        dy: pending.dy,
+        center: pending.centerLocal,
+        angleRad: (pending.angleDeg * Math.PI) / 180,
+        planeId,
+        planeFrame: activeSketchPlaneFrameRef.current,
+      }),
+    });
+  }, []);
+
+  // OK: commits the accumulated transform as ONE move (one undo step)
+  // and closes the dialog by returning to the select tool.
+  const commitPendingSketchMove = useCallback(async () => {
+    const pending = pendingSketchMoveRef.current;
+    pendingSketchMoveRef.current = null;
+    moveDragPreviewActiveRef.current = false;
+    setMovePanelValues({ dx: 0, dy: 0, angleDeg: 0 });
+    try {
+      if (
+        pending &&
+        (pending.dx !== 0 || pending.dy !== 0 || pending.angleDeg !== 0)
+      ) {
+        await moveSketchEntitiesRef.current({
+          entityIds: pending.entityIds,
+          dx: pending.dx,
+          dy: pending.dy,
+          centerX: pending.centerLocal[0],
+          centerY: pending.centerLocal[1],
+          angleDeg: pending.angleDeg,
+        });
+      }
+    } finally {
+      // Rebuild from store state: shows the committed result immediately
+      // (and heals the scene if the commit failed).
+      forceSceneRebuildRef.current = true;
+      runSceneSync();
+      updatePersistentMoveRing();
+    }
+    await setSketchToolRef.current("select");
+  }, [runSceneSync, updatePersistentMoveRing]);
+
+  // Cancel: revert the preview and close the dialog.
+  const cancelPendingSketchMove = useCallback(() => {
+    pendingSketchMoveRef.current = null;
+    moveDragPreviewActiveRef.current = false;
+    setMovePanelValues({ dx: 0, dy: 0, angleDeg: 0 });
+    forceSceneRebuildRef.current = true;
+    runSceneSync();
+    updatePersistentMoveRing();
+    void setSketchToolRef.current("select");
+  }, [runSceneSync, updatePersistentMoveRing]);
+
+  // Restores committed geometry after a live preview that mutated real
+  // scene objects (drag released without moving, Escape, lost pointer-up).
+  const restorePreviewScene = useCallback(() => {
+    endpointDragRef.current = null;
+    dragPreviewMutatingRef.current = false;
+    moveDragPreviewActiveRef.current = false;
+    forceSceneRebuildRef.current = true;
+    runSceneSync();
+    updatePersistentMoveRing();
+    // The Move/Copy dialog's preview survives restores (e.g. pointer
+    // leave): re-apply the pending transform right after the rebuild.
+    applyPendingSketchMovePreview();
+  }, [runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+
   useEffect(() => {
-    syncViewportScene({
+    sceneSyncArgsRef.current = {
       groups: {
         scene: sceneRef.current,
         camera: cameraRef.current,
@@ -3319,7 +3637,11 @@ export function ViewportPanel({
       },
       refs: {
         pendingEndpointCommit: pendingEndpointCommitRef,
+        pendingMoveCommit: pendingMoveCommitRef,
         endpointDrag: endpointDragRef,
+        dragPreviewMutating: dragPreviewMutatingRef,
+        moveDragPreviewActive: moveDragPreviewActiveRef,
+        forceSceneRebuild: forceSceneRebuildRef,
         activeSketchPlaneFrame: activeSketchPlaneFrameRef,
         sketchEntityObjectById: sketchEntityObjectByIdRef,
         sketchPointObjectById: sketchPointObjectByIdRef,
@@ -3376,9 +3698,13 @@ export function ViewportPanel({
       paintSketchEntityMaterials,
       paintSketchPointMaterials,
       paintDofStatusColors,
-    });
-    requestViewportRenderRef.current?.();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation]);
+    };
+    runSceneSync();
+    updatePersistentMoveRing();
+    // The Move/Copy dialog's preview must survive scene rebuilds
+    // (the scene is built from committed state).
+    applyPendingSketchMovePreview();
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;
@@ -3407,7 +3733,30 @@ export function ViewportPanel({
     dimensionToolFirstLineRef.current = null;
     setDimensionToolFirstLine(null);
     dimensionToolFirstPointRef.current = null;
-  }, [activeSketchPlaneId, activeSketchTool]);
+    // Cancel any in-progress Move drag (and its live preview) on tool
+    // or plane switch.
+    if (sketchMoveDragRef.current || moveDragPreviewActiveRef.current) {
+      sketchMoveDragRef.current = null;
+      disposeSketchMoveRingObject(sketchMoveRingGroupRef.current);
+      sketchMoveRingGroupRef.current = null;
+      moveDragPreviewActiveRef.current = false;
+      forceSceneRebuildRef.current = true;
+      runSceneSync();
+    }
+    // Leaving the Move tool reverts an open Move/Copy dialog (Escape or
+    // a toolbar switch); OK/Cancel already clear the pending state
+    // before switching tools, so this only fires for implicit exits.
+    if (pendingSketchMoveRef.current && activeSketchTool !== "move") {
+      pendingSketchMoveRef.current = null;
+      moveDragPreviewActiveRef.current = false;
+      setMovePanelValues({ dx: 0, dy: 0, angleDeg: 0 });
+      forceSceneRebuildRef.current = true;
+      runSceneSync();
+    }
+    // Show/hide the persistent manipulator ring for the new tool state.
+    updatePersistentMoveRing();
+    requestViewportRenderRef.current?.();
+  }, [activeSketchPlaneId, activeSketchTool, updatePersistentMoveRing, runSceneSync]);
 
   useEffect(
     () =>
@@ -3518,6 +3867,9 @@ export function ViewportPanel({
     setSketchLineConstructionRef,
     clearSketchConstraintRef,
     updateSketchDimensionDisplayRef,
+    selectSketchEntityRef,
+    pickSketchPointRef,
+    setSketchToolRef,
   });
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
@@ -3622,6 +3974,21 @@ export function ViewportPanel({
       contextMenu={contextMenu}
       currentGridSpacing={currentGridSpacing}
       contextMenuActions={contextMenuActions}
+      sketchMovePanelOpen={activeSketchTool === "move"}
+      sketchMovePanelValues={movePanelValues}
+      onSketchMovePanelValuesChange={(values) => {
+        setMovePanelValues(values);
+        const pending = pendingSketchMoveRef.current;
+        if (pending) {
+          pending.dx = values.dx;
+          pending.dy = values.dy;
+          pending.angleDeg = values.angleDeg;
+          applyPendingSketchMovePreview();
+          requestViewportRenderRef.current?.();
+        }
+      }}
+      onSketchMovePanelCommit={() => void commitPendingSketchMove()}
+      onSketchMovePanelCancel={() => void cancelPendingSketchMove()}
       crosshairCanvasClass={crosshairCanvasClass}
       crosshairGuideSize={crosshairGuideSize}
       crosshairPointer={crosshairPointer}

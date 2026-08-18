@@ -165,6 +165,35 @@ export function handleActiveSketchPointerUpTool(
     return true;
   }
 
+  // Move tool: a click without a drag selects the entity (so the next
+  // drag moves it); empty-space clicks keep the current selection.
+  // The Move tool is entity-oriented, so a point click resolves to the
+  // owning entity — selecting a vertex would clear the entity selection
+  // in the core and break multi-select near endpoints.
+  if (context.activeSketchTool === "move") {
+    if (context.hit?.kind === "sketch_entity") {
+      void context.selectSketchEntity(context.hit.id, context.additiveSelection);
+      return true;
+    }
+    if (context.hit?.kind === "sketch_point") {
+      const vertex = context.sketch?.vertices.find(
+        (v) => v.vertex_id === context.hit?.id,
+      );
+      const owners = vertex?.geometry_owner_ids ?? [];
+      if (owners.length > 0) {
+        void context.selectSketchEntity(owners[0], context.additiveSelection);
+      } else {
+        void context.pickSketchPoint(
+          context.hit.id,
+          context.hit.pointKind as "endpoint" | "center" | "quadrant",
+          context.additiveSelection,
+        );
+      }
+      return true;
+    }
+    return true;
+  }
+
   if (context.activeSketchTool === "select") {
     handleActiveSketchSelectHit({
       hit: context.hit,

@@ -53,6 +53,7 @@ interface MutableRef<T> {
 
 type PointerDownPosition = { x: number; y: number };
 type EndpointDragPointerUpResult = "inactive" | "continue" | "consumed";
+type SketchMovePointerUpResult = EndpointDragPointerUpResult;
 
 interface ViewportPointerUpParams {
   event: PointerEvent;
@@ -73,6 +74,7 @@ interface ViewportPointerUpParams {
   moveGizmoDragRef: MutableRef<MoveGizmoDragState | null>;
   finishDimensionLabelDragPointerUp: () => "inactive" | "continue" | "consumed";
   finishEndpointDragPointerUp: (event: PointerEvent) => EndpointDragPointerUpResult;
+  finishSketchMovePointerUp: (event: PointerEvent) => SketchMovePointerUpResult;
   finishViewCubePointerUp: (event: PointerEvent) => "inactive" | "consumed";
   draftStartedOnPointerDownRef: MutableRef<boolean>;
   draftDimensionSessionRef: MutableRef<DraftDimensionSession | null>;
@@ -210,6 +212,13 @@ function handleNonPrimaryPointerUp(params: ViewportPointerUpParams) {
     return true;
   }
   if (params.event.button !== 0) {
+    // Move tool: a right-button ROTATE drag finishes here (the generic
+    // non-primary consume would otherwise swallow the pointer-up).
+    const moveResult = params.finishSketchMovePointerUp(params.event);
+    if (moveResult === "consumed" || moveResult === "continue") {
+      params.setPointerDown(null);
+      return true;
+    }
     params.setPointerDown(null);
     return true;
   }
@@ -227,6 +236,9 @@ function finishTransientPointerUp(params: ViewportPointerUpParams) {
     return true;
   }
   if (params.finishDimensionLabelDragPointerUp() === "consumed") {
+    return true;
+  }
+  if (params.finishSketchMovePointerUp(params.event) === "consumed") {
     return true;
   }
   if (params.finishEndpointDragPointerUp(params.event) === "consumed") {

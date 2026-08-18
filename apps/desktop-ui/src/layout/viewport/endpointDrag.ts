@@ -1,6 +1,5 @@
-import * as THREE from "three";
-
 import type {
+  SketchConstraintScene,
   SketchFeatureParameters,
   SketchPlaneFrame,
   SketchPreviewPoint,
@@ -67,56 +66,61 @@ export function endpointDragAnchorLocal(
   return anchor ? [anchor.x, anchor.y] : null;
 }
 
-export interface EndpointDragPreviewSegment {
-  start: [number, number];
-  end: [number, number];
-}
-
-/** Circle center drag metadata — carried alongside preview segments so the
- *  renderer can also draw a dashed circle outline at the preview position. */
-export interface CircleCenterDragPreview {
-  kind: "circle_center_drag";
-  oldCenter: [number, number];
-  newCenter: [number, number];
-  radius: number;
-}
-
-export function endpointDragPreviewSegments(
-  params: SketchFeatureParameters | null,
-  pointId: string,
-  snappedLocal: [number, number],
-): EndpointDragPreviewSegment[] {
-  if (!params) {
-    return [];
+/**
+ * World-space deltas for constraint badges that annotate geometry touched
+ * by the dragged vertex.  Vertex badges (coincident/fixed) follow the
+ * vertex; badges on a line containing the vertex sit at the line midpoint,
+ * which moves by half the vertex delta.  Exact positions re-sync on commit.
+ */
+export function endpointDragConstraintDeltas(
+  constraints: readonly SketchConstraintScene[],
+  sketch: SketchFeatureParameters | null,
+  draggedVertexId: string,
+  deltaLocal: [number, number],
+  planeId: string,
+  planeFrame: SketchPlaneFrame | null,
+): Map<string, [number, number, number]> {
+  const deltas = new Map<string, [number, number, number]>();
+  if (!sketch || (deltaLocal[0] === 0 && deltaLocal[1] === 0)) {
+    return deltas;
   }
 
-  return endpointDragAnchors(params, pointId).map((anchor) => ({
-    start: [anchor.x, anchor.y],
-    end: snappedLocal,
-  }));
-}
-
-/** If pointId is a circle center, returns the drag preview metadata.
- *  Returns null for non-circle points. */
-export function circleCenterDragPreview(
-  params: SketchFeatureParameters | null,
-  pointId: string,
-  snappedLocal: [number, number],
-): CircleCenterDragPreview | null {
-  if (!params) return null;
-
-  const circle = params.circles.find((c) =>
-    c.center_vertex_id === pointId ||
-    `point-circle-${c.circle_id}-center` === pointId,
+  const base = sketch.vertices.find((v) => v.vertex_id === draggedVertexId);
+  const baseLocal: [number, number] = base ? [base.x, base.y] : [0, 0];
+  const worldStart = toWorldPoint(planeId, baseLocal, planeFrame);
+  const worldEnd = toWorldPoint(
+    planeId,
+    [baseLocal[0] + deltaLocal[0], baseLocal[1] + deltaLocal[1]],
+    planeFrame,
   );
-  if (!circle) return null;
+  const fullDelta: [number, number, number] = [
+    worldEnd[0] - worldStart[0],
+    worldEnd[1] - worldStart[1],
+    worldEnd[2] - worldStart[2],
+  ];
+  const halfDelta: [number, number, number] = [
+    fullDelta[0] / 2,
+    fullDelta[1] / 2,
+    fullDelta[2] / 2,
+  ];
 
-  return {
-    kind: "circle_center_drag",
-    oldCenter: [circle.center_x, circle.center_y],
-    newCenter: [snappedLocal[0], snappedLocal[1]],
-    radius: circle.radius,
-  };
+  const lineContainsVertex = sketch.lines.some(
+    (line) =>
+      line.start_vertex_id === draggedVertexId ||
+      line.end_vertex_id === draggedVertexId,
+  );
+
+  for (const constraint of constraints) {
+    if (constraint.entityId === draggedVertexId) {
+      deltas.set(constraint.constraintId, fullDelta);
+    } else if (
+      lineContainsVertex &&
+      sketch.lines.some((line) => line.line_id === constraint.entityId)
+    ) {
+      deltas.set(constraint.constraintId, halfDelta);
+    }
+  }
+  return deltas;
 }
 
 function endpointDragAnchors(
@@ -184,78 +188,6 @@ function endpointDragAnchors(
   return anchors;
 }
 
-export function buildEndpointDragPreviewLines({
-  segments,
-  planeId,
-  planeFrame,
-  color,
-}: {
-  segments: readonly EndpointDragPreviewSegment[];
-  planeId: string;
-  planeFrame: SketchPlaneFrame | null;
-  /** Hex color for the preview lines. Yellow (0xffe784) for TS-only snap,
-   *  cornflower blue (0x6495ed) when constraint-solver was used. */
-  color?: number;
-}) {
-  const lineColor = color ?? 0xffe784;
-  return segments.map((segment) => {
-    const mat = new THREE.LineDashedMaterial({
-      color: lineColor,
-      transparent: true,
-      opacity: 0.6,
-      dashSize: 1.5,
-      gapSize: 0.8,
-    });
-    const geo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(...toWorldPoint(planeId, segment.start, planeFrame)),
-      new THREE.Vector3(...toWorldPoint(planeId, segment.end, planeFrame)),
-    ]);
-    const preview = new THREE.Line(geo, mat);
-    preview.computeLineDistances();
-    return preview;
-  });
-}
-
-export function buildCircleDragPreviewObject({
-  circlePreview,
-  planeId,
-  planeFrame,
-  color,
-}: {
-  circlePreview: CircleCenterDragPreview;
-  planeId: string;
-  planeFrame: SketchPlaneFrame | null;
-  color?: number;
-}): THREE.Line {
-  const segments = 64;
-  const points: THREE.Vector3[] = [];
-  const cx = circlePreview.newCenter[0];
-  const cy = circlePreview.newCenter[1];
-  const r = circlePreview.radius;
-
-  for (let i = 0; i <= segments; i++) {
-    const angle = (i / segments) * Math.PI * 2;
-    const world = toWorldPoint(
-      planeId,
-      [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r],
-      planeFrame,
-    );
-    points.push(new THREE.Vector3(...world));
-  }
-
-  const mat = new THREE.LineDashedMaterial({
-    color: color ?? 0xffe784,
-    transparent: true,
-    opacity: 0.5,
-    dashSize: 2.0,
-    gapSize: 1.0,
-  });
-  const geo = new THREE.BufferGeometry().setFromPoints(points);
-  const preview = new THREE.Line(geo, mat);
-  preview.computeLineDistances();
-  return preview;
-}
-
 export interface PendingEndpointDragFrame {
   vertexId: string;
   x: number;
@@ -274,45 +206,55 @@ export interface PendingEndpointDragFrame {
  * All other points are frozen (fixed=true) during the WASM solve, so only
  * the dragged point and its immediate neighbours can move.
  */
+/** 1-hop ripple set seeded with multiple vertices — used by both endpoint
+ *  drag and the Move tool (same freeze semantics, different seed sets). */
+export function computeRippleActivePointsForVertices(
+  sketch: SketchFeatureParameters | null,
+  vertexIds: readonly string[],
+): string[] {
+  if (!sketch) return [...vertexIds];
+
+  const active = new Set<string>(vertexIds);
+  const seeded = new Set(vertexIds);
+
+  const collectNeighbors = (pointId: string) => {
+    for (const line of sketch.lines) {
+      if (line.start_vertex_id === pointId) {
+        active.add(line.end_vertex_id);
+      } else if (line.end_vertex_id === pointId) {
+        active.add(line.start_vertex_id);
+      }
+    }
+    if (sketch.arcs) {
+      for (const arc of sketch.arcs) {
+        if (arc.start_vertex_id === pointId) {
+          active.add(arc.end_vertex_id);
+        } else if (arc.end_vertex_id === pointId) {
+          active.add(arc.start_vertex_id);
+        }
+      }
+    }
+    const isCircleCenter = sketch.circles.some((c) =>
+      c.center_vertex_id === pointId ||
+      `point-circle-${c.circle_id}-center` === pointId,
+    );
+    if (isCircleCenter) {
+      active.add(pointId);
+    }
+  };
+
+  for (const pointId of [...seeded]) {
+    collectNeighbors(pointId);
+  }
+
+  return Array.from(active);
+}
+
 export function computeRippleActivePoints(
   sketch: SketchFeatureParameters | null,
   draggedPointId: string,
 ): string[] {
-  if (!sketch) return [draggedPointId];
-
-  const active = new Set<string>();
-  active.add(draggedPointId);
-
-  for (const line of sketch.lines) {
-    if (line.start_vertex_id === draggedPointId) {
-      active.add(line.end_vertex_id);
-    } else if (line.end_vertex_id === draggedPointId) {
-      active.add(line.start_vertex_id);
-    }
-  }
-
-  // Arc endpoints: unfreeze the opposite arc endpoint.
-  if (sketch.arcs) {
-    for (const arc of sketch.arcs) {
-      if (arc.start_vertex_id === draggedPointId) {
-        active.add(arc.end_vertex_id);
-      } else if (arc.end_vertex_id === draggedPointId) {
-        active.add(arc.start_vertex_id);
-      }
-    }
-  }
-
-  // Include circle center if this is a center point (support both
-  // vertex-N and legacy point-circle-*-center ID formats).
-  const isCircleCenter = sketch.circles.some((c) =>
-    c.center_vertex_id === draggedPointId ||
-    `point-circle-${c.circle_id}-center` === draggedPointId,
-  );
-  if (isCircleCenter) {
-    active.add(draggedPointId);
-  }
-
-  return Array.from(active);
+  return computeRippleActivePointsForVertices(sketch, [draggedPointId]);
 }
 
 export function resolveEndpointDragFrame({
@@ -322,6 +264,7 @@ export function resolveEndpointDragFrame({
   planeFrame,
   resolveSnappedSketchPoint,
   constraints,
+  sceneConstraints,
 }: {
   next: PendingEndpointDragFrame;
   sketch: SketchFeatureParameters | null;
@@ -337,6 +280,8 @@ export function resolveEndpointDragFrame({
   ) => SketchPreviewPoint;
   /** planegcs constraint data from the viewport state, for WASM solver. */
   constraints?: SketchConstraintData[];
+  /** Scene constraint data, for badge-follow deltas. */
+  sceneConstraints?: readonly SketchConstraintScene[];
 }) {
   const world = toWorldPoint(planeId, [next.x, next.y], planeFrame);
   const anchorLocal = endpointDragAnchorLocal(sketch, next.vertexId);
@@ -355,7 +300,7 @@ export function resolveEndpointDragFrame({
   // Ripple-freeze: only the dragged point and its 1-hop neighbours
   // participate — all other geometry is frozen to prevent ghost movement.
   let finalLocal: [number, number] = [sketchPoint.local[0], sketchPoint.local[1]];
-  let solverUsed = false;
+  const solvedPoints = new Map<string, [number, number]>();
   const gcsBridge = getBridge();
   if (gcsBridge && sketch) {
     // Strip H/V constraints from lines during drag preview so the
@@ -380,40 +325,40 @@ export function resolveEndpointDragFrame({
       activePointIds,
     });
     if (result.ok) {
-      const solved = result.points.find((p) => p.id === next.vertexId);
+      for (const point of result.points) {
+        solvedPoints.set(point.id, [point.x, point.y]);
+      }
+      const solved = solvedPoints.get(next.vertexId);
       if (solved) {
-        finalLocal = [solved.x, solved.y];
-        solverUsed = true;
+        finalLocal = solved;
       }
     }
   }
 
-  const previewLines: THREE.Line[] = buildEndpointDragPreviewLines({
-    segments: endpointDragPreviewSegments(
-      sketch,
-      next.vertexId,
-      finalLocal,
-    ),
-    planeId,
-    planeFrame,
-    color: solverUsed ? 0x6495ed : undefined,
-  });
-
-  // Circle center drag: add a dashed circle outline at the preview position.
-  const circlePreview = circleCenterDragPreview(sketch, next.vertexId, finalLocal);
-  if (circlePreview) {
-    previewLines.push(
-      buildCircleDragPreviewObject({
-        circlePreview,
-        planeId,
-        planeFrame,
-        color: solverUsed ? 0x6495ed : undefined,
-      }),
-    );
+  // Solve failure (or missing bridge): preview just the dragged point at
+  // the snapped position; everything else stays at its base position.
+  if (solvedPoints.size === 0 && sketch) {
+    for (const vertex of sketch.vertices) {
+      solvedPoints.set(vertex.vertex_id, [vertex.x, vertex.y]);
+    }
+    solvedPoints.set(next.vertexId, finalLocal);
   }
+
+  const baseVertex = sketch?.vertices.find((v) => v.vertex_id === next.vertexId);
+  const baseLocal: [number, number] = baseVertex
+    ? [baseVertex.x, baseVertex.y]
+    : finalLocal;
 
   return {
     sketchPoint: { ...sketchPoint, local: finalLocal },
-    previewLines,
+    solvedPoints,
+    constraintDeltas: endpointDragConstraintDeltas(
+      sceneConstraints ?? [],
+      sketch,
+      next.vertexId,
+      [finalLocal[0] - baseLocal[0], finalLocal[1] - baseLocal[1]],
+      planeId,
+      planeFrame,
+    ),
   };
 }

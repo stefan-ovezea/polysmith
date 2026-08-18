@@ -46,6 +46,7 @@ import type {
   SetSketchToolCommand,
   UpdateSketchLineCommand,
   UpdateSketchVertexCommand,
+  MoveSketchEntitiesCommand,
   SetSketchLineConstraintCommand,
   ClearSketchLineConstraintsCommand,
   SetSketchEqualLengthConstraintCommand,
@@ -712,6 +713,7 @@ export type CoreCommand =
   | SetSketchToolCommand
   | UpdateSketchLineCommand
   | UpdateSketchVertexCommand
+  | MoveSketchEntitiesCommand
   | SetSketchLineConstraintCommand
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand

@@ -2,6 +2,7 @@ import type {
   ConstraintType,
   DocumentState,
   SketchFeatureParameters,
+  SketchTool,
   ViewportContextMenuState,
   ViewportScene,
 } from "@/types";
@@ -33,6 +34,9 @@ export function createViewportContextMenuActions({
   setSketchLineConstructionRef,
   clearSketchConstraintRef,
   updateSketchDimensionDisplayRef,
+  selectSketchEntityRef,
+  pickSketchPointRef,
+  setSketchToolRef,
 }: {
   contextMenu: ViewportContextMenuState | null;
   document: DocumentState | null;
@@ -79,6 +83,17 @@ export function createViewportContextMenuActions({
   updateSketchDimensionDisplayRef: MutableRef<
     (dimensionId: string, displayAs: string) => Promise<void>
   >;
+  selectSketchEntityRef: MutableRef<
+    (entityId: string, additive: boolean) => Promise<void>
+  >;
+  pickSketchPointRef: MutableRef<
+    (
+      pointId: string,
+      kind: "endpoint" | "center" | "quadrant",
+      additive: boolean,
+    ) => Promise<void>
+  >;
+  setSketchToolRef: MutableRef<(tool: SketchTool) => Promise<void>>;
 }) {
   async function createSketch() {
     if (contextMenu?.referenceId) {
@@ -148,6 +163,58 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await deleteSketchSelectionRef.current(selection);
+  }
+
+  // Fusion-style "Move/Copy" entry: arms the Move tool with the
+  // right-clicked entity (or the current selection when the clicked
+  // entity was already selected).  The persistent manipulator ring
+  // appears at the selection centroid; drag to translate, grab the
+  // ring to rotate.  The Move tool is entity-oriented, so a
+  // right-clicked vertex resolves to its owning entity.
+  async function moveCopy() {
+    const selection = contextMenu?.sketchDeleteSelection;
+    setContextMenu(null);
+    if (!selection) {
+      return;
+    }
+    const sketch = sketchLinesRef.current;
+    const currentEntityIds = document?.selected_sketch_entity_ids ?? [];
+    const currentVertexIds = document?.selected_sketch_vertex_ids ?? [];
+
+    let targetEntityId: string | null = null;
+    if (selection.entityIds.length > 0) {
+      targetEntityId = selection.entityIds[0];
+    } else if (selection.vertexIds.length > 0) {
+      const vertex = sketch?.vertices.find(
+        (v) => v.vertex_id === selection.vertexIds[0],
+      );
+      targetEntityId = vertex?.geometry_owner_ids?.[0] ?? null;
+      if (!targetEntityId) {
+        // Standalone point: select the vertex itself and move it.
+        if (!currentVertexIds.includes(selection.vertexIds[0])) {
+          await pickSketchPointRef.current(
+            selection.vertexIds[0],
+            "endpoint",
+            false,
+          );
+        }
+        await setSketchToolRef.current("move");
+        return;
+      }
+    }
+    if (!targetEntityId) {
+      return;
+    }
+    // The menu stores either the full current selection (clicked entity
+    // was selected) or just the clicked entity — re-select only in the
+    // latter case so an existing multi-selection is preserved.
+    if (
+      selection.entityIds.length <= 1 &&
+      !currentEntityIds.includes(targetEntityId)
+    ) {
+      await selectSketchEntityRef.current(targetEntityId, false);
+    }
+    await setSketchToolRef.current("move");
   }
 
   async function deleteDimension() {
@@ -277,6 +344,7 @@ export function createViewportContextMenuActions({
     exportBodyMesh,
     unlinkBodyCopy,
     deleteSketchSelection,
+    moveCopy,
     deleteDimension,
     deleteConstraint,
     toggleDriven,

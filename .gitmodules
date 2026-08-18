@@ -15,3 +15,7 @@
 [submodule "third_party/deepseek-vision-mcp"]
 	path = third_party/deepseek-vision-mcp
 	url = https://github.com/kgamv/deepseek-vision-mcp.git
+[submodule "third_party/OndselSolver"]
+	path = third_party/OndselSolver
+	url = https://github.com/FreeCAD/OndselSolver.git
+	branch = main

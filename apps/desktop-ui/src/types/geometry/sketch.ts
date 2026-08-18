@@ -437,7 +437,7 @@ export interface FeatureEntry {
 // `project_*_into_sketch` IPC commands instead of the normal
 // selection. Kept outside `Shape2D` so the shape unions don't grow
 // a non-shape value.
-export type SketchTool = "select" | Shape2D | "project" | "dimension";
+export type SketchTool = "select" | Shape2D | "project" | "dimension" | "move";
 
 /** Rectangle creation modes for the split tool button. */
 type RectangleToolMode =

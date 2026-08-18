@@ -45,6 +45,10 @@ export interface ResolveSnapOptions {
    *  pointer-up commit to prevent inference from pulling committed
    *  coordinates away from the user's intended click position. */
   inferenceSnapsEnabled?: boolean;
+  /** Static snap candidates hosted by these entity ids are skipped —
+   *  the Move tool excludes the entities being moved so their own
+   *  geometry can't snap onto itself. */
+  excludeEntityIds?: readonly string[];
 }
 
 type TranslateSnapLabel = (
@@ -61,6 +65,7 @@ export function resolveSnappedSketchPoint({
   dynamicSnapsEnabled = true,
   objectSnapLatchKey = null,
   inferenceSnapsEnabled = true,
+  excludeEntityIds,
   filter,
   activeSketchPlaneId,
   activeSketchPlaneFrame,
@@ -78,6 +83,7 @@ export function resolveSnappedSketchPoint({
   dynamicSnapsEnabled?: boolean;
   objectSnapLatchKey?: string | null;
   inferenceSnapsEnabled?: boolean;
+  excludeEntityIds?: readonly string[];
   filter: SelectionFilter;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
@@ -116,6 +122,7 @@ export function resolveSnappedSketchPoint({
     activeSketchPlaneFrame,
     includeEndpointMetadata: true,
     objectSnapLatchKey,
+    excludeEntityIds,
   });
   const prioritySnap = priorityStaticSnapPoint(staticSnap);
   if (prioritySnap) {
@@ -240,6 +247,7 @@ function resolveStaticSnap({
   activeSketchPlaneFrame,
   includeEndpointMetadata,
   objectSnapLatchKey,
+  excludeEntityIds,
 }: {
   candidates: readonly SketchSnapCandidate[];
   point: RawSketchPoint;
@@ -249,12 +257,21 @@ function resolveStaticSnap({
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   includeEndpointMetadata: boolean;
   objectSnapLatchKey?: string | null;
+  excludeEntityIds?: readonly string[];
 }): ResolvedStaticSnap | null {
+  const excluded = excludeEntityIds ? new Set(excludeEntityIds) : null;
+  const isExcluded = (candidate: SketchSnapCandidate) =>
+    excluded !== null &&
+    ((candidate.hostLineId !== undefined && excluded.has(candidate.hostLineId)) ||
+      (candidate.endpointHostLineId !== undefined &&
+        excluded.has(candidate.endpointHostLineId)));
+
   const latched = objectSnapLatchKey
     ? staticSnapCandidateByKey(candidates, objectSnapLatchKey)
     : null;
   if (
     latched &&
+    !isExcluded(latched) &&
     isStaticSnapCandidateAllowed(latched, filter) &&
     distanceBetweenPoints(point.local, latched.local) <= sketchSnapDistance
   ) {
@@ -268,7 +285,7 @@ function resolveStaticSnap({
   }
 
   const closest = closestStaticSnapCandidate(
-    candidates,
+    candidates.filter((candidate) => !isExcluded(candidate)),
     point.local,
     filter,
     distanceBetweenPoints,

@@ -57,6 +57,10 @@ const sketchTools: Array<{
   enabled: boolean;
 }> = [
   { id: "select", labelKey: "toolbar.select", enabled: true },
+  // The Move tool is NOT on the toolbar (Fusion-style): it is entered
+  // via the right-click context menu's "Move/Copy" (or the M hotkey),
+  // which arms the tool with the right-clicked entity / selection and
+  // shows the persistent manipulator ring.
   { id: "line", labelKey: "toolbar.line", hotkey: "line", enabled: true },
   { id: "dimension", labelKey: "toolbar.dimension", hotkey: "dimension", enabled: true },
   { id: "rectangle", labelKey: "toolbar.rectangle", hotkey: "rectangle", enabled: true },

@@ -8,6 +8,17 @@ void update_sketch_vertex(FeatureEntry& feature,
                          const std::string& point_id,
                          double x,
                          double y);
+// Rigidly move sketch entities (translate + optional rotation around a
+// center).  Fixed vertices stay; connected geometry ripples like an
+// endpoint drag.  The DocumentManager wrapper pushes the undo state —
+// never push undo inside the core sketch layer.
+void move_sketch_entities(FeatureEntry& feature,
+                          const std::vector<std::string>& entity_ids,
+                          double dx,
+                          double dy,
+                          double center_x,
+                          double center_y,
+                          double angle_deg);
 void set_sketch_line_constraint(FeatureEntry& feature,
                                 const std::string& line_id,
                                 const std::optional<std::string>& constraint);

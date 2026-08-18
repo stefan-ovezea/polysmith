@@ -9,6 +9,7 @@ import type {
   SketchPreviewPoint,
   SketchTool,
   ViewportContextMenuState,
+  ViewportScene,
 } from "@/types";
 import {
   beginMoveGizmoPointerDown,
@@ -29,6 +30,14 @@ import type {
   DraftDimensionSession,
 } from "./draftDimensions";
 import { beginSelectPointerDown } from "./selectPointerDown";
+import { beginSketchMovePointerDown } from "./sketchMovePointerDown";
+import {
+  disposeSketchMoveRingObject,
+  type PendingSketchMove,
+  type SketchMoveDrag,
+  type SketchMoveRingState,
+} from "./sketchMoveTool";
+import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import type { EndpointDrag } from "./endpointDrag";
 import type { SelectionDrag } from "./selectionGeometry";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
@@ -70,6 +79,19 @@ interface ViewportPointerDownParams {
   sketchLinesRef: MutableRef<SketchFeatureParameters | null>;
   endpointDragRef: MutableRef<EndpointDrag | null>;
   selectionDragRef: MutableRef<SelectionDrag | null>;
+  sketchMoveDragRef: MutableRef<SketchMoveDrag | null>;
+  sketchMoveRingGroupRef: MutableRef<THREE.Group | null>;
+  /** Move/Copy dialog state — while set, the target is fixed and
+   *  pointer-down only starts move drags. */
+  pendingSketchMoveRef: MutableRef<PendingSketchMove | null>;
+  /** Fusion-style persistent manipulator: rotation ring shown while the
+   *  Move tool is armed with a selection.  Grabbing the ring rotates. */
+  persistentRingGroupRef: MutableRef<THREE.Group | null>;
+  persistentRingPickablesRef: MutableRef<THREE.Object3D[]>;
+  persistentRingStateRef: MutableRef<SketchMoveRingState | null>;
+  sketchGroupRef: MutableRef<THREE.Group | null>;
+  sceneDataRef: MutableRef<ViewportScene | null>;
+  restorePreviewScene: () => void;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   displayedSketchDimensionsRef: MutableRef<readonly SketchDimensionScene[]>;
   suppressNextDimensionEditorOpenRef: MutableRef<boolean>;
@@ -99,6 +121,12 @@ export function handleViewportPointerDown(params: ViewportPointerDownParams) {
   if (captureDimensionPlacementPointer(params)) {
     return;
   }
+  // Move tool: right-button drag rotates (Alt is unreliable on Windows —
+  // the window menu swallows it).  Must run before handleNonPrimaryButton,
+  // which consumes every non-left button.
+  if (beginSketchMoveRotatePointerDown(params)) {
+    return;
+  }
   if (handleNonPrimaryButton(params)) {
     return;
   }
@@ -120,6 +148,18 @@ function handlePrimaryButtonPointerDown(params: ViewportPointerDownParams) {
     return;
   }
   if (beginMoveGizmoDrag(params)) {
+    return;
+  }
+
+  // Lost pointer-up safety net: restore committed geometry before
+  // starting a new interaction.
+  if (params.endpointDragRef.current || params.sketchMoveDragRef.current) {
+    params.endpointDragRef.current = null;
+    params.sketchMoveDragRef.current = null;
+    params.restorePreviewScene();
+  }
+
+  if (beginSketchMoveToolPointerDown(params)) {
     return;
   }
 
@@ -225,6 +265,174 @@ function beginMoveGizmoDrag(params: ViewportPointerDownParams) {
 
   params.setPointerDown(null);
   return true;
+}
+
+// Raycasts the persistent manipulator ring; returns its state when hit.
+function persistentRingHit(
+  params: ViewportPointerDownParams,
+): SketchMoveRingState | null {
+  if (params.persistentRingPickablesRef.current.length === 0) {
+    return null;
+  }
+  setPointerNdcFromEvent(params.pointer, params.event, params.renderer);
+  params.raycaster.setFromCamera(params.pointer, params.camera);
+  const [ringHit] = params.raycaster.intersectObjects(
+    params.persistentRingPickablesRef.current,
+    false,
+  );
+  return ringHit?.object.userData.moveRingHandle === true
+    ? params.persistentRingStateRef.current
+    : null;
+}
+
+function disposePersistentRing(params: ViewportPointerDownParams) {
+  disposeSketchMoveRingObject(params.persistentRingGroupRef.current);
+  params.persistentRingGroupRef.current = null;
+  params.persistentRingPickablesRef.current = [];
+  params.persistentRingStateRef.current = null;
+}
+
+// Starts a rotate drag from a persistent-ring grab (Fusion-style).
+function beginSketchMoveRingRotate(
+  params: ViewportPointerDownParams,
+  ringState: SketchMoveRingState,
+  activeSketchPlaneId: string,
+): boolean {
+  disposePersistentRing(params);
+  const handled = beginSketchMovePointerDown({
+    event: params.event,
+    renderer: params.renderer,
+    camera: params.camera,
+    controls: params.controls,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame: params.activeSketchPlaneFrameRef.current,
+    sketch: params.sketchLinesRef.current,
+    sceneData: params.sceneDataRef.current,
+    hit: null,
+    armedSketchConstraint: params.armedSketchConstraintRef.current,
+    sketchMoveDragRef: params.sketchMoveDragRef,
+    sketchMoveRingGroupRef: params.sketchMoveRingGroupRef,
+    sketchGroupRef: params.sketchGroupRef,
+    mode: "rotate",
+    entityIdsOverride: ringState.entityIds,
+    pendingSketchMoveRef: params.pendingSketchMoveRef,
+  });
+  if (handled) {
+    params.setPointerDown(null);
+  }
+  return handled;
+}
+
+function beginSketchMoveToolPointerDown(params: ViewportPointerDownParams) {
+  if (params.activeSketchToolRef.current !== "move") {
+    return false;
+  }
+
+  const activeSketchPlaneId = params.activeSketchPlaneIdRef.current;
+  if (!activeSketchPlaneId) {
+    return false;
+  }
+
+  // Grabbing the manipulator ring rotates the selection (Fusion-style).
+  const ringState = persistentRingHit(params);
+  if (ringState) {
+    return beginSketchMoveRingRotate(params, ringState, activeSketchPlaneId);
+  }
+
+  const hit = params.intersectSceneTargets(params.event);
+  const isSketchTarget =
+    hit?.kind === "sketch_entity" || hit?.kind === "sketch_point";
+  if (isSketchTarget) {
+    disposePersistentRing(params);
+    const handled = beginSketchMovePointerDown({
+      event: params.event,
+      renderer: params.renderer,
+      camera: params.camera,
+      controls: params.controls,
+      activeSketchPlaneId,
+      activeSketchPlaneFrame: params.activeSketchPlaneFrameRef.current,
+      sketch: params.sketchLinesRef.current,
+      sceneData: params.sceneDataRef.current,
+      hit,
+      armedSketchConstraint: params.armedSketchConstraintRef.current,
+      sketchMoveDragRef: params.sketchMoveDragRef,
+      sketchMoveRingGroupRef: params.sketchMoveRingGroupRef,
+      sketchGroupRef: params.sketchGroupRef,
+      pendingSketchMoveRef: params.pendingSketchMoveRef,
+    });
+    if (handled) {
+      params.setPointerDown(null);
+      return true;
+    }
+    // Fully-fixed / unmovable hit: fall through to click handling.
+    return false;
+  }
+
+  // Empty space: rectangle multi-select, exactly like the select tool.
+  // (Disabled while the Move/Copy dialog is open — the target set is
+  // fixed until OK/Cancel.)
+  if (!hit && !params.pendingSketchMoveRef.current) {
+    params.selectionDragRef.current = {
+      startX: params.event.clientX,
+      startY: params.event.clientY,
+      currentX: params.event.clientX,
+      currentY: params.event.clientY,
+      active: true,
+    };
+    params.controls.enabled = false;
+    return true;
+  }
+
+  return false;
+}
+
+// Move tool rotation via right-button drag — the reliable Windows
+// alternative to Alt+drag (the window menu swallows Alt in WebView2).
+function beginSketchMoveRotatePointerDown(params: ViewportPointerDownParams) {
+  if (params.event.button !== 2) {
+    return false;
+  }
+  if (params.activeSketchToolRef.current !== "move") {
+    return false;
+  }
+  const activeSketchPlaneId = params.activeSketchPlaneIdRef.current;
+  if (!activeSketchPlaneId) {
+    return false;
+  }
+
+  // Right-drag on the manipulator ring also rotates its selection.
+  const ringState = persistentRingHit(params);
+  if (ringState) {
+    return beginSketchMoveRingRotate(params, ringState, activeSketchPlaneId);
+  }
+
+  const hit = params.intersectSceneTargets(params.event);
+  if (hit?.kind !== "sketch_entity" && hit?.kind !== "sketch_point") {
+    return false;
+  }
+
+  disposePersistentRing(params);
+  const handled = beginSketchMovePointerDown({
+    event: params.event,
+    renderer: params.renderer,
+    camera: params.camera,
+    controls: params.controls,
+    activeSketchPlaneId,
+    activeSketchPlaneFrame: params.activeSketchPlaneFrameRef.current,
+    sketch: params.sketchLinesRef.current,
+    sceneData: params.sceneDataRef.current,
+    hit,
+    armedSketchConstraint: params.armedSketchConstraintRef.current,
+    sketchMoveDragRef: params.sketchMoveDragRef,
+    sketchMoveRingGroupRef: params.sketchMoveRingGroupRef,
+    sketchGroupRef: params.sketchGroupRef,
+    mode: "rotate",
+    pendingSketchMoveRef: params.pendingSketchMoveRef,
+  });
+  if (handled) {
+    params.setPointerDown(null);
+  }
+  return handled;
 }
 
 function beginSelectToolPointerDown(params: ViewportPointerDownParams) {

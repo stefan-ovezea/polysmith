@@ -1321,6 +1321,42 @@ Payload:
 }
 ```
 
+#### `move_sketch_entities`
+
+Rigidly moves sketch entities — a translation plus an optional rotation
+around a sketch-local center — in a single undo step. Used by the sketch
+Move tool commit.
+
+Payload:
+
+```ts
+{
+  entity_ids: string[];
+  dx: number;
+  dy: number;
+  center_x: number;
+  center_y: number;
+  angle_deg: number;
+}
+```
+
+Semantics:
+
+- `entity_ids` are line / circle / arc ids, or vertex ids for standalone
+  points. Every vertex owned by those entities is transformed by
+  `R(angle)·(p − center) + center + (dx, dy)`; circle/arc radii are
+  preserved (pure rigid motion, no scaling).
+- Fixed vertices never move; connected geometry ripples exactly like an
+  endpoint drag (`propagate_connected_point_move`), then the native
+  planegcs solver re-solves constraints.
+- When `|angle_deg| > 1e-6` the core frees H/V constraints on the moved
+  lines (a rotated line is genuinely no longer axis-aligned; keeping the
+  constraint would snap it back). Pure translations keep H/V constraints.
+- Exactly ONE undo state is pushed for the whole move; the selection is
+  preserved so the move can be repeated on the same entities.
+- Projected entities are fixed (derived from 3D body geometry) and are
+  therefore skipped.
+
 #### `update_sketch_circle`
 
 Updates a circle.

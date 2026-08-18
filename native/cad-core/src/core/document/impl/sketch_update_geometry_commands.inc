@@ -72,3 +72,40 @@ DocumentState DocumentManager::update_sketch_vertex(const std::string& point_id,
   bump_geometry_revision();
   return document_.value();
 }
+
+DocumentState DocumentManager::move_sketch_entities(
+    const std::vector<std::string>& entity_ids,
+    double dx,
+    double dy,
+    double center_x,
+    double center_y,
+    double angle_deg) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  // One undo step for the whole move — never call the per-entity
+  // update commands from here (they push undo per call).
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::move_sketch_entities(*feature_it, entity_ids, dx, dy,
+                                        center_x, center_y, angle_deg);
+  refresh_linked_extrudes(*document_, *feature_it);
+  // Selection is deliberately preserved so the user can repeat the
+  // move on the same entities.
+  bump_geometry_revision();
+  return document_.value();
+}

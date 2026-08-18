@@ -263,3 +263,23 @@ target_link_libraries(cad_core_extrude_quality_test PRIVATE
   planegcs
   dxfrw
 )
+
+add_executable(cad_core_sketch_move_test
+  ${CAD_CORE_SOURCES}
+  tests/sketch_move_test.cpp
+)
+
+target_include_directories(cad_core_sketch_move_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_sketch_move_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
