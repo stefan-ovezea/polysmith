@@ -160,6 +160,15 @@ resources at the old-style path. Without setting `CSF_OCCTResourcePath` or
 font rendering) will fail. The `cad_core.rs` spawn logic sets `PATH` for
 DLLs but does **not** configure any OCCT resource variables.
 
+**Resolved (2026-08-18):** OCCT is now self-built from the vendored source
+(`third_party/occt8` → `third_party/occt8-build`), `cad_core.rs` sets
+`CSF_OCCTResourcePath` to the build tree's `src/` when spawning the core
+(the test runner does the same), and the standard `StlAPI_Writer` /
+`STEPControl_Writer` data-exchange path runs without crashing —
+`core/export/export.cpp` now uses the standard writers instead of the
+manual STL/STEP serializers that worked around the precompiled-binary
+crashes.
+
 ### 3.5 Evaluation Hierarchy (low risk for this project)
 
 `D0`/`D1`/`D2`/`D3` virtual methods on `Geom_Curve`/`Geom_Surface` subclasses

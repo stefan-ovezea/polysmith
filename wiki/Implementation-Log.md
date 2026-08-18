@@ -2,6 +2,16 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-18
+
+### STL/STEP export — replaced manual writers with the standard OCCT data-exchange path
+
+- retested the OCCT 8.0 `StlAPI_Writer` and `STEPControl_Writer` against the self-built OCCT build tree: both work (the earlier crash came from the *precompiled* binary, whose unconfigured `CSF_OCCTResourcePath` the OCCT-8.0-Upgrade-Audit had flagged; the Tauri spawn already sets it for the app, and `scripts/run-core-tests.mjs` now sets it for tests too)
+- replaced the hand-written binary STL serializer in `export.cpp` with `StlAPI_Writer` (binary mode); OCCT 8.0's writer only serializes existing face triangulations, so the export path keeps healing (`ShapeFix_Shape`) + tessellating (`BRepMesh_IncrementalMesh`, 0.1 mm linear / 0.5° angular) and the writer handles locations, orientation, and facet normals
+- replaced the triangle-based AP203 STEP hack with `STEPControl_Writer` (`Transfer(STEPControl_AsIs)` per body, one file) — exports are now real B-rep geometry with units instead of tessellated polyline shells; multi-body documents still land in one file with one root per body
+- dropped the per-shape pre-heal in the multi-body STL path (the compound is healed once in `write_stl_shape`)
+- added `cad_core_stl_writer_test` (new suite): direct `StlAPI_Writer` binary/ASCII round-trips with header + triangle-count validation, a direct `STEPControl_Writer` transfer, and document-level `export_document_as_stl` / `export_document_as_step` checks
+
 ## 2026-07-06
 
 ### Phase 0: CAM data structures — vertex unification groundwork
