@@ -275,6 +275,12 @@ function handleSketchToolHotkey(
     return;
   }
 
+  if (matchesHotkey(event, sketchToolbarHotkeys.move)) {
+    event.preventDefault();
+    void setSketchToolRef.current("move");
+    return;
+  }
+
   if (
     matchesHotkey(event, sketchToolbarHotkeys.toggleConstruction) &&
     isDraftDimensionTool(activeSketchToolRef.current)

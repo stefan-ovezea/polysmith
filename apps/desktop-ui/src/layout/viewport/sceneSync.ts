@@ -56,7 +56,18 @@ interface ReadyViewportSceneGroups {
 
 interface ViewportSceneSyncRefs {
   pendingEndpointCommit: MutableRef<boolean>;
+  /** Set on Move-tool commit; cleared when the rebuild arrives (same
+   *  keep-preview-alive semantics as pendingEndpointCommit). */
+  pendingMoveCommit: MutableRef<boolean>;
   endpointDrag: MutableRef<EndpointDrag | null>;
+  /** True while an endpoint-drag preview is mutating committed scene
+   *  objects — mid-drag viewport_state syncs must not overwrite it. */
+  dragPreviewMutating: MutableRef<boolean>;
+  /** Same flag for the Move tool's live preview. */
+  moveDragPreviewActive: MutableRef<boolean>;
+  /** Set to force the next sync past the scene build-key guard (used to
+   *  restore committed geometry after a cancelled live preview). */
+  forceSceneRebuild: MutableRef<boolean>;
   activeSketchPlaneFrame: MutableRef<SketchPlaneFrame | null>;
   sketchEntityObjectById: MutableRef<Map<string, THREE.Line | THREE.LineLoop>>;
   sketchPointObjectById: MutableRef<Map<string, THREE.Mesh>>;
@@ -127,8 +138,11 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
     return;
   }
 
-  const hadPendingCommit = params.refs.pendingEndpointCommit.current;
+  const hadPendingCommit =
+    params.refs.pendingEndpointCommit.current ||
+    params.refs.pendingMoveCommit.current;
   params.refs.pendingEndpointCommit.current = false;
+  params.refs.pendingMoveCommit.current = false;
 
   if (
     syncEndpointDragScene({
@@ -204,6 +218,13 @@ function syncEndpointDragScene({
     return false;
   }
 
+  // A local preview is on-screen: keep the live positions, don't
+  // overwrite them with committed-state data (would snap back a frame).
+  if (refs.dragPreviewMutating.current || refs.moveDragPreviewActive.current) {
+    refs.lastGeometryKey.current = sceneData.geometryKey;
+    return true;
+  }
+
   updateEndpointDragSceneObjects({
     sceneData,
     planeFrame: refs.activeSketchPlaneFrame.current,
@@ -229,10 +250,12 @@ function rebuildViewportScene(
   const sceneBuildKey = viewportSceneBuildKey(params);
   if (
     params.sceneData &&
-    params.refs.lastSceneBuildKey.current === sceneBuildKey
+    params.refs.lastSceneBuildKey.current === sceneBuildKey &&
+    !params.refs.forceSceneRebuild.current
   ) {
     return;
   }
+  params.refs.forceSceneRebuild.current = false;
 
   resetViewportSceneGroups(params, groups);
 
@@ -457,6 +480,8 @@ function releaseEndpointDragPreview({
     return;
   }
   refs.endpointDrag.current = null;
+  refs.dragPreviewMutating.current = false;
+  refs.moveDragPreviewActive.current = false;
   clearDragPreviewLines();
   setConstraintPreview(null);
   refs.dragCursor.current = null;

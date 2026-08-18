@@ -210,6 +210,14 @@ export interface ViewportPanelProps {
     x: number,
     y: number,
   ) => Promise<void>;
+  onMoveSketchEntities: (params: {
+    entityIds: string[];
+    dx: number;
+    dy: number;
+    centerX: number;
+    centerY: number;
+    angleDeg: number;
+  }) => Promise<void>;
   onFinishSketch: () => Promise<void>;
   moveGizmo?: MoveGizmoDescriptor | null;
   onMoveGizmoChange?: (

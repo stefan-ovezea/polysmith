@@ -24,12 +24,14 @@ interface EndpointDragPointerUpParams {
     x: number,
     y: number,
   ) => Promise<void> | void;
-  clearDragPreviewLines: () => void;
   setConstraintPreview: (preview: null) => void;
   setSketchSnapLabel: (label: string | null) => void;
   setHoveredSketchEntity: (entityId: string | null) => void;
   setHoveredSketchPoint: (pointId: string | null) => void;
   setPointerDown: (point: { x: number; y: number } | null) => void;
+  /** Restores committed geometry after a preview that mutated real scene
+   *  objects (drag released without crossing the move threshold). */
+  restorePreviewScene: () => void;
 }
 
 export function finishEndpointDragPointerUp({
@@ -44,12 +46,12 @@ export function finishEndpointDragPointerUp({
   pendingEndpointCommitRef,
   dragCursorRef,
   updateSketchPoint,
-  clearDragPreviewLines,
   setConstraintPreview,
   setSketchSnapLabel,
   setHoveredSketchEntity,
   setHoveredSketchPoint,
   setPointerDown,
+  restorePreviewScene,
 }: EndpointDragPointerUpParams) {
   const drag = endpointDragRef.current;
   if (!drag) {
@@ -70,8 +72,9 @@ export function finishEndpointDragPointerUp({
     });
     pendingEndpointCommitRef.current = true;
   } else {
-    endpointDragRef.current = null;
-    clearDragPreviewLines();
+    // The preview mutated the real scene objects; force a rebuild from
+    // the store state so the committed geometry is shown again.
+    restorePreviewScene();
     setConstraintPreview(null);
     dragCursorRef.current = null;
   }

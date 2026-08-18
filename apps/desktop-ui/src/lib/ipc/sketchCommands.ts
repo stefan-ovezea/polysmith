@@ -77,6 +77,28 @@ export function makeUpdateSketchVertexCommand(
   };
 }
 
+export function makeMoveSketchEntitiesCommand(params: {
+  entityIds: string[];
+  dx: number;
+  dy: number;
+  centerX: number;
+  centerY: number;
+  angleDeg: number;
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "move_sketch_entities",
+    payload: {
+      entity_ids: params.entityIds,
+      dx: params.dx,
+      dy: params.dy,
+      center_x: params.centerX,
+      center_y: params.centerY,
+      angle_deg: params.angleDeg,
+    },
+  };
+}
+
 
 export function makeSetSketchLineConstraintCommand(
   lineId: string,

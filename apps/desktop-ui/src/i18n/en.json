@@ -24,6 +24,7 @@
     "exportAsMesh": "Export as Mesh",
     "hide": "Hide",
     "move": "Move",
+    "moveCopy": "Move/Copy",
     "needsAttention": "Needs attention",
     "none": "None",
     "ok": "OK",
@@ -347,6 +348,7 @@
     "midplane": "Midplane",
     "mirror": "Mirror",
     "move": "Move",
+    "moveSketch": "Move",
     "offsetPlane": "Offset Plane",
     "parallel": "Parallel",
     "perpendicular": "Perpendicular",
@@ -571,6 +573,12 @@
       "x": "X",
       "y": "Y",
       "z": "Z"
+    },
+    "sketchMove": {
+      "angle": "Angle",
+      "dx": "DX",
+      "dy": "DY",
+      "title": "Move/Copy"
     },
     "offsetPlane": {
       "adjustOffset": "Adjust offset",

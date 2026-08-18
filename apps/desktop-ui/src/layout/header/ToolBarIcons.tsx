@@ -15,6 +15,23 @@ const SelectIcon = () => (
   </svg>
 );
 
+const MoveSketchIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {/* Four-direction move arrows */}
+    <path d="M12 3v18M3 12h18" />
+    <path d="m8.5 6.5 3.5-3.5 3.5 3.5M8.5 17.5 12 21l3.5-3.5M6.5 8.5 3 12l3.5 3.5M17.5 8.5 21 12l-3.5 3.5" />
+  </svg>
+);
+
 const LineIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -269,6 +286,8 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
   switch (tool) {
     case "select":
       return <SelectIcon />;
+    case "move":
+      return <MoveSketchIcon />;
     case "line":
       return <LineIcon />;
     case "dimension":

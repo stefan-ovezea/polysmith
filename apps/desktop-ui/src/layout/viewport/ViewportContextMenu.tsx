@@ -13,6 +13,7 @@ interface ViewportContextMenuProps {
   onDeleteDimension: () => void | Promise<void>;
   onDeleteConstraint: () => void | Promise<void>;
   onDeleteSketchSelection: () => void | Promise<void>;
+  onMoveCopy: () => void | Promise<void>;
   onMoveBody: () => void | Promise<void>;
   onCopyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   onUnlinkBodyCopy: () => void | Promise<void>;
@@ -31,6 +32,7 @@ export function ViewportContextMenu({
   onDeleteDimension,
   onDeleteConstraint,
   onDeleteSketchSelection,
+  onMoveCopy,
   onMoveBody,
   onCopyBody,
   onUnlinkBodyCopy,
@@ -97,6 +99,16 @@ export function ViewportContextMenu({
         </>
       ) : contextMenu.sketchDeleteSelection ? (
         <>
+          {contextMenu.sketchDeleteSelection.entityIds.length > 0 ||
+          contextMenu.sketchDeleteSelection.vertexIds.length > 0 ? (
+            <button
+              type="button"
+              className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+              onClick={onMoveCopy}
+            >
+              {translate("common.moveCopy")}
+            </button>
+          ) : null}
           {contextMenu.lineId ? (
             <button
               type="button"

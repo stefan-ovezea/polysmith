@@ -6,6 +6,15 @@
   DocumentState update_sketch_vertex(const std::string& point_id,
                                     double x,
                                     double y);
+  // Rigidly move sketch entities (translate + optional rotation around
+  // a center).  Pushes exactly ONE undo step; selection is preserved so
+  // the user can repeat the move on the same entities.
+  DocumentState move_sketch_entities(const std::vector<std::string>& entity_ids,
+                                     double dx,
+                                     double dy,
+                                     double center_x,
+                                     double center_y,
+                                     double angle_deg);
   DocumentState set_sketch_line_constraint(
       const std::string& line_id,
       const std::optional<std::string>& constraint);

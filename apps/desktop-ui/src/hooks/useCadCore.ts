@@ -132,6 +132,7 @@ import {
   makeUpdateSketchDimensionCommand,
   makeUpdateSketchLineCommand,
   makeUpdateSketchVertexCommand,
+  makeMoveSketchEntitiesCommand,
   makeUpdateBoxFeatureCommand,
   makeUpdateCylinderFeatureCommand,
   makeUpdateExtrudeDepthCommand,
@@ -580,6 +581,18 @@ export function useCadCore() {
     },
     updateSketchPoint: async (vertexId: string, x: number, y: number) => {
       await sendCoreCommand(makeUpdateSketchVertexCommand(vertexId, x, y));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    moveSketchEntities: async (params: {
+      entityIds: string[];
+      dx: number;
+      dy: number;
+      centerX: number;
+      centerY: number;
+      angleDeg: number;
+    }) => {
+      await sendCoreCommand(makeMoveSketchEntitiesCommand(params));
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },

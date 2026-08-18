@@ -147,3 +147,170 @@ void update_sketch_vertex(FeatureEntry& feature,
   sync_all_line_dimensions(parameters);
   refresh_sketch_derived_state(feature);
 }
+
+void move_sketch_entities(FeatureEntry& feature,
+                          const std::vector<std::string>& entity_ids,
+                          double dx,
+                          double dy,
+                          double center_x,
+                          double center_y,
+                          double angle_deg) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can move sketch entities");
+  }
+
+  auto& parameters = feature.sketch_parameters.value();
+  constexpr double kPi = 3.14159265358979323846;
+  const bool rotating = std::abs(angle_deg) > 1.0e-6;
+  const double angle_rad = angle_deg * (kPi / 180.0);
+  const double cos_a = std::cos(angle_rad);
+  const double sin_a = std::sin(angle_rad);
+
+  const auto transform_point = [&](double x, double y) {
+    const double rel_x = x - center_x;
+    const double rel_y = y - center_y;
+    return std::make_pair(rel_x * cos_a - rel_y * sin_a + center_x + dx,
+                          rel_x * sin_a + rel_y * cos_a + center_y + dy);
+  };
+
+  // Collect every vertex belonging to the moved entities.  Entity ids
+  // that match none of the geometry collections are standalone points:
+  // the id IS the vertex id (mirrors the UI's sketchMoveEntityVertices).
+  std::set<std::string> moved_vertex_ids;
+  std::set<std::string> moved_line_ids;
+  for (const auto& entity_id : entity_ids) {
+    bool matched = false;
+    for (const auto& line : parameters.lines) {
+      if (line.id == entity_id) {
+        moved_vertex_ids.insert(line.start_vertex_id);
+        moved_vertex_ids.insert(line.end_vertex_id);
+        moved_line_ids.insert(line.id);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& circle : parameters.circles) {
+      if (circle.id == entity_id) {
+        if (!circle.center_vertex_id.empty()) {
+          moved_vertex_ids.insert(circle.center_vertex_id);
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& arc : parameters.arcs) {
+      if (arc.id == entity_id) {
+        moved_vertex_ids.insert(arc.start_vertex_id);
+        moved_vertex_ids.insert(arc.end_vertex_id);
+        if (!arc.center_vertex_id.empty()) {
+          moved_vertex_ids.insert(arc.center_vertex_id);
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    moved_vertex_ids.insert(entity_id);
+  }
+
+  // Fixed vertices stay put (consistent with update_sketch_vertex's
+  // fixed-point rejection and the ripple's fixed-point semantics).
+  std::vector<std::string> movable_vertex_ids;
+  for (const auto& vertex_id : moved_vertex_ids) {
+    const SketchVertex* vertex = find_sketch_vertex(parameters, vertex_id);
+    if (vertex != nullptr && !vertex->is_fixed) {
+      movable_vertex_ids.push_back(vertex_id);
+    } else if (vertex == nullptr) {
+      // Unknown vertex ids (e.g. a dangling reference) still get a
+      // chance below — propagate validates against live geometry.
+      movable_vertex_ids.push_back(vertex_id);
+    }
+  }
+  if (movable_vertex_ids.empty()) {
+    throw std::runtime_error("No movable vertices for sketch move");
+  }
+
+  // Rotation frees H/V constraints on moved lines: a rotated line is
+  // genuinely no longer axis-aligned, and keeping the constraint would
+  // snap it back inside refresh_sketch_derived_state.  Pure translation
+  // preserves axis-alignment, so constraints stay.
+  if (rotating) {
+    for (auto& line : parameters.lines) {
+      if (moved_line_ids.count(line.id)) {
+        line.constraint = std::nullopt;
+      }
+    }
+  }
+
+  // Rigid transform.  Write each movable vertex's target into the
+  // entity caches that own it (lines via endpoints, circles via
+  // centers, arcs via center + endpoints — radii are preserved because
+  // the motion is a pure rigid transform) and ripple connected lines
+  // through propagate_connected_point_move, exactly like an endpoint
+  // drag.  refresh_sketch_derived_state rebuilds the vertex table from
+  // these caches afterwards.
+  std::set<std::string> seen;
+  for (const auto& vertex_id : movable_vertex_ids) {
+    if (seen.count(vertex_id)) continue;
+    seen.insert(vertex_id);
+    const SketchVertex* vertex = find_sketch_vertex(parameters, vertex_id);
+    if (vertex == nullptr) continue;
+    const auto target = transform_point(vertex->x, vertex->y);
+    if (points_match(vertex->x, vertex->y, target.first, target.second)) {
+      continue;
+    }
+
+    for (auto& line : parameters.lines) {
+      if (line.start_vertex_id == vertex_id) {
+        line.start_x = target.first;
+        line.start_y = target.second;
+      }
+      if (line.end_vertex_id == vertex_id) {
+        line.end_x = target.first;
+        line.end_y = target.second;
+      }
+    }
+    for (auto& circle : parameters.circles) {
+      if (circle.center_vertex_id == vertex_id) {
+        circle.center_x = target.first;
+        circle.center_y = target.second;
+      }
+    }
+    for (auto& arc : parameters.arcs) {
+      if (arc.start_vertex_id == vertex_id) {
+        arc.start_x = target.first;
+        arc.start_y = target.second;
+      }
+      if (arc.end_vertex_id == vertex_id) {
+        arc.end_x = target.first;
+        arc.end_y = target.second;
+      }
+      if (arc.center_vertex_id == vertex_id) {
+        arc.center_x = target.first;
+        arc.center_y = target.second;
+      }
+    }
+    // Standalone points (no owning entity): update the vertex entry
+    // directly so the position survives the refresh.
+    for (auto& vertex_entry : parameters.vertices) {
+      if (vertex_entry.id == vertex_id) {
+        vertex_entry.x = target.first;
+        vertex_entry.y = target.second;
+      }
+    }
+
+    propagate_connected_point_move(parameters, vertex_id, target.first,
+                                   target.second);
+  }
+
+  sync_all_line_dimensions(parameters);
+  for (const auto& line_id : moved_line_ids) {
+    enforce_equal_length_relations(parameters, line_id);
+    enforce_perpendicular_relations(parameters, line_id);
+    enforce_parallel_relations(parameters, line_id);
+  }
+  sync_all_line_dimensions(parameters);
+  refresh_sketch_derived_state(feature);
+}

@@ -298,6 +298,19 @@ export interface UpdateSketchVertexCommand {
   };
 }
 
+export interface MoveSketchEntitiesCommand {
+  id: string;
+  type: "move_sketch_entities";
+  payload: {
+    entity_ids: string[];
+    dx: number;
+    dy: number;
+    center_x: number;
+    center_y: number;
+    angle_deg: number;
+  };
+}
+
 export interface SetSketchLineConstraintCommand {
   id: string;
   type: "set_sketch_line_constraint";

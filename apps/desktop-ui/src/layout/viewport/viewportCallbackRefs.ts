@@ -151,6 +151,16 @@ interface ViewportCallbackRefTargets {
   updateSketchPointRef: MutableRefObject<
     (pointId: string, x: number, y: number) => Promise<void>
   >;
+  moveSketchEntitiesRef: MutableRefObject<
+    (params: {
+      entityIds: string[];
+      dx: number;
+      dy: number;
+      centerX: number;
+      centerY: number;
+      angleDeg: number;
+    }) => Promise<void>
+  >;
   selectSketchDimensionRef: MutableRefObject<
     (dimensionId: string) => Promise<void>
   >;
@@ -252,6 +262,7 @@ interface ViewportCallbackRefValues
   inactiveSketchEntityPickEnabled: boolean;
   onPickSketchPoint: ViewportCallbackRefTargets["pickSketchPointRef"]["current"];
   onUpdateSketchPoint: ViewportCallbackRefTargets["updateSketchPointRef"]["current"];
+  onMoveSketchEntities: ViewportCallbackRefTargets["moveSketchEntitiesRef"]["current"];
   onSelectSketchDimension: ViewportCallbackRefTargets["selectSketchDimensionRef"]["current"];
   onUpdateSketchDimension: ViewportCallbackRefTargets["updateSketchDimensionRef"]["current"];
   onUpdateSketchDimensionLabelPosition: ViewportCallbackRefTargets["updateSketchDimensionLabelPositionRef"]["current"];
@@ -333,6 +344,7 @@ export function useViewportCallbackRefs(
       values.inactiveSketchEntityPickEnabled;
     refs.pickSketchPointRef.current = values.onPickSketchPoint;
     refs.updateSketchPointRef.current = values.onUpdateSketchPoint;
+    refs.moveSketchEntitiesRef.current = values.onMoveSketchEntities;
     refs.selectSketchDimensionRef.current = values.onSelectSketchDimension;
     refs.updateSketchDimensionRef.current = values.onUpdateSketchDimension;
     refs.updateSketchDimensionLabelPositionRef.current =

@@ -40,6 +40,7 @@
       "circle": { "code": "KeyC", "label": "C" },
       "dimension": { "code": "KeyD", "label": "D" },
       "trim": { "code": "KeyT", "label": "T" },
+      "move": { "code": "KeyM", "label": "M" },
       "toggleConstruction": { "code": "KeyX", "label": "X" }
     }
   }

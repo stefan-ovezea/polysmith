@@ -1,12 +1,14 @@
 import * as THREE from "three";
 
 import type {
+  SketchConstraintScene,
   SketchFeatureParameters,
   SketchPlaneFrame,
   SketchPreviewPoint,
 } from "@/types";
 import { resolveSketchPlanePoint } from "@/utils";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
+import { applySolvedPointsToSketchScene } from "./sketchPreviewSceneUpdate";
 import {
   endpointDragCursorPosition,
   endpointDragHasMoved,
@@ -39,15 +41,23 @@ interface HandleEndpointDragPointerMoveParams {
   sketchLinesRef: MutableRef<SketchFeatureParameters | null>;
   /** planegcs constraint data from the viewport state. */
   sketchConstraintsRef: MutableRef<SketchConstraintData[]>;
+  /** Scene constraint data, for badge-follow deltas during the preview. */
+  sceneConstraintsRef: MutableRef<readonly SketchConstraintScene[]>;
   pendingDragRef: MutableRef<PendingEndpointDragFrame | null>;
   pendingDragFrameRef: MutableRef<number | null>;
   dragSnapResultRef: MutableRef<{ snapX: number; snapY: number } | null>;
   dragCursorRef: MutableRef<{ x: number; y: number } | null>;
-  dragPreviewLinesRef: MutableRef<THREE.Line[]>;
-  sketchGroupRef: MutableRef<THREE.Group | null>;
+  /** Set while the preview is mutating committed scene objects — keeps
+   *  mid-drag viewport_state syncs from snapping the preview back. */
+  dragPreviewMutatingRef: MutableRef<boolean>;
+  sketchEntityObjectByIdRef: MutableRef<
+    Map<string, THREE.Line | THREE.LineLoop>
+  >;
+  sketchPointObjectByIdRef: MutableRef<Map<string, THREE.Mesh>>;
+  sketchConstraintObjectsRef: MutableRef<THREE.Object3D[]>;
+  sketchProfileObjectsRef: MutableRef<THREE.Group[]>;
   resolveSnappedSketchPoint: ResolveSnappedSketchPoint;
   setSketchSnapLabel: (label: string | null) => void;
-  clearDragPreviewLines: () => void;
   requestRender: () => void;
 }
 
@@ -111,6 +121,7 @@ function requestEndpointDragFrame(params: HandleEndpointDragPointerMoveParams) {
       planeFrame: params.activeSketchPlaneFrameRef.current,
       resolveSnappedSketchPoint: params.resolveSnappedSketchPoint,
       constraints: params.sketchConstraintsRef.current,
+      sceneConstraints: params.sceneConstraintsRef.current,
     });
     applyEndpointDragFrameResult(params, result);
     params.requestRender();
@@ -118,27 +129,27 @@ function requestEndpointDragFrame(params: HandleEndpointDragPointerMoveParams) {
 }
 
 function applyEndpointDragFrameResult(
-  {
-    dragSnapResultRef,
-    dragPreviewLinesRef,
-    sketchGroupRef,
-    setSketchSnapLabel,
-    clearDragPreviewLines,
-  }: HandleEndpointDragPointerMoveParams,
+  params: HandleEndpointDragPointerMoveParams,
   result: ReturnType<typeof resolveEndpointDragFrame>,
 ) {
-  dragSnapResultRef.current = {
+  params.dragSnapResultRef.current = {
     snapX: result.sketchPoint.local[0],
     snapY: result.sketchPoint.local[1],
   };
-  setSketchSnapLabel(result.sketchPoint.snapLabel);
+  params.setSketchSnapLabel(result.sketchPoint.snapLabel);
 
-  clearDragPreviewLines();
-  const sketchGroup = sketchGroupRef.current;
-  if (sketchGroup) {
-    for (const preview of result.previewLines) {
-      sketchGroup.add(preview);
-    }
-    dragPreviewLinesRef.current = result.previewLines;
-  }
+  // Live preview: write the solved positions into the real committed
+  // scene objects so the actual geometry moves with the pointer.
+  params.dragPreviewMutatingRef.current = true;
+  applySolvedPointsToSketchScene({
+    solvedPoints: result.solvedPoints,
+    sketch: params.sketchLinesRef.current,
+    planeId: params.activeSketchPlaneIdRef.current ?? "ref-plane-xy",
+    planeFrame: params.activeSketchPlaneFrameRef.current,
+    sketchEntityObjectById: params.sketchEntityObjectByIdRef.current,
+    sketchPointObjectById: params.sketchPointObjectByIdRef.current,
+    sketchConstraintObjects: params.sketchConstraintObjectsRef.current,
+    sketchProfileObjects: params.sketchProfileObjectsRef.current,
+    constraintDeltas: result.constraintDeltas,
+  });
 }
