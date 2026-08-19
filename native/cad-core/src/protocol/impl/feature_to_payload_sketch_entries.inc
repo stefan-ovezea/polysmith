@@ -34,6 +34,7 @@
                         }
                       : json(nullptr)},
 #include "protocol/impl/feature_to_payload_sketch_geometry_entries.inc"
+#include "protocol/impl/feature_to_payload_sketch_text_entries.inc"
 #include "protocol/impl/feature_to_payload_sketch_dimension_entries.inc"
 #include "protocol/impl/feature_to_payload_sketch_relation_entries.inc"
 #include "protocol/impl/feature_to_payload_sketch_projection_entries.inc"

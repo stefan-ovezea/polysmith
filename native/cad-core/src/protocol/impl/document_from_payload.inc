@@ -72,6 +72,8 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
   }
   document.selected_sketch_dimension_id =
       read_optional_string(payload, "selected_sketch_dimension_id");
+  document.selected_sketch_text_id =
+      read_optional_string(payload, "selected_sketch_text_id");
   document.selected_sketch_profile_id =
       read_optional_string(payload, "selected_sketch_profile_id");
   if (payload.contains("selected_sketch_profile_ids") &&

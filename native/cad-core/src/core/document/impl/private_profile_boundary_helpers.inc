@@ -181,6 +181,38 @@ const SketchProfileRegion* find_equivalent_profile(
     }
 
     if (profile.kind == "polygon" && !profile.line_ids.empty()) {
+      if (profile.line_ids.front().rfind("line-text-", 0) == 0) {
+        // Text glyph profiles: the deterministic contour ids are REUSED
+        // across string edits (both "O" and "AB" have a c0 contour), so
+        // the containment fallback below would match different glyphs to
+        // each other. A text region is "the same profile" only when its
+        // id SET is unchanged — true for height/angle/position/spacing
+        // edits (the tessellation is scale-invariant), false for string
+        // or font edits. Compare by exact set equality against the id
+        // tokens embedded in the source profile id.
+        const size_t vertex_section =
+            source_profile_id.find("-profile-poly", 12);
+        const std::string line_section =
+            source_profile_id.substr(0, vertex_section);
+        bool all_mentioned = true;
+        for (const auto& entity_id : profile.line_ids) {
+          if (!profile_id_mentions_entity(source_profile_id, entity_id)) {
+            all_mentioned = false;
+            break;
+          }
+        }
+        // Each line id contributes exactly one "-line-text-" token.
+        size_t token_count = 0;
+        size_t search = line_section.find("-line-text-");
+        while (search != std::string::npos) {
+          ++token_count;
+          search = line_section.find("-line-text-", search + 1);
+        }
+        if (all_mentioned && token_count == profile.line_ids.size()) {
+          candidates.push_back(&profile);
+        }
+        continue;
+      }
       const bool same_entities = std::all_of(
           profile.line_ids.begin(),
           profile.line_ids.end(),

@@ -21,6 +21,9 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
     return;
   }
 
+  // Generated glyph segments can't host anchors — edit the text entity.
+  require_user_line(parameters, host_line_id);
+
   const auto host_it = std::find_if(
       parameters.lines.begin(), parameters.lines.end(),
       [&](const SketchLine &line) { return line.id == host_line_id; });
@@ -54,6 +57,12 @@ void set_sketch_vertex_line_anchor(FeatureEntry &feature,
         "Only sketch features can hold point-line anchors");
   }
   auto &parameters = *feature.sketch_parameters;
+
+  if (!host_line_id.empty()) {
+    // Generated glyph segments can't host anchors — edit the text
+    // entity. (Empty host = clear path, nothing to guard.)
+    require_user_line(parameters, host_line_id);
+  }
 
   // Drop any pre-existing anchor for the same point. Also clear any
   // midpoint anchor on the same point so the two relations don't

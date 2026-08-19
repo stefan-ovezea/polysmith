@@ -1,6 +1,14 @@
       if (view->active_sketch_feature_id.has_value() &&
           view->active_sketch_feature_id.value() == feature.id) {
         for (const auto& point : feature.sketch_parameters->vertices) {
+          // Text glyph vertices are derived geometry owned by the text
+          // entity — render neither their point spheres nor FIX badges
+          // (the glyph lines carry the visual; a marker per glyph
+          // corner would drown the sketch). They stay in the params so
+          // the solver keeps treating them as fixed.
+          if (point.id.rfind("vertex-text-", 0) == 0) {
+            continue;
+          }
           const bool is_selected_point =
               is_sketch_vertex_selected(point.id);
           sketch_vertices.push_back(make_sketch_vertex_primitive(

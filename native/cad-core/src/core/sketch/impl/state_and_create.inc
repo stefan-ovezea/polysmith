@@ -28,6 +28,13 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                      }),
       p.point_line_anchors.end());
 
+  // ── Text expansion ───────────────────────────────────────────
+  // Re-derive glyph geometry from the parametric `texts` records FIRST,
+  // before the zero-length cleanup, stale-dim scan, and solver run, so
+  // every downstream pass sees current text lines. Generated entities
+  // are always re-created here — never persisted between refreshes.
+  refresh_sketch_texts(p);
+
   #include "core/sketch/impl/refresh_zero_length_line_cleanup.inc"
 
   // Re-anchor midpoint-bound points to their host line's current
@@ -475,6 +482,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // AFTER enforce_derived_points_fixed so an explicit unfix overrides
   // the default lock on derived points.
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
+
+  // Text glyph vertices are derived geometry owned by the text entity —
+  // always fixed, regardless of what sync_fixed_point_flags carried
+  // over. This runs LAST (authoritative) so the flag can never be lost
+  // by the derived-point or user-flag passes above.
+  for (auto& vertex : feature.sketch_parameters->vertices) {
+    if (vertex.id.rfind("vertex-text-", 0) == 0) {
+      vertex.is_fixed = true;
+    }
+  }
 
   // Driven (reference-only) dimensions: re-measure from current geometry
   // so their displayed values stay correct without driving anything.

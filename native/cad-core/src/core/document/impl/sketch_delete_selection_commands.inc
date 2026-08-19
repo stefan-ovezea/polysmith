@@ -74,6 +74,33 @@ DocumentState DocumentManager::delete_sketch_selection(
     }
   }
 
+  // Generated glyph segments are owned by their text entity: a
+  // pure-glyph selection deletes the text (Fusion-style), a mixed
+  // selection ignores the glyph lines. Collect the owners here; the
+  // generated ids themselves are filtered out of the delete sets so
+  // they can never be removed while their text record still exists.
+  std::unordered_set<std::string> selected_text_ids;
+  const auto filter_generated_ids = [&](auto& ids) {
+    for (auto it = ids.begin(); it != ids.end();) {
+      const auto line_it = std::find_if(
+          parameters.lines.begin(), parameters.lines.end(),
+          [&](const SketchLine& line) { return line.id == *it; });
+      if (line_it != parameters.lines.end() &&
+          line_it->generated_by.has_value()) {
+        const std::string& owner = line_it->generated_by.value();
+        if (owner.rfind("text:", 0) == 0) {
+          selected_text_ids.insert(owner.substr(5));
+        }
+        it = ids.erase(it);
+        continue;
+      }
+      ++it;
+    }
+  };
+  filter_generated_ids(line_ids);
+  filter_generated_ids(circle_ids);
+  filter_generated_ids(arc_ids);
+
   for (const auto& fillet : parameters.fillets) {
     if (id_in_set(line_ids, fillet.line_a_id) ||
         id_in_set(line_ids, fillet.line_b_id) ||
@@ -113,6 +140,28 @@ DocumentState DocumentManager::delete_sketch_selection(
                   [&](const SketchFillet& fillet) {
                     return id_in_set(fillet_ids, fillet.id);
                   });
+  if (!will_delete && !selected_text_ids.empty()) {
+    // Pure-glyph selection: delete the owning text entities (Fusion
+    // behaviour — selecting text geometry and deleting removes the
+    // text). The generated lines were filtered out above, so the
+    // normal deletion path would otherwise be a silent no-op.
+    push_undo_state();
+    clear_redo_stack();
+    for (const auto& text_id : selected_text_ids) {
+      polysmith::core::delete_sketch_text(*feature_it, text_id);
+    }
+    refresh_linked_extrudes(*document_, *feature_it);
+    document_->selected_feature_id = feature_it->id;
+    document_->selected_sketch_vertex_id = std::nullopt;
+    document_->selected_sketch_entity_id = std::nullopt;
+    document_->selected_sketch_dimension_id = std::nullopt;
+    document_->selected_sketch_profile_id = std::nullopt;
+    document_->selected_sketch_profile_ids.clear();
+    document_->selected_sketch_vertex_ids.clear();
+    document_->selected_sketch_entity_ids.clear();
+    bump_geometry_revision();
+    return document_.value();
+  }
   if (!will_delete) {
     return document_.value();
   }

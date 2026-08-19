@@ -178,6 +178,9 @@ export interface SketchLineScene {
   // contribute to profile loop detection in the core.
   isConstruction: boolean;
   isProjected: boolean;
+  // Set for glyph segments expanded from a sketch text entry
+  // ("text:<text-id>"). Null for hand-drawn / projected lines.
+  generatedBy: string | null;
 }
 
 export interface SketchEntityPlaneFrame {
@@ -198,6 +201,9 @@ export interface SketchCircleScene {
   isSelected: boolean;
   isConstruction: boolean;
   isProjected: boolean;
+  // See `SketchLineScene.generatedBy` (reserved — the v1 text
+  // expansion only emits lines).
+  generatedBy: string | null;
 }
 
 // Regular polygon derived from ViewportSketchPolygon.
@@ -232,6 +238,9 @@ export interface SketchArcScene {
   isSelected: boolean;
   isConstruction: boolean;
   isProjected: boolean;
+  // See `SketchLineScene.generatedBy` (reserved — the v1 text
+  // expansion only emits lines).
+  generatedBy: string | null;
 }
 
 export interface SketchVertexScene {

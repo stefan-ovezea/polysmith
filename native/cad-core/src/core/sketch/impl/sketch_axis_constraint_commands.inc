@@ -7,6 +7,10 @@ void set_sketch_line_constraint(FeatureEntry& feature,
 
   validate_constraint(constraint);
 
+  // Glyph segments are derived geometry — they carry no user-editable
+  // constraints.
+  require_user_line(*feature.sketch_parameters, line_id);
+
   const auto line_it = std::find_if(
       feature.sketch_parameters->lines.begin(),
       feature.sketch_parameters->lines.end(),

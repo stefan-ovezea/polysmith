@@ -10,6 +10,7 @@
 #include "core/sketch/sketch_mirror_types.h"
 #include "core/sketch/sketch_profile_types.h"
 #include "core/sketch/sketch_projection_types.h"
+#include "core/sketch/sketch_text_types.h"
 
 namespace polysmith::core {
 
@@ -68,6 +69,14 @@ struct SketchFeatureParameters {
   // project actions only push to `projections`; this vector is
   // never read at runtime.
   std::vector<std::string> projected_sources;
+  // Parametric text entities. Each entry is expanded into generated
+  // sketch lines (SketchLine::generated_by = "text:<id>") by
+  // `refresh_sketch_texts` at the top of every recompute, so text
+  // participates in profile detection / extrude / viewport through the
+  // ordinary line pipeline. The generated lines are NOT stored here —
+  // they are re-derived from these parameters on every refresh.
+  std::vector<SketchText> texts;
+
   std::vector<SketchProfileRegion> profiles;
 
   // Transient state for an in-progress Mirror tool invocation.

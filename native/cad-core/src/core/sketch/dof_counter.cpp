@@ -108,6 +108,15 @@ std::vector<EntityDofResult> count_sketch_dof(
     }
   }
 
+  // Generated (text glyph) lines are derived geometry with fixed
+  // endpoints — report them as fully constrained so the viewport
+  // renders glyphs in the "fixed" color instead of under-constrained.
+  for (const auto& l : params.lines) {
+    if (l.generated_by.has_value()) {
+      map[l.id].consumed = intrinsic_dof("line");
+    }
+  }
+
   // Midpoint anchors.
   for (const auto& a : params.midpoint_anchors) {
     if (map.count(a.vertex_id)) map[a.vertex_id].consumed += 2;

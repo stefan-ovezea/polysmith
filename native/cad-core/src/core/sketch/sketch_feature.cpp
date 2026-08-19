@@ -1,5 +1,6 @@
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/dof_counter.h"
+#include "core/diagnostics/logger.h"
 
 #include <algorithm>
 #include <array>
@@ -18,6 +19,7 @@
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/sketch/sketch_profile.h"
 #include "core/sketch/trim_engine.h"
+#include "core/text_engine.h"
 
 namespace polysmith::core {
 
@@ -37,6 +39,8 @@ namespace {
 }  // namespace
 
 #include "core/sketch/impl/state_and_create.inc"
+#include "core/sketch/impl/text_expansion.inc"
+#include "core/sketch/impl/sketch_text_commands.inc"
 #include "core/sketch/impl/line_constraints.inc"
 #include "core/sketch/impl/vertex_and_circle_updates.inc"
 #include "core/sketch/impl/dimensions.inc"

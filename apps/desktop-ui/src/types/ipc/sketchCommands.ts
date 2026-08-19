@@ -222,6 +222,55 @@ export interface DeleteSketchFilletCommand {
   };
 }
 
+// Sketch text (Fusion-style). The core expands the entry into plain
+// glyph lines tagged `generated_by: "text:<id>"` on every recompute;
+// the commands only carry the text parameters. Missing optional fields
+// fall back to the core defaults ("Text", height 10, angle 0, center /
+// middle alignment, no char spacing, default font).
+export interface AddSketchTextCommand {
+  id: string;
+  type: "add_sketch_text";
+  payload: {
+    text?: string;
+    font_path?: string;
+    height_mm?: number;
+    angle_deg?: number;
+    anchor_x: number;
+    anchor_y: number;
+    h_align?: "left" | "center" | "right";
+    v_align?: "top" | "middle" | "bottom";
+    char_spacing?: number;
+  };
+}
+
+// Optional-field semantics: the core merges the patch over the stored
+// record, so callers only include the keys that changed. The UI sends
+// the FULL merged parameter set on every debounced edit.
+export interface UpdateSketchTextCommand {
+  id: string;
+  type: "update_sketch_text";
+  payload: {
+    text_id: string;
+    text?: string;
+    font_path?: string;
+    height_mm?: number;
+    angle_deg?: number;
+    anchor_x?: number;
+    anchor_y?: number;
+    h_align?: "left" | "center" | "right";
+    v_align?: "top" | "middle" | "bottom";
+    char_spacing?: number;
+  };
+}
+
+export interface DeleteSketchTextCommand {
+  id: string;
+  type: "delete_sketch_text";
+  payload: {
+    text_id: string;
+  };
+}
+
 export interface DeleteSketchDimensionCommand {
   id: string;
   type: "delete_sketch_dimension";

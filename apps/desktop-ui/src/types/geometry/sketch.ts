@@ -33,6 +33,12 @@ export interface SketchLineEntry {
   // Reference-only construction lines render dashed and don't seal
   // profile loops. Defaults to false on older saves via the schema.
   is_construction: boolean;
+  // Set for glyph segments expanded from a sketch text entry
+  // ("text:<text-id>"). The UI routes clicks on these to the owning
+  // text instead of treating them as plain sketch lines. Null for
+  // hand-drawn / projected lines; defaults to null on older saves
+  // via the schema.
+  generated_by: string | null;
 }
 
 export interface SketchCircleEntry {
@@ -43,6 +49,9 @@ export interface SketchCircleEntry {
   center_y: number;
   radius: number;
   is_construction: boolean;
+  // See `SketchLineEntry.generated_by` (reserved — the v1 text
+  // expansion only emits lines).
+  generated_by: string | null;
 }
 
 export interface SketchVertexEntry {
@@ -160,6 +169,9 @@ export interface SketchArcEntry {
   end_y: number;
   ccw: boolean;
   is_construction: boolean;
+  // See `SketchLineEntry.generated_by` (reserved — the v1 text
+  // expansion only emits lines).
+  generated_by: string | null;
 }
 
 // Regular polygon stored on the sketch feature. Mirrors C++ `SketchPolygon`.
@@ -194,6 +206,35 @@ export interface SketchFilletEntry {
   trim_b_vertex_id: string;
   arc_id: string;
   radius: number;
+}
+
+// Parametric sketch text entity (Fusion-style). The glyph geometry is
+// NOT stored here — the core expands every entry into plain sketch
+// lines (tagged `generated_by: "text:<id>"`) on every recompute, so
+// the existing profile / extrude / viewport pipeline consumes text
+// with zero downstream changes. This entry only carries the parameters
+// that define the text. Mirrors C++ `polysmith::core::SketchText`.
+export interface SketchTextEntry {
+  text_id: string;
+  // UTF-8 string; "\n" starts a new line.
+  text: string;
+  // Absolute path to a user-loaded .ttf; null = the engine's default
+  // font (bundled / embedded fallback).
+  font_path: string | null;
+  height_mm: number;
+  angle_deg: number;
+  // Anchor point in sketch-local coordinates. The anchor maps to the
+  // alignment point of the text frame (see h_align / v_align).
+  anchor_x: number;
+  anchor_y: number;
+  h_align: "left" | "center" | "right";
+  v_align: "top" | "middle" | "bottom";
+  // Fraction added to each character advance (0.5 = +50% spacing).
+  char_spacing: number;
+  // Reserved for text-on-path (follow-up). Null in v1; the core
+  // always serializes them.
+  path_entity_id: string | null;
+  path_offset: number | null;
 }
 
 export interface SketchFeatureParameters {
@@ -235,6 +276,11 @@ export interface SketchFeatureParameters {
   // entities in lockstep. Empty on older saves; the schema
   // defaults to [].
   projections: SketchProjectionEntry[];
+  // Parametric text entries. The glyph segments live in `lines`
+  // (tagged via `generated_by`), so profile detection and the
+  // viewport consume text with zero downstream changes. Empty on
+  // older saves; the schema defaults to [].
+  texts: SketchTextEntry[];
   profiles: SketchProfileRegionEntry[];
   // Optional pending mirror tool state. Null when no mirror is in
   // progress.
@@ -439,7 +485,13 @@ export interface FeatureEntry {
 // `project_*_into_sketch` IPC commands instead of the normal
 // selection. Kept outside `Shape2D` so the shape unions don't grow
 // a non-shape value.
-export type SketchTool = "select" | Shape2D | "project" | "dimension" | "move";
+export type SketchTool =
+  | "select"
+  | Shape2D
+  | "project"
+  | "dimension"
+  | "move"
+  | "text";
 
 /** Rectangle creation modes for the split tool button. */
 type RectangleToolMode =

@@ -4,6 +4,76 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-08-19
 
+### Sketch Text tool (Fusion-style parametric text)
+
+- added a first-class **sketch text entity**: `SketchText` records
+  (`sketch_parameters.texts[]` — string, font_path, height, angle,
+  anchor, h/v alignment, char spacing, reserved `path_entity_id` /
+  `path_offset` for text-on-path) expand into ordinary sketch lines on
+  every recompute (`refresh_sketch_texts` at the top of
+  `refresh_sketch_derived_state`). Generated lines carry deterministic
+  ids `line-text-<id>-c<contour>-s<seg>` / `vertex-text-...` (outside
+  the user id counters), `generated_by = "text:<id>"`, no constraints,
+  always-fixed vertices (re-asserted after the flag sync) → glyph
+  contours flow through profile detection, extrude, viewport, and
+  STEP/STL export with zero downstream changes.
+- new `TextEngine` (`core/text_engine.{h,cpp}`) wraps OCCT's
+  `Font_BRepFont`/`Font_FTFont` (TKService + TKV3d added to the
+  `occt_iface` link list; FreeType is linked statically). Glyph faces →
+  wires → edges are classified (line/circle/B-Spline) and
+  chordal-tessellated with tolerance `clamp(h/200, 0.01, 0.2)` mm;
+  layout mirrors `Font_TextFormatter` math (`AdvanceX` kerning,
+  `LineSpacing` for `\n`, bounds → H/V alignment, 2D angle rotation).
+  Default font = the bundled path when present
+  (`POLYSMITH_TEXT_FONT_PATH` env / repo-relative Liberation Sans),
+  otherwise the OCCT font-manager fallback (system font — deterministic
+  per machine); the embedded DejaVu WOFF is a last resort and needs a
+  zlib-enabled FreeType build, which the vendored one is not.
+- IPC: `add_sketch_text` / `update_sketch_text` (partial patch merge) /
+  `delete_sketch_text`; undo follows the fillet precedent (per-command
+  entries, UI debounce, Escape → delete). Text records and
+  `generated_by` round-trip through save/load; `texts` absent on older
+  saves → empty.
+- generated-entity guards: update/trim/move/dimension/constraint/anchor
+  commands reject glyph lines (`require_user_line` /
+  `ensure_user_editable_entity`); `delete_sketch_selection` maps a
+  pure-glyph selection to deleting the owning text (Fusion-style);
+  generated lines report fully constrained in the DOF counter (fixed
+  endpoints) so glyphs render in the fixed color.
+- **TNP**: the id set is stable across height/angle/anchor/alignment/
+  spacing edits (OCCT renders at fixed 72 pt and scales linearly, so
+  the tessellation is scale-invariant). `find_equivalent_profile` now
+  matches text-generated regions by **exact id-set equality** — the
+  contour indices are reused across strings, so the existing
+  containment fallback would have matched "O" to "A" (both use `c0`);
+  exact-set matching re-snapshots extrudes on geometric edits and
+  degrades them (`dependency_broken` + warning) on string/font edits.
+  Extruding deactivates the sketch, so text edits require re-entering
+  the sketch first (standard sketch behavior).
+- UI: Text tool in the sketch toolbar (no hotkey — T is Trim's), click
+  to place → floating `SketchTextPanel` (multi-line textarea, height /
+  angle / spacing, H/V alignment segmented controls, font dropdown =
+  default + user `.ttf` via the Tauri dialog plugin) with 250 ms
+  debounced `update_sketch_text` live preview; Enter confirms, Escape
+  deletes; clicking a glyph segment in Select mode reopens the panel
+  for its owning text. `generated_by` threaded through viewport
+  primitives so glyph lines are excluded from hover/selection.
+- tests: new `cad_core_text_engine_test` (layout/determinism/tolerance/
+  multi-line/spacing/angle/alignment/font-failure) and
+  `cad_core_text_test` (14 cases: complete region sets for "O"/"AB"/
+  multi-line via `profiles_match`, re-expansion stability, height-edit
+  id stability + exact 1.5× scaling, string-edit id change, guard
+  matrix, extrude-from-text ring prism with through-hole,
+  delete-via-selection, save/load zero-drift round trip, TNP
+  break-vs-survive matrix, undo, degenerate strings, 500-char cap).
+  All 11 suites green via `pnpm test:core`; the lightweight
+  `cad_core_sketch_profile_test` links a stub TextEngine
+  (`tests/text_engine_stub.cpp`) so it stays OCCT-free.
+- docs: `Text-Tool-Implementation-Plan` rewritten (design + TNP
+  contract), new `Emboss-Deboss-Design` (emboss = normal text profile
+  → exact-wire prism → fuse/cut via the existing body-compiler
+  machinery; curved faces via normal projection as a follow-up).
+
 ### DXF import/export (libdxfrw)
 
 - added `import_dxf { file_path, plane_id? }` — parses the file with the vendored libdxfrw (`src/dxf/dxf_import.cpp`, `DxfReadInterface`) and creates a NEW sketch feature on `ref-plane-xy` (or the given reference plane) filled with the imported 2D geometry, then activates it (select tool). The parse runs BEFORE any document mutation, so a bad file leaves the document untouched (error event); one undo entry covers the whole import.

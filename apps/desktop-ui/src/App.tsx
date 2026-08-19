@@ -62,6 +62,7 @@ import {
   computeDocumentUiState,
 } from "./app/documentUiState";
 import { ActiveSketchFilletPanel } from "./app/ActiveSketchFilletPanel";
+import { ActiveSketchTextPanel } from "./app/ActiveSketchTextPanel";
 import { ActiveBodyOperationPanels } from "./app/ActiveBodyOperationPanels";
 import { AppTopBar } from "./app/AppTopBar";
 import { ActiveMirrorPanel } from "./app/ActiveMirrorPanel";
@@ -110,6 +111,7 @@ import {
 import {
   useSketchToolLifecycleEffects,
   type SketchFilletAction,
+  type SketchTextAction,
 } from "./app/sketchToolLifecycleEffects";
 import {
   startSketchOnSelectedPlaneOrFace,
@@ -216,6 +218,13 @@ function App() {
   // radius" experience as 3D fillets give for edges.
   const [sketchFilletAction, setSketchFilletAction] =
     useState<SketchFilletAction | null>(null);
+  // Sketch Text panel session. Mirrors `sketchFilletAction`
+  // shape-for-shape: pending while the Text tool is armed but no text
+  // exists yet; active once a click created a text (or the user
+  // picked an existing text's glyph in Select mode) — the panel then
+  // edits that text's parameters.
+  const [sketchTextAction, setSketchTextAction] =
+    useState<SketchTextAction | null>(null);
   const [pendingSketchDeleteConfirmation, setPendingSketchDeleteConfirmation] =
     useState<PendingSketchDeleteConfirmation | null>(null);
   // Mirror of `sketchFilletAction.filletIds` for the inline
@@ -563,6 +572,9 @@ function App() {
     addSketchFillet,
     updateSketchFilletRadius,
     deleteSketchFillet,
+    addSketchText,
+    updateSketchText,
+    deleteSketchText,
     deleteSketchDimension,
     toggleSketchDimensionDriven,
     setSketchLineConstruction,
@@ -600,10 +612,12 @@ function App() {
     activeSketchTool,
     sketchFilletAction,
     sketchFilletIdsRef,
+    sketchTextAction,
     setTimelineEditVisibleFeatureIds,
     setArmedSketchConstraint,
     setMirrorFocusedSlot,
     setSketchFilletAction,
+    setSketchTextAction,
   });
 
   useAppLifecycleEffects({
@@ -924,6 +938,7 @@ function App() {
         pluginAction: activePluginAction,
         editingFeatureId,
         materialsPanelOpen,
+        sketchTextAction,
       },
       setters: {
         setExtrudeAction,
@@ -950,12 +965,15 @@ function App() {
         },
         setEditingFeatureId,
         setMaterialsPanelOpen,
+        setSketchTextAction,
       },
       activeEdgeIdsRef,
       runAction,
       restoreTimelineCursorAfterEdit,
       undo,
       undoUntilExtrudePreviewRemoved,
+      setSketchTool,
+      deleteSketchText,
       updateExtrudeDepth,
       updateExtrudeMode,
       updateExtrudeTargetBody,
@@ -1068,6 +1086,7 @@ function App() {
       pluginAction: activePluginAction,
       editingFeatureId,
       materialsPanelOpen,
+      sketchTextAction,
     },
     state: {
       activeSketchPlaneId,
@@ -1912,6 +1931,100 @@ function App() {
                   // state alone. The next click can recover.
                 }
               }}
+              onAddSketchText={async (anchorX, anchorY) => {
+                // Same fire-and-forget IPC trick as the fillet flow:
+                // subscribe to the next document update that adds a
+                // text on the active sketch so we can pick up the real
+                // text id and bind the panel to it.
+                const documentPromise = awaitDocumentChange(
+                  (next, previous) => {
+                    if (!next.active_sketch_feature_id) {
+                      return false;
+                    }
+                    const nextSketch = next.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const prevSketch = previous?.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const nextTexts =
+                      nextSketch?.sketch_parameters?.texts ?? [];
+                    const prevTexts =
+                      prevSketch?.sketch_parameters?.texts ?? [];
+                    return nextTexts.length > prevTexts.length;
+                  },
+                );
+
+                await runAction(async () => {
+                  await addSketchText({ anchorX, anchorY });
+                });
+
+                try {
+                  const nextDocument = await documentPromise;
+                  const nextSketch = nextDocument.feature_history.find(
+                    (entry) =>
+                      entry.feature_id ===
+                      nextDocument.active_sketch_feature_id,
+                  );
+                  const texts = nextSketch?.sketch_parameters?.texts ?? [];
+                  const newText = texts[texts.length - 1];
+                  if (!newText) {
+                    return;
+                  }
+                  // Flip pending → active, bound to the new text.
+                  setSketchTextAction({
+                    phase: "active",
+                    textId: newText.text_id,
+                    params: newText,
+                  });
+                } catch {
+                  // Document watcher timed out — leave the session
+                  // pending. The next click can recover.
+                }
+              }}
+              onPickSketchText={(textId) => {
+                // Select-mode glyph pick: the clicked sketch entity is
+                // a text glyph segment (`generated_by: "text:<id>"`).
+                // Look up the live text entry and open the editor
+                // bound to it.
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const entry = feature?.sketch_parameters?.texts.find(
+                  (text) => text.text_id === textId,
+                );
+                if (!entry) {
+                  return;
+                }
+                void (async () => {
+                  // The lifecycle effect clears the text action while
+                  // the tool is still "select", so wait for the tool
+                  // change to land before binding the panel to the
+                  // existing text.
+                  const toolPromise = awaitDocumentChange(
+                    (next) => next.active_sketch_tool === "text",
+                  );
+                  await runAction(async () => {
+                    await setSketchTool("text");
+                  });
+                  try {
+                    await toolPromise;
+                  } catch {
+                    // Tool change timed out — open the editor anyway.
+                  }
+                  setSketchTextAction({
+                    phase: "active",
+                    textId: entry.text_id,
+                    params: entry,
+                  });
+                })();
+              }}
               onSelectSketchEntity={async (entityId, additive) => {
                 await handleSketchEntitySelection({
                   entityId,
@@ -2351,6 +2464,17 @@ function App() {
                   setSketchTool={setSketchTool}
                   updateSketchFilletRadius={updateSketchFilletRadius}
                   deleteSketchFillet={deleteSketchFillet}
+                />
+              ) : null}
+              {sketchTextAction ? (
+                <ActiveSketchTextPanel
+                  action={sketchTextAction}
+                  disabled={status !== "connected"}
+                  setSketchTextAction={setSketchTextAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  updateSketchText={updateSketchText}
+                  deleteSketchText={deleteSketchText}
                 />
               ) : null}
               <CamFloatingPanels

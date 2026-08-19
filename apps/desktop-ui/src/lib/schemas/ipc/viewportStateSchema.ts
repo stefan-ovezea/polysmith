@@ -198,6 +198,10 @@ export const viewportStateSchema = z.object({
       // not selectable. Defaulted for back-compat with the few
       // call sites that may not yet emit it.
       is_preview: z.boolean().default(false),
+      // Set for glyph segments expanded from a sketch text entry
+      // ("text:<text-id>"). Defaulted to null so older cores keep
+      // emitting valid snapshots.
+      generated_by: z.string().nullable().default(null),
     }),
   ),
   sketch_circles: z.array(
@@ -215,6 +219,9 @@ export const viewportStateSchema = z.object({
       is_construction: z.boolean().default(false),
       // See `sketch_lines.is_preview`.
       is_preview: z.boolean().default(false),
+      // See `sketch_lines.generated_by` (reserved — the v1 text
+      // expansion only emits lines).
+      generated_by: z.string().nullable().default(null),
     }),
   ),
   // Sketch polygons — regular N-sided polygons on the sketch plane.
@@ -278,6 +285,9 @@ export const viewportStateSchema = z.object({
         is_selected: z.boolean(),
         is_construction: z.boolean().default(false),
         is_preview: z.boolean().default(false),
+        // See `sketch_lines.generated_by` (reserved — the v1 text
+        // expansion only emits lines).
+        generated_by: z.string().nullable().default(null),
       }),
     )
     .default([]),

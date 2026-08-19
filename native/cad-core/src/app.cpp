@@ -17,6 +17,8 @@
 #include <TopoDS_Shape.hxx>
 
 #include <BRepAdaptor_Surface.hxx>
+#include <Message.hxx>
+#include <Message_PrinterOStream.hxx>
 #include <TopExp.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
@@ -52,6 +54,15 @@ using polysmith::protocol::CommandMessage;
 }  // namespace
 
 void CadCoreApp::init_occt() const {
+  // OCCT's default messenger prints internal warnings (e.g. the
+  // Font_FontMgr "unable to find font ... is used instead" notice)
+  // to std::cout. A bare text line on stdout breaks the JSON protocol
+  // stream the Tauri bridge parses. This is a GUI app with no console,
+  // so strip the stream printer entirely — diagnostics go through the
+  // structured logger, not the messenger.
+  Message::DefaultMessenger()->RemovePrinters(
+      STANDARD_TYPE(Message_PrinterOStream));
+
   polysmith::core::log_info("cad_core", "Starting OCCT smoke test...");
 
   const TopoDS_Shape box = BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape();
@@ -73,6 +84,7 @@ void CadCoreApp::handle_command_line(const std::string& line) {
 #include "app/impl/feature_selection_appearance_commands.inc"
 #include "app/impl/feature_operation_commands.inc"
 #include "app/impl/sketch_edit_commands.inc"
+#include "app/impl/sketch_text_command_handlers.inc"
 #include "app/impl/solid_feature_commands.inc"
 #include "app/impl/sketch_create_project_commands.inc"
 #include "app/impl/parameter_filter_trim_commands.inc"

@@ -40,6 +40,14 @@ export interface ActiveSketchPointerUpContext {
   sketchEntityObjectById: ReadonlyMap<string, THREE.Line | THREE.LineLoop>;
   sketchPointObjects: readonly THREE.Mesh[];
   resolveFilletPoint: () => FilletPoint | null;
+  // Sketch Text tool: place a new text anchored at the given
+  // sketch-local point (core defaults; the panel rebinds to the new
+  // text id when the document round-trip lands).
+  addSketchTextAt: (localX: number, localY: number) => Promise<void>;
+  // Select-mode glyph pick: the hit sketch entity is a text glyph
+  // segment (`generated_by: "text:<id>"`); App opens the Text panel
+  // bound to the owning text instead of selecting the raw line.
+  onPickSketchText?: (textId: string) => void;
   selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
   selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
   selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
@@ -140,6 +148,8 @@ export function handleActiveSketchPointerUpTool(
       paintSketchPointMaterials: context.paintSketchPointMaterials,
       selectSketchProfile: context.selectSketchProfile,
       addMessage: context.addMessage,
+      sketch: context.sketch,
+      onPickSketchText: context.onPickSketchText,
     });
     return true;
   }
@@ -212,6 +222,8 @@ export function handleActiveSketchPointerUpTool(
       paintSketchPointMaterials: context.paintSketchPointMaterials,
       selectSketchProfile: context.selectSketchProfile,
       addMessage: context.addMessage,
+      sketch: context.sketch,
+      onPickSketchText: context.onPickSketchText,
     });
     return true;
   }
@@ -260,6 +272,20 @@ export function handleActiveSketchPointerUpTool(
       localPoint: filletPoint.local,
       addSketchFillet: context.addSketchFillet,
     });
+    return true;
+  }
+
+  // Sketch Text tool: any click in the sketch places a new text at
+  // the click's sketch-local point with the core's default
+  // parameters. `cursorLocal` is resolved by the caller from the raw
+  // pointer position on the active plane.
+  if (context.activeSketchTool === "text") {
+    if (context.cursorLocal) {
+      void context.addSketchTextAt(
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+      );
+    }
     return true;
   }
 

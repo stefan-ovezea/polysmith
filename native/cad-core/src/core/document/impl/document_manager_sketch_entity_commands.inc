@@ -72,3 +72,11 @@
   DocumentState trim_sketch_entity(const std::string& entity_id,
                                    double click_x,
                                    double click_y);
+  // Parametric sketch text. The glyph geometry is derived into sketch
+  // lines on every recompute (see SketchText / refresh_sketch_texts);
+  // these commands manage the parameter records. `values` carries the
+  // full parameter set — update callers merge partial patches first.
+  DocumentState add_sketch_text(const SketchText& text);
+  DocumentState update_sketch_text(const std::string& text_id,
+                                   const SketchText& values);
+  DocumentState delete_sketch_text(const std::string& text_id);

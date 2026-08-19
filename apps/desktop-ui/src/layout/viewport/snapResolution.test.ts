@@ -55,6 +55,7 @@ function sketchParameters() {
         end_y: 0,
         constraint: null,
         is_construction: false,
+        generated_by: null,
       },
     ],
     circles: [],
@@ -65,6 +66,7 @@ function sketchParameters() {
     midpoint_anchors: [],
     point_line_anchors: [],
     projections: [],
+    texts: [],
     profiles: [],
   };
 }

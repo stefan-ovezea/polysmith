@@ -134,6 +134,10 @@ interface ViewportCallbackRefTargets {
       lineBId: string,
     ) => Promise<void>
   >;
+  addSketchTextRef: MutableRefObject<
+    (anchorX: number, anchorY: number) => Promise<void>
+  >;
+  pickSketchTextRef: MutableRefObject<(textId: string) => void>;
   selectSketchEntityRef: MutableRefObject<
     (entityId: string, additive: boolean) => Promise<void>
   >;
@@ -255,6 +259,8 @@ interface ViewportCallbackRefValues
   polygonSides: number;
   onAddSketchPolygon: ViewportCallbackRefTargets["addSketchPolygonRef"]["current"];
   onAddSketchFillet: ViewportCallbackRefTargets["addSketchFilletRef"]["current"];
+  onAddSketchText: ViewportCallbackRefTargets["addSketchTextRef"]["current"];
+  onPickSketchText: ViewportCallbackRefTargets["pickSketchTextRef"]["current"];
   onSelectSketchEntity: ViewportCallbackRefTargets["selectSketchEntityRef"]["current"];
   onPickInactiveSketchLine:
     | ViewportCallbackRefTargets["pickInactiveSketchLineRef"]["current"]
@@ -338,6 +344,8 @@ export function useViewportCallbackRefs(
     refs.polygonSidesRef.current = values.polygonSides;
     refs.addSketchPolygonRef.current = values.onAddSketchPolygon;
     refs.addSketchFilletRef.current = values.onAddSketchFillet;
+    refs.addSketchTextRef.current = values.onAddSketchText;
+    refs.pickSketchTextRef.current = values.onPickSketchText;
     refs.selectSketchEntityRef.current = values.onSelectSketchEntity;
     refs.pickInactiveSketchLineRef.current = values.onPickInactiveSketchLine;
     refs.inactiveSketchEntityPickEnabledRef.current =

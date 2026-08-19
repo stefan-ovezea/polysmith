@@ -30,6 +30,10 @@ void trim_sketch_entity(FeatureEntry& feature,
 
   auto& params = *feature.sketch_parameters;
 
+  // Generated glyph segments are derived geometry — trimming them would
+  // open the contour and the expansion pass would just regenerate them.
+  ensure_user_editable_entity(params, entity_id);
+
 
 #include "core/sketch/impl/trim_line_entity_command.inc"
 #include "core/sketch/impl/trim_circle_entity_command.inc"

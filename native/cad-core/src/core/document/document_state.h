@@ -42,6 +42,9 @@ struct DocumentState {
   std::vector<std::string> selected_sketch_vertex_ids;
   std::vector<std::string> selected_sketch_entity_ids;
   std::optional<std::string> selected_sketch_dimension_id;
+  // Selected sketch text entity (glyph click in select mode reopens the
+  // text panel for editing).
+  std::optional<std::string> selected_sketch_text_id;
   std::optional<std::string> selected_sketch_profile_id;
   std::vector<std::string> selected_sketch_profile_ids;
   // Parametric timeline cursor. nullopt means the cursor is at the end

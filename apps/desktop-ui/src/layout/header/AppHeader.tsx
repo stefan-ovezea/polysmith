@@ -689,24 +689,9 @@ export function AppHeader({
               },
             ]}
           />
-          <button
-            type="button"
-            className="cad-ribbon-action"
-            disabled={disabled}
-            title={t("header.importMesh")}
-            onClick={() => void onImportMesh()}
-          >
-            {t("header.importMesh")}
-          </button>
-          <button
-            type="button"
-            className="cad-ribbon-action"
-            disabled={disabled}
-            title={t("header.importDxf")}
-            onClick={() => void onImportDxf()}
-          >
-            {t("header.importDxf")}
-          </button>
+          {/* Import Mesh / Import DXF live in the File menu — no ribbon
+              buttons here. The two wide ribbon buttons pushed the Log
+              button off the right edge of the header (2026-08). */}
           <MenuDropdown
             label={t("header.edit")}
             icon={<EditMenuIcon />}

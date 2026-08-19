@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { ArmedSketchConstraint } from "@/types";
+import type { ArmedSketchConstraint, SketchFeatureParameters } from "@/types";
 import type { SelectedConstraintState } from "./contextMenuState";
 
 export interface CoincidentLineEndpointFallback {
@@ -138,6 +138,15 @@ interface ActiveSketchSelectContext {
   paintSketchPointMaterials: () => void;
   selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
   addMessage: (message: string) => void;
+  // Live sketch document state, used to resolve text glyph segments
+  // (`generated_by`) to their owning text.
+  sketch?: SketchFeatureParameters | null;
+  // Select-mode glyph pick callback. When a hit sketch entity is a
+  // text glyph segment and this callback is present, the hit is
+  // routed to it (opening the Text panel bound to the owning text)
+  // instead of selecting the raw line. Without the callback glyph
+  // hits are ignored.
+  onPickSketchText?: (textId: string) => void;
 }
 
 function handleMirrorEntityPick({
@@ -215,6 +224,12 @@ function handleConstraintBadgePick({
   return false;
 }
 
+function textIdFromGeneratedBy(generatedBy: string): string | null {
+  return generatedBy.startsWith("text:")
+    ? generatedBy.slice("text:".length)
+    : null;
+}
+
 function handleSketchEntityPick({
   hit,
   additiveSelection,
@@ -224,8 +239,32 @@ function handleSketchEntityPick({
   selectSketchEntity,
   pickSketchPoint,
   addMessage,
+  sketch,
+  onPickSketchText,
 }: ActiveSketchSelectContext) {
   if (hit?.kind === "sketch_entity") {
+    // Text glyph segments are owned by their text entity: clicking one
+    // opens the Text panel bound to the owning text (Select mode)
+    // instead of selecting the raw line. Glyph hits are consumed even
+    // when no callback is wired up — derived geometry is never picked
+    // as a plain sketch line.
+    if (
+      hit.entityKind === "line" &&
+      !hit.isProjected &&
+      sketch
+    ) {
+      const generatedBy =
+        sketch.lines.find((line) => line.line_id === hit.id)?.generated_by ??
+        null;
+      if (generatedBy) {
+        const textId = textIdFromGeneratedBy(generatedBy);
+        if (textId && onPickSketchText) {
+          onPickSketchText(textId);
+        }
+        return true;
+      }
+    }
+
     if (
       armedSketchConstraint?.kind === "coincident" &&
       hit.entityKind === "line"

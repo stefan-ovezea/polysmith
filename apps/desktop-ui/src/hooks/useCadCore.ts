@@ -11,8 +11,11 @@ import {
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
   makeAddSketchFilletCommand,
+  makeAddSketchTextCommand,
   makeUpdateSketchFilletRadiusCommand,
+  makeUpdateSketchTextCommand,
   makeDeleteSketchFilletCommand,
+  makeDeleteSketchTextCommand,
   makeDeleteSketchDimensionCommand,
   makeToggleSketchDimensionDrivenCommand,
   makeTrimSketchEntityCommand,
@@ -938,6 +941,81 @@ export function useCadCore() {
     },
     deleteSketchFillet: async (filletId: string) => {
       await sendCoreCommand(makeDeleteSketchFilletCommand(filletId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchText: async (params: {
+      anchorX: number;
+      anchorY: number;
+      text?: string;
+      fontPath?: string;
+      heightMm?: number;
+      angleDeg?: number;
+      hAlign?: "left" | "center" | "right";
+      vAlign?: "top" | "middle" | "bottom";
+      charSpacing?: number;
+    }) => {
+      await sendCoreCommand(
+        makeAddSketchTextCommand({
+          anchor_x: params.anchorX,
+          anchor_y: params.anchorY,
+          ...(params.text !== undefined ? { text: params.text } : {}),
+          ...(params.fontPath !== undefined
+            ? { font_path: params.fontPath }
+            : {}),
+          ...(params.heightMm !== undefined
+            ? { height_mm: params.heightMm }
+            : {}),
+          ...(params.angleDeg !== undefined
+            ? { angle_deg: params.angleDeg }
+            : {}),
+          ...(params.hAlign !== undefined ? { h_align: params.hAlign } : {}),
+          ...(params.vAlign !== undefined ? { v_align: params.vAlign } : {}),
+          ...(params.charSpacing !== undefined
+            ? { char_spacing: params.charSpacing }
+            : {}),
+        }),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchText: async (
+      textId: string,
+      patch: {
+        text?: string;
+        fontPath?: string;
+        heightMm?: number;
+        angleDeg?: number;
+        anchorX?: number;
+        anchorY?: number;
+        hAlign?: "left" | "center" | "right";
+        vAlign?: "top" | "middle" | "bottom";
+        charSpacing?: number;
+      },
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchTextCommand(textId, {
+          ...(patch.text !== undefined ? { text: patch.text } : {}),
+          ...(patch.fontPath !== undefined
+            ? { font_path: patch.fontPath }
+            : {}),
+          ...(patch.heightMm !== undefined
+            ? { height_mm: patch.heightMm }
+            : {}),
+          ...(patch.angleDeg !== undefined
+            ? { angle_deg: patch.angleDeg }
+            : {}),
+          ...(patch.anchorX !== undefined ? { anchor_x: patch.anchorX } : {}),
+          ...(patch.anchorY !== undefined ? { anchor_y: patch.anchorY } : {}),
+          ...(patch.hAlign !== undefined ? { h_align: patch.hAlign } : {}),
+          ...(patch.vAlign !== undefined ? { v_align: patch.vAlign } : {}),
+          ...(patch.charSpacing !== undefined
+            ? { char_spacing: patch.charSpacing }
+            : {}),
+        }),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    deleteSketchText: async (textId: string) => {
+      await sendCoreCommand(makeDeleteSketchTextCommand(textId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteSketchDimension: async (dimensionId: string) => {

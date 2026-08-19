@@ -15,6 +15,10 @@
                                ? json(line.constraint.value())
                                : json(nullptr)},
                           {"is_construction", line.is_construction},
+                          {"generated_by",
+                           line.generated_by.has_value()
+                               ? json(line.generated_by.value())
+                               : json(nullptr)},
                       });
                     }
                     return lines;
@@ -30,6 +34,10 @@
                           {"center_y", circle.center_y},
                           {"radius", circle.radius},
                           {"is_construction", circle.is_construction},
+                          {"generated_by",
+                           circle.generated_by.has_value()
+                               ? json(circle.generated_by.value())
+                               : json(nullptr)},
                       });
                     }
                     return circles;
@@ -52,6 +60,10 @@
                           {"end_y", arc.end_y},
                           {"ccw", arc.ccw},
                           {"is_construction", arc.is_construction},
+                          {"generated_by",
+                           arc.generated_by.has_value()
+                               ? json(arc.generated_by.value())
+                               : json(nullptr)},
                       });
                     }
                     return arcs;

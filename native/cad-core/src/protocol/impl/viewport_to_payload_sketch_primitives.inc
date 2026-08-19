@@ -23,6 +23,9 @@ json to_payload(const polysmith::core::ViewportSketchLinePrimitive& primitive) {
            : json(nullptr)},
       {"is_construction", primitive.is_construction},
       {"is_preview", primitive.is_preview},
+      {"generated_by",
+       primitive.generated_by.has_value() ? json(primitive.generated_by.value())
+                                          : json(nullptr)},
   };
 }
 
@@ -62,6 +65,9 @@ json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive)
       {"is_selected", primitive.is_selected},
       {"is_construction", primitive.is_construction},
       {"is_preview", primitive.is_preview},
+      {"generated_by",
+       primitive.generated_by.has_value() ? json(primitive.generated_by.value())
+                                          : json(nullptr)},
   };
 }
 
@@ -98,6 +104,9 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
       {"is_selected", primitive.is_selected},
       {"is_construction", primitive.is_construction},
       {"is_preview", primitive.is_preview},
+      {"generated_by",
+       primitive.generated_by.has_value() ? json(primitive.generated_by.value())
+                                          : json(nullptr)},
   };
 }
 

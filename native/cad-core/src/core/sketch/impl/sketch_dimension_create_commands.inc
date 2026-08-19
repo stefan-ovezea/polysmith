@@ -108,6 +108,7 @@ void add_sketch_line_length_dimension(FeatureEntry& feature,
   }
 
   auto& parameters = *feature.sketch_parameters;
+  require_user_line(parameters, line_id);
   auto& line = require_line(parameters, line_id);
 
   const std::string dimension_id = "dim-line-" + line.id;
@@ -167,6 +168,7 @@ void add_sketch_line_angle_dimension(FeatureEntry& feature,
   }
 
   auto& parameters = *feature.sketch_parameters;
+  require_user_line(parameters, line_id);
   auto& line = require_line(parameters, line_id);
 
   const std::string dimension_id = "dim-line-angle-" + line.id;

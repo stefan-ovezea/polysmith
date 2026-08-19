@@ -33,6 +33,10 @@
   // a body source and the sketch entities it generated), but a
   // monotonic id keeps debugging and serialization predictable.
   int next_sketch_projection_id_ = 1;
+  // Counter for sketch text entity ids ("text-N"). The generated glyph
+  // lines / vertices use their own deterministic id namespace
+  // (line-text-* / vertex-text-*), so they never consume user counters.
+  int next_sketch_text_id_ = 1;
   int document_count_ = 0;
   std::optional<DocumentState> document_;
   std::vector<DocumentState> undo_stack_;

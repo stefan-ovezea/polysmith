@@ -269,6 +269,8 @@ export function ViewportPanel({
   onSetDimensionToolMode,
   onAddSketchPolygon,
   onAddSketchFillet,
+  onAddSketchText,
+  onPickSketchText,
   onSelectSketchEntity,
   onBatchSelectEntities,
   onPickSketchPoint,
@@ -654,6 +656,8 @@ export function ViewportPanel({
   const dimensionToolModeRef = useRef(dimensionToolMode);
   const addSketchPolygonRef = useRef(onAddSketchPolygon);
   const addSketchFilletRef = useRef(onAddSketchFillet);
+  const addSketchTextRef = useRef(onAddSketchText);
+  const pickSketchTextRef = useRef(onPickSketchText);
   // Arc placement requires three clicks. The first click goes through
   // `lineDraftStartRef` (shared with line/rect/circle to keep the
   // start-snap pipeline uniform); the second click lands here and
@@ -2028,6 +2032,8 @@ export function ViewportPanel({
       polygonSidesRef,
       addSketchPolygonRef,
       addSketchFilletRef,
+      addSketchTextRef,
+      pickSketchTextRef,
       selectSketchEntityRef,
       pickInactiveSketchLineRef,
       inactiveSketchEntityPickEnabledRef,
@@ -2087,6 +2093,8 @@ export function ViewportPanel({
       polygonSides,
       onAddSketchPolygon,
       onAddSketchFillet,
+      onAddSketchText,
+      onPickSketchText,
       onSelectSketchEntity,
       onPickInactiveSketchLine,
       inactiveSketchEntityPickEnabled,
@@ -3197,6 +3205,8 @@ export function ViewportPanel({
         paintSketchPointMaterials,
         addMessage,
         addSketchFillet: addSketchFilletRef.current,
+        addSketchTextAt: addSketchTextRef.current,
+        onPickSketchText: pickSketchTextRef.current,
         pendingDimensionPlacement: pendingDimensionPlacementRef.current,
         pendingDimensionSourceId: pendingDimSourceEntityIdRef.current,
         pendingDimensionId: pendingDimensionIdRef.current,
