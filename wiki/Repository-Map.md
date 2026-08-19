@@ -72,7 +72,7 @@ Responsibilities:
 
 ## wiki/
 
-Project documentation — a GitHub wiki submodule at `wiki/polysmith.wiki/`.
+Project documentation — the canonical repo-local copy of the GitHub wiki.
 
 The wiki contains:
 
