@@ -11,7 +11,9 @@ import type {
 import type { CamOperationType } from "../layout/header/CamToolbar";
 import type { PendingUnsavedAction, WorkspaceView } from "./appState";
 import {
+  pickExportDxfPath,
   pickExportPath,
+  pickImportDxfPath,
   pickImportStlPath,
   pickLoadDocumentPath,
   type DialogTranslate,
@@ -81,7 +83,9 @@ interface AppTopBarProps {
   viewport: ViewportState | null;
   addMessage: (message: string) => void;
   exportDocument: (filePath: string) => Promise<void>;
+  exportDocumentDxf: (filePath: string) => Promise<void>;
   importStl: (filePath: string, scale?: number) => Promise<void>;
+  importDxf: (filePath: string, planeId?: string) => Promise<void>;
   saveCurrentDocument: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
@@ -253,6 +257,35 @@ export function AppTopBar(props: AppTopBarProps) {
         await props.runAction(async () => {
           await props.importStl(filePath, 1.0);
           props.addMessage(`import requested: ${filePath}`);
+        });
+      }}
+      onImportDxf={async () => {
+        const filePath = await pickImportDxfPath({
+          translate: props.translate,
+          addMessage: props.addMessage,
+        });
+        if (!filePath) {
+          return;
+        }
+
+        await props.runAction(async () => {
+          await props.importDxf(filePath);
+          props.addMessage(`import requested: ${filePath}`);
+        });
+      }}
+      onExportDxf={async () => {
+        const filePath = await pickExportDxfPath({
+          translate: props.translate,
+          documentName: props.document?.name,
+          addMessage: props.addMessage,
+        });
+        if (!filePath) {
+          return;
+        }
+
+        await props.runAction(async () => {
+          await props.exportDocumentDxf(filePath);
+          props.addMessage(`export requested: ${filePath}`);
         });
       }}
       onUndo={async () => {

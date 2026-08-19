@@ -43,7 +43,9 @@ import {
   makeExportBodyStlCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
+  makeExportDocumentDxfCommand,
   makeImportStlCommand,
+  makeImportDxfCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
   makeLoadDocumentCommand,
@@ -224,6 +226,9 @@ export function useCadCore() {
     exportDocumentStl: async (filePath: string) => {
       await sendCoreCommand(makeExportDocumentStlCommand(filePath));
     },
+    exportDocumentDxf: async (filePath: string) => {
+      await sendCoreCommand(makeExportDocumentDxfCommand(filePath));
+    },
     exportBodyStl: async (filePath: string, bodyId: string) => {
       await sendCoreCommand(makeExportBodyStlCommand(filePath, bodyId));
     },
@@ -241,6 +246,11 @@ export function useCadCore() {
     importStl: async (filePath: string, scale = 1.0) => {
       await sendAndRefreshSessionViewport(
         makeImportStlCommand(filePath, scale),
+      );
+    },
+    importDxf: async (filePath: string, planeId?: string) => {
+      await sendAndRefreshSessionViewport(
+        makeImportDxfCommand(filePath, planeId),
       );
     },
     convertMeshToBody: async (bodyId: string) => {

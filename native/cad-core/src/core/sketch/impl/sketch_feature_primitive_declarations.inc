@@ -20,7 +20,13 @@ void add_sketch_line(FeatureEntry& feature,
                      // refresh per entity. Bulk inserters (projection
                      // of outlines with many corners) pass false and
                      // refresh once at the end with the full id set.
-                     bool refresh_immediately = true);
+                     bool refresh_immediately = true,
+                     // Near-axis lines get a horizontal/vertical
+                     // constraint hint applied, which snaps their
+                     // coordinates exactly axis-aligned. Importers of
+                     // arbitrary geometry (DXF) pass false — the
+                     // constraint would deform the imported shape.
+                     bool infer_constraints = true);
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,

@@ -126,6 +126,34 @@ export function makeImportStlCommand(
   };
 }
 
+export function makeImportDxfCommand(
+  filePath: string,
+  planeId?: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "import_dxf",
+    payload: planeId
+      ? {
+          file_path: filePath,
+          plane_id: planeId,
+        }
+      : {
+          file_path: filePath,
+        },
+  };
+}
+
+export function makeExportDocumentDxfCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "export_document_dxf",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
 export function makeConvertMeshToBodyCommand(bodyId: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

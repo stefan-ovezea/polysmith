@@ -516,6 +516,14 @@ export interface ExportDocumentStlCommand {
   };
 }
 
+export interface ExportDocumentDxfCommand {
+  id: string;
+  type: "export_document_dxf";
+  payload: {
+    file_path: string;
+  };
+}
+
 export interface ExportBodyStlCommand {
   id: string;
   type: "export_body_stl";
@@ -547,6 +555,15 @@ export interface ImportStlCommand {
   payload: {
     file_path: string;
     scale?: number;
+  };
+}
+
+export interface ImportDxfCommand {
+  id: string;
+  type: "import_dxf";
+  payload: {
+    file_path: string;
+    plane_id?: string;
   };
 }
 
@@ -663,10 +680,12 @@ export type CoreCommand =
   | GetViewportStateCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
+  | ExportDocumentDxfCommand
   | ExportBodyStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
   | ImportStlCommand
+  | ImportDxfCommand
   | ConvertMeshToBodyCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand

@@ -1,7 +1,8 @@
 void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                      double start_y, double end_x, double end_y,
                      bool is_construction, bool snap_start,
-                     bool auto_dimensions, bool refresh_immediately) {
+                     bool auto_dimensions, bool refresh_immediately,
+                     bool infer_constraints) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
@@ -40,12 +41,16 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
       .start_y = snapped_start_y,
       .end_x = snapped_end_x,
       .end_y = snapped_end_y,
-      .constraint = infer_constraint_hint(snapped_start_x, snapped_start_y,
-                                          snapped_end_x, snapped_end_y),
+      .constraint = infer_constraints
+                        ? infer_constraint_hint(snapped_start_x, snapped_start_y,
+                                                snapped_end_x, snapped_end_y)
+                        : std::optional<std::string>(),
       .is_construction = is_construction,
   });
   auto &line = feature.sketch_parameters->lines.back();
-  apply_line_constraint(line);
+  if (infer_constraints) {
+    apply_line_constraint(line);
+  }
   // The start point of user‑drawn lines must not be auto‑merged with
   // nearby geometry (see the phantom‑line bug in the impl log).
   // Rectangle / polygon / mirror lines still merge corners by default.

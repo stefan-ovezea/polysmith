@@ -37,6 +37,7 @@ export const commandPayloadSchemas = {
   get_viewport_state: emptyPayload,
   export_document: z.object({ file_path: stringField }).strict(),
   export_document_stl: z.object({ file_path: stringField }).strict(),
+  export_document_dxf: z.object({ file_path: stringField }).strict(),
   export_body_stl: z
     .object({ file_path: stringField, body_id: stringField })
     .strict(),
@@ -44,6 +45,12 @@ export const commandPayloadSchemas = {
     .object({
       file_path: stringField,
       scale: z.number().positive().optional(),
+    })
+    .strict(),
+  import_dxf: z
+    .object({
+      file_path: stringField,
+      plane_id: stringField.optional(),
     })
     .strict(),
   convert_mesh_to_body: z.object({ body_id: stringField }).strict(),

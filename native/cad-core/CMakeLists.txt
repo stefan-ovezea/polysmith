@@ -95,6 +95,12 @@ add_library(dxfrw STATIC
   ${LIBDXFRW_DIR}/src/drw_header.cpp
   ${LIBDXFRW_DIR}/src/drw_objects.cpp
   ${LIBDXFRW_DIR}/src/intern/drw_dbg.cpp
+  # dwgBuffer/dwgutil are plain byte-buffer/hex-string helpers the
+  # entity classes reference from their (unused in DXF builds)
+  # parseDwg paths — needed at link time once any DRW_Entity subclass
+  # is actually consumed. No iconv or DWG-reader dependency.
+  ${LIBDXFRW_DIR}/src/intern/dwgBuffer.cpp
+  ${LIBDXFRW_DIR}/src/intern/dwgutil.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfreader.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfwriter.cpp
   ${LIBDXFRW_DIR}/src/intern/rscodec.cpp
@@ -111,6 +117,8 @@ set(CAD_CORE_SOURCES
   src/core/diagnostics/logger.cpp
   src/core/document/document.cpp
   src/core/export/export.cpp
+  src/dxf/dxf_export.cpp
+  src/dxf/dxf_import.cpp
   src/core/extrude/extrude_feature.cpp
   src/core/geometry/body_compiler.cpp
   src/core/geometry/edge_geometry.cpp
@@ -321,6 +329,26 @@ target_include_directories(cad_core_stl_import_test PRIVATE
 )
 
 target_link_libraries(cad_core_stl_import_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_dxf_import_export_test
+  ${CAD_CORE_SOURCES}
+  tests/dxf_import_export_test.cpp
+)
+
+target_include_directories(cad_core_dxf_import_export_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_dxf_import_export_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

@@ -66,6 +66,30 @@ export async function pickExportStlPath({
   return filePath;
 }
 
+export async function pickExportDxfPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportDxfTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.dxf`,
+    filters: [
+      {
+        name: translate("dialogs.dxfFileType"),
+        extensions: ["dxf"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}
+
 export async function pickSaveDocumentPath({
   translate,
   documentName,
@@ -126,6 +150,30 @@ export async function pickImportStlPath({
       {
         name: translate("dialogs.stlFileType"),
         extensions: ["stl"],
+      },
+    ],
+  });
+
+  if (result === null || Array.isArray(result)) {
+    addMessage("import canceled");
+    return null;
+  }
+
+  return result;
+}
+
+export async function pickImportDxfPath({
+  translate,
+  addMessage,
+}: DocumentDialogContext) {
+  const result = await open({
+    title: translate("dialogs.importDxfTitle"),
+    multiple: false,
+    directory: false,
+    filters: [
+      {
+        name: translate("dialogs.dxfFileType"),
+        extensions: ["dxf"],
       },
     ],
   });

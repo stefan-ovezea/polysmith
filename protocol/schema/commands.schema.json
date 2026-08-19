@@ -18,6 +18,8 @@
         "export_document_stl",
         "export_body_stl",
         "import_stl",
+        "import_dxf",
+        "export_document_dxf",
         "convert_mesh_to_body",
         "detach_body_projections",
         "save_document",

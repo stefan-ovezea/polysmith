@@ -33,6 +33,7 @@ class DocumentManager {
 #include "core/document/impl/document_manager_projection_parameter_commands.inc"
 #include "core/document/impl/document_manager_io_commands.inc"
 #include "core/document/impl/document_manager_cam_commands.inc"
+#include "core/document/impl/document_manager_dxf_commands.inc"
 
  private:
 #include "core/document/impl/document_manager_private_state.inc"
