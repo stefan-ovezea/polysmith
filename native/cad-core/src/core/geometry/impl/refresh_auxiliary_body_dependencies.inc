@@ -30,7 +30,8 @@
       const auto& params = feature.thread_parameters.value();
       DocumentState prefix = document;
       prefix.feature_history.resize(i);
-      const CompiledBodies compiled = compile_bodies(prefix);
+      const CompiledBodies compiled = compile_bodies(
+          prefix, /*include_meshes=*/false);
       const bool target_body_exists = std::any_of(
           compiled.bodies.begin(), compiled.bodies.end(),
           [&](const CompiledBody& body) { return body.id == params.target_body_id; });
@@ -56,7 +57,8 @@
       const auto& params = feature.move_parameters.value();
       DocumentState prefix = document;
       prefix.feature_history.resize(i);
-      const CompiledBodies compiled = compile_bodies(prefix);
+      const CompiledBodies compiled = compile_bodies(
+          prefix, /*include_meshes=*/false);
       const bool target_body_exists = std::any_of(
           compiled.bodies.begin(), compiled.bodies.end(),
           [&](const CompiledBody& body) {
@@ -87,7 +89,8 @@
       }
       DocumentState prefix = document;
       prefix.feature_history.resize(i);
-      const CompiledBodies compiled = compile_bodies(prefix);
+      const CompiledBodies compiled = compile_bodies(
+          prefix, /*include_meshes=*/false);
       const bool source_body_exists = std::any_of(
           compiled.bodies.begin(), compiled.bodies.end(),
           [&](const CompiledBody& body) {
@@ -101,5 +104,39 @@
         feature.dependency_warning =
             "Copy source body '" + params.source_body_id +
             "' is no longer available.";
+      }
+    }
+
+    if (feature.kind == "mesh_import" &&
+        feature.mesh_import_parameters.has_value()) {
+      // The mesh lives on disk, not in the document — a moved or
+      // deleted STL degrades the body (the compiler skips it) without
+      // crashing.
+      const auto& params = feature.mesh_import_parameters.value();
+      if (!params.file_path.empty() &&
+          std::filesystem::exists(params.file_path)) {
+        feature.dependency_broken = false;
+        feature.dependency_warning.clear();
+      } else {
+        feature.dependency_broken = true;
+        feature.dependency_warning =
+            "STL source file '" + params.file_path +
+            "' is missing. Restore the file at this path to recover the mesh.";
+      }
+    }
+
+    if (feature.kind == "mesh_to_body" &&
+        feature.mesh_to_body_parameters.has_value()) {
+      // The converted solid is a creation-time snapshot (independent
+      // body copy pattern) — its only requirement is the snapshot
+      // itself, so deleting the source mesh body leaves it intact.
+      const auto& params = feature.mesh_to_body_parameters.value();
+      if (!params.serialized_shape.empty()) {
+        feature.dependency_broken = false;
+        feature.dependency_warning.clear();
+      } else {
+        feature.dependency_broken = true;
+        feature.dependency_warning =
+            "Converted body shape is unavailable.";
       }
     }

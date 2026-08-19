@@ -11,6 +11,7 @@ import type {
 } from "./appState";
 import { bodyIdFromFaceId } from "./appState";
 import type {
+  DocumentState,
   ExtrudeMode,
   MoveFeatureParameters,
   SketchTool,
@@ -64,6 +65,14 @@ export interface ViewportFaceSelectionContext {
   addMidplaneSource: (sourceId: string) => Promise<void>;
   createTangentPlaneFeature: (faceId: string) => Promise<void>;
   projectFaceIntoSketch: (faceId: string) => Promise<void>;
+  // Mesh-body projection: face clicks on a mesh_import body project the
+  // whole body instead (see handleProjectFacePick).
+  document: DocumentState | null;
+  bodyProjectionMode: "section" | "silhouette";
+  projectBodyIntoSketch: (
+    bodyId: string,
+    mode: "section" | "silhouette",
+  ) => Promise<void>;
   createExtrudeFromSelectedFace: (
     faceId: string,
     depth: number,
@@ -266,6 +275,56 @@ async function handleTangentPlanePick(context: ViewportFaceSelectionContext) {
 async function handleProjectFacePick(context: ViewportFaceSelectionContext) {
   if (!context.activeSketchPlaneId || context.activeSketchTool !== "project") {
     return false;
+  }
+
+  // Mesh bodies ship no per-face pick entries — a click on their
+  // surface arrives as the BODY id (primitive hit). Project the whole
+  // body in the toolbar's section / silhouette mode.
+  if (!context.faceId.includes(":face:")) {
+    const feature = (context.document?.feature_history ?? []).find(
+      (candidate) => candidate.feature_id === context.faceId,
+    );
+    if (feature?.kind === "mesh_import") {
+      await context.runAction(async () => {
+        try {
+          await context.projectBodyIntoSketch(
+            context.faceId,
+            context.bodyProjectionMode,
+          );
+        } catch (error) {
+          context.addMessage(
+            `Project body: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      });
+    }
+    return true;
+  }
+
+  // A click on a mesh body's face projects the WHOLE body (per the
+  // toolbar's section / silhouette mode) — projecting a single
+  // triangle outline would be meaningless. The core rejects face
+  // projection for non-extrude owners anyway.
+  const face = findFace(context);
+  const ownerFeature = face
+    ? (context.document?.feature_history ?? []).find(
+        (feature) => feature.feature_id === face.owner_id,
+      )
+    : undefined;
+  if (face && ownerFeature?.kind === "mesh_import") {
+    await context.runAction(async () => {
+      try {
+        await context.projectBodyIntoSketch(
+          face.owner_id,
+          context.bodyProjectionMode,
+        );
+      } catch (error) {
+        context.addMessage(
+          `Project body: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+    return true;
   }
 
   await context.runAction(async () => {

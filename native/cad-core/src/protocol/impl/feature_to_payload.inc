@@ -1,4 +1,5 @@
-json to_payload(const polysmith::core::FeatureEntry& feature) {
+json to_payload(const polysmith::core::FeatureEntry& feature,
+                bool include_opaque) {
   return {
       {"feature_id", feature.id},
       {"kind", feature.kind},
@@ -21,5 +22,6 @@ json to_payload(const polysmith::core::FeatureEntry& feature) {
 #include "protocol/impl/feature_to_payload_threaded_entries.inc"
 #include "protocol/impl/feature_to_payload_transform_entries.inc"
 #include "protocol/impl/feature_to_payload_plugin_entries.inc"
+#include "protocol/impl/feature_to_payload_mesh_entries.inc"
   };
 }

@@ -48,7 +48,7 @@ bool projection_generates_entity(const SketchProjection& projection,
 
 bool compiled_body_exists(const DocumentState& document,
                           const std::string& body_id) {
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   return std::any_of(compiled.bodies.begin(),
                      compiled.bodies.end(),
                      [&](const CompiledBody& body) {
@@ -74,7 +74,7 @@ std::optional<TopoDS_Face> resolve_face_for_appearance(
     return std::nullopt;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   const auto body_it =
       std::find_if(compiled.bodies.begin(),
                    compiled.bodies.end(),

@@ -40,6 +40,83 @@ namespace {
 
 }  // namespace
 
+namespace {
+
+double point_segment_distance(const FaceOutlinePoint& p,
+                              const FaceOutlinePoint& a,
+                              const FaceOutlinePoint& b) {
+  const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const double ab_sq = abx * abx + aby * aby + abz * abz;
+  if (ab_sq <= 1e-24) {
+    const double dx = p.x - a.x, dy = p.y - a.y, dz = p.z - a.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  const double apx = p.x - a.x, apy = p.y - a.y, apz = p.z - a.z;
+  const double t = std::clamp((apx * abx + apy * aby + apz * abz) / ab_sq,
+                              0.0, 1.0);
+  const double cx = a.x + t * abx - p.x;
+  const double cy = a.y + t * aby - p.y;
+  const double cz = a.z + t * abz - p.z;
+  return std::sqrt(cx * cx + cy * cy + cz * cz);
+}
+
+}  // namespace
+
+std::vector<FaceOutlinePoint> simplify_outline_polyline(
+    const std::vector<FaceOutlinePoint>& points, double tolerance) {
+  if (points.size() < 4 || tolerance <= 0.0) {
+    return points;
+  }
+
+  // Work on the closed loop: duplicate the first point as the closing
+  // anchor. `closed` index n maps back to original index 0.
+  const size_t n = points.size();
+  std::vector<FaceOutlinePoint> closed = points;
+  closed.push_back(points.front());
+
+  std::vector<bool> keep(n, false);
+  keep[0] = true;
+
+  struct Range {
+    size_t lo;
+    size_t hi;
+  };
+  std::vector<Range> stack{{0, n}};
+  while (!stack.empty()) {
+    const Range range = stack.back();
+    stack.pop_back();
+    double max_distance = -1.0;
+    size_t farthest = range.lo + 1;
+    for (size_t i = range.lo + 1; i < range.hi; ++i) {
+      const double distance =
+          point_segment_distance(closed[i], closed[range.lo], closed[range.hi]);
+      if (distance > max_distance) {
+        max_distance = distance;
+        farthest = i;
+      }
+    }
+    if (max_distance > tolerance) {
+      keep[farthest % n] = true;
+      stack.push_back({range.lo, farthest});
+      stack.push_back({farthest, range.hi});
+    }
+  }
+
+  std::vector<FaceOutlinePoint> result;
+  result.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    if (keep[i]) {
+      result.push_back(points[i]);
+    }
+  }
+  // Never degenerate below a triangle — a null outline would make the
+  // face unprojectable.
+  if (result.size() < 3) {
+    return points;
+  }
+  return result;
+}
+
 std::optional<FaceOutline> compute_face_outline(const DocumentState& document,
                                                 const std::string& face_id) {
   const auto parsed = parse_face_id(face_id);

@@ -462,6 +462,81 @@ Payload:
 
 Returns `document_exported` with `format: "stl"`.
 
+#### `import_stl`
+
+Imports an STL file as a mesh body into the current document. Only the source
+path is persisted — the mesh is re-read from disk on every compile; if the file
+later disappears the feature degrades with `dependency_broken` + a timeline
+warning (no crash).
+
+Payload:
+
+```ts
+{
+  file_path: string;
+  scale?: number; // default 1.0 (STL assumed mm)
+}
+```
+
+Returns `document_state`.
+
+#### `convert_mesh_to_body`
+
+Converts a `mesh_import` body into a regular solid body alongside it (sew →
+make solid → heal → merge coplanar facets). Requires a watertight mesh;
+otherwise a structured error is returned. The converted solid is snapshotted
+at creation and is independent afterwards — the source mesh body can be
+deleted without losing it. The converted solid supports all regular body
+operations.
+
+Payload:
+
+```ts
+{
+  body_id: string; // the mesh_import feature id
+}
+```
+
+Returns `document_state`.
+
+#### `detach_body_projections`
+
+Removes every live sketch-projection link sourced from the given body
+(face / edge / vertex / body projections). The generated sketch entities
+stay in place as fixed lines — only the live link goes away, so the body
+can be deleted without breaking the sketches (and extrudes) built on the
+projection.
+
+Payload:
+
+```ts
+{
+  body_id: string;
+}
+```
+
+Returns `document_state`.
+
+#### `project_body_into_sketch`
+
+Projects a mesh body onto the active sketch plane as fixed-endpoint sketch
+lines, recorded as a live `SketchProjection` (`source_kind: "body"`). Works on
+origin ref-plane sketches too. Curved STL edges project as polylines — no arc
+recovery.
+
+Payload:
+
+```ts
+{
+  body_id: string; // the mesh_import feature id
+  mode: "section" | "silhouette";
+  // section = cross-section at the sketch plane; silhouette = outline
+  // seen along the sketch plane normal (Fusion "Project" semantics)
+}
+```
+
+Returns `document_state`.
+
 ### Embedded Slicer Handoff
 
 The embedded OrcaSlicer view is not part of the AI CAD command language. When

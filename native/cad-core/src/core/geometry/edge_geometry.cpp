@@ -75,7 +75,7 @@ std::optional<EdgeGeometry> compute_edge_geometry(
     return std::nullopt;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   const auto* body = find_compiled_body(compiled, parsed->owner_id);
   if (body == nullptr || body->shape.IsNull()) {
     return std::nullopt;
@@ -156,7 +156,7 @@ std::optional<EdgePoint> compute_vertex_position(
     return std::nullopt;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   const auto* body = find_compiled_body(compiled, parsed->owner_id);
   if (body == nullptr || body->shape.IsNull()) {
     return std::nullopt;

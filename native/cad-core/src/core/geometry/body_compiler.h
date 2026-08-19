@@ -65,6 +65,11 @@ struct CompiledBodies {
 // and `meshes` only contains the per-body tessellations. Callers are
 // responsible for deciding whether to render meshes or fall back to the
 // legacy primitive emission.
-CompiledBodies compile_bodies(const DocumentState& document);
+// When `include_meshes` is false (shape-only consumers: face/edge
+// resolution, dependency checks, export collection), the viewport
+// tessellation pass is skipped — for converted-mesh documents that
+// pass costs hundreds of milliseconds per compile.
+CompiledBodies compile_bodies(const DocumentState& document,
+                              bool include_meshes = true);
 
 }  // namespace polysmith::core

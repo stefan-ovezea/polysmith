@@ -1,7 +1,8 @@
-json to_payload(const polysmith::core::DocumentState& document) {
+json to_payload(const polysmith::core::DocumentState& document,
+                bool include_opaque) {
   json feature_history = json::array();
   for (const auto& feature : document.feature_history) {
-    feature_history.push_back(to_payload(feature));
+    feature_history.push_back(to_payload(feature, include_opaque));
   }
 
   return {

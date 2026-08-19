@@ -17,7 +17,12 @@ type RunAction = (action: () => Promise<void>) => Promise<void>;
 
 type BodyContextActions = Pick<
   ComponentProps<typeof DocumentHierarchyPanel>,
-  "onMoveBody" | "onCopyBody" | "onExportBodyMesh" | "onUnlinkBodyCopy"
+  | "onMoveBody"
+  | "onCopyBody"
+  | "onExportBodyMesh"
+  | "onConvertMeshToBody"
+  | "onDetachBodyProjections"
+  | "onUnlinkBodyCopy"
 >;
 
 interface AppSidebarProps {

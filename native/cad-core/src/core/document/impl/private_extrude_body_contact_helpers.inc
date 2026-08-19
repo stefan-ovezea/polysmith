@@ -158,7 +158,7 @@ std::optional<std::string> find_intersecting_body_for_extrude(
     return std::nullopt;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.shape.IsNull()) {
       continue;
@@ -183,7 +183,7 @@ std::optional<std::string> find_touching_body_for_extrude(
     return std::nullopt;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.shape.IsNull()) {
       continue;

@@ -171,7 +171,8 @@ void delete_sketch_mirror_relation(FeatureEntry& feature,
 
 void set_sketch_vertex_fixed(FeatureEntry& feature,
                             const std::string& point_id,
-                            bool is_fixed) {
+                            bool is_fixed,
+                            bool refresh_immediately) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can set fixed point state");
   }
@@ -183,7 +184,9 @@ void set_sketch_vertex_fixed(FeatureEntry& feature,
   }
 
   point->is_fixed = is_fixed;
-  refresh_sketch_derived_state(feature);
+  if (refresh_immediately) {
+    refresh_sketch_derived_state(feature);
+  }
 }
 
 void update_sketch_circle(FeatureEntry& feature,

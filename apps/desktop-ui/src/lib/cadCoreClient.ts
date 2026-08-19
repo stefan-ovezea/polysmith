@@ -21,15 +21,46 @@ export async function sendCoreCommand(command: CoreCommand): Promise<void> {
   });
 }
 
+// The Rust bridge gzip-compresses events larger than 64KB (see
+// protocol.rs emit_core_event). Decompress before handing the message
+// to the handler; events are processed strictly in arrival order so
+// document/viewport state updates never reorder.
+async function decodeCoreEventPayload(
+  payload: unknown,
+): Promise<CoreMessage | Record<string, unknown>> {
+  const wrapper = payload as { _gz?: string } | null;
+  if (
+    wrapper !== null &&
+    typeof wrapper === "object" &&
+    typeof wrapper._gz === "string"
+  ) {
+    const bytes = Uint8Array.from(atob(wrapper._gz), (char) =>
+      char.charCodeAt(0),
+    );
+    const stream = new Blob([bytes])
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"));
+    const text = await new Response(stream).text();
+    return JSON.parse(text) as CoreMessage;
+  }
+  return payload as CoreMessage | Record<string, unknown>;
+}
+
+let eventChain: Promise<void> = Promise.resolve();
+
 export async function onCadCoreEvent(
   handler: (message: CoreMessage | Record<string, unknown>) => void,
 ): Promise<UnlistenFn> {
-  return listen<CoreMessage | Record<string, unknown>>(
-    CadCoreCommandType.CadCoreEvent,
-    (event) => {
-      handler(event.payload);
-    },
-  );
+  return listen<unknown>(CadCoreCommandType.CadCoreEvent, (event) => {
+    eventChain = eventChain
+      .then(() => decodeCoreEventPayload(event.payload))
+      .then((message) => {
+        handler(message);
+      })
+      .catch((error) => {
+        console.error("failed to decode cad-core-event payload:", error);
+      });
+  });
 }
 
 export async function onCadCoreLog(

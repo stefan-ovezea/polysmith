@@ -112,6 +112,56 @@ export function makeLoadDocumentCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeImportStlCommand(
+  filePath: string,
+  scale = 1.0,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "import_stl",
+    payload: {
+      file_path: filePath,
+      scale,
+    },
+  };
+}
+
+export function makeConvertMeshToBodyCommand(bodyId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "convert_mesh_to_body",
+    payload: {
+      body_id: bodyId,
+    },
+  };
+}
+
+export function makeDetachBodyProjectionsCommand(
+  bodyId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "detach_body_projections",
+    payload: {
+      body_id: bodyId,
+    },
+  };
+}
+
+export function makeProjectBodyIntoSketchCommand(
+  bodyId: string,
+  mode: "section" | "silhouette",
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "project_body_into_sketch",
+    payload: {
+      body_id: bodyId,
+      mode,
+    },
+  };
+}
+
 export function makeProjectFaceIntoSketchCommand(faceId: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

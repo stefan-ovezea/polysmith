@@ -40,12 +40,26 @@ export const commandPayloadSchemas = {
   export_body_stl: z
     .object({ file_path: stringField, body_id: stringField })
     .strict(),
+  import_stl: z
+    .object({
+      file_path: stringField,
+      scale: z.number().positive().optional(),
+    })
+    .strict(),
+  convert_mesh_to_body: z.object({ body_id: stringField }).strict(),
+  detach_body_projections: z.object({ body_id: stringField }).strict(),
   save_document: z.object({ file_path: stringField }).strict(),
   load_document: z.object({ file_path: stringField }).strict(),
   project_face_into_sketch: z.object({ face_id: stringField }).strict(),
   project_profile_into_sketch: z.object({ profile_id: stringField }).strict(),
   project_edge_into_sketch: z.object({ edge_id: stringField }).strict(),
   project_vertex_into_sketch: z.object({ vertex_id: stringField }).strict(),
+  project_body_into_sketch: z
+    .object({
+      body_id: stringField,
+      mode: z.enum(["section", "silhouette"]),
+    })
+    .strict(),
   add_box_feature: z
     .object({
       width: numberField,

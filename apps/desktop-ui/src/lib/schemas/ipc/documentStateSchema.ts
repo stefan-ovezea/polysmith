@@ -269,8 +269,10 @@ export const documentStateSchema = z.object({
       // pre-construction-plane core) round-trip cleanly.
       construction_plane_parameters: z
         .object({
+          // "detached" planes are frozen when their source feature is
+          // deleted — the cached frame is authoritative.
           plane_type: z
-            .enum(["offset", "midplane", "tangent", "angle"])
+            .enum(["offset", "midplane", "tangent", "angle", "detached"])
             .default("offset"),
           source_plane_id: z.string(),
           source_plane_ids: z.array(z.string()).default([]),

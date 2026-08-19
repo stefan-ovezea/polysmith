@@ -212,8 +212,9 @@ tested and how.
 ### C++ Tests
 
 Tests are standalone executables built by CMake (sketch profile, multi-profile
-extrude, extrude quality, CAM face reference, plugin feature). Run ALL of them
-with one command — it handles the OCCT DLL path:
+extrude, extrude quality, CAM face reference, plugin feature, sketch move,
+STL/STEP writer). Run ALL of them with one command — it handles the OCCT DLL
+path and sets `CSF_OCCTResourcePath`:
 
 ```bash
 pnpm test:core

@@ -52,6 +52,13 @@ struct FaceOutline {
 std::optional<FaceOutline> compute_face_outline(const DocumentState& document,
                                                 const std::string& face_id);
 
+// Douglas-Peucker simplification of a closed outline loop (open point
+// list — the caller closes it). Keeps vertices so the simplified loop
+// deviates at most `tolerance` (mm) from the original. Used to decimate
+// chord-sampled outlines from converted meshes before projection.
+std::vector<FaceOutlinePoint> simplify_outline_polyline(
+    const std::vector<FaceOutlinePoint>& points, double tolerance);
+
 struct PlanarFaceProfile {
   PlaneFrame plane_frame;
   std::vector<SketchProfilePoint> outer_points;

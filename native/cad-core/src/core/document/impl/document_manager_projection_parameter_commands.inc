@@ -6,6 +6,11 @@
   DocumentState project_profile_into_sketch(const std::string& profile_id);
   DocumentState project_edge_into_sketch(const std::string& edge_id);
   DocumentState project_vertex_into_sketch(const std::string& vertex_id);
+  // Project a mesh body onto the active sketch plane as fixed sketch
+  // lines: "section" = cross-section at the sketch plane, "silhouette"
+  // = visible outline projected along the plane normal.
+  DocumentState project_body_into_sketch(const std::string& body_id,
+                                         const std::string& mode);
   // Parameter CRUD — document-scoped named numeric parameters that can
   // be referenced by name in sketch dimension expressions.
   DocumentState add_parameter(const std::string& name,

@@ -3,7 +3,9 @@ void add_sketch_circle(FeatureEntry& feature,
                        double center_x,
                        double center_y,
                        double radius,
-                       bool is_construction) {
+                       bool is_construction,
+                       bool auto_dimensions,
+                       bool refresh_immediately) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch circles");
   }
@@ -39,7 +41,9 @@ void add_sketch_circle(FeatureEntry& feature,
       .is_construction = is_construction,
   });
   const auto& circle = feature.sketch_parameters->circles.back();
-  if (!is_construction) {
+  // Projected circles (auto_dimensions = false) skip the automatic
+  // radius dimension — same rationale as add_sketch_line.
+  if (!is_construction && auto_dimensions) {
     feature.sketch_parameters->dimensions.push_back(SketchDimension{
         .id = "dim-circle-" + circle.id,
         .kind = "circle_radius",
@@ -48,11 +52,13 @@ void add_sketch_circle(FeatureEntry& feature,
         .is_auto = true,
     });
   }
-  if (!is_construction) {
+  if (!is_construction && refresh_immediately) {
     run_inference_on_new_circle(*feature.sketch_parameters,
                                 feature.sketch_parameters->circles.back());
   }
-  refresh_sketch_with_append_focus(feature, {circle.id});
+  if (refresh_immediately) {
+    refresh_sketch_with_append_focus(feature, {circle.id});
+  }
 }
 
 void add_sketch_arc(FeatureEntry& feature,
@@ -67,7 +73,9 @@ void add_sketch_arc(FeatureEntry& feature,
                     double center_y,
                     double radius,
                     bool ccw,
-                    bool is_construction) {
+                    bool is_construction,
+                    bool auto_dimensions,
+                    bool refresh_immediately) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch arcs");
   }
@@ -139,7 +147,9 @@ void add_sketch_arc(FeatureEntry& feature,
       .is_construction = is_construction,
   });
 
-  if (!is_construction) {
+  // Projected arcs (auto_dimensions = false) skip the automatic radius
+  // dimension — same rationale as add_sketch_line.
+  if (!is_construction && auto_dimensions) {
     const auto& arc = feature.sketch_parameters->arcs.back();
     feature.sketch_parameters->dimensions.push_back(SketchDimension{
         .id = "dim-arc-" + arc.id,
@@ -150,8 +160,10 @@ void add_sketch_arc(FeatureEntry& feature,
     });
   }
 
-  refresh_sketch_with_append_focus(
-      feature, {"arc-" + std::to_string(arc_index)});
+  if (refresh_immediately) {
+    refresh_sketch_with_append_focus(
+        feature, {"arc-" + std::to_string(arc_index)});
+  }
 
   // Arc endpoints start unfixed. The arc's shape is cached at creation;
   // the user can toggle fix on individual endpoints via the constraint

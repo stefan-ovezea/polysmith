@@ -18,6 +18,8 @@ TopoDS_Shape build_hole_cutter_shape(const HoleFeatureParameters& parameters);
 TopoDS_Shape build_fastener_shape(const FastenerFeatureParameters& parameters);
 TopoDS_Shape build_plugin_feature_shape(
     const PluginFeatureParameters& parameters);
+TopoDS_Shape build_mesh_import_shape(
+    const MeshImportFeatureParameters& parameters);
 
 // Convenience that dispatches on FeatureEntry::kind. Returns a null shape
 // for non-solid features (e.g. sketches) instead of throwing, so callers

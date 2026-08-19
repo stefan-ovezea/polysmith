@@ -287,11 +287,14 @@ interface AppHeaderProps
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
   dimensionToolMode: import("@/types").DimensionToolMode;
   onSetDimensionToolMode: (mode: import("@/types").DimensionToolMode) => void;
+  bodyProjectionMode: "section" | "silhouette";
+  onSetBodyProjectionMode: (mode: "section" | "silhouette") => void;
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
   onSaveDocument: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
+  onImportMesh: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   pluginMenuItems: Array<{
@@ -370,11 +373,14 @@ export function AppHeader({
   onSetPolygonToolMode,
   dimensionToolMode,
   onSetDimensionToolMode,
+  bodyProjectionMode,
+  onSetBodyProjectionMode,
   onStart,
   onCreateDocument,
   onExportDocument,
   onSaveDocument,
   onLoadDocument,
+  onImportMesh,
   onUndo,
   onRedo,
   pluginMenuItems,
@@ -662,11 +668,24 @@ export function AppHeader({
               { label: t("header.open"), onSelect: () => void onLoadDocument() },
               { label: t("header.save"), onSelect: () => void onSaveDocument() },
               {
+                label: t("header.importMesh"),
+                onSelect: () => void onImportMesh(),
+              },
+              {
                 label: t("header.exportStep"),
                 onSelect: () => void onExportDocument(),
               },
             ]}
           />
+          <button
+            type="button"
+            className="cad-ribbon-action"
+            disabled={disabled}
+            title={t("header.importMesh")}
+            onClick={() => void onImportMesh()}
+          >
+            {t("header.importMesh")}
+          </button>
           <MenuDropdown
             label={t("header.edit")}
             icon={<EditMenuIcon />}
@@ -854,6 +873,8 @@ export function AppHeader({
                 onSetPolygonToolMode={onSetPolygonToolMode}
                 dimensionToolMode={dimensionToolMode}
                 onSetDimensionToolMode={onSetDimensionToolMode}
+                bodyProjectionMode={bodyProjectionMode}
+                onSetBodyProjectionMode={onSetBodyProjectionMode}
                 onStartSketch={onStartSketch}
                 onFinishSketch={onFinishSketch}
                 onCancelSketchConstraint={onCancelSketchConstraint}

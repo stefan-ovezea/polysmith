@@ -40,6 +40,14 @@ if (isWindows) {
     .join(delimiter);
 }
 
+// OCCT 8.0 resource files (STEP/IGES/STL export) — mirror the Tauri
+// spawn env in cad_core.rs so writer tests run under the same
+// conditions as the app.
+const occtSrc = join(root, "third_party", "occt8-build", "src");
+if (existsSync(occtSrc)) {
+  env.CSF_OCCTResourcePath = occtSrc;
+}
+
 let failed = 0;
 for (const test of tests) {
   const result = spawnSync(join(exeDir, test), [], { stdio: "inherit", env });

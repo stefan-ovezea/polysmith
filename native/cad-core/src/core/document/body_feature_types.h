@@ -129,4 +129,23 @@ struct ShellFeatureParameters {
   bool is_pending = false;
 };
 
+// Imported STL mesh body.  Only the source path is persisted — the
+// mesh itself is re-read from disk at every compile, so the document
+// stays small and the feature degrades gracefully (dependency_broken)
+// when the file moves or is deleted.
+struct MeshImportFeatureParameters {
+  std::string file_path;
+  double scale = 1.0;  // STL is unitless; assumed mm, scaled by this.
+};
+
+// Converts a mesh_import body into a regular solid body alongside the
+// mesh body (the mesh body itself is kept). The converted solid is
+// snapshotted at creation (same pattern as a standalone body copy), so
+// it is independent afterwards — the source mesh body can be deleted
+// without losing it.
+struct MeshToBodyFeatureParameters {
+  std::string source_body_id;     // mesh body the conversion came from
+  std::string serialized_shape;   // B-rep snapshot of the converted solid
+};
+
 }  // namespace polysmith::core

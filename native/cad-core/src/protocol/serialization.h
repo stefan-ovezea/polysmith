@@ -10,8 +10,14 @@ namespace polysmith::protocol {
 
 using json = nlohmann::json;
 
-json to_payload(const polysmith::core::FeatureEntry& feature);
-json to_payload(const polysmith::core::DocumentState& document);
+// When `include_opaque` is false (the default, used for document_state
+// events), large opaque blobs the UI never reads — B-rep shape
+// snapshots on mesh_to_body and standalone body copies — are omitted
+// from the payload. Save/load passes true to persist them.
+json to_payload(const polysmith::core::FeatureEntry& feature,
+                bool include_opaque = false);
+json to_payload(const polysmith::core::DocumentState& document,
+                bool include_opaque = false);
 json to_payload(const polysmith::core::SessionState& session);
 json to_payload(const polysmith::core::ViewportBoxPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportCylinderPrimitive& primitive);

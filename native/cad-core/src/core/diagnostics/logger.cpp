@@ -45,8 +45,9 @@ std::string to_string(LogLevel level) {
 
 void log(LogLevel level, const std::string& source, const std::string& message) {
   const std::string timestamp = current_timestamp();
-  polysmith::protocol::write_log("[" + timestamp + "] [" + to_string(level) +
-                                 "] [" + source + "] " + message);
+  const std::string line = "[" + timestamp + "] [" + to_string(level) +
+                           "] [" + source + "] " + message;
+  polysmith::protocol::write_log(line);
   polysmith::protocol::write_message(polysmith::protocol::make_log_event(
       to_string(level), source, message, timestamp));
 }

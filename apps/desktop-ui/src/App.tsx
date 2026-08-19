@@ -177,6 +177,12 @@ function App() {
   const [arcToolMode, setArcToolMode] = useState<
     "three_point" | "center_start_end"
   >("three_point");
+  // Body-projection mode for the Project tool — applies when the
+  // armed tool clicks a mesh body (face clicks route through
+  // handleViewportFaceSelection).
+  const [bodyProjectionMode, setBodyProjectionMode] = useState<
+    "section" | "silhouette"
+  >("section");
   // Rectangle creation mode. Defaults to corner-to-corner (2-point).
   // The SketchToolbar shows a split button with a variant dropdown
   // to switch between corner-corner, center-point, and 3-point.
@@ -434,12 +440,16 @@ function App() {
     exportDocument,
     exportDocumentStl,
     exportBodyStl,
+    importStl,
+    convertMeshToBody,
+    detachBodyProjections,
     saveDocument,
     loadDocument,
     projectFaceIntoSketch,
     projectProfileIntoSketch,
     projectEdgeIntoSketch,
     projectVertexIntoSketch,
+    projectBodyIntoSketch,
     addBoxFeature,
     addCylinderFeature,
     updateBoxFeature,
@@ -844,6 +854,8 @@ function App() {
     createBodyCopy,
     unlinkBodyCopy,
     exportBodyStl,
+    convertMeshToBody,
+    detachBodyProjections,
     updateMoveParameters,
     runAction,
     addMessage,
@@ -1258,8 +1270,12 @@ function App() {
     : null;
 
   return (
-    <main className="cad-shell h-screen">
-      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+    <main className="cad-shell h-screen overflow-x-hidden">
+      {/* grid-cols-1 constrains the implicit column to the window width:
+          without it the single auto column sizes to the widest child
+          (the header toolbar rows), and once that exceeds the window the
+          whole grid — canvas included — stretches past the right edge. */}
+      <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto]">
         <AppTopBar
           workspaceView={workspaceView}
           canOpenSlicerView={
@@ -1291,6 +1307,8 @@ function App() {
           setPolygonToolMode={setPolygonToolMode}
           dimensionToolMode={dimensionToolMode}
           onSetDimensionToolMode={setDimensionToolMode}
+          bodyProjectionMode={bodyProjectionMode}
+          setBodyProjectionMode={setBodyProjectionMode}
           runAction={runAction}
           start={start}
           startMirrorPreview={startMirrorPreview}
@@ -1302,6 +1320,7 @@ function App() {
           viewport={viewport}
           addMessage={addMessage}
           exportDocument={exportDocument}
+          importStl={importStl}
           saveCurrentDocument={saveCurrentDocument}
           undo={undo}
           redo={redo}
@@ -1568,6 +1587,9 @@ function App() {
                   addMidplaneSource,
                   createTangentPlaneFeature,
                   projectFaceIntoSketch,
+                  projectBodyIntoSketch,
+                  document,
+                  bodyProjectionMode,
                   createExtrudeFromSelectedFace,
                   selectFace,
                   getDefaultExtrudeSettings,

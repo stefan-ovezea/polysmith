@@ -53,7 +53,7 @@ FaceResolutionResult resolve_face_reference(
 FaceResolutionResult resolve_face_reference(
     const CamFaceReference& reference,
     const DocumentState& document) {
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.id == reference.bodyId && !body.shape.IsNull()) {
       return resolve_face_reference(reference, body.shape);

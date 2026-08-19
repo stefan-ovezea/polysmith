@@ -23,7 +23,9 @@
                  {"source_body_name",
                   feature.body_copy_parameters->source_body_name},
                  {"serialized_shape",
-                  feature.body_copy_parameters->serialized_shape},
+                  include_opaque
+                      ? json(feature.body_copy_parameters->serialized_shape)
+                      : json("")},
                  {"local_x_axis_x",
                   feature.body_copy_parameters->local_x_axis_x},
                  {"local_x_axis_y",

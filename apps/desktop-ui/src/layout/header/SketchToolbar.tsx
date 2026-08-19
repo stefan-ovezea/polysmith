@@ -48,6 +48,13 @@ interface SketchToolbarProps {
   // Dimension tool split button mode
   dimensionToolMode: DimensionToolMode;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
+  // Body-projection mode for the Project tool: which way a clicked
+  // mesh body is projected onto the active sketch (cross-section at
+  // the sketch plane vs. silhouette along the plane normal). Shown as
+  // a small segmented control next to the Project tool while it is
+  // armed.
+  bodyProjectionMode: "section" | "silhouette";
+  onSetBodyProjectionMode: (mode: "section" | "silhouette") => void;
 }
 
 const sketchTools: Array<{
@@ -108,6 +115,8 @@ export function SketchToolbar({
   onSetPolygonToolMode,
   dimensionToolMode,
   onSetDimensionToolMode,
+  bodyProjectionMode,
+  onSetBodyProjectionMode,
 }: SketchToolbarProps) {
   const { config, updateConfig } = useAppConfig();
   const { t } = useTranslation();
@@ -361,6 +370,34 @@ export function SketchToolbar({
         <DimensionIcon />
       </SplitToolButton>
       </span>
+      {activeSketchTool === "project" ? (
+        <>
+          <button
+            type="button"
+            className={
+              bodyProjectionMode === "section"
+                ? "cad-ribbon-action cad-ribbon-action-primary"
+                : "cad-ribbon-action"
+            }
+            data-tooltip={t("toolbar.projectSection")}
+            onClick={() => onSetBodyProjectionMode("section")}
+          >
+            {t("toolbar.projectSection")}
+          </button>
+          <button
+            type="button"
+            className={
+              bodyProjectionMode === "silhouette"
+                ? "cad-ribbon-action cad-ribbon-action-primary"
+                : "cad-ribbon-action"
+            }
+            data-tooltip={t("toolbar.projectSilhouette")}
+            onClick={() => onSetBodyProjectionMode("silhouette")}
+          >
+            {t("toolbar.projectSilhouette")}
+          </button>
+        </>
+      ) : null}
       <div className="h-8 w-px bg-white/10" />
       <SketchConstraintControls
         activeSketchPlaneId={activeSketchPlaneId}

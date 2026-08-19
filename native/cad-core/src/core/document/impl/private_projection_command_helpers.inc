@@ -1,3 +1,11 @@
+// Guard against degenerate outlines (a face whose wire walk explodes
+// into hundreds of thousands of corners). With bulk insertion the
+// projection itself is near-linear, and the planegcs solver is
+// skipped entirely for constraint-free projected sketches — so real
+// mesh faces (a fan panel projects ~900 corners) complete in seconds
+// and are far below this ceiling.
+constexpr int kMaxProjectionOutlineCorners = 5000;
+
 // Validate that the active sketch in `document` is set up to receive
 // projected geometry: there must be an active sketch with a plane
 // frame. Returns the matching FeatureEntry iterator on success and

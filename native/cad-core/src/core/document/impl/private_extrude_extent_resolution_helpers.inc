@@ -127,7 +127,7 @@ void resolve_extrude_side_extent(
     return;
   }
 
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   const gp_Pnt origin = extrude_plane_origin(params);
   const gp_Vec direction = extrude_normal_vector(params, side_sign);
   std::optional<double> distance;

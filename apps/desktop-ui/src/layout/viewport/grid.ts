@@ -114,6 +114,11 @@ export function buildDynamicGrid(
     transparent: true,
     opacity,
     depthWrite: false,
+    // The sketch plane is often exactly coplanar with a body face
+    // (sketch-on-face); draw the grid over the coincident surface like
+    // the sketch overlay entities. (polygonOffset does not affect line
+    // fragments in WebGL, so the offset approach never helped.)
+    depthTest: false,
   });
   return new THREE.LineSegments(geometry, material);
 }
@@ -154,6 +159,11 @@ export function buildAxisLines(
     transparent: true,
     opacity,
     depthWrite: false,
+    // The sketch plane is often exactly coplanar with a body face
+    // (sketch-on-face); draw the grid over the coincident surface like
+    // the sketch overlay entities. (polygonOffset does not affect line
+    // fragments in WebGL, so the offset approach never helped.)
+    depthTest: false,
   });
   return new THREE.LineSegments(geometry, material);
 }

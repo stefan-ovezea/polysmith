@@ -68,6 +68,7 @@ void CadCoreApp::handle_command_line(const std::string& line) {
   const CommandMessage command = polysmith::protocol::parse_command(line);
 
 #include "app/impl/document_session_commands.inc"
+#include "app/impl/mesh_command_handlers.inc"
 #include "app/impl/feature_selection_appearance_commands.inc"
 #include "app/impl/feature_operation_commands.inc"
 #include "app/impl/sketch_edit_commands.inc"

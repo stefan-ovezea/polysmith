@@ -35,6 +35,8 @@ interface BodyMoveActionsContext {
   ) => Promise<void>;
   unlinkBodyCopy: (featureId: string) => Promise<void>;
   exportBodyStl: (filePath: string, bodyId: string) => Promise<void>;
+  convertMeshToBody: (bodyId: string) => Promise<void>;
+  detachBodyProjections: (bodyId: string) => Promise<void>;
   updateMoveParameters: (
     featureId: string,
     parameters: MoveFeatureParameters,
@@ -55,6 +57,8 @@ export function createBodyMoveActions({
   createBodyCopy,
   unlinkBodyCopy,
   exportBodyStl,
+  convertMeshToBody,
+  detachBodyProjections,
   updateMoveParameters,
   runAction,
   addMessage,
@@ -162,10 +166,34 @@ export function createBodyMoveActions({
     });
   }
 
+  async function convertMeshBodyFromContext(bodyId: string) {
+    await runAction(async () => {
+      try {
+        await convertMeshToBody(bodyId);
+        addMessage("mesh converted to body");
+      } catch (error) {
+        addMessage(`convert mesh error: ${String(error)}`);
+      }
+    });
+  }
+
+  async function detachProjectionsFromContext(bodyId: string) {
+    await runAction(async () => {
+      try {
+        await detachBodyProjections(bodyId);
+        addMessage("projection links detached");
+      } catch (error) {
+        addMessage(`detach projections error: ${String(error)}`);
+      }
+    });
+  }
+
   const bodyContextActions = {
     onMoveBody: moveBodyFromContext,
     onCopyBody: copyBodyAndMove,
     onExportBodyMesh: exportBodyAsMesh,
+    onConvertMeshToBody: convertMeshBodyFromContext,
+    onDetachBodyProjections: detachProjectionsFromContext,
     onUnlinkBodyCopy: confirmAndUnlinkBodyCopy,
   };
 

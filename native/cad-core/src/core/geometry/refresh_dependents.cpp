@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -28,6 +29,9 @@
 #include "core/document/document.h"
 #include "core/geometry/edge_geometry.h"
 #include "core/geometry/face_geometry.h"
+#include "core/geometry/feature_shape.h"
+#include "core/geometry/mesh_import_helpers.h"
+#include "core/geometry/mesh_projection.h"
 #include "core/document/feature.h"
 #include "core/sketch/sketch_feature.h"
 

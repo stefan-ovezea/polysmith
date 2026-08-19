@@ -85,6 +85,35 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
   if (deleted_selected) {
     document_->selected_feature_id = std::nullopt;
   }
+
+  // Freeze construction planes that reference the deleted feature:
+  // they keep their cached frame (position) but sever the reference,
+  // so sketches hosted on them stay healthy. Mirrors the Detach
+  // Projections semantics for projection links.
+  for (auto& remaining : document_->feature_history) {
+    if (remaining.kind != "construction_plane" ||
+        !remaining.construction_plane_parameters.has_value()) {
+      continue;
+    }
+    auto& params = remaining.construction_plane_parameters.value();
+    const auto references_deleted = [&](const std::string& source_id) {
+      return source_id == feature_id ||
+             source_id.rfind(feature_id + ":", 0) == 0;
+    };
+    const bool depends_on_deleted =
+        references_deleted(params.source_plane_id) ||
+        std::any_of(params.source_plane_ids.begin(),
+                    params.source_plane_ids.end(), references_deleted) ||
+        references_deleted(params.source_axis_id);
+    if (depends_on_deleted) {
+      params.plane_type = "detached";
+      params.source_plane_id.clear();
+      params.source_plane_ids.clear();
+      params.source_axis_id.clear();
+      remaining.parameters_summary = "Detached";
+    }
+  }
+
   bump_geometry_revision();
   return document_.value();
 }

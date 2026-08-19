@@ -64,6 +64,17 @@
   DocumentState create_body_copy(const std::string& source_body_id,
                                  const std::string& copy_mode);
   DocumentState unlink_body_copy(const std::string& feature_id);
+  // Import an STL file as a mesh body. The document stores only the
+  // source path (+ scale); the mesh is re-read from disk on every
+  // compile and degrades via dependency_broken when the file is gone.
+  DocumentState import_stl(const std::string& file_path, double scale = 1.0);
+  // Convert a mesh_import body into a regular solid body alongside it.
+  DocumentState convert_mesh_to_body(const std::string& source_body_id);
+  // Remove every live projection link sourced from this body (face /
+  // edge / vertex / body projections). The generated sketch entities
+  // stay as fixed lines — only the link goes away, so the body can be
+  // deleted without breaking the sketches built on the projection.
+  DocumentState detach_body_projections(const std::string& body_id);
   DocumentState set_body_color(const std::string& body_id,
                                const std::string& color);
   DocumentState set_face_color(const std::string& face_id,

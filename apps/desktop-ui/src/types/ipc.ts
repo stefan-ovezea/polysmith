@@ -541,6 +541,40 @@ export interface LoadDocumentCommand {
   };
 }
 
+export interface ImportStlCommand {
+  id: string;
+  type: "import_stl";
+  payload: {
+    file_path: string;
+    scale?: number;
+  };
+}
+
+export interface ConvertMeshToBodyCommand {
+  id: string;
+  type: "convert_mesh_to_body";
+  payload: {
+    body_id: string;
+  };
+}
+
+export interface DetachBodyProjectionsCommand {
+  id: string;
+  type: "detach_body_projections";
+  payload: {
+    body_id: string;
+  };
+}
+
+export interface ProjectBodyIntoSketchCommand {
+  id: string;
+  type: "project_body_into_sketch";
+  payload: {
+    body_id: string;
+    mode: "section" | "silhouette";
+  };
+}
+
 export interface ProjectFaceIntoSketchCommand {
   id: string;
   type: "project_face_into_sketch";
@@ -632,10 +666,14 @@ export type CoreCommand =
   | ExportBodyStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
+  | ImportStlCommand
+  | ConvertMeshToBodyCommand
+  | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand
   | ProjectEdgeIntoSketchCommand
   | ProjectVertexIntoSketchCommand
+  | ProjectBodyIntoSketchCommand
   | AddBoxFeatureCommand
   | AddCylinderFeatureCommand
   | UpdateBoxFeatureCommand
