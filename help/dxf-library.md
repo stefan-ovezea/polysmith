@@ -4,6 +4,11 @@ Polysmith integrates **libdxfrw** v0.6.3, a C++ library for reading and
 writing DXF (Drawing Exchange Format) files — the industry-standard
 interchange format for 2D CAD drawings.
 
+Consumed by the DXF import/export feature: `native/cad-core/src/dxf/dxf_import.cpp`
+(read side, `DxfReadInterface`) and `dxf_export.cpp` (write side,
+`DxfWriteInterface`), driven by the `import_dxf` / `export_document_dxf`
+IPC commands.
+
 ## Source
 
 | Detail | Value |

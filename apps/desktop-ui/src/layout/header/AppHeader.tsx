@@ -292,9 +292,11 @@ interface AppHeaderProps
   onStart: () => Promise<void>;
   onCreateDocument: () => Promise<void>;
   onExportDocument: () => Promise<void>;
+  onExportDxf: () => Promise<void>;
   onSaveDocument: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
   onImportMesh: () => Promise<void>;
+  onImportDxf: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   pluginMenuItems: Array<{
@@ -378,9 +380,11 @@ export function AppHeader({
   onStart,
   onCreateDocument,
   onExportDocument,
+  onExportDxf,
   onSaveDocument,
   onLoadDocument,
   onImportMesh,
+  onImportDxf,
   onUndo,
   onRedo,
   pluginMenuItems,
@@ -672,8 +676,16 @@ export function AppHeader({
                 onSelect: () => void onImportMesh(),
               },
               {
+                label: t("header.importDxf"),
+                onSelect: () => void onImportDxf(),
+              },
+              {
                 label: t("header.exportStep"),
                 onSelect: () => void onExportDocument(),
+              },
+              {
+                label: t("header.exportDxf"),
+                onSelect: () => void onExportDxf(),
               },
             ]}
           />
@@ -685,6 +697,15 @@ export function AppHeader({
             onClick={() => void onImportMesh()}
           >
             {t("header.importMesh")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action"
+            disabled={disabled}
+            title={t("header.importDxf")}
+            onClick={() => void onImportDxf()}
+          >
+            {t("header.importDxf")}
           </button>
           <MenuDropdown
             label={t("header.edit")}

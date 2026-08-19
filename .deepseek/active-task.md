@@ -1,43 +1,54 @@
-# Active Task: STL Import/Convert/Project — freeze FIXED and user-verified; awaiting commit approval
+# Active Task: DXF import/export feature
 
-> **Branch:** `feature/stl`
-> **Date:** 2026-08-19 (post-verification)
+> **Branch:** `feature/dxf` (based on merged dev `b89e599`)
+> **Date:** 2026-08-19
 
-## Status: done except the commit
+## Status: core + TS + UI implemented and unit-verified; awaiting manual app test + commit approval
 
-The post-projection UI freeze was traced to `rectangleDimensionEntityIds`
-(O(n⁴) 4-line-combination scan) in `apps/desktop-ui/src/lib/viewportScene.ts`,
-rewritten to O(n²) with identical semantics + a skip-guard when no
-line_length/line_angle dimensions exist. **User confirmed the fix at runtime:
-fan-panel STL now projects and edits fast ("like Fusion").**
+**Scope (user-approved):** `import_dxf` creates a NEW sketch on ref-plane-xy
+(default, `plane_id` optional) with LINE/CIRCLE/ARC/LWPOLYLINE/POLYLINE
+(bulge→arc)/POINT/SPLINE (de Boor 64-seg)/ELLIPSE; unsupported + degenerate
+entities skipped + counted (log warning + `parameters_summary`).
+`export_document_dxf` writes the ACTIVE sketch as ASCII AC1027 DXF
+(LINE/CIRCLE/ARC/POINT; polygons stay constituent lines). `$INSUNITS`
+inches→mm scaling on import; units echoed on export.
 
-All temporary instrumentation from the debug sessions has been removed
-(core_debug.log tee, debug_log handler, debugLog marks, proj_diag lines,
-REPLAY alias + replay files, remote-debugging arg — one genuinely useful
-`log_error("projection", "project_face outline failed")` was kept).
-Verification after cleanup: C++ core rebuilt clean, **all 8 C++ suites pass**,
-`tsc --noEmit` clean, vitest 32 passed / 5 skipped (incl. new permanent
-`viewportSceneRectangleDims.test.ts`).
+## Done
 
-## Remaining: commit (needs user approval)
+- Core parse/write layers `native/cad-core/src/dxf/dxf_import.{h,cpp}` /
+  `dxf_export.{h,cpp}`; document manager methods in
+  `impl/dxf_commands.inc` + declaration `.inc`; handlers
+  `app/impl/dxf_command_handlers.inc`; schema enum +=
+  `import_dxf`/`export_document_dxf`.
+- `add_sketch_line` gained `infer_constraints` flag (default true) —
+  DXF import passes false + `snap_start=false` so imported geometry
+  stays exact (H/V hint snapping deformed near-axis segments).
+- Imported vertices are NOT fixed (user feedback 2026-08-20: fix badges
+  cluttered the drawing and fixed endpoints block later constraint
+  edits). Imported POINTs are unfixed after the first refresh;
+  `sync_fixed_point_flags` preserves the unfix.
+- dxfrw target fixed: added `intern/dwgBuffer.cpp` + `intern/dwgutil.cpp`
+  (link-required by entity parseDwg paths; previous builds reused a
+  stale lib). Sanity gate rejects non-DXF files (atoi quirk).
+- Tests: new `cad_core_dxf_import_export_test` suite, **15/15 pass**;
+  **all 9 C++ suites pass** (`pnpm test:core`).
+- TS: `ipcProtocol.ts` builders, `types/ipc.ts`, `aiCommandPayloadSchemas.ts`,
+  `ipcSchema.ts` (`format: "dxf"`), `useCadCore.ts` hooks — `tsc --noEmit`
+  clean.
+- UI: `documentDialogs.ts` (import/open + export/save dxf), `AppHeader.tsx`
+  (File menu + ribbon buttons), `AppTopBar.tsx` handlers, `en.json` keys.
+- Docs: `wiki/Implementation-Log.md` entry, `help/dxf-library.md` note.
 
-- Commit feature/stl (fix + feature work + cleanup). Working tree has the
-  whole feature/stl diff (~88 tracked files + ~11 new files).
-- EXCLUDE from the commit: `Top Panel with Fan.stl`, `body.stl`,
-  `apps/desktop-ui/src-tauri/part.json` (user test saves),
-  `native/cad-core/build-asan/` (build dir, not gitignored yet),
-  `core_debug.log` (already gitignored).
-- Consider adding `build-asan/` to .gitignore.
-- After merge: delete feature/stl branch (per branch workflow).
+## Remaining
 
-## Log of what was fixed (for the commit message)
-
-1. **O(n⁴) rectangle scan** in `viewportScene.ts` → O(n²) + dimension guard
-   (THE freeze fix — see `viewportSceneRectangleDims.test.ts`).
-2. Core-side fixes from the earlier session: topology-cache move-order bug,
-   coplanar-section leak, silhouette wobble threshold, mesh-face pick storm,
-   hidden-body pick invalidation, grid depthTest, project-tool pick skips,
-   face-pick tie-break.
-3. STL import/convert/project feature work (mesh_import_helpers,
-   mesh_projection, mesh_commands, protocol mesh payload blocks,
-   `stl_import_test.cpp` — self-contained, generates its own fixtures).
+1. **Manual app test** (never commit untested code): restart `pnpm dev`,
+   File → Import DXF with a real-world DXF (LibreCAD/QCAD export with
+   layers/polylines), confirm sketch activates with geometry, extrude a
+   profile, Export DXF, re-import the export, check Logs panel warnings
+   for skipped entities.
+2. Run full vitest (`npx vitest run`) — TS suites.
+3. Commit (needs user approval) + wiki mirror sync (`polysmith.wiki`
+   rsync — the mirror dir is not checked out on this machine).
+4. Follow-ups (explicitly out of v1, logged in Implementation-Log):
+   DXF dimension round-trip, INSERT block resolution, DWG support
+   (iconv + excluded sources), drag-drop import.

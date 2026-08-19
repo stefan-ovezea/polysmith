@@ -439,8 +439,10 @@ function App() {
     createDocument,
     exportDocument,
     exportDocumentStl,
+    exportDocumentDxf,
     exportBodyStl,
     importStl,
+    importDxf,
     convertMeshToBody,
     detachBodyProjections,
     saveDocument,
@@ -1320,7 +1322,9 @@ function App() {
           viewport={viewport}
           addMessage={addMessage}
           exportDocument={exportDocument}
+          exportDocumentDxf={exportDocumentDxf}
           importStl={importStl}
+          importDxf={importDxf}
           saveCurrentDocument={saveCurrentDocument}
           undo={undo}
           redo={redo}

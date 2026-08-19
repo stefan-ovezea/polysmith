@@ -2,6 +2,8 @@
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
+#include "dxf/dxf_export.h"
+#include "dxf/dxf_import.h"
 
 #include <algorithm>
 #include <array>
@@ -83,4 +85,5 @@ namespace {
 #include "core/document/impl/document_io_commands.inc"
 #include "core/document/impl/session_cam_commands.inc"
 #include "core/document/impl/mesh_commands.inc"
+#include "core/document/impl/dxf_commands.inc"
 }  // namespace polysmith::core
