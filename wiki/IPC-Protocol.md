@@ -230,6 +230,13 @@ The current implementation now also includes a focused export boundary:
 - the core replies with `document_exported` when the export succeeds; the payload's `format` field reflects the writer that ran (`step` or `stl`)
 - the UI must not reconstruct geometry or write CAD files itself
 
+The same boundary now imports STL meshes into the live document:
+
+- `import_stl { file_path, scale? }` creates a `mesh_import` body feature and replies with `document_state`. Only the source path and scale are persisted — the core re-reads the STL from disk on every compile; a missing file degrades the feature with `dependency_broken` + a timeline warning instead of crashing.
+- `convert_mesh_to_body { body_id }` creates a `mesh_to_body` feature that converts the referenced mesh into a regular solid body alongside it (sew → make solid → heal → merge coplanar facets). The converted solid is snapshotted at creation (independent body copy pattern), so the mesh body can be deleted afterwards without losing it. Requires a watertight mesh; a structured error is returned otherwise.
+- `project_body_into_sketch { body_id, mode }` projects a mesh body onto the active sketch plane as fixed-endpoint sketch lines, recorded as a live `SketchProjection` (`source_kind = "body"`). `mode = "section"` intersects the mesh with the sketch plane; `mode = "silhouette"` projects the outline seen along the plane normal (Fusion "Project" semantics). Both modes also work on origin ref-plane sketches.
+- v1 limitations: curved STL edges project as polylines (no arc recovery); mesh bodies are shells — booleans/fillets/chamfers/holes are gated off them (converted solids get all body ops); STL is assumed mm (the `scale` parameter is available on the command/AI path); meshes above 50k faces skip the coplanar-facet merge when converting.
+
 Embedded OrcaSlicer integration uses this same export boundary. Switching to
 Slicer view only opens/embeds the configured native OrcaSlicer process. It does
 not export the active document. The separate Export to Slicer action is enabled

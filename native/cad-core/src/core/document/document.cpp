@@ -1,4 +1,5 @@
 #include "core/document/document.h"
+#include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
 
@@ -6,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -41,6 +43,8 @@
 #include "core/geometry/edge_geometry.h"
 #include "core/geometry/face_geometry.h"
 #include "core/geometry/feature_shape.h"
+#include "core/geometry/mesh_import_helpers.h"
+#include "core/geometry/mesh_projection.h"
 #include "core/sketch/formula_eval.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/geometry/refresh_dependents.h"
@@ -78,4 +82,5 @@ namespace {
 #include "core/document/impl/body_appearance_commands.inc"
 #include "core/document/impl/document_io_commands.inc"
 #include "core/document/impl/session_cam_commands.inc"
+#include "core/document/impl/mesh_commands.inc"
 }  // namespace polysmith::core

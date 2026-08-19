@@ -5,7 +5,7 @@ DocumentState DocumentManager::create_body_copy(
 
   const std::string normalized_mode =
       copy_mode == "standalone" ? "standalone" : "linked";
-  const CompiledBodies compiled = compile_bodies(*document_);
+  const CompiledBodies compiled = compile_bodies(*document_, /*include_meshes=*/false);
   const auto body_it = std::find_if(
       compiled.bodies.begin(),
       compiled.bodies.end(),
@@ -71,7 +71,7 @@ DocumentState DocumentManager::unlink_body_copy(const std::string& feature_id) {
       static_cast<std::size_t>(std::distance(document_->feature_history.begin(),
                                              feature_it));
   prefix.feature_history.resize(feature_index + 1);
-  const CompiledBodies compiled = compile_bodies(prefix);
+  const CompiledBodies compiled = compile_bodies(prefix, /*include_meshes=*/false);
   const auto body_it = std::find_if(
       compiled.bodies.begin(),
       compiled.bodies.end(),

@@ -55,7 +55,10 @@ void delete_sketch_mirror_relation(
     const std::string& relation_id);
 void set_sketch_vertex_fixed(FeatureEntry& feature,
                             const std::string& point_id,
-                            bool is_fixed);
+                            bool is_fixed,
+                            // Bulk flows (projection) pass false and
+                            // refresh once after fixing all endpoints.
+                            bool refresh_immediately = true);
 // Bind a sketch point to the midpoint of a host line. The point is
 // pulled to the line's midpoint immediately and re-pulled on every
 // subsequent edit (via `enforce_midpoint_anchors` inside the derived

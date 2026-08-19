@@ -444,6 +444,7 @@ export function buildSolidFaceObject(face: SolidFaceScene) {
     mesh.applyMatrix4(makePlaneTransformMatrixFromFrame(face.planeFrame));
   }
   mesh.userData.faceId = face.faceId;
+  mesh.userData.ownerKind = face.ownerKind;
   mesh.renderOrder = 4;
   return {
     mesh,

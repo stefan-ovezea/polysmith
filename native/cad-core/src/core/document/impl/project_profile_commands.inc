@@ -60,16 +60,31 @@ DocumentState DocumentManager::project_profile_into_sketch(
                                        a.first,
                                        a.second,
                                        b.first,
-                                       b.second);
+                                       b.second,
+                                       /*is_construction=*/false,
+                                       /*snap_start=*/true,
+                                       /*auto_dimensions=*/false,
+                                       /*refresh_immediately=*/false);
     }
+    // Bulk insertion — see project_face_commands.inc for the rationale.
     for (size_t index = lines_before;
          index < sketch_it->sketch_parameters->lines.size(); ++index) {
-      const auto& line = sketch_it->sketch_parameters->lines[index];
+      record.generated_line_ids.push_back(
+          sketch_it->sketch_parameters->lines[index].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_line_ids);
+    for (const auto& line_id : record.generated_line_ids) {
+      const auto& line = *std::find_if(
+          sketch_it->sketch_parameters->lines.begin(),
+          sketch_it->sketch_parameters->lines.end(),
+          [&](const auto& candidate) { return candidate.id == line_id; });
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.start_vertex_id, true);
+          *sketch_it, line.start_vertex_id, true,
+          /*refresh_immediately=*/false);
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.end_vertex_id, true);
-      record.generated_line_ids.push_back(line.id);
+          *sketch_it, line.end_vertex_id, true,
+          /*refresh_immediately=*/false);
     }
   };
 
@@ -84,14 +99,26 @@ DocumentState DocumentManager::project_profile_into_sketch(
                                        next_sketch_circle_id_++,
                                        center_local.first,
                                        center_local.second,
-                                       circle.radius);
+                                       circle.radius,
+                                       /*is_construction=*/false,
+                                       /*auto_dimensions=*/false,
+                                       /*refresh_immediately=*/false);
+    // Bulk insertion — see project_face_commands.inc for the rationale.
     for (size_t index = circles_before;
          index < sketch_it->sketch_parameters->circles.size(); ++index) {
-      const auto& circle = sketch_it->sketch_parameters->circles[index];
-      polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, circle_center_vertex_id(circle), true);
       record.generated_circle_ids.push_back(
-          circle.id);
+          sketch_it->sketch_parameters->circles[index].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_circle_ids);
+    for (const auto& circle_id : record.generated_circle_ids) {
+      const auto& circle = *std::find_if(
+          sketch_it->sketch_parameters->circles.begin(),
+          sketch_it->sketch_parameters->circles.end(),
+          [&](const auto& candidate) { return candidate.id == circle_id; });
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, circle_center_vertex_id(circle), true,
+          /*refresh_immediately=*/false);
     }
   };
 
@@ -143,7 +170,13 @@ DocumentState DocumentManager::project_profile_into_sketch(
     }
   }
 
+  // Bulk insertion — see project_face_commands.inc for the rationale.
+  // Collect the focus ids BEFORE moving the record.
+  std::vector<std::string> focus_ids = record.generated_line_ids;
+  focus_ids.insert(focus_ids.end(), record.generated_circle_ids.begin(),
+                   record.generated_circle_ids.end());
   sketch_it->sketch_parameters->projections.push_back(std::move(record));
+  polysmith::core::refresh_sketch_with_append_focus(*sketch_it, focus_ids);
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;

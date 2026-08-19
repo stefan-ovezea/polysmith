@@ -79,16 +79,32 @@ DocumentState DocumentManager::project_edge_into_sketch(
                                      a.first,
                                      a.second,
                                      b.first,
-                                     b.second);
-    // Lock both endpoints — projected geometry is derived.
+                                     b.second,
+                                     /*is_construction=*/false,
+                                     /*snap_start=*/true,
+                                     /*auto_dimensions=*/false,
+                                     /*refresh_immediately=*/false);
+    // Bulk insertion — see project_face_commands.inc for the rationale:
+    // refresh once so the vertex records exist, then fix without
+    // per-call refreshes.
     for (size_t i = lines_before;
          i < sketch_it->sketch_parameters->lines.size(); ++i) {
-      const auto& line = sketch_it->sketch_parameters->lines[i];
+      record.generated_line_ids.push_back(
+          sketch_it->sketch_parameters->lines[i].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_line_ids);
+    for (const auto& line_id : record.generated_line_ids) {
+      const auto& line = *std::find_if(
+          sketch_it->sketch_parameters->lines.begin(),
+          sketch_it->sketch_parameters->lines.end(),
+          [&](const auto& candidate) { return candidate.id == line_id; });
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.start_vertex_id, true);
+          *sketch_it, line.start_vertex_id, true,
+          /*refresh_immediately=*/false);
       polysmith::core::set_sketch_vertex_fixed(
-          *sketch_it, line.end_vertex_id, true);
-      record.generated_line_ids.push_back(line.id);
+          *sketch_it, line.end_vertex_id, true,
+          /*refresh_immediately=*/false);
     }
   } else if (edge_geometry->kind == "circle" || edge_geometry->kind == "arc") {
     if (!circle_axis_parallel_to_sketch(frame, edge_geometry->axis)) {
@@ -110,7 +126,10 @@ DocumentState DocumentManager::project_edge_into_sketch(
                                          next_sketch_circle_id_++,
                                          center.first,
                                          center.second,
-                                         edge_geometry->radius);
+                                         edge_geometry->radius,
+                                         /*is_construction=*/false,
+                                         /*auto_dimensions=*/false,
+                                         /*refresh_immediately=*/false);
       for (size_t i = circles_before;
            i < sketch_it->sketch_parameters->circles.size(); ++i) {
         record.generated_circle_ids.push_back(
@@ -147,7 +166,10 @@ DocumentState DocumentManager::project_edge_into_sketch(
                                       center.first,
                                       center.second,
                                       edge_geometry->radius,
-                                      ccw);
+                                      ccw,
+                                      /*is_construction=*/false,
+                                      /*auto_dimensions=*/false,
+                                      /*refresh_immediately=*/false);
       for (size_t i = arcs_before;
            i < sketch_it->sketch_parameters->arcs.size(); ++i) {
         record.generated_arc_ids.push_back(
@@ -161,7 +183,15 @@ DocumentState DocumentManager::project_edge_into_sketch(
         "Edge type is not supported by the Project tool yet: " + edge_id);
   }
 
+  // Bulk insertion — see project_face_commands.inc for the rationale.
+  // Collect the focus ids BEFORE moving the record.
+  std::vector<std::string> focus_ids = record.generated_line_ids;
+  focus_ids.insert(focus_ids.end(), record.generated_circle_ids.begin(),
+                   record.generated_circle_ids.end());
+  focus_ids.insert(focus_ids.end(), record.generated_arc_ids.begin(),
+                   record.generated_arc_ids.end());
   sketch_it->sketch_parameters->projections.push_back(std::move(record));
+  polysmith::core::refresh_sketch_with_append_focus(*sketch_it, focus_ids);
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;

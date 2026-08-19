@@ -8,19 +8,139 @@
 // as a feature-level dependency_broken).
 bool refresh_sketch_projections(const DocumentState& prefix,
                                 FeatureEntry& feature) {
-  if (!feature.sketch_parameters.has_value() ||
-      !feature.sketch_parameters->plane_frame.has_value()) {
+  if (!feature.sketch_parameters.has_value()) {
     return false;
   }
   auto& parameters = feature.sketch_parameters.value();
-  const auto& frame = parameters.plane_frame.value();
+  // Body projections are allowed on origin ref-plane sketches (whose
+  // plane_frame is nullopt — the legacy axis mapping applies), so the
+  // frame is materialized once from the stored frame or the origin
+  // fallback and shared by every branch below.
+  const bool has_body_projection = std::any_of(
+      parameters.projections.begin(), parameters.projections.end(),
+      [](const SketchProjection& projection) {
+        return projection.source_kind == "body";
+      });
+  if (!parameters.plane_frame.has_value() && !has_body_projection) {
+    return false;
+  }
+  const auto resolved_frame = resolve_sketch_projection_frame(parameters);
+  if (!resolved_frame.has_value()) {
+    return false;
+  }
+  SketchFeatureParameters::SketchPlaneFrame materialized_frame{
+      .origin_x = resolved_frame->origin_x,
+      .origin_y = resolved_frame->origin_y,
+      .origin_z = resolved_frame->origin_z,
+      .x_axis_x = resolved_frame->x_axis_x,
+      .x_axis_y = resolved_frame->x_axis_y,
+      .x_axis_z = resolved_frame->x_axis_z,
+      .y_axis_x = resolved_frame->y_axis_x,
+      .y_axis_y = resolved_frame->y_axis_y,
+      .y_axis_z = resolved_frame->y_axis_z,
+      .normal_x = resolved_frame->normal_x,
+      .normal_y = resolved_frame->normal_y,
+      .normal_z = resolved_frame->normal_z,
+  };
+  const auto& frame = materialized_frame;
 
   bool any_broken = false;
   for (auto& projection : parameters.projections) {
     projection.dependency_broken = false;
     projection.dependency_warning.clear();
 
-    if (projection.source_kind == "vertex") {
+    if (projection.source_kind == "body") {
+      // source_id format: "body:<body_id>:<mode>".
+      const std::string marker = "body:";
+      const size_t mode_pos = projection.source_id.rfind(':');
+      if (projection.source_id.rfind(marker, 0) != 0 ||
+          mode_pos == std::string::npos || mode_pos <= marker.size()) {
+        projection.dependency_broken = true;
+        projection.dependency_warning =
+            "Projected body source id is malformed.";
+        any_broken = true;
+        continue;
+      }
+      const std::string body_id =
+          projection.source_id.substr(marker.size(), mode_pos - marker.size());
+      const std::string mode = projection.source_id.substr(mode_pos + 1);
+
+      const FeatureEntry* source = nullptr;
+      for (const auto& candidate : prefix.feature_history) {
+        if (candidate.id == body_id) {
+          source = &candidate;
+          break;
+        }
+      }
+      const bool source_is_import =
+          source != nullptr && source->kind == "mesh_import" &&
+          source->mesh_import_parameters.has_value();
+      const bool source_is_converted =
+          source != nullptr && source->kind == "mesh_to_body";
+      if (!source_is_import && !source_is_converted) {
+        projection.dependency_broken = true;
+        projection.dependency_warning =
+            "Projected mesh body is no longer available.";
+        any_broken = true;
+        continue;
+      }
+      // Imported meshes re-read the STL; converted meshes resolve via
+      // the compiled prefix (creation-time snapshot).
+      TopoDS_Shape shape;
+      if (source_is_import) {
+        shape = build_feature_shape(*source);
+      } else {
+        const CompiledBodies compiled =
+            compile_bodies(prefix, /*include_meshes=*/false);
+        const auto compiled_it = std::find_if(
+            compiled.bodies.begin(), compiled.bodies.end(),
+            [&](const CompiledBody& body) { return body.id == body_id; });
+        if (compiled_it != compiled.bodies.end()) {
+          shape = compiled_it->shape;
+        }
+      }
+      if (shape.IsNull()) {
+        projection.dependency_broken = true;
+        projection.dependency_warning =
+            "Projected mesh body source is no longer available.";
+        any_broken = true;
+        continue;
+      }
+      const auto polylines =
+          mode == "section"
+              ? compute_mesh_section_polylines(shape, resolved_frame.value())
+              : compute_mesh_silhouette_polylines(shape,
+                                                  resolved_frame.value());
+      // A polyline of N points emits N-1 lines (closed loops keep the
+      // duplicated closing point) — same emission rule as
+      // project_body_into_sketch.
+      size_t expected_line_count = 0;
+      for (const auto& polyline : polylines) {
+        if (polyline.size() >= 2) {
+          expected_line_count += polyline.size() - 1;
+        }
+      }
+      if (projection.generated_line_ids.size() != expected_line_count) {
+        projection.dependency_broken = true;
+        projection.dependency_warning =
+            "Projected mesh body changed shape. Re-project to update.";
+        any_broken = true;
+        continue;
+      }
+      size_t line_index = 0;
+      for (const auto& polyline : polylines) {
+        for (size_t k = 0; k + 1 < polyline.size(); ++k) {
+          const auto a = world_to_sketch_local(
+              frame, polyline[k].X(), polyline[k].Y(), polyline[k].Z());
+          const auto b = world_to_sketch_local(
+              frame, polyline[k + 1].X(), polyline[k + 1].Y(),
+              polyline[k + 1].Z());
+          patch_sketch_line(parameters,
+                            projection.generated_line_ids[line_index++],
+                            a.first, a.second, b.first, b.second);
+        }
+      }
+    } else if (projection.source_kind == "vertex") {
       const auto position =
           compute_vertex_position(prefix, projection.source_id);
       if (!position.has_value()) {

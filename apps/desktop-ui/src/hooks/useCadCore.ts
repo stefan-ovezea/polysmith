@@ -43,11 +43,15 @@ import {
   makeExportBodyStlCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
+  makeImportStlCommand,
+  makeConvertMeshToBodyCommand,
+  makeDetachBodyProjectionsCommand,
   makeLoadDocumentCommand,
   makeProjectEdgeIntoSketchCommand,
   makeProjectFaceIntoSketchCommand,
   makeProjectProfileIntoSketchCommand,
   makeProjectVertexIntoSketchCommand,
+  makeProjectBodyIntoSketchCommand,
   makeSaveDocumentCommand,
   makeFinishSketchCommand,
   makeReenterSketchCommand,
@@ -233,6 +237,29 @@ export function useCadCore() {
       // document end-to-end.
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    importStl: async (filePath: string, scale = 1.0) => {
+      await sendAndRefreshSessionViewport(
+        makeImportStlCommand(filePath, scale),
+      );
+    },
+    convertMeshToBody: async (bodyId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeConvertMeshToBodyCommand(bodyId),
+      );
+    },
+    detachBodyProjections: async (bodyId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeDetachBodyProjectionsCommand(bodyId),
+      );
+    },
+    projectBodyIntoSketch: async (
+      bodyId: string,
+      mode: "section" | "silhouette",
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeProjectBodyIntoSketchCommand(bodyId, mode),
+      );
     },
     projectFaceIntoSketch: async (faceId: string) => {
       await sendAndRefreshSessionViewport(

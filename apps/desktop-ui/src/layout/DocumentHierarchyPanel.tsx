@@ -28,6 +28,11 @@ interface DocumentHierarchyPanelProps {
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
   onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
+  // Converts a mesh_import body into a regular solid body alongside it.
+  onConvertMeshToBody?: (bodyId: string) => Promise<void> | void;
+  // Removes live projection links sourced from this body (generated
+  // sketch entities stay) so the body can be deleted safely.
+  onDetachBodyProjections?: (bodyId: string) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
   // Optional toggle for the persisted suppressed flag (Phase B). When
   // omitted (e.g. read-only previews) the menu just hides the entry.
@@ -62,6 +67,8 @@ const BODY_KINDS = new Set([
   "fastener",
   "body_copy",
   "plugin_feature",
+  "mesh_import",
+  "mesh_to_body",
 ]);
 
 function EyeIcon({ open }: { open: boolean }) {
@@ -474,6 +481,8 @@ export function DocumentHierarchyPanel({
   onMoveBody,
   onCopyBody,
   onExportBodyMesh,
+  onConvertMeshToBody,
+  onDetachBodyProjections,
   onUnlinkBodyCopy,
   onSetFeatureSuppressed,
 }: DocumentHierarchyPanelProps) {
@@ -489,6 +498,32 @@ export function DocumentHierarchyPanel({
   useContextMenuDismiss(Boolean(contextMenu), () => setContextMenu(null));
 
   const features = document?.feature_history ?? [];
+  // Body ids that are the source of at least one live sketch
+  // projection (face / edge / vertex / body projections) — drives the
+  // "Detach Projections" context-menu entry.
+  const projectionSourceBodyIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const feature of features) {
+      const projections = feature.sketch_parameters?.projections ?? [];
+      for (const projection of projections) {
+        if (projection.source_id.startsWith("body:")) {
+          // "body:<body_id>:<mode>"
+          const rest = projection.source_id.slice("body:".length);
+          const colon = rest.indexOf(":");
+          if (colon > 0) {
+            ids.add(rest.slice(0, colon));
+          }
+        } else {
+          // "<body_id>:face:<index>" etc.
+          const colon = projection.source_id.indexOf(":");
+          if (colon > 0) {
+            ids.add(projection.source_id.slice(0, colon));
+          }
+        }
+      }
+    }
+    return ids;
+  }, [features]);
   const featureNameById = useMemo(
     () =>
       new Map(
@@ -909,6 +944,32 @@ export function DocumentHierarchyPanel({
                   >
                     {t("common.exportAsMesh")}
                   </button>
+                  {contextFeature?.kind === "mesh_import" ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                      onClick={() => {
+                        const id = contextMenu.featureId;
+                        setContextMenu(null);
+                        void onConvertMeshToBody?.(id);
+                      }}
+                    >
+                      {t("common.convertToBody")}
+                    </button>
+                  ) : null}
+                  {projectionSourceBodyIds.has(contextMenu.featureId) ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                      onClick={() => {
+                        const id = contextMenu.featureId;
+                        setContextMenu(null);
+                        void onDetachBodyProjections?.(id);
+                      }}
+                    >
+                      {t("common.detachProjections")}
+                    </button>
+                  ) : null}
                 </>
               ) : null}
               <button

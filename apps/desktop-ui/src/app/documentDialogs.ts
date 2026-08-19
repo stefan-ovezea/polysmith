@@ -113,3 +113,27 @@ export async function pickLoadDocumentPath({
 
   return result;
 }
+
+export async function pickImportStlPath({
+  translate,
+  addMessage,
+}: DocumentDialogContext) {
+  const result = await open({
+    title: translate("dialogs.importStlTitle"),
+    multiple: false,
+    directory: false,
+    filters: [
+      {
+        name: translate("dialogs.stlFileType"),
+        extensions: ["stl"],
+      },
+    ],
+  });
+
+  if (result === null || Array.isArray(result)) {
+    addMessage("import canceled");
+    return null;
+  }
+
+  return result;
+}

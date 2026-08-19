@@ -13,7 +13,7 @@
     result.bodies.push_back(body);
   }
 
-  if (!any_boolean) {
+  if (!any_boolean || !include_meshes) {
     return result;
   }
 

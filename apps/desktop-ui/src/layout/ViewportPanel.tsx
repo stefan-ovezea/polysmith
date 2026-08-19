@@ -2436,7 +2436,6 @@ export function ViewportPanel({
 
       renderer.render(scene, camera);
       renderViewCube();
-
       const editor = dimensionEditorRef.current;
       const dimension = selectedSketchDimensionRef.current;
       const isOpen = isDimensionEditorOpenRef.current;

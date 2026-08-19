@@ -86,7 +86,7 @@ std::optional<PlaneFrame> resolve_face_frame(const DocumentState &document,
   if (face_index < 0) {
     return std::nullopt;
   }
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto &body : compiled.bodies) {
     if (body.id != body_id || body.shape.IsNull()) {
       continue;
@@ -168,7 +168,7 @@ std::optional<PlaneFrame> resolve_body_face_frame(const DocumentState &document,
   if (face_index < 0) {
     return std::nullopt;
   }
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto &body : compiled.bodies) {
     if (body.id != body_id || body.shape.IsNull()) {
       continue;

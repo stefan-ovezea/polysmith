@@ -135,7 +135,14 @@ export function intersectViewportSceneTargets({
       raycaster,
     });
 
-  if (activeSketchPlaneId) {
+  // Project mode: the click targets BODY geometry (face / edge /
+  // vertex). Sketch entities are skipped entirely — projected sketch
+  // geometry lies ON the body surface (the sketch plane is the face),
+  // and its points/entities/profiles would otherwise swallow every
+  // click before the model pick runs.
+  const projectMode = activeSketchTool === "project";
+
+  if (activeSketchPlaneId && !projectMode) {
     // Cursor position on the active sketch plane — used by the exact
     // circle/arc curve-distance gate.
     const planePoint = resolveSketchPlanePoint(
@@ -159,7 +166,7 @@ export function intersectViewportSceneTargets({
     }
   }
 
-  if (inactiveSketchEntityPickEnabled) {
+  if (inactiveSketchEntityPickEnabled && !projectMode) {
     const sketchLineId = pickVisibleSketchLineScreenSpace({
       event,
       sceneData,
@@ -187,12 +194,14 @@ export function intersectViewportSceneTargets({
     }
   }
 
-  const profileId = pickProfile();
-  if (profileId) {
-    return { kind: "sketch_profile", id: profileId };
+  if (!projectMode) {
+    const profileId = pickProfile();
+    if (profileId) {
+      return { kind: "sketch_profile", id: profileId };
+    }
   }
 
-  if (inactiveSketchEntityPickEnabled) {
+  if (inactiveSketchEntityPickEnabled && !projectMode) {
     const [sketchEntityHit] = raycaster.intersectObjects(
       sketchEntityObjects,
       false,
@@ -556,7 +565,26 @@ function pickModelTarget({
     return { kind: "edge", id: edgeId };
   }
 
-  const [faceHit] = raycaster.intersectObjects(faceMeshes, false);
+  // Coincident bodies (a mesh body and its converted solid share the
+  // same surface): STL float32 rounding puts the mesh facets slightly
+  // BELOW the exact plane, so they win the nearest-hit sort even when
+  // emitted after the converted faces. Prefer a non-mesh face among
+  // hits within a small distance band — clicking the shared surface
+  // must select the meaningful body, not a single triangle facet.
+  const faceHits = raycaster.intersectObjects(faceMeshes, false);
+  let faceHit = faceHits[0] ?? null;
+  if (faceHit) {
+    const nearestDistance = faceHit.distance;
+    for (const candidate of faceHits) {
+      if (candidate.distance > nearestDistance + 0.05) {
+        break;
+      }
+      if (candidate.object.userData.ownerKind !== "mesh_import") {
+        faceHit = candidate;
+        break;
+      }
+    }
+  }
   const faceId = faceHit?.object.userData.faceId;
   if (typeof faceId === "string") {
     return { kind: "face", id: faceId };

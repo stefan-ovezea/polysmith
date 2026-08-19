@@ -1,8 +1,12 @@
 #include "core/viewport/viewport.h"
+#include "core/diagnostics/logger.h"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -18,6 +22,7 @@
 #include <BRepGProp_Face.hxx>
 #include <GProp_GProps.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
@@ -33,6 +38,7 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Vertex.hxx>
+#include <TopoDS_Wire.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
@@ -130,6 +136,14 @@ void append_cached_body_topology(
   next.selected_edge_ids = document.selected_edge_ids;
   next.selected_vertex_ids = document.selected_vertex_ids;
 
+  // mesh_import bodies emit NO per-face pick entries: their rendered
+  // body mesh primitive (in `meshes`) already carries the body id for
+  // the raycaster, and emitting one face entry per triangle cost ~3.5MB
+  // of JSON per refresh (measured on a fan panel) — the oversized
+  // viewport events were implicated in UI freezes after projections.
+  // Clicking the mesh body's surface resolves to a "primitive" hit that
+  // the UI routes to the body projection / body selection.
+
   for (const auto& body : compiled_bodies.bodies) {
     std::string label = body.id;
     std::string body_kind;
@@ -158,16 +172,25 @@ void append_cached_body_topology(
 
     const TopoDS_Shape& edge_pick_shape =
         body.pick_shape.IsNull() ? body.shape : body.pick_shape;
-    enumerate_body_edges(edge_pick_shape,
-                         body.id,
-                         document.selected_edge_ids,
-                         next.edges);
-    enumerate_body_vertices(body.shape,
-                            body.id,
-                            document.selected_vertex_ids,
-                            next.vertices);
+    // Mesh bodies (imported AND converted) carry thousands of facet
+    // edges/vertices; per-edge/per-vertex pick primitives are useless
+    // there (fillets on them are gated off anyway) and would flood the
+    // viewport payload (measured ~10k edges + ~4.7k vertices, ~2MB of
+    // JSON per refresh for a fan panel) — the facet-vertex cloud reads
+    // as stray "highlighted points" over the body.
+    if (body_kind != "mesh_to_body" && body_kind != "mesh_import") {
+      enumerate_body_edges(edge_pick_shape,
+                           body.id,
+                           document.selected_edge_ids,
+                           next.edges);
+      enumerate_body_vertices(body.shape,
+                              body.id,
+                              document.selected_vertex_ids,
+                              next.vertices);
+    }
 
-    if (body_kind != "box" && body_kind != "cylinder") {
+    if (body_kind != "box" && body_kind != "cylinder" &&
+        body_kind != "mesh_import") {
       enumerate_body_faces(body.shape,
                            body.id,
                            body_kind,
@@ -177,13 +200,18 @@ void append_cached_body_topology(
     }
   }
 
-  bodies.insert(bodies.end(), next.bodies.begin(), next.bodies.end());
-  edges.insert(edges.end(), next.edges.begin(), next.edges.end());
-  vertices.insert(vertices.end(), next.vertices.begin(), next.vertices.end());
-  solid_faces.insert(solid_faces.end(),
-                     next.solid_faces.begin(),
-                     next.solid_faces.end());
+  // Store the rebuilt topology in the cache FIRST, then copy it out to
+  // the caller. Moving INTO the caller before assigning the cache left
+  // the cache holding moved-from shells (empty triangle geometry, empty
+  // summaries) — every subsequent cache hit served gutted faces, which
+  // silently killed face picking after the cache key stopped changing.
   cache = std::move(next);
+  bodies.insert(bodies.end(), cache.bodies.begin(), cache.bodies.end());
+  edges.insert(edges.end(), cache.edges.begin(), cache.edges.end());
+  vertices.insert(vertices.end(), cache.vertices.begin(), cache.vertices.end());
+  solid_faces.insert(solid_faces.end(),
+                     cache.solid_faces.begin(),
+                     cache.solid_faces.end());
 }
 
 }  // namespace

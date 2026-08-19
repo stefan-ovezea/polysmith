@@ -1,6 +1,7 @@
 #include "core/geometry/body_compiler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cmath>
 #include <sstream>
@@ -53,6 +54,7 @@
 
 #include "core/document/document.h"
 #include "core/geometry/feature_shape.h"
+#include "core/geometry/mesh_import_helpers.h"
 #include "core/geometry/refresh_dependents.h"
 
 namespace polysmith::core {
@@ -66,7 +68,8 @@ namespace {
 
 }  // namespace
 
-CompiledBodies compile_bodies(const DocumentState& document) {
+CompiledBodies compile_bodies(const DocumentState& document,
+                              bool include_meshes) {
 #include "core/geometry/impl/compile_bodies_body.inc"
 }
 

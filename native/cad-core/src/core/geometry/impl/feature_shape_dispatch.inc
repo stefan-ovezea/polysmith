@@ -24,5 +24,9 @@ TopoDS_Shape build_feature_shape(const FeatureEntry& feature) {
       feature.plugin_parameters.has_value()) {
     return build_plugin_feature_shape(feature.plugin_parameters.value());
   }
+  if (feature.kind == "mesh_import" &&
+      feature.mesh_import_parameters.has_value()) {
+    return build_mesh_import_shape(feature.mesh_import_parameters.value());
+  }
   return TopoDS_Shape{};
 }

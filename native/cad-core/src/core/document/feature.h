@@ -61,6 +61,8 @@ struct FeatureEntry {
   std::optional<MoveFeatureParameters> move_parameters;
   std::optional<BodyCopyFeatureParameters> body_copy_parameters;
   std::optional<PluginFeatureParameters> plugin_parameters;
+  std::optional<MeshImportFeatureParameters> mesh_import_parameters;
+  std::optional<MeshToBodyFeatureParameters> mesh_to_body_parameters;
 };
 
 }  // namespace polysmith::core

@@ -96,6 +96,8 @@ export const BODY_KINDS = new Set([
   "sweep",
   "fastener",
   "body_copy",
+  "mesh_import",
+  "mesh_to_body",
 ]);
 
 export function documentHasSolidBody(documentState: DocumentState | null) {

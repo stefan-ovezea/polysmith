@@ -12,6 +12,7 @@ import type { CamOperationType } from "../layout/header/CamToolbar";
 import type { PendingUnsavedAction, WorkspaceView } from "./appState";
 import {
   pickExportPath,
+  pickImportStlPath,
   pickLoadDocumentPath,
   type DialogTranslate,
 } from "./documentDialogs";
@@ -65,6 +66,8 @@ interface AppTopBarProps {
   ) => void;
   dimensionToolMode: import("@/types").DimensionToolMode;
   onSetDimensionToolMode: (mode: import("@/types").DimensionToolMode) => void;
+  bodyProjectionMode: "section" | "silhouette";
+  setBodyProjectionMode: (mode: "section" | "silhouette") => void;
   runAction: RunAction;
   start: AsyncVoid;
   startMirrorPreview: AsyncVoid;
@@ -78,6 +81,7 @@ interface AppTopBarProps {
   viewport: ViewportState | null;
   addMessage: (message: string) => void;
   exportDocument: (filePath: string) => Promise<void>;
+  importStl: (filePath: string, scale?: number) => Promise<void>;
   saveCurrentDocument: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
@@ -191,6 +195,8 @@ export function AppTopBar(props: AppTopBarProps) {
       onSetPolygonToolMode={props.setPolygonToolMode}
       dimensionToolMode={props.dimensionToolMode}
       onSetDimensionToolMode={props.onSetDimensionToolMode}
+      bodyProjectionMode={props.bodyProjectionMode}
+      onSetBodyProjectionMode={props.setBodyProjectionMode}
       onStart={async () => {
         await props.runAction(props.start);
       }}
@@ -234,6 +240,20 @@ export function AppTopBar(props: AppTopBarProps) {
         }
 
         props.requestUnsavedGate({ kind: "load", filePath });
+      }}
+      onImportMesh={async () => {
+        const filePath = await pickImportStlPath({
+          translate: props.translate,
+          addMessage: props.addMessage,
+        });
+        if (!filePath) {
+          return;
+        }
+
+        await props.runAction(async () => {
+          await props.importStl(filePath, 1.0);
+          props.addMessage(`import requested: ${filePath}`);
+        });
       }}
       onUndo={async () => {
         await props.runAction(props.undo);

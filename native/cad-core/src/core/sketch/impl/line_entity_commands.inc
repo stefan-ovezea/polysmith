@@ -1,6 +1,7 @@
 void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                      double start_y, double end_x, double end_y,
-                     bool is_construction, bool snap_start) {
+                     bool is_construction, bool snap_start,
+                     bool auto_dimensions, bool refresh_immediately) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
@@ -53,8 +54,11 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
   // Construction lines are reference geometry; they don't get a
   // driving length dimension automatically. The user can still apply
-  // one explicitly via the dimension tool if they want.
-  if (!is_construction) {
+  // one explicitly via the dimension tool if they want. Projected
+  // geometry (auto_dimensions = false) skips the automatic dimensions
+  // too — its endpoints are fixed, so driving dimensions would only
+  // over-constrain the solver and flood the sketch with clutter.
+  if (!is_construction && auto_dimensions) {
     feature.sketch_parameters->dimensions.push_back(SketchDimension{
         .id = "dim-line-" + line.id,
         .kind = "line_length",
@@ -79,11 +83,15 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
         .is_auto = true,
     });
   }
-  if (!is_construction) {
+  // Bulk inserters (projection outlines) skip the per-entity inference
+  // and refresh — they refresh once at the end with the full id set.
+  if (!is_construction && refresh_immediately) {
     run_inference_on_new_line(*feature.sketch_parameters,
                               feature.sketch_parameters->lines.back());
   }
-  refresh_sketch_with_append_focus(feature, {line.id});
+  if (refresh_immediately) {
+    refresh_sketch_with_append_focus(feature, {line.id});
+  }
 }
 
 void set_sketch_line_construction(FeatureEntry &feature,

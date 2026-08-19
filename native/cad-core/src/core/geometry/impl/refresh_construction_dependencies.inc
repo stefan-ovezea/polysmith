@@ -6,6 +6,13 @@
     if (feature.kind == "construction_plane" &&
         feature.construction_plane_parameters.has_value()) {
       const auto& params = feature.construction_plane_parameters.value();
+      if (params.plane_type == "detached") {
+        // Frozen when its source feature was deleted — the cached
+        // frame is authoritative and there is nothing to re-resolve.
+        feature.dependency_broken = false;
+        feature.dependency_warning.clear();
+        continue;
+      }
       DocumentState prefix = document;
       prefix.feature_history.resize(i);
       std::optional<PlaneFrame> next_frame;
@@ -55,18 +62,59 @@
         feature.dependency_broken = false;
         feature.dependency_warning.clear();
       } else {
-        // Leave the cached frame at its last value so the UI can
-        // still render the plane somewhere; the warning surfaces
-        // via dependency_broken.
-        feature.dependency_broken = true;
-        const std::string source_summary =
-            params.plane_type == "angle"
-                ? params.source_plane_id + "' / '" + params.source_axis_id
-                : params.source_plane_id;
-        feature.dependency_warning =
-            "Construction plane references '" + source_summary +
-            "', which is no longer available. Edit upstream features to "
-            "restore it.";
+        // When the referenced source feature no longer exists ANYWHERE
+        // in the document (deleted, not merely unresolvable), freeze
+        // the plane at its cached frame — there is nothing to re-link
+        // to. This also repairs planes saved before the delete-time
+        // freeze existed. Ref-plane and ownerless sources keep the
+        // broken warning below.
+        const auto source_feature_exists = [&](const std::string& source_id) {
+          if (source_id.empty() || source_id.rfind("ref-plane-", 0) == 0) {
+            return true;
+          }
+          const auto colon = source_id.find(':');
+          if (colon == std::string::npos) {
+            return true;  // ownerless ids — leave the link alone
+          }
+          const std::string owner = source_id.substr(0, colon);
+          for (const auto& candidate : document.feature_history) {
+            if (candidate.id == owner) {
+              return true;
+            }
+          }
+          return false;
+        };
+        const bool any_source_exists =
+            params.plane_type == "midplane"
+                ? std::all_of(params.source_plane_ids.begin(),
+                              params.source_plane_ids.end(),
+                              source_feature_exists)
+                : source_feature_exists(params.source_plane_id) &&
+                      source_feature_exists(params.source_axis_id);
+        if (!any_source_exists) {
+          ConstructionPlaneFeatureParameters next = params;
+          next.plane_type = "detached";
+          next.source_plane_id.clear();
+          next.source_plane_ids.clear();
+          next.source_axis_id.clear();
+          feature.construction_plane_parameters = next;
+          feature.parameters_summary = "Detached";
+          feature.dependency_broken = false;
+          feature.dependency_warning.clear();
+        } else {
+          // Leave the cached frame at its last value so the UI can
+          // still render the plane somewhere; the warning surfaces
+          // via dependency_broken.
+          feature.dependency_broken = true;
+          const std::string source_summary =
+              params.plane_type == "angle"
+                  ? params.source_plane_id + "' / '" + params.source_axis_id
+                  : params.source_plane_id;
+          feature.dependency_warning =
+              "Construction plane references '" + source_summary +
+              "', which is no longer available. Edit upstream features to "
+              "restore it.";
+        }
       }
     }
 

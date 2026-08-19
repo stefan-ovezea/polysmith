@@ -22,7 +22,7 @@ namespace {
 
 std::vector<TopoDS_Shape> collect_export_shapes(const DocumentState& document) {
   std::vector<TopoDS_Shape> shapes;
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (!body.shape.IsNull()) {
       shapes.push_back(body.shape);
@@ -33,7 +33,7 @@ std::vector<TopoDS_Shape> collect_export_shapes(const DocumentState& document) {
 
 TopoDS_Shape collect_export_body_shape(const DocumentState& document,
                                        const std::string& body_id) {
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.id == body_id && !body.shape.IsNull()) {
       return body.shape;

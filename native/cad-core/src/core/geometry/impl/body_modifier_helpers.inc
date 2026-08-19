@@ -1,3 +1,14 @@
+// True when the shape contains at least one solid. Mesh-import bodies
+// are shells (a compound of triangle faces) — the solid-only body
+// modifiers (fillet/chamfer/shell/hole) must never receive them, so
+// their target resolution checks this first.
+bool shape_contains_solid(const TopoDS_Shape& shape) {
+  for (TopExp_Explorer exp(shape, TopAbs_SOLID); exp.More(); exp.Next()) {
+    return true;
+  }
+  return false;
+}
+
 int parse_edge_index(const std::string& edge_id) {
   const std::string marker = ":edge:";
   const auto pos = edge_id.rfind(marker);

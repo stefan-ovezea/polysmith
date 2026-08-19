@@ -10,7 +10,17 @@ void add_sketch_line(FeatureEntry& feature,
                      double end_x,
                      double end_y,
                      bool is_construction = false,
-                     bool snap_start = true);
+                     bool snap_start = true,
+                     // User-drawn lines get automatic driving length +
+                     // angle dimensions. Projected geometry is derived
+                     // (fixed endpoints) — its callers pass false so
+                     // the solver isn't fed conflicting constraints.
+                     bool auto_dimensions = true,
+                     // Runs inference + the sketch derived-state
+                     // refresh per entity. Bulk inserters (projection
+                     // of outlines with many corners) pass false and
+                     // refresh once at the end with the full id set.
+                     bool refresh_immediately = true);
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,
@@ -30,7 +40,11 @@ void add_sketch_circle(FeatureEntry& feature,
                        double center_x,
                        double center_y,
                        double radius,
-                       bool is_construction = false);
+                       bool is_construction = false,
+                       // Same semantics as add_sketch_line — projected
+                       // circles pass false.
+                       bool auto_dimensions = true,
+                       bool refresh_immediately = true);
 
 // Build a regular polygon on the sketch. mode is "circumscribed",
 // "inscribed", or "edge". For circumscribed/inscribed the polygon is
@@ -67,4 +81,8 @@ void add_sketch_arc(FeatureEntry& feature,
                     double center_y,
                     double radius,
                     bool ccw,
-                    bool is_construction = false);
+                    bool is_construction = false,
+                    // Same semantics as add_sketch_line — projected
+                    // arcs pass false.
+                    bool auto_dimensions = true,
+                    bool refresh_immediately = true);

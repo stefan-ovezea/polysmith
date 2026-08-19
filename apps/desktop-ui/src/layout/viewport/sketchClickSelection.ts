@@ -303,6 +303,15 @@ export function handleActiveSketchProjectHit({
     return true;
   }
 
+  // Mesh bodies ship no per-face pick entries — clicking their surface
+  // resolves to the rendered body-mesh primitive carrying the body id.
+  // Route it through the same face-selection entry point so the Project
+  // tool can intercept it as a body projection.
+  if (hit?.kind === "primitive" && typeof hit.id === "string") {
+    void selectFace(hit.id);
+    return true;
+  }
+
   return true;
 }
 

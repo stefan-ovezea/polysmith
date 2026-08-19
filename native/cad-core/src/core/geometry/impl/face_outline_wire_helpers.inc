@@ -110,6 +110,46 @@ std::vector<FaceOutlinePoint> sample_wire_loop(const TopoDS_Wire& wire) {
   return points;
 }
 
+// True when (a, b, c) are collinear and b lies strictly between a and
+// c. Used to collapse collinear runs in wire outlines — converted
+// meshes split every original edge into many collinear triangle edges.
+bool outline_collinear_mergeable(const FaceOutlinePoint& a,
+                                 const FaceOutlinePoint& b,
+                                 const FaceOutlinePoint& c) {
+  const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const double bcx = c.x - b.x, bcy = c.y - b.y, bcz = c.z - b.z;
+  const double cx = aby * bcz - abz * bcy;
+  const double cy = abz * bcx - abx * bcz;
+  const double cz = abx * bcy - aby * bcx;
+  const double cross_sq = cx * cx + cy * cy + cz * cz;
+  // Exact collinearity up to 1e-8 (mm-scale coordinates).
+  if (cross_sq > 1e-16) {
+    return false;
+  }
+  return abx * bcx + aby * bcy + abz * bcz > 0.0;
+}
+
+// Merge collinear runs in a closed outline loop (the point list is
+// open — the projector closes it). Iterates to a fixpoint so runs
+// spanning the list seam also collapse.
+void merge_collinear_outline(std::vector<FaceOutlinePoint>& corners) {
+  bool merged = true;
+  while (merged && corners.size() > 3) {
+    merged = false;
+    const size_t n = corners.size();
+    for (size_t i = 0; i < n; ++i) {
+      const FaceOutlinePoint& a = corners[(i + n - 1) % n];
+      const FaceOutlinePoint& b = corners[i];
+      const FaceOutlinePoint& c = corners[(i + 1) % n];
+      if (outline_collinear_mergeable(a, b, c)) {
+        corners.erase(corners.begin() + static_cast<std::ptrdiff_t>(i));
+        merged = true;
+        break;
+      }
+    }
+  }
+}
+
 std::vector<std::vector<FaceOutlinePoint>> inner_wire_loops(
     const TopoDS_Face& face,
     const TopoDS_Wire& outer_wire) {

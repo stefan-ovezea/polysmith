@@ -323,7 +323,9 @@ export interface ShellFeatureParameters {
 // every recompute, so the UI can read it without having to invert
 // the source relationship itself.
 export interface ConstructionPlaneFeatureParameters {
-  plane_type: "offset" | "midplane" | "tangent" | "angle";
+  // "detached": frozen when its source feature is deleted — the
+  // cached frame is authoritative.
+  plane_type: "offset" | "midplane" | "tangent" | "angle" | "detached";
   source_plane_id: string;
   source_plane_ids: string[];
   source_axis_id: string;

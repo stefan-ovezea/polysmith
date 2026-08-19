@@ -60,8 +60,26 @@ DocumentState DocumentManager::project_face_into_sketch(
 
   const auto outline = compute_face_outline(*document_, face_id);
   if (!outline.has_value()) {
+    polysmith::core::log_error("projection", "project_face outline failed: " + face_id);
     throw std::runtime_error(
         "Face is not supported by the projection helper: " + face_id);
+  }
+
+  // Refuse outlines too complex to project (see the constant's
+  // comment) instead of hanging the core.
+  size_t corner_count =
+      outline->kind == "circle"
+          ? 1 + outline->inner_circles.size()
+          : outline->polygon_corners.size();
+  for (const auto& inner_loop : outline->inner_loops) {
+    corner_count += inner_loop.size();
+  }
+  if (corner_count > kMaxProjectionOutlineCorners) {
+    throw std::runtime_error(
+        "Face outline is too complex to project (" +
+        std::to_string(corner_count) + " corners, limit " +
+        std::to_string(kMaxProjectionOutlineCorners) +
+        "). Pick a simpler face or a reference plane.");
   }
 
   const auto& sketch_frame = sketch_it->sketch_parameters->plane_frame.value();
@@ -110,47 +128,73 @@ DocumentState DocumentManager::project_face_into_sketch(
                                        a.first,
                                        a.second,
                                        b.first,
-                                       b.second);
+                                       b.second,
+                                       /*is_construction=*/false,
+                                       /*snap_start=*/true,
+                                       /*auto_dimensions=*/false,
+                                       /*refresh_immediately=*/false);
     }
 
-    // Lock every endpoint of the four projected lines so the user cannot
-    // drag them away from their projected location. This mirrors common CAD workflow's
-    // "Project" behaviour where projected entities are derived geometry.
+    // Bulk insertion: refresh once to build the vertex records, then
+    // lock every endpoint without per-call refreshes. Projected
+    // geometry is derived — locking matches the CAD "Project" pattern.
     for (size_t i = lines_before; i < sketch_it->sketch_parameters->lines.size();
          ++i) {
-      const auto& line = sketch_it->sketch_parameters->lines[i];
+      record.generated_line_ids.push_back(
+          sketch_it->sketch_parameters->lines[i].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_line_ids);
+    for (const auto& line_id : record.generated_line_ids) {
+      const auto& line = *std::find_if(
+          sketch_it->sketch_parameters->lines.begin(),
+          sketch_it->sketch_parameters->lines.end(),
+          [&](const auto& candidate) { return candidate.id == line_id; });
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.start_vertex_id,
-                                              true);
+                                               line.start_vertex_id,
+                                               true,
+                                               /*refresh_immediately=*/false);
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.end_vertex_id,
-                                              true);
-      record.generated_line_ids.push_back(line.id);
+                                               line.end_vertex_id,
+                                               true,
+                                               /*refresh_immediately=*/false);
     }
   } else if (outline->kind == "circle") {
+    const size_t circles_before = sketch_it->sketch_parameters->circles.size();
     auto add_projected_circle =
         [&](const FaceOutlinePoint& center, double radius) {
       const auto center_local = project_to_sketch_local(center);
-      const size_t circles_before =
-          sketch_it->sketch_parameters->circles.size();
       polysmith::core::add_sketch_circle(*sketch_it,
                                          next_sketch_circle_id_++,
                                          center_local.first,
                                          center_local.second,
-                                         radius);
-      for (size_t i = circles_before;
-           i < sketch_it->sketch_parameters->circles.size(); ++i) {
-        const auto& circle = sketch_it->sketch_parameters->circles[i];
-        polysmith::core::set_sketch_vertex_fixed(
-            *sketch_it, circle_center_vertex_id(circle), true);
-        record.generated_circle_ids.push_back(
-            circle.id);
-      }
+                                         radius,
+                                         /*is_construction=*/false,
+                                         /*auto_dimensions=*/false,
+                                         /*refresh_immediately=*/false);
     };
 
     add_projected_circle(outline->circle_center, outline->circle_radius);
     for (const auto& inner_circle : outline->inner_circles) {
       add_projected_circle(inner_circle.center, inner_circle.radius);
+    }
+
+    // Bulk insertion — same pattern as the rectangle branch.
+    for (size_t i = circles_before;
+         i < sketch_it->sketch_parameters->circles.size(); ++i) {
+      record.generated_circle_ids.push_back(
+          sketch_it->sketch_parameters->circles[i].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_circle_ids);
+    for (const auto& circle_id : record.generated_circle_ids) {
+      const auto& circle = *std::find_if(
+          sketch_it->sketch_parameters->circles.begin(),
+          sketch_it->sketch_parameters->circles.end(),
+          [&](const auto& candidate) { return candidate.id == circle_id; });
+      polysmith::core::set_sketch_vertex_fixed(
+          *sketch_it, circle_center_vertex_id(circle), true,
+          /*refresh_immediately=*/false);
     }
   } else if (outline->kind == "polygon") {
     if (outline->polygon_corners.size() < 3) {
@@ -173,7 +217,11 @@ DocumentState DocumentManager::project_face_into_sketch(
                                        a.first,
                                        a.second,
                                        b.first,
-                                       b.second);
+                                       b.second,
+                                       /*is_construction=*/false,
+                                       /*snap_start=*/true,
+                                       /*auto_dimensions=*/false,
+                                       /*refresh_immediately=*/false);
     }
     for (const auto& inner_loop : outline->inner_loops) {
       if (inner_loop.size() < 3) {
@@ -192,22 +240,35 @@ DocumentState DocumentManager::project_face_into_sketch(
                                          a.first,
                                          a.second,
                                          b.first,
-                                         b.second);
+                                         b.second,
+                                         /*is_construction=*/false,
+                                         /*snap_start=*/true,
+                                         /*auto_dimensions=*/false,
+                                         /*refresh_immediately=*/false);
       }
     }
 
-    // Lock every endpoint of the projected lines (same CAD-style
-    // "derived geometry" lock as the rectangle path).
+    // Bulk insertion — same pattern as the rectangle branch.
     for (size_t i = lines_before; i < sketch_it->sketch_parameters->lines.size();
          ++i) {
-      const auto& line = sketch_it->sketch_parameters->lines[i];
+      record.generated_line_ids.push_back(
+          sketch_it->sketch_parameters->lines[i].id);
+    }
+    polysmith::core::refresh_sketch_with_append_focus(
+        *sketch_it, record.generated_line_ids);
+    for (const auto& line_id : record.generated_line_ids) {
+      const auto& line = *std::find_if(
+          sketch_it->sketch_parameters->lines.begin(),
+          sketch_it->sketch_parameters->lines.end(),
+          [&](const auto& candidate) { return candidate.id == line_id; });
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.start_vertex_id,
-                                              true);
+                                               line.start_vertex_id,
+                                               true,
+                                               /*refresh_immediately=*/false);
       polysmith::core::set_sketch_vertex_fixed(*sketch_it,
-                                              line.end_vertex_id,
-                                              true);
-      record.generated_line_ids.push_back(line.id);
+                                               line.end_vertex_id,
+                                               true,
+                                               /*refresh_immediately=*/false);
     }
   } else {
     throw std::runtime_error("Unsupported projected face kind: " + outline->kind);
@@ -216,7 +277,17 @@ DocumentState DocumentManager::project_face_into_sketch(
   // Register the live link so any future upstream edit of `face_id`
   // can re-derive these generated entities (see
   // `refresh_sketch_projections`).
+  // Bulk insertion: one derived-state refresh for the whole projection
+  // instead of one per entity (per-entity refreshes turn large outlines
+  // into O(n^2) work and freeze the core for minutes). Collect the
+  // focus ids BEFORE moving the record into the projections list.
+  std::vector<std::string> focus_ids = record.generated_line_ids;
+  focus_ids.insert(focus_ids.end(), record.generated_circle_ids.begin(),
+                   record.generated_circle_ids.end());
+  focus_ids.insert(focus_ids.end(), record.generated_arc_ids.begin(),
+                   record.generated_arc_ids.end());
   sketch_it->sketch_parameters->projections.push_back(std::move(record));
+  polysmith::core::refresh_sketch_with_append_focus(*sketch_it, focus_ids);
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;

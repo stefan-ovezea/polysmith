@@ -421,69 +421,117 @@ function rectangleDimensionEntityIds(lines: SketchLineScene[]) {
       (line.start[2] + line.end[2]) / 2,
     ] as [number, number, number];
 
+  // Detect rectangles in O(n²) line pairs instead of the previous
+  // O(n⁴) 4-line combination scan — a projected sketch with 76 lines
+  // cost ~1.3M combinations per scene build (~seconds of main-thread
+  // stall) and 910 lines ~28B (permanent UI freeze).
+  //
+  // A rectangle is two parallel equal-length opposite sides (a, b)
+  // plus the two segments connecting their endpoints. Index lines by
+  // their unordered endpoint-key pair so the connector sides of each
+  // candidate pair can be found in O(1); the endpoint keys use the
+  // same 0.001 rounding as the old scan's vertex-coincidence check,
+  // so which endpoints "touch" is unchanged.
+  const unorderedPairKey = (a: string, b: string) =>
+    a < b ? `${a}::${b}` : `${b}::${a}`;
+  const byEndpointPair = new Map<string, SketchLineScene[]>();
+  for (const line of lines) {
+    const key = unorderedPairKey(pointKey(line.start), pointKey(line.end));
+    const bucket = byEndpointPair.get(key);
+    if (bucket) {
+      bucket.push(line);
+    } else {
+      byEndpointPair.set(key, [line]);
+    }
+  }
+
+  const recordRectangle = (
+    a: SketchLineScene,
+    b: SketchLineScene,
+    side1: SketchLineScene,
+    side2: SketchLineScene,
+  ) => {
+    for (const line of [a, b, side1, side2]) {
+      rectangleEntityIds.add(line.lineId);
+    }
+    // Hide the duplicate-length dimension on the "lower" side of each
+    // opposite pair (y-midpoint tie broken toward -x), matching the
+    // old scan's hide rule.
+    for (const [lineA, lineB] of [
+      [a, b],
+      [side1, side2],
+    ] as const) {
+      const centerA = midpoint(lineA);
+      const centerB = midpoint(lineB);
+      const hideLine =
+        centerA[1] < centerB[1] ||
+        (Math.abs(centerA[1] - centerB[1]) <= tolerance &&
+          centerA[0] < centerB[0])
+          ? lineA
+          : lineB;
+      duplicateLengthEntityIds.add(hideLine.lineId);
+    }
+  };
+
   for (let first = 0; first < lines.length; first += 1) {
     for (let second = first + 1; second < lines.length; second += 1) {
-      for (let third = second + 1; third < lines.length; third += 1) {
-        for (let fourth = third + 1; fourth < lines.length; fourth += 1) {
-          const candidate = [lines[first], lines[second], lines[third], lines[fourth]];
-          const pointDegrees = new Map<string, number>();
-          for (const line of candidate) {
-            pointDegrees.set(pointKey(line.start), (pointDegrees.get(pointKey(line.start)) ?? 0) + 1);
-            pointDegrees.set(pointKey(line.end), (pointDegrees.get(pointKey(line.end)) ?? 0) + 1);
-          }
-          if (
-            pointDegrees.size !== 4 ||
-            Array.from(pointDegrees.values()).some((degree) => degree !== 2)
-          ) {
-            continue;
-          }
+      const a = lines[first];
+      const b = lines[second];
+      const directionA = direction(a);
+      if (
+        Math.abs(Math.abs(dot(directionA, direction(b))) - 1) > tolerance ||
+        Math.abs(length(a) - length(b)) > tolerance
+      ) {
+        continue;
+      }
 
-          const pairs: Array<[SketchLineScene, SketchLineScene]> = [];
-          const used = new Set<string>();
-          for (const line of candidate) {
-            if (used.has(line.lineId)) {
-              continue;
-            }
-            const lineDirection = direction(line);
-            const match = candidate.find(
-              (other) =>
-                other.lineId !== line.lineId &&
-                !used.has(other.lineId) &&
-                Math.abs(Math.abs(dot(lineDirection, direction(other))) - 1) <= 0.001 &&
-                Math.abs(length(line) - length(other)) <= 0.001,
-            );
-            if (!match) {
-              break;
-            }
-            pairs.push([line, match]);
-            used.add(line.lineId);
-            used.add(match.lineId);
-          }
-          if (pairs.length !== 2) {
-            continue;
-          }
-          if (
-            Math.abs(dot(direction(pairs[0][0]), direction(pairs[1][0]))) > 0.001
-          ) {
-            continue;
-          }
+      // a and b are parallel and equal-length. The two remaining
+      // sides of the rectangle connect their endpoints — but which
+      // endpoints pair up depends on whether a and b point the same
+      // way or opposite ways, so try both pairings. Require four
+      // distinct points so a degenerate pair (shared endpoint) can't
+      // form a false rectangle.
+      const aStartKey = pointKey(a.start);
+      const aEndKey = pointKey(a.end);
+      const bStartKey = pointKey(b.start);
+      const bEndKey = pointKey(b.end);
+      if (new Set([aStartKey, aEndKey, bStartKey, bEndKey]).size !== 4) {
+        continue;
+      }
 
-          for (const line of candidate) {
-            rectangleEntityIds.add(line.lineId);
-          }
+      // Connector sides must exist as lines, be distinct from the
+      // pair, and run perpendicular to it. Zero-length lines can't
+      // appear here: their two endpoint keys are equal, so they are
+      // indexed under a single-key bucket, not the two-key bucket
+      // built from the four distinct points above.
+      const pickPerpendicular = (bucket: SketchLineScene[] | undefined) =>
+        bucket?.find(
+          (line) =>
+            line.lineId !== a.lineId &&
+            line.lineId !== b.lineId &&
+            Math.abs(dot(direction(line), directionA)) <= tolerance,
+        );
 
-          for (const [lineA, lineB] of pairs) {
-            const centerA = midpoint(lineA);
-            const centerB = midpoint(lineB);
-            const hideLine =
-              centerA[1] < centerB[1] ||
-              (Math.abs(centerA[1] - centerB[1]) <= tolerance &&
-                centerA[0] < centerB[0])
-                ? lineA
-                : lineB;
-            duplicateLengthEntityIds.add(hideLine.lineId);
-          }
-        }
+      // Same-direction pairing: a.start↔b.end, a.end↔b.start.
+      const side1 = pickPerpendicular(
+        byEndpointPair.get(unorderedPairKey(aStartKey, bEndKey)),
+      );
+      const side2 = pickPerpendicular(
+        byEndpointPair.get(unorderedPairKey(aEndKey, bStartKey)),
+      );
+      if (side1 && side2) {
+        recordRectangle(a, b, side1, side2);
+        continue;
+      }
+      // Opposite-direction pairing: a.start↔b.start, a.end↔b.end.
+      const side1Alt = pickPerpendicular(
+        byEndpointPair.get(unorderedPairKey(aStartKey, bStartKey)),
+      );
+      const side2Alt = pickPerpendicular(
+        byEndpointPair.get(unorderedPairKey(aEndKey, bEndKey)),
+      );
+      if (side1Alt && side2Alt) {
+        recordRectangle(a, b, side1Alt, side2Alt);
       }
     }
   }
@@ -920,8 +968,19 @@ export function createViewportScene(
       sourceFeatureId: point.source_feature_id,
       sourceEdgeId: point.source_edge_id,
     }));
-  const hiddenRectangleDimensionEntityIds =
-    rectangleDimensionEntityIds(sketchLines);
+  // The rectangle scan only feeds line_length / line_angle dimension
+  // hiding; skip it entirely when no such dimensions exist (projected
+  // sketches have none and used to pay the full scan cost anyway).
+  const needsRectangleEntityScan = viewport.sketch_dimensions.some(
+    (dimension) =>
+      dimension.kind === "line_length" || dimension.kind === "line_angle",
+  );
+  const hiddenRectangleDimensionEntityIds = needsRectangleEntityScan
+    ? rectangleDimensionEntityIds(sketchLines)
+    : {
+        duplicateLengthEntityIds: new Set<string>(),
+        rectangleEntityIds: new Set<string>(),
+      };
   const sketchDimensions = viewport.sketch_dimensions
     .filter((dimension) => isSketchPlaneVisible(dimension.plane_id))
     .filter((dimension) => !projectedEntityIds.has(dimension.entity_id))
@@ -1159,6 +1218,15 @@ export function createViewportScene(
             `toolpath:${tp.id}:${tp.points.length}:${tp.points.map((p) => `${p.x}:${p.y}:${p.z}:${p.is_rapid ? "r" : "f"}`).slice(0, 10).join(",")}`,
         ),
       )
+      .concat([
+        // Visibility toggles must invalidate the build key: the sync
+        // skips rebuilds when the key is unchanged, and a hidden body's
+        // pick primitives (faces/edges/vertices) would otherwise stay
+        // in the scene (and keep stealing clicks) after the eye toggle.
+        `hidden-features:${[...hiddenFeatureIds].sort().join(",")}`,
+        `hidden-planes:${[...hiddenSketchPlaneIds].sort().join(",")}`,
+        `hide-references:${hideReferences ? "1" : "0"}`,
+      ])
       .join("|"),
   };
 }

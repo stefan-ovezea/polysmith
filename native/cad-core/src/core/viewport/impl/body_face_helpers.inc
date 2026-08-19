@@ -1,3 +1,7 @@
+// Per-face pick-proxy triangle budget for converted-mesh bodies (see
+// enumerate_body_faces).
+constexpr int kMaxMeshFacePickTriangles = 48;
+
 // Build a plane frame for `face` by reading the underlying surface's plane
 // (when planar) and the face center. For non-planar faces, return a
 // representative frame oriented around the face center + face normal at
@@ -29,24 +33,47 @@ FaceFrameInfo derive_face_frame(const TopoDS_Face& face) {
     BRepAdaptor_Surface surface(face);
     const GeomAbs_SurfaceType type = surface.GetType();
 
-    // Compute the face's parametric mid-point so we can sample a
-    // representative (point, normal) regardless of surface type.
-    const double u_mid = 0.5 * (surface.FirstUParameter() + surface.LastUParameter());
-    const double v_mid = 0.5 * (surface.FirstVParameter() + surface.LastVParameter());
-
-    BRepGProp_Face prop(face);
     gp_Pnt center;
     gp_Vec normal;
-    prop.Normal(u_mid, v_mid, center, normal);
-    if (normal.Magnitude() > 0.0) {
-      normal.Normalize();
+    if (type == GeomAbs_Plane) {
+      // Planar face: the plane branch below derives the frame from
+      // the surface itself — only the representative center point is
+      // needed. Use the first triangulation node (or wire vertex)
+      // instead of BRepGProp_Face numerical integration, which is
+      // the dominant per-face cost on converted-mesh bodies (measured
+      // ~14 ms per face on an 1182-face panel, i.e. ~17 s total).
+      TopLoc_Location loc;
+      const occ::handle<Poly_Triangulation> tri =
+          BRep_Tool::Triangulation(face, loc);
+      if (!tri.IsNull() && tri->NbNodes() > 0) {
+        center = tri->Node(1).Transformed(loc.Transformation());
+      } else {
+        for (TopExp_Explorer vexp(face, TopAbs_VERTEX); vexp.More();
+             vexp.Next()) {
+          center = BRep_Tool::Pnt(TopoDS::Vertex(vexp.Current()));
+          break;
+        }
+      }
+      normal = gp_Vec(0.0, 0.0, 1.0);  // overwritten by the plane branch
     } else {
-      normal = gp_Vec(0.0, 0.0, 1.0);
-    }
-    // Honor the face's orientation flag so the emitted normal is the
-    // outward-pointing one consumers expect.
-    if (face.Orientation() == TopAbs_REVERSED) {
-      normal.Reverse();
+      // Non-planar face: sample a representative (point, normal) via
+      // numerical integration — rare outside converted meshes.
+      const double u_mid =
+          0.5 * (surface.FirstUParameter() + surface.LastUParameter());
+      const double v_mid =
+          0.5 * (surface.FirstVParameter() + surface.LastVParameter());
+      BRepGProp_Face prop(face);
+      prop.Normal(u_mid, v_mid, center, normal);
+      if (normal.Magnitude() > 0.0) {
+        normal.Normalize();
+      } else {
+        normal = gp_Vec(0.0, 0.0, 1.0);
+      }
+      // Honor the face's orientation flag so the emitted normal is the
+      // outward-pointing one consumers expect.
+      if (face.Orientation() == TopAbs_REVERSED) {
+        normal.Reverse();
+      }
     }
 
     info.center_x = center.X();
@@ -175,12 +202,12 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     TopLoc_Location location;
     const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
-    if (triangulation.IsNull()) {
+    if (triangulation.IsNull() && body_kind != "mesh_to_body") {
       // No tessellation for this face — skip rather than emit a face
-      // that can't be picked or rendered.
+      // that can't be picked or rendered. (mesh_to_body faces are
+      // emitted without pick geometry below.)
       continue;
     }
-
     const FaceFrameInfo frame_info = derive_face_frame(face);
 
     ViewportSolidFace primitive{};
@@ -201,34 +228,135 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     primitive.appearance_color =
         face_appearance_color(document, face_id, appearance_face_signature(face));
 
-    // Append per-face triangulation (positions in world space, indices
-    // local to this face's positions array).
     const gp_Trsf transform = location.Transformation();
     const bool reversed = face.Orientation() == TopAbs_REVERSED;
     const int node_count = triangulation->NbNodes();
-    primitive.triangle_positions.reserve(static_cast<size_t>(node_count) * 3);
-    for (int node_index = 1; node_index <= node_count; ++node_index) {
-      gp_Pnt node = triangulation->Node(node_index);
-      node.Transform(transform);
-      primitive.triangle_positions.push_back(node.X());
-      primitive.triangle_positions.push_back(node.Y());
-      primitive.triangle_positions.push_back(node.Z());
-    }
-
     const int triangle_count = triangulation->NbTriangles();
-    primitive.triangle_indices.reserve(static_cast<size_t>(triangle_count) * 3);
-    for (int tri_index = 1; tri_index <= triangle_count; ++tri_index) {
-      const Poly_Triangle& triangle = triangulation->Triangle(tri_index);
-      int n1 = 0;
-      int n2 = 0;
-      int n3 = 0;
-      triangle.Get(n1, n2, n3);
-      if (reversed) {
-        std::swap(n2, n3);
+
+    // Converted-mesh bodies carry the STL's full triangulations —
+    // shipping every triangle of every face floods the viewport
+    // payload (measured ~4MB for an 1182-face panel). Faces only need
+    // enough geometry for raycast picking + hover, so mesh_to_body
+    // faces emit a strided subset (positions compacted to the used
+    // nodes only) capped at kMaxMeshFacePickTriangles. Regular bodies
+    // keep the full triangulation.
+    const bool decimate = body_kind == "mesh_to_body" &&
+                          triangle_count > kMaxMeshFacePickTriangles;
+    const int stride =
+        decimate
+            ? (triangle_count + kMaxMeshFacePickTriangles - 1) /
+                  kMaxMeshFacePickTriangles
+            : 1;
+
+    if (decimate) {
+      // Build the pick geometry as a centroid fan over the face's
+      // outer wire instead of striding the triangulation: a strided
+      // subset covers only a few percent of a large face, so raycast
+      // picks mostly miss. The fan covers the whole face (holes
+      // included — picking inside a hole selects the face, which is
+      // an acceptable trade for converted-mesh bodies). Mesh faces
+      // are planar, so a 2D fan is exact.
+      std::vector<gp_Pnt> boundary;
+      try {
+        const TopoDS_Wire outer = BRepTools::OuterWire(face);
+        for (TopExp_Explorer edge_exp(outer, TopAbs_EDGE);
+             edge_exp.More(); edge_exp.Next()) {
+          const TopoDS_Edge edge = TopoDS::Edge(edge_exp.Current());
+          TopoDS_Vertex v1;
+          TopoDS_Vertex v2;
+          TopExp::Vertices(edge, v1, v2, /*CumOri=*/true);
+          boundary.push_back(BRep_Tool::Pnt(v1));
+        }
+      } catch (const std::exception&) {
+        boundary.clear();
       }
-      primitive.triangle_indices.push_back(n1 - 1);
-      primitive.triangle_indices.push_back(n2 - 1);
-      primitive.triangle_indices.push_back(n3 - 1);
+      if (boundary.size() >= 3) {
+        gp_Pnt centroid(0.0, 0.0, 0.0);
+        for (const gp_Pnt& point : boundary) {
+          centroid.ChangeCoord() += point.XYZ();
+        }
+        centroid.ChangeCoord() /= static_cast<double>(boundary.size());
+        primitive.triangle_positions.reserve((boundary.size() + 1) * 3);
+        primitive.triangle_positions.push_back(centroid.X());
+        primitive.triangle_positions.push_back(centroid.Y());
+        primitive.triangle_positions.push_back(centroid.Z());
+        for (const gp_Pnt& point : boundary) {
+          primitive.triangle_positions.push_back(point.X());
+          primitive.triangle_positions.push_back(point.Y());
+          primitive.triangle_positions.push_back(point.Z());
+        }
+        primitive.triangle_indices.reserve(boundary.size() * 3);
+        for (size_t k = 0; k < boundary.size(); ++k) {
+          const int next = 1 + static_cast<int>((k + 1) % boundary.size());
+          primitive.triangle_indices.push_back(0);
+          primitive.triangle_indices.push_back(1 + static_cast<int>(k));
+          primitive.triangle_indices.push_back(next);
+        }
+      } else {
+        // Degenerate outer wire — fall back to the strided subset.
+        std::vector<int> used_nodes(node_count + 1, -1);
+        std::vector<int> kept_nodes;
+        std::vector<std::array<int, 3>> kept_triangles;
+        for (int tri_index = 1; tri_index <= triangle_count;
+             tri_index += stride) {
+          const Poly_Triangle& triangle = triangulation->Triangle(tri_index);
+          int n1 = 0;
+          int n2 = 0;
+          int n3 = 0;
+          triangle.Get(n1, n2, n3);
+          if (reversed) {
+            std::swap(n2, n3);
+          }
+          for (const int node_index : {n1, n2, n3}) {
+            if (used_nodes[node_index] < 0) {
+              used_nodes[node_index] = static_cast<int>(kept_nodes.size());
+              kept_nodes.push_back(node_index);
+            }
+          }
+          kept_triangles.push_back({used_nodes[n1], used_nodes[n2],
+                                    used_nodes[n3]});
+        }
+        primitive.triangle_positions.reserve(kept_nodes.size() * 3);
+        for (const int node_index : kept_nodes) {
+          gp_Pnt node = triangulation->Node(node_index);
+          node.Transform(transform);
+          primitive.triangle_positions.push_back(node.X());
+          primitive.triangle_positions.push_back(node.Y());
+          primitive.triangle_positions.push_back(node.Z());
+        }
+        primitive.triangle_indices.reserve(kept_triangles.size() * 3);
+        for (const auto& tri : kept_triangles) {
+          primitive.triangle_indices.push_back(tri[0]);
+          primitive.triangle_indices.push_back(tri[1]);
+          primitive.triangle_indices.push_back(tri[2]);
+        }
+      }
+    } else {
+      // Full triangulation (positions in world space, indices local to
+      // this face's positions array).
+      primitive.triangle_positions.reserve(static_cast<size_t>(node_count) * 3);
+      for (int node_index = 1; node_index <= node_count; ++node_index) {
+        gp_Pnt node = triangulation->Node(node_index);
+        node.Transform(transform);
+        primitive.triangle_positions.push_back(node.X());
+        primitive.triangle_positions.push_back(node.Y());
+        primitive.triangle_positions.push_back(node.Z());
+      }
+      primitive.triangle_indices.reserve(
+          static_cast<size_t>(triangle_count) * 3);
+      for (int tri_index = 1; tri_index <= triangle_count; ++tri_index) {
+        const Poly_Triangle& triangle = triangulation->Triangle(tri_index);
+        int n1 = 0;
+        int n2 = 0;
+        int n3 = 0;
+        triangle.Get(n1, n2, n3);
+        if (reversed) {
+          std::swap(n2, n3);
+        }
+        primitive.triangle_indices.push_back(n1 - 1);
+        primitive.triangle_indices.push_back(n2 - 1);
+        primitive.triangle_indices.push_back(n3 - 1);
+      }
     }
 
     if (primitive.triangle_positions.empty() ||

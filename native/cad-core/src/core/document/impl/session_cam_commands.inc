@@ -4,7 +4,9 @@ void DocumentManager::save_document_to_path(const std::string& file_path) const 
     throw std::runtime_error("Save path cannot be empty");
   }
 
-  const nlohmann::json payload = polysmith::protocol::to_payload(document_.value());
+  const nlohmann::json payload =
+      polysmith::protocol::to_payload(document_.value(),
+                                      /*include_opaque=*/true);
 
   std::ofstream stream(file_path);
   if (!stream.is_open()) {

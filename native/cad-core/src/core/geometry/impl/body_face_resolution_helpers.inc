@@ -65,6 +65,26 @@ std::optional<FaceOutline> outline_from_face(const TopoDS_Face& face) {
   outline.polygon_corners = sample_wire_loop(outer);
   outline.inner_loops = inner_wire_loops(face, outer);
 
+  // Triangle-derived faces (converted meshes) share boundaries with
+  // many collinear edges — merge collinear runs so projected sketches
+  // stay small instead of emitting one line per original triangle
+  // edge.
+  merge_collinear_outline(outline.polygon_corners);
+  for (auto& inner_loop : outline.inner_loops) {
+    merge_collinear_outline(inner_loop);
+  }
+
+  // Then decimate chord-sampled curved outlines (Douglas-Peucker at
+  // 0.05 mm — below STL facet resolution and print tolerance).
+  constexpr double kOutlineSimplifyTolerance = 0.05;
+  outline.polygon_corners =
+      simplify_outline_polyline(outline.polygon_corners,
+                                kOutlineSimplifyTolerance);
+  for (auto& inner_loop : outline.inner_loops) {
+    inner_loop = simplify_outline_polyline(inner_loop,
+                                           kOutlineSimplifyTolerance);
+  }
+
   if (outline.polygon_corners.size() < 3) {
     return std::nullopt;
   }
@@ -85,7 +105,7 @@ std::optional<FaceOutline> outline_for_body_face(
   if (face_index < 0) {
     return std::nullopt;
   }
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.id != body_id || body.shape.IsNull()) {
       continue;
@@ -111,7 +131,7 @@ std::optional<TopoDS_Face> resolve_body_face(const DocumentState& document,
   if (face_index < 0) {
     return std::nullopt;
   }
-  const CompiledBodies compiled = compile_bodies(document);
+  const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
     if (body.id != body_id || body.shape.IsNull()) {
       continue;

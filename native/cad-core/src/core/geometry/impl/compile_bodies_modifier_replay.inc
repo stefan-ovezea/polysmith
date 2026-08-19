@@ -26,6 +26,12 @@
       } else {
         continue;
       }
+      if (!shape_contains_solid(body_shapes[target_id])) {
+        // Mesh-import shells cannot be filleted — the operator would
+        // fail (or crash) on non-solid input. Skip the feature.
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
       const TopoDS_Shape pre_shape = body_shapes[target_id];
       const TopoDS_Shape next = apply_fillet(pre_shape, params);
       body_shapes[target_id] = next;
@@ -64,6 +70,11 @@
       } else {
         continue;
       }
+      if (!shape_contains_solid(body_shapes[target_id])) {
+        // Mesh-import shells cannot be chamfered — skip the feature.
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
       const TopoDS_Shape pre_shape = body_shapes[target_id];
       const TopoDS_Shape next = apply_chamfer(pre_shape, params);
       body_shapes[target_id] = next;
@@ -97,6 +108,11 @@
       } else {
         continue;
       }
+      if (!shape_contains_solid(body_shapes[target_id])) {
+        // Mesh-import shells cannot be shelled — skip the feature.
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
       const TopoDS_Shape pre_shape = body_shapes[target_id];
       const TopoDS_Shape next = apply_shell(pre_shape, params);
       body_shapes[target_id] = next;
@@ -126,6 +142,11 @@
       } else if (!body_order.empty()) {
         target_id = body_order.back();
       } else {
+        continue;
+      }
+      if (!shape_contains_solid(body_shapes[target_id])) {
+        // Mesh-import shells cannot take holes — skip the feature.
+        result.consumed_feature_ids.insert(feature.id);
         continue;
       }
       const TopoDS_Shape pre_shape = body_shapes[target_id];
@@ -224,6 +245,46 @@
         }
         result.consumed_feature_ids.insert(target_id);
       }
+      result.consumed_feature_ids.insert(feature.id);
+      continue;
+    }
+    if (feature.kind == "mesh_import" &&
+        feature.mesh_import_parameters.has_value()) {
+      // Re-read the STL from disk on every compile — the document
+      // stores only the path. A missing file yields a null shape and
+      // the body silently drops out (the dependency walker surfaces a
+      // timeline warning). The `continue` keeps the triangle compound
+      // away from the generic compound-fuse path below, which would
+      // try to fuse thousands of facets into one solid.
+      const TopoDS_Shape shape =
+          build_mesh_import_shape(feature.mesh_import_parameters.value());
+      if (shape.IsNull()) {
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
+      body_shapes[feature.id] = shape;
+      body_frames[feature.id] = initial_frame_for_feature(feature);
+      body_pick_shapes.erase(feature.id);
+      body_order.push_back(feature.id);
+      result.consumed_feature_ids.insert(feature.id);
+      continue;
+    }
+    if (feature.kind == "mesh_to_body" &&
+        feature.mesh_to_body_parameters.has_value()) {
+      // The conversion was snapshotted at creation (same pattern as a
+      // standalone body copy), so the solid is independent of the
+      // source mesh body — the user can delete the mesh body without
+      // losing the converted solid.
+      const TopoDS_Shape converted = deserialize_shape_snapshot(
+          feature.mesh_to_body_parameters->serialized_shape);
+      if (converted.IsNull()) {
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
+      body_shapes[feature.id] = converted;
+      body_frames[feature.id] = initial_frame_for_feature(feature);
+      body_pick_shapes.erase(feature.id);
+      body_order.push_back(feature.id);
       result.consumed_feature_ids.insert(feature.id);
       continue;
     }
