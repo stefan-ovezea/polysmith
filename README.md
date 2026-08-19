@@ -307,7 +307,7 @@ help/              In-app help documentation (Markdown source)
 protocol/
   schema/          IPC message schemas
 
-wiki/              Canonical documentation (mirrored to polysmith.wiki/)
+wiki/              Canonical documentation
 
 third_party/
   occt8/           Vendored OpenCascade 8 source
@@ -332,9 +332,7 @@ Current focus:
 
 ## Wiki
 
-All project documentation lives in the [GitHub wiki](https://github.com/stefan-ovezea/polysmith/wiki).
-
-Repo-local copies are in `wiki/` (canonical) and `polysmith.wiki/` (GitHub mirror submodule).
+All project documentation lives in the [GitHub wiki](https://github.com/stefan-ovezea/polysmith/wiki); the repo-local canonical copy is in `wiki/`.
 
 Key pages:
 

@@ -171,7 +171,7 @@ native/cad-core/           C++ CAD core (CMake project)
       diagnostics/         Structured logging
   tests/                   C++ test executables
 protocol/schema/           IPC JSON schemas (commands, events)
-wiki/                      Canonical documentation (mirrored to polysmith.wiki git submodule)
+wiki/                      Canonical documentation
 third_party/
   occt8/                   Vendored OpenCascade 8 source (git submodule)
   freetype/                FreeType (git submodule)
@@ -378,17 +378,8 @@ git submodule update --init --recursive
 
 ## Wiki Documentation
 
-All project documentation lives in `wiki/` and is mirrored to the GitHub wiki submodule at `polysmith.wiki/`. Edits go to `wiki/` first, then mirrored.
-
-**After any edit to `wiki/`, sync the mirror:**
-```bash
-rsync -av --delete wiki/ polysmith.wiki/ --exclude .git
-```
-Then verify with:
-```bash
-diff -r wiki/ polysmith.wiki/ --exclude='.git' && echo "IDENTICAL"
-```
-Both directories must stay identical. Adding a new page to `wiki/` means also adding it to the mirror. Deleting from `wiki/` means also deleting from the mirror.
+All project documentation lives in `wiki/` — this is the single canonical
+documentation directory. Edits go directly to `wiki/`.
 
 Key pages for understanding the system:
 - `wiki/Architecture-Overview.md` — system layout
