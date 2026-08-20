@@ -359,6 +359,7 @@
     "perpendicular": "Perpendicular",
     "polygon": "Polygon",
     "tangentPlane": "Tangent Plane",
+    "text": "Text",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
     "polygonEdge": "Edge Polygon",
@@ -631,6 +632,38 @@
       "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
       "clickCorner": "Click a corner to fillet",
       "title": "Sketch Fillet"
+    },
+    "text": {
+      "title": "Sketch Text",
+      "instructions": "Click in the sketch to place text",
+      "string": "Text",
+      "height": "Height (mm)",
+      "angle": "Angle (deg)",
+      "spacing": "Char spacing",
+      "alignH": "Horizontal alignment",
+      "alignV": "Vertical alignment",
+      "alignHLeft": "Left",
+      "alignHCenter": "Center",
+      "alignHRight": "Right",
+      "alignVTop": "Top",
+      "alignVMiddle": "Middle",
+      "alignVBottom": "Bottom",
+      "font": "Font",
+      "fontDefault": "Default",
+      "loadFont": "Load font...",
+      "loadFontTitle": "Load font",
+      "fontFileType": "TrueType font",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "path": "Path",
+      "pathNone": "None",
+      "pathPick": "Pick path",
+      "pathPicking": "Click a line or arc…",
+      "pathClear": "Clear",
+      "pathBound": "{{entity}}",
+      "pathOffset": "Offset (mm)",
+      "angleOnPathIgnored": "Ignored when text is on a path",
+      "vAlignOnPathIgnored": "Ignored when text is on a path"
     }
   },
   "settings": {
@@ -916,5 +949,11 @@
     "deleteParameter": "Delete Parameter",
     "emptyName": "Name cannot be empty",
     "duplicateName": "A parameter with this name already exists"
+  },
+  "errors": {
+    "text": {
+      "fontLoadFailed": "Failed to load font file",
+      "renderFailed": "Failed to render text"
+    }
   }
 }

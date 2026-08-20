@@ -1346,6 +1346,56 @@ Modes:
 
 The core rejects colinear and zero-radius arcs.
 
+#### `add_sketch_text`
+
+Places parametric text on the active sketch.
+
+Payload:
+
+```ts
+{
+  text: string;        // UTF-8; '\n' starts a new line. Default "Text".
+  font_path: string;   // "" = default font; absolute .ttf path = user font.
+  height_mm: number;   // Default 10.
+  angle_deg: number;   // Rotation around the anchor. Default 0.
+  anchor_x: number;    // Sketch-local anchor point.
+  anchor_y: number;
+  h_align: "left" | "center" | "right";       // Default "center".
+  v_align: "top" | "middle" | "bottom";       // Default "middle".
+  char_spacing: number; // Fraction added to each advance. Default 0.
+}
+```
+
+Text over 500 characters is rejected. The glyph geometry expands into
+ordinary sketch lines on every recompute, so text profiles extrude,
+render, and export exactly like drawn geometry. Glyph lines are not
+individually editable — edit the text entity instead.
+
+#### `update_sketch_text`
+
+Merges a partial patch over the stored record and re-expands the glyphs.
+
+```ts
+{ text_id: string; text?: string; font_path?: string; height_mm?: number;
+  angle_deg?: number; anchor_x?: number; anchor_y?: number;
+  h_align?: string; v_align?: string; char_spacing?: number }
+```
+
+Height/angle/anchor/alignment/spacing edits keep the generated id set
+and re-snapshot linked extrudes; string/font edits degrade linked
+extrudes to `dependency_broken` with a warning. Requires the sketch to
+be active (re-enter it after extruding).
+
+#### `delete_sketch_text`
+
+```ts
+{ text_id: string }
+```
+
+Removes the text record and its generated glyph geometry. Deleting
+selected glyph lines via `delete_sketch_selection` also deletes their
+owning text.
+
 #### `add_sketch_fillet`
 
 Rounds a sketch corner shared by two sketch lines into a tangent arc.

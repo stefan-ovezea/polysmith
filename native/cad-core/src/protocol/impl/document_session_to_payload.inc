@@ -54,6 +54,10 @@ json to_payload(const polysmith::core::DocumentState& document,
        document.selected_sketch_dimension_id.has_value()
            ? json(document.selected_sketch_dimension_id.value())
            : json(nullptr)},
+      {"selected_sketch_text_id",
+       document.selected_sketch_text_id.has_value()
+           ? json(document.selected_sketch_text_id.value())
+           : json(nullptr)},
       {"selected_sketch_profile_id",
        document.selected_sketch_profile_id.has_value()
            ? json(document.selected_sketch_profile_id.value())

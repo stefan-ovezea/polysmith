@@ -11,7 +11,7 @@ bool is_supported_sketch_tool(const std::string& tool) {
   return tool == "select" || tool == "line" || tool == "rectangle" ||
          tool == "circle" || tool == "polygon" || tool == "arc" || tool == "fillet" ||
          tool == "trim" || tool == "project" || tool == "dimension" ||
-         tool == "move";
+         tool == "move" || tool == "text";
 }
 
 std::string plane_id_from_frame(

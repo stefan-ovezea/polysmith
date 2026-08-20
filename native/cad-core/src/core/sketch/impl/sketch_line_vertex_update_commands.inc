@@ -8,6 +8,10 @@ void update_sketch_line(FeatureEntry& feature,
     throw std::runtime_error("Only sketch features can update sketch lines");
   }
 
+  // Text glyph segments are derived geometry — edit the text entity,
+  // not its generated lines.
+  require_user_line(*feature.sketch_parameters, line_id);
+
   const auto line_it = std::find_if(
       feature.sketch_parameters->lines.begin(),
       feature.sketch_parameters->lines.end(),
@@ -77,6 +81,13 @@ void update_sketch_vertex(FeatureEntry& feature,
                          double y) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can update sketch points");
+  }
+
+  // Text glyph vertices are derived geometry — edit the text entity,
+  // not its generated vertices.
+  if (point_id.rfind("vertex-text-", 0) == 0) {
+    throw std::runtime_error("Generated sketch entity is not editable: " +
+                             point_id);
   }
 
   auto& parameters = feature.sketch_parameters.value();
@@ -160,6 +171,14 @@ void move_sketch_entities(FeatureEntry& feature,
   }
 
   auto& parameters = feature.sketch_parameters.value();
+
+  // Generated glyph segments ride with their text entity — a move must
+  // never relocate them independently (or it would fight the expansion
+  // pass, which regenerates them from the text anchor on next refresh).
+  for (const auto& entity_id : entity_ids) {
+    ensure_user_editable_entity(parameters, entity_id);
+  }
+
   constexpr double kPi = 3.14159265358979323846;
   const bool rotating = std::abs(angle_deg) > 1.0e-6;
   const double angle_rad = angle_deg * (kPi / 180.0);

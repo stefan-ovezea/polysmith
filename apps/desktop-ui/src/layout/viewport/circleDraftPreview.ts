@@ -70,6 +70,7 @@ function buildCircleObject({
       isConstruction,
       isPreview,
       isProjected: false,
+      generatedBy: null,
     },
     planeFrame,
   );

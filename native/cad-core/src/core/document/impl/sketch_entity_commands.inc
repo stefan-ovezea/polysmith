@@ -1,5 +1,6 @@
 #include "core/document/impl/sketch_basic_entity_commands.inc"
 #include "core/document/impl/sketch_fillet_entity_commands.inc"
+#include "core/document/impl/sketch_text_entity_commands.inc"
 #include "core/document/impl/sketch_entity_dimension_commands.inc"
 #include "core/document/impl/sketch_delete_selection_commands.inc"
 #include "core/document/impl/sketch_circle_polygon_commands.inc"

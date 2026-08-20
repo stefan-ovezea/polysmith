@@ -29,6 +29,9 @@ struct ViewportSketchLinePrimitive {
   // arrays. False for committed sketch lines.
   bool is_preview = false;
   std::string dof_status;
+  // Set for generated glyph segments ("text:<text-id>"). The UI skips
+  // them for hover/selection picking — they're owned by the text entity.
+  std::optional<std::string> generated_by;
 };
 
 struct ViewportSketchCirclePrimitive {
@@ -44,6 +47,9 @@ struct ViewportSketchCirclePrimitive {
   // See `ViewportSketchLinePrimitive::is_preview`.
   bool is_preview = false;
   std::string dof_status;
+  // See `ViewportSketchLinePrimitive::generated_by` (reserved — the v1
+  // text expansion only emits lines).
+  std::optional<std::string> generated_by;
 };
 
 // 2D arc primitive emitted to the viewport. Carries the arc's
@@ -75,6 +81,9 @@ struct ViewportSketchArcPrimitive {
   // See `ViewportSketchLinePrimitive::is_preview`.
   bool is_preview = false;
   std::string dof_status;
+  // See `ViewportSketchLinePrimitive::generated_by` (reserved — the v1
+  // text expansion only emits lines).
+  std::optional<std::string> generated_by;
 };
 
 struct ViewportSketchVertexPrimitive {

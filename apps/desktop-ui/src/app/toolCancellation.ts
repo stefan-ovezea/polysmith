@@ -2,6 +2,7 @@ import type { MutableRefObject } from "react";
 import type {
   FastenerFeatureParameters,
   MoveFeatureParameters,
+  SketchTool,
   ThreadFeatureParameters,
 } from "../types";
 import type { ActiveToolActions } from "./activeToolActions";
@@ -23,6 +24,7 @@ import type {
   ThreadAction,
 } from "./appState";
 import type { ExtrudeUpdateCallbacks } from "./extrudeUpdateCallbacks";
+import type { SketchTextAction } from "./sketchToolLifecycleEffects";
 
 type AsyncVoid = () => Promise<void>;
 type RunAction = (action: AsyncVoid) => Promise<void>;
@@ -51,11 +53,14 @@ export interface CancelActiveToolContext extends ExtrudeUpdateCallbacks {
     setPluginAction: Setter<{ featureId: string }>;
     setEditingFeatureId: Setter<string>;
     setMaterialsPanelOpen: (open: boolean) => void;
+    setSketchTextAction: Setter<SketchTextAction>;
   };
   activeEdgeIdsRef: MutableRefObject<string[]>;
   runAction: RunAction;
   restoreTimelineCursorAfterEdit: AsyncVoid;
   undo: AsyncVoid;
+  setSketchTool: (tool: SketchTool) => Promise<void>;
+  deleteSketchText: (textId: string) => Promise<void>;
   undoUntilExtrudePreviewRemoved: (
     featureIds: readonly string[],
   ) => Promise<void>;
@@ -112,6 +117,7 @@ const cancellationHandlers: readonly CancellationHandler[] = [
   cancelSweepTool,
   cancelMoveTool,
   cancelEdgeOpTool,
+  cancelTextTool,
   cancelShellTool,
   cancelHoleTool,
   cancelOffsetPlaneTool,
@@ -273,6 +279,25 @@ async function cancelEdgeOpTool(context: CancelActiveToolContext) {
   }
   context.activeEdgeIdsRef.current = [];
   context.setters.setEdgeOpAction(null);
+  return true;
+}
+
+async function cancelTextTool(context: CancelActiveToolContext) {
+  const { sketchTextAction } = context.actions;
+  if (!sketchTextAction) {
+    return false;
+  }
+  if (sketchTextAction.phase === "active") {
+    // The bound text is committed geometry — deleting it is what
+    // "cancel" means for an active text session.
+    await context.runAction(async () => {
+      await context.deleteSketchText(sketchTextAction.textId);
+    });
+  }
+  context.setters.setSketchTextAction(null);
+  await context.runAction(async () => {
+    await context.setSketchTool("select");
+  });
   return true;
 }
 

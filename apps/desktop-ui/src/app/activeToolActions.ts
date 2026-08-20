@@ -15,6 +15,7 @@ import type {
   ShellAction,
   ThreadAction,
 } from "./appState";
+import type { SketchTextAction } from "./sketchToolLifecycleEffects";
 
 export interface ActiveToolActions {
   extrudeAction: ActiveExtrudeAction | null;
@@ -37,4 +38,5 @@ export interface ActiveToolActions {
   pluginAction: { featureId: string } | null;
   editingFeatureId: string | null;
   materialsPanelOpen: boolean;
+  sketchTextAction: SketchTextAction | null;
 }

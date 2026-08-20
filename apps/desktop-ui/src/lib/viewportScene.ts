@@ -261,6 +261,7 @@ function makeSketchCircle(
     isSelected: circle.is_selected,
     isConstruction: circle.is_construction,
     isProjected: projectedCircleIds.has(circle.circle_id),
+    generatedBy: circle.generated_by ?? null,
   };
 }
 
@@ -301,6 +302,7 @@ function makeSketchArc(
     isSelected: arc.is_selected,
     isConstruction: arc.is_construction,
     isProjected: projectedArcIds.has(arc.arc_id),
+    generatedBy: arc.generated_by ?? null,
   };
 }
 
@@ -938,6 +940,7 @@ export function createViewportScene(
       isConstruction: line.is_construction,
       isPreview: line.is_preview,
       isProjected: projectedLineIds.has(line.line_id),
+      generatedBy: line.generated_by ?? null,
     }));
   const sketchCircles = viewport.sketch_circles
     .filter((circle) => isSketchPlaneVisible(circle.plane_id))

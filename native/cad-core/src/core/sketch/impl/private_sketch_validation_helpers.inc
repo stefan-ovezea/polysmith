@@ -10,6 +10,12 @@ std::string make_parameters_summary(const SketchFeatureParameters& parameters) {
       stream << "s";
     }
   }
+  if (!parameters.texts.empty()) {
+    stream << " · " << parameters.texts.size() << " text";
+    if (parameters.texts.size() != 1) {
+      stream << "s";
+    }
+  }
   return stream.str();
 }
 
@@ -57,7 +63,7 @@ void validate_tool(const std::string& tool) {
   if (tool != "select" && tool != "line" && tool != "rectangle" &&
       tool != "circle" && tool != "polygon" && tool != "arc" && tool != "fillet" &&
       tool != "trim" && tool != "project" && tool != "dimension" &&
-      tool != "move") {
+      tool != "move" && tool != "text") {
     throw std::runtime_error("Unsupported sketch tool: " + tool + " (validate_tool)");
   }
 }

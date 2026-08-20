@@ -148,6 +148,19 @@ export interface ViewportPanelProps {
     lineAId: string,
     lineBId: string,
   ) => Promise<void>;
+  // Sketch Text tool: place a new text anchored at the given
+  // sketch-local point with core-default parameters. The App opens /
+  // rebinds the floating Text panel when the document round-trip
+  // lands with the new text id.
+  onAddSketchText: (anchorX: number, anchorY: number) => Promise<void>;
+  // Select-mode glyph pick: the clicked sketch entity is a text glyph
+  // segment (`generated_by: "text:<id>"`). App opens the Text panel
+  // bound to the owning text instead of selecting the raw line.
+  onPickSketchText: (textId: string) => void;
+  // Text-on-path picking: while armed, entity clicks bind the text
+  // path instead of placing a new text.
+  sketchTextPathPicking: boolean;
+  onPickSketchTextPath: (entityId: string) => void;
   onSelectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
   onBatchSelectEntities: (
     entityIds: string[],

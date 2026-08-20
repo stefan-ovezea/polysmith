@@ -57,6 +57,7 @@ function buildArcPreview({
       isConstruction,
       isPreview: true,
       isProjected: false,
+      generatedBy: null,
     },
     planeFrame,
   );
@@ -87,6 +88,7 @@ function buildArcRadiusCircle({
       isConstruction,
       isPreview: true,
       isProjected: false,
+      generatedBy: null,
     },
     planeFrame,
   ) as unknown as THREE.Line;

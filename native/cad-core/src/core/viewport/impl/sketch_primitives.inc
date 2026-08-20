@@ -18,6 +18,7 @@ ViewportSketchLinePrimitive make_sketch_line_primitive(const SketchLine& line,
       .is_selected = is_selected,
       .constraint = line.constraint,
       .is_construction = line.is_construction,
+      .generated_by = line.generated_by,
   };
 }
 
@@ -94,6 +95,7 @@ ViewportSketchCirclePrimitive make_sketch_circle_primitive(
       .radius = circle.radius,
       .is_selected = is_selected,
       .is_construction = circle.is_construction,
+      .generated_by = circle.generated_by,
   };
 }
 
@@ -128,6 +130,7 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
       .ccw = arc.ccw,
       .is_selected = is_selected,
       .is_construction = arc.is_construction,
+      .generated_by = arc.generated_by,
   };
 }
 

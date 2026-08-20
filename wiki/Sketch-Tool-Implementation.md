@@ -2,6 +2,16 @@
 
 This guide covers adding a new drawable sketch shape (line, rectangle, circle, polygon, arc, etc.) to PolySmith. It documents every file that must be touched and the code paths involved, including pitfalls discovered during implementation.
 
+> **Text tool note (2026-08):** the Text tool is a *different shape* of
+> feature — it has no drag draft and no dimension session. Its flow is
+> the fillet panel's (tool active → click places the entity → floating
+> panel edits → Enter confirm / Escape delete), its geometry is
+> *generated* (see `SketchText` / `refresh_sketch_texts` in
+> [Text-Tool-Implementation-Plan](Text-Tool-Implementation-Plan)) rather
+> than drawn, and it needs no per-entity viewport rendering (glyphs are
+> ordinary sketch lines). Use the fillet/panel precedent for any future
+> "place then edit" tools.
+
 ---
 
 ## Files to Touch (Checklist)

@@ -2,7 +2,124 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-20
+
+### Sketch text on path (Fusion "Text on Path")
+
+- `SketchText.path_entity_id` (reserved in the text commit) is now
+  live: the expansion resolves it against the sketch's user lines/arcs
+  (generated glyph segments can never be paths) and hands the engine a
+  `TextPath` (line or arc descriptor). The engine places each glyph at
+  its advance distance along the curve, rotated to the tangent, with
+  `path_offset` (mm) shifting the baseline perpendicular and multi-line
+  stacking one line-height to the right of travel; `h_align` aligns
+  along the curve (start/center/end), `angle_deg`/`v_align`/anchor are
+  ignored in path mode. The path geometry is re-read every recompute,
+  so dragging the path entity moves the text with it; a missing path
+  degrades to `render_error` (no geometry, no crash) and recovers when
+  a real path is bound. Text longer than the curve overflows past the
+  end (fit-to-path is a later polish).
+- IPC: `add_sketch_text` / `update_sketch_text` accept
+  `path_entity_id` (absent = keep, null = clear, string = bind) and
+  `path_offset`.
+- UI: the Text panel gains a Path section — Pick path (arms the picker;
+  the next viewport click on a line/arc binds it), Clear, bound-path
+  status, and an Offset (mm) input; angle and v-align disable while a
+  path is bound (tooltips explain why).
+- tests: engine suite +4 (vertical line rotates 90°, arc path hugs the
+  circle, offset is an exact 10 mm perpendicular shift, center aligns
+  on the curve midpoint); text suite +3 (line-path region completeness
+  via profiles_match, arc-path radius bounds, bind/missing/recover
+  lifecycle). All 11 suites green; tsc clean.
+- FIXED (user-reported "can't pick a curve"): two stacked bugs, found
+  with Logs-panel diagnostics after the first round went to toasts
+  instead of the log (addMessage → messages, addLogEntry → Logs panel).
+  (1) `makeUpdateSketchTextCommand` whitelisted patch keys and silently
+  dropped `path_entity_id` / `path_offset` — path binds reached the
+  core as empty patches, so the core re-expanded (looking like it
+  worked) with the glyphs staying flat; the hook's spread elements
+  skip TS excess-property checks, so tsc could not catch it. Builder
+  now forwards both fields (string = bind, null = clear); pinned by a
+  vitest regression (`sketchCommands.test.ts`, 3 cases on the wire
+  format). (2) Snap resolving clicks to endpoints/midpoints: the picker
+  now resolves the curve from the entity hit, the snapped vertex's
+  geometry owners, or a 5 mm proximity search at the snapped position,
+  and swallows invalid picks while armed. Bind success shows a
+  "Path bound: <entity>" toast; the panel's Path row shows the bound
+  entity id. User-verified working (glyphs ride the curve, offset
+  shifts, Clear unbinds).
+
 ## 2026-08-19
+
+### Sketch Text tool (Fusion-style parametric text)
+
+- added a first-class **sketch text entity**: `SketchText` records
+  (`sketch_parameters.texts[]` — string, font_path, height, angle,
+  anchor, h/v alignment, char spacing, reserved `path_entity_id` /
+  `path_offset` for text-on-path) expand into ordinary sketch lines on
+  every recompute (`refresh_sketch_texts` at the top of
+  `refresh_sketch_derived_state`). Generated lines carry deterministic
+  ids `line-text-<id>-c<contour>-s<seg>` / `vertex-text-...` (outside
+  the user id counters), `generated_by = "text:<id>"`, no constraints,
+  always-fixed vertices (re-asserted after the flag sync) → glyph
+  contours flow through profile detection, extrude, viewport, and
+  STEP/STL export with zero downstream changes.
+- new `TextEngine` (`core/text_engine.{h,cpp}`) wraps OCCT's
+  `Font_BRepFont`/`Font_FTFont` (TKService + TKV3d added to the
+  `occt_iface` link list; FreeType is linked statically). Glyph faces →
+  wires → edges are classified (line/circle/B-Spline) and
+  chordal-tessellated with tolerance `clamp(h/200, 0.01, 0.2)` mm;
+  layout mirrors `Font_TextFormatter` math (`AdvanceX` kerning,
+  `LineSpacing` for `\n`, bounds → H/V alignment, 2D angle rotation).
+  Default font = the bundled path when present
+  (`POLYSMITH_TEXT_FONT_PATH` env / repo-relative Liberation Sans),
+  otherwise the OCCT font-manager fallback (system font — deterministic
+  per machine); the embedded DejaVu WOFF is a last resort and needs a
+  zlib-enabled FreeType build, which the vendored one is not.
+- IPC: `add_sketch_text` / `update_sketch_text` (partial patch merge) /
+  `delete_sketch_text`; undo follows the fillet precedent (per-command
+  entries, UI debounce, Escape → delete). Text records and
+  `generated_by` round-trip through save/load; `texts` absent on older
+  saves → empty.
+- generated-entity guards: update/trim/move/dimension/constraint/anchor
+  commands reject glyph lines (`require_user_line` /
+  `ensure_user_editable_entity`); `delete_sketch_selection` maps a
+  pure-glyph selection to deleting the owning text (Fusion-style);
+  generated lines report fully constrained in the DOF counter (fixed
+  endpoints) so glyphs render in the fixed color.
+- **TNP**: the id set is stable across height/angle/anchor/alignment/
+  spacing edits (OCCT renders at fixed 72 pt and scales linearly, so
+  the tessellation is scale-invariant). `find_equivalent_profile` now
+  matches text-generated regions by **exact id-set equality** — the
+  contour indices are reused across strings, so the existing
+  containment fallback would have matched "O" to "A" (both use `c0`);
+  exact-set matching re-snapshots extrudes on geometric edits and
+  degrades them (`dependency_broken` + warning) on string/font edits.
+  Extruding deactivates the sketch, so text edits require re-entering
+  the sketch first (standard sketch behavior).
+- UI: Text tool in the sketch toolbar (no hotkey — T is Trim's), click
+  to place → floating `SketchTextPanel` (multi-line textarea, height /
+  angle / spacing, H/V alignment segmented controls, font dropdown =
+  default + user `.ttf` via the Tauri dialog plugin) with 250 ms
+  debounced `update_sketch_text` live preview; Enter confirms, Escape
+  deletes; clicking a glyph segment in Select mode reopens the panel
+  for its owning text. `generated_by` threaded through viewport
+  primitives so glyph lines are excluded from hover/selection.
+- tests: new `cad_core_text_engine_test` (layout/determinism/tolerance/
+  multi-line/spacing/angle/alignment/font-failure) and
+  `cad_core_text_test` (14 cases: complete region sets for "O"/"AB"/
+  multi-line via `profiles_match`, re-expansion stability, height-edit
+  id stability + exact 1.5× scaling, string-edit id change, guard
+  matrix, extrude-from-text ring prism with through-hole,
+  delete-via-selection, save/load zero-drift round trip, TNP
+  break-vs-survive matrix, undo, degenerate strings, 500-char cap).
+  All 11 suites green via `pnpm test:core`; the lightweight
+  `cad_core_sketch_profile_test` links a stub TextEngine
+  (`tests/text_engine_stub.cpp`) so it stays OCCT-free.
+- docs: `Text-Tool-Implementation-Plan` rewritten (design + TNP
+  contract), new `Emboss-Deboss-Design` (emboss = normal text profile
+  → exact-wire prism → fuse/cut via the existing body-compiler
+  machinery; curved faces via normal projection as a follow-up).
 
 ### DXF import/export (libdxfrw)
 

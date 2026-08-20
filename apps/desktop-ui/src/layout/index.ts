@@ -17,6 +17,7 @@ export * from "./OffsetPlanePanel";
 export * from "./AnglePlanePanel";
 export * from "./SettingsModal";
 export * from "./SketchFilletPanel";
+export * from "./SketchTextPanel";
 export * from "./CamSetupPanel";
 export * from "./FaceMillingPanel";
 export * from "./MirrorToolPanel";

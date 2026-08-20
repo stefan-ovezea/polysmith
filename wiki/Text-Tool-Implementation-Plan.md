@@ -1,169 +1,125 @@
-# Text Tool — Implementation Plan
+# Text Tool — Implementation Plan & Design
 
-> **Status as of 2026-05-24:** Research complete. Plan written. Not yet implemented.
+> **Status:** v1 implemented on `features/text` (2026-08). This page is the
+> canonical design + follow-up reference; the original 2026-05-24 research
+> plan has been superseded by the hybrid-entity design below.
 
 ## Overview
 
-Add text as a first-class sketch entity. Text strings become closed 2D profiles
-that feed directly into the existing extrude (New Body / Join / Cut) pipeline.
-A follow-up feature (Emboss/Deboss) will allow text on curved surfaces.
+Text is a first-class sketch entity. A `SketchText` record stores the
+parametric definition (string, font, height, angle, anchor, alignments,
+spacing); on every recompute the **text expansion pass** re-derives the
+glyph geometry into ordinary sketch lines with deterministic ids. Text
+therefore flows through profile detection, extrude, viewport rendering,
+and STEP/STL export with **zero downstream changes** — text profiles are
+normal profiles, which is exactly what a future Emboss feature needs
+(see [Emboss-Deboss-Design](Emboss-Deboss-Design)).
 
-## How It Works
-
-PolySmith's bundled OCCT includes `StdPrs_BRepFont` and
-`StdPrs_BRepTextBuilder` (aliased as `Font_BRepFont` /
-`Font_BRepTextBuilder`). These convert TrueType/OpenType font glyphs
-directly into `TopoDS_Shape` objects — no manual FreeType binding needed.
+## Architecture
 
 ```
-Font file (.ttf)
-    → StdPrs_BRepFont::FindAndCreate(name, aspect, size_mm)
-        → StdPrs_BRepFont::RenderGlyph(unicode_char)
-            → TopoDS_Shape (closed wires + faces per glyph, with holes)
-
-StdPrs_BRepTextBuilder::Perform(font, "HELLO", position)
-    → TopoDS_Compound (all glyphs, aligned, kerned, positioned)
+SketchText (parameters.texts)          — parametric record
+   │  refresh_sketch_texts (top of refresh_sketch_derived_state)
+   ▼
+SketchLine[]  id = line-text-<text-id>-c<contour>-s<seg>
+              vertex ids = vertex-text-<text-id>-c<contour>-s<idx> (shared joins)
+              generated_by = "text:<text-id>", constraint = nullopt,
+              vertices always is_fixed (re-asserted after the flag sync)
+   │  existing pipeline
+   ▼
+profiles → extrude / viewport / export   (no changes anywhere downstream)
 ```
 
-Under the hood, OCCT wraps FreeType, decomposes glyph outlines (line segments
-+ quadratic/cubic beziers), converts beziers to B-Spline edges, and detects
-inner/outer loops (`A`, `B`, `O` holes) — all internally. The output is a
-standard `TopoDS_Shape` ready for the existing face builder and extrusion
-pipeline.
+- **TextEngine** (`native/cad-core/src/core/text_engine.{h,cpp}`) wraps
+  OCCT's `StdPrs_BRepFont` / `Font_FTFont` (TKService + TKV3d, FreeType
+  linked statically). Glyph faces → wires → edges are classified
+  (line / circle / B-Spline) and chordal-tessellated with tolerance
+  `clamp(height/200, 0.01, 0.2)` mm; layout mirrors `Font_TextFormatter`
+  math (`AdvanceX` kerning, `LineSpacing` for `\n`) so there is no drift
+  from OCCT's own layout. Default font = DejaVu Sans via `Font_FontMgr`
+  (embedded fallback in TKService — deterministic on every machine, no
+  font file required). User fonts = absolute `.ttf` path.
+- **Expansion** (`core/sketch/impl/text_expansion.inc`): strips all
+  `generated_by` entities, re-expands each text, pushes `SketchLine`s
+  directly (bulk pattern — no inference, no dimensions, no solver
+  participation; text vertices are fixed).
+- **Guards**: `require_user_line` / `ensure_user_editable_entity` reject
+  generated entities in update/trim/move/dimension/constraint/anchor
+  commands; `delete_sketch_selection` maps a pure-glyph selection to the
+  owning text (deleting text geometry deletes the text, Fusion-style).
+- **DOF**: generated lines report fully constrained (fixed endpoints),
+  so glyphs render in the "fixed" color.
 
-## Font Choice
+## TNP contract
 
-Bundle a single open-source font as a binary resource. No dependence on
-system fonts.
+The generated ids are deterministic and the tessellation tolerance is
+proportional to the height (OCCT renders at a fixed 72 pt and scales
+linearly, so the subdivision structure is scale-invariant), so the
+**line-id set** of every glyph region is stable across geometric edits.
+`find_equivalent_profile` matches text regions by **exact id-set
+equality** (not containment — the contour indices are reused across
+strings, so containment would match "O" to "A"):
 
-**Decision pending** — candidates:
+| Edit | Line-id set | Linked extrudes |
+|---|---|---|
+| height, angle, anchor, alignment, spacing | unchanged | re-snapshot, stay healthy |
+| text string or font | changes (glyph set differs) | `dependency_broken` + "Source profile unavailable" |
+| delete text | generated lines removed | profiles vanish → `dependency_broken` |
 
-| Font | License | Size | Coverage |
-|------|---------|------|----------|
-| Liberation Sans | SIL OFL 1.1 | ~350 KB | Latin, Greek, Cyrillic |
-| Noto Sans | SIL OFL 1.1 | ~500 KB | Latin, Greek, Cyrillic, CJK |
+(Profile *ids* themselves embed corner coordinates and change under any
+geometric edit — for text and user sketches alike; the id-set matching
+above is what keeps extrudes re-snapshotting.)
 
-Either ships with a copy of the license file in
-`apps/desktop-ui/src-tauri/resources/`.
+All degradation goes through the existing `refresh_linked_extrudes` /
+`find_equivalent_profile` path — never a crash. Note: editing the text
+of a sketch requires re-entering the sketch first — extruding
+deactivates the active sketch, exactly like other sketch edits.
 
-## Phased Plan
+## IPC
 
-### Phase 0 — C++ Core (flat text on sketch)
+- `add_sketch_text { text?, font_path?, height_mm?, angle_deg?, anchor_x, anchor_y, h_align?, v_align?, char_spacing? }`
+- `update_sketch_text { text_id, ...partial patch... }` — the core merges
+  over the stored record; each command is one undo entry (UI debounces
+  typing at 250 ms, mirroring the fillet panel).
+- `delete_sketch_text { text_id }`
 
-**New files:**
-- `native/cad-core/src/core/text_engine.h` — `TextEngine` class
-- `native/cad-core/src/core/text_engine.cpp`
-- `native/cad-core/src/core/text_feature.h` — `TextFeatureParameters` struct
+Undo semantics follow the fillet precedent: the text entity exists the
+moment it is placed; Escape cancels via `delete_sketch_text` (one undo).
 
-**TextEngine API:**
-- `loadFont(path, size_mm)` → bool
-- `generateTextShapes(text_utf8, position_2d)` → `std::vector<TopoDS_Shape>`
-- `getTextBounds(text_utf8)` → width, height (for UI preview)
+## Tests
 
-**TextFeatureParameters:**
-- `text` (string)
-- `font_path` (string — path to bundled .ttf)
-- `font_size` (double, mm)
-- `position` (gp_Pnt2d in sketch coordinates)
-- `sketch_id` (string)
+- `cad_core_text_engine_test` — layout, determinism, tolerance policy,
+  multi-line, spacing, angle, alignment anchors, missing-font failure.
+- `cad_core_text_test` — full profile sets for "O" (outer + hole) and
+  "AB" via `profiles_match`, re-expansion stability, height-edit id
+  stability + 1.5× scaling, string-edit id change, guard matrix, extrude
+  from text (ring prism with through-hole), delete-via-selection,
+  save/load round trip (zero drift), TNP break-vs-survive matrix, undo.
 
-**Integration points:**
-- `feature.h` — new `TextFeature` type, stored in `DocumentState.features[]`
-- `refresh_sketch_derived_state` — text shapes treated as closed profiles,
-  same profile-detection and extrusion pipeline as other sketch entities
-- `serialization.cpp` — `to_payload` / `from_payload`
-- `app.cpp` — command registration: `create_text`, `update_text`, `delete_text`
-- `CMakeLists.txt` — add new .cpp files
+## Follow-ups (not in v1)
 
-**IPC commands:**
-```
-create_text { text, font_path, font_size, sketch_id, position }
-update_text { feature_id, text?, font_size?, position? }
-delete_text { feature_id }
-```
-
-**History/Undo:** Standard `DocumentHistory::Entry` with snapshot of
-parameters before and after.
-
-### Phase 1 — React UI + Contextual Panel
-
-**New files:**
-- `apps/desktop-ui/src/layout/TextPreviewPanel.tsx`
-
-**Modified files:**
-- `apps/desktop-ui/src/types/ipc.ts` — command types + `TextFeatureParameters`
-- `apps/desktop-ui/src/lib/ipcProtocol.ts` — command builders
-- `apps/desktop-ui/src/hooks/useCadCore.ts` — `createText`, `updateText`, `deleteText`
-- `apps/desktop-ui/src/App.tsx` — tool registration + hotkey (`T`)
-- `apps/desktop-ui/src/i18n/en.json` — `panels.text.*` keys
-
-**TextPreviewPanel behavior:**
-- Text input field + font size slider
-- Debounced `updateText` calls (200ms) drive live geometry preview
-- Confirm/Cancel following the standard contextual modeling pattern
-  (`Contextual-Modeling-Workflow`)
-
-### Phase 2 — Emboss/Deboss on surfaces
-
-**New IPC commands:**
-```
-emboss_text { text_feature_id, target_face_id, depth, mode: "emboss" | "deboss" }
-```
-
-**Two approaches:**
-
-**Approach A — Normal Projection (cleaner, works on steep curves):**
-1. Create text as 2D shapes in a tangent plane near the surface
-2. `BRepProj_Projection` or `BRepOffsetAPI_NormalProjection` to project
-   wires onto the curved target face
-3. Build faces from projected wires
-4. `BRepOffsetAPI_MakeOffsetShape` to thicken the face along the surface
-   normal (positive = emboss, negative = deboss)
-5. Boolean fuse/cut with target body
-
-**Approach B — Tangential Extrusion + Boolean (simpler, good for gentle curves):**
-1. Place text on a datum plane offset from the surface
-2. Extrude text shapes toward the surface (or away) as a solid
-3. Boolean union (emboss) or cut (deboss) with the target body
-4. Limitation: on steep surfaces, extruded ends don't match the surface contour
-
-**Recommendation:** Start with Approach A for correctness. Fall back to
-Approach B for cases where normal projection fails.
-
-### Phase 3 — Polish
-
-- Multiple font support (user-loaded .ttf files)
-- Text along a path/curve
-- Vertical text orientation
-- Bold/italic font aspects via the OCCT `Font_FontAspect` enum
-
-## Risks & Mitigations
-
-| Risk | Mitigation |
-|------|-----------|
-| `StdPrs_BRepFont` produces shapes that fail `BRepCheck_Analyzer` for complex Unicode (emoji, RTL, combining chars) | Limit v1 to ASCII/Latin-1; validate with `BRepCheck_Analyzer` before committing |
-| Kerning mismatch: OCCT FreeType wrapper vs UI text layout disagree on glyph positions | Render text as unified `TopoDS_Compound` from a single `StdPrs_BRepTextBuilder::Perform` call — OCCT handles all positioning internally |
-| `TopoDS_Compound` with mixed wire + face shapes confuses the profile detector | Call `BRepBuilderAPI_MakeFace` on each glyph before feeding to the extrusion pipeline; pass inner/outer loops explicitly |
-| Self-intersecting font outlines (decorative fonts) produce invalid topology | Ship with Noto Sans or Liberation Sans — both have clean, well-tested outlines. Validate user-loaded fonts |
-| Font licensing — cannot bundle commercial fonts, cannot rely on system fonts | Bundle a single SIL OFL 1.1-licensed font as a binary resource |
-| The `StdPrs_BRepFont` mutex (`myMutex`) serializes glyph rendering — concurrent access may be slow | Glyph caching minimizes repeated rendering; text feature creation is infrequent (user-initiated, not in hot loop) |
-
-## FreeCAD Comparison
-
-FreeCAD's ShapeString (Part workbench) uses the same approach:
-1. Load TTF/OTF via FreeType
-2. `FT_Outline_Decompose` to extract line/bezier segments
-3. Convert each contour to `TopoDS_Wire` via `BRepBuilderAPI_MakeWire`
-4. `BRepBuilderAPI_MakeFace(wire)` → extrude
-
-OCCT 7.7+ bundles this logic into `StdPrs_BRepFont`, so PolySmith gets to
-skip the manual FreeType integration. The result is the same — text as
-extrudable BRep shapes — with less code.
-
-## References
-
-- [Sketch Selection Controls](Sketch-Selection-Controls) — selection/snap/constraint controls for sketch entities
-- [Contextual Modeling Workflow](Contextual-Modeling-Workflow) — binding UX pattern
-- [Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan) — same structure, already implemented
-- `third_party/occt-install/include/opencascade/StdPrs_BRepFont.hxx` — OCCT font API
-- `third_party/occt-install/include/opencascade/StdPrs_BRepTextBuilder.hxx` — OCCT text layout API
+- ~~**Text on path**~~ — **SHIPPED (2026-08-20).** `path_entity_id` binds
+  the text to a user sketch line or arc; the engine places each glyph at
+  its advance distance along the curve, rotated to the tangent, with
+  `path_offset` (mm) shifting the baseline perpendicular (positive =
+  left of travel) and multi-line stacking one line-height to the right
+  of travel. In path mode `h_align` aligns along the curve
+  (start/center/end), while `angle_deg`, `v_align`, and the anchor are
+  ignored — the curve drives placement. The path is re-read from the
+  sketch on every recompute, so dragging the path entity moves the text
+  with it; a missing path degrades to `render_error` (no geometry, no
+  crash) and recovers once a real path is bound. UI: the panel's Path
+  section (Pick path arms the picker — the next viewport click on a
+  line/arc binds it; Clear unbinds; Offset input), with angle/v-align
+  disabled while a path is bound. Text longer than the curve overflows
+  past the end ("fit to path" is a later polish).
+- **Exact arc emission** — circle edges currently tessellate to chords;
+  a `kEmitExactArcs` switch in the engine can emit `SketchArc`s.
+- **Bold / italic** — `Font_FontAspect` variants of the loaded font.
+- **Vertical text**, **text selection/drag in the viewport**, **DXF
+  TEXT/MTEXT import** (currently skipped).
+- **Bundled Liberation Sans** — the plumbing exists
+  (`POLYSMITH_TEXT_FONT_PATH` env set by the Tauri spawn when
+  `resources/fonts/LiberationSans-Regular.ttf` exists, plus
+  `TextEngine::bundled_font_path()` fallbacks); only the font file +
+  license copy need to be added to `apps/desktop-ui/src-tauri/resources/fonts/`.

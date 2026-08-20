@@ -50,6 +50,10 @@ target_link_libraries(occt_iface INTERFACE
   # DataExchange
   TKDE TKXSBase TKDESTEP TKXCAF TKDEIGES TKDESTL TKDEVRML
   TKRWMesh TKDECascade TKBinXCAF TKXmlXCAF TKDEOBJ TKDEPLY
+  # Visualization — TKService provides the font stack (Font_BRepFont /
+  # Font_FTFont / Font_FontMgr, FreeType linked statically), TKV3d owns
+  # StdPrs_BRepFont. Needed by the sketch text engine.
+  TKService TKV3d
 )
 set(OpenCASCADE_LIBRARIES occt_iface)
 find_package(Eigen3 REQUIRED)
@@ -140,6 +144,7 @@ set(CAD_CORE_SOURCES
   src/core/sketch/sketch_profile.cpp
   src/core/sketch/trim_engine.cpp
   src/core/sweep/sweep_feature.cpp
+  src/core/text_engine.cpp
   src/core/viewport/viewport.cpp
   src/protocol/ipc.cpp
   src/protocol/serialization.cpp
@@ -172,6 +177,7 @@ add_executable(cad_core_sketch_profile_test
   # protocol/OCCT dependency chain, so tests/logger_stub.cpp supplies
   # the logger symbols as a plain stderr writer.
   tests/logger_stub.cpp
+  tests/text_engine_stub.cpp
   src/core/sketch/constraint_solver.cpp
   src/core/sketch/dof_counter.cpp
   src/core/sketch/formula_eval.cpp
@@ -349,6 +355,45 @@ target_include_directories(cad_core_dxf_import_export_test PRIVATE
 )
 
 target_link_libraries(cad_core_dxf_import_export_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Text engine unit tests — links only the engine + OCCT font stack
+# (no full CAD core), so font behavior is exercised in isolation.
+add_executable(cad_core_text_engine_test
+  tests/text_engine_test.cpp
+  src/core/text_engine.cpp
+  tests/logger_stub.cpp
+)
+
+target_include_directories(cad_core_text_engine_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+)
+
+target_link_libraries(cad_core_text_engine_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+)
+
+# Sketch text integration tests — drive the full DocumentManager like
+# sketch_move_test: expansion, profiles, guards, extrude, save/load.
+add_executable(cad_core_text_test
+  ${CAD_CORE_SOURCES}
+  tests/text_test.cpp
+)
+
+target_include_directories(cad_core_text_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_text_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

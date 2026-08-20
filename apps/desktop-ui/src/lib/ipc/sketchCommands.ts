@@ -697,6 +697,99 @@ export function makeDeleteSketchFilletCommand(filletId: string): CoreCommand {
 }
 
 
+// Sketch text command factories. The core expands every text entry
+// into plain glyph lines on recompute, so these commands only carry
+// the text parameters. `anchor_x` / `anchor_y` are required; every
+// other field falls back to the core default when omitted.
+export function makeAddSketchTextCommand(params: {
+  text?: string;
+  font_path?: string;
+  height_mm?: number;
+  angle_deg?: number;
+  anchor_x: number;
+  anchor_y: number;
+  h_align?: "left" | "center" | "right";
+  v_align?: "top" | "middle" | "bottom";
+  char_spacing?: number;
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_text",
+    payload: {
+      anchor_x: params.anchor_x,
+      anchor_y: params.anchor_y,
+      ...(params.text !== undefined ? { text: params.text } : {}),
+      ...(params.font_path !== undefined ? { font_path: params.font_path } : {}),
+      ...(params.height_mm !== undefined ? { height_mm: params.height_mm } : {}),
+      ...(params.angle_deg !== undefined ? { angle_deg: params.angle_deg } : {}),
+      ...(params.h_align !== undefined ? { h_align: params.h_align } : {}),
+      ...(params.v_align !== undefined ? { v_align: params.v_align } : {}),
+      ...(params.char_spacing !== undefined
+        ? { char_spacing: params.char_spacing }
+        : {}),
+    },
+  };
+}
+
+
+// Only the keys actually present in `patch` are included in the
+// payload; the core merges them over the stored record.
+export function makeUpdateSketchTextCommand(
+  textId: string,
+  patch: {
+    text?: string;
+    font_path?: string;
+    height_mm?: number;
+    angle_deg?: number;
+    anchor_x?: number;
+    anchor_y?: number;
+    h_align?: "left" | "center" | "right";
+    v_align?: "top" | "middle" | "bottom";
+    char_spacing?: number;
+    path_entity_id?: string | null;
+    path_offset?: number;
+  },
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_text",
+    payload: {
+      text_id: textId,
+      ...(patch.text !== undefined ? { text: patch.text } : {}),
+      ...(patch.font_path !== undefined ? { font_path: patch.font_path } : {}),
+      ...(patch.height_mm !== undefined
+        ? { height_mm: patch.height_mm }
+        : {}),
+      ...(patch.angle_deg !== undefined ? { angle_deg: patch.angle_deg } : {}),
+      ...(patch.anchor_x !== undefined ? { anchor_x: patch.anchor_x } : {}),
+      ...(patch.anchor_y !== undefined ? { anchor_y: patch.anchor_y } : {}),
+      ...(patch.h_align !== undefined ? { h_align: patch.h_align } : {}),
+      ...(patch.v_align !== undefined ? { v_align: patch.v_align } : {}),
+      ...(patch.char_spacing !== undefined
+        ? { char_spacing: patch.char_spacing }
+        : {}),
+      ...(patch.path_entity_id !== undefined
+        ? { path_entity_id: patch.path_entity_id }
+        : {}),
+      ...(patch.path_offset !== undefined
+        ? { path_offset: patch.path_offset }
+        : {}),
+    },
+  };
+}
+
+
+export function makeDeleteSketchTextCommand(textId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_text",
+    payload: {
+      text_id: textId,
+    },
+  };
+}
+
+
 export function makeDeleteSketchDimensionCommand(
   dimensionId: string,
 ): CoreCommand {

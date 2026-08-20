@@ -130,6 +130,25 @@ export const ArcIcon = () => (
   </svg>
 );
 
+// Sketch Text tool glyph: a bold "T" — reads as "type text" at
+// toolbar size, distinct from the trim scissors.
+export const TextIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 5h12" />
+    <path d="M12 5v14" />
+    <path d="M9.5 19h5" />
+  </svg>
+);
+
 const TrimIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -302,6 +321,8 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <ArcIcon />;
     case "fillet":
       return <FilletIcon />;
+    case "text":
+      return <TextIcon />;
     case "project":
       return <ProjectFaceIcon />;
     default:

@@ -503,6 +503,10 @@ export const documentStateSchema = z.object({
               // are excluded from profile detection. Optional /
               // defaulted for back-compat with older saves.
               is_construction: z.boolean().default(false),
+              // Set for glyph segments expanded from a sketch text
+              // entry ("text:<text-id>"). Defaulted to null so older
+              // saves / pre-text cores keep parsing cleanly.
+              generated_by: z.string().nullable().default(null),
             }),
           ),
           // Midpoint anchors bind a sketch point (typically an
@@ -574,6 +578,9 @@ export const documentStateSchema = z.object({
               center_y: z.number(),
               radius: z.number(),
               is_construction: z.boolean().default(false),
+              // See `lines.generated_by` (reserved — the v1 text
+              // expansion only emits lines).
+              generated_by: z.string().nullable().default(null),
             }),
           ),
           // Sketch arcs in the document state. Defaulted to `[]`
@@ -595,6 +602,9 @@ export const documentStateSchema = z.object({
                 end_y: z.number(),
                 ccw: z.boolean(),
                 is_construction: z.boolean().default(false),
+                // See `lines.generated_by` (reserved — the v1 text
+                // expansion only emits lines).
+                generated_by: z.string().nullable().default(null),
               }),
             )
             .default([]),
@@ -614,6 +624,32 @@ export const documentStateSchema = z.object({
                 trim_b_vertex_id: z.string(),
                 arc_id: z.string(),
                 radius: z.number(),
+              }),
+            )
+            .default([]),
+          // Parametric sketch text entries. The glyph segments live in
+          // `lines` (tagged via `generated_by`), so profile detection
+          // and the viewport consume text with zero downstream
+          // changes. Defaulted to `[]` so older saves (or messages
+          // from a core that pre-dates text support) keep parsing
+          // cleanly.
+          texts: z
+            .array(
+              z.object({
+                text_id: z.string(),
+                text: z.string(),
+                font_path: z.string().nullable(),
+                height_mm: z.number(),
+                angle_deg: z.number(),
+                anchor_x: z.number(),
+                anchor_y: z.number(),
+                h_align: z.enum(["left", "center", "right"]),
+                v_align: z.enum(["top", "middle", "bottom"]),
+                char_spacing: z.number(),
+                // Reserved for text-on-path (follow-up); the core
+                // always serializes them, but default for safety.
+                path_entity_id: z.string().nullable().default(null),
+                path_offset: z.number().nullable().default(null),
               }),
             )
             .default([]),

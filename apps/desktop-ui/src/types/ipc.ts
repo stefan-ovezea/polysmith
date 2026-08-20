@@ -38,6 +38,9 @@ import type {
   AddSketchFilletCommand,
   UpdateSketchFilletRadiusCommand,
   DeleteSketchFilletCommand,
+  AddSketchTextCommand,
+  UpdateSketchTextCommand,
+  DeleteSketchTextCommand,
   DeleteSketchDimensionCommand,
   ToggleSketchDimensionDrivenCommand,
   TrimSketchEntityCommand,
@@ -811,6 +814,9 @@ export type CoreCommand =
   | AddSketchFilletCommand
   | UpdateSketchFilletRadiusCommand
   | DeleteSketchFilletCommand
+  | AddSketchTextCommand
+  | UpdateSketchTextCommand
+  | DeleteSketchTextCommand
   | DeleteSketchDimensionCommand
   | ToggleSketchDimensionDrivenCommand
   | TrimSketchEntityCommand

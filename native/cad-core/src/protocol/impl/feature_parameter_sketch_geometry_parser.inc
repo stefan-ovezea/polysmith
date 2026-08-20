@@ -14,6 +14,10 @@
           line_payload.at("is_construction").is_boolean()) {
         line.is_construction = line_payload.at("is_construction").get<bool>();
       }
+      // Generated-by ownership (sketch text expansion). Persisted lines
+      // are re-derived from the text record on load, but the flag keeps
+      // them non-editable in the window between parse and first refresh.
+      line.generated_by = read_optional_string(line_payload, "generated_by");
       params.lines.push_back(line);
     }
   }
@@ -33,6 +37,8 @@
         circle.is_construction =
             circle_payload.at("is_construction").get<bool>();
       }
+      circle.generated_by =
+          read_optional_string(circle_payload, "generated_by");
       params.circles.push_back(circle);
     }
   }
@@ -58,6 +64,7 @@
           arc_payload.at("is_construction").is_boolean()) {
         arc.is_construction = arc_payload.at("is_construction").get<bool>();
       }
+      arc.generated_by = read_optional_string(arc_payload, "generated_by");
       params.arcs.push_back(arc);
     }
   }
