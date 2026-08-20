@@ -20,6 +20,11 @@ export interface SketchTextPanelValue {
   h_align: "left" | "center" | "right";
   v_align: "top" | "middle" | "bottom";
   char_spacing: number;
+  // Text on path: the sketch line/arc the glyphs flow along; null =
+  // flat text. When set, angle and v_align are ignored (the curve
+  // drives rotation; path_offset drives the above/below shift).
+  path_entity_id: string | null;
+  path_offset: number;
 }
 
 // Core defaults for `add_sketch_text` (see sketch_text_command_handlers).
@@ -31,6 +36,8 @@ export const DEFAULT_SKETCH_TEXT_VALUE: SketchTextPanelValue = {
   h_align: "center",
   v_align: "middle",
   char_spacing: 0,
+  path_entity_id: null,
+  path_offset: 0,
 };
 
 const TEXT_DEBOUNCE_MS = 250;
@@ -55,6 +62,11 @@ interface SketchTextPanelProps {
   // Cancel = discard the session. The wrapper deletes the bound text
   // (if any) and returns to Select.
   onCancel: () => void | Promise<void>;
+  // True while the path picker is armed: the next viewport click on a
+  // sketch line/arc binds it as the text path.
+  pathPicking: boolean;
+  onArmPathPick: () => void;
+  onClearPath: () => void;
 }
 
 function parseFinite(text: string, fallback: number) {
@@ -81,6 +93,9 @@ export function SketchTextPanel({
   onPreviewValue,
   onConfirm,
   onCancel,
+  pathPicking,
+  onArmPathPick,
+  onClearPath,
 }: SketchTextPanelProps) {
   const { t } = useTranslation();
   const [textValue, setTextValue] = useState(
@@ -95,6 +110,9 @@ export function SketchTextPanel({
   const [spacingText, setSpacingText] = useState(
     String(initialValue?.char_spacing ?? DEFAULT_SKETCH_TEXT_VALUE.char_spacing),
   );
+  const [pathOffsetText, setPathOffsetText] = useState(
+    String(initialValue?.path_offset ?? DEFAULT_SKETCH_TEXT_VALUE.path_offset),
+  );
   const [hAlign, setHAlign] = useState<SketchTextPanelValue["h_align"]>(
     initialValue?.h_align ?? DEFAULT_SKETCH_TEXT_VALUE.h_align,
   );
@@ -107,6 +125,9 @@ export function SketchTextPanel({
   const [fontError, setFontError] = useState<string | null>(null);
   const debounceTimerRef = useRef<number | null>(null);
   const onPreviewValueRef = useRef(onPreviewValue);
+  // When a path is bound, the curve drives rotation and the offset
+  // drives vertical placement — angle and v_align are no-ops.
+  const pathBound = Boolean(initialValue?.path_entity_id);
 
   useEffect(() => {
     onPreviewValueRef.current = onPreviewValue;
@@ -133,6 +154,11 @@ export function SketchTextPanel({
       ),
       h_align: hAlign,
       v_align: vAlign,
+      path_entity_id: initialValue?.path_entity_id ?? null,
+      path_offset: parseFinite(
+        pathOffsetText,
+        DEFAULT_SKETCH_TEXT_VALUE.path_offset,
+      ),
     };
   }
 
@@ -292,7 +318,8 @@ export function SketchTextPanel({
                 type="text"
                 inputMode="decimal"
                 value={angleText}
-                disabled={disabled}
+                disabled={disabled || pathBound}
+                title={pathBound ? t("panels.text.angleOnPathIgnored") : undefined}
                 onChange={(event) => {
                   setAngleText(event.target.value);
                   scheduleUpdate();
@@ -367,7 +394,8 @@ export function SketchTextPanel({
                       ? "cad-action-primary flex-1"
                       : "cad-action-ghost flex-1"
                   }
-                  disabled={disabled}
+                  disabled={disabled || pathBound}
+                  title={pathBound ? t("panels.text.vAlignOnPathIgnored") : undefined}
                   onClick={() => {
                     setVAlign(option.value);
                     scheduleUpdate();
@@ -383,6 +411,60 @@ export function SketchTextPanel({
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <p className="cad-kicker">{t("panels.text.path")}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                className={pathPicking ? "cad-action-primary" : "cad-action-ghost"}
+                disabled={disabled}
+                onClick={() => {
+                  onArmPathPick();
+                }}
+              >
+                {t(pathPicking ? "panels.text.pathPicking" : "panels.text.pathPick")}
+              </button>
+              {pathBound ? (
+                <button
+                  type="button"
+                  className="cad-action-ghost"
+                  disabled={disabled}
+                  onClick={() => {
+                    onClearPath();
+                  }}
+                >
+                  {t("panels.text.pathClear")}
+                </button>
+              ) : null}
+              <span className="truncate text-xs text-on-surface-muted">
+                {pathBound
+                  ? t("panels.text.pathBound", {
+                      entity: initialValue?.path_entity_id,
+                    })
+                  : t("panels.text.pathNone")}
+              </span>
+            </div>
+            <label className="mt-3 block text-[11px] uppercase tracking-[0.16em] text-on-surface-muted">
+              {t("panels.text.pathOffset")}
+              <input
+                className="cad-input mt-1 w-full"
+                type="text"
+                inputMode="decimal"
+                value={pathOffsetText}
+                disabled={disabled}
+                onChange={(event) => {
+                  setPathOffsetText(event.target.value);
+                  scheduleUpdate();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleConfirm();
+                  }
+                }}
+              />
+            </label>
           </div>
           <div>
             <p className="cad-kicker">{t("panels.text.font")}</p>

@@ -96,6 +96,39 @@ TextPoint make_point(const gp_Pnt& pnt) {
   return TextPoint{pnt.X(), pnt.Y()};
 }
 
+struct PathSample {
+  double x;
+  double y;
+  double tangent;  // radians, direction of travel
+};
+
+double path_length(const TextPath& path) {
+  if (!path.is_arc) {
+    const double dx = path.end_x - path.start_x;
+    const double dy = path.end_y - path.start_y;
+    return std::sqrt(dx * dx + dy * dy);
+  }
+  return path.radius * path.sweep_angle;
+}
+
+PathSample sample_path(const TextPath& path, double distance) {
+  if (!path.is_arc) {
+    const double dx = path.end_x - path.start_x;
+    const double dy = path.end_y - path.start_y;
+    const double length = std::sqrt(dx * dx + dy * dy);
+    const double t = distance / length;
+    return PathSample{path.start_x + dx * t, path.start_y + dy * t,
+                      std::atan2(dy, dx)};
+  }
+  const double theta = path.start_angle +
+                       static_cast<double>(path.direction) *
+                           (distance / path.radius);
+  return PathSample{
+      path.center_x + path.radius * std::cos(theta),
+      path.center_y + path.radius * std::sin(theta),
+      theta + static_cast<double>(path.direction) * (kPi / 2.0)};
+}
+
 // The default font: OCCT's embedded DejaVu Sans (Latin subset), dumped
 // from the TKService resource once per process. Using the embedded font
 // directly makes text deterministic on every machine — Font_FontMgr's
@@ -442,40 +475,109 @@ bool TextEngine::layout(const std::string& utf8_text,
   const double line_spacing = font->LineSpacing();
   const double tolerance = tessellation_tolerance(style.height_mm);
 
-  TextLayout layout;
-  double pen_x = 0.0;
-  double pen_y = 0.0;  // baseline of the current line
-  for (size_t i = 0; i <= chars.size(); ++i) {
-    if (i == chars.size() || chars[i] == U'\n') {
-      if (i < chars.size()) {
-        pen_x = 0.0;
-        pen_y -= line_spacing;
-      }
+  // Split into lines with per-glyph advances (two-arg AdvanceX applies
+  // kerning for the current → next pair — the same metric
+  // Font_TextFormatter uses, so there is no drift from OCCT's layout).
+  struct GlyphPlacement {
+    char32_t ch;
+    double advance;
+  };
+  std::vector<std::vector<GlyphPlacement>> lines(1);
+  for (size_t i = 0; i < chars.size(); ++i) {
+    if (chars[i] == U'\n') {
+      lines.emplace_back();
       continue;
     }
-    const char32_t ch = chars[i];
     const char32_t next =
         (i + 1 < chars.size() && chars[i + 1] != U'\n') ? chars[i + 1] : 0;
-    const std::vector<TextContour>& glyph =
-        impl_->glyph_contours(font_key, font, ch, tolerance);
-    if (glyph.empty() && ch != U' ') {
-      log_debug("text_engine",
-                "no outline for codepoint " +
-                    std::to_string(static_cast<uint32_t>(ch)));
+    lines.back().push_back(
+        {chars[i],
+         font->AdvanceX(chars[i], next) * (1.0 + style.char_spacing)});
+  }
+
+  // Path mode: validate the curve and compute per-line start distances
+  // (h_align applies ALONG the path; v_align, angle, and the anchor are
+  // ignored — the curve defines placement and rotation).
+  const bool on_path = style.path.has_value();
+  double curve_length = 0.0;
+  std::vector<double> line_start_distance(lines.size(), 0.0);
+  if (on_path) {
+    curve_length = path_length(style.path.value());
+    if (!(curve_length > 0.0) || !std::isfinite(curve_length)) {
+      *error = "invalid text path";
+      return false;
     }
-    for (const auto& contour : glyph) {
-      TextContour placed;
-      placed.points.reserve(contour.points.size());
-      for (const auto& point : contour.points) {
-        placed.points.push_back(
-            TextPoint{point.x + pen_x, point.y + pen_y});
+    for (size_t k = 0; k < lines.size(); ++k) {
+      double total = 0.0;
+      for (const auto& placement : lines[k]) {
+        total += placement.advance;
       }
-      layout.contours.push_back(std::move(placed));
+      double start = 0.0;
+      if (style.h_align == "center") {
+        start = (curve_length - total) * 0.5;
+      } else if (style.h_align == "right") {
+        start = curve_length - total;
+      }
+      // Text longer than the curve overflows past the end (a "fit to
+      // path" toggle is a later polish) — never start before the start.
+      line_start_distance[k] = std::max(0.0, start);
     }
-    // Two-arg AdvanceX applies kerning for the current → next pair, the
-    // same metric Font_TextFormatter uses — no drift between the engine
-    // and OCCT's own layout.
-    pen_x += font->AdvanceX(ch, next) * (1.0 + style.char_spacing);
+  }
+
+  TextLayout layout;
+  double pen_x = 0.0;
+  double pen_y = 0.0;  // flat mode: baseline of the current line
+  for (size_t k = 0; k < lines.size(); ++k) {
+    pen_x = 0.0;
+    double distance = line_start_distance[k];
+    // Path mode: each further line stacks one line-height to the right
+    // of travel (perpendicular to the curve), mirroring the flat
+    // mode's downward stacking.
+    const double perpendicular =
+        on_path ? style.path_offset -
+                      static_cast<double>(k) * line_spacing
+                : 0.0;
+    for (const auto& placement : lines[k]) {
+      const std::vector<TextContour>& glyph =
+          impl_->glyph_contours(font_key, font, placement.ch, tolerance);
+      if (glyph.empty() && placement.ch != U' ') {
+        log_debug("text_engine",
+                  "no outline for codepoint " +
+                      std::to_string(static_cast<uint32_t>(placement.ch)));
+      }
+      for (const auto& contour : glyph) {
+        TextContour placed;
+        placed.points.reserve(contour.points.size());
+        for (const auto& point : contour.points) {
+          if (on_path) {
+            const PathSample sample =
+                sample_path(style.path.value(), distance);
+            const double sin_t = std::sin(sample.tangent);
+            const double cos_t = std::cos(sample.tangent);
+            // Baseline origin = curve point + perpendicular offset
+            // (positive = left of travel); glyph points rotate by the
+            // tangent angle around that origin.
+            const double origin_x = sample.x - sin_t * perpendicular;
+            const double origin_y = sample.y + cos_t * perpendicular;
+            placed.points.push_back(
+                TextPoint{origin_x + point.x * cos_t - point.y * sin_t,
+                          origin_y + point.x * sin_t + point.y * cos_t});
+          } else {
+            placed.points.push_back(
+                TextPoint{point.x + pen_x, point.y + pen_y});
+          }
+        }
+        layout.contours.push_back(std::move(placed));
+      }
+      if (on_path) {
+        distance += placement.advance;
+      } else {
+        pen_x += placement.advance;
+      }
+    }
+    if (!on_path) {
+      pen_y -= line_spacing;
+    }
   }
 
   // Bounds of the placed text, then the alignment shift. The anchor
@@ -497,34 +599,39 @@ bool TextEngine::layout(const std::string& utf8_text,
       }
     }
   }
-  double shift_x = 0.0;
-  double shift_y = 0.0;
-  if (any) {
-    if (style.h_align == "left") {
-      shift_x = -min_x;
-    } else if (style.h_align == "right") {
-      shift_x = -max_x;
-    } else {
-      shift_x = -0.5 * (min_x + max_x);
+  // Flat mode only: alignment shift + angle rotation + anchor
+  // translation. Path mode is already placed/rotated by the curve —
+  // the anchor is meaningless there.
+  if (!on_path) {
+    double shift_x = 0.0;
+    double shift_y = 0.0;
+    if (any) {
+      if (style.h_align == "left") {
+        shift_x = -min_x;
+      } else if (style.h_align == "right") {
+        shift_x = -max_x;
+      } else {
+        shift_x = -0.5 * (min_x + max_x);
+      }
+      if (style.v_align == "top") {
+        shift_y = -max_y;
+      } else if (style.v_align == "bottom") {
+        shift_y = -min_y;
+      } else {
+        shift_y = -0.5 * (min_y + max_y);
+      }
     }
-    if (style.v_align == "top") {
-      shift_y = -max_y;
-    } else if (style.v_align == "bottom") {
-      shift_y = -min_y;
-    } else {
-      shift_y = -0.5 * (min_y + max_y);
-    }
-  }
 
-  const double angle_rad = style.angle_deg * (kPi / 180.0);
-  const double cos_a = std::cos(angle_rad);
-  const double sin_a = std::sin(angle_rad);
-  for (auto& contour : layout.contours) {
-    for (auto& point : contour.points) {
-      const double x = point.x + shift_x;
-      const double y = point.y + shift_y;
-      point.x = x * cos_a - y * sin_a + anchor_x;
-      point.y = x * sin_a + y * cos_a + anchor_y;
+    const double angle_rad = style.angle_deg * (kPi / 180.0);
+    const double cos_a = std::cos(angle_rad);
+    const double sin_a = std::sin(angle_rad);
+    for (auto& contour : layout.contours) {
+      for (auto& point : contour.points) {
+        const double x = point.x + shift_x;
+        const double y = point.y + shift_y;
+        point.x = x * cos_a - y * sin_a + anchor_x;
+        point.y = x * sin_a + y * cos_a + anchor_y;
+      }
     }
   }
 

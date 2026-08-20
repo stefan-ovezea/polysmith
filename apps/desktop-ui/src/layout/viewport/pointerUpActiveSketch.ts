@@ -5,6 +5,7 @@ import type {
   SketchFeatureParameters,
   SketchTool,
 } from "@/types";
+
 import {
   handleDimensionToolClick,
 } from "./dimensionToolPicking";
@@ -48,6 +49,11 @@ export interface ActiveSketchPointerUpContext {
   // segment (`generated_by: "text:<id>"`); App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText?: (textId: string) => void;
+  // Text-on-path picking: while armed, an entity click binds the
+  // clicked sketch line/arc as the active text's path instead of
+  // placing a new text.
+  sketchTextPathPicking: boolean;
+  pickSketchTextPath: (entityId: string) => void;
   selectSketchProfile: (profileId: string, additive: boolean) => Promise<void>;
   selectVertex: (vertexId: string, additive: boolean) => Promise<void>;
   selectEdge: (edgeId: string, additive: boolean) => Promise<void>;
@@ -118,6 +124,85 @@ function dimensionToolHit(hit: ActiveSketchSelectHit) {
     hit?.kind === "sketch_point"
     ? hit
     : null;
+}
+
+// Nearest user line/arc to a sketch-local point (text-path picking).
+// Snap can pull the click onto the curve or onto an endpoint — this
+// recovers the intended curve from the resolved position itself.
+function findPathCandidateNear(
+  sketch: SketchFeatureParameters | null,
+  localX: number,
+  localY: number,
+  tolerance: number,
+): string | null {
+  if (!sketch) {
+    return null;
+  }
+  let bestId: string | null = null;
+  let bestDistance = Infinity;
+  for (const line of sketch.lines) {
+    if (line.generated_by) continue;
+    const dx = line.end_x - line.start_x;
+    const dy = line.end_y - line.start_y;
+    const len2 = dx * dx + dy * dy;
+    const t =
+      len2 > 0
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              ((localX - line.start_x) * dx + (localY - line.start_y) * dy) /
+                len2,
+            ),
+          )
+        : 0;
+    const distance = Math.hypot(
+      localX - (line.start_x + dx * t),
+      localY - (line.start_y + dy * t),
+    );
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = line.line_id;
+    }
+  }
+  for (const arc of sketch.arcs) {
+    if (arc.generated_by) continue;
+    const distance = Math.abs(
+      Math.hypot(localX - arc.center_x, localY - arc.center_y) - arc.radius,
+    );
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = arc.arc_id;
+    }
+  }
+  return bestDistance <= tolerance ? bestId : null;
+}
+
+// Resolves a picked point (snap landed on an endpoint/midpoint) to a
+// user-owned line/arc for text-path binding.
+function owningPathEntity(
+  sketch: SketchFeatureParameters | null,
+  vertexId: string,
+): string | null {
+  const vertex = sketch?.vertices.find((entry) => entry.vertex_id === vertexId);
+  if (!vertex) {
+    return null;
+  }
+  for (const ownerId of vertex.geometry_owner_ids) {
+    const line = sketch?.lines.find(
+      (entry) => entry.line_id === ownerId && !entry.generated_by,
+    );
+    if (line) {
+      return line.line_id;
+    }
+    const arc = sketch?.arcs.find(
+      (entry) => entry.arc_id === ownerId && !entry.generated_by,
+    );
+    if (arc) {
+      return arc.arc_id;
+    }
+  }
+  return null;
 }
 
 export function handleActiveSketchPointerUpTool(
@@ -280,6 +365,30 @@ export function handleActiveSketchPointerUpTool(
   // parameters. `cursorLocal` is resolved by the caller from the raw
   // pointer position on the active plane.
   if (context.activeSketchTool === "text") {
+    // Path picking armed: resolve the clicked curve from the entity
+    // hit, the snapped point's owners, or the snapped position itself
+    // (snap can pull the click onto the curve/endpoint so the raw
+    // raycast misses). Invalid picks keep the picker armed and
+    // swallow the click — no text is placed while picking.
+    if (context.sketchTextPathPicking) {
+      let pathEntityId: string | null = null;
+      if (context.hit?.kind === "sketch_entity") {
+        pathEntityId = context.hit.id;
+      } else if (context.hit?.kind === "sketch_point") {
+        pathEntityId = owningPathEntity(context.sketch, context.hit.id);
+      } else if (context.cursorLocal) {
+        pathEntityId = findPathCandidateNear(
+          context.sketch,
+          context.cursorLocal[0],
+          context.cursorLocal[1],
+          5.0,
+        );
+      }
+      if (pathEntityId) {
+        context.pickSketchTextPath(pathEntityId);
+      }
+      return true;
+    }
     if (context.cursorLocal) {
       void context.addSketchTextAt(
         context.cursorLocal[0],

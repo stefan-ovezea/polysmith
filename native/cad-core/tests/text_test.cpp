@@ -692,6 +692,150 @@ bool test_no_glyph_vertex_markers() {
                 "viewport: glyph lines still render");
 }
 
+// Fusion-style text on path: the text record references a sketch line
+// or arc; the expansion places every glyph on that curve, rotated to
+// its tangent.
+bool test_text_on_line_path() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 100.0, 0.0);
+  auto params = sketch_params(document);
+  const std::string path_id = params.lines.back().id;
+
+  SketchText text;
+  text.text = "OK";
+  text.height_mm = 10.0;
+  text.path_entity_id = path_id;
+  document = manager.add_sketch_text(text);
+  params = sketch_params(document);
+
+  if (!expect(!generated_line_ids(params).empty(),
+              "line path: glyph geometry generated")) {
+    return false;
+  }
+  // Every glyph vertex rides the horizontal path at y ≈ 0 (glyph
+  // outline points extend within cap-height of the baseline).
+  for (const auto& line : params.lines) {
+    if (!line.generated_by.has_value()) continue;
+    if (!expect(std::abs(line.start_y) < 15.0 &&
+                    std::abs(line.end_y) < 15.0 &&
+                    line.start_x >= -1.0 && line.end_x <= 101.0,
+                "line path: glyph vertices hug the path line")) {
+      return false;
+    }
+  }
+
+  // Glyphs still form complete closed profile regions.
+  const int expected = expected_contour_count("OK", 10.0);
+  if (!expect(expected > 0 && static_cast<int>(params.profiles.size()) ==
+                                  expected,
+              "line path: one profile region per glyph contour")) {
+    return false;
+  }
+  std::vector<polysmith::test::ExpectedProfile> expected_profiles;
+  for (const auto& profile : params.profiles) {
+    expected_profiles.push_back({.entity_ids = profile.line_ids,
+                                 .kind = "polygon",
+                                 .has_source_circle_id = false});
+  }
+  std::string reason;
+  return expect(
+      polysmith::test::profiles_match(document, expected_profiles, &reason),
+      ("line path: complete region set: " + reason).c_str());
+}
+
+bool test_text_on_arc_path() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Quarter arc centered at (0,0), radius 40, from (40,0) to (0,40).
+  DocumentState document = manager.add_sketch_arc(
+      40.0, 0.0, 0.0, 40.0, 0.0, 0.0, "center_start_end");
+  auto params = sketch_params(document);
+  const std::string path_id = params.arcs.back().id;
+
+  SketchText text;
+  text.text = "OK";
+  text.height_mm = 10.0;
+  text.path_entity_id = path_id;
+  document = manager.add_sketch_text(text);
+  params = sketch_params(document);
+
+  if (!expect(!generated_line_ids(params).empty(),
+              "arc path: glyph geometry generated")) {
+    return false;
+  }
+  // Glyph vertices stay within glyph-extent of the circle radius.
+  for (const auto& line : params.lines) {
+    if (!line.generated_by.has_value()) continue;
+    const auto check_radius = [&](double x, double y) {
+      const double radius = std::sqrt(x * x + y * y);
+      return expect(radius > 25.0 && radius < 60.0,
+                    "arc path: glyph vertices hug the circle");
+    };
+    if (!check_radius(line.start_x, line.start_y) ||
+        !check_radius(line.end_x, line.end_y)) {
+      return false;
+    }
+  }
+
+  const int expected = expected_contour_count("OK", 10.0);
+  return expect(expected > 0 && static_cast<int>(params.profiles.size()) ==
+                                    expected,
+                "arc path: one profile region per glyph contour");
+}
+
+bool test_text_path_bind_and_recover() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 100.0, 0.0);
+  auto params = sketch_params(document);
+  const std::string path_id = params.lines.back().id;
+
+  // Missing path degrades gracefully (render_error, no geometry, no
+  // crash) and recovers once a real path is bound.
+  SketchText text;
+  text.text = "OK";
+  text.height_mm = 10.0;
+  text.path_entity_id = std::string("line-999");
+  document = manager.add_sketch_text(text);
+  params = sketch_params(document);
+  if (!expect(params.texts.size() == 1 &&
+                  !params.texts[0].render_error.empty() &&
+                  generated_line_ids(params).empty(),
+              "bind: missing path sets render_error and emits nothing")) {
+    return false;
+  }
+
+  SketchText updated = params.texts[0];
+  updated.path_entity_id = path_id;
+  document = manager.update_sketch_text(updated.id, updated);
+  params = sketch_params(document);
+  if (!expect(!generated_line_ids(params).empty(),
+              "bind: real path generates geometry")) {
+    return false;
+  }
+  if (!expect(params.texts[0].render_error.empty(),
+              "bind: render_error cleared after recovery")) {
+    return false;
+  }
+
+  // Clearing the path returns the text to flat layout (anchor at the
+  // stored anchor point).
+  updated = params.texts[0];
+  updated.path_entity_id = std::nullopt;
+  document = manager.update_sketch_text(updated.id, updated);
+  params = sketch_params(document);
+  return expect(!generated_line_ids(params).empty() &&
+                    !params.texts[0].path_entity_id.has_value(),
+                "bind: clearing the path falls back to flat text");
+}
+
 bool test_multiline_profiles() {
   DocumentManager manager;
   manager.create_document();
@@ -829,6 +973,9 @@ int main() {
   RUN_TEST(test_char_limit);
   RUN_TEST(test_set_text_tool_accepted);
   RUN_TEST(test_no_glyph_vertex_markers);
+  RUN_TEST(test_text_on_line_path);
+  RUN_TEST(test_text_on_arc_path);
+  RUN_TEST(test_text_path_bind_and_recover);
 
   std::cout << "text_test passed\n";
   return 0;

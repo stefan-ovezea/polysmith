@@ -2,6 +2,36 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-20
+
+### Sketch text on path (Fusion "Text on Path")
+
+- `SketchText.path_entity_id` (reserved in the text commit) is now
+  live: the expansion resolves it against the sketch's user lines/arcs
+  (generated glyph segments can never be paths) and hands the engine a
+  `TextPath` (line or arc descriptor). The engine places each glyph at
+  its advance distance along the curve, rotated to the tangent, with
+  `path_offset` (mm) shifting the baseline perpendicular and multi-line
+  stacking one line-height to the right of travel; `h_align` aligns
+  along the curve (start/center/end), `angle_deg`/`v_align`/anchor are
+  ignored in path mode. The path geometry is re-read every recompute,
+  so dragging the path entity moves the text with it; a missing path
+  degrades to `render_error` (no geometry, no crash) and recovers when
+  a real path is bound. Text longer than the curve overflows past the
+  end (fit-to-path is a later polish).
+- IPC: `add_sketch_text` / `update_sketch_text` accept
+  `path_entity_id` (absent = keep, null = clear, string = bind) and
+  `path_offset`.
+- UI: the Text panel gains a Path section — Pick path (arms the picker;
+  the next viewport click on a line/arc binds it), Clear, bound-path
+  status, and an Offset (mm) input; angle and v-align disable while a
+  path is bound (tooltips explain why).
+- tests: engine suite +4 (vertical line rotates 90°, arc path hugs the
+  circle, offset is an exact 10 mm perpendicular shift, center aligns
+  on the curve midpoint); text suite +3 (line-path region completeness
+  via profiles_match, arc-path radius bounds, bind/missing/recover
+  lifecycle). All 11 suites green; tsc clean.
+
 ## 2026-08-19
 
 ### Sketch Text tool (Fusion-style parametric text)

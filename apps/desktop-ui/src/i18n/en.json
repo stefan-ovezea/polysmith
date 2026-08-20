@@ -654,7 +654,16 @@
       "loadFontTitle": "Load font",
       "fontFileType": "TrueType font",
       "confirm": "Confirm",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "path": "Path",
+      "pathNone": "None",
+      "pathPick": "Pick path",
+      "pathPicking": "Click a line or arc…",
+      "pathClear": "Clear",
+      "pathBound": "{{entity}}",
+      "pathOffset": "Offset (mm)",
+      "angleOnPathIgnored": "Ignored when text is on a path",
+      "vAlignOnPathIgnored": "Ignored when text is on a path"
     }
   },
   "settings": {

@@ -157,6 +157,10 @@ export interface ViewportPanelProps {
   // segment (`generated_by: "text:<id>"`). App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText: (textId: string) => void;
+  // Text-on-path picking: while armed, entity clicks bind the text
+  // path instead of placing a new text.
+  sketchTextPathPicking: boolean;
+  onPickSketchTextPath: (entityId: string) => void;
   onSelectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
   onBatchSelectEntities: (
     entityIds: string[],

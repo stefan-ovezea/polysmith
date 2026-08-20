@@ -16,7 +16,15 @@ export type SketchFilletAction =
 // entry (freshly created or picked from the sketch in Select mode).
 export type SketchTextAction =
   | { phase: "pending" }
-  | { phase: "active"; textId: string; params: SketchTextEntry };
+  | {
+      phase: "active";
+      textId: string;
+      params: SketchTextEntry;
+      // True while the path picker is armed: the next viewport click
+      // on a sketch line/arc binds it as the text path instead of
+      // placing a new text.
+      pathPicking?: boolean;
+    };
 
 interface SketchToolLifecycleEffectsContext {
   activeSketchPlaneId: string | null;

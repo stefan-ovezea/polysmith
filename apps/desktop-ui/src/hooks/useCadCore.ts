@@ -989,6 +989,8 @@ export function useCadCore() {
         hAlign?: "left" | "center" | "right";
         vAlign?: "top" | "middle" | "bottom";
         charSpacing?: number;
+        pathEntityId?: string | null;
+        pathOffset?: number;
       },
     ) => {
       await sendCoreCommand(
@@ -1009,6 +1011,12 @@ export function useCadCore() {
           ...(patch.vAlign !== undefined ? { v_align: patch.vAlign } : {}),
           ...(patch.charSpacing !== undefined
             ? { char_spacing: patch.charSpacing }
+            : {}),
+          ...(patch.pathEntityId !== undefined
+            ? { path_entity_id: patch.pathEntityId }
+            : {}),
+          ...(patch.pathOffset !== undefined
+            ? { path_offset: patch.pathOffset }
             : {}),
         }),
       );

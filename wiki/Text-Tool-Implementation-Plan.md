@@ -98,9 +98,21 @@ moment it is placed; Escape cancels via `delete_sketch_text` (one undo).
 
 ## Follow-ups (not in v1)
 
-- **Text on path** — `SketchText.path_entity_id` / `path_offset` are
-  reserved and serialized; the follow-up places glyphs along the curve
-  with per-glyph rotation (planar, Fusion-style) in the layout loop.
+- ~~**Text on path**~~ — **SHIPPED (2026-08-20).** `path_entity_id` binds
+  the text to a user sketch line or arc; the engine places each glyph at
+  its advance distance along the curve, rotated to the tangent, with
+  `path_offset` (mm) shifting the baseline perpendicular (positive =
+  left of travel) and multi-line stacking one line-height to the right
+  of travel. In path mode `h_align` aligns along the curve
+  (start/center/end), while `angle_deg`, `v_align`, and the anchor are
+  ignored — the curve drives placement. The path is re-read from the
+  sketch on every recompute, so dragging the path entity moves the text
+  with it; a missing path degrades to `render_error` (no geometry, no
+  crash) and recovers once a real path is bound. UI: the panel's Path
+  section (Pick path arms the picker — the next viewport click on a
+  line/arc binds it; Clear unbinds; Offset input), with angle/v-align
+  disabled while a path is bound. Text longer than the curve overflows
+  past the end ("fit to path" is a later polish).
 - **Exact arc emission** — circle edges currently tessellate to chords;
   a `kEmitExactArcs` switch in the engine can emit `SketchArc`s.
 - **Bold / italic** — `Font_FontAspect` variants of the loaded font.

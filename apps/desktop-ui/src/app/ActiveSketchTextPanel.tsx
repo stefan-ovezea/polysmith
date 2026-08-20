@@ -23,9 +23,17 @@ interface ActiveSketchTextPanelProps {
       hAlign?: "left" | "center" | "right";
       vAlign?: "top" | "middle" | "bottom";
       charSpacing?: number;
+      pathEntityId?: string | null;
+      pathOffset?: number;
     },
   ) => Promise<void>;
   deleteSketchText: (textId: string) => Promise<void>;
+  // Path picker: armed while the next viewport click should bind a
+  // sketch line/arc as the text path (click handling lives in
+  // App/viewport); clearing unbinds the current path.
+  pathPicking: boolean;
+  onArmPathPick: () => void;
+  onClearPath: () => void;
 }
 
 // contextual modeling state machine for the sketch Text tool,
@@ -47,6 +55,9 @@ export function ActiveSketchTextPanel({
   setSketchTool,
   updateSketchText,
   deleteSketchText,
+  pathPicking,
+  onArmPathPick,
+  onClearPath,
 }: ActiveSketchTextPanelProps) {
   const isActive = action.phase === "active";
   const params = isActive ? action.params : null;
@@ -57,6 +68,9 @@ export function ActiveSketchTextPanel({
       pending={!isActive}
       initialValue={params}
       disabled={disabled}
+      pathPicking={pathPicking}
+      onArmPathPick={onArmPathPick}
+      onClearPath={onClearPath}
       onPreviewValue={async (value: SketchTextPanelValue) => {
         // Keep the action's params in sync so a later Cancel / re-pick
         // sees the latest edits even before the core round-trip lands.
@@ -77,6 +91,7 @@ export function ActiveSketchTextPanel({
             hAlign: value.h_align,
             vAlign: value.v_align,
             charSpacing: value.char_spacing,
+            pathOffset: value.path_offset,
           });
         });
       }}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,29 @@ struct TextLayout {
   double height = 0.0;
 };
 
+// Curve the text flows along (Fusion-style "Text on Path"). When set,
+// every glyph is placed at its advance distance along the curve and
+// rotated to the curve tangent. In path mode `angle_deg` and `v_align`
+// are ignored — the tangent drives rotation and `path_offset` drives
+// the above/below shift.
+struct TextPath {
+  bool is_arc = false;
+  // Straight segment (is_arc == false).
+  double start_x = 0.0;
+  double start_y = 0.0;
+  double end_x = 0.0;
+  double end_y = 0.0;
+  // Arc (is_arc == true). Travel runs from start_angle through
+  // sweep_angle radians; direction +1 = counter-clockwise, -1 =
+  // clockwise.
+  double center_x = 0.0;
+  double center_y = 0.0;
+  double radius = 0.0;
+  double start_angle = 0.0;
+  double sweep_angle = 0.0;  // always positive
+  int direction = 1;
+};
+
 // Parameters shared by the SketchText entity and the engine call.
 struct TextStyle {
   // Empty = default font (embedded DejaVu via Font_FontMgr). Otherwise an
@@ -38,10 +62,17 @@ struct TextStyle {
   double height_mm = 10.0;
   double angle_deg = 0.0;
   double char_spacing = 0.0;
-  // "left" | "center" | "right"
+  // "left" | "center" | "right" — in path mode this aligns along the
+  // path (start / middle / end of the curve).
   std::string h_align = "center";
-  // "top" | "middle" | "bottom"
+  // "top" | "middle" | "bottom" — flat mode only.
   std::string v_align = "middle";
+  // Text on path (Fusion "align to curve"). Nullopt = flat text.
+  std::optional<TextPath> path;
+  // Perpendicular baseline shift in mm (path mode only); positive =
+  // left of the direction of travel. Multi-line text stacks each
+  // further line one line-height to the right of travel.
+  double path_offset = 0.0;
 };
 
 // Converts text strings into polygonal closed contours using OCCT's

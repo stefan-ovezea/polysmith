@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import {
   awaitDocumentChange,
@@ -225,6 +226,10 @@ function App() {
   // edits that text's parameters.
   const [sketchTextAction, setSketchTextAction] =
     useState<SketchTextAction | null>(null);
+  const sketchTextActionRef = useRef(sketchTextAction);
+  useEffect(() => {
+    sketchTextActionRef.current = sketchTextAction;
+  }, [sketchTextAction]);
   const [pendingSketchDeleteConfirmation, setPendingSketchDeleteConfirmation] =
     useState<PendingSketchDeleteConfirmation | null>(null);
   // Mirror of `sketchFilletAction.filletIds` for the inline
@@ -1984,6 +1989,50 @@ function App() {
                   // pending. The next click can recover.
                 }
               }}
+              sketchTextPathPicking={
+                sketchTextAction?.phase === "active" &&
+                (sketchTextAction.pathPicking ?? false)
+              }
+              onPickSketchTextPath={(entityId) => {
+                const action = sketchTextActionRef.current;
+                if (!action || action.phase !== "active") {
+                  return;
+                }
+                // Only user line/arc entities can be paths — generated
+                // glyph segments can't. Invalid picks keep the picker
+                // armed so the user can click something else.
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const sketch = feature?.sketch_parameters;
+                const line = sketch?.lines.find(
+                  (entry) => entry.line_id === entityId && !entry.generated_by,
+                );
+                const arc = sketch?.arcs.find(
+                  (entry) => entry.arc_id === entityId && !entry.generated_by,
+                );
+                if (!line && !arc) {
+                  return;
+                }
+                setSketchTextAction((prev) =>
+                  prev && prev.phase === "active"
+                    ? {
+                        ...prev,
+                        params: { ...prev.params, path_entity_id: entityId },
+                        pathPicking: false,
+                      }
+                    : prev,
+                );
+                void runAction(async () => {
+                  await updateSketchText(action.textId, {
+                    pathEntityId: entityId,
+                  });
+                });
+              }}
               onPickSketchText={(textId) => {
                 // Select-mode glyph pick: the clicked sketch entity is
                 // a text glyph segment (`generated_by: "text:<id>"`).
@@ -2475,6 +2524,37 @@ function App() {
                   setSketchTool={setSketchTool}
                   updateSketchText={updateSketchText}
                   deleteSketchText={deleteSketchText}
+                  pathPicking={
+                    sketchTextAction.phase === "active" &&
+                    (sketchTextAction.pathPicking ?? false)
+                  }
+                  onArmPathPick={() => {
+                    setSketchTextAction((prev) =>
+                      prev && prev.phase === "active"
+                        ? { ...prev, pathPicking: true }
+                        : prev,
+                    );
+                  }}
+                  onClearPath={() => {
+                    const action = sketchTextActionRef.current;
+                    if (!action || action.phase !== "active") {
+                      return;
+                    }
+                    setSketchTextAction((prev) =>
+                      prev && prev.phase === "active"
+                        ? {
+                            ...prev,
+                            params: { ...prev.params, path_entity_id: null },
+                            pathPicking: false,
+                          }
+                        : prev,
+                    );
+                    void runAction(async () => {
+                      await updateSketchText(action.textId, {
+                        pathEntityId: null,
+                      });
+                    });
+                  }}
                 />
               ) : null}
               <CamFloatingPanels

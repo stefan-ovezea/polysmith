@@ -224,6 +224,138 @@ bool test_h_align_anchors() {
                 "align: left starts at anchor, right ends at anchor");
 }
 
+bool test_line_path_rotates_to_tangent() {
+  // Vertical path → every glyph rotates 90°: the text's bounds swap
+  // axes compared to the flat layout.
+  TextLayout flat, on_path;
+  std::string error;
+  TextStyle style{/*font_path=*/"", /*height_mm=*/10.0};
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &flat,
+                                     &error)) {
+    return expect(false, "path: flat layout must succeed");
+  }
+  style.path = polysmith::core::text::TextPath{
+      .start_x = 0.0, .start_y = 0.0, .end_x = 0.0, .end_y = 100.0};
+  style.h_align = "left";
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &on_path,
+                                     &error)) {
+    return expect(false, "path: line-path layout must succeed");
+  }
+  double min_x, max_x, min_y, max_y;
+  bounds(flat, &min_x, &max_x, &min_y, &max_y);
+  const double flat_width = max_x - min_x;
+  const double flat_height = max_y - min_y;
+  bounds(on_path, &min_x, &max_x, &min_y, &max_y);
+  const double path_width = max_x - min_x;
+  const double path_height = max_y - min_y;
+  if (!expect(std::abs(path_width - flat_height) < 2.0 &&
+                  std::abs(path_height - flat_width) < 2.0,
+              "path: vertical path rotates the text 90 degrees")) {
+    return false;
+  }
+  // Every glyph point stays within glyph-extent of the path's x == 0.
+  return expect(std::abs(min_x) < 15.0 && std::abs(max_x) < 15.0,
+                "path: glyphs hug the vertical path line");
+}
+
+bool test_arc_path_places_on_circle() {
+  TextLayout layout;
+  std::string error;
+  TextStyle style{/*font_path=*/"", /*height_mm=*/10.0,
+                  /*angle_deg=*/0.0, /*char_spacing=*/0.0,
+                  /*h_align=*/"left"};
+  style.path = polysmith::core::text::TextPath{
+      .is_arc = true,
+      .center_x = 0.0,
+      .center_y = 0.0,
+      .radius = 50.0,
+      .start_angle = 0.0,
+      .sweep_angle = 3.141592653589793,
+      .direction = 1,
+  };
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &layout,
+                                     &error)) {
+    return expect(false, "path: arc-path layout must succeed");
+  }
+  if (!expect(!layout.contours.empty(), "path: contours present")) {
+    return false;
+  }
+  // The baseline rides the circle; glyph points extend radially (local
+  // +y is outward after the tangent rotation). Every point must stay
+  // within glyph-extent of the circle radius.
+  for (const auto& contour : layout.contours) {
+    for (const auto& point : contour.points) {
+      const double radius = std::sqrt(point.x * point.x + point.y * point.y);
+      if (!expect(radius > 35.0 && radius < 65.0,
+                  "path: glyph points hug the circle")) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool test_path_offset_shifts_perpendicular() {
+  // Horizontal path: two path layouts differing only by path_offset
+  // differ by an exact rigid +10 mm shift perpendicular to the path
+  // (path mode applies no alignment shift, so the comparison is exact).
+  TextLayout base, offset;
+  std::string error;
+  TextStyle style{/*font_path=*/"", /*height_mm=*/10.0,
+                  /*angle_deg=*/0.0, /*char_spacing=*/0.0,
+                  /*h_align=*/"left"};
+  style.path = polysmith::core::text::TextPath{
+      .start_x = 0.0, .start_y = 0.0, .end_x = 100.0, .end_y = 0.0};
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &base,
+                                     &error)) {
+    return expect(false, "offset: base path layout must succeed");
+  }
+  style.path_offset = 10.0;
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &offset,
+                                     &error)) {
+    return expect(false, "offset: shifted path layout must succeed");
+  }
+  if (!expect(base.contours.size() == offset.contours.size(),
+              "offset: same contour structure")) {
+    return false;
+  }
+  for (size_t c = 0; c < base.contours.size(); ++c) {
+    if (!expect(base.contours[c].points.size() ==
+                    offset.contours[c].points.size(),
+                "offset: same point counts")) {
+      return false;
+    }
+    for (size_t p = 0; p < base.contours[c].points.size(); ++p) {
+      const auto& b = base.contours[c].points[p];
+      const auto& o = offset.contours[c].points[p];
+      if (!expect(std::abs(o.x - b.x) < 1e-6 &&
+                      std::abs(o.y - (b.y + 10.0)) < 1e-6,
+                  "offset: points shifted exactly 10 mm perpendicular")) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool test_path_align_centers_along_curve() {
+  TextLayout layout;
+  std::string error;
+  TextStyle style{/*font_path=*/"", /*height_mm=*/10.0,
+                  /*angle_deg=*/0.0, /*char_spacing=*/0.0,
+                  /*h_align=*/"center"};
+  style.path = polysmith::core::text::TextPath{
+      .start_x = 0.0, .start_y = 0.0, .end_x = 100.0, .end_y = 0.0};
+  if (!TextEngine::instance().layout("AB", 0.0, 0.0, style, &layout,
+                                     &error)) {
+    return expect(false, "align: path layout must succeed");
+  }
+  double min_x, max_x, min_y, max_y;
+  bounds(layout, &min_x, &max_x, &min_y, &max_y);
+  return expect(std::abs((min_x + max_x) / 2.0 - 50.0) < 2.0,
+                "align: center aligns the text on the curve midpoint");
+}
+
 bool test_missing_font_fails_gracefully() {
   TextLayout layout;
   std::string error;
@@ -248,6 +380,10 @@ int main() {
   if (!test_angle_rotates_bounds()) return 1;
   if (!test_h_align_anchors()) return 1;
   if (!test_missing_font_fails_gracefully()) return 1;
+  if (!test_line_path_rotates_to_tangent()) return 1;
+  if (!test_arc_path_places_on_circle()) return 1;
+  if (!test_path_offset_shifts_perpendicular()) return 1;
+  if (!test_path_align_centers_along_curve()) return 1;
 
   std::cout << "text_engine_test passed\n";
   return 0;

@@ -114,6 +114,8 @@ interface ViewportPointerUpParams {
   addSketchFillet: ActiveSketchPointerUpContext["addSketchFillet"];
   addSketchTextAt: ActiveSketchPointerUpContext["addSketchTextAt"];
   onPickSketchText: ActiveSketchPointerUpContext["onPickSketchText"];
+  sketchTextPathPicking: ActiveSketchPointerUpContext["sketchTextPathPicking"];
+  pickSketchTextPath: ActiveSketchPointerUpContext["pickSketchTextPath"];
   pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
   pendingDimensionSourceId: ActiveSketchPointerUpContext["pendingDimensionSourceId"];
   pendingDimensionId: ActiveSketchPointerUpContext["pendingDimensionId"];
@@ -377,6 +379,8 @@ function handleActiveSketchToolPointerUp(
     addSketchFillet: params.addSketchFillet,
     addSketchTextAt: params.addSketchTextAt,
     onPickSketchText: params.onPickSketchText,
+    sketchTextPathPicking: params.sketchTextPathPicking,
+    pickSketchTextPath: params.pickSketchTextPath,
     pendingDimensionPlacement: params.pendingDimensionPlacement,
     pendingDimensionSourceId: params.pendingDimensionSourceId,
     pendingDimensionId: params.pendingDimensionId,

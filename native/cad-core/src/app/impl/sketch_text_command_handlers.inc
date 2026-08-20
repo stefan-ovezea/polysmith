@@ -33,6 +33,14 @@
                 command.payload.at("char_spacing").is_number()
             ? command.payload.at("char_spacing").get<double>()
             : 0.0;
+    // Text on path: optional curve reference (sketch line/arc id) plus
+    // the perpendicular baseline offset.
+    text.path_entity_id =
+        read_optional_string(command.payload, "path_entity_id");
+    if (command.payload.contains("path_offset") &&
+        command.payload.at("path_offset").is_number()) {
+      text.path_offset = command.payload.at("path_offset").get<double>();
+    }
 
     const auto document = document_manager().add_sketch_text(text);
 
@@ -110,6 +118,18 @@
         command.payload.at("char_spacing").is_number()) {
       merged.char_spacing =
           command.payload.at("char_spacing").get<double>();
+    }
+    // path_entity_id: absent = keep, null = clear, string = bind.
+    if (command.payload.contains("path_entity_id")) {
+      merged.path_entity_id =
+          read_optional_string(command.payload, "path_entity_id");
+    }
+    if (command.payload.contains("path_offset")) {
+      merged.path_offset =
+          command.payload.at("path_offset").is_number()
+              ? std::optional<double>(
+                    command.payload.at("path_offset").get<double>())
+              : std::nullopt;
     }
 
     const auto document =

@@ -94,17 +94,83 @@ void refresh_sketch_texts(SketchFeatureParameters& parameters) {
         text_entry.font_path.empty() ? text::TextEngine::bundled_font_path()
                                      : text_entry.font_path;
 
+    text::TextStyle style{.font_path = font_path,
+                          .height_mm = text_entry.height_mm,
+                          .angle_deg = text_entry.angle_deg,
+                          .char_spacing = text_entry.char_spacing,
+                          .h_align = text_entry.h_align,
+                          .v_align = text_entry.v_align};
+    style.path_offset = text_entry.path_offset.value_or(0.0);
+
+    // Text on path: resolve the referenced sketch curve — a user line
+    // or arc (generated glyph segments can never be paths). The path
+    // geometry is read fresh on every recompute, so dragging the path
+    // entity moves the text along with it.
+    if (text_entry.path_entity_id.has_value() &&
+        !text_entry.path_entity_id->empty()) {
+      const std::string& path_id = text_entry.path_entity_id.value();
+      const auto path_line = std::find_if(
+          parameters.lines.begin(), parameters.lines.end(),
+          [&](const SketchLine& line) {
+            return line.id == path_id && !line.generated_by.has_value();
+          });
+      if (path_line != parameters.lines.end()) {
+        style.path = text::TextPath{
+            .start_x = path_line->start_x,
+            .start_y = path_line->start_y,
+            .end_x = path_line->end_x,
+            .end_y = path_line->end_y,
+        };
+      } else {
+        const auto path_arc = std::find_if(
+            parameters.arcs.begin(), parameters.arcs.end(),
+            [&](const SketchArc& arc) {
+              return arc.id == path_id && !arc.generated_by.has_value();
+            });
+        if (path_arc != parameters.arcs.end()) {
+          const auto norm_angle = [](double a) {
+            a = std::fmod(a, 2.0 * M_PI);
+            if (a < 0.0) a += 2.0 * M_PI;
+            return a;
+          };
+          const double start_angle =
+              std::atan2(path_arc->start_y - path_arc->center_y,
+                         path_arc->start_x - path_arc->center_x);
+          const double end_angle =
+              std::atan2(path_arc->end_y - path_arc->center_y,
+                         path_arc->end_x - path_arc->center_x);
+          double sweep = path_arc->ccw
+                             ? norm_angle(end_angle - start_angle)
+                             : norm_angle(start_angle - end_angle);
+          if (sweep < 1.0e-9) {
+            sweep = 2.0 * M_PI;  // full circle
+          }
+          style.path = text::TextPath{
+              .is_arc = true,
+              .center_x = path_arc->center_x,
+              .center_y = path_arc->center_y,
+              .radius = path_arc->radius,
+              .start_angle = start_angle,
+              .sweep_angle = sweep,
+              .direction = path_arc->ccw ? 1 : -1,
+          };
+        } else {
+          const std::string path_error =
+              "text path entity not found: " + path_id;
+          if (text_entry.render_error != path_error) {
+            log_warn("sketch_text",
+                     "text " + text_entry.id + ": " + path_error);
+          }
+          text_entry.render_error = path_error;
+          continue;
+        }
+      }
+    }
+
     text::TextLayout layout;
     std::string error;
     if (!engine.layout(text_entry.text, text_entry.anchor_x,
-                       text_entry.anchor_y,
-                       text::TextStyle{.font_path = font_path,
-                                       .height_mm = text_entry.height_mm,
-                                       .angle_deg = text_entry.angle_deg,
-                                       .char_spacing = text_entry.char_spacing,
-                                       .h_align = text_entry.h_align,
-                                       .v_align = text_entry.v_align},
-                       &layout, &error)) {
+                       text_entry.anchor_y, style, &layout, &error)) {
       if (text_entry.render_error != error) {
         log_error("sketch_text",
                   "text " + text_entry.id + " failed to render: " + error);
