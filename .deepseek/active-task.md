@@ -3,7 +3,7 @@
 > **Branch:** `features/text` (from `dev`)
 > **Date:** 2026-08-20
 
-## Status: text committed (a20a1a0); text-on-path implemented, awaiting user verification + commit approval
+## Status: text committed (a20a1a0); text-on-path committed (db0d9c5); picker/builder fix user-verified, committing
 
 Fusion-style parametric sketch text: `SketchText` records expand into
 generated sketch lines on every recompute (deterministic ids, fixed

@@ -2027,6 +2027,7 @@ function App() {
                       }
                     : prev,
                 );
+                addMessage("Path bound: " + entityId);
                 void runAction(async () => {
                   await updateSketchText(action.textId, {
                     pathEntityId: entityId,

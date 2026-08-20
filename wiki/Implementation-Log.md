@@ -31,6 +31,23 @@ This document tracks concrete implementation milestones as they land in the code
   on the curve midpoint); text suite +3 (line-path region completeness
   via profiles_match, arc-path radius bounds, bind/missing/recover
   lifecycle). All 11 suites green; tsc clean.
+- FIXED (user-reported "can't pick a curve"): two stacked bugs, found
+  with Logs-panel diagnostics after the first round went to toasts
+  instead of the log (addMessage → messages, addLogEntry → Logs panel).
+  (1) `makeUpdateSketchTextCommand` whitelisted patch keys and silently
+  dropped `path_entity_id` / `path_offset` — path binds reached the
+  core as empty patches, so the core re-expanded (looking like it
+  worked) with the glyphs staying flat; the hook's spread elements
+  skip TS excess-property checks, so tsc could not catch it. Builder
+  now forwards both fields (string = bind, null = clear); pinned by a
+  vitest regression (`sketchCommands.test.ts`, 3 cases on the wire
+  format). (2) Snap resolving clicks to endpoints/midpoints: the picker
+  now resolves the curve from the entity hit, the snapped vertex's
+  geometry owners, or a 5 mm proximity search at the snapped position,
+  and swallows invalid picks while armed. Bind success shows a
+  "Path bound: <entity>" toast; the panel's Path row shows the bound
+  entity id. User-verified working (glyphs ride the curve, offset
+  shifts, Clear unbinds).
 
 ## 2026-08-19
 

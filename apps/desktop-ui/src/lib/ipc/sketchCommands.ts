@@ -746,6 +746,8 @@ export function makeUpdateSketchTextCommand(
     h_align?: "left" | "center" | "right";
     v_align?: "top" | "middle" | "bottom";
     char_spacing?: number;
+    path_entity_id?: string | null;
+    path_offset?: number;
   },
 ): CoreCommand {
   return {
@@ -765,6 +767,12 @@ export function makeUpdateSketchTextCommand(
       ...(patch.v_align !== undefined ? { v_align: patch.v_align } : {}),
       ...(patch.char_spacing !== undefined
         ? { char_spacing: patch.char_spacing }
+        : {}),
+      ...(patch.path_entity_id !== undefined
+        ? { path_entity_id: patch.path_entity_id }
+        : {}),
+      ...(patch.path_offset !== undefined
+        ? { path_offset: patch.path_offset }
         : {}),
     },
   };
