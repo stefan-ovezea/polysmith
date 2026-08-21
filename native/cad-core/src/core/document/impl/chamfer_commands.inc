@@ -177,6 +177,7 @@ DocumentState DocumentManager::confirm_chamfer(const std::string& feature_id) {
 
   // See `confirm_fillet` for why this does not push an undo step.
   feature_it->chamfer_parameters->is_pending = false;
+  document_->selected_edge_ids.clear();
   bump_geometry_revision();
   return document_.value();
 }

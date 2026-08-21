@@ -1112,19 +1112,19 @@ export function createViewportScene(
         // particularly with the recently-added `mesh` variant.
         switch (primitive.kind) {
           case "box":
-            return `box:${primitive.primitiveId}:${primitive.size.join(":")}:${primitive.position.join(":")}:${primitive.appearanceColor ?? ""}`;
+            return `box:${primitive.primitiveId}:${primitive.size.join(":")}:${primitive.position.join(":")}:${primitive.appearanceColor ?? ""}:${primitive.isSelected}`;
           case "cylinder":
-            return `cyl:${primitive.primitiveId}:${primitive.radius}:${primitive.height}:${primitive.position.join(":")}:${primitive.appearanceColor ?? ""}`;
+            return `cyl:${primitive.primitiveId}:${primitive.radius}:${primitive.height}:${primitive.position.join(":")}:${primitive.appearanceColor ?? ""}:${primitive.isSelected}`;
           case "polygon_extrude":
-            return `poly-extrude:${primitive.primitiveId}:${primitive.planeId}:${primitive.depth}:${primitive.profilePoints.map((point) => point.join(":")).join("|")}:${primitive.innerLoops.map((loop) => loop.map((point) => point.join(":")).join(",")).join(";")}:${primitive.appearanceColor ?? ""}`;
+            return `poly-extrude:${primitive.primitiveId}:${primitive.planeId}:${primitive.depth}:${primitive.profilePoints.map((point) => point.join(":")).join("|")}:${primitive.innerLoops.map((loop) => loop.map((point) => point.join(":")).join(",")).join(";")}:${primitive.appearanceColor ?? ""}:${primitive.isSelected}`;
           case "mesh":
-            return `mesh:${primitive.primitiveId}:${numericBufferSignature(primitive.positions)}:${numericBufferSignature(primitive.indices)}:${primitive.appearanceColor ?? ""}`;
+            return `mesh:${primitive.primitiveId}:${numericBufferSignature(primitive.positions)}:${numericBufferSignature(primitive.indices)}:${primitive.appearanceColor ?? ""}:${primitive.isSelected}`;
         }
       })
       .concat(
         references.map((reference) =>
           reference.kind === "reference_plane"
-            ? `plane:${reference.referenceId}:${reference.orientation}:${reference.position.join(":")}:${reference.size.join(":")}:${reference.isActiveSketchPlane}`
+            ? `plane:${reference.referenceId}:${reference.orientation}:${reference.position.join(":")}:${reference.size.join(":")}:${reference.isActiveSketchPlane}:${reference.isSelected}`
             : reference.kind === "reference_axis"
               ? `axis:${reference.referenceId}:${reference.axis}:${reference.start.join(":")}:${reference.end.join(":")}`
               : reference.kind === "reference_point"

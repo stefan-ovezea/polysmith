@@ -36,6 +36,9 @@ DocumentState DocumentManager::start_sketch_on_face(
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
+  document_->selected_sketch_text_id = std::nullopt;
+  document_->selected_edge_ids.clear();
+  document_->selected_vertex_ids.clear();
   bump_geometry_revision();
   return document_.value();
 }

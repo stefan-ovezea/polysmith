@@ -134,6 +134,7 @@ DocumentState DocumentManager::clear_selection() {
   document_->selected_sketch_profile_ids.clear();
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
+  document_->selected_sketch_text_id = std::nullopt;
   return document_.value();
 }
 

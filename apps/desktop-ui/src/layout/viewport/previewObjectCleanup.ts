@@ -226,3 +226,15 @@ export function createViewportPreviewActions({
     updateTrimSegmentHighlight,
   };
 }
+
+
+// Clears both trim hover overlays (segment + arc). Callers that hold the
+// hook-returned clear functions use this from Escape / tool-switch /
+// before-commit paths so a stale red trim highlight can never survive.
+export function clearTrimHighlights(
+  clearTrimSegmentHighlight: () => void,
+  clearTrimArcHighlight: () => void,
+) {
+  clearTrimSegmentHighlight();
+  clearTrimArcHighlight();
+}
