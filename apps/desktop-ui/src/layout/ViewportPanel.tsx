@@ -299,6 +299,7 @@ export function ViewportPanel({
   onUpdateSketchPoint,
   onMoveSketchEntities,
   onFinishSketch,
+  onClearSelection,
   moveGizmo = null,
   onMoveGizmoChange,
   onMoveBody,
@@ -743,6 +744,9 @@ export function ViewportPanel({
   const mirrorEntityPickRef = useRef(onMirrorEntityPick);
   const cancelSketchConstraintRef = useRef(onCancelSketchConstraint);
   const clearSketchConstraintRef = useRef(onClearSketchConstraint);
+  // Sketch-mode Escape deselect: clears highlighted geometry through the
+  // core's clear_selection command (handled in sketchHotkeys.ts).
+  const clearSketchSelectionRef = useRef(onClearSelection);
   /** Selected constraint for deletion on Delete key. */
   const [selectedConstraint, setSelectedConstraint] =
     useState<SelectedConstraintState | null>(null);
@@ -3793,7 +3797,7 @@ export function ViewportPanel({
       bindSketchHotkeys({
         activeSketchPlaneId,
         sketchToolbarHotkeys: config.hotkeys.sketchToolbar,
-        document,
+        documentRef,
         activeSketchToolRef,
         dimensionLabelDragRef,
         dimensionPlacementOriginalPositionRef,
@@ -3805,6 +3809,7 @@ export function ViewportPanel({
         sketchToolConstructionRef,
         deleteSketchDimensionRef,
         clearSketchConstraintRef,
+        clearSketchSelectionRef,
         deleteSketchSelectionRef,
         setSketchToolRef,
         clearPreviewDimension,

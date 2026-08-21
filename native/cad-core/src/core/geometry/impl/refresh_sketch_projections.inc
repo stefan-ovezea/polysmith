@@ -263,11 +263,28 @@ bool refresh_sketch_projections(const DocumentState& prefix,
                             a.first, a.second, b.first, b.second);
         }
       } else if (outline->kind == "polygon") {
-        size_t expected_line_count = outline->polygon_corners.size();
-        for (const auto& inner_loop : outline->inner_loops) {
-          expected_line_count += inner_loop.size();
+        // Expected entity counts mirror the emission order in
+        // project_face_into_sketch: outer segments (lines/arcs mixed),
+        // then inner-loop segments, then the circular through-holes.
+        size_t expected_line_count = 0;
+        size_t expected_arc_count = 0;
+        const auto count_loop = [&](const auto& segment_arcs) {
+          for (const auto& arc : segment_arcs) {
+            if (arc.has_value()) {
+              ++expected_arc_count;
+            } else {
+              ++expected_line_count;
+            }
+          }
+        };
+        count_loop(outline->polygon_segment_arcs);
+        for (const auto& inner_arcs : outline->inner_segment_arcs) {
+          count_loop(inner_arcs);
         }
-        if (projection.generated_line_ids.size() != expected_line_count) {
+        if (projection.generated_line_ids.size() != expected_line_count ||
+            projection.generated_arc_ids.size() != expected_arc_count ||
+            projection.generated_circle_ids.size() !=
+                outline->inner_circles.size()) {
           projection.dependency_broken = true;
           projection.dependency_warning =
               "Projected face vertex count changed. Re-project to update.";
@@ -275,8 +292,10 @@ bool refresh_sketch_projections(const DocumentState& prefix,
           continue;
         }
         size_t line_id_index = 0;
+        size_t arc_id_index = 0;
         auto patch_loop =
-            [&](const std::vector<FaceOutlinePoint>& loop) {
+            [&](const std::vector<FaceOutlinePoint>& loop,
+                const std::vector<std::optional<FaceOutlineArc>>& segment_arcs) {
               std::vector<std::pair<double, double>> local;
               local.reserve(loop.size());
               for (const auto& corner : loop) {
@@ -286,14 +305,43 @@ bool refresh_sketch_projections(const DocumentState& prefix,
               for (size_t k = 0; k < local.size(); ++k) {
                 const auto& a = local[k];
                 const auto& b = local[(k + 1) % local.size()];
-                patch_sketch_line(parameters,
-                                  projection.generated_line_ids[line_id_index++],
-                                  a.first, a.second, b.first, b.second);
+                const auto& arc = segment_arcs[k];
+                if (arc.has_value() &&
+                    circle_axis_parallel_to_sketch(frame, arc->axis)) {
+                  const auto center = world_to_sketch_local(
+                      frame, arc->center.x, arc->center.y, arc->center.z);
+                  const auto mid = world_to_sketch_local(
+                      frame, arc->mid.x, arc->mid.y, arc->mid.z);
+                  patch_sketch_arc(
+                      parameters,
+                      projection.generated_arc_ids[arc_id_index++],
+                      a.first, a.second, b.first, b.second,
+                      center.first, center.second, arc->radius,
+                      arc_ccw_from_local(a, b, mid));
+                } else {
+                  patch_sketch_line(
+                      parameters,
+                      projection.generated_line_ids[line_id_index++],
+                      a.first, a.second, b.first, b.second);
+                }
               }
             };
-        patch_loop(outline->polygon_corners);
-        for (const auto& inner_loop : outline->inner_loops) {
-          patch_loop(inner_loop);
+        patch_loop(outline->polygon_corners,
+                   outline->polygon_segment_arcs);
+        for (size_t loop_index = 0; loop_index < outline->inner_loops.size();
+             ++loop_index) {
+          patch_loop(outline->inner_loops[loop_index],
+                     outline->inner_segment_arcs[loop_index]);
+        }
+        for (size_t index = 0; index < outline->inner_circles.size(); ++index) {
+          const auto& inner_circle = outline->inner_circles[index];
+          const auto center = world_to_sketch_local(
+              frame, inner_circle.center.x, inner_circle.center.y,
+              inner_circle.center.z);
+          patch_sketch_circle(parameters,
+                              projection.generated_circle_ids[index],
+                              center.first, center.second,
+                              inner_circle.radius);
         }
       } else if (outline->kind == "circle") {
         const size_t expected_circle_count = 1 + outline->inner_circles.size();

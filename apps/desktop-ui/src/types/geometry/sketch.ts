@@ -323,7 +323,8 @@ export interface SketchProjectedPointEntry {
 export interface SketchProjectionEntry {
   projection_id: string;
   source_id: string;
-  source_kind: "face" | "edge" | "vertex" | "profile";
+  // "body" — mesh-body projection (Project Body on a converted mesh).
+  source_kind: "face" | "edge" | "vertex" | "profile" | "body";
   generated_line_ids: string[];
   generated_circle_ids: string[];
   generated_arc_ids: string[];

@@ -232,6 +232,7 @@ export interface ViewportPanelProps {
     angleDeg: number;
   }) => Promise<void>;
   onFinishSketch: () => Promise<void>;
+  onClearSelection: () => Promise<void>;
   moveGizmo?: MoveGizmoDescriptor | null;
   onMoveGizmoChange?: (
     parameters: MoveFeatureParameters,

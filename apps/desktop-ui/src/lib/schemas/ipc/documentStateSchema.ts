@@ -560,7 +560,16 @@ export const documentStateSchema = z.object({
               z.object({
                 projection_id: z.string(),
                 source_id: z.string(),
-                source_kind: z.enum(["face", "edge", "vertex", "profile"]),
+                source_kind: z.enum([
+                  "face",
+                  "edge",
+                  "vertex",
+                  "profile",
+                  // Mesh-body projection (Project Body on a converted
+                  // mesh): the whole body silhouette arrives as one
+                  // live-link record.
+                  "body",
+                ]),
                 generated_line_ids: z.array(z.string()).default([]),
                 generated_circle_ids: z.array(z.string()).default([]),
                 generated_arc_ids: z.array(z.string()).default([]),

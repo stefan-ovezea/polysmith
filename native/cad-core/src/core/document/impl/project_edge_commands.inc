@@ -190,8 +190,34 @@ DocumentState DocumentManager::project_edge_into_sketch(
                    record.generated_circle_ids.end());
   focus_ids.insert(focus_ids.end(), record.generated_arc_ids.begin(),
                    record.generated_arc_ids.end());
-  sketch_it->sketch_parameters->projections.push_back(std::move(record));
   polysmith::core::refresh_sketch_with_append_focus(*sketch_it, focus_ids);
+
+  // Projected arcs are derived geometry — lock their endpoints AND
+  // center (previously left free, so a projected fillet edge could be
+  // dragged off its cached arc). Vertex records exist only after the
+  // refresh above. MUST run before the record moves into the
+  // projections list — a moved-from record has empty id vectors.
+  for (const auto& arc_id : record.generated_arc_ids) {
+    const auto arc_it = std::find_if(
+        sketch_it->sketch_parameters->arcs.begin(),
+        sketch_it->sketch_parameters->arcs.end(),
+        [&](const auto& candidate) { return candidate.id == arc_id; });
+    if (arc_it == sketch_it->sketch_parameters->arcs.end()) {
+      continue;
+    }
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->start_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->end_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->center_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+  }
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;

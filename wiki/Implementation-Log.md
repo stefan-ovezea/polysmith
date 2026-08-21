@@ -4,6 +4,67 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-08-21
 
+### Arc recovery in face projections (feature/projection-arcs)
+
+User-reported: projecting the top face of a rounded-rect extrude with
+filleted corners and a through-hole produced 72 straight segments
+(fillet arcs became chords, the hole circle a 64-segment polyline)
+instead of exact `SketchArc`/`SketchCircle`. Pre-existing v1 behavior:
+the face-projection pipeline discarded curve identity in
+`sample_wire_loop`.
+
+- **Curve identity through the outline**: `FaceOutline` gains
+  `polygon_segment_arcs` / `inner_segment_arcs` (parallel to the corner
+  lists; nullopt = line, set = `FaceOutlineArc` {start/end/center/axis/
+  radius/mid}). New `walk_wire_loop` emits one corner per ordered edge
+  and classifies `GeomAbs_Circle` partial edges as arcs (other curves
+  fall back to the old endpoint chord); `circle_from_wire` now accepts
+  seam-split circular wires (all edges circular, shared
+  center/axis/radius, combined parameter span 2π) so hole circles and
+  seam-split fillets become exact circles/arcs. `merge_outline_loop` is
+  arc-aware (a corner adjacent to an arc never collapses) and
+  Douglas-Peucker gains a `must_keep` mask so arc junctions survive
+  decimation.
+- **Emission** (`project_face_into_sketch` polygon branch): per-segment
+  dispatch — lines as before, parallel-plane circular edges as
+  `add_sketch_arc` (ccw derived from the sketch-local arc midpoint —
+  orientation-proof against wire reversals), non-parallel circular
+  edges fall back to a chord, and circular through-holes emit one
+  `SketchCircle` each. `generated_arc_ids`/`generated_circle_ids`
+  recorded; projected arc endpoints + centers and circle centers are
+  fixed (the fix loops run BEFORE the projection record is moved into
+  the projections list — a moved-from record has empty id vectors; the
+  same move-order bug was fixed in the edge path, whose arcs were
+  previously left unfixed).
+- **Re-derivation** (`refresh_sketch_projections` face branch): count
+  validation now covers lines + arcs + circles and the patch loops
+  consume ids in emission order, patching arcs via `patch_sketch_arc`
+  with the same parallelism predicate — fillet-radius edits move the
+  projected arcs live; shape changes degrade to the existing
+  dependency_broken "Re-project to update" contract.
+- tests: new `cad_core_face_projection_arc_test` (3 cases — the exact
+  user scenario: entity counts 4 lines / ≥4 arcs (seam splits allowed)
+  / 1 circle, radii preserved, all projected vertices fixed, profile
+  completeness, fillet-edit re-derivation, save/load round trip). All
+  14 C++ suites green.
+- Out of scope (documented): mesh-body section/silhouette post-hoc arc
+  fitting (planar-faceted inputs only); ellipses remain chord fallbacks.
+- FIXED (user-reported "!" alarm on a converted-mesh face projection
+  after reload): Douglas-Peucker decimation drops corners while the
+  parallel segment-arc lists kept their pre-simplify lengths, so the
+  count validation in `refresh_sketch_projections` compared the record
+  against a stale (longer) expected count and flagged "Projected face
+  vertex count changed" on every reload even though the body never
+  changed. `simplify_outline_polyline` now returns the kept indices and
+  `outline_from_face` subsets the segment-arc lists in lockstep (arc
+  entries stay aligned because arc-junction corners are must-keep).
+  Verified against the user's saved document (910-line projection loads
+  healthy). A regression test for the synthetic mesh-with-hole case is
+  disabled in `face_projection_arc_test.cpp` — converting that mesh
+  crashes in the test harness (pre-existing, tracked separately).
+
+## 2026-08-21
+
 ### Stale selection/highlight fixes (feature/highlight)
 
 User-reported (pre-dates the text feature): after tool cancel/confirm

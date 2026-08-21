@@ -19,7 +19,10 @@ interface SketchDeleteSelection {
 interface BindSketchHotkeysParams {
   activeSketchPlaneId: string | null;
   sketchToolbarHotkeys: AppHotkeys["sketchToolbar"];
-  document: DocumentState | null;
+  // Ref, not the prop: the keydown listener is bound once per sketch
+  // activation, so a closed-over document would be stale by the time
+  // selection changes (e.g. right after a projection).
+  documentRef: MutableRef<DocumentState | null>;
   activeSketchToolRef: MutableRef<SketchTool>;
   dimensionLabelDragRef: MutableRef<DimensionLabelDragState | null>;
   dimensionPlacementOriginalPositionRef: MutableRef<
@@ -39,6 +42,7 @@ interface BindSketchHotkeysParams {
       relatedEntityId: string | null,
     ) => Promise<void>
   >;
+  clearSketchSelectionRef: MutableRef<() => Promise<void>>;
   deleteSketchSelectionRef: MutableRef<
     (selection?: SketchDeleteSelection) => Promise<void>
   >;
@@ -211,9 +215,10 @@ function resetDimensionPlacement({
 function handleSketchDeleteKey(
   event: KeyboardEvent,
   {
-    document,
+    documentRef,
     selectedConstraintRef,
     clearSketchConstraintRef,
+    clearSketchSelectionRef,
     deleteSketchSelectionRef,
     setSelectedConstraint,
     cancelActiveSketchDraft,
@@ -223,6 +228,10 @@ function handleSketchDeleteKey(
     event.preventDefault();
     setSelectedConstraint(null);
     cancelActiveSketchDraft();
+    clearSketchGeometrySelection({
+      document: documentRef.current,
+      clearSketchSelection: clearSketchSelectionRef.current,
+    });
     return true;
   }
 
@@ -232,7 +241,7 @@ function handleSketchDeleteKey(
 
   event.preventDefault();
   deleteSelectedSketchItems({
-    document,
+    document: documentRef.current,
     selectedConstraintRef,
     setSelectedConstraint,
     clearSketchConstraint: clearSketchConstraintRef.current,
@@ -307,6 +316,31 @@ function isTypingTarget(target: EventTarget | null) {
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
+}
+
+// Escape in sketch mode also deselects any highlighted geometry — after
+// a projection every generated point stays selected until the sketch is
+// closed; Escape clears that instead of requiring a sketch close/reopen.
+function clearSketchGeometrySelection({
+  document,
+  clearSketchSelection,
+}: {
+  document: DocumentState | null;
+  clearSketchSelection: () => Promise<void>;
+}) {
+  const hasSelection = Boolean(
+    document &&
+      (document.selected_sketch_entity_id ||
+        document.selected_sketch_vertex_id ||
+        document.selected_sketch_entity_ids.length > 0 ||
+        document.selected_sketch_vertex_ids.length > 0 ||
+        document.selected_sketch_profile_id ||
+        document.selected_sketch_profile_ids.length > 0 ||
+        document.selected_sketch_dimension_id),
+  );
+  if (hasSelection) {
+    void clearSketchSelection();
+  }
 }
 
 function deleteSelectedSketchItems({

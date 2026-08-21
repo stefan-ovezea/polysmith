@@ -15,6 +15,29 @@ std::pair<double, double> world_to_sketch_local(
   return {sx, sy};
 }
 
+// Mirror of circle_axis_parallel_to_sketch in document.cpp's
+// private_projection_command_helpers.inc (this TU can't reach across).
+bool circle_axis_parallel_to_sketch(
+    const SketchFeatureParameters::SketchPlaneFrame& frame,
+    const FaceOutlinePoint& axis,
+    double tolerance = 1e-6) {
+  const double dot = axis.x * frame.normal_x + axis.y * frame.normal_y +
+                     axis.z * frame.normal_z;
+  return std::abs(std::abs(dot) - 1.0) <= tolerance;
+}
+
+// Mirror of arc_ccw_from_local (same rationale) — sweep direction from
+// the sketch-local geometry; orientation-proof against wire reversals.
+bool arc_ccw_from_local(const std::pair<double, double>& start,
+                        const std::pair<double, double>& end,
+                        const std::pair<double, double>& mid) {
+  const double ux = mid.first - start.first;
+  const double uy = mid.second - start.second;
+  const double vx = end.first - start.first;
+  const double vy = end.second - start.second;
+  return ux * vy - uy * vx > 0.0;
+}
+
 std::array<double, 3> sketch_local_to_world(const PlaneFrame& frame,
                                             double local_x,
                                             double local_y) {

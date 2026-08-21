@@ -322,6 +322,27 @@ target_link_libraries(cad_core_selection_test PRIVATE
   dxfrw
 )
 
+# Face-projection arc recovery regression suite (feature/projection-arcs).
+add_executable(cad_core_face_projection_arc_test
+  ${CAD_CORE_SOURCES}
+  tests/face_projection_arc_test.cpp
+)
+
+target_include_directories(cad_core_face_projection_arc_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_face_projection_arc_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 add_executable(cad_core_stl_writer_test
   ${CAD_CORE_SOURCES}
   tests/stl_writer_test.cpp

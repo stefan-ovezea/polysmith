@@ -74,6 +74,9 @@ DocumentState DocumentManager::project_face_into_sketch(
   for (const auto& inner_loop : outline->inner_loops) {
     corner_count += inner_loop.size();
   }
+  // Circular through-holes project as one exact circle each (previously
+  // chord-sampled into 64 corners apiece).
+  corner_count += outline->inner_circles.size();
   if (corner_count > kMaxProjectionOutlineCorners) {
     throw std::runtime_error(
         "Face outline is too complex to project (" +
@@ -201,7 +204,11 @@ DocumentState DocumentManager::project_face_into_sketch(
       throw std::runtime_error("Polygon outline must have at least 3 corners");
     }
 
-    // Project every corner first, then add closed-loop sketch lines.
+    // Project every corner first, then walk each segment with curve
+    // identity: straight segments become lines, partial circular edges
+    // become exact arcs (fillet/chamfer corners — arc recovery), and
+    // circular edges whose plane isn't parallel to the sketch fall back
+    // to a chord (they would project to ellipses, unsupported in v1).
     std::vector<std::pair<double, double>> local;
     local.reserve(outline->polygon_corners.size());
     for (const auto& corner : outline->polygon_corners) {
@@ -209,21 +216,55 @@ DocumentState DocumentManager::project_face_into_sketch(
     }
 
     const size_t lines_before = sketch_it->sketch_parameters->lines.size();
-    for (size_t i = 0; i < local.size(); ++i) {
-      const auto& a = local[i];
-      const auto& b = local[(i + 1) % local.size()];
-      polysmith::core::add_sketch_line(*sketch_it,
-                                       next_sketch_line_id_++,
-                                       a.first,
-                                       a.second,
-                                       b.first,
-                                       b.second,
-                                       /*is_construction=*/false,
-                                       /*snap_start=*/true,
-                                       /*auto_dimensions=*/false,
-                                       /*refresh_immediately=*/false);
-    }
-    for (const auto& inner_loop : outline->inner_loops) {
+    const size_t arcs_before = sketch_it->sketch_parameters->arcs.size();
+    const size_t circles_before =
+        sketch_it->sketch_parameters->circles.size();
+
+    auto emit_loop = [&](const std::vector<std::pair<double, double>>& loop,
+                         const std::vector<std::optional<FaceOutlineArc>>&
+                             segment_arcs) {
+      for (size_t i = 0; i < loop.size(); ++i) {
+        const auto& a = loop[i];
+        const auto& b = loop[(i + 1) % loop.size()];
+        const auto& arc = segment_arcs[i];
+        if (arc.has_value() &&
+            circle_axis_parallel_to_sketch(
+                sketch_frame,
+                EdgePoint{.x = arc->axis.x,
+                          .y = arc->axis.y,
+                          .z = arc->axis.z})) {
+          const auto center_local = project_to_sketch_local(arc->center);
+          const auto mid_local = project_to_sketch_local(arc->mid);
+          const bool ccw = arc_ccw_from_local(a, b, mid_local);
+          // Arc endpoints share the line id counter so the corner
+          // junction gets ONE vertex id — the profile walker chains
+          // line/arc loops through the shared points (mirrors
+          // project_edge_into_sketch).
+          const int start_point_index = next_sketch_line_id_++;
+          const int end_point_index = next_sketch_line_id_++;
+          polysmith::core::add_sketch_arc(
+              *sketch_it, next_sketch_arc_id_++, start_point_index,
+              end_point_index, a.first, a.second, b.first, b.second,
+              center_local.first, center_local.second, arc->radius, ccw,
+              /*is_construction=*/false,
+              /*auto_dimensions=*/false,
+              /*refresh_immediately=*/false);
+        } else {
+          polysmith::core::add_sketch_line(
+              *sketch_it, next_sketch_line_id_++, a.first, a.second,
+              b.first, b.second,
+              /*is_construction=*/false,
+              /*snap_start=*/true,
+              /*auto_dimensions=*/false,
+              /*refresh_immediately=*/false);
+        }
+      }
+    };
+
+    emit_loop(local, outline->polygon_segment_arcs);
+    for (size_t loop_index = 0; loop_index < outline->inner_loops.size();
+         ++loop_index) {
+      const auto& inner_loop = outline->inner_loops[loop_index];
       if (inner_loop.size() < 3) {
         continue;
       }
@@ -232,20 +273,18 @@ DocumentState DocumentManager::project_face_into_sketch(
       for (const auto& corner : inner_loop) {
         inner_local.push_back(project_to_sketch_local(corner));
       }
-      for (size_t i = 0; i < inner_local.size(); ++i) {
-        const auto& a = inner_local[i];
-        const auto& b = inner_local[(i + 1) % inner_local.size()];
-        polysmith::core::add_sketch_line(*sketch_it,
-                                         next_sketch_line_id_++,
-                                         a.first,
-                                         a.second,
-                                         b.first,
-                                         b.second,
-                                         /*is_construction=*/false,
-                                         /*snap_start=*/true,
-                                         /*auto_dimensions=*/false,
-                                         /*refresh_immediately=*/false);
-      }
+      emit_loop(inner_local, outline->inner_segment_arcs[loop_index]);
+    }
+    // Circular through-holes: one exact circle each (was a 64-chord
+    // polyline in inner_loops before arc recovery).
+    for (const auto& inner_circle : outline->inner_circles) {
+      const auto center_local = project_to_sketch_local(inner_circle.center);
+      polysmith::core::add_sketch_circle(
+          *sketch_it, next_sketch_circle_id_++, center_local.first,
+          center_local.second, inner_circle.radius,
+          /*is_construction=*/false,
+          /*auto_dimensions=*/false,
+          /*refresh_immediately=*/false);
     }
 
     // Bulk insertion — same pattern as the rectangle branch.
@@ -253,6 +292,16 @@ DocumentState DocumentManager::project_face_into_sketch(
          ++i) {
       record.generated_line_ids.push_back(
           sketch_it->sketch_parameters->lines[i].id);
+    }
+    for (size_t i = arcs_before; i < sketch_it->sketch_parameters->arcs.size();
+         ++i) {
+      record.generated_arc_ids.push_back(
+          sketch_it->sketch_parameters->arcs[i].id);
+    }
+    for (size_t i = circles_before;
+         i < sketch_it->sketch_parameters->circles.size(); ++i) {
+      record.generated_circle_ids.push_back(
+          sketch_it->sketch_parameters->circles[i].id);
     }
     polysmith::core::refresh_sketch_with_append_focus(
         *sketch_it, record.generated_line_ids);
@@ -286,8 +335,48 @@ DocumentState DocumentManager::project_face_into_sketch(
                    record.generated_circle_ids.end());
   focus_ids.insert(focus_ids.end(), record.generated_arc_ids.begin(),
                    record.generated_arc_ids.end());
-  sketch_it->sketch_parameters->projections.push_back(std::move(record));
   polysmith::core::refresh_sketch_with_append_focus(*sketch_it, focus_ids);
+
+  // Projected arcs are derived geometry: lock their endpoints AND
+  // center (the vertex records exist only after the refresh above).
+  // Projected circles fix only their center, matching the circle branch.
+  // MUST run before the record moves into the projections list — a
+  // moved-from record has empty id vectors.
+  for (const auto& arc_id : record.generated_arc_ids) {
+    const auto arc_it = std::find_if(
+        sketch_it->sketch_parameters->arcs.begin(),
+        sketch_it->sketch_parameters->arcs.end(),
+        [&](const auto& candidate) { return candidate.id == arc_id; });
+    if (arc_it == sketch_it->sketch_parameters->arcs.end()) {
+      continue;
+    }
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->start_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->end_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+    polysmith::core::set_sketch_vertex_fixed(*sketch_it,
+                                             arc_it->center_vertex_id,
+                                             true,
+                                             /*refresh_immediately=*/false);
+  }
+  for (const auto& circle_id : record.generated_circle_ids) {
+    const auto circle_it = std::find_if(
+        sketch_it->sketch_parameters->circles.begin(),
+        sketch_it->sketch_parameters->circles.end(),
+        [&](const auto& candidate) { return candidate.id == circle_id; });
+    if (circle_it == sketch_it->sketch_parameters->circles.end()) {
+      continue;
+    }
+    polysmith::core::set_sketch_vertex_fixed(
+        *sketch_it, circle_center_vertex_id(*circle_it), true,
+        /*refresh_immediately=*/false);
+  }
+
+  sketch_it->sketch_parameters->projections.push_back(std::move(record));
 
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
