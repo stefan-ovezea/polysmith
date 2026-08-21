@@ -36,9 +36,16 @@ endforeach()
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
 add_library(occt_iface INTERFACE)
-# inc/ is the build-tree header location — works on both platforms without
-# requiring cmake --install (which fails on Windows due to locked DLLs).
-target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+# Build-tree header location is platform-specific: the Windows build
+# tree puts headers flat under inc/; Linux/macOS OCCT nests them under
+# include/opencascade/.  Neither requires cmake --install (which fails
+# on Windows due to locked DLLs).
+if(WIN32)
+  target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+else()
+  target_include_directories(occt_iface INTERFACE
+                             "${OCCT_ROOT}/include/opencascade")
+endif()
 if(WIN32)
   target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
 elseif(APPLE)
@@ -109,11 +116,13 @@ add_library(dxfrw STATIC
   ${LIBDXFRW_DIR}/src/drw_header.cpp
   ${LIBDXFRW_DIR}/src/drw_objects.cpp
   ${LIBDXFRW_DIR}/src/intern/drw_dbg.cpp
-  # dwgBuffer/dwgutil are plain byte-buffer/hex-string helpers the
+  # dwgbuffer/dwgutil are plain byte-buffer/hex-string helpers the
   # entity classes reference from their (unused in DXF builds)
   # parseDwg paths — needed at link time once any DRW_Entity subclass
   # is actually consumed. No iconv or DWG-reader dependency.
-  ${LIBDXFRW_DIR}/src/intern/dwgBuffer.cpp
+  # (Lowercase filename: case-sensitive filesystems reject the
+  # camelCase form.)
+  ${LIBDXFRW_DIR}/src/intern/dwgbuffer.cpp
   ${LIBDXFRW_DIR}/src/intern/dwgutil.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfreader.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfwriter.cpp
