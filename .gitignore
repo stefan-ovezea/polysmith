@@ -28,4 +28,8 @@ claude-ds.sh
 wiki/.git-wiki/
 .scannerwork/
 build-linux/
-untitled-part.json
+part.json
+part.step
+part.stl
+part.igs
+res/
