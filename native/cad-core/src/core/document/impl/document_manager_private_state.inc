@@ -9,6 +9,13 @@
   // selection mutators stick with the plain revision bump because the
   // refresh would be a no-op.
   void bump_geometry_revision();
+  // Erase sketch-selection ids (singular + plural + text) that no
+  // longer exist in any sketch feature. Runs on every geometry revision
+  // so deleted or regenerated entities (trim-as-delete, delete
+  // dimension/fillet/text, zero-length cleanup, fabricated dim ids,
+  // load) can never leave a dangling highlight. Pure selection
+  // mutators do not run it.
+  void prune_document_selection();
 
   int next_document_id_ = 1;
   int next_feature_id_ = 1;

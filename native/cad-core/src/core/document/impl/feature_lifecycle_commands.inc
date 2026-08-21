@@ -86,6 +86,41 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
     document_->selected_feature_id = std::nullopt;
   }
 
+  // Drop 3D selections owned by the deleted feature — its faces,
+  // edges, and vertices are gone, and leaving their ids selected
+  // would re-light (possibly different) topology after undo/redo or
+  // on the next body whose ids collide.
+  const auto owner_of = [](const std::string& id, const char* kind) {
+    const std::string needle = std::string(":") + kind + ":";
+    const auto separator = id.find(needle);
+    return separator == std::string::npos
+               ? std::string()
+               : id.substr(0, separator);
+  };
+  if (document_->selected_face_id.has_value()) {
+    const std::string owner =
+        owner_of(document_->selected_face_id.value(), "face");
+    if (owner == feature_id) {
+      document_->selected_face_id = std::nullopt;
+    }
+  }
+  document_->selected_edge_ids.erase(
+      std::remove_if(
+          document_->selected_edge_ids.begin(),
+          document_->selected_edge_ids.end(),
+          [&](const std::string& id) {
+            return owner_of(id, "edge") == feature_id;
+          }),
+      document_->selected_edge_ids.end());
+  document_->selected_vertex_ids.erase(
+      std::remove_if(
+          document_->selected_vertex_ids.begin(),
+          document_->selected_vertex_ids.end(),
+          [&](const std::string& id) {
+            return owner_of(id, "vertex") == feature_id;
+          }),
+      document_->selected_vertex_ids.end());
+
   // Freeze construction planes that reference the deleted feature:
   // they keep their cached frame (position) but sever the reference,
   // so sketches hosted on them stay healthy. Mirrors the Detach

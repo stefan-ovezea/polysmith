@@ -168,6 +168,10 @@ DocumentState DocumentManager::confirm_fillet(const std::string& feature_id) {
   // the entire pending session, so a single undo() rolls back create
   // + all edits + this confirm in one step.
   feature_it->fillet_parameters->is_pending = false;
+  // The pending session highlights its edges via selected_edge_ids;
+  // confirming clears them core-side (Cancel instead restores the
+  // pre-session set through undo()).
+  document_->selected_edge_ids.clear();
   bump_geometry_revision();
   return document_.value();
 }
