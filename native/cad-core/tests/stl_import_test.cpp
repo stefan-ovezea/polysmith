@@ -20,10 +20,12 @@
 #include <vector>
 
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
+#include <GProp_GProps.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <Poly_Triangulation.hxx>
 #include <StlAPI_Writer.hxx>
@@ -382,6 +384,54 @@ bool test_convert_creates_solid_alongside() {
   }
   return expect(shape_has_solid(after_delete.bodies.front().shape),
                 "convert: the surviving body must still be a solid");
+}
+
+// Writes a binary STL of the box with INVERTED triangle winding
+// (reversed solid), the orientation-inconsistent class of STL files.
+std::string write_reversed_box_stl(const std::string& name) {
+  const TopoDS_Shape box =
+      BRepPrimAPI_MakeBox(gp_Pnt(-20.0, -10.0, -5.0), 40.0, 20.0, 10.0)
+          .Shape()
+          .Reversed();
+  BRepMesh_IncrementalMesh mesher(box, /*linearDeflection=*/0.1,
+                                  /*isRelative=*/false,
+                                  /*angularDeflection=*/0.5,
+                                  /*isInParallel=*/false);
+  (void)mesher;
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("polysmith_stl_import_" + name + ".stl");
+  StlAPI_Writer writer;
+  writer.ASCIIMode() = false;
+  writer.Write(box, path.string().c_str());
+  return path.string();
+}
+
+bool test_converted_solid_orientation_normalized() {
+  const std::string path = write_reversed_box_stl("convert_reversed");
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_stl(path, 1.0);
+  const std::string body_id = document.feature_history.back().id;
+  document = manager.convert_mesh_to_body(body_id);
+
+  const auto compiled = compile_bodies(document);
+  const auto converted_it = std::find_if(
+      compiled.bodies.begin(), compiled.bodies.end(),
+      [&](const auto& body) { return body.id != body_id; });
+  if (!expect(converted_it != compiled.bodies.end() &&
+                  shape_has_solid(converted_it->shape),
+              "orientation: converted body must contain a solid")) {
+    return false;
+  }
+  // Inverted STL winding must NOT yield a negative-volume solid — the
+  // converter normalizes orientation (negative volume breaks booleans
+  // downstream).
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(converted_it->shape, props);
+  const double volume = props.Mass();
+  return expect(volume > 0.0 && std::abs(volume - 8000.0) < 8000.0 * 0.02,
+                "orientation: converted volume must be positive and exact");
 }
 
 bool test_missing_file_dependency_broken() {
@@ -1375,6 +1425,8 @@ int main(int argc, char** argv) {
   if (!test_converted_body_no_op_silhouette_first()) return 1;
   std::cerr << "[stl_import_test] test 18: no-op convert-before-sketch\n";
   if (!test_convert_before_sketch_no_op()) return 1;
+  std::cerr << "[stl_import_test] test 19: converted solid orientation\n";
+  if (!test_converted_solid_orientation_normalized()) return 1;
 
   std::cout << "stl_import_test passed\n";
   return 0;

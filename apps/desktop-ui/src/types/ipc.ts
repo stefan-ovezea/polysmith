@@ -527,6 +527,14 @@ export interface ExportDocumentDxfCommand {
   };
 }
 
+export interface ExportDocumentIgesCommand {
+  id: string;
+  type: "export_document_iges";
+  payload: {
+    file_path: string;
+  };
+}
+
 export interface ExportBodyStlCommand {
   id: string;
   type: "export_body_stl";
@@ -573,6 +581,14 @@ export interface ImportDxfCommand {
 export interface ImportStepCommand {
   id: string;
   type: "import_step";
+  payload: {
+    file_path: string;
+  };
+}
+
+export interface ImportIgesCommand {
+  id: string;
+  type: "import_iges";
   payload: {
     file_path: string;
   };
@@ -692,12 +708,14 @@ export type CoreCommand =
   | ExportDocumentCommand
   | ExportDocumentStlCommand
   | ExportDocumentDxfCommand
+  | ExportDocumentIgesCommand
   | ExportBodyStlCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
   | ImportStlCommand
   | ImportDxfCommand
   | ImportStepCommand
+  | ImportIgesCommand
   | ConvertMeshToBodyCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand

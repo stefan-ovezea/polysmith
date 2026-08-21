@@ -500,6 +500,41 @@ Payload:
 
 Returns `document_state`.
 
+#### `import_iges`
+
+Imports an IGES file as a non-parametric solid body into the current document.
+Same semantics as `import_step`: the file is parsed once at import time (units
+converted to mm, the original unit from the IGES global section reported in
+the feature's `parameters_summary`), a B-rep snapshot is persisted into the
+saved part file (self-contained — the source file is not needed afterwards),
+and multi-solid files become ONE body holding a compound. A missing or
+invalid file throws before any document mutation.
+
+Payload:
+
+```ts
+{
+  file_path: string;
+}
+```
+
+Returns `document_state`.
+
+#### `export_document_iges`
+
+Exports all bodies of the current document as an IGES file (BRep mode — every
+body becomes an MSBO solid). Units are millimeters.
+
+Payload:
+
+```ts
+{
+  file_path: string;
+}
+```
+
+Returns `document_exported` with `format: "iges"`.
+
 #### `convert_mesh_to_body`
 
 Converts a `mesh_import` body into a regular solid body alongside it (sew →

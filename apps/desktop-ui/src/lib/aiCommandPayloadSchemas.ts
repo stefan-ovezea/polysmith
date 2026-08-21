@@ -38,6 +38,7 @@ export const commandPayloadSchemas = {
   export_document: z.object({ file_path: stringField }).strict(),
   export_document_stl: z.object({ file_path: stringField }).strict(),
   export_document_dxf: z.object({ file_path: stringField }).strict(),
+  export_document_iges: z.object({ file_path: stringField }).strict(),
   export_body_stl: z
     .object({ file_path: stringField, body_id: stringField })
     .strict(),
@@ -54,6 +55,11 @@ export const commandPayloadSchemas = {
     })
     .strict(),
   import_step: z
+    .object({
+      file_path: stringField,
+    })
+    .strict(),
+  import_iges: z
     .object({
       file_path: stringField,
     })

@@ -4,6 +4,50 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-08-22
 
+### IGES import + export (feature/iges)
+
+`import_iges { file_path }` and `export_document_iges { file_path }`
+extend the STEP import work to the IGES format. Import mirrors the
+`step_import` feature exactly (`iges_import` kind, parse-once,
+self-contained B-rep snapshot in `part.json`, mm conversion via the
+same `xstep.cascade.unit` static, source units read from the global
+section, parse-before-mutate). Export is new: `IGESControl_Writer` in
+**BRep mode** (`write.iges.brep.mode = 1` — the default Faces mode
+exports surfaces only and the file would re-import without solids;
+the static must be set AFTER `IGESControl_Controller::Init()`, whose
+first call registers it with the Faces default).
+
+- **Faces-only files sew into solids** (user-reported: a real
+  surface-model IGES imported with 0 solids, silently gating off all
+  booleans): when the transfer yields no solids, the faces are sewn
+  (`BRepBuilderAPI_Sewing` at 1e-6, retried at 1e-4 for gap-tolerance
+  files) and closed shells become solids — the mesh converter's
+  sew→make-solid loop, minus the facet merge. **Orientation is
+  normalized per solid** (IGES face orientations are frequently
+  inconsistent — a sewn solid can come out inverted with negative
+  volume, which breaks booleans; verified on a real user file that
+  sewed to 4 inverted solids).
+- **Tests**: new `cad_core_iges_import_export_test` (13 cases)
+  mirroring the STEP suite plus the two real-world cases: box import,
+  INCH-unit file (written via `write.iges.unit`), multi-solid single
+  body, downstream cut extrude, cylinder, serialization round-trip
+  incl. `include_opaque` gating, undo/redo, missing/garbage file
+  parse-before-mutate, **export re-import round-trip** (IGES has no
+  magic header, so re-importing the exported file and checking
+  geometry is the strongest export assertion), source-file deletion,
+  **Faces-mode file sews into a boolean-capable solid**,
+  **inverted-faces file reoriented to positive volume**. The suite
+  also accepts `probe <path>` to dump any file's transfer counts.
+  All 15 C++ suites green.
+- **UI**: File menu → "Import IGES..." / "Export IGES..."
+  (`.iges`/`.igs`); `iges_import` registered in both `BODY_KINDS`
+  sets from the start (the step_import lesson); `document_exported`
+  `format` enum gains `"iges"`.
+- v1 limitations: assembly structure/names/colors not read; faces
+  that do not sew into solids (open shells) import and render but
+  solid-only modifiers no-op on them. IGES export writes one file per
+  document with every body as an MSBO (186) solid.
+
 ### STEP file import (feature/step)
 
 New command `import_step { file_path }` reads an ISO-10303-21 STEP file
@@ -65,12 +109,25 @@ history of their own.
   missing/garbage file errors (document untouched), re-export header,
   source-file deletion after import. All 14 suites green via
   `pnpm test:core`.
+- **Same-bug audit (user-requested)**: the no-solids situation the
+  IGES import hit was checked across the other imports. (1) STEP
+  import now sews shells-only files the same way (shared
+  `sew_faces_to_solids` in `core/geometry/import_sew_helpers`).
+  (2) `convert_mesh_to_body` (STL conversion) did NOT normalize
+  orientation — inverted STL winding produced negative-volume solids,
+  breaking booleans; it now reverses per solid like the imports.
+  (3) `mesh_import` itself stays a triangle mesh by design with the
+  explicit "Convert to solid" action — no change. Regression tests:
+  step_import test 12 (shells-only file sews + boolean cut),
+  stl_import test 19 (inverted-winding STL converts to a
+  positive-volume solid).
 - v1 limitations: assembly structure, names, colors and layers are
   NOT read (plain `STEPControl_Reader`; `STEPCAFControl_Reader` is the
-  follow-up if needed); shells-only files import and render but
-  solid-only modifiers no-op on them (logged as a warning); parts are
-  oriented as written (no Z-up conversion); B-rep snapshots grow
-  `part.json` for large parts (same cost class as existing snapshots).
+  follow-up if needed); faces that do not sew into solids (open
+  shells) import and render, but solid-only modifiers no-op on them;
+  parts are oriented as written (no Z-up conversion); B-rep snapshots
+  grow `part.json` for large parts (same cost class as existing
+  snapshots).
 
 ## 2026-08-21
 

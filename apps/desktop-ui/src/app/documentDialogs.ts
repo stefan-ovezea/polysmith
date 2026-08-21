@@ -209,3 +209,51 @@ export async function pickImportStepPath({
 
   return result;
 }
+
+export async function pickImportIgesPath({
+  translate,
+  addMessage,
+}: DocumentDialogContext) {
+  const result = await open({
+    title: translate("dialogs.importIgesTitle"),
+    multiple: false,
+    directory: false,
+    filters: [
+      {
+        name: translate("dialogs.igesFileType"),
+        extensions: ["iges", "igs"],
+      },
+    ],
+  });
+
+  if (result === null || Array.isArray(result)) {
+    addMessage("import canceled");
+    return null;
+  }
+
+  return result;
+}
+
+export async function pickExportIgesPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportIgesTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.iges`,
+    filters: [
+      {
+        name: translate("dialogs.igesFileType"),
+        extensions: ["iges", "igs"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}

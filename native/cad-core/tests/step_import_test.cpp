@@ -724,6 +724,55 @@ bool test_reexport_starts_with_header() {
                 "reexport: file must start with the STEP header");
 }
 
+// A shells-only STEP file (the box's shell, no solid entity) — the
+// surface-model class of STEP files. The reader must sew it into a
+// solid so the solid-only modifiers work.
+std::string write_shell_box_step(const std::string& name) {
+  const TopoDS_Shape box =
+      BRepPrimAPI_MakeBox(gp_Pnt(-20.0, -10.0, -5.0), 40.0, 20.0, 10.0)
+          .Shape();
+  TopoDS_Shape shell;
+  for (TopExp_Explorer exp(box, TopAbs_SHELL); exp.More(); exp.Next()) {
+    shell = exp.Current();
+    break;
+  }
+  return write_step(name, shell);
+}
+
+bool test_shells_only_file_sews_to_solid() {
+  const std::string path = write_shell_box_step("shell_box");
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_step(path);
+  const std::string body_id = document.feature_history.back().id;
+
+  const auto& feature = document.feature_history.back();
+  if (!expect(feature.step_import_parameters.has_value() &&
+                  feature.step_import_parameters->solid_count == 1,
+              "shell: import must report one sewn solid")) {
+    return false;
+  }
+
+  // And the sewn solid must accept a boolean — the regression the
+  // solid-only guard would otherwise silently reject.
+  document = manager.start_sketch_on_plane("ref-plane-xy");
+  document = manager.add_sketch_rectangle(-20.0, -10.0, 20.0, 10.0);
+  const auto& profiles =
+      document.feature_history.back().sketch_parameters->profiles;
+  if (!expect(profiles.size() == 1, "shell: fixture needs one profile")) {
+    return false;
+  }
+  document = manager.extrude_profile(profiles.front().id, /*depth=*/5.0,
+                                     /*mode=*/"cut", body_id,
+                                     /*parameters=*/std::nullopt);
+
+  const auto compiled = compile_bodies(document);
+  return expect(compiled.bodies.size() == 1, "shell: one body after cut") &&
+         near(shape_volume(compiled.bodies.front().shape), 4000.0,
+              4000.0 * 0.02, "shell: cut must halve the sewn solid volume");
+}
+
 bool test_file_move_does_not_break_part() {
   const std::string path = write_box_step("move_source");
 
@@ -766,6 +815,8 @@ int main() {
   if (!test_reexport_starts_with_header()) return 1;
   std::cerr << "[step_import_test] test 11: source-file deletion\n";
   if (!test_file_move_does_not_break_part()) return 1;
+  std::cerr << "[step_import_test] test 12: shells-only file sews to solid\n";
+  if (!test_shells_only_file_sews_to_solid()) return 1;
   std::cout << "step_import_test passed\n";
   return 0;
 }

@@ -166,4 +166,16 @@ struct StepImportFeatureParameters {
   int face_count = 0;            // for the feature summary
 };
 
+// Imported IGES body — identical storage model to step_import (parse
+// once, live handle + persisted B-rep snapshot, self-contained part).
+struct IgesImportFeatureParameters {
+  std::string file_path;         // original file — display only
+  std::string source_units;      // units the file was written in (e.g. "INCH")
+  std::string serialized_shape;  // B-rep snapshot for persistence
+  TopoDS_Shape imported_shape;   // live handle; null after load — the
+                                 // compiler falls back to the snapshot
+  int solid_count = 0;           // for the feature summary
+  int face_count = 0;            // for the feature summary
+};
+
 }  // namespace polysmith::core

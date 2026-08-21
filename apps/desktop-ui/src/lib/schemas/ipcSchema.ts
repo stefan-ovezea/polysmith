@@ -56,7 +56,7 @@ const documentExportedEventSchema = z.object({
   type: z.literal("document_exported"),
   payload: z.object({
     file_path: z.string(),
-    format: z.enum(["step", "stl", "dxf"]),
+    format: z.enum(["step", "stl", "dxf", "iges"]),
     exported_feature_count: z.number(),
   }),
 });
