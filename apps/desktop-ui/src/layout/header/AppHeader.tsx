@@ -298,6 +298,8 @@ interface AppHeaderProps
   onImportMesh: () => Promise<void>;
   onImportDxf: () => Promise<void>;
   onImportStep: () => Promise<void>;
+  onImportIges: () => Promise<void>;
+  onExportIges: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   pluginMenuItems: Array<{
@@ -387,6 +389,8 @@ export function AppHeader({
   onImportMesh,
   onImportDxf,
   onImportStep,
+  onImportIges,
+  onExportIges,
   onUndo,
   onRedo,
   pluginMenuItems,
@@ -684,6 +688,14 @@ export function AppHeader({
               {
                 label: t("header.importStep"),
                 onSelect: () => void onImportStep(),
+              },
+              {
+                label: t("header.importIges"),
+                onSelect: () => void onImportIges(),
+              },
+              {
+                label: t("header.exportIges"),
+                onSelect: () => void onExportIges(),
               },
               {
                 label: t("header.exportStep"),

@@ -241,7 +241,12 @@ The same boundary also imports STEP solids:
 
 - `import_step { file_path }` creates a `step_import` body feature and replies with `document_state`. The file is parsed ONCE at import time (unlike `import_stl`, the core never re-reads it): the translated shape (units converted to mm, original unit reported in `parameters_summary`) is kept in memory and a B-rep snapshot is persisted into the saved part file (gated by `include_opaque` — event payloads strip it). The part stays self-contained — moving or deleting the source .step never breaks it. A missing or invalid file throws before any document mutation (parse-before-mutate).
 - Multi-solid STEP files (e.g. assemblies) become ONE body holding a compound — the `CompiledBody.id == feature_id` invariant means no per-solid explosion in v1.
-- Imported STEP bodies are real solids: booleans, fillets, chamfers, shell and hole all work on them, and they re-export to STEP through the normal `export_document` path. v1 limitations: assembly structure, names, colors and layers are not read; shells-only files import but solid-only modifiers no-op on them.
+- Imported STEP bodies are real solids: booleans, fillets, chamfers, shell and hole all work on them, and they re-export to STEP through the normal `export_document` path. Shells-only files are sewn into solids on import (same sew+orientation normalization as the IGES import); faces that don't sew (open shells) import but solid-only modifiers no-op. v1 limitations: assembly structure, names, colors and layers are not read.
+
+The same boundary handles IGES with identical semantics:
+
+- `import_iges { file_path }` creates an `iges_import` body feature and replies with `document_state` — parse-once, self-contained B-rep snapshot in the saved part file, mm conversion (same `xstep.cascade.unit` static as STEP; the original unit from the IGES global section is reported in `parameters_summary`), one compound body per import, parse-before-mutate on missing/invalid files. Faces-only files (the common real-world IGES shape) are sewn into solids on import with per-solid orientation normalization, so booleans/fillets work on them; faces that don't sew (open shells) import but solid-only modifiers no-op.
+- `export_document_iges { file_path }` writes every body as an IGES MSBO (186) solid (BRep write mode) and replies with `document_exported` (`format: "iges"`).
 
 Embedded OrcaSlicer integration uses this same export boundary. Switching to
 Slicer view only opens/embeds the configured native OrcaSlicer process. It does

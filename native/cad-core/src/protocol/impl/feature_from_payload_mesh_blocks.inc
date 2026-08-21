@@ -42,3 +42,24 @@
     }
     feature.step_import_parameters = params;
   }
+
+  if (payload.contains("iges_import_parameters") &&
+      !payload.at("iges_import_parameters").is_null()) {
+    const json& mp = payload.at("iges_import_parameters");
+    polysmith::core::IgesImportFeatureParameters params{};
+    params.file_path = read_string(mp, "file_path");
+    params.source_units = read_string(mp, "source_units");
+    // Same lazy-deserialize model as step_import — the live handle
+    // stays null after load and the compiler falls back to the
+    // snapshot.
+    if (mp.contains("serialized_shape") && mp.at("serialized_shape").is_string()) {
+      params.serialized_shape = mp.at("serialized_shape").get<std::string>();
+    }
+    if (mp.contains("solid_count") && mp.at("solid_count").is_number()) {
+      params.solid_count = mp.at("solid_count").get<int>();
+    }
+    if (mp.contains("face_count") && mp.at("face_count").is_number()) {
+      params.face_count = mp.at("face_count").get<int>();
+    }
+    feature.iges_import_parameters = params;
+  }

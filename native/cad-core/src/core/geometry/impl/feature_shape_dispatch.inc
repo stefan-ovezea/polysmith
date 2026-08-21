@@ -32,5 +32,9 @@ TopoDS_Shape build_feature_shape(const FeatureEntry& feature) {
       feature.step_import_parameters.has_value()) {
     return build_step_import_shape(feature.step_import_parameters.value());
   }
+  if (feature.kind == "iges_import" &&
+      feature.iges_import_parameters.has_value()) {
+    return build_iges_import_shape(feature.iges_import_parameters.value());
+  }
   return TopoDS_Shape{};
 }

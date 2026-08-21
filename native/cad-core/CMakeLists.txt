@@ -128,10 +128,12 @@ set(CAD_CORE_SOURCES
   src/core/geometry/edge_geometry.cpp
   src/core/geometry/face_geometry.cpp
   src/core/geometry/feature_shape.cpp
+  src/core/geometry/import_sew_helpers.cpp
   src/core/geometry/mesh_import_helpers.cpp
   src/core/geometry/mesh_projection.cpp
   src/core/geometry/refresh_dependents.cpp
   src/core/geometry/step_import_helpers.cpp
+  src/core/geometry/iges_import_helpers.cpp
   src/core/loft/loft_feature.cpp
   src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
@@ -407,6 +409,26 @@ target_include_directories(cad_core_step_import_test PRIVATE
 )
 
 target_link_libraries(cad_core_step_import_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_iges_import_export_test
+  ${CAD_CORE_SOURCES}
+  tests/iges_import_export_test.cpp
+)
+
+target_include_directories(cad_core_iges_import_export_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_iges_import_export_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

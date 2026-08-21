@@ -22,6 +22,8 @@ TopoDS_Shape build_mesh_import_shape(
     const MeshImportFeatureParameters& parameters);
 TopoDS_Shape build_step_import_shape(
     const StepImportFeatureParameters& parameters);
+TopoDS_Shape build_iges_import_shape(
+    const IgesImportFeatureParameters& parameters);
 
 // Convenience that dispatches on FeatureEntry::kind. Returns a null shape
 // for non-solid features (e.g. sketches) instead of throwing, so callers

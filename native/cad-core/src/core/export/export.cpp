@@ -7,6 +7,9 @@
 #include <BRep_Builder.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <IGESControl_Controller.hxx>
+#include <IGESControl_Writer.hxx>
+#include <Interface_Static.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
 #include <ShapeFix_Shape.hxx>
@@ -113,6 +116,46 @@ ExportResult export_document_as_step(const DocumentState& document,
   return ExportResult{
       .file_path = file_path,
       .format = "step",
+      .exported_feature_count = static_cast<int>(shapes.size()),
+  };
+}
+
+ExportResult export_document_as_iges(const DocumentState& document,
+                                     const std::string& file_path) {
+  if (file_path.empty()) {
+    throw std::runtime_error("Export path cannot be empty");
+  }
+
+  const std::vector<TopoDS_Shape> shapes = collect_export_shapes(document);
+  if (shapes.empty()) {
+    throw std::runtime_error("No solid features are available to export");
+  }
+
+  // One writer session with one AddShape per body, so every body lands
+  // in a single IGES file. BRep mode (write.iges.brep.mode = 1) writes
+  // solids as IGES 186 MSBO entities — the default Faces mode would
+  // export surfaces only, and the file would re-import without solids.
+  // Init() must run BEFORE setting the static: the first Init call
+  // registers the static with its default and would clobber a value
+  // set earlier.
+  IGESControl_Controller::Init();
+  const int previous_mode = Interface_Static::IVal("write.iges.brep.mode");
+  Interface_Static::SetIVal("write.iges.brep.mode", 1);
+  IGESControl_Writer writer;  // reads the static in its constructor
+  Interface_Static::SetIVal("write.iges.brep.mode", previous_mode);
+  for (const auto& shape : shapes) {
+    if (!writer.AddShape(shape)) {
+      throw std::runtime_error("IGES transfer failed for a body");
+    }
+  }
+  writer.ComputeModel();
+  if (!writer.Write(file_path.c_str())) {
+    throw std::runtime_error("Cannot write IGES file: " + file_path);
+  }
+
+  return ExportResult{
+      .file_path = file_path,
+      .format = "iges",
       .exported_feature_count = static_cast<int>(shapes.size()),
   };
 }

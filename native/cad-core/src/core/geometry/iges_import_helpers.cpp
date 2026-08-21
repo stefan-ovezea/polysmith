@@ -1,4 +1,4 @@
-#include "core/geometry/step_import_helpers.h"
+#include "core/geometry/iges_import_helpers.h"
 
 #include <filesystem>
 #include <stdexcept>
@@ -6,10 +6,11 @@
 
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <IGESControl_Reader.hxx>
+#include <IGESData_IGESModel.hxx>
 #include <Interface_Static.hxx>
-#include <NCollection_Sequence.hxx>
 #include <Standard_Failure.hxx>
-#include <STEPControl_Reader.hxx>
+#include <Standard_Transient.hxx>
 #include <TCollection_AsciiString.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
@@ -30,54 +31,56 @@ int count_subshapes(const TopoDS_Shape& shape, TopAbs_ShapeEnum kind) {
 
 }  // namespace
 
-StepImportResult read_step_file(const std::string& file_path) {
+IgesImportResult read_iges_file(const std::string& file_path) {
   if (file_path.empty() || !std::filesystem::exists(file_path)) {
-    throw std::runtime_error("STEP file not found: " + file_path);
+    throw std::runtime_error("IGES file not found: " + file_path);
   }
 
   try {
-    STEPControl_Reader reader;
-    // Convert the file's units to mm on transfer (the standard
-    // xstep.cascade.unit static) so imported bodies live in the same
-    // millimeter world as every parametric feature.
+    IGESControl_Reader reader;
+    // Convert the file's units to mm on transfer. IGES honors the same
+    // xstep.cascade.unit static as STEP (see DEIGES_ConfigurationNode).
     Interface_Static::SetCVal("xstep.cascade.unit", "MM");
 
     const IFSelect_ReturnStatus read_status =
         reader.ReadFile(file_path.c_str());
     if (read_status != IFSelect_RetDone) {
-      throw std::runtime_error("Failed to read STEP file '" + file_path +
-                               "' — not a valid ISO-10303-21 file");
+      throw std::runtime_error("Failed to read IGES file '" + file_path +
+                               "' — not a valid IGES file");
     }
 
     if (reader.TransferRoots() <= 0) {
       throw std::runtime_error(
-          "STEP file contains no transferable geometry: " + file_path);
+          "IGES file contains no transferable geometry: " + file_path);
     }
 
-    StepImportResult result;
+    IgesImportResult result;
     result.shape = reader.OneShape();
     if (result.shape.IsNull()) {
       throw std::runtime_error(
-          "STEP file produced an empty shape: " + file_path);
+          "IGES file produced an empty shape: " + file_path);
     }
 
-    // The original unit names come from the file header; the first
-    // length unit is what the coordinates were written in (the shape
-    // itself is already converted to mm by the transfer above).
-    NCollection_Sequence<TCollection_AsciiString> length_units;
-    NCollection_Sequence<TCollection_AsciiString> angle_units;
-    NCollection_Sequence<TCollection_AsciiString> solid_angle_units;
-    reader.FileUnits(length_units, angle_units, solid_angle_units);
+    // The original unit name comes from the global section (e.g.
+    // "INCH", "MM"); the shape itself is already converted to mm by
+    // the transfer above.
+    const auto iges_model =
+        occ::down_cast<IGESData_IGESModel>(reader.Model());
+    const auto& global_section = iges_model->GlobalSection();
     result.source_units =
-        length_units.IsEmpty() ? "unknown" : length_units.First().ToCString();
+        global_section.UnitName().IsNull()
+            ? "unknown"
+            : global_section.UnitName()->ToCString();
 
     result.solid_count = count_subshapes(result.shape, TopAbs_SOLID);
     result.face_count = count_subshapes(result.shape, TopAbs_FACE);
 
     if (result.solid_count == 0) {
-      // Faces/shells-only surface model: try to sew it into solids so
-      // the solid-only modifiers work (same class of files the IGES
-      // import sews — see sew_faces_to_solids).
+      // Faces-only surface model: try to sew it into solids so the
+      // solid-only modifiers work on real-world files. Two tolerances:
+      // tight first (exact surfaces should match closely), looser
+      // second (classic IGES files often carry small gaps between
+      // adjacent trimmed faces). Shared with the STEP import.
       TopoDS_Shape sewn = sew_faces_to_solids(result.shape, 1e-6);
       double used_tolerance = 1e-6;
       if (sewn.IsNull()) {
@@ -88,7 +91,7 @@ StepImportResult read_step_file(const std::string& file_path) {
         result.shape = sewn;
         result.solid_count = count_subshapes(sewn, TopAbs_SOLID);
         result.face_count = count_subshapes(sewn, TopAbs_FACE);
-        log_info("step_import",
+        log_info("iges_import",
                  "Sewed " + std::to_string(result.face_count) +
                      " faces into " + std::to_string(result.solid_count) +
                      " solid(s) at tolerance " +
@@ -96,11 +99,8 @@ StepImportResult read_step_file(const std::string& file_path) {
       }
     }
 
-    // Guarantee every face carries a triangulation. The STEP reader
-    // transfers faces without triangulations, and downstream consumers
-    // (viewport tessellation, exports) read face triangulations
-    // directly — an unmeshed shape silently produces empty results
-    // there. Same rationale and parameters as mesh_import_helpers.
+    // Guarantee every face carries a triangulation — same rationale
+    // and parameters as the STEP and STL import helpers.
     try {
       BRepMesh_IncrementalMesh mesher(result.shape, /*linearDeflection=*/0.1,
                                       /*isRelative=*/false,
@@ -114,12 +114,12 @@ StepImportResult read_step_file(const std::string& file_path) {
     return result;
   } catch (const Standard_Failure& failure) {
     throw std::runtime_error(
-        std::string("Failed to read STEP file '") + file_path +
+        std::string("Failed to read IGES file '") + file_path +
         "': " + failure.GetMessageString());
   }
 }
 
-TopoDS_Shape build_step_import_shape(const StepImportFeatureParameters& params) {
+TopoDS_Shape build_iges_import_shape(const IgesImportFeatureParameters& params) {
   return params.imported_shape;
 }
 

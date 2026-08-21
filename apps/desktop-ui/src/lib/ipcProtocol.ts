@@ -154,10 +154,30 @@ export function makeImportStepCommand(filePath: string): CoreCommand {
   };
 }
 
+export function makeImportIgesCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "import_iges",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
 export function makeExportDocumentDxfCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "export_document_dxf",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
+export function makeExportDocumentIgesCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "export_document_iges",
     payload: {
       file_path: filePath,
     },

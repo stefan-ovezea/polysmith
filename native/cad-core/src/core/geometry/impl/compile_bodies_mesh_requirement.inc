@@ -90,7 +90,7 @@
       break;
     }
     if (feature.kind == "mesh_import" || feature.kind == "mesh_to_body" ||
-        feature.kind == "step_import") {
+        feature.kind == "step_import" || feature.kind == "iges_import") {
       // Mesh and imported bodies have no legacy primitive renderer —
       // the native mesh path is the only way they appear in the
       // viewport.

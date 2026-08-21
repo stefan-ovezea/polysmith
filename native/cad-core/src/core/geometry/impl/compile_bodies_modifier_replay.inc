@@ -312,3 +312,24 @@
       result.consumed_feature_ids.insert(feature.id);
       continue;
     }
+    if (feature.kind == "iges_import" &&
+        feature.iges_import_parameters.has_value()) {
+      // Same storage model as step_import: live handle after import,
+      // snapshot deserialization after a part-file load, and no
+      // compound fuse (multi-solid files stay one body).
+      const auto& params = feature.iges_import_parameters.value();
+      TopoDS_Shape shape = params.imported_shape;
+      if (shape.IsNull()) {
+        shape = deserialize_shape_snapshot(params.serialized_shape);
+      }
+      if (shape.IsNull()) {
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
+      body_shapes[feature.id] = shape;
+      body_frames[feature.id] = initial_frame_for_feature(feature);
+      body_pick_shapes.erase(feature.id);
+      body_order.push_back(feature.id);
+      result.consumed_feature_ids.insert(feature.id);
+      continue;
+    }

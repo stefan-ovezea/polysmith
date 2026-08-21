@@ -7,8 +7,10 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Builder.hxx>
+#include <GProp_GProps.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
@@ -117,7 +119,17 @@ TopoDS_Shape convert_mesh_to_solid(const TopoDS_Shape& mesh_shape) {
     }
     ShapeFix_Solid fixer(solid_maker.Solid());
     fixer.Perform();
-    builder.Add(solids, fixer.Solid());
+    TopoDS_Solid solid = TopoDS::Solid(fixer.Solid());
+    // STL winding is usually outward but not guaranteed — a sewn solid
+    // can come out inverted (negative volume), which breaks booleans
+    // downstream. Normalize per solid (same rule as the IGES/STEP
+    // face-sewing imports).
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(solid, props);
+    if (props.Mass() < 0.0) {
+      solid.Reverse();
+    }
+    builder.Add(solids, solid);
     any_solid = true;
   }
   if (!any_solid) {

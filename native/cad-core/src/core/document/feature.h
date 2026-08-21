@@ -64,6 +64,7 @@ struct FeatureEntry {
   std::optional<MeshImportFeatureParameters> mesh_import_parameters;
   std::optional<MeshToBodyFeatureParameters> mesh_to_body_parameters;
   std::optional<StepImportFeatureParameters> step_import_parameters;
+  std::optional<IgesImportFeatureParameters> iges_import_parameters;
 };
 
 }  // namespace polysmith::core
