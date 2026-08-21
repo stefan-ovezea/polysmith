@@ -98,6 +98,7 @@ export const BODY_KINDS = new Set([
   "body_copy",
   "mesh_import",
   "mesh_to_body",
+  "step_import",
 ]);
 
 export function documentHasSolidBody(documentState: DocumentState | null) {

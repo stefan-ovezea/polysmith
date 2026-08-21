@@ -237,6 +237,12 @@ The same boundary now imports STL meshes into the live document:
 - `project_body_into_sketch { body_id, mode }` projects a mesh body onto the active sketch plane as fixed-endpoint sketch lines, recorded as a live `SketchProjection` (`source_kind = "body"`). `mode = "section"` intersects the mesh with the sketch plane; `mode = "silhouette"` projects the outline seen along the plane normal (Fusion "Project" semantics). Both modes also work on origin ref-plane sketches.
 - v1 limitations: curved STL edges project as polylines (no arc recovery); mesh bodies are shells — booleans/fillets/chamfers/holes are gated off them (converted solids get all body ops); STL is assumed mm (the `scale` parameter is available on the command/AI path); meshes above 50k faces skip the coplanar-facet merge when converting.
 
+The same boundary also imports STEP solids:
+
+- `import_step { file_path }` creates a `step_import` body feature and replies with `document_state`. The file is parsed ONCE at import time (unlike `import_stl`, the core never re-reads it): the translated shape (units converted to mm, original unit reported in `parameters_summary`) is kept in memory and a B-rep snapshot is persisted into the saved part file (gated by `include_opaque` — event payloads strip it). The part stays self-contained — moving or deleting the source .step never breaks it. A missing or invalid file throws before any document mutation (parse-before-mutate).
+- Multi-solid STEP files (e.g. assemblies) become ONE body holding a compound — the `CompiledBody.id == feature_id` invariant means no per-solid explosion in v1.
+- Imported STEP bodies are real solids: booleans, fillets, chamfers, shell and hole all work on them, and they re-export to STEP through the normal `export_document` path. v1 limitations: assembly structure, names, colors and layers are not read; shells-only files import but solid-only modifiers no-op on them.
+
 Embedded OrcaSlicer integration uses this same export boundary. Switching to
 Slicer view only opens/embeds the configured native OrcaSlicer process. It does
 not export the active document. The separate Export to Slicer action is enabled

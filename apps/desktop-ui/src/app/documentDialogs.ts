@@ -185,3 +185,27 @@ export async function pickImportDxfPath({
 
   return result;
 }
+
+export async function pickImportStepPath({
+  translate,
+  addMessage,
+}: DocumentDialogContext) {
+  const result = await open({
+    title: translate("dialogs.importStepTitle"),
+    multiple: false,
+    directory: false,
+    filters: [
+      {
+        name: translate("dialogs.stepFileType"),
+        extensions: ["step", "stp"],
+      },
+    ],
+  });
+
+  if (result === null || Array.isArray(result)) {
+    addMessage("import canceled");
+    return null;
+  }
+
+  return result;
+}

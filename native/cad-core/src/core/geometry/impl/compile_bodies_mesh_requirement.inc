@@ -89,9 +89,11 @@
       any_boolean = true;
       break;
     }
-    if (feature.kind == "mesh_import" || feature.kind == "mesh_to_body") {
-      // Mesh bodies have no legacy primitive renderer — the native mesh
-      // path is the only way they appear in the viewport.
+    if (feature.kind == "mesh_import" || feature.kind == "mesh_to_body" ||
+        feature.kind == "step_import") {
+      // Mesh and imported bodies have no legacy primitive renderer —
+      // the native mesh path is the only way they appear in the
+      // viewport.
       any_boolean = true;
       break;
     }

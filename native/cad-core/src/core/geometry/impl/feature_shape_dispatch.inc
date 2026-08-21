@@ -28,5 +28,9 @@ TopoDS_Shape build_feature_shape(const FeatureEntry& feature) {
       feature.mesh_import_parameters.has_value()) {
     return build_mesh_import_shape(feature.mesh_import_parameters.value());
   }
+  if (feature.kind == "step_import" &&
+      feature.step_import_parameters.has_value()) {
+    return build_step_import_shape(feature.step_import_parameters.value());
+  }
   return TopoDS_Shape{};
 }

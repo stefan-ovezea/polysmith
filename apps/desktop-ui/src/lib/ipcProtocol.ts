@@ -144,6 +144,16 @@ export function makeImportDxfCommand(
   };
 }
 
+export function makeImportStepCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "import_step",
+    payload: {
+      file_path: filePath,
+    },
+  };
+}
+
 export function makeExportDocumentDxfCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

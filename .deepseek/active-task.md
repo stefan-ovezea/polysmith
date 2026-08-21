@@ -1,63 +1,63 @@
-# Active Task: Arc recovery in face projections (feature/projection-arcs)
+# Active Task: STEP file import (feature/step)
 
-> **Branch:** `feature/projection-arcs` (from `dev`, after #64)
-> **Date:** 2026-08-21
+> **Branch:** `feature/step` (from `dev`, after #65)
+> **Date:** 2026-08-22
 
 ## Status
 
-Committed as `9fd125d` (verified by the user in the running app).
-Squash-merge PR to `dev` pending.
+Implemented, **awaiting user verification in the running app** — nothing
+committed yet (no-untested-commits rule).
 
-## Backlog (next sessions — own branch each)
+## What landed
 
-1. **Mesh outline circle/arc fitting for projections.** Mesh-converted
-   body outlines are faceted polygons — a through-hole projects as
-   ~150 segments instead of one circle. Detect near-circular loops
-   (and arc-like contour runs) on mesh faces → emit `SketchCircle` /
-   `SketchArc`. (Task #25)
-2. **Strip selection state from save files.** The core serializes
-   transient selection (`selected_sketch_*`, `selected_face_id`,
-   `selected_edge_ids`, `selected_vertex_ids`) into `part.json` and
-   restores it on load — reloaded parts come back with highlights
-   intact. Clear/omit on save; round-trip test. (Task #26)
-3. **Fix mesh-with-hole conversion crash in the test harness.**
-   Pre-existing `0xC0000409` in `convert_mesh_to_body` on a synthetic
-   box-with-through-hole; the mesh-projection-stays-healthy regression
-   test in `tests/face_projection_arc_test.cpp` is disabled because of
-   it (see comment there + Implementation-Log). Fix the crash, then
-   enable the test. (Task #27)
+- **`import_step { file_path }`** — new IPC command + File menu →
+  "Import STEP..." (mirrors the DXF import chain; no Tauri changes).
+- **`step_import` body feature**: non-parametric imported solid. File
+  parsed ONCE at import (mm conversion via `xstep.cascade.unit`;
+  original unit in `parameters_summary`); live `TopoDS_Shape` handle in
+  params + B-rep snapshot persisted in `part.json` (`include_opaque`
+  gating) — self-contained, source file not needed afterwards, no
+  `dependency_broken`. Multi-solid files = ONE body (compound).
+- **Compile hooks**: `compile_bodies_mesh_requirement.inc` +
+  `compile_bodies_modifier_replay.inc` (mesh path, no fuse); snapshot
+  deserialization fallback after load. Fillet/boolean/etc. work on
+  imported solids; re-export via existing `export_document`.
+- **Tests**: new `cad_core_step_import_test` (11 cases incl.
+  hand-written AP203 INCH fixture with `CONVERSION_BASED_UNIT`,
+  downstream cut extrude, serialization round-trip, error paths).
+  All 14 C++ suites green; UI `tsc --noEmit` clean.
 
-## Problem (user-reported)
+Key files: `core/geometry/step_import_helpers.{h,cpp}`,
+`core/document/impl/step_commands.inc`,
+`compile_bodies_modifier_replay.inc`, `app/impl/step_command_handlers.inc`,
+`tests/step_import_test.cpp`, UI `documentDialogs.ts` / `AppTopBar.tsx` /
+`AppHeader.tsx`, wiki `Implementation-Log.md` / `IPC-Protocol.md` /
+`AI-CAD-Command-Language.md`.
 
-Projecting the top face of a rounded-rect extrude (4 fillets + through-
-hole) produced 72 straight segments — fillet arcs became chords, the
-hole circle a 64-segment polyline.
+## Verification checklist (user, in the running app)
 
-## Fix (implemented, 14/14 suites green, awaiting user verification)
+1. Import a STEP exported from PolySmith itself → body appears,
+   selectable, timeline "STEP Import" with `file · N faces · … → mm`.
+2. Import an inch-unit STEP → mm scale correct, summary shows `INCH → mm`.
+3. Multi-solid STEP → ONE body/one timeline entry.
+4. Sketch-on-face + extrude cut on the imported body; fillet an
+   imported edge (solid path, unlike STL meshes).
+5. Undo/redo the import.
+6. Save, close, reopen → body intact; move/delete the .step, reopen →
+   still intact, no warning badge.
+7. Export STEP → re-exported file opens (`ISO-10303-21` header).
+8. Import a garbage .step → error, document unchanged.
 
-- Face outlines carry curve identity (`polygon_segment_arcs` /
-  `FaceOutlineArc` with an orientation-proof midpoint), seam-split
-  circular wires are detected as full circles, merge/simplify are
-  arc-aware.
-- Face projection emits exact `SketchArc`s (ccw from sketch-local
-  geometry) and `SketchCircle`s for holes; chord fallback only for
-  non-parallel-plane curves. Projected arc endpoints/centers fixed
-  (face + edge paths — fix loops run before the projection record is
-  moved).
-- Live re-derivation patches arcs on fillet edits (count validation
-  extended to lines+arcs+circles).
-- Tests: `cad_core_face_projection_arc_test` (3 cases). All 14 C++
-  suites green.
+## Known out-of-scope (do not touch)
 
-## Verification checklist (user)
-
-1. Reproduce the original scenario: rounded-rect extrude → fillet →
-   hole → sketch on top → Project → fillet corners arrive as ARCS
-   (radius preserved), hole as a CIRCLE, endpoints fixed.
-2. Edit the fillet radius → projected arcs follow live.
-3. Save/reload → arcs + records survive.
-4. Project a curved edge (arc) via the edge tool → endpoints now fixed.
+- Disabled `test_mesh_face_projection_stays_healthy_after_load` in
+  `tests/face_projection_arc_test.cpp` (Task #27 crash — pre-existing).
+- v1 limits: assembly structure/names/colors not read (plain reader,
+  no CAF); shells-only imports render but solid-only ops no-op.
 
 ## Next session
 
-- User verification → commit approval (squash-merge to `dev`).
+- User verification → commit approval → separate commits (core, tests,
+  UI, docs). Only stage the STEP import files — the working tree also
+  has unrelated user changes (deleted `Ventola.STEP`, `part.json`,
+  `untitled-part.*`, modified `.gitignore`).

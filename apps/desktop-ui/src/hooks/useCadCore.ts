@@ -49,6 +49,7 @@ import {
   makeExportDocumentDxfCommand,
   makeImportStlCommand,
   makeImportDxfCommand,
+  makeImportStepCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
   makeLoadDocumentCommand,
@@ -255,6 +256,9 @@ export function useCadCore() {
       await sendAndRefreshSessionViewport(
         makeImportDxfCommand(filePath, planeId),
       );
+    },
+    importStep: async (filePath: string) => {
+      await sendAndRefreshSessionViewport(makeImportStepCommand(filePath));
     },
     convertMeshToBody: async (bodyId: string) => {
       await sendAndRefreshSessionViewport(

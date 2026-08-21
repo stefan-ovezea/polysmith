@@ -14,6 +14,7 @@ import {
   pickExportDxfPath,
   pickExportPath,
   pickImportDxfPath,
+  pickImportStepPath,
   pickImportStlPath,
   pickLoadDocumentPath,
   type DialogTranslate,
@@ -86,6 +87,7 @@ interface AppTopBarProps {
   exportDocumentDxf: (filePath: string) => Promise<void>;
   importStl: (filePath: string, scale?: number) => Promise<void>;
   importDxf: (filePath: string, planeId?: string) => Promise<void>;
+  importStep: (filePath: string) => Promise<void>;
   saveCurrentDocument: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
@@ -270,6 +272,20 @@ export function AppTopBar(props: AppTopBarProps) {
 
         await props.runAction(async () => {
           await props.importDxf(filePath);
+          props.addMessage(`import requested: ${filePath}`);
+        });
+      }}
+      onImportStep={async () => {
+        const filePath = await pickImportStepPath({
+          translate: props.translate,
+          addMessage: props.addMessage,
+        });
+        if (!filePath) {
+          return;
+        }
+
+        await props.runAction(async () => {
+          await props.importStep(filePath);
           props.addMessage(`import requested: ${filePath}`);
         });
       }}

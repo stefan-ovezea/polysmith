@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <TopoDS_Shape.hxx>
+
 #include "core/document/plane_frame.h"
 
 namespace polysmith::core {
@@ -146,6 +148,22 @@ struct MeshImportFeatureParameters {
 struct MeshToBodyFeatureParameters {
   std::string source_body_id;     // mesh body the conversion came from
   std::string serialized_shape;   // B-rep snapshot of the converted solid
+};
+
+// Imported STEP body. The file is parsed ONCE at import time; the
+// translated shape (in mm) is kept as a live handle for compile-time
+// use, and a B-rep snapshot is persisted into the part file so the
+// document stays self-contained. The source path is provenance only —
+// moving or deleting the .step file never breaks the part (no
+// dependency_broken machinery, unlike mesh_import).
+struct StepImportFeatureParameters {
+  std::string file_path;         // original file — display only
+  std::string source_units;      // units the file was written in (e.g. "INCH")
+  std::string serialized_shape;  // B-rep snapshot for persistence
+  TopoDS_Shape imported_shape;   // live handle; null after load — the
+                                 // compiler falls back to the snapshot
+  int solid_count = 0;           // for the feature summary
+  int face_count = 0;            // for the feature summary
 };
 
 }  // namespace polysmith::core

@@ -480,6 +480,26 @@ Payload:
 
 Returns `document_state`.
 
+#### `import_step`
+
+Imports a STEP file (ISO-10303-21) as a non-parametric solid body into the
+current document. The file is parsed once at import time (units converted to
+mm, the original unit reported in the feature's `parameters_summary`); a B-rep
+snapshot is persisted into the saved part file, so the part stays
+self-contained — the source .step file is not needed afterwards. Multi-solid
+files become ONE body holding a compound. A missing or invalid file throws
+before any document mutation (the document stays untouched).
+
+Payload:
+
+```ts
+{
+  file_path: string;
+}
+```
+
+Returns `document_state`.
+
 #### `convert_mesh_to_body`
 
 Converts a `mesh_import` body into a regular solid body alongside it (sew →

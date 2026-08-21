@@ -16,3 +16,16 @@
                       : json("")},
              }
            : json(nullptr)},
+      {"step_import_parameters",
+       feature.step_import_parameters.has_value()
+           ? json{
+                 {"file_path", feature.step_import_parameters->file_path},
+                 {"source_units", feature.step_import_parameters->source_units},
+                 {"serialized_shape",
+                  include_opaque
+                      ? json(feature.step_import_parameters->serialized_shape)
+                      : json("")},
+                 {"solid_count", feature.step_import_parameters->solid_count},
+                 {"face_count", feature.step_import_parameters->face_count},
+             }
+           : json(nullptr)},

@@ -570,6 +570,14 @@ export interface ImportDxfCommand {
   };
 }
 
+export interface ImportStepCommand {
+  id: string;
+  type: "import_step";
+  payload: {
+    file_path: string;
+  };
+}
+
 export interface ConvertMeshToBodyCommand {
   id: string;
   type: "convert_mesh_to_body";
@@ -689,6 +697,7 @@ export type CoreCommand =
   | LoadDocumentCommand
   | ImportStlCommand
   | ImportDxfCommand
+  | ImportStepCommand
   | ConvertMeshToBodyCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand
