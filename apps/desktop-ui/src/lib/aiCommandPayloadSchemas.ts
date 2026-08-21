@@ -53,6 +53,11 @@ export const commandPayloadSchemas = {
       plane_id: stringField.optional(),
     })
     .strict(),
+  import_step: z
+    .object({
+      file_path: stringField,
+    })
+    .strict(),
   convert_mesh_to_body: z.object({ body_id: stringField }).strict(),
   detach_body_projections: z.object({ body_id: stringField }).strict(),
   save_document: z.object({ file_path: stringField }).strict(),

@@ -288,3 +288,27 @@
       result.consumed_feature_ids.insert(feature.id);
       continue;
     }
+    if (feature.kind == "step_import" &&
+        feature.step_import_parameters.has_value()) {
+      // The STEP file was parsed once at import time; the live handle
+      // is the fast path, and after a part-file load (handle null) the
+      // persisted B-rep snapshot is deserialized instead. The
+      // `continue` keeps multi-solid compounds away from the generic
+      // compound-fuse path below, which would try to fuse every solid
+      // of an imported part into one.
+      const auto& params = feature.step_import_parameters.value();
+      TopoDS_Shape shape = params.imported_shape;
+      if (shape.IsNull()) {
+        shape = deserialize_shape_snapshot(params.serialized_shape);
+      }
+      if (shape.IsNull()) {
+        result.consumed_feature_ids.insert(feature.id);
+        continue;
+      }
+      body_shapes[feature.id] = shape;
+      body_frames[feature.id] = initial_frame_for_feature(feature);
+      body_pick_shapes.erase(feature.id);
+      body_order.push_back(feature.id);
+      result.consumed_feature_ids.insert(feature.id);
+      continue;
+    }

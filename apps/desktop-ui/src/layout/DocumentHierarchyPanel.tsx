@@ -69,6 +69,7 @@ const BODY_KINDS = new Set([
   "plugin_feature",
   "mesh_import",
   "mesh_to_body",
+  "step_import",
 ]);
 
 function EyeIcon({ open }: { open: boolean }) {

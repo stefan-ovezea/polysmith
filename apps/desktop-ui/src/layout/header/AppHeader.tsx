@@ -297,6 +297,7 @@ interface AppHeaderProps
   onLoadDocument: () => Promise<void>;
   onImportMesh: () => Promise<void>;
   onImportDxf: () => Promise<void>;
+  onImportStep: () => Promise<void>;
   onUndo: () => Promise<void>;
   onRedo: () => Promise<void>;
   pluginMenuItems: Array<{
@@ -385,6 +386,7 @@ export function AppHeader({
   onLoadDocument,
   onImportMesh,
   onImportDxf,
+  onImportStep,
   onUndo,
   onRedo,
   pluginMenuItems,
@@ -678,6 +680,10 @@ export function AppHeader({
               {
                 label: t("header.importDxf"),
                 onSelect: () => void onImportDxf(),
+              },
+              {
+                label: t("header.importStep"),
+                onSelect: () => void onImportStep(),
               },
               {
                 label: t("header.exportStep"),

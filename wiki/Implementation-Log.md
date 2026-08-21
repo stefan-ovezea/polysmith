@@ -2,6 +2,76 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-22
+
+### STEP file import (feature/step)
+
+New command `import_step { file_path }` reads an ISO-10303-21 STEP file
+into a non-parametric `step_import` body feature — imported parts can
+be referenced (sketch-on-face, booleans, CAM face references) and
+modified by downstream parametric features, but carry no editable
+history of their own.
+
+- **Reader** (`core/geometry/step_import_helpers.{h,cpp}`):
+  `read_step_file` uses the standard `STEPControl_Reader` (no CAF, no
+  new OCCT libs — `TKDESTEP`/`TKXCAF` were already linked). Units are
+  converted to mm on read via the `xstep.cascade.unit` static; the
+  file's original unit name is reported through `reader.FileUnits`.
+  Multi-root files (assemblies with several solids) come back as ONE
+  compound via `OneShape()`. The shape is meshed immediately
+  (`BRepMesh_IncrementalMesh` 0.1/0.5 — same deflections as
+  `mesh_import_helpers`) so viewport/export see triangulations.
+  Throws on missing/garbage files BEFORE any document mutation
+  (the DXF import's parse-before-mutate guarantee).
+- **Self-contained snapshot storage**: the file is parsed once at
+  import time. The translated shape is kept as a live `TopoDS_Shape`
+  handle in `StepImportFeatureParameters` (cheap refcounted copies on
+  undo-stack pushes), and a B-rep snapshot (`BRepTools::Write`, the
+  `serialized_shape` pattern shared with `mesh_to_body`/`body_copy`)
+  is persisted into `part.json` gated by `include_opaque` — event
+  payloads strip it, saves keep it. After a load the handle is null
+  and the body compiler falls back to `deserialize_shape_snapshot`.
+  The source path is provenance only: moving or deleting the .step
+  never breaks the part (no `dependency_broken` machinery — unlike
+  `mesh_import`, which re-reads from disk on every compile).
+- **Compile integration** (`core/geometry/impl/`): a `step_import`
+  block in `compile_bodies_modifier_replay.inc` inserts the shape into
+  `body_shapes` directly (the `continue` keeps multi-solid compounds
+  away from the generic fuse path), and
+  `compile_bodies_mesh_requirement.inc` forces the native mesh path so
+  imported bodies tessellate into viewport mesh primitives (they have
+  no legacy primitive renderer). One body per feature —
+  `CompiledBody.id == feature_id` is preserved, so multi-solid files
+  stay a single body (no per-solid explosion in v1).
+- **Downstream ops**: imported STEP shapes are real solids, so
+  fillet/chamfer/shell/hole/boolean guards pass on them (unlike STL
+  mesh compounds). Export (`collect_export_shapes`) and face/edge
+  picking work with no changes — the existing face/edge witness
+  system (TNP attestation) covers references to imported topology.
+- **UI**: File menu → "Import STEP..." mirrors the DXF import chain
+  (`pickImportStepPath`, `makeImportStepCommand`, `useCadCore.importStep`,
+  i18n `header.importStep` / `dialogs.importStepTitle`, reuses
+  `dialogs.stepFileType`). No Tauri/Rust changes (dialogs are
+  frontend `tauri-plugin-dialog` calls).
+- **Tests**: new `cad_core_step_import_test` suite (11 cases):
+  box import (kind/body/faces/bounds/volume/viewport emission), a
+  hand-assembled minimal AP203 fixture in INCHES (external-syntax +
+  `CONVERSION_BASED_UNIT` handling, 25.4 mm conversion asserted),
+  multi-solid compound stays one body, downstream cut extrude through
+  the real `DocumentManager` path, curved-face import (cylinder;
+  volume exact — BndLib inflates seam-split cylinder bounds by ~0.5%
+  of the radius, a known bounds quirk, not a geometry defect),
+  serialization round-trip incl. `include_opaque` gating, undo/redo,
+  missing/garbage file errors (document untouched), re-export header,
+  source-file deletion after import. All 14 suites green via
+  `pnpm test:core`.
+- v1 limitations: assembly structure, names, colors and layers are
+  NOT read (plain `STEPControl_Reader`; `STEPCAFControl_Reader` is the
+  follow-up if needed); shells-only files import and render but
+  solid-only modifiers no-op on them (logged as a warning); parts are
+  oriented as written (no Z-up conversion); B-rep snapshots grow
+  `part.json` for large parts (same cost class as existing snapshots).
+
 ## 2026-08-21
 
 ### Arc recovery in face projections (feature/projection-arcs)

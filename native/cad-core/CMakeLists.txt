@@ -131,6 +131,7 @@ set(CAD_CORE_SOURCES
   src/core/geometry/mesh_import_helpers.cpp
   src/core/geometry/mesh_projection.cpp
   src/core/geometry/refresh_dependents.cpp
+  src/core/geometry/step_import_helpers.cpp
   src/core/loft/loft_feature.cpp
   src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
@@ -194,6 +195,9 @@ target_include_directories(cad_core_sketch_profile_test PRIVATE
   ${CMAKE_SOURCE_DIR}/native_compat
   ${PLANEGCS_DIR}/headers
   ${Boost_INCLUDE_DIRS}
+  # feature.h → body_feature_types.h now includes TopoDS_Shape.hxx
+  # (step_import parameters); header-only, so no link change.
+  ${OCCT_ROOT}/inc
 )
 
 target_link_libraries(cad_core_sketch_profile_test PRIVATE
@@ -386,6 +390,26 @@ target_link_libraries(cad_core_stl_import_test PRIVATE
 add_executable(cad_core_dxf_import_export_test
   ${CAD_CORE_SOURCES}
   tests/dxf_import_export_test.cpp
+)
+
+add_executable(cad_core_step_import_test
+  ${CAD_CORE_SOURCES}
+  tests/step_import_test.cpp
+)
+
+target_include_directories(cad_core_step_import_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_step_import_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
 )
 
 target_include_directories(cad_core_dxf_import_export_test PRIVATE

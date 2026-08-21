@@ -457,6 +457,7 @@ function App() {
     exportBodyStl,
     importStl,
     importDxf,
+    importStep,
     convertMeshToBody,
     detachBodyProjections,
     saveDocument,
@@ -1349,6 +1350,7 @@ function App() {
           exportDocumentDxf={exportDocumentDxf}
           importStl={importStl}
           importDxf={importDxf}
+          importStep={importStep}
           saveCurrentDocument={saveCurrentDocument}
           undo={undo}
           redo={redo}

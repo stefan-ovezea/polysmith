@@ -47,6 +47,7 @@
 #include "core/geometry/feature_shape.h"
 #include "core/geometry/mesh_import_helpers.h"
 #include "core/geometry/mesh_projection.h"
+#include "core/geometry/step_import_helpers.h"
 #include "core/sketch/formula_eval.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/geometry/refresh_dependents.h"
@@ -86,4 +87,5 @@ namespace {
 #include "core/document/impl/session_cam_commands.inc"
 #include "core/document/impl/mesh_commands.inc"
 #include "core/document/impl/dxf_commands.inc"
+#include "core/document/impl/step_commands.inc"
 }  // namespace polysmith::core
