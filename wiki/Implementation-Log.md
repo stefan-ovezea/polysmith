@@ -2,6 +2,52 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-21
+
+### Stale selection/highlight fixes (feature/highlight)
+
+User-reported (pre-dates the text feature): after tool cancel/confirm
+and extrude/sketch-exit, sketch entities, points, profile fills, and
+3D faces/edges stayed highlighted when they should not.
+
+- **Central selection prune**: new `DocumentManager::prune_document_selection()`
+  runs at the top of `bump_geometry_revision()` — builds the live
+  sketch-id set (entities, endpoints, vertices, dimensions, fillets,
+  texts, profiles, projected points) across every sketch feature and
+  erases orphaned ids from all singular + plural `selected_sketch_*`
+  fields (incl. `selected_sketch_text_id`), re-deriving the singular id
+  from the pruned plural list. Pure id-set membership, no body
+  compilation. Covers trim-as-delete, deleted dimensions/fillets/texts,
+  fabricated dim ids, zero-length cleanup, and load (the load path
+  already bumps). Undo/redo untouched — snapshots are pruned at push
+  time and fillet-Cancel depends on restoring `selected_edge_ids`.
+- **Per-mutator clears**: `extrude_profiles`/`extrude_open_entities`/
+  `extrude_face` clear plural sketch selections + all 3D selections
+  (the primary symptom: the finished sketch's profile fill stayed lit);
+  `finish_sketch` and `start_sketch_on_face` clear 3D edge/vertex/face
+  selections; `confirm_fillet`/`confirm_chamfer` clear
+  `selected_edge_ids` (the pending session highlights its edges);
+  `delete_feature` clears face/edge/vertex selections owned by the
+  deleted feature (owner-prefix match); `clear_selection` now also
+  clears `selected_sketch_text_id`.
+- **UI visual-state fixes**: new `clearTrimHighlights` helper (extracted
+  from `trimPointerMove`) clears the trim red overlay on Escape
+  (`cancelActiveSketchDraft`), tool switch, and deterministically
+  before each trim click (failed/no-op trims no longer leave the
+  overlay); Escape also clears sketch-profile hover;
+  `handlePointerLeave` clears body hover unconditionally (project-tool
+  hover could stick across sketch sessions); the scene build key now
+  includes `isSelected` for boxes/cylinders/polygon-extrudes/meshes and
+  reference planes, so body/reference selection changes rebuild and
+  repaint (previously the rebuild was skipped and stale maps kept the
+  old highlight).
+- tests: new `cad_core_selection_test` suite (11 cases: extrude/finish
+  clears, fillet/chamfer confirm clears, trim-as-delete prune, deleted
+  dimension prune, fabricated dim id lifecycle, delete_feature owner
+  clears, clear_selection text, load prune with live-selection
+  survival, negative control). All 12 C++ suites green; tsc clean;
+  vitest 4 files / 35 tests green.
+
 ## 2026-08-20
 
 ### Sketch text on path (Fusion "Text on Path")

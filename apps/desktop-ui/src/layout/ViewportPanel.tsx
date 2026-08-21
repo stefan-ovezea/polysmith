@@ -191,6 +191,7 @@ import {
   rotateCameraAroundCurrentView,
 } from "./viewport/viewCubeRender";
 import { createViewportPreviewActions } from "./viewport/previewObjectCleanup";
+import { clearTrimHighlights } from "./viewport/previewObjectCleanup";
 import { createViewportVisualStateActions } from "./viewport/viewportVisualState";
 import { createDimensionPlacementActions } from "./viewport/dimensionPlacementActions";
 import {
@@ -1748,6 +1749,8 @@ export function ViewportPanel({
     dragSnapResultRef.current = null;
     setHoveredSketchEntity(null);
     setHoveredSketchPoint(null);
+    setHoveredSketchProfile(null);
+    clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
     void setSketchToolRef.current("select");
   }
 
@@ -2965,13 +2968,14 @@ export function ViewportPanel({
       setHoveredSketchProfile(null);
       setHoveredSketchPoint(null);
       setHoveredSketchEntity(null);
-      if (!activeSketchPlaneId) {
-        setHoveredReference(null);
-        setHoveredPrimitive(null);
-        setHoveredFace(null);
-        setHoveredEdge(null);
-        setHoveredVertex(null);
-      }
+      // Unconditional: hover repaints on the next pointer move, and a
+      // project-tool body hover that outlives a sketch session would
+      // otherwise stick as a stale highlight.
+      setHoveredReference(null);
+      setHoveredPrimitive(null);
+      setHoveredFace(null);
+      setHoveredEdge(null);
+      setHoveredVertex(null);
       if (viewCubeGroupRef.current) {
         clearCubeHover(viewCubeGroupRef.current);
       }
@@ -3203,7 +3207,13 @@ export function ViewportPanel({
         selectVertex: selectVertexRef.current,
         selectEdge: selectEdgeRef.current,
         selectFace: selectFaceRef.current,
-        trimSketchEntity: trimSketchEntityRef.current,
+        trimSketchEntity: (entityId, localX, localY) => {
+          // Deterministic clear BEFORE the core call: a failed/no-op
+          // trim emits no geometry change, so the red hover overlay
+          // would otherwise survive the click.
+          clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+          return trimSketchEntityRef.current(entityId, localX, localY);
+        },
         mirrorEntityPick: mirrorEntityPickRef.current,
         selectSketchEntity: selectSketchEntityRef.current,
         pickSketchPoint: pickSketchPointRef.current,
@@ -3736,6 +3746,7 @@ export function ViewportPanel({
     clearPreviewArc();
     clearPreviewDimension();
     clearPreviewInference();
+    clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
     setSketchSnapLabel(null);
     setConstraintPreview(null);
     clearDraftDimensionSession();

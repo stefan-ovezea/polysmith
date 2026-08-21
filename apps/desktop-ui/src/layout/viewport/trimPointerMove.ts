@@ -1,3 +1,4 @@
+import { clearTrimHighlights } from "./previewObjectCleanup";
 import * as THREE from "three";
 
 import { sendCoreCommand } from "@/lib/cadCoreClient";
@@ -142,13 +143,6 @@ function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
   return null;
 }
 
-function clearTrimHighlights(
-  clearTrimSegmentHighlight: () => void,
-  clearTrimArcHighlight: () => void,
-) {
-  clearTrimSegmentHighlight();
-  clearTrimArcHighlight();
-}
 
 function sendTrimPreviewIfMoved(
   trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>,
