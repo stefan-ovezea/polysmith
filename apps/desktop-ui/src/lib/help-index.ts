@@ -205,6 +205,7 @@ const selectEntry: HelpEntry = {
   shortcuts: [
     sc("V", "Select mode", "Activate Select tool"),
     sc("Shift+click", "Selection", "Add to selection (toggle)"),
+    sc("Escape", "Sketch mode", "Deselect all highlighted geometry"),
   ],
   sections: [
     sec(

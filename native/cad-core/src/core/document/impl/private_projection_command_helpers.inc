@@ -65,6 +65,21 @@ bool circle_axis_parallel_to_sketch(
   return std::abs(std::abs(dot) - 1.0) <= tolerance;
 }
 
+// Sweep direction of a projected arc, derived from sketch-local
+// geometry: the curve midpoint must lie between start and end, so the
+// 2D cross of (mid - start) x (end - start) gives the winding.
+// Orientation-proof — wire edges can be reversed relative to their
+// underlying curves, so the body axis alone cannot give the sweep.
+bool arc_ccw_from_local(const std::pair<double, double>& start,
+                        const std::pair<double, double>& end,
+                        const std::pair<double, double>& mid) {
+  const double ux = mid.first - start.first;
+  const double uy = mid.second - start.second;
+  const double vx = end.first - start.first;
+  const double vy = end.second - start.second;
+  return ux * vy - uy * vx > 0.0;
+}
+
 FaceOutlinePoint sketch_local_to_world(const SketchFeatureParameters& sketch,
                                        double local_x,
                                        double local_y) {

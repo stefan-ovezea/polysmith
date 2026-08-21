@@ -63,7 +63,10 @@ double point_segment_distance(const FaceOutlinePoint& p,
 }  // namespace
 
 std::vector<FaceOutlinePoint> simplify_outline_polyline(
-    const std::vector<FaceOutlinePoint>& points, double tolerance) {
+    const std::vector<FaceOutlinePoint>& points,
+    double tolerance,
+    const std::vector<bool>* must_keep,
+    std::vector<size_t>* kept_indices) {
   if (points.size() < 4 || tolerance <= 0.0) {
     return points;
   }
@@ -102,17 +105,34 @@ std::vector<FaceOutlinePoint> simplify_outline_polyline(
     }
   }
 
+  // Arc junction corners must survive the decimation — a fillet smaller
+  // than the tolerance has sagitta below it and the DP would otherwise
+  // delete the junction and orphan the arc segment.
+  if (must_keep != nullptr && must_keep->size() == n) {
+    for (size_t i = 0; i < n; ++i) {
+      if ((*must_keep)[i]) {
+        keep[i] = true;
+      }
+    }
+  }
+
   std::vector<FaceOutlinePoint> result;
   result.reserve(n);
+  std::vector<size_t> kept;
+  kept.reserve(n);
   for (size_t i = 0; i < n; ++i) {
     if (keep[i]) {
       result.push_back(points[i]);
+      kept.push_back(i);
     }
   }
   // Never degenerate below a triangle — a null outline would make the
   // face unprojectable.
   if (result.size() < 3) {
     return points;
+  }
+  if (kept_indices != nullptr) {
+    *kept_indices = std::move(kept);
   }
   return result;
 }

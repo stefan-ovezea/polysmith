@@ -279,12 +279,14 @@ async function handleProjectFacePick(context: ViewportFaceSelectionContext) {
 
   // Mesh bodies ship no per-face pick entries — a click on their
   // surface arrives as the BODY id (primitive hit). Project the whole
-  // body in the toolbar's section / silhouette mode.
+  // body in the toolbar's section / silhouette mode. Converted meshes
+  // (mesh_to_body) route here too — the core resolves them through
+  // the compiled body.
   if (!context.faceId.includes(":face:")) {
     const feature = (context.document?.feature_history ?? []).find(
       (candidate) => candidate.feature_id === context.faceId,
     );
-    if (feature?.kind === "mesh_import") {
+    if (feature?.kind === "mesh_import" || feature?.kind === "mesh_to_body") {
       await context.runAction(async () => {
         try {
           await context.projectBodyIntoSketch(
@@ -304,14 +306,19 @@ async function handleProjectFacePick(context: ViewportFaceSelectionContext) {
   // A click on a mesh body's face projects the WHOLE body (per the
   // toolbar's section / silhouette mode) — projecting a single
   // triangle outline would be meaningless. The core rejects face
-  // projection for non-extrude owners anyway.
+  // projection for non-extrude owners anyway. Converted meshes
+  // (mesh_to_body) route here too.
   const face = findFace(context);
   const ownerFeature = face
     ? (context.document?.feature_history ?? []).find(
         (feature) => feature.feature_id === face.owner_id,
       )
     : undefined;
-  if (face && ownerFeature?.kind === "mesh_import") {
+  if (
+    face &&
+    (ownerFeature?.kind === "mesh_import" ||
+      ownerFeature?.kind === "mesh_to_body")
+  ) {
     await context.runAction(async () => {
       try {
         await context.projectBodyIntoSketch(

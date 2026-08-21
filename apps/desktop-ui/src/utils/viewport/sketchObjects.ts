@@ -111,7 +111,7 @@ export function buildSketchLineObject(line: SketchLineScene) {
   // lower opacity.
   const isDashed = line.isConstruction || line.isPreview;
   const baseColor = line.isProjected
-    ? themeColor("--cad-sketch-projected", "#ff4fd8")
+    ? themeColor("--cad-sketch-projected", "#a678d6")
     : themeColor("--color-tertiary-plane-fill", "#fff7c0");
   const material = isDashed
     ? new THREE.LineDashedMaterial({

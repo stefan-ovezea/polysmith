@@ -2298,6 +2298,7 @@ function App() {
                 });
               }}
               onFinishSketch={finishActiveSketch}
+              onClearSelection={clearSelection}
               onSetSketchTool={setActiveSketchTool}
               onUpdateSketchPoint={async (vertexId, x, y) => {
                 await runAction(async () => {

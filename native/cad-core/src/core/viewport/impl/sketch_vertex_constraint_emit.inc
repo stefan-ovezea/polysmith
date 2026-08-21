@@ -9,6 +9,16 @@
           if (point.id.rfind("vertex-text-", 0) == 0) {
             continue;
           }
+          // Projection-derived vertices are owned by the projection
+          // record — render the projected lines, not a sphere per
+          // endpoint, and no FIX badge (they're fixed by definition).
+          // A mesh projection can emit hundreds of vertices; the
+          // spheres + badges read as a field of "highlighted" points.
+          const bool is_projection_vertex =
+              projection_vertex_ids.count(point.id) > 0;
+          if (is_projection_vertex) {
+            continue;
+          }
           const bool is_selected_point =
               is_sketch_vertex_selected(point.id);
           sketch_vertices.push_back(make_sketch_vertex_primitive(
