@@ -306,6 +306,29 @@ target_link_libraries(cad_core_sketch_move_test PRIVATE
   dxfrw
 )
 
+# Sketch tool whitelist regression suite — the two sketch-tool whitelists
+# (validate_tool / is_supported_sketch_tool) must accept identical ids,
+# and commands.schema.json must match the real command vocabulary.
+add_executable(cad_core_tool_whitelist_test
+  ${CAD_CORE_SOURCES}
+  tests/tool_whitelist_test.cpp
+)
+
+target_include_directories(cad_core_tool_whitelist_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_tool_whitelist_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Selection/highlight regression suite — stale selection clears and the
 # central prune pass (feature/highlight).
 add_executable(cad_core_selection_test

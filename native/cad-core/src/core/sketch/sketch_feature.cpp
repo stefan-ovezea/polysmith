@@ -1,5 +1,6 @@
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/dof_counter.h"
+#include "core/sketch/sketch_tool_ids.h"
 #include "core/diagnostics/logger.h"
 
 #include <algorithm>

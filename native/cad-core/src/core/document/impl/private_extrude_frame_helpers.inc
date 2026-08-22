@@ -8,10 +8,10 @@ std::string face_owner_id(const std::string& face_id) {
 }
 
 bool is_supported_sketch_tool(const std::string& tool) {
-  return tool == "select" || tool == "line" || tool == "rectangle" ||
-         tool == "circle" || tool == "polygon" || tool == "arc" || tool == "fillet" ||
-         tool == "trim" || tool == "project" || tool == "dimension" ||
-         tool == "move" || tool == "text";
+  // Delegates to the canonical list in core/sketch/sketch_tool_ids.h —
+  // keeps this document-layer whitelist in sync with the core-layer
+  // validate_tool (see cad_core_tool_whitelist_test).
+  return polysmith::core::is_supported_sketch_tool_id(tool);
 }
 
 std::string plane_id_from_frame(

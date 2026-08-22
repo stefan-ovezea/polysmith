@@ -2,6 +2,7 @@
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
+#include "core/sketch/sketch_tool_ids.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
 
