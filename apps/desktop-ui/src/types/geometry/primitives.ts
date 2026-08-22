@@ -11,6 +11,9 @@ export type Shape2D =
   | "line"
   | "arc"
   | "fillet"
+  | "chamfer"
+  | "ellipse"
+  | "slot"
   | "trim";
 
 export type Axis = "x" | "y" | "z";

@@ -206,6 +206,28 @@ export interface SketchCircleScene {
   generatedBy: string | null;
 }
 
+// Ellipse derived from `ViewportSketchEllipse`. The renderer samples
+// the perimeter in sketch-plane space (a/b around the rotated major
+// axis) and projects each sample through the plane basis — same
+// pattern as `SketchCircleScene`. v1 ellipses are fixed-parameter at
+// creation, so there is no per-vertex drag on the perimeter.
+export interface SketchEllipseScene {
+  // See `SketchLineScene.isPreview`.
+  isPreview: boolean;
+  ellipseId: string;
+  planeId: string;
+  planeFrame: SketchEntityPlaneFrame | null;
+  center: [number, number, number];
+  a: number;
+  b: number;
+  rotation: number;
+  isSelected: boolean;
+  isConstruction: boolean;
+  // See `SketchLineScene.generatedBy` (reserved — v1 ellipses are
+  // user entities only).
+  generatedBy: string | null;
+}
+
 // Regular polygon derived from ViewportSketchPolygon.
 export interface SketchPolygonScene {
   isPreview: boolean;

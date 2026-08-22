@@ -224,6 +224,31 @@ export const viewportStateSchema = z.object({
       generated_by: z.string().nullable().default(null),
     }),
   ),
+  // Sketch ellipses — center + major/minor radii with the major-axis
+  // rotation in sketch-plane coordinates. Defaulted to `[]` so clients
+  // running against an older core don't crash.
+  sketch_ellipses: z
+    .array(
+      z.object({
+        ellipse_id: z.string(),
+        plane_id: z.string(),
+        plane_frame: planeFrameSchema.nullable().default(null),
+        center: z.object({
+          x: z.number(),
+          y: z.number(),
+          z: z.number(),
+        }),
+        a: z.number(),
+        b: z.number(),
+        rotation: z.number(),
+        is_selected: z.boolean(),
+        is_construction: z.boolean().default(false),
+        // See `sketch_lines.is_preview`.
+        is_preview: z.boolean().default(false),
+        generated_by: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
   // Sketch polygons — regular N-sided polygons on the sketch plane.
   // Defaulted to `[]` so clients running against an older core
   // don't crash.

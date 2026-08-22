@@ -143,18 +143,20 @@ export function isDraftDimensionTool(
 
 export function isDrawableSketchTool(
   tool: SketchTool | null,
-): tool is DraftDimensionTool | "arc" | "polygon" {
+): tool is DraftDimensionTool | "arc" | "polygon" | "ellipse" | "slot" {
   return (
     tool === "line" ||
     tool === "rectangle" ||
     tool === "circle" ||
     tool === "arc" ||
-    tool === "polygon"
+    tool === "polygon" ||
+    tool === "ellipse" ||
+    tool === "slot"
   );
 }
 
 export function sketchToolLabelKey(
-  tool: DraftDimensionTool | "arc" | "polygon",
+  tool: DraftDimensionTool | "arc" | "polygon" | "ellipse" | "slot",
 ): string {
   if (tool === "line") {
     return "toolbar.line";
@@ -167,6 +169,12 @@ export function sketchToolLabelKey(
   }
   if (tool === "arc") {
     return "toolbar.arc";
+  }
+  if (tool === "ellipse") {
+    return "toolbar.ellipse";
+  }
+  if (tool === "slot") {
+    return "toolbar.slot";
   }
   return "toolbar.polygon";
 }

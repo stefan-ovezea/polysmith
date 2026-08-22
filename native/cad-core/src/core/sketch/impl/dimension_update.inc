@@ -424,6 +424,37 @@ void update_sketch_dimension(FeatureEntry& feature,
             parameters, dimension.secondary_entity_id, point_b.x, point_b.y);
       }
     }
+
+    // Center-kind vertices (circle / arc / slot / ellipse centers) have
+    // no owning line for propagate_connected_point_move to update — the
+    // vertex-table write above would be lost when rebuild_sketch_vertices
+    // re-reads the entity caches. Sync the owning entity cache here,
+    // mirroring how update_sketch_vertex drives centers.
+    {
+      const std::string& vid = dimension.secondary_entity_id;
+      const double vx = point_b.x;
+      const double vy = point_b.y;
+      for (auto& c : parameters.circles) {
+        if (circle_center_vertex_id(c) == vid) {
+          c.center_x = vx; c.center_y = vy; break;
+        }
+      }
+      for (auto& a : parameters.arcs) {
+        if (a.center_vertex_id == vid) {
+          a.center_x = vx; a.center_y = vy; break;
+        }
+      }
+      for (auto& s : parameters.slots) {
+        if (s.center_vertex_id == vid) {
+          s.center_x = vx; s.center_y = vy; break;
+        }
+      }
+      for (auto& e : parameters.ellipses) {
+        if (e.center_vertex_id == vid) {
+          e.center_x = vx; e.center_y = vy; break;
+        }
+      }
+    }
     dimension.value = value;
     dimension.driven = false;  // reset — may be set below
     refresh_sketch_derived_state(feature);

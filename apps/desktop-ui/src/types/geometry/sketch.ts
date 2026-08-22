@@ -208,6 +208,66 @@ export interface SketchFilletEntry {
   radius: number;
 }
 
+// Parametric sketch ellipse. Mirrors C++ `SketchEllipse`. v1
+// ellipses are fixed-parameter analytic curves (no solver
+// registration): `center` is a movable vertex, the two axis points
+// are fixed at creation. `a` / `b` are the major / minor radii and
+// `rotation` the major-axis angle in sketch-plane coordinates.
+export interface SketchEllipseEntry {
+  ellipse_id: string;
+  center_vertex_id: string;
+  axis_a_vertex_id: string;
+  axis_b_vertex_id: string;
+  center_x: number;
+  center_y: number;
+  a: number;
+  b: number;
+  rotation: number;
+  is_construction: boolean;
+  // See `SketchLineEntry.generated_by` (reserved — v1 ellipses are
+  // user entities only).
+  generated_by: string | null;
+}
+
+// Parametric straight slot (stadium). Mirrors C++ `SketchSlot`. The
+// core expands every entry into 2 lines + 2 arcs (tagged
+// `generated_by: "slot:<id>"`) on every recompute — the same
+// expansion pattern as text, so profiles / extrude / viewport
+// consume slots with zero downstream changes. `length` is the
+// distance between the two arc centers and must stay
+// >= 2 * `radius`.
+export interface SketchSlotEntry {
+  slot_id: string;
+  center_vertex_id: string;
+  center_x: number;
+  center_y: number;
+  length: number;
+  radius: number;
+  rotation: number;
+  mode: string;
+  is_construction: boolean;
+}
+
+// Parametric corner chamfer (line-line). Mirrors C++
+// `SketchChamfer`. The chamfer line and trim points are generated
+// geometry re-derived from the corner + the two distances on every
+// recompute; this record is the source of truth. `corner_x` /
+// `corner_y` are denormalized (like the fillet) so the corner can be
+// re-emitted even when no other entity references it.
+export interface SketchChamferEntry {
+  chamfer_id: string;
+  corner_vertex_id: string;
+  corner_x: number;
+  corner_y: number;
+  line_a_id: string;
+  line_b_id: string;
+  trim_a_vertex_id: string;
+  trim_b_vertex_id: string;
+  chamfer_line_id: string;
+  distance_a: number;
+  distance_b: number;
+}
+
 // Parametric sketch text entity (Fusion-style). The glyph geometry is
 // NOT stored here — the core expands every entry into plain sketch
 // lines (tagged `generated_by: "text:<id>"`) on every recompute, so
@@ -251,6 +311,9 @@ export interface SketchFeatureParameters {
   arcs: SketchArcEntry[];
   polygons: SketchPolygonEntry[];
   fillets: SketchFilletEntry[];
+  chamfers: SketchChamferEntry[];
+  // Parametric ellipses. Empty on older saves; the schema defaults to [].
+  ellipses: SketchEllipseEntry[];
   vertices: SketchVertexEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];
@@ -281,6 +344,8 @@ export interface SketchFeatureParameters {
   // viewport consume text with zero downstream changes. Empty on
   // older saves; the schema defaults to [].
   texts: SketchTextEntry[];
+  // Parametric slots. Empty on older saves; the schema defaults to [].
+  slots: SketchSlotEntry[];
   profiles: SketchProfileRegionEntry[];
   // Optional pending mirror tool state. Null when no mirror is in
   // progress.

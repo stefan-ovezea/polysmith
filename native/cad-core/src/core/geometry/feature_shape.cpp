@@ -38,6 +38,7 @@
 #include <gp_Vec.hxx>
 #include <Geom_Plane.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeEllipse.hxx>
 #include <GC_MakeSegment.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <limits>

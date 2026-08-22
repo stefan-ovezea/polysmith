@@ -28,12 +28,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                      }),
       p.point_line_anchors.end());
 
-  // ── Text expansion ───────────────────────────────────────────
+  // ── Text + slot expansion ────────────────────────────────────
   // Re-derive glyph geometry from the parametric `texts` records FIRST,
   // before the zero-length cleanup, stale-dim scan, and solver run, so
   // every downstream pass sees current text lines. Generated entities
   // are always re-created here — never persisted between refreshes.
+  // Slot expansion runs immediately after: the text pass strips ALL
+  // generated entities (any generated_by value), then the slot pass
+  // strips only its own "slot:"-generated entities and re-pushes them.
   refresh_sketch_texts(p);
+  refresh_sketch_slots(p);
 
   #include "core/sketch/impl/refresh_zero_length_line_cleanup.inc"
 
@@ -61,6 +65,11 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       // Phase 4.2: use geometry_owner_ids instead of prefix matching
       if (find_circle_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
       if (find_arc_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
+      // Slot centers are standalone vertices — they have no owning
+      // line/circle/arc, so check the slot records directly.
+      for (const auto& s : feature.sketch_parameters->slots) {
+        if (s.center_vertex_id == pid) return true;
+      }
       return false;
     };
     for (auto& dim : feature.sketch_parameters->dimensions) {
@@ -438,6 +447,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Fillets must run *after* the tangent passes (so they see the
   // latest line endpoints) and *before* `rebuild_sketch_vertices`.
   enforce_sketch_fillets(*feature.sketch_parameters);
+  enforce_sketch_chamfers(*feature.sketch_parameters);
 
   // Propagate line endpoint positions to any arcs that share those
   // point IDs.  Trim-created arcs share endpoints with lines; when a
@@ -501,12 +511,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // the default lock on derived points.
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
 
-  // Text glyph vertices are derived geometry owned by the text entity —
-  // always fixed, regardless of what sync_fixed_point_flags carried
-  // over. This runs LAST (authoritative) so the flag can never be lost
-  // by the derived-point or user-flag passes above.
+  // Text glyph vertices and slot boundary vertices are derived geometry
+  // owned by their parametric entities — always fixed, regardless of
+  // what sync_fixed_point_flags carried over. This runs LAST
+  // (authoritative) so the flag can never be lost by the derived-point
+  // or user-flag passes above. Slot CENTER vertices carry a regular
+  // "vertex-N" id and are deliberately not covered here (they are
+  // movable, like circle centers).
   for (auto& vertex : feature.sketch_parameters->vertices) {
-    if (vertex.id.rfind("vertex-text-", 0) == 0) {
+    if (vertex.id.rfind("vertex-text-", 0) == 0 ||
+        vertex.id.rfind("vertex-slot-", 0) == 0) {
       vertex.is_fixed = true;
     }
   }

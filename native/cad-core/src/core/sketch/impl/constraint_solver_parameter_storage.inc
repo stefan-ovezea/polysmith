@@ -24,14 +24,14 @@
         if (dim.is_auto && dim.expression.empty()) continue;
         ++driving_dim_count;
     }
-    // Two unit-weight constants per anchor (midpoint + point-line) for
-    // the WeightedLinearCombination constraints.
-    const size_t num_anchor_params =
-        2 * (params.midpoint_anchors.size() + params.point_line_anchors.size());
     // One length constant per collinear / tangent_line_line relation
     // (pins the driven line's own length during the solve), one per
-    // midpoint constraint and one per anchor (pins the host line's
-    // length).
+    // midpoint constraint and two per curve-curve tangent constraint
+    // (pins the radii).  Midpoint/point-line ANCHORS are deliberately
+    // NOT solver-mapped with length pins — the pin conflicts with a
+    // driving dimension on the host line, and the deterministic
+    // enforce_midpoint_anchors / enforce_point_line_anchors passes
+    // position the anchored points after every solve.
     size_t num_length_params = 0;
     for (const auto& rel : params.line_relations) {
         if (rel.kind == "collinear" || rel.kind == "tangent_line_line") {
@@ -46,11 +46,9 @@
             num_length_params += 2;
         }
     }
-    num_length_params +=
-        params.midpoint_anchors.size() + params.point_line_anchors.size();
     const size_t num_params = num_points * 2 + num_circles * 3 +
                               num_arcs * 3 + driving_dim_count +
-                              num_anchor_params + num_length_params;
+                              num_length_params;
 
     param_storage_.clear();
     param_storage_.reserve(num_params);

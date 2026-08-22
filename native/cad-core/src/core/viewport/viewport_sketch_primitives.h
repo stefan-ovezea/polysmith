@@ -52,6 +52,31 @@ struct ViewportSketchCirclePrimitive {
   std::optional<std::string> generated_by;
 };
 
+// Ellipse primitive emitted to the viewport. Carries the ellipse's
+// center in world coordinates plus its major/minor radii (a, b) and
+// the major-axis rotation *in sketch-plane coordinates* — the
+// renderer builds the ellipse in plane space using the plane_frame
+// basis and tessellates locally (mirrors the arc pattern).
+struct ViewportSketchEllipsePrimitive {
+  std::string ellipse_id;
+  std::string plane_id;
+  std::optional<ViewportSketchPlaneFrame> plane_frame;
+  double center_x;
+  double center_y;
+  double center_z;
+  double a;
+  double b;
+  double rotation;
+  bool is_selected;
+  bool is_construction = false;
+  // See `ViewportSketchLinePrimitive::is_preview`.
+  bool is_preview = false;
+  std::string dof_status;
+  // See `ViewportSketchLinePrimitive::generated_by` (reserved — v1
+  // ellipses are user entities only).
+  std::optional<std::string> generated_by;
+};
+
 // 2D arc primitive emitted to the viewport. Carries the arc's
 // endpoints and center in world coordinates plus its radius and ccw
 // flag so the renderer can sample the polyline locally without

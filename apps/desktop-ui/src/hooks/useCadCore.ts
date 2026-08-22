@@ -11,6 +11,12 @@ import {
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
   makeAddSketchFilletCommand,
+  makeAddSketchChamferCommand,
+  makeUpdateSketchChamferCommand,
+  makeDeleteSketchChamferCommand,
+  makeAddSketchEllipseCommand,
+  makeAddSketchSlotCommand,
+  makeUpdateSketchSlotCommand,
   makeAddSketchTextCommand,
   makeUpdateSketchFilletRadiusCommand,
   makeUpdateSketchTextCommand,
@@ -953,6 +959,100 @@ export function useCadCore() {
     },
     deleteSketchFillet: async (filletId: string) => {
       await sendCoreCommand(makeDeleteSketchFilletCommand(filletId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchChamfer: async (
+      cornerPointId: string,
+      lineAId: string,
+      lineBId: string,
+      distanceA: number,
+      distanceB: number,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchChamferCommand(
+          cornerPointId,
+          lineAId,
+          lineBId,
+          distanceA,
+          distanceB,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchChamfer: async (
+      chamferId: string,
+      distanceA: number,
+      distanceB: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchChamferCommand(chamferId, distanceA, distanceB),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    deleteSketchChamfer: async (chamferId: string) => {
+      await sendCoreCommand(makeDeleteSketchChamferCommand(chamferId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchEllipse: async (
+      centerX: number,
+      centerY: number,
+      axisAX: number,
+      axisAY: number,
+      axisBX: number,
+      axisBY: number,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchEllipseCommand(
+          centerX,
+          centerY,
+          axisAX,
+          axisAY,
+          axisBX,
+          axisBY,
+          isConstruction,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchSlot: async (
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchSlotCommand(
+          centerX,
+          centerY,
+          length,
+          radius,
+          rotation,
+          isConstruction,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchSlot: async (
+      slotId: string,
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchSlotCommand(
+          slotId,
+          centerX,
+          centerY,
+          length,
+          radius,
+          rotation,
+        ),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchText: async (params: {

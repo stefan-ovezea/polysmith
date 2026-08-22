@@ -250,6 +250,38 @@ export function collectRectangleSelectionIds({
     }
   }
 
+  for (const ellipse of sceneData.sketchEllipses) {
+    if (ellipse.isPreview || ellipse.isConstruction) {
+      continue;
+    }
+    const center = projectWorldPointToViewport(ellipse.center, camera, renderer);
+    if (!center) {
+      continue;
+    }
+    // Same single-axis screen-radius approximation as circles, sized
+    // by the larger radius so the box covers the rotated major axis.
+    const maxRadius = Math.max(ellipse.a, ellipse.b);
+    const right = projectWorldPointToViewport(
+      [ellipse.center[0] + maxRadius, ellipse.center[1], ellipse.center[2]],
+      camera,
+      renderer,
+    );
+    const approxRadius = right ? Math.abs(right.x - center.x) : 0;
+    const bx1 = center.x - approxRadius;
+    const by1 = center.y - approxRadius;
+    const bx2 = center.x + approxRadius;
+    const by2 = center.y + approxRadius;
+    if (isWindow) {
+      if (bx1 >= rect.x1 && bx2 <= rect.x2 && by1 >= rect.y1 && by2 <= rect.y2) {
+        selected.push(ellipse.ellipseId);
+      }
+      continue;
+    }
+    if (boxesIntersect(bx1, by1, bx2, by2, rect.x1, rect.y1, rect.x2, rect.y2)) {
+      selected.push(ellipse.ellipseId);
+    }
+  }
+
   for (const arc of sceneData.sketchArcs) {
     if (arc.isConstruction) {
       continue;

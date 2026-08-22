@@ -8,81 +8,119 @@
 
 ## Status
 
-**SK0 (housekeeping) — code-complete, tested, pending commit.**
-- `commands.schema.json` synced to the real dispatch chain (+40 commands,
-  −4 stale point→vertex renames); `sketch_tool_ids.h` canonical tool list
-  with both whitelists delegating; `aiCommandPayloadSchemas.ts` /
-  `aiCommandProtocol.ts` aligned; `cad_core_tool_whitelist_test` suite.
+**SK0 — committed** (`e00e549`): schema/whitelist alignment + tool_whitelist suite.
+**SK1 — committed** (`da7a5ff`): parametric arcs via deterministic
+`enforce_arc_dimensions`; GCS::Arc plumbing dormant until arc-referencing
+constraints; append-focus latent fix; parametric_arc suite (6 cases).
+**SK2 — committed** (`f8dcbbd`): constraint completion (symmetric/collinear/
+midpoint/tangent pairs/anchor-t) + constraint_completion suite (8 cases).
 
-**SK1 (parametric arcs) — code-complete, tested, pending commit.**
-- `add_sketch_arc_angle_dimension` command end-to-end (core + DocumentManager
-  + app handler + schema + AI schema).
-- **Deterministic `enforce_arc_dimensions` pass** (in
-  `private_dimension_relation_sync.inc`, called from
-  `refresh_sketch_derived_state` after the line→arc rescue): driving
-  `arc_radius` keeps center + endpoint angles and recomputes the circle;
-  driving `arc_angle` keeps center + start + radius and moves the end;
-  shared H/V-constrained lines are honored by sliding endpoints to the
-  circle∩line intersection; dimensions degrade to driven when a fixed
-  vertex would have to move. **Why not planegcs:** the solver wanders the
-  null space of an unanchored arc (free translate/rotate/sweep) even from a
-  zero-residual reference — measured ~1 mm drift per solve.
-- **GCS::Arc registration plumbing** (mapping, params, unknowns, ArcRules,
-  apply-sync) is in place but gated on `arc_participates_in_solver`
-  (returns false until the constraint-completion milestone adds
-  arc-referencing solver constraints). Unregistered arcs have their
-  vertices pinned during solves so they can't drift.
-- **Two latent bugs fixed along the way:**
-  1. Stale `pending_append_focus_ids` (cleared only when the solver ran) —
-     a later driving dimension could freeze EVERY vertex and
-     over-constrain the solve. Now consumed on every refresh.
-  2. Arc dims excluded from the solver-eligibility gate (they are
-     ad-hoc enforced, so counting them as solver constraints produced
-     empty solver systems).
-- New suite `cad_core_parametric_arc_test` (6 cases: radius both epsilon
-  sides, angle both sides, H-line circle∩line drag + free pivot drag,
-  over-constraint → driven, stadium full `profiles_match`, fillet-arc
-  exclusion) + new `sketch_move_test` case (arc-radius dim survives move).
-- **All 17 suites green, tsc clean.**
+**SK3 (new geometry) — in progress.**
 
-## Status — SK2 complete, pending commit
+- **Ellipse — done, tested.** `SketchEllipse` entity (center + 2 axis
+  points, axis points fixed at creation, no solver registration v1);
+  creation command end-to-end; exact profile engine `kEllipse` (full closed
+  curve, region kind "ellipse"); wire builder `GC_MakeEllipse` (XDir
+  orthogonalized); extrude routing via boundary edges (incl. the
+  wire-path-condition fix `!parameters.boundary_edges.empty()`); move
+  support (center movable, axis pinned); save/load serialization; IPC +
+  schema + AI schemas. New suite `cad_core_ellipse_test` (6 cases:
+  creation, full profiles_match, extrude smoke, move preserves a/b/rotation,
+  construction excluded, trim rejected).
+- **Slot — done, tested.** `SketchSlot` struct (center/length/radius/
+  rotation, mode "straight", length ≥ 2·radius validated); expansion at
+  recompute top right after text expansion: 2 lines + 2 arcs
+  tangent-by-construction (CCW loop: bottom bl→br, right arc br→tr ccw,
+  top tr→tl, left arc tl→bl cw), `generated_by="slot:<id>"`, deterministic
+  ids outside user counters. Center is a regular movable "vertex-N"
+  vertex (distance dims work — with a new center-owner cache sync in the
+  point_distance drive); corner/arc-center vertices carry "vertex-slot-"
+  and are re-marked fixed. add/update/delete commands + doc wrappers +
+  IPC handlers + schema + AI schemas + save/load. Delete path: slot ids,
+  slot-generated selections (like text), slot centers; ALSO fixed while
+  here: ellipse deletion (was a silent no-op) and update_sketch_vertex
+  on ellipse centers. Tool whitelist gained "ellipse" + "slot".
+  New suite `cad_core_slot_test` (8 cases: creation/ownership, rotated
+  geometry both signs, full profiles_match exact 4-id set, update
+  re-expansion, generated-entity guards, center drag + move, distance
+  dim between slots, extrude smoke + delete).
+- **Sketch chamfer — done, tested.** `SketchChamfer` struct cloning the
+  fillet lifecycle (corner cache, trim vertices, parametric record);
+  create/update/delete trio + recompute pass `enforce_sketch_chamfers`
+  (virtual-corner intersection, trim = stored distance along each
+  outgoing direction — no angle math); chamfer line is a plain line
+  owned by the record (mirrors the fillet arc ownership); corner
+  re-emitted as "fillet_corner" kind so delete can restore it; mutual
+  exclusion with fillets BOTH ways; delete-selection ownership rules;
+  doc wrappers + IPC handlers + schema + AI schemas + save/load;
+  "chamfer" added to the tool whitelist. New suite
+  `cad_core_sketch_chamfer_test` (7 cases: symmetric + asymmetric
+  geometry, distance edits both directions, full profiles_match 5-edge
+  chamfered rectangle, delete restores shared corner, fillet/chamfer
+  conflict both orders, chamfer survives a dimension drive).
+- **UI wiring — done, tsc clean.** Full 13-file path for all three
+  tools: toolbar entries + icons (EllipseIcon / SlotIcon /
+  SketchChamferIcon — named to avoid the 3D chamfer glyph) + i18n
+  keys; ellipse = 3-click draft (center → major axis → minor axis)
+  with a live preview reusing the circle preview ref; slot = 2-click
+  draft (center → axis end, radius defaults to length/4 clamped to
+  [0.5, 2]) with a stadium preview group (new previewSlotRef +
+  clearPreviewSlot in the preview-actions factory); chamfer = click
+  tool cloning the fillet flow (corner picking with fillet/chamfer
+  exclusion, session lifecycle with two distances, ActiveSketchChamferPanel
+  + SketchChamferPanel with two debounced inputs). Select-mode routing:
+  slot-generated lines/arcs open the Slot panel (SketchSlotPanel:
+  length/radius/rotation, deg→rad, radius clamped to length/2),
+  chamfer lines open the Chamfer panel bound to that chamfer, ellipse
+  hits select/move via the generic entity path. AI schemas fixed
+  (set_sketch_tool enum + delete_sketch_chamfer payload).
+  **Core addition:** `ViewportSketchEllipsePrimitive` — ellipses had
+  NO viewport rendering path; added the primitive (center/a/b/rotation
+  + plane frame), emission in sketch_curve_polygon_emit.inc, state +
+  serialization plumbing, and the full TS render/pick/marquee/move
+  chain (SketchEllipseScene → buildSketchEllipseObject →
+  updateSketchEllipseObject; exactDistanceToCurve gains a closed-form
+  ellipse polar-radius branch).
+- **Remaining:** user runtime verification + commit (approval).
 
-**SK2 (constraint completion) — code-complete, tested, pending commit.**
-- New commands: set_sketch_symmetric_constraint, set_sketch_midpoint_constraint,
-  set_sketch_collinear_constraint, set_sketch_tangent_pair_constraint
-  (core + DocumentManager + handlers + schema + AI schemas).
-- Solver mappings: collinear/tangent_line_line (parallel + point-on-line +
-  length pin), midpoint (perp-bisector + point-on-line + host length pin),
-  tangent_circle_circle / tangent_arc_arc (TangentCircumf + radius pins),
-  tangent_line_arc (P2LDistance). Arc registration now live for tangent arcs.
-- Anchor-t: ConstraintWeightedLinearCombination replaces PointOnLine-only
-  mapping (midpoint anchors t=0.5, point-line anchors t=t), host length
-  pinned.
-- Deterministic enforcement pass (constraint_completion_enforcement.inc):
-  symmetric uses a compromise convention (each point moves halfway toward
-  its mirror — never reverts a drag); midpoint/tangent-pair drives with
-  fixed-vertex degradation to driven.
-- Latent bug fixes: move tool no longer reverts translations of
-  H/V-constrained lines with unshared endpoints (the propagate clamp
-  processed endpoints one at a time); anchor commands now focus only
-  the anchored point (host no longer wanders during creation solves).
-- New suite cad_core_constraint_completion_test (8 cases). All 18 suites
-  green, tsc clean.
+### SK2 regression found & fixed (folded into SK3 commit)
 
-## Next milestone
+`sketch_profile_test` failed after the SK2 anchor-t solver mapping
+(WLC + host-length pin) went live:
 
-- **SK3 — new geometry** (ellipse, slot, sketch chamfer). See plan for
-  file-level detail.
-
-## Just merged
-
-- **IGES import + export** — squash-merged as `c1a5eec` (#67) into `dev`.
+- **Symptom 1:** `test_midpoint_anchor_follows_host_length_change` —
+  after driving the host line's dimension to 60, the whole sketch
+  translated −6.73 in x (line5 at the host midpoint, but the host slid).
+  Root cause: the WLC's pole gradients (±0.5 on host endpoints) let
+  DogLeg's minimum-norm step satisfy the anchor by translating the
+  under-constrained host instead of moving only the anchored point —
+  the null-space trade. The post-pass then found the anchor already
+  satisfied and couldn't correct the host.
+- **Symptom 2:** `dofs=-6` at anchor creation — the host-length pin
+  double-counts against a driving dimension on the host, and planegcs's
+  diagnosis reports over-constraint (0 conflicting/redundant — the frozen
+  append-focus points explain the arithmetic, the pin explains the
+  conflict on subsequent drives).
+- **Fix:** reverted the anchor solver mapping to the pre-SK2 design —
+  `PointOnLine`-only for midpoint and point-line anchors, no WLC, no
+  host-length pin. The deterministic `enforce_midpoint_anchors` /
+  `enforce_point_line_anchors` post-passes position the anchored points
+  after every solve (they were the proven mechanism all along; PointOnLine's
+  perpendicular residual is zero right after host edits, so the solver
+  leaves the anchor alone). The SK2 `constraints` kind "midpoint"
+  (perp-bisector + pin) is untouched — it has its own suite and anchored
+  setups. `dof_counter` unchanged (its anchor counting predates SK2).
+- Regression test: the pre-existing `sketch_profile_test` midpoint-anchor
+  cases reproduced the failure (fail-before/pass-after). All 19 suites
+  green + tsc clean after the fix.
 
 ## Commit guidance
 
-SK0 and SK1 are two separate commits, each pending user approval + in-app
-smoke. SK1 verification checklist: draw an arc, add a radius dimension,
-edit it both ways (arc stays on-circle); add an arc-angle dimension;
-drag an arc endpoint shared with a line (slides along the H/V line);
-undo/redo each operation. After merge of this branch: squash-merge to
-`dev`, delete `feature/sketch`, next branch per user.
+SK3 (ellipse + slot + chamfer + the SK2 anchor-mapping revert) is one
+commit, pending user approval + in-app smoke. SK3 verification checklist:
+draw an ellipse (3 clicks), extrude it (smooth, analytic edges); draw a
+slot, extrude; chamfer a corner, edit both distances; midpoint-anchor a
+line to another line's midpoint, then resize the host via its dimension
+(anchored line must follow, sketch must not drift); undo/redo each.
+After merge of this branch: squash-merge to `dev`, delete `feature/sketch`,
+next branch per user.

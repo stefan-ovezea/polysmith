@@ -61,6 +61,20 @@
   DocumentState update_sketch_fillet_radius(const std::string& fillet_id,
                                             double radius);
   DocumentState delete_sketch_fillet(const std::string& fillet_id);
+  // Sketch chamfer — bevel a corner shared by two sketch lines into a
+  // straight chamfer line, trimming each line by its own distance.
+  // Parametric like the fillet (see `SketchChamfer`), with its own
+  // update / delete commands. A corner already holding a fillet is
+  // rejected.
+  DocumentState add_sketch_chamfer(const std::string& corner_vertex_id,
+                                   const std::string& line_a_id,
+                                   const std::string& line_b_id,
+                                   double distance_a,
+                                   double distance_b);
+  DocumentState update_sketch_chamfer(const std::string& chamfer_id,
+                                      double distance_a,
+                                      double distance_b);
+  DocumentState delete_sketch_chamfer(const std::string& chamfer_id);
   DocumentState delete_sketch_selection(
       const std::vector<std::string>& entity_ids,
       const std::vector<std::string>& point_ids,
@@ -80,3 +94,26 @@
   DocumentState update_sketch_text(const std::string& text_id,
                                    const SketchText& values);
   DocumentState delete_sketch_text(const std::string& text_id);
+
+  // Full ellipse: center + major-axis point + minor-axis point.
+  DocumentState add_sketch_ellipse(double center_x,
+                                   double center_y,
+                                   double axis_a_x,
+                                   double axis_a_y,
+                                   double axis_b_x,
+                                   double axis_b_y,
+                                   bool is_construction = false);
+
+  // Straight slot (stadium): center + length + radius + rotation (rad).
+  DocumentState add_sketch_slot(double center_x,
+                                double center_y,
+                                double length,
+                                double radius,
+                                double rotation,
+                                bool is_construction = false);
+  DocumentState update_sketch_slot(const std::string& slot_id,
+                                   double center_x,
+                                   double center_y,
+                                   double length,
+                                   double radius,
+                                   double rotation);

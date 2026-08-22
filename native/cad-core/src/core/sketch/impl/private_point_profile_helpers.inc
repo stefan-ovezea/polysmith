@@ -139,6 +139,37 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     append_point(arc.end_vertex_id, "endpoint", arc.end_x, arc.end_y);
   }
 
+  for (const auto& ellipse : parameters.ellipses) {
+    // Center + the two axis points.  The axis points are fixed at
+    // creation (frozen-shape v1 — no solver registration yet).
+    append_point(ellipse.center_vertex_id, "center", ellipse.center_x,
+                 ellipse.center_y);
+    append_point(ellipse.axis_a_vertex_id, "endpoint",
+                 ellipse.center_x + ellipse.a * std::cos(ellipse.rotation),
+                 ellipse.center_y + ellipse.a * std::sin(ellipse.rotation));
+    append_point(ellipse.axis_b_vertex_id, "endpoint",
+                 ellipse.center_x +
+                     ellipse.b * std::cos(ellipse.rotation + 1.5707963267948966),
+                 ellipse.center_y +
+                     ellipse.b * std::sin(ellipse.rotation + 1.5707963267948966));
+    for (auto& vertex : parameters.vertices) {
+      if (vertex.id == ellipse.axis_a_vertex_id ||
+          vertex.id == ellipse.axis_b_vertex_id) {
+        vertex.is_fixed = true;
+      }
+    }
+  }
+
+  for (const auto& slot : parameters.slots) {
+    // The slot center is a regular movable vertex (like a circle
+    // center) so it joins the vertex graph for distance dimensions.
+    // The generated corner / arc-center vertices arrive via the
+    // line/arc loops above and are re-marked fixed by the
+    // "vertex-slot-" prefix pass in refresh_sketch_derived_state.
+    append_point(slot.center_vertex_id, "center", slot.center_x,
+                 slot.center_y);
+  }
+
   // Emit a quadrant vertex unless a vertex with the same id already
   // exists (a line endpoint drawn onto a quadrant point carries the
   // legacy "vertex-<entity>-quadrant-N" id) — pushing a second record
@@ -246,6 +277,17 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                  "fillet_corner",
                  fillet.corner_x,
                  fillet.corner_y);
+  }
+
+  // Same bookkeeping for chamfer corners: the corner vertex must stay
+  // alive for delete to restore, but it must not render as a visible
+  // point. Reuse the "fillet_corner" kind so the frontend skip rule
+  // covers both.
+  for (const auto& chamfer : parameters.chamfers) {
+    append_point(chamfer.corner_vertex_id,
+                 "fillet_corner",
+                 chamfer.corner_x,
+                 chamfer.corner_y);
   }
 
   // Projected points are now emitted at the top of rebuild_sketch_vertices

@@ -5,6 +5,7 @@ import {
   SketchCircleScene,
   SketchConstraintScene,
   SketchDimensionScene,
+  SketchEllipseScene,
   SketchLineScene,
   SketchPlaneFrame,
   SketchVertexScene,
@@ -275,6 +276,70 @@ export function buildSketchCircleObject(
     sketchCircle.userData.sketchEntityIsProjected = circle.isProjected;
   }
   return sketchCircle;
+}
+
+// Build the perimeter loop for a sketch ellipse. Same projection
+// pattern as `buildSketchCircleObject`, with the ellipse sampled in
+// sketch-plane space: the curve's a/b radii sit along the major axis
+// rotated by `rotation`, then each sample is mapped to world via the
+// plane basis.
+export function buildSketchEllipseObject(
+  ellipse: SketchEllipseScene,
+  planeFrame: SketchPlaneFrame | null = null,
+) {
+  const isDashed = ellipse.isPreview || ellipse.isConstruction;
+  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const material = isDashed
+    ? new THREE.LineDashedMaterial({
+        color: ellipse.isSelected
+          ? themeColor("--color-primary-edge-active", "#c3f5ff")
+          : baseColor,
+        transparent: true,
+        opacity: ellipse.isPreview ? 0.55 : 0.72,
+        dashSize: 1,
+        gapSize: 0.6,
+      })
+    : new THREE.LineBasicMaterial({
+        color: ellipse.isSelected
+          ? themeColor("--color-primary-edge-active", "#c3f5ff")
+          : baseColor,
+        transparent: true,
+        opacity: 0.98,
+      });
+  configureSketchOverlayMaterial(material);
+  const curve = new THREE.EllipseCurve(
+    0,
+    0,
+    ellipse.a,
+    ellipse.b,
+    0,
+    Math.PI * 2,
+    false,
+    ellipse.rotation,
+  );
+  const { xAxis, yAxis } = resolveSketchPlaneAxes(ellipse.planeId, planeFrame);
+  const points = curve
+    .getPoints(64)
+    .map(
+      (point) =>
+        new THREE.Vector3(
+          ellipse.center[0] + xAxis[0] * point.x + yAxis[0] * point.y,
+          ellipse.center[1] + xAxis[1] * point.x + yAxis[1] * point.y,
+          ellipse.center[2] + xAxis[2] * point.x + yAxis[2] * point.y,
+        ),
+    );
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const sketchEllipse = new THREE.LineLoop(geometry, material);
+  sketchEllipse.renderOrder = 7;
+  if (isDashed) {
+    sketchEllipse.computeLineDistances();
+  }
+  if (!ellipse.isPreview) {
+    sketchEllipse.userData.sketchEntityId = ellipse.ellipseId;
+    sketchEllipse.userData.sketchEntityKind = "ellipse";
+    sketchEllipse.userData.sketchEntityIsConstruction = ellipse.isConstruction;
+  }
+  return sketchEllipse;
 }
 
 // Sample a sketch arc into a polyline and emit it as a THREE.Line.

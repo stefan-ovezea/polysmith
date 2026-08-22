@@ -99,6 +99,32 @@ ViewportSketchCirclePrimitive make_sketch_circle_primitive(
   };
 }
 
+ViewportSketchEllipsePrimitive make_sketch_ellipse_primitive(
+    const SketchEllipse& ellipse,
+    const SketchFeatureParameters& parameters,
+    bool is_selected) {
+  const WorldPoint center = to_world_point(parameters, ellipse.center_x, ellipse.center_y);
+
+  return ViewportSketchEllipsePrimitive{
+      .ellipse_id = ellipse.id,
+      .plane_id = parameters.plane_id,
+      .plane_frame = parameters.plane_frame.has_value()
+                         ? std::optional<ViewportSketchPlaneFrame>(
+                               make_sketch_plane_frame(
+                                   parameters.plane_frame.value()))
+                         : std::nullopt,
+      .center_x = center.x,
+      .center_y = center.y,
+      .center_z = center.z,
+      .a = ellipse.a,
+      .b = ellipse.b,
+      .rotation = ellipse.rotation,
+      .is_selected = is_selected,
+      .is_construction = ellipse.is_construction,
+      .generated_by = ellipse.generated_by,
+  };
+}
+
 ViewportSketchArcPrimitive make_sketch_arc_primitive(
     const SketchArc& arc,
     const SketchFeatureParameters& parameters,

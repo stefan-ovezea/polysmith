@@ -696,6 +696,125 @@ export function makeDeleteSketchFilletCommand(filletId: string): CoreCommand {
   };
 }
 
+// Sketch chamfer command factories (mirror the fillet trio with two
+// distances).
+export function makeAddSketchChamferCommand(
+  cornerVertexId: string,
+  lineAId: string,
+  lineBId: string,
+  distanceA: number,
+  distanceB: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_chamfer",
+    payload: {
+      corner_vertex_id: cornerVertexId,
+      line_a_id: lineAId,
+      line_b_id: lineBId,
+      distance_a: distanceA,
+      distance_b: distanceB,
+    },
+  };
+}
+
+export function makeUpdateSketchChamferCommand(
+  chamferId: string,
+  distanceA: number,
+  distanceB: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_chamfer",
+    payload: {
+      chamfer_id: chamferId,
+      distance_a: distanceA,
+      distance_b: distanceB,
+    },
+  };
+}
+
+export function makeDeleteSketchChamferCommand(
+  chamferId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_chamfer",
+    payload: {
+      chamfer_id: chamferId,
+    },
+  };
+}
+
+// Sketch ellipse / slot command factories.
+export function makeAddSketchEllipseCommand(
+  centerX: number,
+  centerY: number,
+  axisAX: number,
+  axisAY: number,
+  axisBX: number,
+  axisBY: number,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_ellipse",
+    payload: {
+      center_x: centerX,
+      center_y: centerY,
+      axis_a_x: axisAX,
+      axis_a_y: axisAY,
+      axis_b_x: axisBX,
+      axis_b_y: axisBY,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeAddSketchSlotCommand(
+  centerX: number,
+  centerY: number,
+  length: number,
+  radius: number,
+  rotation: number,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_slot",
+    payload: {
+      center_x: centerX,
+      center_y: centerY,
+      length,
+      radius,
+      rotation,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeUpdateSketchSlotCommand(
+  slotId: string,
+  centerX: number,
+  centerY: number,
+  length: number,
+  radius: number,
+  rotation: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_slot",
+    payload: {
+      slot_id: slotId,
+      center_x: centerX,
+      center_y: centerY,
+      length,
+      radius,
+      rotation,
+    },
+  };
+}
+
 
 // Sketch text command factories. The core expands every text entry
 // into plain glyph lines on recompute, so these commands only carry

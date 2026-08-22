@@ -149,6 +149,65 @@ export const TextIcon = () => (
   </svg>
 );
 
+// Sketch Ellipse tool glyph: an ellipse with a center dot.
+export const EllipseIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <ellipse cx="12" cy="12" rx="8" ry="5" />
+    <circle cx="12" cy="12" r="0.5" fill="currentColor" />
+  </svg>
+);
+
+// Sketch Slot tool glyph: a horizontal stadium (slot) outline with
+// its center axis.
+export const SlotIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 7h12" />
+    <path d="M18 7a5 5 0 0 0 0 10" />
+    <path d="M18 17H6" />
+    <path d="M6 17a5 5 0 0 0 0 -10" />
+    <path d="M6 12h12" />
+  </svg>
+);
+
+// Sketch Chamfer tool glyph: a right angle with the corner cut off
+// at 45° — reads as "chamfer the corner" at toolbar size, distinct
+// from the fillet's arc. (Named SketchChamferIcon — `ChamferIcon`
+// is the 3D body-op chamfer glyph.)
+export const SketchChamferIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 4h10" />
+    <path d="M14 4 4 14" />
+    <path d="M4 14v6" />
+  </svg>
+);
+
 const TrimIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -321,6 +380,12 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <ArcIcon />;
     case "fillet":
       return <FilletIcon />;
+    case "chamfer":
+      return <SketchChamferIcon />;
+    case "ellipse":
+      return <EllipseIcon />;
+    case "slot":
+      return <SlotIcon />;
     case "text":
       return <TextIcon />;
     case "project":

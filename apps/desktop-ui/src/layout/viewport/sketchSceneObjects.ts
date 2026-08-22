@@ -12,6 +12,7 @@ import {
   buildSketchCircleObject,
   buildSketchConstraintObject,
   buildSketchDimensionObject,
+  buildSketchEllipseObject,
   buildSketchLineObject,
   buildSketchPointObject,
   buildSketchPolygonObject,
@@ -139,6 +140,21 @@ function addSketchEntityObjects({
     sketchEntityObjects.push(sketchCircleObject);
     sketchEntityObjectById.set(sketchCircle.circleId, sketchCircleObject);
     sketchGroup.add(sketchCircleObject);
+  }
+
+  for (const sketchEllipse of sceneData.sketchEllipses) {
+    const frame =
+      sketchEllipse.planeFrame ??
+      (activeSketchPlaneId &&
+      sketchEllipse.planeId === activeSketchPlaneId &&
+      activeSketchPlaneFrame
+        ? activeSketchPlaneFrame
+        : null);
+    const sketchEllipseObject = buildSketchEllipseObject(sketchEllipse, frame);
+    sketchEllipseObject.userData.isSelected = sketchEllipse.isSelected;
+    sketchEntityObjects.push(sketchEllipseObject);
+    sketchEntityObjectById.set(sketchEllipse.ellipseId, sketchEllipseObject);
+    sketchGroup.add(sketchEllipseObject);
   }
 
   for (const sketchPolygon of sceneData.sketchPolygons) {

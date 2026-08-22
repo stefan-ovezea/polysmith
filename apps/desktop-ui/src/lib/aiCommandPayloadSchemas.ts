@@ -317,6 +317,37 @@ export const commandPayloadSchemas = {
       is_construction: booleanField.optional(),
     })
     .strict(),
+  add_sketch_ellipse: z
+    .object({
+      center_x: numberField,
+      center_y: numberField,
+      axis_a_x: numberField,
+      axis_a_y: numberField,
+      axis_b_x: numberField,
+      axis_b_y: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  add_sketch_slot: z
+    .object({
+      center_x: numberField,
+      center_y: numberField,
+      length: numberField,
+      radius: numberField,
+      rotation: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  update_sketch_slot: z
+    .object({
+      slot_id: z.string(),
+      center_x: numberField,
+      center_y: numberField,
+      length: numberField,
+      radius: numberField,
+      rotation: numberField,
+    })
+    .strict(),
   add_sketch_circle: z
     .object({
       center_x: numberField,
@@ -348,7 +379,24 @@ export const commandPayloadSchemas = {
   update_sketch_fillet_radius: z
     .object({ fillet_id: stringField, radius: numberField })
     .strict(),
+  add_sketch_chamfer: z
+    .object({
+      corner_vertex_id: stringField,
+      line_a_id: stringField,
+      line_b_id: stringField,
+      distance_a: numberField,
+      distance_b: numberField,
+    })
+    .strict(),
+  update_sketch_chamfer: z
+    .object({
+      chamfer_id: stringField,
+      distance_a: numberField,
+      distance_b: numberField,
+    })
+    .strict(),
   delete_sketch_fillet: z.object({ fillet_id: stringField }).strict(),
+  delete_sketch_chamfer: z.object({ chamfer_id: stringField }).strict(),
   add_sketch_text: z
     .object({
       text: stringField.optional(),
@@ -398,6 +446,9 @@ export const commandPayloadSchemas = {
         "polygon",
         "arc",
         "fillet",
+        "chamfer",
+        "ellipse",
+        "slot",
         "trim",
         "project",
         "dimension",

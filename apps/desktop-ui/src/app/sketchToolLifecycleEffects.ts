@@ -11,6 +11,27 @@ export type SketchFilletAction =
   | { phase: "pending"; radius: number }
   | { phase: "active"; radius: number; filletIds: string[] };
 
+// Sketch Chamfer tool session (mirrors the fillet session with two
+// distances instead of a radius). Clicks use the session's current
+// distances so the panel edits feed the next chamfer.
+export type SketchChamferAction =
+  | { phase: "pending"; distanceA: number; distanceB: number }
+  | {
+      phase: "active";
+      distanceA: number;
+      distanceB: number;
+      chamferIds: string[];
+    };
+
+// Sketch Slot panel session. Selection-driven (like the text pick
+// flow): picking a slot's generated outline in Select mode opens the
+// panel bound to that slot. No pending phase — a slot only exists
+// after a draft commit.
+export type SketchSlotAction = {
+  slotId: string;
+  params: import("../types").SketchSlotEntry;
+};
+
 // Sketch Text tool session. Pending = panel is open but no text
 // exists yet ("click to place"); active = panel is bound to a text
 // entry (freshly created or picked from the sketch in Select mode).
@@ -31,6 +52,8 @@ interface SketchToolLifecycleEffectsContext {
   activeSketchTool: SketchTool | null;
   sketchFilletAction: SketchFilletAction | null;
   sketchFilletIdsRef: MutableRefObject<string[]>;
+  sketchChamferAction: SketchChamferAction | null;
+  sketchChamferIdsRef: MutableRefObject<string[]>;
   sketchTextAction: SketchTextAction | null;
   setTimelineEditVisibleFeatureIds: Dispatch<SetStateAction<Set<string>>>;
   setArmedSketchConstraint: Dispatch<SetStateAction<ArmedSketchConstraint>>;
@@ -40,6 +63,9 @@ interface SketchToolLifecycleEffectsContext {
   setSketchFilletAction: Dispatch<
     SetStateAction<SketchFilletAction | null>
   >;
+  setSketchChamferAction: Dispatch<
+    SetStateAction<SketchChamferAction | null>
+  >;
   setSketchTextAction: Dispatch<SetStateAction<SketchTextAction | null>>;
 }
 
@@ -48,11 +74,14 @@ export function useSketchToolLifecycleEffects({
   activeSketchTool,
   sketchFilletAction,
   sketchFilletIdsRef,
+  sketchChamferAction,
+  sketchChamferIdsRef,
   sketchTextAction,
   setTimelineEditVisibleFeatureIds,
   setArmedSketchConstraint,
   setMirrorFocusedSlot,
   setSketchFilletAction,
+  setSketchChamferAction,
   setSketchTextAction,
 }: SketchToolLifecycleEffectsContext) {
   useEffect(() => {
@@ -63,8 +92,10 @@ export function useSketchToolLifecycleEffects({
       setArmedSketchConstraint(null);
       setMirrorFocusedSlot(null);
       setSketchFilletAction(null);
+      setSketchChamferAction(null);
       setSketchTextAction(null);
       sketchFilletIdsRef.current = [];
+      sketchChamferIdsRef.current = [];
     }
   }, [activeSketchPlaneId]);
 
@@ -83,6 +114,22 @@ export function useSketchToolLifecycleEffects({
       sketchFilletIdsRef.current = [];
     }
   }, [activeSketchTool, activeSketchPlaneId, sketchFilletAction]);
+
+  useEffect(() => {
+    if (
+      activeSketchTool === "chamfer" &&
+      activeSketchPlaneId &&
+      !sketchChamferAction
+    ) {
+      setSketchChamferAction({ phase: "pending", distanceA: 5, distanceB: 5 });
+      sketchChamferIdsRef.current = [];
+      return;
+    }
+    if (activeSketchTool !== "chamfer" && sketchChamferAction) {
+      setSketchChamferAction(null);
+      sketchChamferIdsRef.current = [];
+    }
+  }, [activeSketchTool, activeSketchPlaneId, sketchChamferAction]);
 
   useEffect(() => {
     if (

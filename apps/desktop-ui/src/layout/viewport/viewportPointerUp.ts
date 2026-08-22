@@ -17,12 +17,14 @@ import type {
   CircleDraftCommitOptions,
   DraftCommitSketchPoint,
   DraftPointerUpCommitOptions,
+  EllipseDraftCommitOptions,
   LineBodyHost,
   LineDraftCommitOptions,
   Point2d,
   PolygonDraftCommitOptions,
   PolygonToolMode,
   RectangleDraftCommitOptions,
+  SlotDraftCommitOptions,
 } from "./draftCommit";
 import type {
   DraftDimensionSession,
@@ -112,8 +114,11 @@ interface ViewportPointerUpParams {
   paintSketchPointMaterials: ActiveSketchPointerUpContext["paintSketchPointMaterials"];
   addMessage: ActiveSketchPointerUpContext["addMessage"];
   addSketchFillet: ActiveSketchPointerUpContext["addSketchFillet"];
+  addSketchChamfer: ActiveSketchPointerUpContext["addSketchChamfer"];
   addSketchTextAt: ActiveSketchPointerUpContext["addSketchTextAt"];
   onPickSketchText: ActiveSketchPointerUpContext["onPickSketchText"];
+  onPickSketchSlot: ActiveSketchPointerUpContext["onPickSketchSlot"];
+  onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
   sketchTextPathPicking: ActiveSketchPointerUpContext["sketchTextPathPicking"];
   pickSketchTextPath: ActiveSketchPointerUpContext["pickSketchTextPath"];
   pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
@@ -144,6 +149,7 @@ interface ViewportPointerUpParams {
   arcSecondPointRef: MutableRef<Point2d | null>;
   rectSecondPointRef: MutableRef<Point2d | null>;
   circleSecondPointRef: MutableRef<Point2d | null>;
+  ellipseSecondPointRef: MutableRef<Point2d | null>;
   chainBreakRequestedRef: MutableRef<boolean>;
   previousLineAngleRef: MutableRef<number | null>;
   draftStartMidpointHostRef: MutableRef<string | null>;
@@ -173,6 +179,8 @@ interface ViewportPointerUpParams {
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
+  addSketchEllipse: EllipseDraftCommitOptions["addSketchEllipse"];
+  addSketchSlot: SlotDraftCommitOptions["addSketchSlot"];
   sceneDataRef: MutableRef<ViewportScene | null>;
   pickInactiveSketchLine:
     | ((sketchLineId: string) => void | Promise<void>)
@@ -362,6 +370,8 @@ function handleActiveSketchToolPointerUp(
     sketchEntityObjectById: params.sketchEntityObjectByIdRef.current,
     sketchPointObjects: params.sketchPointObjectsRef.current,
     resolveFilletPoint: () => resolveFilletPoint(params),
+    resolveChamferPoint: () => resolveChamferPoint(params),
+    addSketchChamfer: params.addSketchChamfer,
     selectSketchProfile: params.selectSketchProfile,
     selectVertex: params.selectVertex,
     selectEdge: params.selectEdge,
@@ -379,6 +389,8 @@ function handleActiveSketchToolPointerUp(
     addSketchFillet: params.addSketchFillet,
     addSketchTextAt: params.addSketchTextAt,
     onPickSketchText: params.onPickSketchText,
+    onPickSketchSlot: params.onPickSketchSlot,
+    onPickSketchChamfer: params.onPickSketchChamfer,
     sketchTextPathPicking: params.sketchTextPathPicking,
     pickSketchTextPath: params.pickSketchTextPath,
     pendingDimensionPlacement: params.pendingDimensionPlacement,
@@ -423,6 +435,20 @@ function resolveFilletPoint(params: ViewportPointerUpParams) {
   return rawPoint ? params.resolveSnappedSketchPoint(rawPoint) : null;
 }
 
+function resolveChamferPoint(params: ViewportPointerUpParams) {
+  if (!params.activeSketchPlaneId) {
+    return null;
+  }
+  const rawPoint = resolveSketchPlanePoint(
+    params.event,
+    params.renderer,
+    params.camera,
+    params.activeSketchPlaneId,
+    params.activeSketchPlaneFrame,
+  );
+  return rawPoint ? params.resolveSnappedSketchPoint(rawPoint) : null;
+}
+
 function commitActiveSketchDraft(params: ViewportPointerUpParams) {
   if (!params.activeSketchPlaneId) {
     return;
@@ -454,6 +480,7 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
       arcSecondPoint: params.arcSecondPointRef,
       rectSecondPoint: params.rectSecondPointRef,
       circleSecondPoint: params.circleSecondPointRef,
+      ellipseSecondPoint: params.ellipseSecondPointRef,
       chainBreakRequested: params.chainBreakRequestedRef,
       previousLineAngle: params.previousLineAngleRef,
       draftStartMidpointHost: params.draftStartMidpointHostRef,
@@ -488,6 +515,8 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
     addSketchCircle: params.addSketchCircle,
     addSketchPolygon: params.addSketchPolygon,
     addSketchLine: params.addSketchLine,
+    addSketchEllipse: params.addSketchEllipse,
+    addSketchSlot: params.addSketchSlot,
   });
 }
 

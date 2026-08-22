@@ -146,3 +146,59 @@
             command.id, polysmith::protocol::to_payload(document)));
     return;
   }
+
+  if (command.type == "add_sketch_ellipse") {
+    bool is_construction = false;
+    if (command.payload.contains("is_construction") &&
+        command.payload.at("is_construction").is_boolean()) {
+      is_construction = command.payload.at("is_construction").get<bool>();
+    }
+    const auto document = document_manager().add_sketch_ellipse(
+        read_dimension(command.payload, "center_x"),
+        read_dimension(command.payload, "center_y"),
+        read_dimension(command.payload, "axis_a_x"),
+        read_dimension(command.payload, "axis_a_y"),
+        read_dimension(command.payload, "axis_b_x"),
+        read_dimension(command.payload, "axis_b_y"),
+        is_construction);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "add_sketch_slot") {
+    bool is_construction = false;
+    if (command.payload.contains("is_construction") &&
+        command.payload.at("is_construction").is_boolean()) {
+      is_construction = command.payload.at("is_construction").get<bool>();
+    }
+    const auto document = document_manager().add_sketch_slot(
+        read_dimension(command.payload, "center_x"),
+        read_dimension(command.payload, "center_y"),
+        read_dimension(command.payload, "length"),
+        read_dimension(command.payload, "radius"),
+        read_dimension(command.payload, "rotation"),
+        is_construction);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "update_sketch_slot") {
+    const auto document = document_manager().update_sketch_slot(
+        read_string(command.payload, "slot_id"),
+        read_dimension(command.payload, "center_x"),
+        read_dimension(command.payload, "center_y"),
+        read_dimension(command.payload, "length"),
+        read_dimension(command.payload, "radius"),
+        read_dimension(command.payload, "rotation"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }

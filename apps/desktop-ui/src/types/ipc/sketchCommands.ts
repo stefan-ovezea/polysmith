@@ -222,6 +222,84 @@ export interface DeleteSketchFilletCommand {
   };
 }
 
+// Sketch chamfer (line-line). Same corner/line pair pattern as the
+// fillet with two trim distances instead of a radius.
+export interface AddSketchChamferCommand {
+  id: string;
+  type: "add_sketch_chamfer";
+  payload: {
+    corner_vertex_id: string;
+    line_a_id: string;
+    line_b_id: string;
+    distance_a: number;
+    distance_b: number;
+  };
+}
+
+export interface UpdateSketchChamferCommand {
+  id: string;
+  type: "update_sketch_chamfer";
+  payload: {
+    chamfer_id: string;
+    distance_a: number;
+    distance_b: number;
+  };
+}
+
+export interface DeleteSketchChamferCommand {
+  id: string;
+  type: "delete_sketch_chamfer";
+  payload: {
+    chamfer_id: string;
+  };
+}
+
+// Sketch ellipse (center + 2 axis points). The core derives a / b /
+// rotation from the two axis clicks; the axis points are fixed at
+// creation.
+export interface AddSketchEllipseCommand {
+  id: string;
+  type: "add_sketch_ellipse";
+  payload: {
+    center_x: number;
+    center_y: number;
+    axis_a_x: number;
+    axis_a_y: number;
+    axis_b_x: number;
+    axis_b_y: number;
+    is_construction?: boolean;
+  };
+}
+
+// Sketch slot (straight stadium). `length` is the distance between
+// the two arc centers and must stay >= 2 * radius; `rotation` is in
+// radians.
+export interface AddSketchSlotCommand {
+  id: string;
+  type: "add_sketch_slot";
+  payload: {
+    center_x: number;
+    center_y: number;
+    length: number;
+    radius: number;
+    rotation: number;
+    is_construction?: boolean;
+  };
+}
+
+export interface UpdateSketchSlotCommand {
+  id: string;
+  type: "update_sketch_slot";
+  payload: {
+    slot_id: string;
+    center_x: number;
+    center_y: number;
+    length: number;
+    radius: number;
+    rotation: number;
+  };
+}
+
 // Sketch text (Fusion-style). The core expands the entry into plain
 // glyph lines tagged `generated_by: "text:<id>"` on every recompute;
 // the commands only carry the text parameters. Missing optional fields

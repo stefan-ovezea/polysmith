@@ -85,6 +85,15 @@
         }
       }
 
+      for (const auto& ellipse : feature.sketch_parameters->ellipses) {
+        const bool is_selected_sketch_entity =
+            is_sketch_entity_selected(ellipse.id);
+        sketch_ellipses.push_back(make_sketch_ellipse_primitive(
+            ellipse,
+            *feature.sketch_parameters,
+            is_selected_sketch_entity));
+      }
+
       for (const auto& polygon : feature.sketch_parameters->polygons) {
         // Polygons are now decomposed into individual lines — the
         // lines handle the visual representation. The polygon entry

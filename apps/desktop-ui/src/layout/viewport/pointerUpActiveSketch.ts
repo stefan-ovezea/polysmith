@@ -10,6 +10,7 @@ import {
   handleDimensionToolClick,
 } from "./dimensionToolPicking";
 import { handleSketchFilletClick } from "./sketchFilletPicking";
+import { handleSketchChamferClick } from "./sketchChamferPicking";
 import { handleSketchTrimClick, type TrimPlaneFrame } from "./trimHoverPreview";
 import type { SelectedConstraintState } from "./contextMenuState";
 import {
@@ -41,6 +42,14 @@ export interface ActiveSketchPointerUpContext {
   sketchEntityObjectById: ReadonlyMap<string, THREE.Line | THREE.LineLoop>;
   sketchPointObjects: readonly THREE.Mesh[];
   resolveFilletPoint: () => FilletPoint | null;
+  // Sketch Chamfer tool: same snapped-corner resolution as the
+  // fillet; the distances live in the App-side chamfer session.
+  resolveChamferPoint: () => FilletPoint | null;
+  addSketchChamfer: (
+    cornerPointId: string,
+    lineAId: string,
+    lineBId: string,
+  ) => Promise<void>;
   // Sketch Text tool: place a new text anchored at the given
   // sketch-local point (core defaults; the panel rebinds to the new
   // text id when the document round-trip lands).
@@ -49,6 +58,12 @@ export interface ActiveSketchPointerUpContext {
   // segment (`generated_by: "text:<id>"`); App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText?: (textId: string) => void;
+  // Select-mode slot pick: the hit is a slot's generated line/arc;
+  // App opens the Slot panel bound to the owning slot.
+  onPickSketchSlot?: (slotId: string) => void;
+  // Select-mode chamfer pick: the hit is a chamfer's generated line;
+  // App opens the Chamfer panel bound to that chamfer.
+  onPickSketchChamfer?: (chamferId: string) => void;
   // Text-on-path picking: while armed, an entity click binds the
   // clicked sketch line/arc as the active text's path instead of
   // placing a new text.
@@ -235,6 +250,8 @@ export function handleActiveSketchPointerUpTool(
       addMessage: context.addMessage,
       sketch: context.sketch,
       onPickSketchText: context.onPickSketchText,
+      onPickSketchSlot: context.onPickSketchSlot,
+      onPickSketchChamfer: context.onPickSketchChamfer,
     });
     return true;
   }
@@ -309,6 +326,8 @@ export function handleActiveSketchPointerUpTool(
       addMessage: context.addMessage,
       sketch: context.sketch,
       onPickSketchText: context.onPickSketchText,
+      onPickSketchSlot: context.onPickSketchSlot,
+      onPickSketchChamfer: context.onPickSketchChamfer,
     });
     return true;
   }
@@ -356,6 +375,19 @@ export function handleActiveSketchPointerUpTool(
       sketch: context.sketch,
       localPoint: filletPoint.local,
       addSketchFillet: context.addSketchFillet,
+    });
+    return true;
+  }
+
+  if (context.activeSketchTool === "chamfer") {
+    const chamferPoint = context.resolveChamferPoint();
+    if (!chamferPoint) {
+      return true;
+    }
+    handleSketchChamferClick({
+      sketch: context.sketch,
+      localPoint: chamferPoint.local,
+      addSketchChamfer: context.addSketchChamfer,
     });
     return true;
   }

@@ -38,6 +38,12 @@ import type {
   AddSketchFilletCommand,
   UpdateSketchFilletRadiusCommand,
   DeleteSketchFilletCommand,
+  AddSketchChamferCommand,
+  UpdateSketchChamferCommand,
+  DeleteSketchChamferCommand,
+  AddSketchEllipseCommand,
+  AddSketchSlotCommand,
+  UpdateSketchSlotCommand,
   AddSketchTextCommand,
   UpdateSketchTextCommand,
   DeleteSketchTextCommand,
@@ -149,6 +155,7 @@ import type {
   ViewportSketchCircle,
   ViewportSketchConstraint,
   ViewportSketchDimension,
+  ViewportSketchEllipse,
   ViewportSketchLine,
   ViewportSketchVertex,
   ViewportSketchPolygon,
@@ -259,6 +266,7 @@ export interface ViewportState {
   helices: ViewportHelixPrimitive[];
   sketch_lines: ViewportSketchLine[];
   sketch_circles: ViewportSketchCircle[];
+  sketch_ellipses: ViewportSketchEllipse[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
   sketch_vertices: ViewportSketchVertex[];
@@ -841,6 +849,12 @@ export type CoreCommand =
   | AddSketchFilletCommand
   | UpdateSketchFilletRadiusCommand
   | DeleteSketchFilletCommand
+  | AddSketchChamferCommand
+  | UpdateSketchChamferCommand
+  | DeleteSketchChamferCommand
+  | AddSketchEllipseCommand
+  | AddSketchSlotCommand
+  | UpdateSketchSlotCommand
   | AddSketchTextCommand
   | UpdateSketchTextCommand
   | DeleteSketchTextCommand

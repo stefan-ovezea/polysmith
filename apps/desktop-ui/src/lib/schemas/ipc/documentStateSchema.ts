@@ -636,6 +636,46 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // Parametric corner chamfers (line-line). Defaulted to `[]`
+          // so older saves (or messages from a core that pre-dates
+          // chamfer support) keep parsing cleanly.
+          chamfers: z
+            .array(
+              z.object({
+                chamfer_id: z.string(),
+                corner_vertex_id: z.string(),
+                corner_x: z.number(),
+                corner_y: z.number(),
+                line_a_id: z.string(),
+                line_b_id: z.string(),
+                trim_a_vertex_id: z.string(),
+                trim_b_vertex_id: z.string(),
+                chamfer_line_id: z.string(),
+                distance_a: z.number(),
+                distance_b: z.number(),
+              }),
+            )
+            .default([]),
+          // Parametric sketch ellipses. Defaulted to `[]` so older
+          // saves (or messages from a core that pre-dates ellipse
+          // support) keep parsing cleanly.
+          ellipses: z
+            .array(
+              z.object({
+                ellipse_id: z.string(),
+                center_vertex_id: z.string(),
+                axis_a_vertex_id: z.string(),
+                axis_b_vertex_id: z.string(),
+                center_x: z.number(),
+                center_y: z.number(),
+                a: z.number(),
+                b: z.number(),
+                rotation: z.number(),
+                is_construction: z.boolean().default(false),
+                generated_by: z.string().nullable().default(null),
+              }),
+            )
+            .default([]),
           // Parametric sketch text entries. The glyph segments live in
           // `lines` (tagged via `generated_by`), so profile detection
           // and the viewport consume text with zero downstream
@@ -659,6 +699,24 @@ export const documentStateSchema = z.object({
                 // always serializes them, but default for safety.
                 path_entity_id: z.string().nullable().default(null),
                 path_offset: z.number().nullable().default(null),
+              }),
+            )
+            .default([]),
+          // Parametric straight slots (stadiums), expanded into
+          // generated lines + arcs on recompute. Defaulted to `[]` so
+          // older saves keep parsing cleanly.
+          slots: z
+            .array(
+              z.object({
+                slot_id: z.string(),
+                center_vertex_id: z.string(),
+                center_x: z.number(),
+                center_y: z.number(),
+                length: z.number(),
+                radius: z.number(),
+                rotation: z.number(),
+                mode: z.string(),
+                is_construction: z.boolean().default(false),
               }),
             )
             .default([]),

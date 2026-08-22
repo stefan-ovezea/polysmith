@@ -31,13 +31,16 @@ double exact_wrap_angle(double a) {
 // ── exact curve model ─────────────────────────────────────────────
 
 struct ExactCurve {
-  enum class Kind { kLine, kCircle, kArc };
+  enum class Kind { kLine, kCircle, kArc, kEllipse };
   Kind kind;
   std::string id;
   // line
   double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
-  // circle / arc
+  // circle / arc / ellipse
   double cx = 0.0, cy = 0.0, r = 0.0;
+  // ellipse extras
+  double b = 0.0;              // minor radius
+  double rotation = 0.0;       // major-axis angle
   bool ccw = true;             // stored sweep direction (circles: ccw)
   double sweep_start = 0.0;    // wrapped angle of the entity's start param
   double sweep_end = 0.0;      // wrapped angle of the entity's end param (arcs)
@@ -50,6 +53,16 @@ SketchProfilePoint exact_curve_point(const ExactCurve& c, double param) {
   if (c.kind == ExactCurve::Kind::kLine) {
     return SketchProfilePoint{.x = c.x0 + param * (c.x1 - c.x0),
                              .y = c.y0 + param * (c.y1 - c.y0)};
+  }
+  if (c.kind == ExactCurve::Kind::kEllipse) {
+    const double cu = std::cos(c.rotation);
+    const double su = std::sin(c.rotation);
+    const double ct = std::cos(param);
+    const double st = std::sin(param);
+    return SketchProfilePoint{
+        .x = c.cx + c.r * ct * cu - c.b * st * su,
+        .y = c.cy + c.r * ct * su + c.b * st * cu,
+    };
   }
   return SketchProfilePoint{.x = c.cx + c.r * std::cos(param),
                            .y = c.cy + c.r * std::sin(param)};
@@ -64,6 +77,20 @@ void exact_curve_tangent(const ExactCurve& c, double param, double& tx,
                                  (c.y1 - c.y0) * (c.y1 - c.y0));
     tx = (c.x1 - c.x0) / len;
     ty = (c.y1 - c.y0) / len;
+    return;
+  }
+  if (c.kind == ExactCurve::Kind::kEllipse) {
+    const double cu = std::cos(c.rotation);
+    const double su = std::sin(c.rotation);
+    const double ct = std::cos(param);
+    const double st = std::sin(param);
+    tx = -c.r * st * cu - c.b * ct * su;
+    ty = -c.r * st * su + c.b * ct * cu;
+    const double len = std::sqrt(tx * tx + ty * ty);
+    if (len > 1e-12) {
+      tx /= len;
+      ty /= len;
+    }
     return;
   }
   const double s = std::sin(param);
@@ -117,6 +144,17 @@ double exact_half_edge_area(const ExactCurve& c, double ps, double pe,
     return 0.5 * (p0.x * p1.y - p1.x * p0.y);
   }
   const double d_theta = pe - ps;
+  if (c.kind == ExactCurve::Kind::kEllipse) {
+    // ½∫(x dy − y dx): the shape term is ½·a·b·Δθ (the ellipse
+    // parameterization is area-scaled from the unit circle by a·b);
+    // the center contributes ½(cx·Δy − cy·Δx).
+    const double x0 = p0.x - c.cx;
+    const double y0 = p0.y - c.cy;
+    const double x1 = p1.x - c.cx;
+    const double y1 = p1.y - c.cy;
+    return 0.5 * (c.r * c.b * d_theta + c.cx * (y1 - y0) -
+                  c.cy * (x1 - x0));
+  }
   return 0.5 * (c.r * c.r * d_theta +
                 c.r * c.cx * (std::sin(pe) - std::sin(ps)) -
                 c.r * c.cy * (std::cos(pe) - std::cos(ps)));
@@ -201,17 +239,14 @@ bool exact_point_in_polygon(const SketchProfilePoint& pt,
 }
 
 std::vector<SketchProfilePoint> exact_sample_circle_loop(
-    const ExactCurve& circle) {
+    const ExactCurve& curve) {
   std::vector<SketchProfilePoint> points;
   points.reserve(kCircleProfileSampleSegments);
   for (int index = 0; index < kCircleProfileSampleSegments; ++index) {
     const double angle = (static_cast<double>(index) /
                           static_cast<double>(kCircleProfileSampleSegments)) *
                          2.0 * kExactPi;
-    points.push_back(SketchProfilePoint{
-        .x = circle.cx + circle.r * std::cos(angle),
-        .y = circle.cy + circle.r * std::sin(angle),
-    });
+    points.push_back(exact_curve_point(curve, angle));
   }
   return points;
 }
@@ -266,6 +301,17 @@ std::vector<SketchProfileRegion> build_exact_profiles(
                                                  arc.end_x - arc.center_x)),
         .start_vertex_id = arc.start_vertex_id,
         .end_vertex_id = arc.end_vertex_id,
+    });
+  }
+  for (const auto& ellipse : parameters.ellipses) {
+    if (ellipse.is_construction) continue;
+    curves.push_back(ExactCurve{
+        .kind = ExactCurve::Kind::kEllipse,
+        .id = ellipse.id,
+        .cx = ellipse.center_x, .cy = ellipse.center_y, .r = ellipse.a,
+        .b = ellipse.b,
+        .rotation = ellipse.rotation,
+        .ccw = true,
     });
   }
   if (curves.empty()) return regions;
@@ -438,9 +484,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
 
   // Shared-vertex-id pre-union between line/arc endpoints.
   for (int a = 0; a < nc; ++a) {
-    if (curves[a].kind == ExactCurve::Kind::kCircle) continue;
+    if (curves[a].kind == ExactCurve::Kind::kCircle ||
+        curves[a].kind == ExactCurve::Kind::kEllipse) continue;
     for (int b = a + 1; b < nc; ++b) {
-      if (curves[b].kind == ExactCurve::Kind::kCircle) continue;
+      if (curves[b].kind == ExactCurve::Kind::kCircle ||
+          curves[b].kind == ExactCurve::Kind::kEllipse) continue;
       const ExactCurve& ca = curves[a];
       const ExactCurve& cb = curves[b];
       const double pa_start = (ca.kind == ExactCurve::Kind::kLine)
@@ -507,7 +555,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const int index = static_cast<int>(nodes.size());
     nodes.push_back(ExactNode{.x = raw.x, .y = raw.y});
     // Endpoint vertex override.
-    if (c.kind != ExactCurve::Kind::kCircle) {
+    if (c.kind != ExactCurve::Kind::kCircle &&
+        c.kind != ExactCurve::Kind::kEllipse) {
       const double p_start = (c.kind == ExactCurve::Kind::kLine)
                                  ? 0.0 : c.sweep_start;
       const double p_end = (c.kind == ExactCurve::Kind::kLine)
@@ -546,8 +595,9 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     ps.erase(std::unique(ps.begin(), ps.end(), [](double x, double y) {
                return std::abs(x - y) <= kExactParamEps;
              }), ps.end());
-    if (c.kind == ExactCurve::Kind::kCircle && ps.empty()) {
-      ps.push_back(0.0);  // full-circle anchor
+    if ((c.kind == ExactCurve::Kind::kCircle ||
+         c.kind == ExactCurve::Kind::kEllipse) && ps.empty()) {
+      ps.push_back(0.0);  // full-closed-curve anchor
     }
 
     // Ordered param sequence along the sweep direction.
@@ -556,7 +606,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       seq = ps;
     } else {
       for (double p : ps) seq.push_back(exact_lift_to_sweep(c, p));
-      if (c.kind == ExactCurve::Kind::kCircle) {
+      if (c.kind == ExactCurve::Kind::kCircle ||
+          c.kind == ExactCurve::Kind::kEllipse) {
         std::sort(seq.begin(), seq.end());
         seq.push_back(seq.front() + 2.0 * kExactPi);  // closing entry
       } else {
@@ -576,7 +627,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       // Full circles legitimately close on themselves (n0 == n1); every
       // other degenerate piece is dropped.
       const bool full_circle_piece =
-          c.kind == ExactCurve::Kind::kCircle &&
+          (c.kind == ExactCurve::Kind::kCircle ||
+           c.kind == ExactCurve::Kind::kEllipse) &&
           std::abs(std::abs(p1 - p0) - 2.0 * kExactPi) <= kExactParamEps;
       if (n0 == n1 && !full_circle_piece) continue;
 
@@ -655,7 +707,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     std::vector<bool> curve_dropped(nc, false);
     for (int i = 0; i < nc; ++i) {
       const ExactCurve& c = curves[i];
-      if (c.kind == ExactCurve::Kind::kCircle) continue;
+      if (c.kind == ExactCurve::Kind::kCircle ||
+          c.kind == ExactCurve::Kind::kEllipse) continue;
       const double p_start =
           (c.kind == ExactCurve::Kind::kLine) ? 0.0 : c.sweep_start;
       const double p_end =
@@ -1063,7 +1116,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const ExactCurve* circle_curve = nullptr;
     if (!face.edges.empty()) {
       const ExactCurve& c0 = curves[half_edges[face.edges[0]].curve];
-      if (c0.kind == ExactCurve::Kind::kCircle) {
+      if (c0.kind == ExactCurve::Kind::kCircle ||
+          c0.kind == ExactCurve::Kind::kEllipse) {
         bool all_same = true;
         bool all_forward_same = true;
         double total_span = 0.0;
@@ -1126,8 +1180,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       be.entity_id = c.id;
       be.entity_kind = c.kind == ExactCurve::Kind::kLine
                            ? "line"
-                           : (c.kind == ExactCurve::Kind::kCircle ? "circle"
-                                                                  : "arc");
+                           : (c.kind == ExactCurve::Kind::kCircle
+                                  ? "circle"
+                                  : (c.kind == ExactCurve::Kind::kEllipse
+                                         ? "ellipse"
+                                         : "arc"));
       be.param_start = h.param_start;
       be.param_end = h.param_end;
       be.start_x = nodes[h.node_start].x;
@@ -1138,6 +1195,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         be.center_x = c.cx;
         be.center_y = c.cy;
         be.radius = c.r;
+        be.minor_radius = c.b;
+        be.rotation = c.rotation;
         const bool inc_is_ccw =
             (c.kind == ExactCurve::Kind::kCircle) || c.ccw;
         be.ccw = h.forward ? inc_is_ccw : !inc_is_ccw;
@@ -1147,11 +1206,23 @@ std::vector<SketchProfileRegion> build_exact_profiles(
 
     if (full_circle) {
       if (circles_only && b.holes.empty()) {
-        region.kind = "circle";
-        region.id = "profile-circle-" + circle_curve->id;
+        region.kind = circle_curve->kind == ExactCurve::Kind::kEllipse
+                          ? "ellipse"
+                          : "circle";
+        region.id = "profile-" + std::string(region.kind) + "-" +
+                    circle_curve->id;
         region.points = {};
-        region.vertex_ids = {circle_center_vertex_id_for(
-            parameters, circle_curve->id)};
+        if (circle_curve->kind == ExactCurve::Kind::kEllipse) {
+          for (const auto& ellipse : parameters.ellipses) {
+            if (ellipse.id == circle_curve->id) {
+              region.vertex_ids = {ellipse.center_vertex_id};
+              break;
+            }
+          }
+        } else {
+          region.vertex_ids = {circle_center_vertex_id_for(
+              parameters, circle_curve->id)};
+        }
         region.center_x = circle_curve->cx;
         region.center_y = circle_curve->cy;
         region.radius = circle_curve->r;

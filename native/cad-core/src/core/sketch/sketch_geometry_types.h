@@ -108,6 +108,26 @@ struct SketchArc {
   std::optional<std::string> generated_by;
 };
 
+// Full ellipse entity (feature/sketch milestone).  v1 creates it
+// center + major-axis point + minor-axis point; the axis points are
+// flagged fixed at creation so the cached shape never drifts (the
+// solver has no ellipse registration yet — FreeCAD's ellipse solving
+// is historically fragile, so parametric ellipses are a follow-up).
+struct SketchEllipse {
+  std::string id;
+  std::string center_vertex_id;
+  std::string axis_a_vertex_id;  // major-axis direction point
+  std::string axis_b_vertex_id;  // minor-axis direction point
+  // Cached shape parameters (mirrors SketchCircle's caching pattern).
+  double center_x;
+  double center_y;
+  double a;           // major radius
+  double b;           // minor radius
+  double rotation;    // major-axis angle in sketch-plane coordinates
+  bool is_construction = false;
+  std::optional<std::string> generated_by;
+};
+
 struct SketchVertex {
   std::string id;
   // ── Vertex unification (Phase 4) ────────────────────────────

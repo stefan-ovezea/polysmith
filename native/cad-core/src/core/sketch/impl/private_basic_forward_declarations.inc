@@ -36,4 +36,9 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters);
 // constraint_completion_enforcement.inc.  Runs after the solver as a
 // deterministic fallback.
 void enforce_constraint_completion(SketchFeatureParameters& parameters);
+// Re-derives every chamfer's trim points + chamfer line from the
+// current line endpoints and stored distances — see
+// private_chamfer_refresh.inc.  Runs after the solver, right after
+// enforce_sketch_fillets.
+void enforce_sketch_chamfers(SketchFeatureParameters& parameters);
 void sync_driven_dimensions(SketchFeatureParameters& parameters);

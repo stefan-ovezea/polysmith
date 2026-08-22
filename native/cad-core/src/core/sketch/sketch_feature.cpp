@@ -34,6 +34,7 @@ namespace {
 #include "core/sketch/impl/private_basic_helpers.inc"
 #include "core/sketch/impl/private_point_profile_helpers.inc"
 #include "core/sketch/impl/private_fillet_refresh.inc"
+#include "core/sketch/impl/private_chamfer_refresh.inc"
 #include "core/sketch/impl/private_point_propagation.inc"
 #include "core/sketch/impl/private_dimension_relation_sync.inc"
 #include "core/sketch/impl/private_relation_enforcement.inc"
@@ -43,14 +44,20 @@ namespace {
 
 #include "core/sketch/impl/state_and_create.inc"
 #include "core/sketch/impl/text_expansion.inc"
+#include "core/sketch/impl/slot_expansion.inc"
 #include "core/sketch/impl/sketch_text_commands.inc"
+#include "core/sketch/impl/slot_commands.inc"
 #include "core/sketch/impl/line_constraints.inc"
 #include "core/sketch/impl/vertex_and_circle_updates.inc"
 #include "core/sketch/impl/constraint_completion_commands.inc"
+#include "core/sketch/impl/ellipse_commands.inc"
 #include "core/sketch/impl/dimensions.inc"
 #include "core/sketch/impl/line_primitives.inc"
 #include "core/sketch/impl/mirror.inc"
 #include "core/sketch/impl/curve_primitives.inc"
 #include "core/sketch/impl/fillet_polygon_trim.inc"
+#include "core/sketch/impl/sketch_chamfer_create_command.inc"
+#include "core/sketch/impl/sketch_chamfer_update_command.inc"
+#include "core/sketch/impl/sketch_chamfer_delete_command.inc"
 
 }  // namespace polysmith::core

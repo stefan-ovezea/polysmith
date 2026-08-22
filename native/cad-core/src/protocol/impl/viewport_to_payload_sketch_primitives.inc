@@ -71,6 +71,32 @@ json to_payload(const polysmith::core::ViewportSketchCirclePrimitive& primitive)
   };
 }
 
+json to_payload(const polysmith::core::ViewportSketchEllipsePrimitive& primitive) {
+  return {
+      {"ellipse_id", primitive.ellipse_id},
+      {"plane_id", primitive.plane_id},
+      {"plane_frame",
+       primitive.plane_frame.has_value()
+           ? viewport_sketch_plane_frame_to_payload(primitive.plane_frame.value())
+           : json(nullptr)},
+      {"center",
+       {
+           {"x", primitive.center_x},
+           {"y", primitive.center_y},
+           {"z", primitive.center_z},
+       }},
+      {"a", primitive.a},
+      {"b", primitive.b},
+      {"rotation", primitive.rotation},
+      {"is_selected", primitive.is_selected},
+      {"is_construction", primitive.is_construction},
+      {"is_preview", primitive.is_preview},
+      {"generated_by",
+       primitive.generated_by.has_value() ? json(primitive.generated_by.value())
+                                          : json(nullptr)},
+  };
+}
+
 json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
   return {
       {"arc_id", primitive.arc_id},

@@ -174,48 +174,38 @@
         system_->addConstraintArcRules(garc);
     }
 
-    // Midpoint and point-line anchors: parametric position enforcement.
-    // Each anchor adds two ConstraintWeightedLinearCombination
-    // constraints (x and y): point = (1-t)·p1 + t·p2 along the host
-    // line.  Midpoint anchors use t=0.5; point-line anchors use their
-    // stored t.  This replaces the old PointOnLine-only mapping, which
-    // let the anchored point slide along the line.
-    auto add_anchor_wlc = [&](const std::string& vertex_id,
-                              const std::string& line_id,
-                              double t) {
-        auto pit = point_id_to_index_.find(vertex_id);
-        auto lit = line_id_to_index_.find(line_id);
-        if (pit == point_id_to_index_.end() ||
-            lit == line_id_to_index_.end()) {
-            return;
-        }
-        auto& gp = gcs_points_[pit->second];
-        auto& gl = gcs_lines_[lit->second];
-        // Unit weights for the combination — constants, not unknowns.
-        param_storage_.push_back(1.0);
-        param_storage_.push_back(1.0);
-        double* w1 = &param_storage_[param_storage_.size() - 2];
-        double* w2 = &param_storage_[param_storage_.size() - 1];
-        const std::vector<double> factors = {1.0 - t, t};
-        std::vector<double*> xvec = {gp.x, gl.p1.x, gl.p2.x, w1, w2};
-        std::vector<double*> yvec = {gp.y, gl.p1.y, gl.p2.y, w1, w2};
-        system_->addConstraint(new GCS::ConstraintWeightedLinearCombination(
-            2, xvec, factors));
-        system_->addConstraint(new GCS::ConstraintWeightedLinearCombination(
-            2, yvec, factors));
-        // Pin the host line's length so the solve cannot stretch it
-        // along its free axis (same rationale as the midpoint branch).
-        const double host_len = std::hypot(*gl.p2.x - *gl.p1.x,
-                                           *gl.p2.y - *gl.p1.y);
-        param_storage_.push_back(host_len);
-        system_->addConstraintP2PDistance(
-            gl.p1, gl.p2, &param_storage_[param_storage_.size() - 1], 0);
-    };
-
+    // Midpoint and point-line anchors: constrain the anchored point
+    // to lie on the host line.  The parametric position (t=0.5 for
+    // midpoints, t=t for point-line) is enforced deterministically by
+    // enforce_midpoint_anchors / enforce_point_line_anchors after the
+    // solve — NOT by a solver mapping.  A WeightedLinearCombination
+    // mapping was tried (SK2) and reverted: its pole gradients let
+    // DogLeg satisfy the anchor by translating the under-constrained
+    // host line (null-space drift) whenever the anchored point starts
+    // off-target, and the host-length pin it needed conflicted with
+    // driving dimensions on the host (dofs=-6, drive rejected).
+    // PointOnLine only constrains the perpendicular distance, which is
+    // zero in every refresh where the host was just edited, so the
+    // solver leaves the anchor alone and the deterministic pass moves
+    // the anchored point — never the host.
     for (const auto& anchor : params.midpoint_anchors) {
-        add_anchor_wlc(anchor.vertex_id, anchor.line_id, 0.5);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
+        auto lit = line_id_to_index_.find(anchor.line_id);
+        if (pit != point_id_to_index_.end() &&
+            lit != line_id_to_index_.end()) {
+            system_->addConstraintPointOnLine(
+                gcs_points_[pit->second],
+                gcs_lines_[lit->second]);
+        }
     }
 
     for (const auto& anchor : params.point_line_anchors) {
-        add_anchor_wlc(anchor.vertex_id, anchor.line_id, anchor.t);
+        auto pit = point_id_to_index_.find(anchor.vertex_id);
+        auto lit = line_id_to_index_.find(anchor.line_id);
+        if (pit != point_id_to_index_.end() &&
+            lit != line_id_to_index_.end()) {
+            system_->addConstraintPointOnLine(
+                gcs_points_[pit->second],
+                gcs_lines_[lit->second]);
+        }
     }

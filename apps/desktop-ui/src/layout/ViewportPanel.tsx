@@ -258,6 +258,8 @@ export function ViewportPanel({
   onAddSketchRectangle,
   onAddSketchCircle,
   onAddSketchArc,
+  onAddSketchEllipse,
+  onAddSketchSlot,
   arcToolMode,
   onSetArcToolMode,
   rectangleToolMode,
@@ -270,8 +272,11 @@ export function ViewportPanel({
   onSetDimensionToolMode,
   onAddSketchPolygon,
   onAddSketchFillet,
+  onAddSketchChamfer,
   onAddSketchText,
   onPickSketchText,
+  onPickSketchSlot,
+  onPickSketchChamfer,
   sketchTextPathPicking,
   onPickSketchTextPath,
   onSelectSketchEntity,
@@ -440,6 +445,9 @@ export function ViewportPanel({
   // user is between clicks 2 and 3 (or, in center+start+end mode, a
   // dashed circle while between clicks 1 and 2).
   const previewArcRef = useRef<THREE.Line | null>(null);
+  // Carries the slot draft preview — a stadium group (2 lines + 2
+  // arcs), cleared recursively.
+  const previewSlotRef = useRef<THREE.Group | null>(null);
   /** Inference / tracking guide lines (dotted alignment hints). */
   const previewInferenceRef = useRef<THREE.Line[]>([]);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
@@ -580,8 +588,10 @@ export function ViewportPanel({
   const addSketchLineRef = useRef(onAddSketchLine);
   const addSketchRectangleRef = useRef(onAddSketchRectangle);
   const addSketchCircleRef = useRef(onAddSketchCircle);
-  
+
   const addSketchArcRef = useRef(onAddSketchArc);
+  const addSketchEllipseRef = useRef(onAddSketchEllipse);
+  const addSketchSlotRef = useRef(onAddSketchSlot);
   const selectionDragRef = useRef<SelectionDrag | null>(null);
 
   // Endpoint drag state — active when the user grabs a sketch
@@ -660,8 +670,11 @@ export function ViewportPanel({
   const dimensionToolModeRef = useRef(dimensionToolMode);
   const addSketchPolygonRef = useRef(onAddSketchPolygon);
   const addSketchFilletRef = useRef(onAddSketchFillet);
+  const addSketchChamferRef = useRef(onAddSketchChamfer);
   const addSketchTextRef = useRef(onAddSketchText);
   const pickSketchTextRef = useRef(onPickSketchText);
+  const pickSketchSlotRef = useRef(onPickSketchSlot);
+  const pickSketchChamferRef = useRef(onPickSketchChamfer);
   const sketchTextPathPickingRef = useRef(sketchTextPathPicking);
   const pickSketchTextPathRef = useRef(onPickSketchTextPath);
   useEffect(() => {
@@ -678,6 +691,9 @@ export function ViewportPanel({
   const arcSecondPointRef = useRef<[number, number] | null>(null);
   const rectSecondPointRef = useRef<[number, number] | null>(null);
   const circleSecondPointRef = useRef<[number, number] | null>(null);
+  // Major-axis click of the 3-click ellipse draft (mirrors the arc's
+  // second-point ref; cleared on commit and tool switch).
+  const ellipseSecondPointRef = useRef<[number, number] | null>(null);
   const selectSketchEntityRef = useRef(onSelectSketchEntity);
   const pickInactiveSketchLineRef = useRef(onPickInactiveSketchLine);
   const inactiveSketchEntityPickEnabledRef = useRef(
@@ -1227,6 +1243,7 @@ export function ViewportPanel({
     clearPreviewDimension,
     clearPreviewInference,
     clearPreviewLine,
+    clearPreviewSlot,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
     updateTrimArcHighlight,
@@ -1237,6 +1254,7 @@ export function ViewportPanel({
     previewLineRef,
     previewCircleRef,
     previewArcRef,
+    previewSlotRef,
     previewInferenceRef,
     trimSegmentHighlightRef,
     trimArcHighlightRef,
@@ -1379,6 +1397,7 @@ export function ViewportPanel({
     previewLineRef.current = null;
     previewCircleRef.current = null;
     previewArcRef.current = null;
+    previewSlotRef.current = null;
     previewInferenceRef.current = [];
   }
 
@@ -1742,9 +1761,11 @@ export function ViewportPanel({
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    ellipseSecondPointRef.current = null;
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
+    clearPreviewSlot();
     clearPreviewDimension();
     clearPreviewInference();
     clearDraftDimensionSession();
@@ -1782,15 +1803,18 @@ export function ViewportPanel({
       arcSecondPoint: arcSecondPointRef.current,
       circleSecondPoint: circleSecondPointRef.current,
       rectSecondPoint: rectSecondPointRef.current,
+      ellipseSecondPoint: ellipseSecondPointRef.current,
       isConstruction: sketchToolConstructionRef.current,
       previewLineRef,
       previewCircleRef,
       previewArcRef,
+      previewSlotRef,
       previewDimensionRef,
       previewInferenceRef,
       clearPreviewLine,
       clearPreviewCircle,
       clearPreviewArc,
+      clearPreviewSlot,
       clearPreviewDimension,
       clearPreviewInference,
     });
@@ -2029,6 +2053,8 @@ export function ViewportPanel({
       addSketchRectangleRef,
       addSketchCircleRef,
       addSketchArcRef,
+      addSketchEllipseRef,
+      addSketchSlotRef,
       addSketchAngleDimensionRef,
       addSketchDistanceDimensionRef,
       addSketchLineLengthDimensionRef,
@@ -2047,8 +2073,11 @@ export function ViewportPanel({
       polygonSidesRef,
       addSketchPolygonRef,
       addSketchFilletRef,
+      addSketchChamferRef,
       addSketchTextRef,
       pickSketchTextRef,
+      pickSketchSlotRef,
+      pickSketchChamferRef,
       selectSketchEntityRef,
       pickInactiveSketchLineRef,
       inactiveSketchEntityPickEnabledRef,
@@ -2090,6 +2119,9 @@ export function ViewportPanel({
       onAddSketchRectangle,
       onAddSketchCircle,
       onAddSketchArc,
+      onAddSketchEllipse,
+      onAddSketchSlot,
+      onAddSketchChamfer,
       onAddSketchAngleDimension,
       onAddSketchDistanceDimension,
       onAddSketchLineLengthDimension,
@@ -2110,6 +2142,8 @@ export function ViewportPanel({
       onAddSketchFillet,
       onAddSketchText,
       onPickSketchText,
+      onPickSketchSlot,
+      onPickSketchChamfer,
       onSelectSketchEntity,
       onPickInactiveSketchLine,
       inactiveSketchEntityPickEnabled,
@@ -2639,15 +2673,18 @@ export function ViewportPanel({
         arcSecondPoint: arcSecondPointRef.current,
         circleSecondPoint: circleSecondPointRef.current,
         rectSecondPoint: rectSecondPointRef.current,
+        ellipseSecondPoint: ellipseSecondPointRef.current,
         isConstruction: sketchToolConstructionRef.current,
         previewLineRef,
         previewCircleRef,
         previewArcRef,
+        previewSlotRef,
         previewDimensionRef,
         previewInferenceRef,
         clearPreviewLine,
         clearPreviewCircle,
         clearPreviewArc,
+        clearPreviewSlot,
         clearPreviewDimension,
         clearPreviewInference,
         clearTrimSegmentHighlight,
@@ -3227,8 +3264,11 @@ export function ViewportPanel({
         paintSketchPointMaterials,
         addMessage,
         addSketchFillet: addSketchFilletRef.current,
+        addSketchChamfer: addSketchChamferRef.current,
         addSketchTextAt: addSketchTextRef.current,
         onPickSketchText: pickSketchTextRef.current,
+        onPickSketchSlot: pickSketchSlotRef.current,
+        onPickSketchChamfer: pickSketchChamferRef.current,
         sketchTextPathPicking: sketchTextPathPickingRef.current,
         pickSketchTextPath: pickSketchTextPathRef.current,
         pendingDimensionPlacement: pendingDimensionPlacementRef.current,
@@ -3266,6 +3306,7 @@ export function ViewportPanel({
 	        arcSecondPointRef,
 	        rectSecondPointRef,
 	        circleSecondPointRef,
+	        ellipseSecondPointRef,
 	        chainBreakRequestedRef,
 	        previousLineAngleRef,
 	        draftStartMidpointHostRef,
@@ -3283,6 +3324,7 @@ export function ViewportPanel({
           clearPreviewLine();
           clearPreviewCircle();
           clearPreviewArc();
+          clearPreviewSlot();
           clearPreviewDimension();
           clearPreviewInference();
         },
@@ -3304,6 +3346,8 @@ export function ViewportPanel({
 	        addSketchCircle: addSketchCircleRef.current,
 	        addSketchPolygon: addSketchPolygonRef.current,
 	        addSketchLine: addSketchLineRef.current,
+	        addSketchEllipse: addSketchEllipseRef.current,
+	        addSketchSlot: addSketchSlotRef.current,
 	        sceneDataRef,
 	        pickInactiveSketchLine: pickInactiveSketchLineRef.current,
         selectReference: selectReferenceRef.current,
@@ -3405,9 +3449,11 @@ export function ViewportPanel({
         arcSecondPointRef.current = null;
         rectSecondPointRef.current = null;
         circleSecondPointRef.current = null;
+        ellipseSecondPointRef.current = null;
         clearPreviewLine();
         clearPreviewCircle();
         clearPreviewArc();
+        clearPreviewSlot();
         clearPreviewDimension();
         clearPreviewInference();
         clearDraftDimensionSession();
@@ -3744,10 +3790,12 @@ export function ViewportPanel({
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    ellipseSecondPointRef.current = null;
     clearDragPreviewLines();
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
+    clearPreviewSlot();
     clearPreviewDimension();
     clearPreviewInference();
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);

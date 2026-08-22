@@ -68,6 +68,29 @@
       params.arcs.push_back(arc);
     }
   }
+  // Older saves predate ellipses; absence of the key just means no
+  // ellipses.
+  if (payload.contains("ellipses") && payload.at("ellipses").is_array()) {
+    for (const auto& ellipse_payload : payload.at("ellipses")) {
+      polysmith::core::SketchEllipse ellipse{};
+      ellipse.id = read_string(ellipse_payload, "ellipse_id");
+      ellipse.center_vertex_id = read_string(ellipse_payload, "center_vertex_id");
+      ellipse.axis_a_vertex_id = read_string(ellipse_payload, "axis_a_vertex_id");
+      ellipse.axis_b_vertex_id = read_string(ellipse_payload, "axis_b_vertex_id");
+      ellipse.center_x = read_number(ellipse_payload, "center_x");
+      ellipse.center_y = read_number(ellipse_payload, "center_y");
+      ellipse.a = read_number(ellipse_payload, "a");
+      ellipse.b = read_number(ellipse_payload, "b");
+      ellipse.rotation = read_number(ellipse_payload, "rotation");
+      if (ellipse_payload.contains("is_construction") &&
+          ellipse_payload.at("is_construction").is_boolean()) {
+        ellipse.is_construction =
+            ellipse_payload.at("is_construction").get<bool>();
+      }
+      ellipse.generated_by = read_optional_string(ellipse_payload, "generated_by");
+      params.ellipses.push_back(ellipse);
+    }
+  }
   // Older saves predate fillets; absence of the key just means no
   // fillets exist (lines/arcs that originated as fillet outputs are
   // already round-tripped above as plain entities).

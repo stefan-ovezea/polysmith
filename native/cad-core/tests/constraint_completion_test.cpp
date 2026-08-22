@@ -453,10 +453,6 @@ bool test_symmetric_square_full_profiles() {
   const auto v1 = std::find_if(
       after.vertices.begin(), after.vertices.end(),
       [&](const auto& v) { return v.id == p1; });
-  const auto v2 = std::find_if(
-      after.vertices.begin(), after.vertices.end(),
-      [&](const auto& v) { return v.id == p2; });
-            << v2->x << "," << v2->y << ")" << std::endl;
   return expect(v1 != after.vertices.end() && near(v1->x, -11.0) &&
                     near(v1->y, 9.5),
                 "symmetric square: pair compromises around the drag");

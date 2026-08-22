@@ -63,6 +63,8 @@ import {
   computeDocumentUiState,
 } from "./app/documentUiState";
 import { ActiveSketchFilletPanel } from "./app/ActiveSketchFilletPanel";
+import { ActiveSketchChamferPanel } from "./app/ActiveSketchChamferPanel";
+import { ActiveSketchSlotPanel } from "./app/ActiveSketchSlotPanel";
 import { ActiveSketchTextPanel } from "./app/ActiveSketchTextPanel";
 import { ActiveBodyOperationPanels } from "./app/ActiveBodyOperationPanels";
 import { AppTopBar } from "./app/AppTopBar";
@@ -112,6 +114,8 @@ import {
 import {
   useSketchToolLifecycleEffects,
   type SketchFilletAction,
+  type SketchChamferAction,
+  type SketchSlotAction,
   type SketchTextAction,
 } from "./app/sketchToolLifecycleEffects";
 import {
@@ -219,6 +223,15 @@ function App() {
   // radius" experience as 3D fillets give for edges.
   const [sketchFilletAction, setSketchFilletAction] =
     useState<SketchFilletAction | null>(null);
+  // Sketch Chamfer panel session. Mirrors `sketchFilletAction` with
+  // two trim distances; each corner click chamfers at the session's
+  // current distances.
+  const [sketchChamferAction, setSketchChamferAction] =
+    useState<SketchChamferAction | null>(null);
+  // Slot panel session. Selection-driven: picking a slot's generated
+  // outline in Select mode binds the panel to that slot.
+  const [sketchSlotAction, setSketchSlotAction] =
+    useState<SketchSlotAction | null>(null);
   // Sketch Text panel session. Mirrors `sketchFilletAction`
   // shape-for-shape: pending while the Text tool is armed but no text
   // exists yet; active once a click created a text (or the user
@@ -238,6 +251,9 @@ function App() {
   // captures the value at panel-open time, so we need a ref to
   // see the live list when each subsequent click lands.
   const sketchFilletIdsRef = useRef<string[]>([]);
+  // Mirror of `sketchChamferAction.chamferIds` for the inline
+  // viewport callback (same trick as `sketchFilletIdsRef`).
+  const sketchChamferIdsRef = useRef<string[]>([]);
   const [edgeOpAction, setEdgeOpAction] = useState<ActiveEdgeOpAction | null>(
     null,
   );
@@ -580,6 +596,12 @@ function App() {
     addSketchFillet,
     updateSketchFilletRadius,
     deleteSketchFillet,
+    addSketchChamfer,
+    updateSketchChamfer,
+    deleteSketchChamfer,
+    addSketchEllipse,
+    addSketchSlot,
+    updateSketchSlot,
     addSketchText,
     updateSketchText,
     deleteSketchText,
@@ -620,11 +642,14 @@ function App() {
     activeSketchTool,
     sketchFilletAction,
     sketchFilletIdsRef,
+    sketchChamferAction,
+    sketchChamferIdsRef,
     sketchTextAction,
     setTimelineEditVisibleFeatureIds,
     setArmedSketchConstraint,
     setMirrorFocusedSlot,
     setSketchFilletAction,
+    setSketchChamferAction,
     setSketchTextAction,
   });
 
@@ -1869,6 +1894,46 @@ function App() {
                   );
                 });
               }}
+              onAddSketchEllipse={async (
+                centerX,
+                centerY,
+                axisAX,
+                axisAY,
+                axisBX,
+                axisBY,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await addSketchEllipse(
+                    centerX,
+                    centerY,
+                    axisAX,
+                    axisAY,
+                    axisBX,
+                    axisBY,
+                    isConstruction,
+                  );
+                });
+              }}
+              onAddSketchSlot={async (
+                centerX,
+                centerY,
+                length,
+                radius,
+                rotation,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await addSketchSlot(
+                    centerX,
+                    centerY,
+                    length,
+                    radius,
+                    rotation,
+                    isConstruction,
+                  );
+                });
+              }}
               onAddSketchFillet={async (cornerPointId, lineAId, lineBId) => {
                 // Panel must be open in either phase for adds to be
                 // accepted. The viewport's eligibility filter is the
@@ -1936,6 +2001,76 @@ function App() {
                     phase: "active",
                     radius: sessionRadius,
                     filletIds: updatedIds,
+                  });
+                } catch {
+                  // Document watcher timed out — leave the session
+                  // state alone. The next click can recover.
+                }
+              }}
+              onAddSketchChamfer={async (cornerPointId, lineAId, lineBId) => {
+                // Same session contract as the fillet: the panel must
+                // be open in either phase for adds to be accepted.
+                if (!sketchChamferAction) {
+                  return;
+                }
+                const sessionA = sketchChamferAction.distanceA;
+                const sessionB = sketchChamferAction.distanceB;
+                // Subscribe to the next document update that adds a
+                // chamfer on the active sketch to pick up its id.
+                const documentPromise = awaitDocumentChange(
+                  (next, previous) => {
+                    if (!next.active_sketch_feature_id) {
+                      return false;
+                    }
+                    const nextSketch = next.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const prevSketch = previous?.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const nextChamfers =
+                      nextSketch?.sketch_parameters?.chamfers ?? [];
+                    const prevChamfers =
+                      prevSketch?.sketch_parameters?.chamfers ?? [];
+                    return nextChamfers.length > prevChamfers.length;
+                  },
+                );
+
+                await runAction(async () => {
+                  await addSketchChamfer(
+                    cornerPointId,
+                    lineAId,
+                    lineBId,
+                    sessionA,
+                    sessionB,
+                  );
+                });
+
+                try {
+                  const nextDocument = await documentPromise;
+                  const nextSketch = nextDocument.feature_history.find(
+                    (entry) =>
+                      entry.feature_id ===
+                      nextDocument.active_sketch_feature_id,
+                  );
+                  const chamfers =
+                    nextSketch?.sketch_parameters?.chamfers ?? [];
+                  const newChamfer = chamfers[chamfers.length - 1];
+                  if (!newChamfer) {
+                    return;
+                  }
+                  const updatedIds = [
+                    ...sketchChamferIdsRef.current,
+                    newChamfer.chamfer_id,
+                  ];
+                  sketchChamferIdsRef.current = updatedIds;
+                  setSketchChamferAction({
+                    phase: "active",
+                    distanceA: sessionA,
+                    distanceB: sessionB,
+                    chamferIds: updatedIds,
                   });
                 } catch {
                   // Document watcher timed out — leave the session
@@ -2078,6 +2213,66 @@ function App() {
                     phase: "active",
                     textId: entry.text_id,
                     params: entry,
+                  });
+                })();
+              }}
+              onPickSketchSlot={(slotId) => {
+                // Select-mode slot pick: the clicked entity is a
+                // slot-generated line/arc (`generated_by:
+                // "slot:<id>"`). Look up the live slot record and
+                // open the Slot panel bound to it.
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const entry = feature?.sketch_parameters?.slots.find(
+                  (slot) => slot.slot_id === slotId,
+                );
+                if (!entry) {
+                  return;
+                }
+                setSketchSlotAction({ slotId: entry.slot_id, params: entry });
+              }}
+              onPickSketchChamfer={(chamferId) => {
+                // Select-mode chamfer pick: the clicked line is a
+                // chamfer's generated line. Bind the chamfer panel to
+                // that chamfer and switch to the chamfer tool (the
+                // lifecycle effect keeps the bound action alive while
+                // the tool is "chamfer").
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const entry = feature?.sketch_parameters?.chamfers.find(
+                  (chamfer) => chamfer.chamfer_id === chamferId,
+                );
+                if (!entry) {
+                  return;
+                }
+                void (async () => {
+                  const toolPromise = awaitDocumentChange(
+                    (next) => next.active_sketch_tool === "chamfer",
+                  );
+                  await runAction(async () => {
+                    await setSketchTool("chamfer");
+                  });
+                  try {
+                    await toolPromise;
+                  } catch {
+                    // Tool change timed out — open the panel anyway.
+                  }
+                  sketchChamferIdsRef.current = [entry.chamfer_id];
+                  setSketchChamferAction({
+                    phase: "active",
+                    distanceA: entry.distance_a,
+                    distanceB: entry.distance_b,
+                    chamferIds: [entry.chamfer_id],
                   });
                 })();
               }}
@@ -2521,6 +2716,28 @@ function App() {
                   setSketchTool={setSketchTool}
                   updateSketchFilletRadius={updateSketchFilletRadius}
                   deleteSketchFillet={deleteSketchFillet}
+                />
+              ) : null}
+              {sketchChamferAction ? (
+                <ActiveSketchChamferPanel
+                  action={sketchChamferAction}
+                  disabled={status !== "connected"}
+                  sketchChamferIdsRef={sketchChamferIdsRef}
+                  setSketchChamferAction={setSketchChamferAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  updateSketchChamfer={updateSketchChamfer}
+                  deleteSketchChamfer={deleteSketchChamfer}
+                />
+              ) : null}
+              {sketchSlotAction ? (
+                <ActiveSketchSlotPanel
+                  action={sketchSlotAction}
+                  disabled={status !== "connected"}
+                  setSketchSlotAction={setSketchSlotAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  updateSketchSlot={updateSketchSlot}
                 />
               ) : null}
               {sketchTextAction ? (

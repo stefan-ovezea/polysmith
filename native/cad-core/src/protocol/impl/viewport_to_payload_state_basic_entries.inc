@@ -9,6 +9,7 @@
       {"helices", helices},
       {"sketch_lines", sketch_lines},
       {"sketch_circles", sketch_circles},
+      {"sketch_ellipses", sketch_ellipses},
       {"sketch_polygons", sketch_polygons},
       {"sketch_arcs", sketch_arcs},
       {"sketch_vertices", sketch_vertices},

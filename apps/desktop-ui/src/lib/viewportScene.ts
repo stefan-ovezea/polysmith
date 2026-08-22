@@ -12,6 +12,7 @@ import type {
   ViewportSketchCircle,
   ViewportSketchConstraint,
   ViewportSketchDimension,
+  ViewportSketchEllipse,
   ViewportSketchPolygon,
   ViewportSketchProfile,
   ViewportState,
@@ -27,6 +28,7 @@ import type {
   SketchCircleScene,
   SketchConstraintScene,
   SketchDimensionScene,
+  SketchEllipseScene,
   SketchLineScene,
   SketchVertexScene,
   SketchPolygonScene,
@@ -262,6 +264,24 @@ function makeSketchCircle(
     isConstruction: circle.is_construction,
     isProjected: projectedCircleIds.has(circle.circle_id),
     generatedBy: circle.generated_by ?? null,
+  };
+}
+
+function makeSketchEllipse(
+  ellipse: ViewportSketchEllipse,
+): SketchEllipseScene {
+  return {
+    isPreview: ellipse.is_preview,
+    ellipseId: ellipse.ellipse_id,
+    planeId: ellipse.plane_id,
+    planeFrame: ellipse.plane_frame,
+    center: [ellipse.center.x, ellipse.center.y, ellipse.center.z],
+    a: ellipse.a,
+    b: ellipse.b,
+    rotation: ellipse.rotation,
+    isSelected: ellipse.is_selected,
+    isConstruction: ellipse.is_construction,
+    generatedBy: ellipse.generated_by ?? null,
   };
 }
 
@@ -945,6 +965,9 @@ export function createViewportScene(
   const sketchCircles = viewport.sketch_circles
     .filter((circle) => isSketchPlaneVisible(circle.plane_id))
     .map((circle) => makeSketchCircle(circle, projectedCircleIds));
+  const sketchEllipses = viewport.sketch_ellipses
+    .filter((ellipse) => isSketchPlaneVisible(ellipse.plane_id))
+    .map(makeSketchEllipse);
   const sketchPolygons = viewport.sketch_polygons
     ? viewport.sketch_polygons
         .filter((polygon) => isSketchPlaneVisible(polygon.plane_id))
@@ -1100,6 +1123,7 @@ export function createViewportScene(
     cutPreviews,
     sketchLines,
     sketchCircles,
+    sketchEllipses,
     sketchPolygons,
     sketchArcs,
     sketchDimensions: visibleSketchDimensions,

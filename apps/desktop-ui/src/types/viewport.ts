@@ -19,6 +19,7 @@ import type {
   SketchArcScene,
   SketchDimensionScene,
   SketchConstraintScene,
+  SketchEllipseScene,
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
@@ -158,6 +159,22 @@ export interface ViewportSketchCircle {
   is_preview: boolean;
   // See `ViewportSketchLine.generated_by` (reserved — the v1 text
   // expansion only emits lines).
+  generated_by: string | null;
+}
+
+export interface ViewportSketchEllipse {
+  ellipse_id: string;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
+  center: Vector3;
+  a: number;
+  b: number;
+  rotation: number;
+  is_selected: boolean;
+  is_construction: boolean;
+  is_preview: boolean;
+  // See `ViewportSketchLine.generated_by` (reserved — v1 ellipses
+  // are user entities only).
   generated_by: string | null;
 }
 
@@ -303,6 +320,7 @@ export interface ViewportScene {
   references: SceneReference[];
   sketchLines: SketchLineScene[];
   sketchCircles: SketchCircleScene[];
+  sketchEllipses: SketchEllipseScene[];
   sketchPolygons: SketchPolygonScene[];
   sketchArcs: SketchArcScene[];
   sketchDimensions: SketchDimensionScene[];

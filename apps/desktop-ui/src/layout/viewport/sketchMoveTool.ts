@@ -208,6 +208,9 @@ export function sketchMoveSelectedEntityIds(
   for (const circle of sceneData.sketchCircles) {
     if (circle.isSelected) selected.push(circle.circleId);
   }
+  for (const ellipse of sceneData.sketchEllipses) {
+    if (ellipse.isSelected) selected.push(ellipse.ellipseId);
+  }
   for (const arc of sceneData.sketchArcs) {
     if (arc.isSelected) selected.push(arc.arcId);
   }
@@ -272,6 +275,13 @@ export function sketchMoveEntityVertices(
       vertices.add(
         circle.center_vertex_id ?? `point-circle-${circle.circle_id}-center`,
       );
+      continue;
+    }
+    // Ellipse moves drag the center only — the axis points are fixed
+    // at creation, and the ring builder below filters fixed vertices.
+    const ellipse = sketch.ellipses.find((e) => e.ellipse_id === id);
+    if (ellipse) {
+      vertices.add(ellipse.center_vertex_id);
       continue;
     }
     const arc = sketch.arcs?.find((a) => a.arc_id === id);

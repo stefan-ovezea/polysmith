@@ -68,6 +68,29 @@
                     }
                     return arcs;
                   }()},
+                 {"ellipses",
+                  [&feature]() {
+                    json ellipses = json::array();
+                    for (const auto& e : feature.sketch_parameters->ellipses) {
+                      ellipses.push_back({
+                          {"ellipse_id", e.id},
+                          {"center_vertex_id", e.center_vertex_id},
+                          {"axis_a_vertex_id", e.axis_a_vertex_id},
+                          {"axis_b_vertex_id", e.axis_b_vertex_id},
+                          {"center_x", e.center_x},
+                          {"center_y", e.center_y},
+                          {"a", e.a},
+                          {"b", e.b},
+                          {"rotation", e.rotation},
+                          {"is_construction", e.is_construction},
+                          {"generated_by",
+                           e.generated_by.has_value()
+                               ? json(e.generated_by.value())
+                               : json(nullptr)},
+                      });
+                    }
+                    return ellipses;
+                  }()},
                  {"fillets",
                   [&feature]() {
                     json fillets = json::array();

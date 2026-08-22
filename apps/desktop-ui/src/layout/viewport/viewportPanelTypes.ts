@@ -124,6 +124,28 @@ export interface ViewportPanelProps {
     mode: ArcToolMode,
     isConstruction: boolean,
   ) => Promise<void>;
+  onAddSketchEllipse: (
+    centerX: number,
+    centerY: number,
+    axisAX: number,
+    axisAY: number,
+    axisBX: number,
+    axisBY: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchSlot: (
+    centerX: number,
+    centerY: number,
+    length: number,
+    radius: number,
+    rotation: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchChamfer: (
+    cornerPointId: string,
+    lineAId: string,
+    lineBId: string,
+  ) => Promise<void>;
   arcToolMode: ArcToolMode;
   onSetArcToolMode: (mode: ArcToolMode) => void;
   rectangleToolMode: RectangleToolMode;
@@ -157,6 +179,8 @@ export interface ViewportPanelProps {
   // segment (`generated_by: "text:<id>"`). App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText: (textId: string) => void;
+  onPickSketchSlot: (slotId: string) => void;
+  onPickSketchChamfer: (chamferId: string) => void;
   // Text-on-path picking: while armed, entity clicks bind the text
   // path instead of placing a new text.
   sketchTextPathPicking: boolean;

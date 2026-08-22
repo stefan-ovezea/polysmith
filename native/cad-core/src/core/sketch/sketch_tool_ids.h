@@ -16,7 +16,7 @@ inline const std::vector<std::string>& kSupportedSketchTools() {
   static const std::vector<std::string> tools = {
       "select", "line",    "rectangle", "circle", "polygon", "arc",
       "fillet", "trim",    "project",   "dimension",
-      "move",   "text",
+      "move",   "text",    "ellipse",   "slot",    "chamfer",
   };
   return tools;
 }

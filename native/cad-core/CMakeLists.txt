@@ -306,6 +306,74 @@ target_link_libraries(cad_core_sketch_move_test PRIVATE
   dxfrw
 )
 
+# Ellipse entity regression suite — creation, exact profile edge,
+# extrude smoke, move preservation, construction exclusion.
+add_executable(cad_core_ellipse_test
+  ${CAD_CORE_SOURCES}
+  tests/ellipse_test.cpp
+)
+
+target_include_directories(cad_core_ellipse_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_ellipse_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Slot entity regression suite — expansion to 2 lines + 2 arcs,
+# exact profile set, param update re-expansion, generated-entity
+# guards, move, extrude smoke.
+add_executable(cad_core_slot_test
+  ${CAD_CORE_SOURCES}
+  tests/slot_test.cpp
+)
+
+target_include_directories(cad_core_slot_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_slot_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Sketch chamfer regression suite — symmetric/asymmetric chamfers,
+# distance edits (both epsilon sides), delete restores the corner,
+# full profile set on a chamfered rectangle, fillet conflict.
+add_executable(cad_core_sketch_chamfer_test
+  ${CAD_CORE_SOURCES}
+  tests/sketch_chamfer_test.cpp
+)
+
+target_include_directories(cad_core_sketch_chamfer_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_sketch_chamfer_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.
 add_executable(cad_core_constraint_completion_test

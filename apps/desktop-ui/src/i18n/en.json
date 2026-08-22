@@ -363,6 +363,9 @@
     "polygon": "Polygon",
     "tangentPlane": "Tangent Plane",
     "text": "Text",
+    "chamfer": "Chamfer",
+    "ellipse": "Ellipse",
+    "slot": "Slot",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
     "polygonEdge": "Edge Polygon",
@@ -635,6 +638,20 @@
       "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
       "clickCorner": "Click a corner to fillet",
       "title": "Sketch Fillet"
+    },
+    "sketchChamfer": {
+      "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
+      "clickCorner": "Click a corner to chamfer",
+      "title": "Sketch Chamfer",
+      "distanceA": "Distance A (mm)",
+      "distanceB": "Distance B (mm)"
+    },
+    "sketchSlot": {
+      "title": "Slot",
+      "helper": "Edits re-derive the slot's generated geometry",
+      "length": "Length (mm)",
+      "radius": "Radius (mm)",
+      "rotation": "Rotation (deg)"
     },
     "text": {
       "title": "Sketch Text",

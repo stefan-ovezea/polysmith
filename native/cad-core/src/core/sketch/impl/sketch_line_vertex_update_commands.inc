@@ -83,9 +83,10 @@ void update_sketch_vertex(FeatureEntry& feature,
     throw std::runtime_error("Only sketch features can update sketch points");
   }
 
-  // Text glyph vertices are derived geometry — edit the text entity,
-  // not its generated vertices.
-  if (point_id.rfind("vertex-text-", 0) == 0) {
+  // Text glyph and slot boundary vertices are derived geometry — edit
+  // the owning entity, not its generated vertices.
+  if (point_id.rfind("vertex-text-", 0) == 0 ||
+      point_id.rfind("vertex-slot-", 0) == 0) {
     throw std::runtime_error("Generated sketch entity is not editable: " +
                              point_id);
   }
@@ -141,6 +142,27 @@ void update_sketch_vertex(FeatureEntry& feature,
         }
       }
       throw std::runtime_error("Arc not found for center point: " + point_id);
+    }
+
+    // Slot center: move the slot record's center — the expansion pass
+    // regenerates the whole boundary from it.
+    for (auto& slot : parameters.slots) {
+      if (slot.center_vertex_id == point_id) {
+        slot.center_x = x;
+        slot.center_y = y;
+        refresh_sketch_derived_state(feature);
+        return;
+      }
+    }
+
+    // Ellipse center: move the ellipse (the axis points stay fixed).
+    for (auto& ellipse : parameters.ellipses) {
+      if (ellipse.center_vertex_id == point_id) {
+        ellipse.center_x = x;
+        ellipse.center_y = y;
+        refresh_sketch_derived_state(feature);
+        return;
+      }
     }
 
     throw std::runtime_error("Unsupported sketch center point: " + point_id);
@@ -231,6 +253,28 @@ void move_sketch_entities(FeatureEntry& feature,
       }
     }
     if (matched) continue;
+    for (const auto& ellipse : parameters.ellipses) {
+      if (ellipse.id == entity_id) {
+        // Only the center is movable (the axis points are fixed); the
+        // fixed-vertex filter below leaves them in place and the cache
+        // shift keeps the shape rigid.
+        moved_vertex_ids.insert(ellipse.center_vertex_id);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& slot : parameters.slots) {
+      if (slot.id == entity_id) {
+        // The generated boundary entities are filtered by
+        // ensure_user_editable_entity above; moving the slot moves its
+        // center vertex and the expansion pass regenerates the shape.
+        moved_vertex_ids.insert(slot.center_vertex_id);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
     moved_vertex_ids.insert(entity_id);
   }
 
@@ -309,6 +353,18 @@ void move_sketch_entities(FeatureEntry& feature,
       if (arc.center_vertex_id == vertex_id) {
         arc.center_x = target.first;
         arc.center_y = target.second;
+      }
+    }
+    for (auto& ellipse : parameters.ellipses) {
+      if (ellipse.center_vertex_id == vertex_id) {
+        ellipse.center_x = target.first;
+        ellipse.center_y = target.second;
+      }
+    }
+    for (auto& slot : parameters.slots) {
+      if (slot.center_vertex_id == vertex_id) {
+        slot.center_x = target.first;
+        slot.center_y = target.second;
       }
     }
     // Standalone points (no owning entity): update the vertex entry

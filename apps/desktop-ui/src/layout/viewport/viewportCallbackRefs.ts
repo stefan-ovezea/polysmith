@@ -134,10 +134,40 @@ interface ViewportCallbackRefTargets {
       lineBId: string,
     ) => Promise<void>
   >;
+  addSketchChamferRef: MutableRefObject<
+    (
+      cornerPointId: string,
+      lineAId: string,
+      lineBId: string,
+    ) => Promise<void>
+  >;
+  addSketchEllipseRef: MutableRefObject<
+    (
+      centerX: number,
+      centerY: number,
+      axisAX: number,
+      axisAY: number,
+      axisBX: number,
+      axisBY: number,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
+  addSketchSlotRef: MutableRefObject<
+    (
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
   addSketchTextRef: MutableRefObject<
     (anchorX: number, anchorY: number) => Promise<void>
   >;
   pickSketchTextRef: MutableRefObject<(textId: string) => void>;
+  pickSketchSlotRef: MutableRefObject<(slotId: string) => void>;
+  pickSketchChamferRef: MutableRefObject<(chamferId: string) => void>;
   selectSketchEntityRef: MutableRefObject<
     (entityId: string, additive: boolean) => Promise<void>
   >;
@@ -259,8 +289,13 @@ interface ViewportCallbackRefValues
   polygonSides: number;
   onAddSketchPolygon: ViewportCallbackRefTargets["addSketchPolygonRef"]["current"];
   onAddSketchFillet: ViewportCallbackRefTargets["addSketchFilletRef"]["current"];
+  onAddSketchChamfer: ViewportCallbackRefTargets["addSketchChamferRef"]["current"];
+  onAddSketchEllipse: ViewportCallbackRefTargets["addSketchEllipseRef"]["current"];
+  onAddSketchSlot: ViewportCallbackRefTargets["addSketchSlotRef"]["current"];
   onAddSketchText: ViewportCallbackRefTargets["addSketchTextRef"]["current"];
   onPickSketchText: ViewportCallbackRefTargets["pickSketchTextRef"]["current"];
+  onPickSketchSlot: ViewportCallbackRefTargets["pickSketchSlotRef"]["current"];
+  onPickSketchChamfer: ViewportCallbackRefTargets["pickSketchChamferRef"]["current"];
   onSelectSketchEntity: ViewportCallbackRefTargets["selectSketchEntityRef"]["current"];
   onPickInactiveSketchLine:
     | ViewportCallbackRefTargets["pickInactiveSketchLineRef"]["current"]
@@ -344,8 +379,13 @@ export function useViewportCallbackRefs(
     refs.polygonSidesRef.current = values.polygonSides;
     refs.addSketchPolygonRef.current = values.onAddSketchPolygon;
     refs.addSketchFilletRef.current = values.onAddSketchFillet;
+    refs.addSketchChamferRef.current = values.onAddSketchChamfer;
+    refs.addSketchEllipseRef.current = values.onAddSketchEllipse;
+    refs.addSketchSlotRef.current = values.onAddSketchSlot;
     refs.addSketchTextRef.current = values.onAddSketchText;
     refs.pickSketchTextRef.current = values.onPickSketchText;
+    refs.pickSketchSlotRef.current = values.onPickSketchSlot;
+    refs.pickSketchChamferRef.current = values.onPickSketchChamfer;
     refs.selectSketchEntityRef.current = values.onSelectSketchEntity;
     refs.pickInactiveSketchLineRef.current = values.onPickInactiveSketchLine;
     refs.inactiveSketchEntityPickEnabledRef.current =

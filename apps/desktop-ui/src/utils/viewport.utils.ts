@@ -18,6 +18,7 @@ export {
   buildSketchCircleObject,
   buildSketchConstraintObject,
   buildSketchDimensionObject,
+  buildSketchEllipseObject,
   buildSketchLineObject,
   buildSketchPointObject,
   buildSketchPolygonObject,

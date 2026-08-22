@@ -12,6 +12,8 @@ import {
   buildDraftLinePreview,
   buildInferenceGuideLines,
 } from "./draftLinePreview";
+import { buildEllipseDraftPreview } from "./ellipseDraftPreview";
+import { buildSlotDraftPreview } from "./slotDraftPreview";
 import { formatDraftDimension } from "./draftDimensions";
 import {
   buildRectangleDraftPreview,
@@ -26,10 +28,14 @@ export interface DraftPointerPreviewControls {
   arcSecondPoint: [number, number] | null;
   circleSecondPoint: [number, number] | null;
   rectSecondPoint: [number, number] | null;
+  ellipseSecondPoint: [number, number] | null;
   isConstruction: boolean;
   previewLineRef: MutableRef<THREE.Line | null>;
   previewCircleRef: MutableRef<THREE.LineLoop | null>;
   previewArcRef: MutableRef<THREE.Line | null>;
+  // Slot previews are stadium groups (2 lines + 2 arcs) — one ref per
+  // group, cleared recursively.
+  previewSlotRef: MutableRef<THREE.Group | null>;
   previewDimensionRef: MutableRef<{
     line: THREE.Object3D;
     label: THREE.Sprite;
@@ -38,6 +44,7 @@ export interface DraftPointerPreviewControls {
   clearPreviewLine: () => void;
   clearPreviewCircle: () => void;
   clearPreviewArc: () => void;
+  clearPreviewSlot: () => void;
   clearPreviewDimension: () => void;
   clearPreviewInference: () => void;
 }
@@ -60,6 +67,7 @@ export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
   params.clearPreviewLine();
   params.clearPreviewCircle();
   params.clearPreviewArc();
+  params.clearPreviewSlot();
   params.clearPreviewDimension();
   params.clearPreviewInference();
 
@@ -73,6 +81,14 @@ export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
   }
   if (params.activeSketchTool === "rectangle") {
     renderRectanglePointerPreview(params);
+    return;
+  }
+  if (params.activeSketchTool === "ellipse") {
+    renderEllipsePointerPreview(params);
+    return;
+  }
+  if (params.activeSketchTool === "slot") {
+    renderSlotPointerPreview(params);
     return;
   }
 
@@ -246,6 +262,54 @@ function renderRectanglePointerPreview({
   });
   if (preview) {
     previewLineRef.current = preview;
+    sketchGroup.add(preview);
+  }
+}
+
+function renderEllipsePointerPreview({
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  draftStart,
+  draftPreviewLocal,
+  sketchGroup,
+  ellipseSecondPoint,
+  isConstruction,
+  previewCircleRef,
+}: DraftPointerPreviewParams) {
+  const preview = buildEllipseDraftPreview({
+    start: draftStart,
+    current: draftPreviewLocal,
+    axisPoint: ellipseSecondPoint,
+    planeId: activeSketchPlaneId,
+    planeFrame: activeSketchPlaneFrame,
+    isConstruction,
+  });
+  if (preview) {
+    // The ellipse preview is a single LineLoop — reuse the circle
+    // preview ref (same shape class, same clear path).
+    previewCircleRef.current = preview;
+    sketchGroup.add(preview);
+  }
+}
+
+function renderSlotPointerPreview({
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  draftStart,
+  draftPreviewLocal,
+  sketchGroup,
+  isConstruction,
+  previewSlotRef,
+}: DraftPointerPreviewParams) {
+  const preview = buildSlotDraftPreview({
+    start: draftStart,
+    current: draftPreviewLocal,
+    planeId: activeSketchPlaneId,
+    planeFrame: activeSketchPlaneFrame,
+    isConstruction,
+  });
+  if (preview) {
+    previewSlotRef.current = preview;
     sketchGroup.add(preview);
   }
 }

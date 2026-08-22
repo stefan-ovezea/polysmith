@@ -208,6 +208,31 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       continue;
     }
 
+    if (be.entity_kind == "ellipse") {
+      const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
+      const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
+      // Major axis direction in the sketch plane, rotated into world
+      // space by the sketch frame.
+      const gp_Pnt a_point = to_world_point(
+          frame, be.center_x + be.radius * std::cos(be.rotation),
+          be.center_y + be.radius * std::sin(be.rotation));
+      // Orthogonalize the major-axis direction against the plane
+      // normal — gp_Ax2 requires an exactly perpendicular XDir and
+      // throws ConstructionError on any numerical residual.
+      gp_Vec vx(center, a_point);
+      const double d = vx.Dot(normal);
+      vx.Subtract(normal.XYZ().Multiplied(d));
+      const gp_Dir x_dir(vx);
+      // Full ellipse — one analytic edge.
+      GC_MakeEllipse ell(gp_Ax2(center, normal, x_dir), be.radius,
+                         be.minor_radius);
+      if (!ell.IsDone()) {
+        throw std::runtime_error("Failed to create exact ellipse edge");
+      }
+      wire_builder.Add(BRepBuilderAPI_MakeEdge(ell.Value()));
+      continue;
+    }
+
     const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
     const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
     const gp_Circ circ(gp_Ax2(center, normal), be.radius);
