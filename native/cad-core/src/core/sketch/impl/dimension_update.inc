@@ -472,6 +472,47 @@ void update_sketch_dimension(FeatureEntry& feature,
     return;
   }
 
+  if (dimension.kind == "arc_angle") {
+    const auto arc_it = std::find_if(
+        parameters.arcs.begin(),
+        parameters.arcs.end(),
+        [&](const SketchArc& arc) { return arc.id == dimension.entity_id; });
+
+    if (arc_it == parameters.arcs.end()) {
+      throw std::runtime_error("Sketch arc not found for dimension: " + dimension_id);
+    }
+
+    constexpr double kTwoPi = 2.0 * 3.14159265358979323846;
+    if (value <= 0.0 || value >= kTwoPi) {
+      throw std::runtime_error("Arc angle must be between 0 and 360 degrees");
+    }
+
+    // Ad-hoc fallback for when the solver cannot drive the sweep (e.g.
+    // the arc's endpoints are fixed): keep the center and the start
+    // point, and move the end point to the new sweep in the arc's
+    // current direction.  When the solver does run (the normal path),
+    // it enforces the sweep via addConstraintDifference on the arc's
+    // angle parameters.
+    const double cx = arc_it->center_x;
+    const double cy = arc_it->center_y;
+    const double start_angle = std::atan2(arc_it->start_y - cy, arc_it->start_x - cx);
+    const double signed_value = arc_it->ccw ? value : -value;
+    const double end_angle = start_angle + signed_value;
+
+    arc_it->end_x = cx + arc_it->radius * std::cos(end_angle);
+    arc_it->end_y = cy + arc_it->radius * std::sin(end_angle);
+
+    propagate_connected_point_move(parameters, arc_it->end_vertex_id,
+                                   arc_it->end_x, arc_it->end_y);
+
+    dimension.value = value;
+    dimension.driven = false;  // reset — may be set below
+    refresh_sketch_derived_state(feature);
+    fallback_to_driven();
+    sync_all_labels();
+    return;
+  }
+
   if (dimension.kind == "polygon_radius") {
     const auto polygon_it = std::find_if(
         parameters.polygons.begin(),

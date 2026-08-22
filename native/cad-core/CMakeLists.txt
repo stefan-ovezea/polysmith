@@ -306,6 +306,29 @@ target_link_libraries(cad_core_sketch_move_test PRIVATE
   dxfrw
 )
 
+# Parametric arc regression suite — GCS::Arc solver integration: driving
+# radius/angle dimensions, shared-endpoint drag, over-constraint fallback,
+# complete profile sets for mixed line+arc loops.
+add_executable(cad_core_parametric_arc_test
+  ${CAD_CORE_SOURCES}
+  tests/parametric_arc_test.cpp
+)
+
+target_include_directories(cad_core_parametric_arc_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_parametric_arc_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Sketch tool whitelist regression suite — the two sketch-tool whitelists
 # (validate_tool / is_supported_sketch_tool) must accept identical ids,
 # and commands.schema.json must match the real command vocabulary.

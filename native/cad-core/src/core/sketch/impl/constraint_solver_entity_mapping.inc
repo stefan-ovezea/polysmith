@@ -87,3 +87,61 @@
         gcs_circles_.push_back(gc);
         circle_id_to_index_[sc.id] = gcs_circles_.size() - 1;
     }
+
+    // Map user arc entities. Each arc owns three parameters — radius,
+    // start angle, end angle — and shares its center/start/end points
+    // with the existing point set (vertex unification), so a line
+    // sharing an endpoint with an arc drags the arc along through the
+    // shared GCS::Point.  addConstraintArcRules keeps the endpoints on
+    // the circumcircle at their angles.
+    //
+    // Angles are stored so that endAngle = startAngle + signed_sweep
+    // (positive for ccw, negative for cw), avoiding the ±π wrap problem
+    // when a sweep crosses the atan2 boundary.
+    gcs_arcs_.clear();
+    gcs_arcs_.reserve(num_arcs);
+    arc_param_idx_.clear();
+    arc_param_idx_.reserve(num_arcs);
+    arc_id_to_index_.clear();
+    for (const auto& arc : params.arcs) {
+        if (is_derived_arc(params, arc) ||
+            !arc_participates_in_solver(params, arc)) {
+            continue;
+        }
+        auto center_it = point_id_to_index_.find(arc.center_vertex_id);
+        auto start_it = point_id_to_index_.find(arc.start_vertex_id);
+        auto end_it = point_id_to_index_.find(arc.end_vertex_id);
+        if (center_it == point_id_to_index_.end() ||
+            start_it == point_id_to_index_.end() ||
+            end_it == point_id_to_index_.end()) {
+            // Missing point reference — skip this arc.
+            continue;
+        }
+
+        constexpr double kPi = 3.14159265358979323846;
+        const double start_angle = std::atan2(arc.start_y - arc.center_y,
+                                              arc.start_x - arc.center_x);
+        const double raw_sweep = std::atan2(arc.end_y - arc.center_y,
+                                            arc.end_x - arc.center_x) -
+                                 start_angle;
+        double signed_sweep = raw_sweep;
+        if (arc.ccw && signed_sweep < 0.0) signed_sweep += 2.0 * kPi;
+        if (!arc.ccw && signed_sweep > 0.0) signed_sweep -= 2.0 * kPi;
+        const double end_angle = start_angle + signed_sweep;
+
+        const size_t rad_idx = param_storage_.size();
+        param_storage_.push_back(arc.radius);
+        param_storage_.push_back(start_angle);
+        param_storage_.push_back(end_angle);
+
+        GCS::Arc ga;
+        ga.center = gcs_points_[center_it->second];
+        ga.start = gcs_points_[start_it->second];
+        ga.end = gcs_points_[end_it->second];
+        ga.rad = &param_storage_[rad_idx];
+        ga.startAngle = &param_storage_[rad_idx + 1];
+        ga.endAngle = &param_storage_[rad_idx + 2];
+        gcs_arcs_.push_back(ga);
+        arc_param_idx_.push_back({rad_idx, rad_idx + 1, rad_idx + 2});
+        arc_id_to_index_[arc.id] = gcs_arcs_.size() - 1;
+    }

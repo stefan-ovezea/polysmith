@@ -13,6 +13,7 @@
         "add_parameter",
         "add_sketch_angle_dimension",
         "add_sketch_arc",
+        "add_sketch_arc_angle_dimension",
         "add_sketch_arc_radius_dimension",
         "add_sketch_circle",
         "add_sketch_circle_radius_dimension",

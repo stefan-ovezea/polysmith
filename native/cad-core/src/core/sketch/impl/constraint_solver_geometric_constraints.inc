@@ -65,6 +65,13 @@
         }
     }
 
+    // Arc rules: keep each arc's start/end points on its circumcircle
+    // at the stored angles (FreeCAD's ArcRules model).  This is what
+    // makes arcs follow shared line endpoints through the solve.
+    for (auto& garc : gcs_arcs_) {
+        system_->addConstraintArcRules(garc);
+    }
+
     // Midpoint and point-line anchors: constrain the anchored point
     // to lie on the host line. Full parametric position enforcement
     // (t=0.5 for midpoints, t=t for point-line) is a follow-up.

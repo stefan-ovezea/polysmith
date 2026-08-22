@@ -84,6 +84,40 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
         }
         sc.radius = param_storage_[radius_base + i];
     }
+
+    // Update user arcs: vertex coordinates (center/start/end), then the
+    // cached radius / ccw from the solved angle parameters.  Derived arcs
+    // (fillets, projections) are not mapped and are skipped here — their
+    // enforcement passes re-derive them afterwards.
+    for (auto& arc : params.arcs) {
+        auto ait = arc_id_to_index_.find(arc.id);
+        if (ait == arc_id_to_index_.end()) continue;
+        const auto& mapping = arc_param_idx_[ait->second];
+        auto cit = point_id_to_index_.find(arc.center_vertex_id);
+        auto sit = point_id_to_index_.find(arc.start_vertex_id);
+        auto eit = point_id_to_index_.find(arc.end_vertex_id);
+        if (cit != point_id_to_index_.end()) {
+            params.vertices[cit->second].x = param_storage_[cit->second * 2];
+            params.vertices[cit->second].y = param_storage_[cit->second * 2 + 1];
+            arc.center_x = params.vertices[cit->second].x;
+            arc.center_y = params.vertices[cit->second].y;
+        }
+        if (sit != point_id_to_index_.end()) {
+            params.vertices[sit->second].x = param_storage_[sit->second * 2];
+            params.vertices[sit->second].y = param_storage_[sit->second * 2 + 1];
+            arc.start_x = params.vertices[sit->second].x;
+            arc.start_y = params.vertices[sit->second].y;
+        }
+        if (eit != point_id_to_index_.end()) {
+            params.vertices[eit->second].x = param_storage_[eit->second * 2];
+            params.vertices[eit->second].y = param_storage_[eit->second * 2 + 1];
+            arc.end_x = params.vertices[eit->second].x;
+            arc.end_y = params.vertices[eit->second].y;
+        }
+        arc.radius = param_storage_[mapping.rad_idx];
+        arc.ccw = param_storage_[mapping.end_angle_idx] >=
+                  param_storage_[mapping.start_angle_idx];
+    }
 }
 
 int ConstraintSolver::dofs() const {

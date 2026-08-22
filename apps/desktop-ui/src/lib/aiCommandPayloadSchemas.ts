@@ -279,6 +279,7 @@ export const commandPayloadSchemas = {
     .object({ circle_id: stringField, display_as: stringField.optional() })
     .strict(),
   add_sketch_arc_radius_dimension: z.object({ arc_id: stringField }).strict(),
+  add_sketch_arc_angle_dimension: z.object({ arc_id: stringField }).strict(),
   add_sketch_polygon_radius_dimension: z
     .object({ polygon_id: stringField })
     .strict(),

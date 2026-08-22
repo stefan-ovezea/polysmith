@@ -7,6 +7,15 @@
     // geometry even when called between rebuilds (e.g. during drag).
     const size_t num_points = params.vertices.size();
     const size_t num_circles = params.circles.size();
+    // Only user-drawn arcs that a solver constraint actually references
+    // participate (see arc_participates_in_solver); derived arcs
+    // (fillets, projections, generated) are re-derived after the solve.
+    size_t num_arcs = 0;
+    for (const auto& arc : params.arcs) {
+        if (!is_derived_arc(params, arc) && arc_participates_in_solver(params, arc)) {
+            ++num_arcs;
+        }
+    }
     // Count driving dimensions for parameter reservation.
     // Manual dims always drive; auto dims drive only with expression.
     size_t driving_dim_count = 0;
@@ -15,8 +24,8 @@
         if (dim.is_auto && dim.expression.empty()) continue;
         ++driving_dim_count;
     }
-    const size_t num_params =
-        num_points * 2 + num_circles * 3 + driving_dim_count;
+    const size_t num_params = num_points * 2 + num_circles * 3 +
+                              num_arcs * 3 + driving_dim_count;
 
     param_storage_.clear();
     param_storage_.reserve(num_params);

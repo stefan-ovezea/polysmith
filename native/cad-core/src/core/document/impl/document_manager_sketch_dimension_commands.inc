@@ -19,6 +19,8 @@
       std::optional<std::string> display_as = std::nullopt);
   DocumentState add_sketch_arc_radius_dimension(
       const std::string& arc_id);
+  DocumentState add_sketch_arc_angle_dimension(
+      const std::string& arc_id);
   DocumentState add_sketch_polygon_radius_dimension(
       const std::string& polygon_id);
   DocumentState add_sketch_vertex_distance_dimension(

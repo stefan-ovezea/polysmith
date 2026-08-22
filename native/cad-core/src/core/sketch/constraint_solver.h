@@ -67,11 +67,22 @@ private:
     std::vector<GCS::Point> gcs_points_;
     std::vector<GCS::Line> gcs_lines_;
     std::vector<GCS::Circle> gcs_circles_;
+    std::vector<GCS::Arc> gcs_arcs_;
+
+    // Parameter indices for each arc's rad / startAngle / endAngle,
+    // aligned with gcs_arcs_.
+    struct ArcParamMapping {
+        size_t rad_idx;
+        size_t start_angle_idx;
+        size_t end_angle_idx;
+    };
+    std::vector<ArcParamMapping> arc_param_idx_;
 
     // Maps sketch entity IDs to GCS geometry indices.
     std::map<std::string, size_t> point_id_to_index_;
     std::map<std::string, size_t> line_id_to_index_;
     std::map<std::string, size_t> circle_id_to_index_;
+    std::map<std::string, size_t> arc_id_to_index_;
 
     // The solver system — owned, rebuilt on each build() call.
     std::unique_ptr<GCS::System> system_;

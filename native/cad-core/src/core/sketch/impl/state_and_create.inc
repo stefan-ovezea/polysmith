@@ -77,7 +77,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             feature.sketch_parameters->circles.end(),
             [&](const auto& c) { return c.id == dim.entity_id; });
         if (!found) dim.driven = true;
-      } else if (dim.kind == "arc_radius") {
+      } else if (dim.kind == "arc_radius" || dim.kind == "arc_angle") {
         bool found = std::any_of(
             feature.sketch_parameters->arcs.begin(),
             feature.sketch_parameters->arcs.end(),
@@ -140,6 +140,10 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     for (const auto& dim : feature.sketch_parameters->dimensions) {
       if (dim.driven) continue;
       if (dim.is_auto && dim.expression.empty()) continue;
+      // Arc dimensions are enforced deterministically by
+      // enforce_arc_dimensions (ad-hoc), not through planegcs — see
+      // the pass for why (solver null-space drift on unanchored arcs).
+      if (dim.kind == "arc_radius" || dim.kind == "arc_angle") continue;
       ++driving_dims;
     }
     const bool constraints_exist =
@@ -393,9 +397,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         for (size_t i = 0; i < feature.sketch_parameters->vertices.size(); ++i) {
           feature.sketch_parameters->vertices[i].is_fixed = saved_fixed[i];
         }
-        feature.sketch_parameters->pending_append_focus_ids.clear();
       }
     }
+
+    // Consume the append-focus ids on EVERY refresh, not only when the
+    // solver ran.  A geometry-only commit (no driving constraints yet)
+    // skips the solver block above; leaving the focus ids behind makes
+    // a later refresh (e.g. when a dimension turns driving) freeze every
+    // point — append mode freezes all points outside the focus set, and
+    // a stale entity id matches nothing.
+    feature.sketch_parameters->pending_append_focus_ids.clear();
   }
 
   // Anchor enforcement runs here — after the solver but before
@@ -451,6 +462,12 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       }
     }
   }
+
+  // Re-impose driving arc dimensions deterministically (see
+  // enforce_arc_dimensions in dimension_update.inc).  Must run before
+  // sync_all_line_dimensions / rebuild_sketch_vertices so the profile
+  // walk sees the dimensioned geometry.
+  enforce_arc_dimensions(*feature.sketch_parameters);
 
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.

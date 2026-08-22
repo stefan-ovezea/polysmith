@@ -88,6 +88,17 @@
     return;
   }
 
+  if (command.type == "add_sketch_arc_angle_dimension") {
+    const auto document =
+        document_manager().add_sketch_arc_angle_dimension(
+            read_string(command.payload, "arc_id"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "add_sketch_vertex_distance_dimension") {
     std::optional<std::string> axis;
     if (command.payload.contains("axis") &&
