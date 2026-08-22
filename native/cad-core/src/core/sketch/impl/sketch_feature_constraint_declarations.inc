@@ -85,3 +85,23 @@ void set_sketch_vertex_line_anchor(FeatureEntry& feature,
 void set_sketch_tangent_constraint(FeatureEntry& feature,
                                    const std::string& line_id,
                                    const std::string& circle_id);
+
+// ── Constraint completion (feature/sketch) ───────────────────────────
+// Symmetric: points p1 and p2 mirrored across the axis line (each is
+// equidistant from the axis endpoints).  Midpoint: the vertex is
+// anchored to the host line's midpoint.  Collinear: the first line is
+// driven onto the second line's infinite axis.  Tangent pairs: curve-
+// curve (circle/arc, internal or external) or line-line (collinear).
+void set_sketch_symmetric_constraint(FeatureEntry& feature,
+                                     const std::string& point_id,
+                                     const std::string& other_point_id,
+                                     const std::string& axis_line_id);
+void set_sketch_midpoint_constraint(FeatureEntry& feature,
+                                    const std::string& vertex_id,
+                                    const std::string& line_id);
+void set_sketch_collinear_constraint(FeatureEntry& feature,
+                                     const std::string& line_id,
+                                     const std::string& other_line_id);
+void set_sketch_tangent_pair_constraint(FeatureEntry& feature,
+                                        const std::string& first_id,
+                                        const std::string& second_id);

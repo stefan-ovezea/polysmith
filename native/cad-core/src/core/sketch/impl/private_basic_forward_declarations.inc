@@ -31,4 +31,9 @@ void enforce_tangent_line_circle_relations(SketchFeatureParameters& parameters);
 // solver and the line→arc endpoint rescue so dragged endpoints first
 // move the arc, then the dimension value is re-imposed.
 void enforce_arc_dimensions(SketchFeatureParameters& parameters);
+// Ad-hoc enforcement for the constraint-completion kinds (symmetric,
+// midpoint, collinear, tangent pairs) — see
+// constraint_completion_enforcement.inc.  Runs after the solver as a
+// deterministic fallback.
+void enforce_constraint_completion(SketchFeatureParameters& parameters);
 void sync_driven_dimensions(SketchFeatureParameters& parameters);

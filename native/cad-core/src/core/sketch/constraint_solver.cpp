@@ -1,6 +1,7 @@
 #include "core/sketch/constraint_solver.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
+#include <Constraints.h>
 #include <GCS.h>
 #include <Geo.h>
 #include <algorithm>
@@ -37,13 +38,22 @@ bool is_derived_arc(const SketchFeatureParameters& params,
 // (enforce_arc_dimensions) instead of the solver: planegcs wanders the
 // null space of an unanchored arc (free translation + rotation + sweep)
 // even from a zero-residual reference, drifting the arc on every solve.
-// M1 has no arc-referencing solver constraints (tangent pairs land in
-// the constraint-completion milestone), so nothing participates yet —
-// the registration plumbing is exercised from there.
+// Unregistered arcs have their vertices pinned during solves (see
+// constraint_solver_system_setup.inc), so a lone arc can never drift.
 bool arc_participates_in_solver(const SketchFeatureParameters& params,
                                 const SketchArc& arc) {
-  (void)params;
-  (void)arc;
+  for (const auto& rel : params.line_relations) {
+    if (rel.kind == "tangent_line_arc" && rel.second_line_id == arc.id) {
+      return true;
+    }
+  }
+  for (const auto& constraint : params.constraints) {
+    if (constraint.kind == "tangent_arc_arc") {
+      for (const auto& target_id : constraint.target_ids) {
+        if (target_id == arc.id) return true;
+      }
+    }
+  }
   return false;
 }
 

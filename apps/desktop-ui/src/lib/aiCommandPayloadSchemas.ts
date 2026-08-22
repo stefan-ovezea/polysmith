@@ -445,6 +445,22 @@ export const commandPayloadSchemas = {
   set_sketch_tangent_constraint: z
     .object({ line_id: stringField, circle_id: stringField })
     .strict(),
+  set_sketch_symmetric_constraint: z
+    .object({
+      point_id: stringField,
+      other_point_id: stringField,
+      axis_line_id: stringField,
+    })
+    .strict(),
+  set_sketch_midpoint_constraint: z
+    .object({ vertex_id: stringField, line_id: stringField })
+    .strict(),
+  set_sketch_collinear_constraint: z
+    .object({ line_id: stringField, other_line_id: stringField })
+    .strict(),
+  set_sketch_tangent_pair_constraint: z
+    .object({ first_id: stringField, second_id: stringField })
+    .strict(),
   set_sketch_parallel_constraint: z
     .object({ line_id: stringField, other_line_id: stringField })
     .strict(),

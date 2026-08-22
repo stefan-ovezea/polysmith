@@ -306,6 +306,28 @@ target_link_libraries(cad_core_sketch_move_test PRIVATE
   dxfrw
 )
 
+# Constraint-completion regression suite — symmetric, collinear,
+# midpoint, tangent pairs, and parametric anchor-t enforcement.
+add_executable(cad_core_constraint_completion_test
+  ${CAD_CORE_SOURCES}
+  tests/constraint_completion_test.cpp
+)
+
+target_include_directories(cad_core_constraint_completion_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_constraint_completion_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Parametric arc regression suite — GCS::Arc solver integration: driving
 # radius/angle dimensions, shared-endpoint drag, over-constraint fallback,
 # complete profile sets for mixed line+arc loops.

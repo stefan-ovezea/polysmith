@@ -320,8 +320,27 @@ void move_sketch_entities(FeatureEntry& feature,
       }
     }
 
-    propagate_connected_point_move(parameters, vertex_id, target.first,
-                                   target.second);
+    // Ripple only when a connected line is NOT fully covered by this
+    // move.  propagate_connected_point_move clamps the moved endpoint
+    // of an H/V-constrained line back to its OTHER endpoint's axis —
+    // for a wholly-moved line, processing the endpoints one at a time
+    // would snap each one back to the other's pre-move coordinate and
+    // revert the whole translation (a lone horizontal line was
+    // immovable via the move tool for exactly this reason).
+    bool needs_ripple = false;
+    for (const auto& line : parameters.lines) {
+      if (line.start_vertex_id != vertex_id && line.end_vertex_id != vertex_id) {
+        continue;
+      }
+      const bool fully_moved =
+          moved_vertex_ids.count(line.start_vertex_id) != 0 &&
+          moved_vertex_ids.count(line.end_vertex_id) != 0;
+      if (!fully_moved) needs_ripple = true;
+    }
+    if (needs_ripple) {
+      propagate_connected_point_move(parameters, vertex_id, target.first,
+                                     target.second);
+    }
   }
 
   sync_all_line_dimensions(parameters);

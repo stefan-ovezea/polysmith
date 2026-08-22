@@ -27,6 +27,13 @@ int constraint_cost(const std::string& kind) {
   if (kind == "equal_length") return 1;
   if (kind == "tangent")      return 1;
   if (kind == "symmetry")     return 2;
+  if (kind == "symmetric")    return 2;
+  if (kind == "midpoint")     return 2;
+  if (kind == "collinear")    return 1;
+  if (kind == "tangent_line_line") return 1;
+  if (kind == "tangent_line_circle") return 1;
+  if (kind == "tangent_circle_circle") return 1;
+  if (kind == "tangent_arc_arc") return 1;
   return 1;
 }
 

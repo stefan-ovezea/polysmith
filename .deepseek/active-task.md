@@ -45,12 +45,34 @@
   exclusion) + new `sketch_move_test` case (arc-radius dim survives move).
 - **All 17 suites green, tsc clean.**
 
+## Status — SK2 complete, pending commit
+
+**SK2 (constraint completion) — code-complete, tested, pending commit.**
+- New commands: set_sketch_symmetric_constraint, set_sketch_midpoint_constraint,
+  set_sketch_collinear_constraint, set_sketch_tangent_pair_constraint
+  (core + DocumentManager + handlers + schema + AI schemas).
+- Solver mappings: collinear/tangent_line_line (parallel + point-on-line +
+  length pin), midpoint (perp-bisector + point-on-line + host length pin),
+  tangent_circle_circle / tangent_arc_arc (TangentCircumf + radius pins),
+  tangent_line_arc (P2LDistance). Arc registration now live for tangent arcs.
+- Anchor-t: ConstraintWeightedLinearCombination replaces PointOnLine-only
+  mapping (midpoint anchors t=0.5, point-line anchors t=t), host length
+  pinned.
+- Deterministic enforcement pass (constraint_completion_enforcement.inc):
+  symmetric uses a compromise convention (each point moves halfway toward
+  its mirror — never reverts a drag); midpoint/tangent-pair drives with
+  fixed-vertex degradation to driven.
+- Latent bug fixes: move tool no longer reverts translations of
+  H/V-constrained lines with unshared endpoints (the propagate clamp
+  processed endpoints one at a time); anchor commands now focus only
+  the anchored point (host no longer wanders during creation solves).
+- New suite cad_core_constraint_completion_test (8 cases). All 18 suites
+  green, tsc clean.
+
 ## Next milestone
 
-- **SK2 — constraint completion** (symmetric/collinear/midpoint/tangent
-  pairs/anchor-t). Arc tangency constraints land here — that is when
-  `arc_participates_in_solver` starts returning true and the GCS::Arc
-  registration goes live. See plan for file-level detail.
+- **SK3 — new geometry** (ellipse, slot, sketch chamfer). See plan for
+  file-level detail.
 
 ## Just merged
 

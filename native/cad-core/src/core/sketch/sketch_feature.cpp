@@ -37,6 +37,8 @@ namespace {
 #include "core/sketch/impl/private_point_propagation.inc"
 #include "core/sketch/impl/private_dimension_relation_sync.inc"
 #include "core/sketch/impl/private_relation_enforcement.inc"
+#include "core/sketch/impl/constraint_completion_helpers.inc"
+#include "core/sketch/impl/constraint_completion_enforcement.inc"
 }  // namespace
 
 #include "core/sketch/impl/state_and_create.inc"
@@ -44,6 +46,7 @@ namespace {
 #include "core/sketch/impl/sketch_text_commands.inc"
 #include "core/sketch/impl/line_constraints.inc"
 #include "core/sketch/impl/vertex_and_circle_updates.inc"
+#include "core/sketch/impl/constraint_completion_commands.inc"
 #include "core/sketch/impl/dimensions.inc"
 #include "core/sketch/impl/line_primitives.inc"
 #include "core/sketch/impl/mirror.inc"

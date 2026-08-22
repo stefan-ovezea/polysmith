@@ -47,3 +47,16 @@
   DocumentState set_sketch_vertex_line_anchor(const std::string& point_id,
                                              const std::string& host_line_id,
                                              double t);
+
+  // ── Constraint completion (feature/sketch) ─────────────────────────
+  DocumentState set_sketch_symmetric_constraint(
+      const std::string& point_id,
+      const std::string& other_point_id,
+      const std::string& axis_line_id);
+  DocumentState set_sketch_midpoint_constraint(const std::string& vertex_id,
+                                               const std::string& line_id);
+  DocumentState set_sketch_collinear_constraint(const std::string& line_id,
+                                                const std::string& other_line_id);
+  DocumentState set_sketch_tangent_pair_constraint(
+      const std::string& first_id,
+      const std::string& second_id);
