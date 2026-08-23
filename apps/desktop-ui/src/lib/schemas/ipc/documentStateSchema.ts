@@ -769,6 +769,7 @@ export const documentStateSchema = z.object({
                 "perpendicular",
                 "parallel",
                 "tangent_line_circle",
+                "tangent_circle_line",
               ]),
               first_line_id: z.string(),
               second_line_id: z.string(),

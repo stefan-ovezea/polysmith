@@ -140,6 +140,66 @@ bool test_tangent_two_lines_both_sides() {
                 "tangent-two: second wedge resolved correctly");
 }
 
+// Lines stored pointing TOWARD the corner (reversed directions) —
+// the bisector choice must still place the circle inside the wedge
+// (user-reported: the circle landed outside the angle).
+bool test_tangent_two_lines_reversed_directions() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_line(30.0, 15.0, 0.0, 0.0);
+  document = manager.add_sketch_line(30.0, -15.0, 0.0, 0.0);
+  document = manager.add_sketch_circle(
+      0.0, 0.0, 0.0, false, "tangent_two_lines",
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      "line-1", "line-2", "", 15.0, 0.0);
+
+  const auto after = sketch_params(document);
+  if (!expect(after.circles.size() == 1,
+              "reversed: circle created")) {
+    return false;
+  }
+  const auto& circle = after.circles[0];
+  // Center on the +x bisector at the hint's projection (15, 0);
+  // the hint must win regardless of the stored line directions.
+  return expect(near(circle.center_x, 15.0) && near(circle.center_y, 0.0) &&
+                    near(circle.radius, 6.7082, 1e-3),
+                "reversed: center inside the wedge toward the hint");
+}
+
+// Inscribed circle tangent to ALL THREE sides (user's triangle):
+// the circle splits the interior into two lens regions + the circle
+// itself — three regions total.
+bool test_tangent_circle_tangent_to_all_three_sides() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Isosceles triangle: left vertex (0,0), top (100,50), bottom
+  // (100,-50); the incenter sits at ~(69.1, 0) with r ~30.9.
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 100.0, 50.0);
+  document = manager.add_sketch_line(0.0, 0.0, 100.0, -50.0);
+  document = manager.add_sketch_line(100.0, 50.0, 100.0, -50.0);
+  document = manager.add_sketch_circle(
+      0.0, 0.0, 0.0, false, "tangent_two_lines",
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      "line-1", "line-2", "", 69.0, 0.0);
+
+  const auto after = sketch_params(document);
+  // Complete region set: the outer triangle region (all three
+  // lines) plus the circle region. The third tangency does not
+  // force a lens split — one outer region is the correct surface.
+  std::string reason;
+  const std::vector<ExpectedProfile> expected = {
+      {.entity_ids = {"line-1", "line-2", "line-3"}, .kind = "polygon"},
+      {.entity_ids = {after.circles[0].id}, .kind = "polygon",
+       .has_source_circle_id = true},
+  };
+  return expect(profiles_match(document, expected, &reason),
+                ("all-three-sides: " + reason).c_str());
+}
+
 // The radius re-derives from the circle's fixed center when a
 // defining line moves (circle-slave semantics).
 bool test_tangent_radius_rederives_after_line_move() {
@@ -228,6 +288,38 @@ bool test_tangent_circle_profile() {
                 ("tangent profile: " + reason).c_str());
 }
 
+// A closed triangle with an inscribed tangent circle must produce
+// TWO regions: the outer polygon and the circle (user-reported: the
+// enclosed surface between the triangle and the tangent circle was
+// missing — only the circle region was detected).
+bool test_tangent_circle_inside_triangle_two_regions() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Triangle: the wedge from the origin closed by a vertical side.
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 30.0, 15.0);
+  document = manager.add_sketch_line(0.0, 0.0, 30.0, -15.0);
+  document = manager.add_sketch_line(30.0, 15.0, 30.0, -15.0);
+  document = manager.add_sketch_circle(
+      0.0, 0.0, 0.0, false, "tangent_two_lines",
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      "line-1", "line-2", "", 20.0, 0.0);
+
+  const auto after = sketch_params(document);
+  std::string reason;
+  // Complete region set: the triangle (3 lines) plus the circle
+  // region. Order-independent per profiles_match.
+  std::vector<std::string> triangle_ids = {"line-1", "line-2", "line-3"};
+  const std::vector<ExpectedProfile> expected = {
+      {.entity_ids = triangle_ids, .kind = "polygon"},
+      {.entity_ids = {after.circles[0].id}, .kind = "polygon",
+       .has_source_circle_id = true},
+  };
+  return expect(profiles_match(document, expected, &reason),
+                ("tangent circle in triangle: " + reason).c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -235,8 +327,11 @@ int main() {
   if (!test_three_point_circle()) return 1;
   if (!test_tangent_two_lines_both_sides()) return 1;
   if (!test_tangent_radius_rederives_after_line_move()) return 1;
+  if (!test_tangent_two_lines_reversed_directions()) return 1;
+  if (!test_tangent_circle_tangent_to_all_three_sides()) return 1;
   if (!test_tangent_three_lines_incenter()) return 1;
   if (!test_tangent_circle_profile()) return 1;
+  if (!test_tangent_circle_inside_triangle_two_regions()) return 1;
 
   std::cout << "circle_modes_test passed\n";
   return 0;

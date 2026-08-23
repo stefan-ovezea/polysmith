@@ -136,16 +136,24 @@ DocumentState DocumentManager::add_sketch_circle(
       };
       const auto [bis1_x, bis1_y] = normalize(uax + ubx, uay + uby);
       const auto [bis2_x, bis2_y] = normalize(uax - ubx, uay - uby);
+      // Choose the bisector with the larger ABSOLUTE projection and
+      // point it toward the hint — the signed max fails when the
+      // defining lines are stored pointing toward the corner (both
+      // projections negative; the "max" then picks the one pointing
+      // AWAY from the wedge).
       const double t1 = (hint_x - cx0) * bis1_x + (hint_y - cy0) * bis1_y;
       const double t2 = (hint_x - cx0) * bis2_x + (hint_y - cy0) * bis2_y;
-      const bool use_first = t1 >= t2;
-      const double t = use_first ? t1 : t2;
+      const bool use_first = std::abs(t1) >= std::abs(t2);
+      const double t = std::abs(use_first ? t1 : t2);
+      const bool flip = (use_first ? t1 : t2) < 0.0;
       if (t <= kCircleMinimumDimension) {
         throw std::runtime_error(
             "Tangent circle: the placement point is too close to the corner");
       }
-      resolved_cx = cx0 + (use_first ? bis1_x : bis2_x) * t;
-      resolved_cy = cy0 + (use_first ? bis1_y : bis2_y) * t;
+      const double bis_x = (use_first ? bis1_x : bis2_x) * (flip ? -1.0 : 1.0);
+      const double bis_y = (use_first ? bis1_y : bis2_y) * (flip ? -1.0 : 1.0);
+      resolved_cx = cx0 + bis_x * t;
+      resolved_cy = cy0 + bis_y * t;
       resolved_r = distance_to_line(resolved_cx, resolved_cy, line_a);
     } else {
       // Three lines: the triangle's incenter. Pairwise support

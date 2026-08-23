@@ -822,6 +822,30 @@ std::vector<SketchProfileRegion> build_exact_profiles(
                         d_in_y * (curves[h.curve].cx - nodes[at].x) > 0.0;
       std::vector<double> cand_cw;
       std::vector<int> cand_idx;
+      // Straight continuation along the incoming line (same curve id,
+      // not the twin) and whether any tangent curve candidate sits in
+      // a U-turn position — the interior-tangent override below uses
+      // both.
+      int cont_idx = -1;
+      double cont_cw = 0.0;
+      bool tangent_curve_uturn_present = false;
+      // True when the incoming line PASSES THROUGH this node (the
+      // arrangement split it at a tangent point interior to the
+      // segment): a straight continuation along the same curve
+      // exists. Rule 1 below must not hijack such nodes onto the
+      // tangent curve — the outer face (e.g. a triangle with an
+      // inscribed tangent circle) continues straight while the
+      // digon face enters via the curve side. A line merely ENDING
+      // at a tangent node has no continuation and keeps rule 1.
+      bool has_line_continuation = false;
+      if (incoming_is_line) {
+        for (const int cand : out_edges[at]) {
+          if (cand != h.twin && half_edges[cand].curve == h.curve) {
+            has_line_continuation = true;
+            break;
+          }
+        }
+      }
       if (kTraceFaces) {
         log_debug("exact_profiles",
                   "face walk step incoming=" + curves[h.curve].id +
@@ -864,6 +888,14 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         }
         cand_cw.push_back(cw);
         cand_idx.push_back(cand);
+        if (cc.kind != ExactCurve::Kind::kLine &&
+            std::min(cw, 2.0 * kExactPi - cw) <= kUturnEps) {
+          tangent_curve_uturn_present = true;
+        }
+        if (incoming_is_line && ch.curve == h.curve) {
+          cont_idx = cand;
+          cont_cw = cw;
+        }
         if (kTraceFaces) {
           log_debug("exact_profiles",
                     "face walk cand id=" + cc.id +
@@ -872,8 +904,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
                         " raw=" + std::to_string(raw_cw) +
                         " cw=" + std::to_string(cw));
         }
-        // A line arriving at the node switches onto the tangent curve.
-        if (incoming_is_line &&
+        // A line arriving at the node switches onto the tangent curve —
+        // only when the line TERMINATES here (interior tangent nodes
+        // must keep their straight continuation for the outer face).
+        if (!has_line_continuation && incoming_is_line &&
             cc.kind != ExactCurve::Kind::kLine &&
             std::min(cw, 2.0 * kExactPi - cw) <= kUturnEps) {
           best = cand;
@@ -921,6 +955,19 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             }
           }
         }
+      }
+
+      if (best < 0 && incoming_is_line && tangent_curve_uturn_present &&
+          cont_idx >= 0) {
+        // Interior tangent node arrived along a line: the straight
+        // continuation (cw = π from the reverse) defines the OUTER
+        // face — e.g. a triangle with an inscribed tangent circle —
+        // and must beat the tangent curve's U-turn (cw = 2π) that
+        // the largest-turn rule would pick. The digon/inside faces
+        // arrive via the curve side, so they are unaffected.
+        best = cont_idx;
+        best_cw = cont_cw;
+        best_is_same_id = true;
       }
 
       if (best < 0) {

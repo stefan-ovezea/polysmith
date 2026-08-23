@@ -101,7 +101,12 @@ export interface SketchDimensionEntry {
 
 export interface SketchLineRelationEntry {
   relation_id: string;
-  kind: "equal_length" | "perpendicular" | "parallel";
+  kind:
+    | "equal_length"
+    | "perpendicular"
+    | "parallel"
+    | "tangent_line_circle"
+    | "tangent_circle_line";
   first_line_id: string;
   second_line_id: string;
 }

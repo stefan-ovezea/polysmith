@@ -413,6 +413,7 @@ export const viewportStateSchema = z.object({
         "midpoint",
         "on_line",
         "tangent_line_circle",
+        "tangent_circle_line",
         "coincident",
         "concentric",
         "quadrant",

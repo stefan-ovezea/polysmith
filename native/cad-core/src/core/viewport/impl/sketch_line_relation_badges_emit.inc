@@ -1,6 +1,66 @@
       if (view->active_sketch_feature_id.has_value() &&
           view->active_sketch_feature_id.value() == feature.id) {
         for (const auto& relation : feature.sketch_parameters->line_relations) {
+          if (relation.kind == "tangent_circle_line") {
+            // Circle-slave tangent (circle tool modes): badge at the
+            // contact point on the circle nearest the defining line.
+            const auto circle_it = std::find_if(
+                feature.sketch_parameters->circles.begin(),
+                feature.sketch_parameters->circles.end(),
+                [&](const SketchCircle& c) {
+                  return c.id == relation.first_line_id;
+                });
+            const auto line_it = std::find_if(
+                feature.sketch_parameters->lines.begin(),
+                feature.sketch_parameters->lines.end(),
+                [&](const SketchLine& l) {
+                  return l.id == relation.second_line_id;
+                });
+            if (circle_it == feature.sketch_parameters->circles.end() ||
+                line_it == feature.sketch_parameters->lines.end()) {
+              continue;
+            }
+            const double abx = line_it->end_x - line_it->start_x;
+            const double aby = line_it->end_y - line_it->start_y;
+            const double len = std::hypot(abx, aby);
+            if (len <= 1e-9) {
+              continue;
+            }
+            // Unit normal from the line toward the circle center.
+            double nx = -aby / len;
+            double ny = abx / len;
+            const double dx = circle_it->center_x -
+                              (line_it->start_x + line_it->end_x) / 2.0;
+            const double dy = circle_it->center_y -
+                              (line_it->start_y + line_it->end_y) / 2.0;
+            if (dx * nx + dy * ny < 0.0) {
+              nx = -nx;
+              ny = -ny;
+            }
+            const double cx = circle_it->center_x + nx * circle_it->radius;
+            const double cy = circle_it->center_y + ny * circle_it->radius;
+            const bool is_selected =
+                is_sketch_entity_selected(circle_it->id) ||
+                is_sketch_entity_selected(line_it->id);
+            const WorldPoint pos = to_world_point(
+                feature.sketch_parameters->plane_id, cx, cy,
+                kSketchPlaneOffset + kConstraintBadgeOffset);
+            sketch_constraints.push_back(ViewportSketchConstraintPrimitive{
+                .constraint_id = "constraint-" + relation.kind + "-" +
+                                 relation.first_line_id + "-" +
+                                 relation.second_line_id,
+                .plane_id = feature.sketch_parameters->plane_id,
+                .kind = relation.kind,
+                .entity_id = relation.first_line_id,
+                .related_entity_id = relation.second_line_id,
+                .label = "T",
+                .is_selected = is_selected,
+                .position_x = pos.x,
+                .position_y = pos.y,
+                .position_z = pos.z,
+            });
+            continue;
+          }
           if (relation.kind != "equal_length" &&
               relation.kind != "perpendicular" &&
               relation.kind != "parallel") {
