@@ -59,6 +59,7 @@ interface ViewportPointerDownParams {
   setPointerDown: (point: PointerDownPosition | null) => void;
   dimensionLabelDragRef: MutableRef<DimensionLabelDragState | null>;
   activeSketchToolRef: MutableRef<SketchTool>;
+  circleToolMode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines";
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   armedSketchConstraintRef: MutableRef<ArmedSketchConstraint>;
@@ -170,6 +171,15 @@ function handlePrimaryButtonPointerDown(params: ViewportPointerDownParams) {
 
   params.renderer.domElement.setPointerCapture(params.event.pointerId);
   if (beginDimensionLabelDrag(params)) {
+    return;
+  }
+  if (
+    params.activeSketchToolRef.current === "circle" &&
+    (params.circleToolMode === "tangent_two_lines" ||
+      params.circleToolMode === "tangent_three_lines")
+  ) {
+    // Tangent circle modes pick defining lines — the center+radius
+    // draft rubber band must never start on these clicks.
     return;
   }
   beginDraftPointerDown({

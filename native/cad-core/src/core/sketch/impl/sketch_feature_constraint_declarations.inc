@@ -105,6 +105,11 @@ void set_sketch_vertex_line_anchor(FeatureEntry& feature,
 // Pass an empty `circle_id` to clear any existing tangent relation
 // for the line. Throws when the line's start is inside or on the
 // circle (no real tangent exists).
+void attach_circle_tangent_relations(
+    FeatureEntry& feature,
+    const std::string& circle_id,
+    const std::vector<std::string>& line_ids);
+
 void set_sketch_tangent_constraint(FeatureEntry& feature,
                                    const std::string& line_id,
                                    const std::string& circle_id);

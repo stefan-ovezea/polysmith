@@ -134,6 +134,13 @@ function renderCirclePointerPreview({
   previewCircleRef,
   previewDimensionRef,
 }: DraftPointerPreviewParams) {
+  if (
+    circleToolMode === "tangent_two_lines" ||
+    circleToolMode === "tangent_three_lines"
+  ) {
+    // Tangent modes pick lines — no rubber-band preview.
+    return;
+  }
   const preview = buildCircleDraftPreview({
     mode: circleToolMode,
     start: draftStart,

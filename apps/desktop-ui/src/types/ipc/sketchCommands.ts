@@ -151,6 +151,23 @@ export interface AddSketchCircleCommand {
     center_y: number;
     radius: number;
     is_construction: boolean;
+    // Creation mode. "center_radius" (default) uses the center/radius
+    // fields; the other modes resolve in the core from raw inputs:
+    // two_point (p1/p2 = diameter endpoints), three_point (p1/p2/p3 =
+    // circumcircle), tangent_two_lines / tangent_three_lines (line
+    // ids + hint placement point).
+    mode?: string;
+    p1_x?: number;
+    p1_y?: number;
+    p2_x?: number;
+    p2_y?: number;
+    p3_x?: number;
+    p3_y?: number;
+    line_a_id?: string;
+    line_b_id?: string;
+    line_c_id?: string;
+    hint_x?: number;
+    hint_y?: number;
   };
 }
 

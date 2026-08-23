@@ -730,6 +730,7 @@ function App() {
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
     addSketchCircle,
+    addSketchCircleMode,
     addSketchPolygon,
     addSketchArc,
     addSketchFillet,
@@ -1984,6 +1985,11 @@ function App() {
                     radius,
                     isConstruction,
                   );
+                });
+              }}
+              onAddSketchCircleMode={async (mode, isConstruction, inputs) => {
+                await runAction(async () => {
+                  await addSketchCircleMode(mode, isConstruction, inputs);
                 });
               }}
               onAddSketchArc={async (

@@ -114,11 +114,41 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    // Optional creation-mode fields (two_point / three_point /
+    // tangent_two_lines / tangent_three_lines). Absent fields fall
+    // back to the wrapper defaults so the plain center+radius flow
+    // is unchanged.
+    const auto optional_string = [&](const char* key) {
+      if (command.payload.contains(key) &&
+          command.payload.at(key).is_string()) {
+        return command.payload.at(key).get<std::string>();
+      }
+      return std::string{};
+    };
+    const auto optional_dimension = [&](const char* key) {
+      if (command.payload.contains(key) &&
+          command.payload.at(key).is_number()) {
+        return command.payload.at(key).get<double>();
+      }
+      return 0.0;
+    };
     const auto document = document_manager().add_sketch_circle(
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
         read_dimension(command.payload, "radius"),
-        is_construction);
+        is_construction,
+        optional_string("mode"),
+        optional_dimension("p1_x"),
+        optional_dimension("p1_y"),
+        optional_dimension("p2_x"),
+        optional_dimension("p2_y"),
+        optional_dimension("p3_x"),
+        optional_dimension("p3_y"),
+        optional_string("line_a_id"),
+        optional_string("line_b_id"),
+        optional_string("line_c_id"),
+        optional_dimension("hint_x"),
+        optional_dimension("hint_y"));
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

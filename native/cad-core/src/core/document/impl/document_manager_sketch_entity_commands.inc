@@ -17,10 +17,23 @@
                                      double end_x,
                                      double end_y,
                                      bool is_construction = false);
-  DocumentState add_sketch_circle(double center_x,
-                                  double center_y,
-                                  double radius,
-                                  bool is_construction = false);
+  DocumentState add_sketch_circle(
+      double center_x,
+      double center_y,
+      double radius,
+      bool is_construction = false,
+      const std::string& mode = "center_radius",
+      double p1_x = 0.0,
+      double p1_y = 0.0,
+      double p2_x = 0.0,
+      double p2_y = 0.0,
+      double p3_x = 0.0,
+      double p3_y = 0.0,
+      const std::string& line_a_id = "",
+      const std::string& line_b_id = "",
+      const std::string& line_c_id = "",
+      double hint_x = 0.0,
+      double hint_y = 0.0);
   // Add a regular polygon to the active sketch. mode is one of
   // "circumscribed", "inscribed", "edge".
   DocumentState add_sketch_polygon(int sides,

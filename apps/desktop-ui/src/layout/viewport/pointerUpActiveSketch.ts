@@ -67,6 +67,26 @@ export interface ActiveSketchPointerUpContext {
   // Extend tool: extend the hit entity from the end nearest the
   // click. Core rejects generated/construction entities.
   extendSketchEntity: (entityId: string, clickX: number, clickY: number) => Promise<void>;
+  // Circle tool tangent modes: line-pick state + the mode-aware
+  // creation callback (the core resolves center/radius from the line
+  // ids and the placement hint).
+  circleToolMode?: import("./circleDraftPreview").CircleToolMode;
+  circleTangentLineIdsRef: { current: string[] };
+  isConstruction: boolean;
+  setSketchSnapLabel: (label: string | null) => void;
+  addSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
   // Offset tool: create a copy of the hit entity at the session's
   // current distance (lives in the App-side offset session).
   offsetSketchEntity: (entityId: string) => Promise<void>;
@@ -417,6 +437,76 @@ export function handleActiveSketchPointerUpTool(
   if (context.activeSketchTool === "offset") {
     if (context.hit?.kind === "sketch_entity") {
       void context.offsetSketchEntity(context.hit.id);
+    }
+    return true;
+  }
+
+  // Circle tool tangent modes: pick 2-3 defining lines, then click to
+  // place the circle (the click position is the placement hint that
+  // picks the wedge and the size).
+  if (
+    context.activeSketchTool === "circle" &&
+    (context.circleToolMode === "tangent_two_lines" ||
+      context.circleToolMode === "tangent_three_lines")
+  ) {
+    const maxLines =
+      context.circleToolMode === "tangent_two_lines" ? 2 : 3;
+    const picked = context.circleTangentLineIdsRef.current;
+    // Resolve the clicked line from entity hits, point hits (snap can
+    // pull the click onto an endpoint), or plain proximity.
+    let lineId: string | null = null;
+    if (
+      context.hit?.kind === "sketch_entity" &&
+      context.hit.entityKind === "line"
+    ) {
+      lineId = context.hit.id;
+    } else if (context.hit?.kind === "sketch_point" && context.sketch) {
+      const vertexId = context.hit.id;
+      const owner = context.sketch.lines.find(
+        (line) =>
+          line.start_vertex_id === vertexId || line.end_vertex_id === vertexId,
+      );
+      lineId = owner?.line_id ?? null;
+    } else if (context.cursorLocal && context.sketch) {
+      const nearby = findPathCandidateNear(
+        context.sketch,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+        5.0,
+      );
+      if (nearby && context.sketch.lines.some((l) => l.line_id === nearby)) {
+        lineId = nearby;
+      }
+    }
+    const isLineId = (id: string) =>
+      context.sketch?.lines.some((l) => l.line_id === id) ?? false;
+    if (lineId && isLineId(lineId) && !picked.includes(lineId) &&
+        picked.length < maxLines) {
+      picked.push(lineId);
+      context.setSketchSnapLabel(
+        picked.length === maxLines
+          ? "Tangent circle: click to place the circle"
+          : `Tangent circle: ${picked.length}/${maxLines} lines selected`,
+      );
+      return true;
+    }
+    if (lineId === null && picked.length < maxLines && context.cursorLocal) {
+      context.setSketchSnapLabel("Tangent circle: click on a line");
+      return true;
+    }
+    if (picked.length === maxLines && context.cursorLocal) {
+      void context.addSketchCircleMode(
+        context.circleToolMode,
+        context.isConstruction,
+        {
+          lineAId: picked[0],
+          lineBId: picked[1],
+          lineCId: maxLines === 3 ? picked[2] : undefined,
+          hint: context.cursorLocal,
+        },
+      );
+      context.circleTangentLineIdsRef.current = [];
+      return true;
     }
     return true;
   }

@@ -135,6 +135,19 @@ export interface CircleDraftCommitOptions {
     radius: number,
     isConstruction: boolean,
   ) => Promise<void> | void;
+  addSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void> | void;
 }
 
 export interface PolygonDraftCommitOptions {
@@ -298,6 +311,7 @@ export interface DraftPointerUpCommitOptions {
   addSketchArc: ArcDraftCommitOptions["addSketchArc"];
   addSketchRectangle: RectangleDraftCommitOptions["addSketchRectangle"];
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
+  addSketchCircleMode: CircleDraftCommitOptions["addSketchCircleMode"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
   addSketchEllipse: EllipseDraftCommitOptions["addSketchEllipse"];
@@ -401,21 +415,16 @@ function commitCircleDraft(options: CircleDraftCommitOptions): void {
     if (!secondPoint) {
       return;
     }
-
-    const circle = circleFromThreePoints2d(
-      options.start,
-      secondPoint,
-      options.committedEnd,
-    );
-    if (!circle) {
-      return;
-    }
-
-    void options.addSketchCircle(
-      circle.center[0],
-      circle.center[1],
-      circle.radius,
+    // The core resolves the circumcircle from the raw points —
+    // single source of truth for the geometry.
+    void options.addSketchCircleMode(
+      "three_point",
       options.isConstruction,
+      {
+        p1: options.start,
+        p2: secondPoint,
+        p3: options.committedEnd,
+      },
     );
     return;
   }
@@ -441,11 +450,17 @@ function commitCircleDraft(options: CircleDraftCommitOptions): void {
   let center: Point2d = options.start;
   let radius = distanceBetweenPoints(options.start, options.committedEnd);
   if (options.mode === "two_point") {
-    center = [
-      (startX + options.committedEnd[0]) / 2,
-      (startY + options.committedEnd[1]) / 2,
-    ];
-    radius = distanceBetweenPoints(options.start, options.committedEnd) / 2;
+    // Diameter endpoints — the core computes the midpoint center and
+    // the half-span radius.
+    void options.addSketchCircleMode(
+      "two_point",
+      options.isConstruction,
+      {
+        p1: options.start,
+        p2: options.committedEnd,
+      },
+    );
+    return;
   }
 
   void options.addSketchCircle(center[0], center[1], radius, options.isConstruction);
@@ -647,6 +662,7 @@ export function commitDraftPointerUp({
   addSketchArc,
   addSketchRectangle,
   addSketchCircle,
+  addSketchCircleMode,
   addSketchPolygon,
   addSketchLine,
   addSketchEllipse,
@@ -755,6 +771,7 @@ export function commitDraftPointerUp({
       clearDraftDimensionSession,
       suppressDimensionEditorAfterSketchCommit,
       addSketchCircle,
+      addSketchCircleMode,
     });
     return;
   }

@@ -907,6 +907,24 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    addSketchCircleMode: async (
+      mode: string,
+      isConstruction: boolean,
+      inputs: {
+        p1?: [number, number];
+        p2?: [number, number];
+        p3?: [number, number];
+        lineAId?: string;
+        lineBId?: string;
+        lineCId?: string;
+        hint?: [number, number];
+      },
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchCircleCommand(0, 0, 0, isConstruction, mode, inputs),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     addSketchPolygon: async (
       sides: number,
       mode: string,

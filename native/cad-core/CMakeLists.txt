@@ -444,6 +444,29 @@ target_link_libraries(cad_core_transform_test PRIVATE
   dxfrw
 )
 
+# Circle creation-mode regression suite — two/three-point circles,
+# tangent-to-lines with circle-slave radius re-derivation, incenter,
+# both wedge sides, full profile set.
+add_executable(cad_core_circle_modes_test
+  ${CAD_CORE_SOURCES}
+  tests/circle_modes_test.cpp
+)
+
+target_include_directories(cad_core_circle_modes_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_circle_modes_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Sketch array regression suite — linear/circular exploded copies,
 # unique ids, on-circle placement (1e-6), single-undo removal.
 add_executable(cad_core_array_test

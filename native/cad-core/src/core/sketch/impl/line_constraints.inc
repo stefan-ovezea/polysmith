@@ -3,5 +3,6 @@
 #include "core/sketch/impl/sketch_equal_length_constraint_commands.inc"
 #include "core/sketch/impl/sketch_perpendicular_constraint_commands.inc"
 #include "core/sketch/impl/sketch_tangent_constraint_commands.inc"
+#include "core/sketch/impl/circle_tangent_attach.inc"
 #include "core/sketch/impl/sketch_parallel_constraint_commands.inc"
 #include "core/sketch/impl/sketch_constraint_clear_commands.inc"

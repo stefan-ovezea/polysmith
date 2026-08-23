@@ -563,6 +563,16 @@ export function makeAddSketchCircleCommand(
   centerY: number,
   radius: number,
   isConstruction = false,
+  mode?: string,
+  modeInputs?: {
+    p1?: [number, number];
+    p2?: [number, number];
+    p3?: [number, number];
+    lineAId?: string;
+    lineBId?: string;
+    lineCId?: string;
+    hint?: [number, number];
+  },
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -572,6 +582,14 @@ export function makeAddSketchCircleCommand(
       center_y: centerY,
       radius,
       is_construction: isConstruction,
+      ...(mode ? { mode } : {}),
+      ...(modeInputs?.p1 ? { p1_x: modeInputs.p1[0], p1_y: modeInputs.p1[1] } : {}),
+      ...(modeInputs?.p2 ? { p2_x: modeInputs.p2[0], p2_y: modeInputs.p2[1] } : {}),
+      ...(modeInputs?.p3 ? { p3_x: modeInputs.p3[0], p3_y: modeInputs.p3[1] } : {}),
+      ...(modeInputs?.lineAId ? { line_a_id: modeInputs.lineAId } : {}),
+      ...(modeInputs?.lineBId ? { line_b_id: modeInputs.lineBId } : {}),
+      ...(modeInputs?.lineCId ? { line_c_id: modeInputs.lineCId } : {}),
+      ...(modeInputs?.hint ? { hint_x: modeInputs.hint[0], hint_y: modeInputs.hint[1] } : {}),
     },
   };
 }

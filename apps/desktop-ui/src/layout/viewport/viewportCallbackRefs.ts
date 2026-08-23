@@ -63,6 +63,21 @@ interface ViewportCallbackRefTargets {
       isConstruction: boolean,
     ) => Promise<void>
   >;
+  addSketchCircleModeRef: MutableRefObject<
+    (
+      mode: string,
+      isConstruction: boolean,
+      inputs: {
+        p1?: [number, number];
+        p2?: [number, number];
+        p3?: [number, number];
+        lineAId?: string;
+        lineBId?: string;
+        lineCId?: string;
+        hint?: [number, number];
+      },
+    ) => Promise<void>
+  >;
   addSketchAngleDimensionRef: MutableRefObject<
     (firstLineId: string, secondLineId: string) => Promise<void>
   >;
@@ -305,6 +320,19 @@ interface ViewportCallbackRefValues
   onExtendSketchEntity: ViewportCallbackRefTargets["extendSketchEntityRef"]["current"];
   onOffsetSketchEntity: ViewportCallbackRefTargets["offsetSketchEntityRef"]["current"];
   onOpenTransformArray: () => void;
+  onAddSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
   onSelectSketchEntity: ViewportCallbackRefTargets["selectSketchEntityRef"]["current"];
   onPickInactiveSketchLine:
     | ViewportCallbackRefTargets["pickInactiveSketchLineRef"]["current"]
@@ -359,6 +387,7 @@ export function useViewportCallbackRefs(
     refs.addSketchLineRef.current = values.onAddSketchLine;
     refs.addSketchRectangleRef.current = values.onAddSketchRectangle;
     refs.addSketchCircleRef.current = values.onAddSketchCircle;
+    refs.addSketchCircleModeRef.current = values.onAddSketchCircleMode;
     refs.addSketchArcRef.current = values.onAddSketchArc;
     refs.addSketchAngleDimensionRef.current =
       values.onAddSketchAngleDimension;

@@ -354,6 +354,18 @@ export const commandPayloadSchemas = {
       center_y: numberField,
       radius: numberField,
       is_construction: booleanField,
+      mode: stringField.optional(),
+      p1_x: numberField.optional(),
+      p1_y: numberField.optional(),
+      p2_x: numberField.optional(),
+      p2_y: numberField.optional(),
+      p3_x: numberField.optional(),
+      p3_y: numberField.optional(),
+      line_a_id: stringField.optional(),
+      line_b_id: stringField.optional(),
+      line_c_id: stringField.optional(),
+      hint_x: numberField.optional(),
+      hint_y: numberField.optional(),
     })
     .strict(),
   add_sketch_arc: z

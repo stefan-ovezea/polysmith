@@ -92,3 +92,60 @@ void enforce_tangent_line_circle_relations(
         parameters, line_it->end_vertex_id, tx, ty);
   }
 }
+
+
+// Circle-tangent relations (created by the circle tool's tangent
+// modes): the CIRCLE is the slave — its center stays where the user
+// placed it and the radius re-derives as the distance from the
+// center to each defining line on every refresh. With several lines
+// the radius takes the minimum distance so the circle stays inside
+// the wedge even after the lines move (exact dual tangency after
+// arbitrary edits would require solving the center onto the new
+// bisector — deferred).
+void enforce_tangent_circle_line_relations(
+    SketchFeatureParameters& parameters) {
+  // One pass: collect the minimum distance per circle across all of
+  // its relations (a straight min-loop would never grow the radius
+  // back when the closer line moves away).
+  std::map<std::string, double> min_distance;
+  for (const auto& relation : parameters.line_relations) {
+    if (relation.kind != "tangent_circle_line") {
+      continue;
+    }
+    const auto circle_it = std::find_if(
+        parameters.circles.begin(), parameters.circles.end(),
+        [&](const SketchCircle& c) { return c.id == relation.first_line_id; });
+    if (circle_it == parameters.circles.end()) {
+      continue;
+    }
+    const auto line_it = std::find_if(
+        parameters.lines.begin(), parameters.lines.end(),
+        [&](const SketchLine& l) { return l.id == relation.second_line_id; });
+    if (line_it == parameters.lines.end()) {
+      continue;
+    }
+    const double abx = line_it->end_x - line_it->start_x;
+    const double aby = line_it->end_y - line_it->start_y;
+    const double length = std::hypot(abx, aby);
+    if (length <= kMinimumSketchDimensionValue) {
+      continue;
+    }
+    // Distance from the circle center to the line's support.
+    const double cross = std::abs(
+        abx * (circle_it->center_y - line_it->start_y) -
+        aby * (circle_it->center_x - line_it->start_x));
+    const double distance = cross / length;
+    const auto [it, inserted] =
+        min_distance.emplace(circle_it->id, distance);
+    if (!inserted) {
+      it->second = std::min(it->second, distance);
+    }
+  }
+  for (auto& circle : parameters.circles) {
+    const auto it = min_distance.find(circle.id);
+    if (it == min_distance.end() || it->second <= kMinimumSketchDimensionValue) {
+      continue;
+    }
+    circle.radius = it->second;
+  }
+}

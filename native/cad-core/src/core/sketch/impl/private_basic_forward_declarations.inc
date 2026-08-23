@@ -26,6 +26,7 @@ void enforce_parallel_relations(SketchFeatureParameters& parameters,
 // start, the circle center, or the radius all keep the relation
 // satisfied without explicit re-driving.
 void enforce_tangent_line_circle_relations(SketchFeatureParameters& parameters);
+void enforce_tangent_circle_line_relations(SketchFeatureParameters& parameters);
 // Deterministic (solver-free) enforcement of driving arc_radius /
 // arc_angle dimensions — see dimension_update.inc.  Runs after the
 // solver and the line→arc endpoint rescue so dragged endpoints first

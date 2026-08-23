@@ -114,6 +114,19 @@ export interface ViewportPanelProps {
     radius: number,
     isConstruction: boolean,
   ) => Promise<void>;
+  onAddSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
   onAddSketchArc: (
     startX: number,
     startY: number,

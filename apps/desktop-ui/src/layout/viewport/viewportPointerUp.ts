@@ -121,6 +121,8 @@ interface ViewportPointerUpParams {
   onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
   extendSketchEntity: ActiveSketchPointerUpContext["extendSketchEntity"];
   offsetSketchEntity: ActiveSketchPointerUpContext["offsetSketchEntity"];
+  circleTangentLineIdsRef: ActiveSketchPointerUpContext["circleTangentLineIdsRef"];
+  addSketchCircleMode: ActiveSketchPointerUpContext["addSketchCircleMode"];
   sketchTextPathPicking: ActiveSketchPointerUpContext["sketchTextPathPicking"];
   pickSketchTextPath: ActiveSketchPointerUpContext["pickSketchTextPath"];
   pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
@@ -395,6 +397,11 @@ function handleActiveSketchToolPointerUp(
     onPickSketchChamfer: params.onPickSketchChamfer,
     extendSketchEntity: params.extendSketchEntity,
     offsetSketchEntity: params.offsetSketchEntity,
+    circleToolMode: params.circleToolMode,
+    circleTangentLineIdsRef: params.circleTangentLineIdsRef,
+    isConstruction: params.isConstruction,
+    setSketchSnapLabel: params.setSketchSnapLabel,
+    addSketchCircleMode: params.addSketchCircleMode,
     sketchTextPathPicking: params.sketchTextPathPicking,
     pickSketchTextPath: params.pickSketchTextPath,
     pendingDimensionPlacement: params.pendingDimensionPlacement,
@@ -517,6 +524,7 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
     addSketchArc: params.addSketchArc,
     addSketchRectangle: params.addSketchRectangle,
     addSketchCircle: params.addSketchCircle,
+    addSketchCircleMode: params.addSketchCircleMode,
     addSketchPolygon: params.addSketchPolygon,
     addSketchLine: params.addSketchLine,
     addSketchEllipse: params.addSketchEllipse,

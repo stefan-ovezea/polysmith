@@ -257,6 +257,7 @@ export function ViewportPanel({
   onSetSketchParallelConstraint,
   onAddSketchRectangle,
   onAddSketchCircle,
+  onAddSketchCircleMode,
   onAddSketchArc,
   onAddSketchEllipse,
   onAddSketchSlot,
@@ -591,6 +592,9 @@ export function ViewportPanel({
   const addSketchLineRef = useRef(onAddSketchLine);
   const addSketchRectangleRef = useRef(onAddSketchRectangle);
   const addSketchCircleRef = useRef(onAddSketchCircle);
+  const addSketchCircleModeRef = useRef(onAddSketchCircleMode);
+  // Circle tool tangent modes: defining lines picked so far.
+  const circleTangentLineIdsRef = useRef<string[]>([]);
 
   const addSketchArcRef = useRef(onAddSketchArc);
   const addSketchEllipseRef = useRef(onAddSketchEllipse);
@@ -1769,6 +1773,7 @@ export function ViewportPanel({
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    circleTangentLineIdsRef.current = [];
     ellipseSecondPointRef.current = null;
     clearPreviewLine();
     clearPreviewCircle();
@@ -2060,6 +2065,7 @@ export function ViewportPanel({
       addSketchLineRef,
       addSketchRectangleRef,
       addSketchCircleRef,
+      addSketchCircleModeRef,
       addSketchArcRef,
       addSketchEllipseRef,
       addSketchSlotRef,
@@ -2128,6 +2134,7 @@ export function ViewportPanel({
       onAddSketchLine,
       onAddSketchRectangle,
       onAddSketchCircle,
+      onAddSketchCircleMode,
       onAddSketchArc,
       onAddSketchEllipse,
       onAddSketchSlot,
@@ -2756,6 +2763,7 @@ export function ViewportPanel({
         },
         dimensionLabelDragRef,
         activeSketchToolRef,
+        circleToolMode: circleToolModeRef.current,
         activeSketchPlaneIdRef,
         activeSketchPlaneFrameRef,
         armedSketchConstraintRef,
@@ -3278,6 +3286,7 @@ export function ViewportPanel({
         addMessage,
         addSketchFillet: addSketchFilletRef.current,
         addSketchChamfer: addSketchChamferRef.current,
+        circleTangentLineIdsRef,
         addSketchTextAt: addSketchTextRef.current,
         onPickSketchText: pickSketchTextRef.current,
         onPickSketchSlot: pickSketchSlotRef.current,
@@ -3359,6 +3368,7 @@ export function ViewportPanel({
 	        addSketchArc: addSketchArcRef.current,
 	        addSketchRectangle: addSketchRectangleRef.current,
 	        addSketchCircle: addSketchCircleRef.current,
+        addSketchCircleMode: addSketchCircleModeRef.current,
 	        addSketchPolygon: addSketchPolygonRef.current,
 	        addSketchLine: addSketchLineRef.current,
 	        addSketchEllipse: addSketchEllipseRef.current,
@@ -3464,6 +3474,8 @@ export function ViewportPanel({
         arcSecondPointRef.current = null;
         rectSecondPointRef.current = null;
         circleSecondPointRef.current = null;
+        circleTangentLineIdsRef.current = [];
+    circleTangentLineIdsRef.current = [];
         ellipseSecondPointRef.current = null;
         clearPreviewLine();
         clearPreviewCircle();
@@ -3805,6 +3817,7 @@ export function ViewportPanel({
     arcSecondPointRef.current = null;
     rectSecondPointRef.current = null;
     circleSecondPointRef.current = null;
+    circleTangentLineIdsRef.current = [];
     ellipseSecondPointRef.current = null;
     clearDragPreviewLines();
     clearPreviewLine();

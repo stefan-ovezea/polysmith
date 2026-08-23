@@ -101,11 +101,12 @@ in-app.
 - **Remaining:** nothing for SK3 — committed. Next: SK4 (extend,
   offset, transform family, arrays).
 
-**SK4 (editing) — committed** (`<hash>`): extend, offset, transform
+**SK4 (editing) — committed** (`3334e97`): extend, offset, transform
 family, arrays — core + tests + UI (extend/offset tools, offset live
-fan-out session, Transform/Array panel with session Cancel). All 25
-suites + tsc green; user-verified in-app. Next: SK5 (circle modes). Core implemented, tests written,
-build/verification in flight:
+fan-out session, Transform/Array panel with session-scoped Cancel).
+All 25 suites + tsc green; user-verified in-app.
+
+### SK4 detail (for reference)
 
 - **Extend** (`extend_sketch_entity`): line (infinite support) and arc
   (full circle) extension from the nearest end to the nearest
@@ -159,9 +160,36 @@ build/verification in flight:
   typing (focused-input guard in useDebouncedNumericPreview), double
   command send + post-hoc snapshot (handler rewrite), debounce gap
   between typing and clicking (blur flush + session ref).
-- **Remaining:** nothing for SK4. Next: SK5 (circle tool mode
-  completion — 2-point/3-point/tangent modes with core-side mode
-  resolution + tangent relations).
+**SK5 (circle modes) — in progress.** Core done + green:
+
+- `add_sketch_circle` gains a `mode` field with wrapper-side
+  resolution (the arc wrapper pattern): two_point (diameter
+  midpoint), three_point (circumcircle), tangent_two_lines (center on
+  the corner's angle bisector — the hint point selects the wedge via
+  the u1±u2 bisectors and its projection sets the size),
+  tangent_three_lines (triangle incenter via side-length-weighted
+  vertices). All resolve to (center, radius) in the doc wrapper —
+  single source of truth.
+- Circle-slave tangent relations: new line_relation kind
+  "tangent_circle_line" (first=circle, second=line) +
+  `enforce_tangent_circle_line_relations` in the refresh pipeline:
+  the radius re-derives as the min distance from the fixed center to
+  the defining lines (center-solve onto the new bisector deferred).
+- IPC handler reads optional mode fields; AI/TS schemas pending.
+- New suite `cad_core_circle_modes_test` (6 cases: two/three-point
+  exact circles, tangent-two both wedge sides, radius re-derives
+  after a line move, incenter of a 3-4-5 triangle, complete
+  profiles_match of the tangent-circle region — kind "polygon" with
+  the circle id in the boundary list + has_source_circle_id).
+- UI wired: two/three-point drafts send raw points via the mode-aware
+  addSketchCircleMode path; tangent modes pick 2-3 lines (entity/point/
+  proximity resolution) then place via a hint click; the draft rubber
+  band is SUPPRESSED in tangent modes (pointer-down gate + preview
+  gate) and the pick feedback uses the floating snap label (the log
+  messages were invisible to the user). (two_point/three_point drafts already
+  compute geometry in the UI — send mode+points instead of
+  center/radius; tangent modes need a line-pick + placement click
+  flow), runtime verification, commit.
 
 ### SK4 follow-up (user-reported, deferred)
 
