@@ -208,6 +208,45 @@ export const SketchChamferIcon = () => (
   </svg>
 );
 
+// Sketch Extend tool glyph: a segment with an arrow continuing past
+// its endpoint — reads as "stretch to the next entity".
+export const ExtendIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 17h8" />
+    <path d="M12 17 17 12" />
+    <path d="M12 17v0" />
+  </svg>
+);
+
+// Sketch Offset tool glyph: two parallel lines with an arrow between
+// them — reads as "copy at a distance".
+export const OffsetIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 8h16" />
+    <path d="M4 14h16" />
+    <path d="M6 9v4" />
+    <path d="M9.5 9l2.5 2 2.5-2" />
+  </svg>
+);
+
 const TrimIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -382,6 +421,10 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <FilletIcon />;
     case "chamfer":
       return <SketchChamferIcon />;
+    case "extend":
+      return <ExtendIcon />;
+    case "offset":
+      return <OffsetIcon />;
     case "ellipse":
       return <EllipseIcon />;
     case "slot":

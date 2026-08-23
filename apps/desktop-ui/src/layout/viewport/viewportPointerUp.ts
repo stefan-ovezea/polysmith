@@ -119,6 +119,8 @@ interface ViewportPointerUpParams {
   onPickSketchText: ActiveSketchPointerUpContext["onPickSketchText"];
   onPickSketchSlot: ActiveSketchPointerUpContext["onPickSketchSlot"];
   onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
+  extendSketchEntity: ActiveSketchPointerUpContext["extendSketchEntity"];
+  offsetSketchEntity: ActiveSketchPointerUpContext["offsetSketchEntity"];
   sketchTextPathPicking: ActiveSketchPointerUpContext["sketchTextPathPicking"];
   pickSketchTextPath: ActiveSketchPointerUpContext["pickSketchTextPath"];
   pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
@@ -391,6 +393,8 @@ function handleActiveSketchToolPointerUp(
     onPickSketchText: params.onPickSketchText,
     onPickSketchSlot: params.onPickSketchSlot,
     onPickSketchChamfer: params.onPickSketchChamfer,
+    extendSketchEntity: params.extendSketchEntity,
+    offsetSketchEntity: params.offsetSketchEntity,
     sketchTextPathPicking: params.sketchTextPathPicking,
     pickSketchTextPath: params.pickSketchTextPath,
     pendingDimensionPlacement: params.pendingDimensionPlacement,

@@ -90,6 +90,9 @@ void CadCoreApp::handle_command_line(const std::string& line) {
 #include "app/impl/solid_feature_commands.inc"
 #include "app/impl/sketch_create_project_commands.inc"
 #include "app/impl/parameter_filter_trim_commands.inc"
+#include "app/impl/sketch_extend_command_handlers.inc"
+#include "app/impl/sketch_offset_command_handlers.inc"
+#include "app/impl/sketch_array_command_handlers.inc"
 #include "app/impl/trim_preview_commands.inc"
 #include "app/impl/cam_commands.inc"
 }

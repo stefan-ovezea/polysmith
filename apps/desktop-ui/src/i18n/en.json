@@ -27,6 +27,7 @@
     "hide": "Hide",
     "move": "Move",
     "moveCopy": "Move/Copy",
+    "transformArray": "Transform / Array",
     "needsAttention": "Needs attention",
     "none": "None",
     "ok": "OK",
@@ -365,6 +366,8 @@
     "text": "Text",
     "chamfer": "Chamfer",
     "ellipse": "Ellipse",
+    "extend": "Extend",
+    "offset": "Offset",
     "slot": "Slot",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
@@ -645,6 +648,21 @@
       "title": "Sketch Chamfer",
       "distanceA": "Distance A (mm)",
       "distanceB": "Distance B (mm)"
+    },
+    "sketchTransform": {
+      "title": "Transform / Array",
+      "scale": "Scale",
+      "center": "Center",
+      "copy": "Copy",
+      "applyTransform": "Apply Transform",
+      "count": "Count",
+      "linearArray": "Linear Array",
+      "circularArray": "Circular Array"
+    },
+    "sketchOffset": {
+      "addAnother": "{{count}} offset{{plural}} · click an entity to add another",
+      "clickEntity": "Click a line, circle, or arc to offset it",
+      "title": "Sketch Offset"
     },
     "sketchSlot": {
       "title": "Slot",

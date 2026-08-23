@@ -37,6 +37,7 @@ export function createViewportContextMenuActions({
   selectSketchEntityRef,
   pickSketchPointRef,
   setSketchToolRef,
+  openTransformArrayRef,
 }: {
   contextMenu: ViewportContextMenuState | null;
   document: DocumentState | null;
@@ -94,6 +95,7 @@ export function createViewportContextMenuActions({
     ) => Promise<void>
   >;
   setSketchToolRef: MutableRef<(tool: SketchTool) => Promise<void>>;
+  openTransformArrayRef: MutableRef<(() => void) | undefined>;
 }) {
   async function createSketch() {
     if (contextMenu?.referenceId) {
@@ -337,6 +339,11 @@ export function createViewportContextMenuActions({
     );
   }
 
+  function transformArray() {
+    setContextMenu(null);
+    openTransformArrayRef.current?.();
+  }
+
   return {
     createSketch,
     moveBody,
@@ -345,6 +352,7 @@ export function createViewportContextMenuActions({
     unlinkBodyCopy,
     deleteSketchSelection,
     moveCopy,
+    transformArray,
     deleteDimension,
     deleteConstraint,
     toggleDriven,

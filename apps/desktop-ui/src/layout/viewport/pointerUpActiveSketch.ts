@@ -64,6 +64,12 @@ export interface ActiveSketchPointerUpContext {
   // Select-mode chamfer pick: the hit is a chamfer's generated line;
   // App opens the Chamfer panel bound to that chamfer.
   onPickSketchChamfer?: (chamferId: string) => void;
+  // Extend tool: extend the hit entity from the end nearest the
+  // click. Core rejects generated/construction entities.
+  extendSketchEntity: (entityId: string, clickX: number, clickY: number) => Promise<void>;
+  // Offset tool: create a copy of the hit entity at the session's
+  // current distance (lives in the App-side offset session).
+  offsetSketchEntity: (entityId: string) => Promise<void>;
   // Text-on-path picking: while armed, an entity click binds the
   // clicked sketch line/arc as the active text's path instead of
   // placing a new text.
@@ -389,6 +395,29 @@ export function handleActiveSketchPointerUpTool(
       localPoint: chamferPoint.local,
       addSketchChamfer: context.addSketchChamfer,
     });
+    return true;
+  }
+
+  // Extend tool: click a line/arc near the end to stretch it to the
+  // nearest intersection. The core picks the end from the click
+  // position and rejects unsupported entities with a log entry.
+  if (context.activeSketchTool === "extend") {
+    if (context.hit?.kind === "sketch_entity" && context.cursorLocal) {
+      void context.extendSketchEntity(
+        context.hit.id,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+      );
+    }
+    return true;
+  }
+
+  // Offset tool: click an entity to create a copy at the session's
+  // current distance (the panel sets it; default 2 mm).
+  if (context.activeSketchTool === "offset") {
+    if (context.hit?.kind === "sketch_entity") {
+      void context.offsetSketchEntity(context.hit.id);
+    }
     return true;
   }
 

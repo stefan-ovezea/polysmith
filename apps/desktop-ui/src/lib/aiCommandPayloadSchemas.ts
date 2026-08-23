@@ -447,6 +447,8 @@ export const commandPayloadSchemas = {
         "arc",
         "fillet",
         "chamfer",
+        "extend",
+        "offset",
         "ellipse",
         "slot",
         "trim",
@@ -556,6 +558,48 @@ export const commandPayloadSchemas = {
       entity_id: stringField,
       click_x: numberField,
       click_y: numberField,
+    })
+    .strict(),
+  extend_sketch_entity: z
+    .object({
+      entity_id: stringField,
+      click_x: numberField,
+      click_y: numberField,
+    })
+    .strict(),
+  offset_sketch_entity: z
+    .object({
+      entity_id: stringField,
+      distance: numberField,
+    })
+    .strict(),
+  transform_sketch_entities: z
+    .object({
+      entity_ids: stringArray,
+      dx: numberField,
+      dy: numberField,
+      center_x: numberField,
+      center_y: numberField,
+      angle_deg: numberField,
+      scale: numberField,
+      copy: booleanField,
+    })
+    .strict(),
+  create_linear_array: z
+    .object({
+      entity_ids: stringArray,
+      dx: numberField,
+      dy: numberField,
+      count: z.number().int().min(2),
+    })
+    .strict(),
+  create_circular_array: z
+    .object({
+      entity_ids: stringArray,
+      center_x: numberField,
+      center_y: numberField,
+      count: z.number().int().min(2),
+      total_angle_deg: numberField,
     })
     .strict(),
   trim_preview: z

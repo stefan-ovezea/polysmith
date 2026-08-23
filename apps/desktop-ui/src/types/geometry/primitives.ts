@@ -12,6 +12,8 @@ export type Shape2D =
   | "arc"
   | "fillet"
   | "chamfer"
+  | "extend"
+  | "offset"
   | "ellipse"
   | "slot"
   | "trim";

@@ -181,6 +181,12 @@ export interface ViewportPanelProps {
   onPickSketchText: (textId: string) => void;
   onPickSketchSlot: (slotId: string) => void;
   onPickSketchChamfer: (chamferId: string) => void;
+  onExtendSketchEntity: (
+    entityId: string,
+    clickX: number,
+    clickY: number,
+  ) => Promise<void>;
+  onOffsetSketchEntity: (entityId: string) => Promise<void>;
   // Text-on-path picking: while armed, entity clicks bind the text
   // path instead of placing a new text.
   sketchTextPathPicking: boolean;
@@ -242,6 +248,7 @@ export interface ViewportPanelProps {
     displayAs: string,
   ) => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
+  onOpenTransformArray: () => void;
   onUpdateSketchPoint: (
     pointId: string,
     x: number,

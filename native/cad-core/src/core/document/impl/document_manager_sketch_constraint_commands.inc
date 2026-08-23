@@ -9,6 +9,25 @@
   // Rigidly move sketch entities (translate + optional rotation around
   // a center).  Pushes exactly ONE undo step; selection is preserved so
   // the user can repeat the move on the same entities.
+  DocumentState transform_sketch_entities(
+      const std::vector<std::string>& entity_ids,
+      double dx,
+      double dy,
+      double center_x,
+      double center_y,
+      double angle_deg,
+      double scale,
+      bool copy);
+  DocumentState create_linear_array(const std::vector<std::string>& entity_ids,
+                                    double dx,
+                                    double dy,
+                                    int count);
+  DocumentState create_circular_array(
+      const std::vector<std::string>& entity_ids,
+      double center_x,
+      double center_y,
+      int count,
+      double total_angle_deg);
   DocumentState move_sketch_entities(const std::vector<std::string>& entity_ids,
                                      double dx,
                                      double dy,

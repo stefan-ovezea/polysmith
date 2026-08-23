@@ -374,6 +374,98 @@ target_link_libraries(cad_core_sketch_chamfer_test PRIVATE
   dxfrw
 )
 
+# Sketch extend regression suite — line/arc extension both directions,
+# closed-loop profile after extend, generated-entity rejection,
+# constraint preservation, arc angle dim flips to driven.
+add_executable(cad_core_extend_test
+  ${CAD_CORE_SOURCES}
+  tests/extend_test.cpp
+)
+
+target_include_directories(cad_core_extend_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_extend_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Sketch offset regression suite — line/circle/arc offsets on both
+# distance signs, sweep preservation, collapse/invert rejection,
+# construction/generated/unsupported rejection.
+add_executable(cad_core_offset_test
+  ${CAD_CORE_SOURCES}
+  tests/offset_test.cpp
+)
+
+target_include_directories(cad_core_offset_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_offset_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Sketch transform regression suite — in-place scale (H/V preserved,
+# radii scaled, dims flipped/re-measured), exploded copies (fresh
+# ids, vertex topology preserved among copies, H/V stripped on
+# rotated copies), single-undo, two-profile copy.
+add_executable(cad_core_transform_test
+  ${CAD_CORE_SOURCES}
+  tests/transform_test.cpp
+)
+
+target_include_directories(cad_core_transform_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_transform_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Sketch array regression suite — linear/circular exploded copies,
+# unique ids, on-circle placement (1e-6), single-undo removal.
+add_executable(cad_core_array_test
+  ${CAD_CORE_SOURCES}
+  tests/array_test.cpp
+)
+
+target_include_directories(cad_core_array_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_array_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.
 add_executable(cad_core_constraint_completion_test

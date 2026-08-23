@@ -375,6 +375,74 @@ export interface TrimSketchEntityCommand {
   };
 }
 
+// Extend tool: extends a sketch line (infinite support) or arc (full
+// circle) from the end nearest the click to the nearest intersection
+// with another non-construction entity.
+export interface ExtendSketchEntityCommand {
+  id: string;
+  type: "extend_sketch_entity";
+  payload: {
+    entity_id: string;
+    click_x: number;
+    click_y: number;
+  };
+}
+
+// Offset tool: creates a new entity (parallel line / concentric
+// circle / same-sweep arc) at a signed distance from the source.
+export interface OffsetSketchEntityCommand {
+  id: string;
+  type: "offset_sketch_entity";
+  payload: {
+    entity_id: string;
+    distance: number;
+  };
+}
+
+// Transform tool: translate/rotate/scale a set of sketch entities
+// around a center. `copy=true` creates exploded copies with fresh
+// ids and leaves the originals; uniform scale only. The plain move
+// command remains the scale-1 copy-false wrapper.
+// Array tools: exploded copies (direct commit in v1 — the pending
+// preview workflow is deferred; undo is the adjust path).
+export interface CreateLinearArrayCommand {
+  id: string;
+  type: "create_linear_array";
+  payload: {
+    entity_ids: string[];
+    dx: number;
+    dy: number;
+    count: number;
+  };
+}
+
+export interface CreateCircularArrayCommand {
+  id: string;
+  type: "create_circular_array";
+  payload: {
+    entity_ids: string[];
+    center_x: number;
+    center_y: number;
+    count: number;
+    total_angle_deg: number;
+  };
+}
+
+export interface TransformSketchEntitiesCommand {
+  id: string;
+  type: "transform_sketch_entities";
+  payload: {
+    entity_ids: string[];
+    dx: number;
+    dy: number;
+    center_x: number;
+    center_y: number;
+    angle_deg: number;
+    scale: number;
+    copy: boolean;
+  };
+}
+
 export interface TrimPreviewCommand {
   id: string;
   type: "trim_preview";

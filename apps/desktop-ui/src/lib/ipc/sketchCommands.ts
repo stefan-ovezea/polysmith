@@ -950,6 +950,100 @@ export function makeUpdateSketchDimensionDisplayCommand(
 }
 
 
+export function makeExtendSketchEntityCommand(
+  entityId: string,
+  clickX: number,
+  clickY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "extend_sketch_entity",
+    payload: {
+      entity_id: entityId,
+      click_x: clickX,
+      click_y: clickY,
+    },
+  };
+}
+
+export function makeOffsetSketchEntityCommand(
+  entityId: string,
+  distance: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "offset_sketch_entity",
+    payload: {
+      entity_id: entityId,
+      distance,
+    },
+  };
+}
+
+export function makeCreateLinearArrayCommand(
+  entityIds: string[],
+  dx: number,
+  dy: number,
+  count: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_linear_array",
+    payload: {
+      entity_ids: entityIds,
+      dx,
+      dy,
+      count,
+    },
+  };
+}
+
+export function makeCreateCircularArrayCommand(
+  entityIds: string[],
+  centerX: number,
+  centerY: number,
+  count: number,
+  totalAngleDeg: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_circular_array",
+    payload: {
+      entity_ids: entityIds,
+      center_x: centerX,
+      center_y: centerY,
+      count,
+      total_angle_deg: totalAngleDeg,
+    },
+  };
+}
+
+export function makeTransformSketchEntitiesCommand(
+  entityIds: string[],
+  dx: number,
+  dy: number,
+  centerX: number,
+  centerY: number,
+  angleDeg: number,
+  scale: number,
+  copy: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "transform_sketch_entities",
+    payload: {
+      entity_ids: entityIds,
+      dx,
+      dy,
+      center_x: centerX,
+      center_y: centerY,
+      angle_deg: angleDeg,
+      scale,
+      copy,
+    },
+  };
+}
+
 export function makeTrimSketchEntityCommand(
   entityId: string,
   clickX: number,

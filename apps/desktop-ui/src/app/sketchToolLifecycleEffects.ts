@@ -32,6 +32,20 @@ export type SketchSlotAction = {
   params: import("../types").SketchSlotEntry;
 };
 
+// Sketch Offset tool session. Pending = tool armed, no offsets yet
+// (each entity click creates a copy at the session distance); active
+// = one or more offset pairs recorded. Changing the distance
+// re-creates every pair at the new value (offsets are non-parametric
+// copies, so a change = delete + re-offset each source). Cancel
+// deletes every copy; Confirm just closes.
+export interface SketchOffsetPair {
+  sourceEntityId: string;
+  offsetEntityId: string;
+}
+export type SketchOffsetAction =
+  | { phase: "pending"; distance: number }
+  | { phase: "active"; distance: number; offsets: SketchOffsetPair[] };
+
 // Sketch Text tool session. Pending = panel is open but no text
 // exists yet ("click to place"); active = panel is bound to a text
 // entry (freshly created or picked from the sketch in Select mode).
@@ -54,6 +68,7 @@ interface SketchToolLifecycleEffectsContext {
   sketchFilletIdsRef: MutableRefObject<string[]>;
   sketchChamferAction: SketchChamferAction | null;
   sketchChamferIdsRef: MutableRefObject<string[]>;
+  sketchOffsetAction: SketchOffsetAction | null;
   sketchTextAction: SketchTextAction | null;
   setTimelineEditVisibleFeatureIds: Dispatch<SetStateAction<Set<string>>>;
   setArmedSketchConstraint: Dispatch<SetStateAction<ArmedSketchConstraint>>;
@@ -66,6 +81,7 @@ interface SketchToolLifecycleEffectsContext {
   setSketchChamferAction: Dispatch<
     SetStateAction<SketchChamferAction | null>
   >;
+  setSketchOffsetAction: Dispatch<SetStateAction<SketchOffsetAction | null>>;
   setSketchTextAction: Dispatch<SetStateAction<SketchTextAction | null>>;
 }
 
@@ -76,12 +92,14 @@ export function useSketchToolLifecycleEffects({
   sketchFilletIdsRef,
   sketchChamferAction,
   sketchChamferIdsRef,
+  sketchOffsetAction,
   sketchTextAction,
   setTimelineEditVisibleFeatureIds,
   setArmedSketchConstraint,
   setMirrorFocusedSlot,
   setSketchFilletAction,
   setSketchChamferAction,
+  setSketchOffsetAction,
   setSketchTextAction,
 }: SketchToolLifecycleEffectsContext) {
   useEffect(() => {
@@ -93,6 +111,7 @@ export function useSketchToolLifecycleEffects({
       setMirrorFocusedSlot(null);
       setSketchFilletAction(null);
       setSketchChamferAction(null);
+      setSketchOffsetAction(null);
       setSketchTextAction(null);
       sketchFilletIdsRef.current = [];
       sketchChamferIdsRef.current = [];
@@ -130,6 +149,20 @@ export function useSketchToolLifecycleEffects({
       sketchChamferIdsRef.current = [];
     }
   }, [activeSketchTool, activeSketchPlaneId, sketchChamferAction]);
+
+  useEffect(() => {
+    if (
+      activeSketchTool === "offset" &&
+      activeSketchPlaneId &&
+      !sketchOffsetAction
+    ) {
+      setSketchOffsetAction({ phase: "pending", distance: 2 });
+      return;
+    }
+    if (activeSketchTool !== "offset" && sketchOffsetAction) {
+      setSketchOffsetAction(null);
+    }
+  }, [activeSketchTool, activeSketchPlaneId, sketchOffsetAction]);
 
   useEffect(() => {
     if (

@@ -31,6 +31,24 @@ void trim_sketch_entity(FeatureEntry& feature,
                         double click_x,
                         double click_y);
 
+// Extend tool. Extends the entity (line or arc) from the end nearest
+// the click to the nearest intersection with another
+// non-construction entity. Throws when there is no intersection in
+// the extension direction. Refresh is NOT called here — the caller
+// (document layer) handles that.
+void extend_sketch_entity(FeatureEntry& feature,
+                          const std::string& entity_id,
+                          double click_x,
+                          double click_y);
+
+// Offset tool. Creates a NEW entity at the signed distance from the
+// source (line -> parallel line, circle -> concentric circle with
+// radius + distance, arc -> same sweep at radius + distance).
+// Throws when the offset would collapse/invert a circle or arc.
+void offset_sketch_entity(FeatureEntry& feature,
+                          const std::string& entity_id,
+                          double distance);
+
 // ---------------------------------------------------------------
 void start_mirror_preview(FeatureEntry& feature);
 void update_mirror_preview_axis(FeatureEntry& feature,

@@ -181,15 +181,18 @@ void update_sketch_vertex(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
-void move_sketch_entities(FeatureEntry& feature,
-                          const std::vector<std::string>& entity_ids,
-                          double dx,
-                          double dy,
-                          double center_x,
-                          double center_y,
-                          double angle_deg) {
+void transform_sketch_entities(FeatureEntry& feature,
+                               const std::vector<std::string>& entity_ids,
+                               double dx,
+                               double dy,
+                               double center_x,
+                               double center_y,
+                               double angle_deg,
+                               double scale,
+                               bool copy) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
-    throw std::runtime_error("Only sketch features can move sketch entities");
+    throw std::runtime_error(
+        "Only sketch features can transform sketch entities");
   }
 
   auto& parameters = feature.sketch_parameters.value();
@@ -203,6 +206,10 @@ void move_sketch_entities(FeatureEntry& feature,
 
   constexpr double kPi = 3.14159265358979323846;
   const bool rotating = std::abs(angle_deg) > 1.0e-6;
+  const bool scaling = std::abs(scale - 1.0) > 1.0e-9;
+  if (scale <= kMinimumSketchDimensionValue) {
+    throw std::runtime_error("Sketch transform: scale must be positive");
+  }
   const double angle_rad = angle_deg * (kPi / 180.0);
   const double cos_a = std::cos(angle_rad);
   const double sin_a = std::sin(angle_rad);
@@ -210,9 +217,137 @@ void move_sketch_entities(FeatureEntry& feature,
   const auto transform_point = [&](double x, double y) {
     const double rel_x = x - center_x;
     const double rel_y = y - center_y;
-    return std::make_pair(rel_x * cos_a - rel_y * sin_a + center_x + dx,
-                          rel_x * sin_a + rel_y * cos_a + center_y + dy);
+    return std::make_pair(
+        (rel_x * cos_a - rel_y * sin_a) * scale + center_x + dx,
+        (rel_x * sin_a + rel_y * cos_a) * scale + center_y + dy);
   };
+
+  // ── Copy mode: exploded copies with fresh ids ─────────────────
+  // Pushed directly as raw records (not via add_sketch_*) so the
+  // copies never adopt coincident vertex ids — a scale-1 copy lands
+  // exactly on the originals and must stay independent. No auto
+  // dimensions; H/V constraints are inferred only when the copy is
+  // not rotated (mirrors the plan's "rotate+copy strips H/V").
+  if (copy) {
+    std::vector<std::string> line_ids, circle_ids, arc_ids, ellipse_ids,
+        slot_ids;
+    line_ids.reserve(parameters.lines.size());
+    for (const auto& line : parameters.lines) line_ids.push_back(line.id);
+    for (const auto& circle : parameters.circles) circle_ids.push_back(circle.id);
+    for (const auto& arc : parameters.arcs) arc_ids.push_back(arc.id);
+    for (const auto& ellipse : parameters.ellipses)
+      ellipse_ids.push_back(ellipse.id);
+    for (const auto& slot : parameters.slots) slot_ids.push_back(slot.id);
+    int next_line = next_trim_entity_index(line_ids);
+    int next_circle = next_trim_entity_index(circle_ids);
+    int next_arc = next_trim_entity_index(arc_ids);
+    int next_ellipse = next_trim_entity_index(ellipse_ids);
+    int next_slot = next_trim_entity_index(slot_ids);
+
+    // Copies share vertices with EACH OTHER when the source entities
+    // shared them (a copied rectangle keeps unified corners), but
+    // never with the originals — a scale-1 copy lands exactly on the
+    // source geometry and must stay independent.
+    std::map<std::string, std::string> copied_vertex_ids;
+    const auto copy_vertex = [&](const std::string& source_vertex_id) {
+      auto& mapped = copied_vertex_ids[source_vertex_id];
+      if (mapped.empty()) {
+        mapped = "vertex-" + std::to_string(parameters.next_vertex_index++);
+      }
+      return mapped;
+    };
+
+    for (const auto& entity_id : entity_ids) {
+      for (const auto& line : parameters.lines) {
+        if (line.id != entity_id) continue;
+        const auto s = transform_point(line.start_x, line.start_y);
+        const auto e = transform_point(line.end_x, line.end_y);
+        parameters.lines.push_back(SketchLine{
+            .id = "line-" + std::to_string(next_line++),
+            .start_vertex_id = copy_vertex(line.start_vertex_id),
+            .end_vertex_id = copy_vertex(line.end_vertex_id),
+            .start_x = s.first,
+            .start_y = s.second,
+            .end_x = e.first,
+            .end_y = e.second,
+            .constraint = rotating
+                              ? std::nullopt
+                              : infer_constraint_hint(s.first, s.second,
+                                                      e.first, e.second),
+            .is_construction = line.is_construction,
+        });
+      }
+      for (const auto& circle : parameters.circles) {
+        if (circle.id != entity_id) continue;
+        const auto c = transform_point(circle.center_x, circle.center_y);
+        parameters.circles.push_back(SketchCircle{
+            .id = "circle-" + std::to_string(next_circle++),
+            .center_vertex_id = copy_vertex(circle.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .radius = circle.radius * scale,
+            .is_construction = circle.is_construction,
+        });
+      }
+      for (const auto& arc : parameters.arcs) {
+        if (arc.id != entity_id) continue;
+        const auto c = transform_point(arc.center_x, arc.center_y);
+        const auto s = transform_point(arc.start_x, arc.start_y);
+        const auto e = transform_point(arc.end_x, arc.end_y);
+        parameters.arcs.push_back(SketchArc{
+            .id = "arc-" + std::to_string(next_arc++),
+            .start_vertex_id = copy_vertex(arc.start_vertex_id),
+            .end_vertex_id = copy_vertex(arc.end_vertex_id),
+            .center_vertex_id = copy_vertex(arc.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .radius = arc.radius * scale,
+            .start_x = s.first,
+            .start_y = s.second,
+            .end_x = e.first,
+            .end_y = e.second,
+            .ccw = arc.ccw,
+            .is_construction = arc.is_construction,
+        });
+      }
+      for (const auto& ellipse : parameters.ellipses) {
+        if (ellipse.id != entity_id) continue;
+        const auto c = transform_point(ellipse.center_x, ellipse.center_y);
+        parameters.ellipses.push_back(SketchEllipse{
+            .id = "ellipse-" + std::to_string(next_ellipse++),
+            .center_vertex_id = copy_vertex(ellipse.center_vertex_id),
+            .axis_a_vertex_id = copy_vertex(ellipse.axis_a_vertex_id),
+            .axis_b_vertex_id = copy_vertex(ellipse.axis_b_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .a = ellipse.a * scale,
+            .b = ellipse.b * scale,
+            .rotation = ellipse.rotation + angle_rad,
+            .is_construction = ellipse.is_construction,
+        });
+      }
+      for (const auto& slot : parameters.slots) {
+        if (slot.id != entity_id) continue;
+        const auto c = transform_point(slot.center_x, slot.center_y);
+        parameters.slots.push_back(SketchSlot{
+            .id = "slot-" + std::to_string(next_slot++),
+            .center_vertex_id = copy_vertex(slot.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .length = slot.length * scale,
+            .radius = slot.radius * scale,
+            .rotation = slot.rotation + angle_rad,
+            .mode = slot.mode,
+            .is_construction = slot.is_construction,
+        });
+      }
+      // Standalone point ids are not copyable — ignored.
+    }
+
+    sync_all_line_dimensions(parameters);
+    refresh_sketch_derived_state(feature);
+    return;
+  }
 
   // Collect every vertex belonging to the moved entities.  Entity ids
   // that match none of the geometry collections are standalone points:
@@ -399,6 +534,47 @@ void move_sketch_entities(FeatureEntry& feature,
     }
   }
 
+  // Scale the moved entities' size parameters (a similarity transform
+  // keeps the shape, so radii / a / b / slot dimensions scale with
+  // the vertices). Driving radius dimensions on scaled entities no
+  // longer match the geometry — flip them to driven so the solver
+  // enforcement doesn't undo the scale.
+  if (scaling) {
+    for (auto& circle : parameters.circles) {
+      if (moved_vertex_ids.count(circle.center_vertex_id)) {
+        circle.radius *= scale;
+      }
+    }
+    for (auto& arc : parameters.arcs) {
+      if (moved_vertex_ids.count(arc.start_vertex_id) ||
+          moved_vertex_ids.count(arc.end_vertex_id) ||
+          moved_vertex_ids.count(arc.center_vertex_id)) {
+        arc.radius *= scale;
+      }
+    }
+    for (auto& ellipse : parameters.ellipses) {
+      if (moved_vertex_ids.count(ellipse.center_vertex_id)) {
+        ellipse.a *= scale;
+        ellipse.b *= scale;
+      }
+    }
+    for (auto& slot : parameters.slots) {
+      if (moved_vertex_ids.count(slot.center_vertex_id)) {
+        slot.length *= scale;
+        slot.radius *= scale;
+      }
+    }
+    for (auto& dim : parameters.dimensions) {
+      const bool owns_entity =
+          std::find(entity_ids.begin(), entity_ids.end(), dim.entity_id) !=
+          entity_ids.end();
+      if (owns_entity &&
+          (dim.kind == "circle_radius" || dim.kind == "arc_radius")) {
+        dim.driven = true;
+      }
+    }
+  }
+
   sync_all_line_dimensions(parameters);
   for (const auto& line_id : moved_line_ids) {
     enforce_equal_length_relations(parameters, line_id);
@@ -407,4 +583,16 @@ void move_sketch_entities(FeatureEntry& feature,
   }
   sync_all_line_dimensions(parameters);
   refresh_sketch_derived_state(feature);
+}
+
+// Rigid translate/rotate wrapper — the pre-SK4 move IPC surface.
+void move_sketch_entities(FeatureEntry& feature,
+                          const std::vector<std::string>& entity_ids,
+                          double dx,
+                          double dy,
+                          double center_x,
+                          double center_y,
+                          double angle_deg) {
+  transform_sketch_entities(feature, entity_ids, dx, dy, center_x, center_y,
+                            angle_deg, /*scale=*/1.0, /*copy=*/false);
 }

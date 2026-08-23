@@ -17,6 +17,11 @@ import {
   makeAddSketchEllipseCommand,
   makeAddSketchSlotCommand,
   makeUpdateSketchSlotCommand,
+  makeExtendSketchEntityCommand,
+  makeOffsetSketchEntityCommand,
+  makeTransformSketchEntitiesCommand,
+  makeCreateLinearArrayCommand,
+  makeCreateCircularArrayCommand,
   makeAddSketchTextCommand,
   makeUpdateSketchFilletRadiusCommand,
   makeUpdateSketchTextCommand,
@@ -1051,6 +1056,75 @@ export function useCadCore() {
           length,
           radius,
           rotation,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    extendSketchEntity: async (
+      entityId: string,
+      clickX: number,
+      clickY: number,
+    ) => {
+      await sendCoreCommand(
+        makeExtendSketchEntityCommand(entityId, clickX, clickY),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    offsetSketchEntity: async (entityId: string, distance: number) => {
+      await sendCoreCommand(
+        makeOffsetSketchEntityCommand(entityId, distance),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    transformSketchEntities: async (
+      entityIds: string[],
+      dx: number,
+      dy: number,
+      centerX: number,
+      centerY: number,
+      angleDeg: number,
+      scale: number,
+      copy: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeTransformSketchEntitiesCommand(
+          entityIds,
+          dx,
+          dy,
+          centerX,
+          centerY,
+          angleDeg,
+          scale,
+          copy,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createLinearArray: async (
+      entityIds: string[],
+      dx: number,
+      dy: number,
+      count: number,
+    ) => {
+      await sendCoreCommand(
+        makeCreateLinearArrayCommand(entityIds, dx, dy, count),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createCircularArray: async (
+      entityIds: string[],
+      centerX: number,
+      centerY: number,
+      count: number,
+      totalAngleDeg: number,
+    ) => {
+      await sendCoreCommand(
+        makeCreateCircularArrayCommand(
+          entityIds,
+          centerX,
+          centerY,
+          count,
+          totalAngleDeg,
         ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());

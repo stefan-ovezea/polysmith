@@ -15,7 +15,24 @@ constraints; append-focus latent fix; parametric_arc suite (6 cases).
 **SK2 — committed** (`f8dcbbd`): constraint completion (symmetric/collinear/
 midpoint/tangent pairs/anchor-t) + constraint_completion suite (8 cases).
 
-**SK3 (new geometry) — in progress.**
+**SK3 (new geometry) — committed** (`0b9ceaa`): ellipse + slot + chamfer
+(core + tests + UI wiring), the SK2 anchor-mapping revert, the
+point_distance center fix, delete-path fixes, ellipse viewport
+primitive, AI schema fixes. All 21 suites + tsc green; user-verified
+in-app.
+
+### SK3 follow-ups (user-reported, deferred)
+
+- **Slot draft radius is hardwired** (length/4 clamped to [0.5, 2]) —
+  the 2-click draft gives no way to specify the radius while drawing;
+  only the panel can edit it afterward. Consider a 3-click draft or a
+  draft input.
+- **Slot/ellipse drag preview doesn't follow** — dragging the slot
+  center shows only the vertex moving until release (the client-side
+  WASM preview solver doesn't know the new entities; the core lands
+  the geometry correctly on pointer-up).
+
+### SK3 detail (for reference)
 
 - **Ellipse — done, tested.** `SketchEllipse` entity (center + 2 axis
   points, axis points fixed at creation, no solver registration v1);
@@ -81,7 +98,80 @@ midpoint/tangent pairs/anchor-t) + constraint_completion suite (8 cases).
   chain (SketchEllipseScene → buildSketchEllipseObject →
   updateSketchEllipseObject; exactDistanceToCurve gains a closed-form
   ellipse polar-radius branch).
-- **Remaining:** user runtime verification + commit (approval).
+- **Remaining:** nothing for SK3 — committed. Next: SK4 (extend,
+  offset, transform family, arrays).
+
+**SK4 (editing) — committed** (`<hash>`): extend, offset, transform
+family, arrays — core + tests + UI (extend/offset tools, offset live
+fan-out session, Transform/Array panel with session Cancel). All 25
+suites + tsc green; user-verified in-app. Next: SK5 (circle modes). Core implemented, tests written,
+build/verification in flight:
+
+- **Extend** (`extend_sketch_entity`): line (infinite support) and arc
+  (full circle) extension from the nearest end to the nearest
+  intersection. Dedicated extend-intersection math (target unclipped,
+  local wrap/sweep helpers — trim's are TU-local to trim_engine.cpp),
+  opening-bounded arc side filter, trim point-rebind reuse, H/V
+  preserved, arc angle dims flip to driven. `cad_core_extend_test` (7
+  cases incl. profiles_match closed rectangle).
+- **Offset** (`offset_sketch_entity`): signed single-entity offset via
+  the creation constructors (auto dims off, no inferred constraints):
+  line -> parallel (left-normal convention), circle -> concentric
+  radius+d, arc -> same sweep at radius+d. Collapse/invert +
+  construction/generated/ellipse rejection. `cad_core_offset_test`
+  (6 cases, both signs).
+- **Transform** (`transform_sketch_entities`): move_sketch_entities
+  refactored to a rigid wrapper over transform(dx, dy, center, angle,
+  scale, copy). In-place scale keeps H/V, scales circle/arc radii +
+  ellipse a/b + slot dims, flips circle/arc radius dims to driven,
+  line dims re-measure. Copy mode = exploded raw records with fresh
+  ids, a source-vertex->copy-vertex map (copies share corners with
+  each other, never with originals), H/V inferred only when not
+  rotating. `cad_core_transform_test` (6 cases, both scale sides,
+  two-profile copy, single undo).
+- **Arrays** (`create_linear_array` / `create_circular_array`):
+  direct-commit exploded copies through the transform copy path (one
+  undo per array). DEVIATION from plan: the pending_array preview
+  workflow is deferred — undo is the adjust path for v1.
+  `cad_core_array_test` (3 cases: linear 3x, circular 6x on-circle
+  1e-6, unique ids + single undo).
+- **Verified:** build green; ALL 25 suites pass (extend/offset/
+  transform/array new + 21 existing); tsc clean. Debugging notes:
+  the extend test failure was a dangling pointer in the TEST (find_line
+  over a temporary snapshot) — fixed with named snapshots, not a core
+  bug. Trim's angle helpers are TU-local to trim_engine.cpp — the
+  extend file carries local copies (kExtendPi).
+- **UI wired so far:** toolbar entries + icons + i18n for extend and
+  offset; extend = click tool (click near the end to stretch);
+  offset = click tool with an Offset session panel (distance applies
+  to each clicked entity; cancel deletes the session's offsets);
+  hook wrappers + IPC types + AI schemas for all four commands.
+- **UI wired:** extend/offset toolbar tools + icons + i18n; extend =
+  click tool; offset = click tool with a live session panel (distance
+  fan-out: delete + re-create each source->copy pair on every
+  debounced input; Cancel deletes the session's copies; blur-flush +
+  ref-based reads so typed values always reach the click); transform/
+  array = "Transform / Array" context-menu entry on sketch selection
+  (next to Move/Copy) opening SketchTransformPanel (dx/dy/angle/
+  scale/copy/center + linear/circular array with count/total-angle,
+  selection centroid pre-filled).
+- **Offset debug history (user-reported, fixed):** input reset while
+  typing (focused-input guard in useDebouncedNumericPreview), double
+  command send + post-hoc snapshot (handler rewrite), debounce gap
+  between typing and clicking (blur flush + session ref).
+- **Remaining:** nothing for SK4. Next: SK5 (circle tool mode
+  completion — 2-point/3-point/tangent modes with core-side mode
+  resolution + tangent relations).
+
+### SK4 follow-up (user-reported, deferred)
+
+- **Chain/loop offset** — offsetting a rectangle (any connected
+  contour) must offset the whole loop together, Fusion-style.
+  Current v1 is single-entity; the plan already deferred chain
+  offset (corner-join miter/fillet/intersect handling risks the face
+  walk). Also noted: distance fan-out delete+recreate makes each
+  debounced keystroke an undo step — consider batching into one undo
+  step when revisiting.
 
 ### SK2 regression found & fixed (folded into SK3 commit)
 

@@ -76,6 +76,8 @@ const sketchTools: Array<{
   { id: "arc", labelKey: "toolbar.arc", enabled: true },
   { id: "fillet", labelKey: "toolbar.fillet", enabled: true },
   { id: "chamfer", labelKey: "toolbar.chamfer", enabled: true },
+  { id: "extend", labelKey: "toolbar.extend", enabled: true },
+  { id: "offset", labelKey: "toolbar.offset", enabled: true },
   { id: "ellipse", labelKey: "toolbar.ellipse", enabled: true },
   { id: "slot", labelKey: "toolbar.slot", enabled: true },
   { id: "text", labelKey: "toolbar.text", enabled: true },

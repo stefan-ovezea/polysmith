@@ -12,6 +12,29 @@ void update_sketch_vertex(FeatureEntry& feature,
 // center).  Fixed vertices stay; connected geometry ripples like an
 // endpoint drag.  The DocumentManager wrapper pushes the undo state —
 // never push undo inside the core sketch layer.
+void transform_sketch_entities(FeatureEntry& feature,
+                               const std::vector<std::string>& entity_ids,
+                               double dx,
+                               double dy,
+                               double center_x,
+                               double center_y,
+                               double angle_deg,
+                               double scale,
+                               bool copy);
+
+void create_linear_array(FeatureEntry& feature,
+                         const std::vector<std::string>& entity_ids,
+                         double dx,
+                         double dy,
+                         int count);
+
+void create_circular_array(FeatureEntry& feature,
+                           const std::vector<std::string>& entity_ids,
+                           double center_x,
+                           double center_y,
+                           int count,
+                           double total_angle_deg);
+
 void move_sketch_entities(FeatureEntry& feature,
                           const std::vector<std::string>& entity_ids,
                           double dx,

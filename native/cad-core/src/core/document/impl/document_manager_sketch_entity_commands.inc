@@ -86,6 +86,16 @@
   DocumentState trim_sketch_entity(const std::string& entity_id,
                                    double click_x,
                                    double click_y);
+  // Extend a sketch entity (line or arc) from the end nearest the
+  // click to the nearest intersection with another non-construction
+  // entity. Single undoable action via full sketch snapshot.
+  DocumentState extend_sketch_entity(const std::string& entity_id,
+                                     double click_x,
+                                     double click_y);
+  // Offset a sketch entity (line / circle / arc) by a signed
+  // distance, creating a new entity. Single undoable action.
+  DocumentState offset_sketch_entity(const std::string& entity_id,
+                                     double distance);
   // Parametric sketch text. The glyph geometry is derived into sketch
   // lines on every recompute (see SketchText / refresh_sketch_texts);
   // these commands manage the parameter records. `values` carries the

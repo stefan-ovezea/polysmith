@@ -168,6 +168,12 @@ interface ViewportCallbackRefTargets {
   pickSketchTextRef: MutableRefObject<(textId: string) => void>;
   pickSketchSlotRef: MutableRefObject<(slotId: string) => void>;
   pickSketchChamferRef: MutableRefObject<(chamferId: string) => void>;
+  extendSketchEntityRef: MutableRefObject<
+    (entityId: string, clickX: number, clickY: number) => Promise<void>
+  >;
+  offsetSketchEntityRef: MutableRefObject<
+    (entityId: string) => Promise<void>
+  >;
   selectSketchEntityRef: MutableRefObject<
     (entityId: string, additive: boolean) => Promise<void>
   >;
@@ -296,6 +302,9 @@ interface ViewportCallbackRefValues
   onPickSketchText: ViewportCallbackRefTargets["pickSketchTextRef"]["current"];
   onPickSketchSlot: ViewportCallbackRefTargets["pickSketchSlotRef"]["current"];
   onPickSketchChamfer: ViewportCallbackRefTargets["pickSketchChamferRef"]["current"];
+  onExtendSketchEntity: ViewportCallbackRefTargets["extendSketchEntityRef"]["current"];
+  onOffsetSketchEntity: ViewportCallbackRefTargets["offsetSketchEntityRef"]["current"];
+  onOpenTransformArray: () => void;
   onSelectSketchEntity: ViewportCallbackRefTargets["selectSketchEntityRef"]["current"];
   onPickInactiveSketchLine:
     | ViewportCallbackRefTargets["pickInactiveSketchLineRef"]["current"]
@@ -386,6 +395,8 @@ export function useViewportCallbackRefs(
     refs.pickSketchTextRef.current = values.onPickSketchText;
     refs.pickSketchSlotRef.current = values.onPickSketchSlot;
     refs.pickSketchChamferRef.current = values.onPickSketchChamfer;
+    refs.extendSketchEntityRef.current = values.onExtendSketchEntity;
+    refs.offsetSketchEntityRef.current = values.onOffsetSketchEntity;
     refs.selectSketchEntityRef.current = values.onSelectSketchEntity;
     refs.pickInactiveSketchLineRef.current = values.onPickInactiveSketchLine;
     refs.inactiveSketchEntityPickEnabledRef.current =

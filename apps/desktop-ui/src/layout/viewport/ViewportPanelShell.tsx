@@ -62,6 +62,7 @@ interface ViewportContextMenuActions {
   deleteConstraint: () => void | Promise<void>;
   deleteSketchSelection: () => void | Promise<void>;
   moveCopy: () => void | Promise<void>;
+  transformArray: () => void | Promise<void>;
   moveBody: () => void | Promise<void>;
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
@@ -287,6 +288,7 @@ export function ViewportPanelShell({
             onDeleteConstraint={contextMenuActions.deleteConstraint}
             onDeleteSketchSelection={contextMenuActions.deleteSketchSelection}
             onMoveCopy={contextMenuActions.moveCopy}
+            onTransformArray={contextMenuActions.transformArray}
             onMoveBody={contextMenuActions.moveBody}
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}

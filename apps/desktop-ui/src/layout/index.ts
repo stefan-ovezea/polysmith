@@ -19,6 +19,7 @@ export * from "./SettingsModal";
 export * from "./SketchFilletPanel";
 export * from "./SketchChamferPanel";
 export * from "./SketchSlotPanel";
+export * from "./SketchOffsetPanel";
 export * from "./SketchTextPanel";
 export * from "./CamSetupPanel";
 export * from "./FaceMillingPanel";

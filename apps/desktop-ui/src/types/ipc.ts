@@ -50,6 +50,11 @@ import type {
   DeleteSketchDimensionCommand,
   ToggleSketchDimensionDrivenCommand,
   TrimSketchEntityCommand,
+  ExtendSketchEntityCommand,
+  OffsetSketchEntityCommand,
+  TransformSketchEntitiesCommand,
+  CreateLinearArrayCommand,
+  CreateCircularArrayCommand,
   TrimPreviewCommand,
   DeleteSketchSelectionCommand,
   SetSketchToolCommand,
@@ -861,6 +866,11 @@ export type CoreCommand =
   | DeleteSketchDimensionCommand
   | ToggleSketchDimensionDrivenCommand
   | TrimSketchEntityCommand
+  | ExtendSketchEntityCommand
+  | OffsetSketchEntityCommand
+  | TransformSketchEntitiesCommand
+  | CreateLinearArrayCommand
+  | CreateCircularArrayCommand
   | TrimPreviewCommand
   | DeleteSketchSelectionCommand
   | SelectSketchVertexCommand

@@ -87,6 +87,13 @@ export function NumericPreviewPanel({
             onChange={(event) => {
               handleValueChange(event.target.value);
             }}
+            onBlur={() => {
+              // Clicking the viewport blurs the input before the
+              // pointerup fires — flush the pending debounced value
+              // here so the next geometry click uses what the user
+              // actually typed instead of the previous session value.
+              void flushPendingValue();
+            }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();

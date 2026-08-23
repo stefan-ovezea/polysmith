@@ -277,6 +277,8 @@ export function ViewportPanel({
   onPickSketchText,
   onPickSketchSlot,
   onPickSketchChamfer,
+  onExtendSketchEntity,
+  onOffsetSketchEntity,
   sketchTextPathPicking,
   onPickSketchTextPath,
   onSelectSketchEntity,
@@ -301,6 +303,7 @@ export function ViewportPanel({
   onAddSketchVertexDistanceDimension,
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
+  onOpenTransformArray,
   onUpdateSketchPoint,
   onMoveSketchEntities,
   onFinishSketch,
@@ -675,6 +678,8 @@ export function ViewportPanel({
   const pickSketchTextRef = useRef(onPickSketchText);
   const pickSketchSlotRef = useRef(onPickSketchSlot);
   const pickSketchChamferRef = useRef(onPickSketchChamfer);
+  const extendSketchEntityRef = useRef(onExtendSketchEntity);
+  const offsetSketchEntityRef = useRef(onOffsetSketchEntity);
   const sketchTextPathPickingRef = useRef(sketchTextPathPicking);
   const pickSketchTextPathRef = useRef(onPickSketchTextPath);
   useEffect(() => {
@@ -755,6 +760,9 @@ export function ViewportPanel({
     isDimensionEditorOpenRef.current = isDimensionEditorOpen;
   }, [isDimensionEditorOpen]);
   const setSketchToolRef = useRef(onSetSketchTool);
+  const openTransformArrayRef = useRef<(() => void) | undefined>(
+    onOpenTransformArray,
+  );
   const armedSketchConstraintRef = useRef(armedSketchConstraint);
   const mirrorFocusedSlotRef = useRef(mirrorFocusedSlot);
   const mirrorEntityPickRef = useRef(onMirrorEntityPick);
@@ -2078,6 +2086,8 @@ export function ViewportPanel({
       pickSketchTextRef,
       pickSketchSlotRef,
       pickSketchChamferRef,
+      extendSketchEntityRef,
+      offsetSketchEntityRef,
       selectSketchEntityRef,
       pickInactiveSketchLineRef,
       inactiveSketchEntityPickEnabledRef,
@@ -2144,6 +2154,8 @@ export function ViewportPanel({
       onPickSketchText,
       onPickSketchSlot,
       onPickSketchChamfer,
+      onExtendSketchEntity,
+      onOffsetSketchEntity,
       onSelectSketchEntity,
       onPickInactiveSketchLine,
       inactiveSketchEntityPickEnabled,
@@ -2159,6 +2171,7 @@ export function ViewportPanel({
       onTrimSketchEntity,
       onDeleteSketchSelection,
       onSetSketchTool,
+      onOpenTransformArray,
       armedSketchConstraint,
       mirrorFocusedSlot,
       onMirrorEntityPick,
@@ -3269,6 +3282,8 @@ export function ViewportPanel({
         onPickSketchText: pickSketchTextRef.current,
         onPickSketchSlot: pickSketchSlotRef.current,
         onPickSketchChamfer: pickSketchChamferRef.current,
+        extendSketchEntity: extendSketchEntityRef.current,
+        offsetSketchEntity: offsetSketchEntityRef.current,
         sketchTextPathPicking: sketchTextPathPickingRef.current,
         pickSketchTextPath: pickSketchTextPathRef.current,
         pendingDimensionPlacement: pendingDimensionPlacementRef.current,
@@ -3953,6 +3968,7 @@ export function ViewportPanel({
     selectSketchEntityRef,
     pickSketchPointRef,
     setSketchToolRef,
+    openTransformArrayRef,
   });
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
