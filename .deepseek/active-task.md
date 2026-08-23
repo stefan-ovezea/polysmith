@@ -160,7 +160,23 @@ All 25 suites + tsc green; user-verified in-app.
   typing (focused-input guard in useDebouncedNumericPreview), double
   command send + post-hoc snapshot (handler rewrite), debounce gap
   between typing and clicking (blur flush + session ref).
-**SK5 (circle modes) — in progress.** Core done + green:
+**SK5 (circle modes) — committed** (`de2e202` + `f2493d3`): mode
+resolution, circle-slave tangent relations, UI picking flow, then the
+user-reported follow-ups — bisector absolute-projection fix, face-walk
+tangent-node fix (enclosed region between a closed polygon and an
+inscribed tangent circle), T badges, schema enum fixes. All 26 suites
+green.
+
+### SK5 follow-up (user-reported, deferred)
+
+- **Enclosed surface still missing in-app** despite the regression
+  suite detecting it for the same geometry (closed triangle +
+  inscribed circle). Suspects: a stale cad_core.exe in the running
+  app, or a live-sketch arrangement difference (H/V constraints,
+  enforcement-adjusted radius breaking exact tangency). Needs a
+  live trace with PS_TRACE_FACES when revisited.
+
+**SK5 detail — core + green:**
 
 - `add_sketch_circle` gains a `mode` field with wrapper-side
   resolution (the arc wrapper pattern): two_point (diameter
