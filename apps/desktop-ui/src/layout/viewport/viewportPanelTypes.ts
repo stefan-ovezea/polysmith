@@ -80,6 +80,7 @@ export interface ViewportPanelProps {
   onAddSketchLineLengthDimension: (lineId: string) => Promise<void>;
   onAddSketchLineAngleDimension: (lineId: string) => Promise<void>;
   onAddSketchArcRadiusDimension: (arcId: string) => Promise<void>;
+  onAddSketchArcLengthDimension: (arcId: string) => Promise<void>;
   onAddSketchCircleRadiusDimension: (
     circleId: string,
     displayAs?: string,
@@ -144,6 +145,10 @@ export interface ViewportPanelProps {
     axisAY: number,
     axisBX: number,
     axisBY: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchSpline: (
+    points: Array<{ x: number; y: number }>,
     isConstruction: boolean,
   ) => Promise<void>;
   onAddSketchSlot: (

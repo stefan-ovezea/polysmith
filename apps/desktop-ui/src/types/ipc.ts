@@ -28,6 +28,7 @@ import type {
   AddSketchLineLengthDimensionCommand,
   AddSketchLineAngleDimensionCommand,
   AddSketchArcRadiusDimensionCommand,
+  AddSketchArcLengthDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
   SetSketchVertexLineAnchorCommand,
@@ -43,6 +44,7 @@ import type {
   DeleteSketchChamferCommand,
   AddSketchEllipseCommand,
   AddSketchSlotCommand,
+  AddSketchSplineCommand,
   UpdateSketchSlotCommand,
   AddSketchTextCommand,
   UpdateSketchTextCommand,
@@ -161,6 +163,7 @@ import type {
   ViewportSketchConstraint,
   ViewportSketchDimension,
   ViewportSketchEllipse,
+  ViewportSketchSpline,
   ViewportSketchLine,
   ViewportSketchVertex,
   ViewportSketchPolygon,
@@ -272,6 +275,7 @@ export interface ViewportState {
   sketch_lines: ViewportSketchLine[];
   sketch_circles: ViewportSketchCircle[];
   sketch_ellipses: ViewportSketchEllipse[];
+  sketch_splines: ViewportSketchSpline[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
   sketch_vertices: ViewportSketchVertex[];
@@ -845,6 +849,7 @@ export type CoreCommand =
   | AddSketchLineLengthDimensionCommand
   | AddSketchLineAngleDimensionCommand
   | AddSketchArcRadiusDimensionCommand
+  | AddSketchArcLengthDimensionCommand
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand
@@ -859,6 +864,7 @@ export type CoreCommand =
   | DeleteSketchChamferCommand
   | AddSketchEllipseCommand
   | AddSketchSlotCommand
+  | AddSketchSplineCommand
   | UpdateSketchSlotCommand
   | AddSketchTextCommand
   | UpdateSketchTextCommand

@@ -14,6 +14,7 @@ import type {
   ViewportSketchDimension,
   ViewportSketchEllipse,
   ViewportSketchPolygon,
+  ViewportSketchSpline,
   ViewportSketchProfile,
   ViewportState,
   BoxScenePrimitive,
@@ -30,6 +31,7 @@ import type {
   SketchDimensionScene,
   SketchEllipseScene,
   SketchLineScene,
+  SketchSplineScene,
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
@@ -282,6 +284,23 @@ function makeSketchEllipse(
     isSelected: ellipse.is_selected,
     isConstruction: ellipse.is_construction,
     generatedBy: ellipse.generated_by ?? null,
+  };
+}
+
+function makeSketchSpline(
+  spline: ViewportSketchSpline,
+): SketchSplineScene {
+  return {
+    isPreview: spline.is_preview,
+    splineId: spline.spline_id,
+    planeId: spline.plane_id,
+    planeFrame: spline.plane_frame,
+    curvePoints: spline.curve_points.map((p) => [p.x, p.y, p.z]),
+    polePoints: spline.pole_points.map((p) => [p.x, p.y, p.z]),
+    degree: spline.degree,
+    isSelected: spline.is_selected,
+    isConstruction: spline.is_construction,
+    generatedBy: spline.generated_by ?? null,
   };
 }
 
@@ -968,6 +987,11 @@ export function createViewportScene(
   const sketchEllipses = viewport.sketch_ellipses
     .filter((ellipse) => isSketchPlaneVisible(ellipse.plane_id))
     .map(makeSketchEllipse);
+  const sketchSplines = viewport.sketch_splines
+    ? viewport.sketch_splines
+        .filter((spline) => isSketchPlaneVisible(spline.plane_id))
+        .map(makeSketchSpline)
+    : [];
   const sketchPolygons = viewport.sketch_polygons
     ? viewport.sketch_polygons
         .filter((polygon) => isSketchPlaneVisible(polygon.plane_id))
@@ -1124,6 +1148,7 @@ export function createViewportScene(
     sketchLines,
     sketchCircles,
     sketchEllipses,
+    sketchSplines,
     sketchPolygons,
     sketchArcs,
     sketchDimensions: visibleSketchDimensions,

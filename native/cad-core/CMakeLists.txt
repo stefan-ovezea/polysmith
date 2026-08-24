@@ -25,6 +25,11 @@ endforeach()
 # target — avoids cmake install issues (per-module target files are only
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
+# OCCT's in-tree build dir (occt8-build/inc) carries most headers, but
+# the TColStd/TColgp array templates are deprecated headers that only
+# land in the install tree — the spline helpers (spline_profile_occt.cpp,
+# the BSpline wire edges) need them. Headers are platform-independent.
+include_directories("${CMAKE_SOURCE_DIR}/../../third_party/occt8-install/inc")
 add_library(occt_iface INTERFACE)
 # inc/ is the build-tree header location — works on both platforms without
 # requiring cmake --install (which fails on Windows due to locked DLLs).
@@ -145,6 +150,7 @@ set(CAD_CORE_SOURCES
   src/core/sketch/inference_engine.cpp
   src/core/sketch/sketch_feature.cpp
   src/core/sketch/sketch_profile.cpp
+  src/core/sketch/spline_profile_occt.cpp
   src/core/sketch/trim_engine.cpp
   src/core/sweep/sweep_feature.cpp
   src/core/text_engine.cpp
@@ -177,8 +183,10 @@ add_custom_command(TARGET cad_core POST_BUILD
 add_executable(cad_core_sketch_profile_test
   # Sketch code logs through the structured logger (e.g. the
   # PS_TRACE_FACES face-walk trace); this target is built without the
-  # protocol/OCCT dependency chain, so tests/logger_stub.cpp supplies
-  # the logger symbols as a plain stderr writer.
+  # protocol dependency chain, so tests/logger_stub.cpp supplies
+  # the logger symbols as a plain stderr writer.  Spline profile
+  # intersections DO need OCCT (spline_profile_occt.cpp), so this
+  # target links the OCCT libraries like the full-core suites.
   tests/logger_stub.cpp
   tests/text_engine_stub.cpp
   src/core/sketch/constraint_solver.cpp
@@ -187,6 +195,7 @@ add_executable(cad_core_sketch_profile_test
   src/core/sketch/inference_engine.cpp
   src/core/sketch/sketch_feature.cpp
   src/core/sketch/sketch_profile.cpp
+  src/core/sketch/spline_profile_occt.cpp
   src/core/sketch/trim_engine.cpp
   tests/sketch_profile_test.cpp
 )
@@ -204,6 +213,7 @@ target_include_directories(cad_core_sketch_profile_test PRIVATE
 
 target_link_libraries(cad_core_sketch_profile_test PRIVATE
   planegcs
+  ${OpenCASCADE_LIBRARIES}
 )
 
 add_executable(cad_core_multi_profile_extrude_test
@@ -323,6 +333,29 @@ target_include_directories(cad_core_ellipse_test PRIVATE
 )
 
 target_link_libraries(cad_core_ellipse_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Spline entity regression suite — control-point creation, pole drag
+# re-fit, exact profile set, extrude smoke, move, trim rejection,
+# save/load round-trip.
+add_executable(cad_core_spline_test
+  ${CAD_CORE_SOURCES}
+  tests/spline_test.cpp
+)
+
+target_include_directories(cad_core_spline_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_spline_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw
@@ -462,6 +495,28 @@ target_include_directories(cad_core_circle_modes_test PRIVATE
 )
 
 target_link_libraries(cad_core_circle_modes_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+# Dimension-completion regression suite — diameter display, arc
+# angle sweeps, arc length driving.
+add_executable(cad_core_dimension_completion_test
+  ${CAD_CORE_SOURCES}
+  tests/dimension_completion_test.cpp
+)
+
+target_include_directories(cad_core_dimension_completion_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_dimension_completion_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

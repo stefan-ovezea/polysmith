@@ -494,6 +494,16 @@ export function makeAddSketchCircleRadiusDimensionCommand(
 }
 
 
+export function makeAddSketchArcLengthDimensionCommand(
+  arcId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_arc_length_dimension",
+    payload: { arc_id: arcId },
+  };
+}
+
 export function makeAddSketchArcRadiusDimensionCommand(
   arcId: string,
 ): CoreCommand {
@@ -784,6 +794,20 @@ export function makeAddSketchEllipseCommand(
       axis_a_y: axisAY,
       axis_b_x: axisBX,
       axis_b_y: axisBY,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeAddSketchSplineCommand(
+  points: Array<{ x: number; y: number }>,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_spline",
+    payload: {
+      points,
       is_construction: isConstruction,
     },
   };

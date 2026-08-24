@@ -118,6 +118,18 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
         arc.ccw = param_storage_[mapping.end_angle_idx] >=
                   param_storage_[mapping.start_angle_idx];
     }
+
+    // Spline poles: not solver-registered, but a pole vertex SHARED
+    // with a line/arc/circle endpoint may have moved in the solve.
+    // Re-fit the cached poles so the curve follows the shared vertex.
+    for (auto& spline : params.splines) {
+        for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+            auto pit = point_id_to_index_.find(spline.pole_vertex_ids[i]);
+            if (pit == point_id_to_index_.end()) continue;
+            spline.pole_xs[i] = params.vertices[pit->second].x;
+            spline.pole_ys[i] = params.vertices[pit->second].y;
+        }
+    }
 }
 
 int ConstraintSolver::dofs() const {

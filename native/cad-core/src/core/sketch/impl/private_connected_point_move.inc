@@ -38,6 +38,17 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
     }
     visited_points.push_back(move.vertex_id);
 
+    // Spline poles: the move re-fits the cached pole; the curve
+    // follows through the refresh sync (rebuild + vertex writeback).
+    for (auto& spline : parameters.splines) {
+      for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+        if (spline.pole_vertex_ids[i] == move.vertex_id) {
+          spline.pole_xs[i] = move.to_x;
+          spline.pole_ys[i] = move.to_y;
+        }
+      }
+    }
+
     std::vector<LineEndpointRef> connected_endpoints;
     for (size_t line_index = 0; line_index < parameters.lines.size(); ++line_index) {
       const auto& line = parameters.lines[line_index];

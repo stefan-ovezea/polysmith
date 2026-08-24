@@ -128,6 +128,26 @@ struct SketchEllipse {
   std::optional<std::string> generated_by;
 };
 
+// Control-point B-spline entity (feature/sketch). v1: the user's
+// clicks ARE the control poles — regular movable vertices. The drawn
+// curve is the clamped degree-3 B-spline they define (see
+// spline_math.h for the shared evaluation). No solver registration
+// (FreeCAD's BSpline solving is a regression factory) — pole drags
+// re-fit the cached curve through the ordinary vertex sync passes.
+struct SketchSpline {
+  std::string id;
+  // One vertex per pole, in order.  Regular "vertex-N" vertices so
+  // pole dragging works through the existing vertex paths.
+  std::vector<std::string> pole_vertex_ids;
+  // Cached pole coordinates (sketch-local), re-synced from the vertex
+  // table on every refresh — vertices are the single source of truth.
+  std::vector<double> pole_xs;
+  std::vector<double> pole_ys;
+  int degree = 3;  // min(3, pole_count - 1); clamped open-uniform knots
+  bool is_construction = false;
+  std::optional<std::string> generated_by;
+};
+
 struct SketchVertex {
   std::string id;
   // ── Vertex unification (Phase 4) ────────────────────────────

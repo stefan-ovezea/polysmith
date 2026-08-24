@@ -19,9 +19,45 @@
     double resolved_value = 0.0;
     std::optional<std::string> expression;
 
+    // Look up the target dimension kind up front: circle_radius
+    // dimensions carry the DISPLAYED diameter over IPC (the stored
+    // value stays the radius — same convention as the expression
+    // path below), and angle kinds convert degrees to radians.
+    bool dim_is_angle = false;
+    bool dim_is_circle_radius = false;
+    {
+      const auto doc = document_manager().get_document();
+      if (doc.has_value() && doc->active_sketch_feature_id.has_value()) {
+        const std::string dim_id =
+            read_string(command.payload, "dimension_id");
+        const auto feat_it = std::find_if(
+            doc->feature_history.begin(), doc->feature_history.end(),
+            [&](const core::FeatureEntry& f) {
+              return f.id == doc->active_sketch_feature_id.value();
+            });
+        if (feat_it != doc->feature_history.end() &&
+            feat_it->sketch_parameters.has_value()) {
+          const auto& dims = feat_it->sketch_parameters->dimensions;
+          const auto dim_it = std::find_if(
+              dims.begin(), dims.end(),
+              [&](const core::SketchDimension& d) { return d.id == dim_id; });
+          if (dim_it != dims.end()) {
+            dim_is_angle =
+                dim_it->kind == "angle" || dim_it->kind == "line_angle";
+            dim_is_circle_radius = dim_it->kind == "circle_radius";
+          }
+        }
+      }
+    }
+
     if (command.payload.contains("value")) {
       if (command.payload.at("value").is_number()) {
         resolved_value = command.payload.at("value").get<double>();
+        if (dim_is_angle) {
+          resolved_value = resolved_value * (M_PI / 180.0);
+        } else if (dim_is_circle_radius) {
+          resolved_value = resolved_value / 2.0;
+        }
       } else if (command.payload.at("value").is_string()) {
         std::string expr_str =
             command.payload.at("value").get<std::string>();
@@ -32,40 +68,6 @@
         std::vector<core::ParameterEntry> params;
         if (doc.has_value()) {
           params = doc->parameters;
-        }
-
-        // Determine whether the target dimension is an angle kind so we
-        // can type-check parameter references and apply the degrees->radians
-        // conversion once, in a single pass.
-        bool dim_is_angle = false;
-        bool dim_is_circle_radius = false;
-        if (doc.has_value() &&
-            doc->active_sketch_feature_id.has_value()) {
-          const auto& features = doc->feature_history;
-          const std::string dim_id =
-              read_string(command.payload, "dimension_id");
-          const auto feat_it = std::find_if(
-              features.begin(), features.end(),
-              [&](const core::FeatureEntry& f) {
-                return f.id == doc->active_sketch_feature_id.value();
-              });
-          if (feat_it != features.end() &&
-              feat_it->sketch_parameters.has_value()) {
-            const auto& dims = feat_it->sketch_parameters->dimensions;
-            const auto dim_it = std::find_if(
-                dims.begin(), dims.end(),
-                [&](const core::SketchDimension& d) {
-                  return d.id == dim_id;
-                });
-            if (dim_it != dims.end() &&
-                (dim_it->kind == "angle" ||
-                 dim_it->kind == "line_angle")) {
-              dim_is_angle = true;
-            }
-            if (dim_it != dims.end() && dim_it->kind == "circle_radius") {
-              dim_is_circle_radius = true;
-            }
-          }
         }
 
         auto resolver = [&params,

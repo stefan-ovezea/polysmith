@@ -192,7 +192,8 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
       if (arc_it != parameters.arcs.end()) {
         dimension.value = arc_it->radius;
       }
-    } else if (dimension.kind == "arc_angle") {
+    } else if (dimension.kind == "arc_angle" ||
+               dimension.kind == "arc_length") {
       const auto arc_it = std::find_if(
           parameters.arcs.begin(),
           parameters.arcs.end(),
@@ -204,7 +205,8 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
                                             arc_it->start_x - arc_it->center_x);
         double sweep = raw_sweep;
         if (sweep < 0.0) sweep += 2.0 * 3.14159265358979323846;
-        dimension.value = sweep;
+        dimension.value =
+            dimension.kind == "arc_length" ? arc_it->radius * sweep : sweep;
       }
     }
     } catch (const std::exception& e) {
@@ -242,7 +244,8 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
   for (auto& dim : parameters.dimensions) {
     if (dim.driven) continue;
     if (dim.is_auto && dim.expression.empty()) continue;
-    if (dim.kind != "arc_radius" && dim.kind != "arc_angle") continue;
+    if (dim.kind != "arc_radius" && dim.kind != "arc_angle" &&
+        dim.kind != "arc_length") continue;
 
     auto arc_it = std::find_if(
         parameters.arcs.begin(), parameters.arcs.end(),
@@ -347,7 +350,7 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
                                      arc.start_x, arc.start_y);
       propagate_connected_point_move(parameters, arc.end_vertex_id,
                                      arc.end_x, arc.end_y);
-    } else {  // arc_angle
+    } else {  // arc_angle / arc_length
       if (end_v->is_fixed) {
         dim.driven = true;
         continue;
@@ -356,7 +359,11 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
                                        arc.start_y - arc.center_y);
       const double start_angle =
           std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
-      const double signed_value = arc.ccw ? dim.value : -dim.value;
+      // Arc length = radius * sweep, so the sweep derives from the
+      // stored length and the current radius.
+      const double sweep =
+          dim.kind == "arc_length" ? dim.value / radius : dim.value;
+      const double signed_value = arc.ccw ? sweep : -sweep;
       const double end_angle = start_angle + signed_value;
       arc.radius = radius;
       const double cand_end_x = arc.center_x + radius * std::cos(end_angle);

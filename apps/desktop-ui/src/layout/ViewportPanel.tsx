@@ -71,6 +71,7 @@ import {
   draftStartRelations,
   lineCommitRelations,
 } from "./viewport/lineCommitRelations";
+import { buildSplineDraftPreview } from "./viewport/splineDraftPreview";
 import { usePendingLineCommitRelations } from "./viewport/lineCommitRelationEffects";
 import {
   collectRectangleSelectionIds,
@@ -250,6 +251,7 @@ export function ViewportPanel({
   onAddSketchLineAngleDimension,
   onAddSketchCircleRadiusDimension,
   onAddSketchArcRadiusDimension,
+  onAddSketchArcLengthDimension,
   onAddSketchPolygonRadiusDimension,
   onSetSketchLineConstraint,
   onSetSketchPerpendicularConstraint,
@@ -261,6 +263,7 @@ export function ViewportPanel({
   onAddSketchArc,
   onAddSketchEllipse,
   onAddSketchSlot,
+  onAddSketchSpline,
   arcToolMode,
   onSetArcToolMode,
   rectangleToolMode,
@@ -452,6 +455,8 @@ export function ViewportPanel({
   // Carries the slot draft preview — a stadium group (2 lines + 2
   // arcs), cleared recursively.
   const previewSlotRef = useRef<THREE.Group | null>(null);
+  // Spline draft preview (curve strip + control polygon group).
+  const previewSplineRef = useRef<THREE.Group | null>(null);
   /** Inference / tracking guide lines (dotted alignment hints). */
   const previewInferenceRef = useRef<THREE.Line[]>([]);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
@@ -598,6 +603,7 @@ export function ViewportPanel({
 
   const addSketchArcRef = useRef(onAddSketchArc);
   const addSketchEllipseRef = useRef(onAddSketchEllipse);
+  const addSketchSplineRef = useRef(onAddSketchSpline);
   const addSketchSlotRef = useRef(onAddSketchSlot);
   const selectionDragRef = useRef<SelectionDrag | null>(null);
 
@@ -703,6 +709,9 @@ export function ViewportPanel({
   // Major-axis click of the 3-click ellipse draft (mirrors the arc's
   // second-point ref; cleared on commit and tool switch).
   const ellipseSecondPointRef = useRef<[number, number] | null>(null);
+  // Placed spline control poles for the in-progress spline draft.
+  // Click the first pole again to commit; Escape cancels.
+  const splineDraftPolesRef = useRef<[number, number][]>([]);
   const selectSketchEntityRef = useRef(onSelectSketchEntity);
   const pickInactiveSketchLineRef = useRef(onPickInactiveSketchLine);
   const inactiveSketchEntityPickEnabledRef = useRef(
@@ -775,6 +784,9 @@ export function ViewportPanel({
   // Sketch-mode Escape deselect: clears highlighted geometry through the
   // core's clear_selection command (handled in sketchHotkeys.ts).
   const clearSketchSelectionRef = useRef(onClearSelection);
+  // Spline draft commit (Enter / double-click) — stable ref for the
+  // one-shot keydown listener.
+  const commitSplineDraftRef = useRef<() => void>(() => {});
   /** Selected constraint for deletion on Delete key. */
   const [selectedConstraint, setSelectedConstraint] =
     useState<SelectedConstraintState | null>(null);
@@ -848,6 +860,9 @@ export function ViewportPanel({
   );
   const addSketchArcRadiusDimensionRef = useRef(
     onAddSketchArcRadiusDimension,
+  );
+  const addSketchArcLengthDimensionRef = useRef(
+    onAddSketchArcLengthDimension,
   );
   const addSketchPolygonRadiusDimensionRef = useRef(
     onAddSketchPolygonRadiusDimension,
@@ -1256,6 +1271,7 @@ export function ViewportPanel({
     clearPreviewInference,
     clearPreviewLine,
     clearPreviewSlot,
+    clearPreviewSpline,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
     updateTrimArcHighlight,
@@ -1267,6 +1283,7 @@ export function ViewportPanel({
     previewCircleRef,
     previewArcRef,
     previewSlotRef,
+    previewSplineRef,
     previewInferenceRef,
     trimSegmentHighlightRef,
     trimArcHighlightRef,
@@ -1410,6 +1427,7 @@ export function ViewportPanel({
     previewCircleRef.current = null;
     previewArcRef.current = null;
     previewSlotRef.current = null;
+    previewSplineRef.current = null;
     previewInferenceRef.current = [];
   }
 
@@ -1491,6 +1509,7 @@ export function ViewportPanel({
     selectDimensionLine: dimSelectLine,
     selectDimensionPolygon: dimSelectPolygon,
     createDimensionArc: dimCreateArc,
+    createDimensionArcLength: dimCreateArcLength,
     selectDimensionArc: dimSelectArc,
   } = createDimensionToolActions({
     pendingDimensionIdRef,
@@ -1503,6 +1522,7 @@ export function ViewportPanel({
     pendingRelationPlacementMatchRef,
     addSketchCircleRadiusDimensionRef,
     addSketchArcRadiusDimensionRef,
+    addSketchArcLengthDimensionRef,
     addSketchLineLengthDimensionRef,
     addSketchLineAngleDimensionRef,
     addSketchPolygonRadiusDimensionRef,
@@ -1775,10 +1795,12 @@ export function ViewportPanel({
     circleSecondPointRef.current = null;
     circleTangentLineIdsRef.current = [];
     ellipseSecondPointRef.current = null;
+    splineDraftPolesRef.current = [];
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewSlot();
+    clearPreviewSpline();
     clearPreviewDimension();
     clearPreviewInference();
     clearDraftDimensionSession();
@@ -1822,16 +1844,79 @@ export function ViewportPanel({
       previewCircleRef,
       previewArcRef,
       previewSlotRef,
+      previewSplineRef,
+      splineDraftPolesRef,
       previewDimensionRef,
       previewInferenceRef,
       clearPreviewLine,
       clearPreviewCircle,
       clearPreviewArc,
       clearPreviewSlot,
+      clearPreviewSpline,
       clearPreviewDimension,
       clearPreviewInference,
     });
   }
+
+  // Rebuilds the spline draft preview from the placed poles (click-
+  // driven, not mouse-follow — the preview only changes per click).
+  function renderSplineDraftPreview() {
+    const sketchGroup = sketchGroupRef.current;
+    if (!sketchGroup || !activeSketchPlaneId) {
+      return;
+    }
+    clearPreviewSpline();
+    const preview = buildSplineDraftPreview({
+      poles: splineDraftPolesRef.current,
+      planeId: activeSketchPlaneId,
+      planeFrame: activeSketchPlaneFrame,
+      isConstruction: sketchToolConstructionRef.current,
+      cursor: null,
+    });
+    if (preview) {
+      previewSplineRef.current = preview;
+      sketchGroup.add(preview);
+    }
+  }
+
+  // Commits the in-progress spline draft (double-click, Enter, tool
+  // switch).  Clears the poles + preview; the core applies the real
+  // B-spline on the next document state.
+  function commitSplineDraft() {
+    const poles = splineDraftPolesRef.current;
+    if (poles.length < 2) {
+      // Nothing worth committing — clear the stub draft.
+      splineDraftPolesRef.current = [];
+      clearPreviewSpline();
+      return;
+    }
+    void addSketchSplineRef.current(
+      poles.map((p) => ({ x: p[0], y: p[1] })),
+      sketchToolConstructionRef.current,
+    );
+    splineDraftPolesRef.current = [];
+    clearPreviewSpline();
+  }
+  commitSplineDraftRef.current = commitSplineDraft;
+
+  // Leaving the spline tool commits the draft (Fusion-style) instead
+  // of discarding it — Escape cancels BEFORE this runs (it clears the
+  // poles first), so cancel stays cancel.
+  useEffect(() => {
+    if (activeSketchTool !== "spline") {
+      if (splineDraftPolesRef.current.length >= 2) {
+        void addSketchSplineRef.current(
+          splineDraftPolesRef.current.map((p) => ({ x: p[0], y: p[1] })),
+          sketchToolConstructionRef.current,
+        );
+      }
+      splineDraftPolesRef.current = [];
+      clearPreviewSpline();
+    }
+    // clearPreviewSpline is a fresh closure per render — depending on
+    // it would re-run the effect every render (harmless but wasteful).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSketchTool]);
 
   function updateDraftSessionFromPoint(point: [number, number]) {
     const session = draftDimensionSessionRef.current;
@@ -2068,6 +2153,7 @@ export function ViewportPanel({
       addSketchCircleModeRef,
       addSketchArcRef,
       addSketchEllipseRef,
+      addSketchSplineRef,
       addSketchSlotRef,
       addSketchAngleDimensionRef,
       addSketchDistanceDimensionRef,
@@ -2075,6 +2161,7 @@ export function ViewportPanel({
       addSketchLineAngleDimensionRef,
       addSketchCircleRadiusDimensionRef,
       addSketchArcRadiusDimensionRef,
+      addSketchArcLengthDimensionRef,
       addSketchPolygonRadiusDimensionRef,
       setSketchLineConstraintRef,
       setSketchPerpendicularConstraintRef,
@@ -2138,6 +2225,7 @@ export function ViewportPanel({
       onAddSketchArc,
       onAddSketchEllipse,
       onAddSketchSlot,
+      onAddSketchSpline,
       onAddSketchChamfer,
       onAddSketchAngleDimension,
       onAddSketchDistanceDimension,
@@ -2145,6 +2233,7 @@ export function ViewportPanel({
       onAddSketchLineAngleDimension,
       onAddSketchCircleRadiusDimension,
       onAddSketchArcRadiusDimension,
+      onAddSketchArcLengthDimension,
       onAddSketchPolygonRadiusDimension,
       onSetSketchLineConstraint,
       onSetSketchPerpendicularConstraint,
@@ -2699,12 +2788,15 @@ export function ViewportPanel({
         previewCircleRef,
         previewArcRef,
         previewSlotRef,
+        previewSplineRef,
+        splineDraftPolesRef,
         previewDimensionRef,
         previewInferenceRef,
         clearPreviewLine,
         clearPreviewCircle,
         clearPreviewArc,
         clearPreviewSlot,
+        clearPreviewSpline,
         clearPreviewDimension,
         clearPreviewInference,
         clearTrimSegmentHighlight,
@@ -2712,6 +2804,10 @@ export function ViewportPanel({
         updateTrimSegmentHighlight,
         updateTrimArcHighlight,
       });
+      if (activeSketchToolRef.current === "spline" &&
+          splineDraftPolesRef.current.length >= 2) {
+        setSketchSnapLabel(translate("viewport.splineFinishHint"));
+      }
       return true;
     }
 
@@ -3321,6 +3417,7 @@ export function ViewportPanel({
 	createDimensionCircle: dimCreateCircle,
 	selectDimensionCircle: dimSelectCircle,
 	createDimensionArc: dimCreateArc,
+	createDimensionArcLength: dimCreateArcLength,
 	selectDimensionArc: dimSelectArc,
 	createDimensionPolygon: dimCreatePolygon,
 	selectDimensionPolygon: dimSelectPolygon,
@@ -3331,6 +3428,9 @@ export function ViewportPanel({
 	        rectSecondPointRef,
 	        circleSecondPointRef,
 	        ellipseSecondPointRef,
+	        splineDraftPolesRef,
+	        clearPreviewSpline,
+	        updatePreviewSpline: renderSplineDraftPreview,
 	        chainBreakRequestedRef,
 	        previousLineAngleRef,
 	        draftStartMidpointHostRef,
@@ -3373,6 +3473,7 @@ export function ViewportPanel({
 	        addSketchLine: addSketchLineRef.current,
 	        addSketchEllipse: addSketchEllipseRef.current,
 	        addSketchSlot: addSketchSlotRef.current,
+	        addSketchSpline: addSketchSplineRef.current,
 	        sceneDataRef,
 	        pickInactiveSketchLine: pickInactiveSketchLineRef.current,
         selectReference: selectReferenceRef.current,
@@ -3410,6 +3511,13 @@ export function ViewportPanel({
 
     resizeObserver.observe(host);
     function handleDoubleClick(event: MouseEvent) {
+      // A double-click finishes the control-point spline draft.
+      if (activeSketchPlaneId &&
+          activeSketchToolRef.current === "spline" &&
+          splineDraftPolesRef.current.length >= 2) {
+        commitSplineDraft();
+        return;
+      }
       if (activeSketchPlaneId) {
         return;
       }
@@ -3477,10 +3585,12 @@ export function ViewportPanel({
         circleTangentLineIdsRef.current = [];
     circleTangentLineIdsRef.current = [];
         ellipseSecondPointRef.current = null;
+        splineDraftPolesRef.current = [];
         clearPreviewLine();
         clearPreviewCircle();
         clearPreviewArc();
         clearPreviewSlot();
+        clearPreviewSpline();
         clearPreviewDimension();
         clearPreviewInference();
         clearDraftDimensionSession();
@@ -3819,11 +3929,13 @@ export function ViewportPanel({
     circleSecondPointRef.current = null;
     circleTangentLineIdsRef.current = [];
     ellipseSecondPointRef.current = null;
+    splineDraftPolesRef.current = [];
     clearDragPreviewLines();
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
     clearPreviewSlot();
+    clearPreviewSpline();
     clearPreviewDimension();
     clearPreviewInference();
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
@@ -3893,6 +4005,7 @@ export function ViewportPanel({
         setCanvasCursor,
         setSelectedConstraint,
         cancelActiveSketchDraft,
+        commitSplineDraft: () => commitSplineDraftRef.current(),
         setSketchToolConstruction,
       }),
     [activeSketchPlaneId, config.hotkeys.sketchToolbar],

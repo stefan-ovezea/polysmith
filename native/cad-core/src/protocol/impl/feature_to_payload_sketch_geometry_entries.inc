@@ -91,6 +91,29 @@
                     }
                     return ellipses;
                   }()},
+                 {"splines",
+                  [&feature]() {
+                    json splines = json::array();
+                    for (const auto& s : feature.sketch_parameters->splines) {
+                      json pole_vertex_ids = json::array();
+                      for (const auto& vid : s.pole_vertex_ids) {
+                        pole_vertex_ids.push_back(vid);
+                      }
+                      splines.push_back({
+                          {"spline_id", s.id},
+                          {"pole_vertex_ids", pole_vertex_ids},
+                          {"pole_xs", s.pole_xs},
+                          {"pole_ys", s.pole_ys},
+                          {"degree", s.degree},
+                          {"is_construction", s.is_construction},
+                          {"generated_by",
+                           s.generated_by.has_value()
+                               ? json(s.generated_by.value())
+                               : json(nullptr)},
+                      });
+                    }
+                    return splines;
+                  }()},
                  {"fillets",
                   [&feature]() {
                     json fillets = json::array();

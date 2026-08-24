@@ -127,6 +127,12 @@
                                    double axis_b_y,
                                    bool is_construction = false);
 
+  // Control-point B-spline: the points ARE the poles (regular movable
+  // vertices).  Degree = min(3, count-1), clamped open-uniform knots.
+  DocumentState add_sketch_spline(
+      const std::vector<std::pair<double, double>>& pole_points,
+      bool is_construction = false);
+
   // Straight slot (stadium): center + length + radius + rotation (rad).
   DocumentState add_sketch_slot(double center_x,
                                 double center_y,

@@ -676,6 +676,22 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // Control-point B-splines. Defaulted to `[]` so older
+          // saves (or messages from a core that pre-dates spline
+          // support) keep parsing cleanly.
+          splines: z
+            .array(
+              z.object({
+                spline_id: z.string(),
+                pole_vertex_ids: z.array(z.string()),
+                pole_xs: z.array(z.number()),
+                pole_ys: z.array(z.number()),
+                degree: z.number(),
+                is_construction: z.boolean().default(false),
+                generated_by: z.string().nullable().default(null),
+              }),
+            )
+            .default([]),
           // Parametric sketch text entries. The glyph segments live in
           // `lines` (tagged via `generated_by`), so profile detection
           // and the viewport consume text with zero downstream
@@ -742,6 +758,7 @@ export const documentStateSchema = z.object({
                 "line_length",
                 "circle_radius",
                 "arc_radius",
+                "arc_length",
                 "polygon_radius",
                 "angle",
                 "line_angle",

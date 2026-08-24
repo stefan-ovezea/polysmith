@@ -23,6 +23,7 @@ interface DimensionToolActionParams {
   addSketchArcRadiusDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
+  addSketchArcLengthDimensionRef: MutableRefObject<(arcId: string) => Promise<void>>;
   addSketchLineLengthDimensionRef: MutableRefObject<
     (entityId: string) => Promise<void>
   >;
@@ -58,6 +59,7 @@ export function createDimensionToolActions({
   pendingRelationPlacementMatchRef,
   addSketchCircleRadiusDimensionRef,
   addSketchArcRadiusDimensionRef,
+  addSketchArcLengthDimensionRef,
   addSketchLineLengthDimensionRef,
   addSketchLineAngleDimensionRef,
   addSketchPolygonRadiusDimensionRef,
@@ -154,6 +156,21 @@ export function createDimensionToolActions({
 
   function selectDimensionPolygon(entityId: string) {
     stageFollowUpPick(entityId);
+  }
+
+  function createDimensionArcLength(entityId: string) {
+    stageUnaryDimension(entityId, `dim-arc-length-${entityId}`);
+    stageFollowUpPick(entityId);
+    void addSketchArcLengthDimensionRef
+      .current(entityId)
+      .then(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      })
+      .catch(() => {
+        clearUnaryDimensionStage();
+        clearFollowUpPick();
+      });
   }
 
   function createDimensionArc(entityId: string) {
@@ -273,6 +290,7 @@ export function createDimensionToolActions({
     selectDimensionLine,
     selectDimensionPolygon,
     createDimensionArc,
+    createDimensionArcLength,
     selectDimensionArc,
   };
 }

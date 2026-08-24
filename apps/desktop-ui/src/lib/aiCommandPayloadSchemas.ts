@@ -278,6 +278,9 @@ export const commandPayloadSchemas = {
   add_sketch_circle_radius_dimension: z
     .object({ circle_id: stringField, display_as: stringField.optional() })
     .strict(),
+  add_sketch_arc_length_dimension: z
+    .object({ arc_id: stringField })
+    .strict(),
   add_sketch_arc_radius_dimension: z.object({ arc_id: stringField }).strict(),
   add_sketch_arc_angle_dimension: z.object({ arc_id: stringField }).strict(),
   add_sketch_polygon_radius_dimension: z
@@ -325,6 +328,12 @@ export const commandPayloadSchemas = {
       axis_a_y: numberField,
       axis_b_x: numberField,
       axis_b_y: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  add_sketch_spline: z
+    .object({
+      points: z.array(z.object({ x: numberField, y: numberField })),
       is_construction: booleanField.optional(),
     })
     .strict(),
@@ -463,6 +472,7 @@ export const commandPayloadSchemas = {
         "offset",
         "ellipse",
         "slot",
+        "spline",
         "trim",
         "project",
         "dimension",

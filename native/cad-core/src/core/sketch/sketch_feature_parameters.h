@@ -40,6 +40,10 @@ struct SketchFeatureParameters {
   std::vector<SketchPolygon> polygons;
   std::vector<SketchArc> arcs;
   std::vector<SketchEllipse> ellipses;
+  // Control-point B-splines. The poles are regular vertices; the
+  // cached pole coordinates re-sync from the vertex table on every
+  // refresh so pole drags re-fit the curve.
+  std::vector<SketchSpline> splines;
   // Parametric slots (stadium shapes). Expanded into generated lines +
   // arcs by refresh_sketch_slots on every recompute.
   std::vector<SketchSlot> slots;

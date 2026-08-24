@@ -77,6 +77,32 @@ struct ViewportSketchEllipsePrimitive {
   std::optional<std::string> generated_by;
 };
 
+// Control-point B-spline primitive. The curve arrives as a sampled
+// WORLD polyline (the same de Boor evaluation the profile walk and
+// the wire builder use — spline_math.h) plus the control poles in
+// world coordinates so the renderer can draw the control polygon.
+// Pole vertices also exist in the vertex table, so drag handles come
+// from the ordinary vertex renderer.
+struct ViewportSketchSplinePrimitive {
+  std::string spline_id;
+  std::string plane_id;
+  std::optional<ViewportSketchPlaneFrame> plane_frame;
+  // Sampled curve points (world coordinates, 16 samples per span).
+  std::vector<double> curve_xs;
+  std::vector<double> curve_ys;
+  std::vector<double> curve_zs;
+  // Control poles (world coordinates).
+  std::vector<double> pole_xs;
+  std::vector<double> pole_ys;
+  std::vector<double> pole_zs;
+  int degree = 3;
+  bool is_selected;
+  bool is_construction = false;
+  bool is_preview = false;
+  std::string dof_status;
+  std::optional<std::string> generated_by;
+};
+
 // 2D arc primitive emitted to the viewport. Carries the arc's
 // endpoints and center in world coordinates plus its radius and ccw
 // flag so the renderer can sample the polyline locally without

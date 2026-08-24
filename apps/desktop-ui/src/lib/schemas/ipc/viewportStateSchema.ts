@@ -249,6 +249,38 @@ export const viewportStateSchema = z.object({
       }),
     )
     .default([]),
+  // Control-point B-splines — the curve as a sampled world polyline
+  // plus the control poles. Defaulted to `[]` so clients running
+  // against an older core don't crash.
+  sketch_splines: z
+    .array(
+      z.object({
+        spline_id: z.string(),
+        plane_id: z.string(),
+        plane_frame: planeFrameSchema.nullable().default(null),
+        curve_points: z.array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            z: z.number(),
+          }),
+        ),
+        pole_points: z.array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            z: z.number(),
+          }),
+        ),
+        degree: z.number().default(3),
+        is_selected: z.boolean(),
+        is_construction: z.boolean().default(false),
+        // See `sketch_lines.is_preview`.
+        is_preview: z.boolean().default(false),
+        generated_by: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
   // Sketch polygons — regular N-sided polygons on the sketch plane.
   // Defaulted to `[]` so clients running against an older core
   // don't crash.

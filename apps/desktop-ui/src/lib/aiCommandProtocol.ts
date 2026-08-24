@@ -94,6 +94,7 @@ const activeSketchRequiredCommands = new Set<string>([
   "add_sketch_line_length_dimension",
   "add_sketch_line_angle_dimension",
   "add_sketch_circle_radius_dimension",
+  "add_sketch_arc_length_dimension",
   "add_sketch_arc_radius_dimension",
   "add_sketch_arc_angle_dimension",
   "add_sketch_polygon_radius_dimension",

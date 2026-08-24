@@ -6,6 +6,7 @@ import {
   SketchConstraintScene,
   SketchDimensionScene,
   SketchEllipseScene,
+  SketchSplineScene,
   SketchLineScene,
   SketchPlaneFrame,
   SketchVertexScene,
@@ -340,6 +341,64 @@ export function buildSketchEllipseObject(
     sketchEllipse.userData.sketchEntityIsConstruction = ellipse.isConstruction;
   }
   return sketchEllipse;
+}
+
+// Build the curve strip + control polygon for a control-point spline.
+// The core samples the curve in world space already (the same de Boor
+// evaluation the profile walk uses), so the renderer draws the
+// polyline verbatim. Returns the pickable curve line (the entity
+// object) plus the control polygon — a dashed thin strip, always
+// visible like Fusion's control-point display.
+export function buildSketchSplineObject(spline: SketchSplineScene): {
+  curve: THREE.Line;
+  poles: THREE.Line;
+} {
+  const isDashed = spline.isPreview || spline.isConstruction;
+  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const activeColor = themeColor("--color-primary-edge-active", "#c3f5ff");
+  const curveMaterial = isDashed
+    ? new THREE.LineDashedMaterial({
+        color: spline.isSelected ? activeColor : baseColor,
+        transparent: true,
+        opacity: spline.isPreview ? 0.55 : 0.72,
+        dashSize: 1,
+        gapSize: 0.6,
+      })
+    : new THREE.LineBasicMaterial({
+        color: spline.isSelected ? activeColor : baseColor,
+        transparent: true,
+        opacity: 0.98,
+      });
+  configureSketchOverlayMaterial(curveMaterial);
+  const curveGeometry = new THREE.BufferGeometry().setFromPoints(
+    spline.curvePoints.map((p) => new THREE.Vector3(p[0], p[1], p[2])),
+  );
+  const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+  curveLine.renderOrder = 7;
+  if (isDashed) {
+    curveLine.computeLineDistances();
+  }
+  if (!spline.isPreview) {
+    curveLine.userData.sketchEntityId = spline.splineId;
+    curveLine.userData.sketchEntityKind = "spline";
+    curveLine.userData.sketchEntityIsConstruction = spline.isConstruction;
+  }
+
+  const poleMaterial = new THREE.LineDashedMaterial({
+    color: spline.isSelected ? activeColor : baseColor,
+    transparent: true,
+    opacity: 0.5,
+    dashSize: 0.8,
+    gapSize: 0.8,
+  });
+  configureSketchOverlayMaterial(poleMaterial);
+  const poleGeometry = new THREE.BufferGeometry().setFromPoints(
+    spline.polePoints.map((p) => new THREE.Vector3(p[0], p[1], p[2])),
+  );
+  const poleLine = new THREE.Line(poleGeometry, poleMaterial);
+  poleLine.renderOrder = 6;
+  poleLine.computeLineDistances();
+  return { curve: curveLine, poles: poleLine };
 }
 
 // Sample a sketch arc into a polyline and emit it as a THREE.Line.

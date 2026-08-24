@@ -51,6 +51,7 @@ namespace {
 #include "core/sketch/impl/vertex_and_circle_updates.inc"
 #include "core/sketch/impl/constraint_completion_commands.inc"
 #include "core/sketch/impl/ellipse_commands.inc"
+#include "core/sketch/impl/spline_commands.inc"
 #include "core/sketch/impl/dimensions.inc"
 #include "core/sketch/impl/line_primitives.inc"
 #include "core/sketch/impl/mirror.inc"

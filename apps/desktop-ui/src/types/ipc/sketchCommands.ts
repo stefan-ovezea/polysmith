@@ -102,6 +102,14 @@ export interface AddSketchCircleRadiusDimensionCommand {
   };
 }
 
+export interface AddSketchArcLengthDimensionCommand {
+  id: string;
+  type: "add_sketch_arc_length_dimension";
+  payload: {
+    arc_id: string;
+  };
+}
+
 export interface AddSketchArcRadiusDimensionCommand {
   id: string;
   type: "add_sketch_arc_radius_dimension";
@@ -284,6 +292,17 @@ export interface AddSketchEllipseCommand {
     axis_a_y: number;
     axis_b_x: number;
     axis_b_y: number;
+    is_construction?: boolean;
+  };
+}
+
+// Control-point B-spline. The points ARE the poles (regular movable
+// vertices); the core derives degree = min(3, count - 1).
+export interface AddSketchSplineCommand {
+  id: string;
+  type: "add_sketch_spline";
+  payload: {
+    points: Array<{ x: number; y: number }>;
     is_construction?: boolean;
   };
 }

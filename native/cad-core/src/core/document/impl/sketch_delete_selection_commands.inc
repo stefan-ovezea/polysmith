@@ -29,6 +29,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> chamfer_ids;
   std::unordered_set<std::string> slot_ids;
   std::unordered_set<std::string> ellipse_ids;
+  std::unordered_set<std::string> spline_ids;
 
   add_ids(selected_point_ids, point_ids);
 
@@ -56,6 +57,7 @@ DocumentState DocumentManager::delete_sketch_selection(
     add_id(chamfer_ids, entity_id);
     add_id(slot_ids, entity_id);
     add_id(ellipse_ids, entity_id);
+    add_id(spline_ids, entity_id);
   }
 
   for (const auto& point_id : selected_point_ids) {
@@ -86,6 +88,15 @@ DocumentState DocumentManager::delete_sketch_selection(
           ellipse.axis_a_vertex_id == point_id ||
           ellipse.axis_b_vertex_id == point_id) {
         add_id(ellipse_ids, ellipse.id);
+      }
+    }
+    // Selecting a spline pole deletes the whole spline.
+    for (const auto& spline : parameters.splines) {
+      for (const auto& vid : spline.pole_vertex_ids) {
+        if (vid == point_id) {
+          add_id(spline_ids, spline.id);
+          break;
+        }
       }
     }
     for (const auto& projected : parameters.projected_points) {
@@ -203,6 +214,11 @@ DocumentState DocumentManager::delete_sketch_selection(
                   parameters.ellipses.end(),
                   [&](const SketchEllipse& ellipse) {
                     return id_in_set(ellipse_ids, ellipse.id);
+                  }) ||
+      std::any_of(parameters.splines.begin(),
+                  parameters.splines.end(),
+                  [&](const SketchSpline& spline) {
+                    return id_in_set(spline_ids, spline.id);
                   });
   if (!will_delete && !selected_text_ids.empty()) {
     // Pure-glyph selection: delete the owning text entities (Fusion
@@ -262,6 +278,13 @@ DocumentState DocumentManager::delete_sketch_selection(
       add_id(deleted_point_ids, ellipse.center_vertex_id);
       add_id(deleted_point_ids, ellipse.axis_a_vertex_id);
       add_id(deleted_point_ids, ellipse.axis_b_vertex_id);
+    }
+  }
+  for (const auto& spline : parameters.splines) {
+    if (id_in_set(spline_ids, spline.id)) {
+      for (const auto& vid : spline.pole_vertex_ids) {
+        add_id(deleted_point_ids, vid);
+      }
     }
   }
   // Remove points that are still referenced by surviving entities.
@@ -331,6 +354,12 @@ DocumentState DocumentManager::delete_sketch_selection(
                        return id_in_set(ellipse_ids, ellipse.id);
                      }),
       parameters.ellipses.end());
+  parameters.splines.erase(
+      std::remove_if(parameters.splines.begin(), parameters.splines.end(),
+                     [&](const SketchSpline& spline) {
+                       return id_in_set(spline_ids, spline.id);
+                     }),
+      parameters.splines.end());
   parameters.projected_points.erase(
       std::remove_if(parameters.projected_points.begin(),
                      parameters.projected_points.end(),

@@ -369,6 +369,7 @@
     "extend": "Extend",
     "offset": "Offset",
     "slot": "Slot",
+    "spline": "Spline",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
     "polygonEdge": "Edge Polygon",
@@ -946,6 +947,7 @@
   },
   "viewport": {
     "clickPlaceGeometry": "Click to place geometry",
+    "splineFinishHint": "Double-click or press Enter to finish",
     "constraintSelected": "Constraint: {{kind}} — Press Delete to remove",
     "coreStartup": "Core Startup",
     "dimensionReady": "Dimension ready. Pick another element, drag the label, or type a value.",

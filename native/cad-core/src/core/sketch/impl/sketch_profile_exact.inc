@@ -31,7 +31,7 @@ double exact_wrap_angle(double a) {
 // ── exact curve model ─────────────────────────────────────────────
 
 struct ExactCurve {
-  enum class Kind { kLine, kCircle, kArc, kEllipse };
+  enum class Kind { kLine, kCircle, kArc, kEllipse, kSpline };
   Kind kind;
   std::string id;
   // line
@@ -44,7 +44,11 @@ struct ExactCurve {
   bool ccw = true;             // stored sweep direction (circles: ccw)
   double sweep_start = 0.0;    // wrapped angle of the entity's start param
   double sweep_end = 0.0;      // wrapped angle of the entity's end param (arcs)
-  // shared vertex ids for endpoint pre-union (lines and arcs only)
+  // spline extras — param in [0, 1]
+  std::vector<double> pole_xs;
+  std::vector<double> pole_ys;
+  int spline_degree = 3;
+  // shared vertex ids for endpoint pre-union (lines, arcs, splines)
   std::string start_vertex_id;
   std::string end_vertex_id;
 };
@@ -53,6 +57,13 @@ SketchProfilePoint exact_curve_point(const ExactCurve& c, double param) {
   if (c.kind == ExactCurve::Kind::kLine) {
     return SketchProfilePoint{.x = c.x0 + param * (c.x1 - c.x0),
                              .y = c.y0 + param * (c.y1 - c.y0)};
+  }
+  if (c.kind == ExactCurve::Kind::kSpline) {
+    const auto knots = spline_open_uniform_knots(
+        static_cast<int>(c.pole_xs.size()), c.spline_degree);
+    const SplineSample s = spline_eval(c.spline_degree, knots, c.pole_xs,
+                                       c.pole_ys, param);
+    return SketchProfilePoint{.x = s.x, .y = s.y};
   }
   if (c.kind == ExactCurve::Kind::kEllipse) {
     const double cu = std::cos(c.rotation);
@@ -77,6 +88,20 @@ void exact_curve_tangent(const ExactCurve& c, double param, double& tx,
                                  (c.y1 - c.y0) * (c.y1 - c.y0));
     tx = (c.x1 - c.x0) / len;
     ty = (c.y1 - c.y0) / len;
+    return;
+  }
+  if (c.kind == ExactCurve::Kind::kSpline) {
+    const auto knots = spline_open_uniform_knots(
+        static_cast<int>(c.pole_xs.size()), c.spline_degree);
+    const SplineSample s = spline_eval_derivative(c.spline_degree, knots,
+                                                  c.pole_xs, c.pole_ys, param);
+    tx = s.x;
+    ty = s.y;
+    const double len = std::sqrt(tx * tx + ty * ty);
+    if (len > 1e-12) {
+      tx /= len;
+      ty /= len;
+    }
     return;
   }
   if (c.kind == ExactCurve::Kind::kEllipse) {
@@ -142,6 +167,26 @@ double exact_half_edge_area(const ExactCurve& c, double ps, double pe,
                             const SketchProfilePoint& p1) {
   if (c.kind == ExactCurve::Kind::kLine) {
     return 0.5 * (p0.x * p1.y - p1.x * p0.y);
+  }
+  if (c.kind == ExactCurve::Kind::kSpline) {
+    // ½∫(x dy − y dx) over the piece via the shoelace sum of a dense
+    // deterministic sampling, anchored to the exact node coordinates
+    // at both ends (the interior samples come from the same de Boor
+    // evaluation the walk uses everywhere else).
+    constexpr int kSplineAreaSamples = 24;
+    double sum = 0.0;
+    double px = p0.x;
+    double py = p0.y;
+    for (int i = 1; i < kSplineAreaSamples; ++i) {
+      const double u =
+          ps + (pe - ps) * static_cast<double>(i) / kSplineAreaSamples;
+      const SketchProfilePoint q = exact_curve_point(c, u);
+      sum += px * q.y - q.x * py;
+      px = q.x;
+      py = q.y;
+    }
+    sum += px * p1.y - p1.x * py;
+    return 0.5 * sum;
   }
   const double d_theta = pe - ps;
   if (c.kind == ExactCurve::Kind::kEllipse) {
@@ -251,6 +296,95 @@ std::vector<SketchProfilePoint> exact_sample_circle_loop(
   return points;
 }
 
+// ── spline support ───────────────────────────────────────────
+// Intersections and point projections involving splines delegate to
+// OCCT's 2D curve algorithms (spline_profile_occt.cpp — a separate TU
+// so this walk's header chain stays OCCT-free). Lines / circles /
+// arcs keep their closed-form solvers; the OTHER side's parameter is
+// re-derived from the intersection point so the two sides can never
+// disagree.
+
+// The other curve of an intersection as a flattened description.
+SplineProfileCurve exact_other_curve(const ExactCurve& c) {
+  SplineProfileCurve other;
+  if (c.kind == ExactCurve::Kind::kLine) {
+    other.kind = 0;
+    other.values = {c.x0, c.y0, c.x1, c.y1};
+  } else if (c.kind == ExactCurve::Kind::kCircle) {
+    other.kind = 1;
+    other.values = {c.cx, c.cy, c.r};
+  } else if (c.kind == ExactCurve::Kind::kArc) {
+    other.kind = 2;
+    other.values = {c.cx, c.cy, c.r, c.sweep_start, c.sweep_end,
+                    c.ccw ? 1.0 : 0.0};
+  } else {  // spline
+    other.kind = 3;
+    other.pole_xs = c.pole_xs;
+    other.pole_ys = c.pole_ys;
+    other.degree = c.spline_degree;
+  }
+  return other;
+}
+
+// Param on a line / circle / arc / spline from a POINT on it — the
+// inverse of exact_curve_point. Returns nullopt when the point is not
+// within profile tolerance of the curve.
+std::optional<double> exact_curve_param_at_point(const ExactCurve& c,
+                                                 double x, double y) {
+  if (c.kind == ExactCurve::Kind::kLine) {
+    const double abx = c.x1 - c.x0, aby = c.y1 - c.y0;
+    const double len_sq = abx * abx + aby * aby;
+    const double t = len_sq > 1e-18
+                         ? std::max(0.0, std::min(1.0, ((x - c.x0) * abx +
+                                                        (y - c.y0) * aby) /
+                                                           len_sq))
+                         : 0.0;
+    const double qx = c.x0 + t * abx;
+    const double qy = c.y0 + t * aby;
+    if (std::hypot(x - qx, y - qy) > kProfileTolerance) return std::nullopt;
+    return t;
+  }
+  if (c.kind == ExactCurve::Kind::kCircle) {
+    const double dx = x - c.cx, dy = y - c.cy;
+    if (std::abs(std::hypot(dx, dy) - c.r) > kProfileTolerance) {
+      return std::nullopt;
+    }
+    return exact_wrap_angle(std::atan2(dy, dx));
+  }
+  if (c.kind == ExactCurve::Kind::kArc) {
+    const double dx = x - c.cx, dy = y - c.cy;
+    if (std::abs(std::hypot(dx, dy) - c.r) > kProfileTolerance) {
+      return std::nullopt;
+    }
+    const double ang = exact_wrap_angle(std::atan2(dy, dx));
+    if (!exact_angle_in_sweep(ang, c)) return std::nullopt;
+    return ang;
+  }
+  return spline_profile_param_at_point(c.pole_xs, c.pole_ys,
+                                       c.spline_degree, x, y,
+                                       kProfileTolerance);
+}
+
+// Intersections between a spline (first arg) and any other curve kind
+// (second arg) via OCCT.  Fills `out` with (spline param, other param)
+// pairs; the other param is re-derived from the intersection point so
+// only the spline's parameterization comes from OCCT.
+void exact_spline_intersections(const ExactCurve& spline,
+                                const ExactCurve& other,
+                                std::vector<std::pair<double, double>>& out) {
+  std::vector<SplineProfileIntersection> recs;
+  spline_profile_intersections(spline.pole_xs, spline.pole_ys,
+                               spline.spline_degree, exact_other_curve(other),
+                               recs);
+  for (const auto& rec : recs) {
+    const auto oparam =
+        exact_curve_param_at_point(other, rec.x, rec.y);
+    if (oparam.has_value()) {
+      out.push_back({rec.spline_param, oparam.value()});
+    }
+  }
+}
+
 }  // namespace
 
 // ── main entry: build every bounded region of the exact arrangement ──
@@ -313,6 +447,20 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         .rotation = ellipse.rotation,
         .ccw = true,
     });
+  }
+  for (const auto& spline : parameters.splines) {
+    if (spline.is_construction) continue;
+    if (spline.pole_xs.size() < 2) continue;
+    ExactCurve sc{
+        .kind = ExactCurve::Kind::kSpline,
+        .id = spline.id,
+        .spline_degree = spline.degree,
+    };
+    sc.pole_xs = spline.pole_xs;
+    sc.pole_ys = spline.pole_ys;
+    sc.start_vertex_id = spline.pole_vertex_ids.front();
+    sc.end_vertex_id = spline.pole_vertex_ids.back();
+    curves.push_back(std::move(sc));
   }
   if (curves.empty()) return regions;
 
@@ -393,6 +541,17 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             out.push_back({angle_param(is.param_on_target),
                            angle_param(is.param_on_other)});
           }
+        } else if (A.kind == K::kSpline && B.kind != K::kEllipse) {
+          exact_spline_intersections(A, B, out);
+        } else if (B.kind == K::kSpline && A.kind != K::kEllipse) {
+          std::vector<std::pair<double, double>> recs;
+          exact_spline_intersections(B, A, recs);
+          for (const auto& [pa, pb] : recs) out.push_back({pb, pa});
+        } else if (A.kind == K::kEllipse || B.kind == K::kEllipse) {
+          // v1: ellipses have no cross-curve intersections (pre-existing
+          // gap — ellipse regions only form standalone).  Explicitly
+          // skipped so spline x ellipse can never fall into the
+          // arc x arc solver with garbage circle fields.
         } else {  // arc x arc
           for (const auto& is : intersect_arc_arc(as_arc(A), as_arc(B))) {
             out.push_back({angle_param(is.param_on_target),
@@ -428,6 +587,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
           refs.push_back({c.sweep_end, c.end_vertex_id,
                           c.cx + c.r * std::cos(c.sweep_end),
                           c.cy + c.r * std::sin(c.sweep_end)});
+        } else if (c.kind == ExactCurve::Kind::kSpline) {
+          refs.push_back({0.0, c.start_vertex_id, c.pole_xs.front(),
+                          c.pole_ys.front()});
+          refs.push_back({1.0, c.end_vertex_id, c.pole_xs.back(),
+                          c.pole_ys.back()});
         }
         return refs;
       };
@@ -456,6 +620,12 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             splits[src_idx].push_back(ref.param);
             splits[dst_idx].push_back(ang);
             unions.push_back({src_idx, ref.param, dst_idx, ang});
+          } else if (dst.kind == ExactCurve::Kind::kSpline) {
+            const auto p = exact_curve_param_at_point(dst, ref.x, ref.y);
+            if (!p.has_value()) continue;
+            splits[src_idx].push_back(ref.param);
+            splits[dst_idx].push_back(p.value());
+            unions.push_back({src_idx, ref.param, dst_idx, p.value()});
           } else {  // line
             if (exact_point_segment_dist_sq(ref.x, ref.y, dst.x0, dst.y0,
                                             dst.x1, dst.y1) >
@@ -491,14 +661,16 @@ std::vector<SketchProfileRegion> build_exact_profiles(
           curves[b].kind == ExactCurve::Kind::kEllipse) continue;
       const ExactCurve& ca = curves[a];
       const ExactCurve& cb = curves[b];
-      const double pa_start = (ca.kind == ExactCurve::Kind::kLine)
-                                  ? 0.0 : ca.sweep_start;
-      const double pa_end = (ca.kind == ExactCurve::Kind::kLine)
-                                ? 1.0 : ca.sweep_end;
-      const double pb_start = (cb.kind == ExactCurve::Kind::kLine)
-                                  ? 0.0 : cb.sweep_start;
-      const double pb_end = (cb.kind == ExactCurve::Kind::kLine)
-                                ? 1.0 : cb.sweep_end;
+      const bool a_is_open =
+          ca.kind == ExactCurve::Kind::kLine ||
+          ca.kind == ExactCurve::Kind::kSpline;
+      const bool b_is_open =
+          cb.kind == ExactCurve::Kind::kLine ||
+          cb.kind == ExactCurve::Kind::kSpline;
+      const double pa_start = a_is_open ? 0.0 : ca.sweep_start;
+      const double pa_end = a_is_open ? 1.0 : ca.sweep_end;
+      const double pb_start = b_is_open ? 0.0 : cb.sweep_start;
+      const double pb_end = b_is_open ? 1.0 : cb.sweep_end;
       if (!ca.start_vertex_id.empty() &&
           ca.start_vertex_id == cb.start_vertex_id) {
         unions.push_back({a, pa_start, b, pb_start});
@@ -523,8 +695,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
   std::vector<std::vector<std::pair<double, int>>> node_lookup(nc);
 
   auto canonical_param = [&](const ExactCurve& c, double p) {
-    return (c.kind == ExactCurve::Kind::kLine) ? line_param(p)
-                                               : angle_param(p);
+    if (c.kind == ExactCurve::Kind::kLine) return line_param(p);
+    if (c.kind == ExactCurve::Kind::kSpline) {
+      return std::max(0.0, std::min(1.0, p));
+    }
+    return angle_param(p);
   };
 
   auto vertex_coords = [&](const std::string& vid, double fx, double fy) {
@@ -557,10 +732,16 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     // Endpoint vertex override.
     if (c.kind != ExactCurve::Kind::kCircle &&
         c.kind != ExactCurve::Kind::kEllipse) {
-      const double p_start = (c.kind == ExactCurve::Kind::kLine)
-                                 ? 0.0 : c.sweep_start;
-      const double p_end = (c.kind == ExactCurve::Kind::kLine)
-                               ? 1.0 : c.sweep_end;
+      const double p_start =
+          (c.kind == ExactCurve::Kind::kLine ||
+           c.kind == ExactCurve::Kind::kSpline)
+              ? 0.0
+              : c.sweep_start;
+      const double p_end =
+          (c.kind == ExactCurve::Kind::kLine ||
+           c.kind == ExactCurve::Kind::kSpline)
+              ? 1.0
+              : c.sweep_end;
       if (std::abs(p - p_start) <= kExactParamEps &&
           !c.start_vertex_id.empty()) {
         const SketchProfilePoint vp =
@@ -590,6 +771,9 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     } else if (c.kind == ExactCurve::Kind::kArc) {
       ps.push_back(c.sweep_start);
       ps.push_back(c.sweep_end);
+    } else if (c.kind == ExactCurve::Kind::kSpline) {
+      ps.push_back(0.0);
+      ps.push_back(1.0);
     }
     std::sort(ps.begin(), ps.end());
     ps.erase(std::unique(ps.begin(), ps.end(), [](double x, double y) {
@@ -602,7 +786,8 @@ std::vector<SketchProfileRegion> build_exact_profiles(
 
     // Ordered param sequence along the sweep direction.
     std::vector<double> seq;
-    if (c.kind == ExactCurve::Kind::kLine) {
+    if (c.kind == ExactCurve::Kind::kLine ||
+        c.kind == ExactCurve::Kind::kSpline) {
       seq = ps;
     } else {
       for (double p : ps) seq.push_back(exact_lift_to_sweep(c, p));
@@ -710,9 +895,15 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       if (c.kind == ExactCurve::Kind::kCircle ||
           c.kind == ExactCurve::Kind::kEllipse) continue;
       const double p_start =
-          (c.kind == ExactCurve::Kind::kLine) ? 0.0 : c.sweep_start;
+          (c.kind == ExactCurve::Kind::kLine ||
+           c.kind == ExactCurve::Kind::kSpline)
+              ? 0.0
+              : c.sweep_start;
       const double p_end =
-          (c.kind == ExactCurve::Kind::kLine) ? 1.0 : c.sweep_end;
+          (c.kind == ExactCurve::Kind::kLine ||
+           c.kind == ExactCurve::Kind::kSpline)
+              ? 1.0
+              : c.sweep_end;
       int start_node = -1;
       int end_node = -1;
       for (const auto& h : half_edges) {
@@ -814,9 +1005,13 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       // For a curve arrival, the curve center is LEFT of the incoming
       // direction exactly when this walk is the curve's inside face
       // (holds for CCW and CW entities alike).  Meaningless for line
-      // arrivals.
+      // and spline arrivals (splines have no center).
+      const bool incoming_has_center =
+          curves[h.curve].kind == ExactCurve::Kind::kCircle ||
+          curves[h.curve].kind == ExactCurve::Kind::kArc ||
+          curves[h.curve].kind == ExactCurve::Kind::kEllipse;
       const bool center_left =
-          incoming_is_line
+          !incoming_has_center
               ? false
               : d_in_x * (curves[h.curve].cy - nodes[at].y) -
                         d_in_y * (curves[h.curve].cx - nodes[at].x) > 0.0;
@@ -1231,14 +1426,22 @@ std::vector<SketchProfileRegion> build_exact_profiles(
                                   ? "circle"
                                   : (c.kind == ExactCurve::Kind::kEllipse
                                          ? "ellipse"
-                                         : "arc"));
+                                         : (c.kind == ExactCurve::Kind::kSpline
+                                                ? "spline"
+                                                : "arc")));
       be.param_start = h.param_start;
       be.param_end = h.param_end;
       be.start_x = nodes[h.node_start].x;
       be.start_y = nodes[h.node_start].y;
       be.end_x = nodes[h.node_end].x;
       be.end_y = nodes[h.node_end].y;
-      if (c.kind != ExactCurve::Kind::kLine) {
+      if (c.kind == ExactCurve::Kind::kSpline) {
+        // Carry the control poles so the wire builder can rebuild the
+        // exact curve from the snapshot (no live entity lookup).
+        be.spline_degree = c.spline_degree;
+        be.spline_pole_xs = c.pole_xs;
+        be.spline_pole_ys = c.pole_ys;
+      } else if (c.kind != ExactCurve::Kind::kLine) {
         be.center_x = c.cx;
         be.center_y = c.cy;
         be.radius = c.r;

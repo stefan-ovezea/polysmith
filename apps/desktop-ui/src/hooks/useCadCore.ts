@@ -16,6 +16,7 @@ import {
   makeDeleteSketchChamferCommand,
   makeAddSketchEllipseCommand,
   makeAddSketchSlotCommand,
+  makeAddSketchSplineCommand,
   makeUpdateSketchSlotCommand,
   makeExtendSketchEntityCommand,
   makeOffsetSketchEntityCommand,
@@ -47,6 +48,7 @@ import {
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
   makeAddSketchLineAngleDimensionCommand,
+  makeAddSketchArcLengthDimensionCommand,
   makeAddSketchArcRadiusDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
   makeAddSketchVertexDistanceDimensionCommand,
@@ -866,6 +868,10 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    addSketchArcLengthDimension: async (arcId: string) => {
+      await sendCoreCommand(makeAddSketchArcLengthDimensionCommand(arcId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     addSketchArcRadiusDimension: async (arcId: string) => {
       await sendCoreCommand(
         makeAddSketchArcRadiusDimensionCommand(arcId),
@@ -1035,6 +1041,15 @@ export function useCadCore() {
           axisBY,
           isConstruction,
         ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchSpline: async (
+      points: Array<{ x: number; y: number }>,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchSplineCommand(points, isConstruction),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

@@ -166,6 +166,25 @@ export const EllipseIcon = () => (
   </svg>
 );
 
+// Sketch Spline tool glyph: a control-point curve with its poles.
+export const SplineIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 17 C 9 17, 11 7, 15 7 S 21 9, 20 12" />
+    <circle cx="4" cy="17" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="7" r="1" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="12" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 // Sketch Slot tool glyph: a horizontal stadium (slot) outline with
 // its center axis.
 export const SlotIcon = () => (
@@ -427,6 +446,8 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <OffsetIcon />;
     case "ellipse":
       return <EllipseIcon />;
+    case "spline":
+      return <SplineIcon />;
     case "slot":
       return <SlotIcon />;
     case "text":

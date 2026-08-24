@@ -228,6 +228,22 @@ export interface SketchEllipseScene {
   generatedBy: string | null;
 }
 
+// Control-point B-spline derived from `ViewportSketchSpline`: the
+// curve as a sampled world polyline plus the control poles. The
+// renderer draws the polyline strip and the control polygon.
+export interface SketchSplineScene {
+  isPreview: boolean;
+  splineId: string;
+  planeId: string;
+  planeFrame: SketchEntityPlaneFrame | null;
+  curvePoints: [number, number, number][];
+  polePoints: [number, number, number][];
+  degree: number;
+  isSelected: boolean;
+  isConstruction: boolean;
+  generatedBy: string | null;
+}
+
 // Regular polygon derived from ViewportSketchPolygon.
 export interface SketchPolygonScene {
   isPreview: boolean;

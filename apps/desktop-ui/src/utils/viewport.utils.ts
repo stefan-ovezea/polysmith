@@ -20,6 +20,7 @@ export {
   buildSketchDimensionObject,
   buildSketchEllipseObject,
   buildSketchLineObject,
+  buildSketchSplineObject,
   buildSketchPointObject,
   buildSketchPolygonObject,
   buildSketchProfileObject,

@@ -20,6 +20,7 @@ import type {
   SketchDimensionScene,
   SketchConstraintScene,
   SketchEllipseScene,
+  SketchSplineScene,
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
@@ -178,6 +179,21 @@ export interface ViewportSketchEllipse {
   generated_by: string | null;
 }
 
+// Control-point B-spline primitive: the curve as a sampled world
+// polyline plus the control poles (world coordinates).
+export interface ViewportSketchSpline {
+  spline_id: string;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
+  curve_points: Vector3[];
+  pole_points: Vector3[];
+  degree: number;
+  is_selected: boolean;
+  is_construction: boolean;
+  is_preview: boolean;
+  generated_by: string | null;
+}
+
 export interface ViewportSketchPolygon {
   polygon_id: string;
   plane_id: string;
@@ -321,6 +337,7 @@ export interface ViewportScene {
   sketchLines: SketchLineScene[];
   sketchCircles: SketchCircleScene[];
   sketchEllipses: SketchEllipseScene[];
+  sketchSplines: SketchSplineScene[];
   sketchPolygons: SketchPolygonScene[];
   sketchArcs: SketchArcScene[];
   sketchDimensions: SketchDimensionScene[];

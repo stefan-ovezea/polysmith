@@ -230,7 +230,7 @@ void transform_sketch_entities(FeatureEntry& feature,
   // not rotated (mirrors the plan's "rotate+copy strips H/V").
   if (copy) {
     std::vector<std::string> line_ids, circle_ids, arc_ids, ellipse_ids,
-        slot_ids;
+        slot_ids, spline_ids;
     line_ids.reserve(parameters.lines.size());
     for (const auto& line : parameters.lines) line_ids.push_back(line.id);
     for (const auto& circle : parameters.circles) circle_ids.push_back(circle.id);
@@ -238,11 +238,14 @@ void transform_sketch_entities(FeatureEntry& feature,
     for (const auto& ellipse : parameters.ellipses)
       ellipse_ids.push_back(ellipse.id);
     for (const auto& slot : parameters.slots) slot_ids.push_back(slot.id);
+    for (const auto& spline : parameters.splines)
+      spline_ids.push_back(spline.id);
     int next_line = next_trim_entity_index(line_ids);
     int next_circle = next_trim_entity_index(circle_ids);
     int next_arc = next_trim_entity_index(arc_ids);
     int next_ellipse = next_trim_entity_index(ellipse_ids);
     int next_slot = next_trim_entity_index(slot_ids);
+    int next_spline = next_trim_entity_index(spline_ids);
 
     // Copies share vertices with EACH OTHER when the source entities
     // shared them (a copied rectangle keeps unified corners), but
@@ -341,6 +344,24 @@ void transform_sketch_entities(FeatureEntry& feature,
             .is_construction = slot.is_construction,
         });
       }
+      for (const auto& spline : parameters.splines) {
+        if (spline.id != entity_id) continue;
+        SketchSpline copy;
+        copy.id = "spline-" + std::to_string(next_spline++);
+        copy.degree = spline.degree;
+        copy.is_construction = spline.is_construction;
+        copy.pole_vertex_ids.reserve(spline.pole_vertex_ids.size());
+        copy.pole_xs.reserve(spline.pole_xs.size());
+        copy.pole_ys.reserve(spline.pole_ys.size());
+        for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+          copy.pole_vertex_ids.push_back(
+              copy_vertex(spline.pole_vertex_ids[i]));
+          const auto p = transform_point(spline.pole_xs[i], spline.pole_ys[i]);
+          copy.pole_xs.push_back(p.first);
+          copy.pole_ys.push_back(p.second);
+        }
+        parameters.splines.push_back(std::move(copy));
+      }
       // Standalone point ids are not copyable — ignored.
     }
 
@@ -410,6 +431,17 @@ void transform_sketch_entities(FeatureEntry& feature,
       }
     }
     if (matched) continue;
+    for (const auto& spline : parameters.splines) {
+      if (spline.id == entity_id) {
+        // Every pole is movable — move the whole control polygon.
+        for (const auto& vid : spline.pole_vertex_ids) {
+          moved_vertex_ids.insert(vid);
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
     moved_vertex_ids.insert(entity_id);
   }
 
@@ -468,6 +500,14 @@ void transform_sketch_entities(FeatureEntry& feature,
       if (line.end_vertex_id == vertex_id) {
         line.end_x = target.first;
         line.end_y = target.second;
+      }
+    }
+    for (auto& spline : parameters.splines) {
+      for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+        if (spline.pole_vertex_ids[i] == vertex_id) {
+          spline.pole_xs[i] = target.first;
+          spline.pole_ys[i] = target.second;
+        }
       }
     }
     for (auto& circle : parameters.circles) {

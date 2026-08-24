@@ -144,6 +144,7 @@ interface ViewportPointerUpParams {
   createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
   selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
   createDimensionArc: ActiveSketchPointerUpContext["createDimensionArc"];
+  createDimensionArcLength: ActiveSketchPointerUpContext["createDimensionArcLength"];
   selectDimensionArc: ActiveSketchPointerUpContext["selectDimensionArc"];
   createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];
   selectDimensionPolygon: ActiveSketchPointerUpContext["selectDimensionPolygon"];
@@ -154,6 +155,13 @@ interface ViewportPointerUpParams {
   rectSecondPointRef: MutableRef<Point2d | null>;
   circleSecondPointRef: MutableRef<Point2d | null>;
   ellipseSecondPointRef: MutableRef<Point2d | null>;
+  splineDraftPolesRef: MutableRef<Point2d[]>;
+  clearPreviewSpline: () => void;
+  updatePreviewSpline: () => void;
+  addSketchSpline: (
+    points: Array<{ x: number; y: number }>,
+    isConstruction: boolean,
+  ) => Promise<void> | void;
   chainBreakRequestedRef: MutableRef<boolean>;
   previousLineAngleRef: MutableRef<number | null>;
   draftStartMidpointHostRef: MutableRef<string | null>;
@@ -423,6 +431,7 @@ function handleActiveSketchToolPointerUp(
     createDimensionCircle: params.createDimensionCircle,
     selectDimensionCircle: params.selectDimensionCircle,
     createDimensionArc: params.createDimensionArc,
+    createDimensionArcLength: params.createDimensionArcLength,
     selectDimensionArc: params.selectDimensionArc,
     createDimensionPolygon: params.createDimensionPolygon,
     selectDimensionPolygon: params.selectDimensionPolygon,
@@ -460,8 +469,55 @@ function resolveChamferPoint(params: ViewportPointerUpParams) {
   return rawPoint ? params.resolveSnappedSketchPoint(rawPoint) : null;
 }
 
+// Spline draft: click-to-place poles. Clicking the first pole again
+// (the snapped point resolves to its exact coordinates) commits the
+// control-point spline; Escape clears the session.
+function handleSplineDraftPointerUp(params: ViewportPointerUpParams) {
+  const rawPoint = resolveSketchPlanePoint(
+    params.event,
+    params.renderer,
+    params.camera,
+    params.activeSketchPlaneId,
+    params.activeSketchPlaneFrame,
+  );
+  if (!rawPoint) {
+    return;
+  }
+  const sketchPoint = params.resolveSnappedSketchPoint(rawPoint);
+  params.setSketchSnapLabel(sketchPoint.snapLabel);
+  const poles = params.splineDraftPolesRef.current;
+  const [x, y] = sketchPoint.local;
+  // A click on the last placed pole is a duplicate (the second click
+  // of a double-click lands exactly on the first) — ignore it so
+  // double-click commits cleanly.
+  if (poles.length > 0) {
+    const [lx, ly] = poles[poles.length - 1];
+    if (Math.hypot(x - lx, y - ly) <= 1e-6) {
+      return;
+    }
+  }
+  if (poles.length >= 2) {
+    const [fx, fy] = poles[0];
+    if (Math.hypot(x - fx, y - fy) <= 1e-6) {
+      void params.addSketchSpline(
+        poles.map((p) => ({ x: p[0], y: p[1] })),
+        params.isConstruction,
+      );
+      params.splineDraftPolesRef.current = [];
+      params.clearPreviewSpline();
+      return;
+    }
+  }
+  poles.push([x, y]);
+  params.updatePreviewSpline();
+}
+
 function commitActiveSketchDraft(params: ViewportPointerUpParams) {
   if (!params.activeSketchPlaneId) {
+    return;
+  }
+  if (params.activeSketchToolRef.current === "spline") {
+    handleSplineDraftPointerUp(params);
     return;
   }
   const rawPoint = resolveSketchPlanePoint(

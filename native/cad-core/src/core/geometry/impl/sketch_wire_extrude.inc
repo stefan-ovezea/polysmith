@@ -233,6 +233,48 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       continue;
     }
 
+    if (be.entity_kind == "spline") {
+      // Exact clamped B-spline edge from the boundary's cached poles —
+      // the same open-uniform convention the profile walk evaluates
+      // (spline_math.h), so the extruded edge IS the drawn curve.
+      const int n = static_cast<int>(be.spline_pole_xs.size());
+      if (n < 2) {
+        throw std::runtime_error("Spline boundary edge has too few poles");
+      }
+      int degree = std::min(be.spline_degree, n - 1);
+      degree = std::max(1, degree);
+      TColgp_Array1OfPnt poles(1, n);
+      for (int i = 0; i < n; ++i) {
+        poles.SetValue(i + 1, to_world_point(frame, be.spline_pole_xs[i],
+                                             be.spline_pole_ys[i]));
+      }
+      // OCCT takes DISTINCT knot values with per-value multiplicities
+      // (the expanded sequence the de Boor evaluator uses would be
+      // misread as a near-zero interval).
+      const int interior = n - degree - 1;
+      const int knot_count = interior + 2;
+      TColStd_Array1OfReal knots(1, knot_count);
+      TColStd_Array1OfInteger mults(1, knot_count);
+      knots.SetValue(1, 0.0);
+      mults.SetValue(1, degree + 1);
+      for (int i = 1; i <= interior; ++i) {
+        knots.SetValue(i + 1, static_cast<double>(i) /
+                                  static_cast<double>(interior + 1));
+        mults.SetValue(i + 1, 1);
+      }
+      knots.SetValue(knot_count, 1.0);
+      mults.SetValue(knot_count, degree + 1);
+      Handle(Geom_Curve) piece =
+          new Geom_BSplineCurve(poles, knots, mults, degree);
+      // A split spline contributes only its walked sub-span.
+      if (std::abs(be.param_start) > 1e-12 ||
+          std::abs(be.param_end - 1.0) > 1e-12) {
+        piece = new Geom_TrimmedCurve(piece, be.param_start, be.param_end);
+      }
+      wire_builder.Add(BRepBuilderAPI_MakeEdge(piece));
+      continue;
+    }
+
     const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
     const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
     const gp_Circ circ(gp_Ax2(center, normal), be.radius);

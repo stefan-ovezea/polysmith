@@ -727,6 +727,7 @@ function App() {
     addSketchLineAngleDimension,
     addSketchCircleRadiusDimension,
     addSketchArcRadiusDimension,
+    addSketchArcLengthDimension,
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
     addSketchCircle,
@@ -740,6 +741,7 @@ function App() {
     updateSketchChamfer,
     deleteSketchChamfer,
     addSketchEllipse,
+    addSketchSpline,
     addSketchSlot,
     updateSketchSlot,
     extendSketchEntity,
@@ -1927,6 +1929,11 @@ function App() {
                   await addSketchArcRadiusDimension(arcId);
                 });
               }}
+              onAddSketchArcLengthDimension={async (arcId) => {
+                await runAction(async () => {
+                  await addSketchArcLengthDimension(arcId);
+                });
+              }}
               onAddSketchPolygonRadiusDimension={async (polygonId) => {
                 await runAction(async () => {
                   await addSketchPolygonRadiusDimension(polygonId);
@@ -2065,6 +2072,11 @@ function App() {
                     axisBY,
                     isConstruction,
                   );
+                });
+              }}
+              onAddSketchSpline={async (points, isConstruction) => {
+                await runAction(async () => {
+                  await addSketchSpline(points, isConstruction);
                 });
               }}
               onAddSketchSlot={async (

@@ -97,6 +97,42 @@ json to_payload(const polysmith::core::ViewportSketchEllipsePrimitive& primitive
   };
 }
 
+json to_payload(const polysmith::core::ViewportSketchSplinePrimitive& primitive) {
+  json curve_points = json::array();
+  for (size_t i = 0; i < primitive.curve_xs.size(); ++i) {
+    curve_points.push_back({
+        {"x", primitive.curve_xs[i]},
+        {"y", primitive.curve_ys[i]},
+        {"z", primitive.curve_zs[i]},
+    });
+  }
+  json pole_points = json::array();
+  for (size_t i = 0; i < primitive.pole_xs.size(); ++i) {
+    pole_points.push_back({
+        {"x", primitive.pole_xs[i]},
+        {"y", primitive.pole_ys[i]},
+        {"z", primitive.pole_zs[i]},
+    });
+  }
+  return {
+      {"spline_id", primitive.spline_id},
+      {"plane_id", primitive.plane_id},
+      {"plane_frame",
+       primitive.plane_frame.has_value()
+           ? viewport_sketch_plane_frame_to_payload(primitive.plane_frame.value())
+           : json(nullptr)},
+      {"curve_points", curve_points},
+      {"pole_points", pole_points},
+      {"degree", primitive.degree},
+      {"is_selected", primitive.is_selected},
+      {"is_construction", primitive.is_construction},
+      {"is_preview", primitive.is_preview},
+      {"generated_by",
+       primitive.generated_by.has_value() ? json(primitive.generated_by.value())
+                                          : json(nullptr)},
+  };
+}
+
 json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
   return {
       {"arc_id", primitive.arc_id},

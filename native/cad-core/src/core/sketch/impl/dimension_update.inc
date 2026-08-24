@@ -503,6 +503,27 @@ void update_sketch_dimension(FeatureEntry& feature,
     return;
   }
 
+  if (dimension.kind == "arc_length") {
+    // Store the length; the enforcement derives the sweep from
+    // length / radius and re-positions the end vertex.
+    const auto arc_it = std::find_if(
+        parameters.arcs.begin(),
+        parameters.arcs.end(),
+        [&](const SketchArc& arc) { return arc.id == dimension.entity_id; });
+    if (arc_it == parameters.arcs.end()) {
+      throw std::runtime_error("Sketch arc not found for dimension: " + dimension_id);
+    }
+    if (value <= 0.0) {
+      throw std::runtime_error("Arc length must be positive");
+    }
+    dimension.value = value;
+    dimension.driven = false;
+    refresh_sketch_derived_state(feature);
+    fallback_to_driven();
+    sync_all_labels();
+    return;
+  }
+
   if (dimension.kind == "arc_angle") {
     const auto arc_it = std::find_if(
         parameters.arcs.begin(),

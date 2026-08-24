@@ -150,6 +150,7 @@ export interface ActiveSketchPointerUpContext {
   createDimensionCircle: (circleId: string, label: string) => void;
   selectDimensionCircle: (circleId: string) => void;
   createDimensionArc: (arcId: string) => void;
+  createDimensionArcLength: (arcId: string) => void;
   selectDimensionArc: (arcId: string) => void;
   createDimensionPolygon: (polygonId: string) => void;
   selectDimensionPolygon: (polygonId: string) => void;
@@ -382,6 +383,7 @@ export function handleActiveSketchPointerUpTool(
       createCircle: context.createDimensionCircle,
       selectCircle: context.selectDimensionCircle,
       createArc: context.createDimensionArc,
+      createArcLength: context.createDimensionArcLength,
       selectArc: context.selectDimensionArc,
       createPolygon: context.createDimensionPolygon,
       selectPolygon: context.selectDimensionPolygon,

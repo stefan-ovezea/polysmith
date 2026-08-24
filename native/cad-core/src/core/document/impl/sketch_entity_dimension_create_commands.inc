@@ -217,6 +217,30 @@ DocumentState DocumentManager::add_sketch_arc_angle_dimension(
   return document_.value();
 }
 
+DocumentState DocumentManager::add_sketch_arc_length_dimension(
+    const std::string& arc_id) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_arc_length_dimension(*feature_it, arc_id);
+  document_->selected_sketch_dimension_id =
+      std::make_optional(std::string("dim-arc-length-") + arc_id);
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::add_sketch_polygon_radius_dimension(
     const std::string& polygon_id) {
   require_document();

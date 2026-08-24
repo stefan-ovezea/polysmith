@@ -160,6 +160,15 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
   }
 
+  for (const auto& spline : parameters.splines) {
+    // Poles are regular movable "endpoint" vertices — pole dragging,
+    // snapping, and shared-vertex propagation work unchanged.
+    for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+      append_point(spline.pole_vertex_ids[i], "endpoint", spline.pole_xs[i],
+                   spline.pole_ys[i]);
+    }
+  }
+
   for (const auto& slot : parameters.slots) {
     // The slot center is a regular movable vertex (like a circle
     // center) so it joins the vertex graph for distance dimensions.
@@ -487,6 +496,17 @@ void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
     const auto center_id = circle_center_vertex_id(circle);
     if (const auto* cv = find_v(center_id)) {
       circle.center_x = cv->x; circle.center_y = cv->y;
+    }
+  }
+
+  // Spline poles: the vertex table is authoritative — any vertex move
+  // (drag, solver solve, shared-point propagation) re-fits the curve.
+  for (auto& spline : parameters.splines) {
+    for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+      if (const auto* pv = find_v(spline.pole_vertex_ids[i])) {
+        spline.pole_xs[i] = pv->x;
+        spline.pole_ys[i] = pv->y;
+      }
     }
   }
 }

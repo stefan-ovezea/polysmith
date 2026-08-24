@@ -285,6 +285,7 @@ interface DimensionToolClickContext {
   createCircle: (circleId: string, label: string) => void;
   selectCircle: (circleId: string) => void;
   createArc: (arcId: string) => void;
+  createArcLength: (arcId: string) => void;
   selectArc: (arcId: string) => void;
   createPolygon: (polygonId: string) => void;
   selectPolygon: (polygonId: string) => void;
@@ -513,10 +514,30 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
     case "linear":
     case "aligned":
     case "angular":
-    case "radius":
-    case "diameter":
-    case "arc_length":
       break;
+    case "radius":
+    case "diameter": {
+      // Radius/diameter: circle -> radius dimension (diameter is the
+      // default display); arc -> arc radius dimension.
+      const hit = context.hit;
+      if (hit?.kind === "sketch_entity" && hit.entityKind === "circle") {
+        context.createCircle(hit.id, "");
+        return;
+      }
+      if (hit?.kind === "sketch_entity" && hit.entityKind === "arc") {
+        context.createArc(hit.id);
+        return;
+      }
+      break;
+    }
+    case "arc_length": {
+      const hit = context.hit;
+      if (hit?.kind === "sketch_entity" && hit.entityKind === "arc") {
+        context.createArcLength(hit.id);
+        return;
+      }
+      break;
+    }
     // --- Drawing-sheet modes (reserved for ISO dimensioning) ---
     case "ordinate":
     case "jogged_radial":

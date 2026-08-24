@@ -248,6 +248,71 @@ green.
   cases reproduced the failure (fail-before/pass-after). All 19 suites
   green + tsc clean after the fix.
 
+**SK6 (dimension completion) — implemented, UNCOMMITTED**: diameter
+display via `display_as` (stored value stays the radius — conversion
+at the IPC boundary: payload emits D, parser stores D/2, numeric
+update halves), arc_length end-to-end (creation, update branch,
+driven re-measure, "L" viewport label), arc_angle update dispatch
+branch. UI: dimension-tool dropdown modes radius/diameter/arc-length.
+`cad_core_dimension_completion_test` (3 cases, both epsilon sides).
+All 27 suites + tsc green. Commit blocked pending explicit user
+approval + in-app verification (auto-mode classifier).
+
+**SK7 (spline) — in progress, core + tests written, UI wired, tsc
+green, core rebuild in flight**:
+
+- `SketchSpline` entity (poles = regular movable vertices, degree =
+  min(3, n-1), clamped open-uniform knots — `spline_math.h` shared by
+  the walk/viewport/wire builder). No solver registration (plan).
+- Profile engine: `ExactCurve::Kind::kSpline` — de Boor point/tangent,
+  shoelace area, OCCT intersections via `spline_profile_occt.cpp`
+  (separate TU so the walk stays OCCT-header-free; sketch_profile_test
+  now links OCCT), touch records, endpoint pre-union, dangling drop,
+  boundary edges carry the poles; region kind "spline".
+- Wire builder: exact `Geom_BSplineCurve` edge trimmed to the walked
+  sub-span (feature_shape.cpp).
+- Lifecycle: rebuild emits poles; vertex sync + solver writeback +
+  connected-point move + transform move/copy re-fit the poles; delete
+  path (pole click deletes the whole spline); serialization parser +
+  emitter; viewport primitive (sampled polyline + poles); IPC handler
+  + doc wrapper + schema + AI schemas; whitelist "spline".
+- `cad_core_spline_test` (9 cases: creation, pole-count validation,
+  pole-drag re-fit, full profiles_match single spline-bound region,
+  crossing-line split, extrude smoke, move, trim rejection, save/load
+  round-trip).
+- UI: SplineIcon + toolbar entry + i18n; click-to-place-pole draft
+  with a REAL B-spline preview (TS de Boor mirroring spline_math.h),
+  click the first pole to commit, Escape cancels; scene render +
+  picking; threading through ViewportPanel/pointerUp/callbackRefs/
+  App/useCadCore.
+- Deferred: spline mirror (mirror only folds lines/circles today —
+  same as arcs/ellipses), spline×ellipse intersections (pre-existing
+  ellipse gap), trim/extend/offset on splines (clear rejection).
+
+### SK7 draft-UX rework (user-reported, fixed)
+
+- Commit discoverability: double-click, Enter, tool-switch (commits
+  instead of discarding), and click-first-pole all commit; Escape
+  still cancels. Snap label hints "Double-click or press Enter to
+  finish" after 2+ poles (i18n `viewport.splineFinishHint`).
+- Draft now mouse-follows: the move path rebuilds the preview with a
+  dashed rubber segment last-pole→cursor (splineDraftPreview
+  `cursor`), duplicate consecutive poles deduped.
+- FOLLOW-UP (user-reported, still open): the rubber line preview is
+  wired through draftPointerPreview but does not render in-app —
+  investigate after the SK6/SK7 commit (suspects: the pointer-move
+  path for the spline tool not reaching renderDraftPointerPreview, or
+  the preview group being cleared right after rebuild).
+
+### SK7 fixes folded in (before first green build)
+
+- OCCT's in-tree build dir (occt8-build/inc) lacks the TColStd/
+  TColgp array templates (deprecated headers, install tree only) —
+  added `include_directories(occt8-install/inc)` in cad-core CMake.
+- The vendored `Geom2dAPI_InterCurveCurve` has NO parameter accessor
+  (reduced OCCT 8 API): spline-side params come from point projection
+  instead; tangent overlaps processed via `Segment()` endpoints.
+
 ## Commit guidance
 
 SK3 (ellipse + slot + chamfer + the SK2 anchor-mapping revert) is one

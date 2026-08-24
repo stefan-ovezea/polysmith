@@ -16,6 +16,7 @@ export type Shape2D =
   | "offset"
   | "ellipse"
   | "slot"
+  | "spline"
   | "trim";
 
 export type Axis = "x" | "y" | "z";

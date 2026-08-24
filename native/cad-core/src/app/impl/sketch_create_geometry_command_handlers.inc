@@ -198,6 +198,29 @@
     return;
   }
 
+  if (command.type == "add_sketch_spline") {
+    bool is_construction = false;
+    if (command.payload.contains("is_construction") &&
+        command.payload.at("is_construction").is_boolean()) {
+      is_construction = command.payload.at("is_construction").get<bool>();
+    }
+    std::vector<std::pair<double, double>> points;
+    if (command.payload.contains("points") &&
+        command.payload.at("points").is_array()) {
+      for (const auto& point : command.payload.at("points")) {
+        points.push_back({read_dimension(point, "x"),
+                          read_dimension(point, "y")});
+      }
+    }
+    const auto document = document_manager().add_sketch_spline(
+        points, is_construction);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "add_sketch_slot") {
     bool is_construction = false;
     if (command.payload.contains("is_construction") &&

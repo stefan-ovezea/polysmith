@@ -28,6 +28,7 @@
         "add_sketch_polygon_radius_dimension",
         "add_sketch_rectangle",
         "add_sketch_slot",
+        "add_sketch_spline",
         "add_sketch_text",
         "add_sketch_vertex_distance_dimension",
         "cam_operation_create",

@@ -53,6 +53,49 @@
                 .display_as = "",
             });
           }
+      // Arc-length dimension label: reuses the arc-radius leader
+      // geometry with an "L" prefix at the arc midpoint.
+      // arc_length label (inside the arc loop)
+      for (const auto& dim : feature.sketch_parameters->dimensions) {
+        if (dim.kind != "arc_length" ||
+            dim.entity_id != arc.id ||
+            dim.is_auto) {
+          continue;
+        }
+        const double sa = std::atan2(arc.start_y - arc.center_y,
+                                     arc.start_x - arc.center_x);
+        const double ea = std::atan2(arc.end_y - arc.center_y,
+                                     arc.end_x - arc.center_x);
+        double sweep = arc.ccw
+            ? std::fmod(ea - sa + 2.0 * M_PI, 2.0 * M_PI)
+            : std::fmod(sa - ea + 2.0 * M_PI, 2.0 * M_PI);
+        const double ma = arc.ccw ? sa + sweep * 0.5 : sa - sweep * 0.5;
+        const double mid_x = arc.center_x + arc.radius * std::cos(ma);
+        const double mid_y = arc.center_y + arc.radius * std::sin(ma);
+        const WorldPoint mid =
+            to_world_point(*feature.sketch_parameters, mid_x, mid_y);
+        const WorldPoint center =
+            to_world_point(*feature.sketch_parameters,
+                           arc.center_x, arc.center_y);
+        const bool is_selected_dim =
+            view->selected_sketch_dimension_id.has_value() &&
+            view->selected_sketch_dimension_id.value() == dim.id;
+        sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
+            .dimension_id = dim.id,
+            .plane_id = feature.sketch_parameters->plane_id,
+            .kind = "arc_length",
+            .entity_id = arc.id,
+            .label = "L " + format_dimension_value(dim.value) + " mm",
+            .is_selected = is_selected_dim,
+            .anchor_start_x = center.x, .anchor_start_y = center.y, .anchor_start_z = center.z,
+            .anchor_end_x = mid.x, .anchor_end_y = mid.y, .anchor_end_z = mid.z,
+            .dimension_start_x = center.x, .dimension_start_y = center.y, .dimension_start_z = center.z,
+            .dimension_end_x = mid.x, .dimension_end_y = mid.y, .dimension_end_z = mid.z,
+            .label_x = mid.x, .label_y = mid.y, .label_z = mid.z,
+            .driven = dim.driven,
+            .display_as = "",
+        });
+      }
         }
       }
 
@@ -90,6 +133,15 @@
             is_sketch_entity_selected(ellipse.id);
         sketch_ellipses.push_back(make_sketch_ellipse_primitive(
             ellipse,
+            *feature.sketch_parameters,
+            is_selected_sketch_entity));
+      }
+
+      for (const auto& spline : feature.sketch_parameters->splines) {
+        const bool is_selected_sketch_entity =
+            is_sketch_entity_selected(spline.id);
+        sketch_splines.push_back(make_sketch_spline_primitive(
+            spline,
             *feature.sketch_parameters,
             is_selected_sketch_entity));
       }

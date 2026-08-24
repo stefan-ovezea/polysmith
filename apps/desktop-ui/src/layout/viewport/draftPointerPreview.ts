@@ -14,6 +14,7 @@ import {
 } from "./draftLinePreview";
 import { buildEllipseDraftPreview } from "./ellipseDraftPreview";
 import { buildSlotDraftPreview } from "./slotDraftPreview";
+import { buildSplineDraftPreview } from "./splineDraftPreview";
 import { formatDraftDimension } from "./draftDimensions";
 import {
   buildRectangleDraftPreview,
@@ -36,6 +37,11 @@ export interface DraftPointerPreviewControls {
   // Slot previews are stadium groups (2 lines + 2 arcs) — one ref per
   // group, cleared recursively.
   previewSlotRef: MutableRef<THREE.Group | null>;
+  // Spline draft state: the placed poles + the preview group
+  // (curve + control polygon + rubber segment).
+  splineDraftPolesRef: MutableRef<[number, number][]>;
+  previewSplineRef: MutableRef<THREE.Group | null>;
+  clearPreviewSpline: () => void;
   previewDimensionRef: MutableRef<{
     line: THREE.Object3D;
     label: THREE.Sprite;
@@ -91,8 +97,36 @@ export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
     renderSlotPointerPreview(params);
     return;
   }
+  if (params.activeSketchTool === "spline") {
+    renderSplinePointerPreview(params);
+    return;
+  }
 
   renderLinePointerPreview(params);
+}
+
+function renderSplinePointerPreview({
+  activeSketchPlaneId,
+  activeSketchPlaneFrame,
+  draftPreviewLocal,
+  sketchGroup,
+  splineDraftPolesRef,
+  previewSplineRef,
+  clearPreviewSpline,
+  isConstruction,
+}: DraftPointerPreviewParams) {
+  clearPreviewSpline();
+  const preview = buildSplineDraftPreview({
+    poles: splineDraftPolesRef.current,
+    planeId: activeSketchPlaneId,
+    planeFrame: activeSketchPlaneFrame,
+    isConstruction,
+    cursor: draftPreviewLocal,
+  });
+  if (preview) {
+    previewSplineRef.current = preview;
+    sketchGroup.add(preview);
+  }
 }
 
 function renderArcPointerPreview({

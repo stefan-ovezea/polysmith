@@ -42,6 +42,9 @@ void add_sketch_circle_radius_dimension(FeatureEntry& feature,
                                         std::optional<std::string> display_as = std::nullopt);
 void add_sketch_arc_radius_dimension(FeatureEntry& feature,
                                      const std::string& arc_id);
+void add_sketch_arc_length_dimension(FeatureEntry& feature,
+                                       const std::string& arc_id);
+
 void add_sketch_arc_angle_dimension(FeatureEntry& feature,
                                     const std::string& arc_id);
 void add_sketch_polygon_radius_dimension(FeatureEntry& feature,

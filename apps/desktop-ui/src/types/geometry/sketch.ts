@@ -77,6 +77,7 @@ export interface SketchDimensionEntry {
     | "line_length"
     | "circle_radius"
     | "arc_radius"
+  | "arc_length"
     | "polygon_radius"
     | "angle"
     | "line_angle"
@@ -234,6 +235,21 @@ export interface SketchEllipseEntry {
   generated_by: string | null;
 }
 
+// Control-point B-spline. Mirrors C++ `SketchSpline`. The poles are
+// regular movable vertices (one vertex id per pole); the drawn curve
+// is the clamped open-uniform B-spline they define (degree = min(3,
+// pole count - 1)). No solver participation — pole drags re-fit the
+// curve through the ordinary vertex sync.
+export interface SketchSplineEntry {
+  spline_id: string;
+  pole_vertex_ids: string[];
+  pole_xs: number[];
+  pole_ys: number[];
+  degree: number;
+  is_construction: boolean;
+  generated_by: string | null;
+}
+
 // Parametric straight slot (stadium). Mirrors C++ `SketchSlot`. The
 // core expands every entry into 2 lines + 2 arcs (tagged
 // `generated_by: "slot:<id>"`) on every recompute — the same
@@ -319,6 +335,9 @@ export interface SketchFeatureParameters {
   chamfers: SketchChamferEntry[];
   // Parametric ellipses. Empty on older saves; the schema defaults to [].
   ellipses: SketchEllipseEntry[];
+  // Control-point B-splines. Empty on older saves; the schema
+  // defaults to [].
+  splines: SketchSplineEntry[];
   vertices: SketchVertexEntry[];
   dimensions: SketchDimensionEntry[];
   line_relations: SketchLineRelationEntry[];

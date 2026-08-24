@@ -161,7 +161,7 @@ parse_extrude_parameters_from_payload(const json& payload) {
       -> std::vector<polysmith::core::ProfileBoundaryEdge> {
     std::vector<polysmith::core::ProfileBoundaryEdge> edges;
     for (const auto& edge_payload : edges_payload) {
-      edges.push_back(polysmith::core::ProfileBoundaryEdge{
+      polysmith::core::ProfileBoundaryEdge edge{
           .entity_id = edge_payload.at("entity_id").get<std::string>(),
           .entity_kind = edge_payload.at("entity_kind").get<std::string>(),
           .param_start = edge_payload.at("param_start").get<double>(),
@@ -174,7 +174,27 @@ parse_extrude_parameters_from_payload(const json& payload) {
           .center_y = edge_payload.at("center_y").get<double>(),
           .radius = edge_payload.at("radius").get<double>(),
           .ccw = edge_payload.at("ccw").get<bool>(),
-      });
+      };
+      // Spline pieces carry their control poles (older saves lack the
+      // keys — empty vectors mean a non-spline edge).
+      if (edge_payload.contains("spline_degree") &&
+          edge_payload.at("spline_degree").is_number()) {
+        edge.spline_degree =
+            edge_payload.at("spline_degree").get<int>();
+      }
+      if (edge_payload.contains("spline_pole_xs") &&
+          edge_payload.at("spline_pole_xs").is_array()) {
+        for (const auto& x : edge_payload.at("spline_pole_xs")) {
+          edge.spline_pole_xs.push_back(x.get<double>());
+        }
+      }
+      if (edge_payload.contains("spline_pole_ys") &&
+          edge_payload.at("spline_pole_ys").is_array()) {
+        for (const auto& y : edge_payload.at("spline_pole_ys")) {
+          edge.spline_pole_ys.push_back(y.get<double>());
+        }
+      }
+      edges.push_back(std::move(edge));
     }
     return edges;
   };

@@ -80,6 +80,7 @@ const sketchTools: Array<{
   { id: "offset", labelKey: "toolbar.offset", enabled: true },
   { id: "ellipse", labelKey: "toolbar.ellipse", enabled: true },
   { id: "slot", labelKey: "toolbar.slot", enabled: true },
+  { id: "spline", labelKey: "toolbar.spline", enabled: true },
   { id: "text", labelKey: "toolbar.text", enabled: true },
   { id: "trim", labelKey: "toolbar.trim", hotkey: "trim", enabled: true },
   // Modal Project tool. While active, viewport face / edge / vertex

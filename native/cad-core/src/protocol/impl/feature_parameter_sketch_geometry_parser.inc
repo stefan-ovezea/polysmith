@@ -91,6 +91,41 @@
       params.ellipses.push_back(ellipse);
     }
   }
+  // Older saves predate splines; absence of the key just means no
+  // splines.
+  if (payload.contains("splines") && payload.at("splines").is_array()) {
+    for (const auto& spline_payload : payload.at("splines")) {
+      polysmith::core::SketchSpline spline{};
+      spline.id = read_string(spline_payload, "spline_id");
+      spline.degree = static_cast<int>(read_number(spline_payload, "degree"));
+      if (spline_payload.contains("pole_vertex_ids") &&
+          spline_payload.at("pole_vertex_ids").is_array()) {
+        for (const auto& vid : spline_payload.at("pole_vertex_ids")) {
+          spline.pole_vertex_ids.push_back(vid.get<std::string>());
+        }
+      }
+      if (spline_payload.contains("pole_xs") &&
+          spline_payload.at("pole_xs").is_array()) {
+        for (const auto& x : spline_payload.at("pole_xs")) {
+          spline.pole_xs.push_back(x.get<double>());
+        }
+      }
+      if (spline_payload.contains("pole_ys") &&
+          spline_payload.at("pole_ys").is_array()) {
+        for (const auto& y : spline_payload.at("pole_ys")) {
+          spline.pole_ys.push_back(y.get<double>());
+        }
+      }
+      if (spline_payload.contains("is_construction") &&
+          spline_payload.at("is_construction").is_boolean()) {
+        spline.is_construction =
+            spline_payload.at("is_construction").get<bool>();
+      }
+      spline.generated_by =
+          read_optional_string(spline_payload, "generated_by");
+      params.splines.push_back(spline);
+    }
+  }
   // Older saves predate fillets; absence of the key just means no
   // fillets exist (lines/arcs that originated as fillet outputs are
   // already round-tripped above as plain entities).

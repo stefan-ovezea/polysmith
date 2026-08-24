@@ -40,7 +40,12 @@
 #include <GC_MakeArcOfCircle.hxx>
 #include <GC_MakeEllipse.hxx>
 #include <GC_MakeSegment.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_Curve.hxx>
 #include <Geom_TrimmedCurve.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <limits>
 #include <Standard_Failure.hxx>
 #include <TopAbs.hxx>
