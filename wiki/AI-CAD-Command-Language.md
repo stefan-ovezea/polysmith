@@ -3268,7 +3268,12 @@ this:
 - Origin plane IDs: `ref-plane-xy`, `ref-plane-yz`, `ref-plane-xz`.
 - Start sketches with `start_sketch_on_plane` or `start_sketch_on_face`.
 - Draw with `add_sketch_line`, `add_sketch_rectangle`, `add_sketch_circle`,
-  `add_sketch_arc`, `add_sketch_polygon`, and `add_sketch_fillet`.
+  `add_sketch_arc`, `add_sketch_polygon`, `add_sketch_fillet`,
+  `add_sketch_chamfer`, `add_sketch_ellipse`, `add_sketch_slot`,
+  `add_sketch_spline`, and `add_sketch_text`; edit with
+  `extend_sketch_entity`, `offset_sketch_entity`,
+  `transform_sketch_entities`, `create_linear_array`, and
+  `create_circular_array`.
 - Closed non-construction geometry creates `sketch_profiles`.
 - Extrude profiles with `extrude_profile { profile_ids, depth, mode,
   target_body_id? }`, or planar body faces with

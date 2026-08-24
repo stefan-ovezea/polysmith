@@ -313,13 +313,29 @@ green, core rebuild in flight**:
   (reduced OCCT 8 API): spline-side params come from point projection
   instead; tangent overlaps processed via `Segment()` endpoints.
 
-## Commit guidance
+## SK8 — COMPLETE (2026-08-24)
 
-SK3 (ellipse + slot + chamfer + the SK2 anchor-mapping revert) is one
-commit, pending user approval + in-app smoke. SK3 verification checklist:
-draw an ellipse (3 clicks), extrude it (smooth, analytic edges); draw a
-slot, extrude; chamfer a corner, edit both distances; midpoint-anchor a
-line to another line's midpoint, then resize the host via its dimension
-(anchored line must follow, sketch must not drift); undo/redo each.
-After merge of this branch: squash-merge to `dev`, delete `feature/sketch`,
-next branch per user.
+Docs sweep landed: Implementation Log entries for SK4-SK7 (editing
+tools, circle modes, dimension completion, spline + follow-ups),
+AI command language entries for all new commands (ellipse/slot/
+chamfer/spline, transform/arrays/extend/offset, arc dims, circle
+modes + the diameter convention), IPC protocol bullets, the
+set_sketch_tool enum, and the roadmap sketch-system entry.
+
+## Branch state — FINALIZED
+
+`feature/sketch` is 10 commits ahead of `dev`; every milestone was
+gated on full suites + tsc and user-verified in-app. Suites total 28
+(tool_whitelist, parametric_arc, constraint_completion, ellipse,
+slot, sketch_chamfer, extend, offset, transform, array, circle_modes,
+dimension_completion, spline + the 15 pre-existing). The user ran the
+final verification pass on the spline close gesture, the rubber
+preview, and the extrusion surface.
+
+Deferred (tracked): chain/loop offset, slot draft radius input,
+slot/ellipse drag previews, spline mirror, spline×ellipse
+intersections, the SK5 in-app tangent-circle surface check (suite
+green — re-check with PS_TRACE_FACES if it reappears).
+
+After merge of this branch: squash-merge to `dev`, delete
+`feature/sketch`, next branch per user.
