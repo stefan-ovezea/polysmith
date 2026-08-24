@@ -810,12 +810,18 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       const int n0 = ensure_node(i, p0);
       const int n1 = ensure_node(i, p1);
       // Full circles legitimately close on themselves (n0 == n1); every
-      // other degenerate piece is dropped.
+      // other degenerate piece is dropped.  A closed spline (its end
+      // pole coincides with its start pole) is the same case with the
+      // full [0, 1] parameter span — the self-loop piece bounds the
+      // region alone, like a full circle.
       const bool full_circle_piece =
           (c.kind == ExactCurve::Kind::kCircle ||
            c.kind == ExactCurve::Kind::kEllipse) &&
           std::abs(std::abs(p1 - p0) - 2.0 * kExactPi) <= kExactParamEps;
-      if (n0 == n1 && !full_circle_piece) continue;
+      const bool closed_spline_piece =
+          c.kind == ExactCurve::Kind::kSpline &&
+          std::abs(std::abs(p1 - p0) - 1.0) <= kExactParamEps;
+      if (n0 == n1 && !full_circle_piece && !closed_spline_piece) continue;
 
       const int fwd = static_cast<int>(half_edges.size());
       const int bwd = fwd + 1;
@@ -915,6 +921,9 @@ std::vector<SketchProfileRegion> build_exact_profiles(
           end_node = h.node_end;
         }
       }
+      // A curve whose endpoints land on the SAME node (a closed
+      // spline) bounds its region alone — never dangling.
+      if (start_node >= 0 && start_node == end_node) continue;
       if (start_node >= 0 && node_curves[start_node].size() <= 1) {
         curve_dropped[i] = true;
       }

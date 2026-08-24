@@ -212,6 +212,62 @@ bool test_spline_region_full_profile() {
                 "spline: profile carries an exact spline boundary edge");
 }
 
+bool test_spline_closed_region() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // A closed control polygon: the last pole coincides with the first.
+  // The closed spline must bound a region BY ITSELF (like a full
+  // circle) — the user's "click the first pole to close" gesture.
+  const std::vector<std::pair<double, double>> closed_poles = {
+      {0.0, 0.0}, {20.0, 0.0}, {20.0, 20.0}, {0.0, 20.0}, {0.0, 0.0}};
+  DocumentState document = manager.add_sketch_spline(closed_poles);
+  const auto params = sketch_params(document);
+  const std::string spline_id = params.splines[0].id;
+
+  std::string reason;
+  const std::vector<ExpectedProfile> expected = {
+      {.entity_ids = {spline_id}, .kind = "polygon"},
+  };
+  if (!expect(profiles_match(document, expected, &reason),
+              ("spline closed region: " + reason).c_str())) {
+    return false;
+  }
+
+  // The region carries the full-span spline boundary edge.
+  const auto& profile = params.profiles[0];
+  bool has_spline_edge = false;
+  for (const auto& be : profile.boundary_edges) {
+    if (be.entity_kind == "spline") {
+      has_spline_edge = true;
+      if (!expect(be.spline_pole_xs.size() == 5,
+                  "spline: closed boundary edge carries all poles")) {
+        return false;
+      }
+    }
+  }
+  return expect(has_spline_edge,
+                "spline: closed region carries the spline boundary edge");
+}
+
+bool test_spline_closed_extrude_smoke() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  const std::vector<std::pair<double, double>> closed_poles = {
+      {0.0, 0.0}, {20.0, 0.0}, {20.0, 20.0}, {0.0, 20.0}, {0.0, 0.0}};
+  DocumentState document = manager.add_sketch_spline(closed_poles);
+  const auto params = sketch_params(document);
+  const std::string profile_id = params.profiles[0].id;
+
+  document = manager.extrude_profile(profile_id, 5.0, "new_body");
+  const auto compiled = polysmith::core::compile_bodies(document);
+  return expect(compiled.bodies.size() == 1,
+                "spline: closed spline extrudes to a body");
+}
+
 bool test_spline_region_split_by_connectors() {
   DocumentManager manager;
   manager.create_document();
@@ -412,6 +468,10 @@ int main() {
   if (!test_spline_pole_drag_refits()) return 1;
   std::cout << "--- test_spline_region_full_profile" << std::endl;
   if (!test_spline_region_full_profile()) return 1;
+  std::cout << "--- test_spline_closed_region" << std::endl;
+  if (!test_spline_closed_region()) return 1;
+  std::cout << "--- test_spline_closed_extrude_smoke" << std::endl;
+  if (!test_spline_closed_extrude_smoke()) return 1;
   std::cout << "--- test_spline_region_split_by_connectors" << std::endl;
   if (!test_spline_region_split_by_connectors()) return 1;
   std::cout << "--- test_spline_dangling_crossing_line_dropped" << std::endl;

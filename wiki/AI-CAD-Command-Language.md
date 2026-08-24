@@ -1268,8 +1268,18 @@ Payload:
     | "line"
     | "rectangle"
     | "circle"
+    | "polygon"
     | "arc"
     | "fillet"
+    | "chamfer"
+    | "trim"
+    | "extend"
+    | "offset"
+    | "ellipse"
+    | "slot"
+    | "spline"
+    | "text"
+    | "move"
     | "project"
     | "dimension";
 }
@@ -1324,7 +1334,16 @@ extrudable profiles.
 
 #### `add_sketch_circle`
 
-Adds a circle.
+Adds a circle. `mode` selects the creation interpretation:
+
+- `center_radius` (default / empty): the given center + radius.
+- `two_point`: `p1` / `p2` are diameter endpoints.
+- `three_point`: `p1` / `p2` / `p3` lie on the circle (circumcircle).
+- `tangent_two_lines`: `line_a_id` / `line_b_id` + the hint point `hint_x` /
+  `hint_y` — the circle lands in the wedge containing the hint, tangent to
+  both lines; a `tangent_circle_line` relation keeps it tangent under
+  solver runs (radius re-derives from the fixed center).
+- `tangent_three_lines`: the incircle of the three lines.
 
 Payload:
 
@@ -1334,6 +1353,12 @@ Payload:
   center_y: number;
   radius: number;
   is_construction: boolean;
+  mode?: string;          // see above
+  p1_x?: number; p1_y?: number;
+  p2_x?: number; p2_y?: number;
+  p3_x?: number; p3_y?: number;
+  line_a_id?: string; line_b_id?: string; line_c_id?: string;
+  hint_x?: number; hint_y?: number;
 }
 ```
 
@@ -1441,6 +1466,93 @@ and re-snapshot linked extrudes; string/font edits degrade linked
 extrudes to `dependency_broken` with a warning. Requires the sketch to
 be active (re-enter it after extruding).
 
+#### `add_sketch_ellipse`
+
+Adds a full ellipse from three clicks: center, a major-axis point, and a
+minor-axis point (the minor radius is the perpendicular distance of the
+third click from the major axis). The axis points are FIXED at creation —
+no solver registration yet, so the cached shape cannot drift. The ellipse
+participates in the exact profile engine as a full closed curve
+(`entity_kind "ellipse"`); the wire builder emits an analytic OCCT ellipse
+edge. Construction ellipses are excluded from profiles. Trim on ellipses
+is rejected (v1).
+
+Payload:
+
+```ts
+{
+  center_x: number; center_y: number;
+  axis_a_x: number; axis_a_y: number;
+  axis_b_x: number; axis_b_y: number;
+  is_construction?: boolean;
+}
+```
+
+#### `add_sketch_slot` / `update_sketch_slot`
+
+Adds / updates a straight slot (stadium). The core expands every slot into
+2 lines + 2 arcs (tangent by construction, `generated_by = "slot:<id>"`)
+at the top of every recompute — profiles / extrude / viewport consume the
+plain entities with zero downstream changes. `length` is the distance
+between the two arc centers and must stay >= 2 * radius. The slot center
+is a regular movable vertex (distance dimensions work).
+
+Payload (both):
+
+```ts
+{
+  center_x: number; center_y: number;
+  length: number;
+  radius: number;
+  rotation: number;   // radians
+  // update only:
+  slot_id: string;
+}
+```
+
+#### `add_sketch_chamfer` / `update_sketch_chamfer` / `delete_sketch_chamfer`
+
+Adds / edits / removes a parametric corner chamfer (line-line), the bevel
+analogue of the fillet. The chamfer line and trim points are generated
+geometry re-derived from the corner + the two distances on every recompute.
+A corner already holding a fillet is rejected (both ways).
+
+Payloads:
+
+```ts
+// add
+{ corner_vertex_id: string; line_a_id: string; line_b_id: string;
+  distance_a: number; distance_b: number; }
+// update
+{ chamfer_id: string; distance_a: number; distance_b: number; }
+// delete
+{ chamfer_id: string; }
+```
+
+#### `add_sketch_spline`
+
+Adds a control-point B-spline: `points` ARE the poles — regular movable
+vertices. The drawn curve is the clamped open-uniform B-spline they define
+(degree = min(3, count - 1); `spline_math.h` is the single evaluation
+source for the profile walk, the viewport, the draft preview and the wire
+builder). No solver registration — pole drags re-fit the curve through the
+ordinary vertex sync. At least 2 points are required; 3+ give curvature.
+The profile engine treats the spline as an open exact curve
+(`entity_kind "spline"`); intersections delegate to OCCT 2D algorithms.
+A control polygon whose end pole coincides with its start pole CLOSES the
+loop and bounds a region by itself (like a full circle). The extrude wire
+builder emits the exact `Geom_BSplineCurve` edge trimmed to the walked
+sub-span. Trim / extend / offset on splines are rejected (v1).
+
+Payload:
+
+```ts
+{
+  points: Array<{ x: number; y: number }>;
+  is_construction?: boolean;
+}
+```
+
 #### `delete_sketch_text`
 
 ```ts
@@ -1536,6 +1648,69 @@ Semantics:
   preserved so the move can be repeated on the same entities.
 - Projected entities are fixed (derived from 3D body geometry) and are
   therefore skipped.
+
+#### `transform_sketch_entities`
+
+Translate / rotate / uniform-scale sketch entities (or exploded copies of
+them) in a single undo step. `move_sketch_entities` is a rigid wrapper
+over this command. `copy: true` leaves the originals and pushes fresh
+copies (new ids, copies share vertices with each other but never with the
+originals; H/V constraints inferred only when not rotating).
+
+Payload:
+
+```ts
+{
+  entity_ids: string[];
+  dx: number; dy: number;
+  center_x: number; center_y: number;
+  angle_deg: number;
+  scale: number;
+  copy: boolean;
+}
+```
+
+#### `create_linear_array` / `create_circular_array`
+
+Exploded array copies (direct-commit, one undo step per array — undo is
+the adjust path for v1). Linear: `count` copies at `(dx, dy)` spacing;
+circular: `count` copies around `(center_x, center_y)` across
+`total_angle_deg`.
+
+Payloads:
+
+```ts
+// linear
+{ entity_ids: string[]; dx: number; dy: number; count: number; }
+// circular
+{ entity_ids: string[]; center_x: number; center_y: number;
+  count: number; total_angle_deg: number; }
+```
+
+#### `extend_sketch_entity`
+
+Extends a line (infinite support) or arc (full circle) from the end nearest
+the click to the nearest intersection with another non-construction entity.
+H/V constraints survive; arc angle dimensions flip to driven.
+
+Payload:
+
+```ts
+{ entity_id: string; click_x: number; click_y: number; }
+```
+
+#### `offset_sketch_entity`
+
+Offsets a single line / circle / arc by a signed distance (left-normal
+convention for lines; radius + d for circles and arcs, sweep preserved).
+Non-parametric: the offset is a fresh entity (no auto dimensions).
+Construction / generated / ellipse / spline entities are rejected.
+
+Payload:
+
+```ts
+{ entity_id: string; distance: number; }
+```
 
 #### `update_sketch_circle`
 
@@ -1866,6 +2041,12 @@ Creates a radius (or diameter) dimension on a single sketch circle. Same
 pattern as line length: validates, deduplicates, creates a `SketchDimension`
 of kind `circle_radius`. An optional `display_as` field controls rendering.
 
+Diameter convention: the STORED value is always the radius (the solver
+contract); the payload's `value` carries the DISPLAYED diameter (x2) when
+`display_as` is absent or `"diameter"`, and dimension edits divide the
+entered diameter by two at the IPC boundary — both the expression path
+and the numeric path follow this.
+
 Payload:
 
 ```ts
@@ -1887,6 +2068,41 @@ Payload:
 {
   polygon_id: string;
 }
+```
+
+#### `add_sketch_arc_radius_dimension`
+
+Creates a radius dimension on a sketch arc (kind `arc_radius`). Driving
+for user arcs via the deterministic `enforce_arc_dimensions` pass.
+
+Payload:
+
+```ts
+{ arc_id: string; }
+```
+
+#### `add_sketch_arc_angle_dimension`
+
+Creates an angle dimension on a sketch arc (kind `arc_angle`). The value
+is the sweep in radians; edits re-derive the end point along the circle
+with the stored ccw sense.
+
+Payload:
+
+```ts
+{ arc_id: string; }
+```
+
+#### `add_sketch_arc_length_dimension`
+
+Creates a length dimension on a sketch arc (kind `arc_length`). The sweep
+re-derives from `length / radius` on every drive; driven dimensions
+re-measure from the geometry. The viewport label reads `L <value> mm`.
+
+Payload:
+
+```ts
+{ arc_id: string; }
 ```
 
 #### `update_sketch_dimension`

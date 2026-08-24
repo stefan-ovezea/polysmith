@@ -9,7 +9,7 @@ import type {
   SketchTool,
   ViewportScene,
 } from "@/types";
-import { resolveSketchPlanePoint } from "@/utils";
+import { resolveSketchPlanePoint, SKETCH_SNAP_DISTANCE } from "@/utils";
 import type { ViewportPickHit } from "./contextMenuState";
 import { commitDraftPointerUp } from "./draftCommit";
 import type {
@@ -498,9 +498,13 @@ function handleSplineDraftPointerUp(params: ViewportPointerUpParams) {
   }
   if (poles.length >= 2) {
     const [fx, fy] = poles[0];
-    if (Math.hypot(x - fx, y - fy) <= 1e-6) {
+    // A click near the first pole CLOSES the loop: the first pole is
+    // appended as the final pole and the closed spline bounds a
+    // region by itself. Uses the sketch snap distance so the closing
+    // click doesn't need a pixel-perfect hit.
+    if (Math.hypot(x - fx, y - fy) <= SKETCH_SNAP_DISTANCE) {
       void params.addSketchSpline(
-        poles.map((p) => ({ x: p[0], y: p[1] })),
+        [...poles, [fx, fy]].map((p) => ({ x: p[0], y: p[1] })),
         params.isConstruction,
       );
       params.splineDraftPolesRef.current = [];

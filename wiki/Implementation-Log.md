@@ -2,6 +2,67 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-24
+
+### Sketch toolset finalization — SK4..SK7 (feature/sketch)
+
+- **SK4 editing tools** — `extend_sketch_entity` (line/arc extension to
+  the nearest intersection, H/V preserved, arc angle dims flip to driven),
+  `offset_sketch_entity` (signed single-entity offset via the creation
+  constructors, construction/generated rejection), `transform_sketch_entities`
+  (translate/rotate/uniform-scale + exploded copy mode with fresh ids;
+  `move_sketch_entities` became a rigid wrapper), `create_linear_array` /
+  `create_circular_array` (direct-commit exploded copies, one undo step —
+  the pending-preview workflow is deferred). Suites: extend / offset /
+  transform / array (22 cases total).
+- **SK5 circle creation modes** — `add_sketch_circle` gained
+  two_point / three_point / tangent_two_lines / tangent_three_lines
+  (wrapper-side resolution to center+radius, bisector/incenter math),
+  plus circle-slave `tangent_circle_line` relations enforced in the
+  refresh pipeline (radius = min distance from the fixed center to the
+  defining lines). Follow-ups: bisector absolute-projection fix
+  (negative projections picked the wrong wedge) and the face-walk
+  interior-tangent-node fix (enclosed region between a closed polygon
+  and an inscribed tangent circle — `has_line_continuation` gate +
+  straight-continuation override). Suite: circle_modes.
+- **SK6 dimension completion** — diameter display via `display_as` on
+  circle radius dims (STORED value stays the radius; the D/2 conversion
+  lives at the IPC boundary — payload emits D, parser stores D/2, the
+  numeric update halves, mirroring the expression path); arc length
+  (`arc_length` kind: creation, update branch deriving sweep = L/r,
+  driven re-measure, "L" viewport label); arc angle update dispatch
+  branch. Dimension-tool dropdown modes radius/diameter/arc-length.
+  Suite: dimension_completion.
+- **SK7 control-point B-spline** — `SketchSpline` (poles = regular
+  movable vertices, degree = min(3, n-1), clamped open-uniform knots),
+  shared `spline_math.h` de Boor evaluation across the profile walk /
+  viewport / draft preview / wire builder. Profile engine
+  `ExactCurve::kSpline`: exact tangent/point/area, OCCT intersections
+  via `spline_profile_occt.cpp` (separate TU so the walk stays
+  OCCT-header-free), touch records, dangling-drop, boundary edges
+  carrying the poles; extrude emits the exact `Geom_BSplineCurve`
+  trimmed to the walked sub-span. Full lifecycle (IPC, whitelist,
+  schemas, AI schemas, save/load incl. spline boundary edges inside
+  extruded features, delete, trim/extend/offset rejection). UI: toolbar
+  tool + icon + i18n; click-to-place draft with the REAL B-spline
+  preview (TS de Boor) + control polygon; double-click / Enter /
+  tool-switch commit, Escape cancel; rubber segment follows the cursor.
+  Suite: spline (12 cases incl. complete-set region profiles and the
+  closed-spline region + extrude).
+- **Follow-up fixes (user-reported)** — rubber preview absent (the
+  pointer-move preview path bailed on a null line-draft start; the
+  spline now bypasses the gate); missing extrusion surface (part.json
+  showed a 0.714 mm gap between the closing segment and the spline's
+  end pole — an open region, correctly detected); closed-spline
+  regions + the draft close gesture (click near the first pole, within
+  the sketch snap distance, appends it as the final pole and commits).
+- **Environment fixes** — OCCT's in-tree build dir (occt8-build/inc)
+  lacks the deprecated TColStd/TColgp array templates (install-tree inc
+  dir added to cad-core CMake); the vendored
+  `Geom2dAPI_InterCurveCurve` has no parameter accessor (spline-side
+  params re-derived via point projection; tangent overlaps processed
+  via `Segment()` endpoints).
+
 ## 2026-08-22
 
 ### IGES import + export (feature/iges)

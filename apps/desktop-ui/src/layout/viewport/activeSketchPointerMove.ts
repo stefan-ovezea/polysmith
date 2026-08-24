@@ -76,31 +76,8 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
   }
 
   const { draftStart, draftPreviewLocal, sketchPoint } = draftMove;
-  if (!draftStart) {
-    // Tool is armed but no line started yet — snap feedback (crosshair
-    // position, snap label, constraint preview) already updated by
-    // resolveDraftPointerMove. Just clear hover and skip the rubber-band.
-    params.hoverActions.setHoveredPrimitive(null);
-    params.hoverActions.setHoveredReference(null);
-    return;
-  }
 
-  const sketchGroup = params.sketchGroupRef.current;
-  if (!sketchGroup) {
-    return;
-  }
-
-  renderDraftPointerPreview({
-    activeSketchTool: params.activeSketchTool,
-    activeSketchPlaneId: params.activeSketchPlaneId,
-    activeSketchPlaneFrame: params.activeSketchPlaneFrame,
-    draftStart,
-    draftPreviewLocal,
-    sketchGroup,
-    inferenceLines: sketchPoint.inferenceLines?.map((gl) => ({
-      from: gl.from,
-      draft: gl.draft,
-    })),
+  const previewControls = {
     arcToolMode: params.arcToolMode,
     circleToolMode: params.circleToolMode,
     rectangleToolMode: params.rectangleToolMode,
@@ -124,5 +101,54 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     clearPreviewSpline: params.clearPreviewSpline,
     clearPreviewDimension: params.clearPreviewDimension,
     clearPreviewInference: params.clearPreviewInference,
+  };
+  const inferenceLines = sketchPoint.inferenceLines?.map((gl) => ({
+    from: gl.from,
+    draft: gl.draft,
+  }));
+
+  // The spline draft has no line-draft start — its poles live in
+  // splineDraftPolesRef. Render its preview (curve + control polygon
+  // + rubber segment) whenever at least one pole is placed.
+  if (params.activeSketchTool === "spline") {
+    const sketchGroup = params.sketchGroupRef.current;
+    if (sketchGroup && params.splineDraftPolesRef.current.length >= 1) {
+      renderDraftPointerPreview({
+        ...previewControls,
+        activeSketchTool: params.activeSketchTool,
+        activeSketchPlaneId: params.activeSketchPlaneId,
+        activeSketchPlaneFrame: params.activeSketchPlaneFrame,
+        draftStart: sketchPoint.local,
+        draftPreviewLocal,
+        sketchGroup,
+        inferenceLines,
+      });
+    }
+    return;
+  }
+
+  if (!draftStart) {
+    // Tool is armed but no line started yet — snap feedback (crosshair
+    // position, snap label, constraint preview) already updated by
+    // resolveDraftPointerMove. Just clear hover and skip the rubber-band.
+    params.hoverActions.setHoveredPrimitive(null);
+    params.hoverActions.setHoveredReference(null);
+    return;
+  }
+
+  const sketchGroup = params.sketchGroupRef.current;
+  if (!sketchGroup) {
+    return;
+  }
+
+  renderDraftPointerPreview({
+    ...previewControls,
+    activeSketchTool: params.activeSketchTool,
+    activeSketchPlaneId: params.activeSketchPlaneId,
+    activeSketchPlaneFrame: params.activeSketchPlaneFrame,
+    draftStart,
+    draftPreviewLocal,
+    sketchGroup,
+    inferenceLines,
   });
 }
