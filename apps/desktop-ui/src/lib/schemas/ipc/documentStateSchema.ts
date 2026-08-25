@@ -759,6 +759,7 @@ export const documentStateSchema = z.object({
                 "circle_radius",
                 "arc_radius",
                 "arc_length",
+                "arc_angle",
                 "polygon_radius",
                 "angle",
                 "line_angle",

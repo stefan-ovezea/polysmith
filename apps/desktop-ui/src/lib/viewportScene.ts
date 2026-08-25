@@ -401,7 +401,9 @@ function makeSketchDimension(
       dimension.label_position.z,
     ],
 
-    // Angle arc geometry (optional, from C++ core)
+    // Arc geometry (optional, from C++ core). Angle kinds use it for the
+    // dimension arc; radial kinds carry their centre/radius here so the
+    // renderer and the drag preview can rebuild the leader.
     arcCenter: dimension.arc_center
       ? [dimension.arc_center.x, dimension.arc_center.y, dimension.arc_center.z]
       : undefined,

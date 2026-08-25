@@ -2,6 +2,63 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-26
+
+### Radial & arc dimension rendering + free 2D label placement (feature/sketch)
+
+User report: arc dimensions sat at a fixed position, looked like "a very
+ugly line", and only the value text moved, horizontally. SK6 had shipped
+the dimension *values* (diameter conversion, arc-length measurement,
+arc-angle update dispatch) but touched no viewport rendering file. Four
+independent defects, all confirmed in the code:
+
+- **The core emitters ignored the stored label.** `label_x/label_y` was
+  honored by the linear, angle and polygon emitters but hardcoded away by
+  `circle_radius`, `arc_radius` and `arc_length`. The drag updated a UI
+  cache so it looked live, then the post-drag `get_viewport_state`
+  refetch re-emitted the default and the label snapped back.
+- **The leader was a bare degenerate segment.** The radius branch of
+  `buildSketchDimensionGeometry` was a single `addSegment(anchorEnd,
+  anchorStart)` with no arrowhead and no leader reaching the text
+  (`labelPos` was computed and unused). For a circle that drew a
+  horizontal chord straight through it with the text floating 8 mm to the
+  side; for an arc, centre→arc with the text sitting on the line.
+- **The drag was pinned** to a ring at `radius + 4`, so the text could be
+  swung around the circle but never pushed away from it; `arc_radius`
+  additionally fell through to the axis-constrained linear path.
+- **Two dropped-event bugs.** The core emitted `kind:"arc_length"` while
+  the zod viewport enum omitted it, so `parseCoreMessage` threw and
+  `useCadCoreEventBridge` discarded the *entire* `viewport_state` event —
+  the viewport stopped updating whenever an arc-length dim existed.
+  Separately `documentStateSchema` omitted `arc_angle`, discarding every
+  `document_state` event. `arc_angle` also had no viewport emitter at
+  all, so it was invisible.
+
+Fix: new `sketch_radial_dimension_primitives.inc` with emitters for arc
+radius / arc length / arc angle plus a rewritten circle radius/diameter
+emitter, all resolving the stored label. No new IPC fields — the radial
+kinds reuse the existing `arc_center` / `arc_radius` / `arc_start_angle` /
+`arc_end_angle` / `arc_ccw` fields, and `anchor_end` carries a rim point a
+quarter turn from the contact so the renderer can recover an in-plane
+direction (centre, contact and label are collinear, so there is no cross
+product available). The landing under the text is derived in the renderer
+rather than emitted: it is presentational, and a second implementation of
+it would be one more thing for the drag preview and the re-emitted
+geometry to disagree about. The two mirrored preview projections
+(`shiftedCircleRadiusDimension` / `projectedCircleRadiusDimension`) were
+collapsed into shared helpers that mirror the C++ math and constants
+(`kLeaderJog` 4.0, `kArcLengthMinGap` 6.0, angle clamp [6, 500]), since
+drift between them is exactly what makes a label jump on release. Label
+re-gluing on value edits was extended to the radial kinds, anchored on
+the circle/arc centre.
+
+Suite: `dimension_completion` grew from 3 to 9 cases — label honored,
+diameter through-centre tips, arc-radius contact clamped into the sweep
+(both boundary signs plus the far boundary), arc-length extension radius
+clamped on both sides, arc-angle emitting at all, and a
+label-on-the-centre NaN guard. All 28 suites green, tsc clean,
+user-verified in-app.
+
 ## 2026-08-24
 
 ### Sketch toolset finalization — SK4..SK7 (feature/sketch)

@@ -33,6 +33,41 @@ inline std::string format_dimension_label(const SketchDimension& dim,
   return label;
 }
 
+// A sketch-local 2D point. Used for label placement, which every
+// dimension kind stores as an absolute sketch-local coordinate pair
+// (SketchDimension::label_x / label_y).
+struct SketchLabelPoint2D {
+  double x;
+  double y;
+};
+
+// The stored label when the user has dragged this dimension, otherwise
+// the caller's default placement. Radial kinds ignored the stored value
+// entirely before this existed, so a dragged label snapped back to the
+// default on the next viewport refetch.
+inline SketchLabelPoint2D resolve_dimension_label_local(
+    const SketchDimension& dimension, double default_x, double default_y) {
+  if (dimension.label_x.has_value() && dimension.label_y.has_value()) {
+    return SketchLabelPoint2D{*dimension.label_x, *dimension.label_y};
+  }
+  return SketchLabelPoint2D{default_x, default_y};
+}
+
+// Unit direction from a centre toward a label. Falls back to +X when the
+// label sits on the centre, so the emitted geometry is never NaN.
+inline SketchLabelPoint2D radial_contact_direction(double center_x,
+                                                   double center_y,
+                                                   double label_x,
+                                                   double label_y) {
+  const double dx = label_x - center_x;
+  const double dy = label_y - center_y;
+  const double length = std::sqrt(dx * dx + dy * dy);
+  if (length <= 1e-9) {
+    return SketchLabelPoint2D{1.0, 0.0};
+  }
+  return SketchLabelPoint2D{dx / length, dy / length};
+}
+
 // Centroid (in sketch-local 2D coords) of every line midpoint and
 // circle center in the sketch. Used as the "inside" reference when
 // placing line dimensions so the dimension line lands on the side of

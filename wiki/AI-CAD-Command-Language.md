@@ -2125,7 +2125,10 @@ Payload:
 Dimension kinds emitted by state:
 
 - `line_length`
-- `circle_radius`
+- `circle_radius` (stores the radius; `display_as` selects R or ⌀ display)
+- `arc_radius`
+- `arc_length` (drives the sweep as L / radius)
+- `arc_angle` (arc sweep, radians internally)
 - `polygon_radius`
 - `angle` (between two lines, radians internally)
 - `line_angle` (from positive X axis, radians internally)

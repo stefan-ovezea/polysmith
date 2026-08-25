@@ -311,6 +311,8 @@ export interface SketchDimensionScene {
     | "line_length"
     | "circle_radius"
     | "arc_radius"
+    | "arc_length"
+    | "arc_angle"
     | "polygon_radius"
     | "angle"
     | "line_angle"
@@ -332,7 +334,9 @@ export interface SketchDimensionScene {
   dimensionEnd: [number, number, number];
   labelPosition: [number, number, number];
 
-  // Angle arc geometry (from C++ core, for angle/line_angle kinds)
+  // Arc geometry (from C++ core). Angle kinds use it for the dimension
+  // arc; the radial kinds (circle_radius, arc_radius, arc_length,
+  // arc_angle) use it as the centre/radius their leaders are built from.
   arcCenter?: [number, number, number];
   arcRadius?: number;
   arcStartAngle?: number;

@@ -260,6 +260,8 @@ export interface ViewportSketchDimension {
     | "line_length"
     | "circle_radius"
     | "arc_radius"
+    | "arc_length"
+    | "arc_angle"
     | "polygon_radius"
     | "angle"
     | "line_angle"
@@ -276,7 +278,9 @@ export interface ViewportSketchDimension {
   dimension_end: Vector3;
   label_position: Vector3;
 
-  // Angle arc geometry (from C++ core, optional)
+  // Arc geometry (from C++ core, optional). Emitted for angle/line_angle
+  // and for the radial kinds (circle_radius, arc_radius, arc_length,
+  // arc_angle), whose leaders are built from the centre and radius.
   arc_center?: Vector3;
   arc_radius?: number;
   arc_start_angle?: number;

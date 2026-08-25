@@ -11,8 +11,10 @@ import {
   type ActiveSketchGridPlaneFrame,
 } from "./grid";
 import {
+  arcLengthLeaderDimension,
   buildAngleDimensionFrame,
-  circleRadiusDimensionProjection,
+  isAngleDimensionKind,
+  radialLeaderDimension,
 } from "./dimensionLabelDrag";
 import { clampAngleRadius } from "./draftDimensions";
 
@@ -175,7 +177,7 @@ function displayedSketchDimension({
     return anglePlacementPreview;
   }
 
-  if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+  if (isAngleDimensionKind(dimension.kind)) {
     return displayedAngleDimension({
       dimension,
       sketchParameters,
@@ -187,15 +189,17 @@ function displayedSketchDimension({
   if (!labelPosition) {
     return dimension;
   }
-  if (dimension.kind === "circle_radius") {
-    const projected = projectedCircleRadiusDimension({
+  // Radial kinds rebuild their leader around the label rather than
+  // sliding along an axis. These delegate to the same helpers the live
+  // drag preview uses, so the two cannot disagree on release.
+  const radial =
+    radialLeaderDimension({
       dimension,
-      labelPosition,
-      activeSketchPlaneFrame,
-    });
-    if (projected) {
-      return projected;
-    }
+      labelWorld: labelPosition,
+      planeFrame: activeSketchPlaneFrame,
+    }) ?? arcLengthLeaderDimension({ dimension, labelWorld: labelPosition });
+  if (radial) {
+    return radial;
   }
 
   return shiftedLinearDimension({
@@ -253,44 +257,6 @@ function displayedAngleDimension({
     labelPosition: toTuple(
       frame.pivot.clone().add(frame.bisector.clone().multiplyScalar(radius)),
     ),
-  };
-}
-
-function projectedCircleRadiusDimension({
-  dimension,
-  labelPosition,
-  activeSketchPlaneFrame,
-}: {
-  dimension: SketchDimensionScene;
-  labelPosition: [number, number, number];
-  activeSketchPlaneFrame: ActiveSketchGridPlaneFrame | null;
-}): SketchDimensionScene | null {
-  const projection = circleRadiusDimensionProjection({
-    dimension,
-    worldPoint: labelPosition,
-    planeFrame: activeSketchPlaneFrame,
-  });
-  if (!projection) {
-    return null;
-  }
-  const start = projection.center
-    .clone()
-    .add(projection.direction.clone().multiplyScalar(-projection.radius));
-  const end = projection.center
-    .clone()
-    .add(projection.direction.clone().multiplyScalar(projection.radius));
-  const toTuple = (point: THREE.Vector3): [number, number, number] => [
-    point.x,
-    point.y,
-    point.z,
-  ];
-  return {
-    ...dimension,
-    anchorStart: toTuple(start),
-    anchorEnd: toTuple(end),
-    dimensionStart: toTuple(start),
-    dimensionEnd: toTuple(end),
-    labelPosition,
   };
 }
 

@@ -8,6 +8,7 @@ import type {
 import type { SketchDimensionScene } from "@/types";
 import type { DisplayUnits } from "@/utils/units";
 import { parseDimensionInput } from "@/utils/units";
+import { isAngleDimensionKind } from "./dimensionLabelDrag";
 
 import {
   parameterTokenAtCursor,
@@ -313,7 +314,8 @@ function parseDimensionEditorValue({
 }
 
 function isAngleDimension(dimension: SketchDimensionScene) {
-  return dimension.kind === "angle" || dimension.kind === "line_angle";
+  // Angle kinds are typed in degrees, so they bypass the mm/inch parser.
+  return isAngleDimensionKind(dimension.kind);
 }
 
 function scheduleDimensionExpressionPreview({

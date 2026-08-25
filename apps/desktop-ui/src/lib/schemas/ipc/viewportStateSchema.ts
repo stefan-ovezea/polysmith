@@ -372,10 +372,15 @@ export const viewportStateSchema = z.object({
     z.object({
       dimension_id: z.string(),
       plane_id: z.string(),
+      // Must list every kind the core can emit: an unknown kind fails
+      // this schema, and a failed parse discards the whole viewport_state
+      // event, which reads in-app as the viewport freezing.
       kind: z.enum([
         "line_length",
         "circle_radius",
         "arc_radius",
+        "arc_length",
+        "arc_angle",
         "polygon_radius",
         "angle",
         "line_angle",

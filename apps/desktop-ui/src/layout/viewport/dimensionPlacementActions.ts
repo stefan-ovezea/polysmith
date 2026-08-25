@@ -6,7 +6,11 @@ import type { SketchDimensionScene } from "@/types";
 import { worldPointToSketchLocal } from "./grid";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
 import {
+  arcLengthLeaderDimension,
   buildDimensionPlacementStart,
+  isAngleDimensionKind,
+  isFreeRadialDimensionKind,
+  radialLeaderDimension,
   type AngleDimensionFrame,
 } from "./dimensionLabelDrag";
 import {
@@ -191,58 +195,28 @@ export function createDimensionPlacementActions({
     };
   }
 
-  /** Re-project a circle-radius dimension label so the endpoints
-   *  trace the radius direction through the circle center. */
-  function shiftedCircleRadiusDimension(
+  /** Rebuild a radial dimension's leader around a dragged label. Shares
+   *  radialLeaderDimension / arcLengthLeaderDimension with the derived
+   *  state so the drag preview matches what the core re-emits. */
+  function shiftedRadialDimension(
     dimension: SketchDimensionScene,
     labelWorld: [number, number, number],
-  ): SketchDimensionScene {
-    const center = new THREE.Vector3(...dimension.dimensionStart)
-      .add(new THREE.Vector3(...dimension.dimensionEnd))
-      .multiplyScalar(0.5);
-    const direction = new THREE.Vector3(...labelWorld).sub(center);
-    const planeNormal = getSketchGridFrame(
-      dimension.planeId,
-      activeSketchPlaneFrameRef.current,
-    ).normal;
-    direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-    if (direction.lengthSq() <= 1e-8) {
-      return { ...dimension, labelPosition: labelWorld };
-    }
-    direction.normalize();
-    const original = new THREE.Vector3(...dimension.labelPosition);
-    const projected = center
-      .clone()
-      .add(
-        direction
-          .clone()
-          .multiplyScalar(direction.dot(original.clone().sub(center))),
-      );
-    const radius = projected.distanceTo(center);
-    const start = center
-      .clone()
-      .add(direction.clone().multiplyScalar(-radius));
-    const end = center
-      .clone()
-      .add(direction.clone().multiplyScalar(radius));
-    const toTuple = (v: THREE.Vector3): [number, number, number] => [
-      v.x,
-      v.y,
-      v.z,
-    ];
-    return {
-      ...dimension,
-      anchorStart: toTuple(start),
-      anchorEnd: toTuple(end),
-      dimensionStart: toTuple(start),
-      dimensionEnd: toTuple(end),
-      labelPosition: labelWorld,
-    };
+  ): SketchDimensionScene | null {
+    return (
+      radialLeaderDimension({
+        dimension,
+        labelWorld,
+        planeFrame: activeSketchPlaneFrameRef.current,
+      }) ?? arcLengthLeaderDimension({ dimension, labelWorld })
+    );
   }
 
   function getDimensionPlacementAxis(dimension: SketchDimensionScene) {
-    if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+    if (isAngleDimensionKind(dimension.kind)) {
       return angleDimensionFrame(dimension)?.bisector ?? null;
+    }
+    if (isFreeRadialDimensionKind(dimension.kind)) {
+      return null;
     }
 
     const extensionAxis = new THREE.Vector3(...dimension.dimensionStart).sub(
@@ -290,9 +264,8 @@ export function createDimensionPlacementActions({
       );
       if (original) {
         const shifted =
-          original.kind === "circle_radius"
-            ? shiftedCircleRadiusDimension(original, position)
-            : shiftedLinearDimension(original, position);
+          shiftedRadialDimension(original, position) ??
+          shiftedLinearDimension(original, position);
         if (shifted) {
           rebuildDimensionSceneObject(shifted, displayUnits);
           return;

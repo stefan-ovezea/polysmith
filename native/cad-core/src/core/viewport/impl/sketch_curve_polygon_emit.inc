@@ -5,97 +5,31 @@
             arc,
             *feature.sketch_parameters,
             is_selected_sketch_entity));
-        if (view->active_sketch_feature_id.has_value() &&
-            view->active_sketch_feature_id.value() == feature.id) {
-          const auto dim_it = std::find_if(
-              feature.sketch_parameters->dimensions.begin(),
-              feature.sketch_parameters->dimensions.end(),
-              [&](const SketchDimension& d) {
-                return d.kind == "arc_radius" && d.entity_id == arc.id;
-              });
-          if (dim_it != feature.sketch_parameters->dimensions.end() && !dim_it->is_auto) {
-            const bool is_selected_dim =
-                view->selected_sketch_dimension_id.has_value() &&
-                view->selected_sketch_dimension_id.value() == dim_it->id;
-            const WorldPoint center =
-                to_world_point(*feature.sketch_parameters, arc.center_x, arc.center_y);
-            const WorldPoint dim_start = to_world_point(
-                *feature.sketch_parameters, arc.center_x, arc.center_y);
-            // Compute arc midpoint so the leader points toward the curved
-            // surface, not toward the opening between start and end.
-            const double sa = std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
-            const double ea = std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
-            double sweep = arc.ccw
-                ? std::fmod(ea - sa + 2.0 * M_PI, 2.0 * M_PI)
-                : std::fmod(sa - ea + 2.0 * M_PI, 2.0 * M_PI);
-            double ma = arc.ccw ? sa + sweep * 0.5 : sa - sweep * 0.5;
-            const double mid_x = arc.center_x + arc.radius * std::cos(ma);
-            const double mid_y = arc.center_y + arc.radius * std::sin(ma);
-            const WorldPoint dim_end = to_world_point(
-                *feature.sketch_parameters, mid_x, mid_y);
-            const WorldPoint label = to_world_point(
-                *feature.sketch_parameters,
-                arc.center_x + (mid_x - arc.center_x) * 0.5,
-                arc.center_y + (mid_y - arc.center_y) * 0.5);
-            sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
-                .dimension_id = dim_it->id,
-                .plane_id = feature.sketch_parameters->plane_id,
-                .kind = "arc_radius",
-                .entity_id = arc.id,
-                .label = "R " + format_dimension_value(dim_it->value) + " mm",
-                .is_selected = is_selected_dim,
-                .anchor_start_x = dim_start.x, .anchor_start_y = dim_start.y, .anchor_start_z = dim_start.z,
-                .anchor_end_x = dim_end.x, .anchor_end_y = dim_end.y, .anchor_end_z = dim_end.z,
-                .dimension_start_x = dim_start.x, .dimension_start_y = dim_start.y, .dimension_start_z = dim_start.z,
-                .dimension_end_x = dim_end.x, .dimension_end_y = dim_end.y, .dimension_end_z = dim_end.z,
-                .label_x = label.x, .label_y = label.y, .label_z = label.z,
-                .driven = dim_it->driven,
-                .display_as = "",
-            });
-          }
-      // Arc-length dimension label: reuses the arc-radius leader
-      // geometry with an "L" prefix at the arc midpoint.
-      // arc_length label (inside the arc loop)
-      for (const auto& dim : feature.sketch_parameters->dimensions) {
-        if (dim.kind != "arc_length" ||
-            dim.entity_id != arc.id ||
-            dim.is_auto) {
+        if (!view->active_sketch_feature_id.has_value() ||
+            view->active_sketch_feature_id.value() != feature.id) {
           continue;
         }
-        const double sa = std::atan2(arc.start_y - arc.center_y,
-                                     arc.start_x - arc.center_x);
-        const double ea = std::atan2(arc.end_y - arc.center_y,
-                                     arc.end_x - arc.center_x);
-        double sweep = arc.ccw
-            ? std::fmod(ea - sa + 2.0 * M_PI, 2.0 * M_PI)
-            : std::fmod(sa - ea + 2.0 * M_PI, 2.0 * M_PI);
-        const double ma = arc.ccw ? sa + sweep * 0.5 : sa - sweep * 0.5;
-        const double mid_x = arc.center_x + arc.radius * std::cos(ma);
-        const double mid_y = arc.center_y + arc.radius * std::sin(ma);
-        const WorldPoint mid =
-            to_world_point(*feature.sketch_parameters, mid_x, mid_y);
-        const WorldPoint center =
-            to_world_point(*feature.sketch_parameters,
-                           arc.center_x, arc.center_y);
-        const bool is_selected_dim =
-            view->selected_sketch_dimension_id.has_value() &&
-            view->selected_sketch_dimension_id.value() == dim.id;
-        sketch_dimensions.push_back(ViewportSketchDimensionPrimitive{
-            .dimension_id = dim.id,
-            .plane_id = feature.sketch_parameters->plane_id,
-            .kind = "arc_length",
-            .entity_id = arc.id,
-            .label = "L " + format_dimension_value(dim.value) + " mm",
-            .is_selected = is_selected_dim,
-            .anchor_start_x = center.x, .anchor_start_y = center.y, .anchor_start_z = center.z,
-            .anchor_end_x = mid.x, .anchor_end_y = mid.y, .anchor_end_z = mid.z,
-            .dimension_start_x = center.x, .dimension_start_y = center.y, .dimension_start_z = center.z,
-            .dimension_end_x = mid.x, .dimension_end_y = mid.y, .dimension_end_z = mid.z,
-            .label_x = mid.x, .label_y = mid.y, .label_z = mid.z,
-            .driven = dim.driven,
-            .display_as = "",
-        });
-      }
+        // Radial dimensions on this arc. Each kind owns an emitter in
+        // sketch_radial_dimension_primitives.inc, which resolves the
+        // stored sketch-local label override so a dragged label survives
+        // the next viewport refetch.
+        for (const auto& dim : feature.sketch_parameters->dimensions) {
+          if (dim.entity_id != arc.id || dim.is_auto) {
+            continue;
+          }
+          const bool is_selected_dim =
+              view->selected_sketch_dimension_id.has_value() &&
+              view->selected_sketch_dimension_id.value() == dim.id;
+          if (dim.kind == "arc_radius") {
+            sketch_dimensions.push_back(make_arc_radius_dimension_primitive(
+                arc, dim, *feature.sketch_parameters, is_selected_dim));
+          } else if (dim.kind == "arc_length") {
+            sketch_dimensions.push_back(make_arc_length_dimension_primitive(
+                arc, dim, *feature.sketch_parameters, is_selected_dim));
+          } else if (dim.kind == "arc_angle") {
+            sketch_dimensions.push_back(make_arc_angle_dimension_primitive(
+                arc, dim, *feature.sketch_parameters, is_selected_dim));
+          }
         }
       }
 

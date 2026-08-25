@@ -662,7 +662,7 @@ export function buildSketchDimensionObject(
     labelText = `(${labelText})`;
   }
   const labelPosition = new THREE.Vector3(...dimension.labelPosition);
-  const { points, arrowPositions, arrowIndices, refLineData } =
+  const { points, arrowPositions, arrowIndices, refLineData, witnessLines } =
     buildSketchDimensionGeometry(dimension);
   const dimensionColor = isMutedPreview
     ? themeColor("--color-on-surface-muted", "#9b9b98")
@@ -709,13 +709,14 @@ export function buildSketchDimensionObject(
     group.add(arrowMesh);
   }
 
-  // Dashed reference line for angle dimensions
-  if (refLineData) {
-    const refGeom = new THREE.BufferGeometry().setFromPoints([
-      refLineData.start,
-      refLineData.end,
+  // Dashed reference line for angle dimensions, and the witness lines
+  // running from an arc out to its arc-length extension arc.
+  const addDashedLine = (start: THREE.Vector3, end: THREE.Vector3) => {
+    const dashedGeometry = new THREE.BufferGeometry().setFromPoints([
+      start,
+      end,
     ]);
-    const refMat = new THREE.LineDashedMaterial({
+    const dashedMaterial = new THREE.LineDashedMaterial({
       color: isMutedPreview
         ? themeColor("--color-on-surface-muted", "#9b9b98")
         : dimension.isSelected
@@ -727,14 +728,21 @@ export function buildSketchDimensionObject(
       gapSize: 2,
       depthTest: false,
     });
-    const refLine = new THREE.Line(refGeom, refMat);
-    refLine.computeLineDistances();
-    refLine.renderOrder = isMutedPreview ? 5 : 6;
+    const dashedLine = new THREE.Line(dashedGeometry, dashedMaterial);
+    dashedLine.computeLineDistances();
+    dashedLine.renderOrder = isMutedPreview ? 5 : 6;
     if (isPickable) {
-      refLine.userData.sketchDimensionId = dimension.dimensionId;
-      refLine.userData.sketchDimensionPart = "geometry";
+      dashedLine.userData.sketchDimensionId = dimension.dimensionId;
+      dashedLine.userData.sketchDimensionPart = "geometry";
     }
-    group.add(refLine);
+    group.add(dashedLine);
+  };
+
+  if (refLineData) {
+    addDashedLine(refLineData.start, refLineData.end);
+  }
+  for (const witness of witnessLines) {
+    addDashedLine(witness.start, witness.end);
   }
 
   const label = makeDimensionLabelSprite(labelText, dimension.isSelected, {

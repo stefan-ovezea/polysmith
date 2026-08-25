@@ -322,6 +322,35 @@ chamfer/spline, transform/arrays/extend/offset, arc dims, circle
 modes + the diameter convention), IPC protocol bullets, the
 set_sketch_tool enum, and the roadmap sketch-system entry.
 
+## Post-SK8 follow-up — radial dimension rendering (2026-08-26)
+
+User-reported: arc dimensions were stuck at a fixed position, drew as an
+"ugly line", and only the text moved horizontally. SK6 shipped dimension
+*values* but changed no rendering file. Fixed four defects: the core
+emitters for `circle_radius` / `arc_radius` / `arc_length` ignored the
+stored `label_x/label_y` (drag persisted, refetch reverted it); the TS
+radius branch was a bare segment with no arrowhead or leader; the drag
+pinned the label to a `radius + 4` ring; and two dropped-event bugs —
+`arc_length` missing from the zod viewport enum discarded every
+`viewport_state` event, `arc_angle` missing from documentStateSchema
+discarded every `document_state` event, and `arc_angle` had no emitter at
+all.
+
+New `sketch_radial_dimension_primitives.inc` (arc radius / length / angle
+emitters) + rewritten circle emitter, all honoring the stored label. No
+new IPC fields: the radial kinds reuse `arc_center`/`arc_radius`/arc
+angles, and `anchor_end` carries a quarter-turn rim point as an in-plane
+direction reference. The leader landing is derived in the renderer (it is
+presentational, and duplicating it in the core would give the preview and
+the re-emit something to disagree about). Both mirrored preview
+projections collapsed into shared helpers mirroring the C++ constants.
+`dimension_completion` suite 3 → 9 cases. All 28 suites + tsc green,
+user-verified in-app.
+
+Deferred: `polygon_radius` still uses the old 1-DOF vertical projection —
+it was not part of the report, but it is the last kind with a
+hardcoded-axis label.
+
 ## Branch state — FINALIZED
 
 `feature/sketch` is 10 commits ahead of `dev`; every milestone was

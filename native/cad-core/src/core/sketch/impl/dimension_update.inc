@@ -47,27 +47,55 @@ void update_sketch_dimension(FeatureEntry& feature,
     }
     return {0.0, 0.0};
   };
-  for (const auto& dim : parameters.dimensions) {
-    if (!dim.label_x.has_value() || !dim.label_y.has_value()) continue;
-    double mx = 0, my = 0;
-    bool found = false;
+  // The point a stored label is measured against, so a label the user
+  // dragged keeps its offset when the solver moves the geometry. Linear
+  // kinds track the anchor midpoint; radial kinds track the circle or
+  // arc centre, which is what their leaders are built from.
+  auto label_reference_point =
+      [&](const SketchDimension& dim)
+      -> std::optional<std::pair<double, double>> {
     if (dim.kind == "line_length" || dim.kind == "line_line_distance") {
       for (const auto& l : parameters.lines) {
         if (l.id == dim.entity_id) {
-          mx = (l.start_x + l.end_x) / 2.0;
-          my = (l.start_y + l.end_y) / 2.0;
-          found = true; break;
+          return std::make_pair((l.start_x + l.end_x) / 2.0,
+                                (l.start_y + l.end_y) / 2.0);
         }
       }
-    } else if (dim.kind == "point_distance" ||
-               dim.kind == "circle_center_distance") {
+      return std::nullopt;
+    }
+    if (dim.kind == "point_distance" ||
+        dim.kind == "circle_center_distance") {
       auto pa = find_pt(dim.entity_id);
       auto pb = find_pt(dim.secondary_entity_id);
-      mx = (pa.first + pb.first) / 2.0;
-      my = (pa.second + pb.second) / 2.0;
-      found = true;
+      return std::make_pair((pa.first + pb.first) / 2.0,
+                            (pa.second + pb.second) / 2.0);
     }
-    if (found) pre_labels.push_back({dim.id, *dim.label_x, *dim.label_y, mx, my});
+    if (dim.kind == "circle_radius") {
+      for (const auto& c : parameters.circles) {
+        if (c.id == dim.entity_id) {
+          return std::make_pair(c.center_x, c.center_y);
+        }
+      }
+      return std::nullopt;
+    }
+    if (dim.kind == "arc_radius" || dim.kind == "arc_length" ||
+        dim.kind == "arc_angle") {
+      for (const auto& a : parameters.arcs) {
+        if (a.id == dim.entity_id) {
+          return std::make_pair(a.center_x, a.center_y);
+        }
+      }
+      return std::nullopt;
+    }
+    return std::nullopt;
+  };
+
+  for (const auto& dim : parameters.dimensions) {
+    if (!dim.label_x.has_value() || !dim.label_y.has_value()) continue;
+    if (const auto reference = label_reference_point(dim)) {
+      pre_labels.push_back({dim.id, *dim.label_x, *dim.label_y,
+                            reference->first, reference->second});
+    }
   }
 
   auto sync_all_labels = [&]() {
@@ -75,27 +103,9 @@ void update_sketch_dimension(FeatureEntry& feature,
       if (!dim.label_x.has_value()) continue;
       for (const auto& pre : pre_labels) {
         if (pre.id != dim.id) continue;
-        double mx = 0, my = 0;
-        bool found = false;
-        if (dim.kind == "line_length" || dim.kind == "line_line_distance") {
-          for (const auto& l : parameters.lines) {
-            if (l.id == dim.entity_id) {
-              mx = (l.start_x + l.end_x) / 2.0;
-              my = (l.start_y + l.end_y) / 2.0;
-              found = true; break;
-            }
-          }
-        } else if (dim.kind == "point_distance" ||
-                   dim.kind == "circle_center_distance") {
-          auto pa = find_pt(dim.entity_id);
-          auto pb = find_pt(dim.secondary_entity_id);
-          mx = (pa.first + pb.first) / 2.0;
-          my = (pa.second + pb.second) / 2.0;
-          found = true;
-        }
-        if (found) {
-          dim.label_x = pre.lx + (mx - pre.mx);
-          dim.label_y = pre.ly + (my - pre.my);
+        if (const auto reference = label_reference_point(dim)) {
+          dim.label_x = pre.lx + (reference->first - pre.mx);
+          dim.label_y = pre.ly + (reference->second - pre.my);
         }
         break;
       }
