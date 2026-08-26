@@ -347,9 +347,57 @@ projections collapsed into shared helpers mirroring the C++ constants.
 `dimension_completion` suite 3 → 9 cases. All 28 suites + tsc green,
 user-verified in-app.
 
-Deferred: `polygon_radius` still uses the old 1-DOF vertical projection —
-it was not part of the report, but it is the last kind with a
-hardcoded-axis label.
+## Extrude thin-wall regression — intersecting arcs (2026-08-26)
+
+User-reported: two intersecting arcs enclosed by two lines (res/part.json)
+extruded with part of an arc as a thin wall. Root cause: the face walk
+assigned the arrangement's EXTERIOR cycle (area ~14372, larger than the
+lobe itself) as the lobe's inner loop, because the exterior's probe point
+lies exactly on the lobe's own boundary and the ray-cast rounded it onto
+the inside. The bogus hole cut the lobe face down to a sliver.
+
+Fix: `exact_point_on_polygon_boundary` guard in the hole-assignment loop
+of `sketch_profile_exact.inc` — a probe ON a candidate's boundary is the
+exterior twin of that region, never a hole of it.
+
+Two test-side consequences, both verified with OCCT probes:
+
+- New suite `cad_core_intersecting_arcs_extrude_test` — the exact
+  part.json geometry via the direct constructors, asserting the full
+  region set (lens ~2479 / lobe ~5105 / big U ~6789) and that the lobe
+  carries NO inner loop. Fails on the pre-fix walk (hole area 14372.5).
+- `multi_profile_extrude_test`: the corner-touch new_body case now
+  expects TWO solids inside the single body entry. The old "one solid"
+  was an artifact — the spurious hole destroyed the first prism. Two
+  prisms touching along one edge legitimately stay two solids (a
+  non-manifold union is not a valid solid); the OCCT probe confirms
+  this is the correct geometry, not a regression.
+
+All 29 suites green. Awaiting user in-app verification + commit.
+
+### Radial follow-up round 2 (2026-08-26)
+
+User follow-up after the radial-dimension commit:
+
+- `polygon_radius` joined the free-2D radial leaders
+  (`make_polygon_radius_dimension_primitive` over `compute_radial_leader`;
+  the old emitter projected the stored offset onto a hardcoded (0,1)
+  normal, so only the Y component survived). While testing this, found
+  and fixed a pre-existing emitter bug: `find_if` matched an entity's
+  AUTO dimension first and the `!is_auto` guard then suppressed the
+  explicit dimension entirely — polygons (and circles) carried both, so
+  the explicit one never rendered. The lookup now skips auto dimensions
+  in the predicate.
+- Circle draft-diameter preview was reworked to the new field convention
+  (it was still emitting the old left/right-rim anchors with no
+  arc_center; under the new renderer that drew the leader across the
+  whole circle from the far rim).
+- Arc draft preview: the three-point arc now shows a chord-length
+  dimension readout while placing the second point — the readout between
+  the two end vertices that predated the arc tool rework. Radius draft
+  readouts stay out (Fusion doesn't have one either).
+- `dimension_completion` suite grew to 10 cases (polygon free-2D label +
+  explicit-over-auto lookup). All 28 suites + tsc green.
 
 ## Branch state — FINALIZED
 

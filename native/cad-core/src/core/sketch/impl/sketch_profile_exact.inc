@@ -270,6 +270,24 @@ double exact_point_segment_dist_sq(double px, double py, double ax, double ay,
   return dx * dx + dy * dy;
 }
 
+// True when the point lies ON one of the polygon's boundary segments.
+// Used to reject hole candidates: a hole's boundary never coincides
+// with its region's boundary, so a probe that sits on the region's
+// boundary cannot belong to a nested hole — it is the exterior twin of
+// the region being walked on the other side of a shared edge.
+bool exact_point_on_polygon_boundary(const SketchProfilePoint& pt,
+                                     const std::vector<SketchProfilePoint>& poly) {
+  const double tol_sq = kProfileTolerance * kProfileTolerance;
+  for (size_t i = 0; i < poly.size(); ++i) {
+    const SketchProfilePoint& a = poly[i];
+    const SketchProfilePoint& b = poly[(i + 1) % poly.size()];
+    if (exact_point_segment_dist_sq(pt.x, pt.y, a.x, a.y, b.x, b.y) <= tol_sq) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool exact_point_in_polygon(const SketchProfilePoint& pt,
                             const std::vector<SketchProfilePoint>& poly) {
   bool inside = false;
@@ -1332,7 +1350,13 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       // an isolated component — not a hole.
       if (face_entity_set(cf) == cycle_ids) continue;
       const FaceGeo& geo = face_geo[cf];
-      if (!exact_point_in_polygon(probe, geo.points)) continue;
+      // A probe ON the candidate's boundary is the exterior twin of
+      // the candidate region walked on the other side of the shared
+      // edge — never a hole of it. The ray-cast alone is not enough:
+      // a boundary point can round onto either side.
+      if (exact_point_on_polygon_boundary(probe, geo.points)) continue;
+      const bool inside = exact_point_in_polygon(probe, geo.points);
+      if (!inside) continue;
       if (geo.abs_area < best_area) {
         best_area = geo.abs_area;
         best_f = cf;

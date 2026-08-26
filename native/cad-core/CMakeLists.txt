@@ -529,6 +529,29 @@ add_executable(cad_core_array_test
   tests/array_test.cpp
 )
 
+# Intersecting-arcs extrude regression — the lobe between two arcs
+# must cut its bottom-cap hole, not wire it as a giant complement
+# region (the "thin wall" bug, res/part.json geometry).
+add_executable(cad_core_intersecting_arcs_extrude_test
+  ${CAD_CORE_SOURCES}
+  tests/intersecting_arcs_extrude_test.cpp
+)
+
+target_include_directories(cad_core_intersecting_arcs_extrude_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_intersecting_arcs_extrude_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 target_include_directories(cad_core_array_test PRIVATE
   src
   ${CMAKE_SOURCE_DIR}/../../third_party

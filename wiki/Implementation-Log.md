@@ -59,6 +59,55 @@ clamped on both sides, arc-angle emitting at all, and a
 label-on-the-centre NaN guard. All 28 suites green, tsc clean,
 user-verified in-app.
 
+### Radial dimension follow-up (polygon + draft readouts)
+
+User follow-up on the radial-dimension fix:
+
+- **`polygon_radius` joined the free-2D radial leaders.**
+  `make_polygon_radius_dimension_primitive` rides the shared
+  `compute_radial_leader`; the old emitter projected the stored label
+  onto a hardcoded `(0,1)` normal, so only the Y component of a drag
+  ever survived. While testing, a pre-existing emitter bug surfaced and
+  was fixed: `find_if` matched an entity's AUTO dimension first and the
+  `!is_auto` guard then suppressed the explicit one — polygons and
+  circles carry both, so the explicitly added dimension never rendered.
+  The circle and polygon lookups now skip auto dimensions in the
+  predicate.
+- **Circle draft-diameter preview reworked** to the new field convention.
+  It still emitted the old left/right-rim anchors without `arc_center`,
+  which under the new renderer drew the leader across the whole circle
+  from the far rim.
+- **Arc draft preview gained a chord-length readout.** While placing the
+  second point of a three-point arc, the draft now shows the dimension
+  between the two end vertices (the readout that predated the arc tool
+  rework). Radius draft readouts stay out deliberately — Fusion doesn't
+  draw one either.
+- `dimension_completion` grew to 10 cases. All 28 suites green, tsc
+  clean.
+
+### Extrude thin-wall regression — intersecting arcs (user-reported)
+
+Two intersecting arcs enclosed by two lines extruded with part of an
+arc as a thin wall (the geometry of `res/part.json`). Root cause: the
+face walk assigned the arrangement's EXTERIOR cycle (area ~14372,
+larger than the lobe itself) as the lobe's inner loop — the exterior's
+probe point lies exactly on the lobe's own boundary and the ray-cast
+rounded it onto the inside. The bogus hole cut the extruded lobe face
+down to a thin sliver.
+
+Fix: `exact_point_on_polygon_boundary` guard in the hole-assignment
+loop of `sketch_profile_exact.inc` — a probe ON a candidate's boundary
+is the exterior twin of that region, never a hole of it.
+
+Tests: new suite `intersecting_arcs_extrude` (the exact part.json
+geometry, full region set + no-hole assertion; fails pre-fix with hole
+area 14372.5). One expectation correction in `multi_profile_extrude`:
+the corner-touch new_body case now expects two solids inside the single
+body entry — the old "one solid" was the spurious hole destroying the
+first prism; two prisms touching along one edge legitimately stay two
+solids (OCCT probe confirmed). All 29 suites green, tsc clean,
+user-verified in-app.
+
 ## 2026-08-24
 
 ### Sketch toolset finalization — SK4..SK7 (feature/sketch)
