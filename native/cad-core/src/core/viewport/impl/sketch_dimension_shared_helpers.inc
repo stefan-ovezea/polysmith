@@ -68,6 +68,36 @@ inline SketchLabelPoint2D radial_contact_direction(double center_x,
   return SketchLabelPoint2D{dx / length, dy / length};
 }
 
+// Leader geometry shared by every centre+radius dimension: circle
+// radius/diameter, arc radius, and polygon circumradius.
+struct RadialLeader2D {
+  SketchLabelPoint2D label;     // resolved label placement
+  SketchLabelPoint2D unit;      // centre -> label, normalized
+  SketchLabelPoint2D contact;   // on the curve toward the label
+  SketchLabelPoint2D quadrant;  // a quarter turn from the contact
+};
+
+// `contact` is where the arrowhead lands. `quadrant` is a direction
+// reference for the renderer: the centre, contact and label are
+// collinear, so there is no cross product to recover the sketch plane
+// from when orienting the flat arrowhead triangles.
+inline RadialLeader2D compute_radial_leader(const SketchDimension& dimension,
+                                            double center_x, double center_y,
+                                            double radius) {
+  const SketchLabelPoint2D label = resolve_dimension_label_local(
+      dimension, center_x + radius + kCircleDimensionOffset, center_y);
+  const SketchLabelPoint2D unit =
+      radial_contact_direction(center_x, center_y, label.x, label.y);
+  return RadialLeader2D{
+      label,
+      unit,
+      SketchLabelPoint2D{center_x + unit.x * radius,
+                         center_y + unit.y * radius},
+      SketchLabelPoint2D{center_x - unit.y * radius,
+                         center_y + unit.x * radius},
+  };
+}
+
 // Centroid (in sketch-local 2D coords) of every line midpoint and
 // circle center in the sketch. Used as the "inside" reference when
 // placing line dimensions so the dimension line lands on the side of

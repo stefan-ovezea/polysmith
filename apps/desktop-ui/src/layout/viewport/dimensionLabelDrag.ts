@@ -460,6 +460,7 @@ export function isFreeRadialDimensionKind(kind: SketchDimensionScene["kind"]) {
   return (
     kind === "circle_radius" ||
     kind === "arc_radius" ||
+    kind === "polygon_radius" ||
     kind === "arc_length"
   );
 }
@@ -542,7 +543,11 @@ export function radialLeaderDimension({
   labelWorld: [number, number, number];
   planeFrame: ActiveSketchGridPlaneFrame | null;
 }): SketchDimensionScene | null {
-  if (dimension.kind !== "circle_radius" && dimension.kind !== "arc_radius") {
+  if (
+    dimension.kind !== "circle_radius" &&
+    dimension.kind !== "arc_radius" &&
+    dimension.kind !== "polygon_radius"
+  ) {
     return null;
   }
   const radius = dimension.arcRadius ?? 0;
@@ -580,8 +585,10 @@ export function radialLeaderDimension({
 
   const contact = center.clone().addScaledVector(unit, radius);
   const quadrant = center.clone().addScaledVector(perp, radius);
+  // Only a circle dimension has a diameter mode; arc and polygon radius
+  // always draw the single-arrow radius leader.
   const showRadius =
-    dimension.kind === "arc_radius" || dimension.displayAs === "radius";
+    dimension.kind !== "circle_radius" || dimension.displayAs === "radius";
   const farTip = center.clone().addScaledVector(unit, -radius);
 
   return {

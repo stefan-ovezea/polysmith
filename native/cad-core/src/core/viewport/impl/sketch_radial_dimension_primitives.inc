@@ -158,6 +158,55 @@ ViewportSketchDimensionPrimitive make_arc_radius_dimension_primitive(
   };
 }
 
+// Polygon circumradius: geometrically the same leader as a circle
+// radius, measured from the polygon centre to its circumcircle.
+ViewportSketchDimensionPrimitive make_polygon_radius_dimension_primitive(
+    const SketchPolygon& polygon, const SketchDimension& dimension,
+    const SketchFeatureParameters& parameters, bool is_selected) {
+  const RadialLeader2D leader = compute_radial_leader(
+      dimension, polygon.center_x, polygon.center_y, polygon.radius);
+
+  const WorldPoint center =
+      to_world_point(parameters, polygon.center_x, polygon.center_y);
+  const WorldPoint contact =
+      to_world_point(parameters, leader.contact.x, leader.contact.y);
+  const WorldPoint quadrant =
+      to_world_point(parameters, leader.quadrant.x, leader.quadrant.y);
+  const WorldPoint label =
+      to_world_point(parameters, leader.label.x, leader.label.y);
+
+  return ViewportSketchDimensionPrimitive{
+      .dimension_id = dimension.id,
+      .plane_id = parameters.plane_id,
+      .kind = "polygon_radius",
+      .entity_id = polygon.id,
+      .label = "R " + format_dimension_value(dimension.value) + " mm",
+      .is_selected = is_selected,
+      .anchor_start_x = contact.x,
+      .anchor_start_y = contact.y,
+      .anchor_start_z = contact.z,
+      .anchor_end_x = quadrant.x,
+      .anchor_end_y = quadrant.y,
+      .anchor_end_z = quadrant.z,
+      // One arrowhead: both tips coincide on the contact.
+      .dimension_start_x = contact.x,
+      .dimension_start_y = contact.y,
+      .dimension_start_z = contact.z,
+      .dimension_end_x = contact.x,
+      .dimension_end_y = contact.y,
+      .dimension_end_z = contact.z,
+      .label_x = label.x,
+      .label_y = label.y,
+      .label_z = label.z,
+      .arc_center_x = center.x,
+      .arc_center_y = center.y,
+      .arc_center_z = center.z,
+      .arc_radius = polygon.radius,
+      .driven = dimension.driven,
+      .display_as = "",
+  };
+}
+
 // Arc length: a concentric extension arc at the label's radius, with the
 // arc's own endpoints as the witness-line feet. The renderer draws the
 // extension arc between dimension_start/end about arc_center and the two

@@ -411,7 +411,8 @@ export function buildSketchDimensionGeometry(
     }
   } else if (
     dimension.kind === "arc_radius" ||
-    dimension.kind === "circle_radius"
+    dimension.kind === "circle_radius" ||
+    dimension.kind === "polygon_radius"
   ) {
     // Radius / diameter leader. The core emits the contact(s) on the
     // curve, a quarter-turn rim point as an in-plane direction reference

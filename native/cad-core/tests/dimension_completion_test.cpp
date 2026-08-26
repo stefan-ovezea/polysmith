@@ -80,12 +80,15 @@ P3 dim_end_of(const ViewportSketchDimensionPrimitive& p) {
   return P3{p.dimension_end_x, p.dimension_end_y, p.dimension_end_z};
 }
 
-// Id of the dimension of `kind` attached to `entity_id`.
+// Id of the dimension of `kind` attached to `entity_id`. Auto
+// dimensions are skipped: an entity can carry both an auto dimension and
+// an explicit one, and only the explicit one is emitted to the viewport.
 std::string find_dimension_id(const DocumentState& document,
                               const std::string& kind,
                               const std::string& entity_id) {
   for (const auto& dimension : sketch_params(document).dimensions) {
-    if (dimension.kind == kind && dimension.entity_id == entity_id) {
+    if (dimension.kind == kind && dimension.entity_id == entity_id &&
+        !dimension.is_auto) {
       return dimension.id;
     }
   }
@@ -471,6 +474,43 @@ bool test_arc_angle_emits_primitive_with_radius_clamps() {
       "arc angle: near label clamps the radius to 6");
 }
 
+bool test_polygon_radius_label_position_honored() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  // Hexagon centred at (10,10) with circumradius 5.
+  DocumentState document =
+      manager.add_sketch_polygon(6, "inscribed", 10.0, 10.0, 15.0, 10.0);
+  document = manager.add_sketch_polygon_radius_dimension("polygon-1");
+  const std::string dim_id =
+      find_dimension_id(document, "polygon_radius", "polygon-1");
+  if (!expect(!dim_id.empty(), "polygon radius: dimension was created")) {
+    return false;
+  }
+
+  // Straight up from the centre: the old emitter projected the offset
+  // onto a hardcoded (0,1) normal, so only this component ever survived.
+  // The x component is what regressed.
+  document = manager.update_sketch_dimension_label_position(dim_id, 30.0, 40.0);
+  const auto primitive =
+      find_primitive(document, "polygon_radius", "polygon-1");
+  // This also covers the emitter's auto-vs-explicit lookup: the polygon
+  // carries an auto dimension AND the explicit one added above, and the
+  // explicit one must be the one that renders.
+  if (!expect(primitive.has_value(), "polygon radius: primitive emitted")) {
+    return false;
+  }
+  const P3 center = center_of(*primitive);
+  const P3 label = label_of(*primitive);
+  if (!expect(near(distance(label, center), std::sqrt(1300.0), 1e-6),
+              "polygon radius: label moves freely in 2D")) {
+    return false;
+  }
+  return expect(contact_matches_direction(anchor_start_of(*primitive), center,
+                                          label, primitive->arc_radius),
+                "polygon radius: contact tracks the label direction");
+}
+
 bool test_label_on_center_emits_finite_geometry() {
   DocumentManager manager;
   manager.create_document();
@@ -515,6 +555,7 @@ int main() {
   if (!test_arc_radius_contact_clamped_into_sweep()) return 1;
   if (!test_arc_length_extension_arc_clamps_both_sides()) return 1;
   if (!test_arc_angle_emits_primitive_with_radius_clamps()) return 1;
+  if (!test_polygon_radius_label_position_honored()) return 1;
   if (!test_label_on_center_emits_finite_geometry()) return 1;
 
   std::cout << "dimension_completion_test passed\n";

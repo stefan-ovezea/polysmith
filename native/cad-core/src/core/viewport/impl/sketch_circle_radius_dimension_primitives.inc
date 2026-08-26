@@ -18,31 +18,21 @@ ViewportSketchDimensionPrimitive make_circle_dimension_primitive(
   const double display_value = show_radius ? dimension.value
                                            : dimension.value * 2.0;
 
-  const SketchLabelPoint2D label = resolve_dimension_label_local(
-      dimension,
-      circle.center_x + circle.radius + kCircleDimensionOffset,
-      circle.center_y);
-  const SketchLabelPoint2D unit = radial_contact_direction(
-      circle.center_x, circle.center_y, label.x, label.y);
+  const RadialLeader2D leader = compute_radial_leader(
+      dimension, circle.center_x, circle.center_y, circle.radius);
 
   const WorldPoint center =
       to_world_point(parameters, circle.center_x, circle.center_y);
   const WorldPoint label_world =
-      to_world_point(parameters, label.x, label.y);
+      to_world_point(parameters, leader.label.x, leader.label.y);
   // Contact on the rim toward the label, and its antipode for diameter.
-  const WorldPoint near_contact = to_world_point(
-      parameters, circle.center_x + unit.x * circle.radius,
-      circle.center_y + unit.y * circle.radius);
+  const WorldPoint near_contact =
+      to_world_point(parameters, leader.contact.x, leader.contact.y);
   const WorldPoint far_contact = to_world_point(
-      parameters, circle.center_x - unit.x * circle.radius,
-      circle.center_y - unit.y * circle.radius);
-  // The rim point a quarter turn from the contact. The centre, contact
-  // and label are collinear, so the renderer has no cross product to
-  // derive the sketch plane from; this gives it an in-plane reference
-  // direction for orienting the arrowheads.
-  const WorldPoint quadrant = to_world_point(
-      parameters, circle.center_x - unit.y * circle.radius,
-      circle.center_y + unit.x * circle.radius);
+      parameters, circle.center_x - leader.unit.x * circle.radius,
+      circle.center_y - leader.unit.y * circle.radius);
+  const WorldPoint quadrant =
+      to_world_point(parameters, leader.quadrant.x, leader.quadrant.y);
 
   // anchor_start is where the leader leaves the rim; dimension_start/end
   // are the arrowhead tips and coincide in radius mode (one arrow).
