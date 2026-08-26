@@ -654,10 +654,16 @@
       "title": "Transform / Array",
       "scale": "Scale",
       "center": "Center",
+      "pickCenter": "Pick",
+      "pickCenterHint": "Pick: click a point in the viewport to set the rotation center",
+      "pickCenterHintActive": "Click a center or point in the viewport · Esc cancels",
+      "noSelection": "No geometry selected — select entities in the viewport first",
+      "selectionSummary": "{{count}} selected: {{kinds}}",
       "copy": "Copy",
       "applyTransform": "Apply Transform",
       "count": "Count",
       "linearArray": "Linear Array",
+      "linearArrayHint": "Linear array offsets each copy by the dX / dY values above",
       "circularArray": "Circular Array"
     },
     "sketchOffset": {

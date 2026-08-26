@@ -308,6 +308,8 @@ export function ViewportPanel({
   onUpdateSketchDimensionDisplay,
   onSetSketchTool,
   onOpenTransformArray,
+  arrayCenterPicking,
+  onArrayCenterPicked,
   onUpdateSketchPoint,
   onMoveSketchEntities,
   onFinishSketch,
@@ -1144,6 +1146,29 @@ export function ViewportPanel({
   const showViewportGridRef = useRef(showViewportGrid);
   const showSketchGridRef = useRef(showSketchGrid);
   const documentRef = useRef(document);
+  // Transform/Array center pick: armed from App while the panel's Pick
+  // button is active. The next sketch-plane click reports the snapped
+  // point instead of selecting.
+  const arrayCenterPickingRef = useRef(false);
+  const onArrayCenterPickedRef = useRef(onArrayCenterPicked);
+  useEffect(() => {
+    arrayCenterPickingRef.current = arrayCenterPicking;
+  }, [arrayCenterPicking]);
+  useEffect(() => {
+    onArrayCenterPickedRef.current = onArrayCenterPicked;
+  }, [onArrayCenterPicked]);
+  // Crosshair while the Transform/Array center pick is armed.
+  useEffect(() => {
+    if (!rendererRef.current) {
+      return;
+    }
+    const canvas = rendererRef.current.domElement as HTMLCanvasElement;
+    if (arrayCenterPicking) {
+      canvas.style.cursor = "crosshair";
+    } else {
+      canvas.style.cursor = "";
+    }
+  }, [arrayCenterPicking]);
   useEffect(() => {
     activeSketchPlaneIdRef.current = activeSketchPlaneId;
     activeSketchPlaneFrameRef.current = activeSketchPlaneFrame;
@@ -2844,6 +2869,31 @@ export function ViewportPanel({
     function handlePointerDown(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
+      // Transform/Array center pick consumes the click: resolve the
+      // pointer through the snap machinery (circle/arc centers,
+      // endpoints, grid) and report the sketch-local point.
+      if (arrayCenterPickingRef.current && activeSketchPlaneIdRef.current) {
+        const rawPoint = resolveSketchPlanePoint(
+          event,
+          renderer,
+          camera,
+          activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrameRef.current,
+        );
+        if (rawPoint) {
+          const snapped = resolveSnappedSketchPoint(
+            { local: rawPoint.local, world: rawPoint.world },
+            null,
+            { dynamicSnapsEnabled: false },
+          );
+          if (snapped) {
+            onArrayCenterPickedRef.current(snapped.local);
+            setSketchSnapLabel(null);
+            return;
+          }
+        }
+        return;
+      }
       handleViewportPointerDown({
         event,
         renderer,
@@ -2910,6 +2960,26 @@ export function ViewportPanel({
         setSelectionRect(
           selectionRectOverlayFromDrag(selectionDragRef.current),
         );
+        return;
+      }
+
+      // --- Transform/Array center pick hover feedback ---
+      if (arrayCenterPickingRef.current && activeSketchPlaneIdRef.current) {
+        const rawPoint = resolveSketchPlanePoint(
+          event,
+          renderer,
+          camera,
+          activeSketchPlaneIdRef.current,
+          activeSketchPlaneFrameRef.current,
+        );
+        if (rawPoint) {
+          const snapped = resolveSnappedSketchPoint(
+            { local: rawPoint.local, world: rawPoint.world },
+            null,
+            { dynamicSnapsEnabled: false },
+          );
+          setSketchSnapLabel(snapped?.snapLabel ?? null);
+        }
         return;
       }
 

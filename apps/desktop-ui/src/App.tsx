@@ -258,6 +258,20 @@ function App() {
     centerY: number;
   } | null>(null);
 
+  // Pick-center mode for the Transform / Array panel: while armed, the
+  // viewport routes the next sketch-plane click through the snap
+  // machinery (circle/arc centers, endpoints, grid) and reports the
+  // point back here instead of selecting.
+  const [arrayCenterPicking, setArrayCenterPicking] = useState(false);
+
+  // The pick arm must never outlive the panel: an armed viewport
+  // consumes every click, which reads as "the app stopped working".
+  useEffect(() => {
+    if (!sketchTransformPanel) {
+      setArrayCenterPicking(false);
+    }
+  }, [sketchTransformPanel]);
+
   // Entities created by the Transform / Array panel session (array
   // copies and transform copies). Cancel deletes them all; OK keeps
   // them.
@@ -2695,6 +2709,15 @@ function App() {
               onFinishSketch={finishActiveSketch}
               onClearSelection={clearSelection}
               onSetSketchTool={setActiveSketchTool}
+              arrayCenterPicking={arrayCenterPicking}
+              onArrayCenterPicked={(local) => {
+                setSketchTransformPanel((previous) =>
+                  previous
+                    ? { centerX: local[0], centerY: local[1] }
+                    : previous,
+                );
+                setArrayCenterPicking(false);
+              }}
               onOpenTransformArray={() => {
                 const snapshot = useCadCoreStore.getState().document;
                 const featureId = snapshot?.active_sketch_feature_id;
@@ -2978,10 +3001,47 @@ function App() {
                   deleteSketchChamfer={deleteSketchChamfer}
                 />
               ) : null}
-              {sketchTransformPanel ? (
+              {sketchTransformPanel ? (() => {
+                // Live selection readout: kind labels (never ids, per the
+                // UI copy rule) of every selected sketch entity the
+                // panel actions would apply to.
+                const transformFeatureId =
+                  document?.active_sketch_feature_id;
+                const transformFeature = transformFeatureId
+                  ? document?.feature_history.find(
+                      (entry) => entry.feature_id === transformFeatureId,
+                    )
+                  : undefined;
+                const transformParams =
+                  transformFeature?.sketch_parameters;
+                const transformSelectedIds =
+                  document?.selected_sketch_entity_ids ?? [];
+                const transformKinds: string[] = [];
+                if (transformParams) {
+                  for (const id of transformSelectedIds) {
+                    if (transformParams.lines.some((l) => l.line_id === id)) {
+                      transformKinds.push(t("toolbar.line"));
+                    } else if (transformParams.circles.some((c) => c.circle_id === id)) {
+                      transformKinds.push(t("toolbar.circle"));
+                    } else if (transformParams.arcs?.some((a) => a.arc_id === id)) {
+                      transformKinds.push(t("toolbar.arc"));
+                    } else if (transformParams.ellipses.some((e) => e.ellipse_id === id)) {
+                      transformKinds.push(t("toolbar.ellipse"));
+                    } else if (transformParams.slots.some((s) => s.slot_id === id)) {
+                      transformKinds.push(t("toolbar.slot"));
+                    } else if (transformParams.splines?.some((s) => s.spline_id === id)) {
+                      transformKinds.push(t("toolbar.spline"));
+                    }
+                  }
+                }
+                return (
                 <SketchTransformPanel
                   centerX={sketchTransformPanel.centerX}
                   centerY={sketchTransformPanel.centerY}
+                  pickingCenter={arrayCenterPicking}
+                  onPickCenter={() => setArrayCenterPicking(true)}
+                  onCancelPickCenter={() => setArrayCenterPicking(false)}
+                  selectedKinds={transformKinds}
                   disabled={status !== "connected"}
                   onApplyTransform={async (transform) => {
                     const snapshot = useCadCoreStore.getState().document;
@@ -3034,9 +3094,11 @@ function App() {
                     });
                   }}
                   onConfirm={() => {
+                    setArrayCenterPicking(false);
                     setSketchTransformPanel(null);
                   }}
                   onCancel={() => {
+                    setArrayCenterPicking(false);
                     void runAction(async () => {
                       if (sketchTransformCreatedIdsRef.current.length > 0) {
                         await deleteSketchSelection(
@@ -3050,7 +3112,8 @@ function App() {
                     setSketchTransformPanel(null);
                   }}
                 />
-              ) : null}
+                );
+              })() : null}
               {sketchOffsetAction ? (
                 <ActiveSketchOffsetPanel
                   action={sketchOffsetAction}

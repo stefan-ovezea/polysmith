@@ -267,6 +267,11 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
   onOpenTransformArray: () => void;
+  // Array/transform center pick: while true the viewport routes the
+  // next sketch-plane click through the snap machinery and reports the
+  // sketch-local point instead of selecting.
+  arrayCenterPicking: boolean;
+  onArrayCenterPicked: (local: [number, number]) => void;
   onUpdateSketchPoint: (
     pointId: string,
     x: number,
