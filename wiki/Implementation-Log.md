@@ -2974,3 +2974,46 @@ end-to-end coverage for the trimmed-corner sketch (detection + full-slab
 extrusion + trim complement selection + trim id uniqueness); the lens test
 now asserts the arc/circle region is a real profile; the multi-profile
 tests use corner-touching rectangles per the limitation above.
+
+## Trim tool modernization (2026-08)
+
+**Trim rewritten across five stages.** The 2026-05 tool (line/circle/arc
+only, private intersection math, size-based entity ids) is replaced by a
+shared exact-curve layer and full entity-kind coverage:
+
+- **Stage 1-2 — no silent deletes + deterministic point identity.**
+  The endpoint filter compared a dimensionless parameter to a 0.01 mm
+  tolerance (crossings near a line's ends vanished and the line was
+  deleted as "isolated"); the parallel test was mm-vs-mm²; coincident
+  circles produced 0/0 → NaN params (UB in the sort). All fixed.
+  Split points resolve nearest-wins through `resolve_shared_point`,
+  mint through one tracked helper, and are frozen against the solver
+  pass; crossing-line splits reuse `next_trim_entity_index` instead of
+  a size-based scheme that could alias a surviving line's id.
+- **Stage 3 — shared curve layer.** `core/sketch/sketch_curve` owns
+  the exact curve model, the coincidence tolerance and pair
+  intersections (line/circle/arc analytic, line×ellipse analytic,
+  splines and other ellipse pairs through OCCT). The profile walk and
+  the trim engine consume it — they can no longer disagree. The walk
+  gained ellipse touch records so curves ending on an ellipse weld.
+- **Stage 4 — race elimination.** `trim_preview_result` carries the
+  document revision; `trim_sketch_entity` accepts `expected_revision`
+  and ignores a stale `segment_index` (falls back to the click point).
+  The UI gained request/response correlation, one-frame preview
+  coalescing and newest-request-only rendering. Profile kinds
+  `ellipse`/`spline` added to the UI schemas (they had been emitted
+  since SK3/SK7 — a parse-error source).
+- **Stage 5 — ellipse and spline targets.** Full ellipses convert to
+  partial elliptical arcs (`has_sweep` sweep fields, serialized,
+  rendered, extruded as trimmed `Geom_Ellipse` edges); splines split
+  via OCCT knot-insertion with exact cut ends. The walk's dangling
+  pass now drops only dangling END pieces, so a line crossing a closed
+  curve splits it into regions (ellipse-chord surfaces) — text path
+  lines and construction curves keep the old exclusion semantics.
+- **FIX badges** render only for explicit Fix-tool constraints;
+  internally frozen points (trim/slot/ellipse) stay badge-free.
+
+**Tests:** `cad_core_trim_test` 23 cases, ellipse trim-to-arc, spline
+trim-split, four suite expectations updated to the new
+crossing-line-splits-regions semantics; all 30 suites green; tsc clean;
+user verified in-app (flower, ellipse trim + extrude, spline trim).

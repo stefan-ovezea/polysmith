@@ -416,3 +416,32 @@ green — re-check with PS_TRACE_FACES if it reappears).
 
 After merge of this branch: squash-merge to `dev`, delete
 `feature/sketch`, next branch per user.
+
+## Trim tool modernization — COMPLETE (2026-08-27/28)
+
+User-reported: the 2026-05 trim tool (line/circle/arc only, patched
+three times) got confused on complex geometry, its vertex minting
+fought the wire walk, and the UI raced the core. Modernized in five
+stages, five commits on `feature/sketch`:
+
+- `d6124bf` — no silent deletes + deterministic point identity
+- `fc4e608` — shared exact-curve layer (trim and the walk can no
+  longer disagree; ellipse/spline cutting edges)
+- `443e2a1` — race elimination (revision-stamped previews, stale
+  index fallback, IPC correlation, preview coalescing), flower
+  notch-junction fix, FIX-badge cleanup
+- `127862f` — ellipse trim targets (partial elliptical arcs) +
+  crossing lines split closed profiles (ellipse-chord surfaces)
+- `0673378` — spline trim targets (exact knot-insertion split)
+
+Suites total 30 (trim_test 23 cases, ellipse trim-to-arc, spline
+trim-split); all green; tsc clean; every stage user-verified in-app.
+Dead TS preview math removed from trimHoverPreview.ts;
+wiki/Trim-Tool-Implementation-Plan.md rewritten; Implementation-Log
+updated.
+
+Deferred (tracked): constraint/dimension re-targeting onto surviving
+trim segments; polygon-record preservation across trims; the three
+duplicated orphan-coincident sweeps (consolidate only when a future
+stage touches them); spline×ellipse intersections (still routed
+through OCCT's generic path — fine, but untuned).
