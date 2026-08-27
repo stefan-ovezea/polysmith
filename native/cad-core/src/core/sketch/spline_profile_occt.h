@@ -19,10 +19,11 @@ namespace polysmith::core {
 
 // The other side of an intersection, flattened to plain data.
 struct SplineProfileCurve {
-  int kind = 0;  // 0 line, 1 circle, 2 arc, 3 spline
+  int kind = 0;  // 0 line, 1 circle, 2 arc, 3 spline, 4 ellipse
   // line: x0, y0, x1, y1
   // circle: cx, cy, r
   // arc: cx, cy, r, start_angle, end_angle, ccw (0/1)
+  // ellipse: cx, cy, major_r, minor_r, rotation (ccw, full sweep)
   std::vector<double> values;
   // spline only
   std::vector<double> pole_xs;
@@ -50,5 +51,13 @@ void spline_profile_intersections(
 std::optional<double> spline_profile_param_at_point(
     const std::vector<double>& pole_xs, const std::vector<double>& pole_ys,
     int degree, double px, double py, double tolerance);
+
+// Intersection points between two arbitrary planar curves (the
+// SplineProfileCurve descriptions above, including ellipses).  Fills
+// `out` with point coordinates; the caller re-derives each side's
+// parameter from the point so the two sides can never disagree.
+void sketch_curve_pair_intersections_occt(
+    const SplineProfileCurve& a, const SplineProfileCurve& b,
+    std::vector<std::pair<double, double>>& out_points);
 
 }  // namespace polysmith::core

@@ -1,4 +1,6 @@
-constexpr double kProfileTolerance = 0.01;
+// Owned by sketch_curve.h — shared by the walk and the trim engine so
+// the two consumers can never disagree on coincidence.
+using polysmith::core::kProfileTolerance;
 // Per-arc sample count when materializing a closed loop into a
 // polyline. 16 segments per arc gives a visually smooth approximation
 // at typical sketch scales while keeping the resulting polygon cheap

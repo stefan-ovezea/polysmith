@@ -432,6 +432,111 @@ bool test_trim_survives_solver_pass() {
   return true;
 }
 
+bool test_line_crossing_only_ellipse_keeps_line() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Ellipse a=50 b=20 at the origin; a long line through it. Before
+  // ellipse cutting edges, the line read as isolated and the trim
+  // deleted it whole — this test pins the fix.
+  DocumentState document = manager.add_sketch_line(-100.0, 0.0, 100.0, 0.0);
+  document = manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+
+  document = manager.trim_sketch_entity("line-1", 0.0, 0.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.lines.size() == 2,
+              "ellipse cut: the line survives, split at the ellipse")) {
+    std::cerr << "  lines=" << params.lines.size() << "\n";
+    return false;
+  }
+  for (const auto& line : params.lines) {
+    if (line.id == "line-1") {
+      // Clicking the middle piece splits the line; line-1 keeps its id
+      // as the left portion, exactly from the line start to the
+      // ellipse crossing.
+      if (!expect(std::abs(line.start_x - (-100.0)) <= 1e-6 &&
+                      std::abs(line.end_x - (-50.0)) <= 1e-6,
+                  "ellipse cut: left piece runs (-100,0) -> (-50,0)")) {
+        std::cerr << "  line-1 = (" << line.start_x << "," << line.start_y
+                  << ")->(" << line.end_x << "," << line.end_y << ")\n";
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool test_line_crossing_only_spline_keeps_line() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Cubic arch spline crossing the x-axis twice; a long line through
+  // it. Before spline cutting edges the line was deleted whole.
+  const std::vector<std::pair<double, double>> poles = {
+      {-50.0, 0.0}, {-25.0, 40.0}, {25.0, 40.0}, {50.0, 0.0}};
+  DocumentState document = manager.add_sketch_line(-100.0, 0.0, 100.0, 0.0);
+  document = manager.add_sketch_spline(poles);
+
+  document = manager.trim_sketch_entity("line-1", 0.0, 0.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  return expect(params.lines.size() == 2,
+                "spline cut: the line survives, split at the spline");
+}
+
+bool test_circle_crossing_only_ellipse_keeps_circle() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Circle r=30 at the origin inside an ellipse a=50 b=20 — four
+  // crossings. Trimming one circle piece converts the circle to an
+  // arc instead of deleting it as isolated.
+  DocumentState document = manager.add_sketch_circle(0.0, 0.0, 30.0);
+  document = manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+
+  document = manager.trim_sketch_entity("circle-1", 30.0, 0.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  return expect(params.circles.empty() && params.arcs.size() == 1,
+                "ellipse cut: circle converts to one complementary arc");
+}
+
+bool test_line_ellipse_profile_closes() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // An ellipse plus a chord whose endpoints land EXACTLY on the
+  // ellipse — the two lens regions must be detected. The walk had no
+  // ellipse touch records before the shared-curve layer, so the chord
+  // stayed dangling and this profile set was empty.
+  DocumentState document =
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  document = manager.add_sketch_line(-50.0, 0.0, 50.0, 0.0);
+
+  std::string reason;
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"ellipse-1", "line-1"}, "polygon"},
+      {{"ellipse-1", "line-1"}, "polygon"},
+  };
+  if (!polysmith::test::profiles_match(document, expected, &reason)) {
+    std::cerr << "  ellipse-chord profiles: " << reason << "\n";
+    const auto& params =
+        document.feature_history.back().sketch_parameters.value();
+    for (const auto& p : params.profiles) {
+      std::cerr << "    kind=" << p.kind << " ids=";
+      for (const auto& id : p.line_ids) std::cerr << id << " ";
+      std::cerr << "\n";
+    }
+    return false;
+  }
+  return true;
+}
+
 bool test_notch_trim_deletes_the_highlighted_segment() {
   DocumentManager manager;
   manager.create_document();
@@ -735,6 +840,10 @@ int main() {
     if (!test_rectangle_vertical_trim_leaves_two_closed_profiles()) return 1;
     if (!test_circle_trim_line_split_uses_noncolliding_ids()) return 1;
     if (!test_trim_survives_solver_pass()) return 1;
+    if (!test_line_crossing_only_ellipse_keeps_line()) return 1;
+    if (!test_line_crossing_only_spline_keeps_line()) return 1;
+    if (!test_circle_crossing_only_ellipse_keeps_circle()) return 1;
+    if (!test_line_ellipse_profile_closes()) return 1;
     if (!test_notch_trim_deletes_the_highlighted_segment()) return 1;
     if (!test_arc_distance_metric_beats_chord_for_long_segments()) return 1;
     if (!test_degenerate_arc_never_becomes_a_full_circle_profile()) return 1;

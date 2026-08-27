@@ -31,6 +31,32 @@ std::vector<TrimIntersection> find_all_intersections(
     }
   }
 
+  // New geometry kinds route through the shared curve-intersection
+  // dispatch so the trim sees exactly what the profile walk sees.
+  const ExactCurve target_curve = trim_target_curve(target);
+  for (const auto& ellipse : params.ellipses) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
+    for (const auto& [t, angle] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, t);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = t, .param_on_other = angle,
+          .other_entity_id = ellipse.id});
+    }
+  }
+  for (const auto& spline : params.splines) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
+    for (const auto& [t, sparam] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, t);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = t, .param_on_other = sparam,
+          .other_entity_id = spline.id});
+    }
+  }
+
   if (results.empty()) return results;
 
   std::sort(results.begin(), results.end(),
@@ -79,6 +105,31 @@ std::vector<TrimIntersection> find_all_intersections(
       std::swap(is.param_on_target, is.param_on_other);
       is.other_entity_id = arc.id;
       results.push_back(std::move(is));
+    }
+  }
+
+  // New geometry kinds through the shared dispatch (line-target note).
+  const ExactCurve target_curve = trim_target_curve(target);
+  for (const auto& ellipse : params.ellipses) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
+    for (const auto& [angle, eangle] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = angle, .param_on_other = eangle,
+          .other_entity_id = ellipse.id});
+    }
+  }
+  for (const auto& spline : params.splines) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
+    for (const auto& [angle, sparam] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = angle, .param_on_other = sparam,
+          .other_entity_id = spline.id});
     }
   }
 

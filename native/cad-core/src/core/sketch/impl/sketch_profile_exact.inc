@@ -19,153 +19,20 @@
 
 namespace {
 
-constexpr double kExactPi = 3.14159265358979323846;
-constexpr double kExactParamEps = 1e-9;
-
-double exact_wrap_angle(double a) {
-  while (a < 0.0) a += 2.0 * kExactPi;
-  while (a >= 2.0 * kExactPi) a -= 2.0 * kExactPi;
-  return a;
-}
+constexpr double kExactPi = polysmith::core::kExactPi;
+constexpr double kExactParamEps = polysmith::core::kExactParamEps;
+// kProfileTolerance arrives via the using-declaration in
+// sketch_profile_basic_helpers.inc (same TU scope).
+using polysmith::core::ExactCurve;
+using polysmith::core::exact_angle_in_sweep;
+using polysmith::core::exact_curve_param_at_point;
+using polysmith::core::exact_curve_point;
+using polysmith::core::exact_curve_tangent;
+using polysmith::core::exact_lift_to_sweep;
+using polysmith::core::exact_spline_intersections;
+using polysmith::core::exact_wrap_angle;
 
 // ── exact curve model ─────────────────────────────────────────────
-
-struct ExactCurve {
-  enum class Kind { kLine, kCircle, kArc, kEllipse, kSpline };
-  Kind kind;
-  std::string id;
-  // line
-  double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
-  // circle / arc / ellipse
-  double cx = 0.0, cy = 0.0, r = 0.0;
-  // ellipse extras
-  double b = 0.0;              // minor radius
-  double rotation = 0.0;       // major-axis angle
-  bool ccw = true;             // stored sweep direction (circles: ccw)
-  double sweep_start = 0.0;    // wrapped angle of the entity's start param
-  double sweep_end = 0.0;      // wrapped angle of the entity's end param (arcs)
-  // spline extras — param in [0, 1]
-  std::vector<double> pole_xs;
-  std::vector<double> pole_ys;
-  int spline_degree = 3;
-  // shared vertex ids for endpoint pre-union (lines, arcs, splines)
-  std::string start_vertex_id;
-  std::string end_vertex_id;
-};
-
-SketchProfilePoint exact_curve_point(const ExactCurve& c, double param) {
-  if (c.kind == ExactCurve::Kind::kLine) {
-    return SketchProfilePoint{.x = c.x0 + param * (c.x1 - c.x0),
-                             .y = c.y0 + param * (c.y1 - c.y0)};
-  }
-  if (c.kind == ExactCurve::Kind::kSpline) {
-    const auto knots = spline_open_uniform_knots(
-        static_cast<int>(c.pole_xs.size()), c.spline_degree);
-    const SplineSample s = spline_eval(c.spline_degree, knots, c.pole_xs,
-                                       c.pole_ys, param);
-    return SketchProfilePoint{.x = s.x, .y = s.y};
-  }
-  if (c.kind == ExactCurve::Kind::kEllipse) {
-    const double cu = std::cos(c.rotation);
-    const double su = std::sin(c.rotation);
-    const double ct = std::cos(param);
-    const double st = std::sin(param);
-    return SketchProfilePoint{
-        .x = c.cx + c.r * ct * cu - c.b * st * su,
-        .y = c.cy + c.r * ct * su + c.b * st * cu,
-    };
-  }
-  return SketchProfilePoint{.x = c.cx + c.r * std::cos(param),
-                           .y = c.cy + c.r * std::sin(param)};
-}
-
-// Unit tangent of INCREASING parameter at `param` (line: start->end;
-// circle: ccw; arc: along the stored sweep).
-void exact_curve_tangent(const ExactCurve& c, double param, double& tx,
-                         double& ty) {
-  if (c.kind == ExactCurve::Kind::kLine) {
-    const double len = std::sqrt((c.x1 - c.x0) * (c.x1 - c.x0) +
-                                 (c.y1 - c.y0) * (c.y1 - c.y0));
-    tx = (c.x1 - c.x0) / len;
-    ty = (c.y1 - c.y0) / len;
-    return;
-  }
-  if (c.kind == ExactCurve::Kind::kSpline) {
-    const auto knots = spline_open_uniform_knots(
-        static_cast<int>(c.pole_xs.size()), c.spline_degree);
-    const SplineSample s = spline_eval_derivative(c.spline_degree, knots,
-                                                  c.pole_xs, c.pole_ys, param);
-    tx = s.x;
-    ty = s.y;
-    const double len = std::sqrt(tx * tx + ty * ty);
-    if (len > 1e-12) {
-      tx /= len;
-      ty /= len;
-    }
-    return;
-  }
-  if (c.kind == ExactCurve::Kind::kEllipse) {
-    const double cu = std::cos(c.rotation);
-    const double su = std::sin(c.rotation);
-    const double ct = std::cos(param);
-    const double st = std::sin(param);
-    tx = -c.r * st * cu - c.b * ct * su;
-    ty = -c.r * st * su + c.b * ct * cu;
-    const double len = std::sqrt(tx * tx + ty * ty);
-    if (len > 1e-12) {
-      tx /= len;
-      ty /= len;
-    }
-    return;
-  }
-  const double s = std::sin(param);
-  const double cc = std::cos(param);
-  const bool inc_is_ccw = (c.kind == ExactCurve::Kind::kCircle) || c.ccw;
-  if (inc_is_ccw) {
-    tx = -s; ty = cc;
-  } else {
-    tx = s; ty = -cc;
-  }
-}
-
-// Lifts a wrapped angle into the sweep frame of a circular entity so
-// params can be ordered along the sweep direction.
-double exact_lift_to_sweep(const ExactCurve& c, double wrapped) {
-  const bool inc_is_ccw = (c.kind == ExactCurve::Kind::kCircle) || c.ccw;
-  double a = wrapped;
-  if (inc_is_ccw) {
-    while (a < c.sweep_start) a += 2.0 * kExactPi;
-  } else {
-    while (a > c.sweep_start) a -= 2.0 * kExactPi;
-  }
-  return a;
-}
-
-bool exact_angle_in_sweep(double wrapped, const ExactCurve& arc) {
-  const double s = arc.sweep_start;
-  const double e = arc.sweep_end;
-  // A stored arc whose endpoints coincide is degenerate — a full
-  // circle is always stored as a circle entity, never an arc. Without
-  // this guard the coincident case lifts into a 2π span below and the
-  // walker turns the broken arc into a full-circle face (the
-  // "trimmed to a half circle, detected as a full circle" bug).
-  if (std::abs(std::sin(s - e)) < 1e-9 &&
-      std::abs(std::cos(s - e) - 1.0) < 1e-9) {
-    return false;
-  }
-  if (arc.ccw) {
-    double a = wrapped;
-    if (a < s) a += 2.0 * kExactPi;
-    double ee = e;
-    if (ee <= s) ee += 2.0 * kExactPi;
-    return a >= s - kExactParamEps && a <= ee + kExactParamEps;
-  }
-  double a = wrapped;
-  if (a > s) a -= 2.0 * kExactPi;
-  double ee = e;
-  if (ee >= s) ee -= 2.0 * kExactPi;
-  return a <= s + kExactParamEps && a >= ee - kExactParamEps;
-}
 
 // Signed area contribution of one walked half-edge: ½(x dy − y dx)
 // integrated exactly.  Lines use the shoelace term of the endpoint
@@ -323,95 +190,6 @@ std::vector<SketchProfilePoint> exact_sample_circle_loop(
   return points;
 }
 
-// ── spline support ───────────────────────────────────────────
-// Intersections and point projections involving splines delegate to
-// OCCT's 2D curve algorithms (spline_profile_occt.cpp — a separate TU
-// so this walk's header chain stays OCCT-free). Lines / circles /
-// arcs keep their closed-form solvers; the OTHER side's parameter is
-// re-derived from the intersection point so the two sides can never
-// disagree.
-
-// The other curve of an intersection as a flattened description.
-SplineProfileCurve exact_other_curve(const ExactCurve& c) {
-  SplineProfileCurve other;
-  if (c.kind == ExactCurve::Kind::kLine) {
-    other.kind = 0;
-    other.values = {c.x0, c.y0, c.x1, c.y1};
-  } else if (c.kind == ExactCurve::Kind::kCircle) {
-    other.kind = 1;
-    other.values = {c.cx, c.cy, c.r};
-  } else if (c.kind == ExactCurve::Kind::kArc) {
-    other.kind = 2;
-    other.values = {c.cx, c.cy, c.r, c.sweep_start, c.sweep_end,
-                    c.ccw ? 1.0 : 0.0};
-  } else {  // spline
-    other.kind = 3;
-    other.pole_xs = c.pole_xs;
-    other.pole_ys = c.pole_ys;
-    other.degree = c.spline_degree;
-  }
-  return other;
-}
-
-// Param on a line / circle / arc / spline from a POINT on it — the
-// inverse of exact_curve_point. Returns nullopt when the point is not
-// within profile tolerance of the curve.
-std::optional<double> exact_curve_param_at_point(const ExactCurve& c,
-                                                 double x, double y) {
-  if (c.kind == ExactCurve::Kind::kLine) {
-    const double abx = c.x1 - c.x0, aby = c.y1 - c.y0;
-    const double len_sq = abx * abx + aby * aby;
-    const double t = len_sq > 1e-18
-                         ? std::max(0.0, std::min(1.0, ((x - c.x0) * abx +
-                                                        (y - c.y0) * aby) /
-                                                           len_sq))
-                         : 0.0;
-    const double qx = c.x0 + t * abx;
-    const double qy = c.y0 + t * aby;
-    if (std::hypot(x - qx, y - qy) > kProfileTolerance) return std::nullopt;
-    return t;
-  }
-  if (c.kind == ExactCurve::Kind::kCircle) {
-    const double dx = x - c.cx, dy = y - c.cy;
-    if (std::abs(std::hypot(dx, dy) - c.r) > kProfileTolerance) {
-      return std::nullopt;
-    }
-    return exact_wrap_angle(std::atan2(dy, dx));
-  }
-  if (c.kind == ExactCurve::Kind::kArc) {
-    const double dx = x - c.cx, dy = y - c.cy;
-    if (std::abs(std::hypot(dx, dy) - c.r) > kProfileTolerance) {
-      return std::nullopt;
-    }
-    const double ang = exact_wrap_angle(std::atan2(dy, dx));
-    if (!exact_angle_in_sweep(ang, c)) return std::nullopt;
-    return ang;
-  }
-  return spline_profile_param_at_point(c.pole_xs, c.pole_ys,
-                                       c.spline_degree, x, y,
-                                       kProfileTolerance);
-}
-
-// Intersections between a spline (first arg) and any other curve kind
-// (second arg) via OCCT.  Fills `out` with (spline param, other param)
-// pairs; the other param is re-derived from the intersection point so
-// only the spline's parameterization comes from OCCT.
-void exact_spline_intersections(const ExactCurve& spline,
-                                const ExactCurve& other,
-                                std::vector<std::pair<double, double>>& out) {
-  std::vector<SplineProfileIntersection> recs;
-  spline_profile_intersections(spline.pole_xs, spline.pole_ys,
-                               spline.spline_degree, exact_other_curve(other),
-                               recs);
-  for (const auto& rec : recs) {
-    const auto oparam =
-        exact_curve_param_at_point(other, rec.x, rec.y);
-    if (oparam.has_value()) {
-      out.push_back({rec.spline_param, oparam.value()});
-    }
-  }
-}
-
 }  // namespace
 
 // ── main entry: build every bounded region of the exact arrangement ──
@@ -520,71 +298,14 @@ std::vector<SketchProfileRegion> build_exact_profiles(
   };
 
   // All exact intersections between two curves: fills `out` with
-  // (param on A, param on B) records using the trim engine's analytic
-  // solvers.  Covers every kind pairing.
+  // (param on A, param on B) records.  Owned by the shared
+  // sketch_curve module so the walk and the trim engine can never
+  // disagree on intersection geometry; the local as_* / *_param
+  // helpers above stay for the touch-record and split code.
   auto collect_intersections =
       [&](const ExactCurve& A, const ExactCurve& B,
           std::vector<std::pair<double, double>>& out) {
-        using K = ExactCurve::Kind;
-        if (A.kind == K::kLine && B.kind == K::kLine) {
-          if (const auto is = intersect_line_line(as_line(A), as_line(B));
-              is.has_value()) {
-            out.push_back({line_param(is->param_on_target),
-                           line_param(is->param_on_other)});
-          }
-        } else if (A.kind == K::kLine && B.kind == K::kCircle) {
-          for (const auto& is : intersect_line_circle(as_line(A), as_circle(B))) {
-            out.push_back({line_param(is.param_on_target),
-                           angle_param(is.param_on_other)});
-          }
-        } else if (A.kind == K::kCircle && B.kind == K::kLine) {
-          for (const auto& is : intersect_line_circle(as_line(B), as_circle(A))) {
-            out.push_back({angle_param(is.param_on_other),
-                           line_param(is.param_on_target)});
-          }
-        } else if (A.kind == K::kCircle && B.kind == K::kCircle) {
-          for (const auto& is :
-               intersect_circle_circle(as_circle(A), as_circle(B))) {
-            out.push_back({angle_param(is.param_on_target),
-                           angle_param(is.param_on_other)});
-          }
-        } else if (A.kind == K::kLine && B.kind == K::kArc) {
-          for (const auto& is : intersect_arc_line(as_arc(B), as_line(A))) {
-            out.push_back({line_param(is.param_on_other),
-                           angle_param(is.param_on_target)});
-          }
-        } else if (A.kind == K::kArc && B.kind == K::kLine) {
-          for (const auto& is : intersect_arc_line(as_arc(A), as_line(B))) {
-            out.push_back({angle_param(is.param_on_target),
-                           line_param(is.param_on_other)});
-          }
-        } else if (A.kind == K::kCircle && B.kind == K::kArc) {
-          for (const auto& is : intersect_arc_circle(as_arc(B), as_circle(A))) {
-            out.push_back({angle_param(is.param_on_other),
-                           angle_param(is.param_on_target)});
-          }
-        } else if (A.kind == K::kArc && B.kind == K::kCircle) {
-          for (const auto& is : intersect_arc_circle(as_arc(A), as_circle(B))) {
-            out.push_back({angle_param(is.param_on_target),
-                           angle_param(is.param_on_other)});
-          }
-        } else if (A.kind == K::kSpline && B.kind != K::kEllipse) {
-          exact_spline_intersections(A, B, out);
-        } else if (B.kind == K::kSpline && A.kind != K::kEllipse) {
-          std::vector<std::pair<double, double>> recs;
-          exact_spline_intersections(B, A, recs);
-          for (const auto& [pa, pb] : recs) out.push_back({pb, pa});
-        } else if (A.kind == K::kEllipse || B.kind == K::kEllipse) {
-          // v1: ellipses have no cross-curve intersections (pre-existing
-          // gap — ellipse regions only form standalone).  Explicitly
-          // skipped so spline x ellipse can never fall into the
-          // arc x arc solver with garbage circle fields.
-        } else {  // arc x arc
-          for (const auto& is : intersect_arc_arc(as_arc(A), as_arc(B))) {
-            out.push_back({angle_param(is.param_on_target),
-                           angle_param(is.param_on_other)});
-          }
-        }
+        sketch_curve_intersections(A, B, out);
       };
 
   // 2. Intersection and touch records.
@@ -648,6 +369,17 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             splits[dst_idx].push_back(ang);
             unions.push_back({src_idx, ref.param, dst_idx, ang});
           } else if (dst.kind == ExactCurve::Kind::kSpline) {
+            const auto p = exact_curve_param_at_point(dst, ref.x, ref.y);
+            if (!p.has_value()) continue;
+            splits[src_idx].push_back(ref.param);
+            splits[dst_idx].push_back(p.value());
+            unions.push_back({src_idx, ref.param, dst_idx, p.value()});
+          } else if (dst.kind == ExactCurve::Kind::kEllipse) {
+            // A curve ENDING on the ellipse must weld to it — the
+            // ellipse has no endpoint vertices to share ids with, and
+            // without this touch record the curve's endpoint node stays
+            // degree-1, the dangling pass strips the curve, and the
+            // lens region it bounds never closes.
             const auto p = exact_curve_param_at_point(dst, ref.x, ref.y);
             if (!p.has_value()) continue;
             splits[src_idx].push_back(ref.param);

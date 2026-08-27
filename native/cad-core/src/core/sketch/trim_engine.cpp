@@ -1,5 +1,7 @@
 #include "core/sketch/trim_engine.h"
 
+#include "core/sketch/sketch_curve.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -100,6 +102,56 @@ double point_trim_segment_distance_sq(const TrimSegment& segment,
   const double d_end = point_segment_distance_sq(
       px, py, segment.end_x, segment.end_y, segment.end_x, segment.end_y);
   return std::min(d_start, d_end);
+}
+
+// Shared-curve views for the target entities so the trim adapters can
+// route new geometry kinds (ellipse, spline) through the same
+// intersection dispatch the profile walk uses.
+ExactCurve trim_target_curve(const SketchLine& line) {
+  return ExactCurve{.kind = ExactCurve::Kind::kLine,
+                    .id = line.id,
+                    .x0 = line.start_x, .y0 = line.start_y,
+                    .x1 = line.end_x, .y1 = line.end_y};
+}
+
+ExactCurve trim_target_curve(const SketchCircle& circle) {
+  return ExactCurve{.kind = ExactCurve::Kind::kCircle,
+                    .id = circle.id,
+                    .cx = circle.center_x, .cy = circle.center_y,
+                    .r = circle.radius,
+                    .ccw = true};
+}
+
+ExactCurve trim_target_curve(const SketchArc& arc) {
+  return ExactCurve{
+      .kind = ExactCurve::Kind::kArc,
+      .id = arc.id,
+      .cx = arc.center_x, .cy = arc.center_y, .r = arc.radius,
+      .ccw = arc.ccw,
+      .sweep_start = exact_wrap_angle(
+          std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x)),
+      .sweep_end = exact_wrap_angle(
+          std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x)),
+  };
+}
+
+ExactCurve trim_target_curve(const SketchEllipse& ellipse) {
+  return ExactCurve{.kind = ExactCurve::Kind::kEllipse,
+                    .id = ellipse.id,
+                    .cx = ellipse.center_x, .cy = ellipse.center_y,
+                    .r = ellipse.a,
+                    .b = ellipse.b,
+                    .rotation = ellipse.rotation,
+                    .ccw = true};
+}
+
+ExactCurve trim_target_curve(const SketchSpline& spline) {
+  ExactCurve c{.kind = ExactCurve::Kind::kSpline,
+               .id = spline.id,
+               .spline_degree = spline.degree};
+  c.pole_xs = spline.pole_xs;
+  c.pole_ys = spline.pole_ys;
+  return c;
 }
 
 #include "core/sketch/impl/trim_line_circle_intersections.inc"

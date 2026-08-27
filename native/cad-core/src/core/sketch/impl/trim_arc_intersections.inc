@@ -112,6 +112,31 @@ find_all_intersections(const SketchArc &target,
       results.push_back(std::move(is));
   }
 
+  // New geometry kinds through the shared dispatch (line-target note).
+  const ExactCurve target_curve = trim_target_curve(target);
+  for (const auto &ellipse : params.ellipses) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
+    for (const auto &[angle, eangle] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = angle, .param_on_other = eangle,
+          .other_entity_id = ellipse.id});
+    }
+  }
+  for (const auto &spline : params.splines) {
+    std::vector<std::pair<double, double>> pairs;
+    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
+    for (const auto &[angle, sparam] : pairs) {
+      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
+      results.push_back(TrimIntersection{
+          .x = p.x, .y = p.y,
+          .param_on_target = angle, .param_on_other = sparam,
+          .other_entity_id = spline.id});
+    }
+  }
+
   // Intersections at the arc's own endpoints produce near-zero-length
   // pieces whose endpoints sit closest to clicks anywhere along the
   // arc's middle — the CW selector's distance fallback then hands the

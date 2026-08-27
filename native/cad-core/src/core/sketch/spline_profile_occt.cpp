@@ -5,6 +5,7 @@
 #include <Geom2d_BSplineCurve.hxx>
 #include <Geom2d_Circle.hxx>
 #include <Geom2d_Curve.hxx>
+#include <Geom2d_Ellipse.hxx>
 #include <Geom2d_Line.hxx>
 #include <Geom2d_TrimmedCurve.hxx>
 #include <Geom2dAPI_InterCurveCurve.hxx>
@@ -13,6 +14,7 @@
 #include <TColStd_Array1OfReal.hxx>
 #include <TColgp_Array1OfPnt2d.hxx>
 #include <gp_Ax2d.hxx>
+#include <gp_Ax22d.hxx>
 #include <gp_Dir2d.hxx>
 #include <gp_Pnt2d.hxx>
 
@@ -55,7 +57,8 @@ Handle(Geom2d_BSplineCurve) make_spline_geom(
 
 // The `other` curve as a bounded OCCT 2D curve: lines as trimmed
 // lines, arcs as trimmed circles (bounded by their sweep), circles as
-// full circles, splines via the shared convention.
+// full circles, ellipses via Geom2d_Ellipse (full sweep), splines via
+// the shared convention.
 Handle(Geom2d_Curve) make_other_geom(const SplineProfileCurve& other) {
   const auto& v = other.values;
   if (other.kind == 0) {  // line
@@ -78,6 +81,14 @@ Handle(Geom2d_Curve) make_other_geom(const SplineProfileCurve& other) {
         new Geom2d_Circle(gp_Ax2d(gp_Pnt2d(v[0], v[1]), gp_Dir2d(1.0, 0.0)),
                           v[2]),
         first, last);
+  }
+  if (other.kind == 4) {  // ellipse — full sweep, ccw
+    const double cu = std::cos(v[4]);
+    const double su = std::sin(v[4]);
+    gp_Ax22d axis(gp_Pnt2d(v[0], v[1]),
+                  gp_Dir2d(cu, su),           // major axis direction
+                  gp_Dir2d(-su, cu));         // minor axis direction
+    return new Geom2d_Ellipse(axis, v[2], v[3]);
   }
   return make_spline_geom(other.pole_xs, other.pole_ys, other.degree);
 }
@@ -131,6 +142,34 @@ std::optional<double> spline_profile_param_at_point(
     return std::nullopt;
   }
   return proj.LowerDistanceParameter();
+}
+
+void sketch_curve_pair_intersections_occt(
+    const SplineProfileCurve& a, const SplineProfileCurve& b,
+    std::vector<std::pair<double, double>>& out_points) {
+  Handle(Geom2d_Curve) ga = make_other_geom(a);
+  Handle(Geom2d_Curve) gb = make_other_geom(b);
+  Geom2dAPI_InterCurveCurve inter(ga, gb, 0.01);
+  auto push_point = [&](const gp_Pnt2d& p) {
+    out_points.push_back({p.X(), p.Y()});
+  };
+  for (int i = 1; i <= inter.NbPoints(); ++i) {
+    push_point(inter.Point(i));
+  }
+  // Tangent overlaps arrive as segments, not points — take their
+  // endpoints so a tangent pair still splits.
+  for (int i = 1; i <= inter.NbSegments(); ++i) {
+    Handle(Geom2d_Curve) c1;
+    Handle(Geom2d_Curve) c2;
+    inter.Segment(i, c1, c2);
+    for (const auto* c : {c1.get(), c2.get()}) {
+      gp_Pnt2d p;
+      c->D0(c->FirstParameter(), p);
+      push_point(p);
+      c->D0(c->LastParameter(), p);
+      push_point(p);
+    }
+  }
 }
 
 }  // namespace polysmith::core

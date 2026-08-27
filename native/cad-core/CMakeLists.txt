@@ -150,6 +150,7 @@ set(CAD_CORE_SOURCES
   src/core/sketch/inference_engine.cpp
   src/core/sketch/sketch_feature.cpp
   src/core/sketch/sketch_profile.cpp
+  src/core/sketch/sketch_curve.cpp
   src/core/sketch/spline_profile_occt.cpp
   src/core/sketch/trim_engine.cpp
   src/core/sweep/sweep_feature.cpp
@@ -195,6 +196,7 @@ add_executable(cad_core_sketch_profile_test
   src/core/sketch/inference_engine.cpp
   src/core/sketch/sketch_feature.cpp
   src/core/sketch/sketch_profile.cpp
+  src/core/sketch/sketch_curve.cpp
   src/core/sketch/spline_profile_occt.cpp
   src/core/sketch/trim_engine.cpp
   tests/sketch_profile_test.cpp
