@@ -8,11 +8,6 @@ import { resolveSketchPlanePoint } from "@/utils";
 import type { ViewportPickHit } from "./contextMenuState";
 import type { PointerMoveHoverActions } from "./pointerMoveHover";
 import { applyTrimToolHover } from "./pointerMoveHover";
-import {
-  computeTrimHoverPreview,
-  type TrimHoverPreview,
-  type TrimLineHighlightSegment,
-} from "./trimHoverPreview";
 
 interface MutableRef<T> {
   current: T;
@@ -33,12 +28,6 @@ interface TrimPointerMoveParams {
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   clearTrimSegmentHighlight: () => void;
   clearTrimArcHighlight: () => void;
-  updateTrimSegmentHighlight: (
-    lineId: string,
-    segments: TrimLineHighlightSegment[],
-    hoveredSegmentIndex: number,
-  ) => void;
-  updateTrimArcHighlight: (worldPoints: Array<[number, number, number]>) => void;
 }
 
 export function handleTrimPointerMove({
@@ -54,16 +43,16 @@ export function handleTrimPointerMove({
   intersectSceneTargets,
   clearTrimSegmentHighlight,
   clearTrimArcHighlight,
-  updateTrimSegmentHighlight,
-  updateTrimArcHighlight,
 }: TrimPointerMoveParams) {
+  void activeSketchPlaneFrameRef;
+  void sceneDataRef;
   const trimHit = intersectSceneTargets(event);
   applyTrimToolHover(trimHit, hoverActions);
 
-  const sceneData = sceneDataRef.current;
   const entityKind = trimEntityKind(trimHit);
-  if (!sceneData || !trimHit || trimHit.kind !== "sketch_entity" || !entityKind) {
+  if (!trimHit || trimHit.kind !== "sketch_entity" || !entityKind) {
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+    trimPreviewLastSentRef.current = null;
     return;
   }
 
@@ -76,59 +65,19 @@ export function handleTrimPointerMove({
   );
   if (!rawPoint) {
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+    trimPreviewLastSentRef.current = null;
     return;
   }
 
+  // Single-authority preview: the red highlight is rendered ONLY from
+  // the core's trim_preview_result (the event handler in ViewportPanel
+  // redraws it on every response), and the trim deletes exactly the
+  // hovered index that result reports. A second, local TS preview
+  // computation used to race it — the highlight showed one segment
+  // while the trim deleted the core's pick for a slightly different
+  // point, which is the "excessive trimming" users saw on dense
+  // circle arrangements. Sending here is the whole job.
   sendTrimPreviewIfMoved(trimPreviewLastSentRef, trimHit.id, rawPoint.local);
-
-  renderTrimPreview(
-    computeTrimHoverPreview({
-      sceneData,
-      target: { id: trimHit.id, entityKind },
-      cursorLocal: rawPoint.local,
-      planeId: activeSketchPlaneId,
-      planeFrame: activeSketchPlaneFrameRef.current,
-    }),
-    {
-      clearTrimSegmentHighlight,
-      clearTrimArcHighlight,
-      updateTrimSegmentHighlight,
-      updateTrimArcHighlight,
-    },
-  );
-}
-
-function renderTrimPreview(
-  preview: TrimHoverPreview | null,
-  {
-    clearTrimSegmentHighlight,
-    clearTrimArcHighlight,
-    updateTrimSegmentHighlight,
-    updateTrimArcHighlight,
-  }: Pick<
-    TrimPointerMoveParams,
-    | "clearTrimSegmentHighlight"
-    | "clearTrimArcHighlight"
-    | "updateTrimSegmentHighlight"
-    | "updateTrimArcHighlight"
-  >,
-) {
-  if (!preview) {
-    clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
-    return;
-  }
-
-  if (preview.kind === "line") {
-    updateTrimSegmentHighlight(
-      preview.lineId,
-      preview.segments,
-      preview.hoveredSegmentIndex,
-    );
-    return;
-  }
-
-  clearTrimSegmentHighlight();
-  updateTrimArcHighlight(preview.points);
 }
 
 function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
@@ -143,7 +92,6 @@ function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
   return null;
 }
 
-
 function sendTrimPreviewIfMoved(
   trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>,
   entityId: string,
@@ -151,8 +99,20 @@ function sendTrimPreviewIfMoved(
 ) {
   const [mx, my] = cursorLocal;
   const prev = trimPreviewLastSentRef.current;
-  if (!prev || Math.abs(mx - prev.x) > 0.5 || Math.abs(my - prev.y) > 0.5) {
-    trimPreviewLastSentRef.current = { x: mx, y: my };
+  // The last-sent gate also stores WHICH entity the preview targeted:
+  // hovering a different entity must send immediately.
+  const entityChanged =
+    !prev || (prev as { entityId?: string }).entityId !== entityId;
+  if (
+    entityChanged ||
+    Math.abs(mx - prev.x) > 0.5 ||
+    Math.abs(my - prev.y) > 0.5
+  ) {
+    trimPreviewLastSentRef.current = {
+      x: mx,
+      y: my,
+      entityId,
+    } as { x: number; y: number };
     void sendCoreCommand(makeTrimPreviewCommand(entityId, mx, my));
   }
 }

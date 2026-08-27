@@ -14,7 +14,21 @@ std::optional<TrimIntersection> intersect_line_line(
   const double cdx = dx - cx, cdy = dy - cy;
   const double denom = abx * cdy - aby * cdx;
 
-  if (std::abs(denom) < kTrimCoincidentTolerance) {
+  // Parallelism is a question about DIRECTION, so the test has to be
+  // relative. `denom` is a cross product in mm²; comparing it against
+  // kTrimCoincidentTolerance (0.01 mm) made the answer depend on how
+  // long the two lines happen to be — a pair of 0.05 mm lines meeting
+  // at a right angle scored 0.0025 and was reported "parallel", while
+  // two nearly-parallel metre-long lines sailed through. Normalising by
+  // both lengths turns this back into the sine of the angle between
+  // them, which is what we actually mean.
+  const double ab_len = std::sqrt(abx * abx + aby * aby);
+  const double cd_len = std::sqrt(cdx * cdx + cdy * cdy);
+  if (ab_len <= 0.0 || cd_len <= 0.0) {
+    return std::nullopt;
+  }
+  constexpr double kParallelSinEps = 1e-12;
+  if (std::abs(denom) <= kParallelSinEps * ab_len * cd_len) {
     return std::nullopt;
   }
 
@@ -137,6 +151,25 @@ std::vector<TrimIntersection> intersect_circle_circle(
   // No intersection: circles too far apart or one inside the other.
   if (d > r1 + r2 + kTrimCoincidentTolerance ||
       d < std::abs(r1 - r2) - kTrimCoincidentTolerance) {
+    return result;
+  }
+
+  // Concentric circles have no discrete intersections, and dividing by
+  // `d` below would be a division by zero. The containment test above
+  // catches the different-radius case, but two circles with the SAME
+  // radius and the same centre slip through it: a_val becomes 0/0, the
+  // NaN propagates into param_on_target, and sorting on a NaN
+  // comparator breaks strict weak ordering (undefined behaviour that
+  // can corrupt the whole result vector). Centres within the
+  // coincidence tolerance are the same point by this project's own
+  // definition, so bail out before the division either way.
+  if (d <= kTrimCoincidentTolerance) {
+    if (std::abs(r1 - r2) <= kTrimCoincidentTolerance) {
+      log_warn("trim",
+               "coincident circles '" + target.id + "' and '" + other.id +
+                   "' have no discrete intersections; ignoring as a cutting "
+                   "edge");
+    }
     return result;
   }
 

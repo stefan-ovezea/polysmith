@@ -429,6 +429,12 @@ void extend_sketch_entity(FeatureEntry& feature,
     // Adopt a coincident vertex id when the extension lands on an
     // existing endpoint, and re-resolve other entities that shared
     // the old endpoint ids (mirror the trim split's rebind).
+    // The rebind file mints through this lambda; extend does not
+    // freeze its minted vertices (the extended endpoint is solver-
+    // movable by design, unlike a trim split point).
+    auto mint_vertex_id = [&]() -> std::string {
+      return "vertex-" + std::to_string(params.next_vertex_index++);
+    };
 #include "core/sketch/impl/trim_line_point_rebind.inc"
     return;
   }

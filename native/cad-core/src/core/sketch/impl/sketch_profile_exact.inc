@@ -144,6 +144,15 @@ double exact_lift_to_sweep(const ExactCurve& c, double wrapped) {
 bool exact_angle_in_sweep(double wrapped, const ExactCurve& arc) {
   const double s = arc.sweep_start;
   const double e = arc.sweep_end;
+  // A stored arc whose endpoints coincide is degenerate — a full
+  // circle is always stored as a circle entity, never an arc. Without
+  // this guard the coincident case lifts into a 2π span below and the
+  // walker turns the broken arc into a full-circle face (the
+  // "trimmed to a half circle, detected as a full circle" bug).
+  if (std::abs(std::sin(s - e)) < 1e-9 &&
+      std::abs(std::cos(s - e) - 1.0) < 1e-9) {
+    return false;
+  }
   if (arc.ccw) {
     double a = wrapped;
     if (a < s) a += 2.0 * kExactPi;

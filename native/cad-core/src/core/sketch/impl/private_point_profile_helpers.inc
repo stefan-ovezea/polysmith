@@ -91,6 +91,104 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   return std::nullopt;
 }
 
+// Order-independent shared-point resolution for the trim engine.
+//
+// `find_coincident_endpoint` is a FIRST-MATCH-WINS scan — the result
+// depends on which container happens to be walked first, and a freshly
+// pushed sibling entity can win the race purely by iteration order
+// (the "works only by luck" bug). This resolver instead collects every
+// candidate within the same coincidence tolerance `points_match` uses
+// and returns the NEAREST one, ties broken lexicographically by id so
+// the answer is identical regardless of container order.
+//
+// `excluded_entity_ids` names entities under construction (the target
+// being trimmed and any sibling created by this trim) — their endpoint
+// vertices must never be returned as the "shared" vertex, or the split
+// would weld to geometry that is about to change. It SELECTS an
+// existing id; it never moves the query point — callers keep the exact
+// intersection coordinate and adopt the id, which is what makes the
+// profile walk's analytic-union and touch records fire deterministically.
+std::optional<std::tuple<std::string, double, double>> resolve_shared_point(
+    const SketchFeatureParameters& parameters,
+    double x,
+    double y,
+    const std::unordered_set<std::string>& excluded_entity_ids) {
+  double best_dist_sq = std::numeric_limits<double>::max();
+  std::optional<std::tuple<std::string, double, double>> best;
+
+  auto consider = [&](const std::string& candidate_id,
+                      double cx,
+                      double cy) {
+    const double dx = cx - x, dy = cy - y;
+    const double dist_sq = dx * dx + dy * dy;
+    if (best.has_value()) {
+      if (dist_sq > best_dist_sq) return;
+      if (dist_sq == best_dist_sq && candidate_id >= std::get<0>(*best)) return;
+    }
+    best_dist_sq = dist_sq;
+    best = std::tuple<std::string, double, double>{candidate_id, cx, cy};
+  };
+
+  for (const auto& line : parameters.lines) {
+    if (excluded_entity_ids.count(line.id)) continue;
+    if (points_match(line.start_x, line.start_y, x, y))
+      consider(line.start_vertex_id, line.start_x, line.start_y);
+    if (points_match(line.end_x, line.end_y, x, y))
+      consider(line.end_vertex_id, line.end_x, line.end_y);
+  }
+  for (const auto& arc : parameters.arcs) {
+    if (excluded_entity_ids.count(arc.id)) continue;
+    if (points_match(arc.start_x, arc.start_y, x, y))
+      consider(arc.start_vertex_id, arc.start_x, arc.start_y);
+    if (points_match(arc.end_x, arc.end_y, x, y))
+      consider(arc.end_vertex_id, arc.end_x, arc.end_y);
+  }
+  for (const auto& circle : parameters.circles) {
+    if (excluded_entity_ids.count(circle.id)) continue;
+    if (points_match(circle.center_x, circle.center_y, x, y))
+      consider(circle.center_vertex_id, circle.center_x, circle.center_y);
+  }
+  for (const auto& ellipse : parameters.ellipses) {
+    if (excluded_entity_ids.count(ellipse.id)) continue;
+    if (points_match(ellipse.center_x, ellipse.center_y, x, y))
+      consider(ellipse.center_vertex_id, ellipse.center_x, ellipse.center_y);
+    const double ax_x =
+        ellipse.center_x + ellipse.a * std::cos(ellipse.rotation);
+    const double ax_y =
+        ellipse.center_y + ellipse.a * std::sin(ellipse.rotation);
+    if (points_match(ax_x, ax_y, x, y))
+      consider(ellipse.axis_a_vertex_id, ax_x, ax_y);
+    const double bx_x = ellipse.center_x +
+                        ellipse.b *
+                            std::cos(ellipse.rotation + 1.5707963267948966);
+    const double bx_y = ellipse.center_y +
+                        ellipse.b *
+                            std::sin(ellipse.rotation + 1.5707963267948966);
+    if (points_match(bx_x, bx_y, x, y))
+      consider(ellipse.axis_b_vertex_id, bx_x, bx_y);
+  }
+  for (const auto& spline : parameters.splines) {
+    if (excluded_entity_ids.count(spline.id)) continue;
+    for (size_t i = 0;
+         i < spline.pole_xs.size() && i < spline.pole_vertex_ids.size(); ++i) {
+      if (points_match(spline.pole_xs[i], spline.pole_ys[i], x, y))
+        consider(spline.pole_vertex_ids[i], spline.pole_xs[i],
+                 spline.pole_ys[i]);
+    }
+  }
+  for (const auto& projected : parameters.projected_points) {
+    if (points_match(projected.x, projected.y, x, y))
+      consider(projected.id, projected.x, projected.y);
+  }
+  for (const auto& vertex : parameters.vertices) {
+    if (excluded_entity_ids.count(vertex.id)) continue;
+    if (points_match(vertex.x, vertex.y, x, y))
+      consider(vertex.id, vertex.x, vertex.y);
+  }
+
+  return best;
+}
+
 void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   parameters.vertices.clear();
 

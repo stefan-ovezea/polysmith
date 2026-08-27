@@ -26,10 +26,18 @@
 // Throws when the entity is not found or the click position does not
 // correspond to any segment. Refresh is NOT called here — the
 // caller (document layer) handles that.
+// segment_index: when set, the trim deletes THAT segment of the entity
+// (as reported by the trim_preview command) instead of re-selecting the
+// segment from the click position. The preview and the trim must agree —
+// re-selecting from a slightly different click near a segment boundary
+// is exactly how the red highlight ended up showing one segment while
+// the trim deleted another.
 void trim_sketch_entity(FeatureEntry& feature,
                         const std::string& entity_id,
                         double click_x,
-                        double click_y);
+                        double click_y,
+                        std::optional<int> segment_index = std::nullopt,
+                        std::vector<std::string>* minted_vertex_ids = nullptr);
 
 // Extend tool. Extends the entity (line or arc) from the end nearest
 // the click to the nearest intersection with another

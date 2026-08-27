@@ -40,10 +40,17 @@ export function useCadCoreEventBridge() {
           }
           handleCoreMessage(message);
         } catch (error) {
+          // Include the raw message so a schema gap can be identified
+          // from the log alone — zod's union error alone does not say
+          // which message failed.
+          const rawText =
+            typeof payload === "string" ? payload : String(payload);
+          const raw =
+            rawText.length > 2000 ? rawText.slice(0, 2000) : rawText;
           reportCoreError(
             { addLogEntry, addMessage, setStatus },
             "desktop_ui",
-            `parse error: ${String(error)}`,
+            `parse error: ${String(error).slice(0, 4000)}\nraw: ${raw}`,
           );
         }
       });

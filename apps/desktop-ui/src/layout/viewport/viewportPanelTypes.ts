@@ -248,6 +248,7 @@ export interface ViewportPanelProps {
     entityId: string,
     clickX: number,
     clickY: number,
+    segmentIndex?: number,
   ) => Promise<void>;
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;

@@ -96,9 +96,12 @@
   // split at all intersections with other non-construction entities and
   // only the segment under (click_x, click_y) is kept. Phase 1 handles
   // lines only. Single undoable action via full sketch snapshot.
-  DocumentState trim_sketch_entity(const std::string& entity_id,
-                                   double click_x,
-                                   double click_y);
+  DocumentState trim_sketch_entity(
+      const std::string& entity_id,
+      double click_x,
+      double click_y,
+      std::optional<int> segment_index = std::nullopt,
+      std::vector<std::string>* minted_vertex_ids = nullptr);
   // Extend a sketch entity (line or arc) from the end nearest the
   // click to the nearest intersection with another non-construction
   // entity. Single undoable action via full sketch snapshot.

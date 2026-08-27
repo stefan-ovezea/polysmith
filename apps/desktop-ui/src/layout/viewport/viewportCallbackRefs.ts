@@ -244,7 +244,7 @@ interface ViewportCallbackRefTargets {
     (profileId: string, additive: boolean) => Promise<void>
   >;
   trimSketchEntityRef: MutableRefObject<
-    ((entityId: string, clickX: number, clickY: number) => Promise<void>) | undefined
+    ((entityId: string, clickX: number, clickY: number, segmentIndex?: number) => Promise<void>) | undefined
   >;
   deleteSketchSelectionRef: MutableRefObject<
     (selection?: SketchSelection) => Promise<void>

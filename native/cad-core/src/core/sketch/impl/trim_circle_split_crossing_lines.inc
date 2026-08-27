@@ -4,15 +4,23 @@
 // Without this the profile loop detector sees the arc and line as
 // disconnected components and won't detect the closed region.
 {
-  // Pre-compute the arc endpoint coords — the arc reference may be
-  // invalidated if we push to params.arcs (we don't here, but be safe).
+  // Pre-compute the arc endpoint coords + vertex ids — the arc
+  // reference may be invalidated if we push to params.arcs (we don't
+  // here, but be safe).
   const double asx = params.arcs.back().start_x;
   const double asy = params.arcs.back().start_y;
   const double aex = params.arcs.back().end_x;
   const double aey = params.arcs.back().end_y;
+  const std::string as_id = params.arcs.back().start_vertex_id;
+  const std::string ae_id = params.arcs.back().end_vertex_id;
 
+  // The split point IS the arc endpoint — the whole point of splitting
+  // the line is that the two entities share one vertex. Reuse the arc
+  // endpoint's resolved vertex id instead of minting a fresh one (and
+  // never fall back to a size-based scheme: next_trim_entity_index
+  // exists precisely because ids must not be reused after trims).
   auto split_line_at_interior_point =
-      [&](double px, double py) -> std::string {
+      [&](double px, double py, const std::string& split_pt_id) -> bool {
     // Index-based iteration — avoid iterator invalidation when we
     // push_back a new line inside the loop.
     const size_t n = params.lines.size();
@@ -26,7 +34,7 @@
       const double t =
           ((px - line.start_x) * dx + (py - line.start_y) * dy) / len_sq;
       // Only split interior points — endpoints are already handled by
-      // find_coincident_endpoint.
+      // the shared-point resolution above.
       if (t <= 0.001 || t >= 0.999) continue;
 
       const double proj_x = line.start_x + t * dx;
@@ -38,17 +46,16 @@
       const double old_end_x = line.end_x;
       const double old_end_y = line.end_y;
       const std::string old_end_id = line.end_vertex_id;
-      const int fresh = static_cast<int>(params.lines.size()) * 10 +
-                        static_cast<int>(params.arcs.size()) * 10 + 5000;
-      const std::string split_pt_id =
-          "vertex-" + std::to_string(params.next_vertex_index++);
 
       line.end_x = px;
       line.end_y = py;
       line.end_vertex_id = split_pt_id;
       line.constraint = std::nullopt;
 
-      const int next_idx = static_cast<int>(params.lines.size()) + 1;
+      std::vector<std::string> line_ids;
+      line_ids.reserve(params.lines.size());
+      for (const auto& l : params.lines) line_ids.push_back(l.id);
+      const int next_idx = next_trim_entity_index(line_ids);
       params.lines.push_back(SketchLine{
           .id = "line-" + std::to_string(next_idx),
           .start_vertex_id = split_pt_id,
@@ -61,22 +68,14 @@
           .is_construction = line.is_construction,
       });
 
-      return split_pt_id;
+      return true;
     }
-    return "";
+    return false;
   };
 
   // Check and fix both arc endpoints.  Do start first since end may
   // lie on the same line; after the first split the second check will
   // find the right segment (original shortened or newly-created half).
-  const std::string split_sp =
-      split_line_at_interior_point(asx, asy);
-  if (!split_sp.empty()) {
-    params.arcs.back().start_vertex_id = split_sp;
-  }
-  const std::string split_ep =
-      split_line_at_interior_point(aex, aey);
-  if (!split_ep.empty()) {
-    params.arcs.back().end_vertex_id = split_ep;
-  }
+  split_line_at_interior_point(asx, asy, as_id);
+  split_line_at_interior_point(aex, aey, ae_id);
 }

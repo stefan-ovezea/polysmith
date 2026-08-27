@@ -30,37 +30,25 @@
     const auto segments = split_line_at_intersections(*line_it, intersections);
     if (segments.empty()) return;
 
-    const int clicked_index = select_clicked_segment(
-        segments, *line_it, click_x, click_y);
+    const int clicked_index = resolve_clicked_index(
+        segments, select_clicked_segment(segments, *line_it, click_x, click_y));
 
     if (clicked_index < 0 || clicked_index >= static_cast<int>(segments.size())) {
       throw std::runtime_error(
           "Click position does not correspond to any segment on entity: " + entity_id);
     }
 
-    // Capture old point IDs *before* vector mutations (push_back
-    // may invalidate the line iterator, making later reads garbage).
-    const std::string old_sp_id = line_it->start_vertex_id;
-    const std::string old_ep_id = line_it->end_vertex_id;
-
-    // If all non-clicked segments are zero-length (intersections at
-    // line endpoints), the trim is effectively a full delete.
-    bool only_clicked_is_real = true;
-    for (int si = 0; si < static_cast<int>(segments.size()); ++si) {
-      if (si == clicked_index) continue;
-      const double slen = std::hypot(
-          segments[si].end_x - segments[si].start_x,
-          segments[si].end_y - segments[si].start_y);
-      if (slen > kTrimCoincidentTolerance) { only_clicked_is_real = false; break; }
-    }
-    if (only_clicked_is_real) {
-      // Clicked the only real segment → delete the entire line.
+    // The splitters drop pieces shorter than kTrimCoincidentTolerance,
+    // so a single surviving segment means every intersection sits on
+    // the line's own endpoints: trimming the only real piece is a full
+    // delete. The coordinate mutation below assumes two neighbouring
+    // segments exist and would index out of bounds here.
+    if (segments.size() == 1) {
       params.constraints.erase(
           std::remove_if(params.constraints.begin(), params.constraints.end(),
                          [&](const SketchConstraint& c) {
                            for (const auto& tid : c.target_ids)
-                             if (tid == entity_id || tid == old_sp_id || tid == old_ep_id)
-                               return true;
+                             if (tid == entity_id) return true;
                            return false;
                          }),
           params.constraints.end());
@@ -75,6 +63,11 @@
       return;
     }
 
+    // Capture old point IDs *before* vector mutations (push_back
+    // may invalidate the line iterator, making later reads garbage).
+    const std::string old_sp_id = line_it->start_vertex_id;
+    const std::string old_ep_id = line_it->end_vertex_id;
+
     // Delete the clicked segment.
     const int last = static_cast<int>(segments.size()) - 1;
 
@@ -87,8 +80,8 @@
     }
     if (points_match(line_it->start_x, line_it->start_y,
                      line_it->end_x, line_it->end_y)) {
-      fprintf(stderr, "ERROR trim produced zero-length line %s — deleting\n",
-              line_it->id.c_str());
+      log_warn("trim", "trim produced zero-length line '" + line_it->id +
+                           "' — deleting");
       params.lines.erase(line_it);
       return;
     }
@@ -108,30 +101,46 @@
       const double rex = segments[last].end_x;
       const double rey = segments[last].end_y;
 
+      // The split point is an intersection another entity may already
+      // own: adopt its vertex id so the wire walk welds the two curves
+      // through a shared id. Exclude the entity under construction and
+      // its sibling so neither can match its own (not yet final)
+      // endpoint — the "works only by iteration-order luck" bug.
+      const std::unordered_set<std::string> excluded{entity_id};
+      const auto shared_split =
+          resolve_shared_point(params, rsx, rsy, excluded);
+      const std::string split_id =
+          shared_split.has_value() ? std::get<0>(shared_split.value())
+                                   : mint_vertex_id();
+      const auto shared_far =
+          resolve_shared_point(params, rex, rey, excluded);
+      const std::string far_id =
+          shared_far.has_value() ? std::get<0>(shared_far.value())
+                                 : mint_vertex_id();
+
       params.lines.push_back(SketchLine{
           .id = "line-" + std::to_string(next_index),
-          .start_vertex_id = "vertex-" + std::to_string(params.next_vertex_index++),
-          .end_vertex_id   = "vertex-" + std::to_string(params.next_vertex_index++),
+          .start_vertex_id = split_id,
+          .end_vertex_id   = far_id,
           .start_x = rsx,
           .start_y = rsy,
           .end_x = rex,
           .end_y = rey,
-          .constraint = infer_constraint_hint(rsx, rsy, rex, rey),
+          .constraint = std::nullopt,
           .is_construction = line_it->is_construction,
       });
       auto& new_line = params.lines.back();
-      new_line.constraint = std::nullopt;
 
       if (points_match(new_line.start_x, new_line.start_y,
                        new_line.end_x, new_line.end_y)) {
-        fprintf(stderr, "ERROR trim split produced zero-length line %s — dropping\n",
-                new_line.id.c_str());
+        log_warn("trim", "trim split produced zero-length line '" +
+                             new_line.id + "' — dropping");
         params.lines.pop_back();
       }
       if (points_match(line_it->start_x, line_it->start_y,
                        line_it->end_x, line_it->end_y)) {
-        fprintf(stderr, "ERROR trim split collapsed left portion %s — deleting\n",
-                line_it->id.c_str());
+        log_warn("trim", "trim split collapsed left portion '" +
+                             line_it->id + "' — deleting");
         params.lines.erase(line_it);
         return;
       }

@@ -537,6 +537,29 @@ add_executable(cad_core_intersecting_arcs_extrude_test
   tests/intersecting_arcs_extrude_test.cpp
 )
 
+# Trim regression suite — the hovered segment index must decide the
+# trim (not a re-derived click segment), and the arc-aware distance
+# metric must replace the chord fallback for long arc segments.
+add_executable(cad_core_trim_test
+  ${CAD_CORE_SOURCES}
+  tests/trim_test.cpp
+)
+
+target_include_directories(cad_core_trim_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_trim_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
 target_include_directories(cad_core_intersecting_arcs_extrude_test PRIVATE
   src
   ${CMAKE_SOURCE_DIR}/../../third_party

@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <limits>
 #include <optional>
+#include <string>
+#include <unordered_set>
 #include <utility>
+
+#include "core/diagnostics/logger.h"
 
 namespace polysmith::core {
 namespace {
@@ -58,6 +61,46 @@ void deduplicate(std::vector<TrimIntersection>& results) {
 }
 
 }  // namespace
+
+// Distance from a point to a trim segment, measured against the ARC
+// itself rather than its chord. The old chord-based fallback
+// misselected LARGE segments: for a click on a long arc the distance
+// to its own chord is the sagitta, which exceeds the selection
+// tolerance, so a neighbouring segment's chord could win and the trim
+// deleted the wrong piece. Exposed (non-anonymous) so the trim test
+// suite can pin the metric.
+double point_trim_segment_distance_sq(const TrimSegment& segment,
+                                      double px, double py) {
+  if (segment.kind != TrimSegment::ARC_SEGMENT || segment.radius <= 1e-9) {
+    return point_segment_distance_sq(px, py, segment.start_x, segment.start_y,
+                                     segment.end_x, segment.end_y);
+  }
+  const double dx = px - segment.center_x;
+  const double dy = py - segment.center_y;
+  const double angle = wrap_angle(std::atan2(dy, dx));
+  const double s = wrap_angle(segment.param_start);
+  double e = wrap_angle(segment.param_end);
+  double a = angle;
+  bool in_span = false;
+  if (segment.ccw) {
+    if (e < s) e += 2.0 * M_PI;
+    if (a < s) a += 2.0 * M_PI;
+    in_span = a >= s && a <= e;
+  } else {
+    if (e > s) e -= 2.0 * M_PI;
+    if (a > s) a -= 2.0 * M_PI;
+    in_span = a <= s && a >= e;
+  }
+  if (in_span) {
+    const double gap = std::abs(std::hypot(dx, dy) - segment.radius);
+    return gap * gap;
+  }
+  const double d_start = point_segment_distance_sq(
+      px, py, segment.start_x, segment.start_y, segment.start_x, segment.start_y);
+  const double d_end = point_segment_distance_sq(
+      px, py, segment.end_x, segment.end_y, segment.end_x, segment.end_y);
+  return std::min(d_start, d_end);
+}
 
 #include "core/sketch/impl/trim_line_circle_intersections.inc"
 #include "core/sketch/impl/trim_line_circle_segments.inc"

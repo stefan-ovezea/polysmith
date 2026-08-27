@@ -1318,6 +1318,28 @@ export function ViewportPanel({
     restoreRelationPreviewHiddenDimensions,
   });
 
+  // After ANY geometry change (a trim, a move, a solve), the last
+  // trim_preview_result belongs to the PREVIOUS entity state: its
+  // segment index no longer points at the same segment. Without this
+  // invalidation, a second trim click at an unmoved cursor reuses the
+  // stale index against the new segment list and deletes a different —
+  // often much larger — piece (the residual "excessive trimming" and
+  // the open chains that killed the flower outline).
+  const lastTrimInvalidationRevisionRef = useRef<number | null>(null);
+  useEffect(() => {
+    const revision = document?.revision ?? 0;
+    if (
+      lastTrimInvalidationRevisionRef.current !== null &&
+      revision !== lastTrimInvalidationRevisionRef.current
+    ) {
+      trimPreviewResultRef.current = null;
+      trimPreviewLastSentRef.current = null;
+      clearTrimSegmentHighlight();
+      clearTrimArcHighlight();
+    }
+    lastTrimInvalidationRevisionRef.current = revision;
+  }, [document?.revision, clearTrimSegmentHighlight, clearTrimArcHighlight]);
+
   function clearDimensionToolFirstPick() {
     dimensionToolFirstLineRef.current = null;
     setDimensionToolFirstLine(null);
@@ -3440,7 +3462,20 @@ export function ViewportPanel({
           // trim emits no geometry change, so the red hover overlay
           // would otherwise survive the click.
           clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
-          return trimSketchEntityRef.current(entityId, localX, localY);
+          // Pass the hovered segment index from the core's preview so
+          // the trim deletes EXACTLY the highlighted segment instead of
+          // re-deriving it from a slightly different click point (the
+          // source of "highlight shows one piece, trim deletes another").
+          const preview = trimPreviewResultRef.current;
+          const segmentIndex =
+            preview &&
+            preview.entity_id === entityId &&
+            typeof preview.hovered_index === "number" &&
+            preview.hovered_index >= 0
+              ? preview.hovered_index
+              : undefined;
+          return trimSketchEntityRef.current(
+            entityId, localX, localY, segmentIndex);
         },
         mirrorEntityPick: mirrorEntityPickRef.current,
         selectSketchEntity: selectSketchEntityRef.current,

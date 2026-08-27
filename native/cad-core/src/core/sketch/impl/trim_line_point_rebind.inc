@@ -1,21 +1,21 @@
 // Share point IDs at the new endpoints with coincident geometry
-// so profile loops stay connected after trim.  Mirrors the
-// circle→arc path (find_coincident_endpoint + shared/fallback IDs).
-const int fresh_idx = static_cast<int>(params.lines.size()) * 10 +
-                      static_cast<int>(params.arcs.size()) * 10 + 1000;
+// so profile loops stay connected after trim.  Resolves through the
+// nearest-wins shared-point service instead of the first-match-wins
+// scan — the old scan could return a freshly pushed sibling's own
+// vertex id purely by iteration order.
+const std::unordered_set<std::string> excluded_entities{entity_id};
 
-const auto shared_start = find_coincident_endpoint(
-    params, entity_id, line_it->start_x, line_it->start_y);
-const auto shared_end =
-    find_coincident_endpoint(params, entity_id, line_it->end_x, line_it->end_y);
+const auto shared_start = resolve_shared_point(
+    params, line_it->start_x, line_it->start_y, excluded_entities);
+const auto shared_end = resolve_shared_point(
+    params, line_it->end_x, line_it->end_y, excluded_entities);
 
 const std::string new_sp =
-    shared_start.has_value()
-        ? std::get<0>(shared_start.value())
-        : "vertex-" + std::to_string(params.next_vertex_index++);
+    shared_start.has_value() ? std::get<0>(shared_start.value())
+                             : mint_vertex_id();
 const std::string new_ep =
     shared_end.has_value() ? std::get<0>(shared_end.value())
-                           : "vertex-" + std::to_string(params.next_vertex_index++);
+                           : mint_vertex_id();
 
 line_it->start_vertex_id = new_sp;
 line_it->end_vertex_id = new_ep;
@@ -32,8 +32,10 @@ params.polygons.clear();
 
 // Update other lines that shared the old point IDs.  If the other
 // line's endpoint is still coincident with the trimmed line's new
-// endpoint, they continue to share.  Otherwise orphan the old ref.
-int next_fresh = fresh_idx + 1;
+// endpoint, they continue to share.  Otherwise re-resolve the point
+// against everything else — the old code minted a fresh vertex id
+// here unconditionally, silently breaking the shared point without
+// any coincident constraint to replace it.
 auto update_shared_pt =
     [&](std::string &pt_id, double pt_x, double pt_y, const std::string &old_id,
         const std::string &new_id, double new_x, double new_y) {
@@ -41,9 +43,12 @@ auto update_shared_pt =
         return;
       if (points_match(pt_x, pt_y, new_x, new_y)) {
         pt_id = new_id;
-      } else {
-        pt_id = "vertex-" + std::to_string(params.next_vertex_index++);
+        return;
       }
+      const auto resolved = resolve_shared_point(params, pt_x, pt_y,
+                                                 excluded_entities);
+      pt_id = resolved.has_value() ? std::get<0>(resolved.value())
+                                   : mint_vertex_id();
     };
 
 for (auto &ol : params.lines) {

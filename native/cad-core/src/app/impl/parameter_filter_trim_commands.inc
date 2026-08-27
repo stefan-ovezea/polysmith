@@ -127,10 +127,19 @@
   }
 
   if (command.type == "trim_sketch_entity") {
+    // Optional segment_index: the hovered segment from the trim_preview
+    // result. When present the core trims exactly the highlighted
+    // segment instead of re-deriving it from the click point.
+    std::optional<int> segment_index = std::nullopt;
+    if (command.payload.contains("segment_index") &&
+        command.payload["segment_index"].is_number()) {
+      segment_index = command.payload["segment_index"].get<int>();
+    }
     const auto document = document_manager().trim_sketch_entity(
         read_string(command.payload, "entity_id"),
         read_dimension(command.payload, "click_x"),
-        read_dimension(command.payload, "click_y"));
+        read_dimension(command.payload, "click_y"),
+        segment_index);
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

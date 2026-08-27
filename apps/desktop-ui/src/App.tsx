@@ -2659,9 +2659,9 @@ function App() {
               onDeleteSketchSelection={async (selection) => {
                 confirmAndDeleteSketchSelection(selection);
               }}
-              onTrimSketchEntity={async (entityId, clickX, clickY) => {
+              onTrimSketchEntity={async (entityId, clickX, clickY, segmentIndex) => {
                 await runAction(async () => {
-                  await trimSketchEntity(entityId, clickX, clickY);
+                  await trimSketchEntity(entityId, clickX, clickY, segmentIndex);
                 });
               }}
               onDeleteSketchDimension={async (dimensionId) => {

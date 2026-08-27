@@ -1699,6 +1699,26 @@ Payload:
 { entity_id: string; click_x: number; click_y: number; }
 ```
 
+#### `trim_sketch_entity`
+
+Splits the clicked line / circle / arc at every intersection with other
+non-construction entities and deletes the segment under the click
+(circles become the complementary arc; middle-segment trims split arcs).
+The optional `segment_index` — the hovered index from the matching
+`trim_preview_result` — overrides click-based selection so the trim
+deletes exactly the highlighted segment.
+
+Payload:
+
+```ts
+{
+  entity_id: string;
+  click_x: number;
+  click_y: number;
+  segment_index?: number;  // from trim_preview_result.hovered_index
+}
+```
+
 #### `offset_sketch_entity`
 
 Offsets a single line / circle / arc by a signed distance (left-normal

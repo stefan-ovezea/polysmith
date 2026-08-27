@@ -1090,6 +1090,7 @@ export function makeTrimSketchEntityCommand(
   entityId: string,
   clickX: number,
   clickY: number,
+  segmentIndex?: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -1098,6 +1099,7 @@ export function makeTrimSketchEntityCommand(
       entity_id: entityId,
       click_x: clickX,
       click_y: clickY,
+      ...(segmentIndex === undefined ? {} : { segment_index: segmentIndex }),
     },
   };
 }

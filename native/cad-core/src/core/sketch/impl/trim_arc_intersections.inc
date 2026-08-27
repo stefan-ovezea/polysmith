@@ -90,24 +90,16 @@ find_all_intersections(const SketchArc &target,
                        const SketchFeatureParameters &params) {
   std::vector<TrimIntersection> results;
 
-  int total_lines = 0, total_circles = 0, total_arcs = 0, found = 0;
-
+  // Construction geometry cuts here too — see the line-target note in
+  // trim_line_circle_target_intersections.inc.
   for (const auto &line : params.lines) {
-    ++total_lines;
-    if (line.is_construction)
-      continue;
     auto isects = intersect_arc_line(target, line);
-    found += static_cast<int>(isects.size());
     for (auto &is : isects)
       results.push_back(std::move(is));
   }
 
   for (const auto &circle : params.circles) {
-    ++total_circles;
-    if (circle.is_construction)
-      continue;
     auto isects = intersect_arc_circle(target, circle);
-    found += static_cast<int>(isects.size());
     for (auto &is : isects)
       results.push_back(std::move(is));
   }
@@ -115,32 +107,33 @@ find_all_intersections(const SketchArc &target,
   for (const auto &arc : params.arcs) {
     if (arc.id == target.id)
       continue;
-    ++total_arcs;
-    if (arc.is_construction)
-      continue;
     auto isects = intersect_arc_arc(target, arc);
-    found += static_cast<int>(isects.size());
     for (auto &is : isects)
       results.push_back(std::move(is));
   }
 
-  // Filter out intersections at the arc's own endpoints — they
-  // produce zero-length segments and prevent meaningful trimming.
-  // Keep them only if they're the *only* intersections, otherwise
-  // the arc would be fully deleted (the caller treats an empty
-  // result as "isolated entity → delete").
+  // Intersections at the arc's own endpoints produce near-zero-length
+  // pieces whose endpoints sit closest to clicks anywhere along the
+  // arc's middle — the CW selector's distance fallback then hands the
+  // click to that stub instead of the piece the user pointed at (the
+  // "middle trim does not split" failure). Drop them when the arc has
+  // real intersections to trim with; keep them when they are the ONLY
+  // intersections, because then the trim is a plain delete and an
+  // empty result would instead leave the arc untouched.
   {
     auto [as, ae] = arc_angles(target);
-    const double kEpTol = 1e-6;
+    constexpr double kArcEndpointAngTol = 1e-6;  // radians
     auto copy = results;
     results.erase(
         std::remove_if(results.begin(), results.end(),
                        [&](const TrimIntersection &is) {
                          double a = wrap_angle(is.param_on_target);
-                         return (std::abs(std::sin(a - as)) < kEpTol &&
-                                 std::abs(std::cos(a - as) - 1.0) < kEpTol) ||
-                                (std::abs(std::sin(a - ae)) < kEpTol &&
-                                 std::abs(std::cos(a - ae) - 1.0) < kEpTol);
+                         return (std::abs(std::sin(a - as)) < kArcEndpointAngTol &&
+                                 std::abs(std::cos(a - as) - 1.0) <
+                                     kArcEndpointAngTol) ||
+                                (std::abs(std::sin(a - ae)) < kArcEndpointAngTol &&
+                                 std::abs(std::cos(a - ae) - 1.0) <
+                                     kArcEndpointAngTol);
                        }),
         results.end());
     if (results.empty())

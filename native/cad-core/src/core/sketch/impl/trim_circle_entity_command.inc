@@ -30,8 +30,8 @@
     const auto segments = split_circle_at_intersections(*circle_it, intersections);
     if (segments.empty()) return;
 
-    const int clicked_index = select_clicked_segment(
-        segments, *circle_it, click_x, click_y);
+    const int clicked_index = resolve_clicked_index(
+        segments, select_clicked_segment(segments, *circle_it, click_x, click_y));
 
     if (clicked_index < 0 || clicked_index >= static_cast<int>(segments.size())) {
       throw std::runtime_error(
@@ -46,12 +46,21 @@
     arc_ids.reserve(params.arcs.size());
     for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
     const int arc_index = next_trim_entity_index(arc_ids);
-    const int start_pt_idx = arc_index * 2;
-    const int end_pt_idx = arc_index * 2 + 1;
     const double cx = circle_it->center_x, cy = circle_it->center_y;
     const double r = circle_it->radius;
     auto pt_at_angle = [&](double a) -> std::pair<double, double> {
       return {cx + r * std::cos(a), cy + r * std::sin(a)};
+    };
+
+    // The circle being converted must not resolve against its own
+    // centre or quadrant vertices — exclude it from the shared-point
+    // scan (the old code passed "" as the ignored id and could match
+    // the circle itself).
+    const std::unordered_set<std::string> excluded_entities{entity_id};
+    auto arc_endpoint_id = [&](double px, double py) -> std::string {
+      const auto shared = resolve_shared_point(params, px, py, excluded_entities);
+      return shared.has_value() ? std::get<0>(shared.value())
+                                : mint_vertex_id();
     };
 
     if (N == 2) {
@@ -63,16 +72,10 @@
       // Reuse existing endpoint ids when arc endpoints land on a point
       // another entity already owns — mirrors add_sketch_arc so the
       // profile loop detector can chain arcs with lines.
-      const auto shared_start = find_coincident_endpoint(params, "", sx, sy);
-      const auto shared_end   = find_coincident_endpoint(params, "", ex, ey);
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(arc_index),
-          .start_vertex_id = shared_start.has_value()
-              ? std::get<0>(shared_start.value())
-              : "vertex-" + std::to_string(params.next_vertex_index++),
-          .end_vertex_id   = shared_end.has_value()
-              ? std::get<0>(shared_end.value())
-              : "vertex-" + std::to_string(params.next_vertex_index++),
+          .start_vertex_id = arc_endpoint_id(sx, sy),
+          .end_vertex_id   = arc_endpoint_id(ex, ey),
           // The arc keeps the circle's center — share its center vertex
           // id instead of minting a second one at the same spot.
           .center_vertex_id = circle_it->center_vertex_id,
@@ -92,16 +95,10 @@
       auto [sx, sy] = pt_at_angle(a_start);
       auto [ex, ey] = pt_at_angle(segments[clicked_index].param_start);
       // Reuse existing endpoint ids for profile loop connectivity.
-      const auto shared_start = find_coincident_endpoint(params, "", sx, sy);
-      const auto shared_end   = find_coincident_endpoint(params, "", ex, ey);
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(arc_index),
-          .start_vertex_id = shared_start.has_value()
-              ? std::get<0>(shared_start.value())
-              : "vertex-" + std::to_string(params.next_vertex_index++),
-          .end_vertex_id   = shared_end.has_value()
-              ? std::get<0>(shared_end.value())
-              : "vertex-" + std::to_string(params.next_vertex_index++),
+          .start_vertex_id = arc_endpoint_id(sx, sy),
+          .end_vertex_id   = arc_endpoint_id(ex, ey),
           // The arc keeps the circle's center — share its center vertex
           // id instead of minting a second one at the same spot.
           .center_vertex_id = circle_it->center_vertex_id,

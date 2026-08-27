@@ -116,6 +116,12 @@ int select_clicked_segment(
 
 constexpr double kTrimCoincidentTolerance = 0.01;  // mm
 
+// Distance from a point to a trim segment, measured against the ARC
+// itself rather than its chord (see trim_engine.cpp). Exposed for the
+// trim regression suite.
+double point_trim_segment_distance_sq(const TrimSegment& segment,
+                                      double px, double py);
+
 // Next free numeric suffix for an entity id created by a trim split:
 // one past the highest trailing integer among the existing ids.  The
 // old size-based scheme (entities.size() + 1) reused ids after trims
