@@ -3,8 +3,25 @@ DocumentState DocumentManager::trim_sketch_entity(
     double click_x,
     double click_y,
     std::optional<int> segment_index,
-    std::vector<std::string>* minted_vertex_ids) {
+    std::vector<std::string>* minted_vertex_ids,
+    std::optional<int> expected_revision) {
   require_document();
+
+  // The preview's hovered segment is only meaningful against the
+  // document it was computed from. A click landing before the previous
+  // trim's document_state reached the UI carries a stale
+  // segment_index against a NEW segment list — honouring it deletes a
+  // different, larger piece. Downgrade to click-based selection; the
+  // click point is always re-derivable from current geometry.
+  if (segment_index.has_value() && expected_revision.has_value() &&
+      *expected_revision != document_->revision) {
+    log_warn("trim",
+             "stale segment_index ignored (preview revision " +
+                 std::to_string(*expected_revision) + ", document revision " +
+                 std::to_string(document_->revision) +
+                 ") — falling back to click-based selection");
+    segment_index = std::nullopt;
+  }
 
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");

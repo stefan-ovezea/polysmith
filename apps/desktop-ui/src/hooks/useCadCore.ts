@@ -1278,8 +1278,24 @@ export function useCadCore() {
       await sendCoreCommand(makeDeleteParameterCommand(name));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    trimSketchEntity: async (entityId: string, clickX: number, clickY: number, segmentIndex?: number) => {
-      await sendCoreCommand(makeTrimSketchEntityCommand(entityId, clickX, clickY, segmentIndex));
+    trimSketchEntity: async (
+      entityId: string,
+      clickX: number,
+      clickY: number,
+      segmentIndex?: number,
+      expectedRevision?: number,
+      previewId?: string,
+    ) => {
+      await sendCoreCommand(
+        makeTrimSketchEntityCommand(
+          entityId,
+          clickX,
+          clickY,
+          segmentIndex,
+          expectedRevision,
+          previewId,
+        ),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteSketchSelection: async (

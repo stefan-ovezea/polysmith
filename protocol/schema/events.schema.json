@@ -16,6 +16,7 @@
         "document_exported",
         "document_saved",
         "log",
+        "trim_preview_result",
         "error"
       ]
     },

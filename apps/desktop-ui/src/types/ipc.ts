@@ -459,6 +459,8 @@ export interface TrimPreviewResultEvent {
     entity_id: string;
     entity_kind: "line" | "circle" | "arc";
     hovered_index: number;
+    /** Document revision the preview was computed against. */
+    revision: number;
     full_circle?: boolean;
     full_arc?: boolean;
     segments?: Array<{

@@ -15,6 +15,14 @@ interface MutableRef<T> {
 
 type TrimEntityKind = "line" | "circle" | "arc";
 
+interface TrimPreviewLastSent {
+  x: number;
+  y: number;
+  entityId: string;
+  /** id of the last trim_preview command actually written to the core. */
+  requestId: string | null;
+}
+
 interface TrimPointerMoveParams {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
@@ -23,7 +31,7 @@ interface TrimPointerMoveParams {
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>;
+  trimPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   clearTrimSegmentHighlight: () => void;
@@ -92,8 +100,37 @@ function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
   return null;
 }
 
+// At most one trim_preview command per animation frame, always the
+// newest request. Without this, a fast pointer sweep queues a preview
+// per pointermove event and responses can arrive in any order; the
+// viewport renders whatever lands last, which may not be the request
+// the user's cursor is currently on.
+let scheduledPreview: number | null = null;
+let scheduledPreviewEntity: string | null = null;
+let scheduledPreviewX = 0;
+let scheduledPreviewY = 0;
+let scheduledPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null> | null =
+  null;
+
+function flushScheduledPreview() {
+  scheduledPreview = null;
+  const ref = scheduledPreviewLastSentRef;
+  const entityId = scheduledPreviewEntity;
+  if (ref === null || entityId === null) return;
+  const requestId = crypto.randomUUID();
+  ref.current = {
+    x: scheduledPreviewX,
+    y: scheduledPreviewY,
+    entityId,
+    requestId,
+  };
+  void sendCoreCommand(
+    makeTrimPreviewCommand(entityId, scheduledPreviewX, scheduledPreviewY, requestId),
+  );
+}
+
 function sendTrimPreviewIfMoved(
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>,
+  trimPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null>,
   entityId: string,
   cursorLocal: [number, number],
 ) {
@@ -102,17 +139,18 @@ function sendTrimPreviewIfMoved(
   // The last-sent gate also stores WHICH entity the preview targeted:
   // hovering a different entity must send immediately.
   const entityChanged =
-    !prev || (prev as { entityId?: string }).entityId !== entityId;
+    !prev || prev.entityId !== entityId;
   if (
     entityChanged ||
     Math.abs(mx - prev.x) > 0.5 ||
     Math.abs(my - prev.y) > 0.5
   ) {
-    trimPreviewLastSentRef.current = {
-      x: mx,
-      y: my,
-      entityId,
-    } as { x: number; y: number };
-    void sendCoreCommand(makeTrimPreviewCommand(entityId, mx, my));
+    scheduledPreviewEntity = entityId;
+    scheduledPreviewX = mx;
+    scheduledPreviewY = my;
+    scheduledPreviewLastSentRef = trimPreviewLastSentRef;
+    if (scheduledPreview === null) {
+      scheduledPreview = requestAnimationFrame(flushScheduledPreview);
+    }
   }
 }

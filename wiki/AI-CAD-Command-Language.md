@@ -1704,9 +1704,13 @@ Payload:
 Splits the clicked line / circle / arc at every intersection with other
 non-construction entities and deletes the segment under the click
 (circles become the complementary arc; middle-segment trims split arcs).
-The optional `segment_index` — the hovered index from the matching
-`trim_preview_result` — overrides click-based selection so the trim
-deletes exactly the highlighted segment.
+Ellipses and splines act as cutting edges. The optional `segment_index`
+— the hovered index from the matching `trim_preview_result` —
+overrides click-based selection so the trim deletes exactly the
+highlighted segment. `expected_revision` is the document revision the
+preview was computed against: when it does not match the current
+document, the core IGNORES `segment_index` and re-derives the segment
+from the click point (a stale preview must never cut the wrong piece).
 
 Payload:
 
@@ -1715,7 +1719,9 @@ Payload:
   entity_id: string;
   click_x: number;
   click_y: number;
-  segment_index?: number;  // from trim_preview_result.hovered_index
+  segment_index?: number;     // from trim_preview_result.hovered_index
+  expected_revision?: number; // document.revision of that preview
+  preview_id?: string;        // command id of that preview (diagnostics)
 }
 ```
 

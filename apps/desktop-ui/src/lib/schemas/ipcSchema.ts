@@ -96,6 +96,9 @@ const trimPreviewResultEventSchema = z.object({
       entity_id: z.string(),
       entity_kind: z.enum(["line", "circle", "arc"]),
       hovered_index: z.number(),
+      // Document revision the preview was computed against; the UI
+      // echoes it back so a stale preview can never drive a trim.
+      revision: z.number(),
       full_circle: z.boolean().optional(),
       full_arc: z.boolean().optional(),
       segments: z.array(z.object({

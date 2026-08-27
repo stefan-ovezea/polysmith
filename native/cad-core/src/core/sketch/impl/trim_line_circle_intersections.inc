@@ -164,11 +164,15 @@ std::vector<TrimIntersection> intersect_circle_circle(
   // coincidence tolerance are the same point by this project's own
   // definition, so bail out before the division either way.
   if (d <= kTrimCoincidentTolerance) {
+    // Debug, not warn: coincident SUPPORT circles are routine when two
+    // arcs split from the same circle are tested against each other —
+    // hover previews recompute this per pointer move, and a warn here
+    // floods the Logs panel with hundreds of identical lines.
     if (std::abs(r1 - r2) <= kTrimCoincidentTolerance) {
-      log_warn("trim",
-               "coincident circles '" + target.id + "' and '" + other.id +
-                   "' have no discrete intersections; ignoring as a cutting "
-                   "edge");
+      log_debug("trim",
+                "coincident circles '" + target.id + "' and '" + other.id +
+                    "' have no discrete intersections; ignoring as a cutting "
+                    "edge");
     }
     return result;
   }

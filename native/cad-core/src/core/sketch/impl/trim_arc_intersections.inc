@@ -5,6 +5,7 @@
 std::vector<TrimIntersection> intersect_arc_line(const SketchArc &target,
                                                  const SketchLine &other) {
   auto isects = intersect_line_circle(other, SketchCircle{
+                                                 .id = target.id,
                                                  .center_x = target.center_x,
                                                  .center_y = target.center_y,
                                                  .radius = target.radius,
@@ -36,7 +37,8 @@ std::vector<TrimIntersection> intersect_arc_line(const SketchArc &target,
 std::vector<TrimIntersection> intersect_arc_circle(const SketchArc &target,
                                                    const SketchCircle &other) {
   auto isects =
-      intersect_circle_circle(SketchCircle{.center_x = target.center_x,
+      intersect_circle_circle(SketchCircle{.id = target.id,
+                                           .center_x = target.center_x,
                                            .center_y = target.center_y,
                                            .radius = target.radius},
                               other);
@@ -60,10 +62,12 @@ std::vector<TrimIntersection> intersect_arc_circle(const SketchArc &target,
 std::vector<TrimIntersection> intersect_arc_arc(const SketchArc &target,
                                                 const SketchArc &other) {
   auto isects =
-      intersect_circle_circle(SketchCircle{.center_x = target.center_x,
+      intersect_circle_circle(SketchCircle{.id = target.id,
+                                           .center_x = target.center_x,
                                            .center_y = target.center_y,
                                            .radius = target.radius},
-                              SketchCircle{.center_x = other.center_x,
+                              SketchCircle{.id = other.id,
+                                           .center_x = other.center_x,
                                            .center_y = other.center_y,
                                            .radius = other.radius});
 
@@ -134,6 +138,40 @@ find_all_intersections(const SketchArc &target,
           .x = p.x, .y = p.y,
           .param_on_target = angle, .param_on_other = sparam,
           .other_entity_id = spline.id});
+    }
+  }
+
+  // Endpoint-touch pass: another arc's STORED endpoints that lie ON
+  // the target are genuine junction cuts. The strict angular sweep
+  // filter above drops them at random — the stored endpoint coords
+  // are a trig roundtrip of the same intersection the solver
+  // recomputes analytically, and the two angles differ by ~1e-4 rad,
+  // far beyond the sweep's 1e-12 tolerance. A missing junction makes
+  // the segment list too coarse, so the trim deletes the piece
+  // adjacent to the notch instead of the notch itself (the
+  // six-petal flower bug). The profile walk has its own touch
+  // records, so this pass stays in the trim engine only.
+  {
+    auto [as, ae] = arc_angles(target);
+    for (const auto &other : params.arcs) {
+      if (other.id == target.id) continue;
+      auto add_if_on_target = [&](double px, double py) {
+        const double dx = px - target.center_x;
+        const double dy = py - target.center_y;
+        if (std::abs(std::hypot(dx, dy) - target.radius) >
+            kTrimCoincidentTolerance) {
+          return;
+        }
+        const double ang = wrap_angle(std::atan2(dy, dx));
+        if (!angle_in_arc_sweep(ang, as, ae, target.ccw)) return;
+        results.push_back(TrimIntersection{
+            .x = px, .y = py,
+            .param_on_target = ang,
+            .param_on_other = 0.0,
+            .other_entity_id = other.id});
+      };
+      add_if_on_target(other.start_x, other.start_y);
+      add_if_on_target(other.end_x, other.end_y);
     }
   }
 

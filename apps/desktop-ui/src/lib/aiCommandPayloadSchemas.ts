@@ -580,6 +580,9 @@ export const commandPayloadSchemas = {
       entity_id: stringField,
       click_x: numberField,
       click_y: numberField,
+      segment_index: z.number().int().optional(),
+      expected_revision: z.number().int().optional(),
+      preview_id: z.string().optional(),
     })
     .strict(),
   extend_sketch_entity: z

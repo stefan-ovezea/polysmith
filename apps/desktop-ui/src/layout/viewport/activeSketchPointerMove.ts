@@ -35,7 +35,12 @@ interface ActiveSketchPointerMoveParams
     DraftPointerPreviewControls {
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>;
+  trimPreviewLastSentRef: MutableRef<{
+    x: number;
+    y: number;
+    entityId: string;
+    requestId: string | null;
+  } | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   sketchGroupRef: MutableRef<THREE.Group | null>;

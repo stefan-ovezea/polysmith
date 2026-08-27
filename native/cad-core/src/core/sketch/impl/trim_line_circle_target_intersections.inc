@@ -57,6 +57,36 @@ std::vector<TrimIntersection> find_all_intersections(
     }
   }
 
+  // Endpoint-touch pass: another arc's STORED endpoints that lie on
+  // the target line are junction cuts the sweep filter of the arc
+  // solver can drop (see the arc-target note in
+  // trim_arc_intersections.inc). The profile walk has its own touch
+  // records, so this stays trim-only.
+  for (const auto& other : params.arcs) {
+    auto add_if_on_target = [&](double px, double py) {
+      const double abx = target.end_x - target.start_x;
+      const double aby = target.end_y - target.start_y;
+      const double len_sq = abx * abx + aby * aby;
+      const double t =
+          len_sq > 1e-18
+              ? std::max(0.0, std::min(
+                                  1.0, ((px - target.start_x) * abx +
+                                        (py - target.start_y) * aby) /
+                                           len_sq))
+              : 0.0;
+      const double qx = target.start_x + t * abx;
+      const double qy = target.start_y + t * aby;
+      if (std::hypot(px - qx, py - qy) > kTrimCoincidentTolerance) return;
+      results.push_back(TrimIntersection{
+          .x = px, .y = py,
+          .param_on_target = t,
+          .param_on_other = 0.0,
+          .other_entity_id = other.id});
+    };
+    add_if_on_target(other.start_x, other.start_y);
+    add_if_on_target(other.end_x, other.end_y);
+  }
+
   if (results.empty()) return results;
 
   std::sort(results.begin(), results.end(),
@@ -131,6 +161,28 @@ std::vector<TrimIntersection> find_all_intersections(
           .param_on_target = angle, .param_on_other = sparam,
           .other_entity_id = spline.id});
     }
+  }
+
+  // Endpoint-touch pass: another arc's STORED endpoints that lie on
+  // the target circle (arc-solver sweep filter can drop them — see
+  // the arc-target note in trim_arc_intersections.inc). Trim-only;
+  // the profile walk has its own touch records.
+  for (const auto& other : params.arcs) {
+    auto add_if_on_target = [&](double px, double py) {
+      const double dx = px - target.center_x;
+      const double dy = py - target.center_y;
+      if (std::abs(std::hypot(dx, dy) - target.radius) >
+          kTrimCoincidentTolerance) {
+        return;
+      }
+      results.push_back(TrimIntersection{
+          .x = px, .y = py,
+          .param_on_target = wrap_angle(std::atan2(dy, dx)),
+          .param_on_other = 0.0,
+          .other_entity_id = other.id});
+    };
+    add_if_on_target(other.start_x, other.start_y);
+    add_if_on_target(other.end_x, other.end_y);
   }
 
   if (results.empty()) return results;

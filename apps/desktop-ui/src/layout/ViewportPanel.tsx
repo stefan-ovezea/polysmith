@@ -17,6 +17,7 @@ import type {
   DocumentState,
   SketchConstraintScene,
   SketchTool,
+  TrimPreviewResultEvent,
   ViewportState,
   SketchDimensionScene,
   PrimitiveVisual,
@@ -463,10 +464,20 @@ export function ViewportPanel({
   const previewInferenceRef = useRef<THREE.Line[]>([]);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
-  /** Latest trim_preview_result payload from the core (null when idle). */
-  const trimPreviewResultRef = useRef<any>(null);
+  /** Latest trim_preview_result payload from the core (null when idle),
+   *  including the echoed command id and the document revision the
+   *  preview was computed against. */
+  const trimPreviewResultRef = useRef<
+    | (NonNullable<TrimPreviewResultEvent["payload"]> & { id?: string })
+    | null
+  >(null);
   /** Throttle: skip IPC send if the cursor hasn't moved enough. */
-  const trimPreviewLastSentRef = useRef<{ x: number; y: number } | null>(null);
+  const trimPreviewLastSentRef = useRef<{
+    x: number;
+    y: number;
+    entityId: string;
+    requestId: string | null;
+  } | null>(null);
   const draftDimGroupRef = useRef<THREE.Group | null>(null);
   /** Reusable scene object for draft dimension lines (create once, update positions in-place). */
   const draftDimSceneObjRef = useRef<{
@@ -3466,16 +3477,27 @@ export function ViewportPanel({
           // the trim deletes EXACTLY the highlighted segment instead of
           // re-deriving it from a slightly different click point (the
           // source of "highlight shows one piece, trim deletes another").
+          // Only trust the preview when it describes the SAME document
+          // revision the user is looking at — a stale preview's index
+          // is meaningless against the new segment list, and the core
+          // would cut the wrong piece (the "trim floods" regression).
           const preview = trimPreviewResultRef.current;
-          const segmentIndex =
-            preview &&
+          const revision = document?.revision ?? 0;
+          const previewFresh =
+            preview !== null &&
             preview.entity_id === entityId &&
             typeof preview.hovered_index === "number" &&
-            preview.hovered_index >= 0
-              ? preview.hovered_index
-              : undefined;
+            preview.hovered_index >= 0 &&
+            preview.revision === revision;
+          const segmentIndex = previewFresh ? preview.hovered_index : undefined;
           return trimSketchEntityRef.current(
-            entityId, localX, localY, segmentIndex);
+            entityId,
+            localX,
+            localY,
+            segmentIndex,
+            previewFresh ? revision : undefined,
+            preview?.id,
+          );
         },
         mirrorEntityPick: mirrorEntityPickRef.current,
         selectSketchEntity: selectSketchEntityRef.current,
@@ -3644,7 +3666,17 @@ export function ViewportPanel({
     }
 
     const onTrimPreview = (e: Event) => {
-      trimPreviewResultRef.current = (e as CustomEvent).detail;
+      const detail = (e as CustomEvent).detail as NonNullable<
+        TrimPreviewResultEvent["payload"]
+      > & { id?: string };
+      // Drop responses that are not the newest request — hover
+      // previews are coalesced per frame but the core answers them
+      // asynchronously, so an older response can still arrive late.
+      const lastSent = trimPreviewLastSentRef.current;
+      if (lastSent?.requestId && detail.id !== lastSent.requestId) {
+        return;
+      }
+      trimPreviewResultRef.current = detail;
       // Render the highlight immediately from the core's data.
       renderTrimPreviewHighlight({
         data: trimPreviewResultRef.current,

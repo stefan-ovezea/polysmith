@@ -93,6 +93,10 @@ std::vector<EntityDofResult> count_sketch_dof(
 
   // General constraints.
   for (const auto& c : params.constraints) {
+    // Fixed constraints are counted by the is_fixed pass below — the
+    // record only drives the viewport badge, so counting it here
+    // would consume the DOF twice.
+    if (c.kind == "fixed") continue;
     int cost = constraint_cost(c.kind);
     for (const auto& tid : c.target_ids) {
       if (map.count(tid)) map[tid].consumed += cost;

@@ -101,7 +101,8 @@
       double click_x,
       double click_y,
       std::optional<int> segment_index = std::nullopt,
-      std::vector<std::string>* minted_vertex_ids = nullptr);
+      std::vector<std::string>* minted_vertex_ids = nullptr,
+      std::optional<int> expected_revision = std::nullopt);
   // Extend a sketch entity (line or arc) from the end nearest the
   // click to the nearest intersection with another non-construction
   // entity. Single undoable action via full sketch snapshot.

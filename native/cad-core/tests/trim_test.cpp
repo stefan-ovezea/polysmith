@@ -537,6 +537,56 @@ bool test_line_ellipse_profile_closes() {
   return true;
 }
 
+bool test_stale_expected_revision_falls_back_to_click() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Same notch geometry as the segment_index regression: a big circle
+  // with one small petal circle cutting a notch at angle 0. The
+  // hovered segment is the notch.
+  DocumentState document = manager.add_sketch_circle(0.0, 0.0, 50.0);
+  document = manager.add_sketch_circle(50.0, 0.0, 10.0);
+  const int revision_at_preview = document.revision;
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  const auto& big = params.circles.front();
+  const auto intersections = find_all_intersections(big, params);
+  const auto segments = split_circle_at_intersections(big, intersections);
+  const int hovered = select_clicked_segment(segments, big, 50.0, 0.0);
+  if (!expect(hovered >= 0, "stale revision: notch segment hovered")) {
+    return false;
+  }
+
+  // Bump the document revision with an unrelated edit so the preview
+  // is stale. (Same call re-validates the geometry, so just assert.)
+  document = manager.add_sketch_line(70.0, 30.0, 70.0, 40.0);
+  if (!expect(document.revision != revision_at_preview,
+              "stale revision: an unrelated edit bumps the revision")) {
+    return false;
+  }
+
+  // Trim the big circle with the STALE hovered index but the click at
+  // angle ~90° (the large piece). The core must ignore the stale index
+  // and delete the clicked piece instead.
+  document = manager.trim_sketch_entity(
+      "circle-1", /*click_x=*/0.0, /*click_y=*/50.0, hovered,
+      nullptr, revision_at_preview);
+
+  const auto& after = document.feature_history.back().sketch_parameters.value();
+  if (!expect(after.arcs.size() == 1 && after.circles.size() == 1,
+              "stale revision: circle converts to one arc")) {
+    return false;
+  }
+  const auto& arc = after.arcs.front();
+  // The clicked area (~90°) must be gone (the click won); the notch
+  // (angle 0) must remain (the stale index was ignored).
+  return expect(!arc_contains_angle(arc, kPi / 2.0 - 0.05),
+                "stale revision: click-based segment deleted") &&
+         expect(arc_contains_angle(arc, 0.0),
+                "stale revision: stale index did not delete the notch");
+}
+
 bool test_notch_trim_deletes_the_highlighted_segment() {
   DocumentManager manager;
   manager.create_document();
@@ -641,6 +691,140 @@ bool test_arc_distance_metric_beats_chord_for_long_segments() {
 // small circles arrayed on its perimeter, every small circle trimmed
 // to its outer arc and every big-circle notch between petals trimmed.
 // Must complete without a crash and leave no full-circle region.
+// The user's six-petal flower (res/part.json): big circle r=40.311,
+// six petal circles r=9.155 with centers ON the big circle at 60°
+// spacing starting at 30°. Trim each petal's inner arc, then trim
+// every big-circle notch. The final outline must be ONE closed loop:
+// six petal outer arcs + six big-circle connector arcs.
+bool test_six_petal_flower_trim_workflow() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  const double big_r = 40.311;
+  const double petal_r = 9.155;
+  DocumentState document = manager.add_sketch_circle(0.0, 0.0, big_r);
+  for (int k = 0; k < 6; ++k) {
+    const double a = (30.0 + 60.0 * k) * kPi / 180.0;
+    document = manager.add_sketch_circle(big_r * std::cos(a),
+                                         big_r * std::sin(a), petal_r);
+  }
+
+  const auto sketch_params = [&]() -> const polysmith::core::SketchFeatureParameters& {
+    return document.feature_history.back().sketch_parameters.value();
+  };
+
+  // 1. Trim each petal's inner arc (toward the origin).
+  {
+    std::vector<std::string> petal_ids;
+    for (const auto& c : sketch_params().circles) {
+      if (c.radius < big_r - 1.0) petal_ids.push_back(c.id);
+    }
+    for (const auto& petal_id : petal_ids) {
+      const auto& params = sketch_params();
+      const auto small_it = std::find_if(
+          params.circles.begin(), params.circles.end(),
+          [&](const auto& c) { return c.id == petal_id; });
+      if (small_it == params.circles.end()) continue;
+      const auto& small = *small_it;
+      const auto intersections = find_all_intersections(small, params);
+      const auto segments = split_circle_at_intersections(small, intersections);
+      const double dist = std::hypot(small.center_x, small.center_y);
+      const double click_x = small.center_x - petal_r * small.center_x / dist;
+      const double click_y = small.center_y - petal_r * small.center_y / dist;
+      const int hovered =
+          select_clicked_segment(segments, small, click_x, click_y);
+      if (!expect(hovered >= 0, "6-flower: inner petal segment hovered")) {
+        std::cerr << "  petal " << petal_id << "\n";
+        return false;
+      }
+      document =
+          manager.trim_sketch_entity(petal_id, click_x, click_y, hovered);
+    }
+  }
+
+  // 2. Trim every big-circle notch in order.
+  for (int k = 0; k < 6; ++k) {
+    const double a = (30.0 + 60.0 * k) * kPi / 180.0;
+    const auto& params = sketch_params();
+    const double click_x = big_r * std::cos(a);
+    const double click_y = big_r * std::sin(a);
+    std::string entity_id;
+    bool is_circle = false;
+    for (const auto& c : params.circles) {
+      if (std::abs(c.radius - big_r) > 1e-6) continue;
+      entity_id = c.id;
+      is_circle = true;
+      break;
+    }
+    if (entity_id.empty()) {
+      for (const auto& arc : params.arcs) {
+        if (std::abs(arc.radius - big_r) > 1e-6) continue;
+        if (!arc_contains_angle(arc, a)) continue;
+        entity_id = arc.id;
+        break;
+      }
+    }
+    if (entity_id.empty()) {
+      std::cerr << "  6-flower: no big entity contains angle "
+                << a * 180.0 / kPi << "\n";
+      return false;
+    }
+    int hovered = -1;
+    if (is_circle) {
+      const auto& big = [&]() -> const polysmith::core::SketchCircle& {
+        for (const auto& c : params.circles) {
+          if (c.id == entity_id) return c;
+        }
+        throw std::runtime_error("circle vanished");
+      }();
+      const auto intersections = find_all_intersections(big, params);
+      const auto segments = split_circle_at_intersections(big, intersections);
+      hovered = select_clicked_segment(segments, big, click_x, click_y);
+    } else {
+      const auto& big_arc = [&]() -> const SketchArc& {
+        for (const auto& arc : params.arcs) {
+          if (arc.id == entity_id) return arc;
+        }
+        throw std::runtime_error("arc vanished");
+      }();
+      const auto intersections = find_all_intersections(big_arc, params);
+      const auto segments =
+          split_arc_at_intersections(big_arc, intersections);
+      hovered = select_clicked_segment(segments, big_arc, click_x, click_y);
+    }
+    if (!expect(hovered >= 0, "6-flower: big-circle notch hovered")) {
+      std::cerr << "  angle=" << a * 180.0 / kPi << " entity=" << entity_id
+                << "\n";
+      return false;
+    }
+    document =
+        manager.trim_sketch_entity(entity_id, click_x, click_y, hovered);
+  }
+
+  // 3. Final state: 6 petal arcs + 6 big connectors, one closed loop.
+  const auto& params = sketch_params();
+  if (!expect(params.arcs.size() == 12,
+              "6-flower: six petal arcs + six big connectors")) {
+    return false;
+  }
+  if (!expect(params.circles.empty(), "6-flower: big circle consumed")) {
+    return false;
+  }
+  std::string reason;
+  std::vector<std::string> all_ids;
+  for (const auto& arc : params.arcs) all_ids.push_back(arc.id);
+  std::sort(all_ids.begin(), all_ids.end());
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {all_ids, "polygon"},
+  };
+  if (!polysmith::test::profiles_match(document, expected, &reason)) {
+    std::cerr << "  6-flower profiles: " << reason << "\n";
+    return false;
+  }
+  return true;
+}
+
 bool test_full_flower_trim_workflow() {
   DocumentManager manager;
   manager.create_document();
@@ -844,10 +1028,12 @@ int main() {
     if (!test_line_crossing_only_spline_keeps_line()) return 1;
     if (!test_circle_crossing_only_ellipse_keeps_circle()) return 1;
     if (!test_line_ellipse_profile_closes()) return 1;
+    if (!test_stale_expected_revision_falls_back_to_click()) return 1;
     if (!test_notch_trim_deletes_the_highlighted_segment()) return 1;
     if (!test_arc_distance_metric_beats_chord_for_long_segments()) return 1;
     if (!test_degenerate_arc_never_becomes_a_full_circle_profile()) return 1;
     if (!test_full_flower_trim_workflow()) return 1;
+    if (!test_six_petal_flower_trim_workflow()) return 1;
     std::cout << "trim_test passed\n";
     return 0;
   } catch (const std::exception& e) {

@@ -360,9 +360,10 @@ export function makeTrimPreviewCommand(
   entityId: string,
   cursorX: number,
   cursorY: number,
+  requestId?: string,
 ): CoreCommand {
   return {
-    id: crypto.randomUUID(),
+    id: requestId ?? crypto.randomUUID(),
     type: "trim_preview",
     payload: {
       entity_id: entityId,

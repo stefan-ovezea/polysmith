@@ -1091,6 +1091,8 @@ export function makeTrimSketchEntityCommand(
   clickX: number,
   clickY: number,
   segmentIndex?: number,
+  expectedRevision?: number,
+  previewId?: string,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -1100,6 +1102,10 @@ export function makeTrimSketchEntityCommand(
       click_x: clickX,
       click_y: clickY,
       ...(segmentIndex === undefined ? {} : { segment_index: segmentIndex }),
+      ...(expectedRevision === undefined
+        ? {}
+        : { expected_revision: expectedRevision }),
+      ...(previewId === undefined ? {} : { preview_id: previewId }),
     },
   };
 }
