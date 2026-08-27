@@ -88,6 +88,31 @@
             ellipse_payload.at("is_construction").get<bool>();
       }
       ellipse.generated_by = read_optional_string(ellipse_payload, "generated_by");
+      // Partial-ellipse sweep (trim results); defaults keep full
+      // ellipses for older saves.
+      if (ellipse_payload.contains("has_sweep") &&
+          ellipse_payload.at("has_sweep").is_boolean()) {
+        ellipse.has_sweep = ellipse_payload.at("has_sweep").get<bool>();
+      }
+      if (ellipse_payload.contains("sweep_start_angle") &&
+          ellipse_payload.at("sweep_start_angle").is_number()) {
+        ellipse.sweep_start_angle =
+            ellipse_payload.at("sweep_start_angle").get<double>();
+      }
+      if (ellipse_payload.contains("sweep_end_angle") &&
+          ellipse_payload.at("sweep_end_angle").is_number()) {
+        ellipse.sweep_end_angle =
+            ellipse_payload.at("sweep_end_angle").get<double>();
+      }
+      if (ellipse_payload.contains("ccw") &&
+          ellipse_payload.at("ccw").is_boolean()) {
+        ellipse.ccw = ellipse_payload.at("ccw").get<bool>();
+      }
+      ellipse.start_vertex_id =
+          read_optional_string(ellipse_payload, "start_vertex_id")
+              .value_or("");
+      ellipse.end_vertex_id =
+          read_optional_string(ellipse_payload, "end_vertex_id").value_or("");
       params.ellipses.push_back(ellipse);
     }
   }

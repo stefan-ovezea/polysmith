@@ -223,6 +223,11 @@ export interface SketchEllipseScene {
   rotation: number;
   isSelected: boolean;
   isConstruction: boolean;
+  // Partial ellipse (trim result); false = full closed ellipse.
+  hasSweep?: boolean;
+  sweepStart?: number;
+  sweepEnd?: number;
+  ccw?: boolean;
   // See `SketchLineScene.generatedBy` (reserved — v1 ellipses are
   // user entities only).
   generatedBy: string | null;
@@ -377,7 +382,7 @@ export interface SketchProfileScene {
     yAxis: [number, number, number];
     normal: [number, number, number];
   } | null;
-  profileKind: "polygon" | "circle";
+  profileKind: "polygon" | "circle" | "ellipse" | "spline";
   profilePoints: [number, number][];
   innerLoops: [number, number][][];
   start: [number, number];

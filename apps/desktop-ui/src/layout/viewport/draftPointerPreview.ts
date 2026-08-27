@@ -32,7 +32,7 @@ export interface DraftPointerPreviewControls {
   ellipseSecondPoint: [number, number] | null;
   isConstruction: boolean;
   previewLineRef: MutableRef<THREE.Line | null>;
-  previewCircleRef: MutableRef<THREE.LineLoop | null>;
+  previewCircleRef: MutableRef<THREE.LineLoop | THREE.Line | null>;
   previewArcRef: MutableRef<THREE.Line | null>;
   // Slot previews are stadium groups (2 lines + 2 arcs) — one ref per
   // group, cleared recursively.

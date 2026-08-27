@@ -672,6 +672,12 @@ export const documentStateSchema = z.object({
                 b: z.number(),
                 rotation: z.number(),
                 is_construction: z.boolean().default(false),
+                has_sweep: z.boolean().default(false),
+                sweep_start_angle: z.number().default(0),
+                sweep_end_angle: z.number().default(0),
+                ccw: z.boolean().default(true),
+                start_vertex_id: z.string().default(""),
+                end_vertex_id: z.string().default(""),
                 generated_by: z.string().nullable().default(null),
               }),
             )
@@ -796,7 +802,9 @@ export const documentStateSchema = z.object({
           profiles: z.array(
             z.object({
               profile_id: z.string(),
-              kind: z.enum(["polygon", "circle"]),
+              // The exact arrangement emits ellipse / spline regions
+              // for standalone full curves of those kinds (SK3 / SK7).
+              kind: z.enum(["polygon", "circle", "ellipse", "spline"]),
               vertex_ids: z.array(z.string()),
               line_ids: z.array(z.string()),
               points: z.array(

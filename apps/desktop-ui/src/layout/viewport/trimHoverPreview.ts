@@ -94,7 +94,9 @@ export function handleSketchTrimClick({
     hit?.kind !== "sketch_entity" ||
     (hit.entityKind !== "line" &&
       hit.entityKind !== "circle" &&
-      hit.entityKind !== "arc")
+      hit.entityKind !== "arc" &&
+      hit.entityKind !== "ellipse" &&
+      hit.entityKind !== "spline")
   ) {
     return true;
   }

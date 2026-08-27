@@ -13,7 +13,7 @@ interface MutableRef<T> {
   current: T;
 }
 
-type TrimEntityKind = "line" | "circle" | "arc";
+type TrimEntityKind = "line" | "circle" | "arc" | "ellipse" | "spline";
 
 interface TrimPreviewLastSent {
   x: number;
@@ -93,7 +93,9 @@ function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
     hit?.kind === "sketch_entity" &&
     (hit.entityKind === "line" ||
       hit.entityKind === "circle" ||
-      hit.entityKind === "arc")
+      hit.entityKind === "arc" ||
+      hit.entityKind === "ellipse" ||
+      hit.entityKind === "spline")
   ) {
     return hit.entityKind;
   }

@@ -457,12 +457,14 @@ export interface TrimPreviewResultEvent {
   type: "trim_preview_result";
   payload: {
     entity_id: string;
-    entity_kind: "line" | "circle" | "arc";
+    entity_kind: "line" | "circle" | "arc" | "ellipse" | "spline";
     hovered_index: number;
     /** Document revision the preview was computed against. */
     revision: number;
     full_circle?: boolean;
     full_arc?: boolean;
+    full_ellipse?: boolean;
+    full_spline?: boolean;
     segments?: Array<{
       start?: [number, number];
       end?: [number, number];

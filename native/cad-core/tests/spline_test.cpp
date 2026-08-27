@@ -326,8 +326,17 @@ bool test_spline_dangling_crossing_line_dropped() {
   document = manager.add_sketch_line(5.0, -2.0, 5.0, 6.0);
 
   const auto params = sketch_params(document);
-  return expect(params.profiles.size() == 1,
-                "spline: unconnected crossing line does not split the region");
+  // Dead-end lines that CROSS a closed region now split it (the
+  // ellipse-chord surface fix) — the two lines cut the bulge into
+  // two regions whose boundaries are the same three curves.
+  std::string reason;
+  const std::vector<ExpectedProfile> expected = {
+      {{"line-1", "line-2", "spline-1"}, "polygon"},
+      {{"line-1", "line-2", "spline-1"}, "polygon"},
+  };
+  return expect(profiles_match(document, expected, &reason),
+                ("spline: crossing lines split the region: " + reason)
+                    .c_str());
 }
 
 bool test_spline_extrude_smoke() {

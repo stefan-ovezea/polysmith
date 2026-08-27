@@ -114,7 +114,9 @@ export interface SketchLineRelationEntry {
 
 export interface SketchProfileRegionEntry {
   profile_id: string;
-  kind: "polygon" | "circle";
+  // The exact arrangement emits ellipse / spline regions for
+  // standalone full curves of those kinds (SK3 / SK7).
+  kind: "polygon" | "circle" | "ellipse" | "spline";
   vertex_ids: string[];
   line_ids: string[];
   points: SketchProfilePoint[];
@@ -230,6 +232,14 @@ export interface SketchEllipseEntry {
   b: number;
   rotation: number;
   is_construction: boolean;
+  // Partial ellipse (a trim result). has_sweep=false means the full
+  // closed ellipse; angles are ellipse-frame parametric angles.
+  has_sweep?: boolean;
+  sweep_start_angle?: number;
+  sweep_end_angle?: number;
+  ccw?: boolean;
+  start_vertex_id?: string;
+  end_vertex_id?: string;
   // See `SketchLineEntry.generated_by` (reserved — v1 ellipses are
   // user entities only).
   generated_by: string | null;

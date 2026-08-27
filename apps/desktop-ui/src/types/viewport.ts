@@ -173,6 +173,10 @@ export interface ViewportSketchEllipse {
   rotation: number;
   is_selected: boolean;
   is_construction: boolean;
+  has_sweep: boolean;
+  sweep_start: number;
+  sweep_end: number;
+  ccw: boolean;
   is_preview: boolean;
   // See `ViewportSketchLine.generated_by` (reserved — v1 ellipses
   // are user entities only).
@@ -313,7 +317,7 @@ export interface ViewportSketchProfile {
   profile_id: string;
   plane_id: string;
   plane_frame: PlaneFrame | null;
-  profile_kind: "polygon" | "circle";
+  profile_kind: "polygon" | "circle" | "ellipse" | "spline";
   profile_points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
   start_x: number;

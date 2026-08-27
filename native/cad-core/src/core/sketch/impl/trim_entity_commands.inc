@@ -64,6 +64,7 @@ void trim_sketch_entity(FeatureEntry& feature,
 #include "core/sketch/impl/trim_line_entity_command.inc"
 #include "core/sketch/impl/trim_circle_entity_command.inc"
 #include "core/sketch/impl/trim_arc_entity_command.inc"
+#include "core/sketch/impl/trim_ellipse_entity_command.inc"
 
   throw std::runtime_error("Sketch entity not found: " + entity_id);
 }

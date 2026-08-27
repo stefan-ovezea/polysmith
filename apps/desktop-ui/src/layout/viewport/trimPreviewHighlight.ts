@@ -1,6 +1,7 @@
 import type {
   SketchArcScene,
   SketchCircleScene,
+  SketchEllipseScene,
   TrimPreviewResultEvent,
   ViewportScene,
 } from "@/types";
@@ -95,8 +96,8 @@ function renderCurveTrimPreview(
     return;
   }
 
-  const points = data.full_circle || data.full_arc
-    ? sampleFullCurve(curve.center, curve.radius)
+  const points = data.full_circle || data.full_arc || data.full_ellipse
+    ? sampleFullCurve(curve)
     : sampleCurveSegment(data, hoveredIndex, curve);
   if (!points) {
     actions.clearTrimArcHighlight();
@@ -107,24 +108,26 @@ function renderCurveTrimPreview(
   actions.updateTrimArcHighlight(points);
 }
 
+type TrimPreviewCurve = SketchCircleScene | SketchArcScene | SketchEllipseScene;
+
 function findTrimPreviewCurve(data: TrimPreviewPayload, sceneData: ViewportScene) {
   if (data.entity_kind === "circle") {
     return sceneData.sketchCircles.find((circle) => circle.circleId === data.entity_id) ?? null;
   }
+  if (data.entity_kind === "ellipse") {
+    return sceneData.sketchEllipses.find((ellipse) => ellipse.ellipseId === data.entity_id) ?? null;
+  }
   return sceneData.sketchArcs.find((arc) => arc.arcId === data.entity_id) ?? null;
 }
 
-function sampleFullCurve(
-  center: [number, number, number],
-  radius: number,
-): Array<[number, number, number]> {
-  return sampleCurveAngles(center, radius, 0, 2 * Math.PI);
+function sampleFullCurve(curve: TrimPreviewCurve): Array<[number, number, number]> {
+  return sampleTrimCurve(curve, 0, 2 * Math.PI);
 }
 
 function sampleCurveSegment(
   data: TrimPreviewPayload,
   hoveredIndex: number,
-  curve: SketchCircleScene | SketchArcScene,
+  curve: TrimPreviewCurve,
 ): Array<[number, number, number]> | null {
   const segment = data.segments?.[hoveredIndex];
   if (segment?.param_start == null || segment.param_end == null) {
@@ -135,29 +138,34 @@ function sampleCurveSegment(
   // segment stores param_end < param_start and renders through +2π).
   // CW arcs carry descending ranges — sampling them ascending draws
   // the complement (the "long arc"), so keep the stored direction.
-  const ccw = "ccw" in curve ? curve.ccw : true;
+  const ccw = "ccw" in curve && curve.ccw !== undefined ? curve.ccw : true;
   let end = segment.param_end;
   if (ccw) {
     if (end <= segment.param_start) end += 2 * Math.PI;
   } else if (end >= segment.param_start) {
     end -= 2 * Math.PI;
   }
-  return sampleCurveAngles(curve.center, curve.radius, segment.param_start, end);
+  return sampleTrimCurve(curve, segment.param_start, end);
 }
 
-function sampleCurveAngles(
-  center: [number, number, number],
-  radius: number,
+function sampleTrimCurve(
+  curve: TrimPreviewCurve,
   startAngle: number,
   endAngle: number,
 ): Array<[number, number, number]> {
-  const [cx, cy, cz] = center;
+  const [cx, cy, cz] = curve.center;
   const points: Array<[number, number, number]> = [];
+  const isEllipse = "a" in curve;
+  const a = isEllipse ? curve.a : curve.radius;
+  const b = isEllipse ? curve.b : curve.radius;
+  const rotation = isEllipse ? curve.rotation : 0;
+  const cu = Math.cos(rotation);
+  const su = Math.sin(rotation);
   for (let index = 0; index <= 48; index++) {
     const angle = startAngle + (endAngle - startAngle) * (index / 48);
     points.push([
-      cx + Math.cos(angle) * radius,
-      cy + Math.sin(angle) * radius,
+      cx + a * Math.cos(angle) * cu - b * Math.sin(angle) * su,
+      cy + a * Math.cos(angle) * su + b * Math.sin(angle) * cu,
       cz,
     ]);
   }

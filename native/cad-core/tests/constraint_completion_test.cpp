@@ -410,12 +410,15 @@ bool test_symmetric_square_full_profiles() {
   manager.start_sketch_on_plane("ref-plane-xy");
 
   // Square: top (H), right (V), bottom (H), left (V), plus a vertical
-  // axis line through x=0.
+  // axis line through x=0. The axis is CONSTRUCTION: a reference
+  // curve must not split the square's profile (regular lines that
+  // cross a closed region do split it since the ellipse-chord fix).
   DocumentState document = manager.add_sketch_line(-10.0, 10.0, 10.0, 10.0);
   document = manager.add_sketch_line(10.0, 10.0, 10.0, -10.0);
   document = manager.add_sketch_line(10.0, -10.0, -10.0, -10.0);
   document = manager.add_sketch_line(-10.0, -10.0, -10.0, 10.0);
-  document = manager.add_sketch_line(0.0, -15.0, 0.0, 15.0);
+  document = manager.add_sketch_line(0.0, -15.0, 0.0, 15.0,
+                                     /*is_construction=*/true);
 
   const auto before = sketch_params(document);
   std::vector<std::string> expected_ids;

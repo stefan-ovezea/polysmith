@@ -34,6 +34,8 @@ bool expect(bool condition, const char* message) {
   return false;
 }
 
+constexpr double kPi = 3.14159265358979323846;
+
 SketchFeatureParameters sketch_params(const DocumentState& document) {
   return document.feature_history.back().sketch_parameters.value();
 }
@@ -178,25 +180,75 @@ bool test_construction_ellipse_excluded() {
                 ("construction ellipse excluded: " + reason).c_str());
 }
 
-bool test_ellipse_trim_rejected() {
+bool test_ellipse_trim_to_arc() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
 
+  // Full ellipse a=50 b=20 at the origin, cut by a vertical line at
+  // x=-20 whose endpoints land EXACTLY on the ellipse (the walk welds
+  // endpoints to curves only via touch records — a line overhanging
+  // the ellipse would be dropped as dangling). Trimming the left cap
+  // converts the ellipse to ONE partial ellipse whose endpoints sit
+  // exactly at the two intersections with the line.
   DocumentState document =
-      manager.add_sketch_ellipse(10.0, 10.0, 20.0, 10.0, 10.0, 16.0);
-  const auto params = sketch_params(document);
-  const std::string ellipse_id = params.ellipses[0].id;
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  const double cap_y = 20.0 * std::sqrt(1.0 - (20.0 * 20.0) / (50.0 * 50.0));
+  document = manager.add_sketch_line(-20.0, -cap_y, -20.0, cap_y);
 
-  // The trim engine handles line/circle/arc only — an ellipse id must
-  // be rejected, not silently ignored or crashed on.
-  bool threw = false;
-  try {
-    (void)manager.trim_sketch_entity(ellipse_id, 10.0, 16.0);
-  } catch (const std::exception&) {
-    threw = true;
+  const auto before = sketch_params(document);
+  const std::string ellipse_id = before.ellipses[0].id;
+  document = manager.trim_sketch_entity(ellipse_id, -45.0, 0.0);
+
+  const auto params = sketch_params(document);
+  if (!expect(params.ellipses.size() == 1,
+              "ellipse trim: one partial ellipse remains")) {
+    return false;
   }
-  return expect(threw, "ellipse: trim on an ellipse is rejected");
+  const auto& e = params.ellipses.front();
+  if (!expect(e.has_sweep, "ellipse trim: result carries a sweep")) {
+    return false;
+  }
+  // The left cap (-x side) was deleted: the kept arc spans the +x
+  // side, so its midpoint (a, 0) is material and (-a, 0) is not.
+  const auto angle_at = [&](double px, double py) {
+    const double cu = std::cos(e.rotation), su = std::sin(e.rotation);
+    const double lx = (px - e.center_x) * cu + (py - e.center_y) * su;
+    const double ly = -(px - e.center_x) * su + (py - e.center_y) * cu;
+    return std::atan2(ly / e.b, lx / e.a);
+  };
+  const double mid = angle_at(50.0, 0.0);
+  const double left = angle_at(-50.0, 0.0);
+  const double s = e.sweep_start_angle;
+  const double ee = e.sweep_end_angle;
+  auto in_sweep = [&](double a) {
+    double a2 = a < 0.0 ? a + 2.0 * kPi : a;
+    double e2 = ee <= s ? ee + 2.0 * kPi : ee;
+    double s2 = s < 0.0 ? s + 2.0 * kPi : s;
+    if (a2 < s2) a2 += 2.0 * kPi;
+    return a2 >= s2 - 1e-9 && a2 <= e2 + 1e-9;
+  };
+  if (!expect(in_sweep(mid) && !in_sweep(left),
+              "ellipse trim: right cap kept, left cap deleted")) {
+    return false;
+  }
+
+  // The complete region set: the lens between the elliptical arc and
+  // the cutting line is one polygon profile.
+  std::string reason;
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"ellipse-1", "line-1"}, "polygon"},
+  };
+  if (!profiles_match(document, expected, &reason)) {
+    std::cerr << "  ellipse trim profiles: " << reason << "\n";
+    for (const auto& p : params.profiles) {
+      std::cerr << "    kind=" << p.kind << " ids=";
+      for (const auto& id : p.line_ids) std::cerr << id << " ";
+      std::cerr << "\n";
+    }
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -207,7 +259,7 @@ int main() {
   if (!test_ellipse_extrude_smoke()) return 1;
   if (!test_ellipse_move_preserves_shape()) return 1;
   if (!test_construction_ellipse_excluded()) return 1;
-  if (!test_ellipse_trim_rejected()) return 1;
+  if (!test_ellipse_trim_to_arc()) return 1;
 
   std::cout << "ellipse_test passed\n";
   return 0;

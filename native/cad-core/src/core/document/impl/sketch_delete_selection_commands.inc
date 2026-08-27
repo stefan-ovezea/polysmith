@@ -81,12 +81,14 @@ DocumentState DocumentManager::delete_sketch_selection(
         add_id(slot_ids, slot.id);
       }
     }
-    // Selecting an ellipse vertex (center or axis point) deletes the
-    // whole ellipse.
+    // Selecting an ellipse vertex (center, axis point, or a partial
+    // ellipse's split endpoints) deletes the whole ellipse.
     for (const auto& ellipse : parameters.ellipses) {
       if (ellipse.center_vertex_id == point_id ||
           ellipse.axis_a_vertex_id == point_id ||
-          ellipse.axis_b_vertex_id == point_id) {
+          ellipse.axis_b_vertex_id == point_id ||
+          ellipse.start_vertex_id == point_id ||
+          ellipse.end_vertex_id == point_id) {
         add_id(ellipse_ids, ellipse.id);
       }
     }
@@ -278,6 +280,8 @@ DocumentState DocumentManager::delete_sketch_selection(
       add_id(deleted_point_ids, ellipse.center_vertex_id);
       add_id(deleted_point_ids, ellipse.axis_a_vertex_id);
       add_id(deleted_point_ids, ellipse.axis_b_vertex_id);
+      add_id(deleted_point_ids, ellipse.start_vertex_id);
+      add_id(deleted_point_ids, ellipse.end_vertex_id);
     }
   }
   for (const auto& spline : parameters.splines) {

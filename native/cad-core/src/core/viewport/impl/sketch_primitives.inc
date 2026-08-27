@@ -121,6 +121,10 @@ ViewportSketchEllipsePrimitive make_sketch_ellipse_primitive(
       .rotation = ellipse.rotation,
       .is_selected = is_selected,
       .is_construction = ellipse.is_construction,
+      .has_sweep = ellipse.has_sweep,
+      .sweep_start = ellipse.sweep_start_angle,
+      .sweep_end = ellipse.sweep_end_angle,
+      .ccw = ellipse.ccw,
       .generated_by = ellipse.generated_by,
   };
 }

@@ -250,7 +250,12 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         .cx = ellipse.center_x, .cy = ellipse.center_y, .r = ellipse.a,
         .b = ellipse.b,
         .rotation = ellipse.rotation,
-        .ccw = true,
+        .ccw = ellipse.has_sweep ? ellipse.ccw : true,
+        .sweep_start = ellipse.has_sweep ? ellipse.sweep_start_angle : 0.0,
+        .sweep_end = ellipse.has_sweep ? ellipse.sweep_end_angle : 0.0,
+        .has_sweep = ellipse.has_sweep,
+        .start_vertex_id = ellipse.start_vertex_id,
+        .end_vertex_id = ellipse.end_vertex_id,
     });
   }
   for (const auto& spline : parameters.splines) {
@@ -340,6 +345,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
                           c.pole_ys.front()});
           refs.push_back({1.0, c.end_vertex_id, c.pole_xs.back(),
                           c.pole_ys.back()});
+        } else if (c.kind == ExactCurve::Kind::kEllipse && c.has_sweep) {
+          const SketchProfilePoint sp = exact_curve_point(c, c.sweep_start);
+          const SketchProfilePoint ep = exact_curve_point(c, c.sweep_end);
+          refs.push_back({c.sweep_start, c.start_vertex_id, sp.x, sp.y});
+          refs.push_back({c.sweep_end, c.end_vertex_id, ep.x, ep.y});
         }
         return refs;
       };
@@ -411,13 +421,17 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     }
   }
 
-  // Shared-vertex-id pre-union between line/arc endpoints.
+  // Shared-vertex-id pre-union between line/arc endpoints. Partial
+  // ellipses participate like arcs; full ellipses and circles stay out
+  // (they have no endpoint vertices to share).
+  const auto is_open_curve = [&](const ExactCurve& c) {
+    return c.kind != ExactCurve::Kind::kCircle &&
+           (c.kind != ExactCurve::Kind::kEllipse || c.has_sweep);
+  };
   for (int a = 0; a < nc; ++a) {
-    if (curves[a].kind == ExactCurve::Kind::kCircle ||
-        curves[a].kind == ExactCurve::Kind::kEllipse) continue;
+    if (!is_open_curve(curves[a])) continue;
     for (int b = a + 1; b < nc; ++b) {
-      if (curves[b].kind == ExactCurve::Kind::kCircle ||
-          curves[b].kind == ExactCurve::Kind::kEllipse) continue;
+      if (!is_open_curve(curves[b])) continue;
       const ExactCurve& ca = curves[a];
       const ExactCurve& cb = curves[b];
       const bool a_is_open =
@@ -488,9 +502,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const SketchProfilePoint raw = exact_curve_point(c, p);
     const int index = static_cast<int>(nodes.size());
     nodes.push_back(ExactNode{.x = raw.x, .y = raw.y});
-    // Endpoint vertex override.
+    // Endpoint vertex override. Full ellipses have no endpoint
+    // vertices; partial ellipses do (their minted split vertices).
     if (c.kind != ExactCurve::Kind::kCircle &&
-        c.kind != ExactCurve::Kind::kEllipse) {
+        (c.kind != ExactCurve::Kind::kEllipse || c.has_sweep)) {
       const double p_start =
           (c.kind == ExactCurve::Kind::kLine ||
            c.kind == ExactCurve::Kind::kSpline)
@@ -524,10 +539,13 @@ std::vector<SketchProfileRegion> build_exact_profiles(
 
     std::vector<double> ps;
     for (double s : splits[i]) ps.push_back(canonical_param(c, s));
+    const bool full_ellipse =
+        c.kind == ExactCurve::Kind::kEllipse && !c.has_sweep;
     if (c.kind == ExactCurve::Kind::kLine) {
       ps.push_back(0.0);
       ps.push_back(1.0);
-    } else if (c.kind == ExactCurve::Kind::kArc) {
+    } else if (c.kind == ExactCurve::Kind::kArc ||
+               (c.kind == ExactCurve::Kind::kEllipse && c.has_sweep)) {
       ps.push_back(c.sweep_start);
       ps.push_back(c.sweep_end);
     } else if (c.kind == ExactCurve::Kind::kSpline) {
@@ -538,20 +556,21 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     ps.erase(std::unique(ps.begin(), ps.end(), [](double x, double y) {
                return std::abs(x - y) <= kExactParamEps;
              }), ps.end());
-    if ((c.kind == ExactCurve::Kind::kCircle ||
-         c.kind == ExactCurve::Kind::kEllipse) && ps.empty()) {
+    if ((c.kind == ExactCurve::Kind::kCircle || full_ellipse) &&
+        ps.empty()) {
       ps.push_back(0.0);  // full-closed-curve anchor
     }
 
-    // Ordered param sequence along the sweep direction.
+    // Ordered param sequence along the sweep direction. Partial
+    // ellipses order like arcs (by their stored ccw); full ellipses
+    // and circles close on themselves.
     std::vector<double> seq;
     if (c.kind == ExactCurve::Kind::kLine ||
         c.kind == ExactCurve::Kind::kSpline) {
       seq = ps;
     } else {
       for (double p : ps) seq.push_back(exact_lift_to_sweep(c, p));
-      if (c.kind == ExactCurve::Kind::kCircle ||
-          c.kind == ExactCurve::Kind::kEllipse) {
+      if (c.kind == ExactCurve::Kind::kCircle || full_ellipse) {
         std::sort(seq.begin(), seq.end());
         seq.push_back(seq.front() + 2.0 * kExactPi);  // closing entry
       } else {
@@ -574,8 +593,7 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       // full [0, 1] parameter span — the self-loop piece bounds the
       // region alone, like a full circle.
       const bool full_circle_piece =
-          (c.kind == ExactCurve::Kind::kCircle ||
-           c.kind == ExactCurve::Kind::kEllipse) &&
+          (c.kind == ExactCurve::Kind::kCircle || full_ellipse) &&
           std::abs(std::abs(p1 - p0) - 2.0 * kExactPi) <= kExactParamEps;
       const bool closed_spline_piece =
           c.kind == ExactCurve::Kind::kSpline &&
@@ -654,11 +672,12 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       node_curves[h.node_start].insert(h.curve);
       node_curves[h.node_end].insert(h.curve);
     }
-    std::vector<bool> curve_dropped(nc, false);
     for (int i = 0; i < nc; ++i) {
       const ExactCurve& c = curves[i];
+      // Full ellipses never dangle; partial ellipses are open curves
+      // and drop exactly like a dangling arc.
       if (c.kind == ExactCurve::Kind::kCircle ||
-          c.kind == ExactCurve::Kind::kEllipse) continue;
+          (c.kind == ExactCurve::Kind::kEllipse && !c.has_sweep)) continue;
       const double p_start =
           (c.kind == ExactCurve::Kind::kLine ||
            c.kind == ExactCurve::Kind::kSpline)
@@ -683,15 +702,49 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       // A curve whose endpoints land on the SAME node (a closed
       // spline) bounds its region alone — never dangling.
       if (start_node >= 0 && start_node == end_node) continue;
-      if (start_node >= 0 && node_curves[start_node].size() <= 1) {
-        curve_dropped[i] = true;
+      // A text path line is a REFERENCE curve, not profile geometry —
+      // it rides the glyph baseline and would split every glyph
+      // contour it crosses. Keep the old whole-curve drop for it.
+      bool is_text_path = false;
+      for (const auto& text_entry : parameters.texts) {
+        if (text_entry.path_entity_id.has_value() &&
+            text_entry.path_entity_id.value() == c.id) {
+          is_text_path = true;
+          break;
+        }
       }
-      if (end_node >= 0 && node_curves[end_node].size() <= 1) {
-        curve_dropped[i] = true;
+      const bool start_dangles =
+          start_node >= 0 && node_curves[start_node].size() <= 1;
+      const bool end_dangles =
+          end_node >= 0 && node_curves[end_node].size() <= 1;
+      if ((start_dangles || end_dangles) && is_text_path) {
+        for (auto& h : half_edges) {
+          if (h.curve == i) h.used = true;
+        }
+        continue;
       }
-    }
-    for (auto& h : half_edges) {
-      if (curve_dropped[h.curve]) h.used = true;
+      // Drop only the DANGLING END PIECES, not the whole curve. A
+      // line crossing a closed curve with overhanging ends must keep
+      // its interior piece — that piece bounds the lens region on
+      // both sides. Dropping the entire curve here is what silently
+      // killed regions formed by an ellipse crossed by a chord. An
+      // isolated curve (no interior splits) has a single piece
+      // incident to its dangling endpoint, so it still drops whole —
+      // the old T-junction stealing behaviour is unchanged.
+      if (!start_dangles && !end_dangles) continue;
+      for (auto& h : half_edges) {
+        if (h.curve != i) continue;
+        // Evaluate in the FORWARD frame so the twin of a dangling
+        // piece is marked too — the face walk must not traverse the
+        // stub backwards.
+        const double p0 = h.forward ? h.param_start : h.param_end;
+        const double p1 = h.forward ? h.param_end : h.param_start;
+        const bool start_piece = std::abs(p0 - p_start) <= kExactParamEps;
+        const bool end_piece = std::abs(p1 - p_end) <= kExactParamEps;
+        if ((start_dangles && start_piece) || (end_dangles && end_piece)) {
+          h.used = true;
+        }
+      }
     }
   }
 
@@ -1132,8 +1185,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const ExactCurve* circle_curve = nullptr;
     if (!face.edges.empty()) {
       const ExactCurve& c0 = curves[half_edges[face.edges[0]].curve];
+      // A partial ellipse is an open curve — its pieces can never form
+      // a full-circle region, no matter how their spans sum.
       if (c0.kind == ExactCurve::Kind::kCircle ||
-          c0.kind == ExactCurve::Kind::kEllipse) {
+          (c0.kind == ExactCurve::Kind::kEllipse && !c0.has_sweep)) {
         bool all_same = true;
         bool all_forward_same = true;
         double total_span = 0.0;

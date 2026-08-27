@@ -129,8 +129,8 @@ bool exact_angle_in_sweep(double wrapped, const ExactCurve& arc) {
 std::optional<double> exact_curve_param_at_point(const ExactCurve& c,
                                                  double x, double y) {
   if (c.kind == ExactCurve::Kind::kEllipse) {
-    // Full ellipse: the parameter is the parametric angle of the
-    // point in the ellipse frame.
+    // The parameter is the parametric angle of the point in the
+    // ellipse frame.
     const double cu = std::cos(c.rotation);
     const double su = std::sin(c.rotation);
     const double lx = (x - c.cx) * cu + (y - c.cy) * su;
@@ -140,7 +140,11 @@ std::optional<double> exact_curve_param_at_point(const ExactCurve& c,
     if (std::abs(std::hypot(nx, ny) - 1.0) > kProfileTolerance / c.r) {
       return std::nullopt;
     }
-    return exact_wrap_angle(std::atan2(ly / c.b, lx / c.r));
+    const double ang = exact_wrap_angle(std::atan2(ly / c.b, lx / c.r));
+    // A partial ellipse's material ends at its sweep — points on the
+    // complementary span of the support ellipse are NOT on this curve.
+    if (c.has_sweep && !exact_angle_in_sweep(ang, c)) return std::nullopt;
+    return ang;
   }
   if (c.kind == ExactCurve::Kind::kLine) {
     const double abx = c.x1 - c.x0, aby = c.y1 - c.y0;
@@ -329,10 +333,22 @@ void sketch_curve_intersections(const ExactCurve& A, const ExactCurve& B,
     for (const auto& [pa, pb] : recs) out.push_back({pb, pa});
   } else if (A.kind == K::kLine && B.kind == K::kEllipse) {
     line_ellipse_intersections(A, B, out);
+    // A partial ellipse's material ends at its sweep — drop hits on
+    // the complementary span of the support ellipse.
+    if (B.has_sweep) {
+      out.erase(std::remove_if(out.begin(), out.end(),
+                               [&](const std::pair<double, double>& p) {
+                                 return !exact_angle_in_sweep(p.second, B);
+                               }),
+                out.end());
+    }
   } else if (A.kind == K::kEllipse && B.kind == K::kLine) {
     std::vector<std::pair<double, double>> recs;
     line_ellipse_intersections(B, A, recs);
-    for (const auto& [pt, pa] : recs) out.push_back({pa, pt});
+    for (const auto& [pt, pa] : recs) {
+      if (A.has_sweep && !exact_angle_in_sweep(pa, A)) continue;
+      out.push_back({pa, pt});
+    }
   } else if (A.kind == K::kEllipse || B.kind == K::kEllipse) {
     // Every remaining ellipse pairing (ellipse × circle / arc /
     // ellipse / spline) goes through OCCT's 2D intersection; the

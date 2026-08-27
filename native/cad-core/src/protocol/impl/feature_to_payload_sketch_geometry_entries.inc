@@ -87,6 +87,12 @@
                            e.generated_by.has_value()
                                ? json(e.generated_by.value())
                                : json(nullptr)},
+                          {"has_sweep", e.has_sweep},
+                          {"sweep_start_angle", e.sweep_start_angle},
+                          {"sweep_end_angle", e.sweep_end_angle},
+                          {"ccw", e.ccw},
+                          {"start_vertex_id", e.start_vertex_id},
+                          {"end_vertex_id", e.end_vertex_id},
                       });
                     }
                     return ellipses;

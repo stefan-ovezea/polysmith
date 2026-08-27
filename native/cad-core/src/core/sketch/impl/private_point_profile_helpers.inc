@@ -250,6 +250,28 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                      ellipse.b * std::cos(ellipse.rotation + 1.5707963267948966),
                  ellipse.center_y +
                      ellipse.b * std::sin(ellipse.rotation + 1.5707963267948966));
+    // Partial ellipses (trim results) carry split endpoint vertices —
+    // without these the minted ids vanish from the vertex table and
+    // hover/selection/freeze stop working.
+    if (ellipse.has_sweep) {
+      const double cu = std::cos(ellipse.rotation);
+      const double su = std::sin(ellipse.rotation);
+      auto pt_at = [&](double ang) -> std::pair<double, double> {
+        const double ct = std::cos(ang), st = std::sin(ang);
+        return {ellipse.center_x + ellipse.a * ct * cu -
+                    ellipse.b * st * su,
+                ellipse.center_y + ellipse.a * ct * su +
+                    ellipse.b * st * cu};
+      };
+      if (!ellipse.start_vertex_id.empty()) {
+        auto [sx, sy] = pt_at(ellipse.sweep_start_angle);
+        append_point(ellipse.start_vertex_id, "endpoint", sx, sy);
+      }
+      if (!ellipse.end_vertex_id.empty()) {
+        auto [ex, ey] = pt_at(ellipse.sweep_end_angle);
+        append_point(ellipse.end_vertex_id, "endpoint", ex, ey);
+      }
+    }
     for (auto& vertex : parameters.vertices) {
       if (vertex.id == ellipse.axis_a_vertex_id ||
           vertex.id == ellipse.axis_b_vertex_id) {

@@ -243,6 +243,10 @@ export const viewportStateSchema = z.object({
         rotation: z.number(),
         is_selected: z.boolean(),
         is_construction: z.boolean().default(false),
+        has_sweep: z.boolean().default(false),
+        sweep_start: z.number().default(0),
+        sweep_end: z.number().default(0),
+        ccw: z.boolean().default(true),
         // See `sketch_lines.is_preview`.
         is_preview: z.boolean().default(false),
         generated_by: z.string().nullable().default(null),
@@ -480,7 +484,7 @@ export const viewportStateSchema = z.object({
           normal: z.object({ x: z.number(), y: z.number(), z: z.number() }),
         })
         .nullable(),
-      profile_kind: z.enum(["polygon", "circle"]),
+      profile_kind: z.enum(["polygon", "circle", "ellipse", "spline"]),
       profile_points: z.array(
         z.object({
           x: z.number(),

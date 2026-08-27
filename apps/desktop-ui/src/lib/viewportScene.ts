@@ -283,6 +283,10 @@ function makeSketchEllipse(
     rotation: ellipse.rotation,
     isSelected: ellipse.is_selected,
     isConstruction: ellipse.is_construction,
+    hasSweep: ellipse.has_sweep,
+    sweepStart: ellipse.sweep_start,
+    sweepEnd: ellipse.sweep_end,
+    ccw: ellipse.ccw,
     generatedBy: ellipse.generated_by ?? null,
   };
 }

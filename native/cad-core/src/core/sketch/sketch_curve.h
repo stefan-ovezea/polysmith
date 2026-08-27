@@ -51,6 +51,9 @@ struct ExactCurve {
   bool ccw = true;             // stored sweep direction (circles: ccw)
   double sweep_start = 0.0;    // wrapped angle of the entity's start param
   double sweep_end = 0.0;      // wrapped angle of the entity's end param (arcs)
+  // Partial ellipse (trim result): false = full closed ellipse.
+  // Arcs are always sweep-carrying; circles are never.
+  bool has_sweep = false;
   // spline extras — param in [0, 1]
   std::vector<double> pole_xs;
   std::vector<double> pole_ys;

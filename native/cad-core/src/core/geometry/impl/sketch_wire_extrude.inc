@@ -223,13 +223,22 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       const double d = vx.Dot(normal);
       vx.Subtract(normal.XYZ().Multiplied(d));
       const gp_Dir x_dir(vx);
-      // Full ellipse — one analytic edge.
+      // Ellipse edge — trimmed to the walked sub-span when it is a
+      // partial ellipse (a trim result); a full ellipse stays one
+      // analytic edge. Geom_Ellipse's parameter IS the sketch's
+      // ellipse-frame angle, so the trim is exact.
       GC_MakeEllipse ell(gp_Ax2(center, normal, x_dir), be.radius,
                          be.minor_radius);
       if (!ell.IsDone()) {
         throw std::runtime_error("Failed to create exact ellipse edge");
       }
-      wire_builder.Add(BRepBuilderAPI_MakeEdge(ell.Value()));
+      const double span = std::abs(be.param_end - be.param_start);
+      if (span < 2.0 * M_PI - 1e-9) {
+        wire_builder.Add(BRepBuilderAPI_MakeEdge(
+            new Geom_TrimmedCurve(ell.Value(), be.param_start, be.param_end)));
+      } else {
+        wire_builder.Add(BRepBuilderAPI_MakeEdge(ell.Value()));
+      }
       continue;
     }
 

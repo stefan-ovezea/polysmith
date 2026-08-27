@@ -280,7 +280,13 @@ bool test_tangent_circle_profile() {
   // edge list, and the circle as the source — the open corner lines
   // form no separate polygon).
   std::string reason;
+  // The corner stubs between the origin and the two tangency points
+  // are kept now (dead-end pieces drop, interior pieces stay), so the
+  // wedge between the V and the circle is a REAL closed region — the
+  // complete set is the circle plus that wedge.
   const std::vector<ExpectedProfile> expected = {
+      {.entity_ids = {after.circles[0].id, "line-1", "line-2"},
+       .kind = "polygon"},
       {.entity_ids = {after.circles[0].id}, .kind = "polygon",
        .has_source_circle_id = true},
   };

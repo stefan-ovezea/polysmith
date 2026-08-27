@@ -308,14 +308,25 @@ export function buildSketchEllipseObject(
         opacity: 0.98,
       });
   configureSketchOverlayMaterial(material);
+  // Partial ellipses (trim results) draw an open arc along the stored
+  // sweep; full ellipses draw the closed loop.
+  const hasSweep =
+    ellipse.hasSweep === true &&
+    ellipse.sweepStart !== undefined &&
+    ellipse.sweepEnd !== undefined;
+  const ccw = ellipse.ccw !== undefined ? ellipse.ccw : true;
+  let sweepStart = hasSweep ? ellipse.sweepStart! : 0;
+  let sweepEnd = hasSweep ? ellipse.sweepEnd! : Math.PI * 2;
+  if (ccw && sweepEnd <= sweepStart) sweepEnd += Math.PI * 2;
+  if (!ccw && sweepEnd >= sweepStart) sweepEnd -= Math.PI * 2;
   const curve = new THREE.EllipseCurve(
     0,
     0,
     ellipse.a,
     ellipse.b,
-    0,
-    Math.PI * 2,
-    false,
+    sweepStart,
+    sweepEnd,
+    !ccw,
     ellipse.rotation,
   );
   const { xAxis, yAxis } = resolveSketchPlaneAxes(ellipse.planeId, planeFrame);
@@ -330,7 +341,9 @@ export function buildSketchEllipseObject(
         ),
     );
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const sketchEllipse = new THREE.LineLoop(geometry, material);
+  const sketchEllipse = hasSweep
+    ? new THREE.Line(geometry, material)
+    : new THREE.LineLoop(geometry, material);
   sketchEllipse.renderOrder = 7;
   if (isDashed) {
     sketchEllipse.computeLineDistances();

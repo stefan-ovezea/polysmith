@@ -69,6 +69,11 @@ struct ViewportSketchEllipsePrimitive {
   double rotation;
   bool is_selected;
   bool is_construction = false;
+  // Partial ellipse (trim result); false = full closed ellipse.
+  bool has_sweep = false;
+  double sweep_start = 0.0;
+  double sweep_end = 0.0;
+  bool ccw = true;
   // See `ViewportSketchLinePrimitive::is_preview`.
   bool is_preview = false;
   std::string dof_status;

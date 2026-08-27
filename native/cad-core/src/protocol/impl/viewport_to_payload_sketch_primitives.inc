@@ -90,6 +90,10 @@ json to_payload(const polysmith::core::ViewportSketchEllipsePrimitive& primitive
       {"rotation", primitive.rotation},
       {"is_selected", primitive.is_selected},
       {"is_construction", primitive.is_construction},
+      {"has_sweep", primitive.has_sweep},
+      {"sweep_start", primitive.sweep_start},
+      {"sweep_end", primitive.sweep_end},
+      {"ccw", primitive.ccw},
       {"is_preview", primitive.is_preview},
       {"generated_by",
        primitive.generated_by.has_value() ? json(primitive.generated_by.value())

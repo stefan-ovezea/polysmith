@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <set>
@@ -33,6 +35,7 @@
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
 #include "core/sketch/trim_engine.h"
+#include "protocol/serialization.h"
 #include "sketch_test_utils.h"
 
 namespace {
@@ -587,6 +590,118 @@ bool test_stale_expected_revision_falls_back_to_click() {
                 "stale revision: stale index did not delete the notch");
 }
 
+bool test_ellipse_target_trim_with_two_lines() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Full ellipse a=50 b=20 with two vertical chords at x=±20 whose
+  // endpoints land exactly on the ellipse. Trimming the left cap
+  // converts the ellipse into ONE partial ellipse spanning the right
+  // side; the complete region set is the two lenses.
+  DocumentState document =
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  const double cap_y = 20.0 * std::sqrt(1.0 - (20.0 * 20.0) / (50.0 * 50.0));
+  document = manager.add_sketch_line(-20.0, -cap_y, -20.0, cap_y);
+  document = manager.add_sketch_line(20.0, -cap_y, 20.0, cap_y);
+
+  document = manager.trim_sketch_entity("ellipse-1", -45.0, 0.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.ellipses.size() == 1 && params.ellipses.front().has_sweep,
+              "ellipse target: full ellipse converts to one partial ellipse")) {
+    return false;
+  }
+
+  // Deleting the left cap leaves the kept arc with BOTH endpoints on
+  // line-1; line-2 then splits the interior into the right cap and the
+  // middle band.
+  std::string reason;
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"ellipse-1", "line-2"}, "polygon"},
+      {{"ellipse-1", "line-1", "line-2"}, "polygon"},
+  };
+  if (!polysmith::test::profiles_match(document, expected, &reason)) {
+    std::cerr << "  ellipse target profiles: " << reason << "\n";
+    for (const auto& p : params.profiles) {
+      std::cerr << "    kind=" << p.kind << " ids=";
+      for (const auto& id : p.line_ids) std::cerr << id << " ";
+      std::cerr << "\n";
+    }
+    return false;
+  }
+  return true;
+}
+
+bool test_ellipse_trim_sweep_survives_save_load() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document =
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  const double cap_y = 20.0 * std::sqrt(1.0 - (20.0 * 20.0) / (50.0 * 50.0));
+  document = manager.add_sketch_line(-20.0, -cap_y, -20.0, cap_y);
+  document = manager.trim_sketch_entity("ellipse-1", -45.0, 0.0);
+
+  const std::string path =
+      (std::filesystem::temp_directory_path() /
+       "polysmith_ellipse_trim_test.polysmith")
+          .string();
+  {
+    std::ofstream stream(path);
+    stream << polysmith::protocol::to_payload(document).dump();
+  }
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  DocumentState loaded = loaded_manager.load_document_from_path(path);
+
+  const auto& params = loaded.feature_history.back().sketch_parameters.value();
+  if (!expect(params.ellipses.size() == 1 && params.ellipses.front().has_sweep,
+              "ellipse save/load: sweep flag survives the roundtrip")) {
+    return false;
+  }
+  const auto& e = params.ellipses.front();
+  return expect(e.start_vertex_id == document.feature_history.back()
+                                          .sketch_parameters.value()
+                                          .ellipses.front()
+                                          .start_vertex_id,
+                "ellipse save/load: split vertex ids survive the roundtrip");
+}
+
+bool test_ellipse_crossed_by_overhanging_line_has_profile() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // The user's case: a chord crossing the ellipse with BOTH ends
+  // overhanging. The walk must drop only the dangling stubs and keep
+  // the interior piece — that piece bounds the two lens regions.
+  // (Dropping the whole curve killed the regions and the extrude
+  // produced no surface.)
+  DocumentState document =
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  document = manager.add_sketch_line(-60.0, -40.0, 60.0, 40.0);
+
+  std::string reason;
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"ellipse-1", "line-1"}, "polygon"},
+      {{"ellipse-1", "line-1"}, "polygon"},
+  };
+  if (!polysmith::test::profiles_match(document, expected, &reason)) {
+    std::cerr << "  ellipse-chord profiles: " << reason << "\n";
+    const auto& params =
+        document.feature_history.back().sketch_parameters.value();
+    for (const auto& p : params.profiles) {
+      std::cerr << "    kind=" << p.kind << " ids=";
+      for (const auto& id : p.line_ids) std::cerr << id << " ";
+      std::cerr << "\n";
+    }
+    return false;
+  }
+  return true;
+}
+
 bool test_notch_trim_deletes_the_highlighted_segment() {
   DocumentManager manager;
   manager.create_document();
@@ -1029,6 +1144,9 @@ int main() {
     if (!test_circle_crossing_only_ellipse_keeps_circle()) return 1;
     if (!test_line_ellipse_profile_closes()) return 1;
     if (!test_stale_expected_revision_falls_back_to_click()) return 1;
+    if (!test_ellipse_target_trim_with_two_lines()) return 1;
+    if (!test_ellipse_trim_sweep_survives_save_load()) return 1;
+    if (!test_ellipse_crossed_by_overhanging_line_has_profile()) return 1;
     if (!test_notch_trim_deletes_the_highlighted_segment()) return 1;
     if (!test_arc_distance_metric_beats_chord_for_long_segments()) return 1;
     if (!test_degenerate_arc_never_becomes_a_full_circle_profile()) return 1;

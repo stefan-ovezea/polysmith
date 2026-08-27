@@ -136,13 +136,20 @@ ExactCurve trim_target_curve(const SketchArc& arc) {
 }
 
 ExactCurve trim_target_curve(const SketchEllipse& ellipse) {
-  return ExactCurve{.kind = ExactCurve::Kind::kEllipse,
-                    .id = ellipse.id,
-                    .cx = ellipse.center_x, .cy = ellipse.center_y,
-                    .r = ellipse.a,
-                    .b = ellipse.b,
-                    .rotation = ellipse.rotation,
-                    .ccw = true};
+  return ExactCurve{
+      .kind = ExactCurve::Kind::kEllipse,
+      .id = ellipse.id,
+      .cx = ellipse.center_x, .cy = ellipse.center_y,
+      .r = ellipse.a,
+      .b = ellipse.b,
+      .rotation = ellipse.rotation,
+      .ccw = ellipse.has_sweep ? ellipse.ccw : true,
+      .sweep_start = ellipse.has_sweep ? ellipse.sweep_start_angle : 0.0,
+      .sweep_end = ellipse.has_sweep ? ellipse.sweep_end_angle : 0.0,
+      .has_sweep = ellipse.has_sweep,
+      .start_vertex_id = ellipse.start_vertex_id,
+      .end_vertex_id = ellipse.end_vertex_id,
+  };
 }
 
 ExactCurve trim_target_curve(const SketchSpline& spline) {
@@ -157,5 +164,6 @@ ExactCurve trim_target_curve(const SketchSpline& spline) {
 #include "core/sketch/impl/trim_line_circle_intersections.inc"
 #include "core/sketch/impl/trim_line_circle_segments.inc"
 #include "core/sketch/impl/trim_arc_operations.inc"
+#include "core/sketch/impl/trim_ellipse_operations.inc"
 
 }  // namespace polysmith::core

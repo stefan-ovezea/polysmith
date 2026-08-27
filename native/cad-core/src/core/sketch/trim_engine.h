@@ -18,7 +18,7 @@ struct TrimIntersection {
 
 // A candidate segment of the target entity after splitting.
 struct TrimSegment {
-  enum Kind { LINE_SEGMENT, ARC_SEGMENT };
+  enum Kind { LINE_SEGMENT, ARC_SEGMENT, ELLIPSE_SEGMENT };
   Kind kind;
   double param_start;          // parameter range along the original entity
   double param_end;
@@ -111,6 +111,22 @@ std::vector<TrimSegment> split_arc_at_intersections(
 int select_clicked_segment(
     const std::vector<TrimSegment>& segments,
     const SketchArc& original_arc,
+    double click_x,
+    double click_y);
+
+// Intersection detection / splitting / selection — ellipses.
+
+std::vector<TrimIntersection> find_all_intersections(
+    const SketchEllipse& target,
+    const SketchFeatureParameters& params);
+
+std::vector<TrimSegment> split_ellipse_at_intersections(
+    const SketchEllipse& ellipse,
+    const std::vector<TrimIntersection>& intersections);
+
+int select_clicked_segment(
+    const std::vector<TrimSegment>& segments,
+    const SketchEllipse& original_ellipse,
     double click_x,
     double click_y);
 

@@ -327,6 +327,15 @@ void transform_sketch_entities(FeatureEntry& feature,
             .b = ellipse.b * scale,
             .rotation = ellipse.rotation + angle_rad,
             .is_construction = ellipse.is_construction,
+            // The sweep is stored in the ellipse's own frame, which
+            // rotates with the shape — angles and ccw are invariant
+            // under the transform.
+            .has_sweep = ellipse.has_sweep,
+            .sweep_start_angle = ellipse.sweep_start_angle,
+            .sweep_end_angle = ellipse.sweep_end_angle,
+            .ccw = ellipse.ccw,
+            .start_vertex_id = copy_vertex(ellipse.start_vertex_id),
+            .end_vertex_id = copy_vertex(ellipse.end_vertex_id),
         });
       }
       for (const auto& slot : parameters.slots) {

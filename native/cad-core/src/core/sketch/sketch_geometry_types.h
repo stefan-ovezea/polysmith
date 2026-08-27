@@ -126,6 +126,16 @@ struct SketchEllipse {
   double rotation;    // major-axis angle in sketch-plane coordinates
   bool is_construction = false;
   std::optional<std::string> generated_by;
+  // Partial ellipse (a trim result). has_sweep=false means the full
+  // closed ellipse (creation and all pre-trim saves).  Angles are
+  // ellipse-frame parametric angles (radians) — the same convention
+  // exact_curve_point uses for kEllipse.
+  bool has_sweep = false;
+  double sweep_start_angle = 0.0;
+  double sweep_end_angle = 0.0;
+  bool ccw = true;
+  std::string start_vertex_id;  // minted/shared split vertices (partial only)
+  std::string end_vertex_id;
 };
 
 // Control-point B-spline entity (feature/sketch). v1: the user's
