@@ -241,7 +241,8 @@ TopoDS_Shape build_single_depth_extrude(
                                      parameters.side1.taper_angle_degrees);
   }
   if (parameters.profile_kind == "polygon" ||
-      parameters.profile_kind == "open_chain") {
+      parameters.profile_kind == "open_chain" ||
+      parameters.profile_kind == "ellipse") {
     // When the extrude was sourced from a sketch profile and the
     // profile region carries ordered edge IDs, bypass the polygon
     // wire path and build exact OCCT edges (lines via GC_MakeSegment,
@@ -250,7 +251,8 @@ TopoDS_Shape build_single_depth_extrude(
     // introduce.
     if (!parameters.sketch_edge_ids.empty() &&
         (!parameters.sketch_lines.empty() || !parameters.sketch_arcs.empty() ||
-         !parameters.sketch_circles.empty())) {
+         !parameters.sketch_circles.empty() ||
+         !parameters.boundary_edges.empty())) {
       // When every edge on this profile boundary belongs to the same
       // circle, route through the dedicated cylinder builder — simpler
       // and more robust than building a wire + face + prism.

@@ -3,6 +3,9 @@ constexpr double kReferencePlaneSize = 120.0;
 constexpr double kSketchPlaneOffset = 0.2;
 constexpr double kLineDimensionOffset = 12.0;
 constexpr double kCircleDimensionOffset = 8.0;
+// Minimum clearance between an arc and its arc-length extension arc, so
+// the extension never falls inside the geometry it measures.
+constexpr double kArcLengthMinGap = 6.0;
 constexpr double kConstraintBadgeOffset = 3.5;
 constexpr double kPi = 3.14159265358979323846264338327950288;
 

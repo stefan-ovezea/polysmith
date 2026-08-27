@@ -27,10 +27,14 @@
   // line endpoints share the same id space, keeping the points
   // graph uniform.
   int next_sketch_arc_id_ = 1;
+  int next_sketch_ellipse_id_ = 1;
+  int next_sketch_spline_id_ = 1;
+  int next_sketch_slot_id_ = 1;
   // Independent counter for sketch fillet ids ("fillet-N"). Trim
   // points and the generated arc still come from the existing line /
   // arc counters so the id namespaces stay uniform.
   int next_sketch_fillet_id_ = 1;
+  int next_sketch_chamfer_id_ = 1;
   // Independent counter for the Project tool's standalone projected
   // points ("projected-point-N"). Kept separate from the line / arc
   // endpoint counter so user-visible debug ids stay readable.

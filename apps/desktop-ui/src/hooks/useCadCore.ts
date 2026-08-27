@@ -11,6 +11,18 @@ import {
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
   makeAddSketchFilletCommand,
+  makeAddSketchChamferCommand,
+  makeUpdateSketchChamferCommand,
+  makeDeleteSketchChamferCommand,
+  makeAddSketchEllipseCommand,
+  makeAddSketchSlotCommand,
+  makeAddSketchSplineCommand,
+  makeUpdateSketchSlotCommand,
+  makeExtendSketchEntityCommand,
+  makeOffsetSketchEntityCommand,
+  makeTransformSketchEntitiesCommand,
+  makeCreateLinearArrayCommand,
+  makeCreateCircularArrayCommand,
   makeAddSketchTextCommand,
   makeUpdateSketchFilletRadiusCommand,
   makeUpdateSketchTextCommand,
@@ -36,6 +48,7 @@ import {
   makeAddSketchDistanceDimensionCommand,
   makeAddSketchLineLengthDimensionCommand,
   makeAddSketchLineAngleDimensionCommand,
+  makeAddSketchArcLengthDimensionCommand,
   makeAddSketchArcRadiusDimensionCommand,
   makeAddSketchCircleRadiusDimensionCommand,
   makeAddSketchVertexDistanceDimensionCommand,
@@ -855,6 +868,10 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    addSketchArcLengthDimension: async (arcId: string) => {
+      await sendCoreCommand(makeAddSketchArcLengthDimensionCommand(arcId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     addSketchArcRadiusDimension: async (arcId: string) => {
       await sendCoreCommand(
         makeAddSketchArcRadiusDimensionCommand(arcId),
@@ -893,6 +910,24 @@ export function useCadCore() {
     ) => {
       await sendCoreCommand(
         makeAddSketchCircleCommand(centerX, centerY, radius, isConstruction),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchCircleMode: async (
+      mode: string,
+      isConstruction: boolean,
+      inputs: {
+        p1?: [number, number];
+        p2?: [number, number];
+        p3?: [number, number];
+        lineAId?: string;
+        lineBId?: string;
+        lineCId?: string;
+        hint?: [number, number];
+      },
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchCircleCommand(0, 0, 0, isConstruction, mode, inputs),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -953,6 +988,178 @@ export function useCadCore() {
     },
     deleteSketchFillet: async (filletId: string) => {
       await sendCoreCommand(makeDeleteSketchFilletCommand(filletId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchChamfer: async (
+      cornerPointId: string,
+      lineAId: string,
+      lineBId: string,
+      distanceA: number,
+      distanceB: number,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchChamferCommand(
+          cornerPointId,
+          lineAId,
+          lineBId,
+          distanceA,
+          distanceB,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchChamfer: async (
+      chamferId: string,
+      distanceA: number,
+      distanceB: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchChamferCommand(chamferId, distanceA, distanceB),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    deleteSketchChamfer: async (chamferId: string) => {
+      await sendCoreCommand(makeDeleteSketchChamferCommand(chamferId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchEllipse: async (
+      centerX: number,
+      centerY: number,
+      axisAX: number,
+      axisAY: number,
+      axisBX: number,
+      axisBY: number,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchEllipseCommand(
+          centerX,
+          centerY,
+          axisAX,
+          axisAY,
+          axisBX,
+          axisBY,
+          isConstruction,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchSpline: async (
+      points: Array<{ x: number; y: number }>,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchSplineCommand(points, isConstruction),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchSlot: async (
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+      isConstruction: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchSlotCommand(
+          centerX,
+          centerY,
+          length,
+          radius,
+          rotation,
+          isConstruction,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchSlot: async (
+      slotId: string,
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchSlotCommand(
+          slotId,
+          centerX,
+          centerY,
+          length,
+          radius,
+          rotation,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    extendSketchEntity: async (
+      entityId: string,
+      clickX: number,
+      clickY: number,
+    ) => {
+      await sendCoreCommand(
+        makeExtendSketchEntityCommand(entityId, clickX, clickY),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    offsetSketchEntity: async (entityId: string, distance: number) => {
+      await sendCoreCommand(
+        makeOffsetSketchEntityCommand(entityId, distance),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    transformSketchEntities: async (
+      entityIds: string[],
+      dx: number,
+      dy: number,
+      centerX: number,
+      centerY: number,
+      angleDeg: number,
+      scale: number,
+      copy: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeTransformSketchEntitiesCommand(
+          entityIds,
+          dx,
+          dy,
+          centerX,
+          centerY,
+          angleDeg,
+          scale,
+          copy,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createLinearArray: async (
+      entityIds: string[],
+      dx: number,
+      dy: number,
+      count: number,
+    ) => {
+      await sendCoreCommand(
+        makeCreateLinearArrayCommand(entityIds, dx, dy, count),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    createCircularArray: async (
+      entityIds: string[],
+      centerX: number,
+      centerY: number,
+      count: number,
+      totalAngleDeg: number,
+    ) => {
+      await sendCoreCommand(
+        makeCreateCircularArrayCommand(
+          entityIds,
+          centerX,
+          centerY,
+          count,
+          totalAngleDeg,
+        ),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchText: async (params: {
@@ -1071,8 +1278,24 @@ export function useCadCore() {
       await sendCoreCommand(makeDeleteParameterCommand(name));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    trimSketchEntity: async (entityId: string, clickX: number, clickY: number) => {
-      await sendCoreCommand(makeTrimSketchEntityCommand(entityId, clickX, clickY));
+    trimSketchEntity: async (
+      entityId: string,
+      clickX: number,
+      clickY: number,
+      segmentIndex?: number,
+      expectedRevision?: number,
+      previewId?: string,
+    ) => {
+      await sendCoreCommand(
+        makeTrimSketchEntityCommand(
+          entityId,
+          clickX,
+          clickY,
+          segmentIndex,
+          expectedRevision,
+          previewId,
+        ),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     deleteSketchSelection: async (

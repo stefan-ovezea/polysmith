@@ -494,6 +494,16 @@ export function makeAddSketchCircleRadiusDimensionCommand(
 }
 
 
+export function makeAddSketchArcLengthDimensionCommand(
+  arcId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_arc_length_dimension",
+    payload: { arc_id: arcId },
+  };
+}
+
 export function makeAddSketchArcRadiusDimensionCommand(
   arcId: string,
 ): CoreCommand {
@@ -563,6 +573,16 @@ export function makeAddSketchCircleCommand(
   centerY: number,
   radius: number,
   isConstruction = false,
+  mode?: string,
+  modeInputs?: {
+    p1?: [number, number];
+    p2?: [number, number];
+    p3?: [number, number];
+    lineAId?: string;
+    lineBId?: string;
+    lineCId?: string;
+    hint?: [number, number];
+  },
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -572,6 +592,14 @@ export function makeAddSketchCircleCommand(
       center_y: centerY,
       radius,
       is_construction: isConstruction,
+      ...(mode ? { mode } : {}),
+      ...(modeInputs?.p1 ? { p1_x: modeInputs.p1[0], p1_y: modeInputs.p1[1] } : {}),
+      ...(modeInputs?.p2 ? { p2_x: modeInputs.p2[0], p2_y: modeInputs.p2[1] } : {}),
+      ...(modeInputs?.p3 ? { p3_x: modeInputs.p3[0], p3_y: modeInputs.p3[1] } : {}),
+      ...(modeInputs?.lineAId ? { line_a_id: modeInputs.lineAId } : {}),
+      ...(modeInputs?.lineBId ? { line_b_id: modeInputs.lineBId } : {}),
+      ...(modeInputs?.lineCId ? { line_c_id: modeInputs.lineCId } : {}),
+      ...(modeInputs?.hint ? { hint_x: modeInputs.hint[0], hint_y: modeInputs.hint[1] } : {}),
     },
   };
 }
@@ -692,6 +720,139 @@ export function makeDeleteSketchFilletCommand(filletId: string): CoreCommand {
     type: "delete_sketch_fillet",
     payload: {
       fillet_id: filletId,
+    },
+  };
+}
+
+// Sketch chamfer command factories (mirror the fillet trio with two
+// distances).
+export function makeAddSketchChamferCommand(
+  cornerVertexId: string,
+  lineAId: string,
+  lineBId: string,
+  distanceA: number,
+  distanceB: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_chamfer",
+    payload: {
+      corner_vertex_id: cornerVertexId,
+      line_a_id: lineAId,
+      line_b_id: lineBId,
+      distance_a: distanceA,
+      distance_b: distanceB,
+    },
+  };
+}
+
+export function makeUpdateSketchChamferCommand(
+  chamferId: string,
+  distanceA: number,
+  distanceB: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_chamfer",
+    payload: {
+      chamfer_id: chamferId,
+      distance_a: distanceA,
+      distance_b: distanceB,
+    },
+  };
+}
+
+export function makeDeleteSketchChamferCommand(
+  chamferId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "delete_sketch_chamfer",
+    payload: {
+      chamfer_id: chamferId,
+    },
+  };
+}
+
+// Sketch ellipse / slot command factories.
+export function makeAddSketchEllipseCommand(
+  centerX: number,
+  centerY: number,
+  axisAX: number,
+  axisAY: number,
+  axisBX: number,
+  axisBY: number,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_ellipse",
+    payload: {
+      center_x: centerX,
+      center_y: centerY,
+      axis_a_x: axisAX,
+      axis_a_y: axisAY,
+      axis_b_x: axisBX,
+      axis_b_y: axisBY,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeAddSketchSplineCommand(
+  points: Array<{ x: number; y: number }>,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_spline",
+    payload: {
+      points,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeAddSketchSlotCommand(
+  centerX: number,
+  centerY: number,
+  length: number,
+  radius: number,
+  rotation: number,
+  isConstruction: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_slot",
+    payload: {
+      center_x: centerX,
+      center_y: centerY,
+      length,
+      radius,
+      rotation,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+export function makeUpdateSketchSlotCommand(
+  slotId: string,
+  centerX: number,
+  centerY: number,
+  length: number,
+  radius: number,
+  rotation: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_slot",
+    payload: {
+      slot_id: slotId,
+      center_x: centerX,
+      center_y: centerY,
+      length,
+      radius,
+      rotation,
     },
   };
 }
@@ -831,10 +992,107 @@ export function makeUpdateSketchDimensionDisplayCommand(
 }
 
 
+export function makeExtendSketchEntityCommand(
+  entityId: string,
+  clickX: number,
+  clickY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "extend_sketch_entity",
+    payload: {
+      entity_id: entityId,
+      click_x: clickX,
+      click_y: clickY,
+    },
+  };
+}
+
+export function makeOffsetSketchEntityCommand(
+  entityId: string,
+  distance: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "offset_sketch_entity",
+    payload: {
+      entity_id: entityId,
+      distance,
+    },
+  };
+}
+
+export function makeCreateLinearArrayCommand(
+  entityIds: string[],
+  dx: number,
+  dy: number,
+  count: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_linear_array",
+    payload: {
+      entity_ids: entityIds,
+      dx,
+      dy,
+      count,
+    },
+  };
+}
+
+export function makeCreateCircularArrayCommand(
+  entityIds: string[],
+  centerX: number,
+  centerY: number,
+  count: number,
+  totalAngleDeg: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "create_circular_array",
+    payload: {
+      entity_ids: entityIds,
+      center_x: centerX,
+      center_y: centerY,
+      count,
+      total_angle_deg: totalAngleDeg,
+    },
+  };
+}
+
+export function makeTransformSketchEntitiesCommand(
+  entityIds: string[],
+  dx: number,
+  dy: number,
+  centerX: number,
+  centerY: number,
+  angleDeg: number,
+  scale: number,
+  copy: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "transform_sketch_entities",
+    payload: {
+      entity_ids: entityIds,
+      dx,
+      dy,
+      center_x: centerX,
+      center_y: centerY,
+      angle_deg: angleDeg,
+      scale,
+      copy,
+    },
+  };
+}
+
 export function makeTrimSketchEntityCommand(
   entityId: string,
   clickX: number,
   clickY: number,
+  segmentIndex?: number,
+  expectedRevision?: number,
+  previewId?: string,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -843,6 +1101,11 @@ export function makeTrimSketchEntityCommand(
       entity_id: entityId,
       click_x: clickX,
       click_y: clickY,
+      ...(segmentIndex === undefined ? {} : { segment_index: segmentIndex }),
+      ...(expectedRevision === undefined
+        ? {}
+        : { expected_revision: expectedRevision }),
+      ...(previewId === undefined ? {} : { preview_id: previewId }),
     },
   };
 }

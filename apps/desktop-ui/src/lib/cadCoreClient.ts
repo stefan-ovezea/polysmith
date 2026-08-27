@@ -21,6 +21,66 @@ export async function sendCoreCommand(command: CoreCommand): Promise<void> {
   });
 }
 
+// ── request/response correlation ───────────────────────────────────
+// Commands are fire-and-forget: sendCoreCommand resolves when the
+// command reaches the core's stdin, while responses arrive later as
+// cad-core-event messages. Tools that need to know a specific command
+// was applied (instead of guessing from the latest document_state)
+// can await the matching response here. The core echoes the command id
+// on its response events, so correlation is by id — no ordering
+// assumptions.
+
+interface PendingCommand {
+  resolve: (message: Record<string, unknown>) => void;
+  reject: (reason: Error) => void;
+  timeoutId: number;
+}
+
+const pendingCommands = new Map<string, PendingCommand>();
+
+export function resolvePendingCommand(
+  id: string,
+  message: Record<string, unknown>,
+): boolean {
+  const pending = pendingCommands.get(id);
+  if (pending === undefined) return false;
+  pendingCommands.delete(id);
+  window.clearTimeout(pending.timeoutId);
+  pending.resolve(message);
+  return true;
+}
+
+export function rejectPendingCommand(id: string, reason: Error): boolean {
+  const pending = pendingCommands.get(id);
+  if (pending === undefined) return false;
+  pendingCommands.delete(id);
+  window.clearTimeout(pending.timeoutId);
+  pending.reject(reason);
+  return true;
+}
+
+export async function sendCoreCommandAwaited(
+  command: CoreCommand & { id: string },
+  timeoutMs = 10000,
+): Promise<Record<string, unknown>> {
+  const id = command.id;
+  const timeoutId = window.setTimeout(() => {
+    rejectPendingCommand(
+      id,
+      new Error(`core did not respond to ${command.type} (${id})`),
+    );
+  }, timeoutMs);
+  const response = new Promise<Record<string, unknown>>((resolve, reject) => {
+    pendingCommands.set(id, { resolve, reject, timeoutId });
+  });
+  try {
+    await sendCoreCommand(command);
+  } catch (error) {
+    rejectPendingCommand(id, error as Error);
+  }
+  return response;
+}
+
 // The Rust bridge gzip-compresses events larger than 64KB (see
 // protocol.rs emit_core_event). Decompress before handing the message
 // to the handler; events are processed strictly in arrival order so
@@ -55,6 +115,16 @@ export async function onCadCoreEvent(
     eventChain = eventChain
       .then(() => decodeCoreEventPayload(event.payload))
       .then((message) => {
+        // The core echoes the command id on every response event —
+        // settle any awaited command BEFORE the handler processes the
+        // message, so awaiters never race their own UI update.
+        const id =
+          typeof message === "object" && message !== null
+            ? (message as { id?: unknown }).id
+            : undefined;
+        if (typeof id === "string" && pendingCommands.has(id)) {
+          resolvePendingCommand(id, message as Record<string, unknown>);
+        }
         handler(message);
       })
       .catch((error) => {

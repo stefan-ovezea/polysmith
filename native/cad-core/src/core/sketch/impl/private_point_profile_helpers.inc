@@ -91,6 +91,104 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   return std::nullopt;
 }
 
+// Order-independent shared-point resolution for the trim engine.
+//
+// `find_coincident_endpoint` is a FIRST-MATCH-WINS scan — the result
+// depends on which container happens to be walked first, and a freshly
+// pushed sibling entity can win the race purely by iteration order
+// (the "works only by luck" bug). This resolver instead collects every
+// candidate within the same coincidence tolerance `points_match` uses
+// and returns the NEAREST one, ties broken lexicographically by id so
+// the answer is identical regardless of container order.
+//
+// `excluded_entity_ids` names entities under construction (the target
+// being trimmed and any sibling created by this trim) — their endpoint
+// vertices must never be returned as the "shared" vertex, or the split
+// would weld to geometry that is about to change. It SELECTS an
+// existing id; it never moves the query point — callers keep the exact
+// intersection coordinate and adopt the id, which is what makes the
+// profile walk's analytic-union and touch records fire deterministically.
+std::optional<std::tuple<std::string, double, double>> resolve_shared_point(
+    const SketchFeatureParameters& parameters,
+    double x,
+    double y,
+    const std::unordered_set<std::string>& excluded_entity_ids) {
+  double best_dist_sq = std::numeric_limits<double>::max();
+  std::optional<std::tuple<std::string, double, double>> best;
+
+  auto consider = [&](const std::string& candidate_id,
+                      double cx,
+                      double cy) {
+    const double dx = cx - x, dy = cy - y;
+    const double dist_sq = dx * dx + dy * dy;
+    if (best.has_value()) {
+      if (dist_sq > best_dist_sq) return;
+      if (dist_sq == best_dist_sq && candidate_id >= std::get<0>(*best)) return;
+    }
+    best_dist_sq = dist_sq;
+    best = std::tuple<std::string, double, double>{candidate_id, cx, cy};
+  };
+
+  for (const auto& line : parameters.lines) {
+    if (excluded_entity_ids.count(line.id)) continue;
+    if (points_match(line.start_x, line.start_y, x, y))
+      consider(line.start_vertex_id, line.start_x, line.start_y);
+    if (points_match(line.end_x, line.end_y, x, y))
+      consider(line.end_vertex_id, line.end_x, line.end_y);
+  }
+  for (const auto& arc : parameters.arcs) {
+    if (excluded_entity_ids.count(arc.id)) continue;
+    if (points_match(arc.start_x, arc.start_y, x, y))
+      consider(arc.start_vertex_id, arc.start_x, arc.start_y);
+    if (points_match(arc.end_x, arc.end_y, x, y))
+      consider(arc.end_vertex_id, arc.end_x, arc.end_y);
+  }
+  for (const auto& circle : parameters.circles) {
+    if (excluded_entity_ids.count(circle.id)) continue;
+    if (points_match(circle.center_x, circle.center_y, x, y))
+      consider(circle.center_vertex_id, circle.center_x, circle.center_y);
+  }
+  for (const auto& ellipse : parameters.ellipses) {
+    if (excluded_entity_ids.count(ellipse.id)) continue;
+    if (points_match(ellipse.center_x, ellipse.center_y, x, y))
+      consider(ellipse.center_vertex_id, ellipse.center_x, ellipse.center_y);
+    const double ax_x =
+        ellipse.center_x + ellipse.a * std::cos(ellipse.rotation);
+    const double ax_y =
+        ellipse.center_y + ellipse.a * std::sin(ellipse.rotation);
+    if (points_match(ax_x, ax_y, x, y))
+      consider(ellipse.axis_a_vertex_id, ax_x, ax_y);
+    const double bx_x = ellipse.center_x +
+                        ellipse.b *
+                            std::cos(ellipse.rotation + 1.5707963267948966);
+    const double bx_y = ellipse.center_y +
+                        ellipse.b *
+                            std::sin(ellipse.rotation + 1.5707963267948966);
+    if (points_match(bx_x, bx_y, x, y))
+      consider(ellipse.axis_b_vertex_id, bx_x, bx_y);
+  }
+  for (const auto& spline : parameters.splines) {
+    if (excluded_entity_ids.count(spline.id)) continue;
+    for (size_t i = 0;
+         i < spline.pole_xs.size() && i < spline.pole_vertex_ids.size(); ++i) {
+      if (points_match(spline.pole_xs[i], spline.pole_ys[i], x, y))
+        consider(spline.pole_vertex_ids[i], spline.pole_xs[i],
+                 spline.pole_ys[i]);
+    }
+  }
+  for (const auto& projected : parameters.projected_points) {
+    if (points_match(projected.x, projected.y, x, y))
+      consider(projected.id, projected.x, projected.y);
+  }
+  for (const auto& vertex : parameters.vertices) {
+    if (excluded_entity_ids.count(vertex.id)) continue;
+    if (points_match(vertex.x, vertex.y, x, y))
+      consider(vertex.id, vertex.x, vertex.y);
+  }
+
+  return best;
+}
+
 void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   parameters.vertices.clear();
 
@@ -137,6 +235,68 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     // sync at creation; v1 freezes them after that).
     append_point(arc.start_vertex_id, "endpoint", arc.start_x, arc.start_y);
     append_point(arc.end_vertex_id, "endpoint", arc.end_x, arc.end_y);
+  }
+
+  for (const auto& ellipse : parameters.ellipses) {
+    // Center + the two axis points.  The axis points are fixed at
+    // creation (frozen-shape v1 — no solver registration yet).
+    append_point(ellipse.center_vertex_id, "center", ellipse.center_x,
+                 ellipse.center_y);
+    append_point(ellipse.axis_a_vertex_id, "endpoint",
+                 ellipse.center_x + ellipse.a * std::cos(ellipse.rotation),
+                 ellipse.center_y + ellipse.a * std::sin(ellipse.rotation));
+    append_point(ellipse.axis_b_vertex_id, "endpoint",
+                 ellipse.center_x +
+                     ellipse.b * std::cos(ellipse.rotation + 1.5707963267948966),
+                 ellipse.center_y +
+                     ellipse.b * std::sin(ellipse.rotation + 1.5707963267948966));
+    // Partial ellipses (trim results) carry split endpoint vertices —
+    // without these the minted ids vanish from the vertex table and
+    // hover/selection/freeze stop working.
+    if (ellipse.has_sweep) {
+      const double cu = std::cos(ellipse.rotation);
+      const double su = std::sin(ellipse.rotation);
+      auto pt_at = [&](double ang) -> std::pair<double, double> {
+        const double ct = std::cos(ang), st = std::sin(ang);
+        return {ellipse.center_x + ellipse.a * ct * cu -
+                    ellipse.b * st * su,
+                ellipse.center_y + ellipse.a * ct * su +
+                    ellipse.b * st * cu};
+      };
+      if (!ellipse.start_vertex_id.empty()) {
+        auto [sx, sy] = pt_at(ellipse.sweep_start_angle);
+        append_point(ellipse.start_vertex_id, "endpoint", sx, sy);
+      }
+      if (!ellipse.end_vertex_id.empty()) {
+        auto [ex, ey] = pt_at(ellipse.sweep_end_angle);
+        append_point(ellipse.end_vertex_id, "endpoint", ex, ey);
+      }
+    }
+    for (auto& vertex : parameters.vertices) {
+      if (vertex.id == ellipse.axis_a_vertex_id ||
+          vertex.id == ellipse.axis_b_vertex_id) {
+        vertex.is_fixed = true;
+      }
+    }
+  }
+
+  for (const auto& spline : parameters.splines) {
+    // Poles are regular movable "endpoint" vertices — pole dragging,
+    // snapping, and shared-vertex propagation work unchanged.
+    for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+      append_point(spline.pole_vertex_ids[i], "endpoint", spline.pole_xs[i],
+                   spline.pole_ys[i]);
+    }
+  }
+
+  for (const auto& slot : parameters.slots) {
+    // The slot center is a regular movable vertex (like a circle
+    // center) so it joins the vertex graph for distance dimensions.
+    // The generated corner / arc-center vertices arrive via the
+    // line/arc loops above and are re-marked fixed by the
+    // "vertex-slot-" prefix pass in refresh_sketch_derived_state.
+    append_point(slot.center_vertex_id, "center", slot.center_x,
+                 slot.center_y);
   }
 
   // Emit a quadrant vertex unless a vertex with the same id already
@@ -246,6 +406,17 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                  "fillet_corner",
                  fillet.corner_x,
                  fillet.corner_y);
+  }
+
+  // Same bookkeeping for chamfer corners: the corner vertex must stay
+  // alive for delete to restore, but it must not render as a visible
+  // point. Reuse the "fillet_corner" kind so the frontend skip rule
+  // covers both.
+  for (const auto& chamfer : parameters.chamfers) {
+    append_point(chamfer.corner_vertex_id,
+                 "fillet_corner",
+                 chamfer.corner_x,
+                 chamfer.corner_y);
   }
 
   // Projected points are now emitted at the top of rebuild_sketch_vertices
@@ -445,6 +616,17 @@ void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
     const auto center_id = circle_center_vertex_id(circle);
     if (const auto* cv = find_v(center_id)) {
       circle.center_x = cv->x; circle.center_y = cv->y;
+    }
+  }
+
+  // Spline poles: the vertex table is authoritative — any vertex move
+  // (drag, solver solve, shared-point propagation) re-fits the curve.
+  for (auto& spline : parameters.splines) {
+    for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+      if (const auto* pv = find_v(spline.pole_vertex_ids[i])) {
+        spline.pole_xs[i] = pv->x;
+        spline.pole_ys[i] = pv->y;
+      }
     }
   }
 }

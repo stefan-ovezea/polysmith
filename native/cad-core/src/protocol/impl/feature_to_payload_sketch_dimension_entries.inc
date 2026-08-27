@@ -9,7 +9,11 @@
                           {"entity_id", dimension.entity_id},
                           {"secondary_entity_id",
                            dimension.secondary_entity_id},
-                          {"value", dimension.value},
+                          {"value",
+                           dimension.kind == "circle_radius" &&
+                                   dimension.display_as != "radius"
+                               ? dimension.value * 2.0
+                               : dimension.value},
                           {"expression", dimension.expression},
                           {"driven", dimension.driven},
                           {"is_auto", dimension.is_auto},

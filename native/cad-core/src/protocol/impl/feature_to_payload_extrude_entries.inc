@@ -251,6 +251,9 @@
                           {"center_y", edge.center_y},
                           {"radius", edge.radius},
                           {"ccw", edge.ccw},
+                          {"spline_degree", edge.spline_degree},
+                          {"spline_pole_xs", edge.spline_pole_xs},
+                          {"spline_pole_ys", edge.spline_pole_ys},
                       });
                     }
                     return arr;

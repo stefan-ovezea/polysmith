@@ -10,6 +10,7 @@ import {
   handleDimensionToolClick,
 } from "./dimensionToolPicking";
 import { handleSketchFilletClick } from "./sketchFilletPicking";
+import { handleSketchChamferClick } from "./sketchChamferPicking";
 import { handleSketchTrimClick, type TrimPlaneFrame } from "./trimHoverPreview";
 import type { SelectedConstraintState } from "./contextMenuState";
 import {
@@ -41,6 +42,14 @@ export interface ActiveSketchPointerUpContext {
   sketchEntityObjectById: ReadonlyMap<string, THREE.Line | THREE.LineLoop>;
   sketchPointObjects: readonly THREE.Mesh[];
   resolveFilletPoint: () => FilletPoint | null;
+  // Sketch Chamfer tool: same snapped-corner resolution as the
+  // fillet; the distances live in the App-side chamfer session.
+  resolveChamferPoint: () => FilletPoint | null;
+  addSketchChamfer: (
+    cornerPointId: string,
+    lineAId: string,
+    lineBId: string,
+  ) => Promise<void>;
   // Sketch Text tool: place a new text anchored at the given
   // sketch-local point (core defaults; the panel rebinds to the new
   // text id when the document round-trip lands).
@@ -49,6 +58,38 @@ export interface ActiveSketchPointerUpContext {
   // segment (`generated_by: "text:<id>"`); App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText?: (textId: string) => void;
+  // Select-mode slot pick: the hit is a slot's generated line/arc;
+  // App opens the Slot panel bound to the owning slot.
+  onPickSketchSlot?: (slotId: string) => void;
+  // Select-mode chamfer pick: the hit is a chamfer's generated line;
+  // App opens the Chamfer panel bound to that chamfer.
+  onPickSketchChamfer?: (chamferId: string) => void;
+  // Extend tool: extend the hit entity from the end nearest the
+  // click. Core rejects generated/construction entities.
+  extendSketchEntity: (entityId: string, clickX: number, clickY: number) => Promise<void>;
+  // Circle tool tangent modes: line-pick state + the mode-aware
+  // creation callback (the core resolves center/radius from the line
+  // ids and the placement hint).
+  circleToolMode?: import("./circleDraftPreview").CircleToolMode;
+  circleTangentLineIdsRef: { current: string[] };
+  isConstruction: boolean;
+  setSketchSnapLabel: (label: string | null) => void;
+  addSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
+  // Offset tool: create a copy of the hit entity at the session's
+  // current distance (lives in the App-side offset session).
+  offsetSketchEntity: (entityId: string) => Promise<void>;
   // Text-on-path picking: while armed, an entity click binds the
   // clicked sketch line/arc as the active text's path instead of
   // placing a new text.
@@ -109,6 +150,7 @@ export interface ActiveSketchPointerUpContext {
   createDimensionCircle: (circleId: string, label: string) => void;
   selectDimensionCircle: (circleId: string) => void;
   createDimensionArc: (arcId: string) => void;
+  createDimensionArcLength: (arcId: string) => void;
   selectDimensionArc: (arcId: string) => void;
   createDimensionPolygon: (polygonId: string) => void;
   selectDimensionPolygon: (polygonId: string) => void;
@@ -235,6 +277,8 @@ export function handleActiveSketchPointerUpTool(
       addMessage: context.addMessage,
       sketch: context.sketch,
       onPickSketchText: context.onPickSketchText,
+      onPickSketchSlot: context.onPickSketchSlot,
+      onPickSketchChamfer: context.onPickSketchChamfer,
     });
     return true;
   }
@@ -309,6 +353,8 @@ export function handleActiveSketchPointerUpTool(
       addMessage: context.addMessage,
       sketch: context.sketch,
       onPickSketchText: context.onPickSketchText,
+      onPickSketchSlot: context.onPickSketchSlot,
+      onPickSketchChamfer: context.onPickSketchChamfer,
     });
     return true;
   }
@@ -337,6 +383,7 @@ export function handleActiveSketchPointerUpTool(
       createCircle: context.createDimensionCircle,
       selectCircle: context.selectDimensionCircle,
       createArc: context.createDimensionArc,
+      createArcLength: context.createDimensionArcLength,
       selectArc: context.selectDimensionArc,
       createPolygon: context.createDimensionPolygon,
       selectPolygon: context.selectDimensionPolygon,
@@ -357,6 +404,112 @@ export function handleActiveSketchPointerUpTool(
       localPoint: filletPoint.local,
       addSketchFillet: context.addSketchFillet,
     });
+    return true;
+  }
+
+  if (context.activeSketchTool === "chamfer") {
+    const chamferPoint = context.resolveChamferPoint();
+    if (!chamferPoint) {
+      return true;
+    }
+    handleSketchChamferClick({
+      sketch: context.sketch,
+      localPoint: chamferPoint.local,
+      addSketchChamfer: context.addSketchChamfer,
+    });
+    return true;
+  }
+
+  // Extend tool: click a line/arc near the end to stretch it to the
+  // nearest intersection. The core picks the end from the click
+  // position and rejects unsupported entities with a log entry.
+  if (context.activeSketchTool === "extend") {
+    if (context.hit?.kind === "sketch_entity" && context.cursorLocal) {
+      void context.extendSketchEntity(
+        context.hit.id,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+      );
+    }
+    return true;
+  }
+
+  // Offset tool: click an entity to create a copy at the session's
+  // current distance (the panel sets it; default 2 mm).
+  if (context.activeSketchTool === "offset") {
+    if (context.hit?.kind === "sketch_entity") {
+      void context.offsetSketchEntity(context.hit.id);
+    }
+    return true;
+  }
+
+  // Circle tool tangent modes: pick 2-3 defining lines, then click to
+  // place the circle (the click position is the placement hint that
+  // picks the wedge and the size).
+  if (
+    context.activeSketchTool === "circle" &&
+    (context.circleToolMode === "tangent_two_lines" ||
+      context.circleToolMode === "tangent_three_lines")
+  ) {
+    const maxLines =
+      context.circleToolMode === "tangent_two_lines" ? 2 : 3;
+    const picked = context.circleTangentLineIdsRef.current;
+    // Resolve the clicked line from entity hits, point hits (snap can
+    // pull the click onto an endpoint), or plain proximity.
+    let lineId: string | null = null;
+    if (
+      context.hit?.kind === "sketch_entity" &&
+      context.hit.entityKind === "line"
+    ) {
+      lineId = context.hit.id;
+    } else if (context.hit?.kind === "sketch_point" && context.sketch) {
+      const vertexId = context.hit.id;
+      const owner = context.sketch.lines.find(
+        (line) =>
+          line.start_vertex_id === vertexId || line.end_vertex_id === vertexId,
+      );
+      lineId = owner?.line_id ?? null;
+    } else if (context.cursorLocal && context.sketch) {
+      const nearby = findPathCandidateNear(
+        context.sketch,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+        5.0,
+      );
+      if (nearby && context.sketch.lines.some((l) => l.line_id === nearby)) {
+        lineId = nearby;
+      }
+    }
+    const isLineId = (id: string) =>
+      context.sketch?.lines.some((l) => l.line_id === id) ?? false;
+    if (lineId && isLineId(lineId) && !picked.includes(lineId) &&
+        picked.length < maxLines) {
+      picked.push(lineId);
+      context.setSketchSnapLabel(
+        picked.length === maxLines
+          ? "Tangent circle: click to place the circle"
+          : `Tangent circle: ${picked.length}/${maxLines} lines selected`,
+      );
+      return true;
+    }
+    if (lineId === null && picked.length < maxLines && context.cursorLocal) {
+      context.setSketchSnapLabel("Tangent circle: click on a line");
+      return true;
+    }
+    if (picked.length === maxLines && context.cursorLocal) {
+      void context.addSketchCircleMode(
+        context.circleToolMode,
+        context.isConstruction,
+        {
+          lineAId: picked[0],
+          lineBId: picked[1],
+          lineCId: maxLines === 3 ? picked[2] : undefined,
+          hint: context.cursorLocal,
+        },
+      );
+      context.circleTangentLineIdsRef.current = [];
+      return true;
+    }
     return true;
   }
 

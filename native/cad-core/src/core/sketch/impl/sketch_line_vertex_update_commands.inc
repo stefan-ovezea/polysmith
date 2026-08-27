@@ -83,9 +83,10 @@ void update_sketch_vertex(FeatureEntry& feature,
     throw std::runtime_error("Only sketch features can update sketch points");
   }
 
-  // Text glyph vertices are derived geometry — edit the text entity,
-  // not its generated vertices.
-  if (point_id.rfind("vertex-text-", 0) == 0) {
+  // Text glyph and slot boundary vertices are derived geometry — edit
+  // the owning entity, not its generated vertices.
+  if (point_id.rfind("vertex-text-", 0) == 0 ||
+      point_id.rfind("vertex-slot-", 0) == 0) {
     throw std::runtime_error("Generated sketch entity is not editable: " +
                              point_id);
   }
@@ -143,6 +144,27 @@ void update_sketch_vertex(FeatureEntry& feature,
       throw std::runtime_error("Arc not found for center point: " + point_id);
     }
 
+    // Slot center: move the slot record's center — the expansion pass
+    // regenerates the whole boundary from it.
+    for (auto& slot : parameters.slots) {
+      if (slot.center_vertex_id == point_id) {
+        slot.center_x = x;
+        slot.center_y = y;
+        refresh_sketch_derived_state(feature);
+        return;
+      }
+    }
+
+    // Ellipse center: move the ellipse (the axis points stay fixed).
+    for (auto& ellipse : parameters.ellipses) {
+      if (ellipse.center_vertex_id == point_id) {
+        ellipse.center_x = x;
+        ellipse.center_y = y;
+        refresh_sketch_derived_state(feature);
+        return;
+      }
+    }
+
     throw std::runtime_error("Unsupported sketch center point: " + point_id);
   }
 
@@ -159,15 +181,18 @@ void update_sketch_vertex(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
-void move_sketch_entities(FeatureEntry& feature,
-                          const std::vector<std::string>& entity_ids,
-                          double dx,
-                          double dy,
-                          double center_x,
-                          double center_y,
-                          double angle_deg) {
+void transform_sketch_entities(FeatureEntry& feature,
+                               const std::vector<std::string>& entity_ids,
+                               double dx,
+                               double dy,
+                               double center_x,
+                               double center_y,
+                               double angle_deg,
+                               double scale,
+                               bool copy) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
-    throw std::runtime_error("Only sketch features can move sketch entities");
+    throw std::runtime_error(
+        "Only sketch features can transform sketch entities");
   }
 
   auto& parameters = feature.sketch_parameters.value();
@@ -181,6 +206,10 @@ void move_sketch_entities(FeatureEntry& feature,
 
   constexpr double kPi = 3.14159265358979323846;
   const bool rotating = std::abs(angle_deg) > 1.0e-6;
+  const bool scaling = std::abs(scale - 1.0) > 1.0e-9;
+  if (scale <= kMinimumSketchDimensionValue) {
+    throw std::runtime_error("Sketch transform: scale must be positive");
+  }
   const double angle_rad = angle_deg * (kPi / 180.0);
   const double cos_a = std::cos(angle_rad);
   const double sin_a = std::sin(angle_rad);
@@ -188,9 +217,167 @@ void move_sketch_entities(FeatureEntry& feature,
   const auto transform_point = [&](double x, double y) {
     const double rel_x = x - center_x;
     const double rel_y = y - center_y;
-    return std::make_pair(rel_x * cos_a - rel_y * sin_a + center_x + dx,
-                          rel_x * sin_a + rel_y * cos_a + center_y + dy);
+    return std::make_pair(
+        (rel_x * cos_a - rel_y * sin_a) * scale + center_x + dx,
+        (rel_x * sin_a + rel_y * cos_a) * scale + center_y + dy);
   };
+
+  // ── Copy mode: exploded copies with fresh ids ─────────────────
+  // Pushed directly as raw records (not via add_sketch_*) so the
+  // copies never adopt coincident vertex ids — a scale-1 copy lands
+  // exactly on the originals and must stay independent. No auto
+  // dimensions; H/V constraints are inferred only when the copy is
+  // not rotated (mirrors the plan's "rotate+copy strips H/V").
+  if (copy) {
+    std::vector<std::string> line_ids, circle_ids, arc_ids, ellipse_ids,
+        slot_ids, spline_ids;
+    line_ids.reserve(parameters.lines.size());
+    for (const auto& line : parameters.lines) line_ids.push_back(line.id);
+    for (const auto& circle : parameters.circles) circle_ids.push_back(circle.id);
+    for (const auto& arc : parameters.arcs) arc_ids.push_back(arc.id);
+    for (const auto& ellipse : parameters.ellipses)
+      ellipse_ids.push_back(ellipse.id);
+    for (const auto& slot : parameters.slots) slot_ids.push_back(slot.id);
+    for (const auto& spline : parameters.splines)
+      spline_ids.push_back(spline.id);
+    int next_line = next_trim_entity_index(line_ids);
+    int next_circle = next_trim_entity_index(circle_ids);
+    int next_arc = next_trim_entity_index(arc_ids);
+    int next_ellipse = next_trim_entity_index(ellipse_ids);
+    int next_slot = next_trim_entity_index(slot_ids);
+    int next_spline = next_trim_entity_index(spline_ids);
+
+    // Copies share vertices with EACH OTHER when the source entities
+    // shared them (a copied rectangle keeps unified corners), but
+    // never with the originals — a scale-1 copy lands exactly on the
+    // source geometry and must stay independent.
+    std::map<std::string, std::string> copied_vertex_ids;
+    const auto copy_vertex = [&](const std::string& source_vertex_id) {
+      auto& mapped = copied_vertex_ids[source_vertex_id];
+      if (mapped.empty()) {
+        mapped = "vertex-" + std::to_string(parameters.next_vertex_index++);
+      }
+      return mapped;
+    };
+
+    for (const auto& entity_id : entity_ids) {
+      for (const auto& line : parameters.lines) {
+        if (line.id != entity_id) continue;
+        const auto s = transform_point(line.start_x, line.start_y);
+        const auto e = transform_point(line.end_x, line.end_y);
+        parameters.lines.push_back(SketchLine{
+            .id = "line-" + std::to_string(next_line++),
+            .start_vertex_id = copy_vertex(line.start_vertex_id),
+            .end_vertex_id = copy_vertex(line.end_vertex_id),
+            .start_x = s.first,
+            .start_y = s.second,
+            .end_x = e.first,
+            .end_y = e.second,
+            .constraint = rotating
+                              ? std::nullopt
+                              : infer_constraint_hint(s.first, s.second,
+                                                      e.first, e.second),
+            .is_construction = line.is_construction,
+        });
+      }
+      for (const auto& circle : parameters.circles) {
+        if (circle.id != entity_id) continue;
+        const auto c = transform_point(circle.center_x, circle.center_y);
+        parameters.circles.push_back(SketchCircle{
+            .id = "circle-" + std::to_string(next_circle++),
+            .center_vertex_id = copy_vertex(circle.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .radius = circle.radius * scale,
+            .is_construction = circle.is_construction,
+        });
+      }
+      for (const auto& arc : parameters.arcs) {
+        if (arc.id != entity_id) continue;
+        const auto c = transform_point(arc.center_x, arc.center_y);
+        const auto s = transform_point(arc.start_x, arc.start_y);
+        const auto e = transform_point(arc.end_x, arc.end_y);
+        parameters.arcs.push_back(SketchArc{
+            .id = "arc-" + std::to_string(next_arc++),
+            .start_vertex_id = copy_vertex(arc.start_vertex_id),
+            .end_vertex_id = copy_vertex(arc.end_vertex_id),
+            .center_vertex_id = copy_vertex(arc.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .radius = arc.radius * scale,
+            .start_x = s.first,
+            .start_y = s.second,
+            .end_x = e.first,
+            .end_y = e.second,
+            .ccw = arc.ccw,
+            .is_construction = arc.is_construction,
+        });
+      }
+      for (const auto& ellipse : parameters.ellipses) {
+        if (ellipse.id != entity_id) continue;
+        const auto c = transform_point(ellipse.center_x, ellipse.center_y);
+        parameters.ellipses.push_back(SketchEllipse{
+            .id = "ellipse-" + std::to_string(next_ellipse++),
+            .center_vertex_id = copy_vertex(ellipse.center_vertex_id),
+            .axis_a_vertex_id = copy_vertex(ellipse.axis_a_vertex_id),
+            .axis_b_vertex_id = copy_vertex(ellipse.axis_b_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .a = ellipse.a * scale,
+            .b = ellipse.b * scale,
+            .rotation = ellipse.rotation + angle_rad,
+            .is_construction = ellipse.is_construction,
+            // The sweep is stored in the ellipse's own frame, which
+            // rotates with the shape — angles and ccw are invariant
+            // under the transform.
+            .has_sweep = ellipse.has_sweep,
+            .sweep_start_angle = ellipse.sweep_start_angle,
+            .sweep_end_angle = ellipse.sweep_end_angle,
+            .ccw = ellipse.ccw,
+            .start_vertex_id = copy_vertex(ellipse.start_vertex_id),
+            .end_vertex_id = copy_vertex(ellipse.end_vertex_id),
+        });
+      }
+      for (const auto& slot : parameters.slots) {
+        if (slot.id != entity_id) continue;
+        const auto c = transform_point(slot.center_x, slot.center_y);
+        parameters.slots.push_back(SketchSlot{
+            .id = "slot-" + std::to_string(next_slot++),
+            .center_vertex_id = copy_vertex(slot.center_vertex_id),
+            .center_x = c.first,
+            .center_y = c.second,
+            .length = slot.length * scale,
+            .radius = slot.radius * scale,
+            .rotation = slot.rotation + angle_rad,
+            .mode = slot.mode,
+            .is_construction = slot.is_construction,
+        });
+      }
+      for (const auto& spline : parameters.splines) {
+        if (spline.id != entity_id) continue;
+        SketchSpline copy;
+        copy.id = "spline-" + std::to_string(next_spline++);
+        copy.degree = spline.degree;
+        copy.is_construction = spline.is_construction;
+        copy.pole_vertex_ids.reserve(spline.pole_vertex_ids.size());
+        copy.pole_xs.reserve(spline.pole_xs.size());
+        copy.pole_ys.reserve(spline.pole_ys.size());
+        for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+          copy.pole_vertex_ids.push_back(
+              copy_vertex(spline.pole_vertex_ids[i]));
+          const auto p = transform_point(spline.pole_xs[i], spline.pole_ys[i]);
+          copy.pole_xs.push_back(p.first);
+          copy.pole_ys.push_back(p.second);
+        }
+        parameters.splines.push_back(std::move(copy));
+      }
+      // Standalone point ids are not copyable — ignored.
+    }
+
+    sync_all_line_dimensions(parameters);
+    refresh_sketch_derived_state(feature);
+    return;
+  }
 
   // Collect every vertex belonging to the moved entities.  Entity ids
   // that match none of the geometry collections are standalone points:
@@ -225,6 +412,39 @@ void move_sketch_entities(FeatureEntry& feature,
         moved_vertex_ids.insert(arc.end_vertex_id);
         if (!arc.center_vertex_id.empty()) {
           moved_vertex_ids.insert(arc.center_vertex_id);
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& ellipse : parameters.ellipses) {
+      if (ellipse.id == entity_id) {
+        // Only the center is movable (the axis points are fixed); the
+        // fixed-vertex filter below leaves them in place and the cache
+        // shift keeps the shape rigid.
+        moved_vertex_ids.insert(ellipse.center_vertex_id);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& slot : parameters.slots) {
+      if (slot.id == entity_id) {
+        // The generated boundary entities are filtered by
+        // ensure_user_editable_entity above; moving the slot moves its
+        // center vertex and the expansion pass regenerates the shape.
+        moved_vertex_ids.insert(slot.center_vertex_id);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    for (const auto& spline : parameters.splines) {
+      if (spline.id == entity_id) {
+        // Every pole is movable — move the whole control polygon.
+        for (const auto& vid : spline.pole_vertex_ids) {
+          moved_vertex_ids.insert(vid);
         }
         matched = true;
         break;
@@ -291,6 +511,14 @@ void move_sketch_entities(FeatureEntry& feature,
         line.end_y = target.second;
       }
     }
+    for (auto& spline : parameters.splines) {
+      for (size_t i = 0; i < spline.pole_vertex_ids.size(); ++i) {
+        if (spline.pole_vertex_ids[i] == vertex_id) {
+          spline.pole_xs[i] = target.first;
+          spline.pole_ys[i] = target.second;
+        }
+      }
+    }
     for (auto& circle : parameters.circles) {
       if (circle.center_vertex_id == vertex_id) {
         circle.center_x = target.first;
@@ -311,6 +539,18 @@ void move_sketch_entities(FeatureEntry& feature,
         arc.center_y = target.second;
       }
     }
+    for (auto& ellipse : parameters.ellipses) {
+      if (ellipse.center_vertex_id == vertex_id) {
+        ellipse.center_x = target.first;
+        ellipse.center_y = target.second;
+      }
+    }
+    for (auto& slot : parameters.slots) {
+      if (slot.center_vertex_id == vertex_id) {
+        slot.center_x = target.first;
+        slot.center_y = target.second;
+      }
+    }
     // Standalone points (no owning entity): update the vertex entry
     // directly so the position survives the refresh.
     for (auto& vertex_entry : parameters.vertices) {
@@ -320,8 +560,68 @@ void move_sketch_entities(FeatureEntry& feature,
       }
     }
 
-    propagate_connected_point_move(parameters, vertex_id, target.first,
-                                   target.second);
+    // Ripple only when a connected line is NOT fully covered by this
+    // move.  propagate_connected_point_move clamps the moved endpoint
+    // of an H/V-constrained line back to its OTHER endpoint's axis —
+    // for a wholly-moved line, processing the endpoints one at a time
+    // would snap each one back to the other's pre-move coordinate and
+    // revert the whole translation (a lone horizontal line was
+    // immovable via the move tool for exactly this reason).
+    bool needs_ripple = false;
+    for (const auto& line : parameters.lines) {
+      if (line.start_vertex_id != vertex_id && line.end_vertex_id != vertex_id) {
+        continue;
+      }
+      const bool fully_moved =
+          moved_vertex_ids.count(line.start_vertex_id) != 0 &&
+          moved_vertex_ids.count(line.end_vertex_id) != 0;
+      if (!fully_moved) needs_ripple = true;
+    }
+    if (needs_ripple) {
+      propagate_connected_point_move(parameters, vertex_id, target.first,
+                                     target.second);
+    }
+  }
+
+  // Scale the moved entities' size parameters (a similarity transform
+  // keeps the shape, so radii / a / b / slot dimensions scale with
+  // the vertices). Driving radius dimensions on scaled entities no
+  // longer match the geometry — flip them to driven so the solver
+  // enforcement doesn't undo the scale.
+  if (scaling) {
+    for (auto& circle : parameters.circles) {
+      if (moved_vertex_ids.count(circle.center_vertex_id)) {
+        circle.radius *= scale;
+      }
+    }
+    for (auto& arc : parameters.arcs) {
+      if (moved_vertex_ids.count(arc.start_vertex_id) ||
+          moved_vertex_ids.count(arc.end_vertex_id) ||
+          moved_vertex_ids.count(arc.center_vertex_id)) {
+        arc.radius *= scale;
+      }
+    }
+    for (auto& ellipse : parameters.ellipses) {
+      if (moved_vertex_ids.count(ellipse.center_vertex_id)) {
+        ellipse.a *= scale;
+        ellipse.b *= scale;
+      }
+    }
+    for (auto& slot : parameters.slots) {
+      if (moved_vertex_ids.count(slot.center_vertex_id)) {
+        slot.length *= scale;
+        slot.radius *= scale;
+      }
+    }
+    for (auto& dim : parameters.dimensions) {
+      const bool owns_entity =
+          std::find(entity_ids.begin(), entity_ids.end(), dim.entity_id) !=
+          entity_ids.end();
+      if (owns_entity &&
+          (dim.kind == "circle_radius" || dim.kind == "arc_radius")) {
+        dim.driven = true;
+      }
+    }
   }
 
   sync_all_line_dimensions(parameters);
@@ -332,4 +632,16 @@ void move_sketch_entities(FeatureEntry& feature,
   }
   sync_all_line_dimensions(parameters);
   refresh_sketch_derived_state(feature);
+}
+
+// Rigid translate/rotate wrapper — the pre-SK4 move IPC surface.
+void move_sketch_entities(FeatureEntry& feature,
+                          const std::vector<std::string>& entity_ids,
+                          double dx,
+                          double dy,
+                          double center_x,
+                          double center_y,
+                          double angle_deg) {
+  transform_sketch_entities(feature, entity_ids, dx, dy, center_x, center_y,
+                            angle_deg, /*scale=*/1.0, /*copy=*/false);
 }

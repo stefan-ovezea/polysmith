@@ -46,6 +46,24 @@ void add_sketch_fillet(FeatureEntry &feature, int fillet_index,
     }
   }
 
+  // A corner holding both a fillet and a chamfer is ambiguous — reject
+  // the combination outright (the chamfer create path has the mirrored
+  // check).
+  for (const auto &existing : parameters.chamfers) {
+    const bool a_collides =
+        (existing.line_a_id == line_a_id || existing.line_b_id == line_a_id) &&
+        (existing.trim_a_vertex_id == corner_vertex_id ||
+         existing.trim_b_vertex_id == corner_vertex_id);
+    const bool b_collides =
+        (existing.line_a_id == line_b_id || existing.line_b_id == line_b_id) &&
+        (existing.trim_a_vertex_id == corner_vertex_id ||
+         existing.trim_b_vertex_id == corner_vertex_id);
+    if (a_collides || b_collides) {
+      throw std::runtime_error(
+          "Sketch fillet: this corner is already chamfered");
+    }
+  }
+
   // "Far" endpoint of each line — the one opposite the corner.
   const double far_a_x = a_at_start ? line_a.end_x : line_a.start_x;
   const double far_a_y = a_at_start ? line_a.end_y : line_a.start_y;

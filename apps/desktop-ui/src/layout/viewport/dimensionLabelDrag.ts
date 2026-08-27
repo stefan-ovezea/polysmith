@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import type { SketchDimensionScene, SketchFeatureParameters } from "@/types";
 import { resolveSketchPlanePoint, toWorldPoint } from "@/utils";
+import { kArcLengthMinGap, kLeaderJog } from "@/utils/viewport/dimensionGeometry";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
 import { getSketchGridFrame } from "./grid";
 import {
@@ -17,12 +18,6 @@ export interface AngleDimensionFrame {
   bisector: THREE.Vector3;
   anchorRadius: number;
   dimensionRadius: number;
-}
-
-export interface CircleRadiusDimensionProjection {
-  center: THREE.Vector3;
-  radius: number;
-  direction: THREE.Vector3;
 }
 
 export interface DimensionPlacementStart {
@@ -317,15 +312,16 @@ export function beginDimensionLabelDragPointerDown({
     return false;
   }
 
-  if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+  if (isAngleDimensionKind(dimension.kind)) {
     setAngleDimensionDragRadius(dimension, hit.id, sketchPoint.world);
   }
 
-  const dragAxis =
-    dimension.kind === "circle_radius" || dimension.kind === "arc_radius"
-      ? new THREE.Vector3(0, 0, 0)
-      : getDimensionPlacementAxis(dimension);
-  if (dimension.kind !== "circle_radius" && dimension.kind !== "arc_radius" && !dragAxis) {
+  // Free-placement kinds have no drag axis to constrain against.
+  const isFreeKind = isFreeRadialDimensionKind(dimension.kind);
+  const dragAxis = isFreeKind
+    ? new THREE.Vector3(0, 0, 0)
+    : getDimensionPlacementAxis(dimension);
+  if (!isFreeKind && !dragAxis) {
     return true;
   }
 
@@ -378,31 +374,28 @@ export function buildDimensionPlacementStart({
     return null;
   }
 
-  const isAngleKind =
-    dimension.kind === "angle" || dimension.kind === "line_angle";
+  const isAngleKind = isAngleDimensionKind(dimension.kind);
   const originalPosition = dimension.labelPosition;
-  const isCircleOrArc = dimension.kind === "circle_radius" || dimension.kind === "arc_radius";
-  const circlePosition =
-    isCircleOrArc
-      ? circleDimensionLabelNearPoint({
-          dimension,
-          worldPoint: sketchPoint.world,
-          planeFrame: activeSketchPlaneFrame,
-        })
-      : null;
-  const dragAxis =
-    isCircleOrArc
-      ? new THREE.Vector3(0, 0, 0)
-      : isAngleKind
+  const isFreeKind = isFreeRadialDimensionKind(dimension.kind);
+  const freePosition = isFreeKind
+    ? radialDimensionLabelNearPoint({
+        dimension,
+        worldPoint: sketchPoint.world,
+        planeFrame: activeSketchPlaneFrame,
+      })
+    : null;
+  const dragAxis = isFreeKind
+    ? new THREE.Vector3(0, 0, 0)
+    : isAngleKind
       ? null
       : getDimensionPlacementAxis(dimension);
-  if (!isAngleKind && !isCircleOrArc && !dragAxis) {
+  if (!isAngleKind && !isFreeKind && !dragAxis) {
     return null;
   }
 
   const nextPosition =
     relationPosition ??
-    circlePosition ??
+    freePosition ??
     (isAngleKind
       ? originalPosition
       : constrainedDimensionPlacementPosition({
@@ -454,7 +447,32 @@ function constrainedDimensionPlacementPosition({
   return [nextPositionVector.x, nextPositionVector.y, nextPositionVector.z];
 }
 
-export function circleDimensionLabelNearPoint({
+/** Kinds drawn as a swept angle arc, whose label rides the bisector and
+ *  whose drag distance sets the arc radius. */
+export function isAngleDimensionKind(kind: SketchDimensionScene["kind"]) {
+  return kind === "angle" || kind === "line_angle" || kind === "arc_angle";
+}
+
+/** Kinds whose label the user places freely in 2D. Angle kinds are
+ *  excluded: they keep the 1-DOF bisector placement, where the drag
+ *  distance sets the arc radius. */
+export function isFreeRadialDimensionKind(kind: SketchDimensionScene["kind"]) {
+  return (
+    kind === "circle_radius" ||
+    kind === "arc_radius" ||
+    kind === "polygon_radius" ||
+    kind === "arc_length"
+  );
+}
+
+/**
+ * Where a radial dimension's label goes for a pointer at `worldPoint`.
+ *
+ * The label follows the pointer freely within the sketch plane. It used
+ * to be pinned to a ring at `radius + 4`, which is why the value text
+ * could be swung around the circle but never pushed away from it.
+ */
+export function radialDimensionLabelNearPoint({
   dimension,
   worldPoint,
   planeFrame,
@@ -463,52 +481,163 @@ export function circleDimensionLabelNearPoint({
   worldPoint: [number, number, number];
   planeFrame: ActiveSketchGridPlaneFrame | null;
 }): [number, number, number] | null {
-  if (dimension.kind !== "circle_radius" && dimension.kind !== "arc_radius") {
+  if (!isFreeRadialDimensionKind(dimension.kind) || !dimension.arcCenter) {
     return null;
   }
-  const projection = circleRadiusDimensionProjection({
-    dimension,
-    worldPoint,
-    planeFrame,
-  });
-  if (!projection) {
+  const center = new THREE.Vector3(...dimension.arcCenter);
+  const planeNormal = getSketchGridFrame(dimension.planeId, planeFrame).normal;
+  const offset = new THREE.Vector3(...worldPoint).sub(center);
+  offset.addScaledVector(planeNormal, -offset.dot(planeNormal));
+  // Only guard the degenerate case of dropping the label on the centre,
+  // where the leader direction would be undefined.
+  if (offset.lengthSq() <= 1e-12) {
     return null;
   }
-  const position = projection.center.add(
-    projection.direction.multiplyScalar(projection.radius + 4),
-  );
+  if (offset.length() < kLeaderJog) {
+    offset.setLength(kLeaderJog);
+  }
+  const position = center.clone().add(offset);
   return [position.x, position.y, position.z];
 }
 
-export function circleRadiusDimensionProjection({
+/** Mirror of `clamp_angle_into_arc_span` in the core's
+ *  sketch_radial_dimension_primitives.inc. Keeping the two in step is
+ *  what stops a dragged arc-radius arrowhead from jumping when the core
+ *  re-emits the dimension. */
+export function clampAngleIntoArcSpan(
+  angle: number,
+  startAngle: number,
+  sweep: number,
+  ccw: boolean,
+) {
+  const twoPi = Math.PI * 2;
+  let offset = ccw ? angle - startAngle : startAngle - angle;
+  offset = ((offset % twoPi) + twoPi) % twoPi;
+  if (offset <= sweep) {
+    return angle;
+  }
+  const pastEnd = offset - sweep;
+  const beforeStart = twoPi - offset;
+  const snapped = pastEnd <= beforeStart ? sweep : 0;
+  return ccw ? startAngle + snapped : startAngle - snapped;
+}
+
+function toTuple(point: THREE.Vector3): [number, number, number] {
+  return [point.x, point.y, point.z];
+}
+
+/**
+ * Rebuild a radius / diameter leader around a label being dragged,
+ * reproducing what the core emits on the next viewport refetch (see
+ * make_circle_dimension_primitive and make_arc_radius_dimension_primitive).
+ *
+ * Shared by the live drag preview and the derived-state projection so the
+ * two cannot drift — drift is what makes a label snap on pointer release.
+ */
+export function radialLeaderDimension({
   dimension,
-  worldPoint,
+  labelWorld,
   planeFrame,
 }: {
   dimension: SketchDimensionScene;
-  worldPoint: [number, number, number];
+  labelWorld: [number, number, number];
   planeFrame: ActiveSketchGridPlaneFrame | null;
-}): CircleRadiusDimensionProjection | null {
-  // circle_radius: dimensionStart = left edge, dimensionEnd = right edge → center = midpoint
-  // arc_radius:   dimensionStart = center,       dimensionEnd = point on arc → center = dimStart
-  const isArcRadius = dimension.kind === "arc_radius";
-  const center = isArcRadius
-    ? new THREE.Vector3(...dimension.dimensionStart)
-    : new THREE.Vector3(...dimension.dimensionStart)
-        .add(new THREE.Vector3(...dimension.dimensionEnd))
-        .multiplyScalar(0.5);
-  const radius = isArcRadius
-    ? new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-        new THREE.Vector3(...dimension.dimensionEnd))
-    : new THREE.Vector3(...dimension.dimensionStart).distanceTo(
-        new THREE.Vector3(...dimension.dimensionEnd)) * 0.5;
-  const direction = new THREE.Vector3(...worldPoint).sub(center);
-  const planeNormal = getSketchGridFrame(dimension.planeId, planeFrame).normal;
-  direction.addScaledVector(planeNormal, -direction.dot(planeNormal));
-  if (direction.lengthSq() <= 1e-8 || radius <= 1e-8) {
+}): SketchDimensionScene | null {
+  if (
+    dimension.kind !== "circle_radius" &&
+    dimension.kind !== "arc_radius" &&
+    dimension.kind !== "polygon_radius"
+  ) {
     return null;
   }
-  return { center, radius, direction: direction.normalize() };
+  const radius = dimension.arcRadius ?? 0;
+  if (!dimension.arcCenter || radius <= 1e-8) {
+    return null;
+  }
+  const center = new THREE.Vector3(...dimension.arcCenter);
+  const frame = getSketchGridFrame(dimension.planeId, planeFrame);
+
+  // Express the centre→label direction as a sketch-local angle so the
+  // sweep clamp can use the core's own arc angles.
+  const toLabel = new THREE.Vector3(...labelWorld).sub(center);
+  if (toLabel.lengthSq() <= 1e-12) {
+    return null;
+  }
+  let angle = Math.atan2(toLabel.dot(frame.yAxis), toLabel.dot(frame.xAxis));
+  if (dimension.kind === "arc_radius") {
+    const twoPi = Math.PI * 2;
+    const startAngle = dimension.arcStartAngle ?? 0;
+    const endAngle = dimension.arcEndAngle ?? 0;
+    const ccw = dimension.arcCcw ?? true;
+    const delta = ccw ? endAngle - startAngle : startAngle - endAngle;
+    const sweep = ((delta % twoPi) + twoPi) % twoPi;
+    angle = clampAngleIntoArcSpan(angle, startAngle, sweep, ccw);
+  }
+
+  const unit = frame.xAxis
+    .clone()
+    .multiplyScalar(Math.cos(angle))
+    .addScaledVector(frame.yAxis, Math.sin(angle));
+  const perp = frame.xAxis
+    .clone()
+    .multiplyScalar(-Math.sin(angle))
+    .addScaledVector(frame.yAxis, Math.cos(angle));
+
+  const contact = center.clone().addScaledVector(unit, radius);
+  const quadrant = center.clone().addScaledVector(perp, radius);
+  // Only a circle dimension has a diameter mode; arc and polygon radius
+  // always draw the single-arrow radius leader.
+  const showRadius =
+    dimension.kind !== "circle_radius" || dimension.displayAs === "radius";
+  const farTip = center.clone().addScaledVector(unit, -radius);
+
+  return {
+    ...dimension,
+    anchorStart: toTuple(contact),
+    anchorEnd: toTuple(quadrant),
+    dimensionStart: toTuple(showRadius ? contact : farTip),
+    dimensionEnd: toTuple(contact),
+    labelPosition: labelWorld,
+  };
+}
+
+/** Rebuild an arc-length extension arc around a dragged label, mirroring
+ *  make_arc_length_dimension_primitive. The measured arc's own radius is
+ *  recovered from the anchors (the witness-line feet), because arcRadius
+ *  carries the extension radius for this kind. */
+export function arcLengthLeaderDimension({
+  dimension,
+  labelWorld,
+}: {
+  dimension: SketchDimensionScene;
+  labelWorld: [number, number, number];
+}): SketchDimensionScene | null {
+  if (dimension.kind !== "arc_length" || !dimension.arcCenter) {
+    return null;
+  }
+  const center = new THREE.Vector3(...dimension.arcCenter);
+  const startRay = new THREE.Vector3(...dimension.anchorStart).sub(center);
+  const endRay = new THREE.Vector3(...dimension.anchorEnd).sub(center);
+  const measuredRadius = startRay.length();
+  if (measuredRadius <= 1e-8 || endRay.lengthSq() <= 1e-12) {
+    return null;
+  }
+  const distance = new THREE.Vector3(...labelWorld).distanceTo(center);
+  const extensionRadius = Math.max(
+    measuredRadius + kArcLengthMinGap,
+    Math.min(distance, 500),
+  );
+  return {
+    ...dimension,
+    arcRadius: extensionRadius,
+    dimensionStart: toTuple(
+      center.clone().addScaledVector(startRay.normalize(), extensionRadius),
+    ),
+    dimensionEnd: toTuple(
+      center.clone().addScaledVector(endRay.normalize(), extensionRadius),
+    ),
+    labelPosition: labelWorld,
+  };
 }
 
 function constrainedDimensionLabelPosition(
@@ -561,7 +690,7 @@ export function dimensionLabelDragMoveUpdate({
     drag.hasMoved = true;
   }
 
-  if (dimension?.kind === "angle" || dimension?.kind === "line_angle") {
+  if (dimension && isAngleDimensionKind(dimension.kind)) {
     const frame = angleFrameForDimension(dimension);
     return {
       kind: "angle_radius",
@@ -570,8 +699,8 @@ export function dimensionLabelDragMoveUpdate({
     };
   }
 
-  if (dimension?.kind === "circle_radius" || dimension?.kind === "arc_radius") {
-    const nextPosition = circleDimensionLabelNearPoint({
+  if (dimension && isFreeRadialDimensionKind(dimension.kind)) {
+    const nextPosition = radialDimensionLabelNearPoint({
       dimension,
       worldPoint,
       planeFrame,

@@ -39,6 +39,19 @@ split_arc_at_intersections(const SketchArc &arc,
 
   std::vector<TrimSegment> segments;
   const double k2Pi = 2.0 * M_PI;
+  constexpr double kMinArcSpan = 1e-9;  // radians
+
+  // Degenerate pieces are dropped here rather than by filtering the
+  // intersection list upstream. An intersection landing on one of the
+  // arc's own endpoints is a real cut — it just leaves no piece beyond
+  // itself — so it must still split the arc.
+  auto push_piece = [&](double s, double e) {
+    if (std::abs(e - s) < kMinArcSpan) return;
+    auto [sx, sy] = pt_at_angle(wrap_angle(s));
+    auto [ex, ey] = pt_at_angle(wrap_angle(e));
+    segments.push_back(
+        {TrimSegment::ARC_SEGMENT, s, e, sx, sy, ex, ey, cx, cy, r, ccw});
+  };
 
   // First segment: from arc start to first intersection.
   {
@@ -50,19 +63,12 @@ split_arc_at_intersections(const SketchArc &arc,
       if (e >= s)
         e -= k2Pi;
     }
-    auto [sx, sy] = pt_at_angle(s);
-    auto [ex, ey] = pt_at_angle(wrap_angle(e));
-    segments.push_back(
-        {TrimSegment::ARC_SEGMENT, s, e, sx, sy, ex, ey, cx, cy, r, ccw});
+    push_piece(s, e);
   }
 
   // Middle segments.
   for (size_t i = 0; i + 1 < angles.size(); ++i) {
-    double s = angles[i], e = angles[i + 1];
-    auto [sx, sy] = pt_at_angle(wrap_angle(s));
-    auto [ex, ey] = pt_at_angle(wrap_angle(e));
-    segments.push_back(
-        {TrimSegment::ARC_SEGMENT, s, e, sx, sy, ex, ey, cx, cy, r, ccw});
+    push_piece(angles[i], angles[i + 1]);
   }
 
   // Last segment: from last intersection to arc end.
@@ -75,10 +81,7 @@ split_arc_at_intersections(const SketchArc &arc,
       if (e >= s)
         e -= k2Pi;
     }
-    auto [sx, sy] = pt_at_angle(wrap_angle(s));
-    auto [ex, ey] = pt_at_angle(wrap_angle(e));
-    segments.push_back(
-        {TrimSegment::ARC_SEGMENT, s, e, sx, sy, ex, ey, cx, cy, r, ccw});
+    push_piece(s, e);
   }
 
   return segments;
@@ -142,13 +145,14 @@ int select_clicked_segment(const std::vector<TrimSegment> &segments,
     }
   }
 
-  // Distance fallback.
+  // Distance fallback measured against the arc itself — the chord of a
+  // large segment sits far under the click (the sagitta), so the old
+  // chord test could hand the click to a neighbouring segment.
   double best_dist_sq = std::numeric_limits<double>::max();
   int best_index = -1;
   for (size_t i = 0; i < segments.size(); ++i) {
-    const double dist_sq = point_segment_distance_sq(
-        click_x, click_y, segments[i].start_x, segments[i].start_y,
-        segments[i].end_x, segments[i].end_y);
+    const double dist_sq =
+        point_trim_segment_distance_sq(segments[i], click_x, click_y);
     if (dist_sq < best_dist_sq) {
       best_dist_sq = dist_sq;
       best_index = static_cast<int>(i);

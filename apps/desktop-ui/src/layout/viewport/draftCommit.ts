@@ -16,6 +16,7 @@ import {
   type LineCommitSnapPoint,
 } from "./lineCommitRelations";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
+import { defaultSlotRadius } from "./slotDraftPreview";
 
 export type Point2d = [number, number];
 export type LineBodyHost = { lineId: string; t: number };
@@ -134,6 +135,19 @@ export interface CircleDraftCommitOptions {
     radius: number,
     isConstruction: boolean,
   ) => Promise<void> | void;
+  addSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void> | void;
 }
 
 export interface PolygonDraftCommitOptions {
@@ -204,6 +218,41 @@ export interface LineDraftCommitOptions {
   ) => Promise<void> | void;
 }
 
+export interface EllipseDraftCommitOptions {
+  start: Point2d;
+  current: Point2d;
+  axisPoint: Point2d | null;
+  isConstruction: boolean;
+  setAxisPoint: (point: Point2d) => void;
+  clearAxisPoint: () => void;
+  clearDraftStart: () => void;
+  addSketchEllipse: (
+    centerX: number,
+    centerY: number,
+    axisAX: number,
+    axisAY: number,
+    axisBX: number,
+    axisBY: number,
+    isConstruction: boolean,
+  ) => Promise<void> | void;
+}
+
+export interface SlotDraftCommitOptions {
+  start: Point2d;
+  committedEnd: Point2d;
+  isConstruction: boolean;
+  clearDraftStart: () => void;
+  clearDraftDimensionSession: () => void;
+  addSketchSlot: (
+    centerX: number,
+    centerY: number,
+    length: number,
+    radius: number,
+    rotation: number,
+    isConstruction: boolean,
+  ) => Promise<void> | void;
+}
+
 export interface DraftPointerUpCommitOptions {
   activeSketchTool: SketchTool;
   sketchPoint: DraftCommitSketchPoint;
@@ -215,6 +264,7 @@ export interface DraftPointerUpCommitOptions {
     arcSecondPoint: MutableRef<Point2d | null>;
     rectSecondPoint: MutableRef<Point2d | null>;
     circleSecondPoint: MutableRef<Point2d | null>;
+    ellipseSecondPoint: MutableRef<Point2d | null>;
     chainBreakRequested: MutableRef<boolean>;
     previousLineAngle: MutableRef<number | null>;
     draftStartMidpointHost: MutableRef<string | null>;
@@ -261,8 +311,11 @@ export interface DraftPointerUpCommitOptions {
   addSketchArc: ArcDraftCommitOptions["addSketchArc"];
   addSketchRectangle: RectangleDraftCommitOptions["addSketchRectangle"];
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
+  addSketchCircleMode: CircleDraftCommitOptions["addSketchCircleMode"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
+  addSketchEllipse: EllipseDraftCommitOptions["addSketchEllipse"];
+  addSketchSlot: SlotDraftCommitOptions["addSketchSlot"];
 }
 
 function commitRectangleDraft(options: RectangleDraftCommitOptions): void {
@@ -362,21 +415,16 @@ function commitCircleDraft(options: CircleDraftCommitOptions): void {
     if (!secondPoint) {
       return;
     }
-
-    const circle = circleFromThreePoints2d(
-      options.start,
-      secondPoint,
-      options.committedEnd,
-    );
-    if (!circle) {
-      return;
-    }
-
-    void options.addSketchCircle(
-      circle.center[0],
-      circle.center[1],
-      circle.radius,
+    // The core resolves the circumcircle from the raw points —
+    // single source of truth for the geometry.
+    void options.addSketchCircleMode(
+      "three_point",
       options.isConstruction,
+      {
+        p1: options.start,
+        p2: secondPoint,
+        p3: options.committedEnd,
+      },
     );
     return;
   }
@@ -402,11 +450,17 @@ function commitCircleDraft(options: CircleDraftCommitOptions): void {
   let center: Point2d = options.start;
   let radius = distanceBetweenPoints(options.start, options.committedEnd);
   if (options.mode === "two_point") {
-    center = [
-      (startX + options.committedEnd[0]) / 2,
-      (startY + options.committedEnd[1]) / 2,
-    ];
-    radius = distanceBetweenPoints(options.start, options.committedEnd) / 2;
+    // Diameter endpoints — the core computes the midpoint center and
+    // the half-span radius.
+    void options.addSketchCircleMode(
+      "two_point",
+      options.isConstruction,
+      {
+        p1: options.start,
+        p2: options.committedEnd,
+      },
+    );
+    return;
   }
 
   void options.addSketchCircle(center[0], center[1], radius, options.isConstruction);
@@ -439,6 +493,76 @@ function commitPolygonDraft({
     start[1],
     committedEnd[0],
     committedEnd[1],
+    isConstruction,
+  );
+}
+
+function commitEllipseDraft({
+  start,
+  current,
+  axisPoint,
+  isConstruction,
+  setAxisPoint,
+  clearAxisPoint,
+  clearDraftStart,
+  addSketchEllipse,
+}: EllipseDraftCommitOptions): void {
+  if (!axisPoint) {
+    // First stage done — lock the major-axis point; the next click
+    // lands the minor-axis point and commits.
+    setAxisPoint([current[0], current[1]]);
+    return;
+  }
+
+  const ax = axisPoint[0] - start[0];
+  const ay = axisPoint[1] - start[1];
+  const a = Math.hypot(ax, ay);
+  const dx = current[0] - start[0];
+  const dy = current[1] - start[1];
+  const b = Math.abs((ax * dy - ay * dx) / a);
+  if (a <= 0.001 || b <= 0.001) {
+    // Degenerate minor axis (cursor on the major-axis line) — the
+    // core would reject it; stay in stage 2 instead of failing.
+    return;
+  }
+
+  clearAxisPoint();
+  clearDraftStart();
+  void addSketchEllipse(
+    start[0],
+    start[1],
+    axisPoint[0],
+    axisPoint[1],
+    current[0],
+    current[1],
+    isConstruction,
+  );
+}
+
+function commitSlotDraft({
+  start,
+  committedEnd,
+  isConstruction,
+  clearDraftStart,
+  clearDraftDimensionSession,
+  addSketchSlot,
+}: SlotDraftCommitOptions): void {
+  const dx = committedEnd[0] - start[0];
+  const dy = committedEnd[1] - start[1];
+  const half = Math.hypot(dx, dy);
+  if (half <= 0.001) {
+    return;
+  }
+  const length = 2 * half;
+  const rotation = Math.atan2(dy, dx);
+  clearDraftStart();
+  clearDraftDimensionSession();
+  void addSketchSlot(
+    start[0],
+    start[1],
+    length,
+    defaultSlotRadius(length),
+    rotation,
     isConstruction,
   );
 }
@@ -538,8 +662,11 @@ export function commitDraftPointerUp({
   addSketchArc,
   addSketchRectangle,
   addSketchCircle,
+  addSketchCircleMode,
   addSketchPolygon,
   addSketchLine,
+  addSketchEllipse,
+  addSketchSlot,
 }: DraftPointerUpCommitOptions): void {
   if (!refs.draftStart.current) {
     refs.draftStart.current = sketchPoint.local;
@@ -644,6 +771,7 @@ export function commitDraftPointerUp({
       clearDraftDimensionSession,
       suppressDimensionEditorAfterSketchCommit,
       addSketchCircle,
+      addSketchCircleMode,
     });
     return;
   }
@@ -667,6 +795,40 @@ export function commitDraftPointerUp({
       clearDraftDimensionSession,
       suppressDimensionEditorAfterSketchCommit,
       addSketchPolygon,
+    });
+    return;
+  }
+
+  if (activeSketchTool === "ellipse") {
+    commitEllipseDraft({
+      start,
+      current: sketchPoint.local,
+      axisPoint: refs.ellipseSecondPoint.current,
+      isConstruction,
+      setAxisPoint: (point) => {
+        refs.ellipseSecondPoint.current = point;
+      },
+      clearAxisPoint: () => {
+        refs.ellipseSecondPoint.current = null;
+      },
+      clearDraftStart: () => {
+        refs.draftStart.current = null;
+      },
+      addSketchEllipse,
+    });
+    return;
+  }
+
+  if (activeSketchTool === "slot") {
+    commitSlotDraft({
+      start,
+      committedEnd,
+      isConstruction,
+      clearDraftStart: () => {
+        refs.draftStart.current = null;
+      },
+      clearDraftDimensionSession,
+      addSketchSlot,
     });
     return;
   }

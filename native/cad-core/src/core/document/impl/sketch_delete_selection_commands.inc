@@ -26,6 +26,10 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> projected_point_ids;
   std::unordered_set<std::string> selected_point_ids;
   std::unordered_set<std::string> fillet_ids;
+  std::unordered_set<std::string> chamfer_ids;
+  std::unordered_set<std::string> slot_ids;
+  std::unordered_set<std::string> ellipse_ids;
+  std::unordered_set<std::string> spline_ids;
 
   add_ids(selected_point_ids, point_ids);
 
@@ -50,6 +54,10 @@ DocumentState DocumentManager::delete_sketch_selection(
     add_id(circle_ids, entity_id);
     add_id(arc_ids, entity_id);
     add_id(fillet_ids, entity_id);
+    add_id(chamfer_ids, entity_id);
+    add_id(slot_ids, entity_id);
+    add_id(ellipse_ids, entity_id);
+    add_id(spline_ids, entity_id);
   }
 
   for (const auto& point_id : selected_point_ids) {
@@ -66,6 +74,32 @@ DocumentState DocumentManager::delete_sketch_selection(
     // Use geometry_owner_ids to find circle owner (Phase 4.2)
     if (const auto* circle = find_circle_for_point(parameters, point_id)) {
       add_id(circle_ids, circle->id);
+    }
+    // Selecting a slot's center deletes the whole slot.
+    for (const auto& slot : parameters.slots) {
+      if (slot.center_vertex_id == point_id) {
+        add_id(slot_ids, slot.id);
+      }
+    }
+    // Selecting an ellipse vertex (center, axis point, or a partial
+    // ellipse's split endpoints) deletes the whole ellipse.
+    for (const auto& ellipse : parameters.ellipses) {
+      if (ellipse.center_vertex_id == point_id ||
+          ellipse.axis_a_vertex_id == point_id ||
+          ellipse.axis_b_vertex_id == point_id ||
+          ellipse.start_vertex_id == point_id ||
+          ellipse.end_vertex_id == point_id) {
+        add_id(ellipse_ids, ellipse.id);
+      }
+    }
+    // Selecting a spline pole deletes the whole spline.
+    for (const auto& spline : parameters.splines) {
+      for (const auto& vid : spline.pole_vertex_ids) {
+        if (vid == point_id) {
+          add_id(spline_ids, spline.id);
+          break;
+        }
+      }
     }
     for (const auto& projected : parameters.projected_points) {
       if (projected.id == point_id) {
@@ -90,6 +124,20 @@ DocumentState DocumentManager::delete_sketch_selection(
         const std::string& owner = line_it->generated_by.value();
         if (owner.rfind("text:", 0) == 0) {
           selected_text_ids.insert(owner.substr(5));
+        } else if (owner.rfind("slot:", 0) == 0) {
+          slot_ids.insert(owner.substr(5));
+        }
+        it = ids.erase(it);
+        continue;
+      }
+      const auto arc_it = std::find_if(
+          parameters.arcs.begin(), parameters.arcs.end(),
+          [&](const SketchArc& arc) { return arc.id == *it; });
+      if (arc_it != parameters.arcs.end() &&
+          arc_it->generated_by.has_value()) {
+        const std::string& owner = arc_it->generated_by.value();
+        if (owner.rfind("slot:", 0) == 0) {
+          slot_ids.insert(owner.substr(5));
         }
         it = ids.erase(it);
         continue;
@@ -109,6 +157,20 @@ DocumentState DocumentManager::delete_sketch_selection(
         id_in_set(selected_point_ids, fillet.trim_a_vertex_id) ||
         id_in_set(selected_point_ids, fillet.trim_b_vertex_id)) {
       add_id(fillet_ids, fillet.id);
+    }
+  }
+
+  // Chamfer records follow the same ownership rules as fillets: any
+  // touched line / chamfer line / corner / trim point selects the
+  // whole chamfer.
+  for (const auto& chamfer : parameters.chamfers) {
+    if (id_in_set(line_ids, chamfer.line_a_id) ||
+        id_in_set(line_ids, chamfer.line_b_id) ||
+        id_in_set(line_ids, chamfer.chamfer_line_id) ||
+        id_in_set(selected_point_ids, chamfer.corner_vertex_id) ||
+        id_in_set(selected_point_ids, chamfer.trim_a_vertex_id) ||
+        id_in_set(selected_point_ids, chamfer.trim_b_vertex_id)) {
+      add_id(chamfer_ids, chamfer.id);
     }
   }
 
@@ -139,6 +201,26 @@ DocumentState DocumentManager::delete_sketch_selection(
                   parameters.fillets.end(),
                   [&](const SketchFillet& fillet) {
                     return id_in_set(fillet_ids, fillet.id);
+                  }) ||
+      std::any_of(parameters.chamfers.begin(),
+                  parameters.chamfers.end(),
+                  [&](const SketchChamfer& chamfer) {
+                    return id_in_set(chamfer_ids, chamfer.id);
+                  }) ||
+      std::any_of(parameters.slots.begin(),
+                  parameters.slots.end(),
+                  [&](const SketchSlot& slot) {
+                    return id_in_set(slot_ids, slot.id);
+                  }) ||
+      std::any_of(parameters.ellipses.begin(),
+                  parameters.ellipses.end(),
+                  [&](const SketchEllipse& ellipse) {
+                    return id_in_set(ellipse_ids, ellipse.id);
+                  }) ||
+      std::any_of(parameters.splines.begin(),
+                  parameters.splines.end(),
+                  [&](const SketchSpline& spline) {
+                    return id_in_set(spline_ids, spline.id);
                   });
   if (!will_delete && !selected_text_ids.empty()) {
     // Pure-glyph selection: delete the owning text entities (Fusion
@@ -188,6 +270,27 @@ DocumentState DocumentManager::delete_sketch_selection(
       add_id(deleted_point_ids, arc.end_vertex_id);
     }
   }
+  for (const auto& slot : parameters.slots) {
+    if (id_in_set(slot_ids, slot.id)) {
+      add_id(deleted_point_ids, slot.center_vertex_id);
+    }
+  }
+  for (const auto& ellipse : parameters.ellipses) {
+    if (id_in_set(ellipse_ids, ellipse.id)) {
+      add_id(deleted_point_ids, ellipse.center_vertex_id);
+      add_id(deleted_point_ids, ellipse.axis_a_vertex_id);
+      add_id(deleted_point_ids, ellipse.axis_b_vertex_id);
+      add_id(deleted_point_ids, ellipse.start_vertex_id);
+      add_id(deleted_point_ids, ellipse.end_vertex_id);
+    }
+  }
+  for (const auto& spline : parameters.splines) {
+    if (id_in_set(spline_ids, spline.id)) {
+      for (const auto& vid : spline.pole_vertex_ids) {
+        add_id(deleted_point_ids, vid);
+      }
+    }
+  }
   // Remove points that are still referenced by surviving entities.
   for (const auto& line : parameters.lines) {
     if (!id_in_set(line_ids, line.id)) {
@@ -220,6 +323,16 @@ DocumentState DocumentManager::delete_sketch_selection(
     polysmith::core::delete_sketch_fillet(*feature_it, fillet_id);
   }
 
+  std::vector<std::string> chamfers_to_delete;
+  for (const auto& chamfer : parameters.chamfers) {
+    if (id_in_set(chamfer_ids, chamfer.id)) {
+      chamfers_to_delete.push_back(chamfer.id);
+    }
+  }
+  for (const auto& chamfer_id : chamfers_to_delete) {
+    polysmith::core::delete_sketch_chamfer(*feature_it, chamfer_id);
+  }
+
   parameters.lines.erase(
       std::remove_if(parameters.lines.begin(), parameters.lines.end(), has_selected_line),
       parameters.lines.end());
@@ -231,6 +344,26 @@ DocumentState DocumentManager::delete_sketch_selection(
   parameters.arcs.erase(
       std::remove_if(parameters.arcs.begin(), parameters.arcs.end(), has_selected_arc),
       parameters.arcs.end());
+  // Deleting a slot record orphans its generated entities — the refresh
+  // below strips them (they carry generated_by="slot:<id>").
+  parameters.slots.erase(
+      std::remove_if(parameters.slots.begin(), parameters.slots.end(),
+                     [&](const SketchSlot& slot) {
+                       return id_in_set(slot_ids, slot.id);
+                     }),
+      parameters.slots.end());
+  parameters.ellipses.erase(
+      std::remove_if(parameters.ellipses.begin(), parameters.ellipses.end(),
+                     [&](const SketchEllipse& ellipse) {
+                       return id_in_set(ellipse_ids, ellipse.id);
+                     }),
+      parameters.ellipses.end());
+  parameters.splines.erase(
+      std::remove_if(parameters.splines.begin(), parameters.splines.end(),
+                     [&](const SketchSpline& spline) {
+                       return id_in_set(spline_ids, spline.id);
+                     }),
+      parameters.splines.end());
   parameters.projected_points.erase(
       std::remove_if(parameters.projected_points.begin(),
                      parameters.projected_points.end(),

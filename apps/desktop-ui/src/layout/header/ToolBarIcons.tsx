@@ -149,6 +149,123 @@ export const TextIcon = () => (
   </svg>
 );
 
+// Sketch Ellipse tool glyph: an ellipse with a center dot.
+export const EllipseIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <ellipse cx="12" cy="12" rx="8" ry="5" />
+    <circle cx="12" cy="12" r="0.5" fill="currentColor" />
+  </svg>
+);
+
+// Sketch Spline tool glyph: a control-point curve with its poles.
+export const SplineIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 17 C 9 17, 11 7, 15 7 S 21 9, 20 12" />
+    <circle cx="4" cy="17" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="7" r="1" fill="currentColor" stroke="none" />
+    <circle cx="20" cy="12" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+// Sketch Slot tool glyph: a horizontal stadium (slot) outline with
+// its center axis.
+export const SlotIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 7h12" />
+    <path d="M18 7a5 5 0 0 0 0 10" />
+    <path d="M18 17H6" />
+    <path d="M6 17a5 5 0 0 0 0 -10" />
+    <path d="M6 12h12" />
+  </svg>
+);
+
+// Sketch Chamfer tool glyph: a right angle with the corner cut off
+// at 45° — reads as "chamfer the corner" at toolbar size, distinct
+// from the fillet's arc. (Named SketchChamferIcon — `ChamferIcon`
+// is the 3D body-op chamfer glyph.)
+export const SketchChamferIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 4h10" />
+    <path d="M14 4 4 14" />
+    <path d="M4 14v6" />
+  </svg>
+);
+
+// Sketch Extend tool glyph: a segment with an arrow continuing past
+// its endpoint — reads as "stretch to the next entity".
+export const ExtendIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 17h8" />
+    <path d="M12 17 17 12" />
+    <path d="M12 17v0" />
+  </svg>
+);
+
+// Sketch Offset tool glyph: two parallel lines with an arrow between
+// them — reads as "copy at a distance".
+export const OffsetIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 8h16" />
+    <path d="M4 14h16" />
+    <path d="M6 9v4" />
+    <path d="M9.5 9l2.5 2 2.5-2" />
+  </svg>
+);
+
 const TrimIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -321,6 +438,18 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <ArcIcon />;
     case "fillet":
       return <FilletIcon />;
+    case "chamfer":
+      return <SketchChamferIcon />;
+    case "extend":
+      return <ExtendIcon />;
+    case "offset":
+      return <OffsetIcon />;
+    case "ellipse":
+      return <EllipseIcon />;
+    case "spline":
+      return <SplineIcon />;
+    case "slot":
+      return <SlotIcon />;
     case "text":
       return <TextIcon />;
     case "project":

@@ -2,6 +2,7 @@
 
 #include "core/diagnostics/logger.h"
 #include "core/document/feature.h"
+#include "core/sketch/sketch_curve.h"
 #include "core/sketch/trim_engine.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 
@@ -16,6 +17,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include "core/sketch/spline_math.h"
+#include "core/sketch/spline_profile_occt.h"
 
 namespace polysmith::core {
 namespace {

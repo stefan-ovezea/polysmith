@@ -11,6 +11,8 @@
         .helices = {},
         .sketch_lines = {},
         .sketch_circles = {},
+        .sketch_ellipses = {},
+        .sketch_splines = {},
         .sketch_arcs = {},
         .sketch_vertices = {},
         .sketch_dimensions = {},

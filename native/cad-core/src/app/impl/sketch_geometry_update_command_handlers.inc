@@ -24,7 +24,8 @@
     return;
   }
 
-  if (command.type == "move_sketch_entities") {
+  if (command.type == "move_sketch_entities" ||
+      command.type == "transform_sketch_entities") {
     std::vector<std::string> entity_ids;
     if (command.payload.contains("entity_ids") &&
         command.payload.at("entity_ids").is_array()) {
@@ -33,6 +34,27 @@
           entity_ids.push_back(entry.get<std::string>());
         }
       }
+    }
+    if (command.type == "transform_sketch_entities") {
+      bool copy = false;
+      if (command.payload.contains("copy") &&
+          command.payload.at("copy").is_boolean()) {
+        copy = command.payload.at("copy").get<bool>();
+      }
+      const auto document = document_manager().transform_sketch_entities(
+          entity_ids,
+          read_dimension(command.payload, "dx"),
+          read_dimension(command.payload, "dy"),
+          read_dimension(command.payload, "center_x"),
+          read_dimension(command.payload, "center_y"),
+          read_dimension(command.payload, "angle_deg"),
+          read_dimension(command.payload, "scale"),
+          copy);
+
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document)));
+      return;
     }
     const auto document = document_manager().move_sketch_entities(
         entity_ids,

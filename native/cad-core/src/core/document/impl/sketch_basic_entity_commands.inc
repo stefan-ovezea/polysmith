@@ -237,3 +237,129 @@ DocumentState DocumentManager::add_sketch_arc(double start_x,
   bump_geometry_revision();
   return document_.value();
 }
+
+DocumentState DocumentManager::add_sketch_ellipse(double center_x,
+                                                  double center_y,
+                                                  double axis_a_x,
+                                                  double axis_a_y,
+                                                  double axis_b_x,
+                                                  double axis_b_y,
+                                                  bool is_construction) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_ellipse(
+      *feature_it, next_sketch_ellipse_id_++, center_x, center_y, axis_a_x,
+      axis_a_y, axis_b_x, axis_b_y, is_construction);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_vertex_id = std::nullopt;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->ellipses.back().id;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_sketch_spline(
+    const std::vector<std::pair<double, double>>& pole_points,
+    bool is_construction) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_spline(*feature_it, next_sketch_spline_id_++,
+                                      pole_points, is_construction);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_vertex_id = std::nullopt;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->splines.back().id;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::add_sketch_slot(double center_x,
+                                               double center_y,
+                                               double length,
+                                               double radius,
+                                               double rotation,
+                                               bool is_construction) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::add_sketch_slot(*feature_it, next_sketch_slot_id_++,
+                                    center_x, center_y, length, radius,
+                                    rotation, is_construction);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_vertex_id = std::nullopt;
+  document_->selected_sketch_entity_id =
+      feature_it->sketch_parameters->slots.back().id;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::update_sketch_slot(const std::string& slot_id,
+                                                  double center_x,
+                                                  double center_y,
+                                                  double length,
+                                                  double radius,
+                                                  double rotation) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::update_sketch_slot(*feature_it, slot_id, center_x,
+                                       center_y, length, radius, rotation);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_entity_id = slot_id;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  bump_geometry_revision();
+  return document_.value();
+}

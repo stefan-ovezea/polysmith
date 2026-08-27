@@ -32,6 +32,11 @@
     const auto& params = feature_it->sketch_parameters.value();
     nlohmann::json result;
     result["entity_id"] = entity_id;
+    // The document revision this preview was computed against. The UI
+    // echoes it back with the trim; a mismatch means the preview
+    // described geometry that no longer exists, and the core falls
+    // back to re-deriving the segment from the click point.
+    result["revision"] = doc_opt->revision;
 
     // Find and preview the entity.
     const auto line_it = std::find_if(
@@ -73,6 +78,9 @@
       auto r = nlohmann::json::object();
       r["entity_id"] = entity_id;
       r["entity_kind"] = "circle";
+      // Same revision stamp as the line branch — the UI's schema
+      // requires it on every non-null preview payload.
+      r["revision"] = doc_opt->revision;
       if (isects.empty()) {
         r["hovered_index"] = 0;
         r["full_circle"] = true;
@@ -107,6 +115,9 @@
       auto r = nlohmann::json::object();
       r["entity_id"] = entity_id;
       r["entity_kind"] = "arc";
+      // Same revision stamp as the line branch — the UI's schema
+      // requires it on every non-null preview payload.
+      r["revision"] = doc_opt->revision;
       if (isects.empty()) {
         r["hovered_index"] = 0;
         r["full_arc"] = true;
@@ -122,6 +133,78 @@
           nlohmann::json seg;
           seg["param_start"] = s.param_start;
           seg["param_end"]   = s.param_end;
+          jsegs.push_back(std::move(seg));
+        }
+      }
+      polysmith::protocol::write_message(
+          { { "id", command.id },
+            { "type", "trim_preview_result" },
+            { "payload", r } });
+      return;
+    }
+
+    const auto ellipse_it = std::find_if(
+        params.ellipses.begin(), params.ellipses.end(),
+        [&](const auto& e) { return e.id == entity_id; });
+    if (ellipse_it != params.ellipses.end()) {
+      auto isects = polysmith::core::find_all_intersections(*ellipse_it, params);
+      auto r = nlohmann::json::object();
+      r["entity_id"] = entity_id;
+      r["entity_kind"] = "ellipse";
+      r["revision"] = doc_opt->revision;
+      if (isects.empty()) {
+        r["hovered_index"] = 0;
+        r["full_ellipse"] = true;
+      } else {
+        auto segs = polysmith::core::split_ellipse_at_intersections(
+            *ellipse_it, isects);
+        int idx = polysmith::core::select_clicked_segment(
+            segs, *ellipse_it, cursor_x, cursor_y);
+        r["hovered_index"] = idx;
+        r["full_ellipse"] = false;
+        auto& jsegs = r["segments"] = nlohmann::json::array();
+        for (const auto& s : segs) {
+          nlohmann::json seg;
+          seg["param_start"] = s.param_start;
+          seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
+          jsegs.push_back(std::move(seg));
+        }
+      }
+      polysmith::protocol::write_message(
+          { { "id", command.id },
+            { "type", "trim_preview_result" },
+            { "payload", r } });
+      return;
+    }
+
+    const auto spline_it = std::find_if(
+        params.splines.begin(), params.splines.end(),
+        [&](const auto& s) { return s.id == entity_id; });
+    if (spline_it != params.splines.end()) {
+      auto isects = polysmith::core::find_all_intersections(*spline_it, params);
+      auto r = nlohmann::json::object();
+      r["entity_id"] = entity_id;
+      r["entity_kind"] = "spline";
+      r["revision"] = doc_opt->revision;
+      if (isects.empty()) {
+        r["hovered_index"] = 0;
+        r["full_spline"] = true;
+      } else {
+        auto segs = polysmith::core::split_spline_at_intersections(
+            *spline_it, isects);
+        int idx = polysmith::core::select_clicked_segment(
+            segs, *spline_it, cursor_x, cursor_y);
+        r["hovered_index"] = idx;
+        r["full_spline"] = false;
+        auto& jsegs = r["segments"] = nlohmann::json::array();
+        for (const auto& s : segs) {
+          nlohmann::json seg;
+          seg["param_start"] = s.param_start;
+          seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
           jsegs.push_back(std::move(seg));
         }
       }

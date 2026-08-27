@@ -68,6 +68,58 @@
                     }
                     return arcs;
                   }()},
+                 {"ellipses",
+                  [&feature]() {
+                    json ellipses = json::array();
+                    for (const auto& e : feature.sketch_parameters->ellipses) {
+                      ellipses.push_back({
+                          {"ellipse_id", e.id},
+                          {"center_vertex_id", e.center_vertex_id},
+                          {"axis_a_vertex_id", e.axis_a_vertex_id},
+                          {"axis_b_vertex_id", e.axis_b_vertex_id},
+                          {"center_x", e.center_x},
+                          {"center_y", e.center_y},
+                          {"a", e.a},
+                          {"b", e.b},
+                          {"rotation", e.rotation},
+                          {"is_construction", e.is_construction},
+                          {"generated_by",
+                           e.generated_by.has_value()
+                               ? json(e.generated_by.value())
+                               : json(nullptr)},
+                          {"has_sweep", e.has_sweep},
+                          {"sweep_start_angle", e.sweep_start_angle},
+                          {"sweep_end_angle", e.sweep_end_angle},
+                          {"ccw", e.ccw},
+                          {"start_vertex_id", e.start_vertex_id},
+                          {"end_vertex_id", e.end_vertex_id},
+                      });
+                    }
+                    return ellipses;
+                  }()},
+                 {"splines",
+                  [&feature]() {
+                    json splines = json::array();
+                    for (const auto& s : feature.sketch_parameters->splines) {
+                      json pole_vertex_ids = json::array();
+                      for (const auto& vid : s.pole_vertex_ids) {
+                        pole_vertex_ids.push_back(vid);
+                      }
+                      splines.push_back({
+                          {"spline_id", s.id},
+                          {"pole_vertex_ids", pole_vertex_ids},
+                          {"pole_xs", s.pole_xs},
+                          {"pole_ys", s.pole_ys},
+                          {"degree", s.degree},
+                          {"is_construction", s.is_construction},
+                          {"generated_by",
+                           s.generated_by.has_value()
+                               ? json(s.generated_by.value())
+                               : json(nullptr)},
+                      });
+                    }
+                    return splines;
+                  }()},
                  {"fillets",
                   [&feature]() {
                     json fillets = json::array();

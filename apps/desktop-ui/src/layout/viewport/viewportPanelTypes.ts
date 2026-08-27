@@ -80,6 +80,7 @@ export interface ViewportPanelProps {
   onAddSketchLineLengthDimension: (lineId: string) => Promise<void>;
   onAddSketchLineAngleDimension: (lineId: string) => Promise<void>;
   onAddSketchArcRadiusDimension: (arcId: string) => Promise<void>;
+  onAddSketchArcLengthDimension: (arcId: string) => Promise<void>;
   onAddSketchCircleRadiusDimension: (
     circleId: string,
     displayAs?: string,
@@ -114,6 +115,19 @@ export interface ViewportPanelProps {
     radius: number,
     isConstruction: boolean,
   ) => Promise<void>;
+  onAddSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
   onAddSketchArc: (
     startX: number,
     startY: number,
@@ -123,6 +137,32 @@ export interface ViewportPanelProps {
     anchorY: number,
     mode: ArcToolMode,
     isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchEllipse: (
+    centerX: number,
+    centerY: number,
+    axisAX: number,
+    axisAY: number,
+    axisBX: number,
+    axisBY: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchSpline: (
+    points: Array<{ x: number; y: number }>,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchSlot: (
+    centerX: number,
+    centerY: number,
+    length: number,
+    radius: number,
+    rotation: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  onAddSketchChamfer: (
+    cornerPointId: string,
+    lineAId: string,
+    lineBId: string,
   ) => Promise<void>;
   arcToolMode: ArcToolMode;
   onSetArcToolMode: (mode: ArcToolMode) => void;
@@ -157,6 +197,14 @@ export interface ViewportPanelProps {
   // segment (`generated_by: "text:<id>"`). App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
   onPickSketchText: (textId: string) => void;
+  onPickSketchSlot: (slotId: string) => void;
+  onPickSketchChamfer: (chamferId: string) => void;
+  onExtendSketchEntity: (
+    entityId: string,
+    clickX: number,
+    clickY: number,
+  ) => Promise<void>;
+  onOffsetSketchEntity: (entityId: string) => Promise<void>;
   // Text-on-path picking: while armed, entity clicks bind the text
   // path instead of placing a new text.
   sketchTextPathPicking: boolean;
@@ -200,6 +248,9 @@ export interface ViewportPanelProps {
     entityId: string,
     clickX: number,
     clickY: number,
+    segmentIndex?: number,
+    expectedRevision?: number,
+    previewId?: string,
   ) => Promise<void>;
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;
@@ -218,6 +269,12 @@ export interface ViewportPanelProps {
     displayAs: string,
   ) => Promise<void>;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
+  onOpenTransformArray: () => void;
+  // Array/transform center pick: while true the viewport routes the
+  // next sketch-plane click through the snap machinery and reports the
+  // sketch-local point instead of selecting.
+  arrayCenterPicking: boolean;
+  onArrayCenterPicked: (local: [number, number]) => void;
   onUpdateSketchPoint: (
     pointId: string,
     x: number,

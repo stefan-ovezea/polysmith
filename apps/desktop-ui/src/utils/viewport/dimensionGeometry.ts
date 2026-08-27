@@ -7,12 +7,26 @@ export interface SketchDimensionGeometry {
   arrowPositions: number[];
   arrowIndices: number[];
   refLineData: { start: THREE.Vector3; end: THREE.Vector3 } | null;
+  /** Dashed witness lines running from measured geometry out to the
+   *  dimension line — used by arc-length extension arcs. */
+  witnessLines: { start: THREE.Vector3; end: THREE.Vector3 }[];
 }
 
 export interface FilledArrowGeometry {
   arrowPositions: number[];
   arrowIndices: number[];
 }
+
+/** Length of the flat landing drawn under a radius/diameter value.
+ *  Exported so the drag preview lays the leader out identically — the
+ *  preview and the re-emitted geometry disagreeing is what makes a
+ *  dragged label appear to jump on release. */
+export const kLeaderJog = 4.0;
+
+/** Minimum clearance between an arc and its arc-length extension arc.
+ *  Mirrors kArcLengthMinGap in the core's common_viewport_types.inc; the
+ *  drag preview and the core must clamp identically. */
+export const kArcLengthMinGap = 6.0;
 
 export function appendFilledArrow(
   geometry: FilledArrowGeometry,
@@ -144,6 +158,90 @@ function appendAngleArcGeometry({
   );
 }
 
+/**
+ * Radius and diameter leader, drawn to CAD convention: an arrowhead
+ * landing on the curve, a straight leader out to the value text, and a
+ * short horizontal landing under it.
+ *
+ * The landing is derived here rather than emitted by the core because it
+ * is purely presentational, and because a second implementation of it
+ * would be one more thing for the live drag preview and the re-emitted
+ * geometry to disagree about.
+ *
+ * `firstTip` and `secondTip` coincide for a radius (one arrowhead); they
+ * are the two ends of the through-centre line for a diameter.
+ */
+function appendRadialLeader({
+  addSegment,
+  arrows,
+  center,
+  quadrant,
+  leaderOrigin,
+  firstTip,
+  secondTip,
+  label,
+  arrowLength,
+  arrowWidth,
+}: {
+  addSegment: (start: THREE.Vector3, end: THREE.Vector3) => void;
+  arrows: FilledArrowGeometry;
+  center: THREE.Vector3;
+  quadrant: THREE.Vector3;
+  leaderOrigin: THREE.Vector3;
+  firstTip: THREE.Vector3;
+  secondTip: THREE.Vector3;
+  label: THREE.Vector3;
+  arrowLength: number;
+  arrowWidth: number;
+}) {
+  // In-plane direction perpendicular to the leader, used to give the
+  // flat arrowhead triangles a width within the sketch plane.
+  const perp = quadrant.clone().sub(center);
+  if (perp.lengthSq() <= 1e-12) {
+    return;
+  }
+  perp.normalize();
+
+  const isDiameter = firstTip.distanceToSquared(secondTip) > 1e-12;
+  if (isDiameter) {
+    // The dimension line runs through the centre between both contacts.
+    addSegment(firstTip, secondTip);
+  }
+
+  // Leader from the rim out to the text, with a landing whose length
+  // shrinks rather than doubling back when the text sits close in.
+  const leaderDelta = label.clone().sub(leaderOrigin);
+  if (leaderDelta.lengthSq() > 1e-12) {
+    const landing = Math.min(kLeaderJog, leaderDelta.length() / 2);
+    const bend = label
+      .clone()
+      .sub(leaderDelta.clone().normalize().multiplyScalar(landing));
+    addSegment(leaderOrigin, bend);
+    addSegment(bend, label);
+  }
+
+  // Arrowheads sit on the curve pointing outward, so their triangles
+  // extend back toward the centre.
+  const appendTip = (tip: THREE.Vector3) => {
+    const inward = center.clone().sub(tip);
+    if (inward.lengthSq() <= 1e-12) {
+      return;
+    }
+    appendFilledArrow(
+      arrows,
+      tip,
+      inward.normalize(),
+      perp,
+      arrowLength,
+      arrowWidth,
+    );
+  };
+  appendTip(firstTip);
+  if (isDiameter) {
+    appendTip(secondTip);
+  }
+}
+
 export function buildSketchDimensionGeometry(
   dimension: SketchDimensionScene,
 ): SketchDimensionGeometry {
@@ -176,18 +274,56 @@ export function buildSketchDimensionGeometry(
   const arrowPositions: number[] = [];
   const arrowIndices: number[] = [];
   const arrows = { arrowPositions, arrowIndices };
+  const witnessLines: { start: THREE.Vector3; end: THREE.Vector3 }[] = [];
+
+  const isAngleArcKind =
+    dimension.kind === "angle" ||
+    dimension.kind === "line_angle" ||
+    dimension.kind === "arc_angle";
+  // arc_length shares the extension-arc geometry with the angle kinds;
+  // only its label text and its witness lines differ.
+  const isExtensionArcKind = isAngleArcKind || dimension.kind === "arc_length";
 
   const refLineData: { start: THREE.Vector3; end: THREE.Vector3 } | null =
-    (dimension.kind === "angle" || dimension.kind === "line_angle") &&
-    dimension.refLineStart &&
-    dimension.refLineEnd
+    isAngleArcKind && dimension.refLineStart && dimension.refLineEnd
       ? {
           start: new THREE.Vector3(...dimension.refLineStart),
           end: new THREE.Vector3(...dimension.refLineEnd),
         }
       : null;
 
-  if (dimension.kind === "angle" || dimension.kind === "line_angle") {
+  if (isExtensionArcKind) {
+    // Witness lines run from the measured arc's endpoints out to the
+    // extension arc. Angle kinds anchor on their own rays instead, so
+    // they keep the dashed reference line above and skip these.
+    if (dimension.kind === "arc_length") {
+      witnessLines.push(
+        {
+          start: anchorStart.clone(),
+          end: dimensionStart
+            .clone()
+            .add(
+              dimensionStart
+                .clone()
+                .sub(anchorStart)
+                .normalize()
+                .multiplyScalar(extensionOverrun),
+            ),
+        },
+        {
+          start: anchorEnd.clone(),
+          end: dimensionEnd
+            .clone()
+            .add(
+              dimensionEnd
+                .clone()
+                .sub(anchorEnd)
+                .normalize()
+                .multiplyScalar(extensionOverrun),
+            ),
+        },
+      );
+    }
     if (dimension.arcRadius && dimension.arcRadius > 0 && dimension.arcCenter) {
       const pivot = new THREE.Vector3(...dimension.arcCenter);
       const startAngle = dimension.arcStartAngle ?? 0;
@@ -273,11 +409,30 @@ export function buildSketchDimensionGeometry(
         }
       }
     }
-  } else if (dimension.kind === "arc_radius" || dimension.kind === "circle_radius") {
-    // Radius dimension: single leader from arc surface inward toward center.
-    // No arrows or extension lines.
-    const labelPos = new THREE.Vector3(...dimension.labelPosition);
-    addSegment(anchorEnd, anchorStart);
+  } else if (
+    dimension.kind === "arc_radius" ||
+    dimension.kind === "circle_radius" ||
+    dimension.kind === "polygon_radius"
+  ) {
+    // Radius / diameter leader. The core emits the contact(s) on the
+    // curve, a quarter-turn rim point as an in-plane direction reference
+    // (the centre, contact and label are collinear, so there is no cross
+    // product to recover the sketch plane from), and the label. The
+    // landing under the text is derived here — see appendRadialLeader.
+    appendRadialLeader({
+      addSegment,
+      arrows,
+      center: dimension.arcCenter
+        ? new THREE.Vector3(...dimension.arcCenter)
+        : anchorStart.clone().add(dimensionStart).multiplyScalar(0.5),
+      quadrant: anchorEnd,
+      leaderOrigin: anchorStart,
+      firstTip: dimensionStart,
+      secondTip: dimensionEnd,
+      label: new THREE.Vector3(...dimension.labelPosition),
+      arrowLength,
+      arrowWidth,
+    });
   } else {
     addSegment(
       anchorStart,
@@ -310,5 +465,5 @@ export function buildSketchDimensionGeometry(
     );
   }
 
-  return { points, arrowPositions, arrowIndices, refLineData };
+  return { points, arrowPositions, arrowIndices, refLineData, witnessLines };
 }

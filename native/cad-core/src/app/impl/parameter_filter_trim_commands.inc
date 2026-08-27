@@ -127,10 +127,29 @@
   }
 
   if (command.type == "trim_sketch_entity") {
+    // Optional segment_index: the hovered segment from the trim_preview
+    // result. When present the core trims exactly the highlighted
+    // segment instead of re-deriving it from the click point. A stale
+    // preview (one computed against an older document revision) must
+    // NOT drive the trim — the expected_revision check in the document
+    // layer downgrades it to click-based selection.
+    std::optional<int> segment_index = std::nullopt;
+    if (command.payload.contains("segment_index") &&
+        command.payload["segment_index"].is_number()) {
+      segment_index = command.payload["segment_index"].get<int>();
+    }
+    std::optional<int> expected_revision = std::nullopt;
+    if (command.payload.contains("expected_revision") &&
+        command.payload["expected_revision"].is_number()) {
+      expected_revision = command.payload["expected_revision"].get<int>();
+    }
     const auto document = document_manager().trim_sketch_entity(
         read_string(command.payload, "entity_id"),
         read_dimension(command.payload, "click_x"),
-        read_dimension(command.payload, "click_y"));
+        read_dimension(command.payload, "click_y"),
+        segment_index,
+        nullptr /* minted_vertex_ids */,
+        expected_revision);
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(

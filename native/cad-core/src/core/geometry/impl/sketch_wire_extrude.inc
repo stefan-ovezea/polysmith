@@ -208,6 +208,82 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       continue;
     }
 
+    if (be.entity_kind == "ellipse") {
+      const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
+      const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
+      // Major axis direction in the sketch plane, rotated into world
+      // space by the sketch frame.
+      const gp_Pnt a_point = to_world_point(
+          frame, be.center_x + be.radius * std::cos(be.rotation),
+          be.center_y + be.radius * std::sin(be.rotation));
+      // Orthogonalize the major-axis direction against the plane
+      // normal — gp_Ax2 requires an exactly perpendicular XDir and
+      // throws ConstructionError on any numerical residual.
+      gp_Vec vx(center, a_point);
+      const double d = vx.Dot(normal);
+      vx.Subtract(normal.XYZ().Multiplied(d));
+      const gp_Dir x_dir(vx);
+      // Ellipse edge — trimmed to the walked sub-span when it is a
+      // partial ellipse (a trim result); a full ellipse stays one
+      // analytic edge. Geom_Ellipse's parameter IS the sketch's
+      // ellipse-frame angle, so the trim is exact.
+      GC_MakeEllipse ell(gp_Ax2(center, normal, x_dir), be.radius,
+                         be.minor_radius);
+      if (!ell.IsDone()) {
+        throw std::runtime_error("Failed to create exact ellipse edge");
+      }
+      const double span = std::abs(be.param_end - be.param_start);
+      if (span < 2.0 * M_PI - 1e-9) {
+        wire_builder.Add(BRepBuilderAPI_MakeEdge(
+            new Geom_TrimmedCurve(ell.Value(), be.param_start, be.param_end)));
+      } else {
+        wire_builder.Add(BRepBuilderAPI_MakeEdge(ell.Value()));
+      }
+      continue;
+    }
+
+    if (be.entity_kind == "spline") {
+      // Exact clamped B-spline edge from the boundary's cached poles —
+      // the same open-uniform convention the profile walk evaluates
+      // (spline_math.h), so the extruded edge IS the drawn curve.
+      const int n = static_cast<int>(be.spline_pole_xs.size());
+      if (n < 2) {
+        throw std::runtime_error("Spline boundary edge has too few poles");
+      }
+      int degree = std::min(be.spline_degree, n - 1);
+      degree = std::max(1, degree);
+      TColgp_Array1OfPnt poles(1, n);
+      for (int i = 0; i < n; ++i) {
+        poles.SetValue(i + 1, to_world_point(frame, be.spline_pole_xs[i],
+                                             be.spline_pole_ys[i]));
+      }
+      // OCCT takes DISTINCT knot values with per-value multiplicities
+      // (the expanded sequence the de Boor evaluator uses would be
+      // misread as a near-zero interval).
+      const int interior = n - degree - 1;
+      const int knot_count = interior + 2;
+      TColStd_Array1OfReal knots(1, knot_count);
+      TColStd_Array1OfInteger mults(1, knot_count);
+      knots.SetValue(1, 0.0);
+      mults.SetValue(1, degree + 1);
+      for (int i = 1; i <= interior; ++i) {
+        knots.SetValue(i + 1, static_cast<double>(i) /
+                                  static_cast<double>(interior + 1));
+        mults.SetValue(i + 1, 1);
+      }
+      knots.SetValue(knot_count, 1.0);
+      mults.SetValue(knot_count, degree + 1);
+      Handle(Geom_Curve) piece =
+          new Geom_BSplineCurve(poles, knots, mults, degree);
+      // A split spline contributes only its walked sub-span.
+      if (std::abs(be.param_start) > 1e-12 ||
+          std::abs(be.param_end - 1.0) > 1e-12) {
+        piece = new Geom_TrimmedCurve(piece, be.param_start, be.param_end);
+      }
+      wire_builder.Add(BRepBuilderAPI_MakeEdge(piece));
+      continue;
+    }
+
     const gp_Pnt center = to_world_point(frame, be.center_x, be.center_y);
     const gp_Dir normal(frame.normal_x, frame.normal_y, frame.normal_z);
     const gp_Circ circ(gp_Ax2(center, normal), be.radius);

@@ -84,14 +84,14 @@ int select_clicked_segment(
     }
   }
 
-  // Distance fallback: project click onto each arc chord.
+  // Distance fallback measured against the arc itself — the chord of a
+  // large segment sits far under the click (the sagitta), so the old
+  // chord test could hand the click to a neighbouring segment.
   double best_dist_sq = std::numeric_limits<double>::max();
   int best_index = -1;
   for (size_t i = 0; i < segments.size(); ++i) {
-    const double dist_sq = point_segment_distance_sq(
-        click_x, click_y,
-        segments[i].start_x, segments[i].start_y,
-        segments[i].end_x, segments[i].end_y);
+    const double dist_sq =
+        point_trim_segment_distance_sq(segments[i], click_x, click_y);
     if (dist_sq < best_dist_sq) {
       best_dist_sq = dist_sq;
       best_index = static_cast<int>(i);

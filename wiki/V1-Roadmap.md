@@ -23,7 +23,10 @@ The original v1 milestones 0–3 are complete. The codebase now has:
 - a real document model with feature history, undo/redo, and core-owned selection state
 - 2D sketch system: lines, rectangles, circles, arcs, points, polygons, dimensions,
   geometric constraints (H/V, coincident, parallel, perpendicular, equal-length, tangent,
-  concentric, point-on-object), dimensional constraints (length, radius, angle, distance),
+  concentric, point-on-object, symmetric, collinear, midpoint, tangent pairs),
+  dimensional constraints (length, radius, diameter, angle, distance, arc length),
+  ellipses, slots, chamfers, control-point B-splines (closed splines bound regions
+  by themselves), text, extend, offset, transform/copy, linear + circular arrays,
   and stored sketch profiles with inner-loop/hole support
 - closed-profile detection that survives parametric edits, point merges, and
   mixed line+arc loops

@@ -636,6 +636,68 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // Parametric corner chamfers (line-line). Defaulted to `[]`
+          // so older saves (or messages from a core that pre-dates
+          // chamfer support) keep parsing cleanly.
+          chamfers: z
+            .array(
+              z.object({
+                chamfer_id: z.string(),
+                corner_vertex_id: z.string(),
+                corner_x: z.number(),
+                corner_y: z.number(),
+                line_a_id: z.string(),
+                line_b_id: z.string(),
+                trim_a_vertex_id: z.string(),
+                trim_b_vertex_id: z.string(),
+                chamfer_line_id: z.string(),
+                distance_a: z.number(),
+                distance_b: z.number(),
+              }),
+            )
+            .default([]),
+          // Parametric sketch ellipses. Defaulted to `[]` so older
+          // saves (or messages from a core that pre-dates ellipse
+          // support) keep parsing cleanly.
+          ellipses: z
+            .array(
+              z.object({
+                ellipse_id: z.string(),
+                center_vertex_id: z.string(),
+                axis_a_vertex_id: z.string(),
+                axis_b_vertex_id: z.string(),
+                center_x: z.number(),
+                center_y: z.number(),
+                a: z.number(),
+                b: z.number(),
+                rotation: z.number(),
+                is_construction: z.boolean().default(false),
+                has_sweep: z.boolean().default(false),
+                sweep_start_angle: z.number().default(0),
+                sweep_end_angle: z.number().default(0),
+                ccw: z.boolean().default(true),
+                start_vertex_id: z.string().default(""),
+                end_vertex_id: z.string().default(""),
+                generated_by: z.string().nullable().default(null),
+              }),
+            )
+            .default([]),
+          // Control-point B-splines. Defaulted to `[]` so older
+          // saves (or messages from a core that pre-dates spline
+          // support) keep parsing cleanly.
+          splines: z
+            .array(
+              z.object({
+                spline_id: z.string(),
+                pole_vertex_ids: z.array(z.string()),
+                pole_xs: z.array(z.number()),
+                pole_ys: z.array(z.number()),
+                degree: z.number(),
+                is_construction: z.boolean().default(false),
+                generated_by: z.string().nullable().default(null),
+              }),
+            )
+            .default([]),
           // Parametric sketch text entries. The glyph segments live in
           // `lines` (tagged via `generated_by`), so profile detection
           // and the viewport consume text with zero downstream
@@ -662,6 +724,24 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // Parametric straight slots (stadiums), expanded into
+          // generated lines + arcs on recompute. Defaulted to `[]` so
+          // older saves keep parsing cleanly.
+          slots: z
+            .array(
+              z.object({
+                slot_id: z.string(),
+                center_vertex_id: z.string(),
+                center_x: z.number(),
+                center_y: z.number(),
+                length: z.number(),
+                radius: z.number(),
+                rotation: z.number(),
+                mode: z.string(),
+                is_construction: z.boolean().default(false),
+              }),
+            )
+            .default([]),
           vertices: z.array(
             z.object({
               vertex_id: z.string(),
@@ -684,6 +764,8 @@ export const documentStateSchema = z.object({
                 "line_length",
                 "circle_radius",
                 "arc_radius",
+                "arc_length",
+                "arc_angle",
                 "polygon_radius",
                 "angle",
                 "line_angle",
@@ -711,6 +793,7 @@ export const documentStateSchema = z.object({
                 "perpendicular",
                 "parallel",
                 "tangent_line_circle",
+                "tangent_circle_line",
               ]),
               first_line_id: z.string(),
               second_line_id: z.string(),
@@ -719,7 +802,9 @@ export const documentStateSchema = z.object({
           profiles: z.array(
             z.object({
               profile_id: z.string(),
-              kind: z.enum(["polygon", "circle"]),
+              // The exact arrangement emits ellipse / spline regions
+              // for standalone full curves of those kinds (SK3 / SK7).
+              kind: z.enum(["polygon", "circle", "ellipse", "spline"]),
               vertex_ids: z.array(z.string()),
               line_ids: z.array(z.string()),
               points: z.array(

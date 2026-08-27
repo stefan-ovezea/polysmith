@@ -5,6 +5,8 @@ import {
   SketchCircleScene,
   SketchConstraintScene,
   SketchDimensionScene,
+  SketchEllipseScene,
+  SketchSplineScene,
   SketchLineScene,
   SketchPlaneFrame,
   SketchVertexScene,
@@ -277,6 +279,141 @@ export function buildSketchCircleObject(
   return sketchCircle;
 }
 
+// Build the perimeter loop for a sketch ellipse. Same projection
+// pattern as `buildSketchCircleObject`, with the ellipse sampled in
+// sketch-plane space: the curve's a/b radii sit along the major axis
+// rotated by `rotation`, then each sample is mapped to world via the
+// plane basis.
+export function buildSketchEllipseObject(
+  ellipse: SketchEllipseScene,
+  planeFrame: SketchPlaneFrame | null = null,
+) {
+  const isDashed = ellipse.isPreview || ellipse.isConstruction;
+  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const material = isDashed
+    ? new THREE.LineDashedMaterial({
+        color: ellipse.isSelected
+          ? themeColor("--color-primary-edge-active", "#c3f5ff")
+          : baseColor,
+        transparent: true,
+        opacity: ellipse.isPreview ? 0.55 : 0.72,
+        dashSize: 1,
+        gapSize: 0.6,
+      })
+    : new THREE.LineBasicMaterial({
+        color: ellipse.isSelected
+          ? themeColor("--color-primary-edge-active", "#c3f5ff")
+          : baseColor,
+        transparent: true,
+        opacity: 0.98,
+      });
+  configureSketchOverlayMaterial(material);
+  // Partial ellipses (trim results) draw an open arc along the stored
+  // sweep; full ellipses draw the closed loop.
+  const hasSweep =
+    ellipse.hasSweep === true &&
+    ellipse.sweepStart !== undefined &&
+    ellipse.sweepEnd !== undefined;
+  const ccw = ellipse.ccw !== undefined ? ellipse.ccw : true;
+  let sweepStart = hasSweep ? ellipse.sweepStart! : 0;
+  let sweepEnd = hasSweep ? ellipse.sweepEnd! : Math.PI * 2;
+  if (ccw && sweepEnd <= sweepStart) sweepEnd += Math.PI * 2;
+  if (!ccw && sweepEnd >= sweepStart) sweepEnd -= Math.PI * 2;
+  const curve = new THREE.EllipseCurve(
+    0,
+    0,
+    ellipse.a,
+    ellipse.b,
+    sweepStart,
+    sweepEnd,
+    !ccw,
+    ellipse.rotation,
+  );
+  const { xAxis, yAxis } = resolveSketchPlaneAxes(ellipse.planeId, planeFrame);
+  const points = curve
+    .getPoints(64)
+    .map(
+      (point) =>
+        new THREE.Vector3(
+          ellipse.center[0] + xAxis[0] * point.x + yAxis[0] * point.y,
+          ellipse.center[1] + xAxis[1] * point.x + yAxis[1] * point.y,
+          ellipse.center[2] + xAxis[2] * point.x + yAxis[2] * point.y,
+        ),
+    );
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const sketchEllipse = hasSweep
+    ? new THREE.Line(geometry, material)
+    : new THREE.LineLoop(geometry, material);
+  sketchEllipse.renderOrder = 7;
+  if (isDashed) {
+    sketchEllipse.computeLineDistances();
+  }
+  if (!ellipse.isPreview) {
+    sketchEllipse.userData.sketchEntityId = ellipse.ellipseId;
+    sketchEllipse.userData.sketchEntityKind = "ellipse";
+    sketchEllipse.userData.sketchEntityIsConstruction = ellipse.isConstruction;
+  }
+  return sketchEllipse;
+}
+
+// Build the curve strip + control polygon for a control-point spline.
+// The core samples the curve in world space already (the same de Boor
+// evaluation the profile walk uses), so the renderer draws the
+// polyline verbatim. Returns the pickable curve line (the entity
+// object) plus the control polygon — a dashed thin strip, always
+// visible like Fusion's control-point display.
+export function buildSketchSplineObject(spline: SketchSplineScene): {
+  curve: THREE.Line;
+  poles: THREE.Line;
+} {
+  const isDashed = spline.isPreview || spline.isConstruction;
+  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const activeColor = themeColor("--color-primary-edge-active", "#c3f5ff");
+  const curveMaterial = isDashed
+    ? new THREE.LineDashedMaterial({
+        color: spline.isSelected ? activeColor : baseColor,
+        transparent: true,
+        opacity: spline.isPreview ? 0.55 : 0.72,
+        dashSize: 1,
+        gapSize: 0.6,
+      })
+    : new THREE.LineBasicMaterial({
+        color: spline.isSelected ? activeColor : baseColor,
+        transparent: true,
+        opacity: 0.98,
+      });
+  configureSketchOverlayMaterial(curveMaterial);
+  const curveGeometry = new THREE.BufferGeometry().setFromPoints(
+    spline.curvePoints.map((p) => new THREE.Vector3(p[0], p[1], p[2])),
+  );
+  const curveLine = new THREE.Line(curveGeometry, curveMaterial);
+  curveLine.renderOrder = 7;
+  if (isDashed) {
+    curveLine.computeLineDistances();
+  }
+  if (!spline.isPreview) {
+    curveLine.userData.sketchEntityId = spline.splineId;
+    curveLine.userData.sketchEntityKind = "spline";
+    curveLine.userData.sketchEntityIsConstruction = spline.isConstruction;
+  }
+
+  const poleMaterial = new THREE.LineDashedMaterial({
+    color: spline.isSelected ? activeColor : baseColor,
+    transparent: true,
+    opacity: 0.5,
+    dashSize: 0.8,
+    gapSize: 0.8,
+  });
+  configureSketchOverlayMaterial(poleMaterial);
+  const poleGeometry = new THREE.BufferGeometry().setFromPoints(
+    spline.polePoints.map((p) => new THREE.Vector3(p[0], p[1], p[2])),
+  );
+  const poleLine = new THREE.Line(poleGeometry, poleMaterial);
+  poleLine.renderOrder = 6;
+  poleLine.computeLineDistances();
+  return { curve: curveLine, poles: poleLine };
+}
+
 // Sample a sketch arc into a polyline and emit it as a THREE.Line.
 // `planeFrame` carries the sketch plane's world-space basis so the
 // sampling stays planar — same pattern as `buildSketchCircleObject`.
@@ -538,7 +675,7 @@ export function buildSketchDimensionObject(
     labelText = `(${labelText})`;
   }
   const labelPosition = new THREE.Vector3(...dimension.labelPosition);
-  const { points, arrowPositions, arrowIndices, refLineData } =
+  const { points, arrowPositions, arrowIndices, refLineData, witnessLines } =
     buildSketchDimensionGeometry(dimension);
   const dimensionColor = isMutedPreview
     ? themeColor("--color-on-surface-muted", "#9b9b98")
@@ -585,13 +722,14 @@ export function buildSketchDimensionObject(
     group.add(arrowMesh);
   }
 
-  // Dashed reference line for angle dimensions
-  if (refLineData) {
-    const refGeom = new THREE.BufferGeometry().setFromPoints([
-      refLineData.start,
-      refLineData.end,
+  // Dashed reference line for angle dimensions, and the witness lines
+  // running from an arc out to its arc-length extension arc.
+  const addDashedLine = (start: THREE.Vector3, end: THREE.Vector3) => {
+    const dashedGeometry = new THREE.BufferGeometry().setFromPoints([
+      start,
+      end,
     ]);
-    const refMat = new THREE.LineDashedMaterial({
+    const dashedMaterial = new THREE.LineDashedMaterial({
       color: isMutedPreview
         ? themeColor("--color-on-surface-muted", "#9b9b98")
         : dimension.isSelected
@@ -603,14 +741,21 @@ export function buildSketchDimensionObject(
       gapSize: 2,
       depthTest: false,
     });
-    const refLine = new THREE.Line(refGeom, refMat);
-    refLine.computeLineDistances();
-    refLine.renderOrder = isMutedPreview ? 5 : 6;
+    const dashedLine = new THREE.Line(dashedGeometry, dashedMaterial);
+    dashedLine.computeLineDistances();
+    dashedLine.renderOrder = isMutedPreview ? 5 : 6;
     if (isPickable) {
-      refLine.userData.sketchDimensionId = dimension.dimensionId;
-      refLine.userData.sketchDimensionPart = "geometry";
+      dashedLine.userData.sketchDimensionId = dimension.dimensionId;
+      dashedLine.userData.sketchDimensionPart = "geometry";
     }
-    group.add(refLine);
+    group.add(dashedLine);
+  };
+
+  if (refLineData) {
+    addDashedLine(refLineData.start, refLineData.end);
+  }
+  for (const witness of witnessLines) {
+    addDashedLine(witness.start, witness.end);
   }
 
   const label = makeDimensionLabelSprite(labelText, dimension.isSelected, {

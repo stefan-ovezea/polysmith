@@ -23,9 +23,29 @@
               is_sketch_vertex_selected(point.id);
           sketch_vertices.push_back(make_sketch_vertex_primitive(
               point, *feature.sketch_parameters, is_selected_point));
+          // The "FIX" badge renders only for points with an EXPLICIT
+          // fixed constraint record (the Fix tool). Internally frozen
+          // points — trim split points, slot-generated vertices,
+          // ellipse axis points — keep is_fixed so the solver leaves
+          // them alone, but get no badge: they are bookkeeping, not
+          // user intent, and a badge per junction cluttered the
+          // viewport.
           if (point.is_fixed && point.kind != "projected") {
-            sketch_constraints.push_back(make_point_constraint_primitive(
-                point, *feature.sketch_parameters, is_selected_point));
+            bool has_explicit_fix = false;
+            for (const auto& c : feature.sketch_parameters->constraints) {
+              if (c.kind != "fixed") continue;
+              for (const auto& tid : c.target_ids) {
+                if (tid == point.id) {
+                  has_explicit_fix = true;
+                  break;
+                }
+              }
+              if (has_explicit_fix) break;
+            }
+            if (has_explicit_fix) {
+              sketch_constraints.push_back(make_point_constraint_primitive(
+                  point, *feature.sketch_parameters, is_selected_point));
+            }
           }
         }
 

@@ -237,7 +237,10 @@ function exactDistanceToCurve(
       y_axis: { x: number; y: number; z: number };
     } | null;
     center: [number, number, number];
-    radius: number;
+    radius?: number;
+    a?: number;
+    b?: number;
+    rotation?: number;
     start?: [number, number, number];
     end?: [number, number, number];
     ccw?: boolean;
@@ -248,8 +251,18 @@ function exactDistanceToCurve(
     entity.center, entity.planeId, entity.planeFrame);
   const [mx, my] = cursorLocal;
   const radial = Math.hypot(mx - cx, my - cy);
+  if (entity.a !== undefined && entity.b !== undefined) {
+    // Ellipse: distance to the analytic perimeter via the polar
+    // radius formula evaluated at the cursor angle (closed form —
+    // no iteration needed for the pick gate).
+    const phi = Math.atan2(my - cy, mx - cx) - (entity.rotation ?? 0);
+    const r =
+      (entity.a * entity.b) /
+      Math.hypot(entity.b * Math.cos(phi), entity.a * Math.sin(phi));
+    return Math.abs(radial - r);
+  }
   if (!entity.start || !entity.end || entity.ccw === undefined) {
-    return Math.abs(radial - entity.radius);
+    return Math.abs(radial - (entity.radius ?? 0));
   }
   const [sx, sy] = trimWorldPointToLocal(
     entity.start, entity.planeId, entity.planeFrame);
@@ -364,19 +377,26 @@ function pickActiveSketchTarget({
     // r/2 so their profiles stay reachable on interior hover.  The
     // dimension/trim branches above keep the generous tolerance.
     const entityKind = entityHit.object.userData.sketchEntityKind;
-    if (entityKind === "circle" || entityKind === "arc") {
+    if (entityKind === "circle" || entityKind === "arc" ||
+        entityKind === "ellipse") {
       const entityId =
         entityHit.object.userData.sketchEntityId as string | undefined;
-      const sceneEntity = entityKind === "circle"
+      const sceneEntity =
+        entityKind === "circle"
           ? sceneData?.sketchCircles.find((c) => c.circleId === entityId)
-          : sceneData?.sketchArcs.find((a) => a.arcId === entityId);
+          : entityKind === "arc"
+            ? sceneData?.sketchArcs.find((a) => a.arcId === entityId)
+            : sceneData?.sketchEllipses.find((e) => e.ellipseId === entityId);
       if (!sceneEntity || !cursorLocal) {
         entityResult = null;
       } else {
         const distance = exactDistanceToCurve(sceneEntity, cursorLocal);
+        const radiusLike = "radius" in sceneEntity
+          ? sceneEntity.radius
+          : Math.min(sceneEntity.a, sceneEntity.b);
         const gate = Math.max(
           0.75,
-          Math.min(tolerancePx * worldUnitsPerPixel, sceneEntity.radius / 2));
+          Math.min(tolerancePx * worldUnitsPerPixel, radiusLike / 2));
         if (distance > gate) {
           entityResult = null;
         }

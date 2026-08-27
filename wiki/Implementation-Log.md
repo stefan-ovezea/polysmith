@@ -2,6 +2,173 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-26
+
+### Radial & arc dimension rendering + free 2D label placement (feature/sketch)
+
+User report: arc dimensions sat at a fixed position, looked like "a very
+ugly line", and only the value text moved, horizontally. SK6 had shipped
+the dimension *values* (diameter conversion, arc-length measurement,
+arc-angle update dispatch) but touched no viewport rendering file. Four
+independent defects, all confirmed in the code:
+
+- **The core emitters ignored the stored label.** `label_x/label_y` was
+  honored by the linear, angle and polygon emitters but hardcoded away by
+  `circle_radius`, `arc_radius` and `arc_length`. The drag updated a UI
+  cache so it looked live, then the post-drag `get_viewport_state`
+  refetch re-emitted the default and the label snapped back.
+- **The leader was a bare degenerate segment.** The radius branch of
+  `buildSketchDimensionGeometry` was a single `addSegment(anchorEnd,
+  anchorStart)` with no arrowhead and no leader reaching the text
+  (`labelPos` was computed and unused). For a circle that drew a
+  horizontal chord straight through it with the text floating 8 mm to the
+  side; for an arc, centre→arc with the text sitting on the line.
+- **The drag was pinned** to a ring at `radius + 4`, so the text could be
+  swung around the circle but never pushed away from it; `arc_radius`
+  additionally fell through to the axis-constrained linear path.
+- **Two dropped-event bugs.** The core emitted `kind:"arc_length"` while
+  the zod viewport enum omitted it, so `parseCoreMessage` threw and
+  `useCadCoreEventBridge` discarded the *entire* `viewport_state` event —
+  the viewport stopped updating whenever an arc-length dim existed.
+  Separately `documentStateSchema` omitted `arc_angle`, discarding every
+  `document_state` event. `arc_angle` also had no viewport emitter at
+  all, so it was invisible.
+
+Fix: new `sketch_radial_dimension_primitives.inc` with emitters for arc
+radius / arc length / arc angle plus a rewritten circle radius/diameter
+emitter, all resolving the stored label. No new IPC fields — the radial
+kinds reuse the existing `arc_center` / `arc_radius` / `arc_start_angle` /
+`arc_end_angle` / `arc_ccw` fields, and `anchor_end` carries a rim point a
+quarter turn from the contact so the renderer can recover an in-plane
+direction (centre, contact and label are collinear, so there is no cross
+product available). The landing under the text is derived in the renderer
+rather than emitted: it is presentational, and a second implementation of
+it would be one more thing for the drag preview and the re-emitted
+geometry to disagree about. The two mirrored preview projections
+(`shiftedCircleRadiusDimension` / `projectedCircleRadiusDimension`) were
+collapsed into shared helpers that mirror the C++ math and constants
+(`kLeaderJog` 4.0, `kArcLengthMinGap` 6.0, angle clamp [6, 500]), since
+drift between them is exactly what makes a label jump on release. Label
+re-gluing on value edits was extended to the radial kinds, anchored on
+the circle/arc centre.
+
+Suite: `dimension_completion` grew from 3 to 9 cases — label honored,
+diameter through-centre tips, arc-radius contact clamped into the sweep
+(both boundary signs plus the far boundary), arc-length extension radius
+clamped on both sides, arc-angle emitting at all, and a
+label-on-the-centre NaN guard. All 28 suites green, tsc clean,
+user-verified in-app.
+
+### Radial dimension follow-up (polygon + draft readouts)
+
+User follow-up on the radial-dimension fix:
+
+- **`polygon_radius` joined the free-2D radial leaders.**
+  `make_polygon_radius_dimension_primitive` rides the shared
+  `compute_radial_leader`; the old emitter projected the stored label
+  onto a hardcoded `(0,1)` normal, so only the Y component of a drag
+  ever survived. While testing, a pre-existing emitter bug surfaced and
+  was fixed: `find_if` matched an entity's AUTO dimension first and the
+  `!is_auto` guard then suppressed the explicit one — polygons and
+  circles carry both, so the explicitly added dimension never rendered.
+  The circle and polygon lookups now skip auto dimensions in the
+  predicate.
+- **Circle draft-diameter preview reworked** to the new field convention.
+  It still emitted the old left/right-rim anchors without `arc_center`,
+  which under the new renderer drew the leader across the whole circle
+  from the far rim.
+- **Arc draft preview gained a chord-length readout.** While placing the
+  second point of a three-point arc, the draft now shows the dimension
+  between the two end vertices (the readout that predated the arc tool
+  rework). Radius draft readouts stay out deliberately — Fusion doesn't
+  draw one either.
+- `dimension_completion` grew to 10 cases. All 28 suites green, tsc
+  clean.
+
+### Extrude thin-wall regression — intersecting arcs (user-reported)
+
+Two intersecting arcs enclosed by two lines extruded with part of an
+arc as a thin wall (the geometry of `res/part.json`). Root cause: the
+face walk assigned the arrangement's EXTERIOR cycle (area ~14372,
+larger than the lobe itself) as the lobe's inner loop — the exterior's
+probe point lies exactly on the lobe's own boundary and the ray-cast
+rounded it onto the inside. The bogus hole cut the extruded lobe face
+down to a thin sliver.
+
+Fix: `exact_point_on_polygon_boundary` guard in the hole-assignment
+loop of `sketch_profile_exact.inc` — a probe ON a candidate's boundary
+is the exterior twin of that region, never a hole of it.
+
+Tests: new suite `intersecting_arcs_extrude` (the exact part.json
+geometry, full region set + no-hole assertion; fails pre-fix with hole
+area 14372.5). One expectation correction in `multi_profile_extrude`:
+the corner-touch new_body case now expects two solids inside the single
+body entry — the old "one solid" was the spurious hole destroying the
+first prism; two prisms touching along one edge legitimately stay two
+solids (OCCT probe confirmed). All 29 suites green, tsc clean,
+user-verified in-app.
+
+## 2026-08-24
+
+### Sketch toolset finalization — SK4..SK7 (feature/sketch)
+
+- **SK4 editing tools** — `extend_sketch_entity` (line/arc extension to
+  the nearest intersection, H/V preserved, arc angle dims flip to driven),
+  `offset_sketch_entity` (signed single-entity offset via the creation
+  constructors, construction/generated rejection), `transform_sketch_entities`
+  (translate/rotate/uniform-scale + exploded copy mode with fresh ids;
+  `move_sketch_entities` became a rigid wrapper), `create_linear_array` /
+  `create_circular_array` (direct-commit exploded copies, one undo step —
+  the pending-preview workflow is deferred). Suites: extend / offset /
+  transform / array (22 cases total).
+- **SK5 circle creation modes** — `add_sketch_circle` gained
+  two_point / three_point / tangent_two_lines / tangent_three_lines
+  (wrapper-side resolution to center+radius, bisector/incenter math),
+  plus circle-slave `tangent_circle_line` relations enforced in the
+  refresh pipeline (radius = min distance from the fixed center to the
+  defining lines). Follow-ups: bisector absolute-projection fix
+  (negative projections picked the wrong wedge) and the face-walk
+  interior-tangent-node fix (enclosed region between a closed polygon
+  and an inscribed tangent circle — `has_line_continuation` gate +
+  straight-continuation override). Suite: circle_modes.
+- **SK6 dimension completion** — diameter display via `display_as` on
+  circle radius dims (STORED value stays the radius; the D/2 conversion
+  lives at the IPC boundary — payload emits D, parser stores D/2, the
+  numeric update halves, mirroring the expression path); arc length
+  (`arc_length` kind: creation, update branch deriving sweep = L/r,
+  driven re-measure, "L" viewport label); arc angle update dispatch
+  branch. Dimension-tool dropdown modes radius/diameter/arc-length.
+  Suite: dimension_completion.
+- **SK7 control-point B-spline** — `SketchSpline` (poles = regular
+  movable vertices, degree = min(3, n-1), clamped open-uniform knots),
+  shared `spline_math.h` de Boor evaluation across the profile walk /
+  viewport / draft preview / wire builder. Profile engine
+  `ExactCurve::kSpline`: exact tangent/point/area, OCCT intersections
+  via `spline_profile_occt.cpp` (separate TU so the walk stays
+  OCCT-header-free), touch records, dangling-drop, boundary edges
+  carrying the poles; extrude emits the exact `Geom_BSplineCurve`
+  trimmed to the walked sub-span. Full lifecycle (IPC, whitelist,
+  schemas, AI schemas, save/load incl. spline boundary edges inside
+  extruded features, delete, trim/extend/offset rejection). UI: toolbar
+  tool + icon + i18n; click-to-place draft with the REAL B-spline
+  preview (TS de Boor) + control polygon; double-click / Enter /
+  tool-switch commit, Escape cancel; rubber segment follows the cursor.
+  Suite: spline (12 cases incl. complete-set region profiles and the
+  closed-spline region + extrude).
+- **Follow-up fixes (user-reported)** — rubber preview absent (the
+  pointer-move preview path bailed on a null line-draft start; the
+  spline now bypasses the gate); missing extrusion surface (part.json
+  showed a 0.714 mm gap between the closing segment and the spline's
+  end pole — an open region, correctly detected); closed-spline
+  regions + the draft close gesture (click near the first pole, within
+  the sketch snap distance, appends it as the final pole and commits).
+- **Environment fixes** — OCCT's in-tree build dir (occt8-build/inc)
+  lacks the deprecated TColStd/TColgp array templates (install-tree inc
+  dir added to cad-core CMake); the vendored
+  `Geom2dAPI_InterCurveCurve` has no parameter accessor (spline-side
+  params re-derived via point projection; tangent overlaps processed
+  via `Segment()` endpoints).
+
 ## 2026-08-22
 
 ### IGES import + export (feature/iges)
@@ -2807,3 +2974,46 @@ end-to-end coverage for the trimmed-corner sketch (detection + full-slab
 extrusion + trim complement selection + trim id uniqueness); the lens test
 now asserts the arc/circle region is a real profile; the multi-profile
 tests use corner-touching rectangles per the limitation above.
+
+## Trim tool modernization (2026-08)
+
+**Trim rewritten across five stages.** The 2026-05 tool (line/circle/arc
+only, private intersection math, size-based entity ids) is replaced by a
+shared exact-curve layer and full entity-kind coverage:
+
+- **Stage 1-2 — no silent deletes + deterministic point identity.**
+  The endpoint filter compared a dimensionless parameter to a 0.01 mm
+  tolerance (crossings near a line's ends vanished and the line was
+  deleted as "isolated"); the parallel test was mm-vs-mm²; coincident
+  circles produced 0/0 → NaN params (UB in the sort). All fixed.
+  Split points resolve nearest-wins through `resolve_shared_point`,
+  mint through one tracked helper, and are frozen against the solver
+  pass; crossing-line splits reuse `next_trim_entity_index` instead of
+  a size-based scheme that could alias a surviving line's id.
+- **Stage 3 — shared curve layer.** `core/sketch/sketch_curve` owns
+  the exact curve model, the coincidence tolerance and pair
+  intersections (line/circle/arc analytic, line×ellipse analytic,
+  splines and other ellipse pairs through OCCT). The profile walk and
+  the trim engine consume it — they can no longer disagree. The walk
+  gained ellipse touch records so curves ending on an ellipse weld.
+- **Stage 4 — race elimination.** `trim_preview_result` carries the
+  document revision; `trim_sketch_entity` accepts `expected_revision`
+  and ignores a stale `segment_index` (falls back to the click point).
+  The UI gained request/response correlation, one-frame preview
+  coalescing and newest-request-only rendering. Profile kinds
+  `ellipse`/`spline` added to the UI schemas (they had been emitted
+  since SK3/SK7 — a parse-error source).
+- **Stage 5 — ellipse and spline targets.** Full ellipses convert to
+  partial elliptical arcs (`has_sweep` sweep fields, serialized,
+  rendered, extruded as trimmed `Geom_Ellipse` edges); splines split
+  via OCCT knot-insertion with exact cut ends. The walk's dangling
+  pass now drops only dangling END pieces, so a line crossing a closed
+  curve splits it into regions (ellipse-chord surfaces) — text path
+  lines and construction curves keep the old exclusion semantics.
+- **FIX badges** render only for explicit Fix-tool constraints;
+  internally frozen points (trim/slot/ellipse) stay badge-free.
+
+**Tests:** `cad_core_trim_test` 23 cases, ellipse trim-to-arc, spline
+trim-split, four suite expectations updated to the new
+crossing-line-splits-regions semantics; all 30 suites green; tsc clean;
+user verified in-app (flower, ellipse trim + extrude, spline trim).

@@ -28,12 +28,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
                      }),
       p.point_line_anchors.end());
 
-  // ── Text expansion ───────────────────────────────────────────
+  // ── Text + slot expansion ────────────────────────────────────
   // Re-derive glyph geometry from the parametric `texts` records FIRST,
   // before the zero-length cleanup, stale-dim scan, and solver run, so
   // every downstream pass sees current text lines. Generated entities
   // are always re-created here — never persisted between refreshes.
+  // Slot expansion runs immediately after: the text pass strips ALL
+  // generated entities (any generated_by value), then the slot pass
+  // strips only its own "slot:"-generated entities and re-pushes them.
   refresh_sketch_texts(p);
+  refresh_sketch_slots(p);
 
   #include "core/sketch/impl/refresh_zero_length_line_cleanup.inc"
 
@@ -61,6 +65,11 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       // Phase 4.2: use geometry_owner_ids instead of prefix matching
       if (find_circle_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
       if (find_arc_for_point(*feature.sketch_parameters, pid) != nullptr) return true;
+      // Slot centers are standalone vertices — they have no owning
+      // line/circle/arc, so check the slot records directly.
+      for (const auto& s : feature.sketch_parameters->slots) {
+        if (s.center_vertex_id == pid) return true;
+      }
       return false;
     };
     for (auto& dim : feature.sketch_parameters->dimensions) {
@@ -77,7 +86,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             feature.sketch_parameters->circles.end(),
             [&](const auto& c) { return c.id == dim.entity_id; });
         if (!found) dim.driven = true;
-      } else if (dim.kind == "arc_radius") {
+      } else if (dim.kind == "arc_radius" || dim.kind == "arc_angle") {
         bool found = std::any_of(
             feature.sketch_parameters->arcs.begin(),
             feature.sketch_parameters->arcs.end(),
@@ -140,6 +149,10 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     for (const auto& dim : feature.sketch_parameters->dimensions) {
       if (dim.driven) continue;
       if (dim.is_auto && dim.expression.empty()) continue;
+      // Arc dimensions are enforced deterministically by
+      // enforce_arc_dimensions (ad-hoc), not through planegcs — see
+      // the pass for why (solver null-space drift on unanchored arcs).
+      if (dim.kind == "arc_radius" || dim.kind == "arc_angle") continue;
       ++driving_dims;
     }
     const bool constraints_exist =
@@ -393,9 +406,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         for (size_t i = 0; i < feature.sketch_parameters->vertices.size(); ++i) {
           feature.sketch_parameters->vertices[i].is_fixed = saved_fixed[i];
         }
-        feature.sketch_parameters->pending_append_focus_ids.clear();
       }
     }
+
+    // Consume the append-focus ids on EVERY refresh, not only when the
+    // solver ran.  A geometry-only commit (no driving constraints yet)
+    // skips the solver block above; leaving the focus ids behind makes
+    // a later refresh (e.g. when a dimension turns driving) freeze every
+    // point — append mode freezes all points outside the focus set, and
+    // a stale entity id matches nothing.
+    feature.sketch_parameters->pending_append_focus_ids.clear();
   }
 
   // Anchor enforcement runs here — after the solver but before
@@ -405,6 +425,8 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
+  enforce_tangent_circle_line_relations(*feature.sketch_parameters);
+  enforce_constraint_completion(*feature.sketch_parameters);
 
   // Enforce stored constraints so badges always match geometry.
   // H/V runs first (axis alignment), then relations (inter-line).
@@ -426,6 +448,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // Fillets must run *after* the tangent passes (so they see the
   // latest line endpoints) and *before* `rebuild_sketch_vertices`.
   enforce_sketch_fillets(*feature.sketch_parameters);
+  enforce_sketch_chamfers(*feature.sketch_parameters);
 
   // Propagate line endpoint positions to any arcs that share those
   // point IDs.  Trim-created arcs share endpoints with lines; when a
@@ -451,6 +474,12 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       }
     }
   }
+
+  // Re-impose driving arc dimensions deterministically (see
+  // enforce_arc_dimensions in dimension_update.inc).  Must run before
+  // sync_all_line_dimensions / rebuild_sketch_vertices so the profile
+  // walk sees the dimensioned geometry.
+  enforce_arc_dimensions(*feature.sketch_parameters);
 
   // Sync auto-dimensions after solver and enforce passes so displayed
   // values always match the actual geometry.
@@ -483,12 +512,16 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // the default lock on derived points.
   sync_fixed_point_flags(*feature.sketch_parameters, previous_points);
 
-  // Text glyph vertices are derived geometry owned by the text entity —
-  // always fixed, regardless of what sync_fixed_point_flags carried
-  // over. This runs LAST (authoritative) so the flag can never be lost
-  // by the derived-point or user-flag passes above.
+  // Text glyph vertices and slot boundary vertices are derived geometry
+  // owned by their parametric entities — always fixed, regardless of
+  // what sync_fixed_point_flags carried over. This runs LAST
+  // (authoritative) so the flag can never be lost by the derived-point
+  // or user-flag passes above. Slot CENTER vertices carry a regular
+  // "vertex-N" id and are deliberately not covered here (they are
+  // movable, like circle centers).
   for (auto& vertex : feature.sketch_parameters->vertices) {
-    if (vertex.id.rfind("vertex-text-", 0) == 0) {
+    if (vertex.id.rfind("vertex-text-", 0) == 0 ||
+        vertex.id.rfind("vertex-slot-", 0) == 0) {
       vertex.is_fixed = true;
     }
   }

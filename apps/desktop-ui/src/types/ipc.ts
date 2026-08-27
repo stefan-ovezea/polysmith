@@ -28,6 +28,7 @@ import type {
   AddSketchLineLengthDimensionCommand,
   AddSketchLineAngleDimensionCommand,
   AddSketchArcRadiusDimensionCommand,
+  AddSketchArcLengthDimensionCommand,
   AddSketchCircleRadiusDimensionCommand,
   AddSketchPolygonRadiusDimensionCommand,
   SetSketchVertexLineAnchorCommand,
@@ -38,12 +39,24 @@ import type {
   AddSketchFilletCommand,
   UpdateSketchFilletRadiusCommand,
   DeleteSketchFilletCommand,
+  AddSketchChamferCommand,
+  UpdateSketchChamferCommand,
+  DeleteSketchChamferCommand,
+  AddSketchEllipseCommand,
+  AddSketchSlotCommand,
+  AddSketchSplineCommand,
+  UpdateSketchSlotCommand,
   AddSketchTextCommand,
   UpdateSketchTextCommand,
   DeleteSketchTextCommand,
   DeleteSketchDimensionCommand,
   ToggleSketchDimensionDrivenCommand,
   TrimSketchEntityCommand,
+  ExtendSketchEntityCommand,
+  OffsetSketchEntityCommand,
+  TransformSketchEntitiesCommand,
+  CreateLinearArrayCommand,
+  CreateCircularArrayCommand,
   TrimPreviewCommand,
   DeleteSketchSelectionCommand,
   SetSketchToolCommand,
@@ -149,6 +162,8 @@ import type {
   ViewportSketchCircle,
   ViewportSketchConstraint,
   ViewportSketchDimension,
+  ViewportSketchEllipse,
+  ViewportSketchSpline,
   ViewportSketchLine,
   ViewportSketchVertex,
   ViewportSketchPolygon,
@@ -259,6 +274,8 @@ export interface ViewportState {
   helices: ViewportHelixPrimitive[];
   sketch_lines: ViewportSketchLine[];
   sketch_circles: ViewportSketchCircle[];
+  sketch_ellipses: ViewportSketchEllipse[];
+  sketch_splines: ViewportSketchSpline[];
   sketch_polygons: ViewportSketchPolygon[];
   sketch_arcs: ViewportSketchArc[];
   sketch_vertices: ViewportSketchVertex[];
@@ -440,10 +457,14 @@ export interface TrimPreviewResultEvent {
   type: "trim_preview_result";
   payload: {
     entity_id: string;
-    entity_kind: "line" | "circle" | "arc";
+    entity_kind: "line" | "circle" | "arc" | "ellipse" | "spline";
     hovered_index: number;
+    /** Document revision the preview was computed against. */
+    revision: number;
     full_circle?: boolean;
     full_arc?: boolean;
+    full_ellipse?: boolean;
+    full_spline?: boolean;
     segments?: Array<{
       start?: [number, number];
       end?: [number, number];
@@ -832,6 +853,7 @@ export type CoreCommand =
   | AddSketchLineLengthDimensionCommand
   | AddSketchLineAngleDimensionCommand
   | AddSketchArcRadiusDimensionCommand
+  | AddSketchArcLengthDimensionCommand
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand
@@ -841,12 +863,24 @@ export type CoreCommand =
   | AddSketchFilletCommand
   | UpdateSketchFilletRadiusCommand
   | DeleteSketchFilletCommand
+  | AddSketchChamferCommand
+  | UpdateSketchChamferCommand
+  | DeleteSketchChamferCommand
+  | AddSketchEllipseCommand
+  | AddSketchSlotCommand
+  | AddSketchSplineCommand
+  | UpdateSketchSlotCommand
   | AddSketchTextCommand
   | UpdateSketchTextCommand
   | DeleteSketchTextCommand
   | DeleteSketchDimensionCommand
   | ToggleSketchDimensionDrivenCommand
   | TrimSketchEntityCommand
+  | ExtendSketchEntityCommand
+  | OffsetSketchEntityCommand
+  | TransformSketchEntitiesCommand
+  | CreateLinearArrayCommand
+  | CreateCircularArrayCommand
   | TrimPreviewCommand
   | DeleteSketchSelectionCommand
   | SelectSketchVertexCommand

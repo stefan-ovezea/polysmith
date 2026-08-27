@@ -9,7 +9,7 @@ import type {
   SketchTool,
   ViewportScene,
 } from "@/types";
-import { resolveSketchPlanePoint } from "@/utils";
+import { resolveSketchPlanePoint, SKETCH_SNAP_DISTANCE } from "@/utils";
 import type { ViewportPickHit } from "./contextMenuState";
 import { commitDraftPointerUp } from "./draftCommit";
 import type {
@@ -17,12 +17,14 @@ import type {
   CircleDraftCommitOptions,
   DraftCommitSketchPoint,
   DraftPointerUpCommitOptions,
+  EllipseDraftCommitOptions,
   LineBodyHost,
   LineDraftCommitOptions,
   Point2d,
   PolygonDraftCommitOptions,
   PolygonToolMode,
   RectangleDraftCommitOptions,
+  SlotDraftCommitOptions,
 } from "./draftCommit";
 import type {
   DraftDimensionSession,
@@ -112,8 +114,15 @@ interface ViewportPointerUpParams {
   paintSketchPointMaterials: ActiveSketchPointerUpContext["paintSketchPointMaterials"];
   addMessage: ActiveSketchPointerUpContext["addMessage"];
   addSketchFillet: ActiveSketchPointerUpContext["addSketchFillet"];
+  addSketchChamfer: ActiveSketchPointerUpContext["addSketchChamfer"];
   addSketchTextAt: ActiveSketchPointerUpContext["addSketchTextAt"];
   onPickSketchText: ActiveSketchPointerUpContext["onPickSketchText"];
+  onPickSketchSlot: ActiveSketchPointerUpContext["onPickSketchSlot"];
+  onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
+  extendSketchEntity: ActiveSketchPointerUpContext["extendSketchEntity"];
+  offsetSketchEntity: ActiveSketchPointerUpContext["offsetSketchEntity"];
+  circleTangentLineIdsRef: ActiveSketchPointerUpContext["circleTangentLineIdsRef"];
+  addSketchCircleMode: ActiveSketchPointerUpContext["addSketchCircleMode"];
   sketchTextPathPicking: ActiveSketchPointerUpContext["sketchTextPathPicking"];
   pickSketchTextPath: ActiveSketchPointerUpContext["pickSketchTextPath"];
   pendingDimensionPlacement: ActiveSketchPointerUpContext["pendingDimensionPlacement"];
@@ -135,6 +144,7 @@ interface ViewportPointerUpParams {
   createDimensionCircle: ActiveSketchPointerUpContext["createDimensionCircle"];
   selectDimensionCircle: ActiveSketchPointerUpContext["selectDimensionCircle"];
   createDimensionArc: ActiveSketchPointerUpContext["createDimensionArc"];
+  createDimensionArcLength: ActiveSketchPointerUpContext["createDimensionArcLength"];
   selectDimensionArc: ActiveSketchPointerUpContext["selectDimensionArc"];
   createDimensionPolygon: ActiveSketchPointerUpContext["createDimensionPolygon"];
   selectDimensionPolygon: ActiveSketchPointerUpContext["selectDimensionPolygon"];
@@ -144,6 +154,14 @@ interface ViewportPointerUpParams {
   arcSecondPointRef: MutableRef<Point2d | null>;
   rectSecondPointRef: MutableRef<Point2d | null>;
   circleSecondPointRef: MutableRef<Point2d | null>;
+  ellipseSecondPointRef: MutableRef<Point2d | null>;
+  splineDraftPolesRef: MutableRef<Point2d[]>;
+  clearPreviewSpline: () => void;
+  updatePreviewSpline: () => void;
+  addSketchSpline: (
+    points: Array<{ x: number; y: number }>,
+    isConstruction: boolean,
+  ) => Promise<void> | void;
   chainBreakRequestedRef: MutableRef<boolean>;
   previousLineAngleRef: MutableRef<number | null>;
   draftStartMidpointHostRef: MutableRef<string | null>;
@@ -173,6 +191,8 @@ interface ViewportPointerUpParams {
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
+  addSketchEllipse: EllipseDraftCommitOptions["addSketchEllipse"];
+  addSketchSlot: SlotDraftCommitOptions["addSketchSlot"];
   sceneDataRef: MutableRef<ViewportScene | null>;
   pickInactiveSketchLine:
     | ((sketchLineId: string) => void | Promise<void>)
@@ -362,6 +382,8 @@ function handleActiveSketchToolPointerUp(
     sketchEntityObjectById: params.sketchEntityObjectByIdRef.current,
     sketchPointObjects: params.sketchPointObjectsRef.current,
     resolveFilletPoint: () => resolveFilletPoint(params),
+    resolveChamferPoint: () => resolveChamferPoint(params),
+    addSketchChamfer: params.addSketchChamfer,
     selectSketchProfile: params.selectSketchProfile,
     selectVertex: params.selectVertex,
     selectEdge: params.selectEdge,
@@ -379,6 +401,15 @@ function handleActiveSketchToolPointerUp(
     addSketchFillet: params.addSketchFillet,
     addSketchTextAt: params.addSketchTextAt,
     onPickSketchText: params.onPickSketchText,
+    onPickSketchSlot: params.onPickSketchSlot,
+    onPickSketchChamfer: params.onPickSketchChamfer,
+    extendSketchEntity: params.extendSketchEntity,
+    offsetSketchEntity: params.offsetSketchEntity,
+    circleToolMode: params.circleToolMode,
+    circleTangentLineIdsRef: params.circleTangentLineIdsRef,
+    isConstruction: params.isConstruction,
+    setSketchSnapLabel: params.setSketchSnapLabel,
+    addSketchCircleMode: params.addSketchCircleMode,
     sketchTextPathPicking: params.sketchTextPathPicking,
     pickSketchTextPath: params.pickSketchTextPath,
     pendingDimensionPlacement: params.pendingDimensionPlacement,
@@ -400,6 +431,7 @@ function handleActiveSketchToolPointerUp(
     createDimensionCircle: params.createDimensionCircle,
     selectDimensionCircle: params.selectDimensionCircle,
     createDimensionArc: params.createDimensionArc,
+    createDimensionArcLength: params.createDimensionArcLength,
     selectDimensionArc: params.selectDimensionArc,
     createDimensionPolygon: params.createDimensionPolygon,
     selectDimensionPolygon: params.selectDimensionPolygon,
@@ -423,8 +455,73 @@ function resolveFilletPoint(params: ViewportPointerUpParams) {
   return rawPoint ? params.resolveSnappedSketchPoint(rawPoint) : null;
 }
 
+function resolveChamferPoint(params: ViewportPointerUpParams) {
+  if (!params.activeSketchPlaneId) {
+    return null;
+  }
+  const rawPoint = resolveSketchPlanePoint(
+    params.event,
+    params.renderer,
+    params.camera,
+    params.activeSketchPlaneId,
+    params.activeSketchPlaneFrame,
+  );
+  return rawPoint ? params.resolveSnappedSketchPoint(rawPoint) : null;
+}
+
+// Spline draft: click-to-place poles. Clicking the first pole again
+// (the snapped point resolves to its exact coordinates) commits the
+// control-point spline; Escape clears the session.
+function handleSplineDraftPointerUp(params: ViewportPointerUpParams) {
+  const rawPoint = resolveSketchPlanePoint(
+    params.event,
+    params.renderer,
+    params.camera,
+    params.activeSketchPlaneId,
+    params.activeSketchPlaneFrame,
+  );
+  if (!rawPoint) {
+    return;
+  }
+  const sketchPoint = params.resolveSnappedSketchPoint(rawPoint);
+  params.setSketchSnapLabel(sketchPoint.snapLabel);
+  const poles = params.splineDraftPolesRef.current;
+  const [x, y] = sketchPoint.local;
+  // A click on the last placed pole is a duplicate (the second click
+  // of a double-click lands exactly on the first) — ignore it so
+  // double-click commits cleanly.
+  if (poles.length > 0) {
+    const [lx, ly] = poles[poles.length - 1];
+    if (Math.hypot(x - lx, y - ly) <= 1e-6) {
+      return;
+    }
+  }
+  if (poles.length >= 2) {
+    const [fx, fy] = poles[0];
+    // A click near the first pole CLOSES the loop: the first pole is
+    // appended as the final pole and the closed spline bounds a
+    // region by itself. Uses the sketch snap distance so the closing
+    // click doesn't need a pixel-perfect hit.
+    if (Math.hypot(x - fx, y - fy) <= SKETCH_SNAP_DISTANCE) {
+      void params.addSketchSpline(
+        [...poles, [fx, fy]].map((p) => ({ x: p[0], y: p[1] })),
+        params.isConstruction,
+      );
+      params.splineDraftPolesRef.current = [];
+      params.clearPreviewSpline();
+      return;
+    }
+  }
+  poles.push([x, y]);
+  params.updatePreviewSpline();
+}
+
 function commitActiveSketchDraft(params: ViewportPointerUpParams) {
   if (!params.activeSketchPlaneId) {
+    return;
+  }
+  if (params.activeSketchToolRef.current === "spline") {
+    handleSplineDraftPointerUp(params);
     return;
   }
   const rawPoint = resolveSketchPlanePoint(
@@ -454,6 +551,7 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
       arcSecondPoint: params.arcSecondPointRef,
       rectSecondPoint: params.rectSecondPointRef,
       circleSecondPoint: params.circleSecondPointRef,
+      ellipseSecondPoint: params.ellipseSecondPointRef,
       chainBreakRequested: params.chainBreakRequestedRef,
       previousLineAngle: params.previousLineAngleRef,
       draftStartMidpointHost: params.draftStartMidpointHostRef,
@@ -486,8 +584,11 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
     addSketchArc: params.addSketchArc,
     addSketchRectangle: params.addSketchRectangle,
     addSketchCircle: params.addSketchCircle,
+    addSketchCircleMode: params.addSketchCircleMode,
     addSketchPolygon: params.addSketchPolygon,
     addSketchLine: params.addSketchLine,
+    addSketchEllipse: params.addSketchEllipse,
+    addSketchSlot: params.addSketchSlot,
   });
 }
 

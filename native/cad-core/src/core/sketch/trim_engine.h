@@ -18,7 +18,7 @@ struct TrimIntersection {
 
 // A candidate segment of the target entity after splitting.
 struct TrimSegment {
-  enum Kind { LINE_SEGMENT, ARC_SEGMENT };
+  enum Kind { LINE_SEGMENT, ARC_SEGMENT, ELLIPSE_SEGMENT };
   Kind kind;
   double param_start;          // parameter range along the original entity
   double param_end;
@@ -114,7 +114,45 @@ int select_clicked_segment(
     double click_x,
     double click_y);
 
+// Intersection detection / splitting / selection — ellipses.
+
+std::vector<TrimIntersection> find_all_intersections(
+    const SketchEllipse& target,
+    const SketchFeatureParameters& params);
+
+std::vector<TrimSegment> split_ellipse_at_intersections(
+    const SketchEllipse& ellipse,
+    const std::vector<TrimIntersection>& intersections);
+
+int select_clicked_segment(
+    const std::vector<TrimSegment>& segments,
+    const SketchEllipse& original_ellipse,
+    double click_x,
+    double click_y);
+
+// Intersection detection / splitting / selection — splines.
+
+std::vector<TrimIntersection> find_all_intersections(
+    const SketchSpline& target,
+    const SketchFeatureParameters& params);
+
+std::vector<TrimSegment> split_spline_at_intersections(
+    const SketchSpline& spline,
+    const std::vector<TrimIntersection>& intersections);
+
+int select_clicked_segment(
+    const std::vector<TrimSegment>& segments,
+    const SketchSpline& original_spline,
+    double click_x,
+    double click_y);
+
 constexpr double kTrimCoincidentTolerance = 0.01;  // mm
+
+// Distance from a point to a trim segment, measured against the ARC
+// itself rather than its chord (see trim_engine.cpp). Exposed for the
+// trim regression suite.
+double point_trim_segment_distance_sq(const TrimSegment& segment,
+                                      double px, double py);
 
 // Next free numeric suffix for an entity id created by a trim split:
 // one past the highest trailing integer among the existing ids.  The

@@ -12,6 +12,8 @@ import {
   buildSketchCircleObject,
   buildSketchConstraintObject,
   buildSketchDimensionObject,
+  buildSketchEllipseObject,
+  buildSketchSplineObject,
   buildSketchLineObject,
   buildSketchPointObject,
   buildSketchPolygonObject,
@@ -139,6 +141,32 @@ function addSketchEntityObjects({
     sketchEntityObjects.push(sketchCircleObject);
     sketchEntityObjectById.set(sketchCircle.circleId, sketchCircleObject);
     sketchGroup.add(sketchCircleObject);
+  }
+
+  for (const sketchEllipse of sceneData.sketchEllipses) {
+    const frame =
+      sketchEllipse.planeFrame ??
+      (activeSketchPlaneId &&
+      sketchEllipse.planeId === activeSketchPlaneId &&
+      activeSketchPlaneFrame
+        ? activeSketchPlaneFrame
+        : null);
+    const sketchEllipseObject = buildSketchEllipseObject(sketchEllipse, frame);
+    sketchEllipseObject.userData.isSelected = sketchEllipse.isSelected;
+    sketchEntityObjects.push(sketchEllipseObject);
+    sketchEntityObjectById.set(sketchEllipse.ellipseId, sketchEllipseObject);
+    sketchGroup.add(sketchEllipseObject);
+  }
+
+  for (const sketchSpline of sceneData.sketchSplines) {
+    const { curve, poles } = buildSketchSplineObject(sketchSpline);
+    curve.userData.isSelected = sketchSpline.isSelected;
+    sketchEntityObjects.push(curve);
+    sketchEntityObjectById.set(sketchSpline.splineId, curve);
+    sketchGroup.add(curve);
+    // The control polygon is display-only (poles are picked as
+    // vertices from the point layer).
+    sketchGroup.add(poles);
   }
 
   for (const sketchPolygon of sceneData.sketchPolygons) {

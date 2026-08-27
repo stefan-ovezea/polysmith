@@ -51,23 +51,42 @@
       if (profile_payload.contains("boundary_edges") &&
           profile_payload.at("boundary_edges").is_array()) {
         for (const auto& edge_payload : profile_payload.at("boundary_edges")) {
-          profile.boundary_edges.push_back(
-              polysmith::core::ProfileBoundaryEdge{
-                  .entity_id =
-                      read_string(edge_payload, "entity_id"),
-                  .entity_kind =
-                      read_string(edge_payload, "entity_kind"),
-                  .param_start = read_number(edge_payload, "param_start"),
-                  .param_end = read_number(edge_payload, "param_end"),
-                  .start_x = read_number(edge_payload, "start_x"),
-                  .start_y = read_number(edge_payload, "start_y"),
-                  .end_x = read_number(edge_payload, "end_x"),
-                  .end_y = read_number(edge_payload, "end_y"),
-                  .center_x = read_number(edge_payload, "center_x"),
-                  .center_y = read_number(edge_payload, "center_y"),
-                  .radius = read_number(edge_payload, "radius"),
-                  .ccw = read_bool(edge_payload, "ccw"),
-              });
+          polysmith::core::ProfileBoundaryEdge edge{
+              .entity_id =
+                  read_string(edge_payload, "entity_id"),
+              .entity_kind =
+                  read_string(edge_payload, "entity_kind"),
+              .param_start = read_number(edge_payload, "param_start"),
+              .param_end = read_number(edge_payload, "param_end"),
+              .start_x = read_number(edge_payload, "start_x"),
+              .start_y = read_number(edge_payload, "start_y"),
+              .end_x = read_number(edge_payload, "end_x"),
+              .end_y = read_number(edge_payload, "end_y"),
+              .center_x = read_number(edge_payload, "center_x"),
+              .center_y = read_number(edge_payload, "center_y"),
+              .radius = read_number(edge_payload, "radius"),
+              .ccw = read_bool(edge_payload, "ccw"),
+          };
+          // Spline pieces carry their control poles (older saves lack
+          // the keys — empty vectors mean a non-spline edge).
+          if (edge_payload.contains("spline_degree") &&
+              edge_payload.at("spline_degree").is_number()) {
+            edge.spline_degree =
+                edge_payload.at("spline_degree").get<int>();
+          }
+          if (edge_payload.contains("spline_pole_xs") &&
+              edge_payload.at("spline_pole_xs").is_array()) {
+            for (const auto& x : edge_payload.at("spline_pole_xs")) {
+              edge.spline_pole_xs.push_back(x.get<double>());
+            }
+          }
+          if (edge_payload.contains("spline_pole_ys") &&
+              edge_payload.at("spline_pole_ys").is_array()) {
+            for (const auto& y : edge_payload.at("spline_pole_ys")) {
+              edge.spline_pole_ys.push_back(y.get<double>());
+            }
+          }
+          profile.boundary_edges.push_back(std::move(edge));
         }
       }
       if (profile_payload.contains("arc_descriptors") &&

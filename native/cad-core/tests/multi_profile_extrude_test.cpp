@@ -222,8 +222,13 @@ bool test_new_body_touching_profiles_produces_one_body() {
   document = manager.extrude_profiles(ids, 5.0, "new_body");
   const auto compiled = compile_bodies(document);
 
-  // Verify the body shape is a single fused solid, not a compound of
-  // separate prisms that would appear as independent selectable parts.
+  // The two profiles share ONE extrude feature and compile into ONE
+  // body entry. Inside that body, two prisms that touch only along a
+  // single edge legitimately stay two solids (a non-manifold union is
+  // not a valid solid). Before the 2026-08 face-walk hole fix the
+  // first rectangle's profile carried its own exterior as a spurious
+  // hole, which destroyed its prism and left exactly one solid by
+  // accident. Two solids is the correct geometry here.
   int solid_count = 0;
   if (!compiled.bodies.empty()) {
     for (TopExp_Explorer exp(compiled.bodies.front().shape, TopAbs_SOLID);
@@ -236,8 +241,8 @@ bool test_new_body_touching_profiles_produces_one_body() {
                 "expected touching new_body profiles to share one feature") &&
          expect(compiled.bodies.size() == 1,
                 "expected touching new_body profiles to produce one body") &&
-         expect(solid_count == 1,
-                "expected fused body to contain exactly one solid");
+         expect(solid_count == 2,
+                "expected two corner-touching prisms to remain two solids");
 }
 
 bool test_join_adjacent_compound_into_existing_body() {

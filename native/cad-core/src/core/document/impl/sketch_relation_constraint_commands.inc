@@ -144,3 +144,101 @@ DocumentState DocumentManager::delete_sketch_coincident_constraint(
   bump_geometry_revision();
   return document_.value();
 }
+
+DocumentState DocumentManager::set_sketch_symmetric_constraint(
+    const std::string& point_id,
+    const std::string& other_point_id,
+    const std::string& axis_line_id) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::set_sketch_symmetric_constraint(
+      *feature_it, point_id, other_point_id, axis_line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::set_sketch_midpoint_constraint(
+    const std::string& vertex_id, const std::string& line_id) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::set_sketch_midpoint_constraint(
+      *feature_it, vertex_id, line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::set_sketch_collinear_constraint(
+    const std::string& line_id, const std::string& other_line_id) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::set_sketch_collinear_constraint(
+      *feature_it, line_id, other_line_id);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::set_sketch_tangent_pair_constraint(
+    const std::string& first_id, const std::string& second_id) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  polysmith::core::set_sketch_tangent_pair_constraint(
+      *feature_it, first_id, second_id);
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  bump_geometry_revision();
+  return document_.value();
+}

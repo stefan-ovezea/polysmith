@@ -27,7 +27,7 @@ struct SketchArcDescriptor {
 // hint-based guessing is needed downstream.
 struct ProfileBoundaryEdge {
   std::string entity_id;
-  std::string entity_kind;   // "line" | "circle" | "arc"
+  std::string entity_kind;   // "line" | "circle" | "arc" | "ellipse" | "spline"
   // Line: t in [0, 1].  Circle/arc: sketch angle in the entity's sweep
   // frame (may be lifted beyond 2π; the span's sign follows the walk).
   double param_start;
@@ -41,6 +41,15 @@ struct ProfileBoundaryEdge {
   double center_y = 0.0;
   double radius = 0.0;
   bool ccw = true;           // walk direction around the centre
+  // Ellipse pieces: minor radius + major-axis angle (radius = major).
+  double minor_radius = 0.0;
+  double rotation = 0.0;
+  // Spline pieces: control poles + degree (clamped open-uniform —
+  // spline_math.h). The wire builder reconstructs the exact
+  // Geom_BSplineCurve from these, trimmed to [param_start, param_end].
+  int spline_degree = 3;
+  std::vector<double> spline_pole_xs;
+  std::vector<double> spline_pole_ys;
 };
 
 struct SketchProfileRegion {

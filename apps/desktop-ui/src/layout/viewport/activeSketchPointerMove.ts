@@ -35,7 +35,12 @@ interface ActiveSketchPointerMoveParams
     DraftPointerPreviewControls {
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>;
+  trimPreviewLastSentRef: MutableRef<{
+    x: number;
+    y: number;
+    entityId: string;
+    requestId: string | null;
+  } | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   sketchGroupRef: MutableRef<THREE.Group | null>;
@@ -76,6 +81,57 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
   }
 
   const { draftStart, draftPreviewLocal, sketchPoint } = draftMove;
+
+  const previewControls = {
+    arcToolMode: params.arcToolMode,
+    circleToolMode: params.circleToolMode,
+    rectangleToolMode: params.rectangleToolMode,
+    arcSecondPoint: params.arcSecondPoint,
+    circleSecondPoint: params.circleSecondPoint,
+    rectSecondPoint: params.rectSecondPoint,
+    ellipseSecondPoint: params.ellipseSecondPoint,
+    isConstruction: params.isConstruction,
+    previewLineRef: params.previewLineRef,
+    previewCircleRef: params.previewCircleRef,
+    previewArcRef: params.previewArcRef,
+    previewSlotRef: params.previewSlotRef,
+    splineDraftPolesRef: params.splineDraftPolesRef,
+    previewSplineRef: params.previewSplineRef,
+    previewDimensionRef: params.previewDimensionRef,
+    previewInferenceRef: params.previewInferenceRef,
+    clearPreviewLine: params.clearPreviewLine,
+    clearPreviewCircle: params.clearPreviewCircle,
+    clearPreviewArc: params.clearPreviewArc,
+    clearPreviewSlot: params.clearPreviewSlot,
+    clearPreviewSpline: params.clearPreviewSpline,
+    clearPreviewDimension: params.clearPreviewDimension,
+    clearPreviewInference: params.clearPreviewInference,
+  };
+  const inferenceLines = sketchPoint.inferenceLines?.map((gl) => ({
+    from: gl.from,
+    draft: gl.draft,
+  }));
+
+  // The spline draft has no line-draft start — its poles live in
+  // splineDraftPolesRef. Render its preview (curve + control polygon
+  // + rubber segment) whenever at least one pole is placed.
+  if (params.activeSketchTool === "spline") {
+    const sketchGroup = params.sketchGroupRef.current;
+    if (sketchGroup && params.splineDraftPolesRef.current.length >= 1) {
+      renderDraftPointerPreview({
+        ...previewControls,
+        activeSketchTool: params.activeSketchTool,
+        activeSketchPlaneId: params.activeSketchPlaneId,
+        activeSketchPlaneFrame: params.activeSketchPlaneFrame,
+        draftStart: sketchPoint.local,
+        draftPreviewLocal,
+        sketchGroup,
+        inferenceLines,
+      });
+    }
+    return;
+  }
+
   if (!draftStart) {
     // Tool is armed but no line started yet — snap feedback (crosshair
     // position, snap label, constraint preview) already updated by
@@ -91,32 +147,13 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
   }
 
   renderDraftPointerPreview({
+    ...previewControls,
     activeSketchTool: params.activeSketchTool,
     activeSketchPlaneId: params.activeSketchPlaneId,
     activeSketchPlaneFrame: params.activeSketchPlaneFrame,
     draftStart,
     draftPreviewLocal,
     sketchGroup,
-    inferenceLines: sketchPoint.inferenceLines?.map((gl) => ({
-      from: gl.from,
-      draft: gl.draft,
-    })),
-    arcToolMode: params.arcToolMode,
-    circleToolMode: params.circleToolMode,
-    rectangleToolMode: params.rectangleToolMode,
-    arcSecondPoint: params.arcSecondPoint,
-    circleSecondPoint: params.circleSecondPoint,
-    rectSecondPoint: params.rectSecondPoint,
-    isConstruction: params.isConstruction,
-    previewLineRef: params.previewLineRef,
-    previewCircleRef: params.previewCircleRef,
-    previewArcRef: params.previewArcRef,
-    previewDimensionRef: params.previewDimensionRef,
-    previewInferenceRef: params.previewInferenceRef,
-    clearPreviewLine: params.clearPreviewLine,
-    clearPreviewCircle: params.clearPreviewCircle,
-    clearPreviewArc: params.clearPreviewArc,
-    clearPreviewDimension: params.clearPreviewDimension,
-    clearPreviewInference: params.clearPreviewInference,
+    inferenceLines,
   });
 }

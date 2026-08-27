@@ -2,6 +2,7 @@
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
+#include "core/sketch/sketch_tool_ids.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
 
@@ -73,6 +74,9 @@ namespace {
 #include "core/document/impl/sketch_commands.inc"
 #include "core/document/impl/sketch_dimension_commands.inc"
 #include "core/document/impl/sketch_trim_commands.inc"
+#include "core/document/impl/sketch_extend_commands.inc"
+#include "core/document/impl/sketch_offset_commands.inc"
+#include "core/document/impl/sketch_array_commands.inc"
 #include "core/document/impl/profile_selection_commands.inc"
 #include "core/document/impl/extrude_commands.inc"
 #include "core/document/impl/loft_commands.inc"

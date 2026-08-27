@@ -388,6 +388,36 @@ bool test_attached_line_follows() {
                 "attached: shared vertex at the moved position");
 }
 
+// A driving arc-radius dimension must survive a move with its value
+// unchanged (the solver re-enforces it after the translation).
+bool test_arc_radius_dim_survives_move() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_arc(
+      10.0, 0.0, 0.0, 10.0, 0.0, 0.0, "center_start_end");
+  const auto before = sketch_params(document);
+  const std::string arc_id = before.arcs[0].id;
+  document = manager.add_sketch_arc_radius_dimension(arc_id);
+
+  document = move(manager, {arc_id}, 5.0, 5.0, 0.0, 0.0, 0.0);
+
+  const auto after = sketch_params(document);
+  auto dimension = std::find_if(
+      after.dimensions.begin(), after.dimensions.end(),
+      [&](const auto& dim) { return dim.entity_id == arc_id; });
+  if (!expect(dimension != after.dimensions.end(),
+              "arc dim: dimension survives the move")) {
+    return false;
+  }
+  if (!expect(!dimension->driven, "arc dim: dimension stays driving")) {
+    return false;
+  }
+  return expect(std::abs(dimension->value - 10.0) < 1.0e-6,
+                "arc dim: dimension value unchanged by translation");
+}
+
 // Regression: the document-layer sketch-tool whitelist
 // (is_supported_sketch_tool) once rejected "move" with
 // "Unsupported sketch tool: move" while the core-layer validate_tool
@@ -448,6 +478,7 @@ int main() {
   if (!test_single_undo_step()) return 1;
   if (!test_attached_line_follows()) return 1;
   if (!test_dimensions_resync()) return 1;
+  if (!test_arc_radius_dim_survives_move()) return 1;
   if (!test_set_move_tool_accepted()) return 1;
 
   std::cout << "sketch_move_test passed\n";

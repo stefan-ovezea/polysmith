@@ -97,6 +97,42 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
     return params;
   }
 
+  if (profile.kind == "ellipse") {
+    // Routed through the exact wire path (boundary_edges carry the
+    // analytic ellipse edge) — same pattern as the polygon branch.
+    ExtrudeFeatureParameters params{
+        .sketch_feature_id = sketch_feature.id,
+        .profile_id = profile.id,
+        .profile_ids = {profile.id},
+        .plane_id = plane_id,
+        .plane_frame = plane_frame,
+        .profile_kind = "ellipse",
+        .start_x = profile.center_x,
+        .start_y = profile.center_y,
+        .width = 0.0,
+        .height = 0.0,
+        .radius = 0.0,
+        .profile_points = profile.points,
+        .inner_loops = profile.inner_loops,
+        .depth = depth,
+    };
+
+    params.sketch_edge_ids = profile.ordered_edge_ids;
+    for (const auto& line : sketch.lines) {
+      if (!line.is_construction) params.sketch_lines.push_back(line);
+    }
+    for (const auto& arc : sketch.arcs) {
+      if (!arc.is_construction) params.sketch_arcs.push_back(arc);
+    }
+    for (const auto& circle : sketch.circles) {
+      if (!circle.is_construction) params.sketch_circles.push_back(circle);
+    }
+    params.arc_descriptors = profile.arc_descriptors;
+    params.boundary_edges = profile.boundary_edges;
+
+    return params;
+  }
+
   return std::nullopt;
 }
 

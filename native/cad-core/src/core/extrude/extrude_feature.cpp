@@ -96,6 +96,15 @@ void validate_parameters(const ExtrudeFeatureParameters& parameters) {
     return;
   }
 
+  if (parameters.profile_kind == "ellipse") {
+    // The exact wire path consumes boundary_edges; the ellipse edge
+    // carries the analytic geometry.
+    if (parameters.boundary_edges.empty()) {
+      throw std::runtime_error("Ellipse extrude requires exact boundary edges");
+    }
+    return;
+  }
+
   throw std::runtime_error("Unsupported extrude profile kind: " + parameters.profile_kind);
 }
 

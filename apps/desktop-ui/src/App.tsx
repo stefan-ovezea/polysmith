@@ -21,9 +21,11 @@ import {
 import type { CategoryId } from "./layout";
 import { ArmedSketchConstraint } from "./types";
 import type {
+  DocumentState,
   ExtrudeAdvancedParameters,
   ExtrudeFeatureParameters,
   ExtrudeMode,
+  SketchFeatureParameters,
   SketchTool,
 } from "./types";
 import type { RecentProjectsDocument } from "./lib";
@@ -63,10 +65,14 @@ import {
   computeDocumentUiState,
 } from "./app/documentUiState";
 import { ActiveSketchFilletPanel } from "./app/ActiveSketchFilletPanel";
+import { ActiveSketchChamferPanel } from "./app/ActiveSketchChamferPanel";
+import { ActiveSketchSlotPanel } from "./app/ActiveSketchSlotPanel";
+import { ActiveSketchOffsetPanel } from "./app/ActiveSketchOffsetPanel";
 import { ActiveSketchTextPanel } from "./app/ActiveSketchTextPanel";
 import { ActiveBodyOperationPanels } from "./app/ActiveBodyOperationPanels";
 import { AppTopBar } from "./app/AppTopBar";
 import { ActiveMirrorPanel } from "./app/ActiveMirrorPanel";
+import { SketchTransformPanel } from "./layout/viewport/SketchTransformPanel";
 import { ActiveMaterialsPanel } from "./app/ActiveMaterialsPanel";
 import { ActiveViewPanel } from "./app/ActiveViewPanel";
 import { ActiveHolePanel } from "./app/ActiveHolePanel";
@@ -112,6 +118,10 @@ import {
 import {
   useSketchToolLifecycleEffects,
   type SketchFilletAction,
+  type SketchChamferAction,
+  type SketchSlotAction,
+  type SketchOffsetAction,
+  type SketchOffsetPair,
   type SketchTextAction,
 } from "./app/sketchToolLifecycleEffects";
 import {
@@ -219,6 +229,162 @@ function App() {
   // radius" experience as 3D fillets give for edges.
   const [sketchFilletAction, setSketchFilletAction] =
     useState<SketchFilletAction | null>(null);
+  // Sketch Chamfer panel session. Mirrors `sketchFilletAction` with
+  // two trim distances; each corner click chamfers at the session's
+  // current distances.
+  const [sketchChamferAction, setSketchChamferAction] =
+    useState<SketchChamferAction | null>(null);
+  // Slot panel session. Selection-driven: picking a slot's generated
+  // outline in Select mode binds the panel to that slot.
+  const [sketchSlotAction, setSketchSlotAction] =
+    useState<SketchSlotAction | null>(null);
+  // Offset tool session. Pending while the Offset tool is armed;
+  // active once at least one offset copy exists (cancel deletes them).
+  const [sketchOffsetAction, setSketchOffsetAction] =
+    useState<SketchOffsetAction | null>(null);
+  // Live mirror for the viewport click handler — the handler runs
+  // inside a closure that can predate the panel's latest debounced
+  // distance, so it reads the session through this ref.
+  const sketchOffsetActionRef = useRef(sketchOffsetAction);
+  useEffect(() => {
+    sketchOffsetActionRef.current = sketchOffsetAction;
+  }, [sketchOffsetAction]);
+
+  // Transform / Array panel state. Open = the panel shows for the
+  // current sketch selection; center carries the selection centroid
+  // computed when the panel opened.
+  const [sketchTransformPanel, setSketchTransformPanel] = useState<{
+    centerX: number;
+    centerY: number;
+  } | null>(null);
+
+  // Pick-center mode for the Transform / Array panel: while armed, the
+  // viewport routes the next sketch-plane click through the snap
+  // machinery (circle/arc centers, endpoints, grid) and reports the
+  // point back here instead of selecting.
+  const [arrayCenterPicking, setArrayCenterPicking] = useState(false);
+
+  // The pick arm must never outlive the panel: an armed viewport
+  // consumes every click, which reads as "the app stopped working".
+  useEffect(() => {
+    if (!sketchTransformPanel) {
+      setArrayCenterPicking(false);
+    }
+  }, [sketchTransformPanel]);
+
+  // Entities created by the Transform / Array panel session (array
+  // copies and transform copies). Cancel deletes them all; OK keeps
+  // them.
+  const sketchTransformCreatedIdsRef = useRef<string[]>([]);
+
+  // Creates one offset copy of `sourceEntityId` at `distance` and
+  // returns the new entity id (null when the round-trip times out).
+  // Used by both the click handler and the distance fan-out.
+  const activeSketchParams = (doc?: DocumentState | null) => {
+    const snapshot = doc ?? useCadCoreStore.getState().document;
+    const featureId = snapshot?.active_sketch_feature_id;
+    return featureId
+      ? snapshot?.feature_history.find(
+          (entry) => entry.feature_id === featureId,
+        )?.sketch_parameters
+      : undefined;
+  };
+
+  const collectNewEntityIds = (
+    before?: SketchFeatureParameters | null,
+    after?: SketchFeatureParameters | null,
+  ) => {
+    const ids = (params?: SketchFeatureParameters | null) =>
+      new Set<string>([
+        ...(params?.lines.map((l) => l.line_id) ?? []),
+        ...(params?.circles.map((c) => c.circle_id) ?? []),
+        ...(params?.arcs.map((a) => a.arc_id) ?? []),
+        ...(params?.ellipses.map((e) => e.ellipse_id) ?? []),
+        ...(params?.slots.map((s) => s.slot_id) ?? []),
+      ]);
+    const beforeIds = ids(before);
+    const afterIds = ids(after);
+    return Array.from(afterIds).filter((id) => !beforeIds.has(id));
+  };
+
+  // Runs a session action and records every entity it created so
+  // Cancel can revert the whole panel session.
+  const runTrackedSessionAction = async (action: () => Promise<void>) => {
+    const before = activeSketchParams();
+    const documentPromise = awaitDocumentChange(() => true);
+    await runAction(action);
+    try {
+      const nextDocument = await documentPromise;
+      const created = collectNewEntityIds(
+        before,
+        activeSketchParams(nextDocument),
+      );
+      sketchTransformCreatedIdsRef.current.push(...created);
+    } catch {
+      // Watcher timed out — leave tracking alone; Cancel still
+      // removes whatever was tracked before.
+    }
+  };
+
+  const createOffsetCopy = async (
+    sourceEntityId: string,
+    distance: number,
+  ): Promise<string | null> => {
+    const preSnapshot = useCadCoreStore.getState().document;
+    const preFeature = preSnapshot?.active_sketch_feature_id
+      ? preSnapshot.feature_history.find(
+          (entry) =>
+            entry.feature_id === preSnapshot.active_sketch_feature_id,
+        )
+      : undefined;
+    const pre = preFeature?.sketch_parameters;
+
+    const documentPromise = awaitDocumentChange((next, previous) => {
+      if (!next.active_sketch_feature_id) {
+        return false;
+      }
+      const nextSketch = next.feature_history.find(
+        (entry) => entry.feature_id === next.active_sketch_feature_id,
+      );
+      const prevSketch = previous?.feature_history.find(
+        (entry) => entry.feature_id === next.active_sketch_feature_id,
+      );
+      const count = (sketch?: SketchFeatureParameters | null) =>
+        (sketch?.lines.length ?? 0) +
+        (sketch?.circles.length ?? 0) +
+        (sketch?.arcs.length ?? 0);
+      return (
+        count(nextSketch?.sketch_parameters) >
+        count(prevSketch?.sketch_parameters)
+      );
+    });
+
+    await runAction(async () => {
+      await offsetSketchEntity(sourceEntityId, distance);
+    });
+
+    try {
+      const nextDocument = await documentPromise;
+      const nextSketch = nextDocument.feature_history.find(
+        (entry) => entry.feature_id === nextDocument.active_sketch_feature_id,
+      );
+      const params = nextSketch?.sketch_parameters;
+      if (params && pre) {
+        if (params.lines.length > pre.lines.length) {
+          return params.lines[params.lines.length - 1].line_id;
+        }
+        if (params.circles.length > pre.circles.length) {
+          return params.circles[params.circles.length - 1].circle_id;
+        }
+        if (params.arcs.length > pre.arcs.length) {
+          return params.arcs[params.arcs.length - 1].arc_id;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
   // Sketch Text panel session. Mirrors `sketchFilletAction`
   // shape-for-shape: pending while the Text tool is armed but no text
   // exists yet; active once a click created a text (or the user
@@ -238,6 +404,9 @@ function App() {
   // captures the value at panel-open time, so we need a ref to
   // see the live list when each subsequent click lands.
   const sketchFilletIdsRef = useRef<string[]>([]);
+  // Mirror of `sketchChamferAction.chamferIds` for the inline
+  // viewport callback (same trick as `sketchFilletIdsRef`).
+  const sketchChamferIdsRef = useRef<string[]>([]);
   const [edgeOpAction, setEdgeOpAction] = useState<ActiveEdgeOpAction | null>(
     null,
   );
@@ -572,14 +741,28 @@ function App() {
     addSketchLineAngleDimension,
     addSketchCircleRadiusDimension,
     addSketchArcRadiusDimension,
+    addSketchArcLengthDimension,
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
     addSketchCircle,
+    addSketchCircleMode,
     addSketchPolygon,
     addSketchArc,
     addSketchFillet,
     updateSketchFilletRadius,
     deleteSketchFillet,
+    addSketchChamfer,
+    updateSketchChamfer,
+    deleteSketchChamfer,
+    addSketchEllipse,
+    addSketchSpline,
+    addSketchSlot,
+    updateSketchSlot,
+    extendSketchEntity,
+    offsetSketchEntity,
+    transformSketchEntities,
+    createLinearArray,
+    createCircularArray,
     addSketchText,
     updateSketchText,
     deleteSketchText,
@@ -620,11 +803,16 @@ function App() {
     activeSketchTool,
     sketchFilletAction,
     sketchFilletIdsRef,
+    sketchChamferAction,
+    sketchChamferIdsRef,
+    sketchOffsetAction,
     sketchTextAction,
     setTimelineEditVisibleFeatureIds,
     setArmedSketchConstraint,
     setMirrorFocusedSlot,
     setSketchFilletAction,
+    setSketchChamferAction,
+    setSketchOffsetAction,
     setSketchTextAction,
   });
 
@@ -1755,6 +1943,11 @@ function App() {
                   await addSketchArcRadiusDimension(arcId);
                 });
               }}
+              onAddSketchArcLengthDimension={async (arcId) => {
+                await runAction(async () => {
+                  await addSketchArcLengthDimension(arcId);
+                });
+              }}
               onAddSketchPolygonRadiusDimension={async (polygonId) => {
                 await runAction(async () => {
                   await addSketchPolygonRadiusDimension(polygonId);
@@ -1815,6 +2008,11 @@ function App() {
                   );
                 });
               }}
+              onAddSketchCircleMode={async (mode, isConstruction, inputs) => {
+                await runAction(async () => {
+                  await addSketchCircleMode(mode, isConstruction, inputs);
+                });
+              }}
               onAddSketchArc={async (
                 startX,
                 startY,
@@ -1865,6 +2063,51 @@ function App() {
                     startY,
                     endX,
                     endY,
+                    isConstruction,
+                  );
+                });
+              }}
+              onAddSketchEllipse={async (
+                centerX,
+                centerY,
+                axisAX,
+                axisAY,
+                axisBX,
+                axisBY,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await addSketchEllipse(
+                    centerX,
+                    centerY,
+                    axisAX,
+                    axisAY,
+                    axisBX,
+                    axisBY,
+                    isConstruction,
+                  );
+                });
+              }}
+              onAddSketchSpline={async (points, isConstruction) => {
+                await runAction(async () => {
+                  await addSketchSpline(points, isConstruction);
+                });
+              }}
+              onAddSketchSlot={async (
+                centerX,
+                centerY,
+                length,
+                radius,
+                rotation,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await addSketchSlot(
+                    centerX,
+                    centerY,
+                    length,
+                    radius,
+                    rotation,
                     isConstruction,
                   );
                 });
@@ -1936,6 +2179,76 @@ function App() {
                     phase: "active",
                     radius: sessionRadius,
                     filletIds: updatedIds,
+                  });
+                } catch {
+                  // Document watcher timed out — leave the session
+                  // state alone. The next click can recover.
+                }
+              }}
+              onAddSketchChamfer={async (cornerPointId, lineAId, lineBId) => {
+                // Same session contract as the fillet: the panel must
+                // be open in either phase for adds to be accepted.
+                if (!sketchChamferAction) {
+                  return;
+                }
+                const sessionA = sketchChamferAction.distanceA;
+                const sessionB = sketchChamferAction.distanceB;
+                // Subscribe to the next document update that adds a
+                // chamfer on the active sketch to pick up its id.
+                const documentPromise = awaitDocumentChange(
+                  (next, previous) => {
+                    if (!next.active_sketch_feature_id) {
+                      return false;
+                    }
+                    const nextSketch = next.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const prevSketch = previous?.feature_history.find(
+                      (entry) =>
+                        entry.feature_id === next.active_sketch_feature_id,
+                    );
+                    const nextChamfers =
+                      nextSketch?.sketch_parameters?.chamfers ?? [];
+                    const prevChamfers =
+                      prevSketch?.sketch_parameters?.chamfers ?? [];
+                    return nextChamfers.length > prevChamfers.length;
+                  },
+                );
+
+                await runAction(async () => {
+                  await addSketchChamfer(
+                    cornerPointId,
+                    lineAId,
+                    lineBId,
+                    sessionA,
+                    sessionB,
+                  );
+                });
+
+                try {
+                  const nextDocument = await documentPromise;
+                  const nextSketch = nextDocument.feature_history.find(
+                    (entry) =>
+                      entry.feature_id ===
+                      nextDocument.active_sketch_feature_id,
+                  );
+                  const chamfers =
+                    nextSketch?.sketch_parameters?.chamfers ?? [];
+                  const newChamfer = chamfers[chamfers.length - 1];
+                  if (!newChamfer) {
+                    return;
+                  }
+                  const updatedIds = [
+                    ...sketchChamferIdsRef.current,
+                    newChamfer.chamfer_id,
+                  ];
+                  sketchChamferIdsRef.current = updatedIds;
+                  setSketchChamferAction({
+                    phase: "active",
+                    distanceA: sessionA,
+                    distanceB: sessionB,
+                    chamferIds: updatedIds,
                   });
                 } catch {
                   // Document watcher timed out — leave the session
@@ -2080,6 +2393,96 @@ function App() {
                     params: entry,
                   });
                 })();
+              }}
+              onPickSketchSlot={(slotId) => {
+                // Select-mode slot pick: the clicked entity is a
+                // slot-generated line/arc (`generated_by:
+                // "slot:<id>"`). Look up the live slot record and
+                // open the Slot panel bound to it.
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const entry = feature?.sketch_parameters?.slots.find(
+                  (slot) => slot.slot_id === slotId,
+                );
+                if (!entry) {
+                  return;
+                }
+                setSketchSlotAction({ slotId: entry.slot_id, params: entry });
+              }}
+              onPickSketchChamfer={(chamferId) => {
+                // Select-mode chamfer pick: the clicked line is a
+                // chamfer's generated line. Bind the chamfer panel to
+                // that chamfer and switch to the chamfer tool (the
+                // lifecycle effect keeps the bound action alive while
+                // the tool is "chamfer").
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const entry = feature?.sketch_parameters?.chamfers.find(
+                  (chamfer) => chamfer.chamfer_id === chamferId,
+                );
+                if (!entry) {
+                  return;
+                }
+                void (async () => {
+                  const toolPromise = awaitDocumentChange(
+                    (next) => next.active_sketch_tool === "chamfer",
+                  );
+                  await runAction(async () => {
+                    await setSketchTool("chamfer");
+                  });
+                  try {
+                    await toolPromise;
+                  } catch {
+                    // Tool change timed out — open the panel anyway.
+                  }
+                  sketchChamferIdsRef.current = [entry.chamfer_id];
+                  setSketchChamferAction({
+                    phase: "active",
+                    distanceA: entry.distance_a,
+                    distanceB: entry.distance_b,
+                    chamferIds: [entry.chamfer_id],
+                  });
+                })();
+              }}
+              onExtendSketchEntity={async (entityId, clickX, clickY) => {
+                await runAction(async () => {
+                  await extendSketchEntity(entityId, clickX, clickY);
+                });
+              }}
+              onOffsetSketchEntity={async (entityId) => {
+                // Session contract mirrors the chamfer: the panel must
+                // be open (either phase) and the click creates a copy
+                // at the session's current distance. Read the session
+                // through the ref — the panel's debounced distance can
+                // change after this handler's closure was created.
+                const liveAction = sketchOffsetActionRef.current;
+                if (!liveAction) {
+                  return;
+                }
+                const distance = liveAction.distance;
+                const newEntityId = await createOffsetCopy(entityId, distance);
+                if (!newEntityId) {
+                  return;
+                }
+                const updatedOffsets = [
+                  ...(liveAction.phase === "active" ? liveAction.offsets : []),
+                  { sourceEntityId: entityId, offsetEntityId: newEntityId },
+                ];
+                setSketchOffsetAction({
+                  phase: "active",
+                  distance,
+                  offsets: updatedOffsets,
+                });
               }}
               onSelectSketchEntity={async (entityId, additive) => {
                 await handleSketchEntitySelection({
@@ -2256,9 +2659,23 @@ function App() {
               onDeleteSketchSelection={async (selection) => {
                 confirmAndDeleteSketchSelection(selection);
               }}
-              onTrimSketchEntity={async (entityId, clickX, clickY) => {
+              onTrimSketchEntity={async (
+                entityId,
+                clickX,
+                clickY,
+                segmentIndex,
+                expectedRevision,
+                previewId,
+              ) => {
                 await runAction(async () => {
-                  await trimSketchEntity(entityId, clickX, clickY);
+                  await trimSketchEntity(
+                    entityId,
+                    clickX,
+                    clickY,
+                    segmentIndex,
+                    expectedRevision,
+                    previewId,
+                  );
                 });
               }}
               onDeleteSketchDimension={async (dimensionId) => {
@@ -2306,6 +2723,69 @@ function App() {
               onFinishSketch={finishActiveSketch}
               onClearSelection={clearSelection}
               onSetSketchTool={setActiveSketchTool}
+              arrayCenterPicking={arrayCenterPicking}
+              onArrayCenterPicked={(local) => {
+                setSketchTransformPanel((previous) =>
+                  previous
+                    ? { centerX: local[0], centerY: local[1] }
+                    : previous,
+                );
+                setArrayCenterPicking(false);
+              }}
+              onOpenTransformArray={() => {
+                const snapshot = useCadCoreStore.getState().document;
+                const featureId = snapshot?.active_sketch_feature_id;
+                const feature = featureId
+                  ? snapshot?.feature_history.find(
+                      (entry) => entry.feature_id === featureId,
+                    )
+                  : undefined;
+                const params = feature?.sketch_parameters;
+                const selectedIds = new Set<string>(
+                  snapshot?.selected_sketch_entity_ids ?? [],
+                );
+                let sumX = 0;
+                let sumY = 0;
+                let count = 0;
+                const add = (x: number, y: number) => {
+                  sumX += x;
+                  sumY += y;
+                  count += 1;
+                };
+                if (params) {
+                  for (const line of params.lines) {
+                    if (selectedIds.has(line.line_id)) {
+                      add((line.start_x + line.end_x) / 2,
+                          (line.start_y + line.end_y) / 2);
+                    }
+                  }
+                  for (const circle of params.circles) {
+                    if (selectedIds.has(circle.circle_id)) {
+                      add(circle.center_x, circle.center_y);
+                    }
+                  }
+                  for (const arc of params.arcs ?? []) {
+                    if (selectedIds.has(arc.arc_id)) {
+                      add(arc.center_x, arc.center_y);
+                    }
+                  }
+                  for (const ellipse of params.ellipses) {
+                    if (selectedIds.has(ellipse.ellipse_id)) {
+                      add(ellipse.center_x, ellipse.center_y);
+                    }
+                  }
+                  for (const slot of params.slots) {
+                    if (selectedIds.has(slot.slot_id)) {
+                      add(slot.center_x, slot.center_y);
+                    }
+                  }
+                }
+                sketchTransformCreatedIdsRef.current = [];
+                setSketchTransformPanel({
+                  centerX: count > 0 ? sumX / count : 0,
+                  centerY: count > 0 ? sumY / count : 0,
+                });
+              }}
               onUpdateSketchPoint={async (vertexId, x, y) => {
                 await runAction(async () => {
                   await updateSketchPoint(vertexId, x, y);
@@ -2521,6 +3001,192 @@ function App() {
                   setSketchTool={setSketchTool}
                   updateSketchFilletRadius={updateSketchFilletRadius}
                   deleteSketchFillet={deleteSketchFillet}
+                />
+              ) : null}
+              {sketchChamferAction ? (
+                <ActiveSketchChamferPanel
+                  action={sketchChamferAction}
+                  disabled={status !== "connected"}
+                  sketchChamferIdsRef={sketchChamferIdsRef}
+                  setSketchChamferAction={setSketchChamferAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  updateSketchChamfer={updateSketchChamfer}
+                  deleteSketchChamfer={deleteSketchChamfer}
+                />
+              ) : null}
+              {sketchTransformPanel ? (() => {
+                // Live selection readout: kind labels (never ids, per the
+                // UI copy rule) of every selected sketch entity the
+                // panel actions would apply to.
+                const transformFeatureId =
+                  document?.active_sketch_feature_id;
+                const transformFeature = transformFeatureId
+                  ? document?.feature_history.find(
+                      (entry) => entry.feature_id === transformFeatureId,
+                    )
+                  : undefined;
+                const transformParams =
+                  transformFeature?.sketch_parameters;
+                const transformSelectedIds =
+                  document?.selected_sketch_entity_ids ?? [];
+                const transformKinds: string[] = [];
+                if (transformParams) {
+                  for (const id of transformSelectedIds) {
+                    if (transformParams.lines.some((l) => l.line_id === id)) {
+                      transformKinds.push(t("toolbar.line"));
+                    } else if (transformParams.circles.some((c) => c.circle_id === id)) {
+                      transformKinds.push(t("toolbar.circle"));
+                    } else if (transformParams.arcs?.some((a) => a.arc_id === id)) {
+                      transformKinds.push(t("toolbar.arc"));
+                    } else if (transformParams.ellipses.some((e) => e.ellipse_id === id)) {
+                      transformKinds.push(t("toolbar.ellipse"));
+                    } else if (transformParams.slots.some((s) => s.slot_id === id)) {
+                      transformKinds.push(t("toolbar.slot"));
+                    } else if (transformParams.splines?.some((s) => s.spline_id === id)) {
+                      transformKinds.push(t("toolbar.spline"));
+                    }
+                  }
+                }
+                return (
+                <SketchTransformPanel
+                  centerX={sketchTransformPanel.centerX}
+                  centerY={sketchTransformPanel.centerY}
+                  pickingCenter={arrayCenterPicking}
+                  onPickCenter={() => setArrayCenterPicking(true)}
+                  onCancelPickCenter={() => setArrayCenterPicking(false)}
+                  selectedKinds={transformKinds}
+                  disabled={status !== "connected"}
+                  onApplyTransform={async (transform) => {
+                    const snapshot = useCadCoreStore.getState().document;
+                    const entityIds = snapshot?.selected_sketch_entity_ids ?? [];
+                    if (entityIds.length === 0) {
+                      return;
+                    }
+                    await runTrackedSessionAction(async () => {
+                      await transformSketchEntities(
+                        entityIds,
+                        transform.dx,
+                        transform.dy,
+                        transform.centerX,
+                        transform.centerY,
+                        transform.angleDeg,
+                        transform.scale,
+                        transform.copy,
+                      );
+                    });
+                  }}
+                  onApplyLinearArray={async (array) => {
+                    const snapshot = useCadCoreStore.getState().document;
+                    const entityIds = snapshot?.selected_sketch_entity_ids ?? [];
+                    if (entityIds.length === 0) {
+                      return;
+                    }
+                    await runTrackedSessionAction(async () => {
+                      await createLinearArray(
+                        entityIds,
+                        array.dx,
+                        array.dy,
+                        array.count,
+                      );
+                    });
+                  }}
+                  onApplyCircularArray={async (array) => {
+                    const snapshot = useCadCoreStore.getState().document;
+                    const entityIds = snapshot?.selected_sketch_entity_ids ?? [];
+                    if (entityIds.length === 0) {
+                      return;
+                    }
+                    await runTrackedSessionAction(async () => {
+                      await createCircularArray(
+                        entityIds,
+                        array.centerX,
+                        array.centerY,
+                        array.count,
+                        array.totalAngleDeg,
+                      );
+                    });
+                  }}
+                  onConfirm={() => {
+                    setArrayCenterPicking(false);
+                    setSketchTransformPanel(null);
+                  }}
+                  onCancel={() => {
+                    setArrayCenterPicking(false);
+                    void runAction(async () => {
+                      if (sketchTransformCreatedIdsRef.current.length > 0) {
+                        await deleteSketchSelection(
+                          sketchTransformCreatedIdsRef.current,
+                          [],
+                          [],
+                        );
+                        sketchTransformCreatedIdsRef.current = [];
+                      }
+                    });
+                    setSketchTransformPanel(null);
+                  }}
+                />
+                );
+              })() : null}
+              {sketchOffsetAction ? (
+                <ActiveSketchOffsetPanel
+                  action={sketchOffsetAction}
+                  disabled={status !== "connected"}
+                  setSketchOffsetAction={setSketchOffsetAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  deleteSketchSelection={deleteSketchSelection}
+                  onDistanceChange={async (value) => {
+                    const live = sketchOffsetActionRef.current;
+                    if (!live) {
+                      return;
+                    }
+                    if (live.phase !== "active" || live.offsets.length === 0) {
+                      // Nothing created yet — the value applies to the
+                      // next click.
+                      setSketchOffsetAction({
+                        phase: "pending",
+                        distance: value,
+                      });
+                      return;
+                    }
+                    // Fan-out: delete the session's copies, then
+                    // re-create each from its source at the new value.
+                    const oldIds = live.offsets.map(
+                      (pair) => pair.offsetEntityId,
+                    );
+                    await runAction(async () => {
+                      await deleteSketchSelection(oldIds, [], []);
+                    });
+                    const newOffsets: SketchOffsetPair[] = [];
+                    for (const pair of live.offsets) {
+                      const newId = await createOffsetCopy(
+                        pair.sourceEntityId,
+                        value,
+                      );
+                      if (newId) {
+                        newOffsets.push({
+                          sourceEntityId: pair.sourceEntityId,
+                          offsetEntityId: newId,
+                        });
+                      }
+                    }
+                    setSketchOffsetAction({
+                      phase: "active",
+                      distance: value,
+                      offsets: newOffsets,
+                    });
+                  }}
+                />
+              ) : null}
+              {sketchSlotAction ? (
+                <ActiveSketchSlotPanel
+                  action={sketchSlotAction}
+                  disabled={status !== "connected"}
+                  setSketchSlotAction={setSketchSlotAction}
+                  runAction={runAction}
+                  setSketchTool={setSketchTool}
+                  updateSketchSlot={updateSketchSlot}
                 />
               ) : null}
               {sketchTextAction ? (

@@ -1,8 +1,27 @@
 DocumentState DocumentManager::trim_sketch_entity(
     const std::string& entity_id,
     double click_x,
-    double click_y) {
+    double click_y,
+    std::optional<int> segment_index,
+    std::vector<std::string>* minted_vertex_ids,
+    std::optional<int> expected_revision) {
   require_document();
+
+  // The preview's hovered segment is only meaningful against the
+  // document it was computed from. A click landing before the previous
+  // trim's document_state reached the UI carries a stale
+  // segment_index against a NEW segment list — honouring it deletes a
+  // different, larger piece. Downgrade to click-based selection; the
+  // click point is always re-derivable from current geometry.
+  if (segment_index.has_value() && expected_revision.has_value() &&
+      *expected_revision != document_->revision) {
+    log_warn("trim",
+             "stale segment_index ignored (preview revision " +
+                 std::to_string(*expected_revision) + ", document revision " +
+                 std::to_string(document_->revision) +
+                 ") — falling back to click-based selection");
+    segment_index = std::nullopt;
+  }
 
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");
@@ -21,12 +40,30 @@ DocumentState DocumentManager::trim_sketch_entity(
 
   push_undo_state();
   clear_redo_stack();
+  // The caller rarely needs the minted list, but the freeze below
+  // always does — collect into a local scratch when none was passed.
+  std::vector<std::string> scratch_minted;
+  std::vector<std::string>* minted =
+      minted_vertex_ids != nullptr ? minted_vertex_ids : &scratch_minted;
   polysmith::core::trim_sketch_entity(
-      *feature_it, entity_id, click_x, click_y);
+      *feature_it, entity_id, click_x, click_y, segment_index, minted);
 
   // Refresh derived state: rebuild points, recompute profiles, reify
   // dimensions, and re-sync projection/dependency state.
   polysmith::core::refresh_sketch_derived_state(*feature_it);
+
+  // Freeze the vertices this trim minted. refresh_sketch_derived_state
+  // rebuilt the vertex table with is_fixed = false, so the planegcs
+  // pass can move a fresh split point and re-open the loop the trim
+  // just welded. Split points sit exactly on analytic intersections;
+  // they are definitional, not degrees of freedom.
+  if (!minted->empty()) {
+    const std::unordered_set<std::string> minted_set(
+        minted->begin(), minted->end());
+    for (auto& vertex : feature_it->sketch_parameters->vertices) {
+      if (minted_set.count(vertex.id)) vertex.is_fixed = true;
+    }
+  }
 
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;

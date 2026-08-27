@@ -52,6 +52,7 @@ interface BindSketchHotkeysParams {
   setCanvasCursor: (cursor: string) => void;
   setSelectedConstraint: (constraint: SelectedConstraintState | null) => void;
   cancelActiveSketchDraft: () => void;
+  commitSplineDraft: () => void;
   setSketchToolConstruction: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -89,7 +90,25 @@ function handleSketchKeyDown(
     return;
   }
 
+  if (handleSplineDraftKey(event, params)) {
+    return;
+  }
+
   handleSketchToolHotkey(event, params);
+}
+
+// Enter finishes the control-point spline draft (Escape already
+// cancels it through handleSketchDeleteKey).
+function handleSplineDraftKey(
+  event: KeyboardEvent,
+  { activeSketchToolRef, commitSplineDraft }: Omit<BindSketchHotkeysParams, "activeSketchPlaneId">,
+) {
+  if (event.code !== "Enter" || activeSketchToolRef.current !== "spline") {
+    return false;
+  }
+  event.preventDefault();
+  commitSplineDraft();
+  return true;
 }
 
 function handleDimensionPlacementKey(

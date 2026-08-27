@@ -92,3 +92,54 @@ void add_sketch_arc(FeatureEntry& feature,
                     // arcs pass false.
                     bool auto_dimensions = true,
                     bool refresh_immediately = true);
+
+// Full ellipse from three clicks: center, a major-axis point, and a
+// minor-axis point (the minor radius is the perpendicular distance from
+// the third click to the major axis).  v1 freezes the axis points —
+// no solver registration yet.
+void add_sketch_ellipse(FeatureEntry& feature,
+                        int ellipse_index,
+                        double center_x,
+                        double center_y,
+                        double axis_a_x,
+                        double axis_a_y,
+                        double axis_b_x,
+                        double axis_b_y,
+                        bool is_construction = false,
+                        bool refresh_immediately = true);
+
+// Control-point B-spline: `points` ARE the poles (regular movable
+// vertices).  Degree = min(3, count - 1), clamped open-uniform knots.
+// No solver registration — pole drags re-fit the curve through the
+// ordinary vertex sync.
+void add_sketch_spline(FeatureEntry& feature,
+                       int spline_index,
+                       const std::vector<std::pair<double, double>>& points,
+                       bool is_construction = false,
+                       bool refresh_immediately = true);
+
+// Straight slot (stadium): parametric record expanded by
+// refresh_sketch_slots into 2 lines + 2 arcs (generated_by).
+void add_sketch_slot(FeatureEntry& feature,
+                     int slot_index,
+                     double center_x,
+                     double center_y,
+                     double length,
+                     double radius,
+                     double rotation,
+                     bool is_construction = false);
+
+// Strips previously generated "slot:" entities and re-expands every
+// slot record into 2 lines + 2 arcs. Called right after
+// refresh_sketch_texts at the top of refresh_sketch_derived_state.
+void refresh_sketch_slots(SketchFeatureParameters& parameters);
+
+void update_sketch_slot(FeatureEntry& feature,
+                        const std::string& slot_id,
+                        double center_x,
+                        double center_y,
+                        double length,
+                        double radius,
+                        double rotation);
+
+void delete_sketch_slot(FeatureEntry& feature, const std::string& slot_id);

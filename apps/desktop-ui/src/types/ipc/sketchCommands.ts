@@ -102,6 +102,14 @@ export interface AddSketchCircleRadiusDimensionCommand {
   };
 }
 
+export interface AddSketchArcLengthDimensionCommand {
+  id: string;
+  type: "add_sketch_arc_length_dimension";
+  payload: {
+    arc_id: string;
+  };
+}
+
 export interface AddSketchArcRadiusDimensionCommand {
   id: string;
   type: "add_sketch_arc_radius_dimension";
@@ -151,6 +159,23 @@ export interface AddSketchCircleCommand {
     center_y: number;
     radius: number;
     is_construction: boolean;
+    // Creation mode. "center_radius" (default) uses the center/radius
+    // fields; the other modes resolve in the core from raw inputs:
+    // two_point (p1/p2 = diameter endpoints), three_point (p1/p2/p3 =
+    // circumcircle), tangent_two_lines / tangent_three_lines (line
+    // ids + hint placement point).
+    mode?: string;
+    p1_x?: number;
+    p1_y?: number;
+    p2_x?: number;
+    p2_y?: number;
+    p3_x?: number;
+    p3_y?: number;
+    line_a_id?: string;
+    line_b_id?: string;
+    line_c_id?: string;
+    hint_x?: number;
+    hint_y?: number;
   };
 }
 
@@ -219,6 +244,95 @@ export interface DeleteSketchFilletCommand {
   type: "delete_sketch_fillet";
   payload: {
     fillet_id: string;
+  };
+}
+
+// Sketch chamfer (line-line). Same corner/line pair pattern as the
+// fillet with two trim distances instead of a radius.
+export interface AddSketchChamferCommand {
+  id: string;
+  type: "add_sketch_chamfer";
+  payload: {
+    corner_vertex_id: string;
+    line_a_id: string;
+    line_b_id: string;
+    distance_a: number;
+    distance_b: number;
+  };
+}
+
+export interface UpdateSketchChamferCommand {
+  id: string;
+  type: "update_sketch_chamfer";
+  payload: {
+    chamfer_id: string;
+    distance_a: number;
+    distance_b: number;
+  };
+}
+
+export interface DeleteSketchChamferCommand {
+  id: string;
+  type: "delete_sketch_chamfer";
+  payload: {
+    chamfer_id: string;
+  };
+}
+
+// Sketch ellipse (center + 2 axis points). The core derives a / b /
+// rotation from the two axis clicks; the axis points are fixed at
+// creation.
+export interface AddSketchEllipseCommand {
+  id: string;
+  type: "add_sketch_ellipse";
+  payload: {
+    center_x: number;
+    center_y: number;
+    axis_a_x: number;
+    axis_a_y: number;
+    axis_b_x: number;
+    axis_b_y: number;
+    is_construction?: boolean;
+  };
+}
+
+// Control-point B-spline. The points ARE the poles (regular movable
+// vertices); the core derives degree = min(3, count - 1).
+export interface AddSketchSplineCommand {
+  id: string;
+  type: "add_sketch_spline";
+  payload: {
+    points: Array<{ x: number; y: number }>;
+    is_construction?: boolean;
+  };
+}
+
+// Sketch slot (straight stadium). `length` is the distance between
+// the two arc centers and must stay >= 2 * radius; `rotation` is in
+// radians.
+export interface AddSketchSlotCommand {
+  id: string;
+  type: "add_sketch_slot";
+  payload: {
+    center_x: number;
+    center_y: number;
+    length: number;
+    radius: number;
+    rotation: number;
+    is_construction?: boolean;
+  };
+}
+
+export interface UpdateSketchSlotCommand {
+  id: string;
+  type: "update_sketch_slot";
+  payload: {
+    slot_id: string;
+    center_x: number;
+    center_y: number;
+    length: number;
+    radius: number;
+    rotation: number;
   };
 }
 
@@ -294,6 +408,74 @@ export interface TrimSketchEntityCommand {
     entity_id: string;
     click_x: number;
     click_y: number;
+  };
+}
+
+// Extend tool: extends a sketch line (infinite support) or arc (full
+// circle) from the end nearest the click to the nearest intersection
+// with another non-construction entity.
+export interface ExtendSketchEntityCommand {
+  id: string;
+  type: "extend_sketch_entity";
+  payload: {
+    entity_id: string;
+    click_x: number;
+    click_y: number;
+  };
+}
+
+// Offset tool: creates a new entity (parallel line / concentric
+// circle / same-sweep arc) at a signed distance from the source.
+export interface OffsetSketchEntityCommand {
+  id: string;
+  type: "offset_sketch_entity";
+  payload: {
+    entity_id: string;
+    distance: number;
+  };
+}
+
+// Transform tool: translate/rotate/scale a set of sketch entities
+// around a center. `copy=true` creates exploded copies with fresh
+// ids and leaves the originals; uniform scale only. The plain move
+// command remains the scale-1 copy-false wrapper.
+// Array tools: exploded copies (direct commit in v1 — the pending
+// preview workflow is deferred; undo is the adjust path).
+export interface CreateLinearArrayCommand {
+  id: string;
+  type: "create_linear_array";
+  payload: {
+    entity_ids: string[];
+    dx: number;
+    dy: number;
+    count: number;
+  };
+}
+
+export interface CreateCircularArrayCommand {
+  id: string;
+  type: "create_circular_array";
+  payload: {
+    entity_ids: string[];
+    center_x: number;
+    center_y: number;
+    count: number;
+    total_angle_deg: number;
+  };
+}
+
+export interface TransformSketchEntitiesCommand {
+  id: string;
+  type: "transform_sketch_entities";
+  payload: {
+    entity_ids: string[];
+    dx: number;
+    dy: number;
+    center_x: number;
+    center_y: number;
+    angle_deg: number;
+    scale: number;
+    copy: boolean;
   };
 }
 

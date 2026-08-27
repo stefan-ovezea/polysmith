@@ -19,6 +19,8 @@ sketch_parameters_from_payload(const json& payload) {
                            ? payload.at("active_tool").get<std::string>()
                            : std::string{};
 #include "protocol/impl/feature_parameter_sketch_geometry_parser.inc"
+#include "protocol/impl/feature_parameter_sketch_chamfer_parser.inc"
+#include "protocol/impl/feature_parameter_sketch_slot_parser.inc"
 #include "protocol/impl/feature_parameter_sketch_text_parser.inc"
 #include "protocol/impl/feature_parameter_sketch_dimension_parser.inc"
 #include "protocol/impl/feature_parameter_sketch_relation_parser.inc"

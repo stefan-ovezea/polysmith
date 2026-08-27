@@ -27,6 +27,13 @@ int constraint_cost(const std::string& kind) {
   if (kind == "equal_length") return 1;
   if (kind == "tangent")      return 1;
   if (kind == "symmetry")     return 2;
+  if (kind == "symmetric")    return 2;
+  if (kind == "midpoint")     return 2;
+  if (kind == "collinear")    return 1;
+  if (kind == "tangent_line_line") return 1;
+  if (kind == "tangent_line_circle") return 1;
+  if (kind == "tangent_circle_circle") return 1;
+  if (kind == "tangent_arc_arc") return 1;
   return 1;
 }
 
@@ -86,6 +93,10 @@ std::vector<EntityDofResult> count_sketch_dof(
 
   // General constraints.
   for (const auto& c : params.constraints) {
+    // Fixed constraints are counted by the is_fixed pass below — the
+    // record only drives the viewport badge, so counting it here
+    // would consume the DOF twice.
+    if (c.kind == "fixed") continue;
     int cost = constraint_cost(c.kind);
     for (const auto& tid : c.target_ids) {
       if (map.count(tid)) map[tid].consumed += cost;

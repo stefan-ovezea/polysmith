@@ -12,6 +12,29 @@ void update_sketch_vertex(FeatureEntry& feature,
 // center).  Fixed vertices stay; connected geometry ripples like an
 // endpoint drag.  The DocumentManager wrapper pushes the undo state —
 // never push undo inside the core sketch layer.
+void transform_sketch_entities(FeatureEntry& feature,
+                               const std::vector<std::string>& entity_ids,
+                               double dx,
+                               double dy,
+                               double center_x,
+                               double center_y,
+                               double angle_deg,
+                               double scale,
+                               bool copy);
+
+void create_linear_array(FeatureEntry& feature,
+                         const std::vector<std::string>& entity_ids,
+                         double dx,
+                         double dy,
+                         int count);
+
+void create_circular_array(FeatureEntry& feature,
+                           const std::vector<std::string>& entity_ids,
+                           double center_x,
+                           double center_y,
+                           int count,
+                           double total_angle_deg);
+
 void move_sketch_entities(FeatureEntry& feature,
                           const std::vector<std::string>& entity_ids,
                           double dx,
@@ -82,6 +105,31 @@ void set_sketch_vertex_line_anchor(FeatureEntry& feature,
 // Pass an empty `circle_id` to clear any existing tangent relation
 // for the line. Throws when the line's start is inside or on the
 // circle (no real tangent exists).
+void attach_circle_tangent_relations(
+    FeatureEntry& feature,
+    const std::string& circle_id,
+    const std::vector<std::string>& line_ids);
+
 void set_sketch_tangent_constraint(FeatureEntry& feature,
                                    const std::string& line_id,
                                    const std::string& circle_id);
+
+// ── Constraint completion (feature/sketch) ───────────────────────────
+// Symmetric: points p1 and p2 mirrored across the axis line (each is
+// equidistant from the axis endpoints).  Midpoint: the vertex is
+// anchored to the host line's midpoint.  Collinear: the first line is
+// driven onto the second line's infinite axis.  Tangent pairs: curve-
+// curve (circle/arc, internal or external) or line-line (collinear).
+void set_sketch_symmetric_constraint(FeatureEntry& feature,
+                                     const std::string& point_id,
+                                     const std::string& other_point_id,
+                                     const std::string& axis_line_id);
+void set_sketch_midpoint_constraint(FeatureEntry& feature,
+                                    const std::string& vertex_id,
+                                    const std::string& line_id);
+void set_sketch_collinear_constraint(FeatureEntry& feature,
+                                     const std::string& line_id,
+                                     const std::string& other_line_id);
+void set_sketch_tangent_pair_constraint(FeatureEntry& feature,
+                                        const std::string& first_id,
+                                        const std::string& second_id);

@@ -19,6 +19,8 @@ import type {
   SketchArcScene,
   SketchDimensionScene,
   SketchConstraintScene,
+  SketchEllipseScene,
+  SketchSplineScene,
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
@@ -161,6 +163,41 @@ export interface ViewportSketchCircle {
   generated_by: string | null;
 }
 
+export interface ViewportSketchEllipse {
+  ellipse_id: string;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
+  center: Vector3;
+  a: number;
+  b: number;
+  rotation: number;
+  is_selected: boolean;
+  is_construction: boolean;
+  has_sweep: boolean;
+  sweep_start: number;
+  sweep_end: number;
+  ccw: boolean;
+  is_preview: boolean;
+  // See `ViewportSketchLine.generated_by` (reserved — v1 ellipses
+  // are user entities only).
+  generated_by: string | null;
+}
+
+// Control-point B-spline primitive: the curve as a sampled world
+// polyline plus the control poles (world coordinates).
+export interface ViewportSketchSpline {
+  spline_id: string;
+  plane_id: string;
+  plane_frame: PlaneFrame | null;
+  curve_points: Vector3[];
+  pole_points: Vector3[];
+  degree: number;
+  is_selected: boolean;
+  is_construction: boolean;
+  is_preview: boolean;
+  generated_by: string | null;
+}
+
 export interface ViewportSketchPolygon {
   polygon_id: string;
   plane_id: string;
@@ -227,6 +264,8 @@ export interface ViewportSketchDimension {
     | "line_length"
     | "circle_radius"
     | "arc_radius"
+    | "arc_length"
+    | "arc_angle"
     | "polygon_radius"
     | "angle"
     | "line_angle"
@@ -243,7 +282,9 @@ export interface ViewportSketchDimension {
   dimension_end: Vector3;
   label_position: Vector3;
 
-  // Angle arc geometry (from C++ core, optional)
+  // Arc geometry (from C++ core, optional). Emitted for angle/line_angle
+  // and for the radial kinds (circle_radius, arc_radius, arc_length,
+  // arc_angle), whose leaders are built from the centre and radius.
   arc_center?: Vector3;
   arc_radius?: number;
   arc_start_angle?: number;
@@ -276,7 +317,7 @@ export interface ViewportSketchProfile {
   profile_id: string;
   plane_id: string;
   plane_frame: PlaneFrame | null;
-  profile_kind: "polygon" | "circle";
+  profile_kind: "polygon" | "circle" | "ellipse" | "spline";
   profile_points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
   start_x: number;
@@ -303,6 +344,8 @@ export interface ViewportScene {
   references: SceneReference[];
   sketchLines: SketchLineScene[];
   sketchCircles: SketchCircleScene[];
+  sketchEllipses: SketchEllipseScene[];
+  sketchSplines: SketchSplineScene[];
   sketchPolygons: SketchPolygonScene[];
   sketchArcs: SketchArcScene[];
   sketchDimensions: SketchDimensionScene[];

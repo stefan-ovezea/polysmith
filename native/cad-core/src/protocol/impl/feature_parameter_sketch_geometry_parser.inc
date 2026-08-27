@@ -68,6 +68,89 @@
       params.arcs.push_back(arc);
     }
   }
+  // Older saves predate ellipses; absence of the key just means no
+  // ellipses.
+  if (payload.contains("ellipses") && payload.at("ellipses").is_array()) {
+    for (const auto& ellipse_payload : payload.at("ellipses")) {
+      polysmith::core::SketchEllipse ellipse{};
+      ellipse.id = read_string(ellipse_payload, "ellipse_id");
+      ellipse.center_vertex_id = read_string(ellipse_payload, "center_vertex_id");
+      ellipse.axis_a_vertex_id = read_string(ellipse_payload, "axis_a_vertex_id");
+      ellipse.axis_b_vertex_id = read_string(ellipse_payload, "axis_b_vertex_id");
+      ellipse.center_x = read_number(ellipse_payload, "center_x");
+      ellipse.center_y = read_number(ellipse_payload, "center_y");
+      ellipse.a = read_number(ellipse_payload, "a");
+      ellipse.b = read_number(ellipse_payload, "b");
+      ellipse.rotation = read_number(ellipse_payload, "rotation");
+      if (ellipse_payload.contains("is_construction") &&
+          ellipse_payload.at("is_construction").is_boolean()) {
+        ellipse.is_construction =
+            ellipse_payload.at("is_construction").get<bool>();
+      }
+      ellipse.generated_by = read_optional_string(ellipse_payload, "generated_by");
+      // Partial-ellipse sweep (trim results); defaults keep full
+      // ellipses for older saves.
+      if (ellipse_payload.contains("has_sweep") &&
+          ellipse_payload.at("has_sweep").is_boolean()) {
+        ellipse.has_sweep = ellipse_payload.at("has_sweep").get<bool>();
+      }
+      if (ellipse_payload.contains("sweep_start_angle") &&
+          ellipse_payload.at("sweep_start_angle").is_number()) {
+        ellipse.sweep_start_angle =
+            ellipse_payload.at("sweep_start_angle").get<double>();
+      }
+      if (ellipse_payload.contains("sweep_end_angle") &&
+          ellipse_payload.at("sweep_end_angle").is_number()) {
+        ellipse.sweep_end_angle =
+            ellipse_payload.at("sweep_end_angle").get<double>();
+      }
+      if (ellipse_payload.contains("ccw") &&
+          ellipse_payload.at("ccw").is_boolean()) {
+        ellipse.ccw = ellipse_payload.at("ccw").get<bool>();
+      }
+      ellipse.start_vertex_id =
+          read_optional_string(ellipse_payload, "start_vertex_id")
+              .value_or("");
+      ellipse.end_vertex_id =
+          read_optional_string(ellipse_payload, "end_vertex_id").value_or("");
+      params.ellipses.push_back(ellipse);
+    }
+  }
+  // Older saves predate splines; absence of the key just means no
+  // splines.
+  if (payload.contains("splines") && payload.at("splines").is_array()) {
+    for (const auto& spline_payload : payload.at("splines")) {
+      polysmith::core::SketchSpline spline{};
+      spline.id = read_string(spline_payload, "spline_id");
+      spline.degree = static_cast<int>(read_number(spline_payload, "degree"));
+      if (spline_payload.contains("pole_vertex_ids") &&
+          spline_payload.at("pole_vertex_ids").is_array()) {
+        for (const auto& vid : spline_payload.at("pole_vertex_ids")) {
+          spline.pole_vertex_ids.push_back(vid.get<std::string>());
+        }
+      }
+      if (spline_payload.contains("pole_xs") &&
+          spline_payload.at("pole_xs").is_array()) {
+        for (const auto& x : spline_payload.at("pole_xs")) {
+          spline.pole_xs.push_back(x.get<double>());
+        }
+      }
+      if (spline_payload.contains("pole_ys") &&
+          spline_payload.at("pole_ys").is_array()) {
+        for (const auto& y : spline_payload.at("pole_ys")) {
+          spline.pole_ys.push_back(y.get<double>());
+        }
+      }
+      if (spline_payload.contains("is_construction") &&
+          spline_payload.at("is_construction").is_boolean()) {
+        spline.is_construction =
+            spline_payload.at("is_construction").get<bool>();
+      }
+      spline.generated_by =
+          read_optional_string(spline_payload, "generated_by");
+      params.splines.push_back(spline);
+    }
+  }
   // Older saves predate fillets; absence of the key just means no
   // fillets exist (lines/arcs that originated as fillet outputs are
   // already round-tripped above as plain entities).

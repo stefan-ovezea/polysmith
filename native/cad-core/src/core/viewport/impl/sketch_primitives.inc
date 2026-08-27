@@ -99,6 +99,82 @@ ViewportSketchCirclePrimitive make_sketch_circle_primitive(
   };
 }
 
+ViewportSketchEllipsePrimitive make_sketch_ellipse_primitive(
+    const SketchEllipse& ellipse,
+    const SketchFeatureParameters& parameters,
+    bool is_selected) {
+  const WorldPoint center = to_world_point(parameters, ellipse.center_x, ellipse.center_y);
+
+  return ViewportSketchEllipsePrimitive{
+      .ellipse_id = ellipse.id,
+      .plane_id = parameters.plane_id,
+      .plane_frame = parameters.plane_frame.has_value()
+                         ? std::optional<ViewportSketchPlaneFrame>(
+                               make_sketch_plane_frame(
+                                   parameters.plane_frame.value()))
+                         : std::nullopt,
+      .center_x = center.x,
+      .center_y = center.y,
+      .center_z = center.z,
+      .a = ellipse.a,
+      .b = ellipse.b,
+      .rotation = ellipse.rotation,
+      .is_selected = is_selected,
+      .is_construction = ellipse.is_construction,
+      .has_sweep = ellipse.has_sweep,
+      .sweep_start = ellipse.sweep_start_angle,
+      .sweep_end = ellipse.sweep_end_angle,
+      .ccw = ellipse.ccw,
+      .generated_by = ellipse.generated_by,
+  };
+}
+
+ViewportSketchSplinePrimitive make_sketch_spline_primitive(
+    const SketchSpline& spline,
+    const SketchFeatureParameters& parameters,
+    bool is_selected) {
+  ViewportSketchSplinePrimitive primitive;
+  primitive.spline_id = spline.id;
+  primitive.plane_id = parameters.plane_id;
+  primitive.plane_frame = parameters.plane_frame.has_value()
+                              ? std::optional<ViewportSketchPlaneFrame>(
+                                    make_sketch_plane_frame(
+                                        parameters.plane_frame.value()))
+                              : std::nullopt;
+  primitive.degree = spline.degree;
+  primitive.is_selected = is_selected;
+  primitive.is_construction = spline.is_construction;
+  primitive.generated_by = spline.generated_by;
+
+  const auto knots = spline_open_uniform_knots(
+      static_cast<int>(spline.pole_xs.size()), spline.degree);
+  constexpr int kSplineViewportSamples = 16;
+  primitive.curve_xs.reserve(kSplineViewportSamples + 1);
+  primitive.curve_ys.reserve(kSplineViewportSamples + 1);
+  primitive.curve_zs.reserve(kSplineViewportSamples + 1);
+  for (int i = 0; i <= kSplineViewportSamples; ++i) {
+    const double u = static_cast<double>(i) / kSplineViewportSamples;
+    const SplineSample sample = spline_eval(
+        spline.degree, knots, spline.pole_xs, spline.pole_ys, u);
+    const WorldPoint world =
+        to_world_point(parameters, sample.x, sample.y);
+    primitive.curve_xs.push_back(world.x);
+    primitive.curve_ys.push_back(world.y);
+    primitive.curve_zs.push_back(world.z);
+  }
+  primitive.pole_xs.reserve(spline.pole_xs.size());
+  primitive.pole_ys.reserve(spline.pole_ys.size());
+  primitive.pole_zs.reserve(spline.pole_ys.size());
+  for (size_t i = 0; i < spline.pole_xs.size(); ++i) {
+    const WorldPoint world =
+        to_world_point(parameters, spline.pole_xs[i], spline.pole_ys[i]);
+    primitive.pole_xs.push_back(world.x);
+    primitive.pole_ys.push_back(world.y);
+    primitive.pole_zs.push_back(world.z);
+  }
+  return primitive;
+}
+
 ViewportSketchArcPrimitive make_sketch_arc_primitive(
     const SketchArc& arc,
     const SketchFeatureParameters& parameters,

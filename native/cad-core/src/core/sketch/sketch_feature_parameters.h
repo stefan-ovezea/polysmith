@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "core/sketch/sketch_chamfer_types.h"
 #include "core/sketch/sketch_constraint_types.h"
 #include "core/sketch/sketch_dimension_types.h"
 #include "core/sketch/sketch_fillet_types.h"
@@ -10,6 +11,7 @@
 #include "core/sketch/sketch_mirror_types.h"
 #include "core/sketch/sketch_profile_types.h"
 #include "core/sketch/sketch_projection_types.h"
+#include "core/sketch/sketch_slot_types.h"
 #include "core/sketch/sketch_text_types.h"
 
 namespace polysmith::core {
@@ -37,6 +39,14 @@ struct SketchFeatureParameters {
   std::vector<SketchCircle> circles;
   std::vector<SketchPolygon> polygons;
   std::vector<SketchArc> arcs;
+  std::vector<SketchEllipse> ellipses;
+  // Control-point B-splines. The poles are regular vertices; the
+  // cached pole coordinates re-sync from the vertex table on every
+  // refresh so pole drags re-fit the curve.
+  std::vector<SketchSpline> splines;
+  // Parametric slots (stadium shapes). Expanded into generated lines +
+  // arcs by refresh_sketch_slots on every recompute.
+  std::vector<SketchSlot> slots;
   std::vector<SketchVertex> vertices;
   std::vector<SketchDimension> dimensions;
   std::vector<SketchLineRelation> line_relations;
@@ -48,6 +58,11 @@ struct SketchFeatureParameters {
   // pass keeps those entities in sync with the fillet's `radius` and
   // the current line endpoints.
   std::vector<SketchFillet> fillets;
+  // Parametric corner chamfers (line-line). Each entry's
+  // `chamfer_line_id` and trim point ids reference real entities in
+  // `lines` / `points`; the recompute pass keeps them in sync with the
+  // chamfer's distances and the current line endpoints.
+  std::vector<SketchChamfer> chamfers;
   // Free-standing points placed by the Project tool (one per
   // projected body vertex). Re-emitted into `points` by every
   // `rebuild_sketch_vertices` pass with `kind = "projected"` and

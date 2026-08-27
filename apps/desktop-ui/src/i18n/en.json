@@ -27,6 +27,7 @@
     "hide": "Hide",
     "move": "Move",
     "moveCopy": "Move/Copy",
+    "transformArray": "Transform / Array",
     "needsAttention": "Needs attention",
     "none": "None",
     "ok": "OK",
@@ -363,6 +364,12 @@
     "polygon": "Polygon",
     "tangentPlane": "Tangent Plane",
     "text": "Text",
+    "chamfer": "Chamfer",
+    "ellipse": "Ellipse",
+    "extend": "Extend",
+    "offset": "Offset",
+    "slot": "Slot",
+    "spline": "Spline",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
     "polygonEdge": "Edge Polygon",
@@ -635,6 +642,41 @@
       "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
       "clickCorner": "Click a corner to fillet",
       "title": "Sketch Fillet"
+    },
+    "sketchChamfer": {
+      "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
+      "clickCorner": "Click a corner to chamfer",
+      "title": "Sketch Chamfer",
+      "distanceA": "Distance A (mm)",
+      "distanceB": "Distance B (mm)"
+    },
+    "sketchTransform": {
+      "title": "Transform / Array",
+      "scale": "Scale",
+      "center": "Center",
+      "pickCenter": "Pick",
+      "pickCenterHint": "Pick: click a point in the viewport to set the rotation center",
+      "pickCenterHintActive": "Click a center or point in the viewport · Esc cancels",
+      "noSelection": "No geometry selected — select entities in the viewport first",
+      "selectionSummary": "{{count}} selected: {{kinds}}",
+      "copy": "Copy",
+      "applyTransform": "Apply Transform",
+      "count": "Count",
+      "linearArray": "Linear Array",
+      "linearArrayHint": "Linear array offsets each copy by the dX / dY values above",
+      "circularArray": "Circular Array"
+    },
+    "sketchOffset": {
+      "addAnother": "{{count}} offset{{plural}} · click an entity to add another",
+      "clickEntity": "Click a line, circle, or arc to offset it",
+      "title": "Sketch Offset"
+    },
+    "sketchSlot": {
+      "title": "Slot",
+      "helper": "Edits re-derive the slot's generated geometry",
+      "length": "Length (mm)",
+      "radius": "Radius (mm)",
+      "rotation": "Rotation (deg)"
     },
     "text": {
       "title": "Sketch Text",
@@ -911,6 +953,7 @@
   },
   "viewport": {
     "clickPlaceGeometry": "Click to place geometry",
+    "splineFinishHint": "Double-click or press Enter to finish",
     "constraintSelected": "Constraint: {{kind}} — Press Delete to remove",
     "coreStartup": "Core Startup",
     "dimensionReady": "Dimension ready. Pick another element, drag the label, or type a value.",

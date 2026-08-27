@@ -63,6 +63,21 @@ interface ViewportCallbackRefTargets {
       isConstruction: boolean,
     ) => Promise<void>
   >;
+  addSketchCircleModeRef: MutableRefObject<
+    (
+      mode: string,
+      isConstruction: boolean,
+      inputs: {
+        p1?: [number, number];
+        p2?: [number, number];
+        p3?: [number, number];
+        lineAId?: string;
+        lineBId?: string;
+        lineCId?: string;
+        hint?: [number, number];
+      },
+    ) => Promise<void>
+  >;
   addSketchAngleDimensionRef: MutableRefObject<
     (firstLineId: string, secondLineId: string) => Promise<void>
   >;
@@ -79,6 +94,9 @@ interface ViewportCallbackRefTargets {
     (circleId: string, displayAs?: string) => Promise<void>
   >;
   addSketchArcRadiusDimensionRef: MutableRefObject<
+    (arcId: string) => Promise<void>
+  >;
+  addSketchArcLengthDimensionRef: MutableRefObject<
     (arcId: string) => Promise<void>
   >;
   addSketchPolygonRadiusDimensionRef: MutableRefObject<
@@ -134,10 +152,52 @@ interface ViewportCallbackRefTargets {
       lineBId: string,
     ) => Promise<void>
   >;
+  addSketchChamferRef: MutableRefObject<
+    (
+      cornerPointId: string,
+      lineAId: string,
+      lineBId: string,
+    ) => Promise<void>
+  >;
+  addSketchEllipseRef: MutableRefObject<
+    (
+      centerX: number,
+      centerY: number,
+      axisAX: number,
+      axisAY: number,
+      axisBX: number,
+      axisBY: number,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
+  addSketchSplineRef: MutableRefObject<
+    (
+      points: Array<{ x: number; y: number }>,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
+  addSketchSlotRef: MutableRefObject<
+    (
+      centerX: number,
+      centerY: number,
+      length: number,
+      radius: number,
+      rotation: number,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
   addSketchTextRef: MutableRefObject<
     (anchorX: number, anchorY: number) => Promise<void>
   >;
   pickSketchTextRef: MutableRefObject<(textId: string) => void>;
+  pickSketchSlotRef: MutableRefObject<(slotId: string) => void>;
+  pickSketchChamferRef: MutableRefObject<(chamferId: string) => void>;
+  extendSketchEntityRef: MutableRefObject<
+    (entityId: string, clickX: number, clickY: number) => Promise<void>
+  >;
+  offsetSketchEntityRef: MutableRefObject<
+    (entityId: string) => Promise<void>
+  >;
   selectSketchEntityRef: MutableRefObject<
     (entityId: string, additive: boolean) => Promise<void>
   >;
@@ -184,7 +244,14 @@ interface ViewportCallbackRefTargets {
     (profileId: string, additive: boolean) => Promise<void>
   >;
   trimSketchEntityRef: MutableRefObject<
-    ((entityId: string, clickX: number, clickY: number) => Promise<void>) | undefined
+    ((
+      entityId: string,
+      clickX: number,
+      clickY: number,
+      segmentIndex?: number,
+      expectedRevision?: number,
+      previewId?: string,
+    ) => Promise<void>) | undefined
   >;
   deleteSketchSelectionRef: MutableRefObject<
     (selection?: SketchSelection) => Promise<void>
@@ -247,6 +314,7 @@ interface ViewportCallbackRefValues
   onAddSketchLineAngleDimension: ViewportCallbackRefTargets["addSketchLineAngleDimensionRef"]["current"];
   onAddSketchCircleRadiusDimension: ViewportCallbackRefTargets["addSketchCircleRadiusDimensionRef"]["current"];
   onAddSketchArcRadiusDimension: ViewportCallbackRefTargets["addSketchArcRadiusDimensionRef"]["current"];
+  onAddSketchArcLengthDimension: ViewportCallbackRefTargets["addSketchArcLengthDimensionRef"]["current"];
   onAddSketchPolygonRadiusDimension: ViewportCallbackRefTargets["addSketchPolygonRadiusDimensionRef"]["current"];
   onSetSketchLineConstraint: ViewportCallbackRefTargets["setSketchLineConstraintRef"]["current"];
   onSetSketchPerpendicularConstraint: ViewportCallbackRefTargets["setSketchPerpendicularConstraintRef"]["current"];
@@ -259,8 +327,30 @@ interface ViewportCallbackRefValues
   polygonSides: number;
   onAddSketchPolygon: ViewportCallbackRefTargets["addSketchPolygonRef"]["current"];
   onAddSketchFillet: ViewportCallbackRefTargets["addSketchFilletRef"]["current"];
+  onAddSketchChamfer: ViewportCallbackRefTargets["addSketchChamferRef"]["current"];
+  onAddSketchEllipse: ViewportCallbackRefTargets["addSketchEllipseRef"]["current"];
+  onAddSketchSpline: ViewportCallbackRefTargets["addSketchSplineRef"]["current"];
+  onAddSketchSlot: ViewportCallbackRefTargets["addSketchSlotRef"]["current"];
   onAddSketchText: ViewportCallbackRefTargets["addSketchTextRef"]["current"];
   onPickSketchText: ViewportCallbackRefTargets["pickSketchTextRef"]["current"];
+  onPickSketchSlot: ViewportCallbackRefTargets["pickSketchSlotRef"]["current"];
+  onPickSketchChamfer: ViewportCallbackRefTargets["pickSketchChamferRef"]["current"];
+  onExtendSketchEntity: ViewportCallbackRefTargets["extendSketchEntityRef"]["current"];
+  onOffsetSketchEntity: ViewportCallbackRefTargets["offsetSketchEntityRef"]["current"];
+  onOpenTransformArray: () => void;
+  onAddSketchCircleMode: (
+    mode: string,
+    isConstruction: boolean,
+    inputs: {
+      p1?: [number, number];
+      p2?: [number, number];
+      p3?: [number, number];
+      lineAId?: string;
+      lineBId?: string;
+      lineCId?: string;
+      hint?: [number, number];
+    },
+  ) => Promise<void>;
   onSelectSketchEntity: ViewportCallbackRefTargets["selectSketchEntityRef"]["current"];
   onPickInactiveSketchLine:
     | ViewportCallbackRefTargets["pickInactiveSketchLineRef"]["current"]
@@ -315,6 +405,7 @@ export function useViewportCallbackRefs(
     refs.addSketchLineRef.current = values.onAddSketchLine;
     refs.addSketchRectangleRef.current = values.onAddSketchRectangle;
     refs.addSketchCircleRef.current = values.onAddSketchCircle;
+    refs.addSketchCircleModeRef.current = values.onAddSketchCircleMode;
     refs.addSketchArcRef.current = values.onAddSketchArc;
     refs.addSketchAngleDimensionRef.current =
       values.onAddSketchAngleDimension;
@@ -328,6 +419,8 @@ export function useViewportCallbackRefs(
       values.onAddSketchCircleRadiusDimension;
     refs.addSketchArcRadiusDimensionRef.current =
       values.onAddSketchArcRadiusDimension;
+    refs.addSketchArcLengthDimensionRef.current =
+      values.onAddSketchArcLengthDimension;
     refs.addSketchPolygonRadiusDimensionRef.current =
       values.onAddSketchPolygonRadiusDimension;
     refs.setSketchLineConstraintRef.current = values.onSetSketchLineConstraint;
@@ -344,8 +437,16 @@ export function useViewportCallbackRefs(
     refs.polygonSidesRef.current = values.polygonSides;
     refs.addSketchPolygonRef.current = values.onAddSketchPolygon;
     refs.addSketchFilletRef.current = values.onAddSketchFillet;
+    refs.addSketchChamferRef.current = values.onAddSketchChamfer;
+    refs.addSketchEllipseRef.current = values.onAddSketchEllipse;
+    refs.addSketchSplineRef.current = values.onAddSketchSpline;
+    refs.addSketchSlotRef.current = values.onAddSketchSlot;
     refs.addSketchTextRef.current = values.onAddSketchText;
     refs.pickSketchTextRef.current = values.onPickSketchText;
+    refs.pickSketchSlotRef.current = values.onPickSketchSlot;
+    refs.pickSketchChamferRef.current = values.onPickSketchChamfer;
+    refs.extendSketchEntityRef.current = values.onExtendSketchEntity;
+    refs.offsetSketchEntityRef.current = values.onOffsetSketchEntity;
     refs.selectSketchEntityRef.current = values.onSelectSketchEntity;
     refs.pickInactiveSketchLineRef.current = values.onPickInactiveSketchLine;
     refs.inactiveSketchEntityPickEnabledRef.current =

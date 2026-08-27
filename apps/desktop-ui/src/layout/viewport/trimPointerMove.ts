@@ -8,17 +8,20 @@ import { resolveSketchPlanePoint } from "@/utils";
 import type { ViewportPickHit } from "./contextMenuState";
 import type { PointerMoveHoverActions } from "./pointerMoveHover";
 import { applyTrimToolHover } from "./pointerMoveHover";
-import {
-  computeTrimHoverPreview,
-  type TrimHoverPreview,
-  type TrimLineHighlightSegment,
-} from "./trimHoverPreview";
 
 interface MutableRef<T> {
   current: T;
 }
 
-type TrimEntityKind = "line" | "circle" | "arc";
+type TrimEntityKind = "line" | "circle" | "arc" | "ellipse" | "spline";
+
+interface TrimPreviewLastSent {
+  x: number;
+  y: number;
+  entityId: string;
+  /** id of the last trim_preview command actually written to the core. */
+  requestId: string | null;
+}
 
 interface TrimPointerMoveParams {
   event: PointerEvent;
@@ -28,17 +31,11 @@ interface TrimPointerMoveParams {
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>;
+  trimPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   clearTrimSegmentHighlight: () => void;
   clearTrimArcHighlight: () => void;
-  updateTrimSegmentHighlight: (
-    lineId: string,
-    segments: TrimLineHighlightSegment[],
-    hoveredSegmentIndex: number,
-  ) => void;
-  updateTrimArcHighlight: (worldPoints: Array<[number, number, number]>) => void;
 }
 
 export function handleTrimPointerMove({
@@ -54,16 +51,16 @@ export function handleTrimPointerMove({
   intersectSceneTargets,
   clearTrimSegmentHighlight,
   clearTrimArcHighlight,
-  updateTrimSegmentHighlight,
-  updateTrimArcHighlight,
 }: TrimPointerMoveParams) {
+  void activeSketchPlaneFrameRef;
+  void sceneDataRef;
   const trimHit = intersectSceneTargets(event);
   applyTrimToolHover(trimHit, hoverActions);
 
-  const sceneData = sceneDataRef.current;
   const entityKind = trimEntityKind(trimHit);
-  if (!sceneData || !trimHit || trimHit.kind !== "sketch_entity" || !entityKind) {
+  if (!trimHit || trimHit.kind !== "sketch_entity" || !entityKind) {
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+    trimPreviewLastSentRef.current = null;
     return;
   }
 
@@ -76,59 +73,19 @@ export function handleTrimPointerMove({
   );
   if (!rawPoint) {
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+    trimPreviewLastSentRef.current = null;
     return;
   }
 
+  // Single-authority preview: the red highlight is rendered ONLY from
+  // the core's trim_preview_result (the event handler in ViewportPanel
+  // redraws it on every response), and the trim deletes exactly the
+  // hovered index that result reports. A second, local TS preview
+  // computation used to race it — the highlight showed one segment
+  // while the trim deleted the core's pick for a slightly different
+  // point, which is the "excessive trimming" users saw on dense
+  // circle arrangements. Sending here is the whole job.
   sendTrimPreviewIfMoved(trimPreviewLastSentRef, trimHit.id, rawPoint.local);
-
-  renderTrimPreview(
-    computeTrimHoverPreview({
-      sceneData,
-      target: { id: trimHit.id, entityKind },
-      cursorLocal: rawPoint.local,
-      planeId: activeSketchPlaneId,
-      planeFrame: activeSketchPlaneFrameRef.current,
-    }),
-    {
-      clearTrimSegmentHighlight,
-      clearTrimArcHighlight,
-      updateTrimSegmentHighlight,
-      updateTrimArcHighlight,
-    },
-  );
-}
-
-function renderTrimPreview(
-  preview: TrimHoverPreview | null,
-  {
-    clearTrimSegmentHighlight,
-    clearTrimArcHighlight,
-    updateTrimSegmentHighlight,
-    updateTrimArcHighlight,
-  }: Pick<
-    TrimPointerMoveParams,
-    | "clearTrimSegmentHighlight"
-    | "clearTrimArcHighlight"
-    | "updateTrimSegmentHighlight"
-    | "updateTrimArcHighlight"
-  >,
-) {
-  if (!preview) {
-    clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
-    return;
-  }
-
-  if (preview.kind === "line") {
-    updateTrimSegmentHighlight(
-      preview.lineId,
-      preview.segments,
-      preview.hoveredSegmentIndex,
-    );
-    return;
-  }
-
-  clearTrimSegmentHighlight();
-  updateTrimArcHighlight(preview.points);
 }
 
 function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
@@ -136,23 +93,66 @@ function trimEntityKind(hit: ViewportPickHit | null): TrimEntityKind | null {
     hit?.kind === "sketch_entity" &&
     (hit.entityKind === "line" ||
       hit.entityKind === "circle" ||
-      hit.entityKind === "arc")
+      hit.entityKind === "arc" ||
+      hit.entityKind === "ellipse" ||
+      hit.entityKind === "spline")
   ) {
     return hit.entityKind;
   }
   return null;
 }
 
+// At most one trim_preview command per animation frame, always the
+// newest request. Without this, a fast pointer sweep queues a preview
+// per pointermove event and responses can arrive in any order; the
+// viewport renders whatever lands last, which may not be the request
+// the user's cursor is currently on.
+let scheduledPreview: number | null = null;
+let scheduledPreviewEntity: string | null = null;
+let scheduledPreviewX = 0;
+let scheduledPreviewY = 0;
+let scheduledPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null> | null =
+  null;
+
+function flushScheduledPreview() {
+  scheduledPreview = null;
+  const ref = scheduledPreviewLastSentRef;
+  const entityId = scheduledPreviewEntity;
+  if (ref === null || entityId === null) return;
+  const requestId = crypto.randomUUID();
+  ref.current = {
+    x: scheduledPreviewX,
+    y: scheduledPreviewY,
+    entityId,
+    requestId,
+  };
+  void sendCoreCommand(
+    makeTrimPreviewCommand(entityId, scheduledPreviewX, scheduledPreviewY, requestId),
+  );
+}
 
 function sendTrimPreviewIfMoved(
-  trimPreviewLastSentRef: MutableRef<{ x: number; y: number } | null>,
+  trimPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null>,
   entityId: string,
   cursorLocal: [number, number],
 ) {
   const [mx, my] = cursorLocal;
   const prev = trimPreviewLastSentRef.current;
-  if (!prev || Math.abs(mx - prev.x) > 0.5 || Math.abs(my - prev.y) > 0.5) {
-    trimPreviewLastSentRef.current = { x: mx, y: my };
-    void sendCoreCommand(makeTrimPreviewCommand(entityId, mx, my));
+  // The last-sent gate also stores WHICH entity the preview targeted:
+  // hovering a different entity must send immediately.
+  const entityChanged =
+    !prev || prev.entityId !== entityId;
+  if (
+    entityChanged ||
+    Math.abs(mx - prev.x) > 0.5 ||
+    Math.abs(my - prev.y) > 0.5
+  ) {
+    scheduledPreviewEntity = entityId;
+    scheduledPreviewX = mx;
+    scheduledPreviewY = my;
+    scheduledPreviewLastSentRef = trimPreviewLastSentRef;
+    if (scheduledPreview === null) {
+      scheduledPreview = requestAnimationFrame(flushScheduledPreview);
+    }
   }
 }

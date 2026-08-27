@@ -261,6 +261,53 @@ export function updateSketchArcObject({
   arcObject.geometry.attributes.position.needsUpdate = true;
 }
 
+export function updateSketchEllipseObject({
+  ellipseObject,
+  center,
+  a,
+  b,
+  rotation,
+  xAxis,
+  yAxis,
+}: {
+  ellipseObject: THREE.Line | THREE.LineLoop | undefined;
+  center: readonly [number, number, number];
+  a: number;
+  b: number;
+  rotation: number;
+  xAxis: readonly [number, number, number];
+  yAxis: readonly [number, number, number];
+}) {
+  if (
+    !(ellipseObject instanceof THREE.LineLoop) ||
+    !ellipseObject.geometry.attributes.position
+  ) {
+    return;
+  }
+
+  const position =
+    ellipseObject.geometry.attributes.position.array as Float32Array;
+  const segments = position.length / 3 - 1;
+  const cosRotation = Math.cos(rotation);
+  const sinRotation = Math.sin(rotation);
+  for (let index = 0; index <= segments; index++) {
+    const angle = (index / segments) * Math.PI * 2;
+    const curveX = Math.cos(angle) * a;
+    const curveY = Math.sin(angle) * b;
+    // Rotate the sample from the curve's local space into sketch-plane
+    // space along the stored major-axis rotation.
+    const localX = curveX * cosRotation - curveY * sinRotation;
+    const localY = curveX * sinRotation + curveY * cosRotation;
+    position[index * 3] =
+      center[0] + xAxis[0] * localX + yAxis[0] * localY;
+    position[index * 3 + 1] =
+      center[1] + xAxis[1] * localX + yAxis[1] * localY;
+    position[index * 3 + 2] =
+      center[2] + xAxis[2] * localX + yAxis[2] * localY;
+  }
+  ellipseObject.geometry.attributes.position.needsUpdate = true;
+}
+
 export function updateEndpointDragSceneObjects({
   sceneData,
   planeFrame,
@@ -288,6 +335,18 @@ export function updateEndpointDragSceneObjects({
       circleObject: sketchEntityObjectById.get(circleData.circleId),
       center: circleData.center,
       radius: circleData.radius,
+      xAxis,
+      yAxis,
+    });
+  }
+
+  for (const ellipseData of sceneData.sketchEllipses) {
+    updateSketchEllipseObject({
+      ellipseObject: sketchEntityObjectById.get(ellipseData.ellipseId),
+      center: ellipseData.center,
+      a: ellipseData.a,
+      b: ellipseData.b,
+      rotation: ellipseData.rotation,
       xAxis,
       yAxis,
     });

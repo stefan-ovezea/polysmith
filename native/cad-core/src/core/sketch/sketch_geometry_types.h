@@ -108,6 +108,56 @@ struct SketchArc {
   std::optional<std::string> generated_by;
 };
 
+// Full ellipse entity (feature/sketch milestone).  v1 creates it
+// center + major-axis point + minor-axis point; the axis points are
+// flagged fixed at creation so the cached shape never drifts (the
+// solver has no ellipse registration yet — FreeCAD's ellipse solving
+// is historically fragile, so parametric ellipses are a follow-up).
+struct SketchEllipse {
+  std::string id;
+  std::string center_vertex_id;
+  std::string axis_a_vertex_id;  // major-axis direction point
+  std::string axis_b_vertex_id;  // minor-axis direction point
+  // Cached shape parameters (mirrors SketchCircle's caching pattern).
+  double center_x;
+  double center_y;
+  double a;           // major radius
+  double b;           // minor radius
+  double rotation;    // major-axis angle in sketch-plane coordinates
+  bool is_construction = false;
+  std::optional<std::string> generated_by;
+  // Partial ellipse (a trim result). has_sweep=false means the full
+  // closed ellipse (creation and all pre-trim saves).  Angles are
+  // ellipse-frame parametric angles (radians) — the same convention
+  // exact_curve_point uses for kEllipse.
+  bool has_sweep = false;
+  double sweep_start_angle = 0.0;
+  double sweep_end_angle = 0.0;
+  bool ccw = true;
+  std::string start_vertex_id;  // minted/shared split vertices (partial only)
+  std::string end_vertex_id;
+};
+
+// Control-point B-spline entity (feature/sketch). v1: the user's
+// clicks ARE the control poles — regular movable vertices. The drawn
+// curve is the clamped degree-3 B-spline they define (see
+// spline_math.h for the shared evaluation). No solver registration
+// (FreeCAD's BSpline solving is a regression factory) — pole drags
+// re-fit the cached curve through the ordinary vertex sync passes.
+struct SketchSpline {
+  std::string id;
+  // One vertex per pole, in order.  Regular "vertex-N" vertices so
+  // pole dragging works through the existing vertex paths.
+  std::vector<std::string> pole_vertex_ids;
+  // Cached pole coordinates (sketch-local), re-synced from the vertex
+  // table on every refresh — vertices are the single source of truth.
+  std::vector<double> pole_xs;
+  std::vector<double> pole_ys;
+  int degree = 3;  // min(3, pole_count - 1); clamped open-uniform knots
+  bool is_construction = false;
+  std::optional<std::string> generated_by;
+};
+
 struct SketchVertex {
   std::string id;
   // ── Vertex unification (Phase 4) ────────────────────────────

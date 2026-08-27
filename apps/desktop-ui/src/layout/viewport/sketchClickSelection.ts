@@ -100,7 +100,9 @@ export function handleSharedSketchSelectionHit({
     inactiveSketchEntityPickEnabled &&
     hit?.kind === "sketch_entity" &&
     typeof hit.id === "string" &&
-    (hit.entityKind === "line" || hit.entityKind === "arc")
+    (hit.entityKind === "line" ||
+      hit.entityKind === "arc" ||
+      hit.entityKind === "ellipse")
   ) {
     void selectSketchEntity(hit.id, false);
     return true;
@@ -147,6 +149,13 @@ interface ActiveSketchSelectContext {
   // instead of selecting the raw line. Without the callback glyph
   // hits are ignored.
   onPickSketchText?: (textId: string) => void;
+  // Select-mode slot pick: a hit on a slot's generated line/arc
+  // (`generated_by: "slot:<id>"`) opens the Slot panel bound to the
+  // owning slot instead of selecting the raw entity.
+  onPickSketchSlot?: (slotId: string) => void;
+  // Select-mode chamfer pick: a hit on a chamfer's generated line
+  // opens the Chamfer panel bound to that chamfer.
+  onPickSketchChamfer?: (chamferId: string) => void;
 }
 
 function handleMirrorEntityPick({
@@ -230,6 +239,12 @@ function textIdFromGeneratedBy(generatedBy: string): string | null {
     : null;
 }
 
+function slotIdFromGeneratedBy(generatedBy: string): string | null {
+  return generatedBy.startsWith("slot:")
+    ? generatedBy.slice("slot:".length)
+    : null;
+}
+
 function handleSketchEntityPick({
   hit,
   additiveSelection,
@@ -241,6 +256,8 @@ function handleSketchEntityPick({
   addMessage,
   sketch,
   onPickSketchText,
+  onPickSketchSlot,
+  onPickSketchChamfer,
 }: ActiveSketchSelectContext) {
   if (hit?.kind === "sketch_entity") {
     // Text glyph segments are owned by their text entity: clicking one
@@ -261,6 +278,46 @@ function handleSketchEntityPick({
         if (textId && onPickSketchText) {
           onPickSketchText(textId);
         }
+        return true;
+      }
+    }
+
+    // Slot outlines are generated line/arc pairs owned by their slot
+    // record: clicking any segment opens the Slot panel bound to the
+    // owning slot instead of selecting the raw entity.
+    if (
+      !hit.isProjected &&
+      sketch &&
+      (hit.entityKind === "line" || hit.entityKind === "arc")
+    ) {
+      const sourceEntity =
+        hit.entityKind === "line"
+          ? sketch.lines.find((line) => line.line_id === hit.id)
+          : sketch.arcs?.find((arc) => arc.arc_id === hit.id);
+      const generatedBy = sourceEntity?.generated_by ?? null;
+      if (generatedBy) {
+        const slotId = slotIdFromGeneratedBy(generatedBy);
+        if (slotId && onPickSketchSlot) {
+          onPickSketchSlot(slotId);
+        }
+        return true;
+      }
+    }
+
+    // The chamfer line is owned by its chamfer record: clicking it
+    // opens the Chamfer panel bound to that chamfer instead of
+    // selecting the raw line.
+    if (
+      hit.entityKind === "line" &&
+      !hit.isProjected &&
+      sketch &&
+      onPickSketchChamfer
+    ) {
+      const chamfer = sketch.chamfers?.find(
+        (entry) => entry.chamfer_line_id === hit.id,
+      );
+      if (chamfer) {
+        onPickSketchChamfer(chamfer.chamfer_id);
         return true;
       }
     }

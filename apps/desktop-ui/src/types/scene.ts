@@ -206,6 +206,49 @@ export interface SketchCircleScene {
   generatedBy: string | null;
 }
 
+// Ellipse derived from `ViewportSketchEllipse`. The renderer samples
+// the perimeter in sketch-plane space (a/b around the rotated major
+// axis) and projects each sample through the plane basis — same
+// pattern as `SketchCircleScene`. v1 ellipses are fixed-parameter at
+// creation, so there is no per-vertex drag on the perimeter.
+export interface SketchEllipseScene {
+  // See `SketchLineScene.isPreview`.
+  isPreview: boolean;
+  ellipseId: string;
+  planeId: string;
+  planeFrame: SketchEntityPlaneFrame | null;
+  center: [number, number, number];
+  a: number;
+  b: number;
+  rotation: number;
+  isSelected: boolean;
+  isConstruction: boolean;
+  // Partial ellipse (trim result); false = full closed ellipse.
+  hasSweep?: boolean;
+  sweepStart?: number;
+  sweepEnd?: number;
+  ccw?: boolean;
+  // See `SketchLineScene.generatedBy` (reserved — v1 ellipses are
+  // user entities only).
+  generatedBy: string | null;
+}
+
+// Control-point B-spline derived from `ViewportSketchSpline`: the
+// curve as a sampled world polyline plus the control poles. The
+// renderer draws the polyline strip and the control polygon.
+export interface SketchSplineScene {
+  isPreview: boolean;
+  splineId: string;
+  planeId: string;
+  planeFrame: SketchEntityPlaneFrame | null;
+  curvePoints: [number, number, number][];
+  polePoints: [number, number, number][];
+  degree: number;
+  isSelected: boolean;
+  isConstruction: boolean;
+  generatedBy: string | null;
+}
+
 // Regular polygon derived from ViewportSketchPolygon.
 export interface SketchPolygonScene {
   isPreview: boolean;
@@ -273,6 +316,8 @@ export interface SketchDimensionScene {
     | "line_length"
     | "circle_radius"
     | "arc_radius"
+    | "arc_length"
+    | "arc_angle"
     | "polygon_radius"
     | "angle"
     | "line_angle"
@@ -294,7 +339,9 @@ export interface SketchDimensionScene {
   dimensionEnd: [number, number, number];
   labelPosition: [number, number, number];
 
-  // Angle arc geometry (from C++ core, for angle/line_angle kinds)
+  // Arc geometry (from C++ core). Angle kinds use it for the dimension
+  // arc; the radial kinds (circle_radius, arc_radius, arc_length,
+  // arc_angle) use it as the centre/radius their leaders are built from.
   arcCenter?: [number, number, number];
   arcRadius?: number;
   arcStartAngle?: number;
@@ -335,7 +382,7 @@ export interface SketchProfileScene {
     yAxis: [number, number, number];
     normal: [number, number, number];
   } | null;
-  profileKind: "polygon" | "circle";
+  profileKind: "polygon" | "circle" | "ellipse" | "spline";
   profilePoints: [number, number][];
   innerLoops: [number, number][][];
   start: [number, number];

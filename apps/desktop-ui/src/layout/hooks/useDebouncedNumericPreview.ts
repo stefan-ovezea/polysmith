@@ -32,6 +32,14 @@ export function useDebouncedNumericPreview({
   }, [onPreviewValue]);
 
   useEffect(() => {
+    // Never overwrite the input while the user is editing it — the
+    // debounced preview fires mid-typing and updates `initialValue`
+    // (e.g. the offset/fillet session distance), which would
+    // otherwise snap the field back to the stale previewed value
+    // and make the panel feel stuck.
+    if (document.activeElement === inputRef.current) {
+      return;
+    }
     setValue(String(initialValue));
     lastPreviewedRef.current = initialValue;
   }, [initialValue]);

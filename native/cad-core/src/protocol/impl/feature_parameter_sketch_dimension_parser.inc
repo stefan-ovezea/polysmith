@@ -34,6 +34,12 @@
         dimension.display_as =
             dim_payload.at("display_as").get<std::string>();
       }
+      if (dimension.kind == "circle_radius" &&
+          dimension.display_as != "radius") {
+        // The payload carries the displayed diameter; store the
+        // radius for the solver and the sync passes.
+        dimension.value /= 2.0;
+      }
       if (dim_payload.contains("label_x") &&
           dim_payload.at("label_x").is_number()) {
         dimension.label_x = dim_payload.at("label_x").get<double>();

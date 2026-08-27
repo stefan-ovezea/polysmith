@@ -273,6 +273,26 @@ export const commandPayloadSchemas = {
   add_sketch_distance_dimension: z
     .object({ first_entity_id: stringField, second_entity_id: stringField })
     .strict(),
+  add_sketch_line_length_dimension: z.object({ line_id: stringField }).strict(),
+  add_sketch_line_angle_dimension: z.object({ line_id: stringField }).strict(),
+  add_sketch_circle_radius_dimension: z
+    .object({ circle_id: stringField, display_as: stringField.optional() })
+    .strict(),
+  add_sketch_arc_length_dimension: z
+    .object({ arc_id: stringField })
+    .strict(),
+  add_sketch_arc_radius_dimension: z.object({ arc_id: stringField }).strict(),
+  add_sketch_arc_angle_dimension: z.object({ arc_id: stringField }).strict(),
+  add_sketch_polygon_radius_dimension: z
+    .object({ polygon_id: stringField })
+    .strict(),
+  add_sketch_vertex_distance_dimension: z
+    .object({
+      vertex_a_id: stringField,
+      vertex_b_id: stringField,
+      axis: stringField.optional(),
+    })
+    .strict(),
   set_sketch_point_line_anchor: z
     .object({
       point_id: stringField,
@@ -289,12 +309,72 @@ export const commandPayloadSchemas = {
       is_construction: booleanField,
     })
     .strict(),
+  add_sketch_polygon: z
+    .object({
+      sides: numberField,
+      mode: stringField,
+      start_x: numberField,
+      start_y: numberField,
+      end_x: numberField,
+      end_y: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  add_sketch_ellipse: z
+    .object({
+      center_x: numberField,
+      center_y: numberField,
+      axis_a_x: numberField,
+      axis_a_y: numberField,
+      axis_b_x: numberField,
+      axis_b_y: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  add_sketch_spline: z
+    .object({
+      points: z.array(z.object({ x: numberField, y: numberField })),
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  add_sketch_slot: z
+    .object({
+      center_x: numberField,
+      center_y: numberField,
+      length: numberField,
+      radius: numberField,
+      rotation: numberField,
+      is_construction: booleanField.optional(),
+    })
+    .strict(),
+  update_sketch_slot: z
+    .object({
+      slot_id: z.string(),
+      center_x: numberField,
+      center_y: numberField,
+      length: numberField,
+      radius: numberField,
+      rotation: numberField,
+    })
+    .strict(),
   add_sketch_circle: z
     .object({
       center_x: numberField,
       center_y: numberField,
       radius: numberField,
       is_construction: booleanField,
+      mode: stringField.optional(),
+      p1_x: numberField.optional(),
+      p1_y: numberField.optional(),
+      p2_x: numberField.optional(),
+      p2_y: numberField.optional(),
+      p3_x: numberField.optional(),
+      p3_y: numberField.optional(),
+      line_a_id: stringField.optional(),
+      line_b_id: stringField.optional(),
+      line_c_id: stringField.optional(),
+      hint_x: numberField.optional(),
+      hint_y: numberField.optional(),
     })
     .strict(),
   add_sketch_arc: z
@@ -320,7 +400,56 @@ export const commandPayloadSchemas = {
   update_sketch_fillet_radius: z
     .object({ fillet_id: stringField, radius: numberField })
     .strict(),
+  add_sketch_chamfer: z
+    .object({
+      corner_vertex_id: stringField,
+      line_a_id: stringField,
+      line_b_id: stringField,
+      distance_a: numberField,
+      distance_b: numberField,
+    })
+    .strict(),
+  update_sketch_chamfer: z
+    .object({
+      chamfer_id: stringField,
+      distance_a: numberField,
+      distance_b: numberField,
+    })
+    .strict(),
   delete_sketch_fillet: z.object({ fillet_id: stringField }).strict(),
+  delete_sketch_chamfer: z.object({ chamfer_id: stringField }).strict(),
+  add_sketch_text: z
+    .object({
+      text: stringField.optional(),
+      font_path: stringField.optional(),
+      height_mm: numberField.optional(),
+      angle_deg: numberField.optional(),
+      anchor_x: numberField,
+      anchor_y: numberField,
+      h_align: stringField.optional(),
+      v_align: stringField.optional(),
+      char_spacing: numberField.optional(),
+      path_entity_id: stringField.optional(),
+      path_offset: numberField.optional(),
+    })
+    .strict(),
+  update_sketch_text: z
+    .object({
+      text_id: stringField,
+      text: stringField.optional(),
+      font_path: stringField.optional(),
+      height_mm: numberField.optional(),
+      angle_deg: numberField.optional(),
+      anchor_x: numberField.optional(),
+      anchor_y: numberField.optional(),
+      h_align: stringField.optional(),
+      v_align: stringField.optional(),
+      char_spacing: numberField.optional(),
+      path_entity_id: stringField.nullable().optional(),
+      path_offset: numberField.optional(),
+    })
+    .strict(),
+  delete_sketch_text: z.object({ text_id: stringField }).strict(),
   delete_sketch_selection: z
     .object({
       entity_ids: stringArray,
@@ -335,10 +464,20 @@ export const commandPayloadSchemas = {
         "line",
         "rectangle",
         "circle",
+        "polygon",
         "arc",
         "fillet",
+        "chamfer",
+        "extend",
+        "offset",
+        "ellipse",
+        "slot",
+        "spline",
+        "trim",
         "project",
         "dimension",
+        "move",
+        "text",
       ]),
     })
     .strict(),
@@ -351,8 +490,8 @@ export const commandPayloadSchemas = {
       end_y: numberField,
     })
     .strict(),
-  update_sketch_point: z
-    .object({ point_id: stringField, x: numberField, y: numberField })
+  update_sketch_vertex: z
+    .object({ vertex_id: stringField, x: numberField, y: numberField })
     .strict(),
   set_sketch_line_constraint: z
     .object({
@@ -381,14 +520,33 @@ export const commandPayloadSchemas = {
   set_sketch_tangent_constraint: z
     .object({ line_id: stringField, circle_id: stringField })
     .strict(),
+  set_sketch_symmetric_constraint: z
+    .object({
+      point_id: stringField,
+      other_point_id: stringField,
+      axis_line_id: stringField,
+    })
+    .strict(),
+  set_sketch_midpoint_constraint: z
+    .object({ vertex_id: stringField, line_id: stringField })
+    .strict(),
+  set_sketch_collinear_constraint: z
+    .object({ line_id: stringField, other_line_id: stringField })
+    .strict(),
+  set_sketch_tangent_pair_constraint: z
+    .object({ first_id: stringField, second_id: stringField })
+    .strict(),
   set_sketch_parallel_constraint: z
     .object({ line_id: stringField, other_line_id: stringField })
     .strict(),
   set_sketch_coincident_constraint: z
     .object({ point_id: stringField, other_point_id: stringField })
     .strict(),
-  set_sketch_point_fixed: z
-    .object({ point_id: stringField, is_fixed: booleanField })
+  delete_sketch_coincident_constraint: z
+    .object({ constraint_id: stringField })
+    .strict(),
+  set_sketch_vertex_fixed: z
+    .object({ vertex_id: stringField, is_fixed: booleanField })
     .strict(),
   update_sketch_circle: z
     .object({
@@ -400,6 +558,81 @@ export const commandPayloadSchemas = {
     .strict(),
   update_sketch_dimension: z
     .object({ dimension_id: stringField, value: numberField })
+    .strict(),
+  update_sketch_dimension_display: z
+    .object({ dimension_id: stringField, display_as: stringField })
+    .strict(),
+  toggle_sketch_dimension_driven: z
+    .object({ dimension_id: stringField })
+    .strict(),
+  move_sketch_entities: z
+    .object({
+      entity_ids: stringArray,
+      dx: numberField,
+      dy: numberField,
+      center_x: numberField,
+      center_y: numberField,
+      angle_deg: numberField,
+    })
+    .strict(),
+  trim_sketch_entity: z
+    .object({
+      entity_id: stringField,
+      click_x: numberField,
+      click_y: numberField,
+      segment_index: z.number().int().optional(),
+      expected_revision: z.number().int().optional(),
+      preview_id: z.string().optional(),
+    })
+    .strict(),
+  extend_sketch_entity: z
+    .object({
+      entity_id: stringField,
+      click_x: numberField,
+      click_y: numberField,
+    })
+    .strict(),
+  offset_sketch_entity: z
+    .object({
+      entity_id: stringField,
+      distance: numberField,
+    })
+    .strict(),
+  transform_sketch_entities: z
+    .object({
+      entity_ids: stringArray,
+      dx: numberField,
+      dy: numberField,
+      center_x: numberField,
+      center_y: numberField,
+      angle_deg: numberField,
+      scale: numberField,
+      copy: booleanField,
+    })
+    .strict(),
+  create_linear_array: z
+    .object({
+      entity_ids: stringArray,
+      dx: numberField,
+      dy: numberField,
+      count: z.number().int().min(2),
+    })
+    .strict(),
+  create_circular_array: z
+    .object({
+      entity_ids: stringArray,
+      center_x: numberField,
+      center_y: numberField,
+      count: z.number().int().min(2),
+      total_angle_deg: numberField,
+    })
+    .strict(),
+  trim_preview: z
+    .object({
+      entity_id: stringField,
+      cursor_x: numberField,
+      cursor_y: numberField,
+    })
     .strict(),
   update_sketch_dimension_label_position: z
     .object({
@@ -495,8 +728,8 @@ export const commandPayloadSchemas = {
   select_sketch_entity: z
     .object({ entity_id: stringField, additive: booleanField })
     .strict(),
-  select_sketch_point: z
-    .object({ point_id: stringField, additive: booleanField })
+  select_sketch_vertex: z
+    .object({ vertex_id: stringField, additive: booleanField.optional() })
     .strict(),
   select_sketch_dimension: z.object({ dimension_id: stringField }).strict(),
   finish_sketch: emptyPayload,

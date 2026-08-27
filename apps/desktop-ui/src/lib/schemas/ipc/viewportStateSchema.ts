@@ -224,6 +224,67 @@ export const viewportStateSchema = z.object({
       generated_by: z.string().nullable().default(null),
     }),
   ),
+  // Sketch ellipses — center + major/minor radii with the major-axis
+  // rotation in sketch-plane coordinates. Defaulted to `[]` so clients
+  // running against an older core don't crash.
+  sketch_ellipses: z
+    .array(
+      z.object({
+        ellipse_id: z.string(),
+        plane_id: z.string(),
+        plane_frame: planeFrameSchema.nullable().default(null),
+        center: z.object({
+          x: z.number(),
+          y: z.number(),
+          z: z.number(),
+        }),
+        a: z.number(),
+        b: z.number(),
+        rotation: z.number(),
+        is_selected: z.boolean(),
+        is_construction: z.boolean().default(false),
+        has_sweep: z.boolean().default(false),
+        sweep_start: z.number().default(0),
+        sweep_end: z.number().default(0),
+        ccw: z.boolean().default(true),
+        // See `sketch_lines.is_preview`.
+        is_preview: z.boolean().default(false),
+        generated_by: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
+  // Control-point B-splines — the curve as a sampled world polyline
+  // plus the control poles. Defaulted to `[]` so clients running
+  // against an older core don't crash.
+  sketch_splines: z
+    .array(
+      z.object({
+        spline_id: z.string(),
+        plane_id: z.string(),
+        plane_frame: planeFrameSchema.nullable().default(null),
+        curve_points: z.array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            z: z.number(),
+          }),
+        ),
+        pole_points: z.array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            z: z.number(),
+          }),
+        ),
+        degree: z.number().default(3),
+        is_selected: z.boolean(),
+        is_construction: z.boolean().default(false),
+        // See `sketch_lines.is_preview`.
+        is_preview: z.boolean().default(false),
+        generated_by: z.string().nullable().default(null),
+      }),
+    )
+    .default([]),
   // Sketch polygons — regular N-sided polygons on the sketch plane.
   // Defaulted to `[]` so clients running against an older core
   // don't crash.
@@ -315,10 +376,15 @@ export const viewportStateSchema = z.object({
     z.object({
       dimension_id: z.string(),
       plane_id: z.string(),
+      // Must list every kind the core can emit: an unknown kind fails
+      // this schema, and a failed parse discards the whole viewport_state
+      // event, which reads in-app as the viewport freezing.
       kind: z.enum([
         "line_length",
         "circle_radius",
         "arc_radius",
+        "arc_length",
+        "arc_angle",
         "polygon_radius",
         "angle",
         "line_angle",
@@ -388,6 +454,7 @@ export const viewportStateSchema = z.object({
         "midpoint",
         "on_line",
         "tangent_line_circle",
+        "tangent_circle_line",
         "coincident",
         "concentric",
         "quadrant",
@@ -417,7 +484,7 @@ export const viewportStateSchema = z.object({
           normal: z.object({ x: z.number(), y: z.number(), z: z.number() }),
         })
         .nullable(),
-      profile_kind: z.enum(["polygon", "circle"]),
+      profile_kind: z.enum(["polygon", "circle", "ellipse", "spline"]),
       profile_points: z.array(
         z.object({
           x: z.number(),

@@ -12,7 +12,9 @@ import type {
   ViewportSketchCircle,
   ViewportSketchConstraint,
   ViewportSketchDimension,
+  ViewportSketchEllipse,
   ViewportSketchPolygon,
+  ViewportSketchSpline,
   ViewportSketchProfile,
   ViewportState,
   BoxScenePrimitive,
@@ -27,7 +29,9 @@ import type {
   SketchCircleScene,
   SketchConstraintScene,
   SketchDimensionScene,
+  SketchEllipseScene,
   SketchLineScene,
+  SketchSplineScene,
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
@@ -265,6 +269,45 @@ function makeSketchCircle(
   };
 }
 
+function makeSketchEllipse(
+  ellipse: ViewportSketchEllipse,
+): SketchEllipseScene {
+  return {
+    isPreview: ellipse.is_preview,
+    ellipseId: ellipse.ellipse_id,
+    planeId: ellipse.plane_id,
+    planeFrame: ellipse.plane_frame,
+    center: [ellipse.center.x, ellipse.center.y, ellipse.center.z],
+    a: ellipse.a,
+    b: ellipse.b,
+    rotation: ellipse.rotation,
+    isSelected: ellipse.is_selected,
+    isConstruction: ellipse.is_construction,
+    hasSweep: ellipse.has_sweep,
+    sweepStart: ellipse.sweep_start,
+    sweepEnd: ellipse.sweep_end,
+    ccw: ellipse.ccw,
+    generatedBy: ellipse.generated_by ?? null,
+  };
+}
+
+function makeSketchSpline(
+  spline: ViewportSketchSpline,
+): SketchSplineScene {
+  return {
+    isPreview: spline.is_preview,
+    splineId: spline.spline_id,
+    planeId: spline.plane_id,
+    planeFrame: spline.plane_frame,
+    curvePoints: spline.curve_points.map((p) => [p.x, p.y, p.z]),
+    polePoints: spline.pole_points.map((p) => [p.x, p.y, p.z]),
+    degree: spline.degree,
+    isSelected: spline.is_selected,
+    isConstruction: spline.is_construction,
+    generatedBy: spline.generated_by ?? null,
+  };
+}
+
 function makeSketchPolygon(polygon: ViewportSketchPolygon): SketchPolygonScene {
   const n = polygon.corner_x.length;
   const corners = new Array<number>(n * 3);
@@ -362,7 +405,9 @@ function makeSketchDimension(
       dimension.label_position.z,
     ],
 
-    // Angle arc geometry (optional, from C++ core)
+    // Arc geometry (optional, from C++ core). Angle kinds use it for the
+    // dimension arc; radial kinds carry their centre/radius here so the
+    // renderer and the drag preview can rebuild the leader.
     arcCenter: dimension.arc_center
       ? [dimension.arc_center.x, dimension.arc_center.y, dimension.arc_center.z]
       : undefined,
@@ -945,6 +990,14 @@ export function createViewportScene(
   const sketchCircles = viewport.sketch_circles
     .filter((circle) => isSketchPlaneVisible(circle.plane_id))
     .map((circle) => makeSketchCircle(circle, projectedCircleIds));
+  const sketchEllipses = viewport.sketch_ellipses
+    .filter((ellipse) => isSketchPlaneVisible(ellipse.plane_id))
+    .map(makeSketchEllipse);
+  const sketchSplines = viewport.sketch_splines
+    ? viewport.sketch_splines
+        .filter((spline) => isSketchPlaneVisible(spline.plane_id))
+        .map(makeSketchSpline)
+    : [];
   const sketchPolygons = viewport.sketch_polygons
     ? viewport.sketch_polygons
         .filter((polygon) => isSketchPlaneVisible(polygon.plane_id))
@@ -1100,6 +1153,8 @@ export function createViewportScene(
     cutPreviews,
     sketchLines,
     sketchCircles,
+    sketchEllipses,
+    sketchSplines,
     sketchPolygons,
     sketchArcs,
     sketchDimensions: visibleSketchDimensions,

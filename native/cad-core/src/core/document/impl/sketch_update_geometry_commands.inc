@@ -80,6 +80,20 @@ DocumentState DocumentManager::move_sketch_entities(
     double center_x,
     double center_y,
     double angle_deg) {
+  return transform_sketch_entities(entity_ids, dx, dy, center_x, center_y,
+                                   angle_deg, /*scale=*/1.0,
+                                   /*copy=*/false);
+}
+
+DocumentState DocumentManager::transform_sketch_entities(
+    const std::vector<std::string>& entity_ids,
+    double dx,
+    double dy,
+    double center_x,
+    double center_y,
+    double angle_deg,
+    double scale,
+    bool copy) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -97,15 +111,16 @@ DocumentState DocumentManager::move_sketch_entities(
     throw std::runtime_error("Active sketch feature not found");
   }
 
-  // One undo step for the whole move — never call the per-entity
+  // One undo step for the whole transform — never call the per-entity
   // update commands from here (they push undo per call).
   push_undo_state();
   clear_redo_stack();
-  polysmith::core::move_sketch_entities(*feature_it, entity_ids, dx, dy,
-                                        center_x, center_y, angle_deg);
+  polysmith::core::transform_sketch_entities(*feature_it, entity_ids, dx, dy,
+                                             center_x, center_y, angle_deg,
+                                             scale, copy);
   refresh_linked_extrudes(*document_, *feature_it);
   // Selection is deliberately preserved so the user can repeat the
-  // move on the same entities.
+  // transform on the same entities.
   bump_geometry_revision();
   return document_.value();
 }

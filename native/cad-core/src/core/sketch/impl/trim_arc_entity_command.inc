@@ -31,8 +31,8 @@
     const std::string old_sp_id = arc_it->start_vertex_id;
     const std::string old_ep_id = arc_it->end_vertex_id;
 
-    const int clicked_index = select_clicked_segment(
-        segments, *arc_it, click_x, click_y);
+    const int clicked_index = resolve_clicked_index(
+        segments, select_clicked_segment(segments, *arc_it, click_x, click_y));
 
     if (clicked_index < 0 || clicked_index >= static_cast<int>(segments.size())) {
       throw std::runtime_error(
@@ -42,30 +42,25 @@
     // Delete the clicked segment — keep from arc start to segment
     // boundary, or from boundary to arc end.
     const int last = static_cast<int>(segments.size()) - 1;
-    auto arc_shared_pt = [&](double x, double y, const std::string& fallback) {
-      const auto shared = find_coincident_endpoint(params, entity_id, x, y);
-      return shared.has_value() ? std::get<0>(shared.value()) : fallback;
+    const std::unordered_set<std::string> excluded_entities{entity_id};
+    auto arc_shared_pt = [&](double x, double y) {
+      const auto shared = resolve_shared_point(params, x, y, excluded_entities);
+      return shared.has_value() ? std::get<0>(shared.value()) : mint_vertex_id();
     };
 
     if (clicked_index == 0) {
       arc_it->start_x = segments[1].start_x;
       arc_it->start_y = segments[1].start_y;
-      arc_it->start_vertex_id = arc_shared_pt(
-          arc_it->start_x, arc_it->start_y,
-          "vertex-" + std::to_string(params.next_vertex_index++));
+      arc_it->start_vertex_id = arc_shared_pt(arc_it->start_x, arc_it->start_y);
     } else if (clicked_index == last) {
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_vertex_id = arc_shared_pt(
-          arc_it->end_x, arc_it->end_y,
-          "vertex-" + std::to_string(params.next_vertex_index++));
+      arc_it->end_vertex_id = arc_shared_pt(arc_it->end_x, arc_it->end_y);
     } else {
       // Middle segment deleted — arc splits into two.
       arc_it->end_x = segments[clicked_index - 1].end_x;
       arc_it->end_y = segments[clicked_index - 1].end_y;
-      arc_it->end_vertex_id = arc_shared_pt(
-          arc_it->end_x, arc_it->end_y,
-          "vertex-" + std::to_string(params.next_vertex_index++));
+      arc_it->end_vertex_id = arc_shared_pt(arc_it->end_x, arc_it->end_y);
 
       std::vector<std::string> arc_ids;
       arc_ids.reserve(params.arcs.size());
@@ -75,12 +70,8 @@
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{
           .id = "arc-" + std::to_string(next_idx),
-          .start_vertex_id = arc_shared_pt(
-              right.start_x, right.start_y,
-              "vertex-" + std::to_string(params.next_vertex_index++)),
-          .end_vertex_id   = arc_shared_pt(
-              last_seg.end_x, last_seg.end_y,
-              "vertex-" + std::to_string(params.next_vertex_index++)),
+          .start_vertex_id = arc_shared_pt(right.start_x, right.start_y),
+          .end_vertex_id   = arc_shared_pt(last_seg.end_x, last_seg.end_y),
           // The split keeps the source arc's center — share its center
           // vertex id instead of minting a second one at the same spot.
           .center_vertex_id = arc_it->center_vertex_id,

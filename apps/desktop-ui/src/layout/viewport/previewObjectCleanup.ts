@@ -20,6 +20,10 @@ interface ViewportPreviewActionsContext {
   previewLineRef: MutableRef<THREE.Line | null>;
   previewCircleRef: MutableRef<THREE.LineLoop | null>;
   previewArcRef: MutableRef<THREE.Line | null>;
+  // Slot draft previews are stadium groups (2 lines + 2 arcs).
+  previewSlotRef: MutableRef<THREE.Group | null>;
+  // Spline draft preview: curve strip + control polygon group.
+  previewSplineRef: MutableRef<THREE.Group | null>;
   previewInferenceRef: MutableRef<THREE.Line[]>;
   trimSegmentHighlightRef: MutableRef<THREE.Line | null>;
   trimArcHighlightRef: MutableRef<THREE.Line | null>;
@@ -37,6 +41,8 @@ export function createViewportPreviewActions({
   previewLineRef,
   previewCircleRef,
   previewArcRef,
+  previewSlotRef,
+  previewSplineRef,
   previewInferenceRef,
   trimSegmentHighlightRef,
   trimArcHighlightRef,
@@ -201,6 +207,28 @@ export function createViewportPreviewActions({
     previewDimensionRef.current = null;
   }
 
+  function clearPreviewSlot() {
+    const previewSlot = previewSlotRef.current;
+    const sketchGroup = sketchGroupRef.current;
+    if (!previewSlot || !sketchGroup) {
+      return;
+    }
+    sketchGroup.remove(previewSlot);
+    disposeGeometryTreeResources(previewSlot);
+    previewSlotRef.current = null;
+  }
+
+  function clearPreviewSpline() {
+    const previewSpline = previewSplineRef.current;
+    const sketchGroup = sketchGroupRef.current;
+    if (!previewSpline || !sketchGroup) {
+      return;
+    }
+    sketchGroup.remove(previewSpline);
+    disposeGeometryTreeResources(previewSpline);
+    previewSplineRef.current = null;
+  }
+
   function clearPreviewInference() {
     const sketchGroup = sketchGroupRef.current;
     for (const line of previewInferenceRef.current) {
@@ -220,6 +248,8 @@ export function createViewportPreviewActions({
     clearPreviewDimension,
     clearPreviewInference,
     clearPreviewLine,
+    clearPreviewSlot,
+    clearPreviewSpline,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
     updateTrimArcHighlight,

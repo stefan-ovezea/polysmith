@@ -184,6 +184,28 @@ void set_sketch_vertex_fixed(FeatureEntry& feature,
   }
 
   point->is_fixed = is_fixed;
+  // The viewport renders the "FIX" badge only for points with an
+  // EXPLICIT fixed constraint record — the Fix tool stores one here.
+  // Internally frozen points (trim split points, slot-generated
+  // vertices, ellipse axis points) carry only is_fixed, which pins
+  // them for the solver without cluttering the viewport.
+  parameters.constraints.erase(
+      std::remove_if(parameters.constraints.begin(),
+                     parameters.constraints.end(),
+                     [&](const SketchConstraint& c) {
+                       if (c.kind != "fixed") return false;
+                       return std::find(c.target_ids.begin(),
+                                        c.target_ids.end(),
+                                        point_id) != c.target_ids.end();
+                     }),
+      parameters.constraints.end());
+  if (is_fixed) {
+    SketchConstraint fixed;
+    fixed.constraint_id = "constraint-fixed-" + point_id;
+    fixed.kind = "fixed";
+    fixed.target_ids = {point_id};
+    parameters.constraints.push_back(std::move(fixed));
+  }
   if (refresh_immediately) {
     refresh_sketch_derived_state(feature);
   }

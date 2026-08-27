@@ -75,6 +75,12 @@ const sketchTools: Array<{
   { id: "polygon", labelKey: "toolbar.polygon", enabled: true },
   { id: "arc", labelKey: "toolbar.arc", enabled: true },
   { id: "fillet", labelKey: "toolbar.fillet", enabled: true },
+  { id: "chamfer", labelKey: "toolbar.chamfer", enabled: true },
+  { id: "extend", labelKey: "toolbar.extend", enabled: true },
+  { id: "offset", labelKey: "toolbar.offset", enabled: true },
+  { id: "ellipse", labelKey: "toolbar.ellipse", enabled: true },
+  { id: "slot", labelKey: "toolbar.slot", enabled: true },
+  { id: "spline", labelKey: "toolbar.spline", enabled: true },
   { id: "text", labelKey: "toolbar.text", enabled: true },
   { id: "trim", labelKey: "toolbar.trim", hotkey: "trim", enabled: true },
   // Modal Project tool. While active, viewport face / edge / vertex

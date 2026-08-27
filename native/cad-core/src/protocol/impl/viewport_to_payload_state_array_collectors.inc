@@ -52,6 +52,15 @@
     sketch_polygons.push_back(to_payload(polygon));
   }
 
+  json sketch_ellipses = json::array();
+  for (const auto& ellipse : viewport.sketch_ellipses) {
+    sketch_ellipses.push_back(to_payload(ellipse));
+  }
+  json sketch_splines = json::array();
+  for (const auto& spline : viewport.sketch_splines) {
+    sketch_splines.push_back(to_payload(spline));
+  }
+
   json sketch_arcs = json::array();
   for (const auto& arc : viewport.sketch_arcs) {
     sketch_arcs.push_back(to_payload(arc));
