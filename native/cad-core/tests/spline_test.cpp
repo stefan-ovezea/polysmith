@@ -404,23 +404,56 @@ bool test_spline_move_translates_poles() {
                 "spline: curve shape is preserved by the rigid move");
 }
 
-bool test_spline_trim_rejected() {
+bool test_spline_trim_splits_at_crossings() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
 
   DocumentState document = manager.add_sketch_spline(kBulgePoles);
   const std::string spline_id = sketch_params(document).splines[0].id;
+  // A horizontal chord crossing the bulge twice (apex y≈4.5). The
+  // trim deletes the apex piece between the two crossings, splitting
+  // the spline into two sub-spans whose cut ends land exactly on the
+  // chord.
+  document = manager.add_sketch_line(-5.0, 1.0, 15.0, 1.0);
 
-  // The trim engine handles line/circle/arc only — a spline id must
-  // be rejected (v1: explicit errors, matching the ellipse contract).
-  bool threw = false;
-  try {
-    (void)manager.trim_sketch_entity(spline_id, 4.0, 4.0);
-  } catch (const std::exception&) {
-    threw = true;
+  // Click on the spline's apex (t = 0.5) — inside the piece between
+  // the two crossings.
+  const auto apex = spline_point_at(document, 0.5);
+
+  document = manager.trim_sketch_entity(spline_id, apex.first, apex.second);
+
+  const auto params = sketch_params(document);
+  if (!expect(params.splines.size() == 2,
+              "spline trim: middle trim splits the spline into two")) {
+    std::cerr << "DBG splines=" << params.splines.size()
+              << " lines=" << params.lines.size() << "\n";
+    return false;
   }
-  return expect(threw, "spline: trim on a spline is rejected");
+  for (const auto& s : params.splines) {
+    if (!expect(static_cast<int>(s.pole_xs.size()) >= s.degree + 1 &&
+                    s.degree >= 1,
+                "spline trim: pole count and degree stay consistent")) {
+      return false;
+    }
+    if (!expect(!s.pole_vertex_ids.empty() &&
+                    s.pole_vertex_ids.size() == s.pole_xs.size(),
+                "spline trim: one vertex per pole")) {
+      return false;
+    }
+  }
+  // The two cut ends sit on the chord (y = 1): the left piece ends
+  // left of the apex, the right piece starts right of it.
+  const SketchSpline& a = params.splines.front();
+  const SketchSpline& b = params.splines.back();
+  // The cut ends sit within OCCT's intersection tolerance (0.01) of
+  // the chord y=1.
+  const bool a_cut_at_chord =
+      std::abs(a.pole_ys.back() - 1.0) < 0.01 && a.pole_xs.back() < 6.0;
+  const bool b_cut_at_chord =
+      std::abs(b.pole_ys.front() - 1.0) < 0.01 && b.pole_xs.front() > 6.0;
+  return expect(a_cut_at_chord && b_cut_at_chord,
+                "spline trim: cut ends land exactly on the chord");
 }
 
 bool test_spline_construction_and_save_roundtrip() {
@@ -490,7 +523,7 @@ int main() {
   std::cout << "--- test_spline_move_translates_poles" << std::endl;
   if (!test_spline_move_translates_poles()) return 1;
   std::cout << "--- test_spline_trim_rejected" << std::endl;
-  if (!test_spline_trim_rejected()) return 1;
+  if (!test_spline_trim_splits_at_crossings()) return 1;
   std::cout << "--- test_spline_construction_and_save_roundtrip" << std::endl;
   if (!test_spline_construction_and_save_roundtrip()) return 1;
 

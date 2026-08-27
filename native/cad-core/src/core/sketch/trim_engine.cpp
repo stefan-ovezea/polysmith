@@ -165,5 +165,6 @@ ExactCurve trim_target_curve(const SketchSpline& spline) {
 #include "core/sketch/impl/trim_line_circle_segments.inc"
 #include "core/sketch/impl/trim_arc_operations.inc"
 #include "core/sketch/impl/trim_ellipse_operations.inc"
+#include "core/sketch/impl/trim_spline_operations.inc"
 
 }  // namespace polysmith::core

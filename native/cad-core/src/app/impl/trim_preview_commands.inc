@@ -179,6 +179,42 @@
       return;
     }
 
+    const auto spline_it = std::find_if(
+        params.splines.begin(), params.splines.end(),
+        [&](const auto& s) { return s.id == entity_id; });
+    if (spline_it != params.splines.end()) {
+      auto isects = polysmith::core::find_all_intersections(*spline_it, params);
+      auto r = nlohmann::json::object();
+      r["entity_id"] = entity_id;
+      r["entity_kind"] = "spline";
+      r["revision"] = doc_opt->revision;
+      if (isects.empty()) {
+        r["hovered_index"] = 0;
+        r["full_spline"] = true;
+      } else {
+        auto segs = polysmith::core::split_spline_at_intersections(
+            *spline_it, isects);
+        int idx = polysmith::core::select_clicked_segment(
+            segs, *spline_it, cursor_x, cursor_y);
+        r["hovered_index"] = idx;
+        r["full_spline"] = false;
+        auto& jsegs = r["segments"] = nlohmann::json::array();
+        for (const auto& s : segs) {
+          nlohmann::json seg;
+          seg["param_start"] = s.param_start;
+          seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
+          jsegs.push_back(std::move(seg));
+        }
+      }
+      polysmith::protocol::write_message(
+          { { "id", command.id },
+            { "type", "trim_preview_result" },
+            { "payload", r } });
+      return;
+    }
+
     polysmith::protocol::write_message(
         { { "id", command.id },
           { "type", "trim_preview_result" },

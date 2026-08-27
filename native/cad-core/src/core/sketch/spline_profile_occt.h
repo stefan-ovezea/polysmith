@@ -60,4 +60,15 @@ void sketch_curve_pair_intersections_occt(
     const SplineProfileCurve& a, const SplineProfileCurve& b,
     std::vector<std::pair<double, double>>& out_points);
 
+// Control poles of the spline's [u0, u1] parameter sub-span, in the
+// project's clamped open-uniform convention. Uses OCCT's exact
+// knot-insertion segment (Boehm), NOT a re-fit — the sub-curve is the
+// same geometry, so the joint between two trimmed pieces lands exactly
+// on the intersection. Returns false when the inputs are unusable.
+bool spline_segment_poles(const std::vector<double>& pole_xs,
+                          const std::vector<double>& pole_ys, int degree,
+                          double u0, double u1,
+                          std::vector<double>& out_px,
+                          std::vector<double>& out_py, int& out_degree);
+
 }  // namespace polysmith::core

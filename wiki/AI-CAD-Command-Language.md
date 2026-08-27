@@ -1701,18 +1701,19 @@ Payload:
 
 #### `trim_sketch_entity`
 
-Splits the clicked line / circle / arc / ellipse at every intersection
-with other non-construction entities and deletes the segment under the
-click (circles become the complementary arc; a full ellipse becomes a
-partial elliptical arc with a stored sweep; middle-segment trims split
-arcs and elliptical arcs into two). Ellipses and splines act as cutting
-edges. The optional `segment_index` — the hovered index from the
-matching `trim_preview_result` — overrides click-based selection so the
-trim deletes exactly the highlighted segment. `expected_revision` is
-the document revision the preview was computed against: when it does
-not match the current document, the core IGNORES `segment_index` and
-re-derives the segment from the click point (a stale preview must never
-cut the wrong piece).
+Splits the clicked line / circle / arc / ellipse / spline at every
+intersection with other non-construction entities and deletes the
+segment under the click (circles become the complementary arc; a full
+ellipse becomes a partial elliptical arc with a stored sweep;
+middle-segment trims split arcs, elliptical arcs and splines into two —
+spline pieces are re-fit exactly via OCCT knot-insertion, so the cut
+ends land on the intersection). The optional `segment_index` — the
+hovered index from the matching `trim_preview_result` — overrides
+click-based selection so the trim deletes exactly the highlighted
+segment. `expected_revision` is the document revision the preview was
+computed against: when it does not match the current document, the core
+IGNORES `segment_index` and re-derives the segment from the click point
+(a stale preview must never cut the wrong piece).
 
 Payload:
 

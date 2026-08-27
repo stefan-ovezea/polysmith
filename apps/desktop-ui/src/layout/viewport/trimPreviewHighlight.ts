@@ -90,6 +90,34 @@ function renderCurveTrimPreview(
   sceneData: ViewportScene,
   actions: TrimPreviewHighlightActions,
 ) {
+  if (data.entity_kind === "spline") {
+    // Splines highlight as a sub-range of the sampled world polyline.
+    const spline = sceneData.sketchSplines.find(
+      (s) => s.splineId === data.entity_id,
+    );
+    if (!spline) {
+      actions.clearTrimArcHighlight();
+      return;
+    }
+    const segment = data.segments?.[hoveredIndex];
+    let points: Array<[number, number, number]>;
+    if (data.full_spline || !segment) {
+      points = spline.curvePoints;
+    } else {
+      const n = spline.curvePoints.length;
+      const i0 = Math.max(0, Math.floor((segment.param_start ?? 0) * (n - 1)));
+      const i1 = Math.min(n - 1, Math.ceil((segment.param_end ?? 1) * (n - 1)));
+      points = spline.curvePoints.slice(i0, i1 + 1);
+    }
+    if (points.length < 2) {
+      actions.clearTrimArcHighlight();
+      return;
+    }
+    actions.clearTrimSegmentHighlight();
+    actions.updateTrimArcHighlight(points);
+    return;
+  }
+
   const curve = findTrimPreviewCurve(data, sceneData);
   if (!curve) {
     actions.clearTrimArcHighlight();

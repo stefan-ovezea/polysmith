@@ -130,6 +130,22 @@ int select_clicked_segment(
     double click_x,
     double click_y);
 
+// Intersection detection / splitting / selection — splines.
+
+std::vector<TrimIntersection> find_all_intersections(
+    const SketchSpline& target,
+    const SketchFeatureParameters& params);
+
+std::vector<TrimSegment> split_spline_at_intersections(
+    const SketchSpline& spline,
+    const std::vector<TrimIntersection>& intersections);
+
+int select_clicked_segment(
+    const std::vector<TrimSegment>& segments,
+    const SketchSpline& original_spline,
+    double click_x,
+    double click_y);
+
 constexpr double kTrimCoincidentTolerance = 0.01;  // mm
 
 // Distance from a point to a trim segment, measured against the ARC

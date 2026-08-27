@@ -702,6 +702,64 @@ bool test_ellipse_crossed_by_overhanging_line_has_profile() {
   return true;
 }
 
+bool test_full_ellipse_survives_line_piece_trims() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Full ellipse crossed by a line whose ends overhang. Trimming the
+  // line's middle piece and then both end stubs must leave the FULL
+  // ellipse behind — and it must still produce its region (the user's
+  // "remaining ellipse does not generate a surface" scenario, with
+  // the ellipse untrimmed).
+  DocumentState document =
+      manager.add_sketch_ellipse(0.0, 0.0, 50.0, 0.0, 0.0, 20.0);
+  document = manager.add_sketch_line(-70.0, -30.0, 70.0, 30.0);
+
+  // 1. Trim the line's middle piece (a point between the crossings).
+  document = manager.trim_sketch_entity("line-1", 0.0, 0.0);
+
+  // 2. Trim both remaining stubs (click near each free end). The
+  // middle trim splits the line into line-1 (left stub) and line-2
+  // (right stub).
+  document = manager.trim_sketch_entity("line-1", -65.0, -28.0);
+  {
+    const auto& params =
+        document.feature_history.back().sketch_parameters.value();
+    if (!params.lines.empty()) {
+      document = manager.trim_sketch_entity(
+          params.lines.front().id, 65.0, 28.0);
+    }
+  }
+
+  const auto& params =
+      document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.lines.empty(),
+              "line piece trims: all line pieces removed")) {
+    std::cerr << "  lines=" << params.lines.size() << "\n";
+    return false;
+  }
+  if (!expect(params.ellipses.size() == 1 &&
+                  !params.ellipses.front().has_sweep,
+              "line piece trims: the ellipse stays full")) {
+    return false;
+  }
+  std::string reason;
+  const std::vector<polysmith::test::ExpectedProfile> expected = {
+      {{"ellipse-1"}, "ellipse"},
+  };
+  if (!polysmith::test::profiles_match(document, expected, &reason)) {
+    std::cerr << "  line piece trims profiles: " << reason << "\n";
+    for (const auto& p : params.profiles) {
+      std::cerr << "    kind=" << p.kind << " ids=";
+      for (const auto& id : p.line_ids) std::cerr << id << " ";
+      std::cerr << "\n";
+    }
+    return false;
+  }
+  return true;
+}
+
 bool test_notch_trim_deletes_the_highlighted_segment() {
   DocumentManager manager;
   manager.create_document();
@@ -1147,6 +1205,7 @@ int main() {
     if (!test_ellipse_target_trim_with_two_lines()) return 1;
     if (!test_ellipse_trim_sweep_survives_save_load()) return 1;
     if (!test_ellipse_crossed_by_overhanging_line_has_profile()) return 1;
+    if (!test_full_ellipse_survives_line_piece_trims()) return 1;
     if (!test_notch_trim_deletes_the_highlighted_segment()) return 1;
     if (!test_arc_distance_metric_beats_chord_for_long_segments()) return 1;
     if (!test_degenerate_arc_never_becomes_a_full_circle_profile()) return 1;

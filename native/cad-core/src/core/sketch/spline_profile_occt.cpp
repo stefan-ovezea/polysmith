@@ -144,6 +144,38 @@ std::optional<double> spline_profile_param_at_point(
   return proj.LowerDistanceParameter();
 }
 
+bool spline_segment_poles(const std::vector<double>& pole_xs,
+                          const std::vector<double>& pole_ys, int degree,
+                          double u0, double u1,
+                          std::vector<double>& out_px,
+                          std::vector<double>& out_py, int& out_degree) {
+  if (pole_xs.size() < 2 || pole_xs.size() != pole_ys.size()) return false;
+  if (u0 <= 1e-12 && u1 >= 1.0 - 1e-12) {
+    out_px = pole_xs;
+    out_py = pole_ys;
+    out_degree = degree;
+    return true;
+  }
+  // The vendored Geom2d_BSplineCurve::Segment MUTATES the curve in
+  // place (void return — the reduced OCCT 8 API), so segment a copy.
+  Handle(Geom2d_BSplineCurve) seg = make_spline_geom(pole_xs, pole_ys, degree);
+  if (seg.IsNull()) return false;
+  seg->Segment(u0, u1);
+  const int n = seg->NbPoles();
+  out_px.resize(n);
+  out_py.resize(n);
+  for (int i = 1; i <= n; ++i) {
+    const gp_Pnt2d p = seg->Pole(i);
+    out_px[i - 1] = p.X();
+    out_py[i - 1] = p.Y();
+  }
+  int d = seg->Degree();
+  if (d > n - 1) d = n - 1;
+  if (d < 1) d = 1;
+  out_degree = d;
+  return true;
+}
+
 void sketch_curve_pair_intersections_occt(
     const SplineProfileCurve& a, const SplineProfileCurve& b,
     std::vector<std::pair<double, double>>& out_points) {

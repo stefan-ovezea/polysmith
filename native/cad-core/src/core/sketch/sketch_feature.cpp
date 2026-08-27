@@ -19,6 +19,7 @@
 #include "core/sketch/inference_engine.h"
 #include "core/sketch/impl/private_vertex_lookup_helpers.inc"
 #include "core/sketch/sketch_profile.h"
+#include "core/sketch/spline_profile_occt.h"
 #include "core/sketch/trim_engine.h"
 #include "core/text_engine.h"
 
