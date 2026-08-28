@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { camDocumentDataSchema } from "./camSchema";
 import { planeFrameSchema } from "./common";
 
 export const documentStateSchema = z.object({
@@ -889,17 +890,11 @@ export const documentStateSchema = z.object({
   ).default([]),
   // CAM workspace data — setups, tool library, operations, post-processor,
   // and simulation.  Mirrors CamDocumentData in cam_types.h.
-  cam: z.object({
-    setups: z.array(z.object({}).passthrough()).default([]),
-    tool_library: z.array(z.object({}).passthrough()).default([]),
-    operations: z.array(z.object({}).passthrough()).default([]),
-    post_processor: z.object({}).passthrough().nullable().default(null),
-    simulation: z.object({}).passthrough().nullable().default(null),
-  }).default({
-    setups: [] as Record<string, unknown>[],
-    tool_library: [] as Record<string, unknown>[],
-    operations: [] as Record<string, unknown>[],
-    post_processor: null as Record<string, unknown> | null,
-    simulation: null as Record<string, unknown> | null,
+  cam: camDocumentDataSchema.default({
+    setups: [],
+    tool_library: [],
+    operations: [],
+    post_processor: null,
+    simulation: null,
   }),
 }).passthrough();

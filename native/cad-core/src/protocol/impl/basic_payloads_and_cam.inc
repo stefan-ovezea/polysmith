@@ -93,6 +93,40 @@ json to_payload(const polysmith::core::EdgeAttestation& att) {
   return j;
 }
 
+json to_payload(const polysmith::core::SketchProfileAttestation& att) {
+  json j{
+      {"sketch_feature_id", att.sketch_feature_id},
+      {"profile_id", att.profile_id},
+      {"center_x", att.center_x},
+      {"center_y", att.center_y},
+      {"area", att.area},
+      {"min_x", att.min_x},
+      {"min_y", att.min_y},
+      {"max_x", att.max_x},
+      {"max_y", att.max_y},
+      {"boundary_edge_kinds", att.boundary_edge_kinds},
+      {"inner_loop_count", att.inner_loop_count},
+  };
+  if (att.source_circle_id.has_value())
+    j["source_circle_id"] = att.source_circle_id.value();
+  return j;
+}
+
+json to_payload(const polysmith::core::LaserCutParameters& laser) {
+  return {
+      {"kerf_width_mm", laser.kerf_width_mm},
+      {"lead_in_mm", laser.lead_in_mm},
+      {"lead_out_mm", laser.lead_out_mm},
+      {"pierce_dwell_seconds", laser.pierce_dwell_seconds},
+      {"power_percent", laser.power_percent},
+      {"passes", laser.passes},
+      {"mode", laser.mode},
+      {"material_thickness_mm", laser.material_thickness_mm},
+      {"cut_plane_offset_mm", laser.cut_plane_offset_mm},
+      {"dynamic_power", laser.dynamic_power},
+  };
+}
+
 // ── GeometryReference ────────────────────────────────────────────
 
 json to_payload(const polysmith::core::GeometryReference& ref) {
@@ -134,9 +168,11 @@ json to_payload(const polysmith::core::MachineAxes& ma) {
 // ── WcsOrigin ────────────────────────────────────────────────────
 
 json to_payload(const polysmith::core::WcsOrigin& wcs) {
-  return {
+  json j{
       {"feature_id", wcs.feature_id},
       {"face_reference", to_payload(wcs.face_reference)}};
+  if (wcs.position.has_value()) j["position"] = array3(wcs.position.value());
+  return j;
 }
 
 // ── CamSetup ─────────────────────────────────────────────────────
@@ -230,6 +266,8 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
   if (p.peck_depth_mm.has_value())       j["peck_depth_mm"]       = p.peck_depth_mm.value();
   if (p.dwell_seconds.has_value())       j["dwell_seconds"]       = p.dwell_seconds.value();
   if (p.engagement_angle_deg.has_value()) j["engagement_angle_deg"] = p.engagement_angle_deg.value();
+  if (p.zigzag_angle_deg.has_value())     j["zigzag_angle_deg"]     = p.zigzag_angle_deg.value();
+  if (p.laser.has_value())                j["laser"]                = to_payload(p.laser.value());
   return j;
 }
 
@@ -287,6 +325,7 @@ json to_payload(const polysmith::core::CamOperation& op) {
       {"parameters", to_payload(op.parameters)},
       {"dependencies", to_payload(op.dependencies)},
       {"status", op.status},
+      {"status_message", op.status_message},
   };
   json pl = json::array();
   for (const auto& loc : op.point_locations) pl.push_back(to_payload(loc));

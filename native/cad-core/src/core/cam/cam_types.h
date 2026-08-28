@@ -35,10 +35,27 @@ struct EdgeAttestation {
   std::optional<std::vector<std::array<double, 3>>> adjacent_face_normals;
 };
 
-/// TNP-safe reference to a 3D face or edge.
+/// Witness data to re-identify a sketch profile region after sketch
+/// edits.  Profile ids churn because refresh_sketch_profiles()
+/// recomputes the whole region list; the geometry is the stable
+/// identity.  All coordinates are sketch-local, so resolution compares
+/// against freshly built regions in the same sketch frame.
+struct SketchProfileAttestation {
+  std::string sketch_feature_id;  // owning sketch feature
+  std::string profile_id;         // last-known id (best effort only)
+  double center_x = 0.0, center_y = 0.0;         // sketch-local centroid
+  double area = 0.0;                             // sketch-local area (mm²)
+  double min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0;  // bbox
+  std::vector<std::string> boundary_edge_kinds;  // walk-order signature
+  int inner_loop_count = 0;                      // holes
+  std::optional<std::string> source_circle_id;   // circle-sourced regions
+};
+
+/// TNP-safe reference to a 3D face, 3D edge, or sketch profile.
 struct GeometryReference {
   std::string persistent_id;
-  std::variant<FaceAttestation, EdgeAttestation> attestation;
+  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation>
+      attestation;
   /// "warn_user" | "require_user" | "fail_operation" | "auto_resolve"
   std::string fallback_strategy = "warn_user";
 };
@@ -75,6 +92,9 @@ struct MachineAxes {
 struct WcsOrigin {
   std::string feature_id;            // CAD feature that defines origin
   GeometryReference face_reference;  // TNP-safe face reference
+  /// Last-resolved machine origin, refreshed by the CAM dependency
+  /// pass so the post-processor needs no face resolution at export time.
+  std::optional<std::array<double, 3>> position;
 };
 
 /// "3_axis_mill" | "4_axis_mill" | "5_axis_mill" | "lathe_2_axis" |
@@ -136,7 +156,7 @@ struct ToolEntry {
 
 /// "face_milling" | "pocket_2d" | "contour_2d" | "slot" | "drilling" |
 /// "adaptive_clearing" | "parallel_3d" | "contour_3d" | "chamfer" |
-/// "thread_milling" | "engrave"
+/// "thread_milling" | "engrave" | "laser_cut"
 using CamOperationType = std::string;
 
 /// "pending" | "generated" | "needs_regenerate" | "error" | "deleted"
@@ -167,6 +187,22 @@ using ClearingStrategy = std::string;
 /// "g84_tap" | "g85_bore" | "g87_back_bore"
 using DrillingCycleType = std::string;
 
+/// Laser cutting parameters (only meaningful when type == "laser_cut").
+/// Follows the per-type optional block pattern of the other strategy
+/// fields so the operation struct stays one unified shape.
+struct LaserCutParameters {
+  double kerf_width_mm = 0.15;        // cut width compensation, both sides
+  double lead_in_mm = 2.0;            // straight lead-in length
+  double lead_out_mm = 2.0;           // straight lead-out length
+  double pierce_dwell_seconds = 0.0;  // G4 dwell after pierce
+  double power_percent = 85.0;        // 0..100; GRBL S = value * 10
+  int passes = 1;                     // repeat contour (same path in v1)
+  std::string mode = "cut";           // "cut" | "score" | "engrave"
+  double material_thickness_mm = 3.0;
+  double cut_plane_offset_mm = 0.0;   // cut-plane Z relative to sketch plane
+  bool dynamic_power = true;          // true -> M4 (power scales with feed)
+};
+
 struct CamOperationParameters {
   // Basic cutting.
   double spindle_rpm = 8000.0;
@@ -186,6 +222,8 @@ struct CamOperationParameters {
   std::optional<double> peck_depth_mm;              // for peck drilling
   std::optional<double> dwell_seconds;              // for dwell cycles
   std::optional<double> engagement_angle_deg;       // for adaptive clearing
+  std::optional<double> zigzag_angle_deg;           // for face milling
+  std::optional<LaserCutParameters> laser;          // for laser_cut
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"
@@ -232,6 +270,9 @@ struct CamOperation {
   CamOperationDependencies dependencies;
   std::optional<ToolpathCache> toolpath_cache;
   CamOperationStatus status = "pending";
+  /// Human-readable degrade info (the CAM analogue of
+  /// FeatureEntry::dependency_warning).  Empty when healthy.
+  std::string status_message;
 };
 
 // ══════════════════════════════════════════════════════════════════

@@ -234,7 +234,7 @@ export function ViewportPanel({
   document,
   viewport,
   showStock = true,
-  wcsOrientation = "model",
+  wcsOrientation = "z_up",
   onSnapshotCaptureReady,
   onSelectPrimitive,
   onSelectReference,
@@ -1184,6 +1184,16 @@ export function ViewportPanel({
     activeSketchPlaneIdRef.current = activeSketchPlaneId;
     activeSketchPlaneFrameRef.current = activeSketchPlaneFrame;
   }, [activeSketchPlaneId, activeSketchPlaneFrame]);
+  // Inactive-sketch picking refs must track their props: the CAM
+  // workspace arms picking long after mount, and a stale first-render
+  // value would keep sketch clicks dead.
+  useEffect(() => {
+    pickInactiveSketchLineRef.current = onPickInactiveSketchLine;
+  }, [onPickInactiveSketchLine]);
+  useEffect(() => {
+    inactiveSketchEntityPickEnabledRef.current =
+      inactiveSketchEntityPickEnabled;
+  }, [inactiveSketchEntityPickEnabled]);
   useEffect(() => {
     showViewportGridRef.current = showViewportGrid;
   }, [showViewportGrid]);

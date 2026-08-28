@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -42,6 +43,8 @@
 #include <gp_Vec.hxx>
 
 #include "core/geometry/body_compiler.h"
+#include "core/cam/cam_export.h"
+#include "core/cam/cam_refresh.h"
 #include "core/construction/construction_plane_feature.h"
 #include "core/geometry/edge_geometry.h"
 #include "core/geometry/face_geometry.h"

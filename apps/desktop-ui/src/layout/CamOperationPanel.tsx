@@ -5,6 +5,9 @@ export interface CamOperation {
   id: string;
   type: CamOperationType;
   name: string;
+  mode?: string;
+  status?: string;
+  statusMessage?: string;
 }
 
 export interface CamOperationPanelProps {
@@ -22,10 +25,16 @@ export function CamOperationPanel({
 }: CamOperationPanelProps) {
   const { t } = useTranslation();
 
-  const typeLabel = (type: CamOperationType): string => {
-    switch (type) {
+  const typeLabel = (operation: CamOperation): string => {
+    switch (operation.type) {
       case "faceMilling":
         return t("cam.common.faceOp");
+      case "laserCut":
+        return operation.mode === "engrave"
+          ? t("cam.laserCut.modeEngrave")
+          : operation.mode === "score"
+            ? t("cam.laserCut.modeScore")
+            : t("cam.cutting.twoD");
       case "profile":
         return t("cam.profile");
       case "pocket":
@@ -66,7 +75,7 @@ export function CamOperationPanel({
                     <div className="flex items-center justify-between">
                       <span className="truncate">{op.name}</span>
                       <span className="text-[10px] cad-muted ml-2 shrink-0">
-                        {typeLabel(op.type)}
+                        {typeLabel(op)}
                       </span>
                     </div>
                   </button>

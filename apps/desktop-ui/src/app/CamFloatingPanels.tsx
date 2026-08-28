@@ -1,7 +1,15 @@
-import type { CamOperationUpdatePayload, CamSetupUpdatePayload } from "../lib";
+import type { CamOperation, CamSetup, LaserCutParameters } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
-import { CamSetupPanel, FaceMillingPanel } from "../layout";
-import type { ToolOption } from "../layout/FaceMillingPanel";
+import {
+  CamFaceMillingPanel,
+  CamLaserCutPanel,
+  CamSetupPanel,
+  createDefaultCamSetup,
+  type FaceMillingFormState,
+} from "../layout";
+import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
+import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
+import { awaitDocumentChange } from "../state/cadCoreStore";
 
 type RunAction = (action: () => Promise<void>) => Promise<void>;
 
@@ -18,9 +26,22 @@ interface CamFloatingPanelsProps {
   setSetupPanelOpen: (open: boolean) => void;
   setSelectedOperationId: (operationId: string | null) => void;
   runAction: RunAction;
-  camSetupUpdate: (payload: CamSetupUpdatePayload) => Promise<void>;
-  camOperationUpdate: (payload: CamOperationUpdatePayload) => Promise<void>;
-  camOperationDelete: (operationId: string) => Promise<void>;
+  addMessage: (message: string) => void;
+  onExportGcode: () => void;
+  onPostProcessorChange: (postType: string) => void;
+  postProcessorType: string;
+  posts: Array<{ name: string; path: string }>;
+  onImportPost: () => void;
+  onEditPost: (path: string) => void;
+  camSetupCreate: (setup: CamSetup) => Promise<void>;
+  camSetupUpdate: (setup: CamSetup) => Promise<void>;
+  camOperationUpdate: (
+    opId: string,
+    partial: Partial<CamOperation>,
+  ) => Promise<void>;
+  camOperationDelete: (opId: string) => Promise<void>;
+  camOperationPreview: (opId: string) => Promise<void>;
+  camOperationGenerate: (opId: string) => Promise<void>;
 }
 
 export function CamFloatingPanels({
@@ -36,27 +57,25 @@ export function CamFloatingPanels({
   setSetupPanelOpen,
   setSelectedOperationId,
   runAction,
+  addMessage,
+  onExportGcode,
+  onPostProcessorChange,
+  postProcessorType,
+  posts,
+  onImportPost,
+  onEditPost,
+  camSetupCreate,
   camSetupUpdate,
   camOperationUpdate,
   camOperationDelete,
+  camOperationPreview,
+  camOperationGenerate,
 }: CamFloatingPanelsProps) {
+  const setup = document?.cam.setups?.[0] ?? null;
+
   const setupPanel = isSetupPanelOpen ? (
     <CamSetupPanel
-      initialSetup={{
-        stock: (document?.cam as any)?.setups?.[0]?.stock ?? {
-          width: 120,
-          height: 120,
-          depth: 20,
-          offset_x: 5,
-          offset_y: 5,
-          offset_z: 5,
-        },
-        wcs_origin: (document?.cam as any)?.setups?.[0]?.wcs_origin ?? { x: 0, y: 0, z: 0 },
-        safety_plane_z: (document?.cam as any)?.setups?.[0]?.safety_plane_z ?? 10,
-        wcs_angle: (document?.cam as any)?.setups?.[0]?.wcs_angle ?? 0,
-        orientation_mode: "model",
-        origin_mode: "model",
-      }}
+      initialSetup={setup ?? createDefaultCamSetup()}
       bodies={(viewport?.bodies ?? []).map((body) => ({
         id: body.id,
         label: body.label,
@@ -67,15 +86,19 @@ export function CamFloatingPanels({
       onShowStockChange={setShowStock}
       wcsOrientation={wcsOrientation}
       onWcsOrientationChange={setWcsOrientation}
+      postProcessorType={postProcessorType}
+      onPostProcessorChange={onPostProcessorChange}
+      posts={posts}
+      onImportPost={onImportPost}
+      onEditPost={onEditPost}
       disabled={disabled}
-      onUpdate={(state) => {
+      onUpdate={(nextSetup) => {
         void runAction(async () => {
-          await camSetupUpdate({
-            stock: state.stock,
-            wcs_origin: state.wcs_origin,
-            safety_plane_z: state.safety_plane_z,
-            wcs_angle: state.wcs_angle,
-          });
+          if (setup) {
+            await camSetupUpdate(nextSetup);
+          } else {
+            await camSetupCreate(nextSetup);
+          }
         });
       }}
       onConfirm={() => setSetupPanelOpen(false)}
@@ -83,34 +106,42 @@ export function CamFloatingPanels({
     />
   ) : null;
 
-  const millingPanel = selectedOperationId
-    ? buildFaceMillingPanel({
+  const operationPanel = selectedOperationId
+    ? buildOperationPanel({
         document,
         disabled,
         selectedOperationId,
         setSelectedOperationId,
         runAction,
+        addMessage,
+        onExportGcode,
         camOperationUpdate,
         camOperationDelete,
+        camOperationPreview,
+        camOperationGenerate,
       })
     : null;
 
   return (
     <>
       {setupPanel}
-      {millingPanel}
+      {operationPanel}
     </>
   );
 }
 
-function buildFaceMillingPanel({
+function buildOperationPanel({
   document,
   disabled,
   selectedOperationId,
   setSelectedOperationId,
   runAction,
+  addMessage,
+  onExportGcode,
   camOperationUpdate,
   camOperationDelete,
+  camOperationPreview,
+  camOperationGenerate,
 }: Pick<
   CamFloatingPanelsProps,
   | "document"
@@ -118,55 +149,205 @@ function buildFaceMillingPanel({
   | "selectedOperationId"
   | "setSelectedOperationId"
   | "runAction"
+  | "addMessage"
+  | "onExportGcode"
   | "camOperationUpdate"
   | "camOperationDelete"
+  | "camOperationPreview"
+  | "camOperationGenerate"
 >) {
-  const ops = (document?.cam as any)?.operations;
-  if (!ops || !selectedOperationId) {
-    return null;
-  }
-
-  const operation = ops.find(
-    (candidate: any) => candidate.id === selectedOperationId && candidate.type === 0,
+  const operation = document?.cam.operations.find(
+    (candidate) => candidate.op_id === selectedOperationId,
   );
   if (!operation) {
     return null;
   }
 
-  const tools: ToolOption[] = ((document?.cam as any)?.tool_library ?? []).map((tool: any) => ({
-    tool_id: tool.tool_id,
-    name: tool.name,
-    diameter: tool.diameter,
-  }));
-
-  return (
-    <FaceMillingPanel
-      operationName={operation.name}
-      initialParams={{
-        depth: operation.face_milling?.depth ?? 0.5,
-        stepover: operation.face_milling?.stepover ?? 5,
-        angle_deg: operation.face_milling?.angle_deg ?? 0,
-      }}
-      initialToolId={operation.tool_id}
-      tools={tools}
-      disabled={disabled}
-      onUpdate={(params, toolId) => {
-        void runAction(async () => {
-          await camOperationUpdate({
-            operation_id: operation.id,
-            tool_id: toolId,
-            params,
-          });
-        });
-      }}
-      onDelete={() => {
-        void runAction(async () => {
-          await camOperationDelete(operation.id);
-          setSelectedOperationId(null);
-        });
-      }}
-      onConfirm={() => setSelectedOperationId(null)}
-      onCancel={() => setSelectedOperationId(null)}
-    />
+  const tool = document?.cam.tool_library.find(
+    (entry) => entry.tool_id === operation.tool_id,
   );
+  const toolpathStats =
+    operation.toolpath_cache?.total_length_mm !== undefined ||
+    operation.toolpath_cache?.estimated_time_seconds !== undefined
+      ? {
+          totalLengthMm: operation.toolpath_cache?.total_length_mm,
+          estimatedTimeSeconds: operation.toolpath_cache?.estimated_time_seconds,
+        }
+      : null;
+
+  const shared = {
+    operationName: operation.name,
+    status: operation.status,
+    statusMessage: operation.status_message,
+    toolpathStats,
+    disabled,
+  };
+
+  if (operation.type === "laser_cut") {
+    const laser = operation.parameters.laser ?? DEFAULT_LASER_PARAMS;
+    return (
+      <CamLaserCutPanel
+        {...shared}
+        initialParams={laser}
+        initialFeedrate={operation.parameters.feedrate_mm_per_min ?? 500}
+        onUpdate={(partial: Partial<LaserCutParameters>) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              parameters: {
+                ...operation.parameters,
+                laser: { ...laser, ...partial },
+              },
+            });
+          });
+        }}
+        onFeedrateChange={(feedrateMmPerMin: number) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              parameters: {
+                ...operation.parameters,
+                feedrate_mm_per_min: feedrateMmPerMin,
+              },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={() => {
+          void runAction(async () => {
+            await camOperationGenerate(operation.op_id);
+            // Wait for the generated document and confirm with the
+            // path stats — the toolpath looks identical to the
+            // preview, so the feedback has to be explicit.
+            try {
+              const updated = await awaitDocumentChange(
+                (next) =>
+                  next.cam.operations.find(
+                    (candidate) => candidate.op_id === operation.op_id,
+                  )?.status === "generated",
+              );
+              const generated = updated.cam.operations.find(
+                (candidate) => candidate.op_id === operation.op_id,
+              );
+              const stats = generated?.toolpath_cache;
+              if (stats) {
+                const length =
+                  stats.total_length_mm !== undefined
+                    ? `${stats.total_length_mm.toFixed(1)} mm`
+                    : "?";
+                const time =
+                  stats.estimated_time_seconds !== undefined
+                    ? `${stats.estimated_time_seconds.toFixed(1)} s`
+                    : "?";
+                addMessage(
+                  `toolpath generated: ${length}, estimated ${time}`,
+                );
+              }
+            } catch {
+              // The operation degraded instead of generating — the
+              // panel's status line shows why.
+            }
+          });
+        }}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "face_milling") {
+    const parameters = operation.parameters;
+    const initialParams: FaceMillingFormState = {
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ?? DEFAULT_FACE_MILLING_PARAMS.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_FACE_MILLING_PARAMS.plunge_feedrate_mm_per_min,
+      stepover_percent:
+        parameters.stepover_percent ?? DEFAULT_FACE_MILLING_PARAMS.stepover_percent,
+      zigzag_angle_deg:
+        parameters.zigzag_angle_deg ?? DEFAULT_FACE_MILLING_PARAMS.zigzag_angle_deg,
+      spindle_rpm: parameters.spindle_rpm ?? DEFAULT_FACE_MILLING_PARAMS.spindle_rpm,
+    };
+    const tools = document?.cam.tool_library.filter(
+      (entry) => entry.type === "endmill_flat",
+    ) ?? [];
+    return (
+      <CamFaceMillingPanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: { ...parameters, ...partial },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={() => {
+          void runAction(async () => {
+            await camOperationGenerate(operation.op_id);
+            // Wait for the generated document and confirm with the
+            // path stats — the toolpath looks identical to the
+            // preview, so the feedback has to be explicit.
+            try {
+              const updated = await awaitDocumentChange(
+                (next) =>
+                  next.cam.operations.find(
+                    (candidate) => candidate.op_id === operation.op_id,
+                  )?.status === "generated",
+              );
+              const generated = updated.cam.operations.find(
+                (candidate) => candidate.op_id === operation.op_id,
+              );
+              const stats = generated?.toolpath_cache;
+              if (stats) {
+                const length =
+                  stats.total_length_mm !== undefined
+                    ? `${stats.total_length_mm.toFixed(1)} mm`
+                    : "?";
+                const time =
+                  stats.estimated_time_seconds !== undefined
+                    ? `${stats.estimated_time_seconds.toFixed(1)} s`
+                    : "?";
+                addMessage(
+                  `toolpath generated: ${length}, estimated ${time}`,
+                );
+              }
+            } catch {
+              // The operation degraded instead of generating — the
+              // panel's status line shows why.
+            }
+          });
+        }}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  // Unsupported operation kinds get no panel yet — the sidebar list
+  // still shows them, and generation is not offered for them.
+  return null;
 }

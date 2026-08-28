@@ -45,6 +45,9 @@
 #include <gp_Vec.hxx>
 
 #include "core/geometry/body_compiler.h"
+#include "core/cam/cam_runtime.h"
+#include "core/cam/toolpath.h"
+#include "core/cam/toolpath_geometry.h"
 #include "core/document/appearance.h"
 #include "core/sketch/dof_counter.h"
 #include "core/sketch/spline_math.h"

@@ -157,10 +157,9 @@ interface AppTopBarProps {
   activeCamOperation: CamOperationType | null;
   setActiveCamOperation: Dispatch<SetStateAction<CamOperationType | null>>;
   setIsCamSetupPanelOpen: Dispatch<SetStateAction<boolean>>;
-  camFaceMillingCreate: (
-    bodyId: string,
-    faceIndex: number,
-  ) => Promise<void>;
+  triggerCamLaserCut: AsyncVoid;
+  camMachineType: string | null;
+  triggerCamFaceMilling: AsyncVoid;
 }
 
 export function AppTopBar(props: AppTopBarProps) {
@@ -462,18 +461,16 @@ export function AppTopBar(props: AppTopBarProps) {
       onSelectCamOperation={(op) => {
         props.setActiveCamOperation((prev) => (prev === op ? null : op));
       }}
-      hasCamSetup={(props.document?.cam as any)?.setups?.length > 0}
+      hasCamSetup={(props.document?.cam?.setups?.length ?? 0) > 0}
+      camMachineType={props.camMachineType}
       onCamSetupClick={() => {
         props.setIsCamSetupPanelOpen((prev) => !prev);
       }}
       onCamFaceMillingClick={() => {
-        const body = props.viewport?.bodies?.[0];
-        if (!body) {
-          return;
-        }
-        void props.runAction(async () => {
-          await props.camFaceMillingCreate(body.id, 0);
-        });
+        void props.triggerCamFaceMilling();
+      }}
+      onCamTwoDCutClick={() => {
+        void props.triggerCamLaserCut();
       }}
     />
   );

@@ -1,6 +1,7 @@
   // ── CAM ─────────────────────────────────────────────────────
-  // Stubs — CAM workspace being rebuilt on cam_types.h types.
-  // See session_cam_commands.inc for implementations.
+  // CAM state lives in DocumentState::cam.  Implementations in
+  // session_cam_commands.inc.  Mutators follow the canonical document
+  // shape (require → validate → push undo → mutate → bump revision).
 
   DocumentState cam_setup_create(const CamSetup& setup);
   std::optional<CamSetup> cam_setup_get() const;
@@ -14,3 +15,7 @@
   DocumentState cam_operation_add(const CamOperation& op);
   DocumentState cam_operation_update(const std::string& operation_id, const CamOperation& op);
   DocumentState cam_operation_delete(const std::string& operation_id);
+
+  DocumentState cam_post_processor_set(const PostProcessor& post_processor);
+  DocumentState cam_operation_set_generated(const std::string& operation_id,
+                                            const CamOperation& op);

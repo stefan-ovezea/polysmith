@@ -10,6 +10,7 @@ interface CamIconButtonProps {
   labelKey: string;
   disabled?: boolean;
   inactive?: boolean;
+  onClick?: () => void;
   children: ReactNode;
 }
 
@@ -17,6 +18,7 @@ export function CamIconButton({
   labelKey,
   disabled = false,
   inactive = false,
+  onClick,
   children,
 }: CamIconButtonProps) {
   const { t } = useTranslation();
@@ -29,6 +31,7 @@ export function CamIconButton({
       data-tooltip={label}
       aria-label={label}
       disabled={disabled || inactive}
+      onClick={onClick}
     >
       <svg
         viewBox="0 0 24 24"
@@ -59,9 +62,15 @@ export function CamSetupButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function CamFaceOpButton() {
+export function CamFaceOpButton({
+  disabled = false,
+  onClick = () => {},
+}: {
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <CamIconButton labelKey="cam.common.faceOp" inactive>
+    <CamIconButton labelKey="cam.common.faceOp" disabled={disabled} onClick={onClick}>
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M9 3v18" />
     </CamIconButton>

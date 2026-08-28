@@ -73,7 +73,16 @@ pub fn start_cad_core_process(
                 *guard = None;
             }
             Ok(None) => {
-                return Ok("cad_core already running".to_string());
+                // A core process is still alive — kill it and start a
+                // fresh one.  The binary on disk may have been rebuilt
+                // (dev loop); reusing the old process would serve stale
+                // behavior forever.
+                eprintln!(
+                    "cad_core already running — restarting with the current binary"
+                );
+                let _ = process.child.kill();
+                let _ = process.child.wait();
+                *guard = None;
             }
             Err(error) => {
                 eprintln!("failed to inspect cad_core process state: {error}");
@@ -89,6 +98,19 @@ pub fn start_cad_core_process(
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    // User-editable post-processor directory: one JSON file per dialect,
+    // seeded by the core with the built-in definitions on first use.
+    // The core re-reads it on every export/list so edits in an external
+    // editor apply without a restart.
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let posts_dir = app_data.join("posts");
+        if let Err(error) = std::fs::create_dir_all(&posts_dir) {
+            eprintln!("failed to create posts directory: {error}");
+        } else {
+            cmd.env("POLYSMITH_POSTS_DIR", posts_dir);
+        }
+    }
 
     // Prepend OCCT and 3rdparty DLL directories to PATH so the child
     // process finds TKernel.dll, freetype.dll, zlib.dll etc.

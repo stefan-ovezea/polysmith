@@ -28,9 +28,28 @@ export interface EdgeAttestation {
   adjacent_face_normals?: Array<[number, number, number]>;
 }
 
+// Witness data to re-identify a sketch profile region after sketch
+// edits. Profile ids churn because the core recomputes the whole region
+// list; the geometry is the stable identity. All coordinates are
+// sketch-local.
+export interface SketchProfileAttestation {
+  sketch_feature_id: string;
+  profile_id: string;
+  center_x: number;
+  center_y: number;
+  area: number;
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+  boundary_edge_kinds: string[];
+  inner_loop_count: number;
+  source_circle_id?: string;
+}
+
 export interface GeometryReference {
   persistent_id: string;
-  attestation: FaceAttestation | EdgeAttestation;
+  attestation: FaceAttestation | EdgeAttestation | SketchProfileAttestation;
   fallback_strategy: "warn_user" | "require_user" | "fail_operation" | "auto_resolve";
 }
 
@@ -64,6 +83,9 @@ export interface MachineAxes {
 export interface WcsOrigin {
   feature_id: string;
   face_reference: GeometryReference;
+  /** Last-resolved machine origin, refreshed by the CAM dependency
+   *  pass so the post-processor needs no face resolution at export. */
+  position?: [number, number, number];
 }
 
 export interface CamSetup {
@@ -113,7 +135,8 @@ export interface ToolEntry {
 export type CamOperationType =
   | "face_milling" | "pocket_2d" | "contour_2d" | "slot"
   | "drilling" | "adaptive_clearing" | "parallel_3d"
-  | "contour_3d" | "chamfer" | "thread_milling" | "engrave";
+  | "contour_3d" | "chamfer" | "thread_milling" | "engrave"
+  | "laser_cut";
 
 export type CamOperationStatus =
   | "pending" | "generated" | "needs_regenerate" | "error" | "deleted";
@@ -126,7 +149,7 @@ export interface CamGeometryReferences {
 }
 
 export interface CamPointLocation {
-  point_id: string;
+  vertex_id: string;
   position: [number, number, number];
   surface_normal: [number, number, number];
   hole_diameter?: number;
@@ -138,6 +161,22 @@ export type ClearingStrategy = "zigzag" | "one_way" | "offset" | "adaptive" | "s
 export type DrillingCycleType =
   | "g81_standard" | "g82_dwell" | "g83_peck"
   | "g73_high_speed_peck" | "g84_tap" | "g85_bore" | "g87_back_bore";
+
+// Laser cutting parameters (only meaningful when type == "laser_cut").
+// Follows the per-type optional block pattern of the other strategy
+// fields so the operation struct stays one unified shape.
+export interface LaserCutParameters {
+  kerf_width_mm: number;         // cut width compensation, both sides
+  lead_in_mm: number;            // straight lead-in length
+  lead_out_mm: number;           // straight lead-out length
+  pierce_dwell_seconds: number;  // G4 dwell after pierce
+  power_percent: number;         // 0..100
+  passes: number;                // repeat contour (same path in v1)
+  mode: "cut" | "score" | "engrave";
+  material_thickness_mm: number;
+  cut_plane_offset_mm: number;   // cut-plane Z relative to sketch plane
+  dynamic_power: boolean;        // true -> M4 (power scales with feed)
+}
 
 export interface CamOperationParameters {
   spindle_rpm: number;
@@ -155,6 +194,8 @@ export interface CamOperationParameters {
   peck_depth_mm?: number;
   dwell_seconds?: number;
   engagement_angle_deg?: number;
+  zigzag_angle_deg?: number;     // for face milling
+  laser?: LaserCutParameters;    // for laser_cut
   coolant: "off" | "flood" | "mist" | "through_tool";
 }
 
@@ -196,7 +237,23 @@ export interface CamOperation {
   dependencies: CamOperationDependencies;
   toolpath_cache?: ToolpathCache;
   status: CamOperationStatus;
+  /** Human-readable degrade info (the CAM analogue of
+   *  FeatureEntry::dependency_warning). Empty when healthy. */
+  status_message: string;
 }
+
+// Payload for `cam_operation_create`: a serialized CamOperation whose
+// op_id is optional (the core assigns "cam-op-N") and whose geometry
+// references may be omitted entirely — when machining_regions is empty
+// (or absent) the core captures witness references from the document's
+// selected sketch profiles automatically.
+export type CamOperationPayload = Omit<
+  CamOperation,
+  "op_id" | "geometry_references"
+> & {
+  op_id?: string;
+  geometry_references?: CamGeometryReferences;
+};
 
 // ══════════════════════════════════════════════════════════════════
 //  Post-Processor

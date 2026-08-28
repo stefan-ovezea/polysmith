@@ -2,41 +2,140 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Dropdown, ScrollArea } from "@/lib";
-// Legacy CAM types (being rebuilt on cam_types.h schema).
-interface CamSetupStock {
-  width: number; height: number; depth: number;
-  offset_x: number; offset_y: number; offset_z: number;
-}
-interface CamSetupOrigin { x: number; y: number; z: number; }
+import type {
+  CamSetup,
+  MachineType,
+  StockDefinition,
+  StockType,
+} from "@/types";
 import {
   CamNumberField,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
 } from "./camPanelShared";
 
+// Defaults mirror the C++ struct defaults in cam_types.h.  Used both to
+// seed the setup panel before a setup exists and to build the
+// cam_setup_create payload.
+export function createDefaultCamSetup(): CamSetup {
+  return {
+    setup_id: "",
+    name: "Setup",
+    machine_type: "3_axis_mill",
+    machine_axes: { x: 500, y: 400, z: 300 },
+    stock: {
+      type: "bounding_box",
+      origin: [0, 0, 0],
+      size: [120, 120, 20],
+      margin: 3,
+    },
+    wcs_origin: {
+      feature_id: "",
+      face_reference: {
+        persistent_id: "",
+        attestation: { bounds: { min_x: 0, min_y: 0, min_z: 0, max_x: 0, max_y: 0, max_z: 0 }, area: 0, normal: [0, 0, 1], sample_points: [] },
+        fallback_strategy: "warn_user",
+      },
+      position: [0, 0, 0],
+    },
+    safety_height: 50,
+    retract_height: 5,
+    units: "mm",
+  };
+}
+
+const MACHINE_TYPES: MachineType[] = [
+  "3_axis_mill",
+  "4_axis_mill",
+  "5_axis_mill",
+  "lathe_2_axis",
+  "lathe_live_tooling",
+  "laser",
+  "plasma",
+  "printer",
+];
+
+const STOCK_TYPES: StockType[] = [
+  "bounding_box",
+  "cylinder",
+  "from_solid",
+  "from_mesh",
+];
+
 interface CamSetupFormState {
-  stock: CamSetupStock;
-  wcs_origin: CamSetupOrigin;
-  safety_plane_z: number;
-  wcs_angle: number;
-  orientation_mode: string;
-  origin_mode: string;
+  stockType: StockType;
+  origin: [number, number, number];
+  wcsOrigin: [number, number, number];
+  size: [number, number, number];
+  diameter: number;
+  length: number;
+  margin: number;
+  machineType: MachineType;
+  safetyHeight: number;
+  retractHeight: number;
+  units: "mm" | "inch";
 }
 
 interface CamSetupPanelProps {
-  initialSetup: CamSetupFormState;
+  initialSetup: CamSetup;
   bodies: Array<{ id: string; label: string; center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number } }>;
   showStock: boolean;
   onShowStockChange: (show: boolean) => void;
   wcsOrientation: string;
   onWcsOrientationChange: (mode: string) => void;
+  postProcessorType: string;
+  onPostProcessorChange: (postType: string) => void;
+  posts: Array<{ name: string; path: string }>;
+  onImportPost: () => void;
+  onEditPost: (path: string) => void;
   disabled: boolean;
-  onUpdate: (state: CamSetupFormState) => void;
+  onUpdate: (setup: CamSetup) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 type TabId = "machine" | "stock" | "wcs";
+
+function formStateFromSetup(setup: CamSetup): CamSetupFormState {
+  return {
+    stockType: setup.stock.type ?? "bounding_box",
+    origin: setup.stock.origin ?? [0, 0, 0],
+    wcsOrigin: setup.wcs_origin.position ?? [0, 0, 0],
+    size: setup.stock.size ?? [120, 120, 20],
+    diameter: setup.stock.diameter ?? 40,
+    length: setup.stock.length ?? 20,
+    margin: setup.stock.margin ?? 3,
+    machineType: setup.machine_type ?? "3_axis_mill",
+    safetyHeight: setup.safety_height ?? 50,
+    retractHeight: setup.retract_height ?? 5,
+    units: setup.units === "inch" ? "inch" : "mm",
+  };
+}
+
+function setupFromFormState(
+  initial: CamSetup,
+  state: CamSetupFormState,
+): CamSetup {
+  const stock: StockDefinition = {
+    ...initial.stock,
+    type: state.stockType,
+    origin: state.origin,
+    margin: state.margin,
+    size: state.stockType === "cylinder" ? undefined : state.size,
+    diameter: state.stockType === "cylinder" ? state.diameter : undefined,
+    length: state.stockType === "cylinder" ? state.length : undefined,
+  };
+  return {
+    ...initial,
+    name: initial.name || "Setup",
+    machine_type: state.machineType,
+    stock,
+    wcs_origin: { ...initial.wcs_origin, position: state.wcsOrigin },
+    safety_height: state.safetyHeight,
+    retract_height: state.retractHeight,
+    units: state.units,
+  };
+}
 
 export function CamSetupPanel({
   initialSetup,
@@ -45,61 +144,74 @@ export function CamSetupPanel({
   onShowStockChange,
   wcsOrientation,
   onWcsOrientationChange,
+  postProcessorType,
+  onPostProcessorChange,
+  posts,
+  onImportPost,
+  onEditPost,
   disabled,
   onUpdate,
   onConfirm,
   onCancel,
 }: CamSetupPanelProps) {
   const { t } = useTranslation();
-  const [state, setState] = useState<CamSetupFormState>(initialSetup);
+  const [state, setState] = useState<CamSetupFormState>(() =>
+    formStateFromSetup(initialSetup),
+  );
   const [tab, setTab] = useState<TabId>("machine");
   const confirmRef = useRef(onConfirm);
   confirmRef.current = onConfirm;
   const serialized = JSON.stringify(state);
   const markUpdateSent = useDebouncedCamUpdate(serialized, () => {
-    onUpdate(state);
+    onUpdate(setupFromFormState(initialSetup, state));
   });
 
   useCamEscapeCancel(onCancel);
 
-  // Auto-size stock from model bounds when no setup exists yet.
+  // Auto-size stock from model bounds when the setup has no explicit
+  // stock size yet (fresh setup / bounding_box with default size).
   const autoSizedRef = useRef(false);
   useEffect(() => {
     if (autoSizedRef.current) return;
     if (bodies.length === 0) return;
-    if (initialSetup.stock.width === 120 && initialSetup.stock.height === 120 && initialSetup.stock.depth === 20) {
-      let minX = Infinity, minY = Infinity, minZ = Infinity;
-      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-      for (const body of bodies) {
-        const hw = body.size.x / 2, hh = body.size.y / 2, hd = body.size.z / 2;
-        minX = Math.min(minX, body.center.x - hw);
-        maxX = Math.max(maxX, body.center.x + hw);
-        minY = Math.min(minY, body.center.y - hh);
-        maxY = Math.max(maxY, body.center.y + hh);
-        minZ = Math.min(minZ, body.center.z - hd);
-        maxZ = Math.max(maxZ, body.center.z + hd);
-      }
-      if (Number.isFinite(minX)) {
-        setState((prev) => ({
-          ...prev,
-          stock: {
-            ...prev.stock,
-            width: Math.round((maxX - minX) * 10) / 10,
-            height: Math.round((maxY - minY) * 10) / 10,
-            depth: Math.round((maxZ - minZ) * 10) / 10,
-          },
-        }));
-      }
+    const hasExplicitSize =
+      initialSetup.stock.size !== undefined &&
+      (initialSetup.stock.size[0] !== 120 ||
+        initialSetup.stock.size[1] !== 120 ||
+        initialSetup.stock.size[2] !== 20);
+    if (hasExplicitSize) return;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const body of bodies) {
+      const hw = body.size.x / 2, hh = body.size.y / 2, hd = body.size.z / 2;
+      minX = Math.min(minX, body.center.x - hw);
+      maxX = Math.max(maxX, body.center.x + hw);
+      minY = Math.min(minY, body.center.y - hh);
+      maxY = Math.max(maxY, body.center.y + hh);
+      minZ = Math.min(minZ, body.center.z - hd);
+      maxZ = Math.max(maxZ, body.center.z + hd);
+    }
+    if (Number.isFinite(minX)) {
+      const size: [number, number, number] = [
+        Math.round((maxX - minX) * 10) / 10,
+        Math.round((maxY - minY) * 10) / 10,
+        Math.round((maxZ - minZ) * 10) / 10,
+      ];
+      setState((prev) => ({
+        ...prev,
+        size,
+        origin: [
+          Math.round((minX + maxX) / 2 * 10) / 10,
+          Math.round((minY + maxY) / 2 * 10) / 10,
+          Math.round((minZ + maxZ) / 2 * 10) / 10,
+        ],
+      }));
     }
     autoSizedRef.current = true;
-  }, [bodies, initialSetup.stock.width, initialSetup.stock.height, initialSetup.stock.depth]);
+  }, [bodies, initialSetup.stock.size]);
 
-  function updateStock(patch: Partial<CamSetupFormState["stock"]>) {
-    setState((prev) => ({ ...prev, stock: { ...prev.stock, ...patch } }));
-  }
-
-  function updateWcs(patch: Partial<CamSetupFormState["wcs_origin"]>) {
-    setState((prev) => ({ ...prev, wcs_origin: { ...prev.wcs_origin, ...patch } }));
+  function update(patch: Partial<CamSetupFormState>) {
+    setState((prev) => ({ ...prev, ...patch }));
   }
 
   const tabBtn = (id: TabId, label: string) => (
@@ -116,6 +228,20 @@ export function CamSetupPanel({
     </button>
   );
 
+  const machineTypeOptions = MACHINE_TYPES.map((type) => ({
+    value: type,
+    label: t(`cam.setup.machineType.${type}`),
+  }));
+  const stockTypeOptions = STOCK_TYPES.map((type) => ({
+    value: type,
+    label: t(`cam.setup.stockType.${type}`),
+  }));
+
+  // Laser/plasma machines cut from a sheet: the WCS is the sheet origin
+  // and there is no model-body reference to pick.
+  const isSheetMachine =
+    state.machineType === "laser" || state.machineType === "plasma";
+
   return (
     <section className="pointer-events-auto cad-floating-panel flex max-h-full min-h-0 w-[340px] max-w-full flex-col overflow-hidden px-5 py-5">
       <p className="cad-kicker">{t("cam.setup.title", "Setup")}</p>
@@ -124,7 +250,7 @@ export function CamSetupPanel({
       <div className="mt-3 flex gap-1">
         {tabBtn("machine", t("cam.setup.machine", "Machine"))}
         {tabBtn("stock", t("cam.setup.stock", "Stock"))}
-        {tabBtn("wcs", t("cam.setup.wcs", "WCS"))}
+        {!isSheetMachine && tabBtn("wcs", t("cam.setup.wcs", "WCS"))}
       </div>
 
       <form
@@ -132,7 +258,7 @@ export function CamSetupPanel({
         onSubmit={(event) => {
           event.preventDefault();
           markUpdateSent();
-          onUpdate(state);
+          onUpdate(setupFromFormState(initialSetup, state));
           confirmRef.current();
         }}
       >
@@ -140,28 +266,99 @@ export function CamSetupPanel({
           {/* ════════════════════════════════════════════════════════
               TAB: Machine
               ════════════════════════════════════════════════════════ */}
-          {tab === "machine" && (
+          {(tab === "machine" || (tab === "wcs" && isSheetMachine)) && (
             <>
-              <CamNumberField
-                label={t("cam.setup.axisCount", "Axis count")}
-                value={3}
-                disabled={true}
-                onChange={() => {}}
-              />
-              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
-                {t("cam.setup.axis3Note", "4-axis and 5-axis are planned for a future release.")}
-              </p>
-
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-                {t("cam.setup.modelBody", "Model body")}
+                {t("cam.setup.machineTypeLabel", "Machine type")}
                 <Dropdown
                   className="mt-2 w-full"
-                  value={bodies[0]?.id ?? ""}
-                  label={t("cam.setup.modelBody", "Model body")}
-                  options={bodies.map((b) => ({ value: b.id, label: b.label }))}
-                  disabled={disabled || bodies.length <= 1}
+                  value={state.machineType}
+                  label={t("cam.setup.machineTypeLabel", "Machine type")}
+                  options={machineTypeOptions}
+                  disabled={disabled}
+                  onChange={(value) => update({ machineType: value as MachineType })}
                 />
               </label>
+
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.setup.unitsLabel", "Units")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={state.units}
+                  label={t("cam.setup.unitsLabel", "Units")}
+                  options={[
+                    { value: "mm", label: t("cam.setup.unitsMm", "Millimeters (mm)") },
+                    { value: "inch", label: t("cam.setup.unitsInch", "Inches") },
+                  ]}
+                  disabled={disabled}
+                  onChange={(value) => update({ units: value as "mm" | "inch" })}
+                />
+              </label>
+
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.setup.postProcessor", "Post processor")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={postProcessorType}
+                  label={t("cam.setup.postProcessor", "Post processor")}
+                  options={
+                    posts.length > 0
+                      ? posts.map((post) => ({
+                          value: post.name,
+                          label: post.name,
+                        }))
+                      : [
+                          { value: postProcessorType, label: postProcessorType },
+                        ]
+                  }
+                  disabled={disabled}
+                  onChange={(value) => onPostProcessorChange(value)}
+                />
+                <span className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="cad-action-ghost flex-1 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    disabled={disabled}
+                    onClick={onImportPost}
+                  >
+                    {t("cam.setup.importPost", "Import…")}
+                  </button>
+                  <button
+                    type="button"
+                    className="cad-action-ghost flex-1 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    disabled={
+                      disabled ||
+                      !posts.some(
+                        (post) =>
+                          post.name === postProcessorType && post.path !== "",
+                      )
+                    }
+                    onClick={() => {
+                      const post = posts.find(
+                        (entry) => entry.name === postProcessorType,
+                      );
+                      if (post?.path) {
+                        onEditPost(post.path);
+                      }
+                    }}
+                  >
+                    {t("cam.setup.editPost", "Edit")}
+                  </button>
+                </span>
+              </label>
+
+              {!isSheetMachine && (
+                <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                  {t("cam.setup.modelBody", "Model body")}
+                  <Dropdown
+                    className="mt-2 w-full"
+                    value={bodies[0]?.id ?? ""}
+                    label={t("cam.setup.modelBody", "Model body")}
+                    options={bodies.map((b) => ({ value: b.id, label: b.label }))}
+                    disabled={disabled || bodies.length <= 1}
+                  />
+                </label>
+              )}
 
               <label className="flex items-center gap-2 text-xs cursor-pointer">
                 <input
@@ -183,49 +380,97 @@ export function CamSetupPanel({
               ════════════════════════════════════════════════════════ */}
           {tab === "stock" && (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                <CamNumberField
-                  label={t("cam.setup.stockWidth", "Width (mm)")}
-                  value={state.stock.width}
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.setup.stockTypeLabel", "Stock type")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={state.stockType}
+                  label={t("cam.setup.stockTypeLabel", "Stock type")}
+                  options={stockTypeOptions}
                   disabled={disabled}
-                  onChange={(v) => updateStock({ width: v })}
+                  onChange={(value) => update({ stockType: value as StockType })}
                 />
-                <CamNumberField
-                  label={t("cam.setup.stockHeight", "Height (mm)")}
-                  value={state.stock.height}
-                  disabled={disabled}
-                  onChange={(v) => updateStock({ height: v })}
-                />
-              </div>
-              <CamNumberField
-                label={t("cam.setup.stockDepth", "Depth (mm)")}
-                value={state.stock.depth}
-                disabled={disabled}
-                onChange={(v) => updateStock({ depth: v })}
-              />
-              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
-                {t("cam.setup.offsetsNote", "Offsets add extra material beyond the part bounds on each axis.")}
-              </p>
+              </label>
+
+              {state.stockType === "bounding_box" ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <CamNumberField
+                      label={t("cam.setup.sizeX", "Size X (mm)")}
+                      value={state.size[0]}
+                      disabled={disabled}
+                      onChange={(v) => update({ size: [v, state.size[1], state.size[2]] })}
+                    />
+                    <CamNumberField
+                      label={t("cam.setup.sizeY", "Size Y (mm)")}
+                      value={state.size[1]}
+                      disabled={disabled}
+                      onChange={(v) => update({ size: [state.size[0], v, state.size[2]] })}
+                    />
+                    <CamNumberField
+                      label={t("cam.setup.sizeZ", "Size Z (mm)")}
+                      value={state.size[2]}
+                      disabled={disabled}
+                      onChange={(v) => update({ size: [state.size[0], state.size[1], v] })}
+                    />
+                  </div>
+                  <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.setup.sizeNote", "The stock box is centered on the part origin.")}
+                  </p>
+                </>
+              ) : null}
+
+              {state.stockType === "cylinder" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <CamNumberField
+                    label={t("cam.setup.diameter", "Diameter (mm)")}
+                    value={state.diameter}
+                    disabled={disabled}
+                    onChange={(v) => update({ diameter: v })}
+                  />
+                  <CamNumberField
+                    label={t("cam.setup.length", "Length (mm)")}
+                    value={state.length}
+                    disabled={disabled}
+                    onChange={(v) => update({ length: v })}
+                  />
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-3 gap-2">
                 <CamNumberField
-                  label={t("cam.setup.offsetX", "Offset X")}
-                  value={state.stock.offset_x}
+                  label={t("cam.setup.originX", "Origin X")}
+                  value={state.origin[0]}
                   disabled={disabled}
-                  onChange={(v) => updateStock({ offset_x: v })}
+                  min={undefined}
+                  onChange={(v) => update({ origin: [v, state.origin[1], state.origin[2]] })}
                 />
                 <CamNumberField
-                  label={t("cam.setup.offsetY", "Offset Y")}
-                  value={state.stock.offset_y}
+                  label={t("cam.setup.originY", "Origin Y")}
+                  value={state.origin[1]}
                   disabled={disabled}
-                  onChange={(v) => updateStock({ offset_y: v })}
+                  min={undefined}
+                  onChange={(v) => update({ origin: [state.origin[0], v, state.origin[2]] })}
                 />
                 <CamNumberField
-                  label={t("cam.setup.offsetZ", "Offset Z")}
-                  value={state.stock.offset_z}
+                  label={t("cam.setup.originZ", "Origin Z")}
+                  value={state.origin[2]}
                   disabled={disabled}
-                  onChange={(v) => updateStock({ offset_z: v })}
+                  min={undefined}
+                  onChange={(v) => update({ origin: [state.origin[0], state.origin[1], v] })}
                 />
               </div>
+
+              <CamNumberField
+                label={t("cam.setup.margin", "Margin (mm)")}
+                value={state.margin}
+                disabled={disabled}
+                step={0.5}
+                onChange={(v) => update({ margin: v })}
+              />
+              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.setup.marginNote", "Extra material beyond the part bounds on each axis.")}
+              </p>
             </>
           )}
 
@@ -236,28 +481,10 @@ export function CamSetupPanel({
             <>
               {/* Origin position */}
               <div className="grid grid-cols-3 gap-2">
-                <CamNumberField label="X" value={state.wcs_origin.x} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ x: v })} />
-                <CamNumberField label="Y" value={state.wcs_origin.y} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ y: v })} />
-                <CamNumberField label="Z" value={state.wcs_origin.z} disabled={disabled} min={undefined} onChange={(v) => updateWcs({ z: v })} />
+                <CamNumberField label="X" value={state.wcsOrigin[0]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [v, state.wcsOrigin[1], state.wcsOrigin[2]] })} />
+                <CamNumberField label="Y" value={state.wcsOrigin[1]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], v, state.wcsOrigin[2]] })} />
+                <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v] })} />
               </div>
-
-              {/* Origin mode */}
-              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-                {t("cam.setup.origin", "Origin")}
-                <Dropdown
-                  className="mt-2 w-full"
-                  value={state.origin_mode}
-                  label={t("cam.setup.origin", "Origin")}
-                  options={[
-                    { value: "model", label: t("cam.setup.originModel", "Model origin") },
-                    { value: "point", label: t("cam.setup.originPoint", "Selected point"), disabled: true },
-                    { value: "stock_box", label: t("cam.setup.originStockBox", "Stock box point"), disabled: true },
-                    { value: "model_box", label: t("cam.setup.originModelBox", "Model box point"), disabled: true },
-                  ]}
-                  disabled={disabled}
-                  onChange={(value) => setState((prev) => ({ ...prev, origin_mode: value }))}
-                />
-              </label>
 
               {/* Orientation mode */}
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
@@ -269,7 +496,6 @@ export function CamSetupPanel({
                   options={[
                     { value: "model", label: t("cam.setup.orientModel", "Model orientation") },
                     { value: "z_up", label: t("cam.setup.orientZUp", "Z axis up") },
-                    { value: "y_up", label: t("cam.setup.orientYUp", "Y axis up") },
                     { value: "z_x", label: t("cam.setup.orientZX", "Select Z axis/plane & X axis"), disabled: true },
                     { value: "z_y", label: t("cam.setup.orientZY", "Select Z axis/plane & Y axis"), disabled: true },
                     { value: "x_y", label: t("cam.setup.orientXY", "Select X & Y axes"), disabled: true },
@@ -284,16 +510,22 @@ export function CamSetupPanel({
                 {t("cam.setup.orientModelNote", "WCS axes follow the model coordinate system.")}
               </p>
 
-              {/* Safety plane */}
+              {/* Safety / retract plane */}
               <CamNumberField
-                label={t("cam.setup.safetyPlaneZ", "Safety Z (mm)")}
-                value={state.safety_plane_z}
+                label={t("cam.setup.safetyHeight", "Safety height (mm)")}
+                value={state.safetyHeight}
                 disabled={disabled}
-                onChange={(v) => setState((prev) => ({ ...prev, safety_plane_z: v }))}
+                onChange={(v) => update({ safetyHeight: v })}
               />
               <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
                 {t("cam.setup.safetyNote", "Z height for rapid moves between operations.")}
               </p>
+              <CamNumberField
+                label={t("cam.setup.retractHeight", "Retract height (mm)")}
+                value={state.retractHeight}
+                disabled={disabled}
+                onChange={(v) => update({ retractHeight: v })}
+              />
             </>
           )}
         </ScrollArea>

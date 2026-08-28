@@ -348,8 +348,10 @@ interface AppHeaderProps
   activeCamOperation: CamOperationType | null;
   onSelectCamOperation: (op: CamOperationType) => void;
   hasCamSetup: boolean;
+  camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
+  onCamTwoDCutClick: () => void;
 }
 
 export function AppHeader({
@@ -458,8 +460,10 @@ export function AppHeader({
   activeCamOperation,
   onSelectCamOperation,
   hasCamSetup,
+  camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
+  onCamTwoDCutClick,
 }: AppHeaderProps) {
   const { t: _t } = useTranslation();
   // Keep the main navigation bar in English regardless of the locale
@@ -489,6 +493,27 @@ export function AppHeader({
       setActiveCadWorkspace("sketch");
     }
   }, [activeSketchPlaneId]);
+
+  // The CAM sub-toolbar follows the machine type chosen in the setup —
+  // BUT only when the machine type actually CHANGES (e.g. the user
+  // picks Laser in the setup panel).  Manual tab clicks always win;
+  // re-entering CAM never resets the tab.
+  const lastCamMachineTypeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!camMachineType || camMachineType === lastCamMachineTypeRef.current) {
+      return;
+    }
+    lastCamMachineTypeRef.current = camMachineType;
+    if (camMachineType === "laser" || camMachineType === "plasma") {
+      setActiveCamWorkspace("cutting");
+    } else if (camMachineType === "printer") {
+      setActiveCamWorkspace("printing");
+    } else if (camMachineType.startsWith("lathe")) {
+      setActiveCamWorkspace("turning");
+    } else {
+      setActiveCamWorkspace("milling");
+    }
+  }, [camMachineType]);
 
   return (
     <header className="cad-ribbon relative z-20">
@@ -938,7 +963,11 @@ export function AppHeader({
           ) : activeCamWorkspace === "printing" ? (
             <CamPrintingToolbar disabled={disabled} />
           ) : (
-            <CamCuttingToolbar disabled={disabled} />
+            <CamCuttingToolbar
+              disabled={disabled}
+              onTwoDCut={onCamTwoDCutClick}
+              onFaceOpClick={onCamFaceMillingClick}
+            />
           )}
         </div>
       ) : workspaceView === "drawing" ? (

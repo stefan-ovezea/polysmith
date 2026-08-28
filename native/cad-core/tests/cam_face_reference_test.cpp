@@ -7,6 +7,14 @@
 #include "core/document/document.h"
 #include "core/document/feature.h"
 
+#include <BRepAdaptor_Surface.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
+#include <gp_Vec.hxx>
+
 namespace {
 
 using polysmith::core::CamFaceReference;
@@ -27,8 +35,49 @@ bool expect(bool condition, const char* message) {
 
 // ── Test 1: Capture and re-resolve on the same body ───────────────
 //
-// Create a box, capture face 0 (the top face), resolve immediately.
+// Create a box, capture the top (+Z) face, resolve immediately.
 // Should find exactly one candidate with the same face index.
+
+// Returns the face index whose center normal points along +Z.
+// OCCT face ordering is an implementation detail, not a contract —
+// the top face must be found by geometry, not by hardcoded index.
+int find_top_face_index(const TopoDS_Shape& shape) {
+  TopExp_Explorer explorer(shape, TopAbs_FACE);
+  const TopoDS_Face* topFace = nullptr;
+  for (; explorer.More(); explorer.Next()) {
+    const auto& face = TopoDS::Face(explorer.Current());
+    try {
+      BRepAdaptor_Surface surface(face);
+      const double uMid =
+          0.5 * (surface.FirstUParameter() + surface.LastUParameter());
+      const double vMid =
+          0.5 * (surface.FirstVParameter() + surface.LastVParameter());
+      gp_Pnt center;
+      gp_Vec d1u, d1v;
+      surface.D1(uMid, vMid, center, d1u, d1v);
+      gp_Vec normal = d1u.Crossed(d1v);
+      if (normal.Magnitude() <= 1e-12) {
+        continue;
+      }
+      normal.Normalize();
+      if (normal.Z() > 0.99 && std::abs(normal.X()) < 0.01 &&
+          std::abs(normal.Y()) < 0.01) {
+        topFace = &face;
+        break;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  if (topFace == nullptr) {
+    return -1;
+  }
+  // Convert back to the 0-based face index used by capture_face_reference,
+  // which builds the same map from the same shape, so index order matches.
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(shape, TopAbs_FACE, faceMap);
+  return faceMap.FindIndex(*topFace) - 1;
+}
 
 bool test_capture_and_resolve_same_body() {
   DocumentManager manager;
@@ -44,8 +93,11 @@ bool test_capture_and_resolve_same_body() {
 
   const auto& body = compiled.bodies[0];
 
-  // Box has 6 faces (OCCT order). Face 4 is typically the top face (+Z).
-  const int topFaceIndex = 4;
+  // Find the top face by its +Z normal — never by OCCT face ordering.
+  const int topFaceIndex = find_top_face_index(body.shape);
+  if (!expect(topFaceIndex >= 0, "could not find the top (+Z) face")) {
+    return false;
+  }
   auto ref = capture_face_reference(body.id, body.shape, topFaceIndex, "top");
   if (!expect(ref.has_value(), "capture_face_reference returned nullopt")) {
     return false;

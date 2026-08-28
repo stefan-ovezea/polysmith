@@ -207,10 +207,11 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
 
   // CAM data — loaded from the "cam" key in target-schema documents.
   // Older documents used "cam_setup" / "tool_library" / "cam_operations"
-  // keys; those are no longer supported.  CAM deserialization will be
-  // implemented when the CAM workspace is re-built on the new types.
-  // For now, documents start with an empty default CamDocumentData.
-  (void)payload;
+  // keys; those are no longer supported.  Documents without a "cam" key
+  // (or CAM saved before a field existed) fall back to struct defaults.
+  if (payload.contains("cam") && payload.at("cam").is_object()) {
+    document.cam = cam_document_data_from_payload(payload.at("cam"));
+  }
 
   return document;
 }

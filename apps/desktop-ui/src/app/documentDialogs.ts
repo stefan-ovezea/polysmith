@@ -18,6 +18,30 @@ export function makeDefaultExportBaseName(name?: string | null) {
   );
 }
 
+export async function pickGcodeExportPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportGcodeTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.nc`,
+    filters: [
+      {
+        name: translate("dialogs.gcodeFileType"),
+        extensions: ["nc", "gcode", "tap", "ngc"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}
+
 export async function pickExportPath({
   translate,
   documentName,

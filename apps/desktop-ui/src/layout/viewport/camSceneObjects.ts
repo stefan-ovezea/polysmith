@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
-import type { DocumentState, ViewportState } from "@/types";
+import type { DocumentState, StockDefinition, ViewportState } from "@/types";
+import { themeColor } from "@/utils";
 
 export function addCamSceneObjects({
   document,
@@ -15,15 +16,24 @@ export function addCamSceneObjects({
   showStock: boolean;
   wcsOrientation: string;
 }) {
-  const setup = (document?.cam as any)?.setups?.[0];
+  const setup = document?.cam?.setups?.[0];
   if (!setup) {
     return;
   }
 
+  // The origin marker sits at the STOCK origin — the machine zero the
+  // user edits in the setup panel (falls back to the model center).
+  const stockOrigin = setup.stock?.origin;
+  const origin: [number, number, number] = stockOrigin
+    ? stockOrigin
+    : (() => {
+        const center = modelCenterFromBodies(viewport?.bodies ?? []);
+        return [center.x, center.y, center.z];
+      })();
+
   addWcsOriginMarker({
-    origin: setup.wcs_origin,
+    origin,
     referenceGroup,
-    wcsOrientation,
   });
 
   if (showStock && setup.stock) {
@@ -43,6 +53,8 @@ export function addCamToolpathLines({
   contentGroup: THREE.Group;
 }) {
   const toolpathLines: THREE.Line[] = [];
+  const rapidColor = themeColor("--cad-toolpath-rapid", "#ff4444");
+  const feedColor = themeColor("--cad-toolpath-feed", "#44ff44");
 
   for (const toolpath of viewport?.toolpaths ?? []) {
     for (let index = 1; index < toolpath.points.length; index += 1) {
@@ -54,7 +66,7 @@ export function addCamToolpathLines({
         new THREE.Vector3(current.x, current.y, current.z),
       ]);
       const material = new THREE.LineBasicMaterial({
-        color: isRapid ? 0xff4444 : 0x44ff44,
+        color: isRapid ? rapidColor : feedColor,
         transparent: true,
         opacity: isRapid ? 0.5 : 0.85,
         depthTest: false,
@@ -72,19 +84,19 @@ export function addCamToolpathLines({
   return toolpathLines;
 }
 
+// The WCS marker always renders in the machine Z-up orientation (the
+// CAD model frame's X/Y/Z axes). Axis colors come from theme tokens.
 function addWcsOriginMarker({
   origin,
   referenceGroup,
-  wcsOrientation,
 }: {
-  origin: { x: number; y: number; z: number };
+  origin: [number, number, number];
   referenceGroup: THREE.Group;
-  wcsOrientation: string;
 }) {
-  const originPoint = new THREE.Vector3(origin.x, origin.y, origin.z);
-  const axisLen = 20;
+  const originPoint = new THREE.Vector3(origin[0], origin[1], origin[2]);
+  const axisLen = 30;
 
-  const makeAxis = (dir: THREE.Vector3, color: number) => {
+  const makeAxis = (dir: THREE.Vector3, color: string) => {
     const end = originPoint.clone().add(dir.clone().multiplyScalar(axisLen));
     const geometry = new THREE.BufferGeometry().setFromPoints([
       originPoint,
@@ -103,20 +115,18 @@ function addWcsOriginMarker({
     referenceGroup.add(line);
   };
 
-  const xAxis = new THREE.Vector3(1, 0, 0);
-  const yAxis = new THREE.Vector3(0, 1, 0);
-  const zAxis = new THREE.Vector3(0, 0, 1);
-
-  if (wcsOrientation === "z_up") {
-    yAxis.set(0, 0, -1);
-    zAxis.set(0, 1, 0);
-  } else if (wcsOrientation === "y_up") {
-    zAxis.set(0, 0, -1);
-  }
-
-  makeAxis(xAxis, 0xff4444);
-  makeAxis(yAxis, 0x44ff44);
-  makeAxis(zAxis, 0x4488ff);
+  makeAxis(
+    new THREE.Vector3(1, 0, 0),
+    themeColor("--color-axis-x", "#ff6b7a"),
+  );
+  makeAxis(
+    new THREE.Vector3(0, 1, 0),
+    themeColor("--color-axis-y", "#2bd978"),
+  );
+  makeAxis(
+    new THREE.Vector3(0, 0, 1),
+    themeColor("--color-axis-z", "#6db4ff"),
+  );
 }
 
 function addStockBoundingBox({
@@ -124,48 +134,60 @@ function addStockBoundingBox({
   viewport,
   referenceGroup,
 }: {
-  stock: {
-    width: number;
-    height: number;
-    depth: number;
-    offset_x: number;
-    offset_y: number;
-    offset_z: number;
-  };
+  stock: StockDefinition;
   viewport: ViewportState | null;
   referenceGroup: THREE.Group;
 }) {
-  const stockWidth = stock.width + stock.offset_x * 2;
-  const stockHeight = stock.height + stock.offset_y * 2;
-  const stockDepth = stock.depth + stock.offset_z * 2;
   const modelCenter = modelCenterFromBodies(viewport?.bodies ?? []);
+  const stockCenter = stock.origin
+    ? new THREE.Vector3(stock.origin[0], stock.origin[1], stock.origin[2])
+    : modelCenter;
+  const margin = stock.margin ?? 3;
+
+  let stockWidth: number;
+  let stockHeight: number;
+  let stockDepth: number;
+  if (stock.type === "cylinder" && stock.diameter !== undefined) {
+    // Cylinder stock approximated by its bounding box for display.
+    const diameter = stock.diameter + margin * 2;
+    stockWidth = diameter;
+    stockHeight = diameter;
+    stockDepth = (stock.length ?? 20) + margin * 2;
+  } else {
+    const size = stock.size ?? [120, 120, 20];
+    stockWidth = size[0] + margin * 2;
+    stockHeight = size[1] + margin * 2;
+    stockDepth = size[2] + margin * 2;
+  }
+
   const stockBox = new THREE.BoxGeometry(stockWidth, stockHeight, stockDepth);
+  const stockColor = themeColor("--color-axis-z", "#4488ff");
 
   const stockMesh = new THREE.Mesh(
     stockBox,
     new THREE.MeshBasicMaterial({
-      color: 0x4488ff,
+      color: stockColor,
       transparent: true,
       opacity: 0.15,
       depthTest: true,
       depthWrite: false,
     }),
   );
-  stockMesh.position.copy(modelCenter);
+  stockMesh.position.copy(stockCenter);
   stockMesh.renderOrder = 0;
   referenceGroup.add(stockMesh);
 
   const stockEdges = new THREE.LineSegments(
     new THREE.EdgesGeometry(stockBox),
     new THREE.LineBasicMaterial({
-      color: 0x4488ff,
+      color: stockColor,
       transparent: true,
       opacity: 0.35,
       depthTest: true,
       depthWrite: false,
     }),
   );
-  stockEdges.position.copy(modelCenter);
+  stockEdges.position.copy(stockCenter);
   stockEdges.renderOrder = 2;
   referenceGroup.add(stockEdges);
 }

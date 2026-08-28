@@ -1,0 +1,348 @@
+// Zod schema for the CAM section of the document state — mirrors
+// polysmith::core::CamDocumentData (native/cad-core/src/core/cam/
+// cam_types.h).  The core always emits the full typed shape, but every
+// field carries a default (matching the C++ struct defaults) and the
+// objects are .passthrough() so documents saved before a field existed
+// — or hand-crafted test payloads — still parse.  A CAM parse failure
+// would take down the whole document, so leniency is the priority.
+
+import { z } from "zod";
+
+const vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
+
+const bounds3DSchema = z
+  .object({
+    min_x: z.number().default(0),
+    min_y: z.number().default(0),
+    min_z: z.number().default(0),
+    max_x: z.number().default(0),
+    max_y: z.number().default(0),
+    max_z: z.number().default(0),
+  })
+  .passthrough();
+
+// ── TNP-Safe References ───────────────────────────────────────────
+
+const faceAttestationSchema = z
+  .object({
+    bounds: bounds3DSchema.default({
+      min_x: 0, min_y: 0, min_z: 0, max_x: 0, max_y: 0, max_z: 0,
+    }),
+    area: z.number().default(0),
+    normal: vec3Schema.default([0, 0, 1]),
+    sample_points: z.array(vec3Schema).default([]),
+  })
+  .passthrough();
+
+const edgeAttestationSchema = z
+  .object({
+    start_point: vec3Schema.default([0, 0, 0]),
+    end_point: vec3Schema.default([0, 0, 0]),
+    length: z.number().default(0),
+    tangent: vec3Schema.default([1, 0, 0]),
+    adjacent_face_normals: z.array(vec3Schema).optional(),
+  })
+  .passthrough();
+
+const sketchProfileAttestationSchema = z
+  .object({
+    sketch_feature_id: z.string().default(""),
+    profile_id: z.string().default(""),
+    center_x: z.number().default(0),
+    center_y: z.number().default(0),
+    area: z.number().default(0),
+    min_x: z.number().default(0),
+    min_y: z.number().default(0),
+    max_x: z.number().default(0),
+    max_y: z.number().default(0),
+    boundary_edge_kinds: z.array(z.string()).default([]),
+    inner_loop_count: z.number().default(0),
+    source_circle_id: z.string().optional(),
+  })
+  .passthrough();
+
+const geometryReferenceSchema = z
+  .object({
+    persistent_id: z.string().default(""),
+    attestation: z
+      .union([
+        faceAttestationSchema,
+        sketchProfileAttestationSchema,
+        edgeAttestationSchema,
+        z.object({}).passthrough(),
+      ])
+      .nullable()
+      .optional(),
+    fallback_strategy: z
+      .enum(["warn_user", "require_user", "fail_operation", "auto_resolve"])
+      .default("warn_user"),
+  })
+  .passthrough();
+
+// ── Setup & Machine ───────────────────────────────────────────────
+
+const stockDefinitionSchema = z
+  .object({
+    type: z
+      .enum(["bounding_box", "cylinder", "from_solid", "from_mesh"])
+      .default("bounding_box"),
+    origin: vec3Schema.optional(),
+    size: vec3Schema.optional(),
+    diameter: z.number().optional(),
+    length: z.number().optional(),
+    margin: z.number().default(3),
+    solid_reference: geometryReferenceSchema.optional(),
+    mesh_reference: z.string().optional(),
+  })
+  .passthrough();
+
+const machineAxesSchema = z
+  .object({
+    x: z.number().default(500),
+    y: z.number().default(400),
+    z: z.number().default(300),
+    a: z.number().optional(),
+    b: z.number().optional(),
+    c: z.number().optional(),
+  })
+  .passthrough();
+
+const wcsOriginSchema = z
+  .object({
+    feature_id: z.string().default(""),
+    face_reference: geometryReferenceSchema.optional(),
+    position: vec3Schema.optional(),
+  })
+  .passthrough();
+
+const camSetupSchema = z
+  .object({
+    setup_id: z.string().default(""),
+    name: z.string().default("Setup"),
+    machine_type: z.string().default("3_axis_mill"),
+    machine_axes: machineAxesSchema.default({ x: 500, y: 400, z: 300 }),
+    stock: stockDefinitionSchema.default({ type: "bounding_box", margin: 3 }),
+    wcs_origin: wcsOriginSchema.default({ feature_id: "" }),
+    safety_height: z.number().default(50),
+    retract_height: z.number().default(5),
+    units: z.string().default("mm"),
+  })
+  .passthrough();
+
+// ── Tool Library ──────────────────────────────────────────────────
+
+const toolEntrySchema = z
+  .object({
+    tool_id: z.string().default(""),
+    name: z.string().default(""),
+    type: z.string().default("endmill_flat"),
+    diameter_mm: z.number().default(6),
+    corner_radius_mm: z.number().default(0),
+    flute_length_mm: z.number().default(20),
+    overall_length_mm: z.number().default(60),
+    shank_diameter_mm: z.number().default(6),
+    material: z.string().default("carbide"),
+    coating: z.string().optional(),
+    coolant_through: z.boolean().default(false),
+    max_spindle_rpm: z.number().default(15000),
+    default_feedrate_mm_per_min: z.number().default(1000),
+    default_plunge_feedrate_mm_per_min: z.number().default(500),
+    default_stepdown_mm: z.number().default(1),
+    default_stepover_percent: z.number().default(50),
+  })
+  .passthrough();
+
+// ── Operations ────────────────────────────────────────────────────
+
+const laserCutParametersSchema = z
+  .object({
+    kerf_width_mm: z.number().default(0.15),
+    lead_in_mm: z.number().default(2),
+    lead_out_mm: z.number().default(2),
+    pierce_dwell_seconds: z.number().default(0),
+    power_percent: z.number().default(85),
+    passes: z.number().default(1),
+    mode: z.string().default("cut"),
+    material_thickness_mm: z.number().default(3),
+    cut_plane_offset_mm: z.number().default(0),
+    dynamic_power: z.boolean().default(true),
+  })
+  .passthrough();
+
+const camOperationParametersSchema = z
+  .object({
+    spindle_rpm: z.number().default(8000),
+    feedrate_mm_per_min: z.number().default(1200),
+    plunge_feedrate_mm_per_min: z.number().default(600),
+    stepdown_mm: z.number().optional(),
+    stepover_percent: z.number().optional(),
+    stock_allowance_mm: z.number().default(0.2),
+    cutting_direction: z.string().default("climb"),
+    finish_pass: z.boolean().default(false),
+    multiple_passes: z.boolean().default(false),
+    strategy: z.string().optional(),
+    cycle_type: z.string().optional(),
+    hole_depth_mm: z.number().optional(),
+    peck_depth_mm: z.number().optional(),
+    dwell_seconds: z.number().optional(),
+    engagement_angle_deg: z.number().optional(),
+    zigzag_angle_deg: z.number().optional(),
+    laser: laserCutParametersSchema.optional(),
+    coolant: z.string().default("off"),
+  })
+  .passthrough();
+
+const camGeometryReferencesSchema = z
+  .object({
+    machining_regions: z.array(geometryReferenceSchema).default([]),
+    avoidance_regions: z.array(geometryReferenceSchema).default([]),
+    guide_curves: z.array(geometryReferenceSchema).default([]),
+    check_surfaces: z.array(geometryReferenceSchema).default([]),
+  })
+  .passthrough();
+
+const camPointLocationSchema = z
+  .object({
+    vertex_id: z.string().default(""),
+    position: vec3Schema.default([0, 0, 0]),
+    surface_normal: vec3Schema.default([0, 0, 1]),
+    hole_diameter: z.number().nullable().optional(),
+    sample_face: geometryReferenceSchema.optional(),
+    fallback_strategy: z.string().default("warn_user"),
+  })
+  .passthrough();
+
+const camOperationDependenciesSchema = z
+  .object({
+    parent_operation_ids: z.array(z.string()).default([]),
+    requires_operation_id: z.string().nullable().optional(),
+    use_stock_from_previous: z.boolean().default(false),
+  })
+  .passthrough();
+
+const externalStorageSchema = z
+  .object({
+    format: z.string().default("binary"),
+    file_reference: z.string().default(""),
+    compressed: z.boolean().default(false),
+    size_bytes: z.number().optional(),
+  })
+  .passthrough();
+
+const toolpathCacheSchema = z
+  .object({
+    toolpath_id: z.string().default(""),
+    status: z.string().default("up_to_date"),
+    generated_at: z.string().optional(),
+    bounds: bounds3DSchema.optional(),
+    total_length_mm: z.number().optional(),
+    estimated_time_seconds: z.number().optional(),
+    num_moves: z.number().optional(),
+    num_rapids: z.number().optional(),
+    num_feeds: z.number().optional(),
+    external_storage: externalStorageSchema.optional(),
+  })
+  .passthrough();
+
+const camOperationSchema = z
+  .object({
+    op_id: z.string().default(""),
+    name: z.string().default(""),
+    type: z.string().default("face_milling"),
+    enabled: z.boolean().default(true),
+    tool_id: z.string().default(""),
+    geometry_references: camGeometryReferencesSchema.default({
+      machining_regions: [],
+      avoidance_regions: [],
+      guide_curves: [],
+      check_surfaces: [],
+    }),
+    point_locations: z.array(camPointLocationSchema).default([]),
+    parameters: camOperationParametersSchema.default({
+      spindle_rpm: 8000,
+      feedrate_mm_per_min: 1200,
+      plunge_feedrate_mm_per_min: 600,
+      stock_allowance_mm: 0.2,
+      cutting_direction: "climb",
+      finish_pass: false,
+      multiple_passes: false,
+      coolant: "off",
+    }),
+    dependencies: camOperationDependenciesSchema.default({
+      parent_operation_ids: [],
+      use_stock_from_previous: false,
+    }),
+    toolpath_cache: toolpathCacheSchema.nullable().optional(),
+    status: z.string().default("pending"),
+    status_message: z.string().default(""),
+  })
+  .passthrough();
+
+// ── Post-Processor ────────────────────────────────────────────────
+
+const postProcessorOptionsSchema = z
+  .object({
+    add_line_numbers: z.boolean().default(true),
+    use_arcs: z.boolean().default(true),
+    absolute_coordinates: z.boolean().default(true),
+    tool_change_mcode: z.number().default(6),
+    spindle_start_mcode: z.number().default(3),
+    coolant_mcode_on: z.number().default(8),
+    coolant_mcode_off: z.number().default(9),
+    decimal_places: z.number().default(3),
+    separate_rapids: z.boolean().optional(),
+    header_string: z.string().optional(),
+    footer_string: z.string().optional(),
+  })
+  .passthrough();
+
+const postProcessorSchema = z
+  .object({
+    type: z.string().default("fanuc"),
+    filename: z.string().default(""),
+    options: postProcessorOptionsSchema.default({
+      add_line_numbers: true,
+      use_arcs: true,
+      absolute_coordinates: true,
+      tool_change_mcode: 6,
+      spindle_start_mcode: 3,
+      coolant_mcode_on: 8,
+      coolant_mcode_off: 9,
+      decimal_places: 3,
+    }),
+  })
+  .passthrough();
+
+// ── Simulation ────────────────────────────────────────────────────
+
+const collisionReportSchema = z
+  .object({
+    op_id: z.string().default(""),
+    tool_id: z.string().default(""),
+    position: vec3Schema.default([0, 0, 0]),
+    severity: z.string().default("warning"),
+    message: z.string().default(""),
+  })
+  .passthrough();
+
+const simulationDataSchema = z
+  .object({
+    stock_after_op_id: z.string().optional(),
+    stock_mesh_reference: z.string().optional(),
+    last_verification: z.string().optional(),
+    collisions_detected: z.boolean().default(false),
+    collision_report: z.array(collisionReportSchema).default([]),
+  })
+  .passthrough();
+
+// ── Document Container ────────────────────────────────────────────
+
+export const camDocumentDataSchema = z
+  .object({
+    setups: z.array(camSetupSchema).default([]),
+    tool_library: z.array(toolEntrySchema).default([]),
+    operations: z.array(camOperationSchema).default([]),
+    post_processor: postProcessorSchema.nullable().default(null),
+    simulation: simulationDataSchema.nullable().default(null),
+  })
+  .passthrough();

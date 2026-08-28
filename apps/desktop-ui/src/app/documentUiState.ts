@@ -7,10 +7,16 @@ import type { SavedDocumentBaseline } from "./appState";
 export function buildCamOperations(
   document: DocumentState | null,
 ): CamOperation[] {
-  return ((document?.cam as any)?.operations ?? []).map((operation: any) => ({
-    id: operation.id,
+  return (document?.cam.operations ?? []).map((operation) => ({
+    id: operation.op_id,
     name: operation.name,
     type: coreCamOperationTypeToUi(operation.type),
+    mode:
+      operation.type === "laser_cut"
+        ? operation.parameters.laser?.mode
+        : undefined,
+    status: operation.status,
+    statusMessage: operation.status_message,
   }));
 }
 
@@ -54,13 +60,17 @@ export function computeDocumentUiState({
   };
 }
 
-function coreCamOperationTypeToUi(type: number): CamOperationType {
+// Core operation `type` strings → the UI's display-level operation
+// kinds (CamOperationType in layout/header/CamToolbar.tsx).
+function coreCamOperationTypeToUi(type: string): CamOperationType {
   switch (type) {
-    case 0:
+    case "face_milling":
       return "faceMilling";
-    case 1:
+    case "laser_cut":
+      return "laserCut";
+    case "pocket_2d":
       return "pocket";
-    case 2:
+    case "drilling":
       return "drill";
     default:
       return "profile";

@@ -19,12 +19,15 @@ import {
   ViewportPanel,
 } from "./layout";
 import type { CategoryId } from "./layout";
+import { open } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { ArmedSketchConstraint } from "./types";
 import type {
   DocumentState,
   ExtrudeAdvancedParameters,
   ExtrudeFeatureParameters,
   ExtrudeMode,
+  PostProcessorType,
   SketchFeatureParameters,
   SketchTool,
 } from "./types";
@@ -106,6 +109,9 @@ import {
   syncDefaultOriginVisibility,
 } from "./app/featureVisibility";
 import { computeFeatureActionAvailability } from "./app/featureActionAvailability";
+import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
+import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
+import { pickGcodeExportPath } from "./app/documentDialogs";
 import { useProfileFeatureActions } from "./app/profileFeatureActions";
 import { createRecentProjectHandlers } from "./app/recentProjectHandlers";
 import * as selectionSources from "./app/selectionSources";
@@ -515,10 +521,10 @@ function App() {
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
   const [showStock, setShowStock] = useState(true);
-  const [wcsOrientation, setWcsOrientation] = useState<string>("model");
+  const [wcsOrientation, setWcsOrientation] = useState<string>("z_up");
   const camOperations = useMemo(
     () => buildCamOperations(document),
-    [(document?.cam as any)?.operations],
+    [document?.cam?.operations],
   );
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
   const errorLogCount = logs.filter((entry) => entry.level === "error").length;
@@ -783,9 +789,15 @@ function App() {
     updateSelectionFilter,
     camSetupCreate,
     camSetupUpdate,
-    camFaceMillingCreate,
+    camOperationCreate,
     camOperationUpdate,
     camOperationDelete,
+    camOperationPreview,
+    camOperationGenerate,
+    camPostProcessorSet,
+    camPostList,
+    camPostImport,
+    camExportGcode,
   } = useCadCore();
 
   const {
@@ -1331,6 +1343,113 @@ function App() {
     }
   }
 
+  // CAM contextual triggers — toolbar buttons.  Each requires a valid
+  // selection (sketch profiles for 2D cut, a body face for face
+  // milling) and creates the operation, selecting it so its panel
+  // opens.
+  const triggerCamLaserCutAction = () =>
+    triggerCamLaserCut({
+      document,
+      viewport,
+      runAction,
+      camOperationCreate,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
+  const triggerCamFaceMillingAction = () =>
+    triggerCamFaceMilling({
+      document,
+      viewport,
+      runAction,
+      camOperationCreate,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
+  // G-code export: pick a destination, let the core generate any stale
+  // toolpaths and write the file with the configured post-processor.
+  const exportCamGcodeAction = async () => {
+    const filePath = await pickGcodeExportPath({
+      translate: t,
+      documentName: document?.name,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+    await runAction(async () => {
+      await camExportGcode(filePath);
+      addMessage(`G-code written: ${filePath}`);
+    });
+  };
+
+  const setCamPostProcessorAction = (postType: string) =>
+    runAction(async () => {
+      await camPostProcessorSet({
+        type: postType as PostProcessorType,
+        filename: "",
+        options: {
+          add_line_numbers: true,
+          use_arcs: true,
+          absolute_coordinates: true,
+          tool_change_mcode: 6,
+          spindle_start_mcode: 3,
+          coolant_mcode_on: 8,
+          coolant_mcode_off: 9,
+          decimal_places: 3,
+        },
+      });
+    });
+
+  // Post-processor management: the list refreshes when entering the CAM
+  // workspace; importing copies a definition into the user's posts
+  // directory; editing opens the file in the system editor.
+  const [camPosts, setCamPosts] = useState<
+    Array<{ name: string; path: string }>
+  >([]);
+
+  useEffect(() => {
+    if (workspaceView !== "cam") {
+      return;
+    }
+    let disposed = false;
+    void camPostList().then((posts) => {
+      if (!disposed) {
+        setCamPosts(posts);
+      }
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [workspaceView, camPostList]);
+
+  const importCamPostAction = async () => {
+    const sourcePath = await open({
+      title: t("dialogs.importPostTitle"),
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!sourcePath || typeof sourcePath !== "string") {
+      return;
+    }
+    await runAction(async () => {
+      const posts = await camPostImport(sourcePath);
+      if (posts) {
+        setCamPosts(posts);
+        addMessage("post processor imported");
+      } else {
+        addMessage("post import failed — check the Logs panel");
+      }
+    });
+  };
+
+  const editCamPostAction = (path: string) => {
+    void openPath(path);
+  };
+
   const {
     exportToSlicer,
     handleWorkspaceDropdownOpenChange,
@@ -1601,7 +1720,9 @@ function App() {
           activeCamOperation={activeCamOperation}
           setActiveCamOperation={setActiveCamOperation}
           setIsCamSetupPanelOpen={setIsCamSetupPanelOpen}
-          camFaceMillingCreate={camFaceMillingCreate}
+          triggerCamLaserCut={triggerCamLaserCutAction}
+          triggerCamFaceMilling={triggerCamFaceMillingAction}
+          camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 
         <div className="flex min-h-0 min-w-0">
@@ -1636,6 +1757,7 @@ function App() {
               <AppSidebar
                 activeProjectPath={currentProjectPath}
                 bodyContextActions={bodyContextActions}
+                camOpenSetup={() => setIsCamSetupPanelOpen(true)}
                 camOperationDelete={camOperationDelete}
                 camOperations={camOperations}
                 confirmAndDeleteFeature={confirmAndDeleteFeature}
@@ -1708,9 +1830,24 @@ function App() {
                 sweepAction !== null ||
                 constructionAxisAction !== null ||
                 helixAction !== null ||
-                threadAction !== null
+                threadAction !== null ||
+                workspaceView === "cam"
               }
               onPickInactiveSketchLine={async (lineId) => {
+                if (workspaceView === "cam") {
+                  // CAM workspace: closed sketches aren't pickable by
+                  // default — a click on sketch geometry selects the
+                  // owning sketch feature (the 2D Cut input).
+                  await selectCamSketchFeature({
+                    entityId: lineId,
+                    document,
+                    selectFeature,
+                    runAction,
+                    addMessage,
+                    translate: (key, options) => t(key, options),
+                  });
+                  return;
+                }
                 await handleInactiveSketchLineSelection({
                   lineId,
                   threadAction,
@@ -3244,9 +3381,25 @@ function App() {
                 setSetupPanelOpen={setIsCamSetupPanelOpen}
                 setSelectedOperationId={setSelectedCamOperationId}
                 runAction={runAction}
+                addMessage={addMessage}
+                onExportGcode={() => {
+                  void exportCamGcodeAction();
+                }}
+                onPostProcessorChange={(postType) => {
+                  void setCamPostProcessorAction(postType);
+                }}
+                postProcessorType={document?.cam.post_processor?.type ?? "grbl"}
+                posts={camPosts}
+                onImportPost={() => {
+                  void importCamPostAction();
+                }}
+                onEditPost={editCamPostAction}
+                camSetupCreate={camSetupCreate}
                 camSetupUpdate={camSetupUpdate}
                 camOperationUpdate={camOperationUpdate}
                 camOperationDelete={camOperationDelete}
+                camOperationPreview={camOperationPreview}
+                camOperationGenerate={camOperationGenerate}
               />
               {pendingSketchDeleteConfirmation ? (
                 <SketchDeleteConfirmationPanel

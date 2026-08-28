@@ -603,6 +603,92 @@ temporary STL path to Tauri-native OrcaSlicer window-management commands. Agents
 must not invent separate geometry payloads for the slicer or bypass the native
 core export path.
 
+### CAM Workspace
+
+CAM state lives in `document_state.cam` (`setups`, `tool_library`,
+`operations`, `post_processor`), parallel to `feature_history`. Operations
+consume geometry and produce toolpaths; they never modify the B-rep. All CAM
+commands return `document_state`. Toolpaths are memory-only: `toolpath_cache`
+carries metadata (length, time, move counts), never path points.
+
+#### `cam_setup_create` / `cam_setup_update`
+
+Payload = serialized `CamSetup`. The first setup is THE setup (v1): `name`,
+`machine_type` (`"3_axis_mill"` | `"laser"` | `"plasma"` | `"printer"` | ...),
+`machine_axes`, `stock` (`{type, origin?, size?, margin}`, `"bounding_box"`
+default), `wcs_origin`, `safety_height`, `retract_height`, `units`
+(`"mm"` | `"inch"`). `setup_id` is assigned by the core when empty.
+
+#### `cam_tool_add` / `cam_tool_update` / `cam_tool_delete` / `cam_tool_list`
+
+`cam_tool_add` payload = serialized `ToolEntry` (type `"laser"` for lasers,
+`"endmill_flat"` etc. for mills). `cam_tool_update` payload = `ToolEntry` plus
+the lookup key `tool_id`. `cam_tool_delete` payload = `{tool_id}` — operations
+referencing the deleted tool degrade to `status: "error"` with a message.
+`cam_tool_list` returns `document_state`.
+
+#### `cam_operation_create`
+
+Payload = serialized `CamOperation` without `op_id` (the core assigns
+`cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch) or
+`"face_milling"` (zigzag facing of a horizontal face) are implemented;
+pocket/contour/drill/turning are registry slots for later. `tool_id` must
+reference an existing tool. Laser operations require a laser machine setup.
+
+Geometry input:
+- `laser_cut`: select sketch profiles first (via `select_sketch_profile`), then
+  send `cam_operation_create` with EMPTY `geometry_references` — the core
+  captures TNP-safe profile witness references from
+  `selected_sketch_profile_ids`. The kerf/lead/power settings live in
+  `parameters.laser` (`{kerf_width_mm, lead_in_mm, lead_out_mm,
+  pierce_dwell_seconds, power_percent, passes, mode: "cut"|"score"|"engrave",
+  material_thickness_mm, cut_plane_offset_mm, dynamic_power}`).
+- `face_milling`: pass `geometry_references.machining_regions` with a
+  `FaceAttestation` witness (area, normal, sample points) captured from the
+  selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
+  fill.
+
+#### `cam_operation_update`
+
+Merge patch: `{op_id, name?, type?, enabled?, tool_id?, geometry_references?,
+parameters?}`. Only present keys overwrite. Any change resets the operation to
+`needs_regenerate`.
+
+#### `cam_operation_generate` / `cam_operation_preview`
+
+Payload `{op_id}`. Synchronous (both generators run in well under 100 ms);
+emits `cam_generation_progress` events `{op_id, percent}` (5/15/90/100), then
+`document_state` with `status: "generated"` (preview does not change status,
+it only fills the preview cache the viewport falls back to).
+
+#### `cam_operation_delete` / `cam_post_processor_set` / `cam_export_gcode`
+
+- `cam_operation_delete`: payload `{op_id}`.
+- `cam_post_processor_set`: payload = serialized `PostProcessor` — `type`
+  names a post definition (`"grbl"`, `"linuxcnc"`, `"mach3"`, `"mach4"`,
+  `"marlin"`, `"fanuc"`, or an imported name).  Post processors are FILES in
+  the user's posts directory (one `<name>.json` per machine, seeded with the
+  built-ins, re-read on every export) — edit the file to change the dialect.
+- `cam_export_gcode`: payload `{file_path}` — generates any stale toolpaths on
+  demand, serializes every enabled operation in order through the selected
+  post definition, replies `document_exported` with `format: "gcode"`.
+
+#### `cam_post_list` / `cam_post_import`
+
+- `cam_post_list`: payload `{}` — replies `cam_post_list_result` with
+  `posts: [{name, path}]` (built-ins plus files in the posts directory;
+  `path` is the editable file, always populated after seeding).
+- `cam_post_import`: payload `{source_path}` — validates the JSON and copies
+  it into the posts directory, then replies `cam_post_list_result` with the
+  updated list.  Broken definitions are rejected with an error.
+
+#### Operation status semantics
+
+`pending` (created, never generated) → `generated` (toolpath cached at the
+current document revision) → `needs_regenerate` (any document mutation
+invalidated the cache) → `error` + human-readable `status_message` when a
+geometry reference no longer resolves (TNP doctrine: degrade, never guess).
+
 ### Primitive Solid Features
 
 Primitive feature commands are direct modeling shortcuts. For richer CAD
@@ -3332,4 +3418,9 @@ this:
 - Projection commands are `project_face_into_sketch`,
   `project_profile_into_sketch`, `project_edge_into_sketch`, and
   `project_vertex_into_sketch`.
+- CAM: create a setup (`cam_setup_create`) and tools (`cam_tool_add`) first;
+  select sketch profiles, then `cam_operation_create` with type `laser_cut`
+  and empty geometry_references (the core captures profile witnesses);
+  `cam_operation_generate` fills the toolpath, `cam_operation_preview` shows
+  a wireframe, `cam_export_gcode` writes the file.
 - Never invent IDs. Never expose IDs in user-facing UI copy.

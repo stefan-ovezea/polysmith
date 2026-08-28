@@ -271,6 +271,52 @@ support is provided through XWayland.
 These Tauri commands are outside the CAD command language. They must not carry
 CAD geometry, feature state, or UI-reconstructed mesh data.
 
+The CAM workspace rides the same document/command boundary. CAM state lives in
+`document_state.cam` (`setups`, `tool_library`, `operations`, `post_processor`)
+parallel to `feature_history`; operations consume geometry and produce
+toolpaths, never B-rep. All CAM commands reply with `document_state`:
+
+- `cam_setup_create` / `cam_setup_update` take a serialized `CamSetup`
+  (machine type, stock definition, WCS, safety/retract heights, units).
+  `cam_setup_get` reads the first setup.
+- `cam_stock_set` updates `setups[0].stock` from a serialized
+  `StockDefinition`; `cam_stock_get` reads it back.
+- `cam_tool_add` / `cam_tool_update` / `cam_tool_delete` / `cam_tool_list`
+  manage the tool library (`ToolEntry`; `cam_tool_update` payload carries the
+  lookup key `tool_id`). Deleting a tool degrades referencing operations to
+  `status: "error"` with a message instead of dangling.
+- `cam_operation_create` takes a serialized `CamOperation` (string `type`;
+  `op_id` assigned by the core). For `laser_cut`, an empty
+  `geometry_references` makes the core capture TNP-safe profile witnesses
+  from `selected_sketch_profile_ids`; `face_milling` takes a
+  `FaceAttestation` witness in `machining_regions`. `cam_operation_update`
+  is a merge patch (`{op_id, ...fields}`) that invalidates generated paths;
+  `cam_operation_delete` removes an operation.
+- `cam_operation_generate` / `cam_operation_preview` run the generator
+  registry synchronously (both v1 generators finish in well under 100 ms)
+  and emit `cam_generation_progress` events (`{op_id, percent}`) during the
+  run; generation stores the toolpath in the memory-only runtime cache and
+  marks the operation `generated`. Toolpaths never serialize — the
+  document's `ToolpathCache` carries metadata only.
+- `cam_post_processor_set` stores the `PostProcessor` — `type` names a post
+  DEFINITION.  Post processors are first-class files: one `<name>.json` per
+  machine in the user's posts directory (`POLYSMITH_POSTS_DIR`, resolved by
+  the shell from the app-data path, created and seeded with the built-ins on
+  first use).  The file's line templates drive the output shape; the core
+  re-reads it on every export, so edits apply immediately.
+- `cam_post_list` replies `cam_post_list_result {posts: [{name, path}]}`;
+  `cam_post_import {source_path}` validates a definition JSON, copies it into
+  the posts directory, and replies the updated list (broken definitions are
+  rejected).
+- `cam_export_gcode { file_path }` generates stale toolpaths on demand,
+  serializes every enabled operation through the selected post definition,
+  and replies `document_exported` with `format: "gcode"`.
+
+Operation status semantics: `pending` → `generated` → `needs_regenerate`
+(every document mutation invalidates the revision-keyed cache) → `error`
+with a human-readable `status_message` when a geometry reference no longer
+resolves (TNP doctrine: degrade, never guess).
+
 The protocol also covers native document persistence and the Project sketch
 tool:
 

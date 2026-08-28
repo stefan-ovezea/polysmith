@@ -131,9 +131,22 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       lastEvent: null,
     }),
   addMessage: (message) =>
-    set((state) => ({ messages: [...state.messages, message] })),
+    set((state) => ({ messages: [...state.messages, message].slice(-500) })),
   addLogEntry: (entry) =>
-    set((state) => ({ logs: [...state.logs, entry].slice(-500) })),
+    set((state) => {
+      // The core emits every diagnostic twice — once as a structured
+      // log event and once on the stderr bridge.  Drop consecutive
+      // duplicates so a busy generator doesn't flood the Logs panel.
+      const previous = state.logs[state.logs.length - 1];
+      if (
+        previous &&
+        previous.source === entry.source &&
+        previous.message === entry.message
+      ) {
+        return state;
+      }
+      return { logs: [...state.logs, entry].slice(-500) };
+    }),
   clearLogs: () => set({ logs: [] }),
   handleCoreMessage: (message) =>
     set((state) => {

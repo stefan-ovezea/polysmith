@@ -129,6 +129,8 @@
   --cad-grid-minor: rgba(255, 255, 255, 0.015);
   --cad-loader-ring: rgba(195, 245, 255, 0.2);
   --cad-loader-glow: rgba(0, 229, 255, 0.18);
+  --cad-toolpath-rapid: #ff4444;
+  --cad-toolpath-feed: #44ff44;
   --cad-status-online-glow: rgba(43, 217, 120, 0.45);
   --cad-status-offline-glow: rgba(255, 107, 122, 0.25);
   --cad-overlay-strong: rgba(5, 8, 10, 0.62);
