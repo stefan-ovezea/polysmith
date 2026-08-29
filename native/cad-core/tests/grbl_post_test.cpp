@@ -503,6 +503,95 @@ bool test_laser_footer_has_no_z() {
                 "grbl laser: footer is M5 M2 — no Z lift");
 }
 
+// One laser-on feed move: the beam is still ON at the end, so the
+// pre-footer laser-off and the footer's M5 would collide without the
+// dedupe.
+Toolpath make_laser_on_at_end_path() {
+  Toolpath path;
+  path.moves.push_back(
+      {ToolpathMoveKind::Rapid, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false});
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 10.0, 0.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});
+  return path;
+}
+
+bool test_stale_post_laser_footer_fallback() {
+  // Simulates a stale seeded post file from before laser_footer_lines
+  // existed: a generic footer with a safety-Z lift, no laser key.  The
+  // laser export must reuse the footer MINUS the Z lift (a gantry
+  // laser may have no Z axis) and must not double-emit M5.
+  const auto dir = std::filesystem::temp_directory_path() /
+                   "polysmith_posts_stale_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream stream(dir / "stalegrbl.json");
+    stream << R"JSON({
+      "rapid": "G0 X{x} Y{y}",
+      "feed": "G1 X{x} Y{y}",
+      "laser_on_dynamic": "M4 S{power}",
+      "laser_off": "M5",
+      "footer_lines": ["M5", "G0 Z{safety_z}", "M2"],
+      "decimal_places": 3,
+      "line_numbers": false
+    })JSON";
+  }
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", dir.string().c_str());
+#else
+  setenv("POLYSMITH_POSTS_DIR", dir.string().c_str(), 1);
+#endif
+
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  PostContext context{
+      .toolpath = make_laser_on_at_end_path(),
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Stale",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("stalegrbl", context));
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", "");
+#else
+  unsetenv("POLYSMITH_POSTS_DIR");
+#endif
+  if (!expect(gcode.find("G0 Z") == std::string::npos,
+              "stale post: laser footer has no Z lift")) {
+    std::cerr << gcode;
+    return false;
+  }
+  if (!expect(gcode.find("M5\nM5") == std::string::npos,
+              "stale post: no duplicate M5")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return expect(gcode.find("M5\nM2") != std::string::npos,
+                "stale post: footer is a single M5 then M2");
+}
+
+bool test_no_duplicate_m5_with_laser_on_at_end() {
+  // Beam still ON at the last move: the pre-footer laser-off must not
+  // double with the footer's leading M5 (builtin grbl).
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  PostContext context{
+      .toolpath = make_laser_on_at_end_path(),
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Cut",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  if (!expect(gcode.find("M5\nM5") == std::string::npos,
+              "grbl laser: no duplicate M5 when the beam ends on")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return expect(gcode.find("M5\nM2") != std::string::npos,
+                "grbl laser: single M5 then M2 at the end");
+}
+
 bool test_air_assist_codes() {
   // Air assist templates come from a user file (machine-specific);
   // M8 wraps the cut block, M9 follows the last cut.
@@ -693,6 +782,22 @@ int main() {
 
   std::cout << "  Test 13: footer flag gates program end... ";
   if (test_footer_flag_gates_program_end()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 14: stale post laser footer fallback... ";
+  if (test_stale_post_laser_footer_fallback()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 15: no duplicate M5 when the beam ends on... ";
+  if (test_no_duplicate_m5_with_laser_on_at_end()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

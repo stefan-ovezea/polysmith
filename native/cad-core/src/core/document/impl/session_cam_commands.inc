@@ -277,6 +277,34 @@ DocumentState DocumentManager::cam_setup_update(const CamSetup& setup) {
   throw std::runtime_error("CAM setup not found: " + setup.setup_id);
 }
 
+DocumentState DocumentManager::cam_setup_delete(const std::string& setup_id) {
+  require_document();
+  const auto setup_it = std::find_if(
+      document_->cam.setups.begin(), document_->cam.setups.end(),
+      [&](const CamSetup& setup) { return setup.setup_id == setup_id; });
+  if (setup_it == document_->cam.setups.end()) {
+    throw std::runtime_error("CAM setup not found: " + setup_id);
+  }
+  // Operations of the setup die with it.  Legacy operations with an
+  // EMPTY setup_id belong to the FIRST setup by the core's join rule
+  // (cam_operation_add), so they die with it too.
+  const bool was_first_setup = setup_it == document_->cam.setups.begin();
+  push_undo_state();
+  clear_redo_stack();
+  document_->cam.setups.erase(setup_it);
+  document_->cam.operations.erase(
+      std::remove_if(
+          document_->cam.operations.begin(),
+          document_->cam.operations.end(),
+          [&](const CamOperation& op) {
+            return op.setup_id == setup_id ||
+                   (was_first_setup && op.setup_id.empty());
+          }),
+      document_->cam.operations.end());
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
   require_document();
   if (tool.name.empty()) {

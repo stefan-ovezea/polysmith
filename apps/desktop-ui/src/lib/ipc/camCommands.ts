@@ -57,6 +57,14 @@ export function makeCamSetupUpdateCommand(camSetup: CamSetup): CoreCommand {
   };
 }
 
+export function makeCamSetupDeleteCommand(setupId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_setup_delete",
+    payload: { setup_id: setupId },
+  };
+}
+
 export function makeCamSetupGetCommand(): CoreCommand {
   return {
     id: crypto.randomUUID(),

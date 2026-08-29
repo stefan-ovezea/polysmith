@@ -443,19 +443,34 @@ std::vector<std::string> render_post(const PostContext& context,
   if (airOn && def.laser_air_off.has_value()) {
     emit(render_template(def.laser_air_off.value(), {}));
   }
-  if (laserOn || spindleOn) {
-    emit(render_template(def.spindle_off, {}));
-  }
+  // Footer lines rendered up front: the pre-footer laser/spindle off
+  // is skipped when the footer already starts with the same line (all
+  // builtin footers do) — avoids emitting "M5" twice in a row.
+  std::vector<std::string> footerLines;
   if (include_footer) {
     // Laser ops never lift Z at program end — a gantry laser may not
-    // have a Z axis.
+    // have a Z axis.  laser_footer_lines falls back to a bare
+    // ["M5", "M2"] during parse, so a stale post file without the key
+    // can never reintroduce a Z lift.
     const auto& footers = (context.laser.has_value() &&
                            def.laser_footer_lines.has_value())
                               ? def.laser_footer_lines.value()
                               : def.footer_lines;
     for (const auto& templ : footers) {
-      emit(render_template(templ, common_vars(context)));
+      footerLines.push_back(
+          render_template(templ, common_vars(context)));
     }
+  }
+  if (laserOn || spindleOn) {
+    const std::string spindleOff = render_template(def.spindle_off, {});
+    const bool footerStartsWithOff =
+        !footerLines.empty() && footerLines.front() == spindleOff;
+    if (!footerStartsWithOff) {
+      emit(spindleOff);
+    }
+  }
+  for (const auto& line : footerLines) {
+    emit(line);
   }
 
   return lines;
@@ -488,11 +503,27 @@ bool parse_post_definition(const std::string& json_text,
     definition.spindle_off = read_optional_template(payload, "spindle_off", definition.spindle_off);
     definition.footer_lines = read_optional_lines(payload, "footer_lines", definition.footer_lines);
     definition.power_change = read_optional_template(payload, "power_change", definition.power_change);
-    const auto laserFooters = read_optional_lines(payload, "laser_footer_lines", {});
-    definition.laser_footer_lines =
-        laserFooters.empty()
-            ? std::nullopt
-            : std::optional<std::vector<std::string>>(laserFooters);
+    const auto laserFooters =
+        read_optional_lines(payload, "laser_footer_lines", {});
+    if (!laserFooters.empty()) {
+      definition.laser_footer_lines = laserFooters;
+    } else {
+      // Stale post files predating laser_footer_lines: reuse the
+      // generic footer minus any safety-Z lift — a gantry laser may
+      // have no Z axis, and a missing key must not silently
+      // reintroduce "G0 Z{safety_z}".  Posts that DO want a laser Z
+      // move declare the key explicitly.
+      std::vector<std::string> safe;
+      for (const auto& line : definition.footer_lines) {
+        if (line.find("{safety_z}") == std::string::npos) {
+          safe.push_back(line);
+        }
+      }
+      definition.laser_footer_lines =
+          safe.empty()
+              ? std::nullopt
+              : std::optional<std::vector<std::string>>(safe);
+    }
     if (payload.contains("laser_air_on") &&
         payload.at("laser_air_on").is_string()) {
       definition.laser_air_on = payload.at("laser_air_on").get<std::string>();

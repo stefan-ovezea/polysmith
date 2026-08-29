@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 
 import {
   CamOperationPanel,
-  CamSetupSummaryPanel,
   DocumentHierarchyPanel,
   ProjectsPanel,
 } from "../layout";
@@ -30,12 +29,13 @@ type BodyContextActions = Pick<
 interface AppSidebarProps {
   activeProjectPath: string | null;
   bodyContextActions: BodyContextActions;
-  camOpenSetup: () => void;
+  camOpenSetup: (setupId: string) => void;
   camOperationDelete: (operationId: string) => Promise<void>;
   camOperations: CamOperation[];
   camSetups: Array<{ setup_id: string; name: string; machine_type: string }>;
   activeCamSetupId: string | null;
   onSelectCamSetup: (setupId: string) => void;
+  onDeleteCamSetup: (setupId: string) => void;
   onNewCamSetup: () => void;
   confirmAndDeleteFeature: (featureId: string) => void;
   createRecentProjectFolder: (
@@ -92,6 +92,7 @@ export function AppSidebar({
   camSetups,
   activeCamSetupId,
   onSelectCamSetup,
+  onDeleteCamSetup,
   onNewCamSetup,
   activeProjectPath,
   bodyContextActions,
@@ -240,15 +241,13 @@ export function AppSidebar({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">
-              <CamSetupSummaryPanel
-                document={document}
-                onOpenSetup={camOpenSetup}
-              />
               <CamOperationPanel
                 operations={camOperations}
                 setups={camSetups}
                 activeSetupId={activeCamSetupId}
                 onSelectSetup={onSelectCamSetup}
+                onEditSetup={camOpenSetup}
+                onDeleteSetup={onDeleteCamSetup}
                 onNewSetup={onNewCamSetup}
                 selectedOperationId={selectedCamOperationId}
                 onSelectOperation={setSelectedCamOperationId}

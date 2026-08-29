@@ -666,6 +666,75 @@ bool test_capture_from_profile_ids_no_fallback() {
                 "capture ids: exactly the requested region captured");
 }
 
+bool test_setup_delete() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup("laser"));
+  DocumentState doc = manager.cam_tool_add(make_tool("laser"));
+  const std::string laserToolId = doc.cam.tool_library[0].tool_id;
+  doc = manager.cam_operation_add(make_op("laser_cut", laserToolId));
+  if (!expect(doc.cam.setups.size() == 1 && doc.cam.operations.size() == 1,
+              "setup delete fixture: one setup with one operation")) {
+    return false;
+  }
+
+  // Deleting the setup removes it AND its operations.
+  doc = manager.cam_setup_delete("cam-setup-1");
+  if (!expect(doc.cam.setups.empty() && doc.cam.operations.empty(),
+              "setup delete: setup and its operations removed")) {
+    return false;
+  }
+
+  // One undo restores both.
+  doc = manager.undo();
+  return expect(doc.cam.setups.size() == 1 && doc.cam.operations.size() == 1,
+                "setup delete: undo restores setup and operations");
+}
+
+bool test_setup_delete_legacy_and_isolation() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup("3_axis_mill"));  // cam-setup-1
+  DocumentState doc = manager.cam_setup_create(make_setup("3_axis_mill"));
+  doc = manager.cam_tool_add(make_tool());
+  const std::string toolId = doc.cam.tool_library[0].tool_id;
+
+  // A legacy operation (no setup_id) joins the FIRST setup by the
+  // core's join rule, so it must die with that setup.
+  doc = manager.cam_operation_add(make_op("face_milling", toolId));
+
+  // An operation explicitly on setup 2 must survive deleting setup 1.
+  CamOperation second = make_op("face_milling", toolId);
+  second.setup_id = "cam-setup-2";
+  doc = manager.cam_operation_add(second);
+
+  doc = manager.cam_setup_delete("cam-setup-1");
+  if (!expect(doc.cam.setups.size() == 1 &&
+                  doc.cam.setups[0].setup_id == "cam-setup-2" &&
+                  doc.cam.operations.size() == 1 &&
+                  doc.cam.operations[0].setup_id == "cam-setup-2",
+              "setup delete: legacy op dies with the first setup, "
+              "setup-2 op survives")) {
+    return false;
+  }
+
+  // Deleting the remaining setup removes its operation too.
+  doc = manager.cam_setup_delete("cam-setup-2");
+  if (!expect(doc.cam.setups.empty() && doc.cam.operations.empty(),
+              "setup delete: last setup removes everything")) {
+    return false;
+  }
+
+  bool threw = false;
+  try {
+    manager.cam_setup_delete("cam-setup-99");
+  } catch (const std::runtime_error& error) {
+    threw = std::string(error.what()).find("not found") !=
+            std::string::npos;
+  }
+  return expect(threw, "setup delete: unknown id throws");
+}
+
 }  // namespace
 
 int main() {
@@ -762,6 +831,22 @@ int main() {
 
   std::cout << "  Test 12: capture from profile ids (no fallback)... ";
   if (test_capture_from_profile_ids_no_fallback()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 13: setup delete removes ops + undo... ";
+  if (test_setup_delete()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 14: setup delete legacy + isolation... ";
+  if (test_setup_delete_legacy_and_isolation()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

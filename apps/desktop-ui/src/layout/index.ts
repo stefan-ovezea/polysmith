@@ -22,7 +22,6 @@ export * from "./SketchSlotPanel";
 export * from "./SketchOffsetPanel";
 export * from "./SketchTextPanel";
 export * from "./CamSetupPanel";
-export * from "./CamSetupSummaryPanel";
 export * from "./CamLaserCutPanel";
 export * from "./CamTestPatternPanel";
 export * from "./CamFaceMillingPanel";

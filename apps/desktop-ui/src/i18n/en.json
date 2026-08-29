@@ -211,11 +211,9 @@
     "profile": "Profile",
     "pocket": "Pocket",
     "drill": "Drill",
-    "operationsTitle": "CAM Operations",
     "operations": {
       "delete": "Delete operation"
     },
-    "noOperations": "No CAM operations. Select a tool above to create one.",
     "category": {
       "milling": "Milling",
       "turning": "Turning",
@@ -418,19 +416,20 @@
     },
     "setupsTitle": "Setups",
     "newSetup": "New setup",
+    "noSetups": "No CAM setups yet — create one with New Setup.",
+    "setupRow": {
+      "expand": "Expand setup",
+      "collapse": "Collapse setup",
+      "noOperations": "No operations in this setup.",
+      "delete": "Delete setup and its operations"
+    },
     "toolpathGenerated": "toolpath generated: {{length}}, estimated {{time}}",
     "gcodeWritten": "G-code written: {{path}}",
     "postImported": "post processor imported",
     "postImportFailed": "post import failed — check the Logs panel",
     "operationsTab": "Operations",
     "setupSummary": {
-      "title": "Setup",
       "edit": "Edit",
-      "stock": "Stock",
-      "stockDefault": "Default",
-      "tools": "Tools",
-      "noTools": "No tools added",
-      "noSetup": "No CAM setup yet — create one with the Setup button.",
       "machineLaser": "Laser",
       "machinePlasma": "Plasma",
       "machinePrinter": "Printer"

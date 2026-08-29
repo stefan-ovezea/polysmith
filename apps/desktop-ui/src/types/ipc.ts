@@ -155,6 +155,7 @@ import type {
   CamWcsSetFaceCommand,
   CamSetupCreateCommand,
   CamSetupUpdateCommand,
+  CamSetupDeleteCommand,
   CamSetupGetCommand,
   CamStockSetCommand,
   CamStockGetCommand,
@@ -802,6 +803,7 @@ export type CoreCommand =
   | CamWcsSetFaceCommand
   | CamSetupCreateCommand
   | CamSetupUpdateCommand
+  | CamSetupDeleteCommand
   | CamSetupGetCommand
   | CamStockSetCommand
   | CamStockGetCommand

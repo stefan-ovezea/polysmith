@@ -548,16 +548,46 @@ function App() {
 
   const camNewSetupAction = async () => {
     await runAction(async () => {
-      const count = document?.cam.setups.length ?? 0;
+      const setups = document?.cam.setups ?? [];
+      const count = setups.length;
+      // Count-based names collide after deletions/loads (e.g. two
+      // "Setup 3"s) — skip forward until the name is free.
+      let index = count + 1;
+      const taken = new Set(setups.map((setup) => setup.name));
+      while (taken.has(`Setup ${index}`)) {
+        index += 1;
+      }
       await camSetupCreate({
         ...createDefaultCamSetup(),
-        name: `Setup ${count + 1}`,
+        name: `Setup ${index}`,
       });
       const updated = await awaitDocumentChange(
         (next) => next.cam.setups.length > count,
       );
       const last = updated.cam.setups[updated.cam.setups.length - 1];
       setActiveCamSetupId(last.setup_id);
+      // The new setup is empty — open the setup panel on it right away
+      // so the user can configure it (machine, stock, WCS) immediately.
+      setIsCamSetupPanelOpen(true);
+    });
+  };
+  const camDeleteSetupAction = async (setupId: string) => {
+    // The selected operation panel closes when its operation dies with
+    // the setup (legacy ops with an empty setup_id die with the FIRST
+    // setup — the core rule).
+    const firstSetupId = document?.cam.setups[0]?.setup_id ?? null;
+    const selectedOp = document?.cam.operations.find(
+      (op) => op.op_id === selectedCamOperationId,
+    );
+    if (
+      selectedOp &&
+      (selectedOp.setup_id === setupId ||
+        (selectedOp.setup_id === "" && firstSetupId === setupId))
+    ) {
+      setSelectedCamOperationId(null);
+    }
+    await runAction(async () => {
+      await camSetupDelete(setupId);
     });
   };
   const [showStock, setShowStock] = useState(true);
@@ -830,6 +860,7 @@ function App() {
     updateSelectionFilter,
     camSetupCreate,
     camSetupUpdate,
+    camSetupDelete,
     camMachineSettingsSet,
     camCaptureFaceReference,
     camWcsSetFace,
@@ -1881,7 +1912,10 @@ function App() {
               <AppSidebar
                 activeProjectPath={currentProjectPath}
                 bodyContextActions={bodyContextActions}
-                camOpenSetup={() => setIsCamSetupPanelOpen(true)}
+                camOpenSetup={(setupId) => {
+                  setActiveCamSetupId(setupId);
+                  setIsCamSetupPanelOpen(true);
+                }}
                 camOperationDelete={camOperationDelete}
                 camOperations={camOperations}
                 camSetups={(document?.cam.setups ?? []).map((setup) => ({
@@ -1891,6 +1925,9 @@ function App() {
                 }))}
                 activeCamSetupId={activeCamSetupId}
                 onSelectCamSetup={setActiveCamSetupId}
+                onDeleteCamSetup={(setupId) => {
+                  void camDeleteSetupAction(setupId);
+                }}
                 onNewCamSetup={() => {
                   void camNewSetupAction();
                 }}

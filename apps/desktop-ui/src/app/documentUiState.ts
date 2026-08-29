@@ -9,6 +9,7 @@ export function buildCamOperations(
 ): CamOperation[] {
   return (document?.cam.operations ?? []).map((operation) => ({
     id: operation.op_id,
+    setupId: operation.setup_id ?? "",
     name: operation.name,
     type: coreCamOperationTypeToUi(operation.type),
     mode:

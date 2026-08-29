@@ -619,6 +619,13 @@ Payload = serialized `CamSetup`. The first setup is THE setup (v1): `name`,
 default), `wcs_origin`, `safety_height`, `retract_height`, `units`
 (`"mm"` | `"inch"`). `setup_id` is assigned by the core when empty.
 
+#### `cam_setup_delete`
+
+Payload `{setup_id}`. Deletes the setup AND its operations. Legacy
+operations with an empty `setup_id` belong to the first setup (the
+`cam_operation_create` join rule), so they die with it. One undo step
+covers setup + operations. Unknown id replies with an `error` event.
+
 #### `cam_tool_add` / `cam_tool_update` / `cam_tool_delete` / `cam_tool_list`
 
 `cam_tool_add` payload = serialized `ToolEntry` (type `"laser"` for lasers,

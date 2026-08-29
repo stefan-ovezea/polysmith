@@ -43,6 +43,12 @@ export interface CamSetupUpdateCommand {
   payload: CamSetup;
 }
 
+export interface CamSetupDeleteCommand {
+  id: string;
+  type: "cam_setup_delete";
+  payload: { setup_id: string };
+}
+
 export interface CamSetupGetCommand {
   id: string;
   type: "cam_setup_get";

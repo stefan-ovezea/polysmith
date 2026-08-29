@@ -44,6 +44,7 @@
         "cam_post_list",
         "cam_post_processor_set",
         "cam_setup_create",
+        "cam_setup_delete",
         "cam_setup_get",
         "cam_setup_update",
         "cam_stock_get",

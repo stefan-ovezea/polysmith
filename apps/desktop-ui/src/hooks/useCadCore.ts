@@ -5,6 +5,7 @@ import {
   makeCreateDocumentCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
+  makeCamSetupDeleteCommand,
   makeCamMachineSettingsSetCommand,
   makeCamCaptureFaceReferenceCommand,
   makeCamWcsSetFaceCommand,
@@ -1532,6 +1533,9 @@ export function useCadCore() {
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));
+    },
+    camSetupDelete: async (setupId: string) => {
+      await sendAndRefreshSessionViewport(makeCamSetupDeleteCommand(setupId));
     },
     camMachineSettingsSet: async (machineSettings: LaserMachineSettings) => {
       await sendAndRefreshSessionViewport(

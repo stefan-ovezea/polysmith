@@ -6,6 +6,9 @@
   DocumentState cam_setup_create(const CamSetup& setup);
   std::optional<CamSetup> cam_setup_get() const;
   DocumentState cam_setup_update(const CamSetup& setup);
+  // Deletes the setup AND its operations (legacy operations with an
+  // empty setup_id belong to the first setup and die with it).
+  DocumentState cam_setup_delete(const std::string& setup_id);
   DocumentState cam_machine_settings_set(
       const LaserMachineSettings& machine_settings);
 
