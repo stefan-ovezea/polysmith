@@ -154,18 +154,77 @@ const toolEntrySchema = z
 
 // ── Operations ────────────────────────────────────────────────────
 
-const laserCutParametersSchema = z
+// Single source of truth for laser defaults — the UI spreads this
+// instead of carrying a parallel constants block.
+export const laserCutParametersSchema = z
   .object({
+    mode: z.enum(["cut", "score", "engrave"]).default("cut"),
+    power_percent: z.number().default(85),
+    speed_mm_per_s: z.number().optional(),
+    passes: z.number().default(1),
+    dynamic_power: z.boolean().default(true),
+    air_assist: z.boolean().default(false),
     kerf_width_mm: z.number().default(0.15),
+    kerf_side: z.enum(["auto", "outside", "inside", "none"]).default("auto"),
     lead_in_mm: z.number().default(2),
     lead_out_mm: z.number().default(2),
-    pierce_dwell_seconds: z.number().default(0),
-    power_percent: z.number().default(85),
-    passes: z.number().default(1),
-    mode: z.string().default("cut"),
+    lead_in_style: z.enum(["line", "arc"]).default("line"),
+    lead_out_style: z.enum(["line", "arc"]).default("line"),
+    lead_in_angle_deg: z.number().default(0),
+    lead_out_angle_deg: z.number().default(0),
+    overcut_mm: z.number().default(0),
+    pierce_dwell_seconds: z.number().default(0.1),
+    pierce_position: z
+      .enum(["auto", "lead_start", "nearest_centroid"])
+      .default("auto"),
+    tabs_enabled: z.boolean().default(false),
+    tab_width_mm: z.number().default(0.5),
+    tab_spacing_mm: z.number().default(20),
+    tab_power_percent: z.number().default(0),
+    tabs_on_holes: z.boolean().default(false),
+    engrave_style: z.enum(["line", "fill"]).default("line"),
+    line_spacing_mm: z.number().default(0.1),
+    fill_angle_deg: z.number().default(0),
+    fill_bidirectional: z.boolean().default(true),
     material_thickness_mm: z.number().default(3),
     cut_plane_offset_mm: z.number().default(0),
-    dynamic_power: z.boolean().default(true),
+    cut_order: z
+      .enum(["inner_first", "nearest_neighbor", "by_area"])
+      .default("inner_first"),
+  })
+  .passthrough();
+
+// Machine settings + test patterns (test_pattern is referenced by
+// camOperationParametersSchema below — must be declared first).
+export const laserMachineSettingsSchema = z
+  .object({
+    work_area_x_mm: z.number().default(400),
+    work_area_y_mm: z.number().default(400),
+    pointer_offset_x_mm: z.number().default(0),
+    pointer_offset_y_mm: z.number().default(0),
+  })
+  .passthrough();
+
+export const laserTestPatternParametersSchema = z
+  .object({
+    pattern: z
+      .enum(["engrave_grid", "cut_grid", "kerf_gauge"])
+      .default("engrave_grid"),
+    power_min_percent: z.number().default(10),
+    power_max_percent: z.number().default(100),
+    power_steps: z.number().default(5),
+    speed_min_mm_per_s: z.number().default(5),
+    speed_max_mm_per_s: z.number().default(50),
+    speed_steps: z.number().default(5),
+    cell_size_mm: z.number().default(10),
+    cell_spacing_mm: z.number().default(5),
+    start_x_mm: z.number().default(5),
+    start_y_mm: z.number().default(5),
+    line_spacing_mm: z.number().default(0.1),
+    kerf_width_mm: z.number().default(0.15),
+    power_percent: z.number().default(85),
+    speed_mm_per_s: z.number().default(10),
+    cell_labels: z.boolean().default(true),
   })
   .passthrough();
 
@@ -188,6 +247,7 @@ const camOperationParametersSchema = z
     engagement_angle_deg: z.number().optional(),
     zigzag_angle_deg: z.number().optional(),
     laser: laserCutParametersSchema.optional(),
+    test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),
   })
   .passthrough();
@@ -198,17 +258,6 @@ const camGeometryReferencesSchema = z
     avoidance_regions: z.array(geometryReferenceSchema).default([]),
     guide_curves: z.array(geometryReferenceSchema).default([]),
     check_surfaces: z.array(geometryReferenceSchema).default([]),
-  })
-  .passthrough();
-
-const camPointLocationSchema = z
-  .object({
-    vertex_id: z.string().default(""),
-    position: vec3Schema.default([0, 0, 0]),
-    surface_normal: vec3Schema.default([0, 0, 1]),
-    hole_diameter: z.number().nullable().optional(),
-    sample_face: geometryReferenceSchema.optional(),
-    fallback_strategy: z.string().default("warn_user"),
   })
   .passthrough();
 
@@ -250,6 +299,7 @@ const camOperationSchema = z
     name: z.string().default(""),
     type: z.string().default("face_milling"),
     enabled: z.boolean().default(true),
+    setup_id: z.string().default(""),
     tool_id: z.string().default(""),
     geometry_references: camGeometryReferencesSchema.default({
       machining_regions: [],
@@ -257,7 +307,6 @@ const camOperationSchema = z
       guide_curves: [],
       check_surfaces: [],
     }),
-    point_locations: z.array(camPointLocationSchema).default([]),
     parameters: camOperationParametersSchema.default({
       spindle_rpm: 8000,
       feedrate_mm_per_min: 1200,
@@ -280,60 +329,14 @@ const camOperationSchema = z
 
 // ── Post-Processor ────────────────────────────────────────────────
 
-const postProcessorOptionsSchema = z
-  .object({
-    add_line_numbers: z.boolean().default(true),
-    use_arcs: z.boolean().default(true),
-    absolute_coordinates: z.boolean().default(true),
-    tool_change_mcode: z.number().default(6),
-    spindle_start_mcode: z.number().default(3),
-    coolant_mcode_on: z.number().default(8),
-    coolant_mcode_off: z.number().default(9),
-    decimal_places: z.number().default(3),
-    separate_rapids: z.boolean().optional(),
-    header_string: z.string().optional(),
-    footer_string: z.string().optional(),
-  })
-  .passthrough();
-
 const postProcessorSchema = z
   .object({
     type: z.string().default("fanuc"),
     filename: z.string().default(""),
-    options: postProcessorOptionsSchema.default({
-      add_line_numbers: true,
-      use_arcs: true,
-      absolute_coordinates: true,
-      tool_change_mcode: 6,
-      spindle_start_mcode: 3,
-      coolant_mcode_on: 8,
-      coolant_mcode_off: 9,
-      decimal_places: 3,
-    }),
   })
   .passthrough();
 
 // ── Simulation ────────────────────────────────────────────────────
-
-const collisionReportSchema = z
-  .object({
-    op_id: z.string().default(""),
-    tool_id: z.string().default(""),
-    position: vec3Schema.default([0, 0, 0]),
-    severity: z.string().default("warning"),
-    message: z.string().default(""),
-  })
-  .passthrough();
-
-const simulationDataSchema = z
-  .object({
-    stock_after_op_id: z.string().optional(),
-    stock_mesh_reference: z.string().optional(),
-    last_verification: z.string().optional(),
-    collisions_detected: z.boolean().default(false),
-    collision_report: z.array(collisionReportSchema).default([]),
-  })
-  .passthrough();
 
 // ── Document Container ────────────────────────────────────────────
 
@@ -343,6 +346,6 @@ export const camDocumentDataSchema = z
     tool_library: z.array(toolEntrySchema).default([]),
     operations: z.array(camOperationSchema).default([]),
     post_processor: postProcessorSchema.nullable().default(null),
-    simulation: simulationDataSchema.nullable().default(null),
+    machine_settings: laserMachineSettingsSchema.nullable().default(null),
   })
   .passthrough();

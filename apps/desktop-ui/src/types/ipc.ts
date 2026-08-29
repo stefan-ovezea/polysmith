@@ -150,6 +150,9 @@ import type {
   UpdateAnglePlaneCommand,
 } from "./ipc/bodyFeatureCommands";
 import type {
+  CamCaptureFaceReferenceCommand,
+  CamMachineSettingsSetCommand,
+  CamWcsSetFaceCommand,
   CamSetupCreateCommand,
   CamSetupUpdateCommand,
   CamSetupGetCommand,
@@ -173,7 +176,7 @@ import type {
   FeatureEntry,
   SketchTool,
 } from "./geometry/sketch";
-import type { CamDocumentData } from "./geometry/cam";
+import type { CamDocumentData, FaceAttestation } from "./geometry/cam";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -270,6 +273,8 @@ export interface ViewportToolpathPoint {
   y: number;
   z: number;
   is_rapid: boolean;
+  /** The pierce dwell point (laser on + dwell > 0) — rendered as a marker. */
+  pierce: boolean;
 }
 
 export interface ViewportToolpathPrimitive {
@@ -457,6 +462,17 @@ export interface CamGenerationProgressEvent extends BaseMessage {
   };
 }
 
+// Reply to cam_capture_face_reference: the TNP-safe face witness
+// captured by the core (never fabricated in the UI).
+export interface CamFaceAttestationResultEvent extends BaseMessage {
+  type: "cam_face_attestation_result";
+  id: string;
+  payload: {
+    persistent_id: string;
+    attestation: FaceAttestation;
+  };
+}
+
 // Reply to cam_post_list / cam_post_import: every available post
 // processor (built-ins + files in the user's posts directory).
 export interface CamPostListResultEvent extends BaseMessage {
@@ -533,6 +549,7 @@ export type CoreMessage =
   | TrimPreviewResultEvent
   | CamGenerationProgressEvent
   | CamPostListResultEvent
+  | CamFaceAttestationResultEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -779,6 +796,9 @@ export type CoreCommand =
   | ImportStepCommand
   | ImportIgesCommand
   | ConvertMeshToBodyCommand
+  | CamMachineSettingsSetCommand
+  | CamCaptureFaceReferenceCommand
+  | CamWcsSetFaceCommand
   | CamSetupCreateCommand
   | CamSetupUpdateCommand
   | CamSetupGetCommand

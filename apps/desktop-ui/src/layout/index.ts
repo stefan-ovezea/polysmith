@@ -24,6 +24,7 @@ export * from "./SketchTextPanel";
 export * from "./CamSetupPanel";
 export * from "./CamSetupSummaryPanel";
 export * from "./CamLaserCutPanel";
+export * from "./CamTestPatternPanel";
 export * from "./CamFaceMillingPanel";
 export * from "./MirrorToolPanel";
 export * from "./ParametersPanel";

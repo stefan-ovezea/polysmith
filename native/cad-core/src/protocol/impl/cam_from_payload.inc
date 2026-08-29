@@ -152,8 +152,6 @@ polysmith::core::GeometryReference geometry_reference_from_payload(
     const json& payload) {
   polysmith::core::GeometryReference ref;
   ref.persistent_id = cam_read_string(payload, "persistent_id", "");
-  ref.fallback_strategy =
-      cam_read_string(payload, "fallback_strategy", "warn_user");
   if (!payload.contains("attestation")) {
     // Degenerate reference without attestation — resolution will fail
     // with a human-readable message; never crash on load.
@@ -296,42 +294,48 @@ polysmith::core::CamGeometryReferences cam_geometry_references_from_payload(
   return geo;
 }
 
-polysmith::core::CamPointLocation cam_point_location_from_payload(
-    const json& payload) {
-  polysmith::core::CamPointLocation loc;
-  loc.vertex_id = cam_read_string(payload, "vertex_id", "");
-  loc.position = cam_read_array3(payload, "position", {0.0, 0.0, 0.0});
-  loc.surface_normal =
-      cam_read_array3(payload, "surface_normal", {0.0, 0.0, 1.0});
-  if (payload.contains("hole_diameter") &&
-      !payload.at("hole_diameter").is_null()) {
-    loc.hole_diameter = cam_read_number(payload, "hole_diameter", 0.0);
-  }
-  if (payload.contains("sample_face")) {
-    loc.sample_face =
-        geometry_reference_from_payload(payload.at("sample_face"));
-  }
-  loc.fallback_strategy =
-      cam_read_string(payload, "fallback_strategy", "warn_user");
-  return loc;
-}
-
 polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
     const json& payload) {
   polysmith::core::LaserCutParameters laser;
-  laser.kerf_width_mm = cam_read_number(payload, "kerf_width_mm", 0.15);
-  laser.lead_in_mm = cam_read_number(payload, "lead_in_mm", 2.0);
-  laser.lead_out_mm = cam_read_number(payload, "lead_out_mm", 2.0);
-  laser.pierce_dwell_seconds =
-      cam_read_number(payload, "pierce_dwell_seconds", 0.0);
+  laser.mode = cam_read_string(payload, "mode", "cut");
   laser.power_percent = cam_read_number(payload, "power_percent", 85.0);
   laser.passes = cam_read_int(payload, "passes", 1);
-  laser.mode = cam_read_string(payload, "mode", "cut");
+  laser.dynamic_power = cam_read_bool(payload, "dynamic_power", true);
+  laser.air_assist = cam_read_bool(payload, "air_assist", false);
+  laser.kerf_width_mm = cam_read_number(payload, "kerf_width_mm", 0.15);
+  laser.kerf_side = cam_read_string(payload, "kerf_side", "auto");
+  laser.lead_in_mm = cam_read_number(payload, "lead_in_mm", 2.0);
+  laser.lead_out_mm = cam_read_number(payload, "lead_out_mm", 2.0);
+  laser.lead_in_style = cam_read_string(payload, "lead_in_style", "line");
+  laser.lead_out_style = cam_read_string(payload, "lead_out_style", "line");
+  laser.lead_in_angle_deg =
+      cam_read_number(payload, "lead_in_angle_deg", 0.0);
+  laser.lead_out_angle_deg =
+      cam_read_number(payload, "lead_out_angle_deg", 0.0);
+  laser.overcut_mm = cam_read_number(payload, "overcut_mm", 0.0);
+  laser.pierce_dwell_seconds =
+      cam_read_number(payload, "pierce_dwell_seconds", 0.1);
+  laser.pierce_position = cam_read_string(payload, "pierce_position", "auto");
+  laser.tabs_enabled = cam_read_bool(payload, "tabs_enabled", false);
+  laser.tab_width_mm = cam_read_number(payload, "tab_width_mm", 0.5);
+  laser.tab_spacing_mm = cam_read_number(payload, "tab_spacing_mm", 20.0);
+  laser.tab_power_percent =
+      cam_read_number(payload, "tab_power_percent", 0.0);
+  laser.tabs_on_holes = cam_read_bool(payload, "tabs_on_holes", false);
+  laser.engrave_style = cam_read_string(payload, "engrave_style", "line");
+  laser.line_spacing_mm = cam_read_number(payload, "line_spacing_mm", 0.1);
+  laser.fill_angle_deg = cam_read_number(payload, "fill_angle_deg", 0.0);
+  laser.fill_bidirectional =
+      cam_read_bool(payload, "fill_bidirectional", true);
   laser.material_thickness_mm =
       cam_read_number(payload, "material_thickness_mm", 3.0);
   laser.cut_plane_offset_mm =
       cam_read_number(payload, "cut_plane_offset_mm", 0.0);
-  laser.dynamic_power = cam_read_bool(payload, "dynamic_power", true);
+  laser.cut_order = cam_read_string(payload, "cut_order", "inner_first");
+  if (payload.contains("speed_mm_per_s") &&
+      !payload.at("speed_mm_per_s").is_null()) {
+    laser.speed_mm_per_s = cam_read_number(payload, "speed_mm_per_s", 0.0);
+  }
   return laser;
 }
 
@@ -385,7 +389,52 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
   if (payload.contains("laser") && !payload.at("laser").is_null()) {
     p.laser = laser_cut_parameters_from_payload(payload.at("laser"));
   }
+  if (payload.contains("test_pattern") &&
+      !payload.at("test_pattern").is_null()) {
+    p.test_pattern =
+        laser_test_pattern_parameters_from_payload(payload.at("test_pattern"));
+  }
   return p;
+}
+
+polysmith::core::LaserTestPatternParameters
+laser_test_pattern_parameters_from_payload(const json& payload) {
+  polysmith::core::LaserTestPatternParameters pattern;
+  pattern.pattern = cam_read_string(payload, "pattern", "engrave_grid");
+  pattern.power_min_percent =
+      cam_read_number(payload, "power_min_percent", 10.0);
+  pattern.power_max_percent =
+      cam_read_number(payload, "power_max_percent", 100.0);
+  pattern.power_steps = cam_read_int(payload, "power_steps", 5);
+  pattern.speed_min_mm_per_s =
+      cam_read_number(payload, "speed_min_mm_per_s", 5.0);
+  pattern.speed_max_mm_per_s =
+      cam_read_number(payload, "speed_max_mm_per_s", 50.0);
+  pattern.speed_steps = cam_read_int(payload, "speed_steps", 5);
+  pattern.cell_size_mm = cam_read_number(payload, "cell_size_mm", 10.0);
+  pattern.cell_spacing_mm =
+      cam_read_number(payload, "cell_spacing_mm", 5.0);
+  pattern.start_x_mm = cam_read_number(payload, "start_x_mm", 5.0);
+  pattern.start_y_mm = cam_read_number(payload, "start_y_mm", 5.0);
+  pattern.line_spacing_mm =
+      cam_read_number(payload, "line_spacing_mm", 0.1);
+  pattern.kerf_width_mm = cam_read_number(payload, "kerf_width_mm", 0.15);
+  pattern.power_percent = cam_read_number(payload, "power_percent", 85.0);
+  pattern.speed_mm_per_s = cam_read_number(payload, "speed_mm_per_s", 10.0);
+  pattern.cell_labels = cam_read_bool(payload, "cell_labels", true);
+  return pattern;
+}
+
+polysmith::core::LaserMachineSettings laser_machine_settings_from_payload(
+    const json& payload) {
+  polysmith::core::LaserMachineSettings machine;
+  machine.work_area_x_mm = cam_read_number(payload, "work_area_x_mm", 400.0);
+  machine.work_area_y_mm = cam_read_number(payload, "work_area_y_mm", 400.0);
+  machine.pointer_offset_x_mm =
+      cam_read_number(payload, "pointer_offset_x_mm", 0.0);
+  machine.pointer_offset_y_mm =
+      cam_read_number(payload, "pointer_offset_y_mm", 0.0);
+  return machine;
 }
 
 polysmith::core::CamOperationDependencies cam_operation_dependencies_from_payload(
@@ -459,16 +508,11 @@ polysmith::core::CamOperation cam_operation_from_payload(const json& payload) {
   op.name = cam_read_string(payload, "name", "");
   op.type = cam_read_string(payload, "type", "face_milling");
   op.enabled = cam_read_bool(payload, "enabled", true);
+  op.setup_id = cam_read_string(payload, "setup_id", "");
   op.tool_id = cam_read_string(payload, "tool_id", "");
   if (payload.contains("geometry_references")) {
     op.geometry_references =
         cam_geometry_references_from_payload(payload.at("geometry_references"));
-  }
-  if (payload.contains("point_locations") &&
-      payload.at("point_locations").is_array()) {
-    for (const auto& loc : payload.at("point_locations")) {
-      op.point_locations.push_back(cam_point_location_from_payload(loc));
-    }
   }
   if (payload.contains("parameters")) {
     op.parameters = cam_operation_parameters_from_payload(payload.at("parameters"));
@@ -487,78 +531,13 @@ polysmith::core::CamOperation cam_operation_from_payload(const json& payload) {
   return op;
 }
 
-polysmith::core::PostProcessorOptions post_processor_options_from_payload(
-    const json& payload) {
-  polysmith::core::PostProcessorOptions opt;
-  opt.add_line_numbers = cam_read_bool(payload, "add_line_numbers", true);
-  opt.use_arcs = cam_read_bool(payload, "use_arcs", true);
-  opt.absolute_coordinates =
-      cam_read_bool(payload, "absolute_coordinates", true);
-  opt.tool_change_mcode = cam_read_int(payload, "tool_change_mcode", 6);
-  opt.spindle_start_mcode = cam_read_int(payload, "spindle_start_mcode", 3);
-  opt.coolant_mcode_on = cam_read_int(payload, "coolant_mcode_on", 8);
-  opt.coolant_mcode_off = cam_read_int(payload, "coolant_mcode_off", 9);
-  opt.decimal_places = cam_read_int(payload, "decimal_places", 3);
-  if (payload.contains("separate_rapids") &&
-      !payload.at("separate_rapids").is_null()) {
-    opt.separate_rapids = cam_read_bool(payload, "separate_rapids", false);
-  }
-  if (payload.contains("header_string") &&
-      !payload.at("header_string").is_null()) {
-    opt.header_string = payload.at("header_string").get<std::string>();
-  }
-  if (payload.contains("footer_string") &&
-      !payload.at("footer_string").is_null()) {
-    opt.footer_string = payload.at("footer_string").get<std::string>();
-  }
-  return opt;
-}
-
 polysmith::core::PostProcessor post_processor_from_payload(const json& payload) {
   polysmith::core::PostProcessor pp;
   pp.type = cam_read_string(payload, "type", "fanuc");
   pp.filename = cam_read_string(payload, "filename", "");
   if (payload.contains("options")) {
-    pp.options = post_processor_options_from_payload(payload.at("options"));
   }
   return pp;
-}
-
-polysmith::core::CollisionReport collision_report_from_payload(
-    const json& payload) {
-  polysmith::core::CollisionReport cr;
-  cr.op_id = cam_read_string(payload, "op_id", "");
-  cr.tool_id = cam_read_string(payload, "tool_id", "");
-  cr.position = cam_read_array3(payload, "position", {0.0, 0.0, 0.0});
-  cr.severity = cam_read_string(payload, "severity", "warning");
-  cr.message = cam_read_string(payload, "message", "");
-  return cr;
-}
-
-polysmith::core::SimulationData simulation_data_from_payload(
-    const json& payload) {
-  polysmith::core::SimulationData sim;
-  if (payload.contains("stock_after_op_id") &&
-      !payload.at("stock_after_op_id").is_null()) {
-    sim.stock_after_op_id = payload.at("stock_after_op_id").get<std::string>();
-  }
-  if (payload.contains("stock_mesh_reference") &&
-      !payload.at("stock_mesh_reference").is_null()) {
-    sim.stock_mesh_reference =
-        payload.at("stock_mesh_reference").get<std::string>();
-  }
-  if (payload.contains("last_verification") &&
-      !payload.at("last_verification").is_null()) {
-    sim.last_verification = payload.at("last_verification").get<std::string>();
-  }
-  sim.collisions_detected = cam_read_bool(payload, "collisions_detected", false);
-  if (payload.contains("collision_report") &&
-      payload.at("collision_report").is_array()) {
-    for (const auto& report : payload.at("collision_report")) {
-      sim.collision_report.push_back(collision_report_from_payload(report));
-    }
-  }
-  return sim;
 }
 
 polysmith::core::CamDocumentData cam_document_data_from_payload(
@@ -585,8 +564,10 @@ polysmith::core::CamDocumentData cam_document_data_from_payload(
     cam.post_processor =
         post_processor_from_payload(payload.at("post_processor"));
   }
-  if (payload.contains("simulation") && !payload.at("simulation").is_null()) {
-    cam.simulation = simulation_data_from_payload(payload.at("simulation"));
+  if (payload.contains("machine_settings") &&
+      !payload.at("machine_settings").is_null()) {
+    cam.machine_settings =
+        laser_machine_settings_from_payload(payload.at("machine_settings"));
   }
   return cam;
 }

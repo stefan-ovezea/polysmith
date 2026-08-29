@@ -2,6 +2,7 @@
 
 #include <variant>
 
+#include "core/cam/cam_planning.h"
 #include "core/cam/cam_resolution.h"
 #include "core/cam/cam_runtime.h"
 #include "core/diagnostics/logger.h"
@@ -10,67 +11,14 @@
 
 namespace polysmith::core {
 
-namespace {
-
-// Resolves every machining-region reference of an operation.
-// Returns false and fills `message` on the first unresolved or
-// unsupported reference.
-bool resolve_operation_references(const DocumentState& document,
-                                  const CamOperation& op,
-                                  const CompiledBodies& bodies,
-                                  std::string& message) {
-  for (const auto& ref : op.geometry_references.machining_regions) {
-    if (std::holds_alternative<SketchProfileAttestation>(
-            ref.attestation)) {
-      const auto& attestation =
-          std::get<SketchProfileAttestation>(ref.attestation);
-      const FeatureEntry* sketch = nullptr;
-      for (const auto& feature : document.feature_history) {
-        if (feature.id == attestation.sketch_feature_id) {
-          sketch = &feature;
-          break;
-        }
-      }
-      if (sketch == nullptr || !sketch->sketch_parameters.has_value()) {
-        message =
-            "The sketch used by this operation no longer exists.";
-        return false;
-      }
-      const auto resolved =
-          resolve_profile_attestation(attestation, *sketch);
-      if (!resolved.found) {
-        message = profile_reference_failure_message(resolved);
-        return false;
-      }
-    } else if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
-      const auto resolved = resolve_face_attestation(
-          std::get<FaceAttestation>(ref.attestation), bodies);
-      if (!resolved.found) {
-        message = face_reference_failure_message(resolved);
-        return false;
-      }
-    } else {
-      // EdgeAttestation — no v1 operation references edges yet.
-      message = "Edge references are not supported yet.";
-      return false;
-    }
-  }
-  return true;
-}
-
-}  // namespace
-
 void refresh_cam_dependencies(DocumentState& document, int target_revision) {
-  if (document.cam.operations.empty()) {
-    return;
-  }
-
   // A revision bump invalidates every cached path for this document —
   // drop them so the viewport never draws stale toolpaths.
   cam_runtime::drop_stale(document, target_revision);
 
-  // Compile bodies once for all face-resolving operations.  Cheap pass
-  // (no meshes) and skipped entirely when no op references faces.
+  // Compile bodies once for all face-resolving work (operation
+  // references AND face-anchored WCS origins).  Cheap pass (no
+  // meshes) and skipped entirely when nothing references faces.
   CompiledBodies bodies;
   bool compiled = false;
   auto ensure_bodies = [&]() {
@@ -80,6 +28,59 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
     }
   };
 
+  // ── WCS origins (every setup) ──────────────────────────────────
+  // The machine origin the exporter subtracts comes from the setup's
+  // stock origin, or from a FACE-anchored WCS (the resolved face's
+  // mid-UV point — TNP-safe via the face attestation).  Laser setups
+  // with machine settings then subtract the RED POINTER offset:
+  // parts are framed under the dot, but the laser fires offset from
+  // it — shifting the origin back makes the cut land where the dot
+  // was.
+  for (auto& setup : document.cam.setups) {
+    const bool faceAnchored =
+        !setup.wcs_origin.face_reference.persistent_id.empty();
+    std::optional<std::array<double, 3>> position;
+    if (faceAnchored) {
+      ensure_bodies();
+      const auto resolved = resolve_face_attestation(
+          std::get<FaceAttestation>(
+              setup.wcs_origin.face_reference.attestation),
+          bodies);
+      if (resolved.found) {
+        TopoDS_Face face;
+        std::string faceError;
+        if (cam_planning::map_face_index(resolved.body->shape,
+                                         resolved.faceIndex, face,
+                                         faceError)) {
+          gp_Pnt center;
+          gp_Vec normal;
+          if (cam_planning::face_cut_plane(face, center, normal)) {
+            position = std::array<double, 3>{center.X(), center.Y(),
+                                             center.Z()};
+          }
+        }
+      }
+      if (!position.has_value()) {
+        polysmith::core::log_warn(
+            "cam", "the WCS face reference of setup '" + setup.name +
+                       "' no longer resolves — the WCS falls back to the "
+                       "stock origin.");
+        position = setup.stock.origin;
+      }
+    } else {
+      position = setup.stock.origin;
+    }
+
+    if (setup.machine_type == "laser" &&
+        document.cam.machine_settings.has_value() && position.has_value()) {
+      const auto& machine = document.cam.machine_settings.value();
+      (*position)[0] -= machine.pointer_offset_x_mm;
+      (*position)[1] -= machine.pointer_offset_y_mm;
+    }
+    setup.wcs_origin.position = position;
+  }
+
+  // ── Operation references ───────────────────────────────────────
   for (auto& op : document.cam.operations) {
     if (!op.enabled) {
       continue;
@@ -95,8 +96,20 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
       ensure_bodies();
     }
 
+    // Shared resolution with the generate driver — one source of
+    // truth for TNP re-resolution.  Empty sinks: the refresh pass only
+    // needs the found flag.
+    bool resolved_all = true;
     std::string message;
-    if (!resolve_operation_references(document, op, bodies, message)) {
+    for (const auto& ref : op.geometry_references.machining_regions) {
+      if (!resolve_geometry_reference(ref, document, bodies,
+                                      /*on_profile=*/{},
+                                      /*on_face=*/{}, message)) {
+        resolved_all = false;
+        break;
+      }
+    }
+    if (!resolved_all) {
       if (op.status != "error") {
         polysmith::core::log_warn(
             "cam", "operation '" + op.name + "' degraded: " + message);

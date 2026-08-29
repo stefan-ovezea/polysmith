@@ -32,12 +32,14 @@
           linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.05,
                              arcPoints);
           for (const auto& point : arcPoints) {
-            primitive.points.push_back({point[0], point[1], point[2], false});
+            primitive.points.push_back(
+                {point[0], point[1], point[2], false, false});
           }
         } else {
           primitive.points.push_back(
               {move.x, move.y, move.z,
-               move.kind == ToolpathMoveKind::Rapid});
+               move.kind == ToolpathMoveKind::Rapid,
+               move.laser_on && move.dwell_seconds > 0.0});
         }
         previous = move;
       }

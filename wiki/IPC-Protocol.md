@@ -272,9 +272,28 @@ These Tauri commands are outside the CAD command language. They must not carry
 CAD geometry, feature state, or UI-reconstructed mesh data.
 
 The CAM workspace rides the same document/command boundary. CAM state lives in
-`document_state.cam` (`setups`, `tool_library`, `operations`, `post_processor`)
-parallel to `feature_history`; operations consume geometry and produce
-toolpaths, never B-rep. All CAM commands reply with `document_state`:
+`document_state.cam` (`setups`, `tool_library`, `operations`, `post_processor`,
+`machine_settings`) parallel to `feature_history`; operations consume geometry
+and produce toolpaths, never B-rep. All CAM commands reply with
+`document_state`:
+
+- `cam_machine_settings_set` stores the `LaserMachineSettings` block
+  (bed `work_area_x_mm` / `work_area_y_mm`, red-pointer
+  `pointer_offset_x_mm` / `pointer_offset_y_mm`).  The refresh pass
+  subtracts the pointer offset from the laser WCS origin — parts framed
+  under the red dot cut where the dot was.
+- `cam_capture_face_reference {face_id}` captures a TNP-safe
+  `FaceAttestation` witness from a body face (`"<body_id>:face:<index>"`)
+  and replies `cam_face_attestation_result {persistent_id, attestation}`.
+  The UI never fabricates witness geometry.
+- `cam_wcs_set_face {face_id}` anchors the WCS origin to a body face:
+  the witness lands on `setups[0].wcs_origin.face_reference` and the
+  refresh pass resolves the machine origin from the LIVE face (mid-UV
+  point) on every recompute — a face-anchored WCS is TNP-safe.
+- `CamOperation` carries `setup_id` (empty = the first setup, legacy
+  documents); generation, export, and refresh resolve each operation
+  through ITS setup — multi-setup support.  The setup panel edits the
+  setup of the selected operation.
 
 - `cam_setup_create` / `cam_setup_update` take a serialized `CamSetup`
   (machine type, stock definition, WCS, safety/retract heights, units).
@@ -298,6 +317,21 @@ toolpaths, never B-rep. All CAM commands reply with `document_state`:
   run; generation stores the toolpath in the memory-only runtime cache and
   marks the operation `generated`. Toolpaths never serialize — the
   document's `ToolpathCache` carries metadata only.
+- `LaserCutParameters` (the `laser` block of `cam_operation_create` /
+  `cam_operation_update` payloads) carries the v2 model: `mode`
+  (`cut|score|engrave`, validated), `power_percent`, `speed_mm_per_s`
+  (laser-native speed; absent → the legacy `feedrate_mm_per_min` fallback),
+  `passes`, `dynamic_power`, `air_assist`, `kerf_width_mm`, `kerf_side`
+  (`auto|outside|inside|none`), `lead_in_mm` / `lead_out_mm` +
+  `lead_in_style` / `lead_out_style` (`line|arc`) +
+  `lead_in_angle_deg` / `lead_out_angle_deg`, `overcut_mm`,
+  `pierce_dwell_seconds` (default 0.1), `pierce_position`,
+  `tabs_enabled` / `tab_width_mm` / `tab_spacing_mm` / `tab_power_percent`
+  / `tabs_on_holes`, `engrave_style` (`line|fill`) / `line_spacing_mm` /
+  `fill_angle_deg` / `fill_bidirectional`, `material_thickness_mm`,
+  `cut_plane_offset_mm`, and `cut_order`
+  (`inner_first|nearest_neighbor|by_area`).  Documents saved before v2
+  load unchanged — absent keys take the v2 defaults.
 - `cam_post_processor_set` stores the `PostProcessor` — `type` names a post
   DEFINITION.  Post processors are first-class files: one `<name>.json` per
   machine in the user's posts directory (`POLYSMITH_POSTS_DIR`, resolved by
@@ -311,6 +345,22 @@ toolpaths, never B-rep. All CAM commands reply with `document_state`:
 - `cam_export_gcode { file_path }` generates stale toolpaths on demand,
   serializes every enabled operation through the selected post definition,
   and replies `document_exported` with `format: "gcode"`.
+- `LaserTestPatternParameters` (the `test_pattern` block of
+  `cam_operation_create` / `cam_operation_update` for
+  `type: "laser_test_pattern"` ops) drives LightBurn-style material test
+  cards: `pattern` (`engrave_grid` filled squares | `cut_grid`
+  through-cut squares | `kerf_gauge` calibration square),
+  `power_min_percent` / `power_max_percent` / `power_steps` (columns,
+  ascending left→right), `speed_min_mm_per_s` / `speed_max_mm_per_s` /
+  `speed_steps` (rows, ascending top→bottom), `cell_size_mm`,
+  `cell_spacing_mm`, `start_x_mm`, `start_y_mm`, `line_spacing_mm`
+  (fill density), `kerf_width_mm` / `power_percent` / `speed_mm_per_s`
+  (gauge cut), and `cell_labels` (engraved "P… S…" labels under every
+  cell via the core text engine).  Cells live directly in MACHINE
+  coordinates; a grid exceeding the machine settings' work area warns.
+- Viewport toolpath points carry `pierce` (laser on + dwell > 0) —
+  the UI renders pierce markers, and the payload carries no other
+  interaction state.
 
 Operation status semantics: `pending` → `generated` → `needs_regenerate`
 (every document mutation invalidates the revision-keyed cache) → `error`

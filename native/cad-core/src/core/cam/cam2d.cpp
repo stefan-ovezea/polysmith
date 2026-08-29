@@ -1,55 +1,14 @@
-// ── Shared closed-loop offset machinery ──────────────────────────
-//
-// Offsets one closed, orientation-normalized loop (material on the
-// LEFT of the walk) by `d` to the right (the scrap side), with round
-// join arcs at steep corners and miter trims at shallow corners.
-// Used by the laser kerf offset and the face-milling inset.
+#include "core/cam/cam2d.h"
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
+
+namespace polysmith::core::cam2d {
 
 namespace {
 
 constexpr double kTwoPiConst = 6.28318530717958647692;
-
-struct OffsetSegment {
-  bool is_arc = false;
-  XY start;
-  XY end;
-  XY center;          // arc only
-  double radius = 0.0;  // arc only
-  bool cw = false;      // arc walk direction around the center
-  bool is_join = false; // corner join arc (radius == d)
-};
-
-struct BaseSegment {
-  bool is_arc = false;
-  XY start;
-  XY end;
-  XY center;
-  double radius = 0.0;
-  bool ccw = false;  // true = counter-clockwise around the center
-};
-
-// Reverses a segment list in place (swap endpoints, flip the arc walk
-// direction).  Used to normalize walk orientation.
-void reverse_segments(std::vector<BaseSegment>& segments) {
-  std::reverse(segments.begin(), segments.end());
-  for (auto& segment : segments) {
-    std::swap(segment.start, segment.end);
-    segment.ccw = !segment.ccw;
-  }
-}
-
-// Signed area of a segment list (shoelace over the endpoints).
-double base_segments_signed_area(const std::vector<BaseSegment>& segments) {
-  if (segments.empty()) {
-    return 0.0;
-  }
-  double twiceArea = 0.0;
-  for (const auto& segment : segments) {
-    twiceArea += segment.start.x * segment.end.y -
-                 segment.end.x * segment.start.y;
-  }
-  return twiceArea / 2.0;
-}
 
 // Offsets one base segment by `d` to the right of the walk.
 //   line  → parallel line at distance d
@@ -133,21 +92,199 @@ void append_round_join(OffsetSegment current, OffsetSegment nextOffset,
   out.push_back(join);
 }
 
-// Offsets one closed, orientation-normalized loop by `d` to the right
-// of the walk.  Line-line corner handling:
-//   - round_joins=true (laser kerf on the scrap side): round join arcs
-//     at steep corners; miter trims at shallow corners (polygon
-//     approximations of circles — the lines genuinely cross inside the
-//     truncated segments and the miter point is the true boundary).
-//   - round_joins=false (face-milling inset into the material): every
-//     edge is rebuilt between its two adjacent MITER points (the
-//     intersections of neighbouring offset lines) — a round join would
-//     cut into the material corner.
-// Arc corners are tangent by sketch construction; non-tangent ones get
-// a join arc with the final self-intersection scan as the safety net.
+// True when (px,py) is strictly inside the polygon (ray crossing).
+bool point_inside(const std::vector<XY>& poly, const XY& p) {
+  bool inside = false;
+  for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+    const XY& a = poly[i];
+    const XY& b = poly[j];
+    if ((a.y > p.y) != (b.y > p.y)) {
+      const double xCross =
+          a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y);
+      if (p.x < xCross) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+}  // namespace
+
+double xy_length(double dx, double dy) {
+  return std::hypot(dx, dy);
+}
+
+double xy_signed_area(const std::vector<XY>& points) {
+  if (points.size() < 3) {
+    return 0.0;
+  }
+  double twiceArea = 0.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    const auto& a = points[i];
+    const auto& b = points[(i + 1) % points.size()];
+    twiceArea += a.x * b.y - b.x * a.y;
+  }
+  return twiceArea / 2.0;
+}
+
+XY xy_centroid(const std::vector<XY>& points) {
+  XY c{0.0, 0.0};
+  if (points.empty()) {
+    return c;
+  }
+  for (const auto& p : points) {
+    c.x += p.x;
+    c.y += p.y;
+  }
+  c.x /= points.size();
+  c.y /= points.size();
+  return c;
+}
+
+XY xy_area_centroid(const std::vector<XY>& points) {
+  if (points.empty()) {
+    return XY{0.0, 0.0};
+  }
+  double twiceArea = 0.0;
+  double cx = 0.0;
+  double cy = 0.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    const auto& a = points[i];
+    const auto& b = points[(i + 1) % points.size()];
+    const double cross = a.x * b.y - b.x * a.y;
+    twiceArea += cross;
+    cx += (a.x + b.x) * cross;
+    cy += (a.y + b.y) * cross;
+  }
+  if (std::abs(twiceArea) < 1e-12) {
+    return xy_centroid(points);
+  }
+  return XY{cx / (3.0 * twiceArea), cy / (3.0 * twiceArea)};
+}
+
+XY right_normal(double dx, double dy) {
+  const double length = xy_length(dx, dy);
+  if (length < kOffsetEps) {
+    return XY{0.0, 0.0};
+  }
+  return XY{dy / length, -dx / length};
+}
+
+bool xy_segments_intersect(const XY& a1, const XY& a2, const XY& b1,
+                           const XY& b2) {
+  const double dax = a2.x - a1.x;
+  const double day = a2.y - a1.y;
+  const double dbx = b2.x - b1.x;
+  const double dby = b2.y - b1.y;
+  const double denom = dax * dby - day * dbx;
+  if (std::abs(denom) < kOffsetEps) {
+    return false;  // parallel
+  }
+  const double t = ((b1.x - a1.x) * dby - (b1.y - a1.y) * dbx) / denom;
+  const double u = ((b1.x - a1.x) * day - (b1.y - a1.y) * dax) / denom;
+  // Strictly interior on both sides — touching endpoints is expected
+  // at loop closures and corners.
+  return t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9;
+}
+
+double xy_point_segment_distance(const XY& p, const XY& a, const XY& b) {
+  const double dx = b.x - a.x;
+  const double dy = b.y - a.y;
+  const double len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12) {
+    return xy_length(p.x - a.x, p.y - a.y);
+  }
+  const double t = std::max(
+      0.0, std::min(1.0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return xy_length(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
+                                        const std::vector<XY>& poly) {
+  std::vector<XY> output = {p1, p2};
+  for (size_t i = 0; i < poly.size(); ++i) {
+    if (output.empty()) {
+      break;
+    }
+    std::vector<XY> input = std::move(output);
+    output.clear();
+    const XY& edgeStart = poly[i];
+    const XY& edgeEnd = poly[(i + 1) % poly.size()];
+    const double edgeX = edgeEnd.x - edgeStart.x;
+    const double edgeY = edgeEnd.y - edgeStart.y;
+    for (size_t j = 0; j < input.size(); ++j) {
+      const XY& current = input[j];
+      const XY& previous = input[(j + input.size() - 1) % input.size()];
+      const double dCurrent = edgeX * (current.y - edgeStart.y) -
+                              edgeY * (current.x - edgeStart.x);
+      const double dPrevious = edgeX * (previous.y - edgeStart.y) -
+                               edgeY * (previous.x - edgeStart.x);
+      if (dCurrent >= 0) {
+        if (dPrevious < 0) {
+          const double t = dPrevious / (dPrevious - dCurrent);
+          output.push_back({previous.x + t * (current.x - previous.x),
+                            previous.y + t * (current.y - previous.y)});
+        }
+        output.push_back(current);
+      } else if (dPrevious >= 0) {
+        const double t = dPrevious / (dPrevious - dCurrent);
+        output.push_back({previous.x + t * (current.x - previous.x),
+                          previous.y + t * (current.y - previous.y)});
+      }
+    }
+  }
+  return output;
+}
+
+bool loop_contains(const std::vector<XY>& outer, const std::vector<XY>& inner) {
+  if (inner.empty()) {
+    return false;
+  }
+  // Bbox precheck.
+  double minX = outer[0].x;
+  double maxX = outer[0].x;
+  double minY = outer[0].y;
+  double maxY = outer[0].y;
+  for (const auto& p : outer) {
+    minX = std::min(minX, p.x);
+    maxX = std::max(maxX, p.x);
+    minY = std::min(minY, p.y);
+    maxY = std::max(maxY, p.y);
+  }
+  for (const auto& p : inner) {
+    if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
+      return false;
+    }
+  }
+  // Centroid must be strictly inside (rejects centroid-on-boundary
+  // cases where ray casting would be ambiguous).
+  const XY centroid = xy_area_centroid(inner);
+  return point_inside(outer, centroid);
+}
+
+void reverse_segments(std::vector<BaseSegment>& segments) {
+  std::reverse(segments.begin(), segments.end());
+  for (auto& segment : segments) {
+    std::swap(segment.start, segment.end);
+    segment.ccw = !segment.ccw;
+  }
+}
+
+double base_segments_signed_area(const std::vector<BaseSegment>& segments) {
+  if (segments.empty()) {
+    return 0.0;
+  }
+  double twiceArea = 0.0;
+  for (const auto& segment : segments) {
+    twiceArea += segment.start.x * segment.end.y -
+                 segment.end.x * segment.start.y;
+  }
+  return twiceArea / 2.0;
+}
+
 bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
-                        std::vector<OffsetSegment>& out,
-                        bool round_joins = true) {
+                        std::vector<OffsetSegment>& out, bool round_joins) {
   out.clear();
   const size_t count = base.size();
   if (count == 0) {
@@ -292,7 +429,6 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
   return !out.empty();
 }
 
-// Total length of an offset loop.
 double offset_loop_length(const std::vector<OffsetSegment>& segments) {
   double length = 0.0;
   for (const auto& segment : segments) {
@@ -321,8 +457,6 @@ double offset_loop_length(const std::vector<OffsetSegment>& segments) {
   return length;
 }
 
-// Samples the loop into small straight pieces (for self-intersection
-// scanning and any consumer needing a polyline).
 std::vector<XY> sample_offset_loop(const std::vector<OffsetSegment>& segments,
                                    double tolerance) {
   std::vector<XY> points;
@@ -366,9 +500,6 @@ std::vector<XY> sample_offset_loop(const std::vector<OffsetSegment>& segments,
   return points;
 }
 
-// O(n²) proper-intersection scan over the sampled loop.  Adjacent
-// pieces legitimately share endpoints; a crossing anywhere else means
-// a feature narrower than the offset collapsed the loop.
 bool offset_loop_self_intersects(const std::vector<XY>& samples) {
   const size_t count = samples.size();
   if (count < 4) {
@@ -389,4 +520,4 @@ bool offset_loop_self_intersects(const std::vector<XY>& samples) {
   return false;
 }
 
-}  // namespace
+}  // namespace polysmith::core::cam2d

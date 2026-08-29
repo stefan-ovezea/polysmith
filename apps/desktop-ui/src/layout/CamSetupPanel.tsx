@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Dropdown, ScrollArea } from "@/lib";
 import type {
   CamSetup,
+  LaserMachineSettings,
   MachineType,
   StockDefinition,
   StockType,
@@ -34,7 +35,6 @@ export function createDefaultCamSetup(): CamSetup {
       face_reference: {
         persistent_id: "",
         attestation: { bounds: { min_x: 0, min_y: 0, min_z: 0, max_x: 0, max_y: 0, max_z: 0 }, area: 0, normal: [0, 0, 1], sample_points: [] },
-        fallback_strategy: "warn_user",
       },
       position: [0, 0, 0],
     },
@@ -88,6 +88,13 @@ interface CamSetupPanelProps {
   posts: Array<{ name: string; path: string }>;
   onImportPost: () => void;
   onEditPost: (path: string) => void;
+  onPickOrigin: () => void;
+  pickedOrigin: [number, number, number] | null;
+  originPickArmed: boolean;
+  machineSettings: LaserMachineSettings | null;
+  onMachineSettingsChange: (settings: LaserMachineSettings) => void;
+  wcsPickArmed: boolean;
+  onPickWcsFace: () => void;
   disabled: boolean;
   onUpdate: (setup: CamSetup) => void;
   onConfirm: () => void;
@@ -149,6 +156,13 @@ export function CamSetupPanel({
   posts,
   onImportPost,
   onEditPost,
+  onPickOrigin,
+  pickedOrigin,
+  originPickArmed,
+  machineSettings,
+  onMachineSettingsChange,
+  wcsPickArmed,
+  onPickWcsFace,
   disabled,
   onUpdate,
   onConfirm,
@@ -209,6 +223,24 @@ export function CamSetupPanel({
     }
     autoSizedRef.current = true;
   }, [bodies, initialSetup.stock.size]);
+
+  // A graphical origin pick (viewport click) updates the document
+  // directly through the parent — mirror it into the form fields.
+  const lastPickedOriginRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pickedOrigin) {
+      return;
+    }
+    const key = pickedOrigin.join(",");
+    if (key === lastPickedOriginRef.current) {
+      return;
+    }
+    lastPickedOriginRef.current = key;
+    setState((prev) => ({
+      ...prev,
+      origin: [pickedOrigin[0], pickedOrigin[1], pickedOrigin[2]],
+    }));
+  }, [pickedOrigin]);
 
   function update(patch: Partial<CamSetupFormState>) {
     setState((prev) => ({ ...prev, ...patch }));
@@ -279,6 +311,83 @@ export function CamSetupPanel({
                   onChange={(value) => update({ machineType: value as MachineType })}
                 />
               </label>
+
+              {isSheetMachine ? (
+                <fieldset className="space-y-3">
+                  <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
+                    {t("cam.machine.title", "Machine Settings")}
+                  </legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <CamNumberField
+                      label={t("cam.machine.workAreaX", "Work area X (mm)")}
+                      value={machineSettings?.work_area_x_mm ?? 400}
+                      disabled={disabled}
+                      step={10}
+                      onChange={(v) =>
+                        onMachineSettingsChange({
+                          work_area_x_mm: v,
+                          work_area_y_mm: machineSettings?.work_area_y_mm ?? 400,
+                          pointer_offset_x_mm:
+                            machineSettings?.pointer_offset_x_mm ?? 0,
+                          pointer_offset_y_mm:
+                            machineSettings?.pointer_offset_y_mm ?? 0,
+                        })
+                      }
+                    />
+                    <CamNumberField
+                      label={t("cam.machine.workAreaY", "Work area Y (mm)")}
+                      value={machineSettings?.work_area_y_mm ?? 400}
+                      disabled={disabled}
+                      step={10}
+                      onChange={(v) =>
+                        onMachineSettingsChange({
+                          work_area_x_mm: machineSettings?.work_area_x_mm ?? 400,
+                          work_area_y_mm: v,
+                          pointer_offset_x_mm:
+                            machineSettings?.pointer_offset_x_mm ?? 0,
+                          pointer_offset_y_mm:
+                            machineSettings?.pointer_offset_y_mm ?? 0,
+                        })
+                      }
+                    />
+                    <CamNumberField
+                      label={t("cam.machine.pointerOffsetX", "Red pointer offset X (mm)")}
+                      value={machineSettings?.pointer_offset_x_mm ?? 0}
+                      disabled={disabled}
+                      step={0.1}
+                      min={undefined}
+                      onChange={(v) =>
+                        onMachineSettingsChange({
+                          work_area_x_mm: machineSettings?.work_area_x_mm ?? 400,
+                          work_area_y_mm: machineSettings?.work_area_y_mm ?? 400,
+                          pointer_offset_x_mm: v,
+                          pointer_offset_y_mm:
+                            machineSettings?.pointer_offset_y_mm ?? 0,
+                        })
+                      }
+                    />
+                    <CamNumberField
+                      label={t("cam.machine.pointerOffsetY", "Red pointer offset Y (mm)")}
+                      value={machineSettings?.pointer_offset_y_mm ?? 0}
+                      disabled={disabled}
+                      step={0.1}
+                      min={undefined}
+                      onChange={(v) =>
+                        onMachineSettingsChange({
+                          work_area_x_mm: machineSettings?.work_area_x_mm ?? 400,
+                          work_area_y_mm: machineSettings?.work_area_y_mm ?? 400,
+                          pointer_offset_x_mm:
+                            machineSettings?.pointer_offset_x_mm ?? 0,
+                          pointer_offset_y_mm: v,
+                        })
+                      }
+                    />
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.machine.pointerNote")}
+                  </p>
+                </fieldset>
+              ) : null}
 
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
                 {t("cam.setup.unitsLabel", "Units")}
@@ -437,12 +546,32 @@ export function CamSetupPanel({
                 </div>
               ) : null}
 
+              <div className="flex items-end gap-2">
+                <span className="flex-1 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                  {t("cam.setup.originLabel", "Origin")}
+                </span>
+                <button
+                  type="button"
+                  className={
+                    originPickArmed
+                      ? "cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                      : "cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                  }
+                  disabled={disabled}
+                  onClick={onPickOrigin}
+                >
+                  {originPickArmed
+                    ? t("cam.setup.pickOriginArmed", "Click the part…")
+                    : t("cam.setup.pickOrigin", "Pick origin…")}
+                </button>
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 <CamNumberField
                   label={t("cam.setup.originX", "Origin X")}
                   value={state.origin[0]}
                   disabled={disabled}
                   min={undefined}
+                  step="any"
                   onChange={(v) => update({ origin: [v, state.origin[1], state.origin[2]] })}
                 />
                 <CamNumberField
@@ -450,6 +579,7 @@ export function CamSetupPanel({
                   value={state.origin[1]}
                   disabled={disabled}
                   min={undefined}
+                  step="any"
                   onChange={(v) => update({ origin: [state.origin[0], v, state.origin[2]] })}
                 />
                 <CamNumberField
@@ -457,6 +587,7 @@ export function CamSetupPanel({
                   value={state.origin[2]}
                   disabled={disabled}
                   min={undefined}
+                  step="any"
                   onChange={(v) => update({ origin: [state.origin[0], state.origin[1], v] })}
                 />
               </div>
@@ -479,11 +610,33 @@ export function CamSetupPanel({
               ════════════════════════════════════════════════════════ */}
           {tab === "wcs" && (
             <>
+              {/* Face-anchored WCS: pick a face, the core captures the
+                  TNP-safe witness and resolves the origin from it. */}
+              <div className="flex items-end gap-2">
+                <span className="flex-1 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                  {t("cam.setup.wcsFaceAnchor", "Face anchor")}
+                </span>
+                <button
+                  type="button"
+                  className={
+                    wcsPickArmed
+                      ? "cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                      : "cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                  }
+                  disabled={disabled}
+                  onClick={onPickWcsFace}
+                >
+                  {wcsPickArmed
+                    ? t("cam.setup.pickWcsFaceArmed", "Click a face…")
+                    : t("cam.setup.pickWcsFace", "Pick WCS face…")}
+                </button>
+              </div>
+
               {/* Origin position */}
               <div className="grid grid-cols-3 gap-2">
-                <CamNumberField label="X" value={state.wcsOrigin[0]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [v, state.wcsOrigin[1], state.wcsOrigin[2]] })} />
-                <CamNumberField label="Y" value={state.wcsOrigin[1]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], v, state.wcsOrigin[2]] })} />
-                <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v] })} />
+                <CamNumberField label="X" value={state.wcsOrigin[0]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [v, state.wcsOrigin[1], state.wcsOrigin[2]] })} />
+                <CamNumberField label="Y" value={state.wcsOrigin[1]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], v, state.wcsOrigin[2]] })} />
+                <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v] })} />
               </div>
 
               {/* Orientation mode */}

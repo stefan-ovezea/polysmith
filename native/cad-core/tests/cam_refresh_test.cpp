@@ -367,6 +367,54 @@ bool test_ambiguous_reference_degrades() {
                 "ambiguous: degradation carries a human message");
 }
 
+bool test_wcs_origin_populated() {
+  DocumentManager manager;
+  manager.create_document();
+
+  CamSetup setup;
+  setup.name = "Sheet setup";
+  setup.machine_type = "laser";
+  setup.stock.origin = std::array<double, 3>{10.0, 20.0, 0.0};
+  const auto afterCreate = manager.cam_setup_create(setup);
+
+  // The refresh pass (inside the setup mutation) populates the
+  // machine origin from the stock origin — the exporter subtracts it
+  // from every coordinate.
+  const auto& position = afterCreate.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(), "wcs: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({10.0, 20.0, 0.0}),
+                "wcs: position follows the stock origin");
+}
+
+bool test_pointer_offset_shifts_wcs() {
+  DocumentManager manager;
+  manager.create_document();
+
+  CamSetup setup;
+  setup.name = "Sheet setup";
+  setup.machine_type = "laser";
+  setup.stock.origin = std::array<double, 3>{10.0, 20.0, 0.0};
+  DocumentState document = manager.cam_setup_create(setup);
+
+  // The red pointer sits at (5, 3) from the laser focal point — parts
+  // framed under the dot cut at origin - offset.
+  polysmith::core::LaserMachineSettings machine;
+  machine.work_area_x_mm = 400.0;
+  machine.work_area_y_mm = 400.0;
+  machine.pointer_offset_x_mm = 5.0;
+  machine.pointer_offset_y_mm = 3.0;
+  document = manager.cam_machine_settings_set(machine);
+
+  const auto& position = document.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(), "pointer offset: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({5.0, 17.0, 0.0}),
+                "pointer offset: WCS shifted by -offset");
+}
+
 }  // namespace
 
 int main() {
@@ -397,6 +445,8 @@ int main() {
       test_face_op_survives_unrelated_edit);
   run("Test 4: ambiguous reference never guessed",
       test_ambiguous_reference_degrades);
+  run("Test 5: WCS origin follows the stock origin", test_wcs_origin_populated);
+  run("Test 6: pointer offset shifts the WCS", test_pointer_offset_shifts_wcs);
 
   if (allPassed) {
     std::cout << "cam_refresh_test passed\n";
@@ -404,44 +454,4 @@ int main() {
   }
   return 1;
 }
-#if 0
 
-  std::cout << "  Test 1: generated status + invalidation... ";
-  if (test_generated_status_and_invalidation()) {
-    std::cout << "PASS\n";
-  } else {
-    std::cout << "FAIL\n";
-    allPassed = false;
-  }
-
-  std::cout << "  Test 2: sketch deletion degrades... ";
-  if (test_sketch_deletion_degrades()) {
-    std::cout << "PASS\n";
-  } else {
-    std::cout << "FAIL\n";
-    allPassed = false;
-  }
-
-  std::cout << "  Test 3: face op survives unrelated edit... ";
-  if (test_face_op_survives_unrelated_edit()) {
-    std::cout << "PASS\n";
-  } else {
-    std::cout << "FAIL\n";
-    allPassed = false;
-  }
-
-  std::cout << "  Test 4: ambiguous reference never guessed... ";
-  if (test_ambiguous_reference_degrades()) {
-    std::cout << "PASS\n";
-  } else {
-    std::cout << "FAIL\n";
-    allPassed = false;
-  }
-
-  if (allPassed) {
-    std::cout << "cam_refresh_test passed\n";
-    return 0;
-  }
-  return 1;
-}
-#endif

@@ -10,6 +10,7 @@ struct ViewportToolpathPoint {
   double y;
   double z;
   bool is_rapid;
+  bool pierce;  // the pierce dwell point (laser on + dwell > 0)
 };
 
 struct ViewportToolpathPrimitive {

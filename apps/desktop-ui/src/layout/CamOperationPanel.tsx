@@ -48,7 +48,7 @@ export function CamOperationPanel({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
         <span className="text-xs font-semibold cad-muted tracking-wider uppercase">
-          {t("cam.operations")}
+          {t("cam.operationsTitle")}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto px-1">
@@ -81,8 +81,8 @@ export function CamOperationPanel({
                   </button>
                   <button
                     type="button"
-                    className="shrink-0 px-1.5 py-1 text-on-surface-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label={t("cam.faceMilling.delete", "Delete")}
+                    className="shrink-0 px-1.5 py-1 text-on-surface-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={t("cam.operations.delete", "Delete operation")}
                     onClick={(e) => {
                       e.stopPropagation();
                       onDeleteOperation(op.id);

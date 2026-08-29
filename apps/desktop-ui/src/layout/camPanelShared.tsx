@@ -14,7 +14,7 @@ export function CamNumberField({
   label: string;
   value: number;
   disabled: boolean;
-  step?: number;
+  step?: number | "any";
   min?: number;
   onChange: (value: number) => void;
 }) {
@@ -30,6 +30,31 @@ export function CamNumberField({
         disabled={disabled}
         onChange={(event) => onChange(readNumberInputValue(event.currentTarget))}
       />
+    </label>
+  );
+}
+
+export function CamCheckboxField({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+      <input
+        className="h-3.5 w-3.5"
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+      />
+      {label}
     </label>
   );
 }
@@ -95,7 +120,7 @@ export function CamStatusLine({
   status: string;
   statusMessage: string;
   toolpathStats: CamToolpathStats | null;
-  prefix: "cam.laserCut" | "cam.faceMilling";
+  prefix: "cam.laserCut" | "cam.faceMilling" | "cam.testPattern";
 }) {
   const { t } = useTranslation();
 

@@ -1,4 +1,5 @@
 #include "core/document/document.h"
+#include "core/cam/cam_runtime.h"
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"

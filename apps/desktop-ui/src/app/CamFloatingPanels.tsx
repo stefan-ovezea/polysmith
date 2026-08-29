@@ -1,14 +1,23 @@
-import type { CamOperation, CamSetup, LaserCutParameters } from "@/types";
+import { useTranslation } from "react-i18next";
+
+import type {
+  CamOperation,
+  CamSetup,
+  LaserCutParameters,
+  LaserMachineSettings,
+} from "@/types";
 import type { DocumentState, ViewportState } from "../types";
 import {
   CamFaceMillingPanel,
   CamLaserCutPanel,
   CamSetupPanel,
+  CamTestPatternPanel,
   createDefaultCamSetup,
   type FaceMillingFormState,
 } from "../layout";
 import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
+import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
 
 type RunAction = (action: () => Promise<void>) => Promise<void>;
@@ -33,8 +42,14 @@ interface CamFloatingPanelsProps {
   posts: Array<{ name: string; path: string }>;
   onImportPost: () => void;
   onEditPost: (path: string) => void;
+  onPickOrigin: () => void;
+  pickedOrigin: [number, number, number] | null;
+  originPickArmed: boolean;
+  wcsPickArmed: boolean;
+  onPickWcsFace: () => void;
   camSetupCreate: (setup: CamSetup) => Promise<void>;
   camSetupUpdate: (setup: CamSetup) => Promise<void>;
+  camMachineSettingsSet: (settings: LaserMachineSettings) => Promise<void>;
   camOperationUpdate: (
     opId: string,
     partial: Partial<CamOperation>,
@@ -64,14 +79,37 @@ export function CamFloatingPanels({
   posts,
   onImportPost,
   onEditPost,
+  onPickOrigin,
+  pickedOrigin,
+  originPickArmed,
+  wcsPickArmed,
+  onPickWcsFace,
   camSetupCreate,
   camSetupUpdate,
+  camMachineSettingsSet,
   camOperationUpdate,
   camOperationDelete,
   camOperationPreview,
   camOperationGenerate,
 }: CamFloatingPanelsProps) {
-  const setup = document?.cam.setups?.[0] ?? null;
+  const { t } = useTranslation();
+  // Multi-setup: the setup panel edits the setup the SELECTED
+  // operation belongs to; without a selection it edits the first.
+  const setup = (() => {
+    const setups = document?.cam.setups ?? [];
+    if (selectedOperationId) {
+      const op = document?.cam.operations.find(
+        (candidate) => candidate.op_id === selectedOperationId,
+      );
+      if (op?.setup_id) {
+        const owned = setups.find((s) => s.setup_id === op.setup_id);
+        if (owned) {
+          return owned;
+        }
+      }
+    }
+    return setups[0] ?? null;
+  })();
 
   const setupPanel = isSetupPanelOpen ? (
     <CamSetupPanel
@@ -91,6 +129,17 @@ export function CamFloatingPanels({
       posts={posts}
       onImportPost={onImportPost}
       onEditPost={onEditPost}
+      onPickOrigin={onPickOrigin}
+      pickedOrigin={pickedOrigin}
+      originPickArmed={originPickArmed}
+      wcsPickArmed={wcsPickArmed}
+      onPickWcsFace={onPickWcsFace}
+      machineSettings={document?.cam.machine_settings ?? null}
+      onMachineSettingsChange={(settings) => {
+        void runAction(async () => {
+          await camMachineSettingsSet(settings);
+        });
+      }}
       disabled={disabled}
       onUpdate={(nextSetup) => {
         void runAction(async () => {
@@ -119,6 +168,7 @@ export function CamFloatingPanels({
         camOperationDelete,
         camOperationPreview,
         camOperationGenerate,
+        t,
       })
     : null;
 
@@ -142,6 +192,7 @@ function buildOperationPanel({
   camOperationDelete,
   camOperationPreview,
   camOperationGenerate,
+  t,
 }: Pick<
   CamFloatingPanelsProps,
   | "document"
@@ -155,7 +206,7 @@ function buildOperationPanel({
   | "camOperationDelete"
   | "camOperationPreview"
   | "camOperationGenerate"
->) {
+> & { t: (key: string, options?: Record<string, unknown>) => string }) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
   );
@@ -183,6 +234,41 @@ function buildOperationPanel({
     disabled,
   };
 
+  // Shared generate handler (laser + face milling): run the generator,
+  // wait for the refreshed document, and confirm through the message
+  // log with the path stats — the toolpath looks identical to the
+  // preview, so the feedback has to be explicit.
+  const makeGenerateHandler = (opId: string) => () => {
+    void runAction(async () => {
+      await camOperationGenerate(opId);
+      try {
+        const updated = await awaitDocumentChange(
+          (next) =>
+            next.cam.operations.find((candidate) => candidate.op_id === opId)
+              ?.status === "generated",
+        );
+        const generated = updated.cam.operations.find(
+          (candidate) => candidate.op_id === opId,
+        );
+        const stats = generated?.toolpath_cache;
+        if (stats) {
+          const length =
+            stats.total_length_mm !== undefined
+              ? `${stats.total_length_mm.toFixed(1)} mm`
+              : "?";
+          const time =
+            stats.estimated_time_seconds !== undefined
+              ? `${stats.estimated_time_seconds.toFixed(1)} s`
+              : "?";
+          addMessage(t("cam.toolpathGenerated", { length, time }));
+        }
+      } catch {
+        // The operation degraded instead of generating — the panel's
+        // status line shows why.
+      }
+    });
+  };
+
   if (operation.type === "laser_cut") {
     const laser = operation.parameters.laser ?? DEFAULT_LASER_PARAMS;
     return (
@@ -200,12 +286,37 @@ function buildOperationPanel({
             });
           });
         }}
-        onFeedrateChange={(feedrateMmPerMin: number) => {
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "laser_test_pattern") {
+    const pattern =
+      operation.parameters.test_pattern ?? DEFAULT_TEST_PATTERN_PARAMS;
+    return (
+      <CamTestPatternPanel
+        {...shared}
+        initialParams={pattern}
+        onUpdate={(partial) => {
           void runAction(async () => {
             await camOperationUpdate(operation.op_id, {
               parameters: {
                 ...operation.parameters,
-                feedrate_mm_per_min: feedrateMmPerMin,
+                test_pattern: { ...pattern, ...partial },
               },
             });
           });
@@ -215,42 +326,7 @@ function buildOperationPanel({
             await camOperationPreview(operation.op_id);
           });
         }}
-        onGenerate={() => {
-          void runAction(async () => {
-            await camOperationGenerate(operation.op_id);
-            // Wait for the generated document and confirm with the
-            // path stats — the toolpath looks identical to the
-            // preview, so the feedback has to be explicit.
-            try {
-              const updated = await awaitDocumentChange(
-                (next) =>
-                  next.cam.operations.find(
-                    (candidate) => candidate.op_id === operation.op_id,
-                  )?.status === "generated",
-              );
-              const generated = updated.cam.operations.find(
-                (candidate) => candidate.op_id === operation.op_id,
-              );
-              const stats = generated?.toolpath_cache;
-              if (stats) {
-                const length =
-                  stats.total_length_mm !== undefined
-                    ? `${stats.total_length_mm.toFixed(1)} mm`
-                    : "?";
-                const time =
-                  stats.estimated_time_seconds !== undefined
-                    ? `${stats.estimated_time_seconds.toFixed(1)} s`
-                    : "?";
-                addMessage(
-                  `toolpath generated: ${length}, estimated ${time}`,
-                );
-              }
-            } catch {
-              // The operation degraded instead of generating — the
-              // panel's status line shows why.
-            }
-          });
-        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
         onDelete={() => {
           void runAction(async () => {
@@ -299,42 +375,7 @@ function buildOperationPanel({
             await camOperationPreview(operation.op_id);
           });
         }}
-        onGenerate={() => {
-          void runAction(async () => {
-            await camOperationGenerate(operation.op_id);
-            // Wait for the generated document and confirm with the
-            // path stats — the toolpath looks identical to the
-            // preview, so the feedback has to be explicit.
-            try {
-              const updated = await awaitDocumentChange(
-                (next) =>
-                  next.cam.operations.find(
-                    (candidate) => candidate.op_id === operation.op_id,
-                  )?.status === "generated",
-              );
-              const generated = updated.cam.operations.find(
-                (candidate) => candidate.op_id === operation.op_id,
-              );
-              const stats = generated?.toolpath_cache;
-              if (stats) {
-                const length =
-                  stats.total_length_mm !== undefined
-                    ? `${stats.total_length_mm.toFixed(1)} mm`
-                    : "?";
-                const time =
-                  stats.estimated_time_seconds !== undefined
-                    ? `${stats.estimated_time_seconds.toFixed(1)} s`
-                    : "?";
-                addMessage(
-                  `toolpath generated: ${length}, estimated ${time}`,
-                );
-              }
-            } catch {
-              // The operation degraded instead of generating — the
-              // panel's status line shows why.
-            }
-          });
-        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
         onDelete={() => {
           void runAction(async () => {

@@ -6,6 +6,8 @@
   DocumentState cam_setup_create(const CamSetup& setup);
   std::optional<CamSetup> cam_setup_get() const;
   DocumentState cam_setup_update(const CamSetup& setup);
+  DocumentState cam_machine_settings_set(
+      const LaserMachineSettings& machine_settings);
 
   DocumentState cam_tool_add(const ToolEntry& tool);
   DocumentState cam_tool_update(const std::string& toolId, const ToolEntry& tool);

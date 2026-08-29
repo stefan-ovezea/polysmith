@@ -7,10 +7,29 @@ import type {
   CamOperation,
   CamOperationPayload,
   CamSetup,
+  LaserMachineSettings,
   PostProcessor,
   StockDefinition,
   ToolEntry,
 } from "../geometry/cam";
+
+export interface CamMachineSettingsSetCommand {
+  id: string;
+  type: "cam_machine_settings_set";
+  payload: LaserMachineSettings;
+}
+
+export interface CamCaptureFaceReferenceCommand {
+  id: string;
+  type: "cam_capture_face_reference";
+  payload: { face_id: string };
+}
+
+export interface CamWcsSetFaceCommand {
+  id: string;
+  type: "cam_wcs_set_face";
+  payload: { face_id: string };
+}
 
 export interface CamSetupCreateCommand {
   id: string;

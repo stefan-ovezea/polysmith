@@ -1,4 +1,10 @@
 DocumentState DocumentManager::create_document() {
+  // A fresh document replaces the previous one — drop its runtime
+  // toolpath cache (keyed by document id; it would otherwise leak).
+  if (document_.has_value()) {
+    cam_runtime::clear(document_->id);
+  }
+
   DocumentState document{
       .id = "doc-" + std::to_string(next_document_id_++),
       .name = "Untitled Part",

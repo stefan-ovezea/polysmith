@@ -27,6 +27,8 @@ using polysmith::core::DocumentState;
 using polysmith::core::FaceAttestation;
 using polysmith::core::GeometryReference;
 using polysmith::core::LaserCutParameters;
+using polysmith::core::LaserMachineSettings;
+using polysmith::core::LaserTestPatternParameters;
 using polysmith::core::PostProcessor;
 using polysmith::core::SketchProfileAttestation;
 using polysmith::core::ToolEntry;
@@ -37,6 +39,10 @@ bool expect(bool condition, const char* message) {
   }
   std::cerr << "FAIL: " << message << "\n";
   return false;
+}
+
+bool near(double a, double b, double tolerance = 1e-6) {
+  return std::abs(a - b) < tolerance;
 }
 
 GeometryReference make_profile_ref(const std::string& sketch_feature_id,
@@ -110,12 +116,35 @@ CamDocumentData make_cam_data() {
   laser_op.geometry_references.machining_regions.push_back(
       make_profile_ref("feature-2", "profile-4"));
   LaserCutParameters laser;
-  laser.kerf_width_mm = 0.2;
-  laser.lead_in_mm = 2.5;
-  laser.pierce_dwell_seconds = 0.3;
-  laser.power_percent = 70.0;
-  laser.passes = 2;
   laser.mode = "cut";
+  laser.power_percent = 70.0;
+  laser.speed_mm_per_s = 12.5;
+  laser.passes = 2;
+  laser.dynamic_power = false;
+  laser.air_assist = true;
+  laser.kerf_width_mm = 0.2;
+  laser.kerf_side = "outside";
+  laser.lead_in_mm = 2.5;
+  laser.lead_out_mm = 1.5;
+  laser.lead_in_style = "arc";
+  laser.lead_out_style = "arc";
+  laser.lead_in_angle_deg = 60.0;
+  laser.lead_out_angle_deg = 45.0;
+  laser.overcut_mm = 0.5;
+  laser.pierce_dwell_seconds = 0.3;
+  laser.pierce_position = "lead_start";
+  laser.tabs_enabled = true;
+  laser.tab_width_mm = 0.8;
+  laser.tab_spacing_mm = 15.0;
+  laser.tab_power_percent = 5.0;
+  laser.tabs_on_holes = true;
+  laser.engrave_style = "fill";
+  laser.line_spacing_mm = 0.15;
+  laser.fill_angle_deg = 30.0;
+  laser.fill_bidirectional = false;
+  laser.material_thickness_mm = 4.0;
+  laser.cut_plane_offset_mm = 0.25;
+  laser.cut_order = "nearest_neighbor";
   laser_op.parameters.laser = laser;
   laser_op.status = "generated";
   laser_op.status_message = "";
@@ -132,12 +161,37 @@ CamDocumentData make_cam_data() {
   mill_op.status_message = "The referenced face could not be resolved.";
   cam.operations.push_back(mill_op);
 
+  CamOperation pattern_op;
+  pattern_op.op_id = "cam-op-3";
+  pattern_op.name = "Test Pattern";
+  pattern_op.type = "laser_test_pattern";
+  pattern_op.tool_id = "tool-1";
+  LaserTestPatternParameters pattern;
+  pattern.pattern = "cut_grid";
+  pattern.power_min_percent = 25.0;
+  pattern.power_max_percent = 80.0;
+  pattern.power_steps = 4;
+  pattern.speed_min_mm_per_s = 10.0;
+  pattern.speed_max_mm_per_s = 40.0;
+  pattern.speed_steps = 3;
+  pattern.cell_size_mm = 12.0;
+  pattern.cell_spacing_mm = 6.0;
+  pattern.start_x_mm = 8.0;
+  pattern.start_y_mm = 8.0;
+  pattern.line_spacing_mm = 0.2;
+  pattern_op.parameters.test_pattern = pattern;
+  cam.operations.push_back(pattern_op);
+
+  LaserMachineSettings machine;
+  machine.work_area_x_mm = 500.0;
+  machine.work_area_y_mm = 350.0;
+  machine.pointer_offset_x_mm = 2.5;
+  machine.pointer_offset_y_mm = -1.5;
+  cam.machine_settings = machine;
+
   PostProcessor post;
   post.type = "grbl";
   post.filename = "cut.nc";
-  post.options.add_line_numbers = false;
-  post.options.use_arcs = true;
-  post.options.decimal_places = 4;
   cam.post_processor = post;
 
   return cam;
@@ -201,17 +255,72 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
       if (!la.has_value() || !lb.has_value()) {
         return false;
       }
-      if (la->kerf_width_mm != lb->kerf_width_mm ||
-          la->lead_in_mm != lb->lead_in_mm ||
-          la->pierce_dwell_seconds != lb->pierce_dwell_seconds ||
+      if (la->mode != lb->mode ||
           la->power_percent != lb->power_percent ||
-          la->passes != lb->passes || la->mode != lb->mode ||
-          la->dynamic_power != lb->dynamic_power) {
+          la->speed_mm_per_s != lb->speed_mm_per_s ||
+          la->passes != lb->passes ||
+          la->dynamic_power != lb->dynamic_power ||
+          la->air_assist != lb->air_assist ||
+          la->kerf_width_mm != lb->kerf_width_mm ||
+          la->kerf_side != lb->kerf_side ||
+          la->lead_in_mm != lb->lead_in_mm ||
+          la->lead_out_mm != lb->lead_out_mm ||
+          la->lead_in_style != lb->lead_in_style ||
+          la->lead_out_style != lb->lead_out_style ||
+          la->lead_in_angle_deg != lb->lead_in_angle_deg ||
+          la->lead_out_angle_deg != lb->lead_out_angle_deg ||
+          la->overcut_mm != lb->overcut_mm ||
+          la->pierce_dwell_seconds != lb->pierce_dwell_seconds ||
+          la->pierce_position != lb->pierce_position ||
+          la->tabs_enabled != lb->tabs_enabled ||
+          la->tab_width_mm != lb->tab_width_mm ||
+          la->tab_spacing_mm != lb->tab_spacing_mm ||
+          la->tab_power_percent != lb->tab_power_percent ||
+          la->tabs_on_holes != lb->tabs_on_holes ||
+          la->engrave_style != lb->engrave_style ||
+          la->line_spacing_mm != lb->line_spacing_mm ||
+          la->fill_angle_deg != lb->fill_angle_deg ||
+          la->fill_bidirectional != lb->fill_bidirectional ||
+          la->material_thickness_mm != lb->material_thickness_mm ||
+          la->cut_plane_offset_mm != lb->cut_plane_offset_mm ||
+          la->cut_order != lb->cut_order) {
         return false;
       }
     }
     if (oa.type == "face_milling" &&
         oa.parameters.zigzag_angle_deg != ob.parameters.zigzag_angle_deg) {
+      return false;
+    }
+    if (oa.type == "laser_test_pattern") {
+      const auto ta = oa.parameters.test_pattern;
+      const auto tb = ob.parameters.test_pattern;
+      if (!ta.has_value() || !tb.has_value() ||
+          ta->pattern != tb->pattern ||
+          ta->power_min_percent != tb->power_min_percent ||
+          ta->power_max_percent != tb->power_max_percent ||
+          ta->power_steps != tb->power_steps ||
+          ta->speed_min_mm_per_s != tb->speed_min_mm_per_s ||
+          ta->speed_max_mm_per_s != tb->speed_max_mm_per_s ||
+          ta->speed_steps != tb->speed_steps ||
+          ta->cell_size_mm != tb->cell_size_mm ||
+          ta->cell_spacing_mm != tb->cell_spacing_mm ||
+          ta->start_x_mm != tb->start_x_mm ||
+          ta->start_y_mm != tb->start_y_mm ||
+          ta->line_spacing_mm != tb->line_spacing_mm) {
+        return false;
+      }
+    }
+  }
+  if (a.machine_settings.has_value() != b.machine_settings.has_value()) {
+    return false;
+  }
+  if (a.machine_settings.has_value()) {
+    const auto& ma = a.machine_settings.value();
+    const auto& mb = b.machine_settings.value();
+    if (ma.work_area_x_mm != mb.work_area_x_mm ||
+        ma.work_area_y_mm != mb.work_area_y_mm ||
+        ma.pointer_offset_x_mm != mb.pointer_offset_x_mm ||
+        ma.pointer_offset_y_mm != mb.pointer_offset_y_mm) {
       return false;
     }
   }
@@ -277,11 +386,14 @@ bool test_save_load_file_round_trip() {
   // reference geometry that does not exist in this synthetic document,
   // so both must degrade to "error" with a human message — the refresh
   // doing its job on load, never a crash.
-  if (!expect(loaded.cam.operations.size() == 2,
-              "file load: both operations loaded")) {
+  if (!expect(loaded.cam.operations.size() == 3,
+              "file load: all three operations loaded")) {
     return false;
   }
   for (const auto& op : loaded.cam.operations) {
+    if (op.type == "laser_test_pattern") {
+      continue;  // no geometry references — nothing to degrade
+    }
     if (!expect(op.status == "error" && !op.status_message.empty(),
                 "file load: unresolved references degrade with a message")) {
       return false;
@@ -301,7 +413,7 @@ bool test_attestation_contents_round_trip() {
   const auto restored =
       polysmith::protocol::cam_document_data_from_payload(cam_payload);
 
-  if (!expect(restored.operations.size() == 2, "expected two operations")) {
+  if (!expect(restored.operations.size() == 3, "expected three operations")) {
     return false;
   }
 
@@ -329,8 +441,7 @@ bool test_attestation_contents_round_trip() {
     return false;
   }
   if (!expect(restored.post_processor.has_value() &&
-                  restored.post_processor->type == "grbl" &&
-                  restored.post_processor->options.decimal_places == 4,
+                  restored.post_processor->type == "grbl",
               "post-processor must round-trip")) {
     return false;
   }
@@ -353,6 +464,59 @@ bool test_document_without_cam_key_defaults_empty() {
                     restored.cam.operations.empty() &&
                     !restored.cam.post_processor.has_value(),
                 "missing cam key must default to empty CamDocumentData");
+}
+
+bool test_legacy_laser_payload_defaults() {
+  // Documents saved before the v2 parameter model carried only the
+  // original laser keys.  They must load with the v2 defaults —
+  // no migration, no errors.
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.get_document().value();
+  document.cam = make_cam_data();
+  auto payload = polysmith::protocol::to_payload(document, true);
+
+  // Strip the laser block back to the pre-v2 key set.
+  nlohmann::json legacyLaser;
+  legacyLaser["kerf_width_mm"] = 0.2;
+  legacyLaser["lead_in_mm"] = 2.5;
+  legacyLaser["lead_out_mm"] = 2.0;
+  legacyLaser["pierce_dwell_seconds"] = 0.0;
+  legacyLaser["power_percent"] = 70.0;
+  legacyLaser["passes"] = 2;
+  legacyLaser["mode"] = "cut";
+  legacyLaser["material_thickness_mm"] = 3.0;
+  legacyLaser["cut_plane_offset_mm"] = 0.0;
+  legacyLaser["dynamic_power"] = true;
+  for (auto& op : payload["cam"]["operations"]) {
+    if (op.value("type", "") == "laser_cut") {
+      op["parameters"]["laser"] = legacyLaser;
+    }
+  }
+
+  const auto restored =
+      polysmith::protocol::document_from_payload(payload);
+  if (!expect(restored.cam.operations.size() == 3,
+              "legacy: operations load")) {
+    return false;
+  }
+  const auto& laser = restored.cam.operations[0].parameters.laser;
+  if (!expect(laser.has_value(), "legacy: laser block present")) {
+    return false;
+  }
+  // Keys the old serializer never wrote take the v2 defaults; keys it
+  // DID write (like pierce_dwell_seconds = 0.0) are preserved as-is.
+  return expect(!laser->speed_mm_per_s.has_value() &&
+                    laser->kerf_side == "auto" &&
+                    near(laser->pierce_dwell_seconds, 0.0) &&
+                    !laser->air_assist && !laser->tabs_enabled &&
+                    laser->pierce_position == "auto" &&
+                    laser->engrave_style == "line" &&
+                    laser->cut_order == "inner_first" &&
+                    laser->lead_in_style == "line" &&
+                    near(laser->lead_in_angle_deg, 0.0) &&
+                    near(laser->overcut_mm, 0.0),
+                "legacy: absent keys take the v2 defaults");
 }
 
 }  // namespace
@@ -387,6 +551,14 @@ int main() {
 
   std::cout << "  Test 4: document without cam key defaults empty... ";
   if (test_document_without_cam_key_defaults_empty()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 5: legacy laser payload takes v2 defaults... ";
+  if (test_legacy_laser_payload_defaults()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

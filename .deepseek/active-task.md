@@ -1,3 +1,115 @@
+# Active Task: Laser CAM rework (cam/laser) — M1–M10 IMPLEMENTED, UNCOMMITTED
+
+> **Branch:** `cam/laser` (from `dev`, after `fac4fb5` CAM scaffolding)
+> **Date:** 2026-08-29
+> **Plan:** approved plan at `.claude/plans/lucky-finding-hoare.md` (10
+> milestones; each gated on `pnpm test:core` + `tsc` + user in-app
+> verification before commit — commits need explicit user approval).
+
+## Status — ALL MILESTONES IMPLEMENTED, ALL TEST GATES GREEN, NOT COMMITTED
+
+All 37 suites + tsc green per milestone. **Nothing is committed** — the
+never-commit-untested rule gates every milestone on user in-app
+verification; commits also require explicit approval (branch workflow).
+
+- **M1 — offset correctness + graceful degradation**: right-handed xz
+  frame, world-mapped arc i/j + mirror sweep flip, non-horizontal plane
+  rejection (~5°, `kMaxCutPlaneTilt`), per-loop degrade (outer failure
+  drops the region, hole failure drops the hole, all-fail hard error
+  surfaces the first reason), cached loop samples. Tests 9–12
+  (rotated/mirrored arcs, yz/xz rejection, hairline slot) verified
+  fail-before/pass-after.
+- **M2 — shared 2D CAM module**: `cam2d.{h,cpp}` (offset/join/clip/
+  containment math, OCCT-free) + `cam_planning.{h,cpp}`
+  (chord-tolerance wire sampling, `face_cut_plane`, `map_face_index`);
+  the `.inc` preprocessor era ended for the generators; new
+  `cad_core_cam2d_test` (10 cases).
+- **M3 — parameter model v2 + monolith split**: `LaserCutParameters` v2
+  (speed_mm_per_s, kerf_side, lead styles/angles, overcut, pierce
+  position, tabs, fill, cut_order, air assist — serde
+  backward-compatible, legacy docs load with defaults);
+  `laser/laser_generate.{h,cpp}` module replaces the 630-line `.inc`;
+  speed/passes/kerf_side/mode validation/conventional direction/
+  thickness warning live. Tests 13–17 + save/load v2 round-trip +
+  legacy-defaults test.
+- **M4 — nesting + cut ordering**: containment tree per domain,
+  `laser/laser_order.cpp` (inner_first / nearest_neighbor / by_area),
+  duplicate-cut warning via cross-group coincident scan. Fixed the
+  synthesized-full-circle area = 0 bug (area now from the sampled
+  offset loop). Tests 18–20.
+- **M5 — leads + pierce**: `laser/laser_leads.cpp` (corner-filtered
+  pierce vertices, line/arc lead styles, lead angles, overcut,
+  pierce_position). Tests 21–25. NOTE: lead angle default is 0°
+  (tangent continuation) — the plan's 90° default would have changed
+  the existing behavior; LightBurn's 0°=tangent convention kept.
+- **M6 — tabs/bridges**: `laser/laser_tabs.cpp` (arc-length tab
+  distribution, segment splitting, laser-off or tab_power spans,
+  outer-loops-only default). Tests 26–28.
+- **M7 — engrave fill**: `laser/laser_fill.cpp` (scan-line hatch,
+  holes via even-odd, angle, bidirectional, per-line laser-off jumps
+  across holes). Tests 29–31.
+- **M8 — posts + export (GRBL-first)**: power_change template (B3),
+  laser_footer_lines (no Z lift for laser programs), laser_air_on/off,
+  smoothieware seed, inch scaling ×1/25.4 (B2), single footer on the
+  last exported op (B1), unknown post = real failure. grbl_post tests
+  8–13 + end-to-end export test 32.
+- **M9 — UI rework**: CamLaserCutPanel v2 (all v2 fields; zod schema =
+  single defaults source), merged duplicate generate handlers + i18n
+  stats, last-element op id, batched LineSegments toolpath rendering,
+  i18n for all hardcoded messages, dead en.json keys removed, WIP
+  origin-pick absorbed (camSignature now covers stock.diameter/length;
+  close clears the pick). tsc green.
+- **M10 — cleanup**: shared `resolve_geometry_reference` (refresh +
+  generate one source of truth), laser tool-type validation,
+  WcsOrigin.position from stock origin (+ refresh test 5),
+  cam_runtime clear() wired into create_document, dead constants +
+  both `#if 0` blocks deleted, default laser tool uses ToolEntry
+  defaults. Test 33.
+
+## Next session
+
+1. **User in-app verification** (per milestone, then commit with
+   approval). Manual checklist: rotated-sketch preview arcs; passes=3;
+   speed mm/s → F600; kerf side inside flips the offset; arc lead
+   visible; tabs as gaps; fill hatch renders; export has no Z moves +
+   exactly one M2; origin pick on a cylinder setup rebuilds the marker;
+   Test Pattern card generates/engraves/cuts; Machine Settings fields
+   persist and shift the WCS by the pointer offset.
+2. Deferred (tracked in the plan): Ruida/DSP export, Clipper2
+   adoption, per-shape cut-order priority, material presets, move face
+   attestation capture to native, pierce-point viewport markers (needs
+   a pierce flag in the viewport toolpath protocol), WCS face anchoring,
+   kerf-calibration gauge pattern, test-card cell labels (text engrave).
+
+---
+
+## Added on top (2026-08-29, uncommitted): test patterns + machine settings
+
+- **`laser_test_pattern` operation** (LightBurn material-test cards):
+  `engrave_grid` (filled squares) and `cut_grid` (through-cut squares),
+  power columns × speed rows, machine-coordinate cells, work-area
+  overflow warning, laser-tool check. Generator tests 34–36.
+- **`LaserMachineSettings`** on `document.cam.machine_settings`: bed
+  work area + red-pointer offset; the refresh pass shifts the laser WCS
+  by −offset (framing under the dot); `cam_machine_settings_set` IPC
+  command + schema + TS wiring; Machine fieldset in the setup panel;
+  refresh test 6. Save/load round-trip + legacy defaults covered.
+- **IPC finalization sweep (U1–U6, all test-gated, uncommitted)**:
+  U1 deleted the serialized-but-dead fields (`fallback_strategy`,
+  `PostProcessorOptions`, `SimulationData`, `point_locations`/
+  `CamPointLocation`) end-to-end (core, serde, TS, schemas, tests).
+  U2 `cam_capture_face_reference` → the UI never fabricates face
+  witnesses (TS `buildFaceAttestationFromSelection` deleted).
+  U3 viewport toolpath points carry `pierce` → pierce-dot markers.
+  U4 multi-setup: `CamOperation.setup_id`, `setup_for()` resolution in
+  generate/export/refresh, setup panel edits the selected op's setup.
+  U5 face-anchored WCS: `cam_wcs_set_face` + refresh resolves the
+  machine origin from the live face (mid-UV, TNP-safe).
+  U6 test patterns: `kerf_gauge` calibration square (tests 37) +
+  engraved "P… S…" cell labels via the core text engine (test 38).
+
+---
+
 # Active Task: Sketch toolset finalization (feature/sketch)
 
 > **Branch:** `feature/sketch` (from `dev`, after #67)

@@ -111,6 +111,7 @@ import {
 import { computeFeatureActionAvailability } from "./app/featureActionAvailability";
 import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
+import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
 import { useProfileFeatureActions } from "./app/profileFeatureActions";
 import { createRecentProjectHandlers } from "./app/recentProjectHandlers";
@@ -789,6 +790,9 @@ function App() {
     updateSelectionFilter,
     camSetupCreate,
     camSetupUpdate,
+    camMachineSettingsSet,
+    camCaptureFaceReference,
+    camWcsSetFace,
     camOperationCreate,
     camOperationUpdate,
     camOperationDelete,
@@ -1353,6 +1357,17 @@ function App() {
       viewport,
       runAction,
       camOperationCreate,
+      camCaptureFaceReference,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
+  const triggerCamTestPatternAction = () =>
+    triggerCamTestPattern({
+      document,
+      runAction,
+      camOperationCreate,
       setSelectedOperationId: setSelectedCamOperationId,
       addMessage,
       translate: t,
@@ -1361,9 +1376,9 @@ function App() {
   const triggerCamFaceMillingAction = () =>
     triggerCamFaceMilling({
       document,
-      viewport,
       runAction,
       camOperationCreate,
+      camCaptureFaceReference,
       setSelectedOperationId: setSelectedCamOperationId,
       addMessage,
       translate: t,
@@ -1382,27 +1397,75 @@ function App() {
     }
     await runAction(async () => {
       await camExportGcode(filePath);
-      addMessage(`G-code written: ${filePath}`);
+      addMessage(t("cam.gcodeWritten", { path: filePath }));
     });
   };
 
   const setCamPostProcessorAction = (postType: string) =>
     runAction(async () => {
+      // Output shaping comes from the post DEFINITION FILE — the
+      // document only records the selection.
       await camPostProcessorSet({
         type: postType as PostProcessorType,
         filename: "",
-        options: {
-          add_line_numbers: true,
-          use_arcs: true,
-          absolute_coordinates: true,
-          tool_change_mcode: 6,
-          spindle_start_mcode: 3,
-          coolant_mcode_on: 8,
-          coolant_mcode_off: 9,
-          decimal_places: 3,
-        },
       });
     });
+
+  // Graphical CAM origin placement: arm the mode from the setup panel,
+  // then the next vertex/face click becomes the stock origin.
+  const [originPickArmed, setOriginPickArmed] = useState(false);
+  const [pickedOrigin, setPickedOrigin] = useState<
+    [number, number, number] | null
+  >(null);
+
+  const placeCamOriginFromPick = async (point: {
+    x: number;
+    y: number;
+    z: number;
+  }) => {
+    const setup = document?.cam.setups?.[0];
+    if (!setup) {
+      return;
+    }
+    const origin: [number, number, number] = [point.x, point.y, point.z];
+    await runAction(async () => {
+      await camSetupUpdate({
+        ...setup,
+        stock: { ...setup.stock, origin },
+      });
+    });
+    setPickedOrigin(origin);
+    setOriginPickArmed(false);
+    addMessage(
+      t("cam.setup.originSet", {
+        x: point.x.toFixed(2),
+        y: point.y.toFixed(2),
+        z: point.z.toFixed(2),
+      }),
+    );
+  };
+
+  // Closing the setup panel clears any armed/pending origin pick so a
+  // stale picked point cannot leak into the next open.
+  // Face-anchored WCS pick: arm from the setup panel's WCS tab, then
+  // the next face click becomes the WCS origin face (captured by the
+  // core as a TNP-safe witness).
+  const [wcsPickArmed, setWcsPickArmed] = useState(false);
+
+  const placeWcsFromFacePick = async (faceId: string) => {
+    await runAction(async () => {
+      await camWcsSetFace(faceId);
+    });
+    setWcsPickArmed(false);
+    addMessage(t("cam.setup.wcsFaceSet"));
+  };
+
+  const closeCamSetupPanel = () => {
+    setIsCamSetupPanelOpen(false);
+    setOriginPickArmed(false);
+    setPickedOrigin(null);
+    setWcsPickArmed(false);
+  };
 
   // Post-processor management: the list refreshes when entering the CAM
   // workspace; importing copies a definition into the user's posts
@@ -1411,10 +1474,20 @@ function App() {
     Array<{ name: string; path: string }>
   >([]);
 
+  // Fetch the post list ONCE per CAM-workspace entry.  camPostList is a
+  // fresh function identity every render, so keying the effect on it
+  // would re-fire per render and loop (each fetch replies with a
+  // cam_post_list_result → store update → render → fetch …).
+  const camPostsFetchArmedRef = useRef(false);
   useEffect(() => {
     if (workspaceView !== "cam") {
+      camPostsFetchArmedRef.current = false;
       return;
     }
+    if (camPostsFetchArmedRef.current) {
+      return;
+    }
+    camPostsFetchArmedRef.current = true;
     let disposed = false;
     void camPostList().then((posts) => {
       if (!disposed) {
@@ -1439,9 +1512,9 @@ function App() {
       const posts = await camPostImport(sourcePath);
       if (posts) {
         setCamPosts(posts);
-        addMessage("post processor imported");
+        addMessage(t("cam.postImported"));
       } else {
-        addMessage("post import failed — check the Logs panel");
+        addMessage(t("cam.postImportFailed"));
       }
     });
   };
@@ -1721,6 +1794,7 @@ function App() {
           setActiveCamOperation={setActiveCamOperation}
           setIsCamSetupPanelOpen={setIsCamSetupPanelOpen}
           triggerCamLaserCut={triggerCamLaserCutAction}
+          triggerCamTestPattern={triggerCamTestPatternAction}
           triggerCamFaceMilling={triggerCamFaceMillingAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
@@ -1831,7 +1905,10 @@ function App() {
                 constructionAxisAction !== null ||
                 helixAction !== null ||
                 threadAction !== null ||
-                workspaceView === "cam"
+                // CAM workspace: sketch clicks select the owning sketch —
+                // but NOT while the origin pick is armed, so the click
+                // falls through to the vertex/face pick instead.
+                (workspaceView === "cam" && !originPickArmed)
               }
               onPickInactiveSketchLine={async (lineId) => {
                 if (workspaceView === "cam") {
@@ -1917,6 +1994,19 @@ function App() {
                 });
               }}
               onSelectFace={async (faceId) => {
+                if (wcsPickArmed) {
+                  await placeWcsFromFacePick(faceId);
+                  return;
+                }
+                if (originPickArmed) {
+                  const face = viewport?.solid_faces.find(
+                    (entry) => entry.face_id === faceId,
+                  );
+                  if (face) {
+                    await placeCamOriginFromPick(face.center);
+                  }
+                  return;
+                }
                 await handleViewportFaceSelection({
                   faceId,
                   viewport,
@@ -1991,6 +2081,15 @@ function App() {
                 });
               }}
               onSelectVertex={async (vertexId, additive) => {
+                if (originPickArmed) {
+                  const vertex = viewport?.vertices.find(
+                    (entry) => entry.id === vertexId,
+                  );
+                  if (vertex) {
+                    await placeCamOriginFromPick(vertex.position);
+                  }
+                  return;
+                }
                 if (constructionPointAction) {
                   await createConstructionPointFeature(vertexId);
                   return;
@@ -3378,7 +3477,7 @@ function App() {
                 wcsOrientation={wcsOrientation}
                 setShowStock={setShowStock}
                 setWcsOrientation={setWcsOrientation}
-                setSetupPanelOpen={setIsCamSetupPanelOpen}
+                setSetupPanelOpen={closeCamSetupPanel}
                 setSelectedOperationId={setSelectedCamOperationId}
                 runAction={runAction}
                 addMessage={addMessage}
@@ -3394,8 +3493,30 @@ function App() {
                   void importCamPostAction();
                 }}
                 onEditPost={editCamPostAction}
+                originPickArmed={originPickArmed}
+                onPickOrigin={() => {
+                  if (originPickArmed) {
+                    setOriginPickArmed(false);
+                    addMessage(t("cam.setup.originPickCanceled"));
+                    return;
+                  }
+                  setOriginPickArmed(true);
+                  addMessage(t("cam.setup.originPickHint"));
+                }}
+                pickedOrigin={pickedOrigin}
+                wcsPickArmed={wcsPickArmed}
+                onPickWcsFace={() => {
+                  if (wcsPickArmed) {
+                    setWcsPickArmed(false);
+                    addMessage(t("cam.setup.wcsPickCanceled"));
+                    return;
+                  }
+                  setWcsPickArmed(true);
+                  addMessage(t("cam.setup.wcsPickHint"));
+                }}
                 camSetupCreate={camSetupCreate}
                 camSetupUpdate={camSetupUpdate}
+                camMachineSettingsSet={camMachineSettingsSet}
                 camOperationUpdate={camOperationUpdate}
                 camOperationDelete={camOperationDelete}
                 camOperationPreview={camOperationPreview}

@@ -3,10 +3,39 @@ import type {
   CamOperationPayload,
   CamSetup,
   CoreCommand,
+  LaserMachineSettings,
   PostProcessor,
   StockDefinition,
   ToolEntry,
 } from "@/types";
+
+export function makeCamMachineSettingsSetCommand(
+  machineSettings: LaserMachineSettings,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_machine_settings_set",
+    payload: machineSettings,
+  };
+}
+
+export function makeCamCaptureFaceReferenceCommand(
+  faceId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_capture_face_reference",
+    payload: { face_id: faceId },
+  };
+}
+
+export function makeCamWcsSetFaceCommand(faceId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_wcs_set_face",
+    payload: { face_id: faceId },
+  };
+}
 
 // CAM command factories — every command replies with a `document_state`
 // event (errors reply with an `error` event). Payloads are the

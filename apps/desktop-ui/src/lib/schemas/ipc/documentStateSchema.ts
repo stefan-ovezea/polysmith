@@ -895,6 +895,6 @@ export const documentStateSchema = z.object({
     tool_library: [],
     operations: [],
     post_processor: null,
-    simulation: null,
+    machine_settings: null,
   }),
 }).passthrough();

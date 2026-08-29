@@ -39,6 +39,161 @@
     return;
   }
 
+  if (command.type == "cam_machine_settings_set") {
+    const auto settings =
+        polysmith::protocol::laser_machine_settings_from_payload(
+            command.payload);
+    const auto document =
+        document_manager().cam_machine_settings_set(settings);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cam_capture_face_reference") {
+    // The UI asks the core to capture a TNP-safe face witness from a
+    // selected body face ("<body_id>:face:<index>") — the witness
+    // math lives in the core, never in TypeScript.
+    const std::string face_id = command.payload.value("face_id", "");
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    const auto separator = face_id.rfind(":face:");
+    if (separator == std::string::npos) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_FACE_ID", "The face id is malformed: " + face_id));
+      return;
+    }
+    const std::string body_id = face_id.substr(0, separator);
+    int face_index = 0;
+    try {
+      face_index = std::stoi(face_id.substr(separator + 6));
+    } catch (const std::exception&) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_FACE_ID", "The face id is malformed: " + face_id));
+      return;
+    }
+
+    const auto bodies =
+        polysmith::core::compile_bodies(document.value(),
+                                 /*include_meshes=*/false);
+    const polysmith::core::CompiledBody* body = nullptr;
+    for (const auto& candidate : bodies.bodies) {
+      if (candidate.id == body_id) {
+        body = &candidate;
+        break;
+      }
+    }
+    if (body == nullptr) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "FACE_NOT_FOUND",
+          "The body of the selected face no longer exists."));
+      return;
+    }
+    const auto captured =
+        polysmith::core::capture_face_reference(body_id, body->shape,
+                                                  face_index);
+    if (!captured.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "FACE_CAPTURE_FAILED",
+          "The face witness could not be captured."));
+      return;
+    }
+    polysmith::core::FaceAttestation attestation;
+    attestation.area = captured->capturedArea;
+    attestation.normal = captured->capturedNormal;
+    attestation.sample_points = captured->samplePoints;
+    // Bounds: the sample-point bbox (resolution does not consume
+    // bounds; they round-trip for debugging).
+    for (const auto& point : captured->samplePoints) {
+      attestation.bounds.min_x = std::min(attestation.bounds.min_x, point[0]);
+      attestation.bounds.min_y = std::min(attestation.bounds.min_y, point[1]);
+      attestation.bounds.min_z = std::min(attestation.bounds.min_z, point[2]);
+      attestation.bounds.max_x = std::max(attestation.bounds.max_x, point[0]);
+      attestation.bounds.max_y = std::max(attestation.bounds.max_y, point[1]);
+      attestation.bounds.max_z = std::max(attestation.bounds.max_z, point[2]);
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_face_attestation_event(
+            command.id,
+            {{"persistent_id", face_id},
+             {"attestation", polysmith::protocol::to_payload(attestation)}}));
+    return;
+  }
+
+  if (command.type == "cam_wcs_set_face") {
+    // Anchor the WCS origin to a body face: capture the TNP-safe
+    // witness, store it on the first setup's WCS, and let the refresh
+    // pass resolve the machine origin from the live face.
+    const std::string face_id = command.payload.value("face_id", "");
+    const auto document = document_manager().get_document();
+    if (!document.has_value() || document->cam.setups.empty()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_CAM_SETUP", "Create a CAM setup first"));
+      return;
+    }
+    const auto separator = face_id.rfind(":face:");
+    if (separator == std::string::npos) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_FACE_ID", "The face id is malformed: " + face_id));
+      return;
+    }
+    const std::string body_id = face_id.substr(0, separator);
+    int face_index = 0;
+    try {
+      face_index = std::stoi(face_id.substr(separator + 6));
+    } catch (const std::exception&) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_FACE_ID", "The face id is malformed: " + face_id));
+      return;
+    }
+
+    const auto bodies =
+        polysmith::core::compile_bodies(document.value(),
+                                 /*include_meshes=*/false);
+    const polysmith::core::CompiledBody* body = nullptr;
+    for (const auto& candidate : bodies.bodies) {
+      if (candidate.id == body_id) {
+        body = &candidate;
+        break;
+      }
+    }
+    if (body == nullptr) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "FACE_NOT_FOUND",
+          "The body of the selected face no longer exists."));
+      return;
+    }
+    const auto captured =
+        polysmith::core::capture_face_reference(body_id, body->shape,
+                                                  face_index);
+    if (!captured.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "FACE_CAPTURE_FAILED",
+          "The WCS face witness could not be captured."));
+      return;
+    }
+
+    polysmith::core::FaceAttestation attestation;
+    attestation.area = captured->capturedArea;
+    attestation.normal = captured->capturedNormal;
+    attestation.sample_points = captured->samplePoints;
+
+    auto setup = document->cam.setups[0];
+    setup.wcs_origin.feature_id = body_id;
+    setup.wcs_origin.face_reference.persistent_id = face_id;
+    setup.wcs_origin.face_reference.attestation = attestation;
+    const auto updated = document_manager().cam_setup_update(setup);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(updated)));
+    return;
+  }
+
   if (command.type == "cam_stock_set") {
     // The stock is part of the setup; this command is a thin wrapper
     // over setups[0].stock for the setup panel's stock tab.

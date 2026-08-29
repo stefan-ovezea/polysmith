@@ -630,23 +630,43 @@ referencing the deleted tool degrade to `status: "error"` with a message.
 #### `cam_operation_create`
 
 Payload = serialized `CamOperation` without `op_id` (the core assigns
-`cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch) or
-`"face_milling"` (zigzag facing of a horizontal face) are implemented;
-pocket/contour/drill/turning are registry slots for later. `tool_id` must
-reference an existing tool. Laser operations require a laser machine setup.
+`cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
+`"face_milling"` (zigzag facing of a horizontal face), or
+`"laser_test_pattern"` (LightBurn-style material test cards) are
+implemented; pocket/contour/drill/turning are registry slots for later.
+`tool_id` must reference an existing tool. Laser operations (cut and test
+patterns) require a laser machine setup.
 
 Geometry input:
 - `laser_cut`: select sketch profiles first (via `select_sketch_profile`), then
   send `cam_operation_create` with EMPTY `geometry_references` — the core
   captures TNP-safe profile witness references from
   `selected_sketch_profile_ids`. The kerf/lead/power settings live in
-  `parameters.laser` (`{kerf_width_mm, lead_in_mm, lead_out_mm,
-  pierce_dwell_seconds, power_percent, passes, mode: "cut"|"score"|"engrave",
-  material_thickness_mm, cut_plane_offset_mm, dynamic_power}`).
+  `parameters.laser` (v2 model: `mode`, `power_percent`, `speed_mm_per_s`,
+  `passes`, `kerf_width_mm`/`kerf_side`, leads, tabs, fill, `cut_order`).
 - `face_milling`: pass `geometry_references.machining_regions` with a
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
   fill.
+- `laser_test_pattern`: NO geometry references — `parameters.test_pattern`
+  drives the card (`pattern`: `engrave_grid` | `cut_grid` | `kerf_gauge`,
+  power/speed min-max-steps, `cell_size_mm`, `cell_spacing_mm`,
+  `start_x_mm`/`start_y_mm`, `line_spacing_mm`, gauge kerf/power/speed,
+  `cell_labels`).  Power sweeps columns (left→right), speed sweeps rows
+  (top→bottom); cells live in machine coordinates.
+
+Face references: `cam_capture_face_reference {face_id}` returns the
+TNP-safe `FaceAttestation` for a body face — use it to build operation
+`geometry_references` (never hand-craft witness data).
+`cam_wcs_set_face {face_id}` anchors the WCS to a face; the refresh
+pass resolves the machine origin from the live face.
+
+Machine settings: `cam_machine_settings_set` stores
+`{work_area_x_mm, work_area_y_mm, pointer_offset_x_mm, pointer_offset_y_mm}`
+on `document_state.cam.machine_settings`; the pointer offset shifts the
+laser WCS origin (framing under the red dot).  Operations carry
+`setup_id` (empty = the first setup); every operation resolves through
+its own setup.
 
 #### `cam_operation_update`
 

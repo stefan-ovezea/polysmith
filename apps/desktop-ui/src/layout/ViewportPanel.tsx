@@ -581,7 +581,7 @@ export function ViewportPanel({
   // Translucent red overlay meshes for in-progress cut extrudes. Built
   // from `cut_previews` and rendered without participating in raycasts.
   const cutPreviewObjectsRef = useRef<THREE.Mesh[]>([]);
-  const toolpathLinesRef = useRef<THREE.Line[]>([]);
+  const toolpathLinesRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoObjectsRef = useRef<THREE.Object3D[]>([]);
   const moveGizmoDragRef = useRef<MoveGizmoDragState | null>(null);
   const moveGizmoRef = useRef<MoveGizmoDescriptor | null>(moveGizmo);

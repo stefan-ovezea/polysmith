@@ -113,18 +113,40 @@ json to_payload(const polysmith::core::SketchProfileAttestation& att) {
 }
 
 json to_payload(const polysmith::core::LaserCutParameters& laser) {
-  return {
-      {"kerf_width_mm", laser.kerf_width_mm},
-      {"lead_in_mm", laser.lead_in_mm},
-      {"lead_out_mm", laser.lead_out_mm},
-      {"pierce_dwell_seconds", laser.pierce_dwell_seconds},
+  json j = {
+      {"mode", laser.mode},
       {"power_percent", laser.power_percent},
       {"passes", laser.passes},
-      {"mode", laser.mode},
+      {"dynamic_power", laser.dynamic_power},
+      {"air_assist", laser.air_assist},
+      {"kerf_width_mm", laser.kerf_width_mm},
+      {"kerf_side", laser.kerf_side},
+      {"lead_in_mm", laser.lead_in_mm},
+      {"lead_out_mm", laser.lead_out_mm},
+      {"lead_in_style", laser.lead_in_style},
+      {"lead_out_style", laser.lead_out_style},
+      {"lead_in_angle_deg", laser.lead_in_angle_deg},
+      {"lead_out_angle_deg", laser.lead_out_angle_deg},
+      {"overcut_mm", laser.overcut_mm},
+      {"pierce_dwell_seconds", laser.pierce_dwell_seconds},
+      {"pierce_position", laser.pierce_position},
+      {"tabs_enabled", laser.tabs_enabled},
+      {"tab_width_mm", laser.tab_width_mm},
+      {"tab_spacing_mm", laser.tab_spacing_mm},
+      {"tab_power_percent", laser.tab_power_percent},
+      {"tabs_on_holes", laser.tabs_on_holes},
+      {"engrave_style", laser.engrave_style},
+      {"line_spacing_mm", laser.line_spacing_mm},
+      {"fill_angle_deg", laser.fill_angle_deg},
+      {"fill_bidirectional", laser.fill_bidirectional},
       {"material_thickness_mm", laser.material_thickness_mm},
       {"cut_plane_offset_mm", laser.cut_plane_offset_mm},
-      {"dynamic_power", laser.dynamic_power},
+      {"cut_order", laser.cut_order},
   };
+  if (laser.speed_mm_per_s.has_value()) {
+    j["speed_mm_per_s"] = laser.speed_mm_per_s.value();
+  }
+  return j;
 }
 
 // ── GeometryReference ────────────────────────────────────────────
@@ -134,7 +156,6 @@ json to_payload(const polysmith::core::GeometryReference& ref) {
   j["persistent_id"] = ref.persistent_id;
   std::visit([&](const auto& att) { j["attestation"] = to_payload(att); },
              ref.attestation);
-  j["fallback_strategy"] = ref.fallback_strategy;
   return j;
 }
 
@@ -231,20 +252,6 @@ json to_payload(const polysmith::core::CamGeometryReferences& geo) {
   return j;
 }
 
-// ── CamPointLocation ─────────────────────────────────────────────
-
-json to_payload(const polysmith::core::CamPointLocation& loc) {
-  return {
-      {"vertex_id", loc.vertex_id},
-      {"position", array3(loc.position)},
-      {"surface_normal", array3(loc.surface_normal)},
-      {"hole_diameter", loc.hole_diameter.has_value()
-           ? json(loc.hole_diameter.value()) : json(nullptr)},
-      {"sample_face", to_payload(loc.sample_face)},
-      {"fallback_strategy", loc.fallback_strategy},
-  };
-}
-
 // ── CamOperationParameters ───────────────────────────────────────
 
 json to_payload(const polysmith::core::CamOperationParameters& p) {
@@ -268,6 +275,7 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
   if (p.engagement_angle_deg.has_value()) j["engagement_angle_deg"] = p.engagement_angle_deg.value();
   if (p.zigzag_angle_deg.has_value())     j["zigzag_angle_deg"]     = p.zigzag_angle_deg.value();
   if (p.laser.has_value())                j["laser"]                = to_payload(p.laser.value());
+  if (p.test_pattern.has_value())         j["test_pattern"]         = to_payload(p.test_pattern.value());
   return j;
 }
 
@@ -320,6 +328,7 @@ json to_payload(const polysmith::core::CamOperation& op) {
       {"name", op.name},
       {"type", op.type},
       {"enabled", op.enabled},
+      {"setup_id", op.setup_id},
       {"tool_id", op.tool_id},
       {"geometry_references", to_payload(op.geometry_references)},
       {"parameters", to_payload(op.parameters)},
@@ -327,9 +336,6 @@ json to_payload(const polysmith::core::CamOperation& op) {
       {"status", op.status},
       {"status_message", op.status_message},
   };
-  json pl = json::array();
-  for (const auto& loc : op.point_locations) pl.push_back(to_payload(loc));
-  j["point_locations"] = pl;
   if (op.toolpath_cache.has_value())
     j["toolpath_cache"] = to_payload(op.toolpath_cache.value());
   else
@@ -339,55 +345,44 @@ json to_payload(const polysmith::core::CamOperation& op) {
 
 // ── PostProcessor ────────────────────────────────────────────────
 
-json to_payload(const polysmith::core::PostProcessorOptions& opt) {
-  json j{
-      {"add_line_numbers", opt.add_line_numbers},
-      {"use_arcs", opt.use_arcs},
-      {"absolute_coordinates", opt.absolute_coordinates},
-      {"tool_change_mcode", opt.tool_change_mcode},
-      {"spindle_start_mcode", opt.spindle_start_mcode},
-      {"coolant_mcode_on", opt.coolant_mcode_on},
-      {"coolant_mcode_off", opt.coolant_mcode_off},
-      {"decimal_places", opt.decimal_places},
-  };
-  if (opt.separate_rapids.has_value()) j["separate_rapids"] = opt.separate_rapids.value();
-  if (opt.header_string.has_value())   j["header_string"]   = opt.header_string.value();
-  if (opt.footer_string.has_value())   j["footer_string"]   = opt.footer_string.value();
-  return j;
-}
-
 json to_payload(const polysmith::core::PostProcessor& pp) {
   return {
       {"type", pp.type},
       {"filename", pp.filename},
-      {"options", to_payload(pp.options)},
   };
-}
-
-// ── SimulationData ───────────────────────────────────────────────
-
-json to_payload(const polysmith::core::CollisionReport& cr) {
-  return {
-      {"op_id", cr.op_id},
-      {"tool_id", cr.tool_id},
-      {"position", array3(cr.position)},
-      {"severity", cr.severity},
-      {"message", cr.message},
-  };
-}
-
-json to_payload(const polysmith::core::SimulationData& sim) {
-  json j{{"collisions_detected", sim.collisions_detected}};
-  if (sim.stock_after_op_id.has_value())   j["stock_after_op_id"]   = sim.stock_after_op_id.value();
-  if (sim.stock_mesh_reference.has_value()) j["stock_mesh_reference"] = sim.stock_mesh_reference.value();
-  if (sim.last_verification.has_value())    j["last_verification"]    = sim.last_verification.value();
-  json reports = json::array();
-  for (const auto& cr : sim.collision_report) reports.push_back(to_payload(cr));
-  j["collision_report"] = reports;
-  return j;
 }
 
 // ── CamDocumentData ──────────────────────────────────────────────
+
+json to_payload(const polysmith::core::LaserMachineSettings& machine) {
+  return {
+      {"work_area_x_mm", machine.work_area_x_mm},
+      {"work_area_y_mm", machine.work_area_y_mm},
+      {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
+      {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+  };
+}
+
+json to_payload(const polysmith::core::LaserTestPatternParameters& pattern) {
+  return {
+      {"pattern", pattern.pattern},
+      {"power_min_percent", pattern.power_min_percent},
+      {"power_max_percent", pattern.power_max_percent},
+      {"power_steps", pattern.power_steps},
+      {"speed_min_mm_per_s", pattern.speed_min_mm_per_s},
+      {"speed_max_mm_per_s", pattern.speed_max_mm_per_s},
+      {"speed_steps", pattern.speed_steps},
+      {"cell_size_mm", pattern.cell_size_mm},
+      {"cell_spacing_mm", pattern.cell_spacing_mm},
+      {"start_x_mm", pattern.start_x_mm},
+      {"start_y_mm", pattern.start_y_mm},
+      {"line_spacing_mm", pattern.line_spacing_mm},
+      {"kerf_width_mm", pattern.kerf_width_mm},
+      {"power_percent", pattern.power_percent},
+      {"speed_mm_per_s", pattern.speed_mm_per_s},
+      {"cell_labels", pattern.cell_labels},
+  };
+}
 
 json to_payload(const polysmith::core::CamDocumentData& cam) {
   json j;
@@ -406,8 +401,8 @@ json to_payload(const polysmith::core::CamDocumentData& cam) {
   j["post_processor"] = cam.post_processor.has_value()
       ? to_payload(cam.post_processor.value()) : json(nullptr);
 
-  j["simulation"] = cam.simulation.has_value()
-      ? to_payload(cam.simulation.value()) : json(nullptr);
+  j["machine_settings"] = cam.machine_settings.has_value()
+      ? to_payload(cam.machine_settings.value()) : json(nullptr);
 
   return j;
 }

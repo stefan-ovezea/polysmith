@@ -24,7 +24,6 @@ struct CamSetup;
 
 struct PostContext {
   const Toolpath& toolpath;
-  const PostProcessorOptions& options;
   const CamSetup& setup;
   const ToolEntry& tool;
   std::string op_name;
@@ -40,9 +39,13 @@ struct PostContext {
 };
 
 // Looks the definition up by name (user file first, built-in fallback)
-// and renders the toolpath through its templates.
+// and renders the toolpath through its templates.  `include_footer`
+// gates the footer (program-end) lines — multi-op exports render the
+// footer only on the LAST op.  Returns an empty list when the post
+// type is unknown.
 std::vector<std::string> post_process(const std::string& type,
-                                      const PostContext& context);
+                                      const PostContext& context,
+                                      bool include_footer = true);
 
 struct PostListEntry {
   std::string name;

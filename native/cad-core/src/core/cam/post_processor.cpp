@@ -35,6 +35,7 @@ const char* kGrblDefinition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
   "line_numbers": false,
   "use_arcs": true,
@@ -56,6 +57,7 @@ const char* kLinuxcncDefinition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
@@ -77,6 +79,7 @@ const char* kMach3Definition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "M30"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
@@ -98,6 +101,7 @@ const char* kMach4Definition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M30"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
   "line_numbers": false,
   "use_arcs": true,
@@ -119,6 +123,7 @@ const char* kMarlinDefinition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 255,
   "line_numbers": false,
   "use_arcs": true,
@@ -140,8 +145,32 @@ const char* kFanucDefinition = R"JSON({
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M30"],
+  "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
   "line_numbers": true,
+  "use_arcs": true,
+  "decimal_places": 3
+})JSON";
+
+// Smoothieware: S values are normalized to 0..1.
+const char* kSmoothiewareDefinition = R"JSON({
+  "units_mm": "G21",
+  "units_inch": "G20",
+  "header_lines": ["(op: {op_name})", "{units_word}", "G90", "G94", "G17", "M5"],
+  "rapid": "G0 X{x} Y{y}",
+  "feed": "G1 X{x} Y{y}",
+  "arc_cw": "G2 X{x} Y{y} I{i} J{j}",
+  "arc_ccw": "G3 X{x} Y{y} I{i} J{j}",
+  "dwell": "G4 P{seconds}",
+  "laser_on_dynamic": "M4 S{power}",
+  "laser_on_constant": "M3 S{power}",
+  "laser_off": "M5",
+  "spindle_on": "M3 S{rpm}",
+  "spindle_off": "M5",
+  "footer_lines": ["M5", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
+  "power_max": 1.0,
+  "line_numbers": false,
   "use_arcs": true,
   "decimal_places": 3
 })JSON";
@@ -226,16 +255,20 @@ std::string render_template(const std::string& templ,
 }
 
 std::map<std::string, std::string> common_vars(const PostContext& context) {
+  const double scale = context.setup.units == "inch" ? 1.0 / 25.4 : 1.0;
   return {
       {"op_name", context.op_name},
       {"units_word", context.setup.units == "inch" ? context.definition.units_inch
                                                    : context.definition.units_mm},
-      {"safety_z", fmt_number(context.setup.safety_height - context.wcs_origin[2],
+      {"safety_z", fmt_number((context.setup.safety_height -
+                               context.wcs_origin[2]) *
+                                  scale,
                               context.definition.decimal_places)},
   };
 }
 
-std::vector<std::string> render_post(const PostContext& context) {
+std::vector<std::string> render_post(const PostContext& context,
+                                     bool include_footer) {
   const auto& def = context.definition;
   std::vector<std::string> lines;
   int sequence = 0;
@@ -252,6 +285,11 @@ std::vector<std::string> render_post(const PostContext& context) {
   const double originY = context.wcs_origin[1];
   const double originZ = context.wcs_origin[2];
   const int decimals = def.decimal_places;
+  // Inch setups emit G20 — every machine coordinate must scale.
+  const double scale = context.setup.units == "inch" ? 1.0 / 25.4 : 1.0;
+  const auto fmt = [&](double value) {
+    return fmt_number(value * scale, decimals);
+  };
 
   // Header.
   for (const auto& templ : def.header_lines) {
@@ -260,10 +298,15 @@ std::vector<std::string> render_post(const PostContext& context) {
 
   bool laserOn = false;
   bool spindleOn = false;
+  bool airOn = false;
   double currentPower = -1.0;
   double lastFeed = -1.0;
   double currentZ = 0.0;
   bool haveZ = false;
+
+  const auto power_for = [&](const ToolpathMove& move) {
+    return move.power_percent / 100.0 * def.power_max;
+  };
 
   const auto ensure_power_state = [&](const ToolpathMove& move) {
     if (!context.laser.has_value()) {
@@ -275,15 +318,28 @@ std::vector<std::string> render_post(const PostContext& context) {
       return;
     }
     if (move.laser_on && !laserOn) {
-      const double power =
-          std::round(move.power_percent / 100.0 * def.power_max);
+      if (context.laser->air_assist && def.laser_air_on.has_value() &&
+          !airOn) {
+        emit(render_template(def.laser_air_on.value(), {}));
+        airOn = true;
+      }
+      const double power = power_for(move);
       const bool dynamic =
           context.laser->dynamic_power && context.laser->mode != "engrave";
       emit(render_template(dynamic ? def.laser_on_dynamic
                                    : def.laser_on_constant,
-                           {{"power", std::to_string(static_cast<int>(power))}}));
+                           {{"power", fmt_number(power, decimals)}}));
       currentPower = power;
       laserOn = true;
+    } else if (move.laser_on && laserOn) {
+      // Mid-cut power transition (tabs, pass ramps): the beam stays
+      // on at a different S value.
+      const double power = power_for(move);
+      if (std::abs(power - currentPower) > 1e-9) {
+        emit(render_template(def.power_change,
+                             {{"power", fmt_number(power, decimals)}}));
+        currentPower = power;
+      }
     } else if (!move.laser_on && laserOn) {
       emit(render_template(def.laser_off, {}));
       laserOn = false;
@@ -293,9 +349,9 @@ std::vector<std::string> render_post(const PostContext& context) {
   ToolpathMove previous;
   bool havePrevious = false;
   for (const auto& move : context.toolpath.moves) {
-    const double x = move.x - originX;
-    const double y = move.y - originY;
-    const double z = move.z - originZ;
+    const double x = (move.x - originX) * scale;
+    const double y = (move.y - originY) * scale;
+    const double z = (move.z - originZ) * scale;
     const bool zChanged = !haveZ || z != currentZ;
     const bool feedChanged = move.feedrate_mm_per_min > 0.0 &&
                              move.feedrate_mm_per_min != lastFeed;
@@ -326,8 +382,8 @@ std::vector<std::string> render_post(const PostContext& context) {
       if (def.use_arcs && radius >= 0.001) {
         ensure_power_state(move);
         auto vars = moveVars();
-        vars["i"] = fmt_number(move.i, decimals);
-        vars["j"] = fmt_number(move.j, decimals);
+        vars["i"] = fmt(move.i);
+        vars["j"] = fmt(move.j);
         std::string line = render_template(
             move.kind == ToolpathMoveKind::FeedArcCW ? def.arc_cw
                                                      : def.arc_ccw,
@@ -349,8 +405,8 @@ std::vector<std::string> render_post(const PostContext& context) {
                            chords);
         for (const auto& point : chords) {
           auto vars = std::map<std::string, std::string>{
-              {"x", fmt_number(point[0] - originX, decimals)},
-              {"y", fmt_number(point[1] - originY, decimals)},
+              {"x", fmt(point[0] - originX)},
+              {"y", fmt(point[1] - originY)},
               {"z", fmt_number(z, decimals)},
           };
           std::string line = render_template(def.feed, vars);
@@ -384,11 +440,22 @@ std::vector<std::string> render_post(const PostContext& context) {
     havePrevious = true;
   }
 
+  if (airOn && def.laser_air_off.has_value()) {
+    emit(render_template(def.laser_air_off.value(), {}));
+  }
   if (laserOn || spindleOn) {
     emit(render_template(def.spindle_off, {}));
   }
-  for (const auto& templ : def.footer_lines) {
-    emit(render_template(templ, common_vars(context)));
+  if (include_footer) {
+    // Laser ops never lift Z at program end — a gantry laser may not
+    // have a Z axis.
+    const auto& footers = (context.laser.has_value() &&
+                           def.laser_footer_lines.has_value())
+                              ? def.laser_footer_lines.value()
+                              : def.footer_lines;
+    for (const auto& templ : footers) {
+      emit(render_template(templ, common_vars(context)));
+    }
   }
 
   return lines;
@@ -420,6 +487,20 @@ bool parse_post_definition(const std::string& json_text,
     definition.spindle_on = read_optional_template(payload, "spindle_on", definition.spindle_on);
     definition.spindle_off = read_optional_template(payload, "spindle_off", definition.spindle_off);
     definition.footer_lines = read_optional_lines(payload, "footer_lines", definition.footer_lines);
+    definition.power_change = read_optional_template(payload, "power_change", definition.power_change);
+    const auto laserFooters = read_optional_lines(payload, "laser_footer_lines", {});
+    definition.laser_footer_lines =
+        laserFooters.empty()
+            ? std::nullopt
+            : std::optional<std::vector<std::string>>(laserFooters);
+    if (payload.contains("laser_air_on") &&
+        payload.at("laser_air_on").is_string()) {
+      definition.laser_air_on = payload.at("laser_air_on").get<std::string>();
+    }
+    if (payload.contains("laser_air_off") &&
+        payload.at("laser_air_off").is_string()) {
+      definition.laser_air_off = payload.at("laser_air_off").get<std::string>();
+    }
     if (payload.contains("power_max") && payload.at("power_max").is_number()) {
       definition.power_max = payload.at("power_max").get<double>();
     }
@@ -447,6 +528,7 @@ std::vector<std::pair<std::string, std::string>> builtin_post_definitions() {
       {"mach4", kMach4Definition},
       {"marlin", kMarlinDefinition},
       {"fanuc", kFanucDefinition},
+      {"smoothieware", kSmoothiewareDefinition},
   };
 }
 
@@ -477,16 +559,19 @@ bool load_post_definition(const std::string& name, PostDefinition& definition,
 }
 
 std::vector<std::string> post_process(const std::string& type,
-                                      const PostContext& context) {
+                                      const PostContext& context,
+                                      bool include_footer) {
   seed_builtin_posts();
   PostDefinition definition;
   std::string error;
   if (!load_post_definition(type, definition, error)) {
-    return {"(error: " + error + ")"};
+    // Empty output = failure — the exporter skips the operation with
+    // a warning instead of writing a fake comment line.
+    return {};
   }
   PostContext effective = context;
   effective.definition = definition;
-  return render_post(effective);
+  return render_post(effective, include_footer);
 }
 
 std::vector<PostListEntry> list_post_processors() {

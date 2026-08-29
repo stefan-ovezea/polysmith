@@ -17,6 +17,7 @@
         "document_saved",
         "cam_generation_progress",
         "cam_post_list_result",
+        "cam_face_attestation_result",
         "log",
         "trim_preview_result",
         "error"

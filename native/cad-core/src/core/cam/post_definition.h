@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,17 @@ struct PostDefinition {
   std::string spindle_on = "M3 S{rpm}";
   std::string spindle_off = "M5";
   std::vector<std::string> footer_lines = {"M5", "G0 Z{safety_z}", "M2"};
+  // Emitted when the laser stays on but the move power changes (tabs,
+  // pass power ramps).
+  std::string power_change = "S{power}";
+  // Laser ops use these footer lines instead of footer_lines (a gantry
+  // laser may not have a Z axis — never lift at the end of a laser
+  // program).
+  std::optional<std::vector<std::string>> laser_footer_lines;
+  // Emitted around cuts when the operation enables air assist.
+  // Absent → the controller handles its own air control.
+  std::optional<std::string> laser_air_on;
+  std::optional<std::string> laser_air_off;
 
   // S value at 100% power (GRBL: 1000; other boards differ).
   double power_max = 1000.0;

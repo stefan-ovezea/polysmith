@@ -237,6 +237,20 @@ DocumentState DocumentManager::cam_setup_create(const CamSetup& setup) {
   return document_.value();
 }
 
+DocumentState DocumentManager::cam_machine_settings_set(
+    const LaserMachineSettings& machine_settings) {
+  require_document();
+  if (machine_settings.work_area_x_mm <= 0.0 ||
+      machine_settings.work_area_y_mm <= 0.0) {
+    throw std::runtime_error("The machine work area must be positive");
+  }
+  push_undo_state();
+  clear_redo_stack();
+  document_->cam.machine_settings = machine_settings;
+  bump_geometry_revision();
+  return document_.value();
+}
+
 std::optional<CamSetup> DocumentManager::cam_setup_get() const {
   if (!document_.has_value() || document_->cam.setups.empty())
     return std::nullopt;
@@ -371,6 +385,11 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
   if (stored.op_id.empty()) {
     stored.op_id = "cam-op-" + std::to_string(next_cam_op_id_++);
   }
+  // An operation without an explicit setup joins the first setup
+  // (legacy payloads keep working; multi-setup ops carry setup_id).
+  if (stored.setup_id.empty() && !document_->cam.setups.empty()) {
+    stored.setup_id = document_->cam.setups[0].setup_id;
+  }
 
   // Tool resolution.  An explicit tool must exist; an EMPTY tool gets
   // a sensible default — a matching tool from the library when one
@@ -393,18 +412,10 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
       createDefaultTool = true;
       defaultTool.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
       if (wantsLaser) {
+        // Identity fields only — the struct defaults carry the
+        // sensible cutting parameters.
         defaultTool.name = "CO2 laser (default)";
         defaultTool.type = "laser";
-        defaultTool.diameter_mm = 0.15;
-        defaultTool.flute_length_mm = 10.0;
-        defaultTool.overall_length_mm = 20.0;
-        defaultTool.shank_diameter_mm = 0.15;
-        defaultTool.material = "other";
-        defaultTool.max_spindle_rpm = 1000.0;
-        defaultTool.default_feedrate_mm_per_min = 500.0;
-        defaultTool.default_plunge_feedrate_mm_per_min = 0.0;
-        defaultTool.default_stepdown_mm = 0.0;
-        defaultTool.default_stepover_percent = 0.0;
       } else {
         defaultTool.name = "6mm flat endmill (default)";
         defaultTool.type = "endmill_flat";

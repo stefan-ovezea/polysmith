@@ -2,11 +2,11 @@ import type {
   CamOperation,
   CamOperationPayload,
   DocumentState,
+  FaceAttestation,
   GeometryReference,
   ViewportState,
 } from "@/types";
 import { DEFAULT_LASER_PARAMS } from "@/layout/CamLaserCutPanel";
-import { buildFaceAttestationFromSelection } from "./camFaceMillingActions";
 
 interface CamLaserCutContext {
   document: DocumentState | null;
@@ -15,6 +15,14 @@ interface CamLaserCutContext {
   camOperationCreate: (
     operation: CamOperationPayload,
   ) => Promise<Record<string, unknown>>;
+  camCaptureFaceReference: (
+    faceId: string,
+  ) => Promise<{
+    payload?: {
+      persistent_id: string;
+      attestation: FaceAttestation;
+    };
+  }>;
   setSelectedOperationId: (operationId: string | null) => void;
   addMessage: (message: string) => void;
   translate: (key: string, options?: Record<string, unknown>) => string;
@@ -79,6 +87,7 @@ export async function triggerCamLaserCut({
   viewport,
   runAction,
   camOperationCreate,
+  camCaptureFaceReference,
   setSelectedOperationId,
   addMessage,
   translate,
@@ -96,11 +105,23 @@ export async function triggerCamLaserCut({
   );
 
   // Input geometry: sketch profiles (or the selected sketch feature),
-  // OR a selected 3D face whose outline gets cut at its height.
-  const faceReference =
-    !hasProfileSelection && !hasSelectedSketch
-      ? buildFaceAttestationFromSelection(document, viewport)
-      : null;
+  // OR a selected 3D face whose outline gets cut at its height.  The
+  // face witness is captured by the CORE — never fabricated here.
+  let faceReference: GeometryReference | null = null;
+  if (!hasProfileSelection && !hasSelectedSketch && document.selected_face_id) {
+    await runAction(async () => {
+      const response = await camCaptureFaceReference(
+        document.selected_face_id as string,
+      );
+      const payload = response.payload;
+      if (payload?.attestation) {
+        faceReference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+      }
+    });
+  }
   if (!hasProfileSelection && !hasSelectedSketch && !faceReference) {
     addMessage(translate("cam.laserCut.noSelection"));
     return;
@@ -112,14 +133,13 @@ export async function triggerCamLaserCut({
   const laserTool = document.cam.tool_library.find(
     (tool) => tool.type === "laser",
   );
-  const knownIds = new Set(document.cam.operations.map((op) => op.op_id));
+  const previousCount = document.cam.operations.length;
 
   const operation: CamOperationPayload = {
     name: "2D Cut",
     type: "laser_cut",
     enabled: true,
     tool_id: laserTool?.tool_id ?? "",
-    point_locations: [],
     ...(faceReference
       ? {
           geometry_references: {
@@ -156,7 +176,12 @@ export async function triggerCamLaserCut({
     const operations = (
       response as { payload?: { operations?: CamOperation[] } }
     ).payload?.operations;
-    const created = operations?.find((op) => !knownIds.has(op.op_id));
+    // Creation appends — the new operation is the LAST element
+    // (guard on length instead of diffing id sets).
+    const created =
+      (operations?.length ?? 0) === previousCount + 1
+        ? operations[operations.length - 1]
+        : null;
     createdId = created?.op_id ?? null;
   });
 

@@ -9,12 +9,14 @@ export interface CamCuttingToolbarProps {
   disabled: boolean;
   onTwoDCut: () => void;
   onFaceOpClick: () => void;
+  onTestPattern: () => void;
 }
 
 export function CamCuttingToolbar({
   disabled,
   onTwoDCut,
   onFaceOpClick,
+  onTestPattern,
 }: CamCuttingToolbarProps) {
   return (
     <div className="flex items-center gap-1.5">
@@ -29,6 +31,13 @@ export function CamCuttingToolbar({
       >
         <rect x="3" y="4" width="18" height="16" rx="1" />
         <path d="M3 12h18" />
+      </CamIconButton>
+
+      <CamIconButton labelKey="cam.cutting.testPattern" disabled={disabled} onClick={onTestPattern}>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
       </CamIconButton>
 
       <CamIconButton labelKey="cam.cutting.nest" inactive>

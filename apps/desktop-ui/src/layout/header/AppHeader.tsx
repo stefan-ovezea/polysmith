@@ -352,6 +352,7 @@ interface AppHeaderProps
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
   onCamTwoDCutClick: () => void;
+  onCamTestPatternClick: () => void;
 }
 
 export function AppHeader({
@@ -464,6 +465,7 @@ export function AppHeader({
   onCamSetupClick,
   onCamFaceMillingClick,
   onCamTwoDCutClick,
+  onCamTestPatternClick,
 }: AppHeaderProps) {
   const { t: _t } = useTranslation();
   // Keep the main navigation bar in English regardless of the locale
@@ -967,6 +969,7 @@ export function AppHeader({
               disabled={disabled}
               onTwoDCut={onCamTwoDCutClick}
               onFaceOpClick={onCamFaceMillingClick}
+              onTestPattern={onCamTestPatternClick}
             />
           )}
         </div>

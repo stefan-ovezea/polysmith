@@ -50,7 +50,6 @@ export interface SketchProfileAttestation {
 export interface GeometryReference {
   persistent_id: string;
   attestation: FaceAttestation | EdgeAttestation | SketchProfileAttestation;
-  fallback_strategy: "warn_user" | "require_user" | "fail_operation" | "auto_resolve";
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -136,7 +135,7 @@ export type CamOperationType =
   | "face_milling" | "pocket_2d" | "contour_2d" | "slot"
   | "drilling" | "adaptive_clearing" | "parallel_3d"
   | "contour_3d" | "chamfer" | "thread_milling" | "engrave"
-  | "laser_cut";
+  | "laser_cut" | "laser_test_pattern";
 
 export type CamOperationStatus =
   | "pending" | "generated" | "needs_regenerate" | "error" | "deleted";
@@ -148,15 +147,6 @@ export interface CamGeometryReferences {
   check_surfaces: GeometryReference[];
 }
 
-export interface CamPointLocation {
-  vertex_id: string;
-  position: [number, number, number];
-  surface_normal: [number, number, number];
-  hole_diameter?: number;
-  sample_face: GeometryReference;
-  fallback_strategy: "warn_user" | "require_user" | "fail_operation";
-}
-
 export type ClearingStrategy = "zigzag" | "one_way" | "offset" | "adaptive" | "spiral";
 export type DrillingCycleType =
   | "g81_standard" | "g82_dwell" | "g83_peck"
@@ -166,16 +156,35 @@ export type DrillingCycleType =
 // Follows the per-type optional block pattern of the other strategy
 // fields so the operation struct stays one unified shape.
 export interface LaserCutParameters {
-  kerf_width_mm: number;         // cut width compensation, both sides
-  lead_in_mm: number;            // straight lead-in length
-  lead_out_mm: number;           // straight lead-out length
-  pierce_dwell_seconds: number;  // G4 dwell after pierce
-  power_percent: number;         // 0..100
-  passes: number;                // repeat contour (same path in v1)
   mode: "cut" | "score" | "engrave";
+  power_percent: number;            // 0..100
+  speed_mm_per_s?: number;          // laser-native speed (mm/s)
+  passes: number;                   // contour repetitions, laser stays on
+  dynamic_power: boolean;           // true -> M4 (power scales with feed)
+  air_assist: boolean;              // M8/M9 around cuts
+  kerf_width_mm: number;            // full cut width; halved per side
+  kerf_side: "auto" | "outside" | "inside" | "none";
+  lead_in_mm: number;
+  lead_out_mm: number;
+  lead_in_style: "line" | "arc";
+  lead_out_style: "line" | "arc";
+  lead_in_angle_deg: number;        // entry angle vs contour tangent
+  lead_out_angle_deg: number;       // exit angle vs contour tangent
+  overcut_mm: number;               // extend past the start/end joint
+  pierce_dwell_seconds: number;     // G4 dwell after pierce
+  pierce_position: "auto" | "lead_start" | "nearest_centroid";
+  tabs_enabled: boolean;
+  tab_width_mm: number;             // tab length along the cut
+  tab_spacing_mm: number;           // even distribution along the loop
+  tab_power_percent: number;        // 0 = laser off over tab
+  tabs_on_holes: boolean;           // standard: outer contours only
+  engrave_style: "line" | "fill";
+  line_spacing_mm: number;          // hatch spacing
+  fill_angle_deg: number;           // hatch direction
+  fill_bidirectional: boolean;
   material_thickness_mm: number;
-  cut_plane_offset_mm: number;   // cut-plane Z relative to sketch plane
-  dynamic_power: boolean;        // true -> M4 (power scales with feed)
+  cut_plane_offset_mm: number;      // cut-plane Z relative to sketch plane
+  cut_order: "inner_first" | "nearest_neighbor" | "by_area";
 }
 
 export interface CamOperationParameters {
@@ -196,6 +205,7 @@ export interface CamOperationParameters {
   engagement_angle_deg?: number;
   zigzag_angle_deg?: number;     // for face milling
   laser?: LaserCutParameters;    // for laser_cut
+  test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";
 }
 
@@ -230,9 +240,12 @@ export interface CamOperation {
   name: string;
   type: CamOperationType;
   enabled: boolean;
+  /** Fixturing setup this operation belongs to ("" = the first setup,
+   *  legacy documents created before multi-setup support).  Optional on
+   *  the CREATE payload — the core stamps the active setup. */
+  setup_id?: string;
   tool_id: string;
   geometry_references: CamGeometryReferences;
-  point_locations: CamPointLocation[];
   parameters: CamOperationParameters;
   dependencies: CamOperationDependencies;
   toolpath_cache?: ToolpathCache;
@@ -263,54 +276,54 @@ export type PostProcessorType =
   | "fanuc" | "linuxcnc" | "mach3" | "mach4"
   | "grbl" | "marlin" | "custom";
 
-export interface PostProcessorOptions {
-  add_line_numbers: boolean;
-  use_arcs: boolean;
-  absolute_coordinates: boolean;
-  tool_change_mcode: number;
-  spindle_start_mcode: number;
-  coolant_mcode_on: number;
-  coolant_mcode_off: number;
-  decimal_places: number;
-  separate_rapids?: boolean;
-  header_string?: string;
-  footer_string?: string;
-}
-
+/// The selected post processor.  Output shaping comes from the
+/// DEFINITION FILE — posts are first-class user-editable files.
 export interface PostProcessor {
   type: PostProcessorType;
   filename: string;
-  options: PostProcessorOptions;
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  Simulation
-// ══════════════════════════════════════════════════════════════════
-
-export interface CollisionReport {
-  op_id: string;
-  tool_id: string;
-  position: [number, number, number];
-  severity: "warning" | "error" | "critical";
-  message: string;
-}
-
-export interface SimulationData {
-  stock_after_op_id?: string;
-  stock_mesh_reference?: string;
-  last_verification?: string;
-  collisions_detected: boolean;
-  collision_report: CollisionReport[];
 }
 
 // ══════════════════════════════════════════════════════════════════
 //  Document Container
 // ══════════════════════════════════════════════════════════════════
 
+// Laser machine settings — the physical machine, not the job.
+export interface LaserMachineSettings {
+  work_area_x_mm: number;         // bed X travel
+  work_area_y_mm: number;         // bed Y travel
+  // The red pointer sits at this offset from the laser focal point:
+  // dot_position = laser_position + pointer_offset.  The exporter
+  // shifts coordinates by -offset so a job framed under the dot cuts
+  // where the dot was.
+  pointer_offset_x_mm: number;
+  pointer_offset_y_mm: number;
+}
+
+// Laser test-pattern parameters (type == "laser_test_pattern").
+// LightBurn-style material test cards: power columns × speed rows.
+export interface LaserTestPatternParameters {
+  pattern: "engrave_grid" | "cut_grid" | "kerf_gauge";
+  power_min_percent: number;
+  power_max_percent: number;
+  power_steps: number;
+  speed_min_mm_per_s: number;
+  speed_max_mm_per_s: number;
+  speed_steps: number;
+  cell_size_mm: number;
+  cell_spacing_mm: number;
+  start_x_mm: number;
+  start_y_mm: number;
+  line_spacing_mm: number;        // engrave fill density
+  kerf_width_mm: number;          // kerf_gauge only
+  power_percent: number;          // kerf_gauge only
+  speed_mm_per_s: number;         // kerf_gauge only
+  cell_labels: boolean;           // engrave "P.. S.." under every cell
+}
+
 export interface CamDocumentData {
   setups: CamSetup[];
   tool_library: ToolEntry[];
   operations: CamOperation[];
   post_processor: PostProcessor | null;
-  simulation: SimulationData | null;
+  machine_settings: LaserMachineSettings | null;
 }

@@ -20,7 +20,6 @@ namespace {
 using polysmith::core::CamSetup;
 using polysmith::core::LaserCutParameters;
 using polysmith::core::PostContext;
-using polysmith::core::PostProcessorOptions;
 using polysmith::core::ToolEntry;
 using polysmith::core::Toolpath;
 using polysmith::core::ToolpathMove;
@@ -85,10 +84,8 @@ bool test_laser_golden() {
   laser.dynamic_power = true;
   laser.mode = "cut";
 
-  PostProcessorOptions options;
   PostContext context{
       .toolpath = make_laser_toolpath(),
-      .options = options,
       .setup = make_setup(),
       .tool = make_laser_tool(),
       .op_name = "2D Cut 1",
@@ -172,7 +169,6 @@ bool test_engrave_uses_m3() {
 
   PostContext context{
       .toolpath = path,
-      .options = PostProcessorOptions{},
       .setup = make_setup(),
       .tool = make_laser_tool(),
       .op_name = "Engrave 1",
@@ -217,7 +213,6 @@ bool test_line_numbers_and_decimals() {
 
   PostContext context{
       .toolpath = path,
-      .options = PostProcessorOptions{},
       .setup = make_setup(),
       .tool = make_laser_tool(),
       .op_name = "Numbers",
@@ -259,7 +254,6 @@ bool test_inch_and_wcs_offset() {
 
   PostContext context{
       .toolpath = path,
-      .options = PostProcessorOptions{},
       .setup = make_setup("inch"),
       .tool = make_laser_tool(),
       .op_name = "Inch",
@@ -272,9 +266,11 @@ bool test_inch_and_wcs_offset() {
     std::cerr << gcode;
     return false;
   }
-  // Machine coords = world - wcs origin.
-  return expect(gcode.find("X8.000 Y16.000") != std::string::npos,
-                "grbl: WCS origin offset applied to coordinates");
+  // Machine coords = (world - wcs origin) in INCHES: 8 mm → 0.315 in,
+  // 16 mm → 0.630 in.
+  return expect(gcode.find("X0.315") != std::string::npos &&
+                    gcode.find("Y0.630") != std::string::npos,
+                "grbl: inch coordinates scaled by 1/25.4");
 }
 
 bool test_mill_uses_spindle_m3() {
@@ -289,7 +285,6 @@ bool test_mill_uses_spindle_m3() {
 
   PostContext context{
       .toolpath = path,
-      .options = PostProcessorOptions{},
       .setup = make_setup(),
       .tool = mill,
       .op_name = "Face 1",
@@ -341,7 +336,6 @@ bool test_header_footer_passthrough() {
 
   PostContext context{
       .toolpath = path,
-      .options = PostProcessorOptions{},
       .setup = make_setup(),
       .tool = make_laser_tool(),
       .op_name = "Custom",
@@ -435,6 +429,166 @@ bool test_post_list_and_import() {
                 "import: broken definitions rejected");
 }
 
+bool test_mid_cut_power_change() {
+  // The laser stays on at a different S value (tabs / pass ramps):
+  // the post emits the power-change template instead of dropping it.
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  laser.dynamic_power = false;  // M3 constant — clean S comparison
+
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        300.0, 85.0, true});
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 0.0, 0.0, 0.0, 0.0,
+                        300.0, 60.0, true});
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 2.0, 0.0, 0.0, 0.0, 0.0, 300.0, 60.0, false});
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Power ramp",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  const size_t s850 = gcode.find("S850");
+  const size_t s600 = gcode.find("S600");
+  if (!expect(s850 != std::string::npos && s600 != std::string::npos &&
+                  s600 > s850,
+              "grbl: mid-cut power change emits the S transition")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
+bool test_smoothieware_power_scale() {
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  laser.dynamic_power = true;
+
+  Toolpath path;
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0, 300.0, 85.0, true});
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Smoothie",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("smoothieware", context));
+  return expect(gcode.find("S0.850") != std::string::npos,
+                "smoothieware: S values normalized to 0..1");
+}
+
+bool test_laser_footer_has_no_z() {
+  // Laser ops must never lift Z at program end — a gantry laser may
+  // not have a Z axis.
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+
+  PostContext context{
+      .toolpath = make_laser_toolpath(),
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "2D Cut 1",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  return expect(gcode.find("G0 Z") == std::string::npos &&
+                    gcode.find("M2") != std::string::npos,
+                "grbl laser: footer is M5 M2 — no Z lift");
+}
+
+bool test_air_assist_codes() {
+  // Air assist templates come from a user file (machine-specific);
+  // M8 wraps the cut block, M9 follows the last cut.
+  const auto dir = std::filesystem::temp_directory_path() /
+                   "polysmith_posts_air_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream stream(dir / "airgrbl.json");
+    stream << R"({
+      "laser_air_on": "M8",
+      "laser_air_off": "M9"
+    })";
+  }
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", dir.string().c_str());
+#else
+  setenv("POLYSMITH_POSTS_DIR", dir.string().c_str(), 1);
+#endif
+
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  laser.air_assist = true;
+
+  Toolpath path;
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0, 300.0, 85.0, true});
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 2.0, 1.0, 0.0, 0.0, 0.0, 300.0, 85.0, false});
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Air",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("airgrbl", context));
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", "");
+#else
+  unsetenv("POLYSMITH_POSTS_DIR");
+#endif
+  const size_t m8 = gcode.find("M8");
+  const size_t m9 = gcode.find("M9");
+  return expect(m8 != std::string::npos && m9 != std::string::npos &&
+                    m9 > m8,
+                "air assist: M8 before the cut, M9 after");
+}
+
+bool test_unknown_post_is_empty() {
+  LaserCutParameters laser;
+  laser.power_percent = 50.0;
+  Toolpath path;
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0, 300.0, 50.0, true});
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Unknown",
+      .laser = laser,
+  };
+  return expect(post_process("does_not_exist", context).empty(),
+                "unknown post: empty output signals failure");
+}
+
+bool test_footer_flag_gates_program_end() {
+  LaserCutParameters laser;
+  laser.power_percent = 50.0;
+  Toolpath path;
+  path.moves.push_back(
+      {ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0, 300.0, 50.0, true});
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Footer",
+      .laser = laser,
+  };
+  const std::string without = joined(post_process("grbl", context, false));
+  const std::string with = joined(post_process("grbl", context, true));
+  return expect(without.find("M2") == std::string::npos &&
+                    with.find("M2") != std::string::npos,
+                "footer flag: M2 only on the op that includes the footer");
+}
+
 }  // namespace
 
 int main() {
@@ -491,6 +645,54 @@ int main() {
 
   std::cout << "  Test 7: post list + import... ";
   if (test_post_list_and_import()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 8: mid-cut power change... ";
+  if (test_mid_cut_power_change()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 9: smoothieware power scale... ";
+  if (test_smoothieware_power_scale()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 10: laser footer has no Z... ";
+  if (test_laser_footer_has_no_z()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 11: air assist codes... ";
+  if (test_air_assist_codes()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 12: unknown post is empty... ";
+  if (test_unknown_post_is_empty()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 13: footer flag gates program end... ";
+  if (test_footer_flag_gates_program_end()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

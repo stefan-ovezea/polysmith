@@ -5,6 +5,9 @@ import {
   makeCreateDocumentCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
+  makeCamMachineSettingsSetCommand,
+  makeCamCaptureFaceReferenceCommand,
+  makeCamWcsSetFaceCommand,
   makeCamStockSetCommand,
   makeCamToolAddCommand,
   makeCamToolUpdateCommand,
@@ -195,11 +198,13 @@ import type {
   CamSetup,
   CoreCommand,
   ExtrudeAdvancedParameters,
+  FaceAttestation,
   ExtrudeFeatureParameters,
   ExtrudeMode,
   FastenerFeatureParameters,
   HelixFeatureParameters,
   HoleFeatureParameters,
+  LaserMachineSettings,
   MoveFeatureParameters,
   PostProcessor,
   SelectionFilterUpdate,
@@ -1519,6 +1524,31 @@ export function useCadCore() {
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));
+    },
+    camMachineSettingsSet: async (machineSettings: LaserMachineSettings) => {
+      await sendAndRefreshSessionViewport(
+        makeCamMachineSettingsSetCommand(machineSettings),
+      );
+    },
+    camWcsSetFace: async (faceId: string) => {
+      // Stores the face-anchored WCS witness on the first setup; the
+      // refresh pass resolves the machine origin from the live face.
+      await sendAndRefreshSessionViewport(makeCamWcsSetFaceCommand(faceId));
+    },
+    camCaptureFaceReference: async (faceId: string) => {
+      // Awaited: the reply is a cam_face_attestation_result event
+      // carrying the TNP-safe witness captured by the core.
+      const response = await sendCoreCommandAwaited(
+        makeCamCaptureFaceReferenceCommand(faceId) as CoreCommand & {
+          id: string;
+        },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: FaceAttestation;
+        };
+      };
     },
     camStockSet: async (stock: StockDefinition) => {
       await sendAndRefreshSessionViewport(makeCamStockSetCommand(stock));

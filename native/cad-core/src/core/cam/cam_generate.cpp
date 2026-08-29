@@ -60,21 +60,31 @@ CamGenerateOutcome generate_operation_toolpath(
         "The tool used by this operation no longer exists.";
     return outcome;
   }
+  // A laser operation needs a laser tool — an endmill would emit
+  // nonsense power codes.
+  if ((op->type == "laser_cut" || op->type == "laser_test_pattern") &&
+      tool->type != "laser") {
+    outcome.result.ok = false;
+    outcome.result.error_message =
+        "This operation requires a laser tool (the selected tool is a " +
+        tool->type + ").";
+    return outcome;
+  }
 
-  if (document.cam.setups.empty()) {
+  const CamSetup* setup = setup_for(document, *op);
+  if (setup == nullptr) {
     outcome.result.ok = false;
     outcome.result.error_message =
         "Create a CAM setup before generating toolpaths.";
     return outcome;
   }
-  const CamSetup& setup = document.cam.setups[0];
 
   // Resolve geometry references.  Profiles need their owning sketch
   // feature alongside the region pointer (the generator maps to world
   // space through the sketch's plane frame).
   CamGenerateContext context{
       .document = document,
-      .setup = setup,
+      .setup = *setup,
       .operation = *op,
       .tool = *tool,
       .preview = preview,
@@ -90,46 +100,37 @@ CamGenerateOutcome generate_operation_toolpath(
     }
   };
 
+  // Resolve geometry references through the shared resolver (the same
+  // code the refresh pass uses — one source of truth for TNP
+  // re-resolution).  Profiles need their owning sketch alongside the
+  // region pointer (the generator maps to world space through the
+  // sketch's plane frame).
+  bool needsFaces = false;
   for (const auto& ref : op->geometry_references.machining_regions) {
-    if (std::holds_alternative<SketchProfileAttestation>(
-            ref.attestation)) {
-      const auto& attestation =
-          std::get<SketchProfileAttestation>(ref.attestation);
-      const FeatureEntry* sketch = nullptr;
-      for (const auto& feature : document.feature_history) {
-        if (feature.id == attestation.sketch_feature_id) {
-          sketch = &feature;
-          break;
-        }
-      }
-      if (sketch == nullptr || !sketch->sketch_parameters.has_value()) {
-        outcome.result.ok = false;
-        outcome.result.error_message =
-            "The sketch used by this operation no longer exists.";
-        return outcome;
-      }
-      const auto resolved = resolve_profile_attestation(attestation, *sketch);
-      if (!resolved.found) {
-        outcome.result.ok = false;
-        outcome.result.error_message =
-            profile_reference_failure_message(resolved);
-        return outcome;
-      }
-      context.geometry.profiles.push_back(resolved);
-      context.geometry.sketches.push_back(&sketch->sketch_parameters.value());
-    } else if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
-      ensure_bodies();
-      const auto resolved = resolve_face_attestation(
-          std::get<FaceAttestation>(ref.attestation), bodies);
-      if (!resolved.found) {
-        outcome.result.ok = false;
-        outcome.result.error_message = face_reference_failure_message(resolved);
-        return outcome;
-      }
-      context.geometry.faces.push_back(resolved);
-    } else {
+    if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+      needsFaces = true;
+      break;
+    }
+  }
+  if (needsFaces) {
+    ensure_bodies();
+  }
+  for (const auto& ref : op->geometry_references.machining_regions) {
+    std::string message;
+    const bool ok = resolve_geometry_reference(
+        ref, document, bodies,
+        [&](const ResolvedProfileRef& resolved, const FeatureEntry& sketch) {
+          context.geometry.profiles.push_back(resolved);
+          context.geometry.sketches.push_back(
+              &sketch.sketch_parameters.value());
+        },
+        [&](const ResolvedFaceRef& resolved) {
+          context.geometry.faces.push_back(resolved);
+        },
+        message);
+    if (!ok) {
       outcome.result.ok = false;
-      outcome.result.error_message = "Edge references are not supported yet.";
+      outcome.result.error_message = message;
       return outcome;
     }
   }
