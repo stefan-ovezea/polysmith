@@ -647,6 +647,10 @@ Geometry input:
   power settings live in `parameters.laser` (v2 model: `mode`,
   `power_percent`, `speed_mm_per_s`, `passes`, `kerf_width_mm`/`kerf_side`,
   leads, tabs, fill, `cut_order`).
+- `select_sketch_profile` accepts `{entity_id, additive}` instead of
+  `{profile_id, additive}`: the core selects every profile whose boundary
+  includes the entity (used for outline clicks during the CAM re-pick flow;
+  a shared edge selects both owning regions, construction entities throw).
 - `face_milling`: pass `geometry_references.machining_regions` with a
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the

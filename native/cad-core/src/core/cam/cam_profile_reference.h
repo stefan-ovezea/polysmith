@@ -83,6 +83,15 @@ bool capture_profile_references_from_sketch(const DocumentState& document,
                                             const std::string& sketch_feature_id,
                                             CamOperation& op);
 
+// Captures witness references for the EXPLICIT profile ids only — no
+// sketch-feature fallback, no hole dedup (the ids are honored as
+// picked).  Used by the CAM re-pick gesture, where an empty selection
+// must stay empty instead of silently re-targeting the whole sketch.
+bool capture_profile_references_from_profile_ids(
+    const DocumentState& document,
+    const std::vector<std::string>& profile_ids,
+    CamOperation& op);
+
 // Score threshold above which a candidate region is considered a
 // match; a second candidate above the threshold AND within 5% of the
 // best makes the resolution ambiguous (never guess — the user

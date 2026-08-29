@@ -97,6 +97,7 @@ import {
   makePingCommand,
   makeRedoCommand,
   makeSelectSketchProfileCommand,
+  makeSelectSketchProfileByEntityCommand,
   makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
   makeSelectSketchVertexCommand,
@@ -1346,6 +1347,12 @@ export function useCadCore() {
     },
     selectSketchProfile: async (profileId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchProfileCommand(profileId, additive));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectSketchProfileByEntity: async (entityId: string, additive = false) => {
+      await sendCoreCommand(
+        makeSelectSketchProfileByEntityCommand(entityId, additive),
+      );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     extrudeProfile: async (

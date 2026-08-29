@@ -761,6 +761,7 @@ function App() {
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
     selectSketchProfile,
+    selectSketchProfileByEntity,
     extrudeProfile,
     extrudeOpenEntities,
     extrudeFace,
@@ -1972,13 +1973,29 @@ function App() {
                 constructionAxisAction !== null ||
                 helixAction !== null ||
                 threadAction !== null ||
-                // CAM workspace: sketch clicks select the owning sketch —
-                // but NOT while the origin pick is armed, so the click
-                // falls through to the vertex/face pick instead.
-                (workspaceView === "cam" && !originPickArmed && !camProfilePickArmed)
+                // CAM workspace: sketch clicks are always captured —
+                // while the profile re-pick is armed they select the
+                // profile on the clicked outline; otherwise they select
+                // the owning sketch.  Not while the origin pick is
+                // armed, so that click falls through to the vertex/face
+                // pick instead.
+                (workspaceView === "cam" && !originPickArmed)
               }
               onPickInactiveSketchLine={async (lineId) => {
                 if (workspaceView === "cam") {
+                  if (camProfilePickArmed) {
+                    // Re-pick armed: the clicked outline entity selects
+                    // the profile(s) whose boundary includes it.
+                    await runAction(async () => {
+                      await selectSketchProfileByEntity(lineId, true);
+                    });
+                    addMessage(
+                      t("cam.laserCut.profilePicked", {
+                        count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1,
+                      }),
+                    );
+                    return;
+                  }
                   // CAM workspace: closed sketches aren't pickable by
                   // default — a click on sketch geometry selects the
                   // owning sketch feature (the 2D Cut input).
@@ -2770,6 +2787,19 @@ function App() {
                 });
               }}
               onSelectSketchEntity={async (entityId, additive) => {
+                if (camProfilePickArmed) {
+                  // Re-pick armed: clicking a sketch entity's outline
+                  // selects the profile(s) whose boundary includes it.
+                  await runAction(async () => {
+                    await selectSketchProfileByEntity(entityId, true);
+                  });
+                  addMessage(
+                    t("cam.laserCut.profilePicked", {
+                      count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1,
+                    }),
+                  );
+                  return;
+                }
                 await handleSketchEntitySelection({
                   entityId,
                   additive,

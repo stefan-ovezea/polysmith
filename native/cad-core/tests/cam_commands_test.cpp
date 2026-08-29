@@ -14,6 +14,7 @@
 
 #include "core/document/document.h"
 #include "core/cam/cam_operation.h"
+#include "core/cam/cam_profile_reference.h"
 #include "protocol/serialization.h"
 
 namespace {
@@ -493,6 +494,178 @@ bool test_operation_set_scope_errors() {
                 "set scope: failed scope leaves the op untouched");
 }
 
+bool test_select_sketch_profile_by_entity() {
+  using polysmith::core::SketchProfileRegion;
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState doc = manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+  doc = manager.add_sketch_circle(10.0, 5.0, 2.0);
+
+  const polysmith::core::SketchFeatureParameters* sketch = nullptr;
+  for (const auto& feature : doc.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      sketch = &feature.sketch_parameters.value();
+      break;
+    }
+  }
+  if (!expect(sketch != nullptr && sketch->lines.size() == 4 &&
+                  sketch->circles.size() == 1 && sketch->profiles.size() == 2,
+              "entity fixture: rect + circle sketch with two regions")) {
+    return false;
+  }
+  const std::string rectLineId = sketch->lines[0].id;
+  const std::string circleId = sketch->circles[0].id;
+
+  // IMPORTANT: every `manager.<mutation>` reassigns `doc`, destroying
+  // the previous copy — never keep pointers into an older snapshot
+  // (a dangling FeatureEntry* here reads freed memory).
+  const auto sketch_params_of = [](const DocumentState& state)
+      -> const polysmith::core::SketchFeatureParameters* {
+    for (const auto& feature : state.feature_history) {
+      if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+        return &feature.sketch_parameters.value();
+      }
+    }
+    return nullptr;
+  };
+  const auto region_owns_line = [](const SketchProfileRegion& region,
+                                   const std::string& lineId) {
+    const auto in = [&](const std::vector<std::string>& ids) {
+      return std::find(ids.begin(), ids.end(), lineId) != ids.end();
+    };
+    return in(region.line_ids) || in(region.ordered_edge_ids) ||
+           std::any_of(region.boundary_edges.begin(),
+                       region.boundary_edges.end(),
+                       [&](const auto& edge) {
+                         return edge.entity_id == lineId;
+                       });
+  };
+
+  // Clicking a rectangle edge selects the outer region only.
+  doc = manager.select_sketch_profile_by_entity(rectLineId, true);
+  const auto& selection = doc.selected_sketch_profile_ids;
+  if (!expect(selection.size() == 1,
+              "by entity: rectangle edge selects exactly one profile")) {
+    return false;
+  }
+  const auto* liveSketch = sketch_params_of(doc);
+  const SketchProfileRegion* pickedRegion = nullptr;
+  if (liveSketch != nullptr) {
+    for (const auto& region : liveSketch->profiles) {
+      if (region.id == selection[0]) {
+        pickedRegion = &region;
+        break;
+      }
+    }
+  }
+  if (!expect(pickedRegion != nullptr &&
+                  region_owns_line(*pickedRegion, rectLineId),
+              "by entity: the selected region owns the clicked line")) {
+    return false;
+  }
+
+  // Toggle: clicking the same edge again removes it.
+  doc = manager.select_sketch_profile_by_entity(rectLineId, true);
+  if (!expect(doc.selected_sketch_profile_ids.empty(),
+              "by entity: second click toggles the profile off")) {
+    return false;
+  }
+
+  // Clicking the circle selects the circle-sourced region.
+  doc = manager.select_sketch_profile_by_entity(circleId, false);
+  if (!expect(doc.selected_sketch_profile_ids.size() == 1,
+              "by entity: circle selects one profile")) {
+    return false;
+  }
+  liveSketch = sketch_params_of(doc);
+  const SketchProfileRegion* circleRegion = nullptr;
+  if (liveSketch != nullptr) {
+    for (const auto& region : liveSketch->profiles) {
+      if (region.id == doc.selected_sketch_profile_ids[0]) {
+        circleRegion = &region;
+        break;
+      }
+    }
+  }
+  if (!expect(circleRegion != nullptr &&
+                  circleRegion->source_circle_id.has_value() &&
+                  circleRegion->source_circle_id.value() == circleId,
+              "by entity: circle selects the circle-sourced region")) {
+    return false;
+  }
+
+  // A construction line lies on no profile boundary → throws.
+  doc = manager.add_sketch_line(1.0, 5.0, 19.0, 5.0, /*is_construction=*/true);
+  const std::string constructionId =
+      sketch_params_of(doc)->lines.back().id;
+  bool constructionThrew = false;
+  try {
+    manager.select_sketch_profile_by_entity(constructionId, true);
+  } catch (const std::runtime_error& error) {
+    constructionThrew =
+        std::string(error.what()).find("not on a profile boundary") !=
+        std::string::npos;
+  }
+  if (!expect(constructionThrew,
+              "by entity: construction line throws a boundary error")) {
+    return false;
+  }
+
+  // Unknown entity → throws.
+  bool unknownThrew = false;
+  try {
+    manager.select_sketch_profile_by_entity("line-999", true);
+  } catch (const std::runtime_error& error) {
+    unknownThrew = std::string(error.what()).find("not found") !=
+                   std::string::npos;
+  }
+  return expect(unknownThrew, "by entity: unknown entity throws");
+}
+
+bool test_capture_from_profile_ids_no_fallback() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState doc = manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+  doc = manager.add_sketch_rectangle(30.0, 0.0, 50.0, 10.0);
+
+  // An EMPTY explicit selection captures nothing — the re-pick gesture
+  // must not silently fall back to the whole sketch.
+  CamOperation op;
+  op.type = "laser_cut";
+  if (!expect(!polysmith::core::capture_profile_references_from_profile_ids(
+                  doc, {}, op),
+              "capture ids: empty selection captures nothing")) {
+    return false;
+  }
+  if (!expect(op.geometry_references.machining_regions.empty(),
+              "capture ids: no fallback regions appended")) {
+    return false;
+  }
+
+  // Explicit ids capture exactly those regions.
+  const std::vector<polysmith::core::SketchProfileRegion>* profiles = nullptr;
+  for (const auto& feature : doc.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      profiles = &feature.sketch_parameters->profiles;
+      break;
+    }
+  }
+  if (!expect(profiles != nullptr && profiles->size() == 2,
+              "capture ids fixture: two regions")) {
+    return false;
+  }
+  const std::vector<std::string> oneId = {(*profiles)[0].id};
+  if (!expect(polysmith::core::capture_profile_references_from_profile_ids(
+                  doc, oneId, op),
+              "capture ids: explicit id captures")) {
+    return false;
+  }
+  return expect(op.geometry_references.machining_regions.size() == 1,
+                "capture ids: exactly the requested region captured");
+}
+
 }  // namespace
 
 int main() {
@@ -573,6 +746,22 @@ int main() {
 
   std::cout << "  Test 10: operation set scope errors... ";
   if (test_operation_set_scope_errors()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 11: select profile by entity... ";
+  if (test_select_sketch_profile_by_entity()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 12: capture from profile ids (no fallback)... ";
+  if (test_capture_from_profile_ids_no_fallback()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

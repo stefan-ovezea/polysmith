@@ -358,6 +358,32 @@ bool capture_profile_references_from_sketch(const DocumentState& document,
   return capturedAny;
 }
 
+bool capture_profile_references_from_profile_ids(
+    const DocumentState& document,
+    const std::vector<std::string>& profile_ids,
+    CamOperation& op) {
+  // Explicit profile selections are honored as-is (no hole dedup).
+  bool capturedAny = false;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    const auto& sketch = feature.sketch_parameters.value();
+    for (const auto& region : sketch.profiles) {
+      const bool selected =
+          std::find(profile_ids.begin(), profile_ids.end(), region.id) !=
+          profile_ids.end();
+      if (!selected) {
+        continue;
+      }
+      if (append_captured_profile(op, feature.id, region)) {
+        capturedAny = true;
+      }
+    }
+  }
+  return capturedAny;
+}
+
 bool capture_profile_references_from_selection(const DocumentState& document,
                                                CamOperation& op) {
   // Two selection modes:
@@ -373,27 +399,7 @@ bool capture_profile_references_from_selection(const DocumentState& document,
     return capture_profile_references_from_sketch(
         document, document.selected_feature_id.value(), op);
   }
-
-  // Explicit profile selections are honored as-is (no hole dedup).
-  bool capturedAny = false;
-  for (const auto& feature : document.feature_history) {
-    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
-      continue;
-    }
-    const auto& sketch = feature.sketch_parameters.value();
-    for (const auto& region : sketch.profiles) {
-      const bool selected =
-          std::find(profileIds.begin(), profileIds.end(), region.id) !=
-          profileIds.end();
-      if (!selected) {
-        continue;
-      }
-      if (append_captured_profile(op, feature.id, region)) {
-        capturedAny = true;
-      }
-    }
-  }
-  return capturedAny;
+  return capture_profile_references_from_profile_ids(document, profileIds, op);
 }
 
 ProfileResolutionResult resolve_profile_reference(

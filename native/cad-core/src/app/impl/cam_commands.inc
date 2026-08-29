@@ -348,11 +348,15 @@
               p.at("geometry_references"));
       // An explicitly EMPTY region set is the "re-select geometry"
       // gesture: capture fresh TNP-safe witnesses from the current
-      // sketch profile selection (mirrors cam_operation_create).
+      // sketch profile selection.  Unlike create, this honors ONLY the
+      // explicit profile selection — an empty selection is an error,
+      // never a silent fallback to the whole selected sketch.
       if (merged.geometry_references.machining_regions.empty() &&
           merged.type == "laser_cut") {
-        if (!polysmith::core::capture_profile_references_from_selection(
-                document.value(), merged)) {
+        if (document->selected_sketch_profile_ids.empty() ||
+            !polysmith::core::capture_profile_references_from_profile_ids(
+                document.value(), document->selected_sketch_profile_ids,
+                merged)) {
           polysmith::protocol::write_message(
               polysmith::protocol::make_error_event(
                   command.id, "NO_PROFILE_SELECTION",
