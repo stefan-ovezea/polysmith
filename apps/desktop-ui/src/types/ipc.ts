@@ -165,6 +165,7 @@ import type {
   CamOperationCreateCommand,
   CamOperationUpdateCommand,
   CamOperationDeleteCommand,
+  CamOperationSetScopeCommand,
   CamPostProcessorSetCommand,
   CamPostListCommand,
   CamPostImportCommand,
@@ -811,6 +812,7 @@ export type CoreCommand =
   | CamOperationCreateCommand
   | CamOperationUpdateCommand
   | CamOperationDeleteCommand
+  | CamOperationSetScopeCommand
   | CamPostProcessorSetCommand
   | CamPostListCommand
   | CamPostImportCommand

@@ -284,11 +284,17 @@
       }
       if (!polysmith::core::capture_profile_references_from_selection(
               document.value(), op)) {
-        polysmith::protocol::write_message(
-            polysmith::protocol::make_error_event(
-                command.id, "NO_PROFILE_SELECTION",
-                "Select sketch profiles for the CAM operation first"));
-        return;
+        // A laser operation without a pre-selection is created with an
+        // EMPTY scope — the panel's reference-sketch dropdown fills it
+        // in afterwards.  Every other operation type still requires
+        // geometry up front.
+        if (op.type != "laser_cut") {
+          polysmith::protocol::write_message(
+              polysmith::protocol::make_error_event(
+                  command.id, "NO_PROFILE_SELECTION",
+                  "Select sketch profiles for the CAM operation first"));
+          return;
+        }
       }
     }
     const auto document = document_manager().cam_operation_add(op);
@@ -375,6 +381,19 @@
   if (command.type == "cam_operation_delete") {
     const auto document = document_manager().cam_operation_delete(
         read_string(command.payload, "op_id"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cam_operation_set_scope") {
+    // Re-target an operation at a sketch: the core captures fresh
+    // TNP-safe witnesses for every profile of that sketch.  Errors
+    // (unknown op / unknown sketch) bubble to the run() catch.
+    const auto document = document_manager().cam_operation_set_scope(
+        read_string(command.payload, "op_id"),
+        read_string(command.payload, "feature_id"));
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

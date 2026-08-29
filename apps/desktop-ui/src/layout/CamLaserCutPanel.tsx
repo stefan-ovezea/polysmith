@@ -37,6 +37,11 @@ interface CamLaserCutPanelProps {
   onStartRepick: () => void;
   onCancelRepick: () => void;
   onApplyRepick: () => void;
+  // Reference sketch: the sketch this operation cuts.  null/"" means
+  // no sketch scope (custom profile selection or none yet).
+  sketches: Array<{ feature_id: string; name: string }>;
+  scopeSketchId: string | null;
+  onSetScope: (featureId: string) => void;
   onUpdate: (partial: Partial<LaserCutParameters>) => void;
   onPreview: () => void;
   onGenerate: () => void;
@@ -59,6 +64,9 @@ export function CamLaserCutPanel({
   onStartRepick,
   onCancelRepick,
   onApplyRepick,
+  sketches,
+  scopeSketchId,
+  onSetScope,
   onUpdate,
   onPreview,
   onGenerate,
@@ -130,6 +138,29 @@ export function CamLaserCutPanel({
                   })
                 : null}
             </p>
+            <Dropdown
+              className="w-full"
+              value={scopeSketchId ?? ""}
+              label={t("cam.laserCut.scopeLabel", "Reference sketch")}
+              options={[
+                {
+                  value: "",
+                  label: scopeSketchId
+                    ? t("cam.laserCut.scopeMixed", "Selected profiles")
+                    : t("cam.laserCut.scopeNone", "No sketch selected"),
+                },
+                ...sketches.map((sketch) => ({
+                  value: sketch.feature_id,
+                  label: sketch.name,
+                })),
+              ]}
+              disabled={disabled || repickArmed}
+              onChange={(value) => {
+                if (value) {
+                  onSetScope(value);
+                }
+              }}
+            />
             {repickArmed ? (
               <div className="grid grid-cols-2 gap-2">
                 <button

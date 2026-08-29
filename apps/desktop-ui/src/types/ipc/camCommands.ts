@@ -103,6 +103,12 @@ export interface CamOperationDeleteCommand {
   payload: { op_id: string };
 }
 
+export interface CamOperationSetScopeCommand {
+  id: string;
+  type: "cam_operation_set_scope";
+  payload: { op_id: string; kind: "sketch"; feature_id: string };
+}
+
 export interface CamPostProcessorSetCommand {
   id: string;
   type: "cam_post_processor_set";

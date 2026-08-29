@@ -126,8 +126,10 @@ export async function triggerCamLaserCut({
     });
   }
   if (!hasProfileSelection && !hasSelectedSketch && !faceReference) {
-    addMessage(translate("cam.laserCut.noSelection"));
-    return;
+    // No pre-selection: the operation is created with an EMPTY scope
+    // and the panel's reference-sketch dropdown fills it in afterwards
+    // (the core allows empty-scope laser operations on create).
+    addMessage(translate("cam.laserCut.scopePickHint"));
   }
 
   // The core resolves an empty tool_id: it reuses a matching library

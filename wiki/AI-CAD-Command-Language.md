@@ -641,9 +641,12 @@ Geometry input:
 - `laser_cut`: select sketch profiles first (via `select_sketch_profile`), then
   send `cam_operation_create` with EMPTY `geometry_references` — the core
   captures TNP-safe profile witness references from
-  `selected_sketch_profile_ids`. The kerf/lead/power settings live in
-  `parameters.laser` (v2 model: `mode`, `power_percent`, `speed_mm_per_s`,
-  `passes`, `kerf_width_mm`/`kerf_side`, leads, tabs, fill, `cut_order`).
+  `selected_sketch_profile_ids`. With no pre-selection the core creates the
+  operation with an EMPTY scope (no error) — the panel's reference-sketch
+  dropdown then retargets it via `cam_operation_set_scope`. The kerf/lead/
+  power settings live in `parameters.laser` (v2 model: `mode`,
+  `power_percent`, `speed_mm_per_s`, `passes`, `kerf_width_mm`/`kerf_side`,
+  leads, tabs, fill, `cut_order`).
 - `face_milling`: pass `geometry_references.machining_regions` with a
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
@@ -673,6 +676,15 @@ its own setup.
 Merge patch: `{op_id, name?, type?, enabled?, tool_id?, geometry_references?,
 parameters?}`. Only present keys overwrite. Any change resets the operation to
 `needs_regenerate`.
+
+#### `cam_operation_set_scope`
+
+Payload `{op_id, kind: "sketch", feature_id}`. Re-targets the operation at the
+given sketch feature: the core captures fresh TNP-safe witnesses for EVERY
+profile of that sketch into `machining_regions` (replacing whatever the
+operation referenced before) and resets the operation to `needs_regenerate`.
+Errors: unknown operation or unknown sketch feature id reply with an `error`
+event — the operation is never left half-retargeted. Undo covers the change.
 
 #### `cam_operation_generate` / `cam_operation_preview`
 

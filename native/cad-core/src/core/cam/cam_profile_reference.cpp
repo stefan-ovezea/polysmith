@@ -269,6 +269,95 @@ bool matches_hole(const CamProfileReference& region,
 
 }  // namespace
 
+// Builds the stored GeometryReference for one live region and appends
+// it to the operation's machining_regions.  Shared by the whole-sketch
+// capture and the profile-selection capture below.
+bool append_captured_profile(CamOperation& op,
+                             const std::string& sketch_feature_id,
+                             const SketchProfileRegion& region) {
+  const auto reference = capture_profile_reference(sketch_feature_id, region);
+  if (!reference.has_value()) {
+    return false;
+  }
+  GeometryReference stored;
+  stored.persistent_id = region.id;
+  SketchProfileAttestation attestation;
+  attestation.sketch_feature_id = reference->sketchFeatureId;
+  attestation.profile_id = reference->profileId;
+  attestation.center_x = reference->centerX;
+  attestation.center_y = reference->centerY;
+  attestation.area = reference->area;
+  attestation.min_x = reference->minX;
+  attestation.min_y = reference->minY;
+  attestation.max_x = reference->maxX;
+  attestation.max_y = reference->maxY;
+  attestation.boundary_edge_kinds = reference->boundaryEdgeKinds;
+  attestation.inner_loop_count = reference->innerLoopCount;
+  attestation.source_circle_id = reference->sourceCircleId;
+  stored.attestation = attestation;
+  op.geometry_references.machining_regions.push_back(stored);
+  return true;
+}
+
+bool capture_profile_references_from_sketch(const DocumentState& document,
+                                            const std::string& sketch_feature_id,
+                                            CamOperation& op) {
+  const FeatureEntry* sketch = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketch_feature_id && feature.kind == "sketch" &&
+        feature.sketch_parameters.has_value()) {
+      sketch = &feature;
+      break;
+    }
+  }
+  if (sketch == nullptr) {
+    return false;
+  }
+
+  // Whole-sketch capture: a profile detector reports holes TWICE — as
+  // inner loops of the surrounding region AND as standalone regions.
+  // Cutting both would trace every hole twice; skip standalone regions
+  // that duplicate an inner loop of another captured region.
+  std::vector<HoleSignature> holeSignatures;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch" ||
+        !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      for (const auto& loop : region.inner_loops) {
+        const auto signature = hole_signature(loop);
+        if (signature.has_value()) {
+          holeSignatures.push_back(signature.value());
+        }
+      }
+    }
+  }
+
+  bool capturedAny = false;
+  for (const auto& region : sketch->sketch_parameters->profiles) {
+    const auto reference =
+        capture_profile_reference(sketch_feature_id, region);
+    if (!reference.has_value()) {
+      continue;
+    }
+    bool duplicatesHole = false;
+    for (const auto& hole : holeSignatures) {
+      if (matches_hole(reference.value(), hole)) {
+        duplicatesHole = true;
+        break;
+      }
+    }
+    if (duplicatesHole) {
+      continue;  // already cut as an inner loop of its own region
+    }
+    if (append_captured_profile(op, sketch_feature_id, region)) {
+      capturedAny = true;
+    }
+  }
+  return capturedAny;
+}
+
 bool capture_profile_references_from_selection(const DocumentState& document,
                                                CamOperation& op) {
   // Two selection modes:
@@ -276,49 +365,16 @@ bool capture_profile_references_from_selection(const DocumentState& document,
   //      (selected_sketch_profile_ids), or
   //   2. the CAM-workspace flow — a closed sketch is SELECTED as a
   //      feature and every profile of that sketch is captured.
-  std::vector<std::string> profileIds = document.selected_sketch_profile_ids;
-  bool allProfilesOfSelectedSketch = false;
+  const auto& profileIds = document.selected_sketch_profile_ids;
   if (profileIds.empty()) {
-    const FeatureEntry* selectedSketch = nullptr;
-    for (const auto& feature : document.feature_history) {
-      if (feature.id == document.selected_feature_id &&
-          feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
-        selectedSketch = &feature;
-        break;
-      }
-    }
-    if (selectedSketch == nullptr) {
+    if (!document.selected_feature_id.has_value()) {
       return false;
     }
-    allProfilesOfSelectedSketch = true;
-    for (const auto& region : selectedSketch->sketch_parameters->profiles) {
-      profileIds.push_back(region.id);
-    }
+    return capture_profile_references_from_sketch(
+        document, document.selected_feature_id.value(), op);
   }
 
-  // Whole-sketch capture: a profile detector reports holes TWICE — as
-  // inner loops of the surrounding region AND as standalone regions.
-  // Cutting both would trace every hole twice; skip standalone regions
-  // that duplicate an inner loop of another captured region.  Explicit
-  // profile selections are honored as-is.
-  std::vector<HoleSignature> holeSignatures;
-  if (allProfilesOfSelectedSketch) {
-    for (const auto& feature : document.feature_history) {
-      if (feature.kind != "sketch" ||
-          !feature.sketch_parameters.has_value()) {
-        continue;
-      }
-      for (const auto& region : feature.sketch_parameters->profiles) {
-        for (const auto& loop : region.inner_loops) {
-          const auto signature = hole_signature(loop);
-          if (signature.has_value()) {
-            holeSignatures.push_back(signature.value());
-          }
-        }
-      }
-    }
-  }
-
+  // Explicit profile selections are honored as-is (no hole dedup).
   bool capturedAny = false;
   for (const auto& feature : document.feature_history) {
     if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
@@ -327,46 +383,14 @@ bool capture_profile_references_from_selection(const DocumentState& document,
     const auto& sketch = feature.sketch_parameters.value();
     for (const auto& region : sketch.profiles) {
       const bool selected =
-          allProfilesOfSelectedSketch ||
           std::find(profileIds.begin(), profileIds.end(), region.id) !=
-              profileIds.end();
+          profileIds.end();
       if (!selected) {
         continue;
       }
-      const auto reference = capture_profile_reference(feature.id, region);
-      if (!reference.has_value()) {
-        continue;
+      if (append_captured_profile(op, feature.id, region)) {
+        capturedAny = true;
       }
-      if (allProfilesOfSelectedSketch) {
-        bool duplicatesHole = false;
-        for (const auto& hole : holeSignatures) {
-          if (matches_hole(reference.value(), hole)) {
-            duplicatesHole = true;
-            break;
-          }
-        }
-        if (duplicatesHole) {
-          continue;  // already cut as an inner loop of its own region
-        }
-      }
-      GeometryReference stored;
-      stored.persistent_id = region.id;
-      SketchProfileAttestation attestation;
-      attestation.sketch_feature_id = reference->sketchFeatureId;
-      attestation.profile_id = reference->profileId;
-      attestation.center_x = reference->centerX;
-      attestation.center_y = reference->centerY;
-      attestation.area = reference->area;
-      attestation.min_x = reference->minX;
-      attestation.min_y = reference->minY;
-      attestation.max_x = reference->maxX;
-      attestation.max_y = reference->maxY;
-      attestation.boundary_edge_kinds = reference->boundaryEdgeKinds;
-      attestation.inner_loop_count = reference->innerLoopCount;
-      attestation.source_circle_id = reference->sourceCircleId;
-      stored.attestation = attestation;
-      op.geometry_references.machining_regions.push_back(stored);
-      capturedAny = true;
     }
   }
   return capturedAny;

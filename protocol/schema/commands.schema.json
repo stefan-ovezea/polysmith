@@ -38,6 +38,7 @@
         "cam_operation_delete",
         "cam_operation_generate",
         "cam_operation_preview",
+        "cam_operation_set_scope",
         "cam_operation_update",
         "cam_post_import",
         "cam_post_list",

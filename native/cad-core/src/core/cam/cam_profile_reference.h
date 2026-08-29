@@ -68,10 +68,20 @@ struct CamOperation;
 
 // Captures witness references for every region named in the document's
 // selected_sketch_profile_ids and appends them to the operation's
-// machining_regions.  Returns false when the selection matched no live
-// profile (the caller reports a human-readable error).
+// machining_regions.  Falls back to whole-sketch capture when a sketch
+// feature is selected.  Returns false when the selection matched no
+// live profile (the caller reports a human-readable error).
 bool capture_profile_references_from_selection(const DocumentState& document,
                                                CamOperation& op);
+
+// Captures witness references for EVERY profile region of the given
+// sketch feature and appends them to the operation's machining_regions.
+// Returns false when the feature id does not resolve to a live sketch
+// or the sketch has no profiles (the caller reports a human-readable
+// error — never a crash).
+bool capture_profile_references_from_sketch(const DocumentState& document,
+                                            const std::string& sketch_feature_id,
+                                            CamOperation& op);
 
 // Score threshold above which a candidate region is considered a
 // match; a second candidate above the threshold AND within 5% of the

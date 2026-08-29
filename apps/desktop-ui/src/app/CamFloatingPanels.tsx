@@ -60,6 +60,7 @@ interface CamFloatingPanelsProps {
     partial: Partial<CamOperation>,
   ) => Promise<void>;
   camOperationDelete: (opId: string) => Promise<void>;
+  camOperationSetScope: (opId: string, featureId: string) => Promise<void>;
   camOperationPreview: (opId: string) => Promise<void>;
   camOperationGenerate: (opId: string) => Promise<void>;
 }
@@ -99,6 +100,7 @@ export function CamFloatingPanels({
   camMachineSettingsSet,
   camOperationUpdate,
   camOperationDelete,
+  camOperationSetScope,
   camOperationPreview,
   camOperationGenerate,
 }: CamFloatingPanelsProps) {
@@ -187,6 +189,7 @@ export function CamFloatingPanels({
         onExportGcode,
         camOperationUpdate,
         camOperationDelete,
+        camOperationSetScope,
         camOperationPreview,
         camOperationGenerate,
         t,
@@ -216,6 +219,7 @@ function buildOperationPanel({
   onExportGcode,
   camOperationUpdate,
   camOperationDelete,
+  camOperationSetScope,
   camOperationPreview,
   camOperationGenerate,
   t,
@@ -235,6 +239,7 @@ function buildOperationPanel({
   | "onExportGcode"
   | "camOperationUpdate"
   | "camOperationDelete"
+  | "camOperationSetScope"
   | "camOperationPreview"
   | "camOperationGenerate"
 > & { t: (key: string, options?: Record<string, unknown>) => string }) {
@@ -302,6 +307,31 @@ function buildOperationPanel({
 
   if (operation.type === "laser_cut") {
     const laser = operation.parameters.laser ?? DEFAULT_LASER_PARAMS;
+    // The reference sketch shown in the scope dropdown: every machining
+    // region attests the same sketch → that sketch; anything else
+    // (mixed, face-based, or empty) → no scope.
+    const regions = operation.geometry_references.machining_regions;
+    let scopeSketchId: string | null = null;
+    if (regions.length > 0) {
+      const firstAttestation = regions[0]?.attestation;
+      if (firstAttestation && "sketch_feature_id" in firstAttestation) {
+        const candidate = firstAttestation.sketch_feature_id;
+        const allSame = regions.every(
+          (region) =>
+            "sketch_feature_id" in region.attestation &&
+            region.attestation.sketch_feature_id === candidate,
+        );
+        if (allSame) {
+          scopeSketchId = candidate;
+        }
+      }
+    }
+    const sketches = (document?.feature_history ?? [])
+      .filter((feature) => feature.kind === "sketch")
+      .map((feature) => ({
+        feature_id: feature.feature_id,
+        name: feature.name || "Sketch",
+      }));
     return (
       <CamLaserCutPanel
         {...shared}
@@ -325,6 +355,13 @@ function buildOperationPanel({
               },
             });
             onApplyRepickGeometry();
+          });
+        }}
+        sketches={sketches}
+        scopeSketchId={scopeSketchId}
+        onSetScope={(featureId) => {
+          void runAction(async () => {
+            await camOperationSetScope(operation.op_id, featureId);
           });
         }}
         onUpdate={(partial: Partial<LaserCutParameters>) => {

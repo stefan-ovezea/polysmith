@@ -835,6 +835,7 @@ function App() {
     camOperationCreate,
     camOperationUpdate,
     camOperationDelete,
+    camOperationSetScope,
     camOperationPreview,
     camOperationGenerate,
     camPostProcessorSet,
@@ -3579,6 +3580,7 @@ function App() {
                 camMachineSettingsSet={camMachineSettingsSet}
                 camOperationUpdate={camOperationUpdate}
                 camOperationDelete={camOperationDelete}
+                camOperationSetScope={camOperationSetScope}
                 camOperationPreview={camOperationPreview}
                 camOperationGenerate={camOperationGenerate}
               />

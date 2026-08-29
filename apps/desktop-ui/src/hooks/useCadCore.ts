@@ -15,6 +15,7 @@ import {
   makeCamOperationCreateCommand,
   makeCamOperationUpdateCommand,
   makeCamOperationDeleteCommand,
+  makeCamOperationSetScopeCommand,
   makeCamOperationGenerateCommand,
   makeCamOperationPreviewCommand,
   makeCamPostProcessorSetCommand,
@@ -1588,6 +1589,11 @@ export function useCadCore() {
     },
     camOperationDelete: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationDeleteCommand(opId));
+    },
+    camOperationSetScope: async (opId: string, featureId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeCamOperationSetScopeCommand(opId, featureId),
+      );
     },
     camPostProcessorSet: async (post: PostProcessor) => {
       await sendAndRefreshSessionViewport(makeCamPostProcessorSetCommand(post));

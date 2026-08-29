@@ -495,6 +495,44 @@ DocumentState DocumentManager::cam_operation_delete(const std::string& operation
   throw std::runtime_error("CAM operation not found: " + operation_id);
 }
 
+DocumentState DocumentManager::cam_operation_set_scope(
+    const std::string& operation_id, const std::string& sketch_feature_id) {
+  require_document();
+  // Validate the sketch BEFORE mutating anything — a bad reference
+  // must not leave the operation half-retargeted.
+  const FeatureEntry* sketch = nullptr;
+  for (const auto& feature : document_->feature_history) {
+    if (feature.id == sketch_feature_id && feature.kind == "sketch" &&
+        feature.sketch_parameters.has_value()) {
+      sketch = &feature;
+      break;
+    }
+  }
+  if (sketch == nullptr) {
+    throw std::runtime_error("CAM scope sketch not found: " + sketch_feature_id);
+  }
+  for (auto& existing : document_->cam.operations) {
+    if (existing.op_id == operation_id) {
+      push_undo_state();
+      clear_redo_stack();
+      existing.geometry_references = CamGeometryReferences{};
+      if (!polysmith::core::capture_profile_references_from_sketch(
+              document_.value(), sketch_feature_id, existing)) {
+        // The sketch exists but carries no profiles — an honest empty
+        // scope, not a crash.
+        log_warn("cam", "set scope on sketch '" + sketch->name +
+                            "' which has no profile regions");
+      }
+      existing.status = "needs_regenerate";
+      existing.status_message.clear();
+      existing.toolpath_cache.reset();
+      bump_geometry_revision();
+      return document_.value();
+    }
+  }
+  throw std::runtime_error("CAM operation not found: " + operation_id);
+}
+
 DocumentState DocumentManager::cam_post_processor_set(
     const PostProcessor& post_processor) {
   require_document();

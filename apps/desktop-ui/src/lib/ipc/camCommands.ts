@@ -147,6 +147,17 @@ export function makeCamOperationDeleteCommand(opId: string): CoreCommand {
   };
 }
 
+export function makeCamOperationSetScopeCommand(
+  opId: string,
+  featureId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_operation_set_scope",
+    payload: { op_id: opId, kind: "sketch", feature_id: featureId },
+  };
+}
+
 export function makeCamPostProcessorSetCommand(
   post: PostProcessor,
 ): CoreCommand {

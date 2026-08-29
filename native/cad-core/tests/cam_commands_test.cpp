@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <variant>
 
 #include "core/document/document.h"
 #include "core/cam/cam_operation.h"
@@ -390,6 +391,108 @@ bool test_id_counters_survive_reload() {
   return true;
 }
 
+bool test_operation_set_scope_sketch() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup("laser"));
+  DocumentState doc = manager.cam_tool_add(make_tool("laser"));
+  const std::string laserToolId = doc.cam.tool_library[0].tool_id;
+
+  // A sketch with two closed rectangles: two profile regions.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  doc = manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+  doc = manager.add_sketch_rectangle(30.0, 0.0, 50.0, 10.0);
+
+  std::string sketchId;
+  for (const auto& feature : doc.feature_history) {
+    if (feature.kind == "sketch") {
+      sketchId = feature.id;
+      break;
+    }
+  }
+  if (!expect(!sketchId.empty(), "scope fixture: sketch feature exists")) {
+    return false;
+  }
+
+  doc = manager.cam_operation_add(make_op("laser_cut", laserToolId));
+  if (!expect(doc.cam.operations.size() == 1 &&
+                  doc.cam.operations[0]
+                      .geometry_references.machining_regions.empty(),
+              "scope fixture: op starts with no regions")) {
+    return false;
+  }
+
+  doc = manager.cam_operation_set_scope("cam-op-1", sketchId);
+  const auto& regions =
+      doc.cam.operations[0].geometry_references.machining_regions;
+  if (!expect(regions.size() == 2,
+              "set scope: both profile regions captured")) {
+    return false;
+  }
+  bool allSketch = true;
+  for (const auto& region : regions) {
+    if (!std::holds_alternative<SketchProfileAttestation>(
+            region.attestation)) {
+      allSketch = false;
+      break;
+    }
+    const auto& attestation =
+        std::get<SketchProfileAttestation>(region.attestation);
+    if (attestation.sketch_feature_id != sketchId) {
+      allSketch = false;
+      break;
+    }
+  }
+  if (!expect(allSketch,
+              "set scope: every region attests the target sketch")) {
+    return false;
+  }
+  if (!expect(doc.cam.operations[0].status == "needs_regenerate",
+              "set scope: status resets to needs_regenerate")) {
+    return false;
+  }
+
+  // One undo step restores the previous (empty) geometry.
+  const DocumentState undone = manager.undo();
+  return expect(undone.cam.operations[0]
+                    .geometry_references.machining_regions.empty(),
+                "set scope: undo restores the previous regions");
+}
+
+bool test_operation_set_scope_errors() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup("laser"));
+  DocumentState doc = manager.cam_tool_add(make_tool("laser"));
+  const std::string laserToolId = doc.cam.tool_library[0].tool_id;
+  manager.cam_operation_add(make_op("laser_cut", laserToolId));
+
+  bool unknownOp = false;
+  try {
+    manager.cam_operation_set_scope("cam-op-99", "sketch-1");
+  } catch (const std::runtime_error& error) {
+    unknownOp = std::string(error.what()).find("not found") !=
+                std::string::npos;
+  }
+  if (!expect(unknownOp, "set scope: unknown op throws")) {
+    return false;
+  }
+
+  bool unknownSketch = false;
+  try {
+    manager.cam_operation_set_scope("cam-op-1", "sketch-99");
+  } catch (const std::runtime_error& error) {
+    unknownSketch = std::string(error.what()).find("not found") !=
+                    std::string::npos;
+  }
+  if (!expect(unknownSketch, "set scope: unknown sketch throws")) {
+    return false;
+  }
+  return expect(manager.get_document()->cam.operations[0]
+                    .geometry_references.machining_regions.empty(),
+                "set scope: failed scope leaves the op untouched");
+}
+
 }  // namespace
 
 int main() {
@@ -454,6 +557,22 @@ int main() {
 
   std::cout << "  Test 8: id counters survive reload... ";
   if (test_id_counters_survive_reload()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 9: operation set scope on a sketch... ";
+  if (test_operation_set_scope_sketch()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 10: operation set scope errors... ";
+  if (test_operation_set_scope_errors()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";
