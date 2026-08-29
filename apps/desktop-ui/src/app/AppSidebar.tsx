@@ -33,6 +33,10 @@ interface AppSidebarProps {
   camOpenSetup: () => void;
   camOperationDelete: (operationId: string) => Promise<void>;
   camOperations: CamOperation[];
+  camSetups: Array<{ setup_id: string; name: string; machine_type: string }>;
+  activeCamSetupId: string | null;
+  onSelectCamSetup: (setupId: string) => void;
+  onNewCamSetup: () => void;
   confirmAndDeleteFeature: (featureId: string) => void;
   createRecentProjectFolder: (
     name: string,
@@ -85,6 +89,10 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({
+  camSetups,
+  activeCamSetupId,
+  onSelectCamSetup,
+  onNewCamSetup,
   activeProjectPath,
   bodyContextActions,
   camOperationDelete,
@@ -238,6 +246,10 @@ export function AppSidebar({
               />
               <CamOperationPanel
                 operations={camOperations}
+                setups={camSetups}
+                activeSetupId={activeCamSetupId}
+                onSelectSetup={onSelectCamSetup}
+                onNewSetup={onNewCamSetup}
                 selectedOperationId={selectedCamOperationId}
                 onSelectOperation={setSelectedCamOperationId}
                 onDeleteOperation={(operationId) => {

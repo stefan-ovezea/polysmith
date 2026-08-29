@@ -3,6 +3,8 @@ import { DEFAULT_TEST_PATTERN_PARAMS } from "@/layout/CamTestPatternPanel";
 
 interface CamTestPatternContext {
   document: DocumentState | null;
+  // The ACTIVE CAM setup — the new operation joins it.
+  setupId: string | null;
   runAction: (action: () => Promise<void>) => Promise<void>;
   camOperationCreate: (
     operation: CamOperationPayload,
@@ -17,6 +19,7 @@ interface CamTestPatternContext {
 // references — the cells live directly in machine coordinates.
 export async function triggerCamTestPattern({
   document,
+  setupId,
   runAction,
   camOperationCreate,
   setSelectedOperationId,
@@ -37,6 +40,7 @@ export async function triggerCamTestPattern({
     name: "Test Pattern",
     type: "laser_test_pattern",
     enabled: true,
+    setup_id: setupId ?? "",
     tool_id: laserTool?.tool_id ?? "",
     parameters: {
       spindle_rpm: 0,

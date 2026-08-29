@@ -17,6 +17,7 @@ import {
   SettingsModal,
   ToastViewport,
   ViewportPanel,
+  createDefaultCamSetup,
 } from "./layout";
 import type { CategoryId } from "./layout";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -521,6 +522,44 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  // The ACTIVE CAM setup: new operations join it, the setup panel
+  // edits it.  Follows the first setup until the user picks another.
+  const [activeCamSetupId, setActiveCamSetupId] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    const setups = document?.cam.setups ?? [];
+    if (setups.length === 0) {
+      setActiveCamSetupId(null);
+      return;
+    }
+    if (
+      !activeCamSetupId ||
+      !setups.some((setup) => setup.setup_id === activeCamSetupId)
+    ) {
+      setActiveCamSetupId(setups[0].setup_id);
+    }
+  }, [document?.cam.setups, activeCamSetupId]);
+
+  // Armed profile re-pick for an operation's geometry: clicks on
+  // sketch profiles accumulate into the core's profile selection;
+  // "Apply" sends the empty-region update (the core re-captures).
+  const [camProfilePickArmed, setCamProfilePickArmed] = useState(false);
+
+  const camNewSetupAction = async () => {
+    await runAction(async () => {
+      const count = document?.cam.setups.length ?? 0;
+      await camSetupCreate({
+        ...createDefaultCamSetup(),
+        name: `Setup ${count + 1}`,
+      });
+      const updated = await awaitDocumentChange(
+        (next) => next.cam.setups.length > count,
+      );
+      const last = updated.cam.setups[updated.cam.setups.length - 1];
+      setActiveCamSetupId(last.setup_id);
+    });
+  };
   const [showStock, setShowStock] = useState(true);
   const [wcsOrientation, setWcsOrientation] = useState<string>("z_up");
   const camOperations = useMemo(
@@ -1355,6 +1394,7 @@ function App() {
     triggerCamLaserCut({
       document,
       viewport,
+      setupId: activeCamSetupId,
       runAction,
       camOperationCreate,
       camCaptureFaceReference,
@@ -1366,6 +1406,7 @@ function App() {
   const triggerCamTestPatternAction = () =>
     triggerCamTestPattern({
       document,
+      setupId: activeCamSetupId,
       runAction,
       camOperationCreate,
       setSelectedOperationId: setSelectedCamOperationId,
@@ -1376,6 +1417,7 @@ function App() {
   const triggerCamFaceMillingAction = () =>
     triggerCamFaceMilling({
       document,
+      setupId: activeCamSetupId,
       runAction,
       camOperationCreate,
       camCaptureFaceReference,
@@ -1840,6 +1882,16 @@ function App() {
                 camOpenSetup={() => setIsCamSetupPanelOpen(true)}
                 camOperationDelete={camOperationDelete}
                 camOperations={camOperations}
+                camSetups={(document?.cam.setups ?? []).map((setup) => ({
+                  setup_id: setup.setup_id,
+                  name: setup.name,
+                  machine_type: setup.machine_type,
+                }))}
+                activeCamSetupId={activeCamSetupId}
+                onSelectCamSetup={setActiveCamSetupId}
+                onNewCamSetup={() => {
+                  void camNewSetupAction();
+                }}
                 confirmAndDeleteFeature={confirmAndDeleteFeature}
                 createRecentProjectFolder={createRecentProjectFolder}
                 deleteRecentProject={deleteRecentProject}
@@ -1922,7 +1974,7 @@ function App() {
                 // CAM workspace: sketch clicks select the owning sketch —
                 // but NOT while the origin pick is armed, so the click
                 // falls through to the vertex/face pick instead.
-                (workspaceView === "cam" && !originPickArmed)
+                (workspaceView === "cam" && !originPickArmed && !camProfilePickArmed)
               }
               onPickInactiveSketchLine={async (lineId) => {
                 if (workspaceView === "cam") {
@@ -2857,6 +2909,13 @@ function App() {
                 });
               }}
               onSelectSketchProfile={async (profileId, additive) => {
+                if (camProfilePickArmed) {
+                  await selectSketchProfile(profileId, true);
+                  addMessage(
+                    t("cam.laserCut.profilePicked", { count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1 }),
+                  );
+                  return;
+                }
                 await handleViewportSketchProfileSelection({
                   profileId,
                   additive,
@@ -3469,6 +3528,11 @@ function App() {
                 disabled={status !== "connected"}
                 isSetupPanelOpen={isCamSetupPanelOpen}
                 selectedOperationId={selectedCamOperationId}
+                activeSetupId={activeCamSetupId}
+                camProfilePickArmed={camProfilePickArmed}
+                onStartRepickGeometry={() => setCamProfilePickArmed(true)}
+                onCancelRepickGeometry={() => setCamProfilePickArmed(false)}
+                onApplyRepickGeometry={() => setCamProfilePickArmed(false)}
                 showStock={showStock}
                 wcsOrientation={wcsOrientation}
                 setShowStock={setShowStock}

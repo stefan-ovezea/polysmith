@@ -11,6 +11,8 @@ import { DEFAULT_LASER_PARAMS } from "@/layout/CamLaserCutPanel";
 interface CamLaserCutContext {
   document: DocumentState | null;
   viewport: ViewportState | null;
+  // The ACTIVE CAM setup — the new operation joins it.
+  setupId: string | null;
   runAction: (action: () => Promise<void>) => Promise<void>;
   camOperationCreate: (
     operation: CamOperationPayload,
@@ -85,6 +87,7 @@ export async function selectCamSketchFeature({
 export async function triggerCamLaserCut({
   document,
   viewport,
+  setupId,
   runAction,
   camOperationCreate,
   camCaptureFaceReference,
@@ -139,6 +142,7 @@ export async function triggerCamLaserCut({
     name: "2D Cut",
     type: "laser_cut",
     enabled: true,
+    setup_id: setupId ?? "",
     tool_id: laserTool?.tool_id ?? "",
     ...(faceReference
       ? {

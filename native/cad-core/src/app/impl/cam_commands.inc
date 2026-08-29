@@ -340,6 +340,20 @@
       merged.geometry_references =
           polysmith::protocol::cam_geometry_references_from_payload(
               p.at("geometry_references"));
+      // An explicitly EMPTY region set is the "re-select geometry"
+      // gesture: capture fresh TNP-safe witnesses from the current
+      // sketch profile selection (mirrors cam_operation_create).
+      if (merged.geometry_references.machining_regions.empty() &&
+          merged.type == "laser_cut") {
+        if (!polysmith::core::capture_profile_references_from_selection(
+                document.value(), merged)) {
+          polysmith::protocol::write_message(
+              polysmith::protocol::make_error_event(
+                  command.id, "NO_PROFILE_SELECTION",
+                  "Select sketch profiles for the CAM operation first"));
+          return;
+        }
+      }
     }
     if (p.contains("parameters")) {
       merged.parameters =

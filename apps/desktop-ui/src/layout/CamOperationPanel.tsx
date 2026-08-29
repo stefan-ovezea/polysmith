@@ -10,8 +10,18 @@ export interface CamOperation {
   statusMessage?: string;
 }
 
+export interface CamSetupSummary {
+  setup_id: string;
+  name: string;
+  machine_type: string;
+}
+
 export interface CamOperationPanelProps {
   operations: CamOperation[];
+  setups: CamSetupSummary[];
+  activeSetupId: string | null;
+  onSelectSetup: (setupId: string) => void;
+  onNewSetup: () => void;
   selectedOperationId: string | null;
   onSelectOperation: (id: string) => void;
   onDeleteOperation: (id: string) => void;
@@ -19,6 +29,10 @@ export interface CamOperationPanelProps {
 
 export function CamOperationPanel({
   operations,
+  setups,
+  activeSetupId,
+  onSelectSetup,
+  onNewSetup,
   selectedOperationId,
   onSelectOperation,
   onDeleteOperation,
@@ -46,6 +60,40 @@ export function CamOperationPanel({
 
   return (
     <div className="flex h-full flex-col">
+      {/* ── Setups: the active setup receives new operations ──────── */}
+      <div className="flex items-center justify-between px-3 pt-2 pb-1">
+        <span className="text-xs font-semibold cad-muted tracking-wider uppercase">
+          {t("cam.setupsTitle")}
+        </span>
+        <button
+          type="button"
+          className="cad-action-ghost h-6 px-2 text-[10px] uppercase tracking-wider"
+          onClick={onNewSetup}
+        >
+          {t("cam.newSetup")}
+        </button>
+      </div>
+      <ul className="flex flex-col gap-0.5 px-1">
+        {setups.map((setup) => (
+          <li key={setup.setup_id}>
+            <button
+              type="button"
+              className={
+                activeSetupId === setup.setup_id
+                  ? "w-full rounded px-2 py-1 text-left text-xs cad-panel-item-active"
+                  : "w-full rounded px-2 py-1 text-left text-xs cad-panel-item group"
+              }
+              onClick={() => onSelectSetup(setup.setup_id)}
+            >
+              <span className="truncate">{setup.name}</span>
+              <span className="text-[10px] cad-muted ml-2 shrink-0">
+                {setup.machine_type === "laser" ? t("cam.setupSummary.machineLaser") : setup.machine_type}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
         <span className="text-xs font-semibold cad-muted tracking-wider uppercase">
           {t("cam.operationsTitle")}

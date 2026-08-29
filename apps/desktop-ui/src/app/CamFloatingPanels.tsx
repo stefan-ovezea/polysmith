@@ -28,6 +28,11 @@ interface CamFloatingPanelsProps {
   disabled: boolean;
   isSetupPanelOpen: boolean;
   selectedOperationId: string | null;
+  activeSetupId: string | null;
+  camProfilePickArmed: boolean;
+  onStartRepickGeometry: () => void;
+  onCancelRepickGeometry: () => void;
+  onApplyRepickGeometry: () => void;
   showStock: boolean;
   wcsOrientation: string;
   setShowStock: (show: boolean) => void;
@@ -65,6 +70,11 @@ export function CamFloatingPanels({
   disabled,
   isSetupPanelOpen,
   selectedOperationId,
+  activeSetupId,
+  camProfilePickArmed,
+  onStartRepickGeometry,
+  onCancelRepickGeometry,
+  onApplyRepickGeometry,
   showStock,
   wcsOrientation,
   setShowStock,
@@ -97,6 +107,12 @@ export function CamFloatingPanels({
   // operation belongs to; without a selection it edits the first.
   const setup = (() => {
     const setups = document?.cam.setups ?? [];
+    if (activeSetupId) {
+      const active = setups.find((s) => s.setup_id === activeSetupId);
+      if (active) {
+        return active;
+      }
+    }
     if (selectedOperationId) {
       const op = document?.cam.operations.find(
         (candidate) => candidate.op_id === selectedOperationId,
@@ -160,6 +176,11 @@ export function CamFloatingPanels({
         document,
         disabled,
         selectedOperationId,
+        activeSetupId,
+        camProfilePickArmed,
+        onStartRepickGeometry,
+        onCancelRepickGeometry,
+        onApplyRepickGeometry,
         setSelectedOperationId,
         runAction,
         addMessage,
@@ -184,6 +205,11 @@ function buildOperationPanel({
   document,
   disabled,
   selectedOperationId,
+  activeSetupId,
+  camProfilePickArmed,
+  onStartRepickGeometry,
+  onCancelRepickGeometry,
+  onApplyRepickGeometry,
   setSelectedOperationId,
   runAction,
   addMessage,
@@ -198,6 +224,11 @@ function buildOperationPanel({
   | "document"
   | "disabled"
   | "selectedOperationId"
+  | "activeSetupId"
+  | "camProfilePickArmed"
+  | "onStartRepickGeometry"
+  | "onCancelRepickGeometry"
+  | "onApplyRepickGeometry"
   | "setSelectedOperationId"
   | "runAction"
   | "addMessage"
@@ -276,6 +307,26 @@ function buildOperationPanel({
         {...shared}
         initialParams={laser}
         initialFeedrate={operation.parameters.feedrate_mm_per_min ?? 500}
+        geometryCount={operation.geometry_references.machining_regions.length}
+        selectedProfileCount={
+          document?.selected_sketch_profile_ids?.length ?? 0
+        }
+        repickArmed={camProfilePickArmed}
+        onStartRepick={onStartRepickGeometry}
+        onCancelRepick={onCancelRepickGeometry}
+        onApplyRepick={() => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                machining_regions: [],
+                avoidance_regions: [],
+                guide_curves: [],
+                check_surfaces: [],
+              },
+            });
+            onApplyRepickGeometry();
+          });
+        }}
         onUpdate={(partial: Partial<LaserCutParameters>) => {
           void runAction(async () => {
             await camOperationUpdate(operation.op_id, {

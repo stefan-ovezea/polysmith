@@ -30,6 +30,13 @@ interface CamLaserCutPanelProps {
   statusMessage: string;
   toolpathStats: CamToolpathStats | null;
   disabled: boolean;
+  // Geometry re-selection (armed profile pick).
+  geometryCount: number;
+  selectedProfileCount: number;
+  repickArmed: boolean;
+  onStartRepick: () => void;
+  onCancelRepick: () => void;
+  onApplyRepick: () => void;
   onUpdate: (partial: Partial<LaserCutParameters>) => void;
   onPreview: () => void;
   onGenerate: () => void;
@@ -46,6 +53,12 @@ export function CamLaserCutPanel({
   statusMessage,
   toolpathStats,
   disabled,
+  geometryCount,
+  selectedProfileCount,
+  repickArmed,
+  onStartRepick,
+  onCancelRepick,
+  onApplyRepick,
   onUpdate,
   onPreview,
   onGenerate,
@@ -102,6 +115,52 @@ export function CamLaserCutPanel({
         }}
       >
         <ScrollArea className="min-h-0 flex-1" viewportClassName="space-y-4 pr-4">
+          {/* ── Geometry ────────────────────────────────────────── */}
+          <fieldset className="space-y-3">
+            <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
+              {t("cam.laserCut.geometry", "Geometry")}
+            </legend>
+            <p className="text-[10px] leading-relaxed text-on-surface-dim">
+              {t("cam.laserCut.geometrySummary", {
+                count: geometryCount,
+              })}
+              {repickArmed
+                ? t("cam.laserCut.repickHint", {
+                    count: selectedProfileCount,
+                  })
+                : null}
+            </p>
+            {repickArmed ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                  disabled={disabled}
+                  onClick={onApplyRepick}
+                >
+                  {t("cam.laserCut.applyRepick", "Apply selection")}
+                </button>
+                <button
+                  type="button"
+                  className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                  disabled={disabled}
+                  onClick={onCancelRepick}
+                >
+                  {t("cam.laserCut.cancelRepick", "Cancel")}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                disabled={disabled}
+                onClick={onStartRepick}
+              >
+                {t("cam.laserCut.reselectGeometry", "Re-select geometry")}
+              </button>
+            )}
+          </fieldset>
+
           {/* ── Mode ─────────────────────────────────────────────── */}
           <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
             {t("cam.laserCut.mode", "Mode")}

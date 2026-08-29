@@ -8,6 +8,8 @@ import type {
 
 interface CamFaceMillingContext {
   document: DocumentState | null;
+  // The ACTIVE CAM setup — the new operation joins it.
+  setupId: string | null;
   runAction: (action: () => Promise<void>) => Promise<void>;
   camOperationCreate: (
     operation: CamOperationPayload,
@@ -31,6 +33,7 @@ interface CamFaceMillingContext {
 // never fabricates witness geometry.
 export async function triggerCamFaceMilling({
   document,
+  setupId,
   runAction,
   camOperationCreate,
   camCaptureFaceReference,
@@ -75,6 +78,7 @@ export async function triggerCamFaceMilling({
     name: "Face Mill",
     type: "face_milling",
     enabled: true,
+    setup_id: setupId ?? "",
     tool_id: endmill?.tool_id ?? "",
     geometry_references: {
       machining_regions: [reference],
