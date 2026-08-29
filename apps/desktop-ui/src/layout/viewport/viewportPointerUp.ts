@@ -62,6 +62,10 @@ interface ViewportPointerUpParams {
   renderer: THREE.WebGLRenderer;
   camera: THREE.OrthographicCamera;
   controls: OrbitControls;
+  // Armed origin pick: every pointer-up delivers the clicked world
+  // point on the bed plane instead of running scene selection.
+  originPickPointEnabled: boolean;
+  originPickPoint: (event: PointerEvent) => void;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   pointerDown: PointerDownPosition | null;
@@ -593,6 +597,10 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
 }
 
 function finishScenePointerUp(params: ViewportPointerUpParams) {
+  if (params.originPickPointEnabled) {
+    params.originPickPoint(params.event);
+    return;
+  }
   handlePointerUpSceneSelection({
     event: params.event,
     sceneData: params.sceneDataRef.current,

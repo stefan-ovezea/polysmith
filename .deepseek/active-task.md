@@ -1,16 +1,18 @@
-# Active Task: Laser CAM rework (cam/laser) — M1–M10 IMPLEMENTED, UNCOMMITTED
+# Active Task: Laser CAM rework (cam/laser) — COMMITTED 82c2ffa, ironing out
 
 > **Branch:** `cam/laser` (from `dev`, after `fac4fb5` CAM scaffolding)
 > **Date:** 2026-08-29
 > **Plan:** approved plan at `.claude/plans/lucky-finding-hoare.md` (10
 > milestones; each gated on `pnpm test:core` + `tsc` + user in-app
-> verification before commit — commits need explicit user approval).
+> verification).
 
-## Status — ALL MILESTONES IMPLEMENTED, ALL TEST GATES GREEN, NOT COMMITTED
+## Status — COMMITTED as one squashed feature commit
 
-All 37 suites + tsc green per milestone. **Nothing is committed** — the
-never-commit-untested rule gates every milestone on user in-app
-verification; commits also require explicit approval (branch workflow).
+`82c2ffa` on `cam/laser`: the full rework (M1–M10 + test patterns + machine
+settings + U1–U6 IPC finalization + the in-app-testing UI fixes), 81 files,
++8387/−1935.  Full MSVC build + all 37 suites + tsc green.  The user asked
+for a single commit despite remaining rough edges — ironing out continues
+on top.
 
 - **M1 — offset correctness + graceful degradation**: right-handed xz
   frame, world-mapped arc i/j + mirror sweep flip, non-horizontal plane
@@ -66,24 +68,22 @@ verification; commits also require explicit approval (branch workflow).
   both `#if 0` blocks deleted, default laser tool uses ToolEntry
   defaults. Test 33.
 
-## Next session
+## Next steps
 
-1. **User in-app verification** (per milestone, then commit with
-   approval). Manual checklist: rotated-sketch preview arcs; passes=3;
-   speed mm/s → F600; kerf side inside flips the offset; arc lead
-   visible; tabs as gaps; fill hatch renders; export has no Z moves +
-   exactly one M2; origin pick on a cylinder setup rebuilds the marker;
-   Test Pattern card generates/engraves/cuts; Machine Settings fields
-   persist and shift the WCS by the pointer offset.
+1. **Continue in-app ironing out** (user-reported): rotated-sketch
+   preview arcs; passes=3; speed mm/s → F600; kerf side inside flips
+   the offset; arc lead visible; tabs as gaps; fill hatch renders;
+   export has no Z moves + exactly one M2; origin pick on a cylinder
+   setup rebuilds the marker; Test Pattern card generates/engraves/
+   cuts; Machine Settings fields persist and shift the WCS by the
+   pointer offset.
 2. Deferred (tracked in the plan): Ruida/DSP export, Clipper2
-   adoption, per-shape cut-order priority, material presets, move face
-   attestation capture to native, pierce-point viewport markers (needs
-   a pierce flag in the viewport toolpath protocol), WCS face anchoring,
-   kerf-calibration gauge pattern, test-card cell labels (text engrave).
+   adoption, per-shape cut-order priority, material presets, setup-list
+   UI management (core multi-setup resolution is done).
 
 ---
 
-## Added on top (2026-08-29, uncommitted): test patterns + machine settings
+## Added on top (2026-08-29, in commit 82c2ffa): test patterns + machine settings + IPC sweep
 
 - **`laser_test_pattern` operation** (LightBurn material-test cards):
   `engrave_grid` (filled squares) and `cut_grid` (through-cut squares),
@@ -94,7 +94,7 @@ verification; commits also require explicit approval (branch workflow).
   by −offset (framing under the dot); `cam_machine_settings_set` IPC
   command + schema + TS wiring; Machine fieldset in the setup panel;
   refresh test 6. Save/load round-trip + legacy defaults covered.
-- **IPC finalization sweep (U1–U6, all test-gated, uncommitted)**:
+- **IPC finalization sweep (U1–U6, all test-gated)**:
   U1 deleted the serialized-but-dead fields (`fallback_strategy`,
   `PostProcessorOptions`, `SimulationData`, `point_locations`/
   `CamPointLocation`) end-to-end (core, serde, TS, schemas, tests).
@@ -105,8 +105,12 @@ verification; commits also require explicit approval (branch workflow).
   generate/export/refresh, setup panel edits the selected op's setup.
   U5 face-anchored WCS: `cam_wcs_set_face` + refresh resolves the
   machine origin from the live face (mid-UV, TNP-safe).
-  U6 test patterns: `kerf_gauge` calibration square (tests 37) +
+  U6 test patterns: `kerf_gauge` calibration square (test 37) +
   engraved "P… S…" cell labels via the core text engine (test 38).
+- **In-app-testing fixes (post-commit-ready, folded into 82c2ffa)**:
+  `cam.operations` i18n key collision → `cam.operationsTitle`;
+  `step="any"` on stock-origin, WCS-origin, and laser speed fields
+  (native validation bubbles); speed fallback display rounded to 1dp.
 
 ---
 

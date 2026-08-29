@@ -1427,7 +1427,13 @@ function App() {
     if (!setup) {
       return;
     }
-    const origin: [number, number, number] = [point.x, point.y, point.z];
+    // Microns precision — the pick already rounds, this guards any
+    // other caller (WCS face picks resolve in the core).
+    const origin: [number, number, number] = [
+      Math.round(point.x * 1000) / 1000,
+      Math.round(point.y * 1000) / 1000,
+      Math.round(point.z * 1000) / 1000,
+    ];
     await runAction(async () => {
       await camSetupUpdate({
         ...setup,
@@ -1876,6 +1882,14 @@ function App() {
               viewport={viewport}
               showStock={showStock && workspaceView === "cam"}
               wcsOrientation={wcsOrientation}
+              originPickPointEnabled={originPickArmed}
+              onOriginPickPoint={(point) => {
+                if (!point) {
+                  addMessage(t("cam.setup.originPickMissed"));
+                  return;
+                }
+                void placeCamOriginFromPick(point);
+              }}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -1998,15 +2012,6 @@ function App() {
                   await placeWcsFromFacePick(faceId);
                   return;
                 }
-                if (originPickArmed) {
-                  const face = viewport?.solid_faces.find(
-                    (entry) => entry.face_id === faceId,
-                  );
-                  if (face) {
-                    await placeCamOriginFromPick(face.center);
-                  }
-                  return;
-                }
                 await handleViewportFaceSelection({
                   faceId,
                   viewport,
@@ -2081,15 +2086,6 @@ function App() {
                 });
               }}
               onSelectVertex={async (vertexId, additive) => {
-                if (originPickArmed) {
-                  const vertex = viewport?.vertices.find(
-                    (entry) => entry.id === vertexId,
-                  );
-                  if (vertex) {
-                    await placeCamOriginFromPick(vertex.position);
-                  }
-                  return;
-                }
                 if (constructionPointAction) {
                   await createConstructionPointFeature(vertexId);
                   return;

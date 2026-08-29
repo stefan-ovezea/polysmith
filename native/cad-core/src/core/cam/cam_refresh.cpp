@@ -77,6 +77,13 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
       (*position)[0] -= machine.pointer_offset_x_mm;
       (*position)[1] -= machine.pointer_offset_y_mm;
     }
+    // Microns precision: resolved positions carry float noise that
+    // reads as garbage in the UI — round before storing.
+    if (position.has_value()) {
+      for (auto& axis : position.value()) {
+        axis = std::round(axis * 1000.0) / 1000.0;
+      }
+    }
     setup.wcs_origin.position = position;
   }
 

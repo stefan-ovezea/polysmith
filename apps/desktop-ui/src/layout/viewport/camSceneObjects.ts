@@ -241,9 +241,11 @@ function addStockBoundingBox({
   referenceGroup: THREE.Group;
 }) {
   const modelCenter = modelCenterFromBodies(viewport?.bodies ?? []);
-  const stockCenter = stock.origin
-    ? new THREE.Vector3(stock.origin[0], stock.origin[1], stock.origin[2])
-    : modelCenter;
+  // The stock always WRAPS THE PART — it is centered on the model
+  // bounds, never on the picked origin.  The origin (WCS zero) is an
+  // arbitrary point relative to the stock: picking a part corner must
+  // move the origin marker, NOT the stock box.
+  const stockCenter = modelCenter;
   const margin = stock.margin ?? 3;
 
   let stockWidth: number;

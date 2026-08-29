@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
+import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import {
   applyTheme,
   useAppConfig,
@@ -241,6 +242,8 @@ export function ViewportPanel({
   onSelectFace,
   onSelectEdge,
   onSelectVertex,
+  originPickPointEnabled,
+  onOriginPickPoint,
   onStartSketch,
   onStartSketchOnFace,
   onAddSketchLine,
@@ -603,6 +606,10 @@ export function ViewportPanel({
   const selectPrimitiveRef = useRef(onSelectPrimitive);
   const selectReferenceRef = useRef(onSelectReference);
   const selectFaceRef = useRef(onSelectFace);
+  const originPickPointEnabledRef = useRef(originPickPointEnabled);
+  originPickPointEnabledRef.current = originPickPointEnabled;
+  const originPickPointRef = useRef(onOriginPickPoint);
+  originPickPointRef.current = onOriginPickPoint;
   const selectEdgeRef = useRef(onSelectEdge);
   const selectVertexRef = useRef(onSelectVertex);
   const startSketchRef = useRef(onStartSketch);
@@ -3445,6 +3452,60 @@ export function ViewportPanel({
         renderer,
         camera,
         controls,
+        // Armed origin pick: every pointer-up places the stock origin
+        // at the clicked world point on the bed plane (z = 0) — works
+        // on sketch-only jobs where no faces/vertices exist to snap.
+        originPickPointEnabled: originPickPointEnabledRef.current,
+        originPickPoint: (pickEvent) => {
+          setPointerNdcFromEvent(pointer, pickEvent, renderer);
+          raycaster.setFromCamera(pointer, camera);
+          const hit = new THREE.Vector3();
+          if (
+            !raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+              hit,
+            )
+          ) {
+            originPickPointRef.current(null);
+            return;
+          }
+          // A grazing camera angle intersects the bed plane far away —
+          // reject absurd coordinates instead of placing a garbage
+          // origin (a real machine bed is well under 10 m).
+          if (Math.abs(hit.x) > 10000 || Math.abs(hit.y) > 10000) {
+            originPickPointRef.current(null);
+            return;
+          }
+          // Snap to the nearest sketch vertex within 12 px (screen
+          // space) — the user clicks near a corner and gets the exact
+          // corner, LightBurn-style.
+          const rect = renderer.domElement.getBoundingClientRect();
+          let snapped: THREE.Vector3 | null = null;
+          let bestPx = 12;
+          for (const pointObject of sketchPointObjectsRef.current) {
+            const world = new THREE.Vector3();
+            pointObject.getWorldPosition(world);
+            const screen = world.clone().project(camera);
+            const px = ((screen.x - pointer.x) * rect.width) / 2;
+            const py = ((screen.y - pointer.y) * rect.height) / 2;
+            const distance = Math.hypot(px, py);
+            if (distance < bestPx) {
+              bestPx = distance;
+              snapped = world;
+            }
+          }
+          if (snapped) {
+            // Project the snapped vertex onto the bed plane.
+            hit.set(snapped.x, snapped.y, 0);
+          }
+          // Microns precision — long decimals in the origin fields are
+          // noise, not accuracy.
+          originPickPointRef.current({
+            x: Math.round(hit.x * 1000) / 1000,
+            y: Math.round(hit.y * 1000) / 1000,
+            z: 0,
+          });
+        },
         activeSketchPlaneId,
         activeSketchPlaneFrame,
         pointerDown,

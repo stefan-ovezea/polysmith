@@ -287,6 +287,11 @@ export function CamSetupPanel({
 
       <form
         className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden"
+        // No native HTML5 validation in this panel: origins and WCS
+        // values legitimately go negative, and picked values carry
+        // arbitrary decimals — the "value must be ≥ 0" bubbles are
+        // wrong here by construction.
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           markUpdateSent();

@@ -54,10 +54,14 @@ export function useCadCoreEventBridge() {
           }
           const raw =
             rawText.length > 2000 ? rawText.slice(0, 2000) : rawText;
+          const stack =
+            error instanceof Error && error.stack
+              ? `\nstack: ${error.stack.slice(0, 6000)}`
+              : "";
           reportCoreError(
             { addLogEntry, addMessage, setStatus },
             "desktop_ui",
-            `parse error: ${String(error).slice(0, 4000)}\nraw: ${raw}`,
+            `parse error: ${String(error).slice(0, 4000)}${stack}\nraw: ${raw}`,
           );
         }
       });
