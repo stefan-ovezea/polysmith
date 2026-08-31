@@ -49,7 +49,7 @@ Common command payloads:
 - add_sketch_arc { start_x, start_y, end_x, end_y, anchor_x, anchor_y, mode, is_construction }
 - select_sketch_profile { profile_id, additive? }
 - extrude_profile { profile_ids?, open_entity_ids?, depth, mode?, target_body_id?, parameters? }
-- extrude_face { face_id, depth, mode?, target_body_id?, parameters? }
+- extrude_face { face_id, depth, mode?, target_body_id?, parameters? } (existing-body faces: mode "join" + target_body_id)
 - loft_profiles { profile_ids, ruled? }
 - update_loft_profiles { feature_id, profile_ids }
 - update_loft_ruled { feature_id, ruled }
@@ -133,6 +133,12 @@ Rules:
   arc, profile, 2D drawing, or anything to extrude from a sketch, command 1 must
   be start_sketch_on_plane with reference_id "ref-plane-xy" unless the user
   specified a different plane or face.
+- When no document exists yet, put create_document first, the sketch start
+  second, and the requested sketch geometry afterwards in the SAME batch. Never
+  stop after create_document alone when the user asked for geometry.
+- When extruding a face of an existing body, always use mode "join" with
+  target_body_id set to that face's owner body. Never use mode "new_body" for
+  a face extrude of an existing body — it creates a second overlapping body.
 - Use real IDs from the provided CAD state. Never invent feature, profile, face,
   edge, vertex, line, circle, arc, point, body, or dimension IDs.
 - If a later command needs an ID created by an earlier command, return only the
@@ -169,5 +175,14 @@ ${buildCadStateSummary(document, viewport)}
 Use these IDs as your working references. If the ID you need is not present
 yet because a command in this response would create it, stop before that command
 and set "continue": true.
+`.trim();
+}
+
+export function buildAiCadRecoveryPrompt(failureText: string) {
+  return `
+Your previous response could not be applied: ${failureText}
+Reply again with a corrected JSON envelope that matches the required format and
+rules. Only include commands that can run now; use "continue": true when a later
+batch will need IDs created by this one.
 `.trim();
 }
