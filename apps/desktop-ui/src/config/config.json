@@ -12,7 +12,7 @@
     "baseUrl": "http://localhost:11434",
     "model": "",
     "previewBeforeRun": true,
-    "maxAgentSteps": 5
+    "maxAgentSteps": 8
   },
   "orcaSlicer": {
     "enabled": false,

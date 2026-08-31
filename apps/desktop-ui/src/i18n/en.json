@@ -930,6 +930,8 @@
     "loadingModels": "Loading models...",
     "loadModels": "Load Models",
     "maxAgentSteps": "Max Agent Steps",
+    "previewBeforeRun": "Preview commands before running",
+    "previewBeforeRunDescription": "When off, validated command batches run immediately. Undo is available after each batch.",
     "model": "Model",
     "modelLoadFailed": "Failed to load models: {{error}}",
     "modelNotListed": "{{model}} (not listed)",
@@ -1065,6 +1067,7 @@
     "suppressed": "suppressed"
   },
   "aiAssistant": {
+    "autoRunActive": "Auto-run enabled",
     "cancel": "Cancel",
     "commandPreview": "Command Preview",
     "coreNotRunning": "The CAD core is not running.",
@@ -1074,6 +1077,7 @@
     "noModel": "No model",
     "placeholder": "Create a 60 by 40 mm rectangle on XY and extrude it 20 mm",
     "previewBeforeRun": "Preview before run",
+    "recovering": "The batch was rejected. Asking the model to correct it...",
     "runCommands": "Run Commands",
     "running": "Running...",
     "send": "Send",

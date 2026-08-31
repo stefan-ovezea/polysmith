@@ -110,7 +110,10 @@ function normalizeAiConfig(input: Partial<AppConfig>["ai"]): AppConfig["ai"] {
         ? input.baseUrl
         : defaults.baseUrl,
     model: typeof input?.model === "string" ? input.model : defaults.model,
-    previewBeforeRun: true,
+    previewBeforeRun:
+      typeof input?.previewBeforeRun === "boolean"
+        ? input.previewBeforeRun
+        : defaults.previewBeforeRun,
     maxAgentSteps,
   };
 }

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AiConfig } from "@/config";
 import {
+  buildAiCadRecoveryPrompt,
   buildAiCadSystemPrompt,
   buildAiCadUserPrompt,
   buildAiWorkingReferences,
   commandPreviewLabel,
+  formatAiCommandError,
   type AiExecutableCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
@@ -37,6 +39,15 @@ interface PendingBatch {
   continue: boolean;
   step: number;
 }
+
+// How many times a rejected or failed batch is fed back to the model for a
+// self-correction before the turn is abandoned. Bounded so a confused model
+// cannot loop forever.
+const MAX_RECOVERY_ATTEMPTS = 3;
+// Multi-turn memory size: replay at most this many raw user prompts and raw
+// model envelopes as prior turns. Historical state summaries are never kept
+// (their IDs go stale); the fresh per-turn summary is the real context.
+const MAX_HISTORY_TURNS = 6;
 
 function waitForCoreResponse(commandId: string, timeoutMs = 6000) {
   return new Promise<CoreMessage>((resolve, reject) => {
@@ -96,14 +107,27 @@ export function AiAssistantPanel({
     config.model.trim().length > 0 &&
     config.baseUrl.trim().length > 0;
   const workingReferences = buildAiWorkingReferences(document, viewport);
+  // Multi-turn memory for the model: raw user prompts and raw model envelopes
+  // only (a ref avoids stale-closure reads across the async agent loop).
+  const historyRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>(
+    [],
+  );
+  // Recovery attempts used for the current user turn. Reset when a new prompt
+  // is submitted and after a batch executes successfully.
+  const failureCountRef = useRef(0);
 
-  async function requestNextBatch(userPrompt: string, step: number) {
+  async function requestNextBatch(
+    userPrompt: string,
+    step: number,
+    failureText?: string,
+  ) {
     setIsThinking(true);
     setError(null);
     try {
       const snapshot = useCadCoreStore.getState();
-      const response = await requestOllamaChat(config, [
+      const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
         { role: "system", content: buildAiCadSystemPrompt() },
+        ...historyRef.current,
         {
           role: "user",
           content: buildAiCadUserPrompt(
@@ -112,7 +136,30 @@ export function AiAssistantPanel({
             snapshot.viewport ?? viewport,
           ),
         },
-      ]);
+      ];
+      if (failureText) {
+        messages.push({
+          role: "user",
+          content: buildAiCadRecoveryPrompt(failureText),
+        });
+      }
+      const response = await requestOllamaChat(config, messages);
+      // Record the turn for multi-turn memory: the raw prompt (or the recovery
+      // failure text) plus the exact model envelope. Never store state
+      // summaries here — their IDs go stale between turns.
+      historyRef.current.push(
+        {
+          role: "user",
+          content: failureText
+            ? buildAiCadRecoveryPrompt(failureText)
+            : userPrompt,
+        },
+        { role: "assistant", content: response },
+      );
+      while (historyRef.current.length > MAX_HISTORY_TURNS * 2) {
+        historyRef.current.shift();
+      }
+
       const envelope = parseAiCommandEnvelope(response);
       const preparedBatch = prepareAiCommandBatchForState(
         envelope.commands,
@@ -128,14 +175,35 @@ export function AiAssistantPanel({
           text: notice,
         })),
       ]);
-      setPendingBatch({
+      const batch: PendingBatch = {
         message: envelope.message,
         commands: preparedBatch.commands,
         continue: preparedBatch.continue,
         step,
-      });
+      };
+      if (!config.previewBeforeRun) {
+        // Auto-run: execute immediately through the same machinery the
+        // manual Run button uses (including recovery and continue loops).
+        setIsExecuting(true);
+        try {
+          await executeBatch(batch);
+        } finally {
+          setIsExecuting(false);
+        }
+      } else {
+        setPendingBatch(batch);
+      }
     } catch (caught) {
-      setError(String(caught));
+      if (failureCountRef.current < MAX_RECOVERY_ATTEMPTS) {
+        failureCountRef.current += 1;
+        setEntries((current) => [
+          ...current,
+          { role: "system", text: t("aiAssistant.recovering") },
+        ]);
+        await requestNextBatch(userPrompt, step, formatAiCommandError(caught));
+      } else {
+        setError(formatAiCommandError(caught));
+      }
     } finally {
       setIsThinking(false);
     }
@@ -146,42 +214,80 @@ export function AiAssistantPanel({
     if (!nextPrompt || !canAsk) {
       return;
     }
+    failureCountRef.current = 0;
     setActivePrompt(nextPrompt);
     setPrompt("");
     setEntries((current) => [...current, { role: "user", text: nextPrompt }]);
     await requestNextBatch(nextPrompt, 1);
   }
 
+  // One recovery pass after a rejected or failed batch: refresh the snapshot
+  // so the model sees the partial document, then ask for a corrected envelope.
+  async function recoverFromFailure(
+    batch: PendingBatch,
+    failedCommand: AiExecutableCommand,
+    caught: unknown,
+  ) {
+    try {
+      await refreshCoreSnapshot();
+    } catch {
+      // Best-effort: the model can still read the pre-failure state summary.
+    }
+    if (failureCountRef.current < MAX_RECOVERY_ATTEMPTS) {
+      failureCountRef.current += 1;
+      setEntries((current) => [
+        ...current,
+        { role: "system", text: t("aiAssistant.recovering") },
+      ]);
+      await requestNextBatch(
+        activePrompt,
+        batch.step,
+        `${commandPreviewLabel(failedCommand)}: ${formatAiCommandError(caught)}`,
+      );
+    } else {
+      setError(formatAiCommandError(caught));
+    }
+  }
+
+  async function executeBatch(batch: PendingBatch) {
+    for (const command of batch.commands) {
+      try {
+        await sendAndWait(command);
+      } catch (caught) {
+        await recoverFromFailure(batch, command, caught);
+        return;
+      }
+    }
+    await refreshCoreSnapshot();
+    setEntries((current) => [
+      ...current,
+      {
+        role: "system",
+        text: t("aiAssistant.executedCommands", {
+          count: batch.commands.length,
+          plural: batch.commands.length === 1 ? "" : "s",
+        }),
+      },
+    ]);
+    // A fully executed batch proves the model's last envelope was good.
+    failureCountRef.current = 0;
+    const shouldContinue = batch.continue && batch.step < config.maxAgentSteps;
+    const nextStep = batch.step + 1;
+    if (shouldContinue) {
+      await requestNextBatch(activePrompt, nextStep);
+    }
+  }
+
   async function runPendingBatch() {
     if (!pendingBatch) {
       return;
     }
+    const batch = pendingBatch;
     setIsExecuting(true);
     setError(null);
+    setPendingBatch(null);
     try {
-      for (const command of pendingBatch.commands) {
-        await sendAndWait(command);
-      }
-      await refreshCoreSnapshot();
-      setEntries((current) => [
-        ...current,
-        {
-          role: "system",
-          text: t("aiAssistant.executedCommands", {
-            count: pendingBatch.commands.length,
-            plural: pendingBatch.commands.length === 1 ? "" : "s",
-          }),
-        },
-      ]);
-      const shouldContinue =
-        pendingBatch.continue && pendingBatch.step < config.maxAgentSteps;
-      const nextStep = pendingBatch.step + 1;
-      setPendingBatch(null);
-      if (shouldContinue) {
-        await requestNextBatch(activePrompt, nextStep);
-      }
-    } catch (caught) {
-      setError(String(caught));
+      await executeBatch(batch);
     } finally {
       setIsExecuting(false);
     }
@@ -319,7 +425,9 @@ export function AiAssistantPanel({
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="text-xs text-on-surface-muted">
             {config.enabled
-              ? t("aiAssistant.previewBeforeRun")
+              ? config.previewBeforeRun
+                ? t("aiAssistant.previewBeforeRun")
+                : t("aiAssistant.autoRunActive")
               : t("aiAssistant.disabled")}
           </span>
           <button

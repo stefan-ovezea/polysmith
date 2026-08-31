@@ -552,6 +552,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                             enabled,
                           },
                         }));
+                        if (enabled) {
+                          // One-click setup: fetch the model list immediately
+                          // so a model is auto-selected and ready to use.
+                          void loadAiModels();
+                        }
                       }}
                     />
                   </label>
@@ -650,6 +655,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                           ai: {
                             ...current.ai,
                             maxAgentSteps: Number.isFinite(value) ? value : 5,
+                          },
+                        }));
+                      }}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span>
+                      <span className="block text-sm font-medium text-on-surface">
+                        {t("settings.previewBeforeRun")}
+                      </span>
+                      <span className="mt-1 block text-xs text-on-surface-muted">
+                        {t("settings.previewBeforeRunDescription")}
+                      </span>
+                    </span>
+                    <Checkbox
+                      checked={config.ai.previewBeforeRun}
+                      ariaLabel={t("settings.previewBeforeRun")}
+                      onCheckedChange={(previewBeforeRun) => {
+                        updateConfig((current) => ({
+                          ...current,
+                          ai: {
+                            ...current.ai,
+                            previewBeforeRun,
                           },
                         }));
                       }}
