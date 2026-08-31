@@ -1,4 +1,7 @@
 export * from "./cadCoreClient";
+export * from "./aiClient";
+export * from "./aiKeyStore";
+export * from "./deepseekClient";
 export * from "./components/Checkbox";
 export * from "./components/Dropdown";
 export * from "./components/ScrollArea";

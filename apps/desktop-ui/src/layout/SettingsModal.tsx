@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -9,7 +9,7 @@ import {
   useAppConfig,
 } from "@/config";
 import type { AppConfig, HotkeyBinding, OrcaIntegrationMode } from "@/config";
-import { Checkbox, Dropdown, listOllamaModels } from "@/lib";
+import { Checkbox, Dropdown, getAiSettings, listAiModels } from "@/lib";
 import { usePluginHost } from "@/plugins/PluginProvider";
 
 type SettingsSection =
@@ -184,6 +184,34 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const pluginHost = usePluginHost();
   const [section, setSection] = useState<SettingsSection>("general");
   const [activeHotkeyId, setActiveHotkeyId] = useState<string | null>(null);
+  // "unknown" while the ~/.polysmith key lookup is in flight.
+  const [aiKeyStatus, setAiKeyStatus] = useState<
+    "unknown" | "found" | "missing" | "commandError"
+  >("unknown");
+  const [aiKeySourcePath, setAiKeySourcePath] = useState("");
+
+  useEffect(() => {
+    if (config.ai.provider !== "deepseek") {
+      return;
+    }
+    let cancelled = false;
+    void getAiSettings().then((settings) => {
+      if (cancelled) {
+        return;
+      }
+      setAiKeySourcePath(settings.sourcePath);
+      setAiKeyStatus(
+        settings.commandError
+          ? "commandError"
+          : settings.apiKey
+            ? "found"
+            : "missing",
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.ai.provider]);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const [isConfirmingResetAll, setIsConfirmingResetAll] = useState(false);
   const [aiModelLoadStatus, setAiModelLoadStatus] =
@@ -344,7 +372,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       message: t("settings.loadingModels"),
     });
     try {
-      const models = await listOllamaModels(config.ai.baseUrl);
+      const models = await listAiModels(config.ai);
       setAiModelNames(models);
       if (models.length > 0 && !models.includes(config.ai.model.trim())) {
         updateConfig((current) => ({
@@ -552,6 +580,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                             enabled,
                           },
                         }));
+                        if (enabled) {
+                          // One-click setup: fetch the model list immediately
+                          // so a model is auto-selected and ready to use.
+                          void loadAiModels();
+                        }
                       }}
                     />
                   </label>
@@ -566,11 +599,65 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   }
                 >
                   <label className="block">
-                    <span className="cad-kicker">{t("settings.ollamaUrl")}</span>
+                    <span className="cad-kicker">{t("settings.aiProvider")}</span>
+                    <Dropdown
+                      label={t("settings.aiProvider")}
+                      className="mt-2 w-full"
+                      value={config.ai.provider}
+                      options={[
+                        {
+                          value: "ollama",
+                          label: t("settings.aiProviderOllama"),
+                        },
+                        {
+                          value: "deepseek",
+                          label: t("settings.aiProviderDeepseek"),
+                        },
+                      ]}
+                      onChange={(provider) => {
+                        const other =
+                          provider === "deepseek" ? "ollama" : "deepseek";
+                        const defaults = {
+                          ollama: "http://localhost:11434",
+                          deepseek: "https://api.deepseek.com/anthropic",
+                        } as const;
+                        setAiModelLoadStatus(null);
+                        setAiModelNames([]);
+                        updateConfig((current) => ({
+                          ...current,
+                          ai: {
+                            ...current.ai,
+                            provider,
+                            // Swap the endpoint default when switching
+                            // providers while the URL is still the other
+                            // provider's default.
+                            baseUrl:
+                              !current.ai.baseUrl ||
+                              current.ai.baseUrl === defaults[other]
+                                ? defaults[provider]
+                                : current.ai.baseUrl,
+                            // Reset the model too — a model name from the
+                            // other provider is meaningless on this one.
+                            model:
+                              provider === "deepseek"
+                                ? "deepseek-v4-flash"
+                                : "",
+                          },
+                        }));
+                      }}
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="cad-kicker">{t("settings.aiBaseUrl")}</span>
                     <input
                       className="mt-2 w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-on-surface outline-none transition-colors focus:border-primary-edge"
                       value={config.ai.baseUrl}
-                      placeholder="http://localhost:11434"
+                      placeholder={
+                        config.ai.provider === "deepseek"
+                          ? "https://api.deepseek.com/anthropic"
+                          : "http://localhost:11434"
+                      }
                       onChange={(event) => {
                         setAiModelLoadStatus(null);
                         setAiModelNames([]);
@@ -584,6 +671,69 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                       }}
                     />
                   </label>
+
+                  {config.ai.provider === "deepseek" ? (
+                    <>
+                      <div>
+                        <span className="cad-kicker">{t("settings.aiApiKey")}</span>
+                        <p className="mt-2 text-sm text-on-surface-muted">
+                          {aiKeyStatus === "found"
+                            ? t("settings.aiApiKeyFound", {
+                                path: aiKeySourcePath,
+                              })
+                            : aiKeyStatus === "missing"
+                              ? t("settings.aiApiKeyMissing", {
+                                  path: aiKeySourcePath,
+                                })
+                              : aiKeyStatus === "commandError"
+                                ? t("settings.aiApiKeyCommandError")
+                                : t("settings.aiApiKeyChecking")}
+                        </p>
+                      </div>
+
+                      <label className="block">
+                        <span className="cad-kicker">{t("settings.aiApiStyle")}</span>
+                        <Dropdown
+                          label={t("settings.aiApiStyle")}
+                          className="mt-2 w-full"
+                          value={config.ai.apiStyle}
+                          options={[
+                            {
+                              value: "anthropic",
+                              label: t("settings.aiApiStyleAnthropic"),
+                            },
+                            {
+                              value: "openai",
+                              label: t("settings.aiApiStyleOpenai"),
+                            },
+                          ]}
+                          onChange={(apiStyle) => {
+                            setAiModelLoadStatus(null);
+                            setAiModelNames([]);
+                            updateConfig((current) => ({
+                              ...current,
+                              ai: {
+                                ...current.ai,
+                                apiStyle,
+                                // Each style belongs to its own endpoint
+                                // path: swap the deepseek URL defaults with
+                                // the style so the pair always matches.
+                                baseUrl:
+                                  current.ai.baseUrl ===
+                                    "https://api.deepseek.com/anthropic" ||
+                                  current.ai.baseUrl ===
+                                    "https://api.deepseek.com"
+                                    ? apiStyle === "openai"
+                                      ? "https://api.deepseek.com"
+                                      : "https://api.deepseek.com/anthropic"
+                                    : current.ai.baseUrl,
+                              },
+                            }));
+                          }}
+                        />
+                      </label>
+                    </>
+                  ) : null}
 
                   <div className="flex flex-wrap items-center gap-3">
                     <button
@@ -650,6 +800,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                           ai: {
                             ...current.ai,
                             maxAgentSteps: Number.isFinite(value) ? value : 5,
+                          },
+                        }));
+                      }}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span>
+                      <span className="block text-sm font-medium text-on-surface">
+                        {t("settings.previewBeforeRun")}
+                      </span>
+                      <span className="mt-1 block text-xs text-on-surface-muted">
+                        {t("settings.previewBeforeRunDescription")}
+                      </span>
+                    </span>
+                    <Checkbox
+                      checked={config.ai.previewBeforeRun}
+                      ariaLabel={t("settings.previewBeforeRun")}
+                      onCheckedChange={(previewBeforeRun) => {
+                        updateConfig((current) => ({
+                          ...current,
+                          ai: {
+                            ...current.ai,
+                            previewBeforeRun,
                           },
                         }));
                       }}

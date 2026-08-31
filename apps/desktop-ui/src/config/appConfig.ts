@@ -93,7 +93,14 @@ function isCrosshairMode(value: unknown): value is CrosshairMode {
 
 function normalizeAiConfig(input: Partial<AppConfig>["ai"]): AppConfig["ai"] {
   const defaults = defaultAppConfig.ai;
-  const provider = input?.provider === "ollama" ? input.provider : defaults.provider;
+  const provider =
+    input?.provider === "ollama" || input?.provider === "deepseek"
+      ? input.provider
+      : defaults.provider;
+  const apiStyle =
+    input?.apiStyle === "anthropic" || input?.apiStyle === "openai"
+      ? input.apiStyle
+      : defaults.apiStyle;
   const maxAgentSteps =
     typeof input?.maxAgentSteps === "number" &&
     Number.isFinite(input.maxAgentSteps) &&
@@ -109,8 +116,21 @@ function normalizeAiConfig(input: Partial<AppConfig>["ai"]): AppConfig["ai"] {
       typeof input?.baseUrl === "string" && input.baseUrl.trim().length > 0
         ? input.baseUrl
         : defaults.baseUrl,
-    model: typeof input?.model === "string" ? input.model : defaults.model,
-    previewBeforeRun: true,
+    model:
+      typeof input?.model === "string" && input.model.trim().length > 0
+        ? input.model
+        : provider === "deepseek"
+          ? "deepseek-v4-flash"
+          : defaults.model,
+    // The API key is NEVER persisted in the app config — it lives in the
+    // user's ~/.polysmith file and is fetched at call time. Always normalize
+    // to "" so a stale config can never carry a key.
+    apiKey: "",
+    apiStyle,
+    previewBeforeRun:
+      typeof input?.previewBeforeRun === "boolean"
+        ? input.previewBeforeRun
+        : defaults.previewBeforeRun,
     maxAgentSteps,
   };
 }

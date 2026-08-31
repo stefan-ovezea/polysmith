@@ -2,6 +2,109 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-01
+
+### Headless AI generation harness + DeepSeek cloud provider (feature/AI)
+
+Test-driving the AI against local Ollama on CPU proved too slow (multi-minute
+agent loops; scenarios killed mid-run), so two additions landed:
+
+- **Headless harness** (`apps/desktop-ui/src/lib/ai/`):
+  - `cadCoreHarness.ts` spawns the real `cad_core` binary with the
+    `cad_core.rs` environment recipe (PATH DLL dirs, `CSF_OCCTResourcePath`,
+    posts dir), id-correlated `send()` calls, latest document/viewport
+    snapshots, stdin-close teardown.
+  - `profileAssertions.ts` ports the C++ `profiles_match` oracle to the
+    serialized `document_state` (complete region set, never presence).
+    Empirically confirmed: full-circle regions serialize as
+    `kind: "polygon"` with the circle id inside `line_ids` plus
+    `source_circle_id` set; rectangle-with-hole keeps its 4-line boundary.
+  - `runAiScenario.ts` runs the agent loop (prompt → envelope → validate →
+    execute → bounded recovery → continue) reusing the in-app prompt
+    builders, envelope parser and batch validation verbatim.
+  - `cadCoreHarness.smoke.test.ts` (scripted, no model) and
+    `aiSketchGeneration.integration.test.ts` (rectangle extrude — green on
+    Ollama/gemma4:12b in 224 s; two-circle cut + slot scenarios pending
+    verification), with 3-attempt flake retries and raw-envelope failure
+    dumps. `pnpm test:ai` runs both.
+  - `@types/node` added to desktop-ui devDependencies for the
+    node-targeted harness code.
+- **DeepSeek provider** — `AiConfig.provider` is now `"ollama" | "deepseek"`
+  plus `apiKey` and `apiStyle` (`anthropic` | `openai`). `deepseekClient.ts`
+  speaks both shapes of api.deepseek.com (`/anthropic/v1/messages` with
+  x-api-key for `deepseek-v4-pro[1m]` — the same endpoint this repo's agent
+  tooling uses — and `/chat/completions` with Bearer +
+  `response_format: json_object` for `deepseek-chat`). Both endpoints were
+  probed to echo permissive CORS headers, so the Tauri renderer calls them
+  directly — no Rust proxy. `aiClient.ts` dispatches panel + harness;
+  Settings gains provider / API key / API style fields; the integration
+  suite switches providers via `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` /
+  `AI_BASE_URL` / `AI_API_STYLE`. Unit tests pin both wire formats
+  (`deepseekClient.test.ts`, 6 tests).
+- **Key storage** — per user requirement the DeepSeek key never enters the
+  repo or the persisted app config. It lives in the user-owned
+  `~/.polysmith` JSON file (`deepseek_api_key`), read by a new Rust command
+  `read_ai_api_key` (`src-tauri/src/ai_key.rs`) for the app and directly by
+  the node harness (env `AI_API_KEY` or the same file). The app config
+  normalization forces `apiKey: ""` so stale configs can never carry a key;
+  Settings shows a found/missing status instead of a key input.
+
+## 2026-08-31
+
+### AI assistant reliability pass — recovery loop, memory, auto-run, gemma4 fix (feature/AI)
+
+First usability pass over the shipped AI assistant, driven by testing with
+a local gemma4:12b on Ollama. All changes are UI-layer (`apps/desktop-ui`).
+
+- **gemma4 thinking fix** — verified live: with thinking enabled, gemma4
+  emits the envelope into `message.thinking` and returns an empty
+  `content` field (`done_reason:"length"` after ~30 s). `requestOllamaChat`
+  now sends `think: false` in the `/api/chat` body; accepted by both
+  thinking-capable (gemma4) and non-thinking (gemma3) models on Ollama
+  0.33+. The request also sets `num_ctx: 16384` — Ollama's 4096-token
+  default truncated the growing prompt by the third agent step.
+- **Prompt stop-short fix** — a replay of the real panel prompts against
+  gemma4:12b showed the model stopping after `create_document` (or after
+  the sketch start), reading the state-summary hint as its whole job. The
+  system prompt now requires `create_document` + sketch start + requested
+  geometry in one batch; the empty-document state summary was reworded to
+  match. With both fixes the full rectangle→extrude flow completes in two
+  batches on gemma4:12b (verified via prompt replay).
+- **Face-extrude new_body guard** — in-app testing showed gemma choosing
+  `extrude_face` with `mode: "new_body"` on a face of the existing body,
+  which the core faithfully compiled as a second coincident solid
+  ("seam / two bodies"). Headless repro against the real core confirmed
+  the join path is clean (unify_same_domain merges the seam plane) — the
+  artifact is the two-body new_body result, so the fix lives in the AI
+  layer: the validator rejects `new_body` face extrudes of owned faces
+  with a correction message, and the system prompt now requires
+  `mode: "join"` + `target_body_id` for existing-body face extrudes.
+  Prompt replay confirms the model emits join+target.
+- **Error recovery loop** — a rejected or failed batch is fed back to the
+  model as a compact recovery message (`formatAiCommandError`: zod issues
+  mapped to `<path>: <message>` lines; core failures include the failed
+  command label), bounded at 3 attempts per user turn. A fully executed
+  batch resets the budget; recovery does not consume agent steps.
+- **Multi-turn memory** — the panel replays prior raw user prompts and raw
+  model envelopes (max 6 turns) as chat history; state summaries are never
+  retained (stale-ID risk).
+- **Envelope tolerance** — markdown-fenced JSON envelopes are stripped
+  before parsing (small models emit fences despite `format:"json"`).
+- **`previewBeforeRun` honored** — previously forced true in
+  `normalizeAiConfig`; now a real setting with a Settings checkbox.
+  Auto-run executes validated batches immediately through the same
+  execute/continue/recovery machinery.
+- **One-click enable** — enabling the AI assistant in Settings now
+  auto-loads the Ollama model list (auto-selecting the first model).
+  Default `maxAgentSteps` raised 5 → 8.
+- **Tests** — new vitest suites: `aiCommandProtocol.test.ts` (envelope
+  parsing + batch repair/deferral/construction-guard), `aiCadPrompt.test.ts`
+  (prompt golden fragments), `ollamaClient.test.ts` (wire format pins
+  `stream:false`/`format:"json"`/`think:false`). 23 tests, all green;
+  tsc clean.
+- Docs: `AI-CAD-Command-Language.md` envelope section extended (memory,
+  recovery, auto-run, fence tolerance, `think:false`).
+
 ## 2026-08-29/30
 
 ### CAM usability rework — reference-sketch scope, profile re-pick, setup tree (cam/laser)

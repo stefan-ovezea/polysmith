@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai_key;
 mod app_config;
 mod cad_core;
 mod orca_slicer;
@@ -208,6 +209,11 @@ fn set_orca_mapped(
     orca_slicer::set_orca_mapped_window(state, mapped)
 }
 
+#[tauri::command]
+fn read_ai_settings(app: tauri::AppHandle) -> Result<ai_key::AiSettings, String> {
+    ai_key::read_ai_settings(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     orca_slicer::configure_linux_windowing_environment();
@@ -251,7 +257,8 @@ pub fn run() {
             embed_orca_window,
             resize_orca_window,
             hide_orca_window,
-            set_orca_mapped
+            set_orca_mapped,
+            read_ai_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

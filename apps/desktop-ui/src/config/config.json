@@ -11,8 +11,9 @@
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",
     "model": "",
+    "apiStyle": "anthropic",
     "previewBeforeRun": true,
-    "maxAgentSteps": 5
+    "maxAgentSteps": 8
   },
   "orcaSlicer": {
     "enabled": false,
