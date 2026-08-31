@@ -13,7 +13,7 @@ import {
   makeGetViewportStateCommand,
   parseAiCommandEnvelope,
   prepareAiCommandBatchForState,
-  requestOllamaChat,
+  requestAiChat,
   sendCoreCommand,
 } from "@/lib";
 import { useCadCoreStore } from "@/state";
@@ -115,12 +115,29 @@ export function AiAssistantPanel({
   // Recovery attempts used for the current user turn. Reset when a new prompt
   // is submitted and after a batch executes successfully.
   const failureCountRef = useRef(0);
+  // Stop signal for the agent loop: checked after every await so a runaway
+  // model session can always be interrupted.
+  const stopRequestedRef = useRef(false);
+
+  function stopActiveWork() {
+    stopRequestedRef.current = true;
+    setIsThinking(false);
+    setIsExecuting(false);
+    setPendingBatch(null);
+    setEntries((current) => [
+      ...current,
+      { role: "system", text: t("aiAssistant.stopped") },
+    ]);
+  }
 
   async function requestNextBatch(
     userPrompt: string,
     step: number,
     failureText?: string,
   ) {
+    if (stopRequestedRef.current) {
+      return;
+    }
     setIsThinking(true);
     setError(null);
     try {
@@ -143,7 +160,10 @@ export function AiAssistantPanel({
           content: buildAiCadRecoveryPrompt(failureText),
         });
       }
-      const response = await requestOllamaChat(config, messages);
+      const response = await requestAiChat(config, messages);
+      if (stopRequestedRef.current) {
+        return;
+      }
       // Record the turn for multi-turn memory: the raw prompt (or the recovery
       // failure text) plus the exact model envelope. Never store state
       // summaries here — their IDs go stale between turns.
@@ -194,6 +214,9 @@ export function AiAssistantPanel({
         setPendingBatch(batch);
       }
     } catch (caught) {
+      if (stopRequestedRef.current) {
+        return;
+      }
       if (failureCountRef.current < MAX_RECOVERY_ATTEMPTS) {
         failureCountRef.current += 1;
         setEntries((current) => [
@@ -215,6 +238,7 @@ export function AiAssistantPanel({
       return;
     }
     failureCountRef.current = 0;
+    stopRequestedRef.current = false;
     setActivePrompt(nextPrompt);
     setPrompt("");
     setEntries((current) => [...current, { role: "user", text: nextPrompt }]);
@@ -251,9 +275,15 @@ export function AiAssistantPanel({
 
   async function executeBatch(batch: PendingBatch) {
     for (const command of batch.commands) {
+      if (stopRequestedRef.current) {
+        return;
+      }
       try {
         await sendAndWait(command);
       } catch (caught) {
+        if (stopRequestedRef.current) {
+          return;
+        }
         await recoverFromFailure(batch, command, caught);
         return;
       }
@@ -307,7 +337,8 @@ export function AiAssistantPanel({
         <div>
           <p className="cad-kicker">{t("aiAssistant.title")}</p>
           <p className="mt-1 text-xs text-on-surface-muted">
-            Ollama · {config.model.trim() || t("aiAssistant.noModel")}
+            {config.provider === "deepseek" ? "DeepSeek" : "Ollama"} ·{" "}
+            {config.model.trim() || t("aiAssistant.noModel")}
           </p>
         </div>
         <button
@@ -430,14 +461,24 @@ export function AiAssistantPanel({
                 : t("aiAssistant.autoRunActive")
               : t("aiAssistant.disabled")}
           </span>
-          <button
-            type="button"
-            className="cad-ribbon-action cad-ribbon-action-primary"
-            disabled={!canAsk || status !== "connected"}
-            onClick={() => void submitPrompt()}
-          >
-            {t("aiAssistant.send")}
-          </button>
+          {isThinking || isExecuting ? (
+            <button
+              type="button"
+              className="cad-ribbon-action cad-ribbon-action-primary"
+              onClick={stopActiveWork}
+            >
+              {t("aiAssistant.stop")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="cad-ribbon-action cad-ribbon-action-primary"
+              disabled={!canAsk || status !== "connected"}
+              onClick={() => void submitPrompt()}
+            >
+              {t("aiAssistant.send")}
+            </button>
+          )}
         </div>
       </footer>
     </aside>
