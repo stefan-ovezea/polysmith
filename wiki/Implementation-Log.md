@@ -2,6 +2,53 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-01
+
+### Headless AI generation harness + DeepSeek cloud provider (feature/AI)
+
+Test-driving the AI against local Ollama on CPU proved too slow (multi-minute
+agent loops; scenarios killed mid-run), so two additions landed:
+
+- **Headless harness** (`apps/desktop-ui/src/lib/ai/`):
+  - `cadCoreHarness.ts` spawns the real `cad_core` binary with the
+    `cad_core.rs` environment recipe (PATH DLL dirs, `CSF_OCCTResourcePath`,
+    posts dir), id-correlated `send()` calls, latest document/viewport
+    snapshots, stdin-close teardown.
+  - `profileAssertions.ts` ports the C++ `profiles_match` oracle to the
+    serialized `document_state` (complete region set, never presence).
+    Empirically confirmed: full-circle regions serialize as
+    `kind: "polygon"` with the circle id inside `line_ids` plus
+    `source_circle_id` set; rectangle-with-hole keeps its 4-line boundary.
+  - `runAiScenario.ts` runs the agent loop (prompt → envelope → validate →
+    execute → bounded recovery → continue) reusing the in-app prompt
+    builders, envelope parser and batch validation verbatim.
+  - `cadCoreHarness.smoke.test.ts` (scripted, no model) and
+    `aiSketchGeneration.integration.test.ts` (rectangle extrude — green on
+    Ollama/gemma4:12b in 224 s; two-circle cut + slot scenarios pending
+    verification), with 3-attempt flake retries and raw-envelope failure
+    dumps. `pnpm test:ai` runs both.
+  - `@types/node` added to desktop-ui devDependencies for the
+    node-targeted harness code.
+- **DeepSeek provider** — `AiConfig.provider` is now `"ollama" | "deepseek"`
+  plus `apiKey` and `apiStyle` (`anthropic` | `openai`). `deepseekClient.ts`
+  speaks both shapes of api.deepseek.com (`/anthropic/v1/messages` with
+  x-api-key for `deepseek-v4-pro[1m]` — the same endpoint this repo's agent
+  tooling uses — and `/chat/completions` with Bearer +
+  `response_format: json_object` for `deepseek-chat`). Both endpoints were
+  probed to echo permissive CORS headers, so the Tauri renderer calls them
+  directly — no Rust proxy. `aiClient.ts` dispatches panel + harness;
+  Settings gains provider / API key / API style fields; the integration
+  suite switches providers via `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` /
+  `AI_BASE_URL` / `AI_API_STYLE`. Unit tests pin both wire formats
+  (`deepseekClient.test.ts`, 6 tests).
+- **Key storage** — per user requirement the DeepSeek key never enters the
+  repo or the persisted app config. It lives in the user-owned
+  `~/.polysmith` JSON file (`deepseek_api_key`), read by a new Rust command
+  `read_ai_api_key` (`src-tauri/src/ai_key.rs`) for the app and directly by
+  the node harness (env `AI_API_KEY` or the same file). The app config
+  normalization forces `apiKey: ""` so stale configs can never carry a key;
+  Settings shows a found/missing status instead of a key input.
+
 ## 2026-08-31
 
 ### AI assistant reliability pass — recovery loop, memory, auto-run, gemma4 fix (feature/AI)

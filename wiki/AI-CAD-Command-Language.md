@@ -120,12 +120,25 @@ Rules:
 - A markdown-fenced JSON envelope (``` ```json ... ``` ```) is tolerated and
   stripped before parsing, since small local models emit fences even with
   `format: "json"`.
+- Two providers are supported: `ollama` (local) and `deepseek` (cloud,
+  api.deepseek.com). The DeepSeek provider speaks two API shapes:
+  `anthropic` (`/anthropic/v1/messages`, x-api-key — e.g. model
+  `deepseek-v4-pro[1m]`) and `openai` (`/chat/completions`, Bearer with
+  `response_format: json_object` — e.g. model `deepseek-chat`). The API key
+  is read from the user-owned `~/.polysmith` file
+  (`{ "deepseek_api_key": "...", "deepseek_base_url": "..." }`) — it never
+  enters the repository or the persisted app config. The Rust shell reads the
+  file (command `read_ai_settings`); the headless harness reads `AI_API_KEY` /
+  `AI_BASE_URL` or the same file. The file's `deepseek_base_url` overrides the
+  config URL when present. The API style and endpoint path must match:
+  `anthropic` style → `.../anthropic`, `openai` style → `https://api.deepseek.com`
+  (the Settings dropdown swaps the URL with the style).
 - The app sends `think: false` in the Ollama `/api/chat` request. This is
   load-bearing for thinking-capable models (gemma4): with thinking enabled
   they emit the envelope into `message.thinking` and return an empty
   `content` field. The request also sets `num_ctx: 16384` — Ollama's
   4096-token default truncates the system prompt + state summary + history
-  by the third agent step (`done_reason: "length"`).
+  by the third agent step (`done_reason: "length"`). (Ollama path only.)
 - Multi-turn memory: the app replays prior raw user prompts and raw model
   envelopes (capped at 6 turns) as chat history. Historical state summaries
   are never retained — their IDs go stale; the fresh per-turn state summary
@@ -3491,3 +3504,39 @@ this:
   `cam_operation_generate` fills the toolpath, `cam_operation_preview` shows
   a wireframe, `cam_export_gcode` writes the file.
 - Never invent IDs. Never expose IDs in user-facing UI copy.
+
+## Headless AI Generation Harness
+
+For repeatable, non-interactive AI testing the repo ships a vitest integration
+suite that drives the real `cad_core` binary through the same prompt /
+envelope / validation pipeline the in-app assistant uses:
+
+- `pnpm test:ai` runs `cadCoreHarness.smoke.test.ts` (scripted
+  rectangle → extrude, no model needed — validates the spawn and assertion
+  plumbing) and `aiSketchGeneration.integration.test.ts` (scenarios:
+  rectangle extrude, two-circle cut, slot extrude).
+- Prerequisites: a built core (`pnpm core:build`) and a serving model.
+  Default provider is Ollama; set `AI_PROVIDER=deepseek` with
+  `AI_API_KEY=<key>` (a key from platform.deepseek.com) to run against the
+  cloud API — scenarios finish in seconds instead of CPU minutes. Env
+  overrides: `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` (defaults
+  `gemma4:12b` / `deepseek-v4-pro[1m]` per provider), `AI_BASE_URL`,
+  `AI_API_STYLE` (`anthropic` | `openai`), `POLYSMITH_CORE_BIN`. Missing
+  core → the suite skips with a warning; missing model/key → the suite
+  fails loudly in `beforeAll`.
+- `apps/desktop-ui/src/lib/ai/cadCoreHarness.ts` spawns the core with the
+  same environment recipe as the Tauri shell (`src-tauri/src/cad_core.rs`:
+  DLL directories on `PATH`, `CSF_OCCTResourcePath`, `POLYSMITH_POSTS_DIR`)
+  and offers id-correlated `send()` calls with the latest document/viewport
+  snapshots. Teardown closes stdin (there is no working `shutdown` command).
+- `apps/desktop-ui/src/lib/ai/runAiScenario.ts` implements the agent loop:
+  prompt → envelope → validate → execute → bounded recovery (3 attempts per
+  step) → `continue` up to `maxAgentSteps` (default 8).
+- `apps/desktop-ui/src/lib/ai/profileAssertions.ts` ports the C++ profile
+  oracle (`tests/sketch_test_utils.h::profiles_match`) to the serialized
+  `document_state` — tests assert the COMPLETE profile set, never presence.
+- Scenarios retry up to 3 times with a fresh core per attempt (local models
+  are nondeterministic); assertion failures include the model's raw
+  envelopes and recovery errors.
+- Per-test timeout is 10 minutes — a single scenario makes several
+  sequential model calls at CPU speed.
