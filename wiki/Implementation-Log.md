@@ -2,6 +2,55 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-29/30
+
+### CAM usability rework — reference-sketch scope, profile re-pick, setup tree (cam/laser)
+
+User-driven pass over the laser CAM workspace (commits `8eec847`,
+`4aa9e67`, `a025e87`), each gated on the full test suite + tsc and
+verified in-app by the user.
+
+- **Reference sketch scope** — the 2D Cut panel gained a "Reference
+  sketch" dropdown listing the document's sketches by name. New IPC
+  `cam_operation_set_scope {op_id, kind, feature_id}` re-targets the
+  operation at a sketch: the core captures fresh TNP-safe profile
+  witnesses for every profile of that sketch into `machining_regions`
+  (undo-covered, throws on unknown op/sketch, never half-retargets).
+  `cam_operation_create` no longer errors `NO_PROFILE_SELECTION` for
+  `laser_cut` — an empty-scope operation is created and filled in from
+  the panel afterwards. The whole-sketch capture path was factored
+  into `capture_profile_references_from_sketch()`.
+- **Partial (per-profile) selection** — profile picking previously
+  worked only on clicks in the profile *interior*; clicking a shape's
+  outline did nothing in the CAM workspace. New
+  `DocumentManager::select_sketch_profile_by_entity`: selects every
+  profile whose boundary (`ordered_edge_ids` / `line_ids` /
+  `boundary_edges` / `source_circle_id`) includes the clicked entity;
+  shared edges select both regions, construction entities throw. The
+  `select_sketch_profile` payload gained an `entity_id` variant. The
+  re-select gesture now captures from the explicit profile ids only
+  (`capture_profile_references_from_profile_ids`) — an emptied
+  selection errors instead of silently falling back to the whole
+  sketch.
+- **Setup tree** — the CAM sidebar was a flat setup row list with
+  operations in a separate flat section, and only the first setup was
+  editable (the summary partition hardwired to `setups[0]`); there was
+  no delete at all. The sidebar is now a tree: each setup is a row
+  (caret, name, machine type, always-visible Edit, Delete) with its
+  operations nested underneath, grouped by `op.setup_id` (legacy ops
+  with an empty `setup_id` join the first setup). `CamSetupSummaryPanel`
+  deleted. New `cam_setup_delete` command deletes the setup and its
+  operations (legacy ops die with the first setup) in one undo step.
+  "New setup" opens the setup panel immediately on the new setup and
+  names it uniquely (no more duplicate "Setup 3").
+- **Post-processor fixes** — a stale seeded post file predating
+  `laser_footer_lines` made laser exports silently fall back to the
+  milling footer, emitting a duplicate `M5` and a `G0 Z{safety_z}`
+  lift a gantry laser may not have the axis for. Stale posts now reuse
+  the generic footer minus the safety-Z line (posts that want a laser
+  Z move declare the key), and the pre-footer laser/spindle off is
+  skipped when the footer already starts with the same line.
+
 ## 2026-08-26
 
 ### Radial & arc dimension rendering + free 2D label placement (feature/sketch)

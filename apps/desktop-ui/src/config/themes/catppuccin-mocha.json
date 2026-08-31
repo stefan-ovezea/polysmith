@@ -30,6 +30,8 @@
     "--color-axis-x": "#f38ba8",
     "--color-axis-y": "#a6e3a1",
     "--color-axis-z": "#89b4fa",
+    "--cad-toolpath-rapid": "#f38ba8",
+    "--cad-toolpath-feed": "#a6e3a1",
     "--color-tertiary-plane-fill": "#fab387",
     "--color-tertiary-plane-edge": "#fab387",
     "--color-tertiary-plane-selected": "#f5e0dc",

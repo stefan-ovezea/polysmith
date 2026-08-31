@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
-import type { DocumentState, ViewportState } from "@/types";
+import type { DocumentState, StockDefinition, ViewportState } from "@/types";
+import { themeColor } from "@/utils";
 
 export function addCamSceneObjects({
   document,
@@ -15,15 +16,24 @@ export function addCamSceneObjects({
   showStock: boolean;
   wcsOrientation: string;
 }) {
-  const setup = (document?.cam as any)?.setups?.[0];
+  const setup = document?.cam?.setups?.[0];
   if (!setup) {
     return;
   }
 
+  // The origin marker sits at the STOCK origin — the machine zero the
+  // user edits in the setup panel (falls back to the model center).
+  const stockOrigin = setup.stock?.origin;
+  const origin: [number, number, number] = stockOrigin
+    ? stockOrigin
+    : (() => {
+        const center = modelCenterFromBodies(viewport?.bodies ?? []);
+        return [center.x, center.y, center.z];
+      })();
+
   addWcsOriginMarker({
-    origin: setup.wcs_origin,
+    origin,
     referenceGroup,
-    wcsOrientation,
   });
 
   if (showStock && setup.stock) {
@@ -42,81 +52,183 @@ export function addCamToolpathLines({
   viewport: ViewportState | null;
   contentGroup: THREE.Group;
 }) {
-  const toolpathLines: THREE.Line[] = [];
+  // One THREE.Line per segment was a draw call per segment — merge
+  // into two batched LineSegments per toolpath (rapid vs feed), plus
+  // pierce-point dots.
+  const toolpathLines: THREE.Object3D[] = [];
+  const rapidColor = themeColor("--cad-toolpath-rapid", "#ff4444");
+  const feedColor = themeColor("--cad-toolpath-feed", "#44ff44");
 
   for (const toolpath of viewport?.toolpaths ?? []) {
+    const rapidPositions: number[] = [];
+    const feedPositions: number[] = [];
     for (let index = 1; index < toolpath.points.length; index += 1) {
       const previous = toolpath.points[index - 1];
       const current = toolpath.points[index];
-      const isRapid = current.is_rapid;
-      const geometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(previous.x, previous.y, previous.z),
-        new THREE.Vector3(current.x, current.y, current.z),
-      ]);
-      const material = new THREE.LineBasicMaterial({
-        color: isRapid ? 0xff4444 : 0x44ff44,
-        transparent: true,
-        opacity: isRapid ? 0.5 : 0.85,
-        depthTest: false,
-        depthWrite: false,
-      });
-      const line = new THREE.Line(geometry, material);
-      line.renderOrder = 10;
-      line.userData.toolpathId = toolpath.id;
-      line.userData.isRapid = isRapid;
-      toolpathLines.push(line);
-      contentGroup.add(line);
+      const positions = current.is_rapid ? rapidPositions : feedPositions;
+      positions.push(
+        previous.x,
+        previous.y,
+        previous.z,
+        current.x,
+        current.y,
+        current.z,
+      );
+    }
+
+    const makeSegments = (
+      positions: number[],
+      color: string,
+      opacity: number,
+      isRapid: boolean,
+    ) => {
+      if (positions.length === 0) {
+        return null;
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(positions, 3),
+      );
+      const segments = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      segments.renderOrder = 10;
+      segments.userData.toolpathId = toolpath.id;
+      segments.userData.isRapid = isRapid;
+      contentGroup.add(segments);
+      return segments;
+    };
+
+    const rapid = makeSegments(rapidPositions, rapidColor, 0.5, true);
+    if (rapid) {
+      toolpathLines.push(rapid);
+    }
+    const feed = makeSegments(feedPositions, feedColor, 0.85, false);
+    if (feed) {
+      toolpathLines.push(feed);
+    }
+
+    // Pierce markers: small dots where the beam dwells before cutting.
+    const piercePositions: number[] = [];
+    for (const point of toolpath.points) {
+      if (point.pierce) {
+        piercePositions.push(point.x, point.y, point.z);
+      }
+    }
+    if (piercePositions.length > 0) {
+      const dotsGeometry = new THREE.BufferGeometry();
+      dotsGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(piercePositions, 3),
+      );
+      const dots = new THREE.Points(
+        dotsGeometry,
+        new THREE.PointsMaterial({
+          color: rapidColor,
+          size: 3.5,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      dots.renderOrder = 11;
+      dots.userData.toolpathId = toolpath.id;
+      contentGroup.add(dots);
+      toolpathLines.push(dots);
     }
   }
 
   return toolpathLines;
 }
 
+// The machining origin marker: a triaxis gizmo (sphere + arrowheads)
+// at the stock origin.  Axis colors come from theme tokens.
 function addWcsOriginMarker({
   origin,
   referenceGroup,
-  wcsOrientation,
 }: {
-  origin: { x: number; y: number; z: number };
+  origin: [number, number, number];
   referenceGroup: THREE.Group;
-  wcsOrientation: string;
 }) {
-  const originPoint = new THREE.Vector3(origin.x, origin.y, origin.z);
-  const axisLen = 20;
+  const originPoint = new THREE.Vector3(origin[0], origin[1], origin[2]);
+  const axisLen = 50;
 
-  const makeAxis = (dir: THREE.Vector3, color: number) => {
+  const makeAxis = (dir: THREE.Vector3, color: string) => {
     const end = originPoint.clone().add(dir.clone().multiplyScalar(axisLen));
-    const geometry = new THREE.BufferGeometry().setFromPoints([
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
       originPoint,
       end,
     ]);
-    const material = new THREE.LineBasicMaterial({
-      color,
-      linewidth: 1,
+    const line = new THREE.Line(
+      lineGeometry,
+      new THREE.LineBasicMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    line.renderOrder = 20;
+    referenceGroup.add(line);
+
+    // Arrowhead cone pointing along the axis.
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(4, 12, 12),
+      new THREE.MeshBasicMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    const tip = originPoint
+      .clone()
+      .add(dir.clone().multiplyScalar(axisLen + 6));
+    cone.position.copy(tip);
+    const axis = new THREE.Vector3(0, 1, 0);
+    cone.quaternion.setFromUnitVectors(axis, dir.clone().normalize());
+    cone.renderOrder = 20;
+    referenceGroup.add(cone);
+  };
+
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(3.5, 16, 16),
+    new THREE.MeshBasicMaterial({
+      color: themeColor("--color-axis-x", "#ff6b7a"),
       depthTest: false,
       depthWrite: false,
       transparent: true,
-      opacity: 0.9,
-    });
-    const line = new THREE.Line(geometry, material);
-    line.renderOrder = 1;
-    referenceGroup.add(line);
-  };
+      opacity: 0.95,
+    }),
+  );
+  sphere.position.copy(originPoint);
+  sphere.renderOrder = 20;
+  referenceGroup.add(sphere);
 
-  const xAxis = new THREE.Vector3(1, 0, 0);
-  const yAxis = new THREE.Vector3(0, 1, 0);
-  const zAxis = new THREE.Vector3(0, 0, 1);
-
-  if (wcsOrientation === "z_up") {
-    yAxis.set(0, 0, -1);
-    zAxis.set(0, 1, 0);
-  } else if (wcsOrientation === "y_up") {
-    zAxis.set(0, 0, -1);
-  }
-
-  makeAxis(xAxis, 0xff4444);
-  makeAxis(yAxis, 0x44ff44);
-  makeAxis(zAxis, 0x4488ff);
+  makeAxis(
+    new THREE.Vector3(1, 0, 0),
+    themeColor("--color-axis-x", "#ff6b7a"),
+  );
+  makeAxis(
+    new THREE.Vector3(0, 1, 0),
+    themeColor("--color-axis-y", "#2bd978"),
+  );
+  makeAxis(
+    new THREE.Vector3(0, 0, 1),
+    themeColor("--color-axis-z", "#6db4ff"),
+  );
 }
 
 function addStockBoundingBox({
@@ -124,48 +236,62 @@ function addStockBoundingBox({
   viewport,
   referenceGroup,
 }: {
-  stock: {
-    width: number;
-    height: number;
-    depth: number;
-    offset_x: number;
-    offset_y: number;
-    offset_z: number;
-  };
+  stock: StockDefinition;
   viewport: ViewportState | null;
   referenceGroup: THREE.Group;
 }) {
-  const stockWidth = stock.width + stock.offset_x * 2;
-  const stockHeight = stock.height + stock.offset_y * 2;
-  const stockDepth = stock.depth + stock.offset_z * 2;
   const modelCenter = modelCenterFromBodies(viewport?.bodies ?? []);
+  // The stock always WRAPS THE PART — it is centered on the model
+  // bounds, never on the picked origin.  The origin (WCS zero) is an
+  // arbitrary point relative to the stock: picking a part corner must
+  // move the origin marker, NOT the stock box.
+  const stockCenter = modelCenter;
+  const margin = stock.margin ?? 3;
+
+  let stockWidth: number;
+  let stockHeight: number;
+  let stockDepth: number;
+  if (stock.type === "cylinder" && stock.diameter !== undefined) {
+    // Cylinder stock approximated by its bounding box for display.
+    const diameter = stock.diameter + margin * 2;
+    stockWidth = diameter;
+    stockHeight = diameter;
+    stockDepth = (stock.length ?? 20) + margin * 2;
+  } else {
+    const size = stock.size ?? [120, 120, 20];
+    stockWidth = size[0] + margin * 2;
+    stockHeight = size[1] + margin * 2;
+    stockDepth = size[2] + margin * 2;
+  }
+
   const stockBox = new THREE.BoxGeometry(stockWidth, stockHeight, stockDepth);
+  const stockColor = themeColor("--color-axis-z", "#4488ff");
 
   const stockMesh = new THREE.Mesh(
     stockBox,
     new THREE.MeshBasicMaterial({
-      color: 0x4488ff,
+      color: stockColor,
       transparent: true,
       opacity: 0.15,
       depthTest: true,
       depthWrite: false,
     }),
   );
-  stockMesh.position.copy(modelCenter);
+  stockMesh.position.copy(stockCenter);
   stockMesh.renderOrder = 0;
   referenceGroup.add(stockMesh);
 
   const stockEdges = new THREE.LineSegments(
     new THREE.EdgesGeometry(stockBox),
     new THREE.LineBasicMaterial({
-      color: 0x4488ff,
+      color: stockColor,
       transparent: true,
       opacity: 0.35,
       depthTest: true,
       depthWrite: false,
     }),
   );
-  stockEdges.position.copy(modelCenter);
+  stockEdges.position.copy(stockCenter);
   stockEdges.renderOrder = 2;
   referenceGroup.add(stockEdges);
 }

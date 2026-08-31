@@ -56,8 +56,30 @@ const documentExportedEventSchema = z.object({
   type: z.literal("document_exported"),
   payload: z.object({
     file_path: z.string(),
-    format: z.enum(["step", "stl", "dxf", "iges"]),
+    format: z.enum(["step", "stl", "dxf", "iges", "gcode"]),
     exported_feature_count: z.number(),
+  }),
+});
+
+const camGenerationProgressEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_generation_progress"),
+  payload: z.object({
+    op_id: z.string(),
+    percent: z.number(),
+  }),
+});
+
+const camPostListResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_post_list_result"),
+  payload: z.object({
+    posts: z.array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+      }),
+    ),
   }),
 });
 
@@ -125,6 +147,8 @@ export const coreMessageSchema = z.union([
   documentSavedEventSchema,
   logEventSchema,
   trimPreviewResultEventSchema,
+  camGenerationProgressEventSchema,
+  camPostListResultEventSchema,
   errorEventSchema,
 ]);
 

@@ -150,9 +150,35 @@ import type {
   UpdateAnglePlaneCommand,
 } from "./ipc/bodyFeatureCommands";
 import type {
+  CamCaptureFaceReferenceCommand,
+  CamMachineSettingsSetCommand,
+  CamWcsSetFaceCommand,
+  CamSetupCreateCommand,
+  CamSetupUpdateCommand,
+  CamSetupDeleteCommand,
+  CamSetupGetCommand,
+  CamStockSetCommand,
+  CamStockGetCommand,
+  CamToolAddCommand,
+  CamToolUpdateCommand,
+  CamToolDeleteCommand,
+  CamToolListCommand,
+  CamOperationCreateCommand,
+  CamOperationUpdateCommand,
+  CamOperationDeleteCommand,
+  CamOperationSetScopeCommand,
+  CamPostProcessorSetCommand,
+  CamPostListCommand,
+  CamPostImportCommand,
+  CamOperationGenerateCommand,
+  CamOperationPreviewCommand,
+  CamExportGcodeCommand,
+} from "./ipc/camCommands";
+import type {
   FeatureEntry,
   SketchTool,
 } from "./geometry/sketch";
+import type { CamDocumentData, FaceAttestation } from "./geometry/cam";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -180,16 +206,11 @@ export * from "./ipc/bodyFeatureCommands";
 
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
+export * from "./ipc/camCommands";
 
 // CAM data — mirrors polysmith::core::CamDocumentData (cam_types.h).
 // Detailed CAM types live in types/geometry/cam.ts.
-export interface CamDocumentData {
-  setups: Record<string, unknown>[];
-  tool_library: Record<string, unknown>[];
-  operations: Record<string, unknown>[];
-  post_processor: Record<string, unknown> | null;
-  simulation: Record<string, unknown> | null;
-}
+export { type CamDocumentData } from "./geometry/cam";
 
 export interface DocumentState {
   document_id: string;
@@ -254,6 +275,8 @@ export interface ViewportToolpathPoint {
   y: number;
   z: number;
   is_rapid: boolean;
+  /** The pierce dwell point (laser on + dwell > 0) — rendered as a marker. */
+  pierce: boolean;
 }
 
 export interface ViewportToolpathPrimitive {
@@ -372,7 +395,7 @@ export interface ViewportVertexPrimitive {
 
 export interface DocumentExportResult {
   file_path: string;
-  format: "step" | "stl";
+  format: "step" | "stl" | "gcode";
   exported_feature_count: number;
 }
 
@@ -426,6 +449,40 @@ export interface DocumentExportedEvent extends BaseMessage {
   type: "document_exported";
   id: string;
   payload: DocumentExportResult;
+}
+
+// Emitted by the core while a CAM toolpath is being generated
+// (cam_operation_generate / cam_operation_preview). The event echoes the
+// command id, so it can arrive interleaved with the final
+// document_state reply of the same command.
+export interface CamGenerationProgressEvent extends BaseMessage {
+  type: "cam_generation_progress";
+  id: string;
+  payload: {
+    op_id: string;
+    percent: number;
+  };
+}
+
+// Reply to cam_capture_face_reference: the TNP-safe face witness
+// captured by the core (never fabricated in the UI).
+export interface CamFaceAttestationResultEvent extends BaseMessage {
+  type: "cam_face_attestation_result";
+  id: string;
+  payload: {
+    persistent_id: string;
+    attestation: FaceAttestation;
+  };
+}
+
+// Reply to cam_post_list / cam_post_import: every available post
+// processor (built-ins + files in the user's posts directory).
+export interface CamPostListResultEvent extends BaseMessage {
+  type: "cam_post_list_result";
+  id: string;
+  payload: {
+    posts: Array<{ name: string; path: string }>;
+  };
 }
 
 export interface DocumentSavedEvent extends BaseMessage {
@@ -492,6 +549,9 @@ export type CoreMessage =
   | DocumentSavedEvent
   | LogEvent
   | TrimPreviewResultEvent
+  | CamGenerationProgressEvent
+  | CamPostListResultEvent
+  | CamFaceAttestationResultEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -738,6 +798,29 @@ export type CoreCommand =
   | ImportStepCommand
   | ImportIgesCommand
   | ConvertMeshToBodyCommand
+  | CamMachineSettingsSetCommand
+  | CamCaptureFaceReferenceCommand
+  | CamWcsSetFaceCommand
+  | CamSetupCreateCommand
+  | CamSetupUpdateCommand
+  | CamSetupDeleteCommand
+  | CamSetupGetCommand
+  | CamStockSetCommand
+  | CamStockGetCommand
+  | CamToolAddCommand
+  | CamToolUpdateCommand
+  | CamToolDeleteCommand
+  | CamToolListCommand
+  | CamOperationCreateCommand
+  | CamOperationUpdateCommand
+  | CamOperationDeleteCommand
+  | CamOperationSetScopeCommand
+  | CamPostProcessorSetCommand
+  | CamPostListCommand
+  | CamPostImportCommand
+  | CamOperationGenerateCommand
+  | CamOperationPreviewCommand
+  | CamExportGcodeCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand

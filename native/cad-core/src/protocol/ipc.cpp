@@ -152,4 +152,38 @@ json make_error_event(const std::string& id,
   return error;
 }
 
+json make_cam_generation_progress_event(const std::string& id,
+                                        const std::string& op_id,
+                                        int percent) {
+  return {
+      {"id", id},
+      {"type", "cam_generation_progress"},
+      {"payload",
+       {
+           {"op_id", op_id},
+           {"percent", percent},
+       }},
+  };
+}
+
+json make_cam_face_attestation_event(const std::string& id,
+                                     const json& payload) {
+  return {
+      {"id", id},
+      {"type", "cam_face_attestation_result"},
+      {"payload", payload},
+  };
+}
+
+json make_cam_post_list_event(const std::string& id, const json& posts) {
+  return {
+      {"id", id},
+      {"type", "cam_post_list_result"},
+      {"payload",
+       {
+           {"posts", posts},
+       }},
+  };
+}
+
 }  // namespace polysmith::protocol

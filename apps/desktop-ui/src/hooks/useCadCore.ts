@@ -1,12 +1,28 @@
 import {
   sendCoreCommand,
+  sendCoreCommandAwaited,
   startCadCore,
   makeCreateDocumentCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
+  makeCamSetupDeleteCommand,
+  makeCamMachineSettingsSetCommand,
+  makeCamCaptureFaceReferenceCommand,
+  makeCamWcsSetFaceCommand,
+  makeCamStockSetCommand,
+  makeCamToolAddCommand,
+  makeCamToolUpdateCommand,
+  makeCamToolDeleteCommand,
   makeCamOperationCreateCommand,
   makeCamOperationUpdateCommand,
   makeCamOperationDeleteCommand,
+  makeCamOperationSetScopeCommand,
+  makeCamOperationGenerateCommand,
+  makeCamOperationPreviewCommand,
+  makeCamPostProcessorSetCommand,
+  makeCamPostListCommand,
+  makeCamPostImportCommand,
+  makeCamExportGcodeCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
@@ -82,6 +98,7 @@ import {
   makePingCommand,
   makeRedoCommand,
   makeSelectSketchProfileCommand,
+  makeSelectSketchProfileByEntityCommand,
   makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
   makeSelectSketchVertexCommand,
@@ -179,15 +196,24 @@ import {
   writeLogToConsole,
 } from "@/lib";
 import type {
+  CamOperation,
+  CamOperationPayload,
+  CamSetup,
+  CoreCommand,
   ExtrudeAdvancedParameters,
+  FaceAttestation,
   ExtrudeFeatureParameters,
   ExtrudeMode,
   FastenerFeatureParameters,
   HelixFeatureParameters,
   HoleFeatureParameters,
+  LaserMachineSettings,
   MoveFeatureParameters,
+  PostProcessor,
   SelectionFilterUpdate,
+  StockDefinition,
   ThreadFeatureParameters,
+  ToolEntry,
 } from "@/types";
 
 import { useCadCoreStore } from "@/state";
@@ -1324,6 +1350,12 @@ export function useCadCore() {
       await sendCoreCommand(makeSelectSketchProfileCommand(profileId, additive));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    selectSketchProfileByEntity: async (entityId: string, additive = false) => {
+      await sendCoreCommand(
+        makeSelectSketchProfileByEntityCommand(entityId, additive),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     extrudeProfile: async (
       profileIds: string | readonly string[],
       depth: number,
@@ -1496,24 +1528,116 @@ export function useCadCore() {
       await sendCoreCommand(makeClearSelectionCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    camSetupCreate: async () => {
-      await sendCoreCommand(makeCamSetupCreateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+    camSetupCreate: async (camSetup: CamSetup) => {
+      await sendAndRefreshSessionViewport(makeCamSetupCreateCommand(camSetup));
     },
-    camSetupUpdate: async (payload: import("@/lib/ipcProtocol").CamSetupUpdatePayload) => {
-      await sendCoreCommand(makeCamSetupUpdateCommand(payload));
-      await sendCoreCommand(makeGetViewportStateCommand());
+    camSetupUpdate: async (camSetup: CamSetup) => {
+      await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));
     },
-    camFaceMillingCreate: async (bodyId: string, faceIndex: number) => {
-      await sendCoreCommand(makeCamOperationCreateCommand("face_milling", bodyId, faceIndex));
-      await sendCoreCommand(makeGetViewportStateCommand());
+    camSetupDelete: async (setupId: string) => {
+      await sendAndRefreshSessionViewport(makeCamSetupDeleteCommand(setupId));
     },
-    camOperationUpdate: async (payload: import("@/lib/ipcProtocol").CamOperationUpdatePayload) => {
-      await sendCoreCommand(makeCamOperationUpdateCommand(payload));
-      await sendCoreCommand(makeGetViewportStateCommand());
+    camMachineSettingsSet: async (machineSettings: LaserMachineSettings) => {
+      await sendAndRefreshSessionViewport(
+        makeCamMachineSettingsSetCommand(machineSettings),
+      );
     },
-    camOperationDelete: async (operationId: string) => {
-      await sendCoreCommand(makeCamOperationDeleteCommand(operationId));
+    camWcsSetFace: async (faceId: string) => {
+      // Stores the face-anchored WCS witness on the first setup; the
+      // refresh pass resolves the machine origin from the live face.
+      await sendAndRefreshSessionViewport(makeCamWcsSetFaceCommand(faceId));
+    },
+    camCaptureFaceReference: async (faceId: string) => {
+      // Awaited: the reply is a cam_face_attestation_result event
+      // carrying the TNP-safe witness captured by the core.
+      const response = await sendCoreCommandAwaited(
+        makeCamCaptureFaceReferenceCommand(faceId) as CoreCommand & {
+          id: string;
+        },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: FaceAttestation;
+        };
+      };
+    },
+    camStockSet: async (stock: StockDefinition) => {
+      await sendAndRefreshSessionViewport(makeCamStockSetCommand(stock));
+    },
+    camToolAdd: async (tool: Omit<ToolEntry, "tool_id"> & { tool_id?: string }) => {
+      // Awaited like camOperationCreate so callers can recover the
+      // core-assigned tool_id from the reply.
+      const response = await sendCoreCommandAwaited(
+        makeCamToolAddCommand(tool) as CoreCommand & { id: string },
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+      return response;
+    },
+    camToolUpdate: async (toolId: string, tool: ToolEntry) => {
+      await sendAndRefreshSessionViewport(makeCamToolUpdateCommand(toolId, tool));
+    },
+    camToolDelete: async (toolId: string) => {
+      await sendAndRefreshSessionViewport(makeCamToolDeleteCommand(toolId));
+    },
+    // CAM operation create awaits the core's document_state reply so
+    // the caller can locate the freshly assigned op_id. The reply
+    // carries the command id, so the awaited response is the final
+    // document state, not an intermediate progress event.
+    camOperationCreate: async (operation: CamOperationPayload) => {
+      const response = await sendCoreCommandAwaited(
+        makeCamOperationCreateCommand(operation) as CoreCommand & {
+          id: string;
+        },
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+      return response;
+    },
+    camOperationUpdate: async (opId: string, partial: Partial<CamOperation>) => {
+      await sendAndRefreshSessionViewport(makeCamOperationUpdateCommand(opId, partial));
+    },
+    camOperationDelete: async (opId: string) => {
+      await sendAndRefreshSessionViewport(makeCamOperationDeleteCommand(opId));
+    },
+    camOperationSetScope: async (opId: string, featureId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeCamOperationSetScopeCommand(opId, featureId),
+      );
+    },
+    camPostProcessorSet: async (post: PostProcessor) => {
+      await sendAndRefreshSessionViewport(makeCamPostProcessorSetCommand(post));
+    },
+    camPostList: async () => {
+      // Awaited: the reply is a cam_post_list_result event carrying the
+      // posts array.
+      const response = await sendCoreCommandAwaited(
+        makeCamPostListCommand() as CoreCommand & { id: string },
+      );
+      const posts = (response as { payload?: { posts?: Array<{ name: string; path: string }> } })
+        .payload?.posts;
+      return posts ?? [];
+    },
+    camPostImport: async (sourcePath: string) => {
+      const response = await sendCoreCommandAwaited(
+        makeCamPostImportCommand(sourcePath) as CoreCommand & { id: string },
+      );
+      const posts = (response as { payload?: { posts?: Array<{ name: string; path: string }> } })
+        .payload?.posts;
+      return posts ?? null;
+    },
+    camOperationGenerate: async (opId: string) => {
+      await sendAndRefreshSessionViewport(makeCamOperationGenerateCommand(opId));
+    },
+    camOperationPreview: async (opId: string) => {
+      await sendAndRefreshSessionViewport(makeCamOperationPreviewCommand(opId));
+    },
+    camExportGcode: async (filePath: string) => {
+      await sendCoreCommandAwaited(
+        makeCamExportGcodeCommand(filePath) as CoreCommand & { id: string },
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
   };

@@ -91,7 +91,7 @@ interface ViewportSceneSyncRefs {
   edgeLineObjects: MutableRef<THREE.Line[]>;
   vertexObjects: MutableRef<THREE.Mesh[]>;
   cutPreviewObjects: MutableRef<THREE.Mesh[]>;
-  toolpathLines: MutableRef<THREE.Line[]>;
+  toolpathLines: MutableRef<THREE.Object3D[]>;
   moveGizmoObjects: MutableRef<THREE.Object3D[]>;
   hiddenRelationPreviewDimensionIds: MutableRef<Set<string>>;
   selectedConstraint: MutableRef<SelectedConstraintState | null>;
@@ -280,16 +280,33 @@ function viewportSceneBuildKey({
   showStock,
   wcsOrientation,
   moveGizmo,
+  document,
 }: SyncViewportSceneParams) {
   if (!sceneData) {
     return "";
   }
+  // The CAM origin marker + stock box are drawn from the DOCUMENT (not
+  // the viewport state), so the build key must include their values —
+  // otherwise changing the origin in the setup panel never triggers a
+  // scene rebuild and the marker stays put until some other update.
+  const camSetup = document?.cam?.setups?.[0];
+  const camSignature = camSetup
+    ? [
+        camSetup.stock?.origin?.join(",") ?? "",
+        camSetup.stock?.size?.join(",") ?? "",
+        camSetup.stock?.diameter ?? "",
+        camSetup.stock?.length ?? "",
+        camSetup.stock?.margin ?? 0,
+        camSetup.stock?.type ?? "",
+      ].join("|")
+    : "nosetup";
   return [
     sceneData.geometryKey,
     displayUnits,
     activeSketchPlaneId ?? "",
     showReferencePlanes ? "refs:on" : "refs:off",
     showStock ? "stock:on" : "stock:off",
+    "cam:" + camSignature,
     wcsOrientation,
     moveGizmoKey(moveGizmo),
     displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),

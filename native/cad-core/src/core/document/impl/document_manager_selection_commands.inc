@@ -15,6 +15,13 @@
   DocumentState select_vertex(const std::string& vertex_id, bool additive);
   DocumentState select_sketch_profile(const std::string& profile_id,
                                       bool additive = false);
+  // Selects every profile whose boundary includes the given sketch
+  // entity (line/circle/arc/ellipse/spline).  A shared edge between
+  // two regions selects both — no guessing.  Throws when the entity
+  // does not exist or lies on no profile boundary (e.g. construction
+  // lines, interior entities).
+  DocumentState select_sketch_profile_by_entity(const std::string& entity_id,
+                                                bool additive = false);
   DocumentState select_sketch_vertex(const std::string& vertex_id,
                                     bool additive = false);
   DocumentState select_sketch_entity(const std::string& entity_id,

@@ -38,6 +38,10 @@ json to_payload(const polysmith::core::ViewportState& viewport);
 json to_payload(const polysmith::core::Bounds3D& b);
 json to_payload(const polysmith::core::FaceAttestation& att);
 json to_payload(const polysmith::core::EdgeAttestation& att);
+json to_payload(const polysmith::core::SketchProfileAttestation& att);
+json to_payload(const polysmith::core::LaserCutParameters& laser);
+json to_payload(const polysmith::core::LaserTestPatternParameters& pattern);
+json to_payload(const polysmith::core::LaserMachineSettings& machine);
 json to_payload(const polysmith::core::GeometryReference& ref);
 json to_payload(const polysmith::core::StockDefinition& s);
 json to_payload(const polysmith::core::MachineAxes& ma);
@@ -45,16 +49,12 @@ json to_payload(const polysmith::core::WcsOrigin& wcs);
 json to_payload(const polysmith::core::CamSetup& setup);
 json to_payload(const polysmith::core::ToolEntry& tool);
 json to_payload(const polysmith::core::CamGeometryReferences& geo);
-json to_payload(const polysmith::core::CamPointLocation& loc);
 json to_payload(const polysmith::core::CamOperationParameters& p);
 json to_payload(const polysmith::core::CamOperationDependencies& d);
 json to_payload(const polysmith::core::ExternalStorage& es);
 json to_payload(const polysmith::core::ToolpathCache& tc);
 json to_payload(const polysmith::core::CamOperation& op);
-json to_payload(const polysmith::core::PostProcessorOptions& opt);
 json to_payload(const polysmith::core::PostProcessor& pp);
-json to_payload(const polysmith::core::CollisionReport& cr);
-json to_payload(const polysmith::core::SimulationData& sim);
 json to_payload(const polysmith::core::CamDocumentData& cam);
 
 polysmith::core::ExtrudeFeatureParameters extrude_parameters_from_payload(
@@ -65,5 +65,29 @@ polysmith::core::ExtrudeFeatureParameters extrude_parameters_from_payload(
 // malformed payloads.
 polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload);
 polysmith::core::DocumentState document_from_payload(const json& payload);
+
+// Inverse of to_payload(CamDocumentData). Missing fields fall back to
+// struct defaults so documents saved before a field existed still load.
+polysmith::core::CamDocumentData cam_document_data_from_payload(
+    const json& payload);
+
+// ── CAM per-type inverses (used by the app command handlers) ──────
+
+polysmith::core::CamSetup cam_setup_from_payload(const json& payload);
+polysmith::core::StockDefinition stock_definition_from_payload(
+    const json& payload);
+polysmith::core::ToolEntry tool_entry_from_payload(const json& payload);
+polysmith::core::CamOperation cam_operation_from_payload(const json& payload);
+polysmith::core::CamGeometryReferences cam_geometry_references_from_payload(
+    const json& payload);
+polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
+    const json& payload);
+polysmith::core::LaserTestPatternParameters
+laser_test_pattern_parameters_from_payload(const json& payload);
+polysmith::core::LaserMachineSettings laser_machine_settings_from_payload(
+    const json& payload);
+polysmith::core::CamOperationDependencies cam_operation_dependencies_from_payload(
+    const json& payload);
+polysmith::core::PostProcessor post_processor_from_payload(const json& payload);
 
 }  // namespace polysmith::protocol

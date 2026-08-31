@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "pnpm --filter desktop-ui tauri dev",
+    "dev": "node scripts/kill-dev-port.mjs 1420 && pnpm --filter desktop-ui tauri dev",
     "ui:dev": "pnpm --filter desktop-ui dev",
     "ui:build": "pnpm --filter desktop-ui build",
     "ui:install": "pnpm install",

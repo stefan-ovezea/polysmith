@@ -85,12 +85,6 @@ FaceResolutionResult resolve_face_reference(
 
 // ── Scoring parameters (tunable) ──────────────────────────────────
 
-// Minimum fraction of sample points that must lie on a candidate face.
-inline constexpr double kMinSampleHitRatio = 0.6;
-
-// Maximum relative area difference for a candidate face.
-inline constexpr double kMaxAreaRatio = 0.3;  // ±30%
-
 // Maximum angular deviation for normals (radians).
 inline constexpr double kMaxNormalAngle = 0.087;  // ~5 degrees
 

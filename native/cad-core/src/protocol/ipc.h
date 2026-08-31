@@ -33,5 +33,11 @@ json make_log_event(const std::string& level,
 json make_error_event(const std::string& id,
                       const std::string& code,
                       const std::string& message);
+json make_cam_generation_progress_event(const std::string& id,
+                                        const std::string& op_id,
+                                        int percent);
+json make_cam_face_attestation_event(const std::string& id,
+                                     const json& payload);
+json make_cam_post_list_event(const std::string& id, const json& posts);
 
 }  // namespace polysmith::protocol

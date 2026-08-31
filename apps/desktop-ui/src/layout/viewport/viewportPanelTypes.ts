@@ -45,6 +45,13 @@ export interface ViewportPanelProps {
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
   onSelectFace: (faceId: string) => Promise<void>;
+  // Armed origin pick: while true, every pointer-up places the stock
+  // origin at the clicked world point on the bed plane (z = 0) —
+  // LightBurn-style, works on sketches too where no faces/vertices
+  // exist to snap to.  `null` = the click missed the bed (grazing
+  // camera angle) — the caller shows a hint instead of placing.
+  originPickPointEnabled: boolean;
+  onOriginPickPoint: (point: { x: number; y: number; z: number } | null) => void;
   onSelectEdge: (edgeId: string, additive: boolean) => Promise<void>;
   onSelectVertex: (vertexId: string, additive: boolean) => Promise<void>;
   onStartSketch: (referenceId: string) => Promise<void>;

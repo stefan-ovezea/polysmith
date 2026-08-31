@@ -26,6 +26,10 @@
 #include <gp_Vec.hxx>
 
 #include "core/geometry/body_compiler.h"
+#include "core/cam/cam_generate.h"
+#include "core/cam/cam_profile_reference.h"
+#include "core/cam/cam_runtime.h"
+#include "core/cam/post_processor.h"
 #include "core/document/document.h"
 #include "core/sketch/formula_eval.h"
 #include "core/diagnostics/logger.h"
@@ -104,6 +108,14 @@ void CadCoreApp::run() {
   // stdout is still clean.
   polysmith::protocol::write_message(polysmith::protocol::make_hello_event());
   init_occt();
+  // CAM generators register after OCCT is up — never from static
+  // initializers, whose order relative to OCCT is undefined.
+  polysmith::core::register_builtin_cam_generators();
+  // Visible in the Logs panel: verifies the running binary includes
+  // the CAM generators (useful when an old core process lingers).
+  polysmith::core::log_info(
+      "cad_core",
+      "CAM generators registered (laser_cut, face_milling)");
 
   std::string line;
   while (std::getline(std::cin, line)) {

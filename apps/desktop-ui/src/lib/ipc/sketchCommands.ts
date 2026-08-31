@@ -353,6 +353,23 @@ export function makeSelectSketchProfileCommand(
   };
 }
 
+// Entity-id variant: the core selects every profile whose boundary
+// includes the clicked sketch entity (used by the CAM re-pick flow,
+// where clicking a shape's outline must pick the shape).
+export function makeSelectSketchProfileByEntityCommand(
+  entityId: string,
+  additive = false,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_profile",
+    payload: {
+      entity_id: entityId,
+      additive,
+    },
+  };
+}
+
 
 export function makeAddSketchLineCommand(
   startX: number,

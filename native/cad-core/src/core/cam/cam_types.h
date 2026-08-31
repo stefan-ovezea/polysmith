@@ -35,12 +35,27 @@ struct EdgeAttestation {
   std::optional<std::vector<std::array<double, 3>>> adjacent_face_normals;
 };
 
-/// TNP-safe reference to a 3D face or edge.
+/// Witness data to re-identify a sketch profile region after sketch
+/// edits.  Profile ids churn because refresh_sketch_profiles()
+/// recomputes the whole region list; the geometry is the stable
+/// identity.  All coordinates are sketch-local, so resolution compares
+/// against freshly built regions in the same sketch frame.
+struct SketchProfileAttestation {
+  std::string sketch_feature_id;  // owning sketch feature
+  std::string profile_id;         // last-known id (best effort only)
+  double center_x = 0.0, center_y = 0.0;         // sketch-local centroid
+  double area = 0.0;                             // sketch-local area (mm²)
+  double min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0;  // bbox
+  std::vector<std::string> boundary_edge_kinds;  // walk-order signature
+  int inner_loop_count = 0;                      // holes
+  std::optional<std::string> source_circle_id;   // circle-sourced regions
+};
+
+/// TNP-safe reference to a 3D face, 3D edge, or sketch profile.
 struct GeometryReference {
   std::string persistent_id;
-  std::variant<FaceAttestation, EdgeAttestation> attestation;
-  /// "warn_user" | "require_user" | "fail_operation" | "auto_resolve"
-  std::string fallback_strategy = "warn_user";
+  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation>
+      attestation;
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -75,6 +90,9 @@ struct MachineAxes {
 struct WcsOrigin {
   std::string feature_id;            // CAD feature that defines origin
   GeometryReference face_reference;  // TNP-safe face reference
+  /// Last-resolved machine origin, refreshed by the CAM dependency
+  /// pass so the post-processor needs no face resolution at export time.
+  std::optional<std::array<double, 3>> position;
 };
 
 /// "3_axis_mill" | "4_axis_mill" | "5_axis_mill" | "lathe_2_axis" |
@@ -136,7 +154,7 @@ struct ToolEntry {
 
 /// "face_milling" | "pocket_2d" | "contour_2d" | "slot" | "drilling" |
 /// "adaptive_clearing" | "parallel_3d" | "contour_3d" | "chamfer" |
-/// "thread_milling" | "engrave"
+/// "thread_milling" | "engrave" | "laser_cut"
 using CamOperationType = std::string;
 
 /// "pending" | "generated" | "needs_regenerate" | "error" | "deleted"
@@ -150,22 +168,110 @@ struct CamGeometryReferences {
   std::vector<GeometryReference> check_surfaces;      // for collision checking
 };
 
-/// Drilling point location with TNP attestation.
-struct CamPointLocation {
-  std::string vertex_id;
-  std::array<double, 3> position = {0.0, 0.0, 0.0};
-  std::array<double, 3> surface_normal = {0.0, 0.0, 1.0};
-  std::optional<double> hole_diameter;
-  GeometryReference sample_face;
-  std::string fallback_strategy = "warn_user";
-};
-
 /// "zigzag" | "one_way" | "offset" | "adaptive" | "spiral"
 using ClearingStrategy = std::string;
 
 /// "g81_standard" | "g82_dwell" | "g83_peck" | "g73_high_speed_peck" |
 /// "g84_tap" | "g85_bore" | "g87_back_bore"
 using DrillingCycleType = std::string;
+
+/// Laser cutting parameters (only meaningful when type == "laser_cut").
+/// Follows the per-type optional block pattern of the other strategy
+/// fields so the operation struct stays one unified shape.
+struct LaserCutParameters {
+  // Process.
+  std::string mode = "cut";  // "cut" | "score" | "engrave" — VALIDATED
+  double power_percent = 85.0;  // 0..100; S scaling is power_max-driven
+  std::optional<double> speed_mm_per_s;  // laser-native speed (mm/s);
+                                         // absent → legacy feedrate fallback
+  int passes = 1;              // contour repetitions, laser stays on
+  bool dynamic_power = true;   // true -> M4 (power scales with feed)
+  bool air_assist = false;     // M8/M9 around cuts (post-supported)
+
+  // Kerf.
+  double kerf_width_mm = 0.15;  // full cut width; halved per side
+  std::string kerf_side = "auto";  // "auto" (holes inward, outers outward)
+                                   // | "outside" | "inside" | "none"
+
+  // Leads.
+  double lead_in_mm = 2.0;
+  double lead_out_mm = 2.0;
+  std::string lead_in_style = "line";   // "line" | "arc" (tangent roll-in)
+  std::string lead_out_style = "line";  // "line" | "arc"
+  double lead_in_angle_deg = 0.0;       // entry angle vs contour tangent
+  double lead_out_angle_deg = 0.0;      // exit angle vs contour tangent
+                                         // (0 = tangent continuation)
+  double overcut_mm = 0.0;              // extend past the start/end joint
+
+  // Pierce.
+  double pierce_dwell_seconds = 0.1;  // G4 dwell after pierce
+  std::string pierce_position = "auto";  // "auto" | "lead_start" |
+                                         // "nearest_centroid"
+
+  // Tabs / bridges.
+  bool tabs_enabled = false;
+  double tab_width_mm = 0.5;     // tab length along the cut
+  double tab_spacing_mm = 20.0;  // even distribution along the loop
+  double tab_power_percent = 0.0;  // 0 = laser off over tab; >0 = micro-joint
+  bool tabs_on_holes = false;    // standard: outer contours only
+
+  // Engrave fill / hatch.
+  std::string engrave_style = "line";  // "line" (contour trace) | "fill"
+  double line_spacing_mm = 0.1;        // hatch spacing
+  double fill_angle_deg = 0.0;         // hatch direction
+  bool fill_bidirectional = true;      // scan without travel-back passes
+
+  // Cut plane / material.
+  double material_thickness_mm = 3.0;
+  double cut_plane_offset_mm = 0.0;  // cut-plane Z relative to sketch plane
+
+  // Ordering.
+  std::string cut_order = "inner_first";  // "inner_first" |
+                                          // "nearest_neighbor" | "by_area"
+};
+
+/// Laser machine settings — the physical machine, not the job.
+/// Stored once per document (multi-setup work splits this later).
+struct LaserMachineSettings {
+  // Bed travel extents.  Used to validate that test patterns (and
+  // later, job bounds) fit the machine.
+  double work_area_x_mm = 400.0;
+  double work_area_y_mm = 400.0;
+  // The red pointer sits at this offset from the laser focal point:
+  //   dot_position = laser_position + pointer_offset.
+  // Users frame parts under the DOT, so the exporter shifts every
+  // coordinate by -offset — the cut lands where the dot was.
+  double pointer_offset_x_mm = 0.0;
+  double pointer_offset_y_mm = 0.0;
+};
+
+/// Laser test-pattern parameters (type == "laser_test_pattern").
+/// LightBurn-style material test cards: a grid of cells sweeping power
+/// along columns (ascending left→right) and speed along rows
+/// (ascending top→bottom) — read the best cell off the card.
+struct LaserTestPatternParameters {
+  std::string pattern = "engrave_grid";  // "engrave_grid" | "cut_grid" |
+                                         // "kerf_gauge"
+  double power_min_percent = 10.0;
+  double power_max_percent = 100.0;
+  int power_steps = 5;
+  double speed_min_mm_per_s = 5.0;
+  double speed_max_mm_per_s = 50.0;
+  int speed_steps = 5;
+  double cell_size_mm = 10.0;
+  double cell_spacing_mm = 5.0;
+  double start_x_mm = 5.0;
+  double start_y_mm = 5.0;
+  double line_spacing_mm = 0.1;  // engrave fill density
+  // kerf_gauge only: the calibration square is cut with the CURRENT
+  // kerf/power/speed so the measured plug reveals the true kerf
+  // (kerf = (cell − plug) / 2).
+  double kerf_width_mm = 0.15;
+  double power_percent = 85.0;
+  double speed_mm_per_s = 10.0;
+  // Grid cards: engrave "P.. S.." labels under every cell.
+  bool cell_labels = true;
+};
 
 struct CamOperationParameters {
   // Basic cutting.
@@ -186,6 +292,9 @@ struct CamOperationParameters {
   std::optional<double> peck_depth_mm;              // for peck drilling
   std::optional<double> dwell_seconds;              // for dwell cycles
   std::optional<double> engagement_angle_deg;       // for adaptive clearing
+  std::optional<double> zigzag_angle_deg;           // for face milling
+  std::optional<LaserCutParameters> laser;          // for laser_cut
+  std::optional<LaserTestPatternParameters> test_pattern;  // laser_test_pattern
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"
@@ -225,13 +334,18 @@ struct CamOperation {
   std::string name;
   CamOperationType type = "face_milling";
   bool enabled = true;
+  /// Fixturing setup this operation belongs to.  Empty = the first
+  /// setup (legacy documents created before multi-setup support).
+  std::string setup_id;
   std::string tool_id;                         // references ToolEntry::tool_id
   CamGeometryReferences geometry_references;
-  std::vector<CamPointLocation> point_locations;  // for drilling
   CamOperationParameters parameters;
   CamOperationDependencies dependencies;
   std::optional<ToolpathCache> toolpath_cache;
   CamOperationStatus status = "pending";
+  /// Human-readable degrade info (the CAM analogue of
+  /// FeatureEntry::dependency_warning).  Empty when healthy.
+  std::string status_message;
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -241,44 +355,12 @@ struct CamOperation {
 /// "fanuc" | "linuxcnc" | "mach3" | "mach4" | "grbl" | "marlin" | "custom"
 using PostProcessorType = std::string;
 
-struct PostProcessorOptions {
-  bool add_line_numbers = true;
-  bool use_arcs = true;
-  bool absolute_coordinates = true;
-  int tool_change_mcode = 6;
-  int spindle_start_mcode = 3;
-  int coolant_mcode_on = 8;
-  int coolant_mcode_off = 9;
-  int decimal_places = 3;
-  std::optional<bool> separate_rapids;
-  std::optional<std::string> header_string;
-  std::optional<std::string> footer_string;
-};
-
+/// The selected post processor.  Output shaping (templates, S scale,
+/// decimals) comes from the DEFINITION FILE — posts are first-class
+/// user-editable files, not per-document options.
 struct PostProcessor {
   PostProcessorType type = "fanuc";
   std::string filename;
-  PostProcessorOptions options;
-};
-
-// ══════════════════════════════════════════════════════════════════
-//  Simulation Data
-// ══════════════════════════════════════════════════════════════════
-
-struct CollisionReport {
-  std::string op_id;
-  std::string tool_id;
-  std::array<double, 3> position = {0.0, 0.0, 0.0};
-  std::string severity = "warning";  // "warning" | "error" | "critical"
-  std::string message;
-};
-
-struct SimulationData {
-  std::optional<std::string> stock_after_op_id;
-  std::optional<std::string> stock_mesh_reference;
-  std::optional<std::string> last_verification;  // ISO-8601
-  bool collisions_detected = false;
-  std::vector<CollisionReport> collision_report;
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -291,7 +373,7 @@ struct CamDocumentData {
   std::vector<ToolEntry> tool_library;
   std::vector<CamOperation> operations;
   std::optional<PostProcessor> post_processor;
-  std::optional<SimulationData> simulation;
+  std::optional<LaserMachineSettings> machine_settings;
 };
 
 }  // namespace polysmith::core

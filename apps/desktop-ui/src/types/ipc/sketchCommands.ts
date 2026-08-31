@@ -705,7 +705,11 @@ export interface SelectSketchProfileCommand {
   id: string;
   type: "select_sketch_profile";
   payload: {
-    profile_id: string;
+    // Exactly one of the two keys — by profile id, or by entity id
+    // (the core selects every profile whose boundary includes the
+    // entity; used by the CAM re-pick outline clicks).
+    profile_id?: string;
+    entity_id?: string;
     additive?: boolean;
   };
 }

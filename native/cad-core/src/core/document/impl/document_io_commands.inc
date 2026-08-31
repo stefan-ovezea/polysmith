@@ -144,6 +144,15 @@ ExportResult DocumentManager::export_document_as_step(
   return polysmith::core::export_document_as_step(document_.value(), file_path);
 }
 
+ExportResult DocumentManager::export_cam_gcode(
+    const std::string& file_path) const {
+  require_document();
+  const auto result =
+      polysmith::core::export_cam_gcode(document_.value(), file_path);
+  return ExportResult{result.file_path, result.format,
+                      result.exported_feature_count};
+}
+
 ExportResult DocumentManager::export_document_as_iges(
     const std::string& file_path) const {
   require_document();

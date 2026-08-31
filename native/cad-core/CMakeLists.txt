@@ -120,8 +120,26 @@ add_library(dxfrw STATIC
 target_include_directories(dxfrw PUBLIC ${LIBDXFRW_DIR}/src)
 
 set(CAD_CORE_SOURCES
+  src/core/cam/cam2d.cpp
+  src/core/cam/cam_export.cpp
+  src/core/cam/cam_generate.cpp
+  src/core/cam/cam_generators.cpp
   src/core/cam/cam_operation.cpp
+  src/core/cam/cam_planning.cpp
+  src/core/cam/cam_profile_reference.cpp
+  src/core/cam/cam_refresh.cpp
+  src/core/cam/cam_resolution.cpp
+  src/core/cam/cam_runtime.cpp
   src/core/cam/face_milling.cpp
+  src/core/cam/laser/laser_fill.cpp
+  src/core/cam/laser/laser_generate.cpp
+  src/core/cam/laser/laser_leads.cpp
+  src/core/cam/laser/laser_order.cpp
+  src/core/cam/laser/laser_tabs.cpp
+  src/core/cam/laser/laser_test_pattern.cpp
+  src/core/cam/laser_cut.cpp
+  src/core/cam/post_processor.cpp
+  src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
   src/core/diagnostics/logger.cpp
   src/core/document/document.cpp
@@ -179,6 +197,25 @@ add_custom_command(TARGET cad_core POST_BUILD
     $<TARGET_FILE:cad_core>
     ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:cad_core>
   COMMENT "Copying cad_core to build/ for Tauri"
+)
+
+add_executable(cad_core_cam2d_test
+  # cam2d + cam_planning only — no cad_core / protocol dependency, so
+  # no logger stub needed.  cam_planning (wire sampling) links OCCT.
+  src/core/cam/cam2d.cpp
+  src/core/cam/cam_planning.cpp
+  tests/cam2d_test.cpp
+)
+
+target_include_directories(cad_core_cam2d_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${OCCT_ROOT}/inc
+)
+
+target_link_libraries(cad_core_cam2d_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
 )
 
 add_executable(cad_core_sketch_profile_test
@@ -253,6 +290,126 @@ target_include_directories(cad_core_cam_face_reference_test PRIVATE
 )
 
 target_link_libraries(cad_core_cam_face_reference_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_save_load_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_save_load_test.cpp
+)
+
+target_include_directories(cad_core_cam_save_load_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_save_load_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_commands_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_commands_test.cpp
+)
+
+target_include_directories(cad_core_cam_commands_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_commands_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_profile_reference_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_profile_reference_test.cpp
+)
+
+target_include_directories(cad_core_cam_profile_reference_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_profile_reference_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_refresh_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_refresh_test.cpp
+)
+
+target_include_directories(cad_core_cam_refresh_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_refresh_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_grbl_post_test
+  ${CAD_CORE_SOURCES}
+  tests/grbl_post_test.cpp
+)
+
+target_include_directories(cad_core_grbl_post_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_grbl_post_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_generators_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_generators_test.cpp
+)
+
+target_include_directories(cad_core_cam_generators_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_generators_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

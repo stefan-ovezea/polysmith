@@ -1531,43 +1531,43 @@ before the next operation depends on it:
 
 | Step | Status |
 |---|---|
-| 1. TNP Witness Resolution | ✅ Done — `cam_operation.h/.cpp`, test passes |
+| 1. TNP Witness Resolution | ✅ Done — `cam_operation.h/.cpp` + face test |
 | 2. CAM Panel UI skeleton | ✅ Done — sub-category tabs, per-category toolbars, operations panel |
-| 3. Toolpath visualization in viewport | 🔲 Next |
-| 4. Setup + Stock model (document data + viewport rendering) | 🔲 After |
-| 5. Face Milling toolpath generation | 🔲 After |
-| 6. Post-processor skeleton | 🔲 After |
-| 7. 2D Pocket toolpath generation | 🔲 |
-| 8. Drilling toolpath generation | 🔲 |
-| 9. Adaptive Clearing toolpath generation | 🔲 |
+| 3. Toolpath visualization in viewport | ✅ Done — `ViewportToolpathPrimitive` → `viewport_state.toolpaths`, rendered by `camSceneObjects.ts` (rapid/feed colors from theme tokens) |
+| 4. Setup + Stock model (document data + viewport rendering) | ✅ Done — `cam_types.h` `CamSetup`/`StockDefinition` round-trips save/load |
+| 5. CAM document CRUD + persistence | ✅ Done — setups/tools/operations/post-processor, undo/redo, id counters restored on load |
+| 6. CAM dependency refresh pass | ✅ Done — `refresh_cam_dependencies` runs inside every `bump_geometry_revision`; operations degrade with `status_message`, never crash |
+| 7. Toolpath IR + generator registry + runtime cache | ✅ Done — `toolpath.h` (arcs/feeds/laser state), `cam_generator.h` registry, `cam_runtime` revision-keyed memory-only cache |
+| 8. Post-processor framework + GRBL | ✅ Done — `post_processor.h/.cpp`, GRBL writer (M3/M4, S 0-1000, G2/G3 I/J), aliases for other hobby dialects |
+| 9. Laser cutting from sketch | ✅ Done — kerf offset (outer outward/holes inward, miter at shallow corners), lead-in/out + pierce, hole-before-outer ordering, self-intersection detection |
+| 10. Face milling | ✅ Done — face-witness resolution, tool-radius miter inset with physical validation, clipped zigzag rows |
+| 11. G-code export | ✅ Done — `cam_export_gcode` + `document_exported` `format: "gcode"` |
+| 12. 2D Pocket toolpath generation | 🔲 registry slot |
+| 13. Drilling toolpath generation | 🔲 registry slot |
+| 14. Adaptive Clearing toolpath generation | 🔲 registry slot |
 
-## Next Step: Toolpath Visualization in the Viewport
+**Deviations from this document (binding):**
+- **Laser/cutting promoted into v1** — the original plan scoped v1 to
+  milling only (§What NOT to Build). The sprint goal changed to laser
+  cutting from sketch; it is now the first implemented operation.
+- **Generation is synchronous.** The async job protocol (`job_id` →
+  `cam_job_status` → `cam_toolpath_chunk`) is deferred: the core is a
+  single-threaded stdin/stdout loop, and both v1 generators complete in
+  well under 100 ms. Progress is reported inline via
+  `cam_generation_progress` events. The registry interface keeps the door
+  open for a background job pool with zero IPC change.
+- **Toolpaths are memory-only, cached by document revision** (a concrete
+  realization of §"Toolpaths as Generated Geometry"). `cam_runtime`
+  holds them; `ToolpathCache` in the document carries metadata only.
 
-The viewport needs to display CAM toolpath lines before any generation code
-can be tested. This is the next gate — without it, toolpath generation
-produces data with no way to see it.
+## Architecture notes for extension
 
-**What to build:**
-
-1. **New viewport primitive type** — toolpath lines as colored polylines
-   (rapid moves in one color, feed moves in another). Distinct from CAD
-   sketch lines. C++ side in `viewport.h/.cpp`, sent via the existing
-   `ViewportState` IPC message.
-
-2. **IPC extension** — add an optional `toolpaths` field to the viewport
-   state message. Each toolpath entry has: an id, a list of 3D points,
-   and a per-segment type (rapid/feed). Start with small payloads (~1000
-   points per chunk).
-
-3. **Test with hardcoded data** — inject a sample toolpath (e.g. a square
-   contour with lead-in) from C++ into the viewport state, render it,
-   and verify colors are correct. No toolpath generation needed yet —
-   just the display pipeline.
-
-**Why this before the post-processor:** Toolpath visualization lets you
-visually verify generated toolpaths. The post-processor converts toolpaths
-to G-code text — you need to see the toolpath first to know if the G-code
-is even right.
+New operation kinds are registry entries: implement a generator matching
+`CamGenerator` (`cam_generator.h`), register it in
+`register_builtin_cam_generators()` (`cam_generators.cpp`), add any
+per-type parameters as an optional block on `CamOperationParameters`
+(`cam_types.h`), and mirror the types in `apps/desktop-ui/src/types/geometry/cam.ts`.
+No changes to the document, refresh pass, IPC, or viewport machinery.
 
 ---
 
@@ -1581,9 +1581,9 @@ is even right.
 - **Simulation.** Visual preview only, no material removal simulation.
 - **Tool wear compensation.** Not needed for hobbyist use.
 - **Binary IPC transport.** Chunked JSON is sufficient through v1.
-- **Turning, Cutting, Printing operations.** Milling only for v1.
-  Scaffolding (disabled toolbar buttons) is present but no generation
-  code will be written.
+- **Turning and Printing operations.** Laser cutting and face milling are
+  implemented; turning/printing remain disabled scaffolding. Nesting,
+  common-cut, and bridge/tab for cutting are not built.
 
 ---
 

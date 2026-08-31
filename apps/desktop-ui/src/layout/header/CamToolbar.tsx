@@ -1,1 +1,6 @@
-export type CamOperationType = "faceMilling" | "profile" | "pocket" | "drill";
+export type CamOperationType =
+  | "faceMilling"
+  | "profile"
+  | "pocket"
+  | "drill"
+  | "laserCut";

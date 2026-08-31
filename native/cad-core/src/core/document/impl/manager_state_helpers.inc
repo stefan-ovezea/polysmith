@@ -12,6 +12,11 @@ void DocumentManager::push_undo_state() {
 void DocumentManager::bump_geometry_revision() {
   require_document();
   refresh_history_dependencies(*document_);
+  // CAM operations re-resolve their geometry references against the
+  // live document after every geometry bump — the CAM analogue of the
+  // history dependency pass.  Early-outs when there are no operations.
+  // The revision increments after this pass, so hand it the target.
+  refresh_cam_dependencies(*document_, document_->revision + 1);
   normalize_timeline_cursor(*document_);
   // Prune selections that reference ids which no longer exist after
   // the mutation that triggered this bump (trim-as-delete, deleted

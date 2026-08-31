@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -28,8 +29,14 @@ type BodyContextActions = Pick<
 interface AppSidebarProps {
   activeProjectPath: string | null;
   bodyContextActions: BodyContextActions;
+  camOpenSetup: (setupId: string) => void;
   camOperationDelete: (operationId: string) => Promise<void>;
   camOperations: CamOperation[];
+  camSetups: Array<{ setup_id: string; name: string; machine_type: string }>;
+  activeCamSetupId: string | null;
+  onSelectCamSetup: (setupId: string) => void;
+  onDeleteCamSetup: (setupId: string) => void;
+  onNewCamSetup: () => void;
   confirmAndDeleteFeature: (featureId: string) => void;
   createRecentProjectFolder: (
     name: string,
@@ -82,6 +89,11 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({
+  camSetups,
+  activeCamSetupId,
+  onSelectCamSetup,
+  onDeleteCamSetup,
+  onNewCamSetup,
   activeProjectPath,
   bodyContextActions,
   camOperationDelete,
@@ -117,8 +129,74 @@ export function AppSidebar({
   setSidebarTab,
   sidebarTab,
   workspaceView,
+  camOpenSetup,
 }: AppSidebarProps) {
   const { t } = useTranslation();
+  const [camTab, setCamTab] = useState<"hierarchy" | "operations">(
+    "operations",
+  );
+
+  const renderHierarchyPanel = () => (
+    <DocumentHierarchyPanel
+      document={document}
+      hiddenFeatureIds={hiddenFeatureIds}
+      hiddenCategories={hiddenCategories}
+      onToggleFeatureVisibility={(featureId) => {
+        setHiddenFeatureIds((current) => {
+          const next = new Set(current);
+          if (next.has(featureId)) {
+            next.delete(featureId);
+          } else {
+            next.add(featureId);
+          }
+          return next;
+        });
+      }}
+      onToggleCategoryVisibility={(category) => {
+        if (category === "origin") {
+          markOriginVisibilityChanged();
+        }
+        setHiddenCategories((current) => {
+          const next = new Set(current);
+          if (next.has(category)) {
+            next.delete(category);
+          } else {
+            next.add(category);
+          }
+          return next;
+        });
+      }}
+      onSelectFeature={async (featureId) => {
+        await runAction(async () => {
+          await selectFeature(featureId);
+        });
+      }}
+      onSelectReference={async (referenceId) => {
+        await runAction(async () => {
+          await selectReference(referenceId);
+        });
+      }}
+      onReenterSketch={async (featureId) => {
+        await runAction(async () => {
+          await reenterSketch(featureId);
+        });
+      }}
+      onRenameFeature={async (featureId, name) => {
+        await runAction(async () => {
+          await renameFeature(featureId, name);
+        });
+      }}
+      onDeleteFeature={async (featureId) => {
+        confirmAndDeleteFeature(featureId);
+      }}
+      {...bodyContextActions}
+      onSetFeatureSuppressed={async (featureId, suppressed) => {
+        await runAction(async () => {
+          await setFeatureSuppressed(featureId, suppressed);
+        });
+      }}
+    />
+  );
 
   if (workspaceView === "cam") {
     return (
@@ -126,19 +204,65 @@ export function AppSidebar({
         className="cad-sidebar relative min-h-0 flex-shrink-0"
         style={{ width: hierarchyWidth }}
       >
-        <CamOperationPanel
-          operations={camOperations}
-          selectedOperationId={selectedCamOperationId}
-          onSelectOperation={setSelectedCamOperationId}
-          onDeleteOperation={(operationId) => {
-            void runAction(async () => {
-              await camOperationDelete(operationId);
-              if (selectedCamOperationId === operationId) {
-                setSelectedCamOperationId(null);
-              }
-            });
-          }}
-        />
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex items-center gap-2 px-3 pt-2">
+            <div className="cad-sidebar-tabs" role="tablist">
+              <button
+                type="button"
+                className={
+                  camTab === "operations"
+                    ? "cad-sidebar-tab cad-sidebar-tab-active"
+                    : "cad-sidebar-tab"
+                }
+                onClick={() => setCamTab("operations")}
+                role="tab"
+                aria-selected={camTab === "operations"}
+              >
+                {t("cam.operationsTab")}
+              </button>
+              <button
+                type="button"
+                className={
+                  camTab === "hierarchy"
+                    ? "cad-sidebar-tab cad-sidebar-tab-active"
+                    : "cad-sidebar-tab"
+                }
+                onClick={() => setCamTab("hierarchy")}
+                role="tab"
+                aria-selected={camTab === "hierarchy"}
+              >
+                {t("document.hierarchy")}
+              </button>
+            </div>
+          </div>
+          {camTab === "hierarchy" ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {renderHierarchyPanel()}
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <CamOperationPanel
+                operations={camOperations}
+                setups={camSetups}
+                activeSetupId={activeCamSetupId}
+                onSelectSetup={onSelectCamSetup}
+                onEditSetup={camOpenSetup}
+                onDeleteSetup={onDeleteCamSetup}
+                onNewSetup={onNewCamSetup}
+                selectedOperationId={selectedCamOperationId}
+                onSelectOperation={setSelectedCamOperationId}
+                onDeleteOperation={(operationId) => {
+                  void runAction(async () => {
+                    await camOperationDelete(operationId);
+                    if (selectedCamOperationId === operationId) {
+                      setSelectedCamOperationId(null);
+                    }
+                  });
+                }}
+              />
+            </div>
+          )}
+        </div>
         <SidebarResizer width={hierarchyWidth} onResize={setHierarchyWidth} />
       </aside>
     );
@@ -206,65 +330,7 @@ export function AppSidebar({
           </button>
         </div>
         {sidebarTab === "hierarchy" ? (
-          <DocumentHierarchyPanel
-            document={document}
-            hiddenFeatureIds={hiddenFeatureIds}
-            hiddenCategories={hiddenCategories}
-            onToggleFeatureVisibility={(featureId) => {
-              setHiddenFeatureIds((current) => {
-                const next = new Set(current);
-                if (next.has(featureId)) {
-                  next.delete(featureId);
-                } else {
-                  next.add(featureId);
-                }
-                return next;
-              });
-            }}
-            onToggleCategoryVisibility={(category) => {
-              if (category === "origin") {
-                markOriginVisibilityChanged();
-              }
-              setHiddenCategories((current) => {
-                const next = new Set(current);
-                if (next.has(category)) {
-                  next.delete(category);
-                } else {
-                  next.add(category);
-                }
-                return next;
-              });
-            }}
-            onSelectFeature={async (featureId) => {
-              await runAction(async () => {
-                await selectFeature(featureId);
-              });
-            }}
-            onSelectReference={async (referenceId) => {
-              await runAction(async () => {
-                await selectReference(referenceId);
-              });
-            }}
-            onReenterSketch={async (featureId) => {
-              await runAction(async () => {
-                await reenterSketch(featureId);
-              });
-            }}
-            onRenameFeature={async (featureId, name) => {
-              await runAction(async () => {
-                await renameFeature(featureId, name);
-              });
-            }}
-            onDeleteFeature={async (featureId) => {
-              confirmAndDeleteFeature(featureId);
-            }}
-            {...bodyContextActions}
-            onSetFeatureSuppressed={async (featureId, suppressed) => {
-              await runAction(async () => {
-                await setFeatureSuppressed(featureId, suppressed);
-              });
-            }}
-          />
+          renderHierarchyPanel()
         ) : (
           <ProjectsPanel
             document={recentProjectsDocument}

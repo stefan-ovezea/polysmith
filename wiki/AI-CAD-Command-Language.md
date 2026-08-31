@@ -603,6 +603,135 @@ temporary STL path to Tauri-native OrcaSlicer window-management commands. Agents
 must not invent separate geometry payloads for the slicer or bypass the native
 core export path.
 
+### CAM Workspace
+
+CAM state lives in `document_state.cam` (`setups`, `tool_library`,
+`operations`, `post_processor`), parallel to `feature_history`. Operations
+consume geometry and produce toolpaths; they never modify the B-rep. All CAM
+commands return `document_state`. Toolpaths are memory-only: `toolpath_cache`
+carries metadata (length, time, move counts), never path points.
+
+#### `cam_setup_create` / `cam_setup_update`
+
+Payload = serialized `CamSetup`. The first setup is THE setup (v1): `name`,
+`machine_type` (`"3_axis_mill"` | `"laser"` | `"plasma"` | `"printer"` | ...),
+`machine_axes`, `stock` (`{type, origin?, size?, margin}`, `"bounding_box"`
+default), `wcs_origin`, `safety_height`, `retract_height`, `units`
+(`"mm"` | `"inch"`). `setup_id` is assigned by the core when empty.
+
+#### `cam_setup_delete`
+
+Payload `{setup_id}`. Deletes the setup AND its operations. Legacy
+operations with an empty `setup_id` belong to the first setup (the
+`cam_operation_create` join rule), so they die with it. One undo step
+covers setup + operations. Unknown id replies with an `error` event.
+
+#### `cam_tool_add` / `cam_tool_update` / `cam_tool_delete` / `cam_tool_list`
+
+`cam_tool_add` payload = serialized `ToolEntry` (type `"laser"` for lasers,
+`"endmill_flat"` etc. for mills). `cam_tool_update` payload = `ToolEntry` plus
+the lookup key `tool_id`. `cam_tool_delete` payload = `{tool_id}` — operations
+referencing the deleted tool degrade to `status: "error"` with a message.
+`cam_tool_list` returns `document_state`.
+
+#### `cam_operation_create`
+
+Payload = serialized `CamOperation` without `op_id` (the core assigns
+`cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
+`"face_milling"` (zigzag facing of a horizontal face), or
+`"laser_test_pattern"` (LightBurn-style material test cards) are
+implemented; pocket/contour/drill/turning are registry slots for later.
+`tool_id` must reference an existing tool. Laser operations (cut and test
+patterns) require a laser machine setup.
+
+Geometry input:
+- `laser_cut`: select sketch profiles first (via `select_sketch_profile`), then
+  send `cam_operation_create` with EMPTY `geometry_references` — the core
+  captures TNP-safe profile witness references from
+  `selected_sketch_profile_ids`. With no pre-selection the core creates the
+  operation with an EMPTY scope (no error) — the panel's reference-sketch
+  dropdown then retargets it via `cam_operation_set_scope`. The kerf/lead/
+  power settings live in `parameters.laser` (v2 model: `mode`,
+  `power_percent`, `speed_mm_per_s`, `passes`, `kerf_width_mm`/`kerf_side`,
+  leads, tabs, fill, `cut_order`).
+- `select_sketch_profile` accepts `{entity_id, additive}` instead of
+  `{profile_id, additive}`: the core selects every profile whose boundary
+  includes the entity (used for outline clicks during the CAM re-pick flow;
+  a shared edge selects both owning regions, construction entities throw).
+- `face_milling`: pass `geometry_references.machining_regions` with a
+  `FaceAttestation` witness (area, normal, sample points) captured from the
+  selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
+  fill.
+- `laser_test_pattern`: NO geometry references — `parameters.test_pattern`
+  drives the card (`pattern`: `engrave_grid` | `cut_grid` | `kerf_gauge`,
+  power/speed min-max-steps, `cell_size_mm`, `cell_spacing_mm`,
+  `start_x_mm`/`start_y_mm`, `line_spacing_mm`, gauge kerf/power/speed,
+  `cell_labels`).  Power sweeps columns (left→right), speed sweeps rows
+  (top→bottom); cells live in machine coordinates.
+
+Face references: `cam_capture_face_reference {face_id}` returns the
+TNP-safe `FaceAttestation` for a body face — use it to build operation
+`geometry_references` (never hand-craft witness data).
+`cam_wcs_set_face {face_id}` anchors the WCS to a face; the refresh
+pass resolves the machine origin from the live face.
+
+Machine settings: `cam_machine_settings_set` stores
+`{work_area_x_mm, work_area_y_mm, pointer_offset_x_mm, pointer_offset_y_mm}`
+on `document_state.cam.machine_settings`; the pointer offset shifts the
+laser WCS origin (framing under the red dot).  Operations carry
+`setup_id` (empty = the first setup); every operation resolves through
+its own setup.
+
+#### `cam_operation_update`
+
+Merge patch: `{op_id, name?, type?, enabled?, tool_id?, geometry_references?,
+parameters?}`. Only present keys overwrite. Any change resets the operation to
+`needs_regenerate`.
+
+#### `cam_operation_set_scope`
+
+Payload `{op_id, kind: "sketch", feature_id}`. Re-targets the operation at the
+given sketch feature: the core captures fresh TNP-safe witnesses for EVERY
+profile of that sketch into `machining_regions` (replacing whatever the
+operation referenced before) and resets the operation to `needs_regenerate`.
+Errors: unknown operation or unknown sketch feature id reply with an `error`
+event — the operation is never left half-retargeted. Undo covers the change.
+
+#### `cam_operation_generate` / `cam_operation_preview`
+
+Payload `{op_id}`. Synchronous (both generators run in well under 100 ms);
+emits `cam_generation_progress` events `{op_id, percent}` (5/15/90/100), then
+`document_state` with `status: "generated"` (preview does not change status,
+it only fills the preview cache the viewport falls back to).
+
+#### `cam_operation_delete` / `cam_post_processor_set` / `cam_export_gcode`
+
+- `cam_operation_delete`: payload `{op_id}`.
+- `cam_post_processor_set`: payload = serialized `PostProcessor` — `type`
+  names a post definition (`"grbl"`, `"linuxcnc"`, `"mach3"`, `"mach4"`,
+  `"marlin"`, `"fanuc"`, or an imported name).  Post processors are FILES in
+  the user's posts directory (one `<name>.json` per machine, seeded with the
+  built-ins, re-read on every export) — edit the file to change the dialect.
+- `cam_export_gcode`: payload `{file_path}` — generates any stale toolpaths on
+  demand, serializes every enabled operation in order through the selected
+  post definition, replies `document_exported` with `format: "gcode"`.
+
+#### `cam_post_list` / `cam_post_import`
+
+- `cam_post_list`: payload `{}` — replies `cam_post_list_result` with
+  `posts: [{name, path}]` (built-ins plus files in the posts directory;
+  `path` is the editable file, always populated after seeding).
+- `cam_post_import`: payload `{source_path}` — validates the JSON and copies
+  it into the posts directory, then replies `cam_post_list_result` with the
+  updated list.  Broken definitions are rejected with an error.
+
+#### Operation status semantics
+
+`pending` (created, never generated) → `generated` (toolpath cached at the
+current document revision) → `needs_regenerate` (any document mutation
+invalidated the cache) → `error` + human-readable `status_message` when a
+geometry reference no longer resolves (TNP doctrine: degrade, never guess).
+
 ### Primitive Solid Features
 
 Primitive feature commands are direct modeling shortcuts. For richer CAD
@@ -3332,4 +3461,9 @@ this:
 - Projection commands are `project_face_into_sketch`,
   `project_profile_into_sketch`, `project_edge_into_sketch`, and
   `project_vertex_into_sketch`.
+- CAM: create a setup (`cam_setup_create`) and tools (`cam_tool_add`) first;
+  select sketch profiles, then `cam_operation_create` with type `laser_cut`
+  and empty geometry_references (the core captures profile witnesses);
+  `cam_operation_generate` fills the toolpath, `cam_operation_preview` shows
+  a wireframe, `cam_export_gcode` writes the file.
 - Never invent IDs. Never expose IDs in user-facing UI copy.

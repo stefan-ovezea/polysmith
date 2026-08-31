@@ -48,6 +48,11 @@
   // lines / vertices use their own deterministic id namespace
   // (line-text-* / vertex-text-*), so they never consume user counters.
   int next_sketch_text_id_ = 1;
+  // CAM id counters ("cam-setup-N" / "tool-N" / "cam-op-N"), restored
+  // on load by scanning trailing integers like the feature counters.
+  int next_cam_setup_id_ = 1;
+  int next_cam_tool_id_ = 1;
+  int next_cam_op_id_ = 1;
   int document_count_ = 0;
   std::optional<DocumentState> document_;
   std::vector<DocumentState> undo_stack_;

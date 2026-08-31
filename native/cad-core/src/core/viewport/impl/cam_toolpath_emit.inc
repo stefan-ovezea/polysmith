@@ -1,9 +1,48 @@
-// ── CAM toolpaths from operations ────────────────────────────
-  // Toolpath generation is being rebuilt on the new cam_types.h schema.
-  // For now, emit empty toolpaths so the viewport doesn't attempt to
-  // generate geometry from the old CamOperationEntry type.
+  // ── CAM toolpaths from operations ────────────────────────────
+  // Toolpaths are memory-only: generated on demand, cached in
+  // cam_runtime keyed by document revision.  The viewport draws the
+  // full path when the op is "generated", falling back to the cached
+  // wireframe preview otherwise.  Arcs are chord-linearized for the
+  // polyline renderer (0.05 mm sagitta).
   std::vector<ViewportToolpathPrimitive> toolpaths;
+  if (document.has_value()) {
+    for (const auto& op : document->cam.operations) {
+      if (!op.enabled) {
+        continue;
+      }
+      const Toolpath* toolpath =
+          cam_runtime::cached_toolpath(*document, op.op_id);
+      if (toolpath == nullptr) {
+        toolpath = cam_runtime::cached_preview(*document, op.op_id);
+      }
+      if (toolpath == nullptr || toolpath->moves.empty()) {
+        continue;
+      }
 
-  // ── CAM stock — deferred until non-interactive rendering is available.
-  // TODO: render stock as a translucent box that doesn't participate in
-  // the CAD picking chain (ViewportBoxPrimitive triggers feature lookup).
+      ViewportToolpathPrimitive primitive;
+      primitive.id = "tp:" + op.op_id;
+      primitive.label = op.name;
+      ToolpathMove previous = toolpath->moves.front();
+      for (const auto& move : toolpath->moves) {
+        if (move.kind == ToolpathMoveKind::FeedArcCW ||
+            move.kind == ToolpathMoveKind::FeedArcCCW) {
+          // Chord points first, endpoint last (linearize_arc_move's
+          // final point is the move endpoint).
+          std::vector<std::array<double, 3>> arcPoints;
+          linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.05,
+                             arcPoints);
+          for (const auto& point : arcPoints) {
+            primitive.points.push_back(
+                {point[0], point[1], point[2], false, false});
+          }
+        } else {
+          primitive.points.push_back(
+              {move.x, move.y, move.z,
+               move.kind == ToolpathMoveKind::Rapid,
+               move.laser_on && move.dwell_seconds > 0.0});
+        }
+        previous = move;
+      }
+      toolpaths.push_back(std::move(primitive));
+    }
+  }
