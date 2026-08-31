@@ -122,10 +122,13 @@ Rules:
   `format: "json"`.
 - Two providers are supported: `ollama` (local) and `deepseek` (cloud,
   api.deepseek.com). The DeepSeek provider speaks two API shapes:
-  `anthropic` (`/anthropic/v1/messages`, x-api-key — e.g. model
-  `deepseek-v4-pro[1m]`) and `openai` (`/chat/completions`, Bearer with
-  `response_format: json_object` — e.g. model `deepseek-chat`). The API key
-  is read from the user-owned `~/.polysmith` file
+  `anthropic` (`/anthropic/v1/messages`, x-api-key) and `openai`
+  (`/chat/completions`, Bearer with `response_format: json_object`). The
+  Settings model dropdown lists the account's models from
+  `https://api.deepseek.com/models` (`deepseek-v4-flash`,
+  `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`); `deepseek-v4-flash`
+  is the default — it handles the CAD envelope task in ~20 s per scenario.
+  The API key is read from the user-owned `~/.polysmith` file
   (`{ "deepseek_api_key": "...", "deepseek_base_url": "..." }`) — it never
   enters the repository or the persisted app config. The Rust shell reads the
   file (command `read_ai_settings`); the headless harness reads `AI_API_KEY` /
@@ -133,6 +136,10 @@ Rules:
   config URL when present. The API style and endpoint path must match:
   `anthropic` style → `.../anthropic`, `openai` style → `https://api.deepseek.com`
   (the Settings dropdown swaps the URL with the style).
+- The DeepSeek client sends `thinking: { type: "disabled" }` on both API
+  shapes. The v4 models think by default on every call; the probe showed
+  ~6 s → ~1 s per reply on flash with the flag. It is accepted as-is on both
+  shapes (`thinking: false` is rejected on the openai shape).
 - The app sends `think: false` in the Ollama `/api/chat` request. This is
   load-bearing for thinking-capable models (gemma4): with thinking enabled
   they emit the envelope into `message.thinking` and return an empty
@@ -3520,7 +3527,7 @@ envelope / validation pipeline the in-app assistant uses:
   `AI_API_KEY=<key>` (a key from platform.deepseek.com) to run against the
   cloud API — scenarios finish in seconds instead of CPU minutes. Env
   overrides: `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` (defaults
-  `gemma4:12b` / `deepseek-v4-pro[1m]` per provider), `AI_BASE_URL`,
+  `gemma4:12b` / `deepseek-v4-flash` per provider), `AI_BASE_URL`,
   `AI_API_STYLE` (`anthropic` | `openai`), `POLYSMITH_CORE_BIN`. Missing
   core → the suite skips with a warning; missing model/key → the suite
   fails loudly in `beforeAll`.

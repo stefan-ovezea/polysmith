@@ -12,9 +12,16 @@ export type AiChatMessage = {
   content: string;
 };
 
-export function listAiModels(config: AiConfig): Promise<string[]> {
+export async function listAiModels(config: AiConfig): Promise<string[]> {
   if (config.provider === "deepseek") {
-    return listDeepseekModels(config);
+    // The app never persists the key or the cloud URL, so the config's
+    // apiKey is always empty here — the /models endpoint would 401 and the
+    // lister would fall back to the single configured model. Merge the
+    // ~/.polysmith settings first, exactly like requestAiChat does.
+    const settings = await getAiSettings();
+    const apiKey = config.apiKey || settings.apiKey;
+    const baseUrl = settings.baseUrl || config.baseUrl;
+    return listDeepseekModels({ ...config, apiKey, baseUrl });
   }
   return listOllamaModels(config.baseUrl);
 }

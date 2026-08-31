@@ -86,7 +86,7 @@ function makeAiConfig(config: AiScenarioConfig): AiConfig {
     provider === "deepseek"
       ? {
           baseUrl: "https://api.deepseek.com/anthropic",
-          model: "deepseek-v4-pro[1m]",
+          model: "deepseek-v4-flash",
         }
       : { baseUrl: "http://localhost:11434", model: "gemma4:12b" };
   const fromHome = provider === "deepseek" ? loadAiSettingsFromHome() : null;

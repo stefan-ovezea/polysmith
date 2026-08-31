@@ -120,7 +120,7 @@ function normalizeAiConfig(input: Partial<AppConfig>["ai"]): AppConfig["ai"] {
       typeof input?.model === "string" && input.model.trim().length > 0
         ? input.model
         : provider === "deepseek"
-          ? "deepseek-v4-pro[1m]"
+          ? "deepseek-v4-flash"
           : defaults.model,
     // The API key is NEVER persisted in the app config — it lives in the
     // user's ~/.polysmith file and is fetched at call time. Always normalize

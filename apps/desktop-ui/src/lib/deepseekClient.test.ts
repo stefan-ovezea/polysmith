@@ -56,6 +56,9 @@ describe("requestDeepseekChat (anthropic style)", () => {
     expect(body).toMatchObject({
       model: "deepseek-v4-pro[1m]",
       max_tokens: 4096,
+      // Thinking is off: the envelope doesn't need reasoning and it costs
+      // ~6x the latency on flash when left on.
+      thinking: { type: "disabled" },
       system: "system prompt",
       messages: [{ role: "user", content: "user prompt" }],
     });
@@ -129,6 +132,7 @@ describe("requestDeepseekChat (openai style)", () => {
     expect(body).toMatchObject({
       model: "deepseek-chat",
       stream: false,
+      thinking: { type: "disabled" },
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "system prompt" },
@@ -139,22 +143,53 @@ describe("requestDeepseekChat (openai style)", () => {
 });
 
 describe("listDeepseekModels", () => {
-  it("maps the openai-style models list", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        jsonResponse({ data: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }] }),
-      ),
+  it("maps the models list from the root endpoint", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        data: [
+          { id: "deepseek-v4-flash" },
+          { id: "deepseek-v4-pro" },
+          { id: "deepseek-v4-flash-vision-exp" },
+        ],
+      }),
     );
+    vi.stubGlobal("fetch", fetchMock);
+
     const models = await listDeepseekModels(
       makeConfig({ baseUrl: "https://api.deepseek.com", apiStyle: "openai" }),
     );
-    expect(models).toEqual(["deepseek-chat", "deepseek-reasoner"]);
+    expect(models).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
+    ]);
+  });
+
+  it("strips the /anthropic suffix and hits the root /models route", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ data: [{ id: "deepseek-v4-flash" }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const models = await listDeepseekModels(makeConfig({}));
+    expect(models).toEqual(["deepseek-v4-flash"]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toBe("https://api.deepseek.com/models");
   });
 
   it("falls back to the configured model when listing fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, false)));
     const models = await listDeepseekModels(makeConfig({}));
     expect(models).toEqual(["deepseek-v4-pro[1m]"]);
+  });
+
+  it("falls back to the documented v4 models when nothing is configured", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, false)));
+    const models = await listDeepseekModels(makeConfig({ model: "" }));
+    expect(models).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
+    ]);
   });
 });

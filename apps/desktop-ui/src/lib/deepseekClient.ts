@@ -40,6 +40,10 @@ async function requestAnthropicStyle(
     body: JSON.stringify({
       model: config.model.trim(),
       max_tokens: 4096,
+      // Disable thinking: the assistant only needs the JSON envelope, and the
+      // v4 models think by default (probe: flash ~6s -> ~1s with this flag).
+      // The thinking-block skip below stays as a defensive fallback.
+      thinking: { type: "disabled" },
       // The Anthropic shape takes system separately from the turn list.
       system: messages
         .filter((message) => message.role === "system")
@@ -77,6 +81,9 @@ async function requestOpenAiStyle(
     body: JSON.stringify({
       model: config.model.trim(),
       stream: false,
+      // Same as the anthropic shape: the envelope doesn't need reasoning, and
+      // the OpenAI shape takes the identical struct (probe-verified).
+      thinking: { type: "disabled" },
       // Envelope compliance on the OpenAI shape: force a JSON object reply.
       response_format: { type: "json_object" },
       messages,
@@ -108,22 +115,26 @@ export async function requestDeepseekChat(
   return requestAnthropicStyle(config, messages);
 }
 
-// Best-effort model listing. Not every endpoint deployment exposes a models
-// route — fall back to the configured model so the Settings dropdown still
-// shows a usable entry.
+// The documented DeepSeek v4 model family — used as the Settings fallback
+// when the models endpoint is unreachable and no model is configured yet.
+export const DEFAULT_DEEPSEEK_MODELS = [
+  "deepseek-v4-flash",
+  "deepseek-v4-pro",
+  "deepseek-v4-flash-vision-exp",
+];
+
+// Best-effort model listing. The models route lives at the ROOT of
+// api.deepseek.com (`/models`, Bearer auth) for both API styles — the
+// anthropic-style path has no /v1/models listing (404).
 export async function listDeepseekModels(config: AiConfig): Promise<string[]> {
   const configured = config.model.trim();
-  const fallback = configured ? [configured] : [];
+  const fallback = configured ? [configured] : DEFAULT_DEEPSEEK_MODELS;
+  // Strip a trailing /anthropic so the lister hits the root domain.
+  const rootBase = trimBaseUrl(config.baseUrl).replace(/\/anthropic$/, "");
   try {
-    const url =
-      config.apiStyle === "openai"
-        ? `${trimBaseUrl(config.baseUrl)}/models`
-        : `${trimBaseUrl(config.baseUrl)}/v1/models`;
-    const headers =
-      config.apiStyle === "openai"
-        ? { Authorization: `Bearer ${config.apiKey}` }
-        : { "x-api-key": config.apiKey };
-    const response = await fetch(url, { headers });
+    const response = await fetch(`${rootBase}/models`, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
     if (!response.ok) {
       return fallback;
     }

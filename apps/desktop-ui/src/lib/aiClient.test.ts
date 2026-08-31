@@ -45,6 +45,50 @@ describe("requestAiChat dispatch", () => {
     expect(String(url)).toContain("/api/chat");
   });
 
+  it("fills the deepseek key from the key store when listing models", async () => {
+    // Regression: listAiModels used to call the models endpoint with the
+    // config's empty apiKey, 401, and fall back to the single configured
+    // model — so Settings listed only deepseek-v4-pro[1m].
+    vi.doMock("./aiKeyStore", () => ({
+      getAiSettings: async () => ({
+        apiKey: "sk-from-home",
+        baseUrl: "https://api.deepseek.com/anthropic",
+      }),
+    }));
+    const fetchMock = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [
+            { id: "deepseek-v4-flash" },
+            { id: "deepseek-v4-pro" },
+            { id: "deepseek-v4-flash-vision-exp" },
+          ],
+        }),
+      }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Import after the mock so the dispatcher picks up the stub.
+    const { listAiModels: mockedList } = await import("./aiClient");
+    const models = await mockedList(
+      makeConfig({
+        provider: "deepseek",
+        baseUrl: "https://api.deepseek.com/anthropic",
+        model: "deepseek-v4-pro[1m]",
+      }),
+    );
+    expect(models).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
+    ]);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("https://api.deepseek.com/models");
+    expect(init.headers).toMatchObject({ Authorization: "Bearer sk-from-home" });
+  });
+
   it("fills the deepseek key from the key store when config has none", async () => {
     vi.doMock("./aiKeyStore", () => ({
       getAiSettings: async () => ({

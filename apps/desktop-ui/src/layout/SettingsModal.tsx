@@ -640,7 +640,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                             // other provider is meaningless on this one.
                             model:
                               provider === "deepseek"
-                                ? "deepseek-v4-pro[1m]"
+                                ? "deepseek-v4-flash"
                                 : "",
                           },
                         }));
@@ -764,47 +764,26 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     ) : null}
                   </div>
 
-                  {config.ai.provider === "deepseek" ? (
-                    <label className="block">
-                      <span className="cad-kicker">{t("settings.model")}</span>
-                      <input
-                        className="mt-2 w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-on-surface outline-none transition-colors focus:border-primary-edge"
-                        value={config.ai.model}
-                        placeholder="deepseek-v4-pro[1m]"
-                        onChange={(event) => {
-                          setAiModelLoadStatus(null);
-                          updateConfig((current) => ({
-                            ...current,
-                            ai: {
-                              ...current.ai,
-                              model: event.target.value,
-                            },
-                          }));
-                        }}
-                      />
-                    </label>
-                  ) : (
-                    <label className="block">
-                      <span className="cad-kicker">{t("settings.model")}</span>
-                      <Dropdown
-                        label={t("settings.model")}
-                        className="mt-2 w-full"
-                        value={config.ai.model}
-                        options={aiModelOptions}
-                        disabled={!config.ai.enabled || aiModelNames.length === 0}
-                        onChange={(model) => {
-                          setAiModelLoadStatus(null);
-                          updateConfig((current) => ({
-                            ...current,
-                            ai: {
-                              ...current.ai,
-                              model,
-                            },
-                          }));
-                        }}
-                      />
-                    </label>
-                  )}
+                  <label className="block">
+                    <span className="cad-kicker">{t("settings.model")}</span>
+                    <Dropdown
+                      label={t("settings.model")}
+                      className="mt-2 w-full"
+                      value={config.ai.model}
+                      options={aiModelOptions}
+                      disabled={!config.ai.enabled || aiModelNames.length === 0}
+                      onChange={(model) => {
+                        setAiModelLoadStatus(null);
+                        updateConfig((current) => ({
+                          ...current,
+                          ai: {
+                            ...current.ai,
+                            model,
+                          },
+                        }));
+                      }}
+                    />
+                  </label>
 
                   <label className="block">
                     <span className="cad-kicker">{t("settings.maxAgentSteps")}</span>

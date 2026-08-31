@@ -34,7 +34,7 @@ const CORE_EXE = coreBinaryPath();
 const PROVIDER = (process.env.AI_PROVIDER ?? "ollama") as "ollama" | "deepseek";
 const MODEL =
   process.env.AI_MODEL ??
-  (PROVIDER === "deepseek" ? "deepseek-v4-pro[1m]" : "gemma4:12b");
+  (PROVIDER === "deepseek" ? "deepseek-v4-flash" : "gemma4:12b");
 const BASE_URL =
   process.env.AI_BASE_URL ??
   (PROVIDER === "deepseek"
