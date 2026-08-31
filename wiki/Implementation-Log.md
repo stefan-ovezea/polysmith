@@ -2,6 +2,62 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-08-31
+
+### AI assistant reliability pass — recovery loop, memory, auto-run, gemma4 fix (feature/AI)
+
+First usability pass over the shipped AI assistant, driven by testing with
+a local gemma4:12b on Ollama. All changes are UI-layer (`apps/desktop-ui`).
+
+- **gemma4 thinking fix** — verified live: with thinking enabled, gemma4
+  emits the envelope into `message.thinking` and returns an empty
+  `content` field (`done_reason:"length"` after ~30 s). `requestOllamaChat`
+  now sends `think: false` in the `/api/chat` body; accepted by both
+  thinking-capable (gemma4) and non-thinking (gemma3) models on Ollama
+  0.33+. The request also sets `num_ctx: 16384` — Ollama's 4096-token
+  default truncated the growing prompt by the third agent step.
+- **Prompt stop-short fix** — a replay of the real panel prompts against
+  gemma4:12b showed the model stopping after `create_document` (or after
+  the sketch start), reading the state-summary hint as its whole job. The
+  system prompt now requires `create_document` + sketch start + requested
+  geometry in one batch; the empty-document state summary was reworded to
+  match. With both fixes the full rectangle→extrude flow completes in two
+  batches on gemma4:12b (verified via prompt replay).
+- **Face-extrude new_body guard** — in-app testing showed gemma choosing
+  `extrude_face` with `mode: "new_body"` on a face of the existing body,
+  which the core faithfully compiled as a second coincident solid
+  ("seam / two bodies"). Headless repro against the real core confirmed
+  the join path is clean (unify_same_domain merges the seam plane) — the
+  artifact is the two-body new_body result, so the fix lives in the AI
+  layer: the validator rejects `new_body` face extrudes of owned faces
+  with a correction message, and the system prompt now requires
+  `mode: "join"` + `target_body_id` for existing-body face extrudes.
+  Prompt replay confirms the model emits join+target.
+- **Error recovery loop** — a rejected or failed batch is fed back to the
+  model as a compact recovery message (`formatAiCommandError`: zod issues
+  mapped to `<path>: <message>` lines; core failures include the failed
+  command label), bounded at 3 attempts per user turn. A fully executed
+  batch resets the budget; recovery does not consume agent steps.
+- **Multi-turn memory** — the panel replays prior raw user prompts and raw
+  model envelopes (max 6 turns) as chat history; state summaries are never
+  retained (stale-ID risk).
+- **Envelope tolerance** — markdown-fenced JSON envelopes are stripped
+  before parsing (small models emit fences despite `format:"json"`).
+- **`previewBeforeRun` honored** — previously forced true in
+  `normalizeAiConfig`; now a real setting with a Settings checkbox.
+  Auto-run executes validated batches immediately through the same
+  execute/continue/recovery machinery.
+- **One-click enable** — enabling the AI assistant in Settings now
+  auto-loads the Ollama model list (auto-selecting the first model).
+  Default `maxAgentSteps` raised 5 → 8.
+- **Tests** — new vitest suites: `aiCommandProtocol.test.ts` (envelope
+  parsing + batch repair/deferral/construction-guard), `aiCadPrompt.test.ts`
+  (prompt golden fragments), `ollamaClient.test.ts` (wire format pins
+  `stream:false`/`format:"json"`/`think:false`). 23 tests, all green;
+  tsc clean.
+- Docs: `AI-CAD-Command-Language.md` envelope section extended (memory,
+  recovery, auto-run, fence tolerance, `think:false`).
+
 ## 2026-08-29/30
 
 ### CAM usability rework — reference-sketch scope, profile re-pick, setup tree (cam/laser)

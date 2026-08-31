@@ -117,6 +117,26 @@ Rules:
   it before new sketch geometry.
 - In live app mode, validated commands are sent through the existing Tauri
   bridge, not directly to `cad_core` stdin.
+- A markdown-fenced JSON envelope (``` ```json ... ``` ```) is tolerated and
+  stripped before parsing, since small local models emit fences even with
+  `format: "json"`.
+- The app sends `think: false` in the Ollama `/api/chat` request. This is
+  load-bearing for thinking-capable models (gemma4): with thinking enabled
+  they emit the envelope into `message.thinking` and return an empty
+  `content` field. The request also sets `num_ctx: 16384` — Ollama's
+  4096-token default truncates the system prompt + state summary + history
+  by the third agent step (`done_reason: "length"`).
+- Multi-turn memory: the app replays prior raw user prompts and raw model
+  envelopes (capped at 6 turns) as chat history. Historical state summaries
+  are never retained — their IDs go stale; the fresh per-turn state summary
+  is the real context.
+- Error recovery: a rejected or failed batch is fed back to the model as a
+  short recovery message (compact validation issue list or the core error
+  plus the failed command label), bounded at 3 attempts per user turn. A
+  fully executed batch resets the recovery budget.
+- `previewBeforeRun: false` (Settings → Preview commands before running)
+  auto-runs validated batches immediately instead of waiting for the Run
+  Commands click. Undo is available after each batch.
 
 ## Core Response Types
 
@@ -2551,6 +2571,10 @@ Rules:
 - Use a planar face ID from `viewport_state.solid_faces[]`.
 - Annular faces carry their inner loop into the extrude profile.
 - `mode` and `target_body_id` follow the same rules as `extrude_profile`.
+- Extruding a face that belongs to an existing body must use `mode: "join"`
+  with `target_body_id` set to the face's owner body. The app rejects
+  `mode: "new_body"` for owned faces: it would create a second, coincident
+  overlapping body (visually a seam). An omitted mode auto-joins.
 
 #### `update_extrude_depth`
 
