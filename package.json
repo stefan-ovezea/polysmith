@@ -17,6 +17,7 @@
     "core:build": "cmake --build native/cad-core/build --config Release --parallel 2",
     "core:rebuild": "pnpm core:configure && pnpm core:build",
     "test:core": "node scripts/run-core-tests.mjs",
+    "test:ai": "pnpm --filter desktop-ui exec vitest run src/lib/ai/aiSketchGeneration.integration.test.ts src/lib/ai/cadCoreHarness.smoke.test.ts",
     "test": "pnpm test:core",
     "deps:sync": "git submodule update --init --recursive",
     "occt:configure": "node scripts/configure-occt.mjs",

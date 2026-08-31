@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:ai": "vitest run src/lib/ai/aiSketchGeneration.integration.test.ts src/lib/ai/cadCoreHarness.smoke.test.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -31,6 +32,7 @@
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^20.17.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@types/three": "^0.184.0",
