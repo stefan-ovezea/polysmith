@@ -44,11 +44,18 @@ export interface ViewportConfig {
   showSketchGrid: boolean;
 }
 
+// "deepseek" speaks to api.deepseek.com in either of two API shapes:
+// "anthropic" (/anthropic/v1/messages, x-api-key — e.g. deepseek-v4-pro[1m])
+// or "openai" (/chat/completions, Bearer — e.g. deepseek-chat).
+export type AiApiStyle = "anthropic" | "openai";
+
 export interface AiConfig {
   enabled: boolean;
-  provider: "ollama";
+  provider: "ollama" | "deepseek";
   baseUrl: string;
   model: string;
+  apiKey: string;
+  apiStyle: AiApiStyle;
   previewBeforeRun: boolean;
   maxAgentSteps: number;
 }

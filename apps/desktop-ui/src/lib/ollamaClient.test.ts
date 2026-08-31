@@ -13,6 +13,8 @@ const config: AiConfig = {
   provider: "ollama",
   baseUrl: "http://localhost:11434",
   model: "gemma4:12b",
+  apiKey: "",
+  apiStyle: "anthropic",
   previewBeforeRun: true,
   maxAgentSteps: 8,
 };
