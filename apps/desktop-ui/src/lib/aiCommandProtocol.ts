@@ -32,11 +32,27 @@ function issueCommandId(index: number) {
   return `ai-command-${Date.now()}-${index}`;
 }
 
-export function parseAiCommandEnvelope(raw: string): AiCommandEnvelope {
+// Small local models sometimes wrap the JSON envelope in markdown fences
+// (```json ... ```) despite format:"json". Strip a single outer fence before
+// parsing so those responses are still accepted.
+function stripJsonFences(raw: string) {
   const trimmed = raw.trim();
+  const fenceStart = /^```(?:json)?\s*\n/.exec(trimmed);
+  if (!fenceStart) {
+    return trimmed;
+  }
+  let content = trimmed.slice(fenceStart[0].length);
+  const fenceEnd = /\n```\s*$/.exec(content);
+  if (fenceEnd) {
+    content = content.slice(0, fenceEnd.index);
+  }
+  return content.trim();
+}
+
+export function parseAiCommandEnvelope(raw: string): AiCommandEnvelope {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(trimmed);
+    parsed = JSON.parse(stripJsonFences(raw));
   } catch {
     throw new Error("AI response was not valid JSON.");
   }
@@ -66,6 +82,18 @@ export function parseAiCommandEnvelope(raw: string): AiCommandEnvelope {
 
 export function commandPreviewLabel(command: CoreCommand) {
   return `${command.type} ${JSON.stringify(command.payload)}`;
+}
+
+// Formats a validation or core failure into a compact, model-readable string.
+// A raw ZodError.toString() is far too noisy for a small local model to learn
+// from; map issues to "<path>: <message>" lines instead.
+export function formatAiCommandError(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    return error.issues
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
+  }
+  return String(error);
 }
 
 const activeSketchRequiredCommands = new Set<string>([
@@ -161,6 +189,7 @@ interface AiCommandValidationContext {
   knownProfileIds: Set<string>;
   knownBodyIds: Set<string>;
   knownPlanarFaceIds: Set<string>;
+  faceOwners: Map<string, string>;
 }
 
 function validateAiCommandBatchForState(
@@ -191,12 +220,16 @@ function buildAiCommandValidationContext(
       .filter((face) => face.sketchability === "planar")
       .map((face) => face.face_id),
   );
+  const faceOwners = new Map(
+    (viewport?.solid_faces ?? []).map((face) => [face.face_id, face.owner_id]),
+  );
 
   return {
     hasActiveSketch: Boolean(document?.active_sketch_feature_id),
     knownProfileIds,
     knownBodyIds,
     knownPlanarFaceIds,
+    faceOwners,
   };
 }
 
@@ -337,6 +370,15 @@ function validateExtrudeFaceReference(
   if (!context.knownPlanarFaceIds.has(command.payload.face_id)) {
     throw new Error(
       `extrude_face references unknown or non-planar face "${command.payload.face_id}". Use a planar face id from viewport state.`,
+    );
+  }
+  // Extruding a face of an existing body with mode new_body creates a second,
+  // coincident body (two overlapping solids — visually a seam). Join into the
+  // owner body instead.
+  const ownerId = context.faceOwners.get(command.payload.face_id);
+  if (command.payload.mode === "new_body" && ownerId && context.knownBodyIds.has(ownerId)) {
+    throw new Error(
+      `extrude_face with mode "new_body" on a face of existing body "${ownerId}" would create a second overlapping body. Use mode "join" with target_body_id "${ownerId}".`,
     );
   }
 }
@@ -674,7 +716,7 @@ export function buildCadStateSummary(
   if (!document) {
     return [
       "No active document is loaded.",
-      "If the user asks to draw or model, start with create_document.",
+      "If the user asks to draw or model, begin the batch with create_document and include the sketch start and the requested geometry in the same batch.",
     ].join("\n");
   }
 
