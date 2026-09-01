@@ -12,6 +12,7 @@ import type {
   DocumentState,
   SketchDimensionScene,
   SketchTool,
+  SlicerExportFormat,
   ViewportState,
 } from "@/types";
 import type { ArcToolMode } from "./arcDraftPreview";
@@ -67,6 +68,8 @@ interface ViewportContextMenuActions {
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
   exportBodyMesh: () => void | Promise<void>;
+  sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
+  isMeshImportBody: (bodyId: string | null) => boolean;
   createSketch: () => void | Promise<void>;
 }
 
@@ -281,6 +284,7 @@ export function ViewportPanelShell({
               contextMenuActions.getCircleDimensionToggleLabel
             }
             isLinkedBodyCopy={contextMenuActions.isLinkedBodyCopy}
+            isMeshImportBody={contextMenuActions.isMeshImportBody}
             onToggleDimensionDisplay={contextMenuActions.toggleDimensionDisplay}
             onToggleDriven={contextMenuActions.toggleDriven}
             onToggleConstruction={contextMenuActions.toggleConstruction}
@@ -293,6 +297,7 @@ export function ViewportPanelShell({
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}
             onExportBodyMesh={contextMenuActions.exportBodyMesh}
+            onSendBodyToSlicer={contextMenuActions.sendBodyToSlicer}
             onCreateSketch={contextMenuActions.createSketch}
           />
         ) : null}

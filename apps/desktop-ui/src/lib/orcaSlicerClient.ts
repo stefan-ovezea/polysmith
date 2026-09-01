@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { SlicerExportFormat } from "@/types";
+
 export interface SlicerViewportBounds {
   x: number;
   y: number;
@@ -14,6 +16,11 @@ export interface OrcaEmbedRequest {
   bounds: SlicerViewportBounds;
 }
 
+export interface OrcaLaunchRequest {
+  binaryPath: string;
+  modelFilePath?: string | null;
+}
+
 export interface OrcaEmbedResult {
   platform: string;
   processId: number;
@@ -21,8 +28,16 @@ export interface OrcaEmbedResult {
   message: string;
 }
 
-export function prepareOrcaExportPath(): Promise<string> {
-  return invoke("prepare_orca_export_path");
+export function prepareOrcaExportPath(
+  format: SlicerExportFormat,
+): Promise<string> {
+  return invoke("prepare_orca_export_path", { format });
+}
+
+export function launchOrcaSlicer(
+  request: OrcaLaunchRequest,
+): Promise<OrcaEmbedResult> {
+  return invoke("launch_orca_slicer", { request });
 }
 
 export function embedOrcaWindow(

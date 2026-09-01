@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { DocumentState } from "@/types";
+import type { DocumentState, SlicerExportFormat } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
 import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
@@ -28,6 +28,11 @@ interface DocumentHierarchyPanelProps {
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
   onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
+  // Sends just this body to OrcaSlicer as a mesh (STL) or B-rep (STEP).
+  onSendBodyToSlicer?: (
+    bodyId: string,
+    format: SlicerExportFormat,
+  ) => Promise<void> | void;
   // Converts a mesh_import body into a regular solid body alongside it.
   onConvertMeshToBody?: (bodyId: string) => Promise<void> | void;
   // Removes live projection links sourced from this body (generated
@@ -483,6 +488,7 @@ export function DocumentHierarchyPanel({
   onMoveBody,
   onCopyBody,
   onExportBodyMesh,
+  onSendBodyToSlicer,
   onConvertMeshToBody,
   onDetachBodyProjections,
   onUnlinkBodyCopy,
@@ -946,6 +952,41 @@ export function DocumentHierarchyPanel({
                   >
                     {t("common.exportAsMesh")}
                   </button>
+                  <div className="group/slicer relative">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                    >
+                      <span>{t("common.sendToSlicer")}</span>
+                      <span className="text-on-surface-dim">&gt;</span>
+                    </button>
+                    <div className="cad-context-menu invisible absolute left-full top-0 z-40 ml-1 min-w-[170px] rounded-xl p-1 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-opacity group-hover/slicer:visible group-hover/slicer:opacity-100">
+                      <button
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                        onClick={() => {
+                          const id = contextMenu.featureId;
+                          setContextMenu(null);
+                          void onSendBodyToSlicer?.(id, "stl");
+                        }}
+                      >
+                        {t("common.sendToSlicerAsStl")}
+                      </button>
+                      {contextFeature?.kind !== "mesh_import" ? (
+                        <button
+                          type="button"
+                          className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                          onClick={() => {
+                            const id = contextMenu.featureId;
+                            setContextMenu(null);
+                            void onSendBodyToSlicer?.(id, "step");
+                          }}
+                        >
+                          {t("common.sendToSlicerAsStep")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                   {contextFeature?.kind === "mesh_import" ? (
                     <button
                       type="button"

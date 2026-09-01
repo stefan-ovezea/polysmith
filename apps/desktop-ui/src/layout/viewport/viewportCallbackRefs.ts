@@ -4,6 +4,7 @@ import type {
   ArmedSketchConstraint,
   ConstraintType,
   MoveFeatureParameters,
+  SlicerExportFormat,
   SketchTool,
   SolidFacePlaneFrame,
 } from "@/types";
@@ -286,6 +287,13 @@ interface ViewportCallbackRefTargets {
   exportBodyMeshRef: MutableRefObject<
     ((bodyId: string) => Promise<void> | void) | undefined
   >;
+  sendBodyToSlicerRef: MutableRefObject<
+    | ((
+        bodyId: string,
+        format: SlicerExportFormat,
+      ) => Promise<void> | void)
+    | undefined
+  >;
   unlinkBodyCopyRef: MutableRefObject<
     ((featureId: string) => Promise<void> | void) | undefined
   >;
@@ -382,6 +390,9 @@ interface ViewportCallbackRefValues
   onExportBodyMesh:
     | ViewportCallbackRefTargets["exportBodyMeshRef"]["current"]
     | undefined;
+  onSendBodyToSlicer:
+    | ViewportCallbackRefTargets["sendBodyToSlicerRef"]["current"]
+    | undefined;
   onUnlinkBodyCopy:
     | ViewportCallbackRefTargets["unlinkBodyCopyRef"]["current"]
     | undefined;
@@ -476,6 +487,7 @@ export function useViewportCallbackRefs(
     refs.moveBodyRef.current = values.onMoveBody;
     refs.copyBodyRef.current = values.onCopyBody;
     refs.exportBodyMeshRef.current = values.onExportBodyMesh;
+    refs.sendBodyToSlicerRef.current = values.onSendBodyToSlicer;
     refs.unlinkBodyCopyRef.current = values.onUnlinkBodyCopy;
   }, [refs, values]);
 }

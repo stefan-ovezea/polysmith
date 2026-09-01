@@ -42,6 +42,9 @@ export const commandPayloadSchemas = {
   export_body_stl: z
     .object({ file_path: stringField, body_id: stringField })
     .strict(),
+  export_body_step: z
+    .object({ file_path: stringField, body_id: stringField })
+    .strict(),
   import_stl: z
     .object({
       file_path: stringField,

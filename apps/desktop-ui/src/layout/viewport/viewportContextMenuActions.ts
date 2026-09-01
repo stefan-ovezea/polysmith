@@ -3,6 +3,7 @@ import type {
   DocumentState,
   SketchFeatureParameters,
   SketchTool,
+  SlicerExportFormat,
   ViewportContextMenuState,
   ViewportScene,
 } from "@/types";
@@ -27,6 +28,7 @@ export function createViewportContextMenuActions({
   moveBodyRef,
   copyBodyRef,
   exportBodyMeshRef,
+  sendBodyToSlicerRef,
   unlinkBodyCopyRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
@@ -62,6 +64,13 @@ export function createViewportContextMenuActions({
   >;
   exportBodyMeshRef: MutableRef<
     ((bodyId: string) => Promise<void> | void) | undefined
+  >;
+  sendBodyToSlicerRef: MutableRef<
+    | ((
+        bodyId: string,
+        format: SlicerExportFormat,
+      ) => Promise<void> | void)
+    | undefined
   >;
   unlinkBodyCopyRef: MutableRef<
     ((featureId: string) => Promise<void> | void) | undefined
@@ -147,6 +156,15 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await exportBodyMeshRef.current?.(bodyId);
+  }
+
+  async function sendBodyToSlicer(format: SlicerExportFormat) {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await sendBodyToSlicerRef.current?.(bodyId, format);
   }
 
   async function unlinkBodyCopy() {
@@ -339,6 +357,16 @@ export function createViewportContextMenuActions({
     );
   }
 
+  function isMeshImportBody(bodyId: string | null | undefined) {
+    if (!bodyId) {
+      return false;
+    }
+    const feature = document?.feature_history.find(
+      (entry) => entry.feature_id === bodyId,
+    );
+    return feature?.kind === "mesh_import";
+  }
+
   function transformArray() {
     setContextMenu(null);
     openTransformArrayRef.current?.();
@@ -349,6 +377,7 @@ export function createViewportContextMenuActions({
     moveBody,
     copyBody,
     exportBodyMesh,
+    sendBodyToSlicer,
     unlinkBodyCopy,
     deleteSketchSelection,
     moveCopy,
@@ -360,5 +389,6 @@ export function createViewportContextMenuActions({
     toggleDimensionDisplay,
     getCircleDimensionToggleLabel,
     isLinkedBodyCopy,
+    isMeshImportBody,
   };
 }

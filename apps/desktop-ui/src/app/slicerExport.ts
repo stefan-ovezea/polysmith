@@ -1,12 +1,12 @@
 import type { AppConfig, SlicerViewportBounds } from "../lib";
-import { embedOrcaWindow } from "../lib";
+import type { SlicerExportFormat } from "../types";
+import { embedOrcaWindow, launchOrcaSlicer } from "../lib";
 import { IS_MACOS, STANDALONE_SLICER_BOUNDS } from "./appState";
 
-type AsyncString = () => Promise<string>;
 type AsyncVoid = () => Promise<void>;
 
 export interface SlicerExportMessages {
-  noExportableBody: string;
+  stepWebUnsupported: string;
   disabled: string;
   exporting: string;
   binaryMissing: string;
@@ -14,13 +14,17 @@ export interface SlicerExportMessages {
 }
 
 export interface SlicerExportContext {
-  hasExportableBody: boolean;
+  bodyId: string;
+  exportFormat: SlicerExportFormat;
   orcaSlicer: AppConfig["orcaSlicer"];
   messages: SlicerExportMessages;
   setSlicerStatus: (status: string | null) => void;
   setWorkspaceView: (view: "slicer") => void;
   addMessage: (message: string) => void;
-  prepareExportedSlicerStl: AsyncString;
+  prepareExportedSlicerFile: (
+    format: SlicerExportFormat,
+    bodyId: string,
+  ) => Promise<string>;
   uploadStlToOrcaWeb: (stlPath: string) => Promise<void>;
   waitForNextFrame: AsyncVoid;
   readSlicerViewportBounds: () => SlicerViewportBounds | null;
@@ -33,12 +37,17 @@ export interface SlicerExportContext {
 }
 
 export async function exportToSlicerFromContext(context: SlicerExportContext) {
-  if (!context.hasExportableBody) {
-    context.setSlicerStatus(context.messages.noExportableBody);
-    return;
-  }
   if (!context.orcaSlicer.enabled) {
     context.setSlicerStatus(context.messages.disabled);
+    return;
+  }
+
+  if (
+    context.orcaSlicer.integrationMode === "web" &&
+    context.exportFormat === "step"
+  ) {
+    // The web integration uploads a mesh file; STEP is B-rep.
+    context.setSlicerStatus(context.messages.stepWebUnsupported);
     return;
   }
 
@@ -47,13 +56,44 @@ export async function exportToSlicerFromContext(context: SlicerExportContext) {
     return;
   }
 
+  if (context.orcaSlicer.integrationMode === "external") {
+    await exportToExternalSlicer(context);
+    return;
+  }
+
   await exportToNativeSlicer(context);
+}
+
+async function exportToExternalSlicer(context: SlicerExportContext) {
+  const binaryPath = context.orcaSlicer.binaryPath.trim();
+  if (!binaryPath) {
+    context.setSlicerStatus(context.messages.binaryMissing);
+    return;
+  }
+
+  try {
+    context.setSlicerStatus(context.messages.exporting);
+    const exportPath = await context.prepareExportedSlicerFile(
+      context.exportFormat,
+      context.bodyId,
+    );
+    const result = await launchOrcaSlicer({
+      binaryPath,
+      modelFilePath: exportPath,
+    });
+    context.applyOrcaEmbedResult(result, "slicer export", false);
+  } catch (error) {
+    context.reportSlicerEmbedError(error, "slicer export error");
+  }
 }
 
 async function exportToWebSlicer(context: SlicerExportContext) {
   try {
     context.setSlicerStatus(context.messages.exporting);
-    const exportPath = await context.prepareExportedSlicerStl();
+    const exportPath = await context.prepareExportedSlicerFile(
+      context.exportFormat,
+      context.bodyId,
+    );
     await context.uploadStlToOrcaWeb(exportPath);
     context.setWorkspaceView("slicer");
     context.setSlicerStatus(null);
@@ -86,7 +126,10 @@ async function exportToStandaloneMacSlicer(
   binaryPath: string,
 ) {
   context.setSlicerStatus(context.messages.exporting);
-  const exportPath = await context.prepareExportedSlicerStl();
+  const exportPath = await context.prepareExportedSlicerFile(
+    context.exportFormat,
+    context.bodyId,
+  );
   const result = await embedOrcaWindow({
     binaryPath,
     modelFilePath: exportPath,
@@ -108,7 +151,10 @@ async function exportToEmbeddedNativeSlicer(
     return;
   }
 
-  const exportPath = await context.prepareExportedSlicerStl();
+  const exportPath = await context.prepareExportedSlicerFile(
+    context.exportFormat,
+    context.bodyId,
+  );
   const result = await embedOrcaWindow({
     binaryPath,
     modelFilePath: exportPath,

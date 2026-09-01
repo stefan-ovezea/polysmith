@@ -1,3 +1,52 @@
+# Active Task: OrcaSlicer per-body "Send to Slicer" — UNCOMMITTED, awaiting
+user verification
+
+> **Branch:** `feature/Orca`
+> **Date:** 2026-09-01
+> **Plan:** approved plan at `.claude/plans/nifty-enchanting-fern.md`
+
+## What shipped (all in the working tree, nothing committed)
+
+1. **External-launch mode** (prior session, runtime-confirmed by the user):
+   OrcaSlicer runs as its own window — export the model to a temp file and
+   spawn OrcaSlicer detached with the file as argv (`orca_slicer.rs`
+   `prepare_orca_export_path` + `spawn_orca`; TS side in
+   `slicerExport.ts` / `slicerWorkspaceActions.ts`).
+2. **Header "Export to Slicer" button removed entirely** (AppHeader +
+   AppTopBar + App.tsx dead wiring) — replaced by right-click context
+   menus, per user request.
+3. **"Send to Slicer ▸" submenu** on body right-click in BOTH the document
+   tree (`DocumentHierarchyPanel.tsx`) and the viewport
+   (`ViewportContextMenu.tsx` + actions/refs/shell plumbing):
+   - **As STL (mesh)** — existing `export_body_stl` path.
+   - **As STEP (B-rep, more accurate)** — new `export_body_step` IPC →
+     new `export_body_as_step` in `core/export/export.cpp` (single
+     `STEPControl_Writer` session, one `Transfer(STEPControl_AsIs)`).
+   - STEP hidden for mesh-import bodies (no B-rep — core rejects);
+     web integration + STEP shows a status message (web upload is
+     mesh-only).
+4. **"Export as Mesh" untouched** — still saves STL to disk via file
+   dialog.
+5. **Regression tests**: `stl_writer_test` grew
+   `test_body_export_step` (valid ISO-10303-21 file, count 1) +
+   `test_body_export_step_unknown_body` (runtime_error, no file).
+6. **Docs**: `wiki/IPC-Protocol.md` + `wiki/AI-CAD-Command-Language.md`
+   document `export_body_step`.
+
+## Next steps
+
+1. Verification builds: `pnpm core:rebuild` (VS2022 cmake wrapper),
+   `pnpm test:core`, `cargo check` in `apps/desktop-ui/src-tauri`,
+   `tsc --noEmit`.
+2. User runtime checks: right-click body in tree AND viewport → submenu
+   with both formats; STL and STEP each launch Orca with only that body;
+   mesh-import body shows only As STL; web mode + STEP shows the
+   unsupported message.
+3. Commit ONLY after user confirms + approves (no git mutations until
+   then).
+
+---
+
 # Active Task: Laser CAM rework (cam/laser) — COMMITTED 82c2ffa, ironing out
 
 > **Branch:** `cam/laser` (from `dev`, after `fac4fb5` CAM scaffolding)

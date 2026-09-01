@@ -625,6 +625,18 @@ export interface ExportBodyStlCommand {
   };
 }
 
+export interface ExportBodyStepCommand {
+  id: string;
+  type: "export_body_step";
+  payload: {
+    file_path: string;
+    body_id: string;
+  };
+}
+
+/** File formats the slicer integration can hand to OrcaSlicer. */
+export type SlicerExportFormat = "stl" | "step";
+
 export interface SaveDocumentCommand {
   id: string;
   type: "save_document";
@@ -791,6 +803,7 @@ export type CoreCommand =
   | ExportDocumentDxfCommand
   | ExportDocumentIgesCommand
   | ExportBodyStlCommand
+  | ExportBodyStepCommand
   | SaveDocumentCommand
   | LoadDocumentCommand
   | ImportStlCommand

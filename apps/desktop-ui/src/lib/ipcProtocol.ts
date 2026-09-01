@@ -93,6 +93,20 @@ export function makeExportBodyStlCommand(
   };
 }
 
+export function makeExportBodyStepCommand(
+  filePath: string,
+  bodyId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "export_body_step",
+    payload: {
+      file_path: filePath,
+      body_id: bodyId,
+    },
+  };
+}
+
 export function makeSaveDocumentCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

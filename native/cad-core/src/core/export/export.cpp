@@ -202,4 +202,35 @@ ExportResult export_body_as_stl(const DocumentState& document,
   return write_stl_shape(body_shape, file_path, 1);
 }
 
+ExportResult export_body_as_step(const DocumentState& document,
+                                 const std::string& file_path,
+                                 const std::string& body_id) {
+  if (file_path.empty()) {
+    throw std::runtime_error("Export path cannot be empty");
+  }
+  if (body_id.empty()) {
+    throw std::runtime_error("Body id cannot be empty");
+  }
+
+  const TopoDS_Shape body_shape = collect_export_body_shape(document, body_id);
+
+  // Single-transfer STEP session — same writer usage as
+  // export_document_as_step, but for exactly one body.
+  STEPControl_Writer writer;
+  const IFSelect_ReturnStatus status =
+      writer.Transfer(body_shape, STEPControl_AsIs);
+  if (status != IFSelect_RetDone) {
+    throw std::runtime_error("STEP transfer failed for body: " + body_id);
+  }
+  if (writer.Write(file_path.c_str()) != IFSelect_RetDone) {
+    throw std::runtime_error("Cannot write STEP file: " + file_path);
+  }
+
+  return ExportResult{
+      .file_path = file_path,
+      .format = "step",
+      .exported_feature_count = 1,
+  };
+}
+
 }  // namespace polysmith::core

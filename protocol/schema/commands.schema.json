@@ -97,6 +97,7 @@
         "delete_sketch_selection",
         "delete_sketch_text",
         "detach_body_projections",
+        "export_body_step",
         "export_body_stl",
         "export_document",
         "export_document_dxf",

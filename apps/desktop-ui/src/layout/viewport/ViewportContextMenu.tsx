@@ -1,4 +1,4 @@
-import type { ViewportContextMenuState } from "@/types";
+import type { SlicerExportFormat, ViewportContextMenuState } from "@/types";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -7,6 +7,7 @@ interface ViewportContextMenuProps {
   translate: Translate;
   getCircleDimensionToggleLabel: (dimensionId: string) => string | null;
   isLinkedBodyCopy: (bodyId: string | null | undefined) => boolean;
+  isMeshImportBody: (bodyId: string | null | undefined) => boolean;
   onToggleDimensionDisplay: () => void | Promise<void>;
   onToggleDriven: () => void | Promise<void>;
   onToggleConstruction: () => void | Promise<void>;
@@ -19,6 +20,9 @@ interface ViewportContextMenuProps {
   onCopyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   onUnlinkBodyCopy: () => void | Promise<void>;
   onExportBodyMesh: () => void | Promise<void>;
+  onSendBodyToSlicer: (
+    format: SlicerExportFormat,
+  ) => void | Promise<void>;
   onCreateSketch: () => void | Promise<void>;
 }
 
@@ -27,6 +31,7 @@ export function ViewportContextMenu({
   translate,
   getCircleDimensionToggleLabel,
   isLinkedBodyCopy,
+  isMeshImportBody,
   onToggleDimensionDisplay,
   onToggleDriven,
   onToggleConstruction,
@@ -39,6 +44,7 @@ export function ViewportContextMenu({
   onCopyBody,
   onUnlinkBodyCopy,
   onExportBodyMesh,
+  onSendBodyToSlicer,
   onCreateSketch,
 }: ViewportContextMenuProps) {
   const dimensionToggleLabel = contextMenu.dimensionId
@@ -193,6 +199,37 @@ export function ViewportContextMenu({
               >
                 {translate("common.exportAsMesh")}
               </button>
+              <div className="group/slicer relative">
+                <button
+                  type="button"
+                  className="cad-context-menu-item flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                >
+                  <span>{translate("common.sendToSlicer")}</span>
+                  <span className="text-on-surface-dim">&gt;</span>
+                </button>
+                <div className="cad-context-menu invisible absolute left-full top-0 z-30 ml-1 min-w-[180px] rounded-2xl p-1.5 opacity-0 backdrop-blur-xl transition-opacity group-hover/slicer:visible group-hover/slicer:opacity-100">
+                  <button
+                    type="button"
+                    className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                    onClick={() => {
+                      void onSendBodyToSlicer("stl");
+                    }}
+                  >
+                    {translate("common.sendToSlicerAsStl")}
+                  </button>
+                  {!isMeshImportBody(contextMenu.bodyId) ? (
+                    <button
+                      type="button"
+                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                      onClick={() => {
+                        void onSendBodyToSlicer("step");
+                      }}
+                    >
+                      {translate("common.sendToSlicerAsStep")}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             </>
           ) : null}
           {contextMenu.referenceId || contextMenu.faceId ? (

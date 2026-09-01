@@ -173,8 +173,15 @@ fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn prepare_orca_export_path() -> Result<String, String> {
-    orca_slicer::prepare_orca_export_path()
+fn prepare_orca_export_path(format: String) -> Result<String, String> {
+    orca_slicer::prepare_orca_export_path(&format)
+}
+
+#[tauri::command]
+fn launch_orca_slicer(
+    request: orca_slicer::OrcaLaunchRequest,
+) -> Result<orca_slicer::OrcaEmbedResult, String> {
+    orca_slicer::launch_orca_slicer(request)
 }
 
 #[tauri::command]
@@ -254,6 +261,7 @@ pub fn run() {
             project_file_exists,
             show_main_window,
             prepare_orca_export_path,
+            launch_orca_slicer,
             embed_orca_window,
             resize_orca_window,
             hide_orca_window,
