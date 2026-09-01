@@ -972,19 +972,17 @@ export function DocumentHierarchyPanel({
                       >
                         {t("common.sendToSlicerAsStl")}
                       </button>
-                      {contextFeature?.kind !== "mesh_import" ? (
-                        <button
-                          type="button"
-                          className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
-                          onClick={() => {
-                            const id = contextMenu.featureId;
-                            setContextMenu(null);
-                            void onSendBodyToSlicer?.(id, "step");
-                          }}
-                        >
-                          {t("common.sendToSlicerAsStep")}
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                        onClick={() => {
+                          const id = contextMenu.featureId;
+                          setContextMenu(null);
+                          void onSendBodyToSlicer?.(id, "step");
+                        }}
+                      >
+                        {t("common.sendToSlicerAsStep")}
+                      </button>
                     </div>
                   </div>
                   {contextFeature?.kind === "mesh_import" ? (

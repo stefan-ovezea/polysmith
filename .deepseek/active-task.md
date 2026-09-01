@@ -1,11 +1,16 @@
-# Active Task: OrcaSlicer per-body "Send to Slicer" — UNCOMMITTED, awaiting
-user verification
+# Active Task: OrcaSlicer per-body "Send to Slicer" — COMMITTED 38119f3
 
 > **Branch:** `feature/Orca`
 > **Date:** 2026-09-01
 > **Plan:** approved plan at `.claude/plans/nifty-enchanting-fern.md`
 
-## What shipped (all in the working tree, nothing committed)
+## Status — COMMITTED as `38119f3` (36 files, +587/−78)
+
+User runtime-verified in-app ("it is working") and approved the commit.
+All verification builds green: `pnpm test:core` (37/37 suites),
+`cargo check`, `tsc --noEmit`.
+
+## What shipped
 
 1. **External-launch mode** (prior session, runtime-confirmed by the user):
    OrcaSlicer runs as its own window — export the model to a temp file and
@@ -33,17 +38,33 @@ user verification
 6. **Docs**: `wiki/IPC-Protocol.md` + `wiki/AI-CAD-Command-Language.md`
    document `export_body_step`.
 
+## Follow-up — mesh-import bodies now show BOTH formats (UNCOMMITTED, 2026-09-01)
+
+User checklist item 6: a mesh-import body showed only "As STL" (STEP
+hidden) and the user wants both items listed. Investigation: the gate
+was unnecessary — mesh bodies DO compile into `body_shapes`
+(`compile_bodies_modifier_replay.inc`: the `include_meshes=false` flag
+only skips viewport tessellation), and `export_body_as_step` writes
+them as valid faceted/tessellated STEP (the "core rejects" note in
+"What shipped" item 3 was wrong). STEP-import bodies are kind
+`step_import` and were never gated — matching the user's "I have
+imported step files and works".
+
+Fix (UI-only, 4 files): removed the STEP gate in
+`DocumentHierarchyPanel.tsx` + `ViewportContextMenu.tsx` and deleted
+the dead `isMeshImportBody` plumbing (`viewportContextMenuActions.ts`,
+`ViewportPanelShell.tsx`). "Convert to Body" mesh item untouched.
+
+Regression test: `stl_import_test` test 20 `test_mesh_body_export_step`
+— import STL box → `export_body_as_step` → format "step", count 1,
+file starts with `ISO-10303-21`. All 37 suites + tsc green.
+
+Awaiting user in-app verification + commit approval.
+
 ## Next steps
 
-1. Verification builds: `pnpm core:rebuild` (VS2022 cmake wrapper),
-   `pnpm test:core`, `cargo check` in `apps/desktop-ui/src-tauri`,
-   `tsc --noEmit`.
-2. User runtime checks: right-click body in tree AND viewport → submenu
-   with both formats; STL and STEP each launch Orca with only that body;
-   mesh-import body shows only As STL; web mode + STEP shows the
-   unsupported message.
-3. Commit ONLY after user confirms + approves (no git mutations until
-   then).
+1. Push `feature/Orca` and open a draft PR against `dev` (needs user
+   approval — not done yet).
 
 ---
 

@@ -357,16 +357,6 @@ export function createViewportContextMenuActions({
     );
   }
 
-  function isMeshImportBody(bodyId: string | null | undefined) {
-    if (!bodyId) {
-      return false;
-    }
-    const feature = document?.feature_history.find(
-      (entry) => entry.feature_id === bodyId,
-    );
-    return feature?.kind === "mesh_import";
-  }
-
   function transformArray() {
     setContextMenu(null);
     openTransformArrayRef.current?.();
@@ -389,6 +379,5 @@ export function createViewportContextMenuActions({
     toggleDimensionDisplay,
     getCircleDimensionToggleLabel,
     isLinkedBodyCopy,
-    isMeshImportBody,
   };
 }

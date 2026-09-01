@@ -7,7 +7,6 @@ interface ViewportContextMenuProps {
   translate: Translate;
   getCircleDimensionToggleLabel: (dimensionId: string) => string | null;
   isLinkedBodyCopy: (bodyId: string | null | undefined) => boolean;
-  isMeshImportBody: (bodyId: string | null | undefined) => boolean;
   onToggleDimensionDisplay: () => void | Promise<void>;
   onToggleDriven: () => void | Promise<void>;
   onToggleConstruction: () => void | Promise<void>;
@@ -31,7 +30,6 @@ export function ViewportContextMenu({
   translate,
   getCircleDimensionToggleLabel,
   isLinkedBodyCopy,
-  isMeshImportBody,
   onToggleDimensionDisplay,
   onToggleDriven,
   onToggleConstruction,
@@ -217,17 +215,15 @@ export function ViewportContextMenu({
                   >
                     {translate("common.sendToSlicerAsStl")}
                   </button>
-                  {!isMeshImportBody(contextMenu.bodyId) ? (
-                    <button
-                      type="button"
-                      className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
-                      onClick={() => {
-                        void onSendBodyToSlicer("step");
-                      }}
-                    >
-                      {translate("common.sendToSlicerAsStep")}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                    onClick={() => {
+                      void onSendBodyToSlicer("step");
+                    }}
+                  >
+                    {translate("common.sendToSlicerAsStep")}
+                  </button>
                 </div>
               </div>
             </>

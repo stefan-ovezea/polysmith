@@ -69,7 +69,6 @@ interface ViewportContextMenuActions {
   unlinkBodyCopy: () => void | Promise<void>;
   exportBodyMesh: () => void | Promise<void>;
   sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
-  isMeshImportBody: (bodyId: string | null) => boolean;
   createSketch: () => void | Promise<void>;
 }
 
@@ -284,7 +283,6 @@ export function ViewportPanelShell({
               contextMenuActions.getCircleDimensionToggleLabel
             }
             isLinkedBodyCopy={contextMenuActions.isLinkedBodyCopy}
-            isMeshImportBody={contextMenuActions.isMeshImportBody}
             onToggleDimensionDisplay={contextMenuActions.toggleDimensionDisplay}
             onToggleDriven={contextMenuActions.toggleDriven}
             onToggleConstruction={contextMenuActions.toggleConstruction}

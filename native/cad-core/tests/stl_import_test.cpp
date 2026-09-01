@@ -43,6 +43,7 @@
 #include <nlohmann/json.hpp>
 
 #include "core/document/document.h"
+#include "core/export/export.h"
 #include "core/geometry/body_compiler.h"
 #include "core/geometry/face_geometry.h"
 #include "core/geometry/feature_shape.h"
@@ -1358,6 +1359,41 @@ bool test_serialization_round_trip() {
       "payloads must keep it");
 }
 
+// A mesh-import body (triangles only, no B-rep surfaces) must still
+// export as STEP: the compiled body is a faceted shape and OCCT writes it
+// as a tessellated STEP file. This backs the "Send to Slicer > As STEP"
+// menu item for mesh bodies (2026-09: the UI gate that hid STEP for
+// mesh_import bodies was removed).
+bool test_mesh_body_export_step() {
+  const std::string stl_path = write_box_stl("export_step", -5.0);
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_stl(stl_path, 1.0);
+  const std::string body_id = document.feature_history.back().id;
+
+  const auto step_path = std::filesystem::temp_directory_path() /
+                         "polysmith_stl_import_export_body.step";
+
+  const polysmith::core::ExportResult result =
+      polysmith::core::export_body_as_step(document, step_path.string(),
+                                           body_id);
+
+  if (!expect(result.format == "step" && result.exported_feature_count == 1,
+              "mesh STEP export: result must report one STEP body")) {
+    return false;
+  }
+
+  std::ifstream step_file(step_path, std::ios::binary);
+  if (!expect(step_file.good(), "mesh STEP export: STEP file must exist")) {
+    return false;
+  }
+  std::string header;
+  std::getline(step_file, header);
+  return expect(header.find("ISO-10303-21") != std::string::npos,
+                "mesh STEP export: file must start with the STEP header");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1427,6 +1463,8 @@ int main(int argc, char** argv) {
   if (!test_convert_before_sketch_no_op()) return 1;
   std::cerr << "[stl_import_test] test 19: converted solid orientation\n";
   if (!test_converted_solid_orientation_normalized()) return 1;
+  std::cerr << "[stl_import_test] test 20: mesh body STEP export\n";
+  if (!test_mesh_body_export_step()) return 1;
 
   std::cout << "stl_import_test passed\n";
   return 0;
