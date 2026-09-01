@@ -4,3 +4,5 @@
   ExportResult export_cam_gcode(const std::string& file_path) const;
   ExportResult export_body_as_stl(const std::string& file_path,
                                   const std::string& body_id) const;
+  ExportResult export_body_as_step(const std::string& file_path,
+                                   const std::string& body_id) const;

@@ -5,6 +5,7 @@ import type {
   DocumentState,
   MoveFeatureParameters,
   SelectionFilter,
+  SlicerExportFormat,
   SketchTool,
   SolidFacePlaneFrame,
   ViewportState,
@@ -307,6 +308,10 @@ export interface ViewportPanelProps {
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
   onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
+  onSendBodyToSlicer?: (
+    bodyId: string,
+    format: SlicerExportFormat,
+  ) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
   hiddenFeatureIds?: ReadonlySet<string>;
   hiddenSketchPlaneIds?: ReadonlySet<string>;

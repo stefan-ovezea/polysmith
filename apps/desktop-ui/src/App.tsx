@@ -697,9 +697,9 @@ function App() {
     start,
     createDocument,
     exportDocument,
-    exportDocumentStl,
     exportDocumentDxf,
     exportBodyStl,
+    exportBodyStep,
     importStl,
     importDxf,
     importStep,
@@ -934,13 +934,11 @@ function App() {
     () => documentHasSolidBody(document),
     [document],
   );
-  const hasExportableBody = (viewport?.bodies.length ?? 0) > 0;
   const isSlicerConfigured =
     config.orcaSlicer.enabled &&
     (config.orcaSlicer.integrationMode === "web"
       ? config.orcaSlicer.webUrl.trim().length > 0
       : config.orcaSlicer.binaryPath.trim().length > 0);
-  const canExportToSlicer = hasExportableBody && isSlicerConfigured;
   useEffect(() => {
     syncDefaultOriginVisibility({
       documentId: document?.document_id ?? null,
@@ -1605,7 +1603,7 @@ function App() {
   };
 
   const {
-    exportToSlicer,
+    sendBodyToSlicer,
     handleWorkspaceDropdownOpenChange,
     showCadView,
     showCamView,
@@ -1613,7 +1611,6 @@ function App() {
     showSlicerView,
   } = useSlicerWorkspaceActions({
     workspaceView,
-    hasExportableBody,
     hasOrcaEmbedSession,
     orcaSlicer: config.orcaSlicer,
     slicerViewportRef,
@@ -1623,15 +1620,24 @@ function App() {
       binaryMissing: t("workspace.slicerBinaryMissing"),
       containerUnavailable: t("workspace.slicerContainerUnavailable"),
       embedFailed: (error) => t("workspace.slicerEmbedFailed", { error }),
-      noExportableBody: t("workspace.slicerNoExportableBody"),
+      stepWebUnsupported: t("workspace.slicerStepWebUnsupported"),
       exporting: t("workspace.exportingToSlicer"),
     },
     setWorkspaceView,
     setSlicerStatus,
     setHasOrcaEmbedSession,
-    exportDocumentStl,
+    exportBodyStl,
+    exportBodyStep,
     addMessage,
   });
+
+  // The tree and viewport body context menus share one action bundle.
+  // "Send to Slicer" is merged in after useSlicerWorkspaceActions because
+  // it needs the hook's sendBodyToSlicer.
+  const bodyContextActionsWithSlicer = {
+    ...bodyContextActions,
+    onSendBodyToSlicer: sendBodyToSlicer,
+  };
 
   function confirmAndDeleteFeature(featureId: string) {
     confirmAndDeleteFeatureFromContext({
@@ -1770,14 +1776,14 @@ function App() {
           workspaceView={workspaceView}
           canOpenSlicerView={
             isSlicerConfigured &&
-            (config.orcaSlicer.integrationMode === "web" || !IS_MACOS)
+            // Native embedding is unavailable on macOS; web and external
+            // modes work on every platform.
+            (config.orcaSlicer.integrationMode !== "native" || !IS_MACOS)
           }
-          canExportToSlicer={canExportToSlicer}
           showCadView={showCadView}
           showCamView={showCamView}
           showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
-          exportToSlicer={exportToSlicer}
           status={status}
           canUndo={session?.can_undo ?? false}
           canRedo={session?.can_redo ?? false}
@@ -1904,6 +1910,7 @@ function App() {
               hasOrcaEmbedSession={hasOrcaEmbedSession}
               slicerStatus={slicerStatus}
               waitingMessage={t("workspace.slicerWaiting")}
+              externalMessage={t("workspace.slicerExternalInfo")}
               openInBrowserLabel={t("workspace.openInBrowser")}
               addMessage={addMessage}
             />
@@ -1911,7 +1918,7 @@ function App() {
             <>
               <AppSidebar
                 activeProjectPath={currentProjectPath}
-                bodyContextActions={bodyContextActions}
+                bodyContextActions={bodyContextActionsWithSlicer}
                 camOpenSetup={(setupId) => {
                   setActiveCamSetupId(setupId);
                   setIsCamSetupPanelOpen(true);
@@ -2003,7 +2010,7 @@ function App() {
               onMoveGizmoChange={async (parameters) => {
                 await updateActiveMovePreviewParameters(parameters);
               }}
-              {...bodyContextActions}
+              {...bodyContextActionsWithSlicer}
               inactiveSketchEntityPickEnabled={
                 revolveAction !== null ||
                 sweepAction !== null ||

@@ -1,3 +1,73 @@
+# Active Task: OrcaSlicer per-body "Send to Slicer" — COMMITTED 38119f3
+
+> **Branch:** `feature/Orca`
+> **Date:** 2026-09-01
+> **Plan:** approved plan at `.claude/plans/nifty-enchanting-fern.md`
+
+## Status — COMMITTED as `38119f3` (36 files, +587/−78)
+
+User runtime-verified in-app ("it is working") and approved the commit.
+All verification builds green: `pnpm test:core` (37/37 suites),
+`cargo check`, `tsc --noEmit`.
+
+## What shipped
+
+1. **External-launch mode** (prior session, runtime-confirmed by the user):
+   OrcaSlicer runs as its own window — export the model to a temp file and
+   spawn OrcaSlicer detached with the file as argv (`orca_slicer.rs`
+   `prepare_orca_export_path` + `spawn_orca`; TS side in
+   `slicerExport.ts` / `slicerWorkspaceActions.ts`).
+2. **Header "Export to Slicer" button removed entirely** (AppHeader +
+   AppTopBar + App.tsx dead wiring) — replaced by right-click context
+   menus, per user request.
+3. **"Send to Slicer ▸" submenu** on body right-click in BOTH the document
+   tree (`DocumentHierarchyPanel.tsx`) and the viewport
+   (`ViewportContextMenu.tsx` + actions/refs/shell plumbing):
+   - **As STL (mesh)** — existing `export_body_stl` path.
+   - **As STEP (B-rep, more accurate)** — new `export_body_step` IPC →
+     new `export_body_as_step` in `core/export/export.cpp` (single
+     `STEPControl_Writer` session, one `Transfer(STEPControl_AsIs)`).
+   - STEP hidden for mesh-import bodies (no B-rep — core rejects);
+     web integration + STEP shows a status message (web upload is
+     mesh-only).
+4. **"Export as Mesh" untouched** — still saves STL to disk via file
+   dialog.
+5. **Regression tests**: `stl_writer_test` grew
+   `test_body_export_step` (valid ISO-10303-21 file, count 1) +
+   `test_body_export_step_unknown_body` (runtime_error, no file).
+6. **Docs**: `wiki/IPC-Protocol.md` + `wiki/AI-CAD-Command-Language.md`
+   document `export_body_step`.
+
+## Follow-up — mesh-import bodies now show BOTH formats (UNCOMMITTED, 2026-09-01)
+
+User checklist item 6: a mesh-import body showed only "As STL" (STEP
+hidden) and the user wants both items listed. Investigation: the gate
+was unnecessary — mesh bodies DO compile into `body_shapes`
+(`compile_bodies_modifier_replay.inc`: the `include_meshes=false` flag
+only skips viewport tessellation), and `export_body_as_step` writes
+them as valid faceted/tessellated STEP (the "core rejects" note in
+"What shipped" item 3 was wrong). STEP-import bodies are kind
+`step_import` and were never gated — matching the user's "I have
+imported step files and works".
+
+Fix (UI-only, 4 files): removed the STEP gate in
+`DocumentHierarchyPanel.tsx` + `ViewportContextMenu.tsx` and deleted
+the dead `isMeshImportBody` plumbing (`viewportContextMenuActions.ts`,
+`ViewportPanelShell.tsx`). "Convert to Body" mesh item untouched.
+
+Regression test: `stl_import_test` test 20 `test_mesh_body_export_step`
+— import STL box → `export_body_as_step` → format "step", count 1,
+file starts with `ISO-10303-21`. All 37 suites + tsc green.
+
+Awaiting user in-app verification + commit approval.
+
+## Next steps
+
+1. Push `feature/Orca` and open a draft PR against `dev` (needs user
+   approval — not done yet).
+
+---
+
 # Active Task: Laser CAM rework (cam/laser) — COMMITTED 82c2ffa, ironing out
 
 > **Branch:** `cam/laser` (from `dev`, after `fac4fb5` CAM scaffolding)

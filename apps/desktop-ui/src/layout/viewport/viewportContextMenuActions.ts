@@ -3,6 +3,7 @@ import type {
   DocumentState,
   SketchFeatureParameters,
   SketchTool,
+  SlicerExportFormat,
   ViewportContextMenuState,
   ViewportScene,
 } from "@/types";
@@ -27,6 +28,7 @@ export function createViewportContextMenuActions({
   moveBodyRef,
   copyBodyRef,
   exportBodyMeshRef,
+  sendBodyToSlicerRef,
   unlinkBodyCopyRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
@@ -62,6 +64,13 @@ export function createViewportContextMenuActions({
   >;
   exportBodyMeshRef: MutableRef<
     ((bodyId: string) => Promise<void> | void) | undefined
+  >;
+  sendBodyToSlicerRef: MutableRef<
+    | ((
+        bodyId: string,
+        format: SlicerExportFormat,
+      ) => Promise<void> | void)
+    | undefined
   >;
   unlinkBodyCopyRef: MutableRef<
     ((featureId: string) => Promise<void> | void) | undefined
@@ -147,6 +156,15 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await exportBodyMeshRef.current?.(bodyId);
+  }
+
+  async function sendBodyToSlicer(format: SlicerExportFormat) {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await sendBodyToSlicerRef.current?.(bodyId, format);
   }
 
   async function unlinkBodyCopy() {
@@ -349,6 +367,7 @@ export function createViewportContextMenuActions({
     moveBody,
     copyBody,
     exportBodyMesh,
+    sendBodyToSlicer,
     unlinkBodyCopy,
     deleteSketchSelection,
     moveCopy,

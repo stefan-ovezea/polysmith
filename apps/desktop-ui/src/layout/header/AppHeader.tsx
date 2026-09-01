@@ -260,9 +260,7 @@ interface AppHeaderProps
     AppHeaderConstructToolbarProps {
   workspaceView: WorkspaceView;
   canOpenSlicerView: boolean;
-  canExportToSlicer: boolean;
   onSetWorkspaceView: (view: WorkspaceView) => void;
-  onExportToSlicer: () => void;
   status: string;
   disabled: boolean;
   canUndo: boolean;
@@ -358,9 +356,7 @@ interface AppHeaderProps
 export function AppHeader({
   workspaceView,
   canOpenSlicerView,
-  canExportToSlicer,
   onSetWorkspaceView,
-  onExportToSlicer,
   status,
   disabled,
   canUndo,
@@ -936,17 +932,6 @@ export function AppHeader({
             ) : null}
             {activeCadWorkspace === "sketch" ? <SketchDofBadge /> : null}
           </div>
-
-          {canExportToSlicer ? (
-            <button
-              type="button"
-              className="cad-ribbon-action"
-              disabled={disabled}
-              onClick={onExportToSlicer}
-            >
-              {t("workspace.exportToSlicer")}
-            </button>
-          ) : null}
         </div>
       ) : workspaceView === "cam" ? (
         <div

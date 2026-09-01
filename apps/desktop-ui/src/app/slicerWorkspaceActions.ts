@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 
 import { awaitDocumentExport } from "../state";
 import type { AppConfig, SlicerViewportBounds } from "../lib";
+import type { SlicerExportFormat } from "../types";
 import {
   embedOrcaWindow,
   hideOrcaWindow,
@@ -19,13 +20,12 @@ interface SlicerWorkspaceActionMessages {
   binaryMissing: string;
   containerUnavailable: string;
   embedFailed: (error: string) => string;
-  noExportableBody: string;
+  stepWebUnsupported: string;
   exporting: string;
 }
 
 interface SlicerWorkspaceActionContext {
   workspaceView: WorkspaceView;
-  hasExportableBody: boolean;
   hasOrcaEmbedSession: boolean;
   orcaSlicer: AppConfig["orcaSlicer"];
   slicerViewportRef: RefObject<HTMLDivElement | null>;
@@ -33,13 +33,13 @@ interface SlicerWorkspaceActionContext {
   setWorkspaceView: (view: WorkspaceView) => void;
   setSlicerStatus: (status: string | null) => void;
   setHasOrcaEmbedSession: (hasSession: boolean) => void;
-  exportDocumentStl: (filePath: string) => Promise<void>;
+  exportBodyStl: (filePath: string, bodyId: string) => Promise<void>;
+  exportBodyStep: (filePath: string, bodyId: string) => Promise<void>;
   addMessage: (message: string) => void;
 }
 
 export function useSlicerWorkspaceActions({
   workspaceView,
-  hasExportableBody,
   hasOrcaEmbedSession,
   orcaSlicer,
   slicerViewportRef,
@@ -47,7 +47,8 @@ export function useSlicerWorkspaceActions({
   setWorkspaceView,
   setSlicerStatus,
   setHasOrcaEmbedSession,
-  exportDocumentStl,
+  exportBodyStl,
+  exportBodyStep,
   addMessage,
 }: SlicerWorkspaceActionContext) {
   const workspaceViewRef = useRef(workspaceView);
@@ -103,11 +104,18 @@ export function useSlicerWorkspaceActions({
     setWorkspaceView("drawing");
   }
 
-  async function prepareExportedSlicerStl() {
-    const exportPath = await prepareOrcaExportPath();
-    await exportDocumentStl(exportPath);
+  async function prepareExportedSlicerFile(
+    format: SlicerExportFormat,
+    bodyId: string,
+  ) {
+    const exportPath = await prepareOrcaExportPath(format);
+    if (format === "stl") {
+      await exportBodyStl(exportPath, bodyId);
+    } else {
+      await exportBodyStep(exportPath, bodyId);
+    }
     await awaitDocumentExport(
-      (result) => result.format === "stl" && result.file_path === exportPath,
+      (result) => result.format === format && result.file_path === exportPath,
     );
     return exportPath;
   }
@@ -139,6 +147,13 @@ export function useSlicerWorkspaceActions({
     }
 
     if (orcaSlicer.integrationMode === "web") {
+      setSlicerStatus(null);
+      return;
+    }
+
+    // External mode runs OrcaSlicer in its own window — nothing to embed.
+    // The workspace shows the explanatory panel; exports launch the slicer.
+    if (orcaSlicer.integrationMode === "external") {
       setSlicerStatus(null);
       return;
     }
@@ -191,12 +206,13 @@ export function useSlicerWorkspaceActions({
     }
   }
 
-  async function exportToSlicer() {
+  async function sendBodyToSlicer(bodyId: string, format: SlicerExportFormat) {
     await exportToSlicerFromContext({
-      hasExportableBody,
+      bodyId,
+      exportFormat: format,
       orcaSlicer,
       messages: {
-        noExportableBody: messages.noExportableBody,
+        stepWebUnsupported: messages.stepWebUnsupported,
         disabled: messages.disabled,
         exporting: messages.exporting,
         binaryMissing: messages.binaryMissing,
@@ -205,7 +221,7 @@ export function useSlicerWorkspaceActions({
       setSlicerStatus,
       setWorkspaceView: (view) => setWorkspaceView(view),
       addMessage,
-      prepareExportedSlicerStl,
+      prepareExportedSlicerFile,
       uploadStlToOrcaWeb,
       waitForNextFrame,
       readSlicerViewportBounds,
@@ -257,7 +273,7 @@ export function useSlicerWorkspaceActions({
   }, [workspaceView, hasOrcaEmbedSession, addMessage, slicerViewportRef]);
 
   return {
-    exportToSlicer,
+    sendBodyToSlicer,
     handleWorkspaceDropdownOpenChange,
     showCadView,
     showCamView,

@@ -73,6 +73,7 @@ import {
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
   makeExportBodyStlCommand,
+  makeExportBodyStepCommand,
   makeExportDocumentCommand,
   makeExportDocumentStlCommand,
   makeExportDocumentDxfCommand,
@@ -279,6 +280,9 @@ export function useCadCore() {
     },
     exportBodyStl: async (filePath: string, bodyId: string) => {
       await sendCoreCommand(makeExportBodyStlCommand(filePath, bodyId));
+    },
+    exportBodyStep: async (filePath: string, bodyId: string) => {
+      await sendCoreCommand(makeExportBodyStepCommand(filePath, bodyId));
     },
     saveDocument: async (filePath: string) => {
       await sendCoreCommand(makeSaveDocumentCommand(filePath));

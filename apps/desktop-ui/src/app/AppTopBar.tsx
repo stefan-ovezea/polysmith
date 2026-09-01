@@ -30,12 +30,10 @@ type EdgeOperationKind = "fillet" | "chamfer";
 interface AppTopBarProps {
   workspaceView: WorkspaceView;
   canOpenSlicerView: boolean;
-  canExportToSlicer: boolean;
   showCadView: AsyncVoid;
   showCamView: AsyncVoid;
   showDrawingView: AsyncVoid;
   showSlicerView: AsyncVoid;
-  exportToSlicer: () => Promise<unknown>;
   status: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -168,7 +166,6 @@ export function AppTopBar(props: AppTopBarProps) {
     <AppHeader
       workspaceView={props.workspaceView}
       canOpenSlicerView={props.canOpenSlicerView}
-      canExportToSlicer={props.canExportToSlicer}
       onSetWorkspaceView={(view) => {
         if (view === "cad") {
           void props.showCadView();
@@ -184,7 +181,6 @@ export function AppTopBar(props: AppTopBarProps) {
         }
         void props.showSlicerView();
       }}
-      onExportToSlicer={() => void props.exportToSlicer()}
       status={props.status}
       disabled={props.status !== "connected"}
       canUndo={props.canUndo}

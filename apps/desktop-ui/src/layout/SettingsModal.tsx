@@ -928,6 +928,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                             ),
                           },
                           {
+                            value: "external",
+                            label: t(
+                              "settings.orcaSlicerIntegrationModeExternal",
+                            ),
+                          },
+                          {
                             value: "web",
                             label: t(
                               "settings.orcaSlicerIntegrationModeWeb",
@@ -949,7 +955,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                   </label>
 
-                  {config.orcaSlicer.integrationMode === "native" ? (
+                  {config.orcaSlicer.integrationMode !== "web" ? (
                     <label className="block">
                       <span className="cad-kicker">
                         {t("settings.orcaSlicerBinaryPath")}

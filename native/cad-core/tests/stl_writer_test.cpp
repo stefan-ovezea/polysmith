@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -221,6 +222,68 @@ bool test_document_export_step() {
                 "document step: file must start with ISO-10303-21 header");
 }
 
+// Per-body STEP export (the "Send to Slicer ▸ As STEP" path) — one body,
+// one transferred shape, a valid B-rep file.
+bool test_body_export_step() {
+  DocumentManager manager;
+  DocumentState document;
+  TopoDS_Shape shape;
+  if (!build_extruded_slab(manager, document, shape)) return false;
+
+  // A body id IS its root feature id; recompile so the test tracks the
+  // same resolution the export path uses.
+  const auto compiled = compile_bodies(document);
+  if (!expect(compiled.bodies.size() == 1,
+              "body step: fixture expected exactly one body")) {
+    return false;
+  }
+  const std::string body_id = compiled.bodies.front().id;
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_body_export_test.step";
+  const auto result =
+      polysmith::core::export_body_as_step(document, path.string(), body_id);
+  if (!expect(result.format == "step", "body step: format must be 'step'")) {
+    return false;
+  }
+  if (!expect(result.exported_feature_count == 1,
+              "body step: exported_feature_count must be 1")) {
+    return false;
+  }
+
+  std::ifstream in(result.file_path);
+  if (!expect(in.good(), "body step: file must be readable")) {
+    return false;
+  }
+  std::string head(64, '\0');
+  in.read(head.data(), 64);
+  return expect(head.rfind("ISO-10303-21", 0) == 0,
+                "body step: file must start with ISO-10303-21 header");
+}
+
+// Unknown body id must throw (never crash) and must not write a file.
+bool test_body_export_step_unknown_body() {
+  DocumentManager manager;
+  DocumentState document;
+  TopoDS_Shape shape;
+  if (!build_extruded_slab(manager, document, shape)) return false;
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_body_export_unknown_test.step";
+  bool threw = false;
+  try {
+    (void)polysmith::core::export_body_as_step(document, path.string(),
+                                               "unknown-body-id");
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  if (!expect(threw, "body step: unknown body id must throw runtime_error")) {
+    return false;
+  }
+  return expect(!std::filesystem::exists(path),
+                "body step: unknown body id must not write a file");
+}
+
 }  // namespace
 
 int main() {
@@ -229,6 +292,8 @@ int main() {
   if (!test_stepcontrol_writer()) return 1;
   if (!test_document_export_stl()) return 1;
   if (!test_document_export_step()) return 1;
+  if (!test_body_export_step()) return 1;
+  if (!test_body_export_step_unknown_body()) return 1;
 
   std::cout << "stl_writer_test passed\n";
   return 0;

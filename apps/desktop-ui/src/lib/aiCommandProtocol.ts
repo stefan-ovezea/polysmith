@@ -322,7 +322,10 @@ function validateBodyReferences(
     assertKnownBody(command.type, command.payload.target_body_id, context);
     return;
   }
-  if (command.type === "export_body_stl") {
+  if (
+    command.type === "export_body_stl" ||
+    command.type === "export_body_step"
+  ) {
     assertKnownBody(command.type, command.payload.body_id, context);
     return;
   }

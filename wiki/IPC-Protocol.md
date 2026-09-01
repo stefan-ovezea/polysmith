@@ -225,7 +225,8 @@ The current implementation now also includes a focused export boundary:
 - the UI may send `export_document` (STEP) or `export_document_stl` (binary STL) with a destination file path
 - the CAD core rebuilds exportable solids from core-owned feature history and writes the file
 - the UI may send `export_body_stl` with a destination file path and a body id to export one compiled body as binary STL
-- user-facing mesh export is body-scoped; the File menu exposes STEP only, while body context menus expose mesh export for the selected body
+- the UI may send `export_body_step` with a destination file path and a body id to export one compiled body as STEP (B-rep); mesh-import bodies have no B-rep and are rejected with an error
+- user-facing mesh export is body-scoped; the File menu exposes STEP only, while body context menus expose mesh export for the selected body, and the Send to Slicer submenu exports one body as STL or STEP
 - the STL exporter triangulates the requested body or compound with a fixed linear/angular deflection before writing; the UI does not generate any tessellation itself
 - the core replies with `document_exported` when the export succeeds; the payload's `format` field reflects the writer that ran (`step` or `stl`)
 - the UI must not reconstruct geometry or write CAD files itself

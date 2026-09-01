@@ -174,6 +174,15 @@ ExportResult DocumentManager::export_body_as_stl(
                                              body_id);
 }
 
+ExportResult DocumentManager::export_body_as_step(
+    const std::string& file_path,
+    const std::string& body_id) const {
+  require_document();
+  return polysmith::core::export_body_as_step(document_.value(),
+                                              file_path,
+                                              body_id);
+}
+
 namespace {
 
 // Extract the trailing positive integer from id strings like "feature-12",

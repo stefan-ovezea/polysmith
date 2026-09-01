@@ -60,7 +60,7 @@ export interface AiConfig {
   maxAgentSteps: number;
 }
 
-export type OrcaIntegrationMode = "native" | "web";
+export type OrcaIntegrationMode = "native" | "web" | "external";
 
 export interface OrcaSlicerConfig {
   enabled: boolean;

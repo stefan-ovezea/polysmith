@@ -321,7 +321,8 @@ Response to `save_document`.
 
 ### `document_exported`
 
-Response to `export_document`, `export_document_stl`, and `export_body_stl`.
+Response to `export_document`, `export_document_stl`, `export_body_stl`, and
+`export_body_step`.
 
 ```ts
 {
@@ -501,6 +502,23 @@ Payload:
 ```
 
 Returns `document_exported` with `format: "stl"`.
+
+#### `export_body_step`
+
+Exports one compiled body as STEP (ISO-10303-21, B-rep). Use this for
+body-accurate exports such as "Send to Slicer ▸ As STEP". Mesh-import
+bodies have no B-rep — exporting one returns an error rather than a file.
+
+Payload:
+
+```ts
+{
+  file_path: string;
+  body_id: string;
+}
+```
+
+Returns `document_exported` with `format: "step"`.
 
 #### `import_stl`
 

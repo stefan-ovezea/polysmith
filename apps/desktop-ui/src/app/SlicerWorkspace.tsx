@@ -8,6 +8,7 @@ interface SlicerWorkspaceProps {
   hasOrcaEmbedSession: boolean;
   slicerStatus: string | null;
   waitingMessage: string;
+  externalMessage: string;
   openInBrowserLabel: string;
   addMessage: (message: string) => void;
 }
@@ -18,6 +19,7 @@ export function SlicerWorkspace({
   hasOrcaEmbedSession,
   slicerStatus,
   waitingMessage,
+  externalMessage,
   openInBrowserLabel,
   addMessage,
 }: SlicerWorkspaceProps) {
@@ -48,6 +50,20 @@ export function SlicerWorkspace({
           title="OrcaSlicer"
           allow="autoplay;camera;microphone;fullscreen"
         />
+      </section>
+    );
+  }
+
+  if (orcaSlicer.enabled && orcaSlicer.integrationMode === "external") {
+    // OrcaSlicer runs in its own window; this view only explains the mode
+    // and surfaces the status of the last export/launch.
+    return (
+      <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center bg-surface-lowest">
+          <span className="max-w-xl px-6 text-center text-sm text-on-surface-muted">
+            {slicerStatus ?? externalMessage}
+          </span>
+        </div>
       </section>
     );
   }

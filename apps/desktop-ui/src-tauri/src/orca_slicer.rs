@@ -39,6 +39,13 @@ pub struct OrcaEmbedRequest {
     pub bounds: SlicerViewportBounds,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrcaLaunchRequest {
+    pub binary_path: String,
+    pub model_file_path: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrcaEmbedResult {
@@ -62,7 +69,15 @@ pub fn configure_linux_windowing_environment() {
     }
 }
 
-pub fn prepare_orca_export_path() -> Result<String, String> {
+pub fn prepare_orca_export_path(format: &str) -> Result<String, String> {
+    // OrcaSlicer picks its importer from the file extension, so the temp file
+    // must carry the requested format's extension.
+    let extension = match format {
+        "stl" => "stl",
+        "step" => "step",
+        other => return Err(format!("Unsupported OrcaSlicer export format: {other}")),
+    };
+
     let dir = std::env::temp_dir().join("polysmith-orca");
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
 
@@ -71,9 +86,35 @@ pub fn prepare_orca_export_path() -> Result<String, String> {
         .map_err(|error| error.to_string())?
         .as_millis();
     Ok(dir
-        .join(format!("polysmith-orca-{timestamp}.stl"))
+        .join(format!("polysmith-orca-{timestamp}.{extension}"))
         .to_string_lossy()
         .to_string())
+}
+
+/// Launches OrcaSlicer as a standalone application with the exported model
+/// file, without any window embedding. The spawned process is intentionally
+/// not tracked in `OrcaSlicerState` — it outlives the embed session and is
+/// managed by the user in its own window.
+pub fn launch_orca_slicer(request: OrcaLaunchRequest) -> Result<OrcaEmbedResult, String> {
+    let binary_path = request.binary_path.trim();
+    if binary_path.is_empty() {
+        return Err("OrcaSlicer binary path is not configured".to_string());
+    }
+    let model_file_path = request
+        .model_file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+
+    let launch_path = resolve_orca_launch_path(binary_path)?;
+    let child = spawn_orca(&launch_path, model_file_path)?;
+
+    Ok(OrcaEmbedResult {
+        platform: platform_name().to_string(),
+        process_id: child.id(),
+        status: "running".to_string(),
+        message: "OrcaSlicer launched as a separate application.".to_string(),
+    })
 }
 
 pub fn embed_orca_window(
