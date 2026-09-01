@@ -4,20 +4,28 @@
 #include <string>
 #include <vector>
 
-#include <BRep_Builder.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <IGESControl_Controller.hxx>
 #include <IGESControl_Writer.hxx>
 #include <Interface_Static.hxx>
+#include <Poly_Triangulation.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <StlAPI_Writer.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 
+#include "core/diagnostics/logger.h"
 #include "core/geometry/body_compiler.h"
 #include "core/document/document.h"
 
@@ -67,9 +75,9 @@ TopoDS_Shape collect_export_body_shape(const DocumentState& document,
 
 // Tessellate one shape and write it as binary STL through the standard
 // OCCT writer.  OCCT 8.0's StlAPI_Writer only serializes existing face
-// triangulations (it does not mesh), so the shape is meshed first with
-// fixed linear/angular deflections; the writer handles face locations,
-// orientation, and facet normals.
+// triangulations (it does not mesh), so the shape is meshed first at
+// slicer-grade quality; the writer handles face locations, orientation,
+// and facet normals.
 ExportResult write_stl_shape(const TopoDS_Shape& shape,
                              const std::string& file_path,
                              int exported_feature_count) {
@@ -78,8 +86,26 @@ ExportResult write_stl_shape(const TopoDS_Shape& shape,
   fixer.Perform();
   const TopoDS_Shape& healed = fixer.Shape();
 
+  // Drop existing triangulations so the mesher cannot reuse the coarse
+  // display mesh: BRepMesh_ModelPreProcessor marks a face Reused when its
+  // stored LINEAR deflection fits the request (BRepMesh_Deflection::
+  // IsConsistent compares only the linear deflection), so faces meshed
+  // earlier at 0.5 (~30°) angular would never be re-tessellated at the
+  // finer export quality below.  Polygon-only shapes (pure meshes) keep
+  // their polygons — they have no geometry to re-tessellate.
+  BRepTools::Clean(healed);
+
   constexpr double kLinearDeflection = 0.1;
-  constexpr double kAngularDeflection = 0.5;
+  // Angular deflection is a sine ratio ≈ radians (GCPnts_TangentialDeflection).
+  // 0.1 ≈ 5.7° per segment: on a radius-r arc the sagitta is r(1-cos(θ/2)),
+  // ~0.01 mm at r=2 and ~0.05 mm at r=10 — at or below FDM print resolution,
+  // so it reads smooth both on screen and in print.  Going much finer
+  // explodes doubly-curved faces: the 1° first attempt meshed a r2 torus
+  // fillet at 360×360 ≈ 260k triangles (13 MB STL) for a 0.00008 mm sagitta.
+  // The display mesh's 0.5 (~30°/segment) was the opposite failure: ~0.1 mm
+  // steps that looked like missing facets on fillets.  kLinearDeflection
+  // remains the absolute deviation cap for large radii.
+  constexpr double kAngularDeflection = 0.1;
 
   BRepMesh_IncrementalMesh mesher(healed,
                                   kLinearDeflection,
@@ -88,6 +114,39 @@ ExportResult write_stl_shape(const TopoDS_Shape& shape,
                                   /*isInParallel=*/false);
   if (!mesher.IsDone()) {
     throw std::runtime_error("STL meshing failed");
+  }
+
+  // Mesh-quality report for the in-app Logs panel: triangle count plus
+  // free edges (edges referenced by a single face — a closed shell has
+  // none; nonzero means the STL carries an open boundary).
+  int triangle_count = 0;
+  for (TopExp_Explorer face_exp(healed, TopAbs_FACE); face_exp.More();
+       face_exp.Next()) {
+    TopLoc_Location location;
+    const occ::handle<Poly_Triangulation>& triangulation =
+        BRep_Tool::Triangulation(TopoDS::Face(face_exp.Current()), location);
+    if (!triangulation.IsNull()) {
+      triangle_count += triangulation->NbTriangles();
+    }
+  }
+  TopTools_IndexedDataMapOfShapeListOfShape face_ancestors;
+  TopExp::MapShapesAndAncestors(healed, TopAbs_EDGE, TopAbs_FACE,
+                                face_ancestors);
+  int free_edges = 0;
+  for (int i = 1; i <= face_ancestors.Extent(); ++i) {
+    if (face_ancestors.FindFromIndex(i).Extent() == 1) {
+      ++free_edges;
+    }
+  }
+  if (free_edges == 0) {
+    log_info("stl_export",
+             "STL mesh: " + std::to_string(triangle_count) +
+                 " triangles, closed (0 free edges)");
+  } else {
+    log_warn("stl_export",
+             "STL mesh: " + std::to_string(triangle_count) +
+                 " triangles, OPEN (" + std::to_string(free_edges) +
+                 " free edges)");
   }
 
   StlAPI_Writer writer;
