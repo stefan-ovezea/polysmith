@@ -24,6 +24,7 @@
     "empty": "Empty",
     "entries": "{{count}} entries",
     "exportAsMesh": "Export as Mesh",
+    "exportAsStep": "Export as STEP",
     "hide": "Hide",
     "move": "Move",
     "moveCopy": "Move/Copy",

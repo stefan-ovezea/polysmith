@@ -19,6 +19,7 @@ interface ViewportContextMenuProps {
   onCopyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   onUnlinkBodyCopy: () => void | Promise<void>;
   onExportBodyMesh: () => void | Promise<void>;
+  onExportBodyStep: () => void | Promise<void>;
   onSendBodyToSlicer: (
     format: SlicerExportFormat,
   ) => void | Promise<void>;
@@ -42,6 +43,7 @@ export function ViewportContextMenu({
   onCopyBody,
   onUnlinkBodyCopy,
   onExportBodyMesh,
+  onExportBodyStep,
   onSendBodyToSlicer,
   onCreateSketch,
 }: ViewportContextMenuProps) {
@@ -196,6 +198,13 @@ export function ViewportContextMenu({
                 onClick={onExportBodyMesh}
               >
                 {translate("common.exportAsMesh")}
+              </button>
+              <button
+                type="button"
+                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                onClick={onExportBodyStep}
+              >
+                {translate("common.exportAsStep")}
               </button>
               <div className="group/slicer relative">
                 <button

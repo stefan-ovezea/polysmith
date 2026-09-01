@@ -28,6 +28,7 @@ interface DocumentHierarchyPanelProps {
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
   onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
+  onExportBodyStep?: (bodyId: string) => Promise<void> | void;
   // Sends just this body to OrcaSlicer as a mesh (STL) or B-rep (STEP).
   onSendBodyToSlicer?: (
     bodyId: string,
@@ -488,6 +489,7 @@ export function DocumentHierarchyPanel({
   onMoveBody,
   onCopyBody,
   onExportBodyMesh,
+  onExportBodyStep,
   onSendBodyToSlicer,
   onConvertMeshToBody,
   onDetachBodyProjections,
@@ -951,6 +953,17 @@ export function DocumentHierarchyPanel({
                     }}
                   >
                     {t("common.exportAsMesh")}
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                    onClick={() => {
+                      const id = contextMenu.featureId;
+                      setContextMenu(null);
+                      void onExportBodyStep?.(id);
+                    }}
+                  >
+                    {t("common.exportAsStep")}
                   </button>
                   <div className="group/slicer relative">
                     <button

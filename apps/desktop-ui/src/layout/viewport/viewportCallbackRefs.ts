@@ -287,6 +287,9 @@ interface ViewportCallbackRefTargets {
   exportBodyMeshRef: MutableRefObject<
     ((bodyId: string) => Promise<void> | void) | undefined
   >;
+  exportBodyStepRef: MutableRefObject<
+    ((bodyId: string) => Promise<void> | void) | undefined
+  >;
   sendBodyToSlicerRef: MutableRefObject<
     | ((
         bodyId: string,
@@ -390,6 +393,9 @@ interface ViewportCallbackRefValues
   onExportBodyMesh:
     | ViewportCallbackRefTargets["exportBodyMeshRef"]["current"]
     | undefined;
+  onExportBodyStep:
+    | ViewportCallbackRefTargets["exportBodyStepRef"]["current"]
+    | undefined;
   onSendBodyToSlicer:
     | ViewportCallbackRefTargets["sendBodyToSlicerRef"]["current"]
     | undefined;
@@ -487,6 +493,7 @@ export function useViewportCallbackRefs(
     refs.moveBodyRef.current = values.onMoveBody;
     refs.copyBodyRef.current = values.onCopyBody;
     refs.exportBodyMeshRef.current = values.onExportBodyMesh;
+    refs.exportBodyStepRef.current = values.onExportBodyStep;
     refs.sendBodyToSlicerRef.current = values.onSendBodyToSlicer;
     refs.unlinkBodyCopyRef.current = values.onUnlinkBodyCopy;
   }, [refs, values]);
