@@ -1,2 +1,0 @@
-{"payload":{"service":"cad_core","version":"0.1.0"},"type":"hello"}
-{"payload":{"level":"info","message":"Starting OCCT smoke test...","source":"cad_core","timestamp":"2026-07-17T15:30:37Z"},"type":"log"}
