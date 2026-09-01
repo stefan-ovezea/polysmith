@@ -68,6 +68,7 @@ interface ViewportContextMenuActions {
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
   exportBodyMesh: () => void | Promise<void>;
+  exportBodyStep: () => void | Promise<void>;
   sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
   createSketch: () => void | Promise<void>;
 }
@@ -295,6 +296,7 @@ export function ViewportPanelShell({
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}
             onExportBodyMesh={contextMenuActions.exportBodyMesh}
+            onExportBodyStep={contextMenuActions.exportBodyStep}
             onSendBodyToSlicer={contextMenuActions.sendBodyToSlicer}
             onCreateSketch={contextMenuActions.createSketch}
           />

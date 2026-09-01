@@ -28,6 +28,7 @@ export function createViewportContextMenuActions({
   moveBodyRef,
   copyBodyRef,
   exportBodyMeshRef,
+  exportBodyStepRef,
   sendBodyToSlicerRef,
   unlinkBodyCopyRef,
   deleteSketchSelectionRef,
@@ -63,6 +64,9 @@ export function createViewportContextMenuActions({
     | undefined
   >;
   exportBodyMeshRef: MutableRef<
+    ((bodyId: string) => Promise<void> | void) | undefined
+  >;
+  exportBodyStepRef: MutableRef<
     ((bodyId: string) => Promise<void> | void) | undefined
   >;
   sendBodyToSlicerRef: MutableRef<
@@ -156,6 +160,15 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await exportBodyMeshRef.current?.(bodyId);
+  }
+
+  async function exportBodyStep() {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await exportBodyStepRef.current?.(bodyId);
   }
 
   async function sendBodyToSlicer(format: SlicerExportFormat) {
@@ -367,6 +380,7 @@ export function createViewportContextMenuActions({
     moveBody,
     copyBody,
     exportBodyMesh,
+    exportBodyStep,
     sendBodyToSlicer,
     unlinkBodyCopy,
     deleteSketchSelection,

@@ -21,6 +21,7 @@ type BodyContextActions = Pick<
   | "onMoveBody"
   | "onCopyBody"
   | "onExportBodyMesh"
+  | "onExportBodyStep"
   | "onSendBodyToSlicer"
   | "onConvertMeshToBody"
   | "onDetachBodyProjections"

@@ -22,10 +22,15 @@
 #include <string>
 
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <STEPControl_Reader.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
 #include <StlAPI_Writer.hxx>
+#include <TopExp_Explorer.hxx>
+
+#include <gp_Pnt.hxx>
 
 #include "core/document/document.h"
 #include "core/export/export.h"
@@ -75,6 +80,22 @@ void mesh_for_export(TopoDS_Shape& shape) {
                                   /*angularDeflection=*/0.5,
                                   /*isInParallel=*/false);
   (void)mesher;
+}
+
+// Binary STL fixture for mesh-import tests — a simple box tessellated with
+// the same parameters as the export path.  Written through StlAPI_Writer
+// so import_stl re-reads it exactly like a user file.
+bool write_box_stl(const std::filesystem::path& path) {
+  TopoDS_Shape box =
+      BRepPrimAPI_MakeBox(gp_Pnt(-20.0, -10.0, 5.0), 40.0, 20.0, 10.0).Shape();
+  BRepMesh_IncrementalMesh mesher(box, /*linearDeflection=*/0.1,
+                                  /*isRelative=*/false,
+                                  /*angularDeflection=*/0.5,
+                                  /*isInParallel=*/false);
+  (void)mesher;
+  StlAPI_Writer writer;
+  writer.ASCIIMode() = false;
+  return writer.Write(box, path.string().c_str());
 }
 
 // Little-endian decode — the binary STL count field is always LE,
@@ -222,6 +243,80 @@ bool test_document_export_step() {
                 "document step: file must start with ISO-10303-21 header");
 }
 
+// Document-level STEP export must skip mesh-import bodies when the
+// document also contains real solids.  A mesh body is one B-rep face per
+// triangle with no solid; including it writes thousands of one-face shells
+// that balloon the file and break re-import (2026-09: a 243 KB STL became
+// a 28 MB STEP that could not be re-imported).  The exported file must
+// re-read as exactly one root containing the slab solid — 6 faces, no
+// mesh triangles.
+bool test_document_export_step_skips_mesh_bodies() {
+  DocumentManager manager;
+  DocumentState document;
+  TopoDS_Shape shape;
+  if (!build_extruded_slab(manager, document, shape)) return false;
+
+  const auto stl_path = std::filesystem::temp_directory_path() /
+                        "polysmith_import_fixture_box.stl";
+  if (!expect(write_box_stl(stl_path),
+              "mesh skip: box STL fixture must be written")) {
+    return false;
+  }
+  // Second body: the imported mesh (one face per triangle, no solid).
+  // import_stl stores only the path, so the fixture must stay on disk
+  // until the export re-compiles the document.
+  document = manager.import_stl(stl_path.string(), /*scale=*/1.0);
+  const auto compiled = compile_bodies(document);
+  if (!expect(compiled.bodies.size() == 2,
+              "mesh skip: fixture expected exactly two bodies")) {
+    return false;
+  }
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_document_export_skip_mesh_test.step";
+  const auto result =
+      polysmith::core::export_document_as_step(document, path.string());
+  if (!expect(result.exported_feature_count == 1,
+              "mesh skip: only the solid body must be exported")) {
+    return false;
+  }
+
+  STEPControl_Reader reader;
+  if (!expect(reader.ReadFile(path.string().c_str()) == IFSelect_RetDone,
+              "mesh skip: re-read must succeed")) {
+    return false;
+  }
+  if (!expect(reader.NbRootsForTransfer() == 1,
+              "mesh skip: re-read must have exactly one root")) {
+    return false;
+  }
+  if (!expect(reader.TransferRoots(),
+              "mesh skip: TransferRoots must succeed")) {
+    return false;
+  }
+
+  const TopoDS_Shape imported = reader.OneShape();
+  bool has_solid = false;
+  for (TopExp_Explorer exp(imported, TopAbs_SOLID); exp.More(); exp.Next()) {
+    has_solid = true;
+    break;
+  }
+  if (!expect(has_solid, "mesh skip: re-imported shape must contain a solid")) {
+    return false;
+  }
+
+  int face_count = 0;
+  for (TopExp_Explorer exp(imported, TopAbs_FACE); exp.More(); exp.Next()) {
+    ++face_count;
+  }
+  // 6 = the slab's exact faces; the mesh body would add its 12 triangles.
+  if (!expect(face_count == 6,
+              "mesh skip: re-imported shape must have only the slab faces")) {
+    return false;
+  }
+  return true;
+}
+
 // Per-body STEP export (the "Send to Slicer ▸ As STEP" path) — one body,
 // one transferred shape, a valid B-rep file.
 bool test_body_export_step() {
@@ -292,6 +387,7 @@ int main() {
   if (!test_stepcontrol_writer()) return 1;
   if (!test_document_export_stl()) return 1;
   if (!test_document_export_step()) return 1;
+  if (!test_document_export_step_skips_mesh_bodies()) return 1;
   if (!test_body_export_step()) return 1;
   if (!test_body_export_step_unknown_body()) return 1;
 

@@ -308,6 +308,7 @@ export interface ViewportPanelProps {
     copyMode: "linked" | "standalone",
   ) => Promise<void> | void;
   onExportBodyMesh?: (bodyId: string) => Promise<void> | void;
+  onExportBodyStep?: (bodyId: string) => Promise<void> | void;
   onSendBodyToSlicer?: (
     bodyId: string,
     format: SlicerExportFormat,

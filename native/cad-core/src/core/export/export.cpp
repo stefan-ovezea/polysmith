@@ -14,6 +14,7 @@
 #include <STEPControl_Writer.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <StlAPI_Writer.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Shape.hxx>
 
@@ -23,15 +24,33 @@
 namespace polysmith::core {
 namespace {
 
-std::vector<TopoDS_Shape> collect_export_shapes(const DocumentState& document) {
-  std::vector<TopoDS_Shape> shapes;
+bool shape_has_solid(const TopoDS_Shape& shape) {
+  for (TopExp_Explorer exp(shape, TopAbs_SOLID); exp.More(); exp.Next()) {
+    return true;
+  }
+  return false;
+}
+
+// Document-level export shapes.  A mesh-import body is per-triangle B-rep
+// faces with no solid — serializing one as STEP/IGES writes thousands of
+// one-face shells, producing huge files that break re-import.  For
+// solids_only, prefer bodies that contain solids; only when NO body has a
+// solid (mesh-only document) fall back to exporting all bodies, preserving
+// the previous behaviour for that case.
+std::vector<TopoDS_Shape> collect_export_shapes(const DocumentState& document,
+                                                bool solids_only) {
+  std::vector<TopoDS_Shape> all_shapes;
+  std::vector<TopoDS_Shape> solid_shapes;
   const CompiledBodies compiled = compile_bodies(document, /*include_meshes=*/false);
   for (const auto& body : compiled.bodies) {
-    if (!body.shape.IsNull()) {
-      shapes.push_back(body.shape);
+    if (body.shape.IsNull()) continue;
+    all_shapes.push_back(body.shape);
+    if (shape_has_solid(body.shape)) {
+      solid_shapes.push_back(body.shape);
     }
   }
-  return shapes;
+  if (!solids_only) return all_shapes;
+  return solid_shapes.empty() ? all_shapes : solid_shapes;
 }
 
 TopoDS_Shape collect_export_body_shape(const DocumentState& document,
@@ -92,7 +111,8 @@ ExportResult export_document_as_step(const DocumentState& document,
     throw std::runtime_error("Export path cannot be empty");
   }
 
-  const std::vector<TopoDS_Shape> shapes = collect_export_shapes(document);
+  const std::vector<TopoDS_Shape> shapes =
+      collect_export_shapes(document, /*solids_only=*/true);
   if (shapes.empty()) {
     throw std::runtime_error("No solid features are available to export");
   }
@@ -126,7 +146,8 @@ ExportResult export_document_as_iges(const DocumentState& document,
     throw std::runtime_error("Export path cannot be empty");
   }
 
-  const std::vector<TopoDS_Shape> shapes = collect_export_shapes(document);
+  const std::vector<TopoDS_Shape> shapes =
+      collect_export_shapes(document, /*solids_only=*/true);
   if (shapes.empty()) {
     throw std::runtime_error("No solid features are available to export");
   }
@@ -166,7 +187,10 @@ ExportResult export_document_as_stl(const DocumentState& document,
     throw std::runtime_error("Export path cannot be empty");
   }
 
-  const std::vector<TopoDS_Shape> shapes = collect_export_shapes(document);
+  // STL keeps every body (including mesh-import bodies) — mesh data is
+  // valid STL content and documents whose only body is a mesh must export.
+  const std::vector<TopoDS_Shape> shapes =
+      collect_export_shapes(document, /*solids_only=*/false);
   if (shapes.empty()) {
     throw std::runtime_error("No solid features are available to export");
   }

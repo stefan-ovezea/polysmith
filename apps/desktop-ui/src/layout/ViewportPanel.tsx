@@ -323,6 +323,7 @@ export function ViewportPanel({
   onMoveBody,
   onCopyBody,
   onExportBodyMesh,
+  onExportBodyStep,
   onSendBodyToSlicer,
   onUnlinkBodyCopy,
   hiddenFeatureIds,
@@ -593,6 +594,7 @@ export function ViewportPanel({
   const moveBodyRef = useRef(onMoveBody);
   const copyBodyRef = useRef(onCopyBody);
   const exportBodyMeshRef = useRef(onExportBodyMesh);
+  const exportBodyStepRef = useRef(onExportBodyStep);
   const sendBodyToSlicerRef = useRef(onSendBodyToSlicer);
   const unlinkBodyCopyRef = useRef(onUnlinkBodyCopy);
   const pendingMoveGizmoParametersRef = useRef<MoveFeatureParameters | null>(
@@ -2283,6 +2285,7 @@ export function ViewportPanel({
       moveBodyRef,
       copyBodyRef,
       exportBodyMeshRef,
+      exportBodyStepRef,
       sendBodyToSlicerRef,
       unlinkBodyCopyRef,
     },
@@ -2356,6 +2359,7 @@ export function ViewportPanel({
       onMoveBody,
       onCopyBody,
       onExportBodyMesh,
+      onExportBodyStep,
       onSendBodyToSlicer,
       onUnlinkBodyCopy,
     },
@@ -4296,6 +4300,7 @@ export function ViewportPanel({
     moveBodyRef,
     copyBodyRef,
     exportBodyMeshRef,
+    exportBodyStepRef,
     sendBodyToSlicerRef,
     unlinkBodyCopyRef,
     deleteSketchSelectionRef,

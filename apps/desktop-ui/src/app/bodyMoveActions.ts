@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import type { MoveFeatureParameters } from "../types";
 import type { DocumentState } from "../types/ipc";
-import { pickExportStlPath } from "./documentDialogs";
+import { pickExportPath, pickExportStlPath } from "./documentDialogs";
 import {
   defaultMoveParameters,
   type ActiveMoveAction,
@@ -35,6 +35,7 @@ interface BodyMoveActionsContext {
   ) => Promise<void>;
   unlinkBodyCopy: (featureId: string) => Promise<void>;
   exportBodyStl: (filePath: string, bodyId: string) => Promise<void>;
+  exportBodyStep: (filePath: string, bodyId: string) => Promise<void>;
   convertMeshToBody: (bodyId: string) => Promise<void>;
   detachBodyProjections: (bodyId: string) => Promise<void>;
   updateMoveParameters: (
@@ -57,6 +58,7 @@ export function createBodyMoveActions({
   createBodyCopy,
   unlinkBodyCopy,
   exportBodyStl,
+  exportBodyStep,
   convertMeshToBody,
   detachBodyProjections,
   updateMoveParameters,
@@ -128,6 +130,25 @@ export function createBodyMoveActions({
     });
   }
 
+  async function exportBodyAsStep(bodyId: string) {
+    const bodyName =
+      document?.feature_history.find((feature) => feature.feature_id === bodyId)
+        ?.name ?? document?.name;
+    const filePath = await pickExportPath({
+      translate,
+      documentName: bodyName,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+
+    await runAction(async () => {
+      await exportBodyStep(filePath, bodyId);
+      addMessage(`step export requested: ${filePath}`);
+    });
+  }
+
   async function copyBodyAndMove(
     sourceBodyId: string,
     copyMode: "linked" | "standalone",
@@ -192,6 +213,7 @@ export function createBodyMoveActions({
     onMoveBody: moveBodyFromContext,
     onCopyBody: copyBodyAndMove,
     onExportBodyMesh: exportBodyAsMesh,
+    onExportBodyStep: exportBodyAsStep,
     onConvertMeshToBody: convertMeshBodyFromContext,
     onDetachBodyProjections: detachProjectionsFromContext,
     onUnlinkBodyCopy: confirmAndUnlinkBodyCopy,

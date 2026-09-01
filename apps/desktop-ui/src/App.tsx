@@ -1152,6 +1152,7 @@ function App() {
     createBodyCopy,
     unlinkBodyCopy,
     exportBodyStl,
+    exportBodyStep,
     convertMeshToBody,
     detachBodyProjections,
     updateMoveParameters,
