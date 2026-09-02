@@ -29,11 +29,14 @@ export function makeCamCaptureFaceReferenceCommand(
   };
 }
 
-export function makeCamWcsSetFaceCommand(faceId: string): CoreCommand {
+export function makeCamWcsSetFaceCommand(
+  faceId: string,
+  setupId?: string,
+): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "cam_wcs_set_face",
-    payload: { face_id: faceId },
+    payload: { face_id: faceId, setup_id: setupId },
   };
 }
 

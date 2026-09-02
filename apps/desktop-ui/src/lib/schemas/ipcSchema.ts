@@ -83,6 +83,30 @@ const camPostListResultEventSchema = z.object({
   }),
 });
 
+// Reply to cam_capture_face_reference — see CamFaceAttestationResultEvent
+// in types/ipc.ts. Payload mirrors make_cam_face_attestation_event
+// (native/cad-core/src/app/impl/cam_commands.inc).
+const camFaceAttestationResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_face_attestation_result"),
+  payload: z.object({
+    persistent_id: z.string(),
+    attestation: z.object({
+      area: z.number(),
+      bounds: z.object({
+        min_x: z.number(),
+        min_y: z.number(),
+        min_z: z.number(),
+        max_x: z.number(),
+        max_y: z.number(),
+        max_z: z.number(),
+      }),
+      normal: z.tuple([z.number(), z.number(), z.number()]),
+      sample_points: z.array(z.tuple([z.number(), z.number(), z.number()])),
+    }),
+  }),
+});
+
 const documentSavedEventSchema = z.object({
   id: z.string(),
   type: z.literal("document_saved"),
@@ -149,6 +173,7 @@ export const coreMessageSchema = z.union([
   trimPreviewResultEventSchema,
   camGenerationProgressEventSchema,
   camPostListResultEventSchema,
+  camFaceAttestationResultEventSchema,
   errorEventSchema,
 ]);
 

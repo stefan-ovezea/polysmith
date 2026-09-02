@@ -28,7 +28,9 @@ export interface CamCaptureFaceReferenceCommand {
 export interface CamWcsSetFaceCommand {
   id: string;
   type: "cam_wcs_set_face";
-  payload: { face_id: string };
+  // setup_id omitted = first setup (core legacy rule, backward
+  // compatible with pre-multi-setup documents).
+  payload: { face_id: string; setup_id?: string };
 }
 
 export interface CamSetupCreateCommand {

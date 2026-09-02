@@ -1546,10 +1546,13 @@ export function useCadCore() {
         makeCamMachineSettingsSetCommand(machineSettings),
       );
     },
-    camWcsSetFace: async (faceId: string) => {
-      // Stores the face-anchored WCS witness on the first setup; the
+    camWcsSetFace: async (faceId: string, setupId?: string) => {
+      // Stores the face-anchored WCS witness on the target setup
+      // (omitting setup_id = first setup, core legacy rule); the
       // refresh pass resolves the machine origin from the live face.
-      await sendAndRefreshSessionViewport(makeCamWcsSetFaceCommand(faceId));
+      await sendAndRefreshSessionViewport(
+        makeCamWcsSetFaceCommand(faceId, setupId),
+      );
     },
     camCaptureFaceReference: async (faceId: string) => {
       // Awaited: the reply is a cam_face_attestation_result event

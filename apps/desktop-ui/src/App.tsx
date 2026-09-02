@@ -1486,7 +1486,9 @@ function App() {
     });
 
   // Graphical CAM origin placement: arm the mode from the setup panel,
-  // then the next vertex/face click becomes the stock origin.
+  // then the next click snaps to nearby geometry (body vertices/edges/
+  // faces, sketch points, stock-box corners) or falls back to the bed
+  // plane — the snapped point becomes the ACTIVE setup's stock origin.
   const [originPickArmed, setOriginPickArmed] = useState(false);
   const [pickedOrigin, setPickedOrigin] = useState<
     [number, number, number] | null
@@ -1497,7 +1499,9 @@ function App() {
     y: number;
     z: number;
   }) => {
-    const setup = document?.cam.setups?.[0];
+    const setup =
+      document?.cam.setups.find((s) => s.setup_id === activeCamSetupId) ??
+      document?.cam.setups?.[0];
     if (!setup) {
       return;
     }
@@ -1534,7 +1538,7 @@ function App() {
 
   const placeWcsFromFacePick = async (faceId: string) => {
     await runAction(async () => {
-      await camWcsSetFace(faceId);
+      await camWcsSetFace(faceId, activeCamSetupId ?? undefined);
     });
     setWcsPickArmed(false);
     addMessage(t("cam.setup.wcsFaceSet"));
@@ -1981,6 +1985,7 @@ function App() {
               viewport={viewport}
               showStock={showStock && workspaceView === "cam"}
               wcsOrientation={wcsOrientation}
+              activeCamSetupId={activeCamSetupId}
               originPickPointEnabled={originPickArmed}
               onOriginPickPoint={(point) => {
                 if (!point) {

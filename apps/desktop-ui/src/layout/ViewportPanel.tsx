@@ -186,6 +186,11 @@ import { ensureBridge } from "@/lib/planegcsSolver";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
 import { makeUiLogEntry } from "@/lib/logger";
 import { updateScreenSpaceSketchSprites } from "./viewport/screenSpaceSketchSprites";
+import {
+  buildCamOriginSnapCandidates,
+  camOriginSnapLabelKey,
+  resolveCamOriginSnap,
+} from "./viewport/camOriginSnap";
 import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
 import { bindSketchHotkeys } from "./viewport/sketchHotkeys";
 import { syncViewportScene } from "./viewport/sceneSync";
@@ -236,6 +241,7 @@ export function ViewportPanel({
   viewport,
   showStock = true,
   wcsOrientation = "z_up",
+  activeCamSetupId = null,
   onSnapshotCaptureReady,
   onSelectPrimitive,
   onSelectReference,
@@ -340,6 +346,19 @@ export function ViewportPanel({
   const [contextMenu, setContextMenu] =
     useState<ViewportContextMenuState | null>(null);
   const [sketchSnapLabel, setSketchSnapLabel] = useState<string | null>(null);
+  // True while the snap label currently shows a CAM origin-snap kind
+  // (not a sketch tool snap) — gates the disarm cleanup below so it
+  // never wipes a sketch snap label.
+  const camOriginSnapLabelActiveRef = useRef(false);
+  // Clear the origin-pick snap label when the pick disarms (apply,
+  // cancel, or closing the setup panel) so a stale label cannot stick
+  // at the last pointer position.
+  useEffect(() => {
+    if (!originPickPointEnabled && camOriginSnapLabelActiveRef.current) {
+      camOriginSnapLabelActiveRef.current = false;
+      setSketchSnapLabel(null);
+    }
+  }, [originPickPointEnabled]);
   // Floating constraint-preview badge tracked relative to the
   // viewport container. Shown next to the cursor whenever the snap
   // resolver is producing a midpoint or perpendicular snap so the
@@ -3221,6 +3240,34 @@ export function ViewportPanel({
         }
       }
 
+      if (originPickPointEnabledRef.current) {
+        // Live snap preview while the origin pick is armed: label the
+        // snap kind whenever the cursor is within the snap threshold,
+        // so the user sees what the next click will snap to.
+        setPointerNdcFromEvent(pointer, event, renderer);
+        const rect = renderer.domElement.getBoundingClientRect();
+        const candidates = buildCamOriginSnapCandidates({
+          document,
+          activeCamSetupId,
+          viewport,
+          showStock,
+          sketchPointObjects: sketchPointObjectsRef.current,
+          vertexObjects: vertexObjectsRef.current,
+          edgeLineObjects: edgeLineObjectsRef.current,
+          faceMeshes: faceMeshesRef.current,
+        });
+        const snapped = resolveCamOriginSnap({
+          candidates,
+          camera,
+          pointer,
+          rect,
+        });
+        camOriginSnapLabelActiveRef.current = snapped !== null;
+        setSketchSnapLabel(
+          snapped ? translate(camOriginSnapLabelKey(snapped.kind)) : null,
+        );
+      }
+
       const hit = intersectSceneTargets(event);
       applySceneHover(hit, hoverActions());
     }
@@ -3262,6 +3309,10 @@ export function ViewportPanel({
       setHoveredFace(null);
       setHoveredEdge(null);
       setHoveredVertex(null);
+      if (camOriginSnapLabelActiveRef.current) {
+        camOriginSnapLabelActiveRef.current = false;
+        setSketchSnapLabel(null);
+      }
       if (viewCubeGroupRef.current) {
         clearCubeHover(viewCubeGroupRef.current);
       }
@@ -3461,12 +3512,48 @@ export function ViewportPanel({
         camera,
         controls,
         // Armed origin pick: every pointer-up places the stock origin
-        // at the clicked world point on the bed plane (z = 0) — works
-        // on sketch-only jobs where no faces/vertices exist to snap.
+        // at the clicked point — snapped to nearby geometry (sketch
+        // points, body vertices/edge midpoints/face centers, stock-box
+        // top corners/midpoints) or on the bed plane (z = 0) as the
+        // fallback for sketch-only jobs.
         originPickPointEnabled: originPickPointEnabledRef.current,
         originPickPoint: (pickEvent) => {
           setPointerNdcFromEvent(pointer, pickEvent, renderer);
           raycaster.setFromCamera(pointer, camera);
+          // Snap to the nearest geometry candidate within 12 px
+          // (screen space) — the user clicks near a corner and gets
+          // the exact 3D point, LightBurn-style.
+          const rect = renderer.domElement.getBoundingClientRect();
+          const candidates = buildCamOriginSnapCandidates({
+            document,
+            activeCamSetupId,
+            viewport,
+            showStock,
+            sketchPointObjects: sketchPointObjectsRef.current,
+            vertexObjects: vertexObjectsRef.current,
+            edgeLineObjects: edgeLineObjectsRef.current,
+            faceMeshes: faceMeshesRef.current,
+          });
+          const snapped = resolveCamOriginSnap({
+            candidates,
+            camera,
+            pointer,
+            rect,
+          });
+          // Microns precision — long decimals in the origin fields are
+          // noise, not accuracy.
+          if (snapped) {
+            // Snapped geometry keeps its full 3D point (an elevated
+            // sketch point or a body vertex above the bed keeps z).
+            const { x, y, z } = snapped.position;
+            originPickPointRef.current({
+              x: Math.round(x * 1000) / 1000,
+              y: Math.round(y * 1000) / 1000,
+              z: Math.round(z * 1000) / 1000,
+            });
+            return;
+          }
+          // No snap target: fall back to the bed plane (z = 0).
           const hit = new THREE.Vector3();
           if (
             !raycaster.ray.intersectPlane(
@@ -3484,30 +3571,6 @@ export function ViewportPanel({
             originPickPointRef.current(null);
             return;
           }
-          // Snap to the nearest sketch vertex within 12 px (screen
-          // space) — the user clicks near a corner and gets the exact
-          // corner, LightBurn-style.
-          const rect = renderer.domElement.getBoundingClientRect();
-          let snapped: THREE.Vector3 | null = null;
-          let bestPx = 12;
-          for (const pointObject of sketchPointObjectsRef.current) {
-            const world = new THREE.Vector3();
-            pointObject.getWorldPosition(world);
-            const screen = world.clone().project(camera);
-            const px = ((screen.x - pointer.x) * rect.width) / 2;
-            const py = ((screen.y - pointer.y) * rect.height) / 2;
-            const distance = Math.hypot(px, py);
-            if (distance < bestPx) {
-              bestPx = distance;
-              snapped = world;
-            }
-          }
-          if (snapped) {
-            // Project the snapped vertex onto the bed plane.
-            hit.set(snapped.x, snapped.y, 0);
-          }
-          // Microns precision — long decimals in the origin fields are
-          // noise, not accuracy.
           originPickPointRef.current({
             x: Math.round(hit.x * 1000) / 1000,
             y: Math.round(hit.y * 1000) / 1000,
@@ -4119,6 +4182,7 @@ export function ViewportPanel({
       showReferencePlanes,
       showStock,
       wcsOrientation,
+      activeCamSetupId,
       moveGizmo,
       clearViewportSceneObjectRefs,
       clearDragPreviewLines,
@@ -4136,7 +4200,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

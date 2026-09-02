@@ -9,27 +9,35 @@ export function addCamSceneObjects({
   referenceGroup,
   showStock,
   wcsOrientation,
+  activeCamSetupId,
 }: {
   document: DocumentState | null;
   viewport: ViewportState | null;
   referenceGroup: THREE.Group;
   showStock: boolean;
   wcsOrientation: string;
+  activeCamSetupId?: string | null;
 }) {
-  const setup = document?.cam?.setups?.[0];
+  const setup = resolveActiveCamSetup(document, activeCamSetupId);
   if (!setup) {
     return;
   }
 
-  // The origin marker sits at the STOCK origin — the machine zero the
-  // user edits in the setup panel (falls back to the model center).
+  // The origin marker sits at the RESOLVED WCS origin — the refresh
+  // pass fills wcs_origin.position for face-anchored WCS picks and
+  // applies the laser pointer offset.  Falls back to the stock origin
+  // (the machine zero the user edits in the setup panel), then the
+  // model center.
+  const wcsPosition = setup.wcs_origin?.position;
   const stockOrigin = setup.stock?.origin;
-  const origin: [number, number, number] = stockOrigin
-    ? stockOrigin
-    : (() => {
-        const center = modelCenterFromBodies(viewport?.bodies ?? []);
-        return [center.x, center.y, center.z];
-      })();
+  const origin: [number, number, number] = wcsPosition
+    ? wcsPosition
+    : stockOrigin
+      ? stockOrigin
+      : (() => {
+          const center = modelCenterFromBodies(viewport?.bodies ?? []);
+          return [center.x, center.y, center.z];
+        })();
 
   addWcsOriginMarker({
     origin,
@@ -296,7 +304,22 @@ function addStockBoundingBox({
   referenceGroup.add(stockEdges);
 }
 
-function modelCenterFromBodies(bodies: ViewportState["bodies"]) {
+// The setup the CAM scene (marker, stock box, snap candidates)
+// renders: the active setup by id, falling back to the first setup
+// (the core's legacy join rule).
+export function resolveActiveCamSetup(
+  document: DocumentState | null,
+  activeCamSetupId?: string | null,
+) {
+  const setups = document?.cam?.setups ?? [];
+  return (
+    setups.find((setup) => setup.setup_id === activeCamSetupId) ??
+    setups[0] ??
+    null
+  );
+}
+
+export function modelCenterFromBodies(bodies: ViewportState["bodies"]) {
   let minX = Infinity;
   let minY = Infinity;
   let minZ = Infinity;

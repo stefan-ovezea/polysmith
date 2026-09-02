@@ -119,6 +119,7 @@ interface SyncViewportSceneParams {
   showReferencePlanes: boolean;
   showStock: boolean;
   wcsOrientation: string;
+  activeCamSetupId?: string | null;
   moveGizmo: MoveGizmoDescriptor | null | undefined;
   clearViewportSceneObjectRefs: () => void;
   clearDragPreviewLines: () => void;
@@ -279,6 +280,7 @@ function viewportSceneBuildKey({
   showReferencePlanes,
   showStock,
   wcsOrientation,
+  activeCamSetupId,
   moveGizmo,
   document,
 }: SyncViewportSceneParams) {
@@ -289,7 +291,13 @@ function viewportSceneBuildKey({
   // the viewport state), so the build key must include their values —
   // otherwise changing the origin in the setup panel never triggers a
   // scene rebuild and the marker stays put until some other update.
+  // The RESOLVED WCS position matters too: face-anchored WCS picks and
+  // laser pointer-offset changes move the marker without touching the
+  // stock origin.
   const camSetup = document?.cam?.setups?.[0];
+  const wcsPosition = document?.cam?.setups
+    .find((setup) => setup.setup_id === activeCamSetupId)
+    ?.wcs_origin?.position ?? camSetup?.wcs_origin?.position;
   const camSignature = camSetup
     ? [
         camSetup.stock?.origin?.join(",") ?? "",
@@ -298,6 +306,8 @@ function viewportSceneBuildKey({
         camSetup.stock?.length ?? "",
         camSetup.stock?.margin ?? 0,
         camSetup.stock?.type ?? "",
+        wcsPosition?.join(",") ?? "",
+        activeCamSetupId ?? "",
       ].join("|")
     : "nosetup";
   return [
@@ -356,6 +366,7 @@ function addModelSceneObjects(
     showReferencePlanes,
     showStock,
     wcsOrientation,
+    activeCamSetupId,
   }: SyncViewportSceneParams,
   { contentGroup, referenceGroup }: ReadyViewportSceneGroups,
 ) {
@@ -386,6 +397,7 @@ function addModelSceneObjects(
     referenceGroup,
     showStock,
     wcsOrientation,
+    activeCamSetupId,
   });
 
   addSolidSceneObjects({
