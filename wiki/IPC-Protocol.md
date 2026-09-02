@@ -287,10 +287,12 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `FaceAttestation` witness from a body face (`"<body_id>:face:<index>"`)
   and replies `cam_face_attestation_result {persistent_id, attestation}`.
   The UI never fabricates witness geometry.
-- `cam_wcs_set_face {face_id}` anchors the WCS origin to a body face:
-  the witness lands on `setups[0].wcs_origin.face_reference` and the
-  refresh pass resolves the machine origin from the LIVE face (mid-UV
-  point) on every recompute — a face-anchored WCS is TNP-safe.
+- `cam_wcs_set_face {face_id, setup_id?}` anchors the WCS origin to a body
+  face: the witness lands on the target setup's `wcs_origin.face_reference`
+  and the refresh pass resolves the machine origin from the LIVE face
+  (mid-UV point) on every recompute — a face-anchored WCS is TNP-safe.
+  `setup_id` defaults to the first setup when absent (backward compatible);
+  an unknown id replies `SETUP_NOT_FOUND`.
 - `CamOperation` carries `setup_id` (empty = the first setup, legacy
   documents); generation, export, and refresh resolve each operation
   through ITS setup — multi-setup support.  The setup panel edits the

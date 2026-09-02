@@ -252,9 +252,18 @@ DocumentState DocumentManager::cam_machine_settings_set(
 }
 
 std::optional<CamSetup> DocumentManager::cam_setup_get() const {
+  return cam_setup_find("");
+}
+
+std::optional<CamSetup> DocumentManager::cam_setup_find(
+    const std::string& setup_id) const {
   if (!document_.has_value() || document_->cam.setups.empty())
     return std::nullopt;
-  return document_->cam.setups[0];
+  if (setup_id.empty()) return document_->cam.setups[0];
+  for (const auto& setup : document_->cam.setups) {
+    if (setup.setup_id == setup_id) return setup;
+  }
+  return std::nullopt;
 }
 
 DocumentState DocumentManager::cam_setup_update(const CamSetup& setup) {

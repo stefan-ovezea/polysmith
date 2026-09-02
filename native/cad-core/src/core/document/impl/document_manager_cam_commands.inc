@@ -5,6 +5,10 @@
 
   DocumentState cam_setup_create(const CamSetup& setup);
   std::optional<CamSetup> cam_setup_get() const;
+  // Resolves a setup by id; an empty id means the first setup (the
+  // legacy join rule).  Nullopt when there is no setup at all or the
+  // id does not resolve.
+  std::optional<CamSetup> cam_setup_find(const std::string& setup_id) const;
   DocumentState cam_setup_update(const CamSetup& setup);
   // Deletes the setup AND its operations (legacy operations with an
   // empty setup_id belong to the first setup and die with it).
