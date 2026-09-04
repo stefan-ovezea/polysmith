@@ -22,6 +22,7 @@ import {
   addCamSceneObjects,
   addCamToolpathLines,
 } from "./camSceneObjects";
+import { addCamOriginPickMarkerObjects } from "./camOriginSnap";
 import {
   addPrimitiveSceneObjects,
   addReferenceSceneObjects,
@@ -120,6 +121,9 @@ interface SyncViewportSceneParams {
   showStock: boolean;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
+  /** True while the CAM origin pick is armed — draws the snap-target
+   *  markers and suppresses scene hover while picking. */
+  originPickArmed: boolean;
   moveGizmo: MoveGizmoDescriptor | null | undefined;
   clearViewportSceneObjectRefs: () => void;
   clearDragPreviewLines: () => void;
@@ -281,6 +285,7 @@ function viewportSceneBuildKey({
   showStock,
   wcsOrientation,
   activeCamSetupId,
+  originPickArmed,
   moveGizmo,
   document,
 }: SyncViewportSceneParams) {
@@ -317,6 +322,9 @@ function viewportSceneBuildKey({
     showReferencePlanes ? "refs:on" : "refs:off",
     showStock ? "stock:on" : "stock:off",
     "cam:" + camSignature,
+    // The origin-pick markers are added/removed on arm/disarm, so
+    // the arm state must be part of the rebuild key.
+    originPickArmed ? "originpick:on" : "originpick:off",
     wcsOrientation,
     moveGizmoKey(moveGizmo),
     displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),
@@ -367,6 +375,7 @@ function addModelSceneObjects(
     showStock,
     wcsOrientation,
     activeCamSetupId,
+    originPickArmed,
   }: SyncViewportSceneParams,
   { contentGroup, referenceGroup }: ReadyViewportSceneGroups,
 ) {
@@ -398,6 +407,12 @@ function addModelSceneObjects(
     showStock,
     wcsOrientation,
     activeCamSetupId,
+  });
+
+  addCamOriginPickMarkerObjects({
+    sceneData,
+    referenceGroup,
+    originPickArmed,
   });
 
   addSolidSceneObjects({

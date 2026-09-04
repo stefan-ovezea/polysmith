@@ -735,6 +735,21 @@ button:not(:disabled),
     filter: drop-shadow(0 0 4px var(--cad-accent-glow-soft));
   }
 
+  /* Name of the snap target kind next to the snap square (e.g. the
+   * CAM origin pick labels "sketch point" / "center point"). */
+  .cad-snap-cursor-label {
+    position: absolute;
+    z-index: 19;
+    pointer-events: none;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--color-on-primary-soft, #e3f2fd);
+    background: var(--color-primary-soft, rgba(79, 195, 247, 0.9));
+  }
+
   .cad-checkbox {
     position: relative;
     display: inline-flex;

@@ -354,9 +354,28 @@ export function ViewportPanel({
   // cancel, or closing the setup panel) so a stale label cannot stick
   // at the last pointer position.
   useEffect(() => {
+    if (originPickPointEnabled) {
+      // Scene hover is suppressed while the pick is armed (see the
+      // pointer-move handler) — clear any highlight from before the
+      // arm so a stale surface highlight doesn't sit frozen under
+      // the cursor for the whole pick.
+      setHoveredReference(null);
+      setHoveredPrimitive(null);
+      setHoveredFace(null);
+      setHoveredEdge(null);
+      setHoveredVertex(null);
+      setHoveredSketchProfile(null);
+      setHoveredSketchPoint(null);
+      setHoveredSketchEntity(null);
+    }
     if (!originPickPointEnabled && camOriginSnapLabelActiveRef.current) {
       camOriginSnapLabelActiveRef.current = false;
       setSketchSnapLabel(null);
+    }
+    if (!originPickPointEnabled) {
+      // The armed pick tracks the pointer position itself; a stale
+      // position would keep the snap square visible after disarm.
+      setCrosshairPointer(null);
     }
   }, [originPickPointEnabled]);
   // Floating constraint-preview badge tracked relative to the
@@ -3243,15 +3262,24 @@ export function ViewportPanel({
       if (originPickPointEnabledRef.current) {
         // Live snap preview while the origin pick is armed: label the
         // snap kind whenever the cursor is within the snap threshold,
-        // so the user sees what the next click will snap to.
+        // so the user sees what the next click will snap to.  Also
+        // track the pointer position here — the sketch-mode crosshair
+        // update never runs in the CAM workspace, so without this the
+        // SnapCursorOverlay has no position to render the square +
+        // label chip at.
         setPointerNdcFromEvent(pointer, event, renderer);
         const rect = renderer.domElement.getBoundingClientRect();
+        setCrosshairPointer({
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        });
         const candidates = buildCamOriginSnapCandidates({
           document,
           activeCamSetupId,
           viewport,
           showStock,
           sketchPointObjects: sketchPointObjectsRef.current,
+          sketchPrimitives: sceneDataRef.current,
           vertexObjects: vertexObjectsRef.current,
           edgeLineObjects: edgeLineObjectsRef.current,
           faceMeshes: faceMeshesRef.current,
@@ -3266,6 +3294,12 @@ export function ViewportPanel({
         setSketchSnapLabel(
           snapped ? translate(camOriginSnapLabelKey(snapped.kind)) : null,
         );
+        // Suppress scene hover while the pick is armed: a surface or
+        // profile highlight under the cursor would look like it is
+        // "consuming" the pointer when the pick actually snaps to the
+        // marker targets.  The visible markers + snap chip are the
+        // pick feedback instead.
+        return;
       }
 
       const hit = intersectSceneTargets(event);
@@ -3530,6 +3564,7 @@ export function ViewportPanel({
             viewport,
             showStock,
             sketchPointObjects: sketchPointObjectsRef.current,
+            sketchPrimitives: sceneDataRef.current,
             vertexObjects: vertexObjectsRef.current,
             edgeLineObjects: edgeLineObjectsRef.current,
             faceMeshes: faceMeshesRef.current,
@@ -4183,6 +4218,7 @@ export function ViewportPanel({
       showStock,
       wcsOrientation,
       activeCamSetupId,
+      originPickArmed: originPickPointEnabled,
       moveGizmo,
       clearViewportSceneObjectRefs,
       clearDragPreviewLines,
@@ -4200,7 +4236,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

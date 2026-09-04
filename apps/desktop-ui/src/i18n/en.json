@@ -308,6 +308,7 @@
       "wcsPickHint": "click a face of the part to anchor the WCS origin",
       "wcsFaceSet": "WCS anchored to the picked face",
       "originSnapSketchPoint": "sketch point",
+      "originSnapSketchCenter": "center point",
       "originSnapVertex": "body vertex",
       "originSnapEdge": "body edge midpoint",
       "originSnapFace": "body face center",

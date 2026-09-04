@@ -334,6 +334,7 @@ export function ViewportPanelShell({
         <SnapCursorOverlay
           pointer={crosshairPointer}
           visible={isSnapping}
+          label={sketchSnapLabel}
         />
         <SelectionRectangleOverlay overlay={selectionRect} />
         <ConstraintPreviewBadge preview={constraintPreview} />
