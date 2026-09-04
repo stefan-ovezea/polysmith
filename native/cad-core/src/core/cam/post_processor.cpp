@@ -401,8 +401,14 @@ std::vector<std::string> render_post(const PostContext& context,
       } else {
         ensure_power_state(move);
         std::vector<std::array<double, 3>> chords;
-        linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.01,
-                           chords);
+        if (context.toolpath.arc_segments_per_circle > 0) {
+          const int steps = arc_steps_for(
+              previous, move, context.toolpath.arc_segments_per_circle);
+          linearize_arc_move_steps(previous, move, steps, chords);
+        } else {
+          linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.01,
+                             chords);
+        }
         for (const auto& point : chords) {
           auto vars = std::map<std::string, std::string>{
               {"x", fmt(point[0] - originX)},

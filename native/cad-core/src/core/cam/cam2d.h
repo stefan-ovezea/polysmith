@@ -101,6 +101,16 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
 // Total length of an offset loop.
 double offset_loop_length(const std::vector<OffsetSegment>& segments);
 
+// Signed sweep angle of one offset arc segment (positive = CCW,
+// negative = CW), with the full-circle special case resolved from the
+// walk direction.  Returns 0.0 for a non-arc segment.
+double offset_arc_sweep(const OffsetSegment& segment);
+
+// True when `p` lies on the arc segment's swept span (on the circle,
+// angle within the signed sweep).  Full circles contain every point
+// on their circumference.
+bool offset_arc_contains_point(const OffsetSegment& segment, const XY& p);
+
 // Samples the loop into small straight pieces (for self-intersection
 // scanning and any consumer needing a polyline).
 std::vector<XY> sample_offset_loop(const std::vector<OffsetSegment>& segments,

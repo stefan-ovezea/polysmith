@@ -457,6 +457,55 @@ double offset_loop_length(const std::vector<OffsetSegment>& segments) {
   return length;
 }
 
+double offset_arc_sweep(const OffsetSegment& segment) {
+  if (!segment.is_arc) {
+    return 0.0;
+  }
+  const double startAngle = std::atan2(segment.start.y - segment.center.y,
+                                       segment.start.x - segment.center.x);
+  const double endAngle = std::atan2(segment.end.y - segment.center.y,
+                                     segment.end.x - segment.center.x);
+  double sweep = endAngle - startAngle;
+  // Full circles: start == end, so the sweep must come from the
+  // walk direction.
+  if (xy_length(segment.end.x - segment.start.x,
+                segment.end.y - segment.start.y) < 1e-9) {
+    return segment.cw ? -kTwoPiConst : kTwoPiConst;
+  }
+  if (segment.cw && sweep > 0) {
+    sweep -= kTwoPiConst;
+  } else if (!segment.cw && sweep < 0) {
+    sweep += kTwoPiConst;
+  }
+  return sweep;
+}
+
+bool offset_arc_contains_point(const OffsetSegment& segment, const XY& p) {
+  if (!segment.is_arc) {
+    return false;
+  }
+  const double sweep = offset_arc_sweep(segment);
+  if (std::abs(std::abs(sweep) - kTwoPiConst) < 1e-9) {
+    return true;
+  }
+  const double startAngle = std::atan2(segment.start.y - segment.center.y,
+                                       segment.start.x - segment.center.x);
+  const double hitAngle = std::atan2(p.y - segment.center.y,
+                                     p.x - segment.center.x);
+  double relative = hitAngle - startAngle;
+  while (relative > kPi) {
+    relative -= kTwoPiConst;
+  }
+  while (relative < -kPi) {
+    relative += kTwoPiConst;
+  }
+  constexpr double kContainEps = 1e-9;
+  if (sweep > 0.0) {
+    return relative >= -kContainEps && relative <= sweep + kContainEps;
+  }
+  return relative <= kContainEps && relative >= sweep - kContainEps;
+}
+
 std::vector<XY> sample_offset_loop(const std::vector<OffsetSegment>& segments,
                                    double tolerance) {
   std::vector<XY> points;

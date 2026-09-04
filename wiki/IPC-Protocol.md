@@ -329,12 +329,36 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `lead_in_style` / `lead_out_style` (`line|arc`) +
   `lead_in_angle_deg` / `lead_out_angle_deg`, `overcut_mm`,
   `pierce_dwell_seconds` (default 0.1), `pierce_position`,
-  `tabs_enabled` / `tab_width_mm` / `tab_spacing_mm` / `tab_power_percent`
-  / `tabs_on_holes`, `engrave_style` (`line|fill`) / `line_spacing_mm` /
-  `fill_angle_deg` / `fill_bidirectional`, `material_thickness_mm`,
-  `cut_plane_offset_mm`, and `cut_order`
+  `pierce_angle_deg` (nullable), `tabs_enabled` / `tab_width_mm` /
+  `tab_spacing_mm` / `tab_power_percent` / `tabs_on_holes`,
+  `engrave_style` (`line|fill`) / `line_spacing_mm` / `fill_angle_deg` /
+  `fill_bidirectional`, `material_thickness_mm`, `cut_plane_offset_mm`,
+  `arc_segments_per_circle` (0 = auto), and `cut_order`
   (`inner_first|nearest_neighbor|by_area`).  Documents saved before v2
   load unchanged — absent keys take the v2 defaults.
+- `pierce_angle_deg` picks the lead/pierce side explicitly: a ray from
+  each loop's centroid at the given angle (loop-local sketch plane, CCW
+  from +X) finds the first contour crossing — that point becomes the
+  pierce, the contour walk starts and ends there, and the leads attach
+  tangentially.  When set it **overrides `pierce_position`** (the UI
+  disables that dropdown while an angle is set); when absent the
+  automatic placement rules apply.  Mirrored sketch frames mirror the
+  visual direction — the angle is loop-local, and the lead tangents
+  always follow the contour walk, so both stay consistent.
+- Lead side follows the kerf offset side.  `kerf_side: auto` offsets the
+  cut OUTWARD on outer loops (scrap outside the disc) and INWARD on holes
+  (scrap inside the hole), and the pierce + leads land on that same side:
+  exterior offsets keep the tangent lead-in/out, interior offsets turn
+  the lead into a spoke along the pierce→centroid ray (perpendicular to
+  the contour on circles) — a straight tangent line cannot lie inside a
+  closed contour.  `kerf_side: inside|outside` overrides force that side
+  (and the lead side) on every loop; `none` and engrave have no offset
+  and keep tangent leads.
+- `arc_segments_per_circle` pins how many chords approximate each full
+  circle in the polyline viewport render and in the `use_arcs=false`
+  G-code post (proportional counts for partial arcs).  `0` (default)
+  keeps the legacy chord-tolerance paths; the toolpath IR always keeps
+  true G2/G3 arcs regardless of the display count.
 - `cam_post_processor_set` stores the `PostProcessor` — `type` names a post
   DEFINITION.  Post processors are first-class files: one `<name>.json` per
   machine in the user's posts directory (`POLYSMITH_POSTS_DIR`, resolved by

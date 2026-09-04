@@ -316,6 +316,10 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   laser.pierce_dwell_seconds =
       cam_read_number(payload, "pierce_dwell_seconds", 0.1);
   laser.pierce_position = cam_read_string(payload, "pierce_position", "auto");
+  if (payload.contains("pierce_angle_deg") &&
+      !payload.at("pierce_angle_deg").is_null()) {
+    laser.pierce_angle_deg = cam_read_number(payload, "pierce_angle_deg", 0.0);
+  }
   laser.tabs_enabled = cam_read_bool(payload, "tabs_enabled", false);
   laser.tab_width_mm = cam_read_number(payload, "tab_width_mm", 0.5);
   laser.tab_spacing_mm = cam_read_number(payload, "tab_spacing_mm", 20.0);
@@ -332,6 +336,8 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   laser.cut_plane_offset_mm =
       cam_read_number(payload, "cut_plane_offset_mm", 0.0);
   laser.cut_order = cam_read_string(payload, "cut_order", "inner_first");
+  laser.arc_segments_per_circle =
+      cam_read_int(payload, "arc_segments_per_circle", 0);
   if (payload.contains("speed_mm_per_s") &&
       !payload.at("speed_mm_per_s").is_null()) {
     laser.speed_mm_per_s = cam_read_number(payload, "speed_mm_per_s", 0.0);

@@ -147,6 +147,101 @@ bool plan_loop(const std::vector<BaseSegment>& base, double kerf,
   return true;
 }
 
+// Rotates the loop's segments so the walk starts at `pierce`,
+// splitting the containing segment in two when the pierce lies
+// mid-segment (a lead-side angle landing inside a full-circle arc).
+// The returned contour starts AND ends at the pierce.
+std::vector<OffsetSegment> contour_starting_at(
+    const std::vector<OffsetSegment>& segments, const XY& pierce) {
+  constexpr double kVertexEps = 1e-6;
+
+  // True when the pierce lies INSIDE the segment (not on its start
+  // vertex — the identity rotation handles that case).
+  const auto pierce_inside = [&](const OffsetSegment& segment) {
+    if (!segment.is_arc) {
+      if (cam2d::xy_point_segment_distance(pierce, segment.start,
+                                           segment.end) > kVertexEps) {
+        return false;
+      }
+      // The distance test also matches the unbounded line — require
+      // the projection to lie within the span.
+      const double len = xy_length(segment.end.x - segment.start.x,
+                                   segment.end.y - segment.start.y);
+      if (len < 1e-12) {
+        return false;
+      }
+      const double t = ((pierce.x - segment.start.x) *
+                            (segment.end.x - segment.start.x) +
+                        (pierce.y - segment.start.y) *
+                            (segment.end.y - segment.start.y)) /
+                       (len * len);
+      return t >= -1e-9 && t <= 1.0 + 1e-9;
+    }
+    const double dist = xy_length(pierce.x - segment.center.x,
+                                  pierce.y - segment.center.y);
+    return std::abs(dist - segment.radius) <= kVertexEps &&
+           cam2d::offset_arc_contains_point(segment, pierce);
+  };
+
+  // Locate the pierce: an exact start-vertex match first (identity
+  // case — the segment selectors return segment starts for auto
+  // placement), then a mid-segment hit.
+  size_t containing = segments.size();
+  bool atEndpoint = false;
+  for (size_t i = 0; i < segments.size(); ++i) {
+    if (xy_length(segments[i].start.x - pierce.x,
+                  segments[i].start.y - pierce.y) < kVertexEps) {
+      containing = i;
+      atEndpoint = true;
+      break;
+    }
+    if (pierce_inside(segments[i])) {
+      containing = i;
+    }
+  }
+  if (containing == segments.size()) {
+    // The pierce is not on the contour (should not happen — the
+    // selectors return contour points) — rotate to the nearest
+    // segment start as a safety net.
+    size_t nearest = 0;
+    double best = std::numeric_limits<double>::max();
+    for (size_t i = 0; i < segments.size(); ++i) {
+      const double d = xy_length(segments[i].start.x - pierce.x,
+                                 segments[i].start.y - pierce.y);
+      if (d < best) {
+        best = d;
+        nearest = i;
+      }
+    }
+    containing = nearest;
+    atEndpoint = true;
+  }
+
+  std::vector<OffsetSegment> contour;
+  contour.reserve(segments.size() + (atEndpoint ? 0 : 1));
+  OffsetSegment closingHead;
+  bool hasClosingHead = false;
+  for (size_t k = 0; k < segments.size(); ++k) {
+    const OffsetSegment& segment = segments[(containing + k) % segments.size()];
+    if (k == 0 && !atEndpoint) {
+      // Split [start → end] into [pierce → end] (walk starts here)
+      // and [start → pierce] (closes the loop at the end).
+      OffsetSegment tail = segment;
+      tail.start = pierce;
+      contour.push_back(tail);
+      closingHead = segment;
+      closingHead.end = pierce;
+      hasClosingHead = true;
+      continue;
+    }
+    contour.push_back(segment);
+  }
+  if (hasClosingHead) {
+    contour.push_back(closingHead);
+  }
+  return contour;
+}
+
 }  // namespace
 
 std::optional<SketchFeatureParameters::SketchPlaneFrame> resolve_sketch_frame(
@@ -288,6 +383,15 @@ CamGenerateResult generate_laser_cut_toolpath(
     return conventional ? -signedKerf : signedKerf;
   };
 
+  // Lead side follows the kerf offset side: exterior offsets keep
+  // tangent leads, interior offsets turn the lead into a spoke from
+  // the loop centroid.  Recorded per loop at plan time, where the
+  // walk handedness and the offset sign are both known.
+  const auto note_kerf_side = [&](PlannedLoop& loop, double kerf) {
+    const bool walkCw = loop.is_hole != conventional;
+    loop.kerf_inside = (kerf > 0.0) == walkCw;
+  };
+
   // Speed: laser-native mm/s when present; legacy feedrate fallback
   // (feedrate_mm_per_min = speed × 60).
   const double feedrate = [&]() {
@@ -348,8 +452,9 @@ CamGenerateResult generate_laser_cut_toolpath(
 
       PlannedLoop loop;
       std::string error;
-      if (!plan_loop(base, kerf_for(/*is_hole=*/false), /*is_hole=*/false,
-                     centroid, loop, error)) {
+      const double outerKerf = kerf_for(/*is_hole=*/false);
+      if (!plan_loop(base, outerKerf, /*is_hole=*/false, centroid, loop,
+                     error)) {
         // Drop the whole region: cutting a region's holes after its
         // outline failed would separate material with no release cut.
         if (firstSkipReason.empty()) {
@@ -358,6 +463,7 @@ CamGenerateResult generate_laser_cut_toolpath(
         result.warnings.push_back("A profile contour was skipped: " + error);
         continue;
       }
+      note_kerf_side(loop, outerKerf);
       group.push_back(std::move(loop));
     }
 
@@ -380,11 +486,13 @@ CamGenerateResult generate_laser_cut_toolpath(
       }
       PlannedLoop loop;
       std::string error;
-      if (!plan_loop(holeBase, kerf_for(/*is_hole=*/true), /*is_hole=*/true,
+      const double holeKerf = kerf_for(/*is_hole=*/true);
+      if (!plan_loop(holeBase, holeKerf, /*is_hole=*/true,
                      xy_centroid(holePointList), loop, error)) {
         result.warnings.push_back("A hole contour was skipped: " + error);
         continue;
       }
+      note_kerf_side(loop, holeKerf);
       group.push_back(std::move(loop));
     }
 
@@ -478,7 +586,8 @@ CamGenerateResult generate_laser_cut_toolpath(
         }
         PlannedLoop loop;
         std::string error;
-        if (!plan_loop(base, kerf_for(isHole), isHole,
+        const double faceKerf = kerf_for(isHole);
+        if (!plan_loop(base, faceKerf, isHole,
                        xy_centroid(wireLoops[w]), loop, error)) {
           // A failed outer boundary drops the whole face; a failed
           // hole drops only that hole.
@@ -495,6 +604,7 @@ CamGenerateResult generate_laser_cut_toolpath(
               "A face hole contour was skipped: " + error);
           continue;
         }
+        note_kerf_side(loop, faceKerf);
         loop.isWorldXY = true;
         loop.worldZ = faceZ + laser.cut_plane_offset_mm;
         faceGroup.push_back(std::move(loop));
@@ -617,6 +727,9 @@ CamGenerateResult generate_laser_cut_toolpath(
   // ── Emit moves ──────────────────────────────────────────────────
   Toolpath toolpath;
   toolpath.op_id = op.op_id;
+  // Pinned arc segment count flows to the viewport linearizer and the
+  // linearized post; 0 keeps the chord-tolerance default.
+  toolpath.arc_segments_per_circle = laser.arc_segments_per_circle;
   const double cut_plane_offset = laser.cut_plane_offset_mm;
 
   const double leadIn = engrave ? 0.0 : laser.lead_in_mm;
@@ -780,16 +893,30 @@ CamGenerateResult generate_laser_cut_toolpath(
     }
 
     // Pierce vertex + lead geometry (M5): corner-aware placement,
-    // line/arc lead styles, overcut.
-    const XY pierce = select_pierce_vertex(loop, laser, result.warnings);
-    const auto leadInSegments = build_lead_in(loop, pierce, laser);
-    const auto leadOutSegments = build_lead_out(loop, pierce, laser);
+    // line/arc lead styles, overcut.  A pinned lead-side angle pierces
+    // where its ray crosses the contour; otherwise placement follows
+    // pierce_position.  The contour is rotated (and split when the
+    // pierce lands mid-segment) so it starts AND ends at the pierce —
+    // the leads hang off its exact boundary tangents.
+    const XY pierce =
+        laser.pierce_angle_deg.has_value()
+            ? select_pierce_at_angle(loop, laser.pierce_angle_deg.value(),
+                                     laser, result.warnings)
+            : select_pierce_vertex(loop, laser, result.warnings);
+    const auto contour = contour_starting_at(loop.segments, pierce);
+    // The lead comes from the kerf side: exterior offsets keep the
+    // tangent lead, an interior offset turns it into a spoke from the
+    // loop centroid.
+    const auto leadInSegments =
+        build_lead_in(contour, pierce, laser, loop.centroid, loop.kerf_inside);
+    const auto leadOutSegments =
+        build_lead_out(contour, pierce, laser, loop.centroid, loop.kerf_inside);
     const XY leadInStart = leadInSegments.empty()
                                ? pierce
                                : leadInSegments.front().start;
 
     // Rapid to the lead entry (laser off), pierce in place: laser on,
-    // dwell — on the scrap side, off the contour.
+    // dwell — on the kerf side, off the contour.
     append_rapid(leadInStart);
     append_linear(leadInStart, /*laserOn=*/true, laser.power_percent, dwell);
     // Lead-in cut.
@@ -797,28 +924,11 @@ CamGenerateResult generate_laser_cut_toolpath(
       append_segment(segment, laser.power_percent, /*laserOn=*/true);
     }
 
-    // Contour, starting at the segment whose start lies at the pierce
-    // vertex.  Repeated `passes` times with the laser staying on —
-    // LightBurn-style re-cut, no re-pierce between passes.
-    size_t startSegment = 0;
-    double closest = std::numeric_limits<double>::max();
-    for (size_t s = 0; s < loop.segments.size(); ++s) {
-      const double d = xy_length(loop.segments[s].start.x - pierce.x,
-                                 loop.segments[s].start.y - pierce.y);
-      if (d < closest) {
-        closest = d;
-        startSegment = s;
-      }
-    }
-    // Rotate the walk so it starts at the pierce vertex, then split
-    // the contour at tab boundaries (M6).  Tabs land relative to the
-    // pierce seam — never on leads.
-    const size_t count = loop.segments.size();
-    std::vector<OffsetSegment> contour;
-    contour.reserve(count);
-    for (size_t k = 0; k < count; ++k) {
-      contour.push_back(loop.segments[(startSegment + k) % count]);
-    }
+    // Contour, starting at the pierce.  Repeated `passes` times with
+    // the laser staying on — LightBurn-style re-cut, no re-pierce
+    // between passes.  Tabs (M6) split the rotated contour at tab
+    // boundaries, landing relative to the pierce seam — never on
+    // leads.
     PlannedLoop contourLoop = loop;
     contourLoop.segments = contour;
     const auto tabbed = apply_loop_tabs(contourLoop, laser, result.warnings);

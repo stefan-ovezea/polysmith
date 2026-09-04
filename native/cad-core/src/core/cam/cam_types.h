@@ -207,6 +207,10 @@ struct LaserCutParameters {
   double pierce_dwell_seconds = 0.1;  // G4 dwell after pierce
   std::string pierce_position = "auto";  // "auto" | "lead_start" |
                                          // "nearest_centroid"
+  // Lead-side selection: when set, the pierce is placed where the ray
+  // from the loop centroid at this angle (degrees, CCW from sketch +X,
+  // loop-local) crosses the contour.  Overrides pierce_position.
+  std::optional<double> pierce_angle_deg;
 
   // Tabs / bridges.
   bool tabs_enabled = false;
@@ -224,6 +228,11 @@ struct LaserCutParameters {
   // Cut plane / material.
   double material_thickness_mm = 3.0;
   double cut_plane_offset_mm = 0.0;  // cut-plane Z relative to sketch plane
+
+  // Arc display fidelity: fixed segment count per full circle for the
+  // viewport polyline and the linearized G-code post.  0 = auto
+  // (chord-tolerance based, existing behavior).
+  int arc_segments_per_circle = 0;
 
   // Ordering.
   std::string cut_order = "inner_first";  // "inner_first" |

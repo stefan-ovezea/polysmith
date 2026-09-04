@@ -711,7 +711,17 @@ Geometry input:
   dropdown then retargets it via `cam_operation_set_scope`. The kerf/lead/
   power settings live in `parameters.laser` (v2 model: `mode`,
   `power_percent`, `speed_mm_per_s`, `passes`, `kerf_width_mm`/`kerf_side`,
-  leads, tabs, fill, `cut_order`).
+  leads, tabs, fill, `cut_order`). Two laser settings agents should know:
+  `pierce_angle_deg` (nullable) pins the lead/pierce side — a ray from each
+  loop's centroid at that angle (loop-local sketch plane, CCW from +X) hits
+  the contour and the walk + leads attach there tangentially; when set it
+  overrides `pierce_position`. `arc_segments_per_circle` (0 = auto) pins the
+  chord count per full circle for the polyline preview and the
+  `use_arcs=false` post. The lead side follows the kerf side: with
+  `kerf_side: auto`, holes get their pierce + leads INSIDE the hole and
+  outer loops get them outside the disc (interior leads run along the
+  pierce→centroid spoke — tangent leads cannot lie inside a closed
+  contour); `inside|outside` forces both the kerf and the lead side.
 - `select_sketch_profile` accepts `{entity_id, additive}` instead of
   `{profile_id, additive}`: the core selects every profile whose boundary
   includes the entity (used for outline clicks during the CAM re-pick flow;
