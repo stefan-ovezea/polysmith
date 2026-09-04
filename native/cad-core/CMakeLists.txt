@@ -11,6 +11,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
   add_compile_definitions(_USE_MATH_DEFINES)
   add_compile_options(/EHsc)
+  # Parallel per-TU compilation via MSBuild's multi-tool task scheduler:
+  # one cl.exe per TU, total process count bounded by the /m value that
+  # `cmake --build --parallel N` passes.  Do NOT combine with /MP — MTT
+  # disables it, and cmake --build injects CL_MPCount=1 anyway.  Requires
+  # MSBuild 16.4+ (VS 2019 16.4+); consumed only by the VS generator and
+  # silently ignored by Makefiles/Ninja.
+  set(CMAKE_VS_GLOBALS
+    "UseMultiToolTask=true"
+    "EnforceProcessCountAcrossBuilds=true"
+  )
 endif()
 
 # Place binaries directly in build/ (not build/Release/) so Tauri finds them.
@@ -25,11 +35,6 @@ endforeach()
 # target — avoids cmake install issues (per-module target files are only
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
-# OCCT's in-tree build dir (occt8-build/inc) carries most headers, but
-# the TColStd/TColgp array templates are deprecated headers that only
-# land in the install tree — the spline helpers (spline_profile_occt.cpp,
-# the BSpline wire edges) need them. Headers are platform-independent.
-include_directories("${CMAKE_SOURCE_DIR}/../../third_party/occt8-install/inc")
 add_library(occt_iface INTERFACE)
 # inc/ is the build-tree header location — works on both platforms without
 # requiring cmake --install (which fails on Windows due to locked DLLs).
@@ -179,18 +184,27 @@ set(CAD_CORE_SOURCES
   src/protocol/serialization.cpp
 )
 
-add_executable(cad_core
-  src/app.cpp
-  ${CAD_CORE_SOURCES}
-  src/main.cpp
-)
+# ---- CAD core static library ------------------------------------------------
+# All full-core test suites and the cad_core exe link this library instead of
+# recompiling every source file per target (~35x fewer TU compilations per
+# clean build).  Static-lib link semantics pull only referenced objects, so
+# any future TU that self-registers via a static initializer would be
+# silently dropped here — registration must stay explicit.
+add_library(cad_core_lib STATIC ${CAD_CORE_SOURCES})
 
-target_include_directories(cad_core PRIVATE
+target_include_directories(cad_core_lib PUBLIC
   src
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
 
-target_link_libraries(cad_core PRIVATE ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
+target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
+
+add_executable(cad_core
+  src/app.cpp
+  src/main.cpp
+)
+
+target_link_libraries(cad_core PRIVATE cad_core_lib)
 
 # Tauri looks for cad_core.exe in build/ (not build/Release/).
 add_custom_command(TARGET cad_core POST_BUILD
@@ -199,6 +213,22 @@ add_custom_command(TARGET cad_core POST_BUILD
     ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:cad_core>
   COMMENT "Copying cad_core to build/ for Tauri"
 )
+
+# Full-core test suite: links cad_core_lib instead of recompiling
+# ${CAD_CORE_SOURCES} per target.  The include list matches the old
+# per-target block verbatim to preserve include order exactly.
+function(polysmith_add_core_test NAME TEST_FILE)
+  add_executable(${NAME} ${TEST_FILE})
+  target_include_directories(${NAME} PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/../../third_party
+    ${PLANEGCS_DIR}
+    ${CMAKE_SOURCE_DIR}/native_compat
+    ${PLANEGCS_DIR}/headers
+    ${Boost_INCLUDE_DIRS}
+  )
+  target_link_libraries(${NAME} PRIVATE cad_core_lib)
+endfunction()
 
 add_executable(cad_core_cam2d_test
   # cam2d + cam_planning only — no cad_core / protocol dependency, so
@@ -256,730 +286,118 @@ target_link_libraries(cad_core_sketch_profile_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
 )
 
-add_executable(cad_core_multi_profile_extrude_test
-  ${CAD_CORE_SOURCES}
-  tests/multi_profile_extrude_test.cpp
-)
+polysmith_add_core_test(cad_core_multi_profile_extrude_test tests/multi_profile_extrude_test.cpp)
 
-target_include_directories(cad_core_multi_profile_extrude_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_cam_face_reference_test tests/cam_face_reference_test.cpp)
 
-target_link_libraries(cad_core_multi_profile_extrude_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_cam_save_load_test tests/cam_save_load_test.cpp)
 
-add_executable(cad_core_cam_face_reference_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_face_reference_test.cpp
-)
+polysmith_add_core_test(cad_core_cam_commands_test tests/cam_commands_test.cpp)
 
-target_include_directories(cad_core_cam_face_reference_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_cam_machine_library_test tests/cam_machine_library_test.cpp)
 
-target_link_libraries(cad_core_cam_face_reference_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_cam_profile_reference_test tests/cam_profile_reference_test.cpp)
 
-add_executable(cad_core_cam_save_load_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_save_load_test.cpp
-)
+polysmith_add_core_test(cad_core_cam_refresh_test tests/cam_refresh_test.cpp)
 
-target_include_directories(cad_core_cam_save_load_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_grbl_post_test tests/grbl_post_test.cpp)
 
-target_link_libraries(cad_core_cam_save_load_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_cam_generators_test tests/cam_generators_test.cpp)
 
-add_executable(cad_core_cam_commands_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_commands_test.cpp
-)
+polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 
-target_include_directories(cad_core_cam_commands_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_extrude_quality_test tests/extrude_quality_test.cpp)
 
-target_link_libraries(cad_core_cam_commands_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_cam_machine_library_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_machine_library_test.cpp
-)
-
-target_include_directories(cad_core_cam_machine_library_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_cam_machine_library_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_cam_profile_reference_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_profile_reference_test.cpp
-)
-
-target_include_directories(cad_core_cam_profile_reference_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_cam_profile_reference_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_cam_refresh_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_refresh_test.cpp
-)
-
-target_include_directories(cad_core_cam_refresh_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_cam_refresh_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_grbl_post_test
-  ${CAD_CORE_SOURCES}
-  tests/grbl_post_test.cpp
-)
-
-target_include_directories(cad_core_grbl_post_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_grbl_post_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_cam_generators_test
-  ${CAD_CORE_SOURCES}
-  tests/cam_generators_test.cpp
-)
-
-target_include_directories(cad_core_cam_generators_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_cam_generators_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_plugin_feature_test
-  ${CAD_CORE_SOURCES}
-  tests/plugin_feature_test.cpp
-)
-
-target_include_directories(cad_core_plugin_feature_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_plugin_feature_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_extrude_quality_test
-  ${CAD_CORE_SOURCES}
-  tests/extrude_quality_test.cpp
-)
-
-target_include_directories(cad_core_extrude_quality_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_extrude_quality_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_sketch_move_test
-  ${CAD_CORE_SOURCES}
-  tests/sketch_move_test.cpp
-)
-
-target_include_directories(cad_core_sketch_move_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_sketch_move_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_sketch_move_test tests/sketch_move_test.cpp)
 
 # Ellipse entity regression suite — creation, exact profile edge,
 # extrude smoke, move preservation, construction exclusion.
-add_executable(cad_core_ellipse_test
-  ${CAD_CORE_SOURCES}
-  tests/ellipse_test.cpp
-)
-
-target_include_directories(cad_core_ellipse_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_ellipse_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_ellipse_test tests/ellipse_test.cpp)
 
 # Spline entity regression suite — control-point creation, pole drag
 # re-fit, exact profile set, extrude smoke, move, trim rejection,
 # save/load round-trip.
-add_executable(cad_core_spline_test
-  ${CAD_CORE_SOURCES}
-  tests/spline_test.cpp
-)
-
-target_include_directories(cad_core_spline_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_spline_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_spline_test tests/spline_test.cpp)
 
 # Slot entity regression suite — expansion to 2 lines + 2 arcs,
 # exact profile set, param update re-expansion, generated-entity
 # guards, move, extrude smoke.
-add_executable(cad_core_slot_test
-  ${CAD_CORE_SOURCES}
-  tests/slot_test.cpp
-)
-
-target_include_directories(cad_core_slot_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_slot_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_slot_test tests/slot_test.cpp)
 
 # Sketch chamfer regression suite — symmetric/asymmetric chamfers,
 # distance edits (both epsilon sides), delete restores the corner,
 # full profile set on a chamfered rectangle, fillet conflict.
-add_executable(cad_core_sketch_chamfer_test
-  ${CAD_CORE_SOURCES}
-  tests/sketch_chamfer_test.cpp
-)
-
-target_include_directories(cad_core_sketch_chamfer_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_sketch_chamfer_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_sketch_chamfer_test tests/sketch_chamfer_test.cpp)
 
 # Sketch extend regression suite — line/arc extension both directions,
 # closed-loop profile after extend, generated-entity rejection,
 # constraint preservation, arc angle dim flips to driven.
-add_executable(cad_core_extend_test
-  ${CAD_CORE_SOURCES}
-  tests/extend_test.cpp
-)
-
-target_include_directories(cad_core_extend_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_extend_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_extend_test tests/extend_test.cpp)
 
 # Sketch offset regression suite — line/circle/arc offsets on both
 # distance signs, sweep preservation, collapse/invert rejection,
 # construction/generated/unsupported rejection.
-add_executable(cad_core_offset_test
-  ${CAD_CORE_SOURCES}
-  tests/offset_test.cpp
-)
-
-target_include_directories(cad_core_offset_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_offset_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_offset_test tests/offset_test.cpp)
 
 # Sketch transform regression suite — in-place scale (H/V preserved,
 # radii scaled, dims flipped/re-measured), exploded copies (fresh
 # ids, vertex topology preserved among copies, H/V stripped on
 # rotated copies), single-undo, two-profile copy.
-add_executable(cad_core_transform_test
-  ${CAD_CORE_SOURCES}
-  tests/transform_test.cpp
-)
-
-target_include_directories(cad_core_transform_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_transform_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_transform_test tests/transform_test.cpp)
 
 # Circle creation-mode regression suite — two/three-point circles,
 # tangent-to-lines with circle-slave radius re-derivation, incenter,
 # both wedge sides, full profile set.
-add_executable(cad_core_circle_modes_test
-  ${CAD_CORE_SOURCES}
-  tests/circle_modes_test.cpp
-)
-
-target_include_directories(cad_core_circle_modes_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_circle_modes_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_circle_modes_test tests/circle_modes_test.cpp)
 
 # Dimension-completion regression suite — diameter display, arc
 # angle sweeps, arc length driving.
-add_executable(cad_core_dimension_completion_test
-  ${CAD_CORE_SOURCES}
-  tests/dimension_completion_test.cpp
-)
-
-target_include_directories(cad_core_dimension_completion_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_dimension_completion_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_dimension_completion_test tests/dimension_completion_test.cpp)
 
 # Sketch array regression suite — linear/circular exploded copies,
 # unique ids, on-circle placement (1e-6), single-undo removal.
-add_executable(cad_core_array_test
-  ${CAD_CORE_SOURCES}
-  tests/array_test.cpp
-)
+polysmith_add_core_test(cad_core_array_test tests/array_test.cpp)
 
 # Intersecting-arcs extrude regression — the lobe between two arcs
 # must cut its bottom-cap hole, not wire it as a giant complement
 # region (the "thin wall" bug, res/part.json geometry).
-add_executable(cad_core_intersecting_arcs_extrude_test
-  ${CAD_CORE_SOURCES}
-  tests/intersecting_arcs_extrude_test.cpp
-)
+polysmith_add_core_test(cad_core_intersecting_arcs_extrude_test tests/intersecting_arcs_extrude_test.cpp)
 
 # Trim regression suite — the hovered segment index must decide the
 # trim (not a re-derived click segment), and the arc-aware distance
 # metric must replace the chord fallback for long arc segments.
-add_executable(cad_core_trim_test
-  ${CAD_CORE_SOURCES}
-  tests/trim_test.cpp
-)
-
-target_include_directories(cad_core_trim_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_trim_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-target_include_directories(cad_core_intersecting_arcs_extrude_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_intersecting_arcs_extrude_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-target_include_directories(cad_core_array_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_array_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_trim_test tests/trim_test.cpp)
 
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.
-add_executable(cad_core_constraint_completion_test
-  ${CAD_CORE_SOURCES}
-  tests/constraint_completion_test.cpp
-)
-
-target_include_directories(cad_core_constraint_completion_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_constraint_completion_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_constraint_completion_test tests/constraint_completion_test.cpp)
 
 # Parametric arc regression suite — GCS::Arc solver integration: driving
 # radius/angle dimensions, shared-endpoint drag, over-constraint fallback,
 # complete profile sets for mixed line+arc loops.
-add_executable(cad_core_parametric_arc_test
-  ${CAD_CORE_SOURCES}
-  tests/parametric_arc_test.cpp
-)
-
-target_include_directories(cad_core_parametric_arc_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_parametric_arc_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_parametric_arc_test tests/parametric_arc_test.cpp)
 
 # Sketch tool whitelist regression suite — the two sketch-tool whitelists
 # (validate_tool / is_supported_sketch_tool) must accept identical ids,
 # and commands.schema.json must match the real command vocabulary.
-add_executable(cad_core_tool_whitelist_test
-  ${CAD_CORE_SOURCES}
-  tests/tool_whitelist_test.cpp
-)
-
-target_include_directories(cad_core_tool_whitelist_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_tool_whitelist_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_tool_whitelist_test tests/tool_whitelist_test.cpp)
 
 # Selection/highlight regression suite — stale selection clears and the
 # central prune pass (feature/highlight).
-add_executable(cad_core_selection_test
-  ${CAD_CORE_SOURCES}
-  tests/cad_core_selection_test.cpp
-)
-
-target_include_directories(cad_core_selection_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_selection_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_selection_test tests/cad_core_selection_test.cpp)
 
 # Face-projection arc recovery regression suite (feature/projection-arcs).
-add_executable(cad_core_face_projection_arc_test
-  ${CAD_CORE_SOURCES}
-  tests/face_projection_arc_test.cpp
-)
+polysmith_add_core_test(cad_core_face_projection_arc_test tests/face_projection_arc_test.cpp)
 
-target_include_directories(cad_core_face_projection_arc_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_stl_writer_test tests/stl_writer_test.cpp)
 
-target_link_libraries(cad_core_face_projection_arc_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_stl_import_test tests/stl_import_test.cpp)
 
-add_executable(cad_core_stl_writer_test
-  ${CAD_CORE_SOURCES}
-  tests/stl_writer_test.cpp
-)
+polysmith_add_core_test(cad_core_dxf_import_export_test tests/dxf_import_export_test.cpp)
 
-target_include_directories(cad_core_stl_writer_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
+polysmith_add_core_test(cad_core_step_import_test tests/step_import_test.cpp)
 
-target_link_libraries(cad_core_stl_writer_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_stl_import_test
-  ${CAD_CORE_SOURCES}
-  tests/stl_import_test.cpp
-)
-
-target_include_directories(cad_core_stl_import_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_stl_import_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_dxf_import_export_test
-  ${CAD_CORE_SOURCES}
-  tests/dxf_import_export_test.cpp
-)
-
-add_executable(cad_core_step_import_test
-  ${CAD_CORE_SOURCES}
-  tests/step_import_test.cpp
-)
-
-target_include_directories(cad_core_step_import_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_step_import_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-add_executable(cad_core_iges_import_export_test
-  ${CAD_CORE_SOURCES}
-  tests/iges_import_export_test.cpp
-)
-
-target_include_directories(cad_core_iges_import_export_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_iges_import_export_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
-
-target_include_directories(cad_core_dxf_import_export_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_dxf_import_export_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_iges_import_export_test tests/iges_import_export_test.cpp)
 
 # Text engine unit tests — links only the engine + OCCT font stack
 # (no full CAD core), so font behavior is exercised in isolation.
@@ -1000,22 +418,4 @@ target_link_libraries(cad_core_text_engine_test PRIVATE
 
 # Sketch text integration tests — drive the full DocumentManager like
 # sketch_move_test: expansion, profiles, guards, extrude, save/load.
-add_executable(cad_core_text_test
-  ${CAD_CORE_SOURCES}
-  tests/text_test.cpp
-)
-
-target_include_directories(cad_core_text_test PRIVATE
-  src
-  ${CMAKE_SOURCE_DIR}/../../third_party
-  ${PLANEGCS_DIR}
-  ${CMAKE_SOURCE_DIR}/native_compat
-  ${PLANEGCS_DIR}/headers
-  ${Boost_INCLUDE_DIRS}
-)
-
-target_link_libraries(cad_core_text_test PRIVATE
-  ${OpenCASCADE_LIBRARIES}
-  planegcs
-  dxfrw
-)
+polysmith_add_core_test(cad_core_text_test tests/text_test.cpp)

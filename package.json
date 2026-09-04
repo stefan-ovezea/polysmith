@@ -14,7 +14,7 @@
     "ui:install": "pnpm install",
     "build:release": "node scripts/build-release.mjs",
     "core:configure": "node scripts/configure-core.mjs",
-    "core:build": "cmake --build native/cad-core/build --config Release --parallel 2",
+    "core:build": "node scripts/build-core.mjs",
     "core:rebuild": "pnpm core:configure && pnpm core:build",
     "test:core": "node scripts/run-core-tests.mjs",
     "test:ai": "pnpm --filter desktop-ui exec vitest run src/lib/ai/aiSketchGeneration.integration.test.ts src/lib/ai/cadCoreHarness.smoke.test.ts",

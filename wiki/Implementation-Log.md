@@ -2,6 +2,71 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-04
+
+### Core build speedup: static cad_core_lib + parallel compile + parallel test runner (core-build-speedup)
+
+Full core builds were slow for two structural reasons: all 35 full-core
+test executables recompiled the entire `CAD_CORE_SOURCES` list (~57 TUs)
+each (~2,100 TU compilations per clean build), and `cmake --build
+--parallel 2` with serial in-project compilation (cmake injects
+`CL_MPCount=1`) left a 12-core machine mostly idle.
+
+- **Static library** — `native/cad-core/CMakeLists.txt` builds
+  `cad_core_lib` (STATIC, `CAD_CORE_SOURCES`) once; the `cad_core` exe
+  and all 35 full-core suites link it via a `polysmith_add_core_test()`
+  helper (1 test TU + project reference per suite). The curated suites
+  (`cam2d_test`, `sketch_profile_test`, `text_engine_test`) keep their
+  deliberate source subsets. Clean rebuild: ~122 TU compiles instead of
+  ~2,100.
+- **Parallel compile** — `CMAKE_VS_GLOBALS` sets `UseMultiToolTask=true`
+  + `EnforceProcessCountAcrossBuilds=true` (MSBuild 16.4+): one cl.exe
+  per TU scheduled through MSBuild, total process count bounded by the
+  `/m` value. Deliberately NOT `/MP` — it is inert under `cmake --build`
+  (which injects `CL_MPCount=1`) and MTT disables it anyway; non-VS
+  generators ignore the pair.
+- **`scripts/build-core.mjs`** — `pnpm core:build` now runs this wrapper:
+  jobs default to `os.cpus().length`, override with `CAD_CORE_JOBS`
+  (memory valve for OCCT-heavy TUs). No `--target` (VS generator: `all`
+  is not a solution project).
+- **Parallel test runner** — `scripts/run-core-tests.mjs` runs suites
+  concurrently (`CAD_CORE_TEST_JOBS`, default CPU count; `=1` restores
+  serial order). Each suite gets a private temp dir exported as TMP/TEMP
+  (Windows) / TMPDIR (POSIX) — several suites create fixed-name subdirs
+  under `temp_directory_path()` and `remove_all` them on entry, so
+  sharing the real temp root would race. Output is buffered per suite
+  and printed on completion to avoid interleaving.
+
+Measured on the dev machine (12 logical cores): clean `pnpm core:rebuild`
+1m25s; `pnpm test:core` 38/38 green in ~1.7s wall (parallel), also green
+in serial mode and on re-run; touching a protocol `.inc` recompiles the
+owning TU and relinks dependents in ~4s (MSBuild tlog tracking unchanged).
+
+### OCCT 8.0 deprecated containers → NCollection (core-build-speedup)
+
+A clean-rebuild warning triage found 16 OCCT deprecation warnings, all
+from our code (OCCT-library and planegcs warnings left alone): the
+deprecated `TColgp_Array1OfPnt{,2d}` / `TColStd_Array1OfReal` /
+`TColStd_Array1OfInteger` templates and the
+`TopTools_IndexedDataMapOfShapeListOfShape` typedef.
+
+- **Spline construction** (`feature_shape.cpp` via
+  `sketch_wire_extrude.inc`, `spline_profile_occt.cpp`, `cam2d_test`
+  fixture) now uses `NCollection_Array1<gp_Pnt|gp_Pnt2d|double|int>` —
+  source-compatible (deprecated TCol types derive from
+  NCollection_Array1) and accepted by OCCT 8.0's `Geom{,2d}_BSplineCurve`
+  constructors.
+- **Face-ancestor maps** (`export.cpp`, `stl_writer_test.cpp`) spell the
+  underlying `NCollection_IndexedDataMap<TopoDS_Shape,
+  NCollection_List<TopoDS_Shape>, TopTools_ShapeMapHasher>` accepted by
+  `TopExp::MapShapesAndAncestors`.
+- **CMakeLists.txt** drops the install-tree include dir
+  (`third_party/occt8-install/inc`): it existed only for those deprecated
+  TCol headers, which nothing includes anymore.
+
+Verified: rebuild with zero warnings from our code; `pnpm test:core`
+38/38 in parallel and serial modes.
+
 ## 2026-09-01
 
 ### Headless AI generation harness + DeepSeek cloud provider (feature/AI)
