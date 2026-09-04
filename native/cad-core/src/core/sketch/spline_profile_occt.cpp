@@ -10,9 +10,7 @@
 #include <Geom2d_TrimmedCurve.hxx>
 #include <Geom2dAPI_InterCurveCurve.hxx>
 #include <Geom2dAPI_ProjectPointOnCurve.hxx>
-#include <TColStd_Array1OfInteger.hxx>
-#include <TColStd_Array1OfReal.hxx>
-#include <TColgp_Array1OfPnt2d.hxx>
+#include <NCollection_Array1.hxx>
 #include <gp_Ax2d.hxx>
 #include <gp_Ax22d.hxx>
 #include <gp_Dir2d.hxx>
@@ -35,14 +33,14 @@ Handle(Geom2d_BSplineCurve) make_spline_geom(
   const int n = static_cast<int>(pole_xs.size());
   if (degree < 1 || degree > n - 1) degree = n - 1;
   if (degree < 1) degree = 1;
-  TColgp_Array1OfPnt2d poles(1, n);
+  NCollection_Array1<gp_Pnt2d> poles(1, n);
   for (int i = 0; i < n; ++i) {
     poles.SetValue(i + 1, gp_Pnt2d(pole_xs[i], pole_ys[i]));
   }
   const int interior = n - degree - 1;
   const int knot_count = interior + 2;
-  TColStd_Array1OfReal knots(1, knot_count);
-  TColStd_Array1OfInteger mults(1, knot_count);
+  NCollection_Array1<double> knots(1, knot_count);
+  NCollection_Array1<int> mults(1, knot_count);
   knots.SetValue(1, 0.0);
   mults.SetValue(1, degree + 1);
   for (int i = 1; i <= interior; ++i) {
