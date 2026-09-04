@@ -37,6 +37,10 @@ interface CamLaserCutPanelProps {
   onStartRepick: () => void;
   onCancelRepick: () => void;
   onApplyRepick: () => void;
+  // Clears the document-level profile selection while re-pick is armed
+  // (core clear_selection — not undoable, by design: the armed state is
+  // a staging area, not part of the operation yet).
+  onClearSelection: () => void;
   // Reference sketch: the sketch this operation cuts.  null/"" means
   // no sketch scope (custom profile selection or none yet).
   sketches: Array<{ feature_id: string; name: string }>;
@@ -64,6 +68,7 @@ export function CamLaserCutPanel({
   onStartRepick,
   onCancelRepick,
   onApplyRepick,
+  onClearSelection,
   sketches,
   scopeSketchId,
   onSetScope,
@@ -187,6 +192,16 @@ export function CamLaserCutPanel({
                 >
                   {t("cam.laserCut.cancelRepick", "Cancel")}
                 </button>
+                {selectedProfileCount > 0 ? (
+                  <button
+                    type="button"
+                    className="cad-action-ghost col-span-2 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    disabled={disabled}
+                    onClick={onClearSelection}
+                  >
+                    {t("cam.laserCut.clearSelection", "Clear selection")}
+                  </button>
+                ) : null}
               </div>
             ) : (
               <button

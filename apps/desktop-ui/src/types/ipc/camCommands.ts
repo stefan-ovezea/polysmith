@@ -8,6 +8,7 @@ import type {
   CamOperationPayload,
   CamSetup,
   LaserMachineSettings,
+  MachineDefinition,
   PostProcessor,
   StockDefinition,
   ToolEntry,
@@ -135,6 +136,18 @@ export interface CamPostImportCommand {
   payload: {
     source_path: string;
   };
+}
+
+export interface CamMachineListCommand {
+  id: string;
+  type: "cam_machine_list";
+  payload: Record<string, never>;
+}
+
+export interface CamMachineSaveCommand {
+  id: string;
+  type: "cam_machine_save";
+  payload: MachineDefinition;
 }
 
 export interface CamOperationGenerateCommand {

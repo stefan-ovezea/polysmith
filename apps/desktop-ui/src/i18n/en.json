@@ -313,7 +313,16 @@
       "originSnapEdge": "body edge midpoint",
       "originSnapFace": "body face center",
       "originSnapStockCorner": "stock corner",
-      "originSnapStockMidpoint": "stock edge midpoint"
+      "originSnapStockMidpoint": "stock edge midpoint",
+      "machineLibraryLabel": "Machine",
+      "machineNone": "— none —",
+      "machineNamePlaceholder": "Machine name…",
+      "saveMachine": "Save",
+      "machineSaved": "machine \"{{name}}\" saved to the library.",
+      "machineApplied": "machine \"{{name}}\" applied — machine type, post processor, and settings updated.",
+      "machineNote": "Machines live as files in the user machines folder and are shared across documents. Selecting one applies its type, post processor, and settings to this setup.",
+      "machineListFailed": "could not load the machine library — the dropdown will retry when you re-enter CAM.",
+      "machineListEmpty": "machine library reply was empty — the core may have rejected the request; check the Logs panel."
     },
     "faceMilling": {
       "title": "Face Milling",
@@ -428,6 +437,9 @@
       "applyRepick": "Apply selection",
       "cancelRepick": "Cancel",
       "profilePicked": "profile added to the selection ({{count}} total).",
+      "profileRemoved": "profile removed from the selection ({{count}} total).",
+      "clearSelection": "Clear selection",
+      "selectionCleared": "profile selection cleared",
       "sketchSelected": "Sketch selected: {{name}} — click 2D Cut to cut it.",
       "defaultToolCreated": "Added a default laser tool.",
       "exportGcode": "Export G-code"

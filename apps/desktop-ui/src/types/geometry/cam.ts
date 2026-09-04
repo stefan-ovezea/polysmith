@@ -288,6 +288,21 @@ export interface PostProcessor {
   filename: string;
 }
 
+/// A saved, reusable machine definition — the physical machine, not the
+/// job.  Lives as <slug>.json files in the user's machines directory
+/// (seeded with built-ins on first use), re-read on every
+/// cam_machine_list, so saving a machine is writing a file.  Mirrors
+/// the core's MachineDefinition (cam_types.h).
+export interface MachineDefinition {
+  name: string;
+  machine_type: string;  // mirrors CamSetup::machine_type
+  post_processor: PostProcessor;
+  work_area_x_mm: number;
+  work_area_y_mm: number;
+  pointer_offset_x_mm: number;
+  pointer_offset_y_mm: number;
+}
+
 // ══════════════════════════════════════════════════════════════════
 //  Document Container
 // ══════════════════════════════════════════════════════════════════

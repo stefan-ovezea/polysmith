@@ -28,6 +28,7 @@ import type {
   ExtrudeAdvancedParameters,
   ExtrudeFeatureParameters,
   ExtrudeMode,
+  MachineDefinition,
   PostProcessorType,
   SketchFeatureParameters,
   SketchTool,
@@ -64,6 +65,10 @@ import {
   type WorkspaceView,
 } from "./app/appState";
 import { computeActiveFeatureParameters } from "./app/activeFeatureParameters";
+import {
+  laserOperationScopeSketchId,
+  reportCamProfileSelectionChange,
+} from "./app/camProfileSelection";
 import {
   buildCamOperations,
   computeDocumentUiState,
@@ -545,6 +550,68 @@ function App() {
   // sketch profiles accumulate into the core's profile selection;
   // "Apply" sends the empty-region update (the core re-captures).
   const [camProfilePickArmed, setCamProfilePickArmed] = useState(false);
+  // Sketch the re-pick auto-showed (hidden → shown on arm), restored
+  // on apply/cancel.  v1 restores feature-level hiding only.
+  const [repickShownSketchId, setRepickShownSketchId] = useState<
+    string | null
+  >(null);
+
+  const startCamProfileRepick = () => {
+    // Re-picking profiles of an invisible sketch is a trap — auto-show
+    // the operation's reference sketch for the duration of the arm.
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === selectedCamOperationId,
+    );
+    const sketchId = laserOperationScopeSketchId(operation);
+    if (sketchId && hiddenFeatureIds.has(sketchId)) {
+      setHiddenFeatureIds((previous) => {
+        const next = new Set(previous);
+        next.delete(sketchId);
+        return next;
+      });
+      setRepickShownSketchId(sketchId);
+    }
+    setCamProfilePickArmed(true);
+  };
+
+  const finishCamProfileRepick = () => {
+    if (repickShownSketchId) {
+      setHiddenFeatureIds((previous) => {
+        const next = new Set(previous);
+        next.add(repickShownSketchId);
+        return next;
+      });
+      setRepickShownSketchId(null);
+    }
+    setCamProfilePickArmed(false);
+    // Drop the leftover document selection — cam_operation_create with
+    // empty regions recaptures selected_sketch_profile_ids (core
+    // capture_profile_references_from_selection), so a stale selection
+    // would silently leak into the NEXT operation.
+    void runAction(async () => {
+      await clearSelection();
+    });
+  };
+
+  // Closing the operation panel (Escape / close button) while the
+  // re-pick is armed must disarm it — a stale arm would keep hijacking
+  // sketch clicks in the CAM workspace.
+  useEffect(() => {
+    if (!camProfilePickArmed) {
+      return;
+    }
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === selectedCamOperationId,
+    );
+    if (!operation || operation.type !== "laser_cut") {
+      finishCamProfileRepick();
+    }
+  }, [
+    camProfilePickArmed,
+    selectedCamOperationId,
+    document,
+    finishCamProfileRepick,
+  ]);
 
   const camNewSetupAction = async () => {
     await runAction(async () => {
@@ -873,6 +940,8 @@ function App() {
     camPostProcessorSet,
     camPostList,
     camPostImport,
+    camMachineList,
+    camMachineSave,
     camExportGcode,
   } = useCadCore();
 
@@ -1607,6 +1676,59 @@ function App() {
     void openPath(path);
   };
 
+  // Machine library: fetch once per CAM-workspace entry.  camMachineList
+  // is a fresh function identity every render (useCadCore is not
+  // memoized), so keying the effect on it re-runs the effect per render
+  // and the disposed guard can drop a reply that lands after any
+  // unrelated re-render — leaving the dropdown at "— none —" with the
+  // armed ref blocking every retry.  Key on workspaceView only and read
+  // the latest function through a ref.  Saving replies the refreshed
+  // library (built-ins + user files), so the dropdown updates without a
+  // refetch.
+  const [camMachines, setCamMachines] = useState<MachineDefinition[]>([]);
+  const camMachinesFetchArmedRef = useRef(false);
+  const camMachineListRef = useRef(camMachineList);
+  camMachineListRef.current = camMachineList;
+  useEffect(() => {
+    if (workspaceView !== "cam") {
+      camMachinesFetchArmedRef.current = false;
+      return;
+    }
+    if (camMachinesFetchArmedRef.current) {
+      return;
+    }
+    camMachinesFetchArmedRef.current = true;
+    void camMachineListRef
+      .current()
+      .then((machines) => {
+        if (machines.length === 0) {
+          // The core always seeds at least the built-ins, so an empty
+          // reply means the await settled on something that was not the
+          // list result (e.g. an error event).  Surface it instead of
+          // showing "— none —" silently.
+          addMessage(t("cam.setup.machineListEmpty"));
+        }
+        setCamMachines(machines);
+      })
+      .catch((error: unknown) => {
+        // Re-arm so the next CAM entry retries after a transient
+        // failure; surface the reason instead of failing silently.
+        camMachinesFetchArmedRef.current = false;
+        const detail =
+          error instanceof Error ? error.message : String(error);
+        addMessage(`${t("cam.setup.machineListFailed")} (${detail})`);
+      });
+  }, [workspaceView]);
+
+  const saveCamMachineAction = (machine: MachineDefinition) =>
+    runAction(async () => {
+      const updated = await camMachineSave(machine);
+      if (updated) {
+        setCamMachines(updated);
+        addMessage(t("cam.setup.machineSaved", { name: machine.name }));
+      }
+    });
+
   const {
     sendBodyToSlicer,
     handleWorkspaceDropdownOpenChange,
@@ -2036,14 +2158,16 @@ function App() {
                   if (camProfilePickArmed) {
                     // Re-pick armed: the clicked outline entity selects
                     // the profile(s) whose boundary includes it.
-                    await runAction(async () => {
-                      await selectSketchProfileByEntity(lineId, true);
+                    await reportCamProfileSelectionChange({
+                      beforeCount:
+                        document?.selected_sketch_profile_ids?.length ?? 0,
+                      runSelection: () =>
+                        runAction(async () => {
+                          await selectSketchProfileByEntity(lineId, true);
+                        }),
+                      addMessage,
+                      translate: t,
                     });
-                    addMessage(
-                      t("cam.laserCut.profilePicked", {
-                        count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1,
-                      }),
-                    );
                     return;
                   }
                   // CAM workspace: closed sketches aren't pickable by
@@ -2840,14 +2964,16 @@ function App() {
                 if (camProfilePickArmed) {
                   // Re-pick armed: clicking a sketch entity's outline
                   // selects the profile(s) whose boundary includes it.
-                  await runAction(async () => {
-                    await selectSketchProfileByEntity(entityId, true);
+                  await reportCamProfileSelectionChange({
+                    beforeCount:
+                      document?.selected_sketch_profile_ids?.length ?? 0,
+                    runSelection: () =>
+                      runAction(async () => {
+                        await selectSketchProfileByEntity(entityId, true);
+                      }),
+                    addMessage,
+                    translate: t,
                   });
-                  addMessage(
-                    t("cam.laserCut.profilePicked", {
-                      count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1,
-                    }),
-                  );
                   return;
                 }
                 await handleSketchEntitySelection({
@@ -2991,10 +3117,16 @@ function App() {
               }}
               onSelectSketchProfile={async (profileId, additive) => {
                 if (camProfilePickArmed) {
-                  await selectSketchProfile(profileId, true);
-                  addMessage(
-                    t("cam.laserCut.profilePicked", { count: (document?.selected_sketch_profile_ids?.length ?? 0) + 1 }),
-                  );
+                  await reportCamProfileSelectionChange({
+                    beforeCount:
+                      document?.selected_sketch_profile_ids?.length ?? 0,
+                    runSelection: () =>
+                      runAction(async () => {
+                        await selectSketchProfile(profileId, true);
+                      }),
+                    addMessage,
+                    translate: t,
+                  });
                   return;
                 }
                 await handleViewportSketchProfileSelection({
@@ -3611,9 +3743,15 @@ function App() {
                 selectedOperationId={selectedCamOperationId}
                 activeSetupId={activeCamSetupId}
                 camProfilePickArmed={camProfilePickArmed}
-                onStartRepickGeometry={() => setCamProfilePickArmed(true)}
-                onCancelRepickGeometry={() => setCamProfilePickArmed(false)}
-                onApplyRepickGeometry={() => setCamProfilePickArmed(false)}
+                onStartRepickGeometry={startCamProfileRepick}
+                onCancelRepickGeometry={finishCamProfileRepick}
+                onApplyRepickGeometry={finishCamProfileRepick}
+                onClearRepickSelection={() => {
+                  void runAction(async () => {
+                    await clearSelection();
+                    addMessage(t("cam.laserCut.selectionCleared"));
+                  });
+                }}
                 showStock={showStock}
                 wcsOrientation={wcsOrientation}
                 setShowStock={setShowStock}
@@ -3630,6 +3768,9 @@ function App() {
                 }}
                 postProcessorType={document?.cam.post_processor?.type ?? "grbl"}
                 posts={camPosts}
+                machines={camMachines}
+                onSaveMachine={saveCamMachineAction}
+                camPostProcessorSet={camPostProcessorSet}
                 onImportPost={() => {
                   void importCamPostAction();
                 }}

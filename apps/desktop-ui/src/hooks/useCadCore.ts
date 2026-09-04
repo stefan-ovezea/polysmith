@@ -22,6 +22,8 @@ import {
   makeCamPostProcessorSetCommand,
   makeCamPostListCommand,
   makeCamPostImportCommand,
+  makeCamMachineListCommand,
+  makeCamMachineSaveCommand,
   makeCamExportGcodeCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
@@ -209,6 +211,7 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   LaserMachineSettings,
+  MachineDefinition,
   MoveFeatureParameters,
   PostProcessor,
   SelectionFilterUpdate,
@@ -1633,6 +1636,30 @@ export function useCadCore() {
       const posts = (response as { payload?: { posts?: Array<{ name: string; path: string }> } })
         .payload?.posts;
       return posts ?? null;
+    },
+    camMachineList: async () => {
+      // Awaited: the reply is a cam_machine_list_result event carrying
+      // the machines array.
+      const response = await sendCoreCommandAwaited(
+        makeCamMachineListCommand() as CoreCommand & { id: string },
+      );
+      const machines = (
+        response as {
+          payload?: { machines?: MachineDefinition[] };
+        }
+      ).payload?.machines;
+      return machines ?? [];
+    },
+    camMachineSave: async (machine: MachineDefinition) => {
+      const response = await sendCoreCommandAwaited(
+        makeCamMachineSaveCommand(machine) as CoreCommand & { id: string },
+      );
+      const machines = (
+        response as {
+          payload?: { machines?: MachineDefinition[] };
+        }
+      ).payload?.machines;
+      return machines ?? null;
     },
     camOperationGenerate: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationGenerateCommand(opId));

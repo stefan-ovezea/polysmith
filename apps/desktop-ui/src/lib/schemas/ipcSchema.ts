@@ -83,6 +83,27 @@ const camPostListResultEventSchema = z.object({
   }),
 });
 
+const camMachineListResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_machine_list_result"),
+  payload: z.object({
+    machines: z.array(
+      z.object({
+        name: z.string(),
+        machine_type: z.string(),
+        post_processor: z.object({
+          type: z.string(),
+          filename: z.string(),
+        }),
+        work_area_x_mm: z.number(),
+        work_area_y_mm: z.number(),
+        pointer_offset_x_mm: z.number(),
+        pointer_offset_y_mm: z.number(),
+      }),
+    ),
+  }),
+});
+
 // Reply to cam_capture_face_reference — see CamFaceAttestationResultEvent
 // in types/ipc.ts. Payload mirrors make_cam_face_attestation_event
 // (native/cad-core/src/app/impl/cam_commands.inc).
@@ -173,6 +194,7 @@ export const coreMessageSchema = z.union([
   trimPreviewResultEventSchema,
   camGenerationProgressEventSchema,
   camPostListResultEventSchema,
+  camMachineListResultEventSchema,
   camFaceAttestationResultEventSchema,
   errorEventSchema,
 ]);

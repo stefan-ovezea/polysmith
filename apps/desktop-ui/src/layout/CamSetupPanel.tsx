@@ -5,7 +5,9 @@ import { Dropdown, ScrollArea } from "@/lib";
 import type {
   CamSetup,
   LaserMachineSettings,
+  MachineDefinition,
   MachineType,
+  PostProcessorType,
   StockDefinition,
   StockType,
 } from "@/types";
@@ -95,6 +97,9 @@ interface CamSetupPanelProps {
   onMachineSettingsChange: (settings: LaserMachineSettings) => void;
   wcsPickArmed: boolean;
   onPickWcsFace: () => void;
+  machines: MachineDefinition[];
+  onApplyMachine: (machine: MachineDefinition) => void;
+  onSaveMachine: (machine: MachineDefinition) => Promise<void>;
   disabled: boolean;
   onUpdate: (setup: CamSetup) => void;
   onConfirm: () => void;
@@ -144,6 +149,37 @@ function setupFromFormState(
   };
 }
 
+// The library machine matching the CURRENT panel state — the dropdown
+// preselects it, and it re-derives to "— none —" the moment any field
+// diverges.  Mill machines match on type + post only (their work-area
+// fields are not exposed in the panel).
+function findMatchingMachine(
+  machineType: MachineType,
+  postType: string,
+  settings: LaserMachineSettings | null,
+  library: MachineDefinition[],
+): MachineDefinition | null {
+  return (
+    library.find((machine) => {
+      if (machine.machine_type !== machineType) {
+        return false;
+      }
+      if (machine.post_processor.type !== postType) {
+        return false;
+      }
+      if (machine.machine_type === "laser" && settings) {
+        return (
+          machine.work_area_x_mm === settings.work_area_x_mm &&
+          machine.work_area_y_mm === settings.work_area_y_mm &&
+          machine.pointer_offset_x_mm === settings.pointer_offset_x_mm &&
+          machine.pointer_offset_y_mm === settings.pointer_offset_y_mm
+        );
+      }
+      return true;
+    }) ?? null
+  );
+}
+
 export function CamSetupPanel({
   initialSetup,
   bodies,
@@ -163,6 +199,9 @@ export function CamSetupPanel({
   onMachineSettingsChange,
   wcsPickArmed,
   onPickWcsFace,
+  machines,
+  onApplyMachine,
+  onSaveMachine,
   disabled,
   onUpdate,
   onConfirm,
@@ -173,6 +212,9 @@ export function CamSetupPanel({
     formStateFromSetup(initialSetup),
   );
   const [tab, setTab] = useState<TabId>("machine");
+  // Inline "save current as machine…" row: name input + save button.
+  const [machineNameInput, setMachineNameInput] = useState("");
+  const [savingMachine, setSavingMachine] = useState(false);
   const confirmRef = useRef(onConfirm);
   confirmRef.current = onConfirm;
   const serialized = JSON.stringify(state);
@@ -246,6 +288,40 @@ export function CamSetupPanel({
     setState((prev) => ({ ...prev, ...patch }));
   }
 
+  // Builds the machine definition from the CURRENT panel state and hands
+  // it to the parent (runAction → cam_machine_save).  The core validates
+  // (empty name / unsupported type / zero work area) and replies the
+  // refreshed library, which re-renders the dropdown through the
+  // `machines` prop.
+  const saveCurrentMachine = async () => {
+    const name = machineNameInput.trim();
+    if (!name) {
+      return;
+    }
+    setSavingMachine(true);
+    try {
+      await onSaveMachine({
+        name,
+        machine_type: state.machineType,
+        post_processor: {
+          type: postProcessorType as PostProcessorType,
+          filename:
+            posts.find((post) => post.name === postProcessorType)?.path ?? "",
+        },
+        work_area_x_mm: machineSettings?.work_area_x_mm ?? 400,
+        work_area_y_mm: machineSettings?.work_area_y_mm ?? 400,
+        pointer_offset_x_mm: machineSettings?.pointer_offset_x_mm ?? 0,
+        pointer_offset_y_mm: machineSettings?.pointer_offset_y_mm ?? 0,
+      });
+      setMachineNameInput("");
+    } catch {
+      // Validation errors surface through the parent's runAction catch
+      // (message log) — nothing to add here.
+    } finally {
+      setSavingMachine(false);
+    }
+  };
+
   const tabBtn = (id: TabId, label: string) => (
     <button
       type="button"
@@ -305,6 +381,82 @@ export function CamSetupPanel({
               ════════════════════════════════════════════════════════ */}
           {(tab === "machine" || (tab === "wcs" && isSheetMachine)) && (
             <>
+              {/* Machine library: saved definitions apply their type,
+                  post processor, and (laser) settings to this setup. */}
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.setup.machineLibraryLabel", "Machine")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={findMatchingMachine(
+                    state.machineType,
+                    postProcessorType,
+                    machineSettings,
+                    machines,
+                  )?.name ?? "__none__"}
+                  label={t("cam.setup.machineLibraryLabel", "Machine")}
+                  options={[
+                    {
+                      value: "__none__",
+                      label: t("cam.setup.machineNone", "— none —"),
+                    },
+                    ...machines.map((machine) => ({
+                      value: machine.name,
+                      label: machine.name,
+                    })),
+                  ]}
+                  disabled={disabled}
+                  onChange={(value) => {
+                    const machine = machines.find(
+                      (candidate) => candidate.name === value,
+                    );
+                    if (!machine) {
+                      return;
+                    }
+                    // Mirror into the form so the Machine-type dropdown
+                    // and the debounced setup update follow.
+                    update({
+                      machineType: machine.machine_type as MachineType,
+                    });
+                    onApplyMachine(machine);
+                  }}
+                />
+              </label>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  className="cad-input min-w-0 flex-1"
+                  placeholder={t(
+                    "cam.setup.machineNamePlaceholder",
+                    "Machine name…",
+                  )}
+                  value={machineNameInput}
+                  disabled={disabled || savingMachine}
+                  onChange={(event) => setMachineNameInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void saveCurrentMachine();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                  disabled={
+                    disabled || savingMachine || machineNameInput.trim() === ""
+                  }
+                  onClick={() => {
+                    void saveCurrentMachine();
+                  }}
+                >
+                  {t("cam.setup.saveMachine", "Save")}
+                </button>
+              </div>
+              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.setup.machineNote")}
+              </p>
+
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
                 {t("cam.setup.machineTypeLabel", "Machine type")}
                 <Dropdown

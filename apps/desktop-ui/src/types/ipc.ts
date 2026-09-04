@@ -170,6 +170,8 @@ import type {
   CamPostProcessorSetCommand,
   CamPostListCommand,
   CamPostImportCommand,
+  CamMachineListCommand,
+  CamMachineSaveCommand,
   CamOperationGenerateCommand,
   CamOperationPreviewCommand,
   CamExportGcodeCommand,
@@ -178,7 +180,11 @@ import type {
   FeatureEntry,
   SketchTool,
 } from "./geometry/sketch";
-import type { CamDocumentData, FaceAttestation } from "./geometry/cam";
+import type {
+  CamDocumentData,
+  FaceAttestation,
+  MachineDefinition,
+} from "./geometry/cam";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -485,6 +491,17 @@ export interface CamPostListResultEvent extends BaseMessage {
   };
 }
 
+// Reply to cam_machine_list / cam_machine_save: every machine
+// definition (built-ins first, then user files in the machines
+// directory).
+export interface CamMachineListResultEvent extends BaseMessage {
+  type: "cam_machine_list_result";
+  id: string;
+  payload: {
+    machines: MachineDefinition[];
+  };
+}
+
 export interface DocumentSavedEvent extends BaseMessage {
   type: "document_saved";
   id: string;
@@ -551,6 +568,7 @@ export type CoreMessage =
   | TrimPreviewResultEvent
   | CamGenerationProgressEvent
   | CamPostListResultEvent
+  | CamMachineListResultEvent
   | CamFaceAttestationResultEvent
   | ErrorEvent;
 
@@ -831,6 +849,8 @@ export type CoreCommand =
   | CamPostProcessorSetCommand
   | CamPostListCommand
   | CamPostImportCommand
+  | CamMachineListCommand
+  | CamMachineSaveCommand
   | CamOperationGenerateCommand
   | CamOperationPreviewCommand
   | CamExportGcodeCommand
