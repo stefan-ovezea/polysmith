@@ -82,6 +82,14 @@ export function CamLaserCutPanel({
   const serialized = JSON.stringify(params);
   const markUpdateSent = useDebouncedCamUpdate(serialized, () => {
     onUpdate(params);
+    // Live preview: parameter edits regenerate the path without an
+    // explicit Preview click.  Gated on geometry presence — an empty
+    // region set fails generation and every core error surfaces a
+    // toast.  The core processes commands sequentially, so the update
+    // lands before the preview generation.
+    if (!disabled && geometryCount > 0) {
+      onPreview();
+    }
   });
 
   useCamEscapeCancel(onClose);
@@ -245,6 +253,21 @@ export function CamLaserCutPanel({
                 step={0.05}
                 onChange={(v) => update({ kerf_width_mm: v })}
               />
+              <CamNumberField
+                label={t("cam.laserCut.arcSegments", "Arc segments / circle")}
+                value={params.arc_segments_per_circle}
+                disabled={disabled}
+                step={1}
+                min={0}
+                onChange={(v) =>
+                  update({
+                    arc_segments_per_circle: Math.max(
+                      0,
+                      Math.min(360, Math.round(v)),
+                    ),
+                  })
+                }
+              />
             </div>
             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.kerfSide", "Kerf side")}
@@ -352,6 +375,48 @@ export function CamLaserCutPanel({
                 onChange={(v) => update({ overcut_mm: v })}
               />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.laserCut.leadSide", "Lead side")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={params.pierce_angle_deg === null ? "auto" : "angle"}
+                  label={t("cam.laserCut.leadSide", "Lead side")}
+                  options={[
+                    { value: "auto", label: t("cam.laserCut.leadSideAuto", "Auto") },
+                    { value: "angle", label: t("cam.laserCut.leadSideAngle", "Angle") },
+                  ]}
+                  disabled={disabled}
+                  onChange={(value) =>
+                    update({ pierce_angle_deg: value === "auto" ? null : 0 })
+                  }
+                />
+              </label>
+              <CamNumberField
+                label={t(
+                  "cam.laserCut.leadSideAngleLabel",
+                  "Lead side angle (°)",
+                )}
+                value={params.pierce_angle_deg ?? 0}
+                disabled={disabled || params.pierce_angle_deg === null}
+                step={5}
+                min={0}
+                onChange={(v) =>
+                  // Keep the angle in [0, 360) — the core accepts any
+                  // value, but the loop-local ray-cast reads cleanly
+                  // in one revolution.
+                  update({
+                    pierce_angle_deg: ((Math.round(v) % 360) + 360) % 360,
+                  })
+                }
+              />
+            </div>
+            <p className="text-[10px] leading-relaxed text-on-surface-dim">
+              {t(
+                "cam.laserCut.leadFollowsKerfSide",
+                "The pierce and leads follow the kerf side: Auto enters holes from inside and outer shapes from outside; Inside/Outside forces that side.",
+              )}
+            </p>
           </fieldset>
 
           {/* ── Pierce ───────────────────────────────────────────── */}
@@ -378,11 +443,19 @@ export function CamLaserCutPanel({
                     { value: "lead_start", label: t("cam.laserCut.pierceLeadStart", "Lead start") },
                     { value: "nearest_centroid", label: t("cam.laserCut.pierceCentroid", "Near centroid") },
                   ]}
-                  disabled={disabled}
+                  disabled={disabled || params.pierce_angle_deg !== null}
                   onChange={(value) => update({ pierce_position: value as LaserCutParameters["pierce_position"] })}
                 />
               </label>
             </div>
+            {params.pierce_angle_deg !== null ? (
+              <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                {t(
+                  "cam.laserCut.leadSideOverridesPierce",
+                  "The lead side angle overrides the pierce position.",
+                )}
+              </p>
+            ) : null}
           </fieldset>
 
           {/* ── Tabs ─────────────────────────────────────────────── */}

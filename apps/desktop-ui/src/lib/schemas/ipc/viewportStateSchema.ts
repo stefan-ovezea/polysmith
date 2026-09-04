@@ -532,6 +532,7 @@ export const viewportStateSchema = z.object({
             y: z.number(),
             z: z.number(),
             is_rapid: z.boolean(),
+            pierce: z.boolean().default(false),
           }),
         ),
       }),

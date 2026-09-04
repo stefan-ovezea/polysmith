@@ -173,6 +173,9 @@ export interface LaserCutParameters {
   overcut_mm: number;               // extend past the start/end joint
   pierce_dwell_seconds: number;     // G4 dwell after pierce
   pierce_position: "auto" | "lead_start" | "nearest_centroid";
+  pierce_angle_deg: number | null;  // lead-side angle about the loop
+                                    // centroid (sketch plane, CCW from
+                                    // +X); null = pierce_position rules
   tabs_enabled: boolean;
   tab_width_mm: number;             // tab length along the cut
   tab_spacing_mm: number;           // even distribution along the loop
@@ -184,6 +187,8 @@ export interface LaserCutParameters {
   fill_bidirectional: boolean;
   material_thickness_mm: number;
   cut_plane_offset_mm: number;      // cut-plane Z relative to sketch plane
+  arc_segments_per_circle: number;  // polyline chords per full circle;
+                                    // 0 = auto chord tolerance
   cut_order: "inner_first" | "nearest_neighbor" | "by_area";
 }
 

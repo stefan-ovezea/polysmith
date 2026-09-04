@@ -177,6 +177,9 @@ export const laserCutParametersSchema = z
     pierce_position: z
       .enum(["auto", "lead_start", "nearest_centroid"])
       .default("auto"),
+    // Lead-side angle about the loop centroid; null = pierce_position
+    // rules.  The core omits the field when unset, so default(null).
+    pierce_angle_deg: z.number().nullable().default(null),
     tabs_enabled: z.boolean().default(false),
     tab_width_mm: z.number().default(0.5),
     tab_spacing_mm: z.number().default(20),
@@ -188,6 +191,8 @@ export const laserCutParametersSchema = z
     fill_bidirectional: z.boolean().default(true),
     material_thickness_mm: z.number().default(3),
     cut_plane_offset_mm: z.number().default(0),
+    // Polyline chords per full circle; 0 = auto chord tolerance.
+    arc_segments_per_circle: z.number().int().min(0).max(360).default(0),
     cut_order: z
       .enum(["inner_first", "nearest_neighbor", "by_area"])
       .default("inner_first"),
