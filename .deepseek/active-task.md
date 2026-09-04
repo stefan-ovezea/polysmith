@@ -30,7 +30,7 @@ marker follows `stock.origin` instead of the resolved
   label, active-setup fixes for origin pick + `placeWcsFromFacePick`,
   WCS marker positioned at `wcs_origin.position` (pointer offset +
   face-anchored WCS now move it), i18n snap labels.
-- **M2 — implemented, UNCOMMITTED**: re-pick polish (TS only).
+- **M2 — COMMITTED** `f2a5e77`: re-pick polish (TS only).
   `camProfileSelection.ts` (new): `reportCamProfileSelectionChange`
   runs the selection command then awaits the fresh document —
   `profilePicked` (increased) / `profileRemoved` (decreased), never
@@ -39,7 +39,7 @@ marker follows `stock.origin` instead of the resolved
   CamLaserCutPanel when armed; Apply/Cancel dispatch `clear_selection`
   (no stale-selection leakage into later ops); hidden scope sketch
   auto-shows on arm, restored on Apply/Cancel. tsc green.
-- **M3-core — implemented, UNCOMMITTED**: machine library.
+- **M3-core — COMMITTED** `ccd7f98`: machine library.
   `machine_library.{h,cpp}` (new) mirroring post_processor.cpp: JSON
   file per machine in `POLYSMITH_MACHINES_DIR` (set by cad_core.rs to
   app_data/machines), 3 built-in seeds (grbl-laser, smoothieware-laser,
@@ -50,7 +50,7 @@ marker follows `stock.origin` instead of the resolved
   `cam_machine_library_test` (5 cases: seed idempotence + user
   override, save/load round-trip, invalid rejection, dir env override,
   builtin seeds parse). Registered in CMakeLists.txt.
-- **M3-ui — implemented, UNCOMMITTED**: MachineDefinition types (TS,
+- **M3-ui — COMMITTED** `f2a5e77`: MachineDefinition types (TS,
   cam.ts + camCommands.ts + ipc.ts), zod schema
   (`camMachineListResultEventSchema` in coreMessageSchema — avoid the
   attestation-event class of bug), factories, useCadCore
@@ -84,30 +84,7 @@ marker follows `stock.origin` instead of the resolved
 
 ## Next steps
 
-1. **M3 build/test state**: the full Release build + `pnpm test:core`
-   (all 38 suites incl. the machine-library suite) are green as of
-   2026-09-04.
-2. **User in-app verification (gates before any commit)**:
-   - M2 checklist: toggle-off reports decreased count; Clear → 0; Apply
-     with 0 → NO_PROFILE_SELECTION, arm exits cleanly; Apply then new
-     empty op → previous selection NOT captured; hidden sketch
-     auto-shows on arm, restores on cancel.
-   - M3 checklist: dropdown lists 3 seeded machines; select grbl-laser
-     → type/post/pointer-offset update + WCS marker shifts; save
-     "my laser" → JSON in `%APPDATA%\org.sovezea.polysmith\machines\`,
-     survives restart; external JSON edit loads on panel re-open;
-     empty-name save → error toast, nothing written.
-   - Reminder: restart `pnpm dev` (core binary copy fails while the app
-     runs).
-3. **Commits (each needs explicit user approval)**: M2 (5 files:
-   App.tsx, CamFloatingPanels.tsx, CamLaserCutPanel.tsx,
-   camProfileSelection.ts [new], en.json); M3-core (cam_types.h,
-   machine_library.h/.cpp [new], serialization.h,
-   basic_payloads_and_cam.inc, cam_from_payload.inc, ipc.h, ipc.cpp,
-   cam_commands.inc, app.cpp, CMakeLists.txt,
-   cam_machine_library_test.cpp [new], schemas, cad_core.rs, wiki);
-   M3-ui (types ×3, ipcSchema.ts, lib camCommands.ts, useCadCore.ts,
-   App.tsx, CamFloatingPanels.tsx, CamSetupPanel.tsx, en.json).
+1. Push `cam/laser-cut` and open the PR against `dev` (user-requested).
 
 ---
 
