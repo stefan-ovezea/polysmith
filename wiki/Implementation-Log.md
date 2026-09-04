@@ -2,6 +2,54 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-05
+
+### CAM milling UX: multi-pass face milling + stock-aware WCS picking (cam/milling)
+
+Addresses the user's CAM workspace complaints — no negative Z, no pass
+count, no snap on stock points, unpickable stock faces:
+
+- **Multi-pass face milling** (`face_milling_generate.inc` +
+  `cam_stock.h/.cpp`): with `stepdown_mm` set, passes plan from the
+  STOCK TOP down to the face (first cut `stockTop − stepdown`, last
+  level pinned to `faceZ`); unset/≤0 stepdown or unresolvable stock =
+  the legacy single pass. Global zigzag row index across levels, 100-
+  level cap + warning, new retract guard "below the stock top" for the
+  multi-pass case (guard 1 "below the face height" unchanged).
+- **WCS anchor model** (`cam_types.h` `WcsOrigin.anchor` /
+  `stock_face`): `""` derived (legacy), `"face"` (TNP witness),
+  `"stock_face"` (live stock extents), `"point"` (authoritative —
+  fixes the refresh pass clobbering manual WCS X/Y/Z edits),
+  `"stock_origin"`. Laser pointer offset applies only to non-`"point"`
+  anchors. Serialization lenient — old docs load as derived.
+- **Stock-face WCS picking** (`cam_commands.inc`): `cam_wcs_set_face`
+  accepts `"stock:<face>"` ids (top/bottom/front/back/left/right) — no
+  new IPC. Core resolves via `cam_stock::stock_face_center`, degrading
+  to the stock origin with a warning.
+- **Pick UX** (ViewportPanel / camSceneObjects / camOriginSnap /
+  CamSetupPanel): the stock box mesh is face-tagged via
+  `userData.stockFaceNames` (BoxGeometry group order 0-5 =
+  right/left/front/back/top/bottom; cylinder side untagged) and feeds
+  the WCS pick raycast. Routing: body face → TNP face anchor; stock
+  intercept → stock-only snap (top AND bottom corners/midpoints,
+  12 px) → `"point"`; no snap + named stock face → `"stock_face"`
+  anchor; else bed-plane fallback (z = 0, 10 m guard). Both pick modes
+  share snap markers and disarm each other. Setup panel X/Y/Z edits pin
+  `"point"` only when actually edited (`wcsOriginDirty`). Stepdown is a
+  clearable CamNumberField (empty = single pass).
+- **Deviation (deliberate):** the plan listed a stock bottom-FACE
+  CENTER snap candidate; it is not implemented (would need a new snap
+  kind + i18n label — top face has no center either, and corners +
+  edge midpoints cover the bottom face).
+
+Tests (fail-before/pass-after): `cam_generators_test` 47-50
+(multi-pass levels 21+20 for stock 23/face 20/step 2, no-stock single
+pass, 100-level cap, retract-below-stock-top guard), `cam_refresh_test`
+7-10 (point anchor survives refresh, stock_face resolves top/front,
+degrades to stock origin, payload round-trip), `cam_commands_test`
+stock_face round-trip through `cam_setup_update`. Full gates pending
+user in-app verification before any commit.
+
 ## 2026-09-04
 
 ### Core build speedup: static cad_core_lib + parallel compile + parallel test runner (core-build-speedup)
@@ -66,6 +114,53 @@ deprecated `TColgp_Array1OfPnt{,2d}` / `TColStd_Array1OfReal` /
 
 Verified: rebuild with zero warnings from our code; `pnpm test:core`
 38/38 in parallel and serial modes.
+
+### Milling M0 — 5-axis scaffolding + mill machine library (cam/milling)
+
+First milestone of the CAM milling plan: the data model, toolpath IR,
+posts, and machine definitions become 5-axis-ready up front, while every
+generator stays 3-axis. No user-visible behavior change; the three new
+machines are the only thing a user can notice.
+
+- **Toolpath IR** — `ToolpathMove` gains optional `a/b/c` (degrees,
+  absent = modal). Bounds/length/linearization deliberately ignore them
+  until a rotary generator exists (commented in `toolpath_geometry.cpp`).
+- **Machine definitions** — `MachineDefinition` gains
+  `travel_x/y/z_mm` (0 = unset → UI falls back to `setup.machine_axes`),
+  `kinematics` (`cartesian_3axis` | `rotary_table_a/b/c` | `head_table`
+  | `table_table` | `head_head`), `axis_limits`, and
+  `tool_change_position`. Parse is lenient both ways: old 8-field
+  machine JSON files load with defaults, and new keys are always
+  emitted. Validation covers the kinematics enum, axis letters, and
+  min<=max.
+- **Mill machine seeds (new slugs)** — GRBL CNC Router
+  (`grbl-cnc-router`, 3_axis_mill, grbl), LinuxCNC Rotary 4-Axis
+  (`linuxcnc-rotary-4axis`, 4_axis_mill, rotary_table_a, A 0–360),
+  LinuxCNC 5-Axis Table-Table (`linuxcnc-5axis-table-table`,
+  5_axis_mill, table_table, A −120–120 / C −360–360). Seeds never reuse
+  an old slug — a stale user file shadows the seed by name and is never
+  overwritten.
+- **Post engine** — modal A/B/C words emitted on change only (mirrors
+  Z); rapid and feed moves carry rotary words; `PostDefinition` gains
+  `feed_inverse_time` + `inverse_time_word` (linuxcnc seed:
+  `feed_inverse_time: true`) — a feed move carrying a rotary word prices
+  F = feedrate / path length under G93, with G94 restored for plain
+  3-axis moves. Toolpaths without rotary words never emit G93.
+- **Per-op tool axis mode** — `CamOperationParameters.tool_axis_mode`
+  (`"fixed_z"` today; `"3_plus_2"` / `"rotary_continuous"` reserved).
+  A shared `milling::check_tool_axis_supported` guard rejects non-fixed
+  modes with a clear error; face milling is the first consumer, every
+  future generator calls it too.
+- **Serialization** — protocol `.inc`s, TS types (`cam.ts`), and zod
+  (`camSchema.ts`, `.default().passthrough()` pattern) carry the new
+  fields; no IPC command/event changes.
+
+Verified: `pnpm core:rebuild` green (new `cad_core_linuxcnc_post_test`
+suite registered); `pnpm test:core` 39/39 (machine-library seeds +
+round-trip + legacy-defaults + kinematics validation; new linuxcnc post
+goldens — modal A words, no-G93-for-3-axis, inverse-time feed on the
+rotary line, G94 restore; `tool_axis_mode` save/load round-trip; grbl
+goldens unchanged); `tsc --noEmit` green.
 
 ## 2026-09-01
 

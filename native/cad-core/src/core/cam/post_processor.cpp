@@ -61,7 +61,8 @@ const char* kLinuxcncDefinition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "feed_inverse_time": true
 })JSON";
 
 const char* kMach3Definition = R"JSON({
@@ -303,6 +304,11 @@ std::vector<std::string> render_post(const PostContext& context,
   double lastFeed = -1.0;
   double currentZ = 0.0;
   bool haveZ = false;
+  // Rotary words are modal, mirroring Z: emitted once, then only on
+  // change.  Degrees never scale (inch setups keep degrees).
+  double currentA = 0.0, currentB = 0.0, currentC = 0.0;
+  bool haveA = false, haveB = false, haveC = false;
+  bool inverseTimeActive = false;  // G93 mode (feed_inverse_time posts)
 
   const auto power_for = [&](const ToolpathMove& move) {
     return move.power_percent / 100.0 * def.power_max;
@@ -353,8 +359,58 @@ std::vector<std::string> render_post(const PostContext& context,
     const double y = (move.y - originY) * scale;
     const double z = (move.z - originZ) * scale;
     const bool zChanged = !haveZ || z != currentZ;
-    const bool feedChanged = move.feedrate_mm_per_min > 0.0 &&
-                             move.feedrate_mm_per_min != lastFeed;
+    const bool hasRotary =
+        move.a.has_value() || move.b.has_value() || move.c.has_value();
+    const bool isFeedMove =
+        move.kind == ToolpathMoveKind::FeedLinear ||
+        move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW;
+    // Inverse-time feed: a feed move carrying a rotary word prices its
+    // feed as 1/min over the actual path length.  A mode switch forces
+    // an F re-emission — the same raw feedrate means a different F word
+    // on each side of G93/G94.
+    const bool wantInverseTime =
+        def.feed_inverse_time && hasRotary && isFeedMove && havePrevious;
+    const bool inverseModeChanged = wantInverseTime != inverseTimeActive;
+    const bool feedChanged =
+        move.feedrate_mm_per_min > 0.0 &&
+        (move.feedrate_mm_per_min != lastFeed || inverseModeChanged);
+    double feedValue = move.feedrate_mm_per_min;
+    if (wantInverseTime) {
+      const double length = move_length(previous, move);
+      feedValue = length > 1e-9 ? move.feedrate_mm_per_min / length : 0.0;
+    }
+    const auto syncInverseTimeMode = [&]() {
+      if (!inverseModeChanged) {
+        return;
+      }
+      if (wantInverseTime) {
+        emit(render_template(def.inverse_time_word, {}));
+      } else {
+        emit(render_template("G94", {}));  // also the header default
+      }
+      inverseTimeActive = wantInverseTime;
+    };
+    const auto appendRotaryWords = [&](std::string& line) {
+      if (move.a.has_value() &&
+          (!haveA || std::abs(move.a.value() - currentA) >= 1e-9)) {
+        line += " A" + fmt_number(move.a.value(), decimals);
+        currentA = move.a.value();
+        haveA = true;
+      }
+      if (move.b.has_value() &&
+          (!haveB || std::abs(move.b.value() - currentB) >= 1e-9)) {
+        line += " B" + fmt_number(move.b.value(), decimals);
+        currentB = move.b.value();
+        haveB = true;
+      }
+      if (move.c.has_value() &&
+          (!haveC || std::abs(move.c.value() - currentC) >= 1e-9)) {
+        line += " C" + fmt_number(move.c.value(), decimals);
+        currentC = move.c.value();
+        haveC = true;
+      }
+    };
     const auto moveVars = [&]() {
       auto vars = std::map<std::string, std::string>{
           {"x", fmt_number(x, decimals)},
@@ -362,8 +418,16 @@ std::vector<std::string> render_post(const PostContext& context,
           {"z", fmt_number(z, decimals)},
       };
       if (feedChanged) {
-        vars["feed"] = fmt_number(move.feedrate_mm_per_min, decimals);
+        vars["feed"] = fmt_number(feedValue, decimals);
       }
+      // Template slots for custom posts; the built-in templates have
+      // no {a}{b}{c} — rotary words are appended by the engine.
+      if (move.a.has_value())
+        vars["a"] = fmt_number(move.a.value(), decimals);
+      if (move.b.has_value())
+        vars["b"] = fmt_number(move.b.value(), decimals);
+      if (move.c.has_value())
+        vars["c"] = fmt_number(move.c.value(), decimals);
       return vars;
     };
 
@@ -375,12 +439,14 @@ std::vector<std::string> render_post(const PostContext& context,
         currentZ = z;
         haveZ = true;
       }
+      appendRotaryWords(line);
       emit(line);
     } else if (move.kind == ToolpathMoveKind::FeedArcCW ||
                move.kind == ToolpathMoveKind::FeedArcCCW) {
       const double radius = std::hypot(move.i, move.j);
       if (def.use_arcs && radius >= 0.001) {
         ensure_power_state(move);
+        syncInverseTimeMode();
         auto vars = moveVars();
         vars["i"] = fmt(move.i);
         vars["j"] = fmt(move.j);
@@ -389,7 +455,7 @@ std::vector<std::string> render_post(const PostContext& context,
                                                      : def.arc_ccw,
             vars);
         if (feedChanged) {
-          line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+          line += " F" + fmt_number(feedValue, decimals);
           lastFeed = move.feedrate_mm_per_min;
         }
         if (zChanged) {
@@ -397,9 +463,11 @@ std::vector<std::string> render_post(const PostContext& context,
           currentZ = z;
           haveZ = true;
         }
+        appendRotaryWords(line);
         emit(line);
       } else {
         ensure_power_state(move);
+        syncInverseTimeMode();
         std::vector<std::array<double, 3>> chords;
         if (context.toolpath.arc_segments_per_circle > 0) {
           const int steps = arc_steps_for(
@@ -409,7 +477,8 @@ std::vector<std::string> render_post(const PostContext& context,
           linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.01,
                              chords);
         }
-        for (const auto& point : chords) {
+        for (size_t i = 0; i < chords.size(); ++i) {
+          const auto& point = chords[i];
           auto vars = std::map<std::string, std::string>{
               {"x", fmt(point[0] - originX)},
               {"y", fmt(point[1] - originY)},
@@ -417,17 +486,23 @@ std::vector<std::string> render_post(const PostContext& context,
           };
           std::string line = render_template(def.feed, vars);
           if (feedChanged) {
-            line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+            line += " F" + fmt_number(feedValue, decimals);
             lastFeed = move.feedrate_mm_per_min;
+          }
+          // The rotary target is the arc endpoint: declare it on the
+          // final chord so A/B/C land with the XY endpoint.
+          if (i + 1 == chords.size()) {
+            appendRotaryWords(line);
           }
           emit(line);
         }
       }
     } else {
       ensure_power_state(move);
+      syncInverseTimeMode();
       std::string line = render_template(def.feed, moveVars());
       if (feedChanged) {
-        line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+        line += " F" + fmt_number(feedValue, decimals);
         lastFeed = move.feedrate_mm_per_min;
       }
       if (zChanged) {
@@ -435,6 +510,7 @@ std::vector<std::string> render_post(const PostContext& context,
         currentZ = z;
         haveZ = true;
       }
+      appendRotaryWords(line);
       emit(line);
       if (move.dwell_seconds > 0.0) {
         emit(render_template(def.dwell,
@@ -550,6 +626,12 @@ bool parse_post_definition(const std::string& json_text,
     if (payload.contains("decimal_places") && payload.at("decimal_places").is_number_integer()) {
       definition.decimal_places = payload.at("decimal_places").get<int>();
     }
+    if (payload.contains("feed_inverse_time") &&
+        payload.at("feed_inverse_time").is_boolean()) {
+      definition.feed_inverse_time = payload.at("feed_inverse_time").get<bool>();
+    }
+    definition.inverse_time_word = read_optional_template(
+        payload, "inverse_time_word", definition.inverse_time_word);
     return true;
   } catch (const std::exception& exception) {
     error = std::string("invalid post definition JSON: ") + exception.what();

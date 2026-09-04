@@ -80,6 +80,12 @@ export interface MachineAxes {
 }
 
 export interface WcsOrigin {
+  /** "" derived (legacy) | "face" | "stock_face" | "point" |
+   *  "stock_origin".  "point" pins the position against refresh. */
+  anchor?: string;
+  /** "top" | "bottom" | "front" | "back" | "left" | "right" — only
+   *  meaningful when anchor === "stock_face". */
+  stock_face?: string;
   feature_id: string;
   face_reference: GeometryReference;
   /** Last-resolved machine origin, refreshed by the CAM dependency
@@ -212,6 +218,10 @@ export interface CamOperationParameters {
   laser?: LaserCutParameters;    // for laser_cut
   test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";
+  // Tool axis (5-axis scaffolding).  "fixed_z" is the only supported
+  // mode today; "3_plus_2" and "rotary_continuous" are reserved for
+  // future rotary generators.
+  tool_axis_mode: "fixed_z" | "3_plus_2" | "rotary_continuous";
 }
 
 export interface CamOperationDependencies {
@@ -288,6 +298,18 @@ export interface PostProcessor {
   filename: string;
 }
 
+/// Kinematics topology of a milling machine (5-axis scaffolding).
+export type MachineKinematics =
+  | "cartesian_3axis" | "rotary_table_a" | "rotary_table_b"
+  | "rotary_table_c" | "head_table" | "table_table" | "head_head";
+
+/// Travel limit for one axis (mm for linear, degrees for rotary).
+export interface MachineAxisLimit {
+  axis: "x" | "y" | "z" | "a" | "b" | "c" | string;
+  min: number;
+  max: number;
+}
+
 /// A saved, reusable machine definition — the physical machine, not the
 /// job.  Lives as <slug>.json files in the user's machines directory
 /// (seeded with built-ins on first use), re-read on every
@@ -301,6 +323,14 @@ export interface MachineDefinition {
   work_area_y_mm: number;
   pointer_offset_x_mm: number;
   pointer_offset_y_mm: number;
+  // Mill fields (5-axis scaffolding).  Travel is mm; 0 = unset, in
+  // which case the UI falls back to setup.machine_axes.
+  travel_x_mm: number;
+  travel_y_mm: number;
+  travel_z_mm: number;
+  kinematics: MachineKinematics;
+  axis_limits: MachineAxisLimit[];
+  tool_change_position?: [number, number, number];
 }
 
 // ══════════════════════════════════════════════════════════════════

@@ -50,11 +50,68 @@ const char* kGenericMillDefinition = R"JSON({
   "pointer_offset_y_mm": 0.0
 })JSON";
 
+// The three mill seeds carry the extended (travel/kinematics/axis
+// limits) shape.  New slugs on purpose: a stale user file for an old
+// slug shadows the seed by name and is never overwritten, so seeds must
+// never reuse an existing slug when the schema grows.
+const char* kGrblCncRouterDefinition = R"JSON({
+  "name": "GRBL CNC Router",
+  "machine_type": "3_axis_mill",
+  "post_processor": { "type": "grbl", "filename": "" },
+  "work_area_x_mm": 400.0,
+  "work_area_y_mm": 400.0,
+  "pointer_offset_x_mm": 0.0,
+  "pointer_offset_y_mm": 0.0,
+  "travel_x_mm": 500.0,
+  "travel_y_mm": 400.0,
+  "travel_z_mm": 100.0,
+  "kinematics": "cartesian_3axis",
+  "axis_limits": []
+})JSON";
+
+const char* kLinuxcncRotary4AxisDefinition = R"JSON({
+  "name": "LinuxCNC Rotary 4-Axis",
+  "machine_type": "4_axis_mill",
+  "post_processor": { "type": "linuxcnc", "filename": "" },
+  "work_area_x_mm": 400.0,
+  "work_area_y_mm": 400.0,
+  "pointer_offset_x_mm": 0.0,
+  "pointer_offset_y_mm": 0.0,
+  "travel_x_mm": 400.0,
+  "travel_y_mm": 400.0,
+  "travel_z_mm": 150.0,
+  "kinematics": "rotary_table_a",
+  "axis_limits": [
+    { "axis": "a", "min": 0.0, "max": 360.0 }
+  ]
+})JSON";
+
+const char* kLinuxcnc5AxisTableTableDefinition = R"JSON({
+  "name": "LinuxCNC 5-Axis (Table-Table)",
+  "machine_type": "5_axis_mill",
+  "post_processor": { "type": "linuxcnc", "filename": "" },
+  "work_area_x_mm": 400.0,
+  "work_area_y_mm": 400.0,
+  "pointer_offset_x_mm": 0.0,
+  "pointer_offset_y_mm": 0.0,
+  "travel_x_mm": 400.0,
+  "travel_y_mm": 400.0,
+  "travel_z_mm": 150.0,
+  "kinematics": "table_table",
+  "axis_limits": [
+    { "axis": "a", "min": -120.0, "max": 120.0 },
+    { "axis": "c", "min": -360.0, "max": 360.0 }
+  ]
+})JSON";
+
 std::vector<std::pair<std::string, std::string>> builtin_machine_definitions() {
   return {
       {"grbl-laser", kGrblLaserDefinition},
       {"smoothieware-laser", kSmoothiewareLaserDefinition},
       {"generic-3-axis-mill", kGenericMillDefinition},
+      {"grbl-cnc-router", kGrblCncRouterDefinition},
+      {"linuxcnc-rotary-4axis", kLinuxcncRotary4AxisDefinition},
+      {"linuxcnc-5axis-table-table", kLinuxcnc5AxisTableTableDefinition},
   };
 }
 
@@ -100,6 +157,13 @@ bool is_supported_machine_type(const std::string& type) {
   return kSupported.count(type) > 0;
 }
 
+bool is_supported_kinematics(const std::string& kinematics) {
+  static const std::set<std::string> kSupported = {
+      "cartesian_3axis", "rotary_table_a", "rotary_table_b",
+      "rotary_table_c", "head_table", "table_table", "head_head"};
+  return kSupported.count(kinematics) > 0;
+}
+
 bool validate_machine(const MachineDefinition& machine, std::string& error) {
   if (machine.name.empty()) {
     error = "the machine needs a name";
@@ -113,6 +177,21 @@ bool validate_machine(const MachineDefinition& machine, std::string& error) {
       (machine.work_area_x_mm <= 0.0 || machine.work_area_y_mm <= 0.0)) {
     error = "laser machines need a positive work area";
     return false;
+  }
+  if (!is_supported_kinematics(machine.kinematics)) {
+    error = "unknown kinematics: " + machine.kinematics;
+    return false;
+  }
+  for (const auto& limit : machine.axis_limits) {
+    if (limit.axis != "x" && limit.axis != "y" && limit.axis != "z" &&
+        limit.axis != "a" && limit.axis != "b" && limit.axis != "c") {
+      error = "unknown axis in axis limit: " + limit.axis;
+      return false;
+    }
+    if (limit.min > limit.max) {
+      error = "axis limit min exceeds max for axis " + limit.axis;
+      return false;
+    }
   }
   return true;
 }
@@ -160,6 +239,32 @@ std::optional<MachineDefinition> parse_machine_definition(
         read_number(payload, "pointer_offset_x_mm", 0.0);
     machine.pointer_offset_y_mm =
         read_number(payload, "pointer_offset_y_mm", 0.0);
+    machine.travel_x_mm = read_number(payload, "travel_x_mm", 0.0);
+    machine.travel_y_mm = read_number(payload, "travel_y_mm", 0.0);
+    machine.travel_z_mm = read_number(payload, "travel_z_mm", 0.0);
+    machine.kinematics =
+        read_string(payload, "kinematics", "cartesian_3axis");
+    if (payload.contains("axis_limits") &&
+        payload.at("axis_limits").is_array()) {
+      for (const auto& entry : payload.at("axis_limits")) {
+        if (!entry.is_object()) {
+          continue;  // lenient: junk entries are skipped, not fatal
+        }
+        MachineAxisLimit limit;
+        limit.axis = read_string(entry, "axis", "");
+        limit.min = read_number(entry, "min", 0.0);
+        limit.max = read_number(entry, "max", 0.0);
+        machine.axis_limits.push_back(limit);
+      }
+    }
+    if (payload.contains("tool_change_position") &&
+        payload.at("tool_change_position").is_array() &&
+        payload.at("tool_change_position").size() == 3) {
+      const auto& position = payload.at("tool_change_position");
+      machine.tool_change_position = std::array<double, 3>{
+          position.at(0).get<double>(), position.at(1).get<double>(),
+          position.at(2).get<double>()};
+    }
     return machine;
   } catch (const std::exception& exception) {
     error = std::string("invalid machine JSON: ") + exception.what();
@@ -197,7 +302,7 @@ std::string slugify(const std::string& name) {
 }
 
 json to_json(const MachineDefinition& machine) {
-  return {
+  json result = {
       {"name", machine.name},
       {"machine_type", machine.machine_type},
       {"post_processor",
@@ -207,7 +312,22 @@ json to_json(const MachineDefinition& machine) {
       {"work_area_y_mm", machine.work_area_y_mm},
       {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
       {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+      {"travel_x_mm", machine.travel_x_mm},
+      {"travel_y_mm", machine.travel_y_mm},
+      {"travel_z_mm", machine.travel_z_mm},
+      {"kinematics", machine.kinematics},
   };
+  json limits = json::array();
+  for (const auto& limit : machine.axis_limits) {
+    limits.push_back(
+        {{"axis", limit.axis}, {"min", limit.min}, {"max", limit.max}});
+  }
+  result["axis_limits"] = limits;
+  if (machine.tool_change_position.has_value()) {
+    const auto& position = machine.tool_change_position.value();
+    result["tool_change_position"] = {position[0], position[1], position[2]};
+  }
+  return result;
 }
 
 }  // namespace

@@ -741,7 +741,12 @@ Face references: `cam_capture_face_reference {face_id}` returns the
 TNP-safe `FaceAttestation` for a body face — use it to build operation
 `geometry_references` (never hand-craft witness data).
 `cam_wcs_set_face {face_id}` anchors the WCS to a face; the refresh
-pass resolves the machine origin from the live face.
+pass resolves the machine origin from the live face.  `face_id` may also
+be `"stock:<face>"` (top/bottom/front/back/left/right) — the WCS then
+anchors to the live stock extents (`anchor: "stock_face"`) instead of a
+body-face witness.  `wcs_origin.anchor` may also be `"point"` (pinned
+position, never overwritten by refresh) or `"stock_origin"` (legacy
+derived default).
 
 Machine settings: `cam_machine_settings_set` stores
 `{work_area_x_mm, work_area_y_mm, pointer_offset_x_mm, pointer_offset_y_mm}`

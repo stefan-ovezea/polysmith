@@ -1606,11 +1606,57 @@ function App() {
   const [wcsPickArmed, setWcsPickArmed] = useState(false);
 
   const placeWcsFromFacePick = async (faceId: string) => {
+    // "stock:<face>" ids anchor to a stock box face (resolved by the
+    // core against the live stock extents); anything else is a body
+    // face with a TNP witness.
+    const isStockFace = faceId.startsWith("stock:");
     await runAction(async () => {
       await camWcsSetFace(faceId, activeCamSetupId ?? undefined);
     });
     setWcsPickArmed(false);
-    addMessage(t("cam.setup.wcsFaceSet"));
+    addMessage(
+      t(isStockFace ? "cam.setup.wcsStockFaceSet" : "cam.setup.wcsFaceSet"),
+    );
+  };
+
+  // Point-anchored WCS pick: the viewport snaps the click to geometry
+  // (stock corners/midpoints, body vertices/edges/faces, sketch
+  // points) or the bed plane and reports the point here — stored as an
+  // authoritative "point" anchor that refresh never overwrites.
+  const placeWcsFromPointPick = async (point: {
+    x: number;
+    y: number;
+    z: number;
+  }) => {
+    const setup =
+      document?.cam.setups.find((s) => s.setup_id === activeCamSetupId) ??
+      document?.cam.setups?.[0];
+    if (!setup) {
+      return;
+    }
+    const position: [number, number, number] = [
+      Math.round(point.x * 1000) / 1000,
+      Math.round(point.y * 1000) / 1000,
+      Math.round(point.z * 1000) / 1000,
+    ];
+    await runAction(async () => {
+      await camSetupUpdate({
+        ...setup,
+        wcs_origin: {
+          ...setup.wcs_origin,
+          anchor: "point",
+          position,
+        },
+      });
+    });
+    setWcsPickArmed(false);
+    addMessage(
+      t("cam.setup.wcsPointSet", {
+        x: point.x.toFixed(2),
+        y: point.y.toFixed(2),
+        z: point.z.toFixed(2),
+      }),
+    );
   };
 
   const closeCamSetupPanel = () => {
@@ -1627,11 +1673,17 @@ function App() {
     Array<{ name: string; path: string }>
   >([]);
 
-  // Fetch the post list ONCE per CAM-workspace entry.  camPostList is a
-  // fresh function identity every render, so keying the effect on it
-  // would re-fire per render and loop (each fetch replies with a
-  // cam_post_list_result → store update → render → fetch …).
+  // Fetch the post list ONCE per CAM-workspace entry.  camPostList is
+  // a fresh function identity every render (useCadCore is not
+  // memoized), so keying the effect on it re-runs the effect per
+  // render and the disposed guard can drop a reply that lands after
+  // any unrelated re-render — leaving the dropdown stuck on a single
+  // option (the current post type) with the armed ref blocking every
+  // retry.  Key on workspaceView only and read the latest function
+  // through a ref (same pattern as the machine-list fetch below).
   const camPostsFetchArmedRef = useRef(false);
+  const camPostListRef = useRef(camPostList);
+  camPostListRef.current = camPostList;
   useEffect(() => {
     if (workspaceView !== "cam") {
       camPostsFetchArmedRef.current = false;
@@ -1641,16 +1693,20 @@ function App() {
       return;
     }
     camPostsFetchArmedRef.current = true;
-    let disposed = false;
-    void camPostList().then((posts) => {
-      if (!disposed) {
+    void camPostListRef
+      .current()
+      .then((posts) => {
         setCamPosts(posts);
-      }
-    });
-    return () => {
-      disposed = true;
-    };
-  }, [workspaceView, camPostList]);
+      })
+      .catch((error: unknown) => {
+        // Re-arm so the next CAM entry retries after a transient
+        // failure; surface the reason instead of failing silently.
+        camPostsFetchArmedRef.current = false;
+        const detail =
+          error instanceof Error ? error.message : String(error);
+        addMessage(`${t("cam.setup.postListFailed")} (${detail})`);
+      });
+  }, [workspaceView]);
 
   const importCamPostAction = async () => {
     const sourcePath = await open({
@@ -2116,6 +2172,14 @@ function App() {
                 }
                 void placeCamOriginFromPick(point);
               }}
+              wcsPickPointEnabled={wcsPickArmed}
+              onWcsPickPoint={(point) => {
+                if (!point) {
+                  addMessage(t("cam.setup.originPickMissed"));
+                  return;
+                }
+                void placeWcsFromPointPick(point);
+              }}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -2151,7 +2215,7 @@ function App() {
                 // the owning sketch.  Not while the origin pick is
                 // armed, so that click falls through to the vertex/face
                 // pick instead.
-                (workspaceView === "cam" && !originPickArmed)
+                (workspaceView === "cam" && !originPickArmed && !wcsPickArmed)
               }
               onPickInactiveSketchLine={async (lineId) => {
                 if (workspaceView === "cam") {
@@ -3782,6 +3846,9 @@ function App() {
                     addMessage(t("cam.setup.originPickCanceled"));
                     return;
                   }
+                  // One armed pick at a time: both modes consume the
+                  // next viewport click.
+                  setWcsPickArmed(false);
                   setOriginPickArmed(true);
                   addMessage(t("cam.setup.originPickHint"));
                 }}
@@ -3793,6 +3860,9 @@ function App() {
                     addMessage(t("cam.setup.wcsPickCanceled"));
                     return;
                   }
+                  // One armed pick at a time: both modes consume the
+                  // next viewport click.
+                  setOriginPickArmed(false);
                   setWcsPickArmed(true);
                   addMessage(t("cam.setup.wcsPickHint"));
                 }}

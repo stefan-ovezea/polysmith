@@ -194,6 +194,8 @@ json to_payload(const polysmith::core::MachineAxes& ma) {
 
 json to_payload(const polysmith::core::WcsOrigin& wcs) {
   json j{
+      {"anchor", wcs.anchor},
+      {"stock_face", wcs.stock_face},
       {"feature_id", wcs.feature_id},
       {"face_reference", to_payload(wcs.face_reference)}};
   if (wcs.position.has_value()) j["position"] = array3(wcs.position.value());
@@ -268,6 +270,7 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
       {"finish_pass", p.finish_pass},
       {"multiple_passes", p.multiple_passes},
       {"coolant", p.coolant},
+      {"tool_axis_mode", p.tool_axis_mode},
   };
   if (p.stepdown_mm.has_value())         j["stepdown_mm"]         = p.stepdown_mm.value();
   if (p.stepover_percent.has_value())    j["stepover_percent"]    = p.stepover_percent.value();
@@ -357,7 +360,7 @@ json to_payload(const polysmith::core::PostProcessor& pp) {
 }
 
 json to_payload(const polysmith::core::MachineDefinition& machine) {
-  return {
+  json j{
       {"name", machine.name},
       {"machine_type", machine.machine_type},
       {"post_processor", to_payload(machine.post_processor)},
@@ -365,7 +368,22 @@ json to_payload(const polysmith::core::MachineDefinition& machine) {
       {"work_area_y_mm", machine.work_area_y_mm},
       {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
       {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+      {"travel_x_mm", machine.travel_x_mm},
+      {"travel_y_mm", machine.travel_y_mm},
+      {"travel_z_mm", machine.travel_z_mm},
+      {"kinematics", machine.kinematics},
   };
+  json limits = json::array();
+  for (const auto& limit : machine.axis_limits) {
+    limits.push_back(
+        {{"axis", limit.axis}, {"min", limit.min}, {"max", limit.max}});
+  }
+  j["axis_limits"] = limits;
+  if (machine.tool_change_position.has_value()) {
+    j["tool_change_position"] =
+        array3(machine.tool_change_position.value());
+  }
+  return j;
 }
 
 // ── CamDocumentData ──────────────────────────────────────────────

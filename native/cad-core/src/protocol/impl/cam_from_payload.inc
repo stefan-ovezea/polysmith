@@ -217,6 +217,10 @@ polysmith::core::MachineAxes machine_axes_from_payload(const json& payload) {
 
 polysmith::core::WcsOrigin wcs_origin_from_payload(const json& payload) {
   polysmith::core::WcsOrigin wcs;
+  // Absent anchor (pre-anchor documents) loads as "" → derived at the
+  // next refresh: face witness → "face", else legacy "stock_origin".
+  wcs.anchor = cam_read_string(payload, "anchor", "");
+  wcs.stock_face = cam_read_string(payload, "stock_face", "top");
   wcs.feature_id = cam_read_string(payload, "feature_id", "");
   if (payload.contains("face_reference")) {
     wcs.face_reference =
@@ -358,6 +362,7 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
   p.finish_pass = cam_read_bool(payload, "finish_pass", false);
   p.multiple_passes = cam_read_bool(payload, "multiple_passes", false);
   p.coolant = cam_read_string(payload, "coolant", "off");
+  p.tool_axis_mode = cam_read_string(payload, "tool_axis_mode", "fixed_z");
   if (payload.contains("stepdown_mm") && !payload.at("stepdown_mm").is_null()) {
     p.stepdown_mm = cam_read_number(payload, "stepdown_mm", 1.0);
   }
@@ -562,6 +567,33 @@ polysmith::core::MachineDefinition machine_definition_from_payload(
       cam_read_number(payload, "pointer_offset_x_mm", 0.0);
   machine.pointer_offset_y_mm =
       cam_read_number(payload, "pointer_offset_y_mm", 0.0);
+  machine.travel_x_mm = cam_read_number(payload, "travel_x_mm", 0.0);
+  machine.travel_y_mm = cam_read_number(payload, "travel_y_mm", 0.0);
+  machine.travel_z_mm = cam_read_number(payload, "travel_z_mm", 0.0);
+  machine.kinematics =
+      cam_read_string(payload, "kinematics", "cartesian_3axis");
+  if (payload.contains("axis_limits") &&
+      payload.at("axis_limits").is_array()) {
+    for (const auto& entry : payload.at("axis_limits")) {
+      if (!entry.is_object()) {
+        continue;  // lenient: junk entries are skipped, not fatal
+      }
+      polysmith::core::MachineAxisLimit limit;
+      limit.axis = cam_read_string(entry, "axis", "");
+      limit.min = cam_read_number(entry, "min", 0.0);
+      limit.max = cam_read_number(entry, "max", 0.0);
+      machine.axis_limits.push_back(limit);
+    }
+  }
+  if (payload.contains("tool_change_position") &&
+      !payload.at("tool_change_position").is_null() &&
+      payload.at("tool_change_position").is_array() &&
+      payload.at("tool_change_position").size() == 3) {
+    const auto& position = payload.at("tool_change_position");
+    machine.tool_change_position = std::array<double, 3>{
+        position.at(0).get<double>(), position.at(1).get<double>(),
+        position.at(2).get<double>()};
+  }
   return machine;
 }
 

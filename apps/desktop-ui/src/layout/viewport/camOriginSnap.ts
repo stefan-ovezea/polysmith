@@ -11,7 +11,7 @@ import {
 // Pure geometry helpers for the graphical origin pick.  Candidates
 // are world-space points the pointer can snap to within a screen
 // distance: sketch points, body vertices, body edge midpoints, body
-// face centers, and the stock box's top-face corners + edge
+// face centers, and the stock box's top/bottom-face corners + edge
 // midpoints (computed client-side from the same stock definition the
 // stock box is drawn from — see addStockBoundingBox in
 // camSceneObjects.ts).
@@ -93,7 +93,7 @@ export function buildCamOriginSnapCandidates({
     const setup = resolveActiveCamSetup(document, activeCamSetupId);
     if (setup?.stock) {
       candidates.push(
-        ...stockBoxTopFaceCandidates(setup.stock, viewport),
+        ...stockBoxFaceCandidates(setup.stock, viewport),
       );
     }
   }
@@ -200,34 +200,71 @@ export function buildCamOriginSketchSnapCandidates(
   return candidates;
 }
 
-// While the origin pick is armed, draw a visible dot at every
-// sketch-derived snap target (endpoints, corners, circle/arc/ellipse
-// centers).  Finished-sketch geometry has no point sprites in the
-// CAM workspace — without markers a circle center is invisible and
-// the user has nothing to aim at.  Same visual language as the
+// While the origin pick is armed, draw a visible dot at every snap
+// target the resolver can hit — sketch points/centers, body
+// vertices, body edge midpoints, body face centers, and the stock
+// box's top-face corners + edge midpoints.  Body vertex sprites are
+// part of the normal scene, but edge midpoints, face centers and
+// stock targets have no other visualization: without markers they
+// resolve invisibly and look broken.  Same visual language as the
 // sketch-point sprites: draw-on-top spheres, axis-z blue for
-// centers, warm yellow for points.  Display-only; picking goes
-// through the screen-space snap resolver.
+// centers/midpoints, warm yellow for points, axis-y green for stock
+// targets.  Display-only; picking goes through the screen-space
+// snap resolver.
 export function addCamOriginPickMarkerObjects({
   sceneData,
   referenceGroup,
   originPickArmed,
+  document,
+  activeCamSetupId,
+  viewport,
+  showStock,
+  vertexObjects,
+  edgeLineObjects,
+  faceMeshes,
 }: {
   sceneData: ViewportScene | null;
   referenceGroup: THREE.Group;
   originPickArmed: boolean;
+  document: DocumentState | null;
+  activeCamSetupId?: string | null;
+  viewport: ViewportState | null;
+  showStock: boolean;
+  vertexObjects: THREE.Mesh[];
+  edgeLineObjects: THREE.Line[];
+  faceMeshes: THREE.Mesh[];
 }) {
   if (!originPickArmed || !sceneData) {
     return;
   }
   const centerColor = themeColor("--color-axis-z", "#6db4ff");
   const pointColor = themeColor("--color-tertiary-plane-edge", "#ffe784");
-  const candidates = buildCamOriginSketchSnapCandidates(sceneData);
+  const stockColor = themeColor("--color-axis-y", "#2bd978");
+  const candidates = buildCamOriginSnapCandidates({
+    document,
+    activeCamSetupId,
+    viewport,
+    showStock,
+    // Active-sketch point sprites are already visible in the scene
+    // and the refs are repopulated later in the same rebuild — the
+    // sceneData-derived sketch targets below cover finished sketches.
+    sketchPointObjects: [],
+    sketchPrimitives: sceneData,
+    vertexObjects,
+    edgeLineObjects,
+    faceMeshes,
+  });
   for (const candidate of candidates) {
-    const isCenter = candidate.kind === "sketch_center";
+    const isStock =
+      candidate.kind === "stock_corner" ||
+      candidate.kind === "stock_midpoint";
+    const isCenter =
+      candidate.kind === "sketch_center" ||
+      candidate.kind === "edge" ||
+      candidate.kind === "face";
     const geometry = new THREE.SphereGeometry(isCenter ? 0.9 : 0.7, 12, 12);
     const material = new THREE.MeshBasicMaterial({
-      color: isCenter ? centerColor : pointColor,
+      color: isStock ? stockColor : isCenter ? centerColor : pointColor,
       transparent: true,
       opacity: 0.9,
       depthTest: false,
@@ -317,9 +354,10 @@ function edgeMidpointWorld(edgeObject: THREE.Line): THREE.Vector3 | null {
 }
 
 // Corners (priority) and edge midpoints of the displayed stock box's
-// TOP face — the face a laser bed or mill table sees.  Same extents
-// as addStockBoundingBox so the snap points sit on the drawn box.
-function stockBoxTopFaceCandidates(
+// TOP and BOTTOM faces — the faces a mill table sees from above and
+// below.  Same extents as addStockBoundingBox so the snap points sit
+// on the drawn box.
+function stockBoxFaceCandidates(
   stock: NonNullable<DocumentState["cam"]["setups"][number]["stock"]>,
   viewport: ViewportState | null,
 ): CamOriginSnapCandidate[] {
@@ -342,7 +380,7 @@ function stockBoxTopFaceCandidates(
   }
   const hw = width / 2;
   const hh = height / 2;
-  const zTop = center.z + depth / 2;
+  const halfDepth = depth / 2;
 
   const points: [number, number][] = [
     [-hw, -hh],
@@ -351,22 +389,29 @@ function stockBoxTopFaceCandidates(
     [-hw, hh],
   ];
   const candidates: CamOriginSnapCandidate[] = [];
-  for (const [x, y] of points) {
-    candidates.push({
-      kind: "stock_corner",
-      position: new THREE.Vector3(center.x + x, center.y + y, zTop),
-    });
-  }
-  for (const [x, y] of [
-    [0, -hh],
-    [hw, 0],
-    [0, hh],
-    [-hw, 0],
-  ]) {
-    candidates.push({
-      kind: "stock_midpoint",
-      position: new THREE.Vector3(center.x + x, center.y + y, zTop),
-    });
+  for (const zFace of [center.z + halfDepth, center.z - halfDepth]) {
+    // A cylinder has no corners: the bounding-box corners float off
+    // the drawn cylinder, so only the box edge midpoints (which lie
+    // exactly on the cylinder rim, hw == hh == radius) are emitted.
+    if (stock.type !== "cylinder") {
+      for (const [x, y] of points) {
+        candidates.push({
+          kind: "stock_corner",
+          position: new THREE.Vector3(center.x + x, center.y + y, zFace),
+        });
+      }
+    }
+    for (const [x, y] of [
+      [0, -hh],
+      [hw, 0],
+      [0, hh],
+      [-hw, 0],
+    ]) {
+      candidates.push({
+        kind: "stock_midpoint",
+        position: new THREE.Vector3(center.x + x, center.y + y, zFace),
+      });
+    }
   }
   return candidates;
 }

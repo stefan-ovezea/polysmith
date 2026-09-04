@@ -250,6 +250,8 @@ export function ViewportPanel({
   onSelectVertex,
   originPickPointEnabled,
   onOriginPickPoint,
+  wcsPickPointEnabled,
+  onWcsPickPoint,
   onStartSketch,
   onStartSketchOnFace,
   onAddSketchLine,
@@ -612,6 +614,10 @@ export function ViewportPanel({
     new Map<string, SketchProfileInteractionState>(),
   );
   const faceMeshesRef = useRef<THREE.Mesh[]>([]);
+  // Stock box mesh (face-tagged via userData.stockFaceNames) for the WCS
+  // pick raycast — populated by addCamSceneObjects, cleared with the rest
+  // of the scene refs in clearViewportSceneObjectRefs.
+  const stockFaceMeshesRef = useRef<THREE.Mesh[]>([]);
   // Body edges materialized as THREE.Line objects. Raycasting against
   // these (with a small `params.Line.threshold`) drives edge picking
   // for the upcoming fillet/chamfer features. Edges are checked before
@@ -652,6 +658,10 @@ export function ViewportPanel({
   originPickPointEnabledRef.current = originPickPointEnabled;
   const originPickPointRef = useRef(onOriginPickPoint);
   originPickPointRef.current = onOriginPickPoint;
+  const wcsPickPointEnabledRef = useRef(wcsPickPointEnabled);
+  wcsPickPointEnabledRef.current = wcsPickPointEnabled;
+  const wcsPickPointRef = useRef(onWcsPickPoint);
+  wcsPickPointRef.current = onWcsPickPoint;
   const selectEdgeRef = useRef(onSelectEdge);
   const selectVertexRef = useRef(onSelectVertex);
   const startSketchRef = useRef(onStartSketch);
@@ -1206,6 +1216,15 @@ export function ViewportPanel({
   const showViewportGridRef = useRef(showViewportGrid);
   const showSketchGridRef = useRef(showSketchGrid);
   const documentRef = useRef(document);
+  // The pointer handlers below live in an effect keyed on
+  // activeSketchPlaneId only — their closures would otherwise see the
+  // mount-time document/viewport/stock state.  Stock snap candidates
+  // and the stock-face raycast read these refs so they track live
+  // values (body candidates come from scene refs and never had the
+  // problem — which is why stock snap looked like the only failure).
+  const viewportRef = useRef(viewport);
+  const showStockRef = useRef(showStock);
+  const activeCamSetupIdRef = useRef(activeCamSetupId);
   // Transform/Array center pick: armed from App while the panel's Pick
   // button is active. The next sketch-plane click reports the snapped
   // point instead of selecting.
@@ -1252,6 +1271,15 @@ export function ViewportPanel({
   useEffect(() => {
     documentRef.current = document;
   }, [document]);
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+  useEffect(() => {
+    showStockRef.current = showStock;
+  }, [showStock]);
+  useEffect(() => {
+    activeCamSetupIdRef.current = activeCamSetupId;
+  }, [activeCamSetupId]);
   useEffect(() => {
     draftDimensionSessionRef.current = draftDimensionSession;
   }, [draftDimensionSession]);
@@ -1535,6 +1563,7 @@ export function ViewportPanel({
     sketchProfileObjectsRef.current = [];
     meshesRef.current = [];
     faceMeshesRef.current = [];
+    stockFaceMeshesRef.current = [];
     edgeLineObjectsRef.current = [];
     vertexObjectsRef.current = [];
     cutPreviewObjectsRef.current = [];
@@ -3259,14 +3288,14 @@ export function ViewportPanel({
         }
       }
 
-      if (originPickPointEnabledRef.current) {
-        // Live snap preview while the origin pick is armed: label the
-        // snap kind whenever the cursor is within the snap threshold,
-        // so the user sees what the next click will snap to.  Also
-        // track the pointer position here — the sketch-mode crosshair
-        // update never runs in the CAM workspace, so without this the
-        // SnapCursorOverlay has no position to render the square +
-        // label chip at.
+      if (originPickPointEnabledRef.current || wcsPickPointEnabledRef.current) {
+        // Live snap preview while the origin or WCS pick is armed:
+        // label the snap kind whenever the cursor is within the snap
+        // threshold, so the user sees what the next click will snap
+        // to.  Also track the pointer position here — the sketch-mode
+        // crosshair update never runs in the CAM workspace, so without
+        // this the SnapCursorOverlay has no position to render the
+        // square + label chip at.
         setPointerNdcFromEvent(pointer, event, renderer);
         const rect = renderer.domElement.getBoundingClientRect();
         setCrosshairPointer({
@@ -3274,10 +3303,10 @@ export function ViewportPanel({
           y: event.clientY - rect.top,
         });
         const candidates = buildCamOriginSnapCandidates({
-          document,
-          activeCamSetupId,
-          viewport,
-          showStock,
+          document: documentRef.current,
+          activeCamSetupId: activeCamSetupIdRef.current,
+          viewport: viewportRef.current,
+          showStock: showStockRef.current,
           sketchPointObjects: sketchPointObjectsRef.current,
           sketchPrimitives: sceneDataRef.current,
           vertexObjects: vertexObjectsRef.current,
@@ -3559,10 +3588,10 @@ export function ViewportPanel({
           // the exact 3D point, LightBurn-style.
           const rect = renderer.domElement.getBoundingClientRect();
           const candidates = buildCamOriginSnapCandidates({
-            document,
-            activeCamSetupId,
-            viewport,
-            showStock,
+            document: documentRef.current,
+            activeCamSetupId: activeCamSetupIdRef.current,
+            viewport: viewportRef.current,
+            showStock: showStockRef.current,
             sketchPointObjects: sketchPointObjectsRef.current,
             sketchPrimitives: sceneDataRef.current,
             vertexObjects: vertexObjectsRef.current,
@@ -3607,6 +3636,119 @@ export function ViewportPanel({
             return;
           }
           originPickPointRef.current({
+            x: Math.round(hit.x * 1000) / 1000,
+            y: Math.round(hit.y * 1000) / 1000,
+            z: 0,
+          });
+        },
+        // Armed WCS pick: same pointer-up routing as the origin pick,
+        // but face hits take priority — a body face keeps the TNP face
+        // anchor, a stock face anchors to the stock face (or a snapped
+        // stock corner/midpoint as a pinned point) — and the result is
+        // a point anchor instead of a stock origin.
+        wcsPickPointEnabled: wcsPickPointEnabledRef.current,
+        wcsPickPoint: (pickEvent) => {
+          setPointerNdcFromEvent(pointer, pickEvent, renderer);
+          raycaster.setFromCamera(pointer, camera);
+          const rect = renderer.domElement.getBoundingClientRect();
+
+          // 1) Face raycast FIRST.  A body face keeps the TNP face
+          // anchor (selectFace → placeWcsFromFacePick).  Snap-first
+          // would degrade body-face picks into bare points — the snap
+          // set includes body face centers.  The stock box is the
+          // outermost surface when shown, so it intercepts first and
+          // routes to the stock branch below; hiding the stock
+          // restores body-face picks.
+          let stockFaceName: string | null = null;
+          let stockIntercepted = false;
+          const hits = raycaster
+            .intersectObjects(
+              [
+                ...faceMeshesRef.current,
+                ...(showStockRef.current ? stockFaceMeshesRef.current : []),
+              ],
+              false,
+            )
+            .sort((a, b) => a.distance - b.distance);
+          for (const hit of hits) {
+            if (hit.object.userData.isStockBox === true) {
+              stockIntercepted = true;
+              const names = hit.object.userData.stockFaceNames as
+                | Array<string | null>
+                | undefined;
+              stockFaceName =
+                names?.[hit.face?.materialIndex ?? -1] ?? null;
+              break;
+            }
+            if (typeof hit.object.userData.faceId === "string") {
+              void selectFaceRef.current(hit.object.userData.faceId);
+              return;
+            }
+          }
+
+          // 2) Snap within 12 px.  When the stock face intercepted the
+          // ray, only stock candidates are considered — they are the
+          // outermost surface and must stay reachable; otherwise the
+          // full set (body vertices/edges/faces, sketch points).
+          const allCandidates = buildCamOriginSnapCandidates({
+            document: documentRef.current,
+            activeCamSetupId: activeCamSetupIdRef.current,
+            viewport: viewportRef.current,
+            showStock: showStockRef.current,
+            sketchPointObjects: sketchPointObjectsRef.current,
+            sketchPrimitives: sceneDataRef.current,
+            vertexObjects: vertexObjectsRef.current,
+            edgeLineObjects: edgeLineObjectsRef.current,
+            faceMeshes: faceMeshesRef.current,
+          });
+          const candidates = stockIntercepted
+            ? allCandidates.filter(
+                (candidate) =>
+                  candidate.kind === "stock_corner" ||
+                  candidate.kind === "stock_midpoint",
+              )
+            : allCandidates;
+          const snapped = resolveCamOriginSnap({
+            candidates,
+            camera,
+            pointer,
+            rect,
+          });
+          if (snapped) {
+            const { x, y, z } = snapped.position;
+            wcsPickPointRef.current({
+              x: Math.round(x * 1000) / 1000,
+              y: Math.round(y * 1000) / 1000,
+              z: Math.round(z * 1000) / 1000,
+            });
+            return;
+          }
+
+          // 3) No snap + a named stock face → stock_face anchor (the
+          // core resolves it against the live stock extents).
+          if (stockFaceName) {
+            void selectFaceRef.current(`stock:${stockFaceName}`);
+            return;
+          }
+
+          // 4) Bed-plane fallback (z = 0, same 10 m guard as the
+          // origin pick) — also covers stock hits on the cylinder side
+          // (untagged: not a real cylinder face).
+          const hit = new THREE.Vector3();
+          if (
+            !raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+              hit,
+            )
+          ) {
+            wcsPickPointRef.current(null);
+            return;
+          }
+          if (Math.abs(hit.x) > 10000 || Math.abs(hit.y) > 10000) {
+            wcsPickPointRef.current(null);
+            return;
+          }
+          wcsPickPointRef.current({
             x: Math.round(hit.x * 1000) / 1000,
             y: Math.round(hit.y * 1000) / 1000,
             z: 0,
@@ -4190,6 +4332,7 @@ export function ViewportPanel({
         referencePlaneVisuals: referencePlaneVisualsRef,
         referencePlaneStates: referencePlaneStatesRef,
         faceMeshes: faceMeshesRef,
+        stockFaceMeshes: stockFaceMeshesRef,
         solidFaceVisuals: solidFaceVisualsRef,
         solidFaceStates: solidFaceStatesRef,
         edgeLineObjects: edgeLineObjectsRef,
@@ -4218,7 +4361,9 @@ export function ViewportPanel({
       showStock,
       wcsOrientation,
       activeCamSetupId,
-      originPickArmed: originPickPointEnabled,
+      // Both pick modes share the snap markers + hover suppression —
+      // sceneSync only needs to know that SOME pick is armed.
+      originPickArmed: originPickPointEnabled || wcsPickPointEnabled,
       moveGizmo,
       clearViewportSceneObjectRefs,
       clearDragPreviewLines,
@@ -4236,7 +4381,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

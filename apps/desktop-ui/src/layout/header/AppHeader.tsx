@@ -346,6 +346,8 @@ interface AppHeaderProps
   activeCamOperation: CamOperationType | null;
   onSelectCamOperation: (op: CamOperationType) => void;
   hasCamSetup: boolean;
+  // The document's viewport face selection — face milling requires one.
+  selectedCamFaceId: string | null;
   camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
@@ -457,6 +459,7 @@ export function AppHeader({
   activeCamOperation,
   onSelectCamOperation,
   hasCamSetup,
+  selectedCamFaceId,
   camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
@@ -942,6 +945,7 @@ export function AppHeader({
             <CamMillingToolbar
               disabled={disabled}
               hasSetup={hasCamSetup}
+              selectedFaceId={selectedCamFaceId}
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
             />

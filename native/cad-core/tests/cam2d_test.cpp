@@ -255,27 +255,28 @@ bool test_sampling_sagitta() {
 
 bool test_clip_segment() {
   const std::vector<XY> square{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-  // The polygon-clip form may repeat the intersection points; the
-  // consumers (milling rows) read clipped.front() and clipped.back().
+  // Consumers (milling rows) read clipped.front()/back() as row
+  // start/end, so the points must come back in p1→p2 order without
+  // duplicated intersections.
   const auto inside =
       clip_segment_to_polygon({-2, 0}, {2, 0}, square);
-  double minX = 1e9;
-  double maxX = -1e9;
-  for (const auto& p : inside) {
-    minX = std::min(minX, p.x);
-    maxX = std::max(maxX, p.x);
-    if (!near(p.y, 0.0, 1e-9)) {
-      return expect(false, "clip: clipped points stay on the line");
-    }
+  if (!expect(inside.size() == 2, "clip: crossing segment gives 2 points")) {
+    std::cerr << "  got " << inside.size() << " points\n";
+    return false;
   }
-  if (!expect(inside.size() >= 2 && near(minX, -1.0, 1e-9) &&
-                  near(maxX, 1.0, 1e-9),
-              "clip: crossing segment trimmed to [-1, 1]")) {
+  if (!expect(near(inside[0].x, -1.0, 1e-9) && near(inside[0].y, 0.0, 1e-9),
+              "clip: entry point is the left intersection")) {
+    std::cerr << "  entry (" << inside[0].x << ", " << inside[0].y << ")\n";
+    return false;
+  }
+  if (!expect(near(inside[1].x, 1.0, 1e-9) && near(inside[1].y, 0.0, 1e-9),
+              "clip: exit point is the right intersection")) {
+    std::cerr << "  exit (" << inside[1].x << ", " << inside[1].y << ")\n";
     return false;
   }
   const auto outside =
       clip_segment_to_polygon({5, 0}, {6, 0}, square);
-  return expect(outside.size() < 2, "clip: outside segment dropped");
+  return expect(outside.empty(), "clip: outside segment dropped");
 }
 
 // ── Test 7: loop containment ─────────────────────────────────────

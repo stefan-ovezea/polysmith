@@ -13,6 +13,15 @@ CamGenerateResult generate_face_milling_toolpath(
   CamGenerateResult result;
   const auto& op = context.operation;
 
+  // Tool-axis guard (5-axis scaffolding): reserved rotary modes must
+  // degrade with a clear error, never silently emit 3-axis moves.
+  std::string axisError;
+  if (!milling::check_tool_axis_supported(op, axisError)) {
+    result.ok = false;
+    result.error_message = axisError;
+    return result;
+  }
+
   if (context.geometry.faces.empty()) {
     result.ok = false;
     result.error_message =
@@ -188,6 +197,18 @@ CamGenerateResult generate_face_milling_toolpath(
       std::max(1, static_cast<int>(std::ceil((maxN - minN) / spacing)) + 1);
 
   const double retractZ = context.setup.retract_height;
+  // Rapid-safety guard: when the retract height sits BELOW the face,
+  // every rapid travels through the material and every entry move
+  // rises up out of it — on the machine that crashes the tool.  v1
+  // warns instead of failing; the operator raises it in the Setup.
+  if (retractZ < faceZ) {
+    std::ostringstream message;
+    message << "Retract height (" << retractZ
+            << " mm) is below the face height (" << faceZ
+            << " mm) — rapids travel through the material. Raise it "
+               "in the Setup.";
+    result.warnings.push_back(message.str());
+  }
   const double feedrate = op.parameters.feedrate_mm_per_min > 0.0
                               ? op.parameters.feedrate_mm_per_min
                               : context.tool.default_feedrate_mm_per_min;
@@ -196,12 +217,50 @@ CamGenerateResult generate_face_milling_toolpath(
           ? op.parameters.plunge_feedrate_mm_per_min
           : context.tool.default_plunge_feedrate_mm_per_min;
 
-  if (op.parameters.stepdown_mm.has_value() &&
-      op.parameters.stepdown_mm.value() <
-          std::abs(faceZ - context.setup.safety_height)) {
-    result.warnings.push_back(
-        "Multi-pass face milling is not supported yet — a single pass "
-        "at the face height is generated.");
+  // Multi-pass levels: with a stepdown, cut from the STOCK TOP down to
+  // the face (first level at stockTop − stepdown, last pinned to the
+  // face — stock 23 / face 20 / stepdown 2 → 21, 20).  No stepdown, a
+  // non-positive stepdown, or no resolvable stock = the legacy single
+  // pass at the face.
+  std::vector<double> levels;
+  double stockTopZ = 0.0;
+  bool haveStockTop = false;
+  if (op.parameters.stepdown_mm.has_value()) {
+    const double stepdown = op.parameters.stepdown_mm.value();
+    if (stepdown > 1e-9) {
+      haveStockTop = cam_stock::stock_top_z(context.document,
+                                            context.setup.stock, stockTopZ);
+      if (haveStockTop && stockTopZ > faceZ + 1e-9) {
+        constexpr int kMaxLevels = 100;
+        for (double z = stockTopZ - stepdown; z > faceZ + 1e-9;
+             z -= stepdown) {
+          levels.push_back(z);
+          if (static_cast<int>(levels.size()) >= kMaxLevels) {
+            std::ostringstream cap;
+            cap << "Pass count capped at " << kMaxLevels
+                << " — reduce the stepdown or the stock height.";
+            result.warnings.push_back(cap.str());
+            break;
+          }
+        }
+        levels.push_back(faceZ);
+      }
+    }
+  }
+  if (levels.empty()) {
+    levels.push_back(faceZ);
+  }
+
+  // Guard 2 (multi-pass): rapids must clear the unmilled stock above
+  // the first level, not just the face.  Guard 1 above already covers
+  // retract < face; this covers the band between face and stock top.
+  if (levels.size() > 1 && haveStockTop && retractZ < stockTopZ) {
+    std::ostringstream message;
+    message << "Retract height (" << retractZ
+            << " mm) is below the stock top (" << stockTopZ
+            << " mm) — rapids travel through unmilled stock. Raise it "
+               "in the Setup.";
+    result.warnings.push_back(message.str());
   }
 
   Toolpath toolpath;
@@ -227,25 +286,35 @@ CamGenerateResult generate_face_milling_toolpath(
     toolpath.moves.push_back(move);
   };
 
-  for (int row = 0; row < rowCount; ++row) {
-    const double n = minN + spacing * static_cast<double>(row);
-    const XY anchor{rowNormal.x * n, rowNormal.y * n};
-    XY a{anchor.x - rowDir.x * 10000.0, anchor.y - rowDir.y * 10000.0};
-    XY b{anchor.x + rowDir.x * 10000.0, anchor.y + rowDir.y * 10000.0};
-    const auto clipped = cam2d::clip_segment_to_polygon(a, b, insetPoints);
-    if (clipped.size() < 2) {
-      continue;
-    }
-    XY rowStart = clipped[0];
-    XY rowEnd = clipped.back();
-    if (zigzag && row % 2 == 1) {
-      std::swap(rowStart, rowEnd);
-    }
+  // The GLOBAL row index keeps the zigzag alternation going across
+  // levels, so consecutive cutting rows always swap direction.
+  int globalRow = 0;
+  for (const double levelZ : levels) {
+    for (int row = 0; row < rowCount; ++row, ++globalRow) {
+      // Pin the final row to maxN: rowCount rounds UP, so the last step
+      // would otherwise land past the polygon and the clip would
+      // silently drop the far edge's coverage band.
+      const double n = (row == rowCount - 1)
+                           ? maxN
+                           : minN + spacing * static_cast<double>(row);
+      const XY anchor{rowNormal.x * n, rowNormal.y * n};
+      XY a{anchor.x - rowDir.x * 10000.0, anchor.y - rowDir.y * 10000.0};
+      XY b{anchor.x + rowDir.x * 10000.0, anchor.y + rowDir.y * 10000.0};
+      const auto clipped = cam2d::clip_segment_to_polygon(a, b, insetPoints);
+      if (clipped.size() < 2) {
+        continue;
+      }
+      XY rowStart = clipped[0];
+      XY rowEnd = clipped.back();
+      if (zigzag && globalRow % 2 == 1) {
+        std::swap(rowStart, rowEnd);
+      }
 
-    append_rapid_xy(rowStart, retractZ);
-    append_feed_xy(rowStart, faceZ, plungeFeed);
-    append_feed_xy(rowEnd, faceZ, feedrate);
-    append_rapid_xy(rowEnd, retractZ);
+      append_rapid_xy(rowStart, retractZ);
+      append_feed_xy(rowStart, levelZ, plungeFeed);
+      append_feed_xy(rowEnd, levelZ, feedrate);
+      append_rapid_xy(rowEnd, retractZ);
+    }
   }
 
   if (toolpath.moves.empty()) {

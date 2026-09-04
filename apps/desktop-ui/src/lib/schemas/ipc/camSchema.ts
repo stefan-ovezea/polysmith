@@ -109,6 +109,8 @@ const machineAxesSchema = z
 
 const wcsOriginSchema = z
   .object({
+    anchor: z.string().optional(),
+    stock_face: z.string().optional(),
     feature_id: z.string().default(""),
     face_reference: geometryReferenceSchema.optional(),
     position: vec3Schema.optional(),
@@ -124,7 +126,7 @@ const camSetupSchema = z
     stock: stockDefinitionSchema.default({ type: "bounding_box", margin: 3 }),
     wcs_origin: wcsOriginSchema.default({ feature_id: "" }),
     safety_height: z.number().default(50),
-    retract_height: z.number().default(5),
+    retract_height: z.number().default(25),
     units: z.string().default("mm"),
   })
   .passthrough();
@@ -254,6 +256,8 @@ const camOperationParametersSchema = z
     laser: laserCutParametersSchema.optional(),
     test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),
+    // 5-axis scaffolding: "fixed_z" is the only supported mode today.
+    tool_axis_mode: z.string().default("fixed_z"),
   })
   .passthrough();
 
@@ -321,6 +325,7 @@ const camOperationSchema = z
       finish_pass: false,
       multiple_passes: false,
       coolant: "off",
+      tool_axis_mode: "fixed_z",
     }),
     dependencies: camOperationDependenciesSchema.default({
       parent_operation_ids: [],

@@ -230,7 +230,9 @@
       "editSetup": "Edit Setup",
       "faceOp": "Face",
       "contour": "Contour",
-      "engrave": "Engrave"
+      "engrave": "Engrave",
+      "selectFaceFirst": "Select a face first",
+      "notImplemented": "This operation is not implemented yet."
     },
     "setup": {
       "title": "Setup",
@@ -263,6 +265,7 @@
         "from_solid": "From solid",
         "from_mesh": "From mesh"
       },
+      "stockTypeDisabledNote": " (coming soon)",
       "sizeX": "Size X (mm)",
       "sizeY": "Size Y (mm)",
       "sizeZ": "Size Z (mm)",
@@ -305,8 +308,11 @@
       "pickWcsFace": "Pick WCS face…",
       "pickWcsFaceArmed": "Click a face…",
       "wcsPickCanceled": "WCS face pick canceled",
-      "wcsPickHint": "click a face of the part to anchor the WCS origin",
+      "wcsPickHint": "click a face to anchor the WCS: a part face follows the feature, a stock face follows the stock, and stock corners/edges snap to a pinned point. With the stock shown, clicks land on the stock — hide it to pick part faces.",
       "wcsFaceSet": "WCS anchored to the picked face",
+      "wcsStockFaceSet": "WCS anchored to the stock face",
+      "wcsPointSet": "WCS set to {{x}}, {{y}}, {{z}}",
+      "wcsManualNote": "Manually entered origins pin the position; picking a face re-anchors it.",
       "originSnapSketchPoint": "sketch point",
       "originSnapSketchCenter": "center point",
       "originSnapVertex": "body vertex",
@@ -322,7 +328,8 @@
       "machineApplied": "machine \"{{name}}\" applied — machine type, post processor, and settings updated.",
       "machineNote": "Machines live as files in the user machines folder and are shared across documents. Selecting one applies its type, post processor, and settings to this setup.",
       "machineListFailed": "could not load the machine library — the dropdown will retry when you re-enter CAM.",
-      "machineListEmpty": "machine library reply was empty — the core may have rejected the request; check the Logs panel."
+      "machineListEmpty": "machine library reply was empty — the core may have rejected the request; check the Logs panel.",
+      "postListFailed": "could not load the post-processor list — it will retry when you re-enter CAM."
     },
     "faceMilling": {
       "title": "Face Milling",
@@ -336,6 +343,8 @@
       "stepoverPercent": "Stepover (%)",
       "zigzagAngle": "Zigzag angle (°)",
       "spindleRpm": "Spindle (RPM)",
+      "stepdown": "Stepdown (mm)",
+      "stepdownHelp": "Axial depth per pass, cut from the stock top down to the face. Leave empty for a single pass at the face.",
       "help": "Changes update the toolpath preview in real time.",
       "preview": "Preview",
       "generate": "Generate",

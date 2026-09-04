@@ -215,7 +215,13 @@ std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
     const double edgeY = edgeEnd.y - edgeStart.y;
     for (size_t j = 0; j < input.size(); ++j) {
       const XY& current = input[j];
-      const XY& previous = input[(j + input.size() - 1) % input.size()];
+      // The input is an OPEN segment chain, not a closed ring: the
+      // first vertex has no predecessor, so pair it with itself and
+      // emit no crossing before it.  (The old wrap-around pairing
+      // processed the segment in both directions, duplicating the
+      // intersections and putting the far-end crossing first — every
+      // milling row collapsed onto its exit point.)
+      const XY& previous = (j == 0) ? input[j] : input[j - 1];
       const double dCurrent = edgeX * (current.y - edgeStart.y) -
                               edgeY * (current.x - edgeStart.x);
       const double dPrevious = edgeX * (previous.y - edgeStart.y) -

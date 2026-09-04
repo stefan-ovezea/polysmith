@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { readNumberInputValue } from "./numberInput";
@@ -9,15 +9,24 @@ export function CamNumberField({
   disabled,
   step = 0.5,
   min = 0,
+  clearable = false,
   onChange,
 }: {
   label: string;
-  value: number;
+  value: number | undefined;
   disabled: boolean;
   step?: number | "any";
   min?: number;
-  onChange: (value: number) => void;
+  /** Empty input commits undefined instead of 0 (optional parameters
+   *  like stepdown: cleared = "no multi-pass"). */
+  clearable?: boolean;
+  onChange: (value: number | undefined) => void;
 }) {
+  // String draft so a cleared input stays empty while the user types —
+  // a controlled number input would repaint "" as 0 immediately.
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft ?? (value === undefined ? "" : String(value));
+
   return (
     <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
       {label}
@@ -26,9 +35,17 @@ export function CamNumberField({
         type="number"
         min={min}
         step={step}
-        value={value}
+        value={display}
         disabled={disabled}
-        onChange={(event) => onChange(readNumberInputValue(event.currentTarget))}
+        onChange={(event) => {
+          const raw = event.currentTarget.value;
+          setDraft(raw);
+          if (clearable && raw === "") {
+            onChange(undefined);
+            return;
+          }
+          onChange(readNumberInputValue(event.currentTarget));
+        }}
       />
     </label>
   );

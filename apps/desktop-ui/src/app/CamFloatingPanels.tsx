@@ -474,6 +474,9 @@ function buildOperationPanel({
       zigzag_angle_deg:
         parameters.zigzag_angle_deg ?? DEFAULT_FACE_MILLING_PARAMS.zigzag_angle_deg,
       spindle_rpm: parameters.spindle_rpm ?? DEFAULT_FACE_MILLING_PARAMS.spindle_rpm,
+      // Absent in the params = single pass; never substitute a default
+      // number for a cleared stepdown.
+      stepdown_mm: parameters.stepdown_mm,
     };
     const tools = document?.cam.tool_library.filter(
       (entry) => entry.type === "endmill_flat",

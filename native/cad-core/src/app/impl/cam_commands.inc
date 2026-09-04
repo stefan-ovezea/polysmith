@@ -137,8 +137,11 @@
   if (command.type == "cam_wcs_set_face") {
     // Anchor the WCS origin to a body face: capture the TNP-safe
     // witness, store it on the target setup's WCS, and let the refresh
-    // pass resolve the machine origin from the live face.  An absent
-    // setup_id means the first setup (backward compatible).
+    // pass resolve the machine origin from the live face.  Stock box
+    // faces ride the same command as "stock:<face>" ids (top, bottom,
+    // front, back, left, right) — the refresh resolves them from the
+    // stock extents.  An absent setup_id means the first setup
+    // (backward compatible).
     const std::string face_id = command.payload.value("face_id", "");
     const std::string setup_id = command.payload.value("setup_id", "");
     const auto document = document_manager().get_document();
@@ -153,6 +156,39 @@
           command.id, "SETUP_NOT_FOUND", "CAM setup not found"));
       return;
     }
+
+    // "stock:top"-style ids anchor to a stock box face — no witness,
+    // just the anchor + face name (resolution happens at refresh).
+    if (face_id.rfind("stock:", 0) == 0) {
+      const std::string stock_face = face_id.substr(6);
+      static const char* const kStockFaces[] = {
+          "top", "bottom", "front", "back", "left", "right"};
+      bool known = false;
+      for (const char* face_name : kStockFaces) {
+        if (stock_face == face_name) {
+          known = true;
+          break;
+        }
+      }
+      if (!known) {
+        polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+            command.id, "BAD_FACE_ID",
+            "The stock face is unknown: " + face_id));
+        return;
+      }
+      auto setup = resolved_setup.value();
+      setup.wcs_origin.anchor = "stock_face";
+      setup.wcs_origin.stock_face = stock_face;
+      setup.wcs_origin.feature_id.clear();
+      setup.wcs_origin.face_reference = polysmith::core::GeometryReference{};
+      setup.wcs_origin.position.reset();
+      const auto updated = document_manager().cam_setup_update(setup);
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(updated)));
+      return;
+    }
+
     const auto separator = face_id.rfind(":face:");
     if (separator == std::string::npos) {
       polysmith::protocol::write_message(polysmith::protocol::make_error_event(
@@ -201,6 +237,7 @@
     attestation.sample_points = captured->samplePoints;
 
     auto setup = resolved_setup.value();
+    setup.wcs_origin.anchor = "face";
     setup.wcs_origin.feature_id = body_id;
     setup.wcs_origin.face_reference.persistent_id = face_id;
     setup.wcs_origin.face_reference.attestation = attestation;

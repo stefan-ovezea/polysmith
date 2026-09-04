@@ -291,8 +291,17 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   face: the witness lands on the target setup's `wcs_origin.face_reference`
   and the refresh pass resolves the machine origin from the LIVE face
   (mid-UV point) on every recompute — a face-anchored WCS is TNP-safe.
+  `face_id` may also be `"stock:<face>"` (top/bottom/front/back/left/right):
+  instead of a witness the core stores `wcs_origin.anchor = "stock_face"` +
+  `wcs_origin.stock_face = <face>` and resolves the origin from the LIVE
+  stock extents (see `cam_stock`), degrading to the stock origin with a
+  warning when the stock is unresolvable.
   `setup_id` defaults to the first setup when absent (backward compatible);
   an unknown id replies `SETUP_NOT_FOUND`.
+- `wcs_origin` carries an `anchor` discriminator (`""` derived |
+  `"face"` | `"stock_face"` | `"point"` | `"stock_origin"`).  `"point"`
+  pins an authoritative position that the refresh pass never overwrites;
+  the laser pointer-offset shift applies only to non-`"point"` anchors.
 - `CamOperation` carries `setup_id` (empty = the first setup, legacy
   documents); generation, export, and refresh resolve each operation
   through ITS setup — multi-setup support.  The setup panel edits the

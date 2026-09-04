@@ -157,6 +157,10 @@ CamDocumentData make_cam_data() {
   mill_op.tool_id = "tool-2";
   mill_op.geometry_references.machining_regions.push_back(make_face_ref());
   mill_op.parameters.zigzag_angle_deg = 30.0;
+  // Non-default tool axis mode proves the field round-trips (the
+  // value itself is reserved for future rotary generators — nothing
+  // in this test generates a toolpath for it).
+  mill_op.parameters.tool_axis_mode = "3_plus_2";
   mill_op.status = "error";
   mill_op.status_message = "The referenced face could not be resolved.";
   cam.operations.push_back(mill_op);
@@ -236,6 +240,9 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
     // toolpath cache is memory-only).  Compare the DATA only.
     if (oa.op_id != ob.op_id || oa.type != ob.type ||
         oa.tool_id != ob.tool_id) {
+      return false;
+    }
+    if (oa.parameters.tool_axis_mode != ob.parameters.tool_axis_mode) {
       return false;
     }
     if (oa.geometry_references.machining_regions.size() !=

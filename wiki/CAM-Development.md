@@ -1542,9 +1542,10 @@ before the next operation depends on it:
 | 9. Laser cutting from sketch | ✅ Done — kerf offset (outer outward/holes inward, miter at shallow corners), lead-in/out + pierce, hole-before-outer ordering, self-intersection detection |
 | 10. Face milling | ✅ Done — face-witness resolution, tool-radius miter inset with physical validation, clipped zigzag rows |
 | 11. G-code export | ✅ Done — `cam_export_gcode` + `document_exported` `format: "gcode"` |
-| 12. 2D Pocket toolpath generation | 🔲 registry slot |
-| 13. Drilling toolpath generation | 🔲 registry slot |
-| 14. Adaptive Clearing toolpath generation | 🔲 registry slot |
+| 12. 5-axis scaffolding + mill machine library | ✅ Done (2026-09-04) — rotary A/B/C on the toolpath IR, per-op `tool_axis_mode`, mill machine fields (travel/kinematics/axis limits/tool-change position), 3 mill seeds, modal rotary words + G93 inverse-time feed in posts. Generators still 3-axis only |
+| 13. 2D Pocket toolpath generation | 🔲 registry slot |
+| 14. Drilling toolpath generation | 🔲 registry slot |
+| 15. Adaptive Clearing toolpath generation | 🔲 registry slot |
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -1559,6 +1560,114 @@ before the next operation depends on it:
 - **Toolpaths are memory-only, cached by document revision** (a concrete
   realization of §"Toolpaths as Generated Geometry"). `cam_runtime`
   holds them; `ToolpathCache` in the document carries metadata only.
+- **4/5-axis is scaffolding, not generation (2026-09-04).** The old
+  "2.5D only" v1 policy is softened to *5-axis-ready*: the toolpath IR,
+  machine definitions, and posts model rotary axes up front, but every
+  generator is 3-axis (`tool_axis_mode` is per-operation; only
+  `"fixed_z"` is accepted today, everything else errors via
+  `milling::check_tool_axis_supported`). Indexed/continuous 5-axis
+  generation is explicit future work.
+- **Basic simulation is now in scope** (final milestone of the milling
+  plan): height-map material removal + playback, 3-axis only — see
+  Implementation-Log for the milestone list.
+
+## Mill Machine Library & 5-Axis Scaffolding (2026-09-04)
+
+`MachineDefinition` (cam_types.h) gained mill fields, all defaulted so
+old 8-field machine JSON files load unchanged: `travel_x/y/z_mm`
+(0 = unset → UI falls back to `setup.machine_axes`), `kinematics`
+(`cartesian_3axis` | `rotary_table_a/b/c` | `head_table` |
+`table_table` | `head_head`), `axis_limits` (per-axis min/max, mm or
+degrees), and `tool_change_position`. Three mill seeds ship with NEW
+slugs (seeds never reuse an old slug — a stale user file shadows the
+seed by name and is never overwritten):
+
+| Seed | Type | Post | Kinematics |
+|---|---|---|---|
+| GRBL CNC Router | 3_axis_mill | grbl | cartesian_3axis |
+| LinuxCNC Rotary 4-Axis | 4_axis_mill | linuxcnc | rotary_table_a (A 0–360) |
+| LinuxCNC 5-Axis (Table-Table) | 5_axis_mill | linuxcnc | table_table (A −120–120, C −360–360) |
+
+Post-processing: `ToolpathMove.a/b/c` (degrees, optional) are modal —
+words are emitted on change only, mirroring Z. The linuxcnc seed
+declares `feed_inverse_time`: any feed move carrying a rotary word
+prices its feed as `F = feedrate / path_length` under G93, restoring
+G94 for plain 3-axis moves. Toolpaths without rotary words never emit
+G93. Per-op `tool_axis_mode` on `CamOperationParameters`
+(`"fixed_z"` today; `"3_plus_2"` / `"rotary_continuous"` reserved).
+
+## Multi-Pass Face Milling & WCS Anchors (2026-09-05)
+
+### Multi-pass face generation
+
+`face_milling` plans levels from the STOCK TOP down to the face when
+`parameters.stepdown_mm` is set: first cut at `stockTop − stepdown`,
+descending by stepdown, last level pinned to `faceZ` (stock 23 / face
+20 / stepdown 2 → 21, 20).  Unset or non-positive stepdown — or an
+unresolvable stock — generates exactly the legacy single pass at the
+face.  The zigzag alternation uses a GLOBAL row index across levels so
+the pass direction flips continuously; the level count is capped at 100
+with a "capped" warning.  With the WCS anchored to the stock top (see
+below), multi-pass cuts produce the negative Z values the user expects.
+
+Retract guards (both warning-only, never fatal):
+1. retract < faceZ → "below the face height" (existing).
+2. multi-pass only, retract < stock top → "below the stock top" —
+   rapids would travel through unmilled stock.
+
+### WCS origin anchors
+
+`WcsOrigin.anchor` discriminates how `refresh_cam_dependencies`
+re-resolves the machine origin:
+
+| anchor | resolution | laser pointer offset |
+|---|---|---|
+| `""` (derived, legacy docs) | `"face"` if a face witness is stored, else `"stock_origin"` | applied |
+| `"face"` | TNP witness against the live body shape; degrades to `stock.origin` + warning | applied |
+| `"stock_face"` | `cam_stock::stock_face_center` against the live stock extents; degrades to `stock.origin` + warning | applied |
+| `"point"` | `wcs_origin.position` verbatim — NEVER overwritten (fixes the manual-edit clobber) | NOT applied (explicit machine point; an offset would double-shift) |
+| `"stock_origin"` | `stock.origin` | applied |
+
+The Setup panel pins `"point"` only when the user actually edited the
+WCS X/Y/Z fields that panel session (`wcsOriginDirty`); the WCS pick
+flow writes `"point"` for snapped stock corners/midpoints and
+`"stock_face"` for stock-face clicks.
+
+### Stock-extent parity rule (binding)
+
+`cam_stock.h/.cpp` (core) and `addStockBoundingBox` /
+`stockBoxFaceCandidates` (UI, camSceneObjects.ts / camOriginSnap.ts)
+compute the stock extents from the SAME definition — parity is the
+correctness contract and the mapping lives in exactly these two places:
+
+- Center = model bbox center (`compile_bodies(include_meshes=false)`,
+  union `Bnd_Box`; UI `modelCenterFromBodies`).
+- Box: dims = `size + 2·margin` — `size` is REQUIRED in the core (the
+  UI `[120,120,20]` is a rendering-only fallback, never stock state).
+- Cylinder: `diameter + 2·margin` wide, `(length ?? 20) + 2·margin`
+  deep; ONLY top/bottom are real cylinder faces — side picks must not
+  anchor to the cylinder side.
+- Face names (CAD convention): right +X, left −X, front +Y, back −Y,
+  top +Z, bottom −Z.  BoxGeometry group order px/nx/py/ny/pz/nz maps
+  0-5 to right/left/front/back/top/bottom; CylinderGeometry groups are
+  [side, top, bottom] — side untagged.
+
+### Stock-face WCS picking (UI)
+
+The stock box mesh is face-tagged (`userData.stockFaceNames`,
+`isStockBox`) and feeds the WCS pick raycast.  Routing order (binding):
+1. face raycast FIRST — a body face keeps the TNP `"face"` anchor
+   (snap-first would degrade body-face picks into bare points);
+2. stock intercepted → stock candidates ONLY (corners/midpoints, top
+   AND bottom faces) snap within 12 px → `"point"` anchor;
+3. no snap + named stock face → `"stock:<face>"` id through
+   `cam_wcs_set_face` → `"stock_face"` anchor;
+4. otherwise bed-plane fallback (z = 0, 10 m guard) like the origin
+   pick.
+
+With the stock shown it is the outermost surface, so clicks land on the
+stock (pick hint copy says so); hiding the stock restores body-face
+picks.
 
 ## Architecture notes for extension
 

@@ -10,11 +10,14 @@
 // model (passes, speed_mm_per_s, kerf_side, mode validation,
 // thickness warnings, score mode).
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -513,12 +516,59 @@ bool test_too_thin_for_kerf() {
 
 // Creates a mill setup + tool + face-milling op referencing the top
 // face of a box via the face witness machinery.  Returns the op id.
-std::string make_face_milling_op(DocumentManager& manager,
-                                 DocumentState& document) {
+// Z of the document body's upward face (orientation-corrected).  The
+// box builds UP from the XY plane, so read it instead of hardcoding it.
+double document_top_face_z(const DocumentState& document) {
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const auto& body = compiled.bodies[0];
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+  for (int i = 1; i <= faceMap.Extent(); ++i) {
+    const auto face = TopoDS::Face(faceMap(i));
+    try {
+      BRepAdaptor_Surface surface(face);
+      const double uMid =
+          0.5 * (surface.FirstUParameter() + surface.LastUParameter());
+      const double vMid =
+          0.5 * (surface.FirstVParameter() + surface.LastVParameter());
+      gp_Pnt center;
+      gp_Vec d1u, d1v;
+      surface.D1(uMid, vMid, center, d1u, d1v);
+      gp_Vec normal = d1u.Crossed(d1v);
+      if (normal.Magnitude() > 1e-12) {
+        normal.Normalize();
+        // Orientation-correct: both box caps parameterize +Z — only
+        // the face orientation picks the UPWARD side.
+        if (face.Orientation() == TopAbs_REVERSED) {
+          normal.Reverse();
+        }
+        if (normal.Z() > 0.99) {
+          return center.Z();
+        }
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  throw std::runtime_error("top face not found");
+}
+
+std::string make_face_milling_op(
+    DocumentManager& manager, DocumentState& document,
+    double retractHeight = 5.0,
+    const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
+    double stockMargin = 0.0) {
   CamSetup setup;
   setup.name = "Mill setup";
   setup.machine_type = "3_axis_mill";
-  setup.retract_height = 5.0;
+  setup.retract_height = retractHeight;
+  if (stockSize.has_value()) {
+    // Stock box centered on the model bbox center (cam_stock parity —
+    // the UI draws the same extents).
+    setup.stock.type = "bounding_box";
+    setup.stock.size = stockSize;
+    setup.stock.margin = stockMargin;
+  }
   document = manager.cam_setup_create(setup);
 
   ToolEntry tool;
@@ -599,7 +649,7 @@ bool test_face_milling_box_top() {
   const std::string opId = make_face_milling_op(manager, document);
 
   // The box's top face height drives the expected feed Z (the box
-  // builds downward from the XY plane — don't hardcode it).
+  // builds UP from the XY plane — don't hardcode it).
   double faceZ = 0.0;
   {
     const auto compiled = polysmith::core::compile_bodies(document);
@@ -679,6 +729,17 @@ bool test_face_milling_box_top() {
               << ", " << maxY << "]\n";
     return false;
   }
+  // Rows must SPAN the full inset on both axes, not collapse to a
+  // point (regression: the segment clip once returned the exit
+  // intersection as both row ends, so every row degenerated onto the
+  // x=17 edge and the path rendered as a vertical line).
+  if (!expect(near(minX, 3.0, 0.05) && near(maxX, 17.0, 0.05) &&
+                  near(minY, 3.0, 0.05) && near(maxY, 17.0, 0.05),
+              "face milling: rows span the full tool-radius inset")) {
+    std::cerr << "  bounds: x[" << minX << ", " << maxX << "] y[" << minY
+              << ", " << maxY << "]\n";
+    return false;
+  }
   if (!expect(sawRetractZ && sawFaceZ,
               "face milling: rapids at retract height, feeds at face height")) {
     std::cerr << "  z values:";
@@ -697,6 +758,259 @@ bool test_face_milling_box_top() {
   // the face center line.
   return expect(rowsAbove && rowsBelow,
                 "face milling: rows on both sides of the center");
+}
+
+// ── Face milling: retract-height guard ───────────────────────────
+
+bool test_face_milling_retract_below_face_warns() {
+  // Retract below the face height means every rapid travels through
+  // the material and the entry moves rise UP out of it (regression:
+  // the laser-era 5 mm default sat below a 20 mm-tall face).  v1
+  // warns instead of failing.  Retract heights are expressed relative
+  // to the resolved face Z — the box builds UP from the XY plane, so
+  // its top face height is not a constant worth hardcoding.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const double faceZ = document_top_face_z(document);
+    const std::string opId =
+        make_face_milling_op(manager, document, faceZ - 5.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "retract below face: generation still succeeds")) {
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(warned,
+                "retract below face: warns about rapids through material")) {
+      return false;
+    }
+  }
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const double faceZ = document_top_face_z(document);
+    const std::string opId =
+        make_face_milling_op(manager, document, faceZ + 5.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "retract above face: generation succeeds")) {
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    return expect(!warned,
+                  "retract above face: no through-material warning");
+  }
+}
+
+// ── Test 47: stepdown plans passes from the stock top down ─────────
+//
+// Stock 24×24×16 (margin 0) centered on the 20×20×10 box → stock top
+// 13, face 10, stepdown 2 → levels 11, 10 (the last level is pinned to
+// the face).  Every rapid stays at the retract height.
+
+bool test_face_milling_stepdown_multipass() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const double faceZ = document_top_face_z(document);
+  const std::string opId = make_face_milling_op(
+      manager, document, /*retractHeight=*/20.0,
+      std::array<double, 3>{24.0, 24.0, 16.0}, /*margin=*/0.0);
+
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  if (!expect(op != document.cam.operations.end(), "stepdown: op found")) {
+    return false;
+  }
+  op->parameters.stepdown_mm = 2.0;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "stepdown: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("not supported") != std::string::npos) {
+      return expect(false, "stepdown: no 'not supported' warning");
+    }
+  }
+
+  const Toolpath& toolpath = outcome.result.toolpath;
+  bool sawLevel11 = false;
+  bool sawLevel10 = false;
+  bool otherFeedZ = false;
+  bool rapidNotAtRetract = false;
+  double lastFeedZ = 0.0;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::Rapid) {
+      if (!near(move.z, 20.0, 0.001)) {
+        rapidNotAtRetract = true;
+      }
+    } else {
+      lastFeedZ = move.z;
+      if (near(move.z, faceZ + 1.0, 0.001)) {
+        sawLevel11 = true;
+      } else if (near(move.z, faceZ, 0.001)) {
+        sawLevel10 = true;
+      } else {
+        otherFeedZ = true;
+      }
+    }
+  }
+  if (!expect(sawLevel11, "stepdown: feeds at the stock-top level")) {
+    return false;
+  }
+  if (!expect(sawLevel10, "stepdown: feeds at the face level")) {
+    return false;
+  }
+  if (!expect(!otherFeedZ, "stepdown: feeds ONLY at the two levels")) {
+    return false;
+  }
+  if (!expect(near(lastFeedZ, faceZ, 0.001),
+              "stepdown: final feed is at the face")) {
+    return false;
+  }
+  return expect(!rapidNotAtRetract, "stepdown: rapids stay at the retract");
+}
+
+// ── Test 48: stepdown with no resolvable stock = single pass ───────
+
+bool test_face_milling_stepdown_no_stock_single_pass() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const double faceZ = document_top_face_z(document);
+  const std::string opId = make_face_milling_op(manager, document,
+                                                /*retractHeight=*/20.0);
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  op->parameters.stepdown_mm = 2.0;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "no stock: generation succeeds")) {
+    return false;
+  }
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::Rapid &&
+        !near(move.z, faceZ, 0.001)) {
+      return expect(false, "no stock: every feed at the face only");
+    }
+  }
+  return true;
+}
+
+// ── Test 49: the level count is capped at 100 ──────────────────────
+
+bool test_face_milling_stepdown_level_cap() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const std::string opId = make_face_milling_op(
+      manager, document, /*retractHeight=*/300.0,
+      std::array<double, 3>{24.0, 24.0, 500.0}, /*margin=*/0.0);
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  op->parameters.stepdown_mm = 0.5;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "level cap: generation succeeds")) {
+    return false;
+  }
+  bool capped = false;
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("capped") != std::string::npos) {
+      capped = true;
+    }
+  }
+  if (!expect(capped, "level cap: warns about the cap")) {
+    return false;
+  }
+  std::set<double> feedZs;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::Rapid) {
+      feedZs.insert(move.z);
+    }
+  }
+  return expect(feedZs.size() <= 101,
+                "level cap: at most 101 distinct feed levels");
+}
+
+// ── Test 50: retract below the STOCK TOP warns (multi-pass) ────────
+
+bool test_face_milling_retract_below_stock_top_warns() {
+  const auto run_case = [](double retractHeight, bool expectWarned) {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, retractHeight,
+        std::array<double, 3>{24.0, 24.0, 16.0}, /*margin=*/0.0);
+    auto op = std::find_if(document.cam.operations.begin(),
+                           document.cam.operations.end(),
+                           [&](const CamOperation& candidate) {
+                             return candidate.op_id == opId;
+                           });
+    op->parameters.stepdown_mm = 2.0;
+    document = manager.cam_operation_update(opId, *op);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the stock top") != std::string::npos) {
+        warned = true;
+      }
+    }
+    return expect(warned == expectWarned,
+                  expectWarned
+                      ? "retract below stock top: warns"
+                      : "retract above stock top: no warning");
+  };
+
+  // Stock top 13, face 10.  Retract 12 sits BETWEEN them: guard 1
+  // (below the face) is silent, guard 2 (below the stock top) fires.
+  if (!run_case(12.0, true)) {
+    return false;
+  }
+  return run_case(20.0, false);
 }
 
 // ── Test 8: laser cut from a 3D face outline ─────────────────────
@@ -3225,6 +3539,16 @@ int main() {
       test_hole_lead_from_interior);
   run("Test 45: kerf side inside pulls the lead inside an outer",
       test_kerf_inside_lead_inside);
+  run("Test 46: retract below the face warns",
+      test_face_milling_retract_below_face_warns);
+  run("Test 47: stepdown plans passes from the stock top down",
+      test_face_milling_stepdown_multipass);
+  run("Test 48: stepdown with no stock = single pass",
+      test_face_milling_stepdown_no_stock_single_pass);
+  run("Test 49: the level count is capped at 100",
+      test_face_milling_stepdown_level_cap);
+  run("Test 50: retract below the STOCK TOP warns (multi-pass)",
+      test_face_milling_retract_below_stock_top_warns);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

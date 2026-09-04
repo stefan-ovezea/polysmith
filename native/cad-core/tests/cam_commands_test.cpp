@@ -783,10 +783,42 @@ bool test_wcs_face_update_targets_named_setup() {
     return false;
   }
   const auto first = manager.cam_setup_find("cam-setup-1");
-  return expect(first.has_value() &&
-                    first->wcs_origin.feature_id.empty() &&
-                    first->wcs_origin.face_reference.persistent_id.empty(),
-                "wcs face update: first setup untouched");
+  if (!expect(first.has_value() &&
+                  first->wcs_origin.feature_id.empty() &&
+                  first->wcs_origin.face_reference.persistent_id.empty(),
+              "wcs face update: first setup untouched")) {
+    return false;
+  }
+
+  // Stock-face anchor (the "stock:top" pick path): the WCS carries the
+  // anchor + face name instead of a body witness; the update must
+  // round-trip them on the targeted setup only.
+  auto stockTarget = manager.cam_setup_find("cam-setup-2");
+  if (!expect(stockTarget.has_value(), "wcs stock update: setup found")) {
+    return false;
+  }
+  stockTarget->wcs_origin.anchor = "stock_face";
+  stockTarget->wcs_origin.stock_face = "top";
+  stockTarget->wcs_origin.feature_id.clear();
+  stockTarget->wcs_origin.face_reference = GeometryReference{};
+  stockTarget->wcs_origin.position.reset();
+  const DocumentState afterStock = manager.cam_setup_update(stockTarget.value());
+  if (!expect(afterStock.cam.setups.size() == 2,
+              "wcs stock update: document keeps both setups")) {
+    return false;
+  }
+  const auto byIdStock = manager.cam_setup_find("cam-setup-2");
+  if (!expect(byIdStock.has_value() &&
+                  byIdStock->wcs_origin.anchor == "stock_face" &&
+                  byIdStock->wcs_origin.stock_face == "top" &&
+                  byIdStock->wcs_origin.feature_id.empty() &&
+                  byIdStock->wcs_origin.face_reference.persistent_id.empty(),
+              "wcs stock update: named setup received the stock anchor")) {
+    return false;
+  }
+  const auto firstAfter = manager.cam_setup_find("cam-setup-1");
+  return expect(firstAfter.has_value() && firstAfter->wcs_origin.anchor.empty(),
+                "wcs stock update: first setup untouched");
 }
 
 }  // namespace

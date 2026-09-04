@@ -56,6 +56,15 @@ struct PostDefinition {
   bool line_numbers = true;
   bool use_arcs = true;
   int decimal_places = 3;
+
+  // Inverse-time feed (5-axis scaffolding).  When on, any FEED move
+  // that carries a rotary (A/B/C) word prices its feed as 1/min over
+  // the actual path length: F = feedrate / length.  The engine emits
+  // inverse_time_word once on the first such move and restores "G94"
+  // on the first plain 3-axis feed move after it.  Toolpaths without
+  // rotary words are unaffected (no G93 is ever emitted).
+  bool feed_inverse_time = false;
+  std::string inverse_time_word = "G93";
 };
 
 // Parses a definition from JSON.  Unknown keys are ignored; missing

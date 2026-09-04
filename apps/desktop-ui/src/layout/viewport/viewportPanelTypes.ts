@@ -59,6 +59,13 @@ export interface ViewportPanelProps {
   // angle) — the caller shows a hint instead of placing.
   originPickPointEnabled: boolean;
   onOriginPickPoint: (point: { x: number; y: number; z: number } | null) => void;
+  // Armed WCS pick: while true, every pointer-up routes to the WCS
+  // pick handler — body faces keep the TNP face anchor, stock faces
+  // anchor to the stock face (or a snapped stock corner/edge as a
+  // pinned point), anything else snaps like the origin pick or falls
+  // back to the bed plane (z = 0).
+  wcsPickPointEnabled: boolean;
+  onWcsPickPoint: (point: { x: number; y: number; z: number } | null) => void;
   onSelectEdge: (edgeId: string, additive: boolean) => Promise<void>;
   onSelectVertex: (vertexId: string, additive: boolean) => Promise<void>;
   onStartSketch: (referenceId: string) => Promise<void>;

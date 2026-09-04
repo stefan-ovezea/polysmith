@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,14 @@ struct ToolpathMove {
   double power_percent = 100.0;      // laser S source (mills ignore it)
   bool laser_on = true;              // M3/M4 vs M5 boundary for lasers
   double dwell_seconds = 0.0;        // G4 pause after this move (pierce)
+  // Rotary axis targets (degrees) — 5-axis scaffolding.  Absent =
+  // modal, the axis keeps its current position (posts emit A/B/C
+  // words only on change, mirroring Z).  No 3-axis generator sets
+  // these; the toolpath_geometry bounds/length/linearization helpers
+  // deliberately ignore them until a rotary generator exists.
+  std::optional<double> a;
+  std::optional<double> b;
+  std::optional<double> c;
 };
 
 struct Toolpath {

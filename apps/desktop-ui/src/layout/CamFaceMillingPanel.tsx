@@ -19,6 +19,9 @@ export interface FaceMillingFormState {
   stepover_percent: number;
   zigzag_angle_deg: number;
   spindle_rpm: number;
+  // Axial depth per pass.  NOT in the defaults — undefined means a
+  // single pass at the face (no multi-pass levels).
+  stepdown_mm?: number;
 }
 
 export const DEFAULT_FACE_MILLING_PARAMS: FaceMillingFormState = {
@@ -160,7 +163,21 @@ export function CamFaceMillingPanel({
                 min={undefined}
                 onChange={(v) => update({ zigzag_angle_deg: v })}
               />
+              <CamNumberField
+                label={t("cam.faceMilling.stepdown", "Stepdown (mm)")}
+                value={params.stepdown_mm}
+                disabled={disabled}
+                step={0.5}
+                clearable
+                onChange={(v) => update({ stepdown_mm: v })}
+              />
             </div>
+            <p className="text-[10px] leading-relaxed text-on-surface-dim">
+              {t(
+                "cam.faceMilling.stepdownHelp",
+                "Axial depth per pass, cut from the stock top down to the face. Leave empty for a single pass at the face.",
+              )}
+            </p>
             <CamNumberField
               label={t("cam.faceMilling.spindleRpm", "Spindle (RPM)")}
               value={params.spindle_rpm}

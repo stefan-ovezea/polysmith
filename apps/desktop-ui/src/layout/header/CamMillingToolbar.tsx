@@ -1,11 +1,15 @@
 import { useTranslation } from "react-i18next";
 
+import { useToastStore } from "@/state/toastStore";
+
 const ICON_BUTTON_BASE = "cad-icon-button cad-icon-tool h-9 w-9 p-0";
 const ICON_BUTTON_DISABLED = "cad-icon-button cad-icon-tool h-9 w-9 p-0 opacity-40";
 
 export interface CamMillingToolbarProps {
   disabled: boolean;
   hasSetup: boolean;
+  // The currently selected body face — face milling requires one.
+  selectedFaceId: string | null;
   onSetupClick: () => void;
   onFaceMillingClick: () => void;
 }
@@ -13,10 +17,20 @@ export interface CamMillingToolbarProps {
 export function CamMillingToolbar({
   disabled,
   hasSetup,
+  selectedFaceId,
   onSetupClick,
   onFaceMillingClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
+  const pushToast = useToastStore((state) => state.pushToast);
+
+  // Profile / Pocket / Drill have no generators yet (milestone work) —
+  // keep the buttons clickable but answer with a visible toast instead
+  // of a silent no-op.
+  const onNotImplemented = () =>
+    pushToast("info", t("cam.common.notImplemented", "This operation is not implemented yet."));
+
+  const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -38,7 +52,8 @@ export function CamMillingToolbar({
       <div className="w-px h-6 cad-panel-soft-border mx-1" />
 
       <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.profile")} aria-label={t("cam.profile")} disabled={disabled}>
+        data-tooltip={t("cam.profile")} aria-label={t("cam.profile")}
+        disabled={disabled} onClick={onNotImplemented}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">
@@ -49,7 +64,8 @@ export function CamMillingToolbar({
       </button>
 
       <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.pocket")} aria-label={t("cam.pocket")} disabled={disabled}>
+        data-tooltip={t("cam.pocket")} aria-label={t("cam.pocket")}
+        disabled={disabled} onClick={onNotImplemented}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">
@@ -59,7 +75,8 @@ export function CamMillingToolbar({
       </button>
 
       <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.drill")} aria-label={t("cam.drill")} disabled={disabled}>
+        data-tooltip={t("cam.drill")} aria-label={t("cam.drill")}
+        disabled={disabled} onClick={onNotImplemented}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">
@@ -72,10 +89,14 @@ export function CamMillingToolbar({
       <div className="w-px h-6 cad-panel-soft-border mx-1" />
 
       <button type="button"
-        className={hasSetup && !disabled ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
-        data-tooltip={t("cam.common.faceOp")}
+        className={faceReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && !selectedFaceId
+            ? t("cam.common.selectFaceFirst", "Select a face first")
+            : t("cam.common.faceOp")
+        }
         aria-label={t("cam.common.faceOp")}
-        disabled={!hasSetup || disabled}
+        disabled={!faceReady}
         onClick={onFaceMillingClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"

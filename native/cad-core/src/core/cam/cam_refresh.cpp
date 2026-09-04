@@ -5,6 +5,7 @@
 #include "core/cam/cam_planning.h"
 #include "core/cam/cam_resolution.h"
 #include "core/cam/cam_runtime.h"
+#include "core/cam/cam_stock.h"
 #include "core/diagnostics/logger.h"
 #include "core/document/document.h"
 #include "core/geometry/body_compiler.h"
@@ -29,18 +30,27 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
   };
 
   // ── WCS origins (every setup) ──────────────────────────────────
-  // The machine origin the exporter subtracts comes from the setup's
-  // stock origin, or from a FACE-anchored WCS (the resolved face's
-  // mid-UV point — TNP-safe via the face attestation).  Laser setups
-  // with machine settings then subtract the RED POINTER offset:
-  // parts are framed under the dot, but the laser fires offset from
-  // it — shifting the origin back makes the cut land where the dot
-  // was.
+  // The machine origin the exporter subtracts comes from the WCS
+  // ANCHOR: a body face (resolved face mid-UV point — TNP-safe via the
+  // face attestation), a stock box face (resolved from the stock
+  // extents), an explicit point (authoritative — never overwritten so
+  // manual X/Y/Z edits in the Setup panel survive), or the stock
+  // origin (legacy default).  A legacy empty anchor is derived:
+  // face witness → "face", else "stock_origin".  Laser setups with
+  // machine settings then subtract the RED POINTER offset for DERIVED
+  // anchors only: parts are framed under the dot, but the laser fires
+  // offset from it — shifting the origin back makes the cut land where
+  // the dot was.  An explicit "point" is a machine point, not a
+  // derived one, so it must not be shifted twice.
   for (auto& setup : document.cam.setups) {
-    const bool faceAnchored =
-        !setup.wcs_origin.face_reference.persistent_id.empty();
+    const std::string anchor =
+        setup.wcs_origin.anchor.empty()
+            ? (setup.wcs_origin.face_reference.persistent_id.empty()
+                   ? "stock_origin"
+                   : "face")
+            : setup.wcs_origin.anchor;
     std::optional<std::array<double, 3>> position;
-    if (faceAnchored) {
+    if (anchor == "face") {
       ensure_bodies();
       const auto resolved = resolve_face_attestation(
           std::get<FaceAttestation>(
@@ -67,11 +77,29 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
                        "stock origin.");
         position = setup.stock.origin;
       }
+    } else if (anchor == "stock_face") {
+      std::array<double, 3> resolved{};
+      if (cam_stock::stock_face_center(document, setup.stock,
+                                       setup.wcs_origin.stock_face,
+                                       resolved)) {
+        position = resolved;
+      } else {
+        polysmith::core::log_warn(
+            "cam", "the WCS stock face reference of setup '" + setup.name +
+                       "' no longer resolves — the WCS falls back to the "
+                       "stock origin.");
+        position = setup.stock.origin;
+      }
+    } else if (anchor == "point") {
+      // Explicit machine point — the Setup panel's manual X/Y/Z edits.
+      // Never derived, never overwritten (regression: every refresh
+      // used to clobber this with the stock origin).
+      position = setup.wcs_origin.position;
     } else {
-      position = setup.stock.origin;
+      position = setup.stock.origin;  // "stock_origin" (legacy default)
     }
 
-    if (setup.machine_type == "laser" &&
+    if (anchor != "point" && setup.machine_type == "laser" &&
         document.cam.machine_settings.has_value() && position.has_value()) {
       const auto& machine = document.cam.machine_settings.value();
       (*position)[0] -= machine.pointer_offset_x_mm;

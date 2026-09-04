@@ -106,6 +106,9 @@ void linearize_arc_move(const ToolpathMove& from, const ToolpathMove& arc,
   linearize_arc_move_steps(from, arc, steps, out);
 }
 
+// Bounds/length/linearization cover XYZ only: rotary targets (move.a/b/c)
+// are post-processor concerns and are deliberately ignored here until a
+// rotary generator exists (see ToolpathMove in toolpath.h).
 void finalize_toolpath(Toolpath& toolpath) {
   toolpath.bounds = Bounds3D{};
   bool havePoint = false;

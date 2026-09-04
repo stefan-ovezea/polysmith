@@ -16,6 +16,7 @@
 #include "core/cam/cam_runtime.h"
 #include "core/document/document.h"
 #include "core/geometry/body_compiler.h"
+#include "protocol/serialization.h"
 
 #include <BRepAdaptor_Surface.hxx>
 #include <NCollection_IndexedMap.hxx>
@@ -388,6 +389,127 @@ bool test_wcs_origin_populated() {
                 "wcs: position follows the stock origin");
 }
 
+// ── Test 7: a manual WCS point survives the refresh ──────────────
+//
+// Regression: the refresh pass overwrote ANY non-face-anchored
+// wcs_origin.position with the stock origin — manual X/Y/Z edits in
+// the Setup panel were silently discarded.
+
+bool test_wcs_point_anchor_survives_refresh() {
+  DocumentManager manager;
+  manager.create_document();
+
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.origin = std::array<double, 3>{10.0, 20.0, 0.0};
+  DocumentState document = manager.cam_setup_create(setup);
+
+  auto modified = document.cam.setups[0];
+  modified.wcs_origin.anchor = "point";
+  modified.wcs_origin.position = std::array<double, 3>{1.0, 2.0, 3.0};
+  document = manager.cam_setup_update(modified);
+
+  const auto& position = document.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(), "point anchor: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({1.0, 2.0, 3.0}),
+                "point anchor: position survives the refresh");
+}
+
+// ── Test 8: stock-face anchor resolves to the stock box face center ──
+
+bool test_wcs_stock_face_anchor_resolves() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+
+  // The stock box is drawn centered on the model bbox center (10,10,5)
+  // with dims = size + 2*margin (UI parity — cam_stock.cpp must
+  // compute the same extents).
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.type = "bounding_box";
+  setup.stock.size = std::array<double, 3>{30.0, 30.0, 20.0};
+  setup.stock.margin = 0.0;
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  document = manager.cam_setup_create(setup);
+
+  const auto& top = document.cam.setups[0].wcs_origin.position;
+  if (!expect(top.has_value(), "stock face: top position populated")) {
+    return false;
+  }
+  if (!expect(top.value() == std::array<double, 3>({10.0, 10.0, 15.0}),
+              "stock face: top resolves to the box top center")) {
+    std::cerr << "  got: " << top.value()[0] << ", " << top.value()[1]
+              << ", " << top.value()[2] << "\n";
+    return false;
+  }
+
+  auto modified = document.cam.setups[0];
+  modified.wcs_origin.stock_face = "front";
+  document = manager.cam_setup_update(modified);
+  const auto& front = document.cam.setups[0].wcs_origin.position;
+  return expect(front.has_value() &&
+                    front.value() == std::array<double, 3>({10.0, 25.0, 5.0}),
+                "stock face: front resolves to the box front center");
+}
+
+// ── Test 9: unresolvable stock face falls back to the stock origin ──
+
+bool test_wcs_stock_face_anchor_degrades() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.origin = std::array<double, 3>{7.0, 8.0, 9.0};
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  document = manager.cam_setup_create(setup);
+
+  const auto& position = document.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(),
+              "stock face degrade: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({7.0, 8.0, 9.0}),
+                "stock face degrade: falls back to the stock origin");
+}
+
+// ── Test 10: anchor fields round-trip the payload ──────────────────
+
+bool test_wcs_anchor_payload_round_trip() {
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  const auto payload = polysmith::protocol::to_payload(setup);
+  const auto loaded = polysmith::protocol::cam_setup_from_payload(payload);
+  if (!expect(loaded.wcs_origin.anchor == "stock_face" &&
+                  loaded.wcs_origin.stock_face == "top",
+              "round trip: anchor fields survive")) {
+    return false;
+  }
+
+  // Old documents carry no anchor — it must load empty so the refresh
+  // derives it (face witness → "face", else legacy stock-origin
+  // behavior).
+  CamSetup legacy;
+  legacy.name = "Legacy setup";
+  const auto loadedLegacy = polysmith::protocol::cam_setup_from_payload(
+      polysmith::protocol::to_payload(legacy));
+  return expect(loadedLegacy.wcs_origin.anchor.empty(),
+                "round trip: absent anchor loads empty (derived at refresh)");
+}
+
 bool test_pointer_offset_shifts_wcs() {
   DocumentManager manager;
   manager.create_document();
@@ -447,6 +569,14 @@ int main() {
       test_ambiguous_reference_degrades);
   run("Test 5: WCS origin follows the stock origin", test_wcs_origin_populated);
   run("Test 6: pointer offset shifts the WCS", test_pointer_offset_shifts_wcs);
+  run("Test 7: point anchor survives the refresh",
+      test_wcs_point_anchor_survives_refresh);
+  run("Test 8: stock-face anchor resolves to the box face center",
+      test_wcs_stock_face_anchor_resolves);
+  run("Test 9: unresolvable stock face falls back to the stock origin",
+      test_wcs_stock_face_anchor_degrades);
+  run("Test 10: anchor fields round-trip the payload",
+      test_wcs_anchor_payload_round_trip);
 
   if (allPassed) {
     std::cout << "cam_refresh_test passed\n";
