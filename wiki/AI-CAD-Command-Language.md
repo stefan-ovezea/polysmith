@@ -793,6 +793,23 @@ it only fills the preview cache the viewport falls back to).
   it into the posts directory, then replies `cam_post_list_result` with the
   updated list.  Broken definitions are rejected with an error.
 
+#### `cam_machine_list` / `cam_machine_save`
+
+- `cam_machine_list`: payload `{}` — replies `cam_machine_list_result` with
+  `machines: [MachineDefinition]` (built-ins first, then user files in the
+  machines directory; a user file with the same name overrides the
+  built-in).  A `MachineDefinition` is `{name, machine_type, post_processor
+  {type, filename}, work_area_x_mm, work_area_y_mm, pointer_offset_x_mm,
+  pointer_offset_y_mm}`.
+- `cam_machine_save`: payload = serialized `MachineDefinition` — validates
+  (non-empty name, supported machine type, positive work area for lasers)
+  and writes it as `<slug>.json` in the machines directory, then replies
+  `cam_machine_list_result` with the refreshed library.  Invalid
+  definitions are rejected with `CAM_MACHINE_SAVE_FAILED`.  Like posts,
+  machines are first-class files (seeded with `grbl-laser`,
+  `smoothieware-laser`, `generic-3-axis-mill` on first use, re-read on
+  every list) — external edits apply on the next list.
+
 #### Operation status semantics
 
 `pending` (created, never generated) → `generated` (toolpath cached at the

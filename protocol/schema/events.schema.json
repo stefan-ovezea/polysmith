@@ -16,6 +16,7 @@
         "document_exported",
         "document_saved",
         "cam_generation_progress",
+        "cam_machine_list_result",
         "cam_post_list_result",
         "cam_face_attestation_result",
         "log",

@@ -372,6 +372,22 @@ struct PostProcessor {
   std::string filename;
 };
 
+/// A saved, reusable machine definition — the physical machine, not the
+/// job.  Lives as <slug>.json files in the user's machines directory
+/// (see machine_library.h), seeded with built-ins on first use and
+/// re-read on every list, so saving a machine is writing a file.
+struct MachineDefinition {
+  std::string name;
+  std::string machine_type = "laser";  // mirrors CamSetup::machine_type
+  PostProcessor post_processor;        // output dialect + optional file
+  // Laser fields — the red pointer sits at this offset from the focal
+  // point, and work-area extents gate test-pattern placement.
+  double work_area_x_mm = 400.0;
+  double work_area_y_mm = 400.0;
+  double pointer_offset_x_mm = 0.0;
+  double pointer_offset_y_mm = 0.0;
+};
+
 // ══════════════════════════════════════════════════════════════════
 //  Full CAM Section (held by DocumentState)
 // ══════════════════════════════════════════════════════════════════

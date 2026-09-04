@@ -186,4 +186,15 @@ json make_cam_post_list_event(const std::string& id, const json& posts) {
   };
 }
 
+json make_cam_machine_list_event(const std::string& id, const json& machines) {
+  return {
+      {"id", id},
+      {"type", "cam_machine_list_result"},
+      {"payload",
+       {
+           {"machines", machines},
+       }},
+  };
+}
+
 }  // namespace polysmith::protocol

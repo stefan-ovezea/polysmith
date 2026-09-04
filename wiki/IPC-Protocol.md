@@ -369,6 +369,20 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `cam_post_import {source_path}` validates a definition JSON, copies it into
   the posts directory, and replies the updated list (broken definitions are
   rejected).
+- `cam_machine_list` replies `cam_machine_list_result
+  {machines: [MachineDefinition]}` — the machine library, built-ins first,
+  then user files.  A `MachineDefinition` is `{name, machine_type,
+  post_processor {type, filename}, work_area_x_mm, work_area_y_mm,
+  pointer_offset_x_mm, pointer_offset_y_mm}`.  Like posts, machines are
+  first-class files: one `<slug>.json` per machine in the user's machines
+  directory (`POLYSMITH_MACHINES_DIR`, resolved by the shell from the
+  app-data path, seeded with `grbl-laser`, `smoothieware-laser`, and
+  `generic-3-axis-mill` on first use), re-read on every list, so external
+  edits apply immediately.
+- `cam_machine_save {MachineDefinition}` validates (non-empty name, supported
+  machine type, positive work area for lasers) and writes the definition as
+  `<slug>.json`, replying the refreshed library via `cam_machine_list_result`;
+  invalid definitions are rejected with `CAM_MACHINE_SAVE_FAILED`.
 - `cam_export_gcode { file_path }` generates stale toolpaths on demand,
   serializes every enabled operation through the selected post definition,
   and replies `document_exported` with `format: "gcode"`.

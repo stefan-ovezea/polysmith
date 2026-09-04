@@ -112,6 +112,19 @@ pub fn start_cad_core_process(
         }
     }
 
+    // User machine library: one JSON file per machine definition,
+    // seeded by the core with the built-ins on first use.  The core
+    // re-reads it on every list/save so external edits apply without a
+    // restart.
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let machines_dir = app_data.join("machines");
+        if let Err(error) = std::fs::create_dir_all(&machines_dir) {
+            eprintln!("failed to create machines directory: {error}");
+        } else {
+            cmd.env("POLYSMITH_MACHINES_DIR", machines_dir);
+        }
+    }
+
     // Prepend OCCT and 3rdparty DLL directories to PATH so the child
     // process finds TKernel.dll, freetype.dll, zlib.dll etc.
     #[cfg(target_os = "windows")]

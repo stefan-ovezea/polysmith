@@ -55,6 +55,7 @@ json to_payload(const polysmith::core::ExternalStorage& es);
 json to_payload(const polysmith::core::ToolpathCache& tc);
 json to_payload(const polysmith::core::CamOperation& op);
 json to_payload(const polysmith::core::PostProcessor& pp);
+json to_payload(const polysmith::core::MachineDefinition& machine);
 json to_payload(const polysmith::core::CamDocumentData& cam);
 
 polysmith::core::ExtrudeFeatureParameters extrude_parameters_from_payload(
@@ -89,5 +90,7 @@ polysmith::core::LaserMachineSettings laser_machine_settings_from_payload(
 polysmith::core::CamOperationDependencies cam_operation_dependencies_from_payload(
     const json& payload);
 polysmith::core::PostProcessor post_processor_from_payload(const json& payload);
+polysmith::core::MachineDefinition machine_definition_from_payload(
+    const json& payload);
 
 }  // namespace polysmith::protocol

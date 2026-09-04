@@ -356,6 +356,18 @@ json to_payload(const polysmith::core::PostProcessor& pp) {
   };
 }
 
+json to_payload(const polysmith::core::MachineDefinition& machine) {
+  return {
+      {"name", machine.name},
+      {"machine_type", machine.machine_type},
+      {"post_processor", to_payload(machine.post_processor)},
+      {"work_area_x_mm", machine.work_area_x_mm},
+      {"work_area_y_mm", machine.work_area_y_mm},
+      {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
+      {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+  };
+}
+
 // ── CamDocumentData ──────────────────────────────────────────────
 
 json to_payload(const polysmith::core::LaserMachineSettings& machine) {

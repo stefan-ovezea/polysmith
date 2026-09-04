@@ -457,6 +457,37 @@
     return;
   }
 
+  if (command.type == "cam_machine_list" ||
+      command.type == "cam_machine_save") {
+    if (command.type == "cam_machine_save") {
+      const auto machine =
+          polysmith::protocol::machine_definition_from_payload(
+              command.payload);
+      std::string error;
+      const std::string saved =
+          polysmith::core::save_machine_definition(machine, error);
+      if (!error.empty()) {
+        polysmith::core::log_warn("cam",
+                                  "machine save failed: " + error);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_MACHINE_SAVE_FAILED", error));
+        return;
+      }
+      polysmith::core::log_info("cam",
+                                "machine definition saved: " + saved);
+    }
+    const auto machines = polysmith::core::load_machine_library();
+    polysmith::protocol::json payload = polysmith::protocol::json::array();
+    for (const auto& machine : machines) {
+      payload.push_back(polysmith::protocol::to_payload(machine));
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_machine_list_event(command.id,
+                                                         payload));
+    return;
+  }
+
   if (command.type == "cam_export_gcode") {
     const auto export_result = document_manager().export_cam_gcode(
         read_string(command.payload, "file_path"));

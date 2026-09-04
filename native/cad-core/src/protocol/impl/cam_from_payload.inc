@@ -546,6 +546,25 @@ polysmith::core::PostProcessor post_processor_from_payload(const json& payload) 
   return pp;
 }
 
+polysmith::core::MachineDefinition machine_definition_from_payload(
+    const json& payload) {
+  polysmith::core::MachineDefinition machine;
+  machine.name = cam_read_string(payload, "name", "");
+  machine.machine_type = cam_read_string(payload, "machine_type", "laser");
+  if (payload.contains("post_processor") &&
+      payload.at("post_processor").is_object()) {
+    machine.post_processor =
+        post_processor_from_payload(payload.at("post_processor"));
+  }
+  machine.work_area_x_mm = cam_read_number(payload, "work_area_x_mm", 400.0);
+  machine.work_area_y_mm = cam_read_number(payload, "work_area_y_mm", 400.0);
+  machine.pointer_offset_x_mm =
+      cam_read_number(payload, "pointer_offset_x_mm", 0.0);
+  machine.pointer_offset_y_mm =
+      cam_read_number(payload, "pointer_offset_y_mm", 0.0);
+  return machine;
+}
+
 polysmith::core::CamDocumentData cam_document_data_from_payload(
     const json& payload) {
   polysmith::core::CamDocumentData cam;
