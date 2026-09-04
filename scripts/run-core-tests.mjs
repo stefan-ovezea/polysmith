@@ -5,10 +5,19 @@
 // committing any native change (`pnpm test:core`).  On Windows the
 // OCCT DLLs are picked up from the build directory by prepending it
 // to PATH; on POSIX the same directory is added to LD_LIBRARY_PATH.
+//
+// Suites run concurrently (bounded by CAD_CORE_TEST_JOBS, default CPU
+// count; CAD_CORE_TEST_JOBS=1 reproduces the old serial run).  Each
+// suite gets a private temp dir exported as TMP/TEMP (Windows) or
+// TMPDIR (POSIX): several suites create fixed-name subdirs under
+// temp_directory_path() and remove_all() them on entry, so sharing
+// the real temp root would race.  Output is buffered per suite and
+// printed on completion to avoid interleaving.
 
-import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { dirname, delimiter, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import os from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,11 +40,11 @@ if (tests.length === 0) {
   process.exit(1);
 }
 
-const env = { ...process.env };
+const baseEnv = { ...process.env };
 if (isWindows) {
-  env.PATH = `${buildRoot}${delimiter}${env.PATH ?? ""}`;
+  baseEnv.PATH = `${buildRoot}${delimiter}${baseEnv.PATH ?? ""}`;
 } else {
-  env.LD_LIBRARY_PATH = [buildRoot, env.LD_LIBRARY_PATH]
+  baseEnv.LD_LIBRARY_PATH = [buildRoot, baseEnv.LD_LIBRARY_PATH]
     .filter(Boolean)
     .join(delimiter);
 }
@@ -45,22 +54,68 @@ if (isWindows) {
 // conditions as the app.
 const occtSrc = join(root, "third_party", "occt8-build", "src");
 if (existsSync(occtSrc)) {
-  env.CSF_OCCTResourcePath = occtSrc;
+  baseEnv.CSF_OCCTResourcePath = occtSrc;
 }
 
+const requested = Number.parseInt(process.env.CAD_CORE_TEST_JOBS ?? "", 10);
+const jobs = Number.isFinite(requested) && requested > 0
+  ? Math.min(requested, tests.length)
+  : Math.max(1, Math.min(os.cpus().length, tests.length));
+
+let next = 0;
+let running = 0;
+let done = 0;
 let failed = 0;
-for (const test of tests) {
-  const result = spawnSync(join(exeDir, test), [], { stdio: "inherit", env });
-  const ok = result.status === 0;
-  const status =
-    result.status === null ? `signal ${result.signal}` : `exit ${result.status}`;
-  console.log(`${ok ? "PASS" : "FAIL"}  ${test} (${status})`);
-  if (!ok) failed += 1;
+
+function spawnOne(test) {
+  // std::filesystem::temp_directory_path() → GetTempPathW (checks TMP,
+  // then TEMP) on Windows, TMPDIR on POSIX — point both at the private
+  // root so fixed-name temp subdirs can never collide across suites.
+  const privateTmp = mkdtempSync(join(os.tmpdir(), "polysmith-core-test-"));
+  const env = { ...baseEnv };
+  if (isWindows) {
+    env.TMP = privateTmp;
+    env.TEMP = privateTmp;
+  } else {
+    env.TMPDIR = privateTmp;
+  }
+
+  const child = spawn(join(exeDir, test), [], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "";
+  child.stdout.on("data", (chunk) => { out += chunk; });
+  child.stderr.on("data", (chunk) => { out += chunk; });
+  child.on("close", (code, signal) => {
+    rmSync(privateTmp, { recursive: true, force: true });
+    const ok = code === 0;
+    const status = code === null ? `signal ${signal}` : `exit ${code}`;
+    console.log(`${ok ? "PASS" : "FAIL"}  ${test} (${status})`);
+    if (out.trim() !== "") {
+      console.log(out.trimEnd());
+    }
+    if (!ok) failed += 1;
+    running -= 1;
+    done += 1;
+    if (done === tests.length) {
+      if (failed === 0) {
+        console.log(`\nAll ${tests.length} test suites passed.`);
+        process.exit(0);
+      }
+      console.error(`\n${failed}/${tests.length} suites FAILED.`);
+      process.exit(1);
+    }
+    pump();
+  });
+  running += 1;
 }
 
-if (failed === 0) {
-  console.log(`\nAll ${tests.length} test suites passed.`);
-  process.exit(0);
+function pump() {
+  while (running < jobs && next < tests.length) {
+    spawnOne(tests[next]);
+    next += 1;
+  }
 }
-console.error(`\n${failed}/${tests.length} suites FAILED.`);
-process.exit(1);
+
+pump();

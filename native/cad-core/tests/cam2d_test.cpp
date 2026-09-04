@@ -18,9 +18,7 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Curve.hxx>
-#include <TColStd_Array1OfInteger.hxx>
-#include <TColStd_Array1OfReal.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include <NCollection_Array1.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Wire.hxx>
@@ -367,15 +365,15 @@ TopoDS_Wire make_spline_quad_wire() {
   builder.Add(BRepBuilderAPI_MakeEdge(p1, p2));
   builder.Add(BRepBuilderAPI_MakeEdge(p2, p3));
   // Closing spline edge from (0,2,0) back to (0,0,0).
-  TColgp_Array1OfPnt poles(1, 4);
+  NCollection_Array1<gp_Pnt> poles(1, 4);
   poles.SetValue(1, p3);
   poles.SetValue(2, gp_Pnt(-0.5, 1.5, 0));
   poles.SetValue(3, gp_Pnt(0.5, 0.5, 0));
   poles.SetValue(4, p0);
-  TColStd_Array1OfReal knots(1, 2);
+  NCollection_Array1<double> knots(1, 2);
   knots.SetValue(1, 0.0);
   knots.SetValue(2, 1.0);
-  TColStd_Array1OfInteger mults(1, 2);
+  NCollection_Array1<int> mults(1, 2);
   mults.SetValue(1, 4);
   mults.SetValue(2, 4);
   Handle(Geom_BSplineCurve) spline =

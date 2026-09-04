@@ -252,7 +252,7 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       }
       int degree = std::min(be.spline_degree, n - 1);
       degree = std::max(1, degree);
-      TColgp_Array1OfPnt poles(1, n);
+      NCollection_Array1<gp_Pnt> poles(1, n);
       for (int i = 0; i < n; ++i) {
         poles.SetValue(i + 1, to_world_point(frame, be.spline_pole_xs[i],
                                              be.spline_pole_ys[i]));
@@ -262,8 +262,8 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       // misread as a near-zero interval).
       const int interior = n - degree - 1;
       const int knot_count = interior + 2;
-      TColStd_Array1OfReal knots(1, knot_count);
-      TColStd_Array1OfInteger mults(1, knot_count);
+      NCollection_Array1<double> knots(1, knot_count);
+      NCollection_Array1<int> mults(1, knot_count);
       knots.SetValue(1, 0.0);
       mults.SetValue(1, degree + 1);
       for (int i = 1; i <= interior; ++i) {

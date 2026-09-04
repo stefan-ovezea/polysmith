@@ -1,4 +1,87 @@
-# Active Task: CAM workspace interaction pass (cam/laser-cut)
+# Active Task: Core build speedup + OCCT deprecation migration (core-build-speedup)
+
+> **Branch:** `core-build-speedup` (from `dev` @ 4d03d7b)
+> **Date:** 2026-09-04
+> **Plan:** approved plan at `.claude/plans/streamed-hatching-crab.md`
+> (every commit gated on build/tests + user verification — CLAUDE.md:
+> no untested commits, no git mutations without explicit approval.)
+
+## Context
+
+Task #6: "Speed up full core builds: parallel jobs + stop per-test
+recompilation". Two structural problems: all 35 full-core test exes
+recompiled the entire CAD_CORE_SOURCES (~57 TUs) each (~2,100 TU
+compiles per clean build), and `cmake --build --parallel 2` with
+cmake-injected `CL_MPCount=1` meant serial in-project compilation.
+`pnpm test:core` also ran the 38 suites strictly sequentially.
+
+## Status — implemented, verified, UNCOMMITTED
+
+- **CMakeLists.txt** — `cad_core_lib` STATIC target (CAD_CORE_SOURCES
+  compiled once); cad_core exe = app.cpp + main.cpp + lib; 35 full-core
+  suites collapse to `polysmith_add_core_test(name tests/x_test.cpp)`
+  (1 TU + project reference each); curated suites (cam2d,
+  sketch_profile, text_engine) untouched. `CMAKE_VS_GLOBALS`
+  UseMultiToolTask + EnforceProcessCountAcrossBuilds for bounded
+  per-TU parallelism (NOT /MP — inert under cmake --build).
+- **scripts/build-core.mjs** (new) — `pnpm core:build` wrapper, jobs =
+  `CAD_CORE_JOBS` || os.cpus().length, no `--target`.
+- **scripts/run-core-tests.mjs** — async pool (`CAD_CORE_TEST_JOBS`,
+  default CPU count), per-suite private TMP/TEMP/TMPDIR (fixed-name
+  temp subdirs + remove_all would race otherwise), buffered output in
+  completion order.
+- **Docs** — wiki/Implementation-Log.md entry.
+
+## Verification (all green on this machine, 12 cores)
+
+- clean `pnpm core:rebuild`: 1m25s (was multi-minute at --parallel 2)
+- `pnpm test:core`: 38/38 in ~1.7s wall parallel; serial ×2 and
+  parallel ×2 all green; no temp leftovers
+- incremental: touch protocol `.inc` → owning TU + relinks in ~4s
+  (tlog tracking unchanged)
+
+## Part 2: OCCT 8.0 deprecation migration — implemented, verified, UNCOMMITTED
+
+Task #5 (user-added, same branch): replace deprecated OCCT 8.0 array
+containers with NCollection types; fix only warnings from OUR code,
+leave OCCT-library and planegcs ones. Clean-rebuild triage found 16
+deprecation warnings in exactly 5 files:
+
+- **feature_shape.cpp + geometry/impl/sketch_wire_extrude.inc** —
+  `TColgp_Array1OfPnt` / `TColStd_Array1OfReal` / `TColStd_Array1OfInteger`
+  → `NCollection_Array1<gp_Pnt|double|int>` (BSpline wire edges)
+- **sketch/spline_profile_occt.cpp** — same trio (Pnt2d) →
+  `NCollection_Array1<gp_Pnt2d|double|int>`
+- **export/export.cpp + tests/stl_writer_test.cpp** —
+  `TopTools_IndexedDataMapOfShapeListOfShape` → `NCollection_IndexedDataMap
+  <TopoDS_Shape, NCollection_List<TopoDS_Shape>, TopTools_ShapeMapHasher>`
+  (`TopExp::MapShapesAndAncestors` signature verified against OCCT 8.0)
+- **tests/cam2d_test.cpp** — spline fixture trio → NCollection_Array1
+
+- **CMakeLists.txt** — removed `include_directories(occt8-install/inc)`
+  + its stale comment: it existed only for the deprecated TCol headers
+  (install-tree-only), which nothing includes anymore
+  (`grep TColStd_|TColgp_|...` → 0 matches in our code).
+
+Verification: incremental rebuild — 0 warnings, `pnpm test:core` 38/38
+parallel + serial; full rebuild after the include-dir removal — green,
+0 warnings from our code (remaining: dxfrw C4805 + planegcs
+`BOOST_ALLOW_DEPRECATED_HEADERS` C4005, both third-party), 38/38 again.
+
+## Next steps
+
+- User smoke: `pnpm dev` (POST_BUILD cad_core.exe copy confirmed) —
+  remaining commit gate
+- Commits (each needs explicit user approval, no Co-Authored-By):
+  1. build: static cad_core_lib + MTT parallel compile
+     (CMakeLists, build-core.mjs, package.json, Implementation-Log)
+  2. test: parallel suite runner (run-core-tests.mjs, this tracker)
+  3. fix: OCCT 8 deprecations → NCollection containers
+     (5 sources + CMakeLists include-dir cleanup, Implementation-Log)
+- POSIX cross-check untested here (changes are generator-agnostic;
+  CMAKE_VS_GLOBALS ignored by Makefiles/Ninja)
+
+## Previous task: CAM workspace interaction pass — MERGED PR #74 (4d03d7b)
 
 > **Branch:** `cam/laser-cut` (from `dev`)
 > **Date:** 2026-09-02/04

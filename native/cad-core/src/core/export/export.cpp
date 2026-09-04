@@ -19,7 +19,9 @@
 #include <StlAPI_Writer.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <NCollection_IndexedDataMap.hxx>
+#include <NCollection_List.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Face.hxx>
@@ -129,7 +131,9 @@ ExportResult write_stl_shape(const TopoDS_Shape& shape,
       triangle_count += triangulation->NbTriangles();
     }
   }
-  TopTools_IndexedDataMapOfShapeListOfShape face_ancestors;
+  NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>,
+                             TopTools_ShapeMapHasher>
+      face_ancestors;
   TopExp::MapShapesAndAncestors(healed, TopAbs_EDGE, TopAbs_FACE,
                                 face_ancestors);
   int free_edges = 0;
