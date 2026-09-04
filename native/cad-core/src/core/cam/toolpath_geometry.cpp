@@ -15,7 +15,7 @@ constexpr double kRapidFeedMmPerMin = 3000.0;
 
 // Sweep angle of an arc move from `from` to `arc`, signed so that
 // CW moves (kind == FeedArcCW) are negative and CCW positive.
-double arc_sweep(const ToolpathMove& from, const ToolpathMove& arc) {
+double arc_sweep_radians(const ToolpathMove& from, const ToolpathMove& arc) {
   const double cx = from.x + arc.i;
   const double cy = from.y + arc.j;
   const double radius = std::hypot(arc.i, arc.j);
@@ -41,7 +41,7 @@ double arc_sweep(const ToolpathMove& from, const ToolpathMove& arc) {
 }
 
 double arc_length(const ToolpathMove& from, const ToolpathMove& arc) {
-  return std::hypot(arc.i, arc.j) * std::abs(arc_sweep(from, arc));
+  return std::hypot(arc.i, arc.j) * std::abs(arc_sweep_radians(from, arc));
 }
 
 }  // namespace
@@ -55,22 +55,26 @@ double move_length(const ToolpathMove& from, const ToolpathMove& to) {
                     to.z - from.z);
 }
 
-void linearize_arc_move(const ToolpathMove& from, const ToolpathMove& arc,
-                        double chord_tolerance_mm,
-                        std::vector<std::array<double, 3>>& out) {
+int arc_steps_for(const ToolpathMove& from, const ToolpathMove& arc,
+                  int segments_per_circle) {
+  if (segments_per_circle <= 0) {
+    return 0;
+  }
+  const double sweep = std::abs(arc_sweep_radians(from, arc));
+  return std::max(
+      1, static_cast<int>(std::lround(sweep / kTwoPi *
+                                      static_cast<double>(segments_per_circle))));
+}
+
+void linearize_arc_move_steps(const ToolpathMove& from,
+                              const ToolpathMove& arc, int steps,
+                              std::vector<std::array<double, 3>>& out) {
   const double radius = std::hypot(arc.i, arc.j);
-  const double sweep = arc_sweep(from, arc);
-  if (radius < 1e-9 || std::abs(sweep) < 1e-9) {
+  const double sweep = arc_sweep_radians(from, arc);
+  if (radius < 1e-9 || std::abs(sweep) < 1e-9 || steps < 1) {
     out.push_back({arc.x, arc.y, arc.z});
     return;
   }
-  // Sagitta of a chord spanning angle θ: s = r (1 - cos(θ/2)).
-  // Solve for the maximum angle meeting the tolerance.
-  const double toleranceRatio =
-      std::max(0.0, std::min(1.0, chord_tolerance_mm / radius));
-  const double maxAngle = 2.0 * std::acos(1.0 - toleranceRatio);
-  const int steps = std::max(
-      1, static_cast<int>(std::ceil(std::abs(sweep) / maxAngle)));
 
   const double cx = from.x + arc.i;
   const double cy = from.y + arc.j;
@@ -81,6 +85,25 @@ void linearize_arc_move(const ToolpathMove& from, const ToolpathMove& arc,
     out.push_back({cx + radius * std::cos(angle),
                    cy + radius * std::sin(angle), arc.z});
   }
+}
+
+void linearize_arc_move(const ToolpathMove& from, const ToolpathMove& arc,
+                        double chord_tolerance_mm,
+                        std::vector<std::array<double, 3>>& out) {
+  const double radius = std::hypot(arc.i, arc.j);
+  const double sweep = std::abs(arc_sweep_radians(from, arc));
+  if (radius < 1e-9 || sweep < 1e-9) {
+    out.push_back({arc.x, arc.y, arc.z});
+    return;
+  }
+  // Sagitta of a chord spanning angle θ: s = r (1 - cos(θ/2)).
+  // Solve for the maximum angle meeting the tolerance.
+  const double toleranceRatio =
+      std::max(0.0, std::min(1.0, chord_tolerance_mm / radius));
+  const double maxAngle = 2.0 * std::acos(1.0 - toleranceRatio);
+  const int steps = std::max(
+      1, static_cast<int>(std::ceil(sweep / maxAngle)));
+  linearize_arc_move_steps(from, arc, steps, out);
 }
 
 void finalize_toolpath(Toolpath& toolpath) {

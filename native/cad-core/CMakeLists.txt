@@ -138,6 +138,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/laser/laser_tabs.cpp
   src/core/cam/laser/laser_test_pattern.cpp
   src/core/cam/laser_cut.cpp
+  src/core/cam/machine_library.cpp
   src/core/cam/post_processor.cpp
   src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
@@ -330,6 +331,26 @@ target_include_directories(cad_core_cam_commands_test PRIVATE
 )
 
 target_link_libraries(cad_core_cam_commands_test PRIVATE
+  ${OpenCASCADE_LIBRARIES}
+  planegcs
+  dxfrw
+)
+
+add_executable(cad_core_cam_machine_library_test
+  ${CAD_CORE_SOURCES}
+  tests/cam_machine_library_test.cpp
+)
+
+target_include_directories(cad_core_cam_machine_library_test PRIVATE
+  src
+  ${CMAKE_SOURCE_DIR}/../../third_party
+  ${PLANEGCS_DIR}
+  ${CMAKE_SOURCE_DIR}/native_compat
+  ${PLANEGCS_DIR}/headers
+  ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(cad_core_cam_machine_library_test PRIVATE
   ${OpenCASCADE_LIBRARIES}
   planegcs
   dxfrw

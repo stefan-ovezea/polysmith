@@ -1,3 +1,93 @@
+# Active Task: CAM workspace interaction pass (cam/laser-cut)
+
+> **Branch:** `cam/laser-cut` (from `dev`)
+> **Date:** 2026-09-02/04
+> **Plan:** approved plan at `.claude/plans/streamed-hatching-crab.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval.)
+
+## Context
+
+The user asked to revisit the laser CAM implementation and rejected a
+polish-focused plan: the real gaps were CAM-workspace interaction —
+snap to geometries, highlighting, select & deselect, stock/body snap
+points for the origin pick, and saveable/reusable machine definitions.
+Git archaeology confirmed regressions from `b48b47d` (exact 3D origin
+pick → bed-plane click, z forced 0) and two multi-setup bugs (TS origin
+pick + core `cam_wcs_set_face` both write `setups[0]`; the WCS triaxis
+marker follows `stock.origin` instead of the resolved
+`wcs_origin.position`).
+
+## Status
+
+- **M1-core — COMMITTED** `3740663`: `cam_setup_find` resolution +
+  optional `setup_id` on `cam_wcs_set_face` (absent = first setup,
+  backward compatible) + tests + wiki.
+- **M1-ui — COMMITTED** `59bbee3`: origin snap restoration
+  (`camOriginSnap.ts` candidates + `resolveCamOriginSnap`, z-rule: snapped
+  geometry keeps 3D z, bed-plane fallback stays z=0), SnapCursorOverlay
+  label, active-setup fixes for origin pick + `placeWcsFromFacePick`,
+  WCS marker positioned at `wcs_origin.position` (pointer offset +
+  face-anchored WCS now move it), i18n snap labels.
+- **M2 — COMMITTED** `f2a5e77`: re-pick polish (TS only).
+  `camProfileSelection.ts` (new): `reportCamProfileSelectionChange`
+  runs the selection command then awaits the fresh document —
+  `profilePicked` (increased) / `profileRemoved` (decreased), never
+  client-side prediction; `laserOperationScopeSketchId`. App.tsx
+  overcount sites replaced; "Clear selection" button in
+  CamLaserCutPanel when armed; Apply/Cancel dispatch `clear_selection`
+  (no stale-selection leakage into later ops); hidden scope sketch
+  auto-shows on arm, restored on Apply/Cancel. tsc green.
+- **M3-core — COMMITTED** `ccd7f98`: machine library.
+  `machine_library.{h,cpp}` (new) mirroring post_processor.cpp: JSON
+  file per machine in `POLYSMITH_MACHINES_DIR` (set by cad_core.rs to
+  app_data/machines), 3 built-in seeds (grbl-laser, smoothieware-laser,
+  generic-3-axis-mill) written if absent, user files override built-ins
+  by name, re-read on every list, save = slugged-file write with
+  validation. IPC: `cam_machine_list` / `cam_machine_save` →
+  `cam_machine_list_result` event; schemas; wiki docs. New suite
+  `cam_machine_library_test` (5 cases: seed idempotence + user
+  override, save/load round-trip, invalid rejection, dir env override,
+  builtin seeds parse). Registered in CMakeLists.txt.
+- **M3-ui — COMMITTED** `f2a5e77`: MachineDefinition types (TS,
+  cam.ts + camCommands.ts + ipc.ts), zod schema
+  (`camMachineListResultEventSchema` in coreMessageSchema — avoid the
+  attestation-event class of bug), factories, useCadCore
+  camMachineList/camMachineSave, App once-per-CAM-entry fetch
+  (armed-ref, NOT keyed on the fresh function identity), CamSetupPanel
+  Machine tab (dropdown + inline name input + Save, preselect by
+  content match), applyMachine composes camSetupUpdate +
+  camPostProcessorSet + camMachineSettingsSet in one runAction in
+  CamFloatingPanels (single setup-resolution source). i18n keys.
+  tsc green.
+- **Laser lead side — COMMITTED** `1fe6d2a` (core) + `3ba2453` (UI):
+  the pierce + leads now follow the kerf offset side.  A straight
+  tangent line cannot lie inside a closed contour, so interior offsets
+  (kerf_side "inside", or auto on holes) turn the lead into a spoke
+  along the pierce→centroid ray (mirrored roll for arc style); the
+  pierce dwell stays at the lead entry, on the kerf side.  Also
+  shipped: `pierce_angle_deg` (centroid ray-cast, overrides
+  `pierce_position`), `arc_segments_per_circle` (viewport polyline +
+  use_arcs=false post), pierce viewport flag, panel controls
+  (lead-side auto/angle, arc segments, debounced auto-preview,
+  lead-follows-kerf hint).  38 suites green (cam_generators 45 cases
+  incl. hole-lead-from-interior + kerf-inside-lead-inside regressions;
+  grbl_post byte-identical at arc_segments 0); user verified in-app.
+- **Origin snap on finished sketches — COMMITTED** `e713110`: the core
+  only emits vertex sprites for the ACTIVE sketch, so finished
+  sketches contributed no origin-pick snap targets.  Candidates now
+  derive from the always-emitted sketch primitives (line endpoints,
+  circle/arc centers), shared by the snap resolver and the armed-pick
+  markers; scene hover suppressed while armed; snap square + kind
+  label track the pointer.  tsc green; user verified in-app.
+
+## Next steps
+
+1. Push `cam/laser-cut` and open the PR against `dev` (user-requested).
+
+---
+
 # Active Task: OrcaSlicer per-body "Send to Slicer" — COMMITTED 38119f3
 
 > **Branch:** `feature/Orca`

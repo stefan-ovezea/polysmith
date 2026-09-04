@@ -48,6 +48,9 @@ struct Toolpath {
   int num_feeds = 0;
   int num_arcs = 0;
   int num_points = 0;  // linearized count, for viewport/UI stats
+  // Fixed segment count per full circle for arc linearization
+  // (viewport polyline + linearized post).  0 = auto chord tolerance.
+  int arc_segments_per_circle = 0;
 };
 
 }  // namespace polysmith::core

@@ -36,6 +36,11 @@ struct PlannedLoop {
   bool is_hole = false;
   bool skipped = false;  // set when the loop is dropped (warn + continue)
   cam2d::XY pierce{0.0, 0.0};  // resolved pierce point
+  // The kerf offset went to the loop's INTERIOR side (kerf_side
+  // "inside", or auto on a hole).  Interior-side leads must be
+  // spoke-style (centroid → pierce) — a straight tangent line cannot
+  // lie inside a closed contour.
+  bool kerf_inside = false;
   // Face-derived loops already live in WORLD XY (sampled from the
   // body's wire geometry); sketch loops live in sketch-local 2D and
   // map through the sketch plane frame.

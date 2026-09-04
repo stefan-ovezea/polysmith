@@ -22,6 +22,8 @@ import {
   makeCamPostProcessorSetCommand,
   makeCamPostListCommand,
   makeCamPostImportCommand,
+  makeCamMachineListCommand,
+  makeCamMachineSaveCommand,
   makeCamExportGcodeCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
@@ -209,6 +211,7 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   LaserMachineSettings,
+  MachineDefinition,
   MoveFeatureParameters,
   PostProcessor,
   SelectionFilterUpdate,
@@ -1546,10 +1549,13 @@ export function useCadCore() {
         makeCamMachineSettingsSetCommand(machineSettings),
       );
     },
-    camWcsSetFace: async (faceId: string) => {
-      // Stores the face-anchored WCS witness on the first setup; the
+    camWcsSetFace: async (faceId: string, setupId?: string) => {
+      // Stores the face-anchored WCS witness on the target setup
+      // (omitting setup_id = first setup, core legacy rule); the
       // refresh pass resolves the machine origin from the live face.
-      await sendAndRefreshSessionViewport(makeCamWcsSetFaceCommand(faceId));
+      await sendAndRefreshSessionViewport(
+        makeCamWcsSetFaceCommand(faceId, setupId),
+      );
     },
     camCaptureFaceReference: async (faceId: string) => {
       // Awaited: the reply is a cam_face_attestation_result event
@@ -1630,6 +1636,30 @@ export function useCadCore() {
       const posts = (response as { payload?: { posts?: Array<{ name: string; path: string }> } })
         .payload?.posts;
       return posts ?? null;
+    },
+    camMachineList: async () => {
+      // Awaited: the reply is a cam_machine_list_result event carrying
+      // the machines array.
+      const response = await sendCoreCommandAwaited(
+        makeCamMachineListCommand() as CoreCommand & { id: string },
+      );
+      const machines = (
+        response as {
+          payload?: { machines?: MachineDefinition[] };
+        }
+      ).payload?.machines;
+      return machines ?? [];
+    },
+    camMachineSave: async (machine: MachineDefinition) => {
+      const response = await sendCoreCommandAwaited(
+        makeCamMachineSaveCommand(machine) as CoreCommand & { id: string },
+      );
+      const machines = (
+        response as {
+          payload?: { machines?: MachineDefinition[] };
+        }
+      ).payload?.machines;
+      return machines ?? null;
     },
     camOperationGenerate: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationGenerateCommand(opId));

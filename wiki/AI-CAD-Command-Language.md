@@ -711,7 +711,17 @@ Geometry input:
   dropdown then retargets it via `cam_operation_set_scope`. The kerf/lead/
   power settings live in `parameters.laser` (v2 model: `mode`,
   `power_percent`, `speed_mm_per_s`, `passes`, `kerf_width_mm`/`kerf_side`,
-  leads, tabs, fill, `cut_order`).
+  leads, tabs, fill, `cut_order`). Two laser settings agents should know:
+  `pierce_angle_deg` (nullable) pins the lead/pierce side — a ray from each
+  loop's centroid at that angle (loop-local sketch plane, CCW from +X) hits
+  the contour and the walk + leads attach there tangentially; when set it
+  overrides `pierce_position`. `arc_segments_per_circle` (0 = auto) pins the
+  chord count per full circle for the polyline preview and the
+  `use_arcs=false` post. The lead side follows the kerf side: with
+  `kerf_side: auto`, holes get their pierce + leads INSIDE the hole and
+  outer loops get them outside the disc (interior leads run along the
+  pierce→centroid spoke — tangent leads cannot lie inside a closed
+  contour); `inside|outside` forces both the kerf and the lead side.
 - `select_sketch_profile` accepts `{entity_id, additive}` instead of
   `{profile_id, additive}`: the core selects every profile whose boundary
   includes the entity (used for outline clicks during the CAM re-pick flow;
@@ -782,6 +792,23 @@ it only fills the preview cache the viewport falls back to).
 - `cam_post_import`: payload `{source_path}` — validates the JSON and copies
   it into the posts directory, then replies `cam_post_list_result` with the
   updated list.  Broken definitions are rejected with an error.
+
+#### `cam_machine_list` / `cam_machine_save`
+
+- `cam_machine_list`: payload `{}` — replies `cam_machine_list_result` with
+  `machines: [MachineDefinition]` (built-ins first, then user files in the
+  machines directory; a user file with the same name overrides the
+  built-in).  A `MachineDefinition` is `{name, machine_type, post_processor
+  {type, filename}, work_area_x_mm, work_area_y_mm, pointer_offset_x_mm,
+  pointer_offset_y_mm}`.
+- `cam_machine_save`: payload = serialized `MachineDefinition` — validates
+  (non-empty name, supported machine type, positive work area for lasers)
+  and writes it as `<slug>.json` in the machines directory, then replies
+  `cam_machine_list_result` with the refreshed library.  Invalid
+  definitions are rejected with `CAM_MACHINE_SAVE_FAILED`.  Like posts,
+  machines are first-class files (seeded with `grbl-laser`,
+  `smoothieware-laser`, `generic-3-axis-mill` on first use, re-read on
+  every list) — external edits apply on the next list.
 
 #### Operation status semantics
 

@@ -57,6 +57,17 @@ XY rotate_by(const XY& v, double radians) {
   return XY{v.x * c - v.y * s, v.x * s + v.y * c};
 }
 
+// Unit vector from the pierce toward the loop centroid — the spoke
+// interior leads run along.  Degenerate (a pierce at the centroid)
+// falls back to +X; the lead then still lies on the contour side.
+XY unit_spoke(const XY& centroid, const XY& pierce) {
+  const double len = xy_length(centroid.x - pierce.x, centroid.y - pierce.y);
+  if (len < 1e-9) {
+    return XY{1.0, 0.0};
+  }
+  return XY{(centroid.x - pierce.x) / len, (centroid.y - pierce.y) / len};
+}
+
 // Straight lead segment from `entry` to `end`.
 cam2d::OffsetSegment line_segment(const XY& entry, const XY& end) {
   cam2d::OffsetSegment segment;
@@ -81,6 +92,52 @@ cam2d::OffsetSegment roll_arc(const XY& vertex, const XY& tangent,
   segment.end = end;
   segment.cw = cw;
   return segment;
+}
+
+// Walk tangent on an arc segment at its start or end point: the
+// radius direction rotated +90° for CCW, −90° for CW.
+XY arc_tangent_at(const cam2d::OffsetSegment& segment, bool atStart) {
+  const XY& p = atStart ? segment.start : segment.end;
+  const double angle = std::atan2(p.y - segment.center.y,
+                                  p.x - segment.center.x);
+  const double c = std::cos(angle);
+  const double s = std::sin(angle);
+  return segment.cw ? XY{s, -c} : XY{-s, c};
+}
+
+// Exact tangents at the contour's walk boundaries: u_out leaves
+// contour.front().start along the walk, u_in arrives at
+// contour.back().end.  The contour is already rotated so both are the
+// pierce point.
+void boundary_tangents(const std::vector<cam2d::OffsetSegment>& contour,
+                       XY& u_out, XY& u_in) {
+  u_out = {1.0, 0.0};
+  u_in = {1.0, 0.0};
+  if (contour.empty()) {
+    return;
+  }
+  const auto& first = contour.front();
+  const auto& last = contour.back();
+  if (first.is_arc) {
+    u_out = arc_tangent_at(first, /*atStart=*/true);
+  } else {
+    const double len = xy_length(first.end.x - first.start.x,
+                                 first.end.y - first.start.y);
+    if (len > 1e-12) {
+      u_out = {(first.end.x - first.start.x) / len,
+               (first.end.y - first.start.y) / len};
+    }
+  }
+  if (last.is_arc) {
+    u_in = arc_tangent_at(last, /*atStart=*/false);
+  } else {
+    const double len = xy_length(last.end.x - last.start.x,
+                                 last.end.y - last.start.y);
+    if (len > 1e-12) {
+      u_in = {(last.end.x - last.start.x) / len,
+              (last.end.y - last.start.y) / len};
+    }
+  }
 }
 
 }  // namespace
@@ -159,32 +216,126 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
   return candidates[best];
 }
 
+cam2d::XY select_pierce_at_angle(const PlannedLoop& loop, double angle_deg,
+                                 const LaserCutParameters& params,
+                                 std::vector<std::string>& warnings) {
+  const double theta = std::fmod(angle_deg, 360.0) * kPi / 180.0;
+  const XY d{std::cos(theta), std::sin(theta)};
+  const XY& o = loop.centroid;
+
+  // First contour crossing along the ray from the centroid wins, so
+  // the angle means "the side the ray points at".
+  XY best{0.0, 0.0};
+  double bestT = std::numeric_limits<double>::max();
+  bool found = false;
+
+  for (const auto& segment : loop.segments) {
+    if (!segment.is_arc) {
+      // Ray-line: o + t·d = a + u·(b − a).
+      const double ex = segment.end.x - segment.start.x;
+      const double ey = segment.end.y - segment.start.y;
+      const double denom = d.x * ey - d.y * ex;  // cross(d, e)
+      if (std::abs(denom) < 1e-12) {
+        continue;
+      }
+      const double ax = segment.start.x - o.x;
+      const double ay = segment.start.y - o.y;
+      const double t = (ax * ey - ay * ex) / denom;
+      const double u = (ax * d.y - ay * d.x) / denom;
+      if (t < -1e-9 || u < -1e-9 || u > 1.0 + 1e-9 || t >= bestT) {
+        continue;
+      }
+      bestT = t;
+      best = {o.x + t * d.x, o.y + t * d.y};
+      found = true;
+      continue;
+    }
+    // Ray-circle: |o + t·d − c|² = r².  d is a unit vector, so the
+    // quadratic is t² + B·t + C = 0.
+    const double cx = o.x - segment.center.x;
+    const double cy = o.y - segment.center.y;
+    const double b = 2.0 * (d.x * cx + d.y * cy);
+    const double c = cx * cx + cy * cy - segment.radius * segment.radius;
+    const double discriminant = b * b - 4.0 * c;
+    if (discriminant < 0.0) {
+      continue;
+    }
+    const double root = std::sqrt(discriminant);
+    const double t1 = (-b - root) / 2.0;
+    const double t2 = (-b + root) / 2.0;
+    double t = t1 >= -1e-9 ? t1 : t2;
+    if (t < -1e-9 || t >= bestT) {
+      continue;
+    }
+    // The hit must lie within the arc's swept span (a join arc only
+    // owns its corner sector).
+    const XY hit{o.x + t * d.x, o.y + t * d.y};
+    if (!cam2d::offset_arc_contains_point(segment, hit)) {
+      continue;
+    }
+    bestT = t;
+    best = hit;
+    found = true;
+  }
+
+  if (found) {
+    return best;
+  }
+  warnings.push_back(
+      "The lead-side angle ray does not cross the contour — falling "
+      "back to automatic pierce placement.");
+  return select_pierce_vertex(loop, params, warnings);
+}
+
 std::vector<cam2d::OffsetSegment> build_lead_in(
-    const PlannedLoop& loop, const cam2d::XY& pierce,
-    const LaserCutParameters& params) {
+    const std::vector<cam2d::OffsetSegment>& contour,
+    const cam2d::XY& pierce, const LaserCutParameters& params,
+    const cam2d::XY& centroid, bool interior) {
   std::vector<cam2d::OffsetSegment> segments;
   if (params.mode == "engrave" || params.lead_in_mm <= 0.0) {
     return segments;
   }
   const double length = params.lead_in_mm;
-  const size_t vertexIndex = sample_index_of(loop, pierce);
   XY u_out;
   XY u_in;
-  vertex_tangents(loop, vertexIndex, u_out, u_in);
+  boundary_tangents(contour, u_out, u_in);
 
   if (params.lead_in_style == "arc") {
-    // 90° tangent roll-in: enter outside the contour and sweep onto
-    // the walk tangent.
-    const XY n = right_normal(u_out.x, u_out.y);
-    const XY entry{pierce.x + n.x * length + u_out.x * length,
-                   pierce.y + n.y * length + u_out.y * length};
-    segments.push_back(roll_arc(pierce, n, length, entry, pierce,
-                                /*cw=*/true));
+    if (!interior) {
+      // 90° tangent roll-in: enter outside the contour and sweep onto
+      // the walk tangent.
+      const XY n = right_normal(u_out.x, u_out.y);
+      const XY entry{pierce.x + n.x * length + u_out.x * length,
+                     pierce.y + n.y * length + u_out.y * length};
+      segments.push_back(roll_arc(pierce, n, length, entry, pierce,
+                                  /*cw=*/true));
+      return segments;
+    }
+    // Interior: the roll center sits on the pierce→centroid spoke and
+    // sweeps CCW, so the arc stays inside the kerf side instead of
+    // crossing into the material.
+    const XY spoke = unit_spoke(centroid, pierce);
+    const XY entry{pierce.x + spoke.x * length + u_out.x * length,
+                   pierce.y + spoke.y * length + u_out.y * length};
+    segments.push_back(roll_arc(pierce, spoke, length, entry, pierce,
+                                /*cw=*/false));
     return segments;
   }
-  // Straight lead at lead_in_angle_deg to the contour tangent.
+  if (!interior) {
+    // Straight lead at lead_in_angle_deg to the contour tangent.
+    const double angle = params.lead_in_angle_deg * kPi / 180.0;
+    const XY direction = rotate_by(u_out, angle);
+    const XY entry{pierce.x - direction.x * length,
+                   pierce.y - direction.y * length};
+    segments.push_back(line_segment(entry, pierce));
+    return segments;
+  }
+  // Interior: a tangent line cannot lie inside a closed contour, so
+  // the lead runs along the pierce→centroid spoke (perpendicular to
+  // the contour on circles), entering from inside the kerf side.
+  // lead_in_angle_deg rotates the spoke.
   const double angle = params.lead_in_angle_deg * kPi / 180.0;
-  const XY direction = rotate_by(u_out, angle);
+  const XY direction = rotate_by(unit_spoke(centroid, pierce), angle + kPi);
   const XY entry{pierce.x - direction.x * length,
                  pierce.y - direction.y * length};
   segments.push_back(line_segment(entry, pierce));
@@ -192,17 +343,17 @@ std::vector<cam2d::OffsetSegment> build_lead_in(
 }
 
 std::vector<cam2d::OffsetSegment> build_lead_out(
-    const PlannedLoop& loop, const cam2d::XY& pierce,
-    const LaserCutParameters& params) {
+    const std::vector<cam2d::OffsetSegment>& contour,
+    const cam2d::XY& pierce, const LaserCutParameters& params,
+    const cam2d::XY& centroid, bool interior) {
   std::vector<cam2d::OffsetSegment> segments;
   if (params.mode == "engrave" ||
       (params.lead_out_mm <= 0.0 && params.overcut_mm <= 0.0)) {
     return segments;
   }
-  const size_t vertexIndex = sample_index_of(loop, pierce);
   XY u_out;
   XY u_in;
-  vertex_tangents(loop, vertexIndex, u_out, u_in);
+  boundary_tangents(contour, u_out, u_in);
 
   if (params.lead_out_style == "arc" && params.lead_out_mm > 0.0) {
     // Overcut: continue straight along the exit tangent PAST the
@@ -215,18 +366,32 @@ std::vector<cam2d::OffsetSegment> build_lead_out(
       start = overcutEnd;
     }
     const double length = params.lead_out_mm;
-    const XY n = right_normal(u_in.x, u_in.y);
-    const XY exit{start.x + n.x * length + u_in.x * length,
-                  start.y + n.y * length + u_in.y * length};
-    segments.push_back(roll_arc(start, n, length, start, exit,
-                                /*cw=*/true));
+    if (!interior) {
+      const XY n = right_normal(u_in.x, u_in.y);
+      const XY exit{start.x + n.x * length + u_in.x * length,
+                    start.y + n.y * length + u_in.y * length};
+      segments.push_back(roll_arc(start, n, length, start, exit,
+                                  /*cw=*/true));
+      return segments;
+    }
+    // Interior: mirrored roll — the arc curls back into the interior
+    // along the spoke instead of rolling out along the tangent.
+    const XY spoke = unit_spoke(centroid, start);
+    const XY exit{start.x + spoke.x * length - u_in.x * length,
+                  start.y + spoke.y * length - u_in.y * length};
+    segments.push_back(roll_arc(start, spoke, length, start, exit,
+                                /*cw=*/false));
     return segments;
   }
   // Straight lead along the exit tangent; the overcut folds into the
-  // same segment (the cut runs past the pierce vertex).
+  // same segment (the cut runs past the pierce vertex).  Interior
+  // leads retreat back into the interior along the spoke instead.
   const double total = params.lead_out_mm + params.overcut_mm;
   if (total > 0.0) {
-    const XY end{pierce.x + u_in.x * total, pierce.y + u_in.y * total};
+    const XY direction =
+        interior ? unit_spoke(centroid, pierce) : u_in;
+    const XY end{pierce.x + direction.x * total,
+                 pierce.y + direction.y * total};
     segments.push_back(line_segment(pierce, end));
   }
   return segments;

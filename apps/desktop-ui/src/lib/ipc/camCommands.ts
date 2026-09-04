@@ -4,6 +4,7 @@ import type {
   CamSetup,
   CoreCommand,
   LaserMachineSettings,
+  MachineDefinition,
   PostProcessor,
   StockDefinition,
   ToolEntry,
@@ -29,11 +30,14 @@ export function makeCamCaptureFaceReferenceCommand(
   };
 }
 
-export function makeCamWcsSetFaceCommand(faceId: string): CoreCommand {
+export function makeCamWcsSetFaceCommand(
+  faceId: string,
+  setupId?: string,
+): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "cam_wcs_set_face",
-    payload: { face_id: faceId },
+    payload: { face_id: faceId, setup_id: setupId },
   };
 }
 
@@ -189,6 +193,27 @@ export function makeCamPostImportCommand(sourcePath: string): CoreCommand {
     id: crypto.randomUUID(),
     type: "cam_post_import",
     payload: { source_path: sourcePath },
+  };
+}
+
+// Machine library commands — cam_machine_list replies with a
+// cam_machine_list_result event (not document_state); cam_machine_save
+// validates + writes the definition and replies the refreshed library.
+export function makeCamMachineListCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_machine_list",
+    payload: {},
+  };
+}
+
+export function makeCamMachineSaveCommand(
+  machine: MachineDefinition,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_machine_save",
+    payload: machine,
   };
 }
 

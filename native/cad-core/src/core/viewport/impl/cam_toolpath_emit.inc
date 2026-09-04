@@ -3,7 +3,8 @@
   // cam_runtime keyed by document revision.  The viewport draws the
   // full path when the op is "generated", falling back to the cached
   // wireframe preview otherwise.  Arcs are chord-linearized for the
-  // polyline renderer (0.05 mm sagitta).
+  // polyline renderer: a pinned arc_segments_per_circle count when
+  // set, else 0.05 mm sagitta.
   std::vector<ViewportToolpathPrimitive> toolpaths;
   if (document.has_value()) {
     for (const auto& op : document->cam.operations) {
@@ -29,8 +30,14 @@
           // Chord points first, endpoint last (linearize_arc_move's
           // final point is the move endpoint).
           std::vector<std::array<double, 3>> arcPoints;
-          linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.05,
-                             arcPoints);
+          if (toolpath->arc_segments_per_circle > 0) {
+            const int steps = arc_steps_for(
+                previous, move, toolpath->arc_segments_per_circle);
+            linearize_arc_move_steps(previous, move, steps, arcPoints);
+          } else {
+            linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.05,
+                               arcPoints);
+          }
           for (const auto& point : arcPoints) {
             primitive.points.push_back(
                 {point[0], point[1], point[2], false, false});

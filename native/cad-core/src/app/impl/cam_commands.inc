@@ -136,13 +136,21 @@
 
   if (command.type == "cam_wcs_set_face") {
     // Anchor the WCS origin to a body face: capture the TNP-safe
-    // witness, store it on the first setup's WCS, and let the refresh
-    // pass resolve the machine origin from the live face.
+    // witness, store it on the target setup's WCS, and let the refresh
+    // pass resolve the machine origin from the live face.  An absent
+    // setup_id means the first setup (backward compatible).
     const std::string face_id = command.payload.value("face_id", "");
+    const std::string setup_id = command.payload.value("setup_id", "");
     const auto document = document_manager().get_document();
     if (!document.has_value() || document->cam.setups.empty()) {
       polysmith::protocol::write_message(polysmith::protocol::make_error_event(
           command.id, "NO_CAM_SETUP", "Create a CAM setup first"));
+      return;
+    }
+    const auto resolved_setup = document_manager().cam_setup_find(setup_id);
+    if (!resolved_setup.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "SETUP_NOT_FOUND", "CAM setup not found"));
       return;
     }
     const auto separator = face_id.rfind(":face:");
@@ -192,7 +200,7 @@
     attestation.normal = captured->capturedNormal;
     attestation.sample_points = captured->samplePoints;
 
-    auto setup = document->cam.setups[0];
+    auto setup = resolved_setup.value();
     setup.wcs_origin.feature_id = body_id;
     setup.wcs_origin.face_reference.persistent_id = face_id;
     setup.wcs_origin.face_reference.attestation = attestation;
@@ -446,6 +454,37 @@
     }
     polysmith::protocol::write_message(
         polysmith::protocol::make_cam_post_list_event(command.id, payload));
+    return;
+  }
+
+  if (command.type == "cam_machine_list" ||
+      command.type == "cam_machine_save") {
+    if (command.type == "cam_machine_save") {
+      const auto machine =
+          polysmith::protocol::machine_definition_from_payload(
+              command.payload);
+      std::string error;
+      const std::string saved =
+          polysmith::core::save_machine_definition(machine, error);
+      if (!error.empty()) {
+        polysmith::core::log_warn("cam",
+                                  "machine save failed: " + error);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_MACHINE_SAVE_FAILED", error));
+        return;
+      }
+      polysmith::core::log_info("cam",
+                                "machine definition saved: " + saved);
+    }
+    const auto machines = polysmith::core::load_machine_library();
+    polysmith::protocol::json payload = polysmith::protocol::json::array();
+    for (const auto& machine : machines) {
+      payload.push_back(polysmith::protocol::to_payload(machine));
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_machine_list_event(command.id,
+                                                         payload));
     return;
   }
 

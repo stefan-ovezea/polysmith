@@ -207,6 +207,10 @@ struct LaserCutParameters {
   double pierce_dwell_seconds = 0.1;  // G4 dwell after pierce
   std::string pierce_position = "auto";  // "auto" | "lead_start" |
                                          // "nearest_centroid"
+  // Lead-side selection: when set, the pierce is placed where the ray
+  // from the loop centroid at this angle (degrees, CCW from sketch +X,
+  // loop-local) crosses the contour.  Overrides pierce_position.
+  std::optional<double> pierce_angle_deg;
 
   // Tabs / bridges.
   bool tabs_enabled = false;
@@ -224,6 +228,11 @@ struct LaserCutParameters {
   // Cut plane / material.
   double material_thickness_mm = 3.0;
   double cut_plane_offset_mm = 0.0;  // cut-plane Z relative to sketch plane
+
+  // Arc display fidelity: fixed segment count per full circle for the
+  // viewport polyline and the linearized G-code post.  0 = auto
+  // (chord-tolerance based, existing behavior).
+  int arc_segments_per_circle = 0;
 
   // Ordering.
   std::string cut_order = "inner_first";  // "inner_first" |
@@ -361,6 +370,22 @@ using PostProcessorType = std::string;
 struct PostProcessor {
   PostProcessorType type = "fanuc";
   std::string filename;
+};
+
+/// A saved, reusable machine definition — the physical machine, not the
+/// job.  Lives as <slug>.json files in the user's machines directory
+/// (see machine_library.h), seeded with built-ins on first use and
+/// re-read on every list, so saving a machine is writing a file.
+struct MachineDefinition {
+  std::string name;
+  std::string machine_type = "laser";  // mirrors CamSetup::machine_type
+  PostProcessor post_processor;        // output dialect + optional file
+  // Laser fields — the red pointer sits at this offset from the focal
+  // point, and work-area extents gate test-pattern placement.
+  double work_area_x_mm = 400.0;
+  double work_area_y_mm = 400.0;
+  double pointer_offset_x_mm = 0.0;
+  double pointer_offset_y_mm = 0.0;
 };
 
 // ══════════════════════════════════════════════════════════════════

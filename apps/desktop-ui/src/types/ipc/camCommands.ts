@@ -8,6 +8,7 @@ import type {
   CamOperationPayload,
   CamSetup,
   LaserMachineSettings,
+  MachineDefinition,
   PostProcessor,
   StockDefinition,
   ToolEntry,
@@ -28,7 +29,9 @@ export interface CamCaptureFaceReferenceCommand {
 export interface CamWcsSetFaceCommand {
   id: string;
   type: "cam_wcs_set_face";
-  payload: { face_id: string };
+  // setup_id omitted = first setup (core legacy rule, backward
+  // compatible with pre-multi-setup documents).
+  payload: { face_id: string; setup_id?: string };
 }
 
 export interface CamSetupCreateCommand {
@@ -133,6 +136,18 @@ export interface CamPostImportCommand {
   payload: {
     source_path: string;
   };
+}
+
+export interface CamMachineListCommand {
+  id: string;
+  type: "cam_machine_list";
+  payload: Record<string, never>;
+}
+
+export interface CamMachineSaveCommand {
+  id: string;
+  type: "cam_machine_save";
+  payload: MachineDefinition;
 }
 
 export interface CamOperationGenerateCommand {

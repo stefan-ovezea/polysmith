@@ -39,5 +39,6 @@ json make_cam_generation_progress_event(const std::string& id,
 json make_cam_face_attestation_event(const std::string& id,
                                      const json& payload);
 json make_cam_post_list_event(const std::string& id, const json& posts);
+json make_cam_machine_list_event(const std::string& id, const json& machines);
 
 }  // namespace polysmith::protocol

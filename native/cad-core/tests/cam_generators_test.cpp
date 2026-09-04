@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@
 #include "core/cam/cam_generator.h"
 #include "core/cam/cam_operation.h"
 #include "core/cam/cam_profile_reference.h"
+#include "core/cam/toolpath_geometry.h"
 #include "core/document/document.h"
 #include "core/sketch/sketch_feature_parameters.h"
 #include "core/geometry/body_compiler.h"
@@ -328,15 +330,19 @@ bool test_rectangle_with_hole() {
     }
   }
 
-  // Kerf direction — hole loop inward: the closest approach to the
-  // circle center (10,5) is the offset hole radius 2 - 0.1 = 1.9.
-  double minDistance = 1e9;
+  // Kerf direction — hole loop inward: a laser-on move sits ON the
+  // offset hole ring (2 − 0.1 = 1.9).  (The interior lead entry now
+  // reaches FURTHER inside, so the closest-approach metric no longer
+  // isolates the ring — assert the ring itself.)
+  bool sawHoleRing = false;
   for (const auto& move : toolpath.moves) {
-    minDistance = std::min(minDistance, dist(move.x, move.y, 10.0, 5.0));
+    if (move.laser_on &&
+        near(dist(move.x, move.y, 10.0, 5.0), 1.9, 0.05)) {
+      sawHoleRing = true;
+    }
   }
-  if (!expect(near(minDistance, 1.9, 0.05),
+  if (!expect(sawHoleRing,
               "rect+hole: hole loop offset INWARD by kerf/2")) {
-    std::cerr << "  min distance: " << minDistance << "\n";
     return false;
   }
 
@@ -2770,6 +2776,376 @@ bool test_test_pattern_bed_overflow() {
   return false;
 }
 
+// ── Pierce-angle + arc-segment tests ──────────────────────────────
+
+// Shared harness: a standalone circle at (10,5) r=5 cut with kerf 0.2
+// (offset radius 5.1), a 2 mm tangent lead-in, and the given lead-side
+// angle (nullopt = automatic placement).  With lead_in 2.0 the moves
+// are [rapid, pierce dwell at lead entry, lead-in end == pierce, ...].
+Toolpath circle_toolpath_for_angle(const std::optional<double>& angle) {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch") {
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 0.0;
+  laser.pierce_angle_deg = angle;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!outcome.found || !outcome.result.ok) {
+    throw std::runtime_error("circle generation failed");
+  }
+  return outcome.result.toolpath;
+}
+
+// ── Test 39: pierce angle pins the lead side of a circle ──────────
+
+bool test_pierce_angle_circle() {
+  const Toolpath toolpath = circle_toolpath_for_angle(90.0);
+  const auto& entry = toolpath.moves[1];
+  const auto& pierce = toolpath.moves[2];
+  // 90° from the centroid (10,5): the +Y point of the offset circle.
+  if (!expect(near(pierce.x, 10.0, 0.01) && near(pierce.y, 10.1, 0.01),
+              "pierce angle 90: pierce lands on the +Y side")) {
+    std::cerr << "  pierce at (" << pierce.x << ", " << pierce.y << ")\n";
+    return false;
+  }
+  // The CCW walk leaves the top of the circle toward −X, so the
+  // tangent lead-in enters from +X.
+  const double dx = pierce.x - entry.x;
+  const double dy = pierce.y - entry.y;
+  if (!expect(near(std::hypot(dx, dy), 2.0, 0.02),
+              "pierce angle 90: lead length preserved")) {
+    return false;
+  }
+  return expect(near(dx, -2.0, 0.02) && std::abs(dy) < 0.02,
+                "pierce angle 90: lead enters tangentially");
+}
+
+// ── Test 40: 180° pierces the opposite side of the circle ─────────
+
+bool test_pierce_angle_opposite_side() {
+  const Toolpath toolpath = circle_toolpath_for_angle(180.0);
+  const auto& entry = toolpath.moves[1];
+  const auto& pierce = toolpath.moves[2];
+  // 180° from the centroid: the −X point of the offset circle.
+  if (!expect(near(pierce.x, 4.9, 0.01) && near(pierce.y, 5.0, 0.01),
+              "pierce angle 180: pierce lands on the −X side")) {
+    std::cerr << "  pierce at (" << pierce.x << ", " << pierce.y << ")\n";
+    return false;
+  }
+  // CCW tangent at −X points down (−Y): the lead-in enters from above
+  // (entry.y = 7), so pierce − entry = (0, −2).
+  const double dx = pierce.x - entry.x;
+  const double dy = pierce.y - entry.y;
+  return expect(std::abs(dx) < 0.02 && near(dy, -2.0, 0.02),
+                "pierce angle 180: lead enters tangentially");
+}
+
+// ── Test 41: without an angle the automatic placement is kept ─────
+
+bool test_pierce_angle_absent_keeps_auto() {
+  const Toolpath toolpath = circle_toolpath_for_angle(std::nullopt);
+  const auto& pierce = toolpath.moves[2];
+  // Automatic placement keeps the arc start (cx+r, cy) — the
+  // identity-rotation path.
+  return expect(near(pierce.x, 15.1, 0.01) && near(pierce.y, 5.0, 0.01),
+                "pierce angle absent: pierce stays at the arc start");
+}
+
+// ── Test 42: pinned arc segments linearize the circle ─────────────
+
+bool test_arc_segments_per_circle() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch") {
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  // 36 pinned segments: the toolpath carries the count and the
+  // full-circle arc linearizes into exactly 36 chords on the
+  // 5.1 mm offset radius.  No leads so the moves stay
+  // [rapid, pierce dwell, contour arc].
+  LaserCutParameters pinned;
+  pinned.kerf_width_mm = 0.2;
+  pinned.lead_in_mm = 0.0;
+  pinned.lead_out_mm = 0.0;
+  pinned.arc_segments_per_circle = 36;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, pinned);
+  const auto pinnedOutcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(pinnedOutcome.found && pinnedOutcome.result.ok,
+              "arc segments 36: generation succeeds")) {
+    return false;
+  }
+  const Toolpath& pinnedToolpath = pinnedOutcome.result.toolpath;
+  if (!expect(pinnedToolpath.arc_segments_per_circle == 36,
+              "arc segments 36: count carried on the toolpath")) {
+    return false;
+  }
+  // With no leads: [rapid, pierce dwell, contour arc].
+  const auto& previous = pinnedToolpath.moves[1];
+  const auto& arc = pinnedToolpath.moves[2];
+  if (!expect(arc.kind == ToolpathMoveKind::FeedArcCCW,
+              "arc segments 36: contour stays a true arc")) {
+    return false;
+  }
+  const int steps = polysmith::core::arc_steps_for(previous, arc, 36);
+  if (!expect(steps == 36, "arc segments 36: full circle → 36 steps")) {
+    std::cerr << "  steps = " << steps << "\n";
+    return false;
+  }
+  std::vector<std::array<double, 3>> chords;
+  polysmith::core::linearize_arc_move_steps(previous, arc, steps, chords);
+  if (!expect(static_cast<int>(chords.size()) == 36,
+              "arc segments 36: 36 chord points")) {
+    return false;
+  }
+  for (const auto& chord : chords) {
+    if (!near(dist(chord[0], chord[1], 10.0, 5.0), 5.1, 0.02)) {
+      std::cerr << "  chord radius " << dist(chord[0], chord[1], 10.0, 5.0)
+                << "\n";
+      return expect(false, "arc segments 36: chords on the offset radius");
+    }
+  }
+
+  // 0 (default): the count stays 0 and the contour remains one arc.
+  LaserCutParameters autoSeg;
+  autoSeg.kerf_width_mm = 0.2;
+  autoSeg.lead_in_mm = 0.0;
+  autoSeg.lead_out_mm = 0.0;
+  const std::string autoOpId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, autoSeg);
+  const auto autoOutcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), autoOpId, /*preview=*/false);
+  if (!expect(autoOutcome.found && autoOutcome.result.ok,
+              "arc segments 0: generation succeeds")) {
+    return false;
+  }
+  if (!expect(autoOutcome.result.toolpath.arc_segments_per_circle == 0,
+              "arc segments 0: default count is 0")) {
+    return false;
+  }
+  int arcMoves = 0;
+  for (const auto& move : autoOutcome.result.toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      ++arcMoves;
+    }
+  }
+  return expect(arcMoves == 1, "arc segments 0: single true arc in the IR");
+}
+
+// ── Test 43: pierce angle reaches a CW circular hole ──────────────
+
+bool test_pierce_angle_hole() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_circle(10.0, 5.0, 2.0);
+
+  // Outer profile = the region whose inner loop is the hole.
+  std::string outerProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (!region.inner_loops.empty()) {
+        outerProfile = region.id;
+      }
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;  // hole offset inward: radius 2 − 0.1 = 1.9
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 0.0;
+  laser.pierce_angle_deg = 270.0;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), outerProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "pierce angle hole: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // Holes cut first: moves[1] is the pierce dwell at the lead entry,
+  // moves[2] the lead-in end = pierce on the hole contour.  The hole
+  // loop is a 16-segment sampled polygon, so allow the chord/join
+  // tolerance instead of exact arc math.
+  const auto& entry = outcome.result.toolpath.moves[1];
+  const auto& pierce = outcome.result.toolpath.moves[2];
+  const double pierceRadius = dist(pierce.x, pierce.y, 10.0, 5.0);
+  if (!expect(near(pierceRadius, 1.9, 0.05) && pierce.y < 4.0 &&
+                  std::abs(pierce.x - 10.0) < 0.5,
+              "pierce angle hole: pierce on the bottom of the hole")) {
+    std::cerr << "  pierce at (" << pierce.x << ", " << pierce.y << ")\n";
+    return false;
+  }
+  return expect(near(std::hypot(pierce.x - entry.x, pierce.y - entry.y), 2.0,
+                     0.02),
+                "pierce angle hole: lead length preserved");
+}
+
+// ── Test 44: hole leads enter from the kerf side (interior) ───────
+
+bool test_hole_lead_from_interior() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_circle(10.0, 5.0, 2.0);
+
+  // Outer profile = the region whose inner loop is the hole.
+  std::string outerProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (!region.inner_loops.empty()) {
+        outerProfile = region.id;
+      }
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;  // hole cut line at radius 2 − 0.1 = 1.9
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 2.0;
+  laser.pierce_angle_deg = 270.0;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), outerProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "hole interior lead: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // Holes cut first.  A tangent line at a circle always lies OUTSIDE
+  // the contour, so the interior-side lead must be a spoke through
+  // the center: moves[0] rapids to the entry directly above the
+  // pierce, moves[1] pierces there, moves[2] runs the lead-in to the
+  // pierce on the contour.
+  const auto& entry = outcome.result.toolpath.moves[0];
+  const auto& pierce = outcome.result.toolpath.moves[2];
+  const double entryRadius = dist(entry.x, entry.y, 10.0, 5.0);
+  if (!expect(entryRadius < 1.0,
+              "hole interior lead: entry well inside the hole")) {
+    std::cerr << "  entry at (" << entry.x << ", " << entry.y
+              << ") r=" << entryRadius << "\n";
+    return false;
+  }
+  if (!expect(std::abs(entry.x - 10.0) < 0.1 && entry.y > 4.0,
+              "hole interior lead: entry on the interior ray through "
+              "the pierce")) {
+    return false;
+  }
+  if (!expect(near(std::hypot(pierce.x - entry.x, pierce.y - entry.y), 2.0,
+                   0.02),
+              "hole interior lead: lead-in length preserved")) {
+    return false;
+  }
+  // The lead-out retreats back INTO the interior, ending at the entry
+  // point — never continuing tangentially into the material.
+  bool leadOutInside = false;
+  for (size_t i = 3; i < outcome.result.toolpath.moves.size(); ++i) {
+    const auto& move = outcome.result.toolpath.moves[i];
+    if (move.laser_on &&
+        near(dist(move.x, move.y, entry.x, entry.y), 0.0, 0.1)) {
+      leadOutInside = true;
+    }
+  }
+  return expect(leadOutInside,
+                "hole interior lead: lead-out ends inside the hole");
+}
+
+// ── Test 45: kerf side "inside" pulls the lead inside an outer ─────
+
+bool test_kerf_inside_lead_inside() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    circleProfile = feature.sketch_parameters->profiles[0].id;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.kerf_side = "inside";  // cut line at radius 5 − 0.1 = 4.9
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 0.0;
+  laser.pierce_angle_deg = 90.0;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "kerf inside lead: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // The cut line sits INSIDE the drawn circle, so the lead must enter
+  // from the interior — a spoke through the top pierce (90°): the
+  // entry lands directly below the pierce, inside the cut circle.
+  const auto& entry = outcome.result.toolpath.moves[0];
+  const auto& pierce = outcome.result.toolpath.moves[2];
+  const double entryRadius = dist(entry.x, entry.y, 10.0, 5.0);
+  if (!expect(entryRadius < 4.9,
+              "kerf inside lead: entry inside the cut line")) {
+    std::cerr << "  entry at (" << entry.x << ", " << entry.y
+              << ") r=" << entryRadius << "\n";
+    return false;
+  }
+  if (!expect(std::abs(entry.x - 10.0) < 0.05 && entry.y < 9.0,
+              "kerf inside lead: entry on the interior ray through "
+              "the pierce")) {
+    return false;
+  }
+  if (!expect(near(pierce.x, 10.0, 0.05) && near(pierce.y, 9.9, 0.05),
+              "kerf inside lead: pierce stays on the top of the cut "
+              "line")) {
+    std::cerr << "  pierce at (" << pierce.x << ", " << pierce.y << ")\n";
+    return false;
+  }
+  return expect(near(std::hypot(pierce.x - entry.x, pierce.y - entry.y), 2.0,
+                     0.02),
+                "kerf inside lead: lead-in length preserved");
+}
+
 }  // namespace
 
 int main() {
@@ -2835,6 +3211,20 @@ int main() {
   run("Test 36: test card bed overflow", test_test_pattern_bed_overflow);
   run("Test 37: kerf gauge square", test_test_pattern_kerf_gauge);
   run("Test 38: test-card cell labels", test_test_pattern_cell_labels);
+  run("Test 39: pierce angle pins the lead side",
+      test_pierce_angle_circle);
+  run("Test 40: pierce angle opposite side",
+      test_pierce_angle_opposite_side);
+  run("Test 41: pierce angle absent keeps auto",
+      test_pierce_angle_absent_keeps_auto);
+  run("Test 42: pinned arc segments linearize the circle",
+      test_arc_segments_per_circle);
+  run("Test 43: pierce angle reaches a CW circular hole",
+      test_pierce_angle_hole);
+  run("Test 44: hole leads enter from the kerf side (interior)",
+      test_hole_lead_from_interior);
+  run("Test 45: kerf side inside pulls the lead inside an outer",
+      test_kerf_inside_lead_inside);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

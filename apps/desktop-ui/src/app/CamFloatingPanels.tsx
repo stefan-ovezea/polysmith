@@ -5,6 +5,10 @@ import type {
   CamSetup,
   LaserCutParameters,
   LaserMachineSettings,
+  MachineDefinition,
+  MachineType,
+  PostProcessor,
+  PostProcessorType,
 } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
 import {
@@ -19,6 +23,7 @@ import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
+import { laserOperationScopeSketchId } from "./camProfileSelection";
 
 type RunAction = (action: () => Promise<void>) => Promise<void>;
 
@@ -33,6 +38,8 @@ interface CamFloatingPanelsProps {
   onStartRepickGeometry: () => void;
   onCancelRepickGeometry: () => void;
   onApplyRepickGeometry: () => void;
+  // "Clear selection" button while re-pick is armed.
+  onClearRepickSelection: () => void;
   showStock: boolean;
   wcsOrientation: string;
   setShowStock: (show: boolean) => void;
@@ -47,6 +54,9 @@ interface CamFloatingPanelsProps {
   posts: Array<{ name: string; path: string }>;
   onImportPost: () => void;
   onEditPost: (path: string) => void;
+  machines: MachineDefinition[];
+  onSaveMachine: (machine: MachineDefinition) => Promise<void>;
+  camPostProcessorSet: (post: PostProcessor) => Promise<void>;
   onPickOrigin: () => void;
   pickedOrigin: [number, number, number] | null;
   originPickArmed: boolean;
@@ -76,6 +86,7 @@ export function CamFloatingPanels({
   onStartRepickGeometry,
   onCancelRepickGeometry,
   onApplyRepickGeometry,
+  onClearRepickSelection,
   showStock,
   wcsOrientation,
   setShowStock,
@@ -90,6 +101,9 @@ export function CamFloatingPanels({
   posts,
   onImportPost,
   onEditPost,
+  machines,
+  onSaveMachine,
+  camPostProcessorSet,
   onPickOrigin,
   pickedOrigin,
   originPickArmed,
@@ -129,6 +143,34 @@ export function CamFloatingPanels({
     return setups[0] ?? null;
   })();
 
+  // Applying a saved machine composes the existing commands in one
+  // runAction: setup machine type (active setup), document post
+  // processor (document-level in v1), and laser machine settings when
+  // the machine is a laser.  The panel mirrors the type into its form
+  // before calling this.
+  const applyMachine = (machine: MachineDefinition) => {
+    const target = setup ?? createDefaultCamSetup();
+    void runAction(async () => {
+      await camSetupUpdate({
+        ...target,
+        machine_type: machine.machine_type as MachineType,
+      });
+      await camPostProcessorSet({
+        type: machine.post_processor.type as PostProcessorType,
+        filename: machine.post_processor.filename ?? "",
+      });
+      if (machine.machine_type === "laser") {
+        await camMachineSettingsSet({
+          work_area_x_mm: machine.work_area_x_mm,
+          work_area_y_mm: machine.work_area_y_mm,
+          pointer_offset_x_mm: machine.pointer_offset_x_mm,
+          pointer_offset_y_mm: machine.pointer_offset_y_mm,
+        });
+      }
+      addMessage(t("cam.setup.machineApplied", { name: machine.name }));
+    });
+  };
+
   const setupPanel = isSetupPanelOpen ? (
     <CamSetupPanel
       initialSetup={setup ?? createDefaultCamSetup()}
@@ -147,6 +189,9 @@ export function CamFloatingPanels({
       posts={posts}
       onImportPost={onImportPost}
       onEditPost={onEditPost}
+      machines={machines}
+      onApplyMachine={applyMachine}
+      onSaveMachine={onSaveMachine}
       onPickOrigin={onPickOrigin}
       pickedOrigin={pickedOrigin}
       originPickArmed={originPickArmed}
@@ -183,6 +228,7 @@ export function CamFloatingPanels({
         onStartRepickGeometry,
         onCancelRepickGeometry,
         onApplyRepickGeometry,
+        onClearRepickSelection,
         setSelectedOperationId,
         runAction,
         addMessage,
@@ -213,6 +259,7 @@ function buildOperationPanel({
   onStartRepickGeometry,
   onCancelRepickGeometry,
   onApplyRepickGeometry,
+  onClearRepickSelection,
   setSelectedOperationId,
   runAction,
   addMessage,
@@ -233,6 +280,7 @@ function buildOperationPanel({
   | "onStartRepickGeometry"
   | "onCancelRepickGeometry"
   | "onApplyRepickGeometry"
+  | "onClearRepickSelection"
   | "setSelectedOperationId"
   | "runAction"
   | "addMessage"
@@ -308,24 +356,9 @@ function buildOperationPanel({
   if (operation.type === "laser_cut") {
     const laser = operation.parameters.laser ?? DEFAULT_LASER_PARAMS;
     // The reference sketch shown in the scope dropdown: every machining
-    // region attests the same sketch → that sketch; anything else
-    // (mixed, face-based, or empty) → no scope.
-    const regions = operation.geometry_references.machining_regions;
-    let scopeSketchId: string | null = null;
-    if (regions.length > 0) {
-      const firstAttestation = regions[0]?.attestation;
-      if (firstAttestation && "sketch_feature_id" in firstAttestation) {
-        const candidate = firstAttestation.sketch_feature_id;
-        const allSame = regions.every(
-          (region) =>
-            "sketch_feature_id" in region.attestation &&
-            region.attestation.sketch_feature_id === candidate,
-        );
-        if (allSame) {
-          scopeSketchId = candidate;
-        }
-      }
-    }
+    // region must attest the same sketch (mixed, face-based, or empty →
+    // no scope).
+    const scopeSketchId = laserOperationScopeSketchId(operation);
     const sketches = (document?.feature_history ?? [])
       .filter((feature) => feature.kind === "sketch")
       .map((feature) => ({
@@ -344,6 +377,7 @@ function buildOperationPanel({
         repickArmed={camProfilePickArmed}
         onStartRepick={onStartRepickGeometry}
         onCancelRepick={onCancelRepickGeometry}
+        onClearSelection={onClearRepickSelection}
         onApplyRepick={() => {
           void runAction(async () => {
             await camOperationUpdate(operation.op_id, {

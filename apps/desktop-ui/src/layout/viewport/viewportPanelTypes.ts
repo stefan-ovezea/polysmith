@@ -42,15 +42,21 @@ export interface ViewportPanelProps {
   viewport: ViewportState | null;
   showStock?: boolean;
   wcsOrientation?: string;
+  // CAM setup the viewport renders (WCS marker, stock box, origin
+  // snap candidates) — falls back to the first setup.
+  activeCamSetupId?: string | null;
   onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
   onSelectFace: (faceId: string) => Promise<void>;
   // Armed origin pick: while true, every pointer-up places the stock
-  // origin at the clicked world point on the bed plane (z = 0) —
-  // LightBurn-style, works on sketches too where no faces/vertices
-  // exist to snap to.  `null` = the click missed the bed (grazing
-  // camera angle) — the caller shows a hint instead of placing.
+  // origin at the clicked point.  The click snaps (12 px) to sketch
+  // points, body vertices, body edge midpoints, body face centers,
+  // and stock-box top corners/midpoints — snapped geometry keeps its
+  // 3D z.  With no snap target the click falls back to the bed plane
+  // (z = 0) — LightBurn-style, works on sketch-only jobs too.
+  // `null` = the click missed the bed entirely (grazing camera
+  // angle) — the caller shows a hint instead of placing.
   originPickPointEnabled: boolean;
   onOriginPickPoint: (point: { x: number; y: number; z: number } | null) => void;
   onSelectEdge: (edgeId: string, additive: boolean) => Promise<void>;

@@ -6,6 +6,7 @@ json to_payload(const polysmith::core::ViewportToolpathPrimitive& primitive) {
         {"y", p.y},
         {"z", p.z},
         {"is_rapid", p.is_rapid},
+        {"pierce", p.pierce},
     });
   }
   return {

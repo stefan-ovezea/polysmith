@@ -287,10 +287,12 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `FaceAttestation` witness from a body face (`"<body_id>:face:<index>"`)
   and replies `cam_face_attestation_result {persistent_id, attestation}`.
   The UI never fabricates witness geometry.
-- `cam_wcs_set_face {face_id}` anchors the WCS origin to a body face:
-  the witness lands on `setups[0].wcs_origin.face_reference` and the
-  refresh pass resolves the machine origin from the LIVE face (mid-UV
-  point) on every recompute — a face-anchored WCS is TNP-safe.
+- `cam_wcs_set_face {face_id, setup_id?}` anchors the WCS origin to a body
+  face: the witness lands on the target setup's `wcs_origin.face_reference`
+  and the refresh pass resolves the machine origin from the LIVE face
+  (mid-UV point) on every recompute — a face-anchored WCS is TNP-safe.
+  `setup_id` defaults to the first setup when absent (backward compatible);
+  an unknown id replies `SETUP_NOT_FOUND`.
 - `CamOperation` carries `setup_id` (empty = the first setup, legacy
   documents); generation, export, and refresh resolve each operation
   through ITS setup — multi-setup support.  The setup panel edits the
@@ -327,12 +329,36 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `lead_in_style` / `lead_out_style` (`line|arc`) +
   `lead_in_angle_deg` / `lead_out_angle_deg`, `overcut_mm`,
   `pierce_dwell_seconds` (default 0.1), `pierce_position`,
-  `tabs_enabled` / `tab_width_mm` / `tab_spacing_mm` / `tab_power_percent`
-  / `tabs_on_holes`, `engrave_style` (`line|fill`) / `line_spacing_mm` /
-  `fill_angle_deg` / `fill_bidirectional`, `material_thickness_mm`,
-  `cut_plane_offset_mm`, and `cut_order`
+  `pierce_angle_deg` (nullable), `tabs_enabled` / `tab_width_mm` /
+  `tab_spacing_mm` / `tab_power_percent` / `tabs_on_holes`,
+  `engrave_style` (`line|fill`) / `line_spacing_mm` / `fill_angle_deg` /
+  `fill_bidirectional`, `material_thickness_mm`, `cut_plane_offset_mm`,
+  `arc_segments_per_circle` (0 = auto), and `cut_order`
   (`inner_first|nearest_neighbor|by_area`).  Documents saved before v2
   load unchanged — absent keys take the v2 defaults.
+- `pierce_angle_deg` picks the lead/pierce side explicitly: a ray from
+  each loop's centroid at the given angle (loop-local sketch plane, CCW
+  from +X) finds the first contour crossing — that point becomes the
+  pierce, the contour walk starts and ends there, and the leads attach
+  tangentially.  When set it **overrides `pierce_position`** (the UI
+  disables that dropdown while an angle is set); when absent the
+  automatic placement rules apply.  Mirrored sketch frames mirror the
+  visual direction — the angle is loop-local, and the lead tangents
+  always follow the contour walk, so both stay consistent.
+- Lead side follows the kerf offset side.  `kerf_side: auto` offsets the
+  cut OUTWARD on outer loops (scrap outside the disc) and INWARD on holes
+  (scrap inside the hole), and the pierce + leads land on that same side:
+  exterior offsets keep the tangent lead-in/out, interior offsets turn
+  the lead into a spoke along the pierce→centroid ray (perpendicular to
+  the contour on circles) — a straight tangent line cannot lie inside a
+  closed contour.  `kerf_side: inside|outside` overrides force that side
+  (and the lead side) on every loop; `none` and engrave have no offset
+  and keep tangent leads.
+- `arc_segments_per_circle` pins how many chords approximate each full
+  circle in the polyline viewport render and in the `use_arcs=false`
+  G-code post (proportional counts for partial arcs).  `0` (default)
+  keeps the legacy chord-tolerance paths; the toolpath IR always keeps
+  true G2/G3 arcs regardless of the display count.
 - `cam_post_processor_set` stores the `PostProcessor` — `type` names a post
   DEFINITION.  Post processors are first-class files: one `<name>.json` per
   machine in the user's posts directory (`POLYSMITH_POSTS_DIR`, resolved by
@@ -343,6 +369,20 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `cam_post_import {source_path}` validates a definition JSON, copies it into
   the posts directory, and replies the updated list (broken definitions are
   rejected).
+- `cam_machine_list` replies `cam_machine_list_result
+  {machines: [MachineDefinition]}` — the machine library, built-ins first,
+  then user files.  A `MachineDefinition` is `{name, machine_type,
+  post_processor {type, filename}, work_area_x_mm, work_area_y_mm,
+  pointer_offset_x_mm, pointer_offset_y_mm}`.  Like posts, machines are
+  first-class files: one `<slug>.json` per machine in the user's machines
+  directory (`POLYSMITH_MACHINES_DIR`, resolved by the shell from the
+  app-data path, seeded with `grbl-laser`, `smoothieware-laser`, and
+  `generic-3-axis-mill` on first use), re-read on every list, so external
+  edits apply immediately.
+- `cam_machine_save {MachineDefinition}` validates (non-empty name, supported
+  machine type, positive work area for lasers) and writes the definition as
+  `<slug>.json`, replying the refreshed library via `cam_machine_list_result`;
+  invalid definitions are rejected with `CAM_MACHINE_SAVE_FAILED`.
 - `cam_export_gcode { file_path }` generates stale toolpaths on demand,
   serializes every enabled operation through the selected post definition,
   and replies `document_exported` with `format: "gcode"`.

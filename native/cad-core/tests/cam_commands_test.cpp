@@ -735,6 +735,60 @@ bool test_setup_delete_legacy_and_isolation() {
   return expect(threw, "setup delete: unknown id throws");
 }
 
+bool test_cam_setup_find_resolves_by_id() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup());  // cam-setup-1
+  manager.cam_setup_create(make_setup());  // cam-setup-2
+
+  const auto byId = manager.cam_setup_find("cam-setup-2");
+  if (!expect(byId.has_value() && byId->setup_id == "cam-setup-2",
+              "setup find: resolves by id")) {
+    return false;
+  }
+  const auto legacy = manager.cam_setup_find("");
+  if (!expect(legacy.has_value() && legacy->setup_id == "cam-setup-1",
+              "setup find: empty id means the first setup")) {
+    return false;
+  }
+  return expect(!manager.cam_setup_find("cam-setup-99").has_value(),
+                "setup find: unknown id returns nullopt");
+}
+
+bool test_wcs_face_update_targets_named_setup() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup());  // cam-setup-1
+  manager.cam_setup_create(make_setup());  // cam-setup-2
+
+  // The handler's write path: resolve the target setup, mutate the
+  // WCS witness, and update by id — setups[0] must stay untouched.
+  auto target = manager.cam_setup_find("cam-setup-2");
+  if (!expect(target.has_value(), "wcs face update fixture: setup found")) {
+    return false;
+  }
+  target->wcs_origin.feature_id = "body-1";
+  target->wcs_origin.face_reference.persistent_id = "body-1:face:3";
+  const DocumentState after = manager.cam_setup_update(target.value());
+  if (!expect(after.cam.setups.size() == 2,
+              "wcs face update: document keeps both setups")) {
+    return false;
+  }
+  const auto byId = manager.cam_setup_find("cam-setup-2");
+  if (!expect(byId.has_value() &&
+                  byId->wcs_origin.feature_id == "body-1" &&
+                  byId->wcs_origin.face_reference.persistent_id ==
+                      "body-1:face:3",
+              "wcs face update: named setup received the WCS witness")) {
+    return false;
+  }
+  const auto first = manager.cam_setup_find("cam-setup-1");
+  return expect(first.has_value() &&
+                    first->wcs_origin.feature_id.empty() &&
+                    first->wcs_origin.face_reference.persistent_id.empty(),
+                "wcs face update: first setup untouched");
+}
+
 }  // namespace
 
 int main() {
@@ -847,6 +901,22 @@ int main() {
 
   std::cout << "  Test 14: setup delete legacy + isolation... ";
   if (test_setup_delete_legacy_and_isolation()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 15: setup find resolves by id... ";
+  if (test_cam_setup_find_resolves_by_id()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 16: wcs face update targets named setup... ";
+  if (test_wcs_face_update_targets_named_setup()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

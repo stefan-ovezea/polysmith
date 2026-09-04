@@ -142,9 +142,13 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
       {"material_thickness_mm", laser.material_thickness_mm},
       {"cut_plane_offset_mm", laser.cut_plane_offset_mm},
       {"cut_order", laser.cut_order},
+      {"arc_segments_per_circle", laser.arc_segments_per_circle},
   };
   if (laser.speed_mm_per_s.has_value()) {
     j["speed_mm_per_s"] = laser.speed_mm_per_s.value();
+  }
+  if (laser.pierce_angle_deg.has_value()) {
+    j["pierce_angle_deg"] = laser.pierce_angle_deg.value();
   }
   return j;
 }
@@ -349,6 +353,18 @@ json to_payload(const polysmith::core::PostProcessor& pp) {
   return {
       {"type", pp.type},
       {"filename", pp.filename},
+  };
+}
+
+json to_payload(const polysmith::core::MachineDefinition& machine) {
+  return {
+      {"name", machine.name},
+      {"machine_type", machine.machine_type},
+      {"post_processor", to_payload(machine.post_processor)},
+      {"work_area_x_mm", machine.work_area_x_mm},
+      {"work_area_y_mm", machine.work_area_y_mm},
+      {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
+      {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
   };
 }
 

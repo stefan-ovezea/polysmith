@@ -80,26 +80,43 @@ export function CrosshairGuideOverlay({
 interface SnapCursorOverlayProps {
   pointer: { x: number; y: number } | null;
   visible: boolean;
+  label?: string | null;
 }
 
 /** Small square overlay at the snap point — replaces the crosshair
- *  guide when the pointer is snapped to a sketch point. */
+ *  guide when the pointer is snapped to a sketch point.  An optional
+ *  label names the snap target kind (used by the CAM origin pick,
+ *  which has no sketch status panel to show it in). */
 export function SnapCursorOverlay({
   pointer,
   visible,
+  label,
 }: SnapCursorOverlayProps) {
   if (!visible || !pointer) {
     return null;
   }
 
   return (
-    <div
-      className="cad-snap-cursor"
-      style={{
-        left: pointer.x,
-        top: pointer.y,
-      }}
-    />
+    <>
+      <div
+        className="cad-snap-cursor"
+        style={{
+          left: pointer.x,
+          top: pointer.y,
+        }}
+      />
+      {label ? (
+        <div
+          className="cad-snap-cursor-label"
+          style={{
+            left: pointer.x + 10,
+            top: pointer.y + 10,
+          }}
+        >
+          {label}
+        </div>
+      ) : null}
+    </>
   );
 }
 
