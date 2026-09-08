@@ -1669,6 +1669,124 @@ With the stock shown it is the outermost surface, so clicks land on the
 stock (pick hint copy says so); hiding the stock restores body-face
 picks.
 
+## 2D Pocket (2026-09-07, refined 2026-09-08)
+
+`pocket_2d` clears material inside a planar face boundary with a zigzag
+fill at a configurable angle, with optional islands, followed by closed
+finishing contours around every avoidance at each level.  It reuses the
+face-milling machinery wherever it fits: the shared `plan_stepdown_levels`
+helper (levels from the stock top, last pinned at the face, island tops
+inserted as extra levels), the row planner, and the witness-capture
+trigger flow.
+
+### Region model
+
+The machinable area = outer boundary inset by the tool radius (miter,
+the face-milling pattern) minus avoidance polygons:
+
+1. **Outer loop** = the face wire with the largest |signed area|.
+   Multi-wire faces ARE allowed — pocketing around a face's own holes
+   is core to the feature (face milling rejects these, pocket must
+   not).  Inset by `tool.diameter/2` with the same min-distance +
+   self-intersection validation as face milling (smaller-than-tool →
+   error).
+2. **Face inner wires are classified boss vs hole** (2026-09-08).  For
+   each inner wire, the faces adjacent to its edges (excluding the
+   floor itself) are probed with `BRepGProp::SurfaceProperties`:
+   - any adjacent wall whose centre of mass sits ABOVE the floor face
+     (COM.z > faceZ + 0.1 mm) → the wire is a **boss** standing on the
+     floor → always-avoided polygon, grown outward by the tool radius
+     (round joins — growth is the opposite of the miter inset);
+   - all adjacent walls below/coplanar with the floor → the wire is an
+     **open hole** through the floor → NOT avoided: rows mill straight
+     across it, clearing the stock plug so the hole can be drilled or
+     milled later (the plug would otherwise become a boss anyway);
+   - no wall can be probed → conservative default: avoid.
+3. **Island faces** (`avoidance_regions`, user-picked boss tops,
+   resolved per refresh/generate like machining regions):
+   near-horizontal check (same `kMaxUpwardFaceTilt`
+   orientation-corrected test as face milling) → error if not;
+   footprint = its wires sampled in the pocket plane (XY), grown by the
+   tool radius.  Island top Z = `face_cut_plane` center.  Centroid
+   outside the outer loop → warning "has no effect" (no hard failure —
+   outside islands subtract nothing).
+
+### Per-level island filter
+
+At level Z, subtract an island footprint iff `islandTopZ > Z + eps`
+(the island is still solid there).  At `islandTopZ ≈ Z` the footprint
+is INCLUDED — the pass cuts the stock above the island flush with its
+top.  Below the island top it is always avoided, so no level ever cuts
+into a boss.
+
+### Island-top levels
+
+In multi-pass mode, every island top strictly between faceZ and
+stockTop is added as a level (deduped within eps, sorted descending) so
+the stock ABOVE a short boss is cleared down to the boss top before
+avoidance kicks in.  Single-pass mode (no stepdown): only the face
+level; islands above the face are avoided and the stock over them
+stays — consistent single-pass semantics.
+
+### Fill
+
+The face-milling row planner: `minN/maxN` sweep over the inset polygon
+along the row normal, `spacing = max(diam × stepover%, 0.1)`, last row
+pinned to maxN, GLOBAL row index for zigzag parity.  Per row: clip the
+infinite line against the inset polygon (CCW), then subtract each
+active avoidance polygon by clipping the resulting pieces against the
+hole's CW loop (`clip_segment_to_polygon` CCW-inside semantics, pinned
+in cam2d_test).  A row may split into MULTIPLE pieces (bosses,
+non-convex boundaries) — every consecutive pair is emitted, not just
+`[0]`/`[back]` as face milling does.  Each piece: rapid at retractZ →
+plunge at plunge feed → feed at cutting feed → rapid up (no linked-in
+zigzag in v1).  Zigzag reversal reverses the piece list AND swaps piece
+endpoints on odd global rows.
+
+### Finishing contours (2026-09-08)
+
+After the zigzag rows at EVERY level, closed climb contours clean the
+row scallops and machine the boss walls with circular motion:
+
+- each active avoidance loop is traced as-is (CCW grown loop = climb on
+  an internal profile — the round motion the zigzag cannot produce);
+- the outer inset loop is traced in reverse (CW = climb on an external
+  wall);
+- every contour segment is clipped against the OTHER active avoidances
+  (`clip_segment_outside_polygon` — never against itself), so a contour
+  can never ride through a neighbouring island's clearance; surviving
+  pieces chain when endpoints touch (1e-6) and each chain goes
+  rapid-plunge-feed-rapid.
+
+The contours are unconditional — there is no finish-pass toggle.  With
+a single pass (no stepdown) they still run at the pocket floor, giving
+the round walls their circular cut even in single-pass mode.
+
+### Failure semantics (same family as face milling)
+
+Non-horizontal outer face → error; non-horizontal island → error naming
+the island; broken outer OR island reference → generation FAILS with
+the dependency_broken message (never silently cut into a boss — both
+generate and refresh resolve avoidance refs); retract-below-face and
+retract-below-stock-top guards warning-only; level cap warning; "No
+machinable rows were produced" error.
+
+### Deliberate v1 exclusions
+
+No `stock_allowance_mm` honoring (face milling ignores it too); no
+linked-in zigzag (each piece retracts); no rest machining; no stepover
+parameter on the finishing contours (they are single laps at the grown
+clearance offset).
+
+### Island hint (2026-09-08)
+
+In single-pass mode islands only add avoidance — the island-top flush
+levels never exist, so an island picked on a boss that is already part
+of the pocket face changes nothing (the face's own inner wire is
+already avoided).  The core warns when an island lies on such a
+face-owned boss, and the UI shows a hint next to the island list when
+islands exist but no stepdown is set.
+
 ## Architecture notes for extension
 
 New operation kinds are registry entries: implement a generator matching
@@ -1690,9 +1808,10 @@ No changes to the document, refresh pass, IPC, or viewport machinery.
 - **Simulation.** Visual preview only, no material removal simulation.
 - **Tool wear compensation.** Not needed for hobbyist use.
 - **Binary IPC transport.** Chunked JSON is sufficient through v1.
-- **Turning and Printing operations.** Laser cutting and face milling are
-  implemented; turning/printing remain disabled scaffolding. Nesting,
-  common-cut, and bridge/tab for cutting are not built.
+- **Turning and Printing operations.** Laser cutting, face milling, and
+  2D pocket are implemented; turning/printing remain disabled
+  scaffolding. Nesting, common-cut, and bridge/tab for cutting are not
+  built.
 
 ---
 

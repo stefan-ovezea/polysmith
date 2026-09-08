@@ -40,6 +40,7 @@ struct CamGenerateContext {
 
   struct Geometry {
     std::vector<ResolvedFaceRef> faces;                 // machining regions
+    std::vector<ResolvedFaceRef> avoidance_faces;       // islands (avoidance regions)
     std::vector<ResolvedProfileRef> profiles;           // profile regions
     std::vector<const SketchFeatureParameters*> sketches;  // owning sketches
   } geometry;

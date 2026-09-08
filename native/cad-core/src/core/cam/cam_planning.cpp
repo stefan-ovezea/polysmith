@@ -1,5 +1,9 @@
 #include "core/cam/cam_planning.h"
 
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <sstream>
 #include <vector>
 
 #include <BRepAdaptor_Curve.hxx>
@@ -42,6 +46,65 @@ void refine_curve(const BRepAdaptor_Curve& curve, double t0, double t1,
 }
 
 }  // namespace
+
+bool plan_stepdown_levels(double stockTopZ, double faceZ, double stepdown,
+                          const std::vector<double>& extra_levels,
+                          std::vector<double>& levels,
+                          std::vector<std::string>& warnings) {
+  levels.clear();
+  constexpr int kMaxLevels = 100;
+  auto warn_capped = [&]() {
+    std::ostringstream cap;
+    cap << "Pass count capped at " << kMaxLevels
+        << " — reduce the stepdown or the stock height.";
+    warnings.push_back(cap.str());
+  };
+  if (stepdown <= 1e-9 || stockTopZ <= faceZ + 1e-9) {
+    levels.push_back(faceZ);
+    return false;
+  }
+
+  // Descending stepdown levels: stockTop − stepdown down to faceZ.
+  bool capped = false;
+  for (double z = stockTopZ - stepdown; z > faceZ + 1e-9; z -= stepdown) {
+    levels.push_back(z);
+    if (static_cast<int>(levels.size()) >= kMaxLevels) {
+      warn_capped();
+      capped = true;
+      break;
+    }
+  }
+
+  // Island tops and the like: extra levels strictly between faceZ and
+  // stockTop join the plan (deduped within eps) so the stock above a
+  // short island is cleared down to the island top.
+  for (const double extra : extra_levels) {
+    if (extra <= faceZ + 1e-9 || extra >= stockTopZ - 1e-9) {
+      continue;
+    }
+    bool duplicate = false;
+    for (const double existing : levels) {
+      if (std::fabs(existing - extra) <= 1e-6) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) {
+      continue;
+    }
+    if (static_cast<int>(levels.size()) >= kMaxLevels) {
+      if (!capped) {
+        warn_capped();
+      }
+      break;
+    }
+    levels.push_back(extra);
+  }
+
+  std::sort(levels.begin(), levels.end(), std::greater<double>());
+  levels.push_back(faceZ);  // the last cut is always pinned to the face
+  return true;
+}
 
 bool sample_planar_wire(const TopoDS_Wire& wire, double chord_tolerance,
                         std::vector<cam2d::XY>& out_loop) {

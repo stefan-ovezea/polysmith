@@ -56,6 +56,18 @@ double xy_point_segment_distance(const XY& p, const XY& a, const XY& b);
 std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
                                         const std::vector<XY>& poly);
 
+// Ray-crossing point-in-polygon (orientation-independent).  Points
+// exactly on an edge are arbitrary — callers should sample interval
+// midpoints, never boundary points.
+bool xy_point_in_polygon(const XY& p, const std::vector<XY>& poly);
+
+// Complement of clip_segment_to_polygon: keeps the parts of the
+// segment OUTSIDE the closed polygon (any walk orientation), splitting
+// at boundary crossings.  Same return contract — points in p1→p2
+// order, consecutive pairs are the kept sub-segments.
+std::vector<XY> clip_segment_outside_polygon(XY p1, XY p2,
+                                             const std::vector<XY>& poly);
+
 // True when every vertex of `inner` lies inside `outer` AND the inner
 // centroid is strictly inside (bbox precheck + ray crossing).  Used
 // for loop nesting depth.

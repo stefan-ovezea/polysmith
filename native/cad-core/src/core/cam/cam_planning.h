@@ -24,6 +24,22 @@ namespace polysmith::core::cam_planning {
 // horizontal 2.5D feature.
 constexpr double kMaxUpwardFaceTilt = 0.9962;
 
+// Plans the 2.5D roughing levels shared by the face-milling and pocket
+// generators: the first cut at stockTop − stepdown, descending by
+// stepdown, with the last level pinned to faceZ (stock 23 / face 20 /
+// stepdown 2 → 21, 20).  extra_levels (island top heights) strictly
+// between faceZ and stockTop join the descending plan, deduped within
+// eps — they clear the stock above a short island down to its top.
+// No stepdown, a non-positive stepdown, or a stock top at/below the
+// face = the legacy single pass at the face.  Capped at 100 planned
+// levels (the pinned faceZ can make 101 cuts) with a warning appended.
+// Returns false when the single-pass fallback applied (no multi-pass
+// possible for the given inputs).
+bool plan_stepdown_levels(double stockTopZ, double faceZ, double stepdown,
+                          const std::vector<double>& extra_levels,
+                          std::vector<double>& levels,
+                          std::vector<std::string>& warnings);
+
 // Samples one planar wire into a closed polyline of its X/Y
 // coordinates.  Every edge is sampled adaptively so the chord height
 // (sagitta) stays within `chord_tolerance`; the pieces are then

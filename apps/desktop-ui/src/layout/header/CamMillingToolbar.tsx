@@ -12,6 +12,7 @@ export interface CamMillingToolbarProps {
   selectedFaceId: string | null;
   onSetupClick: () => void;
   onFaceMillingClick: () => void;
+  onPocketClick: () => void;
 }
 
 export function CamMillingToolbar({
@@ -20,6 +21,7 @@ export function CamMillingToolbar({
   selectedFaceId,
   onSetupClick,
   onFaceMillingClick,
+  onPocketClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
   const pushToast = useToastStore((state) => state.pushToast);
@@ -30,7 +32,10 @@ export function CamMillingToolbar({
   const onNotImplemented = () =>
     pushToast("info", t("cam.common.notImplemented", "This operation is not implemented yet."));
 
+  // Face milling and 2D pocket share the same trigger: a setup plus a
+  // selected body face (the milled top / pocket floor).
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
+  const pocketReady = faceReady;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -63,9 +68,16 @@ export function CamMillingToolbar({
         </svg>
       </button>
 
-      <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.pocket")} aria-label={t("cam.pocket")}
-        disabled={disabled} onClick={onNotImplemented}>
+      <button type="button"
+        className={pocketReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && !selectedFaceId
+            ? t("cam.common.selectFaceFirst", "Select a face first")
+            : t("cam.pocket.label", "Pocket")
+        }
+        aria-label={t("cam.pocket.label", "Pocket")}
+        disabled={!pocketReady}
+        onClick={onPocketClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">

@@ -351,6 +351,7 @@ interface AppHeaderProps
   camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
+  onCamPocketClick: () => void;
   onCamTwoDCutClick: () => void;
   onCamTestPatternClick: () => void;
 }
@@ -463,6 +464,7 @@ export function AppHeader({
   camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
+  onCamPocketClick,
   onCamTwoDCutClick,
   onCamTestPatternClick,
 }: AppHeaderProps) {
@@ -948,6 +950,7 @@ export function AppHeader({
               selectedFaceId={selectedCamFaceId}
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
+              onPocketClick={onCamPocketClick}
             />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />

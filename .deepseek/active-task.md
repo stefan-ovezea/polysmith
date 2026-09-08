@@ -1,4 +1,165 @@
-# Active Task: Core build speedup + OCCT deprecation migration (core-build-speedup)
+# Active Task: 2D Pocket CAM operation + refinement (cam/milling) — implemented, UNCOMMITTED
+
+> **Branch:** `cam/milling` (HEAD e9d4a64)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/glittery-coalescing-kernighan.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+User: "No PR. continue with implementation." — the next milestone in
+the prioritized V1 CAM list is 2D Pocket.  Binding decisions: islands =
+full spec from day one (user-pickable boss faces stored as
+`avoidance_regions`); stepdown = reuse the face-milling multi-pass
+machinery (stock top → face, last level pinned at face).
+
+In-app feedback 2026-09-08 (their words, binding): a join boss on the
+pocket face is avoided "like a hole" (the zigzag leaves a stock plug
+that becomes a boss and blocks later drilling); the linear zigzag
+around a round boss "will create artifacts and a circular motion will
+be more appropriate"; islands added/deleted look identical to the
+path.  → implemented the refinement below.
+
+## Status — phases 1-5 implemented + refinement, uncommitted (working tree)
+
+- **P1** shared `plan_stepdown_levels` helper + face-milling level-loop
+  refactor (behavior pinned by cam_generators_test 47-50).
+- **P2** `pocket_2d` generator (`pocket_2d.cpp` + `impl/pocket_2d_generate.inc`)
+  + `cam_generate.cpp`/`cam_refresh.cpp` avoidance-region resolution.
+- **P3** `cad_core_pocket_2d_test` suite (12 cases) + cam2d CCW-clip pin.
+- **P4** UI: `camPocketActions.ts` trigger; pocket button in
+  CamMillingToolbar; `CamPocketPanel`; armed pocket face pick
+  (outer/island) in App.tsx with mutual disarm vs origin/WCS picks;
+  `cam.pocket.*` i18n.
+- **P5** docs: wiki/CAM-Development.md section, AI-CAD-Command-Language.md,
+  Implementation-Log.md, tracker (this file).
+- **Refinement R1 — inner-wire boss/hole classification**
+  (`pocket_2d_generate.inc`): floor-face inner wires probed via their
+  adjacent walls (edge→face ancestor map, floor excluded); wall COM
+  above the floor (`faceZ + 0.1`) → boss → avoided; all walls
+  below/coplanar → open hole → rows mill ACROSS it (clears the stock
+  plug); no probe → conservative avoid.  Tests 2/2b/2c.
+- **Refinement R2 — finishing contours**: after the rows at every
+  level, closed climb contours around each active avoidance (CCW, as
+  traced) + the outer inset wall (CW, reversed); each segment clipped
+  against the other active avoidances (never itself — tests 3/4
+  caught the unclipped version riding into a grown near-wall island),
+  surviving pieces chained (1e-6) and rapid-plunge-feed-rapid.
+  Unconditional, also in single-pass mode.
+- **Refinement R3 — island single-pass hint**: core warns when an
+  island lies on a boss already owned by the pocket face (only
+  multi-pass flush levels would change anything); UI
+  `cam.pocket.islandSinglePassHint` beside the island list when
+  islands exist without a stepdown.
+- **Laser pierce corner fix** (same working tree): mitered-reflex-corner
+  interior detection (`base_corner_interior` three branches in
+  laser_leads.cpp) + Test 23 comment / Test 25 fixture corrections.
+
+## Verification (so far)
+
+- `pnpm test:core` — all 40 suites green (pocket suite 12/12;
+  cam_generators_test 50/50 incl. the pierce regressions).
+- `tsc --noEmit` clean (CamPocketPanel hint + en.json key).
+- **Pending:** user in-app verification (checklist below) → commit
+  approval (explicit, per the binding rules).
+
+## In-app verification checklist (before any commit)
+
+1. Their res/part.json (box + Ø42.3 boss): pocket on the floor →
+   rows avoid the boss AND a circular contour laps the boss; the outer
+   wall gets its closed contour; G-code export sane (retract ≥ stock
+   top 33.05 — the saved file used 25).
+2. Real through-hole part: rows now mill ACROSS the hole (no more
+   avoided plug) — regenerate and compare.
+3. Single-pass + island: the hint appears beside the island list;
+   stepdown set → hint disappears and the island-top flush level
+   appears.
+4. Stepdown 2 multi-pass: levels from stock top; contours at every
+   level.
+5. Face milling + laser ops unaffected.
+
+## Next steps
+
+1. User in-app verification → single commit (core + tests + UI + docs;
+   needs explicit approval; no Co-Authored-By trailer; commit message
+   names the suites run).
+2. Next milestone per wiki/CAM-Development.md §V1: 2D contour.
+
+---
+
+# Previous task: CAM milling UX + 5-axis scaffolding (cam/milling) — COMMITTED e9d4a64
+
+> **Branch:** `cam/milling` (from `dev` @ c10ceba)
+> **Date:** 2026-09-05
+> **Plan:** approved plan at `.claude/plans/glittery-coalescing-kernighan.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+User feedback on the CAM milling workspace (their words, binding): "I
+still do not have -z value. I still do not have how many passes. I do
+not have 'snap' on the stoc points. I cannot select face of the stoc
+faces. I am having here a very bad implementation". User decisions:
+passes run from the STOCK TOP down to the face (multi-pass only when a
+Stepdown is set); WCS Z=0 = top of stock (pick the stock top face →
+cuts go negative).
+
+## Status — COMMITTED as `e9d4a64` (50 files, +2463/−180)
+
+- **M0 milling foundations** (from the earlier milestones, same commit):
+  MachineDefinition mill fields (travel/kinematics/axis limits/
+  tool-change position) + 3 mill seeds; ToolpathMove rotary a/b/c +
+  modal rotary words + G93 inverse-time feed; per-op tool_axis_mode
+  (fixed_z only); linuxcnc post with golden test.
+- **Multi-pass face milling**: stepdown plans levels from the stock top
+  down to the face (last level pinned at the face); cleared stepdown =
+  single pass; 100-level cap + retract-below-stock-top warning.
+- **WCS anchor model**: `""`/`face`/`stock_face`/`point`/`stock_origin`;
+  `"point"` pins manual X/Y/Z edits against the refresh clobber;
+  `cam_wcs_set_face` accepts `"stock:<face>"` ids (no new IPC).
+- **cam_stock helper** mirroring the UI stock-box extents (core/UI
+  parity contract, documented in wiki/CAM-Development.md).
+- **Stock-aware picking**: stock box face-tagged (`userData.stockFaceNames`)
+  and pickable; WCS pick snaps to stock corners/midpoints (top+bottom),
+  anchors to stock faces, falls back to the bed plane; snap markers
+  shared with the origin pick.
+- **Stale-closure fix** (the stock-snap root cause): the viewport
+  pointer handlers live in an effect keyed on activeSketchPlaneId only,
+  so their closures froze mount-time document/viewport/showStock/setup —
+  body snap worked (scene refs), stock candidates were silently never
+  built. Fixed with render-synced `documentRef`/`viewportRef`/
+  `showStockRef`/`activeCamSetupIdRef` at the three pick call sites.
+- **Deviation (deliberate)**: stock bottom-FACE CENTER snap candidate
+  from the plan omitted (would need a new snap kind + i18n label; top
+  face has no center either — corners + edge midpoints cover both).
+
+## Verification
+
+- `pnpm test:core` all 39 suites green — cam_generators_test (1-50:
+  multi-pass levels, level cap, retract-below-stock-top), cam_refresh_test
+  (1-10: point anchor survives refresh, stock_face resolves/degrades,
+  payload round-trip), cam_commands_test (stock_face round-trip),
+  cam_machine_library_test, linuxcnc_post_test, cam_save_load_test.
+- `tsc --noEmit` clean.
+- User-verified in-app: face milling multi-pass looks good; stock snap
+  square + label + stock face anchor work after the closure fix; manual
+  WCS edits survive refresh. "OK it is working now. commit and continue"
+  → commit approved.
+
+## Next steps
+
+1. ~~Push `cam/milling` and open the PR against `dev`~~ — SUPERSEDED by
+   the user's "No PR. continue with implementation."; work continues on
+   `cam/milling` (see the 2D Pocket task above).
+2. Deferred from the plan: stock bottom-face-center snap kind (if wanted).
+
+---
+
+# Previous task: Core build speedup + OCCT deprecation migration (core-build-speedup)
 
 > **Branch:** `core-build-speedup` (from `dev` @ 4d03d7b)
 > **Date:** 2026-09-04

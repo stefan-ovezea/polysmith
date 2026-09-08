@@ -127,16 +127,32 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
         break;
       }
     }
+    for (const auto& ref : op.geometry_references.avoidance_regions) {
+      if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+        needs_faces = true;
+        break;
+      }
+    }
     if (needs_faces) {
       ensure_bodies();
     }
 
     // Shared resolution with the generate driver — one source of
     // truth for TNP re-resolution.  Empty sinks: the refresh pass only
-    // needs the found flag.
+    // needs the found flag.  Avoidance regions (pocket islands) are
+    // part of the same contract: a broken island degrades the
+    // operation — never regenerate a path that would cut into a boss.
     bool resolved_all = true;
     std::string message;
     for (const auto& ref : op.geometry_references.machining_regions) {
+      if (!resolve_geometry_reference(ref, document, bodies,
+                                      /*on_profile=*/{},
+                                      /*on_face=*/{}, message)) {
+        resolved_all = false;
+        break;
+      }
+    }
+    for (const auto& ref : op.geometry_references.avoidance_regions) {
       if (!resolve_geometry_reference(ref, document, bodies,
                                       /*on_profile=*/{},
                                       /*on_face=*/{}, message)) {

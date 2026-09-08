@@ -221,35 +221,19 @@ CamGenerateResult generate_face_milling_toolpath(
   // the face (first level at stockTop − stepdown, last pinned to the
   // face — stock 23 / face 20 / stepdown 2 → 21, 20).  No stepdown, a
   // non-positive stepdown, or no resolvable stock = the legacy single
-  // pass at the face.
+  // pass at the face.  The shared cam_planning planner keeps face
+  // milling and pocketing level plans in lockstep.
   std::vector<double> levels;
   double stockTopZ = 0.0;
   bool haveStockTop = false;
-  if (op.parameters.stepdown_mm.has_value()) {
-    const double stepdown = op.parameters.stepdown_mm.value();
-    if (stepdown > 1e-9) {
-      haveStockTop = cam_stock::stock_top_z(context.document,
-                                            context.setup.stock, stockTopZ);
-      if (haveStockTop && stockTopZ > faceZ + 1e-9) {
-        constexpr int kMaxLevels = 100;
-        for (double z = stockTopZ - stepdown; z > faceZ + 1e-9;
-             z -= stepdown) {
-          levels.push_back(z);
-          if (static_cast<int>(levels.size()) >= kMaxLevels) {
-            std::ostringstream cap;
-            cap << "Pass count capped at " << kMaxLevels
-                << " — reduce the stepdown or the stock height.";
-            result.warnings.push_back(cap.str());
-            break;
-          }
-        }
-        levels.push_back(faceZ);
-      }
-    }
+  if (op.parameters.stepdown_mm.has_value() &&
+      op.parameters.stepdown_mm.value() > 1e-9) {
+    haveStockTop = cam_stock::stock_top_z(context.document,
+                                          context.setup.stock, stockTopZ);
   }
-  if (levels.empty()) {
-    levels.push_back(faceZ);
-  }
+  cam_planning::plan_stepdown_levels(
+      stockTopZ, faceZ, op.parameters.stepdown_mm.value_or(0.0),
+      /*extra_levels=*/{}, levels, result.warnings);
 
   // Guard 2 (multi-pass): rapids must clear the unmilled stock above
   // the first level, not just the face.  Guard 1 above already covers

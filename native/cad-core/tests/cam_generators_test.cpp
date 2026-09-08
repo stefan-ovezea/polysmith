@@ -215,7 +215,9 @@ std::string sketch_feature_id(const DocumentState& document) {
 bool test_registry() {
   return expect(polysmith::core::find_cam_generator("laser_cut") != nullptr,
                 "registry: laser_cut found") &&
-         expect(polysmith::core::find_cam_generator("pocket_2d") == nullptr,
+         expect(polysmith::core::find_cam_generator("pocket_2d") != nullptr,
+                "registry: pocket_2d found") &&
+         expect(polysmith::core::find_cam_generator("drilling") == nullptr,
                 "registry: unregistered type reports null");
 }
 
@@ -484,8 +486,19 @@ bool test_too_thin_for_kerf() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  DocumentState document =
-      manager.add_sketch_rectangle(0.0, 0.0, 20.0, 2.0);  // 2 mm tall
+  // A U-shaped outline with a 3 mm-wide bay.  With kerf 6 the offset
+  // is d = 3, wider than half the bay mouth, so the two bay walls'
+  // offset arcs cross across the mouth — the feature is narrower than
+  // the kerf.  (A plain thin outer rectangle cannot pin this check:
+  // its offset grows outward and never collapses.)
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 20.0, 0.0);
+  document = manager.add_sketch_line(20.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_line(20.0, 10.0, 10.0, 10.0);
+  document = manager.add_sketch_line(10.0, 10.0, 10.0, 1.0);
+  document = manager.add_sketch_line(10.0, 1.0, 7.0, 1.0);
+  document = manager.add_sketch_line(7.0, 1.0, 7.0, 10.0);
+  document = manager.add_sketch_line(7.0, 10.0, 0.0, 10.0);
+  document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);
 
   std::string profile;
   for (const auto& feature : document.feature_history) {
@@ -496,7 +509,7 @@ bool test_too_thin_for_kerf() {
   }
 
   LaserCutParameters laser;
-  laser.kerf_width_mm = 6.0;  // d = 3 > half height (1): collapses
+  laser.kerf_width_mm = 6.0;  // d = 3 > half the bay width (1.5)
   laser.lead_in_mm = 0.0;
   laser.lead_out_mm = 0.0;
   const std::string opId =
@@ -2116,8 +2129,12 @@ bool test_sharp_corner_pierce() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  // A thin triangle: the tip at (5, 0.5) has an interior angle of
-  // ~11° — far below the pierce threshold.
+  // A thin triangle: the tip's MATERIAL wedge is obtuse (~168.6°) — the
+  // ~11.4° figure is the walk's turn between edge directions — and the
+  // genuinely sharp corners are the ~5.7° base corners at (0,0)/(10,0).
+  // The pointedness rule (walk turn < 60°) excludes the tip junction;
+  // the both-wedges rule excludes the base corners; with every corner
+  // excluded the pierce falls back to a mid-edge point.
   DocumentState document = manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
   document = manager.add_sketch_line(10.0, 0.0, 5.0, 0.5);
   document = manager.add_sketch_line(5.0, 0.5, 0.0, 0.0);
@@ -2216,11 +2233,16 @@ bool test_pierce_position() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  // A square with a shallow dent in the bottom edge: the dent corner
-  // is nearest the centroid, the (0,0) corner is nearest the origin.
-  DocumentState document = manager.add_sketch_line(0.0, 0.0, 5.0, 0.0);
-  document = manager.add_sketch_line(5.0, 0.0, 5.1, -0.01);
-  document = manager.add_sketch_line(5.1, -0.01, 10.0, 0.0);
+  // A square with a notch in the bottom edge: the notch corners are
+  // nearest the centroid, the (0,0) corner is nearest the origin.
+  // (A shallow dent instead of a notch makes the dent corners sub-60°
+  // "pointed" features and the pierce rule excludes them — the fixture
+  // needs corners that legitimately qualify.)
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 4.97, 0.0);
+  document = manager.add_sketch_line(4.97, 0.0, 5.0, -0.2);
+  document = manager.add_sketch_line(5.0, -0.2, 5.03, -0.2);
+  document = manager.add_sketch_line(5.03, -0.2, 5.06, 0.0);
+  document = manager.add_sketch_line(5.06, 0.0, 10.0, 0.0);
   document = manager.add_sketch_line(10.0, 0.0, 10.0, 10.0);
   document = manager.add_sketch_line(10.0, 10.0, 0.0, 10.0);
   document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);

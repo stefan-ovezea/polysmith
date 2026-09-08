@@ -146,6 +146,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/laser_cut.cpp
   src/core/cam/machine_library.cpp
   src/core/cam/milling_common.cpp
+  src/core/cam/pocket_2d.cpp
   src/core/cam/post_processor.cpp
   src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
@@ -307,6 +308,10 @@ polysmith_add_core_test(cad_core_grbl_post_test tests/grbl_post_test.cpp)
 polysmith_add_core_test(cad_core_linuxcnc_post_test tests/linuxcnc_post_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_generators_test tests/cam_generators_test.cpp)
+
+# 2D Pocket generator suite — outer-wire selection, hole/island
+# subtraction, island-top levels, dependency degradation, payload.
+polysmith_add_core_test(cad_core_pocket_2d_test tests/pocket_2d_test.cpp)
 
 polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 

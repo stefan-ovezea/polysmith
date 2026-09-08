@@ -158,6 +158,7 @@ interface AppTopBarProps {
   triggerCamLaserCut: AsyncVoid;
   camMachineType: string | null;
   triggerCamFaceMilling: AsyncVoid;
+  triggerCamPocket: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
 }
 
@@ -466,6 +467,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onCamFaceMillingClick={() => {
         void props.triggerCamFaceMilling();
+      }}
+      onCamPocketClick={() => {
+        void props.triggerCamPocket();
       }}
       onCamTwoDCutClick={() => {
         void props.triggerCamLaserCut();

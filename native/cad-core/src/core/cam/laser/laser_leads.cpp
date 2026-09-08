@@ -12,45 +12,6 @@ using cam2d::kPi;
 using cam2d::right_normal;
 using cam2d::xy_length;
 
-// Tangent directions at a vertex of the sampled contour (walk order,
-// with wrap).  u_out = direction leaving the vertex along the walk;
-// u_in = direction arriving at the vertex.
-void vertex_tangents(const PlannedLoop& loop, size_t vertexIndex, XY& u_out,
-                     XY& u_in) {
-  const auto& samples = loop.samples;
-  const size_t n = samples.size();
-  const XY& v = samples[vertexIndex];
-  const XY out{samples[(vertexIndex + 1) % n].x - v.x,
-               samples[(vertexIndex + 1) % n].y - v.y};
-  const XY in{v.x - samples[(vertexIndex - 1 + n) % n].x,
-              v.y - samples[(vertexIndex - 1 + n) % n].y};
-  const double outLen = xy_length(out.x, out.y);
-  const double inLen = xy_length(in.x, in.y);
-  u_out = outLen > 1e-12 ? XY{out.x / outLen, out.y / outLen} : XY{1.0, 0.0};
-  u_in = inLen > 1e-12 ? XY{in.x / inLen, in.y / inLen} : XY{1.0, 0.0};
-}
-
-// Interior (material-side) angle in radians at the vertex.
-double interior_angle(const PlannedLoop& loop, size_t vertexIndex) {
-  XY u_out;
-  XY u_in;
-  vertex_tangents(loop, vertexIndex, u_out, u_in);
-  const double turn = std::atan2(u_in.x * u_out.y - u_in.y * u_out.x,
-                                 u_in.x * u_out.x + u_in.y * u_out.y);
-  return kPi - turn;  // left turns (convex) shrink the interior
-}
-
-// Sample index of a segment-start vertex.
-size_t sample_index_of(const PlannedLoop& loop, const XY& vertex) {
-  for (size_t i = 0; i < loop.samples.size(); ++i) {
-    if (xy_length(loop.samples[i].x - vertex.x,
-                  loop.samples[i].y - vertex.y) < 1e-9) {
-      return i;
-    }
-  }
-  return 0;
-}
-
 XY rotate_by(const XY& v, double radians) {
   const double c = std::cos(radians);
   const double s = std::sin(radians);
@@ -105,6 +66,59 @@ XY arc_tangent_at(const cam2d::OffsetSegment& segment, bool atStart) {
   return segment.cw ? XY{s, -c} : XY{-s, c};
 }
 
+// Interior (material-side) angle in radians at the BASE corner behind
+// the candidate vertex (the start of piece `pieceIndex`).  The offset
+// contour is tangent-continuous at every arc join — a sampled tangent
+// cannot see the corner at all — so an arc-joined corner is measured
+// between the two base pieces neighbouring the join.  Reflex corners
+// with reachable miters carry NO join arc, so their corner is measured
+// directly between the two pieces that meet at the candidate (this
+// also covers un-offset loops such as engrave, which have no joins at
+// all).  The join's short arc (or the miter's shaved point) moves the
+// pierce only d away from the corner, and the corner's own wedge still
+// burns under a pierce dwell.  Returns pi for loops without corners
+// (full circles — two arc pieces).
+double base_corner_interior(const PlannedLoop& loop, size_t pieceIndex) {
+  const size_t n = loop.segments.size();
+  if (n <= 2) {
+    return kPi;
+  }
+  // Tangent the walk uses leaving the end / start of a piece.
+  const auto tangent_at = [&](size_t i, bool atStart) {
+    const auto& s = loop.segments[i];
+    if (s.is_arc) {
+      return arc_tangent_at(s, atStart);
+    }
+    const double dx = s.end.x - s.start.x;
+    const double dy = s.end.y - s.start.y;
+    const double len = xy_length(dx, dy);
+    return len > 1e-12 ? XY{dx / len, dy / len} : XY{1.0, 0.0};
+  };
+  const auto interior_from = [&](const XY& u_in, const XY& u_out) {
+    const double turn = std::atan2(u_in.x * u_out.y - u_in.y * u_out.x,
+                                   u_in.x * u_out.x + u_in.y * u_out.y);
+    return kPi - turn;  // left turns (convex) shrink the interior
+  };
+  const bool ownIsJoin = loop.segments[pieceIndex].is_join;
+  if (ownIsJoin) {
+    // The candidate is the join arc's start: the corner sits between
+    // the base pieces neighbouring the join.
+    return interior_from(tangent_at((pieceIndex + n - 1) % n, false),
+                         tangent_at((pieceIndex + 1) % n, true));
+  }
+  const size_t prev = (pieceIndex + n - 1) % n;
+  if (loop.segments[prev].is_join) {
+    // The preceding piece is the corner's join arc.
+    return interior_from(tangent_at((pieceIndex + n - 2) % n, false),
+                         tangent_at(pieceIndex, true));
+  }
+  // No join arc behind the candidate: a mitered corner (or a corner
+  // between two base pieces) — measure between the pieces that meet
+  // at the candidate.
+  return interior_from(tangent_at(prev, false),
+                       tangent_at(pieceIndex, true));
+}
+
 // Exact tangents at the contour's walk boundaries: u_out leaves
 // contour.front().start along the walk, u_in arrives at
 // contour.back().end.  The contour is already rotated so both are the
@@ -154,14 +168,22 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
     return loop.centroid;
   }
 
-  // Qualifying vertices: interior angle at least the corner threshold.
+  // Qualifying vertices: the BASE corner behind the junction must
+  // clear the corner threshold on both sides and be blunt enough to
+  // survive a dwell.  The interior wedge guards sharp material
+  // corners; the exterior wedge guards narrow scrap spikes; the
+  // pointedness check (|pi − interior|, the walk's turn) guards
+  // delicate apexes — a thin triangle tip has an OBTUSE material
+  // wedge, but a pierce that dwells on its pointed side still burns
+  // the tip.
   std::vector<bool> qualifies(candidates.size(), false);
   int sharpCount = 0;
   for (size_t i = 0; i < candidates.size(); ++i) {
-    const size_t sampleIndex = sample_index_of(loop, candidates[i]);
-    const double interior = interior_angle(loop, sampleIndex);
-    qualifies[i] =
-        interior >= kMinPierceCornerAngleDeg * kPi / 180.0;
+    const double interior = base_corner_interior(loop, i);
+    const double minAngle = kMinPierceCornerAngleDeg * kPi / 180.0;
+    qualifies[i] = interior >= minAngle &&
+                   2.0 * kPi - interior >= minAngle &&
+                   std::abs(kPi - interior) >= minAngle;
     if (!qualifies[i]) {
       ++sharpCount;
     }
@@ -211,8 +233,29 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
     return candidates[qualifyingBest];
   }
   warnings.push_back(
-      "Every corner is sharper than the pierce threshold — using the "
-      "nearest vertex.");
+      "Every corner is sharper than the pierce threshold — piercing "
+      "mid-segment on the longest straight edge.");
+  size_t longest = candidates.size();
+  double longestLen = -1.0;
+  for (size_t i = 0; i < loop.segments.size(); ++i) {
+    if (loop.segments[i].is_arc) {
+      continue;
+    }
+    const double len =
+        xy_length(loop.segments[i].end.x - loop.segments[i].start.x,
+                  loop.segments[i].end.y - loop.segments[i].start.y);
+    if (len > longestLen) {
+      longestLen = len;
+      longest = i;
+    }
+  }
+  if (longest < loop.segments.size() && longestLen > 1e-12) {
+    // Mid-piece pierce: as far from every excluded corner as the
+    // contour allows.  contour_starting_at splits the piece.
+    const auto& segment = loop.segments[longest];
+    return XY{0.5 * (segment.start.x + segment.end.x),
+              0.5 * (segment.start.y + segment.end.y)};
+  }
   return candidates[best];
 }
 

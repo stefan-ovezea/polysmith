@@ -2,6 +2,46 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-08
+
+### CAM pocket refinement: boss/hole classification + finishing contours (cam/milling)
+
+Response to in-app feedback on 2D Pocket: a join boss on the pocket face
+was avoided like a hole (wrong — the face's own inner wire was always
+subtracted), the zigzag left linear scallops around round bosses, and
+islands seemed to do nothing in single-pass mode.
+
+- **Inner-wire boss/hole classification** (`pocket_2d_generate.inc`):
+  each floor-face inner wire is probed via its adjacent walls
+  (`TopExp::MapShapesAndAncestors` edge→face map, excluding the floor);
+  any wall with centre of mass above the floor (`COM.z > faceZ + 0.1`)
+  → the wire is a boss standing on the face → avoided (grown by the
+  tool radius); all walls below/coplanar → an open hole through the
+  floor → rows mill straight ACROSS it (clears the stock plug that
+  would otherwise become a boss and block later drilling); no probe →
+  conservative avoid.
+- **Finishing contours**: after the rows at every level, closed climb
+  contours around each active avoidance (CCW, as-is) and the outer
+  inset wall (CW, reversed) clean the zigzag scallops and cut round
+  walls with circular motion. Each contour segment is clipped against
+  the other active avoidances (never itself), surviving pieces chain
+  when endpoints touch and rapid-plunge-feed-rapid. Unconditional —
+  also runs in single-pass mode.
+- **Island single-pass hint**: the core warns when an island lies on a
+  boss already owned by the pocket face (island only adds multi-pass
+  flush levels); the UI shows `cam.pocket.islandSinglePassHint` beside
+  the island list when islands exist without a stepdown.
+
+Tests (pocket_2d_test, fail-before/pass-after where fixing a bug):
+Test 2 rewritten — through-hole rows now CROSS the hole (segment
+through the hole centre, unsplit at the grown boundary); 2b — boss
+wire avoided + closed boss ring and outer-wall contours; 2c — boss +
+hole mixed; 2d — single-pass island on a face boss warns; 3/4 —
+island fixtures pinned the outer contour clipping against islands
+(feed inside a grown near-wall island before the fix). Full gates:
+`pnpm core:build` + `pnpm test:core` (40/40) + `tsc --noEmit` green;
+user in-app verification pending before commit.
+
 ## 2026-09-05
 
 ### CAM milling UX: multi-pass face milling + stock-aware WCS picking (cam/milling)
@@ -3329,3 +3369,69 @@ shared exact-curve layer and full entity-kind coverage:
 trim-split, four suite expectations updated to the new
 crossing-line-splits-regions semantics; all 30 suites green; tsc clean;
 user verified in-app (flower, ellipse trim + extrude, spline trim).
+
+## 2D Pocket + laser pierce corner fix (2026-09-07)
+
+Branch `cam/milling`, next CAM milestone after face milling.  Status:
+core + tests + UI implemented; `pnpm test:core` all 40 suites green
+(including the new `cad_core_pocket_2d_test` 9 cases); `tsc --noEmit`
+clean; awaiting user in-app verification before commit.
+
+### 2D pocket (`pocket_2d`)
+
+- **Shared level helper** — `plan_stepdown_levels` extracted from the
+  face-milling loop (stock top − stepdown descending, last level pinned
+  at the face, extra levels inserted in (faceZ, stockTop), deduped,
+  capped at 100 with a warning).  Face milling now calls it with empty
+  extras — behavior pinned by cam_generators_test 47-50.
+- **Generator** (`pocket_2d.cpp` + `impl/pocket_2d_generate.inc`):
+  largest-|area| face wire as the outer loop (multi-wire faces allowed
+  — face holes are pocketing's bread and butter), miter inset by the
+  tool radius with face-milling validation; face inner wires +
+  island footprints (`avoidance_regions`) grown by the tool radius
+  (round joins); per-level island filter (`islandTopZ > levelZ + eps`);
+  island-top levels inserted into multi-pass planning; face-milling row
+  planner with per-piece clipping (a row splits into MULTIPLE pieces
+  around holes/non-convex boundaries — every consecutive pair is
+  emitted) and CW-loop subtraction via `clip_segment_to_polygon`.
+- **Drivers** — `cam_generate.cpp` and `cam_refresh.cpp` now resolve
+  `avoidance_regions` into witnesses with the same
+  `resolve_geometry_reference` loop; a broken island fails generation
+  AND degrades refresh to `error` (never silently cut into a boss).
+- **CW clip pin** — `clip_segment_to_polygon` CCW-inside semantics
+  pinned in cam2d_test before the generator was built on it.
+- **Tests** — new `cad_core_pocket_2d_test` (9 cases): plain box fill,
+  through-hole row splitting, island avoided below its top, island-top
+  level insertion, single-pass + island, non-horizontal island error,
+  broken island attestation (generate fail + refresh error), level cap
+  + retract guards, avoidance payload round-trip.  `pnpm test:core`
+  40/40 suites green.
+- **UI** — `camPocketActions.ts` trigger (same witness-capture flow as
+  face milling, no default stepdown = single pass); pocket button in
+  CamMillingToolbar (gated like face milling); `CamPocketPanel` with
+  tool dropdown, geometry section (pocket face re-pick, indexed island
+  rows with remove, Add island), cutting params incl. clearable
+  stepdown, status line; armed pocket face pick in App.tsx
+  (`pocketPickArmed {opId, target: "outer"|"island"}`) — the next
+  body-face click becomes the floor (machining_regions[0]) or an island
+  (avoidance_regions appended); `stock:` faces rejected with a toast;
+  mutual disarm with the origin/WCS pick arms; disarm on
+  selected-operation change.  All copy via `cam.pocket.*` i18n keys.
+  `tsc --noEmit` clean.
+
+### Laser pierce corner fix (folded into the same working tree)
+
+Test 25 exposed a pierce-selection regression: cam2d emits MITER joins
+(no arc) at REFLEX corners with reachable miters, so the pierce corner
+filter — which samples base-piece tangents on either side of a join arc
+— saw no corner at all and returned π (candidate excluded as
+"pointed").  `base_corner_interior` now has three branches: candidate
+on a join arc → measure between the neighbouring base pieces; join arc
+immediately before the candidate → measure across it; otherwise (miter)
+→ measure between the two pieces meeting at the candidate.  Test 25's
+fixture re-pinned to a real notch (a shallow dent's corners are
+sub-60° pointed features the rule legitimately excludes) and Test 23's
+comment corrected: the triangle tip's MATERIAL wedge is ~168.6° obtuse
+(the ~11.4° figure is the walk's turn); the genuinely sharp corners are
+the ~5.7° base corners, excluded by the both-wedges rule.  All 50
+cam_generators cases green.

@@ -14,12 +14,15 @@ import type { DocumentState, ViewportState } from "../types";
 import {
   CamFaceMillingPanel,
   CamLaserCutPanel,
+  CamPocketPanel,
   CamSetupPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
   type FaceMillingFormState,
+  type PocketFormState,
 } from "../layout";
 import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
+import { DEFAULT_POCKET_PARAMS } from "../layout/CamPocketPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
@@ -62,6 +65,11 @@ interface CamFloatingPanelsProps {
   originPickArmed: boolean;
   wcsPickArmed: boolean;
   onPickWcsFace: () => void;
+  // Armed pocket face pick — opId + which face it will replace.
+  pocketPick: { opId: string; target: "outer" | "island" } | null;
+  onPickPocketFace: (opId: string) => void;
+  onPickIslandFace: (opId: string) => void;
+  onCancelPocketPick: () => void;
   camSetupCreate: (setup: CamSetup) => Promise<void>;
   camSetupUpdate: (setup: CamSetup) => Promise<void>;
   camMachineSettingsSet: (settings: LaserMachineSettings) => Promise<void>;
@@ -109,6 +117,10 @@ export function CamFloatingPanels({
   originPickArmed,
   wcsPickArmed,
   onPickWcsFace,
+  pocketPick,
+  onPickPocketFace,
+  onPickIslandFace,
+  onCancelPocketPick,
   camSetupCreate,
   camSetupUpdate,
   camMachineSettingsSet,
@@ -238,6 +250,10 @@ export function CamFloatingPanels({
         camOperationSetScope,
         camOperationPreview,
         camOperationGenerate,
+        pocketPick,
+        onPickPocketFace,
+        onPickIslandFace,
+        onCancelPocketPick,
         t,
       })
     : null;
@@ -269,6 +285,10 @@ function buildOperationPanel({
   camOperationSetScope,
   camOperationPreview,
   camOperationGenerate,
+  pocketPick,
+  onPickPocketFace,
+  onPickIslandFace,
+  onCancelPocketPick,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -290,6 +310,10 @@ function buildOperationPanel({
   | "camOperationSetScope"
   | "camOperationPreview"
   | "camOperationGenerate"
+  | "pocketPick"
+  | "onPickPocketFace"
+  | "onPickIslandFace"
+  | "onCancelPocketPick"
 > & { t: (key: string, options?: Record<string, unknown>) => string }) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
@@ -487,6 +511,82 @@ function buildOperationPanel({
         initialParams={initialParams}
         initialToolId={operation.tool_id}
         tools={tools}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: { ...parameters, ...partial },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "pocket_2d") {
+    const parameters = operation.parameters;
+    const initialParams: PocketFormState = {
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ?? DEFAULT_POCKET_PARAMS.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_POCKET_PARAMS.plunge_feedrate_mm_per_min,
+      stepover_percent:
+        parameters.stepover_percent ?? DEFAULT_POCKET_PARAMS.stepover_percent,
+      zigzag_angle_deg:
+        parameters.zigzag_angle_deg ?? DEFAULT_POCKET_PARAMS.zigzag_angle_deg,
+      spindle_rpm: parameters.spindle_rpm ?? DEFAULT_POCKET_PARAMS.spindle_rpm,
+      // Absent in the params = single pass; never substitute a default
+      // number for a cleared stepdown.
+      stepdown_mm: parameters.stepdown_mm,
+    };
+    const tools =
+      document?.cam.tool_library.filter(
+        (entry) => entry.type === "endmill_flat",
+      ) ?? [];
+    const avoidance = operation.geometry_references.avoidance_regions;
+    return (
+      <CamPocketPanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        islandCount={avoidance.length}
+        pickTarget={
+          pocketPick?.opId === operation.op_id ? pocketPick.target : null
+        }
+        onRepickFace={() => onPickPocketFace(operation.op_id)}
+        onAddIsland={() => onPickIslandFace(operation.op_id)}
+        onRemoveIsland={(index) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                machining_regions:
+                  operation.geometry_references.machining_regions,
+                avoidance_regions: avoidance.filter(
+                  (_, entryIndex) => entryIndex !== index,
+                ),
+                guide_curves: [],
+                check_surfaces: [],
+              },
+            });
+          });
+        }}
+        onCancelPick={onCancelPocketPick}
         onUpdate={(partial, toolId) => {
           void runAction(async () => {
             await camOperationUpdate(operation.op_id, {

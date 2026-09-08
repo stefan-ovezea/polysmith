@@ -112,6 +112,12 @@ CamGenerateOutcome generate_operation_toolpath(
       break;
     }
   }
+  for (const auto& ref : op->geometry_references.avoidance_regions) {
+    if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+      needsFaces = true;
+      break;
+    }
+  }
   if (needsFaces) {
     ensure_bodies();
   }
@@ -126,6 +132,28 @@ CamGenerateOutcome generate_operation_toolpath(
         },
         [&](const ResolvedFaceRef& resolved) {
           context.geometry.faces.push_back(resolved);
+        },
+        message);
+    if (!ok) {
+      outcome.result.ok = false;
+      outcome.result.error_message = message;
+      return outcome;
+    }
+  }
+  // Avoidance regions (pocket islands) resolve the same way.  A broken
+  // island FAILS generation — skipping its subtraction would mill
+  // straight into a boss.
+  for (const auto& ref : op->geometry_references.avoidance_regions) {
+    std::string message;
+    const bool ok = resolve_geometry_reference(
+        ref, document, bodies,
+        [&](const ResolvedProfileRef& resolved, const FeatureEntry& sketch) {
+          context.geometry.profiles.push_back(resolved);
+          context.geometry.sketches.push_back(
+              &sketch.sketch_parameters.value());
+        },
+        [&](const ResolvedFaceRef& resolved) {
+          context.geometry.avoidance_faces.push_back(resolved);
         },
         message);
     if (!ok) {

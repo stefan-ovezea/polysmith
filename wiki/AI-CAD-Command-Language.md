@@ -696,9 +696,10 @@ referencing the deleted tool degrade to `status: "error"` with a message.
 
 Payload = serialized `CamOperation` without `op_id` (the core assigns
 `cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
-`"face_milling"` (zigzag facing of a horizontal face), or
+`"face_milling"` (zigzag facing of a horizontal face), `"pocket_2d"`
+(zigzag pocketing of a planar face, with optional islands), or
 `"laser_test_pattern"` (LightBurn-style material test cards) are
-implemented; pocket/contour/drill/turning are registry slots for later.
+implemented; contour/drill/turning are registry slots for later.
 `tool_id` must reference an existing tool. Laser operations (cut and test
 patterns) require a laser machine setup.
 
@@ -730,6 +731,19 @@ Geometry input:
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
   fill.
+- `pocket_2d`: same shape as face milling — `machining_regions[0]` is the
+  pocket-floor face witness.  `avoidance_regions` carries ISLAND faces
+  (boss tops, captured via the same `cam_capture_face_reference` flow):
+  the toolpath clears inside the outer boundary (inset by the tool
+  radius) minus the grown island footprints; below an island's top Z the
+  footprint is always avoided, and multi-pass level planning inserts a
+  level at each island top between the face and the stock top so the
+  stock above a boss is cleared flush.  `stepdown_mm` reuses the
+  face-milling multi-pass machinery (stock top → face, last level pinned
+  at the face); absent = single pass at the face level.  Multi-wire
+  faces are allowed — the face's own holes are avoided; `stock:` face
+  ids are NOT valid pocket floors.  Islands live entirely in
+  `avoidance_regions` (no dedicated island field).
 - `laser_test_pattern`: NO geometry references — `parameters.test_pattern`
   drives the card (`pattern`: `engrave_grid` | `cut_grid` | `kerf_gauge`,
   power/speed min-max-steps, `cell_size_mm`, `cell_spacing_mm`,

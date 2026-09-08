@@ -5,6 +5,7 @@ import {
   awaitDocumentChange,
   useCadCoreStore,
 } from "./state";
+import { useToastStore } from "./state/toastStore";
 import { useCadCore } from "./hooks";
 import {
   useAppConfig,
@@ -28,6 +29,7 @@ import type {
   ExtrudeAdvancedParameters,
   ExtrudeFeatureParameters,
   ExtrudeMode,
+  GeometryReference,
   MachineDefinition,
   PostProcessorType,
   SketchFeatureParameters,
@@ -116,6 +118,7 @@ import {
 } from "./app/featureVisibility";
 import { computeFeatureActionAvailability } from "./app/featureActionAvailability";
 import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
+import { triggerCamPocket } from "./app/camPocketActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
@@ -1527,6 +1530,18 @@ function App() {
       translate: t,
     });
 
+  const triggerCamPocketAction = () =>
+    triggerCamPocket({
+      document,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      camCaptureFaceReference,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
   // G-code export: pick a destination, let the core generate any stale
   // toolpaths and write the file with the configured post-processor.
   const exportCamGcodeAction = async () => {
@@ -1616,6 +1631,78 @@ function App() {
     setWcsPickArmed(false);
     addMessage(
       t(isStockFace ? "cam.setup.wcsStockFaceSet" : "cam.setup.wcsFaceSet"),
+    );
+  };
+
+  // Armed pocket face pick: the next body-face click becomes the
+  // pocket floor ("outer") or an island boss ("island", stored as an
+  // avoidance region).  Stock faces cannot anchor a pocket.
+  const [pocketPickArmed, setPocketPickArmed] = useState<{
+    opId: string;
+    target: "outer" | "island";
+  } | null>(null);
+
+  // The pick belongs to the operation that armed it — switching the
+  // selected operation (or closing its panel) disarms it.
+  useEffect(() => {
+    setPocketPickArmed(null);
+  }, [selectedCamOperationId]);
+
+  const applyPocketFacePick = async (faceId: string) => {
+    const pick = pocketPickArmed;
+    if (!pick) {
+      return;
+    }
+    if (faceId.startsWith("stock:")) {
+      addMessage(t("cam.pocket.pickMissed"));
+      useToastStore.getState().pushToast("warn", t("cam.pocket.pickMissed"));
+      return;
+    }
+    // TNP-safe witness capture — the same flow as the initial trigger.
+    let reference: GeometryReference | null = null;
+    await runAction(async () => {
+      const response = await camCaptureFaceReference(faceId);
+      const payload = response.payload;
+      if (payload?.attestation) {
+        reference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+      }
+    });
+    if (!reference) {
+      addMessage(t("cam.pocket.captureFailed"));
+      useToastStore
+        .getState()
+        .pushToast("error", t("cam.pocket.captureFailed"));
+      return;
+    }
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === pick.opId,
+    );
+    if (!operation) {
+      setPocketPickArmed(null);
+      return;
+    }
+    const existing = operation.geometry_references;
+    await runAction(async () => {
+      await camOperationUpdate(pick.opId, {
+        geometry_references:
+          pick.target === "outer"
+            ? { ...existing, machining_regions: [reference] }
+            : {
+                ...existing,
+                avoidance_regions: [...existing.avoidance_regions, reference],
+              },
+      });
+    });
+    setPocketPickArmed(null);
+    addMessage(
+      t(
+        pick.target === "outer"
+          ? "cam.pocket.faceSet"
+          : "cam.pocket.islandAdded",
+      ),
     );
   };
 
@@ -2066,6 +2153,7 @@ function App() {
           triggerCamLaserCut={triggerCamLaserCutAction}
           triggerCamTestPattern={triggerCamTestPatternAction}
           triggerCamFaceMilling={triggerCamFaceMillingAction}
+          triggerCamPocket={triggerCamPocketAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 
@@ -2318,6 +2406,10 @@ function App() {
               onSelectFace={async (faceId) => {
                 if (wcsPickArmed) {
                   await placeWcsFromFacePick(faceId);
+                  return;
+                }
+                if (pocketPickArmed) {
+                  await applyPocketFacePick(faceId);
                   return;
                 }
                 await handleViewportFaceSelection({
@@ -3839,6 +3931,43 @@ function App() {
                   void importCamPostAction();
                 }}
                 onEditPost={editCamPostAction}
+                pocketPick={pocketPickArmed}
+                onPickPocketFace={(opId) => {
+                  if (
+                    pocketPickArmed?.opId === opId &&
+                    pocketPickArmed.target === "outer"
+                  ) {
+                    setPocketPickArmed(null);
+                    addMessage(t("cam.pocket.pickCanceled"));
+                    return;
+                  }
+                  // One armed pick at a time: pocket picks consume the
+                  // next viewport click too.
+                  setOriginPickArmed(false);
+                  setWcsPickArmed(false);
+                  setPocketPickArmed({ opId, target: "outer" });
+                  addMessage(t("cam.pocket.repickFaceHint"));
+                }}
+                onPickIslandFace={(opId) => {
+                  if (
+                    pocketPickArmed?.opId === opId &&
+                    pocketPickArmed.target === "island"
+                  ) {
+                    setPocketPickArmed(null);
+                    addMessage(t("cam.pocket.pickCanceled"));
+                    return;
+                  }
+                  // One armed pick at a time: pocket picks consume the
+                  // next viewport click too.
+                  setOriginPickArmed(false);
+                  setWcsPickArmed(false);
+                  setPocketPickArmed({ opId, target: "island" });
+                  addMessage(t("cam.pocket.addIslandHint"));
+                }}
+                onCancelPocketPick={() => {
+                  setPocketPickArmed(null);
+                  addMessage(t("cam.pocket.pickCanceled"));
+                }}
                 originPickArmed={originPickArmed}
                 onPickOrigin={() => {
                   if (originPickArmed) {
@@ -3846,9 +3975,10 @@ function App() {
                     addMessage(t("cam.setup.originPickCanceled"));
                     return;
                   }
-                  // One armed pick at a time: both modes consume the
+                  // One armed pick at a time: all modes consume the
                   // next viewport click.
                   setWcsPickArmed(false);
+                  setPocketPickArmed(null);
                   setOriginPickArmed(true);
                   addMessage(t("cam.setup.originPickHint"));
                 }}
@@ -3860,9 +3990,10 @@ function App() {
                     addMessage(t("cam.setup.wcsPickCanceled"));
                     return;
                   }
-                  // One armed pick at a time: both modes consume the
+                  // One armed pick at a time: all modes consume the
                   // next viewport click.
                   setOriginPickArmed(false);
+                  setPocketPickArmed(null);
                   setWcsPickArmed(true);
                   addMessage(t("cam.setup.wcsPickHint"));
                 }}

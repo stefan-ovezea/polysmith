@@ -6,6 +6,7 @@
 #include "core/cam/face_milling.h"
 #include "core/cam/laser/laser_test_pattern.h"
 #include "core/cam/laser_cut.h"
+#include "core/cam/pocket_2d.h"
 
 namespace polysmith::core {
 
@@ -41,6 +42,7 @@ void register_builtin_cam_generators() {
   // Called once from CadCoreApp::run() after OCCT initialization.
   register_laser_cut_generator();
   register_face_milling_generator();
+  register_pocket_2d_generator();
   laser::register_laser_test_pattern_generator();
 }
 
