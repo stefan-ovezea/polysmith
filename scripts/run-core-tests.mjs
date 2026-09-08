@@ -22,7 +22,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const buildRoot = join(root, "native", "cad-core", "build");
-const exeDir = join(buildRoot, "Release");
+// Multi-config generators (Visual Studio on Windows) put binaries under
+// build/<config>/; single-config generators (Unix Makefiles, Ninja — the
+// Linux/macOS default) put them directly in build/.  Prefer the
+// multi-config layout when present so Windows behaves exactly as before.
+const exeDir = existsSync(join(buildRoot, "Release"))
+  ? join(buildRoot, "Release")
+  : buildRoot;
 
 if (!existsSync(exeDir)) {
   console.error(`No test binaries at ${exeDir} — run pnpm core:build first.`);
