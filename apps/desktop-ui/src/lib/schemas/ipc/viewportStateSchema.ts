@@ -491,6 +491,19 @@ export const viewportStateSchema = z.object({
           y: z.number(),
         }),
       ),
+      inner_loops: z
+        .array(z.array(z.object({ x: z.number(), y: z.number() })))
+        .default([]),
+      circle_holes: z
+        .array(
+          z.object({
+            loop_index: z.number(),
+            center_x: z.number(),
+            center_y: z.number(),
+            radius: z.number(),
+          }),
+        )
+        .default([]),
       start_x: z.number(),
       start_y: z.number(),
       width: z.number(),

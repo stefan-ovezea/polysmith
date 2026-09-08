@@ -127,6 +127,8 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
       {"lead_out_style", laser.lead_out_style},
       {"lead_in_angle_deg", laser.lead_in_angle_deg},
       {"lead_out_angle_deg", laser.lead_out_angle_deg},
+      {"lead_in_arc_angle_deg", laser.lead_in_arc_angle_deg},
+      {"lead_out_arc_angle_deg", laser.lead_out_arc_angle_deg},
       {"overcut_mm", laser.overcut_mm},
       {"pierce_dwell_seconds", laser.pierce_dwell_seconds},
       {"pierce_position", laser.pierce_position},

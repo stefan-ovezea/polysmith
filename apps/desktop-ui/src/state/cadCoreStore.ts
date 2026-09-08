@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  CamGenerationResultEvent,
   CoreMessage,
   DocumentState,
   DocumentExportResult,
@@ -24,11 +25,15 @@ interface CadCoreStoreState {
   viewport: ViewportState | null;
   lastExport: DocumentExportResult | null;
   lastEvent: CoreMessage | null;
+  // Latest cam_generation_result payload (generate-only core event).
+  // The CAM result popup reads this and dismisses it on close.
+  generationResult: CamGenerationResultEvent["payload"] | null;
   setStatus: (status: CadCoreStoreState["status"]) => void;
   handleCoreStopped: () => void;
   addMessage: (message: string) => void;
   addLogEntry: (entry: LogEntry) => void;
   clearLogs: () => void;
+  dismissGenerationResult: () => void;
   handleCoreMessage: (message: CoreMessage) => void;
 }
 
@@ -120,6 +125,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   viewport: null,
   lastExport: null,
   lastEvent: null,
+  generationResult: null,
   setStatus: (status) => set({ status }),
   handleCoreStopped: () =>
     set({
@@ -129,6 +135,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       viewport: null,
       lastExport: null,
       lastEvent: null,
+      generationResult: null,
     }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message].slice(-500) })),
@@ -148,6 +155,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       return { logs: [...state.logs, entry].slice(-500) };
     }),
   clearLogs: () => set({ logs: [] }),
+  dismissGenerationResult: () => set({ generationResult: null }),
   handleCoreMessage: (message) =>
     set((state) => {
       const nextState: Partial<CadCoreStoreState> = {
@@ -176,6 +184,12 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       if (message.type === "log") {
         nextState.logs = [...state.logs, message.payload].slice(-500);
+      }
+
+      if (message.type === "cam_generation_result") {
+        // A repeated Generate replaces the previous result — the popup
+        // always shows the most recent outcome.
+        nextState.generationResult = message.payload;
       }
 
       const error = getErrorFromMessage(message);

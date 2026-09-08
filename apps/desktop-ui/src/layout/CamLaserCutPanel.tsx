@@ -383,6 +383,35 @@ export function CamLaserCutPanel({
                 onChange={(v) => update({ lead_out_angle_deg: v })}
               />
               <CamNumberField
+                label={t("cam.laserCut.leadInArcAngle", "Lead-in arc angle (°)")}
+                value={params.lead_in_arc_angle_deg}
+                disabled={disabled || params.lead_in_style !== "arc"}
+                step={15}
+                min={1}
+                max={360}
+                // Clamp on commit: a cleared input would send 0 (a
+                // zero-length arc — some controllers turn that into a
+                // full circle), so out-of-range values are pinned.
+                onChange={(v) => {
+                  if (typeof v === "number" && Number.isFinite(v)) {
+                    update({ lead_in_arc_angle_deg: Math.min(360, Math.max(1, v)) });
+                  }
+                }}
+              />
+              <CamNumberField
+                label={t("cam.laserCut.leadOutArcAngle", "Lead-out arc angle (°)")}
+                value={params.lead_out_arc_angle_deg}
+                disabled={disabled || params.lead_out_style !== "arc"}
+                step={15}
+                min={1}
+                max={360}
+                onChange={(v) => {
+                  if (typeof v === "number" && Number.isFinite(v)) {
+                    update({ lead_out_arc_angle_deg: Math.min(360, Math.max(1, v)) });
+                  }
+                }}
+              />
+              <CamNumberField
                 label={t("cam.laserCut.overcut", "Overcut (mm)")}
                 value={params.overcut_mm}
                 disabled={disabled}

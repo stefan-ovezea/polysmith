@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/cam/cam2d.h"
+#include "core/cam/cam_types.h"
 #include "core/sketch/sketch_feature_parameters.h"
 #include "core/sketch/sketch_profile_types.h"
 
@@ -42,6 +43,16 @@ bool plan_stepdown_levels(double stockTopZ, double faceZ, double stepdown,
                           const std::vector<double>& extra_levels,
                           std::vector<double>& levels,
                           std::vector<std::string>& warnings);
+
+// World Z of the setup's retract plane.  `retract_height` is a
+// WCS-relative value (millimeters of machine Z above the setup
+// origin); the toolpath is emitted in WORLD coordinates, so the
+// plane sits at origin Z + height.  The post-processor subtracts the
+// origin again (machine = world − wcs_origin), landing the rapids
+// exactly at `retract_height` in machine Z.  An unresolved origin
+// (never refreshed / legacy documents) resolves to {0,0,0}, matching
+// the pre-WCS behavior.
+double setup_retract_plane_z(const CamSetup& setup);
 
 // Samples one planar wire into a closed polyline of its X/Y
 // coordinates.  Every edge is sampled adaptively so the chord height

@@ -1359,6 +1359,15 @@ button:not(:disabled),
     padding: 1rem;
   }
 
+  .cad-generation-result-dialog {
+    width: min(32rem, 100%);
+    border-radius: 0.5rem;
+    border: 1px solid var(--cad-outline);
+    background: var(--cad-panel-bg);
+    box-shadow: 0 24px 48px var(--cad-context-shadow);
+    padding: 1rem;
+  }
+
   .cad-hierarchy-item {
     background: var(--cad-subtle-surface-dim);
     box-shadow: inset 0 0 0 1px var(--cad-subtle-surface-dim);

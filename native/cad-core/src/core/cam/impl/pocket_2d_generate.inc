@@ -505,12 +505,15 @@ CamGenerateResult generate_pocket_2d_toolpath(
       islandTops, levels, result.warnings);
 
   // ── Guards ────────────────────────────────────────────────────
-  const double retractZ = context.setup.retract_height;
+  // The retract plane is WCS-relative (origin Z + retract height).
+  const double retractZ =
+      cam_planning::setup_retract_plane_z(context.setup);
   // Guard 1: rapid-safety (see face milling — same contract).
   if (retractZ < faceZ) {
     std::ostringstream message;
-    message << "Retract height (" << retractZ
-            << " mm) is below the face height (" << faceZ
+    message << "Retract height (" << context.setup.retract_height
+            << " mm above the setup origin) reaches " << retractZ
+            << " mm — below the face height (" << faceZ
             << " mm) — rapids travel through the material. Raise it "
                "in the Setup.";
     result.warnings.push_back(message.str());
@@ -519,8 +522,9 @@ CamGenerateResult generate_pocket_2d_toolpath(
   // the first level, not just the face.
   if (levels.size() > 1 && haveStockTop && retractZ < stockTopZ) {
     std::ostringstream message;
-    message << "Retract height (" << retractZ
-            << " mm) is below the stock top (" << stockTopZ
+    message << "Retract height (" << context.setup.retract_height
+            << " mm above the setup origin) reaches " << retractZ
+            << " mm — below the stock top (" << stockTopZ
             << " mm) — rapids travel through unmilled stock. Raise it "
                "in the Setup.";
     result.warnings.push_back(message.str());

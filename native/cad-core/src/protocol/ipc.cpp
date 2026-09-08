@@ -166,6 +166,22 @@ json make_cam_generation_progress_event(const std::string& id,
   };
 }
 
+json make_cam_generation_result_event(
+    const std::string& id, const std::string& op_id, bool ok,
+    const std::string& error_message, const std::vector<std::string>& warnings) {
+  return {
+      {"id", id},
+      {"type", "cam_generation_result"},
+      {"payload",
+       {
+           {"op_id", op_id},
+           {"ok", ok},
+           {"error_message", error_message},
+           {"warnings", warnings},
+       }},
+  };
+}
+
 json make_cam_face_attestation_event(const std::string& id,
                                      const json& payload) {
   return {

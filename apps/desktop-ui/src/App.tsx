@@ -12,6 +12,7 @@ import {
 } from "./lib";
 import {
   AiAssistantPanel,
+  CamGenerationResultPopup,
   FeatureTimeline,
   LogsWindow,
   MessageLog,
@@ -1573,6 +1574,10 @@ function App() {
     await runAction(async () => {
       await camExportGcode(filePath);
       addMessage(t("cam.gcodeWritten", { path: filePath }));
+      // The Logs panel line is easy to miss — surface the success.
+      useToastStore
+        .getState()
+        .pushToast("info", t("cam.gcodeWritten", { path: filePath }));
     });
   };
 
@@ -4176,6 +4181,7 @@ function App() {
         />
       ) : null}
       <ToastViewport />
+      <CamGenerationResultPopup />
     </main>
   );
 }

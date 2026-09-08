@@ -108,6 +108,12 @@ bool plan_stepdown_levels(double stockTopZ, double faceZ, double stepdown,
   return true;
 }
 
+double setup_retract_plane_z(const CamSetup& setup) {
+  const auto& origin = setup.wcs_origin.position.value_or(
+      std::array<double, 3>{0.0, 0.0, 0.0});
+  return origin[2] + setup.retract_height;
+}
+
 bool sample_planar_wire(const TopoDS_Wire& wire, double chord_tolerance,
                         std::vector<cam2d::XY>& out_loop) {
   std::vector<std::vector<XY>> pieces;

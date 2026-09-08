@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 namespace polysmith::protocol {
 
@@ -36,6 +37,9 @@ json make_error_event(const std::string& id,
 json make_cam_generation_progress_event(const std::string& id,
                                         const std::string& op_id,
                                         int percent);
+json make_cam_generation_result_event(
+    const std::string& id, const std::string& op_id, bool ok,
+    const std::string& error_message, const std::vector<std::string>& warnings);
 json make_cam_face_attestation_event(const std::string& id,
                                      const json& payload);
 json make_cam_post_list_event(const std::string& id, const json& posts);

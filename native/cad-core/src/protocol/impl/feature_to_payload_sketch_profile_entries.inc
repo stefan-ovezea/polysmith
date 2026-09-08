@@ -36,6 +36,16 @@
                         inner_loops.push_back(loop_payload);
                       }
 
+                      json circle_holes = json::array();
+                      for (const auto& hole : profile.circle_holes) {
+                        circle_holes.push_back({
+                            {"loop_index", hole.loop_index},
+                            {"center_x", hole.center_x},
+                            {"center_y", hole.center_y},
+                            {"radius", hole.radius},
+                        });
+                      }
+
                       json arc_descriptors = json::array();
                       for (const auto& desc : profile.arc_descriptors) {
                         arc_descriptors.push_back({
@@ -78,6 +88,7 @@
                           {"ordered_edge_ids", ordered_edge_ids},
                           {"points", points},
                           {"inner_loops", inner_loops},
+                          {"circle_holes", circle_holes},
                           {"arc_descriptors", arc_descriptors},
                           {"boundary_edges", boundary_edges},
                           {"source_circle_id",

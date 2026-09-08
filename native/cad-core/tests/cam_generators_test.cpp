@@ -27,6 +27,7 @@
 #include "core/cam/cam_generator.h"
 #include "core/cam/cam_operation.h"
 #include "core/cam/cam_profile_reference.h"
+#include "core/cam/toolpath.h"
 #include "core/cam/toolpath_geometry.h"
 #include "core/document/document.h"
 #include "core/sketch/sketch_feature_parameters.h"
@@ -51,6 +52,7 @@ using polysmith::core::LaserCutParameters;
 using polysmith::core::SketchFeatureParameters;
 using polysmith::core::ToolEntry;
 using polysmith::core::Toolpath;
+using polysmith::core::ToolpathMove;
 using polysmith::core::ToolpathMoveKind;
 
 bool expect(bool condition, const char* message) {
@@ -351,6 +353,40 @@ bool test_rectangle_with_hole() {
     return false;
   }
 
+  // The hole ring must be ONE exact full-circle arc — the sampled
+  // 16-chord hole polygon would emit ~16 straight chords at the ring
+  // radius (the "one circle one polyline" double: a smooth circle
+  // outline with a polygonal cut path on top).  Auto kerf puts the
+  // ring at 2 − 0.1 = 1.9; a full-circle arc ends where it starts.
+  bool sawHoleArc = false;
+  int straightOnRing = 0;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      if (near(std::hypot(move.i, move.j), 1.9, 0.02)) {
+        sawHoleArc = true;
+        if (!expect(near(dist(move.x, move.y, 10.0, 5.0), 1.9, 0.02),
+                    "rect+hole: hole arc endpoint on the offset ring")) {
+          return false;
+        }
+      }
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               near(dist(move.x, move.y, 10.0, 5.0), 1.9, 0.02)) {
+      // The interior lead's entry point is allowed on the ring; the
+      // chord polyline would add ~16 more.
+      ++straightOnRing;
+    }
+  }
+  if (!expect(sawHoleArc,
+              "rect+hole: hole ring emitted as an exact full-circle arc")) {
+    return false;
+  }
+  if (!expect(straightOnRing <= 2,
+              "rect+hole: no chord polyline on the hole ring")) {
+    std::cerr << "  straight moves on ring: " << straightOnRing << "\n";
+    return false;
+  }
+
   // Ordering: the hole is cut before the outer loop.
   size_t holeIndex = toolpath.moves.size();
   size_t outerIndex = toolpath.moves.size();
@@ -570,11 +606,16 @@ std::string make_face_milling_op(
     DocumentManager& manager, DocumentState& document,
     double retractHeight = 5.0,
     const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
-    double stockMargin = 0.0) {
+    double stockMargin = 0.0,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt) {
   CamSetup setup;
   setup.name = "Mill setup";
   setup.machine_type = "3_axis_mill";
   setup.retract_height = retractHeight;
+  if (wcsOrigin.has_value()) {
+    setup.wcs_origin.anchor = "point";
+    setup.wcs_origin.position = wcsOrigin;
+  }
   if (stockSize.has_value()) {
     // Stock box centered on the model bbox center (cam_stock parity —
     // the UI draws the same extents).
@@ -1024,6 +1065,103 @@ bool test_face_milling_retract_below_stock_top_warns() {
     return false;
   }
   return run_case(20.0, false);
+}
+
+// ── Face milling: retract height is WCS-relative ──────────────────
+//
+// Same contract as the contour/pocket suites: retract_height is
+// machine Z above the WCS origin, so the retract PLANE is origin Z +
+// height.  Regression: the raw height was compared against the world
+// face height, so an origin above z=0 produced bogus warnings while
+// the post emitted rapids inside the stock.
+
+bool test_face_milling_retract_wcs_relative() {
+  // WCS z=20 + retract 25 → plane 45 clears the face 30: no retract
+  // warnings, rapids at world z=45.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, /*retractHeight=*/25.0,
+        /*stockSize=*/std::nullopt, /*stockMargin=*/0.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos ||
+          warning.find("below the stock top") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(!warned,
+                "wcs retract: retract 25 above the z=20 origin clears "
+                "the face 30")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    int rapids = 0;
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid) {
+        ++rapids;
+        if (!near(move.z, 45.0, 0.001)) {
+          std::cerr << "  rapid at z=" << move.z << " (expected 45)\n";
+          return expect(false, "wcs retract: rapids at world z=45");
+        }
+      }
+    }
+    return expect(rapids > 0, "wcs retract: at least one rapid");
+  }
+  // WCS z=20 + retract 9 → plane 29 sits below the face 30: the
+  // through-material warning must survive.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, /*retractHeight=*/9.0,
+        /*stockSize=*/std::nullopt, /*stockMargin=*/0.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract low: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(warned,
+                "wcs retract low: plane 29 below the face 30 still "
+                "warns")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid &&
+          !near(move.z, 29.0, 0.001)) {
+        std::cerr << "  rapid at z=" << move.z << " (expected 29)\n";
+        return expect(false, "wcs retract low: rapids at world z=29");
+      }
+    }
+    return true;
+  }
 }
 
 // ── Test 8: laser cut from a 3D face outline ─────────────────────
@@ -3482,6 +3620,306 @@ bool test_kerf_inside_lead_inside() {
                 "kerf inside lead: lead-in length preserved");
 }
 
+// ── Test 52: arc lead sweep angle is configurable ────────────────
+
+// Sweep of an arc move in its travel direction: the angle at the arc
+// center between the previous move's endpoint (the arc start) and this
+// move's endpoint.  I/J are center offsets from the arc START (GRBL
+// convention).
+double arc_sweep_deg(const ToolpathMove& prev, const ToolpathMove& arc) {
+  constexpr double kPi = 3.14159265358979323846;
+  const double cx = prev.x + arc.i;
+  const double cy = prev.y + arc.j;
+  const double a = std::atan2(prev.y - cy, prev.x - cx);
+  const double b = std::atan2(arc.y - cy, arc.x - cx);
+  double sweep = (arc.kind == ToolpathMoveKind::FeedArcCCW) ? b - a
+                                                            : a - b;
+  if (sweep < 0.0) {
+    sweep += 2.0 * kPi;
+  }
+  return sweep * 180.0 / kPi;
+}
+
+bool test_arc_lead_sweep_angle() {
+  // Exterior (kerf auto on an outer contour): an explicit angle drives
+  // the roll sweep (the classic roll is 90°).
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document =
+        manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+
+    std::string profile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.lead_in_mm = 2.0;
+    laser.lead_out_mm = 0.0;
+    laser.lead_in_style = "arc";
+    laser.lead_in_arc_angle_deg = 135.0;
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), profile, laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: exterior generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    if (!expect(toolpath.moves.size() >= 3,
+                "arc sweep: exterior enough moves")) {
+      return false;
+    }
+    // The lead-in arc is the first arc move (the rectangle contour is
+    // all lines).
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = 1; i < toolpath.moves.size(); ++i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: exterior lead is an arc")) {
+      return false;
+    }
+    if (!expect(near(std::hypot(arc->i, arc->j), 2.0, 0.02),
+                "arc sweep: exterior radius stays lead_in_mm")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 135.0, 1.0),
+                "arc sweep: exterior roll sweeps 135°")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+  }
+
+  // Interior (kerf inside on a circle): the default 90° must produce a
+  // 90° roll entering inside the cut line — NOT the old ~270° curl.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+    std::string circleProfile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.kerf_side = "inside";
+    laser.lead_in_mm = 2.0;
+    laser.lead_out_mm = 0.0;
+    laser.lead_in_style = "arc";
+    laser.pierce_angle_deg = 90.0;  // top pierce
+    // lead_in_arc_angle_deg left at its 90° default.
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), circleProfile,
+        laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: interior generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = 1; i < toolpath.moves.size(); ++i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: interior lead is an arc")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 90.0, 1.0),
+                "arc sweep: interior default sweeps 90° (not 270°)")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+    // The entry (arc start) sits inside the cut line at radius 4.9.
+    if (!expect(dist(prev->x, prev->y, 10.0, 5.0) < 4.9,
+                "arc sweep: interior entry inside the cut line")) {
+      std::cerr << "  entry at (" << prev->x << ", " << prev->y
+                << ") r=" << dist(prev->x, prev->y, 10.0, 5.0) << "\n";
+      return false;
+    }
+  }
+
+  // Interior lead-out: an explicit angle drives the exit roll sweep.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+    std::string circleProfile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.kerf_side = "inside";
+    laser.lead_in_mm = 0.0;
+    laser.lead_out_mm = 2.0;
+    laser.lead_out_style = "arc";
+    laser.lead_out_arc_angle_deg = 120.0;
+    laser.pierce_angle_deg = 90.0;  // top pierce
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), circleProfile,
+        laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: lead-out generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    // The lead-out arc is the LAST arc move (after the circle contour).
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = toolpath.moves.size() - 1; i >= 1; --i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: lead-out is an arc")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 120.0, 1.0),
+                "arc sweep: lead-out roll sweeps 120°")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+    // The exit (arc end) sits inside the cut line at radius 4.9.
+    if (!expect(dist(arc->x, arc->y, 10.0, 5.0) < 4.9,
+                "arc sweep: lead-out exit inside the cut line")) {
+      std::cerr << "  exit at (" << arc->x << ", " << arc->y
+                << ") r=" << dist(arc->x, arc->y, 10.0, 5.0) << "\n";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ── Test 53: a circle in a mixed sketch pierces without corner
+// warnings ─────────────────────────────────────────────────────────
+//
+// A full-circle contour has no corners: its one vertex is the loop's
+// artificial self-join.  The corner classifier used to flag that join
+// as "sharp" and then claim a mid-segment pierce on "the longest
+// straight edge" — for a loop that is nothing but one arc.  Regressed
+// by the user's 2D Cut op on a circle sketch that also contained other
+// entities (the region is an exact kind "circle" region).
+
+bool test_circle_in_mixed_sketch_has_no_corner_warnings() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  // A separate rectangle makes this a mixed sketch — the circle region
+  // is still exact kind "circle" (center/radius, no sampled points)
+  // and carries the exact circle boundary edge.
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+  document = manager.add_sketch_rectangle(20.0, 0.0, 24.0, 4.0);
+
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (region.kind == "circle") {
+        circleProfile = region.id;
+      }
+    }
+  }
+  if (!expect(!circleProfile.empty(),
+              "mixed-sketch circle: exact circle region found")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.15;
+  laser.kerf_side = "inside";
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 2.0;
+  laser.lead_in_style = "arc";
+  laser.lead_out_style = "arc";
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "mixed-sketch circle: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  // A circle has no corners: no corner warnings, no tessellation
+  // fallback, and the contour stays one exact arc.
+  for (const auto& warning : outcome.result.warnings) {
+    if (!expect(warning.find("sharp corner") == std::string::npos &&
+                    warning.find("Every corner") == std::string::npos &&
+                    warning.find("tessellated") == std::string::npos,
+                "mixed-sketch circle: no corner/tessellation warnings")) {
+      std::cerr << "  warning: " << warning << "\n";
+      return false;
+    }
+  }
+
+  // Kerf inside: the offset circle radius is 5 − 0.075 = 4.925.  The
+  // contour move is one exact full-circle arc (I/J = center offset
+  // from the arc start; endpoint == start for a full circle).
+  const Toolpath& toolpath = outcome.result.toolpath;
+  bool sawCircleArc = false;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::FeedArcCW &&
+        move.kind != ToolpathMoveKind::FeedArcCCW) {
+      continue;
+    }
+    if (near(std::hypot(move.i, move.j), 4.925, 0.02)) {
+      sawCircleArc = true;
+      if (!expect(near(dist(move.x, move.y, 10.0, 5.0), 4.925, 0.02),
+                  "mixed-sketch circle: contour arc endpoint on the "
+                  "offset circle")) {
+        return false;
+      }
+    }
+  }
+  return expect(sawCircleArc,
+                "mixed-sketch circle: contour emitted as an exact arc");
+}
+
 }  // namespace
 
 int main() {
@@ -3571,6 +4009,12 @@ int main() {
       test_face_milling_stepdown_level_cap);
   run("Test 50: retract below the STOCK TOP warns (multi-pass)",
       test_face_milling_retract_below_stock_top_warns);
+  run("Test 51: retract height is WCS-relative",
+      test_face_milling_retract_wcs_relative);
+  run("Test 52: arc lead sweep angle is configurable",
+      test_arc_lead_sweep_angle);
+  run("Test 53: circle in a mixed sketch has no corner warnings",
+      test_circle_in_mixed_sketch_has_no_corner_warnings);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

@@ -174,6 +174,11 @@ export const laserCutParametersSchema = z
     lead_out_style: z.enum(["line", "arc"]).default("line"),
     lead_in_angle_deg: z.number().default(0),
     lead_out_angle_deg: z.number().default(0),
+    // No min/max here: the core stores whatever the user typed and
+    // echoes it back — a stricter schema would reject every following
+    // document_state (e.g. a cleared input commits 0).
+    lead_in_arc_angle_deg: z.number().default(90),
+    lead_out_arc_angle_deg: z.number().default(90),
     overcut_mm: z.number().default(0),
     pierce_dwell_seconds: z.number().default(0.1),
     pierce_position: z

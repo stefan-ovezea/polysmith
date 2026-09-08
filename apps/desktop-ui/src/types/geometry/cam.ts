@@ -176,6 +176,8 @@ export interface LaserCutParameters {
   lead_out_style: "line" | "arc";
   lead_in_angle_deg: number;        // entry angle vs contour tangent
   lead_out_angle_deg: number;       // exit angle vs contour tangent
+  lead_in_arc_angle_deg: number;    // "arc" lead roll sweep
+  lead_out_arc_angle_deg: number;   // "arc" lead roll sweep
   overcut_mm: number;               // extend past the start/end joint
   pierce_dwell_seconds: number;     // G4 dwell after pierce
   pierce_position: "auto" | "lead_start" | "nearest_centroid";

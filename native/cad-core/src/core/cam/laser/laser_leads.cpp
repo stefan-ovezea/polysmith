@@ -1,5 +1,6 @@
 #include "core/cam/laser/laser_leads.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -16,6 +17,14 @@ XY rotate_by(const XY& v, double radians) {
   const double c = std::cos(radians);
   const double s = std::sin(radians);
   return XY{v.x * c - v.y * s, v.x * s + v.y * c};
+}
+
+// Arc lead sweep in radians, pinned to [1°, 360°].  A 0° sweep (e.g.
+// a cleared input field stored as 0) would degenerate the roll into a
+// zero-length arc — and some controllers treat G2/G3 with coincident
+// start/end as a FULL CIRCLE — so the core never emits that.
+double arc_sweep_radians(double degrees) {
+  return std::clamp(degrees, 1.0, 360.0) * kPi / 180.0;
 }
 
 // Unit vector from the pierce toward the loop centroid — the spoke
@@ -168,6 +177,50 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
     return loop.centroid;
   }
 
+  // Reference point per pierce_position; "auto" and
+  // "nearest_centroid" anchor on the centroid, "lead_start" on the
+  // machine-origin approach.
+  const XY reference =
+      params.pierce_position == "lead_start" ? XY{0.0, 0.0}
+                                             : loop.centroid;
+
+  // A loop lying entirely on one circle has no corners at all — its
+  // vertices are artificial split points (or the self-join of a single
+  // full-circle arc), not material features.  Pierce by position rules
+  // alone; the corner classifier below would flag every one of them as
+  // "sharp".
+  const cam2d::OffsetSegment* firstArc = nullptr;
+  bool allOnOneCircle = !loop.segments.empty();
+  for (const auto& segment : loop.segments) {
+    if (!segment.is_arc) {
+      allOnOneCircle = false;
+      break;
+    }
+    if (firstArc == nullptr) {
+      firstArc = &segment;
+      continue;
+    }
+    if (xy_length(segment.center.x - firstArc->center.x,
+                  segment.center.y - firstArc->center.y) > 1e-6 ||
+        std::abs(segment.radius - firstArc->radius) > 1e-6) {
+      allOnOneCircle = false;
+      break;
+    }
+  }
+  if (allOnOneCircle && firstArc != nullptr) {
+    size_t best = candidates.size();
+    double bestDistance = std::numeric_limits<double>::max();
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      const double d = xy_length(candidates[i].x - reference.x,
+                                 candidates[i].y - reference.y);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = i;
+      }
+    }
+    return candidates[best];
+  }
+
   // Qualifying vertices: the BASE corner behind the junction must
   // clear the corner threshold on both sides and be blunt enough to
   // survive a dwell.  The interior wedge guards sharp material
@@ -193,13 +246,6 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
         std::to_string(sharpCount) +
         " sharp corner(s) were excluded from pierce placement.");
   }
-
-  // Reference point per pierce_position; "auto" and
-  // "nearest_centroid" anchor on the centroid, "lead_start" on the
-  // machine-origin approach.
-  const XY reference =
-      params.pierce_position == "lead_start" ? XY{0.0, 0.0}
-                                             : loop.centroid;
 
   size_t best = candidates.size();
   double bestDistance = std::numeric_limits<double>::max();
@@ -345,21 +391,31 @@ std::vector<cam2d::OffsetSegment> build_lead_in(
 
   if (params.lead_in_style == "arc") {
     if (!interior) {
-      // 90° tangent roll-in: enter outside the contour and sweep onto
-      // the walk tangent.
+      // Tangent roll-in: enter outside the contour and sweep onto the
+      // walk tangent.  The roll center sits at the tangent corner
+      // (pierce + right_normal * length); the entry radius direction is
+      // the pierce radius direction (−n) rotated FORWARD by the sweep,
+      // so the CW arc sweeps exactly lead_in_arc_angle_deg (90° = the
+      // classic quarter roll; the pre-input code effectively swept
+      // 270° here).
       const XY n = right_normal(u_out.x, u_out.y);
-      const XY entry{pierce.x + n.x * length + u_out.x * length,
-                     pierce.y + n.y * length + u_out.y * length};
+      const double sweep = arc_sweep_radians(params.lead_in_arc_angle_deg);
+      const XY entryDir = rotate_by(XY{-n.x, -n.y}, sweep);
+      const XY entry{pierce.x + n.x * length + entryDir.x * length,
+                     pierce.y + n.y * length + entryDir.y * length};
       segments.push_back(roll_arc(pierce, n, length, entry, pierce,
                                   /*cw=*/true));
       return segments;
     }
     // Interior: the roll center sits on the pierce→centroid spoke and
     // sweeps CCW, so the arc stays inside the kerf side instead of
-    // crossing into the material.
+    // crossing into the material.  The entry radius direction is the
+    // pierce radius direction (−spoke) rotated back by the sweep.
     const XY spoke = unit_spoke(centroid, pierce);
-    const XY entry{pierce.x + spoke.x * length + u_out.x * length,
-                   pierce.y + spoke.y * length + u_out.y * length};
+    const double sweep = arc_sweep_radians(params.lead_in_arc_angle_deg);
+    const XY entryDir = rotate_by(XY{-spoke.x, -spoke.y}, -sweep);
+    const XY entry{pierce.x + spoke.x * length + entryDir.x * length,
+                   pierce.y + spoke.y * length + entryDir.y * length};
     segments.push_back(roll_arc(pierce, spoke, length, entry, pierce,
                                 /*cw=*/false));
     return segments;
@@ -410,18 +466,28 @@ std::vector<cam2d::OffsetSegment> build_lead_out(
     }
     const double length = params.lead_out_mm;
     if (!interior) {
+      // Mirror of the exterior roll-in: the exit radius direction is
+      // the start radius direction (−n) rotated back by the sweep, so
+      // the CW arc sweeps exactly lead_out_arc_angle_deg (90° was also
+      // the pre-input sweep here).
       const XY n = right_normal(u_in.x, u_in.y);
-      const XY exit{start.x + n.x * length + u_in.x * length,
-                    start.y + n.y * length + u_in.y * length};
+      const double sweep = arc_sweep_radians(params.lead_out_arc_angle_deg);
+      const XY exitDir = rotate_by(XY{-n.x, -n.y}, -sweep);
+      const XY exit{start.x + n.x * length + exitDir.x * length,
+                    start.y + n.y * length + exitDir.y * length};
       segments.push_back(roll_arc(start, n, length, start, exit,
                                   /*cw=*/true));
       return segments;
     }
     // Interior: mirrored roll — the arc curls back into the interior
-    // along the spoke instead of rolling out along the tangent.
+    // along the spoke instead of rolling out along the tangent.  The
+    // exit radius direction is the start radius direction (−spoke)
+    // rotated FORWARD by the sweep (CCW travel).
     const XY spoke = unit_spoke(centroid, start);
-    const XY exit{start.x + spoke.x * length - u_in.x * length,
-                  start.y + spoke.y * length - u_in.y * length};
+    const double sweep = arc_sweep_radians(params.lead_out_arc_angle_deg);
+    const XY exitDir = rotate_by(XY{-spoke.x, -spoke.y}, sweep);
+    const XY exit{start.x + spoke.x * length + exitDir.x * length,
+                  start.y + spoke.y * length + exitDir.y * length};
     segments.push_back(roll_arc(start, spoke, length, start, exit,
                                 /*cw=*/false));
     return segments;

@@ -373,6 +373,18 @@ export interface SketchConstraintScene {
   driven?: boolean;
 }
 
+// Exact circle-hole descriptor: innerLoops[loopIndex] is a sampled
+// chord outline of a full-circle hole whose exact geometry is this
+// circle.  The renderer draws these holes from center/radius so the
+// outline matches the smooth standalone circle region (the sampled
+// points alone show a visible polygon next to it).
+export interface SketchProfileCircleHoleScene {
+  loopIndex: number;
+  centerX: number;
+  centerY: number;
+  radius: number;
+}
+
 export interface SketchProfileScene {
   profileId: string;
   planeId: string;
@@ -385,6 +397,7 @@ export interface SketchProfileScene {
   profileKind: "polygon" | "circle" | "ellipse" | "spline";
   profilePoints: [number, number][];
   innerLoops: [number, number][][];
+  circleHoles: SketchProfileCircleHoleScene[];
   start: [number, number];
   width: number;
   height: number;

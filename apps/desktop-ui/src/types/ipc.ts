@@ -470,6 +470,20 @@ export interface CamGenerationProgressEvent extends BaseMessage {
   };
 }
 
+// Emitted by the core after cam_operation_generate completes (never for
+// preview), following the document_state reply so toolpath_cache stats
+// are already fresh. Drives the CAM generate-result popup.
+export interface CamGenerationResultEvent extends BaseMessage {
+  type: "cam_generation_result";
+  id: string;
+  payload: {
+    op_id: string;
+    ok: boolean;
+    error_message: string;
+    warnings: string[];
+  };
+}
+
 // Reply to cam_capture_face_reference: the TNP-safe face witness
 // captured by the core (never fabricated in the UI).
 export interface CamFaceAttestationResultEvent extends BaseMessage {
@@ -567,6 +581,7 @@ export type CoreMessage =
   | LogEvent
   | TrimPreviewResultEvent
   | CamGenerationProgressEvent
+  | CamGenerationResultEvent
   | CamPostListResultEvent
   | CamMachineListResultEvent
   | CamFaceAttestationResultEvent

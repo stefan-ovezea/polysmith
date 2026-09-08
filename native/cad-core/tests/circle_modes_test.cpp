@@ -193,8 +193,7 @@ bool test_tangent_circle_tangent_to_all_three_sides() {
   std::string reason;
   const std::vector<ExpectedProfile> expected = {
       {.entity_ids = {"line-1", "line-2", "line-3"}, .kind = "polygon"},
-      {.entity_ids = {after.circles[0].id}, .kind = "polygon",
-       .has_source_circle_id = true},
+      {.entity_ids = {after.circles[0].id}, .kind = "circle"},
   };
   return expect(profiles_match(document, expected, &reason),
                 ("all-three-sides: " + reason).c_str());
@@ -287,8 +286,7 @@ bool test_tangent_circle_profile() {
   const std::vector<ExpectedProfile> expected = {
       {.entity_ids = {after.circles[0].id, "line-1", "line-2"},
        .kind = "polygon"},
-      {.entity_ids = {after.circles[0].id}, .kind = "polygon",
-       .has_source_circle_id = true},
+      {.entity_ids = {after.circles[0].id}, .kind = "circle"},
   };
   return expect(profiles_match(document, expected, &reason),
                 ("tangent profile: " + reason).c_str());
@@ -319,8 +317,7 @@ bool test_tangent_circle_inside_triangle_two_regions() {
   std::vector<std::string> triangle_ids = {"line-1", "line-2", "line-3"};
   const std::vector<ExpectedProfile> expected = {
       {.entity_ids = triangle_ids, .kind = "polygon"},
-      {.entity_ids = {after.circles[0].id}, .kind = "polygon",
-       .has_source_circle_id = true},
+      {.entity_ids = {after.circles[0].id}, .kind = "circle"},
   };
   return expect(profiles_match(document, expected, &reason),
                 ("tangent circle in triangle: " + reason).c_str());

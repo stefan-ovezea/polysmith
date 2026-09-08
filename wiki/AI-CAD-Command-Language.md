@@ -808,7 +808,11 @@ event — the operation is never left half-retargeted. Undo covers the change.
 Payload `{op_id}`. Synchronous (both generators run in well under 100 ms);
 emits `cam_generation_progress` events `{op_id, percent}` (5/15/90/100), then
 `document_state` with `status: "generated"` (preview does not change status,
-it only fills the preview cache the viewport falls back to).
+it only fills the preview cache the viewport falls back to). Generate (not
+preview) additionally emits `cam_generation_result` `{op_id, ok,
+error_message, warnings: [string]}` after the document reply — success,
+generator warnings, or a failure message; the UI shows it in a result popup
+(the same warnings also land in the structured log).
 
 #### `cam_operation_delete` / `cam_post_processor_set` / `cam_export_gcode`
 

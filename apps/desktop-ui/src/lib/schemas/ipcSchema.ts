@@ -70,6 +70,21 @@ const camGenerationProgressEventSchema = z.object({
   }),
 });
 
+// Generate-only completion event (never preview) — see
+// CamGenerationResultEvent in types/ipc.ts. Lenient on the message and
+// list fields: the core always sends them, defaults keep a bad payload
+// from dropping the whole event.
+const camGenerationResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_generation_result"),
+  payload: z.object({
+    op_id: z.string(),
+    ok: z.boolean(),
+    error_message: z.string().default(""),
+    warnings: z.array(z.string()).default([]),
+  }),
+});
+
 const camPostListResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("cam_post_list_result"),
@@ -193,6 +208,7 @@ export const coreMessageSchema = z.union([
   logEventSchema,
   trimPreviewResultEventSchema,
   camGenerationProgressEventSchema,
+  camGenerationResultEventSchema,
   camPostListResultEventSchema,
   camMachineListResultEventSchema,
   camFaceAttestationResultEventSchema,

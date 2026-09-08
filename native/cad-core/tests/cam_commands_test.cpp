@@ -589,9 +589,11 @@ bool test_select_sketch_profile_by_entity() {
     }
   }
   if (!expect(circleRegion != nullptr &&
-                  circleRegion->source_circle_id.has_value() &&
-                  circleRegion->source_circle_id.value() == circleId,
-              "by entity: circle selects the circle-sourced region")) {
+                  circleRegion->kind == "circle" &&
+                  std::find(circleRegion->line_ids.begin(),
+                            circleRegion->line_ids.end(),
+                            circleId) != circleRegion->line_ids.end(),
+              "by entity: circle selects the exact circle region")) {
     return false;
   }
 

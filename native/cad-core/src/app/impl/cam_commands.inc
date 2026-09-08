@@ -569,6 +569,14 @@
                                     "': " + outcome.result.error_message);
       polysmith::protocol::write_message(polysmith::protocol::make_error_event(
           command.id, "CAM_GENERATION_FAILED", outcome.result.error_message));
+      if (!preview) {
+        // Generate drives the UI's result dialog; preview failures keep
+        // surfacing through the generic error event only.
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_cam_generation_result_event(
+                command.id, op_id, /*ok=*/false, outcome.result.error_message,
+                /*warnings=*/{}));
+      }
       return;
     }
 
@@ -612,5 +620,15 @@
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(updated.value())));
+
+    if (!preview) {
+      // Emitted AFTER the document_state reply so the UI's stats lookup
+      // sees the fresh toolpath_cache.  The warnings also remain in the
+      // structured log above — this event drives the result popup.
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_cam_generation_result_event(
+              command.id, op_id, /*ok=*/true, /*error_message=*/"",
+              outcome.result.warnings));
+    }
     return;
   }

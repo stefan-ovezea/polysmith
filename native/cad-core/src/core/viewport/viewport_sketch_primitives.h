@@ -254,6 +254,10 @@ struct ViewportSketchProfilePrimitive {
   std::string profile_kind;
   std::vector<SketchProfilePoint> profile_points;
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
+  // Exact circle-hole descriptors (indexed into inner_loops); the UI
+  // draws these holes from center/radius so they match the smooth
+  // outline of the standalone circle region.
+  std::vector<SketchProfileCircleHole> circle_holes;
   double start_x;
   double start_y;
   double width;

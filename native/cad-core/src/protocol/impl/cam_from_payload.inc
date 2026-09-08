@@ -316,6 +316,10 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
       cam_read_number(payload, "lead_in_angle_deg", 0.0);
   laser.lead_out_angle_deg =
       cam_read_number(payload, "lead_out_angle_deg", 0.0);
+  laser.lead_in_arc_angle_deg =
+      cam_read_number(payload, "lead_in_arc_angle_deg", 90.0);
+  laser.lead_out_arc_angle_deg =
+      cam_read_number(payload, "lead_out_arc_angle_deg", 90.0);
   laser.overcut_mm = cam_read_number(payload, "overcut_mm", 0.0);
   laser.pierce_dwell_seconds =
       cam_read_number(payload, "pierce_dwell_seconds", 0.1);

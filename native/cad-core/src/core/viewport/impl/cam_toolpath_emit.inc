@@ -4,7 +4,11 @@
   // full path when the op is "generated", falling back to the cached
   // wireframe preview otherwise.  Arcs are chord-linearized for the
   // polyline renderer: a pinned arc_segments_per_circle count when
-  // set, else 0.05 mm sagitta.
+  // set (the preview then shows the faceting the machine will
+  // actually cut), else a 0.005 mm sagitta — far below a screen
+  // pixel at typical zoom so true-arc exports still PREVIEW round
+  // (0.05 mm left ~8° facets on a 20 mm circle).
+  constexpr double kPreviewChordToleranceMm = 0.005;
   std::vector<ViewportToolpathPrimitive> toolpaths;
   if (document.has_value()) {
     for (const auto& op : document->cam.operations) {
@@ -35,7 +39,7 @@
                 previous, move, toolpath->arc_segments_per_circle);
             linearize_arc_move_steps(previous, move, steps, arcPoints);
           } else {
-            linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.05,
+            linearize_arc_move(previous, move, kPreviewChordToleranceMm,
                                arcPoints);
           }
           for (const auto& point : arcPoints) {

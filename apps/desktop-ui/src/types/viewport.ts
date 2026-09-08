@@ -320,6 +320,13 @@ export interface ViewportSketchProfile {
   profile_kind: "polygon" | "circle" | "ellipse" | "spline";
   profile_points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
+  // Exact circle-hole descriptors (indexed into inner_loops).
+  circle_holes?: {
+    loop_index: number;
+    center_x: number;
+    center_y: number;
+    radius: number;
+  }[];
   start_x: number;
   start_y: number;
   width: number;

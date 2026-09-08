@@ -873,6 +873,9 @@ export function CamSetupPanel({
                 disabled={disabled}
                 onChange={(v) => update({ retractHeight: v })}
               />
+              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.setup.retractNote", "Above the setup origin (WCS Z).")}
+              </p>
             </>
           )}
         </ScrollArea>

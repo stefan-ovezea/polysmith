@@ -179,11 +179,16 @@ std::string make_pocket_op(
     const std::vector<GeometryReference>& islands,
     double retractHeight = 20.0,
     const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
-    double floorZ = -1.0) {
+    double floorZ = -1.0,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt) {
   CamSetup setup;
   setup.name = "Mill setup";
   setup.machine_type = "3_axis_mill";
   setup.retract_height = retractHeight;
+  if (wcsOrigin.has_value()) {
+    setup.wcs_origin.anchor = "point";
+    setup.wcs_origin.position = wcsOrigin;
+  }
   if (stockSize.has_value()) {
     setup.stock.type = "bounding_box";
     setup.stock.size = stockSize;
@@ -1117,6 +1122,110 @@ bool test_level_cap_and_guards() {
   }
 }
 
+// ── Test 10: retract height is WCS-relative ───────────────────────
+//
+// Same contract as the contour suite: retract_height is machine Z
+// above the WCS origin, so the retract PLANE is origin Z + height.
+// Regression: the raw height was compared against the world face /
+// stock top heights, so an origin above z=0 produced bogus warnings
+// while the post emitted rapids inside the stock.
+
+bool test_pocket_retract_wcs_relative() {
+  // WCS z=20 + retract 25 → plane 45 clears the face 30: no retract
+  // warnings, rapids at world z=45.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_pocket_op(
+        manager, document, {}, /*retractHeight=*/25.0,
+        /*stockSize=*/std::nullopt, /*floorZ=*/30.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos ||
+          warning.find("below the stock top") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(!warned,
+                "wcs retract: retract 25 above the z=20 origin clears "
+                "the face 30")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    int rapids = 0;
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid) {
+        ++rapids;
+        if (!near(move.z, 45.0, 0.001)) {
+          std::cerr << "  rapid at z=" << move.z << " (expected 45)\n";
+          return expect(false, "wcs retract: rapids at world z=45");
+        }
+      }
+    }
+    return expect(rapids > 0, "wcs retract: at least one rapid");
+  }
+  // WCS z=20 + retract 12 + stepdown 2 (levels 31, 30) → plane 32
+  // clears the face 30 but not the stock top 33: only the stock-top
+  // warning fires (the face warning would mean the raw height was
+  // compared again).
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_pocket_op(
+        manager, document, {}, /*retractHeight=*/12.0,
+        /*stockSize=*/std::nullopt, /*floorZ=*/30.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    set_stepdown(manager, document, opId, 2.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract low: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool faceWarned = false;
+    bool stockWarned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        faceWarned = true;
+      }
+      if (warning.find("below the stock top") != std::string::npos) {
+        stockWarned = true;
+      }
+    }
+    if (!expect(!faceWarned && stockWarned,
+                "wcs retract low: plane 32 clears the face 30 but not "
+                "the stock top 33 — stock-top warning only")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid &&
+          !near(move.z, 32.0, 0.001)) {
+        std::cerr << "  rapid at z=" << move.z << " (expected 32)\n";
+        return expect(false, "wcs retract low: rapids at world z=32");
+      }
+    }
+    return true;
+  }
+}
+
 // ── Test 9: avoidance regions survive the payload round-trip ──────
 
 bool test_avoidance_payload_roundtrip() {
@@ -1202,6 +1311,8 @@ int main() {
   run("Test 7: broken island attestation", test_broken_island_attestation);
   run("Test 8: level cap + retract guards", test_level_cap_and_guards);
   run("Test 9: avoidance payload round-trip", test_avoidance_payload_roundtrip);
+  run("Test 10: retract height is WCS-relative",
+      test_pocket_retract_wcs_relative);
 
   if (allPassed) {
     std::cout << "pocket_2d_test passed\n";

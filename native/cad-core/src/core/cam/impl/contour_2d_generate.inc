@@ -310,11 +310,14 @@ CamGenerateResult generate_contour_2d_toolpath(
   // ── Guards ─────────────────────────────────────────────────────
   // Retract must clear the cut plane and the stock top; the cut plane
   // must stay inside the stock (the pocket retract-guard contract).
-  const double retractZ = context.setup.retract_height;
+  // The retract plane is WCS-relative (origin Z + retract height).
+  const double retractZ =
+      cam_planning::setup_retract_plane_z(context.setup);
   if (retractZ < cutZ) {
     std::ostringstream message;
-    message << "Retract height (" << retractZ
-            << " mm) is below the cut plane (" << cutZ
+    message << "Retract height (" << context.setup.retract_height
+            << " mm above the setup origin) reaches " << retractZ
+            << " mm — below the cut plane (" << cutZ
             << " mm) — rapids travel through the material. Raise it "
                "in the Setup.";
     result.warnings.push_back(message.str());
@@ -326,8 +329,9 @@ CamGenerateResult generate_contour_2d_toolpath(
     const double stockBottomZ = extents.center[2] - extents.size[2] / 2.0;
     if (retractZ < stockTopZ) {
       std::ostringstream message;
-      message << "Retract height (" << retractZ
-              << " mm) is below the stock top (" << stockTopZ
+      message << "Retract height (" << context.setup.retract_height
+              << " mm above the setup origin) reaches " << retractZ
+              << " mm — below the stock top (" << stockTopZ
               << " mm) — rapids travel through unmilled stock. Raise "
                  "it in the Setup.";
       result.warnings.push_back(message.str());

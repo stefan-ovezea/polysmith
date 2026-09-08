@@ -223,11 +223,16 @@ std::string make_contour_op(
     DocumentManager& manager, DocumentState& document,
     const std::vector<GeometryReference>& regions,
     const ContourParameters& contour, const std::string& direction = "climb",
-    bool includeContourBlock = true, double retractHeight = 20.0) {
+    bool includeContourBlock = true, double retractHeight = 20.0,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt) {
   CamSetup setup;
   setup.name = "Mill setup";
   setup.machine_type = "3_axis_mill";
   setup.retract_height = retractHeight;
+  if (wcsOrigin.has_value()) {
+    setup.wcs_origin.anchor = "point";
+    setup.wcs_origin.position = wcsOrigin;
+  }
   document = manager.cam_setup_create(setup);
 
   ToolEntry tool;
@@ -1033,6 +1038,132 @@ bool test_contour_payload_roundtrip() {
                 "roundtrip: side/depth/allowance preserved");
 }
 
+// ── Test 18: retract height is WCS-relative ───────────────────────
+//
+// The user's reported case: a setup whose WCS origin sits at world
+// z=20 (origin picked on a 20 mm-tall base), a boss reaching z=30 and
+// 3 mm stock → stock top 33.  retract_height is machine Z above the
+// WCS origin, so the retract PLANE is world 20 + 25 = 45 — the
+// generators must guard and emit against the plane, not the raw
+// height.  Regression: the raw height was compared directly (25 < 33
+// → bogus "through unmilled stock" warning while the exported G-code
+// actually rapided at machine z=5, INSIDE the stock).
+
+bool test_contour_retract_wcs_relative() {
+  // WCS z=20 + retract 25 → plane 45 clears the stock top 33: no
+  // retract warnings, rapids at world z=45.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const auto compiled = polysmith::core::compile_bodies(document);
+    const int topIndex = find_upward_face_at_z(compiled.bodies[0], 30.0);
+    const std::string opId = make_contour_op(
+        manager, document, {capture_face_ref(compiled.bodies[0], topIndex)},
+        ContourParameters{.side = "outside", .depth_mm = 1.0,
+                          .stock_allowance_mm = 0.0},
+        /*direction=*/"climb", /*includeContourBlock=*/true,
+        /*retractHeight=*/25.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+
+    const auto outcome = generate(manager, opId);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(!has_warning(outcome.result, "below the stock top") &&
+                    !has_warning(outcome.result, "below the cut plane"),
+                "wcs retract: retract 25 above the z=20 origin clears "
+                "the stock top 33")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    return check_rect_contour(
+        outcome.result.toolpath,
+        {{-2.0, -2.0}, {22.0, -2.0}, {22.0, 22.0}, {-2.0, 22.0}},
+        /*expectCcw=*/true, /*z=*/29.0, /*retractZ=*/45.0,
+        "wcs retract: rapids at the origin-relative plane 45");
+  }
+  // WCS z=20 + retract 10 → plane 30 still clears the cut plane 29 but
+  // sits below the stock top 33: the stock-top warning must survive.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const auto compiled = polysmith::core::compile_bodies(document);
+    const int topIndex = find_upward_face_at_z(compiled.bodies[0], 30.0);
+    const std::string opId = make_contour_op(
+        manager, document, {capture_face_ref(compiled.bodies[0], topIndex)},
+        ContourParameters{.side = "outside", .depth_mm = 1.0,
+                          .stock_allowance_mm = 0.0},
+        /*direction=*/"climb", /*includeContourBlock=*/true,
+        /*retractHeight=*/10.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+
+    const auto outcome = generate(manager, opId);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract low: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(has_warning(outcome.result, "below the stock top") &&
+                    !has_warning(outcome.result, "below the cut plane"),
+                "wcs retract low: plane 30 clears the cut plane 29 but "
+                "not the stock top 33 — the stock-top warning remains")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    return check_rect_contour(
+        outcome.result.toolpath,
+        {{-2.0, -2.0}, {22.0, -2.0}, {22.0, 22.0}, {-2.0, 22.0}},
+        /*expectCcw=*/true, /*z=*/29.0, /*retractZ=*/30.0,
+        "wcs retract low: rapids at the origin-relative plane 30");
+  }
+  // No WCS origin (legacy default → origin z=0): the behavior must be
+  // unchanged — retract 25 below the stock top 33 still warns.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const auto compiled = polysmith::core::compile_bodies(document);
+    const int topIndex = find_upward_face_at_z(compiled.bodies[0], 30.0);
+    const std::string opId = make_contour_op(
+        manager, document, {capture_face_ref(compiled.bodies[0], topIndex)},
+        ContourParameters{.side = "outside", .depth_mm = 1.0,
+                          .stock_allowance_mm = 0.0},
+        /*direction=*/"climb", /*includeContourBlock=*/true,
+        /*retractHeight=*/25.0);
+
+    const auto outcome = generate(manager, opId);
+    if (!expect(outcome.found && outcome.result.ok,
+                "default wcs: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(has_warning(outcome.result, "below the stock top"),
+                "default wcs: retract 25 below the stock top 33 still "
+                "warns")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    return check_rect_contour(
+        outcome.result.toolpath,
+        {{-2.0, -2.0}, {22.0, -2.0}, {22.0, 22.0}, {-2.0, 22.0}},
+        /*expectCcw=*/true, /*z=*/29.0, /*retractZ=*/25.0,
+        "default wcs: legacy rapids at world z=25");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -1076,6 +1207,8 @@ int main() {
   run("Test 15: non-horizontal face", test_non_horizontal_face);
   run("Test 16: multi-wire face", test_multi_wire_face);
   run("Test 17: payload round-trip", test_contour_payload_roundtrip);
+  run("Test 18: retract height is WCS-relative",
+      test_contour_retract_wcs_relative);
 
   if (allPassed) {
     std::cout << "contour_2d_test passed\n";

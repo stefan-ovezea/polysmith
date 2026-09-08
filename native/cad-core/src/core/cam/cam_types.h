@@ -212,6 +212,13 @@ struct LaserCutParameters {
   std::string lead_out_style = "line";  // "line" | "arc"
   double lead_in_angle_deg = 0.0;       // entry angle vs contour tangent
   double lead_out_angle_deg = 0.0;      // exit angle vs contour tangent
+  // Sweep of the "arc"-style lead roll, degrees.  90° is the classic
+  // tangent quarter-roll; interior leads sweep exactly this angle
+  // around the pierce→centroid spoke (270 reproduces the pre-input
+  // interior curl on circles; larger values curl deeper into the kerf
+  // side, useful past tight corners).
+  double lead_in_arc_angle_deg = 90.0;
+  double lead_out_arc_angle_deg = 90.0;
                                          // (0 = tangent continuation)
   double overcut_mm = 0.0;              // extend past the start/end joint
 

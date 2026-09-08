@@ -1616,6 +1616,19 @@ Retract guards (both warning-only, never fatal):
 2. multi-pass only, retract < stock top → "below the stock top" —
    rapids would travel through unmilled stock.
 
+**Retract height is WCS-relative.**  `setup.retract_height` is machine
+Z ABOVE the setup origin, not an absolute world Z: the retract PLANE in
+world coordinates is `wcs_origin.position.z + retract_height`
+(`cam_planning::setup_retract_plane_z`, the single source of truth used
+by all three mill generators for guards AND emission).  The
+post-processor subtracts the origin again (machine = world −
+wcs_origin), landing the rapids exactly at `retract_height` in machine
+Z.  An unresolved origin (never refreshed) resolves to {0,0,0} —
+legacy behavior unchanged.  Regression: comparing the raw height
+against world stock/face heights produced bogus warnings for origins
+above z=0 while the exported rapids sat inside the stock (origin z=20,
+retract 25, stock top 33 → machine Z 5).
+
 ### WCS origin anchors
 
 `WcsOrigin.anchor` discriminates how `refresh_cam_dependencies`

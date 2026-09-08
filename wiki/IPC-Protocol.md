@@ -329,6 +329,11 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   run; generation stores the toolpath in the memory-only runtime cache and
   marks the operation `generated`. Toolpaths never serialize — the
   document's `ToolpathCache` carries metadata only.
+- After a GENERATE (never preview), the core emits `cam_generation_result`
+  `{op_id, ok, error_message, warnings: [string]}` after the
+  `document_state` reply — the UI's result popup reads it (success /
+  warnings list / failure), while the warnings also remain in the
+  structured log.
 - `LaserCutParameters` (the `laser` block of `cam_operation_create` /
   `cam_operation_update` payloads) carries the v2 model: `mode`
   (`cut|score|engrave`, validated), `power_percent`, `speed_mm_per_s`
@@ -336,7 +341,9 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `passes`, `dynamic_power`, `air_assist`, `kerf_width_mm`, `kerf_side`
   (`auto|outside|inside|none`), `lead_in_mm` / `lead_out_mm` +
   `lead_in_style` / `lead_out_style` (`line|arc`) +
-  `lead_in_angle_deg` / `lead_out_angle_deg`, `overcut_mm`,
+  `lead_in_angle_deg` / `lead_out_angle_deg`, `lead_in_arc_angle_deg` /
+  `lead_out_arc_angle_deg` (arc-style lead roll sweep, default 90°),
+  `overcut_mm`,
   `pierce_dwell_seconds` (default 0.1), `pierce_position`,
   `pierce_angle_deg` (nullable), `tabs_enabled` / `tab_width_mm` /
   `tab_spacing_mm` / `tab_power_percent` / `tabs_on_holes`,

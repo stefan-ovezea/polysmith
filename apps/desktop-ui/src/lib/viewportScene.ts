@@ -641,6 +641,12 @@ function makeSketchProfile(profile: ViewportSketchProfile): SketchProfileScene {
     innerLoops: (profile.inner_loops ?? []).map((loop) =>
       loop.map((point) => [point.x, point.y] as [number, number]),
     ),
+    circleHoles: (profile.circle_holes ?? []).map((hole) => ({
+      loopIndex: hole.loop_index,
+      centerX: hole.center_x,
+      centerY: hole.center_y,
+      radius: hole.radius,
+    })),
     start: [profile.start_x, profile.start_y],
     width: profile.width,
     height: profile.height,
@@ -692,12 +698,46 @@ function makeSketchProfileFromDocument(
     innerLoops: profile.inner_loops.map((loop) =>
       loop.map((point) => [point.x, point.y] as [number, number]),
     ),
+    circleHoles: (profile.circle_holes ?? []).map((hole) => ({
+      loopIndex: hole.loop_index,
+      centerX: hole.center_x,
+      centerY: hole.center_y,
+      radius: hole.radius,
+    })),
     start: [profile.center_x, profile.center_y],
     width: 0,
     height: 0,
     radius: profile.radius,
     isSelected: selectedProfileIds.has(profile.profile_id),
   };
+}
+
+// The hole loop a profile displays at `index`: for exact circle holes
+// (circleHoles) this is a dense sample of the circle — the stored
+// innerLoops points are only a 16-point chord outline and would show
+// as a visible polygon next to the smooth standalone circle region.
+export function smoothProfileHoleLoop(
+  profile: SketchProfileScene,
+  index: number,
+): [number, number][] {
+  const circle = profile.circleHoles.find(
+    (entry) => entry.loopIndex === index,
+  );
+  if (!circle) {
+    return [...profile.innerLoops[index]];
+  }
+  const points: [number, number][] = [];
+  // Dense enough to stay visually smooth at extreme zoom — this loop
+  // feeds the fill mesh's hole boundary, which facets at 96 samples.
+  const segmentCount = 256;
+  for (let i = 0; i < segmentCount; i += 1) {
+    const angle = (i / segmentCount) * Math.PI * 2;
+    points.push([
+      circle.centerX + circle.radius * Math.cos(angle),
+      circle.centerY + circle.radius * Math.sin(angle),
+    ]);
+  }
+  return points;
 }
 
 function profileContour(profile: SketchProfileScene): [number, number][] {
@@ -771,7 +811,9 @@ function withDisplayProfileHoles(
     }
 
     const profileArea = polygonArea2d(profile.profilePoints);
-    const nextLoops = profile.innerLoops.map((loop) => [...loop]);
+    const nextLoops = profile.innerLoops.map((_, index) =>
+      smoothProfileHoleLoop(profile, index),
+    );
     for (const candidate of profiles) {
       if (candidate.profileId === profile.profileId) {
         continue;
@@ -1267,7 +1309,7 @@ export function createViewportScene(
       .concat(
         sketchProfiles.map(
           (profile) =>
-            `sketch-profile:${profile.profileId}:${profile.profileKind}:${profile.planeId}:${profile.profilePoints.map((point) => point.join(":")).join("|")}:${profile.innerLoops.map((loop) => loop.map((point) => point.join(":")).join(",")).join(";")}:${profile.start.join(":")}:${profile.width}:${profile.height}:${profile.radius}:${profile.isSelected}`,
+            `sketch-profile:${profile.profileId}:${profile.profileKind}:${profile.planeId}:${profile.profilePoints.map((point) => point.join(":")).join("|")}:${profile.innerLoops.map((loop) => loop.map((point) => point.join(":")).join(",")).join(";")}:${profile.circleHoles.map((hole) => `${hole.loopIndex}:${hole.centerX}:${hole.centerY}:${hole.radius}`).join(",")}:${profile.start.join(":")}:${profile.width}:${profile.height}:${profile.radius}:${profile.isSelected}`,
         ),
       )
       .concat(

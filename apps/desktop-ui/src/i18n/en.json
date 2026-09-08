@@ -380,6 +380,7 @@
       "safety": "Safety Plane",
       "safetyHeight": "Safety height (mm)",
       "retractHeight": "Retract height (mm)",
+      "retractNote": "Above the setup origin (WCS Z).",
       "safetyNote": "Z height for rapid moves between operations.",
       "cancel": "Cancel",
       "confirm": "OK",
@@ -480,6 +481,8 @@
       "leadStyleArc": "Arc",
       "leadInAngle": "Lead-in angle (°)",
       "leadOutAngle": "Lead-out angle (°)",
+      "leadInArcAngle": "Lead-in arc angle (°)",
+      "leadOutArcAngle": "Lead-out arc angle (°)",
       "overcut": "Overcut (mm)",
       "leadSide": "Lead side",
       "leadSideAuto": "Auto",
@@ -1268,7 +1271,13 @@
     "unlinkLinkedCopyMessage": "This will make the linked copy independent. Future changes to the original will no longer update this copy, and this cannot be undone except with Undo. Continue?",
     "exportGcodeTitle": "Export G-code",
     "gcodeFileType": "G-code files",
-    "importPostTitle": "Import post processor"
+    "importPostTitle": "Import post processor",
+    "generateResult": {
+      "titleSuccess": "Toolpath generated",
+      "titleWarnings": "Toolpath generated with {{count}} warning(s)",
+      "titleError": "Toolpath generation failed",
+      "okButton": "OK"
+    }
   },
   "geometry": {
     "ownerFace": "{{owner}} face",

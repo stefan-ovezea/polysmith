@@ -366,10 +366,43 @@ CamGenerateResult generate_laser_cut_toolpath(
     }
 
     // Hole loops.
-    for (const auto& holePoints : region.inner_loops) {
+    for (size_t holeIndex = 0; holeIndex < region.inner_loops.size();
+         ++holeIndex) {
+      const auto& holePoints = region.inner_loops[holeIndex];
       std::vector<BaseSegment> holeBase;
-      cam_planning::build_base_segments_from_points(holePoints, holeBase);
-      if (holeBase.size() < 2) {
+      XY holeCentroid;
+      // Circle holes carry an exact center/radius descriptor — cut
+      // them as one full-circle arc, like the standalone circle
+      // region above.  The stored points are a coarse chord sample;
+      // cutting them would trace a visibly polygonal hole path next
+      // to the smooth circle outline.  The walk is CW (hole interior
+      // on the right) so the auto kerf still offsets inward, into
+      // the scrap side.  Non-circle holes keep the sampled points.
+      const auto circleHole = std::find_if(
+          region.circle_holes.begin(), region.circle_holes.end(),
+          [&](const auto& entry) {
+            return entry.loop_index == static_cast<int>(holeIndex);
+          });
+      if (circleHole != region.circle_holes.end()) {
+        BaseSegment full;
+        full.is_arc = true;
+        full.center = {circleHole->center_x, circleHole->center_y};
+        full.radius = circleHole->radius;
+        full.start = {full.center.x + full.radius, full.center.y};
+        full.end = full.start;
+        full.ccw = false;
+        holeBase.push_back(full);
+        holeCentroid = full.center;
+      } else {
+        cam_planning::build_base_segments_from_points(holePoints, holeBase);
+        std::vector<XY> holePointList;
+        for (const auto& segment : holeBase) {
+          holePointList.push_back(segment.start);
+        }
+        holeCentroid = xy_centroid(holePointList);
+      }
+      if (holeBase.size() < 2 &&
+          !(holeBase.size() == 1 && holeBase[0].is_arc)) {
         continue;
       }
       if (base_segments_signed_area(holeBase) > 0) {
@@ -378,15 +411,11 @@ CamGenerateResult generate_laser_cut_toolpath(
       if (conventional) {
         reverse_segments(holeBase);
       }
-      std::vector<XY> holePointList;
-      for (const auto& segment : holeBase) {
-        holePointList.push_back(segment.start);
-      }
       PlannedLoop loop;
       std::string error;
       const double holeKerf = kerf_for(/*is_hole=*/true);
       if (!plan_loop(holeBase, holeKerf, /*is_hole=*/true,
-                     xy_centroid(holePointList), loop, error)) {
+                     holeCentroid, loop, error)) {
         result.warnings.push_back("A hole contour was skipped: " + error);
         continue;
       }

@@ -1102,6 +1102,11 @@ std::vector<SketchProfileRegion> build_exact_profiles(
   struct HoleLoop {
     std::vector<SketchProfilePoint> points;
     std::string first_entity_id;
+    // Exact circle curve when this hole face is a full circle
+    // (nullptr otherwise).  Lets the region carry an exact
+    // center/radius for smooth rendering; the sampled points above
+    // stay for capture math and legacy consumers.
+    const ExactCurve* circle_curve = nullptr;
   };
   struct RegionBuild {
     size_t face_idx;
@@ -1123,6 +1128,39 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     std::sort(ids.begin(), ids.end());
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
     return ids;
+  };
+
+  // Full-circle face test shared by region and hole classification:
+  // every boundary edge belongs to the same circle entity (or an
+  // unsplit full ellipse), all walked in the same direction, and the
+  // total angular span covers 2π.  An unsplit circle yields one
+  // self-closing edge; a circle touched by lines yields several
+  // pieces.
+  auto full_circle_curve = [&](const ExactFace& face) -> const ExactCurve* {
+    if (face.edges.empty()) return nullptr;
+    const ExactCurve& c0 = curves[half_edges[face.edges[0]].curve];
+    // A partial ellipse is an open curve — its pieces can never form
+    // a full-circle face, no matter how their spans sum.
+    if (c0.kind != ExactCurve::Kind::kCircle &&
+        !(c0.kind == ExactCurve::Kind::kEllipse && !c0.has_sweep)) {
+      return nullptr;
+    }
+    bool all_same = true;
+    bool all_forward_same = true;
+    double total_span = 0.0;
+    for (const int e : face.edges) {
+      const ExactHalfEdge& h = half_edges[e];
+      if (curves[h.curve].id != c0.id) { all_same = false; break; }
+      total_span += std::abs(h.param_end - h.param_start);
+      if (h.forward != half_edges[face.edges[0]].forward) {
+        all_forward_same = false;
+      }
+    }
+    if (all_same && all_forward_same &&
+        std::abs(total_span - 2.0 * kExactPi) < 1e-9) {
+      return &c0;
+    }
+    return nullptr;
   };
 
   for (size_t f = 0; f < faces.size(); ++f) {
@@ -1160,12 +1198,22 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     if (!found) continue;  // exterior cycle of the arrangement
     for (auto& b : builds) {
       if (b.face_idx == best_f) {
-        b.holes.push_back(HoleLoop{
+        HoleLoop hole{
             .points = face_geo[f].points,
             .first_entity_id = face_geo[f].ids.empty()
                                    ? std::string()
                                    : face_geo[f].ids.front(),
-        });
+        };
+        // Exact circle hole: same full-circle test the region
+        // classification uses.  Ellipse holes keep their sampled
+        // outline — a circle descriptor cannot express their
+        // minor-axis shape.
+        if (const ExactCurve* curve = full_circle_curve(faces[f])) {
+          if (curve->kind == ExactCurve::Kind::kCircle) {
+            hole.circle_curve = curve;
+          }
+        }
+        b.holes.push_back(std::move(hole));
         break;
       }
     }
@@ -1177,36 +1225,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     const ExactFace& face = faces[b.face_idx];
     const FaceGeo& geo = face_geo[b.face_idx];
 
-    // Full-circle face: every boundary edge belongs to the same circle
-    // entity, all walked in the same direction, and the total angular
-    // span covers 2π.  An unsplit circle yields one self-closing edge;
-    // a circle touched by lines yields several pieces.
-    bool full_circle = false;
-    const ExactCurve* circle_curve = nullptr;
-    if (!face.edges.empty()) {
-      const ExactCurve& c0 = curves[half_edges[face.edges[0]].curve];
-      // A partial ellipse is an open curve — its pieces can never form
-      // a full-circle region, no matter how their spans sum.
-      if (c0.kind == ExactCurve::Kind::kCircle ||
-          (c0.kind == ExactCurve::Kind::kEllipse && !c0.has_sweep)) {
-        bool all_same = true;
-        bool all_forward_same = true;
-        double total_span = 0.0;
-        for (const int e : face.edges) {
-          const ExactHalfEdge& h = half_edges[e];
-          if (curves[h.curve].id != c0.id) { all_same = false; break; }
-          total_span += std::abs(h.param_end - h.param_start);
-          if (h.forward != half_edges[face.edges[0]].forward) {
-            all_forward_same = false;
-          }
-        }
-        if (all_same && all_forward_same &&
-            std::abs(total_span - 2.0 * kExactPi) < 1e-9) {
-          full_circle = true;
-          circle_curve = &c0;
-        }
-      }
-    }
+    // Full-circle face classification (see full_circle_curve above —
+    // the same test the hole assignment uses).
+    const ExactCurve* circle_curve = full_circle_curve(face);
+    const bool full_circle = circle_curve != nullptr;
 
     std::vector<std::string> unique_ids = geo.ids;
     std::sort(unique_ids.begin(), unique_ids.end());
@@ -1218,8 +1240,17 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     region.line_ids = unique_ids;
     region.ordered_edge_ids = geo.ids;
     region.points = geo.points;
-    for (const auto& hole : b.holes) {
+    for (size_t hole_index = 0; hole_index < b.holes.size(); ++hole_index) {
+      const HoleLoop& hole = b.holes[hole_index];
       region.inner_loops.push_back(hole.points);
+      if (hole.circle_curve != nullptr) {
+        region.circle_holes.push_back(SketchProfileCircleHole{
+            .loop_index = static_cast<int>(hole_index),
+            .center_x = hole.circle_curve->cx,
+            .center_y = hole.circle_curve->cy,
+            .radius = hole.circle_curve->r,
+        });
+      }
     }
     region.center_x = 0.0;
     region.center_y = 0.0;
@@ -1284,7 +1315,18 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     }
 
     if (full_circle) {
-      if (circles_only && b.holes.empty()) {
+      // A full circle carries exact geometry — emit kind "circle"
+      // (center/radius, no sampled points) even when the sketch also
+      // contains lines/arcs; the CAM preview would otherwise show the
+      // 16-point sample polygon instead of a circle.  Full ELLIPSES
+      // still need the circles-only gate: their boundary edges are
+      // ellipse-kind, which the CAM base builder cannot consume, so in
+      // mixed sketches the sampled points remain their only usable
+      // contour input.  Regions with holes also stay polygon-kind so
+      // the hole loops keep a points-based outline.
+      if ((circles_only ||
+           circle_curve->kind == ExactCurve::Kind::kCircle) &&
+          b.holes.empty()) {
         region.kind = circle_curve->kind == ExactCurve::Kind::kEllipse
                           ? "ellipse"
                           : "circle";

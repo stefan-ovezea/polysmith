@@ -9,6 +9,7 @@ export function CamNumberField({
   disabled,
   step = 0.5,
   min = 0,
+  max,
   clearable = false,
   onChange,
 }: {
@@ -17,6 +18,7 @@ export function CamNumberField({
   disabled: boolean;
   step?: number | "any";
   min?: number;
+  max?: number;
   /** Empty input commits undefined instead of 0 (optional parameters
    *  like stepdown: cleared = "no multi-pass"). */
   clearable?: boolean;
@@ -34,6 +36,7 @@ export function CamNumberField({
         className="cad-input mt-2"
         type="number"
         min={min}
+        max={max}
         step={step}
         value={display}
         disabled={disabled}

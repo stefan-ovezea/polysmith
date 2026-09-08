@@ -1,3 +1,289 @@
+# Active task: CAM retract WCS fix + generate-result popup + arc lead sweep angle + circle pierce corner-warning fix + mixed-sketch circle kind fix + circle-hole double-rendering fix + circle-hole exact toolpath fix + sketch-circle double-outline UI fix (cam/milling) — implemented, UNCOMMITTED
+
+> **Branch:** `cam/milling` (HEAD 0bc3ad8)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+Two user-reported items (2026-09-08), both implemented, both
+uncommitted in the working tree:
+
+1. **Generate-result popup**: pressing Generate shows a popup —
+   "generated without problem" or "generated with warnings/errors".
+   **User verified in-app ("it works well")** — popup gate passed.
+2. **Retract-height WCS bug**: origin at world z=20, boss top 30 +
+   3 mm stock → stock top 33, retract 25 warned and only 35 passed.
+   Root cause: the generators compared the RAW retract height (a
+   machine-Z-above-origin value) against WORLD face/stock heights;
+   the post subtracts the origin (machine = world − wcs_origin), so
+   the exported rapids sat at machine z=5 — inside the stock.  Fixed:
+   retract is now WCS-relative everywhere.
+
+## Status — implemented, uncommitted (working tree)
+
+- **Popup (user-verified)**: `make_cam_generation_result_event`
+  (protocol/ipc.{h,cpp}) `{op_id, ok, error_message, warnings[]}`;
+  emitted by cam_commands.inc after generate (NEVER preview) —
+  failure branch and after the document_state reply (so the UI's
+  stats lookup sees the fresh toolpath_cache); existing error event +
+  log_warn fan-out untouched; events.schema.json enum entry.
+  CamGenerationResultEvent type + zod schema + coreMessageSchema
+  union; cadCoreStore `generationResult` + `dismissGenerationResult`;
+  CamGenerationResultPopup modal (success / amber warnings list /
+  danger failure, stats line, Escape/OK/backdrop dismiss) mounted in
+  App.tsx; `dialogs.generateResult.*` i18n; export G-code success
+  toast (the path previously had NO visible feedback).
+- **Retract WCS fix**: `cam_planning::setup_retract_plane_z(setup)` —
+  world retract plane = `wcs_origin.position.value_or({0,0,0})[2] +
+  retract_height` (doc comment carries the post contract).  All three
+  mill generators (contour/pocket/face milling) use it for guards AND
+  emission; the warning strings now print the setup value AND the
+  resolved plane ("Retract height (25 mm above the setup origin)
+  reaches 45 mm — below the stock top (33 mm)…").  Unresolved origin
+  → {0,0,0}: legacy behavior unchanged.  **User verified in-app
+  ("it works well").**
+- **Preview arc smoothness fix**: cam_toolpath_emit.inc viewport chord
+  tolerance 0.05 → 0.005 mm (kPreviewChordToleranceMm) — 0.05 mm left
+  ~8° facets on a 20 mm circle; the pinned arc_segments_per_circle
+  path is untouched (pinned counts must show the real faceting).
+  Viewport-only; G-code export unaffected (true arcs / pinned count).
+  **User verified in-app ("yes it works now").**
+- **Arc lead sweep angle (user request 2026-09-08)**: kerf-inside +
+  arc leads curled a full 270° (the spoke-based roll geometry) —
+  "excesiv".  New `lead_in_arc_angle_deg` / `lead_out_arc_angle_deg`
+  (default 90) on LaserCutParameters + serde both directions; the four
+  arc branches in laser_leads.cpp now construct the entry/exit radius
+  direction as the pierce radius direction rotated by the requested
+  sweep, so the emitted arc sweeps exactly the input value (90° =
+  classic quarter roll; 270 reproduces the old interior curl).
+  Measurement during the fail-before run also showed the OLD code
+  swept 270° on the exterior LEAD-IN too (lead-out was 90°) — the new
+  default fixes both.  UI: two number fields in CamLaserCutPanel
+  (min 1 / max 360, disabled unless the style is "arc"; CamNumberField
+  gained a max prop) + i18n keys.  **In-app verification pending.**
+- **Arc sweep parse-error fix (user log 2026-09-08 15:34)**: a cleared
+  field commits `Number("") === 0`; the zod `.min(1)` then rejected
+  every document_state the core echoed back (parse-error cascade).
+  Fixed three ways: zod loosened (core is the source of truth — no
+  min/max, schema must accept what the core stores); the panel clamps
+  on commit to [1, 360]; the core clamps the sweep at use via
+  `arc_sweep_radians` (a stored 0° would emit a zero-length arc that
+  some controllers turn into a full circle).  Rebuilt + 41/41 green.
+- **Regression tests (fail-before verified)**: contour_2d_test 18,
+  pocket_2d_test 10, cam_generators_test 51 — WCS z=20 / retract 25 /
+  stock top 33: no retract warnings + rapids at world z=45; genuinely
+  too-low retract still warns; default-origin legacy still warns.
+  Verified failing against the pre-fix helper (temp revert) and
+  passing with the fix.
+- **Regression test (fail-before verified)**: cam_generators_test 52
+  "arc lead sweep angle is configurable" — exterior roll at 135°
+  sweeps 135° (measured sweep=270 on the old geometry); interior
+  circle at the 90° DEFAULT sweeps 90° with the entry inside the cut
+  line (r<4.9); interior lead-out at 120° sweeps 120° with the exit
+  inside.  Sweep measured from the move I/J center + start/end angles
+  (kind-aware).  Old geometry: Test 52 FAIL (sweep=270); fix: PASS.
+- **Circle pierce corner-warning fix (user 2026-09-08: "we should not
+  have polygon approximation anymore")**: the user's circle op logged
+  "1 sharp corner(s) were excluded from pierce placement" + "Every
+  corner is sharper than the pierce threshold — piercing mid-segment on
+  the longest straight edge".  NOT polygonization — the contour was
+  already one exact full-circle arc (a 16-gon would report 16 corners;
+  the profile id's 16 keys are the circle's SAMPLE points, and the
+  generator walks the exact boundary edge).  The corner classifier in
+  `select_pierce_vertex` flagged the circle's artificial self-join
+  vertex as sharp (interior = π → the |π − interior| pointedness guard
+  rejects it), then printed the straight-edge fallback message even
+  though the loop has no straight edges.  Fix: a loop lying entirely on
+  one circle (same center/radius on every arc segment) has no corners —
+  pierce by position rules alone, no corner warnings.  Regression:
+  cam_generators_test 53 "circle in a mixed sketch has no corner
+  warnings" — circle + separate rectangle (forces the polygon-kind
+  region path the user hit), kerf inside + arc leads: no corner/
+  tessellation warnings + the contour stays an exact full-circle arc at
+  the offset radius.  Fail-before verified (clean pre-fix build: only
+  Test 53 FAIL, warnings present); pass-after: all 41 suites green.
+  **In-app verification pending.**
+- **Mixed-sketch circle kind fix (user 2026-09-08: "Circle profiles in
+  sketches that also contain lines/arcs keep kind:'polygon' with a
+  16-point sample. it is looking very bad in cam preview. The path is
+  circle and the circle is poligons. Why I need that?")**: the CAM
+  preview drew the circle PROFILE as a 16-gon because the exact
+  profile engine gated kind "circle" (center/radius, no sampled
+  points) behind `circles_only` — a sketch-wide "no lines and no arcs"
+  test inherited from the OCCT-v8 port (8d845a6).  The toolpath was
+  always exact (boundary_edges carry the circle edge); only the
+  preview region was sampled.  Fix in sketch_profile_exact.inc: the
+  gate is now `(circles_only || circle_curve->kind == kCircle) &&
+  holes.empty()` — hole-free full CIRCLE faces become kind "circle"
+  even in mixed sketches.  Full ELLIPSES keep the circles_only gate
+  (their boundary edges are ellipse-kind, which
+  build_base_segments_from_edges cannot consume — the sampled points
+  remain their only contour input), and hole-bearing circles stay
+  polygon-kind (the UI polygon renderer draws the hole loops; the
+  circle renderer has no inner-loop path).  Downstream verified safe:
+  detect_sketch_profiles → circle viewport primitive → UI
+  EllipseCurve smooth render; extrude kind "circle" branch works
+  without source_circle_id; project/deletes find the circle via
+  line_ids/boundary_edges; CAM capture/planning read the exact
+  boundary edge.  Known degradation (pre-existing pattern): stored
+  "profile-poly-circle-…" ids in OLD documents do not re-resolve to
+  the new "profile-circle-…" ids (find_equivalent_profile has no
+  polygon→circle bridge) — dependency_broken + warning per TNP
+  doctrine, same as the mixed→circles-only transition today.
+  Test updates: circle_modes (3 expectations polygon→circle),
+  extrude_quality (small-selectable lookup, trim-extrude expectation
+  set, touching-lines lookup), sketch_profile (2 counting loops),
+  cam_commands (circle selection assertion), cam_profile_reference
+  (swap by kind, capture without source id, Test 7 lookup),
+  cam_generators 53 (lookup by kind), sketch_test_utils doc comment.
+  **In-app verification pending.**
+- **Circle-hole double-rendering fix (user 2026-09-08: "are you crazy?
+  the circle is nou double: one circle one polyline")**: after the
+  circle-kind fix the circle region drew smooth, but the CONTAINING
+  polygon still drew the circle as its hole outline from the 16-point
+  sample in inner_loops — two outlines at the same radius disagreed.
+  Fix: the exact detector now records a `SketchProfileCircleHole`
+  (loop_index + exact center/radius, same full-circle test the region
+  classification uses — hoisted into a shared `full_circle_curve`
+  lambda) alongside the sampled hole points.  The sampled points STAY
+  (capture/area math and operations created before the descriptor
+  existed depend on them — the attestation consistency constraint);
+  the descriptor is rendering-only metadata.  Carried end-to-end:
+  region → PolygonSketchProfile → ViewportSketchProfilePrimitive →
+  viewport wire + document save/load serde (both directions, lenient
+  parse) → zod (viewportState + documentState) → SketchProfileScene
+  `circleHoles` → renderer draws circle holes from center/radius with
+  the same 96-point smooth sampling as circle profiles (fill path AND
+  outline), and withDisplayProfileHoles bases its loop checks on the
+  smoothed loops.  Ellipse holes keep the sampled outline (a circle
+  descriptor cannot express the minor axis).  Regression:
+  cam_profile_reference_test Test 1 asserts the exact descriptor
+  (center 10/5, radius 2, loop_index 0) + a full
+  serialize/deserialize round trip preserves it.  Rebuilt (touched
+  sketch_profile.cpp / viewport.cpp / serialization.cpp shells) —
+  41/41 suites green; tsc clean.  **In-app verification pending.**
+- **Circle-hole exact toolpath fix (user 2026-09-08: "nothing
+  changed" after the hole-rendering fix)**: the region outline fix
+  worked, but the LASER CUT PATH around a circle hole was still built
+  from the 16-point sample (`build_base_segments_from_points` on
+  `inner_loops`) — ~16 straight chords at the hole radius, the
+  polyline the user saw on top of the smooth circle.  Fix in
+  laser_generate.cpp: the hole loop now looks up
+  `region.circle_holes` by loop index and, when present, synthesizes
+  one exact full-circle BaseSegment (CW walk — hole interior on the
+  right — so the auto kerf still offsets inward into the scrap;
+  `conventional` reversal unchanged; centroid = the circle center).
+  Non-circle holes keep the sampled path; the size gate now accepts a
+  single full-circle arc.  Regression: cam_generators Test 2 (rect +
+  circle hole) gained two assertions — the hole ring emits ONE exact
+  FeedArc at the offset radius (1.9) and ≤2 straight moves may touch
+  the ring (the old chord path put ~16 there).  Fail-before verified
+  (pre-fix build: Test 2 FAILS at "hole ring emitted as an exact
+  full-circle arc"); pass-after: 41/41 suites green.  Side effect:
+  exported G-code now carries G2/G3 for circle holes (was straight
+  chords).  **In-app verification pending.**
+- **Sketch-circle double-outline UI fix (user 2026-09-08: "the path
+  was good and circle but the circle of the sketch was double circle
+  and polygons")**: pixel forensics on the user's screenshot
+  (stdlib-only PNG decoder, PCA ridge separation, kink-angle
+  measurement — cross-checked with `bl vision describe`) identified
+  the double as TWO coincident UI outlines at the circle's radius,
+  not a core-data problem (a fresh core driven on the saved part.json
+  emits a fully smooth circle region + exact circle_holes): (A) the
+  sketch ENTITY circle — peach `--color-tertiary-plane-fill`,
+  64-point EllipseCurve; (B) the circle PROFILE edge loop — lavender
+  `--color-tertiary-plane-edge-hover`, 96 points, raised to opacity
+  0.98 only while hovered/selected (the CAM region is).  Different
+  sample counts + colors at extreme zoom read as "one circle + one
+  polygon".  Fix (UI-only, no core rebuild): circle-kind profiles no
+  longer draw an edge loop at all — the entity circle draws the same
+  boundary; hover/selection feedback stays via the fill; picking is
+  unaffected (fill mesh carries the profile id + the analytic circle
+  fallback in sketchProfilePicking).  Polygon holes that are exact
+  circles (circleHoles) skip their edge loop too — the rectangle's
+  hole loop was the third coincident candidate.  Sampling raised for
+  smoothness at extreme zoom: entity circle 64→256, circle fill
+  CircleGeometry 48→256, smoothProfileHoleLoop 96→256 (feeds the
+  fill's hole boundary).  Files: sketchObjects.ts + viewportScene.ts.
+  **In-app verification pending.**
+- Docs: IPC-Protocol.md + AI-CAD-Command-Language.md bullets (popup);
+  wiki/CAM-Development.md retract-semantics paragraph.
+
+## Gates
+
+- `pnpm core:build` — green (app closed to release the exe lock; rebuilt
+  again for the circle-hole fix with the three owning shells touched —
+  sketch_profile.cpp, viewport.cpp, serialization.cpp).
+- Circle-hole fix: `pnpm test:core` 41/41 green again (incl. the new
+  cam_profile_reference Test 1 descriptor + round-trip assertions);
+  `tsc --noEmit` clean.
+- Circle-hole toolpath fix: fail-before verified (Test 2 FAIL on the
+  pre-fix build) → pass-after `pnpm test:core` 41/41 green; final
+  `pnpm core:build` relinked cad_core.exe + spawn-path copy fresh.
+- `pnpm test:core` — 41/41 suites green (incl. cam_generators 53,
+  contour 18, pocket 10 — the arc-sweep, WCS-relative, and circle
+  pierce cases; the mixed-sketch circle-kind change rebuilt the core
+  with the touched sketch_profile.cpp shell and every suite passes
+  with the updated expectations).
+- `tsc --noEmit` — green (Setup panel retract hint: `cam.setup.retractNote`
+  "Above the setup origin (WCS Z)." + i18n key; laser panel arc-angle
+  fields).
+- Double-outline UI fix: `tsc --noEmit` green (sketchObjects.ts +
+  viewportScene.ts; UI-only — no core rebuild).
+- **Popup in-app pass — user confirmed ("it works well").**
+- **Retract fix in-app pass — user confirmed ("it works well",
+  2026-09-08).**
+- **Preview arc smoothness in-app pass — user confirmed ("yes it
+  works now", 2026-09-08).**
+- **Arc lead sweep in-app pass PENDING** — laser op, lead style Arc,
+  kerf inside on a circle: the lead arcs must now be 90° quarter
+  rolls (not 270° curls); change the arc angle fields and confirm the
+  preview/G-code sweep follows.
+- **Circle pierce warning fix in-app pass PENDING** — same op: the
+  Logs panel must no longer show "sharp corner(s) were excluded" /
+  "Every corner is sharper…" for a circle contour.
+- **Mixed-sketch circle kind fix in-app pass PENDING** — a sketch
+  with a circle PLUS lines/arcs: the circle's filled profile preview
+  (sketch + CAM) must now render as a smooth circle, not a 16-gon.
+
+## Next steps
+
+1. In-app: laser cut, kerf inside, lead-in/out style Arc → the arcs
+   roll 90° by default; try e.g. 120° in the new "Lead-in/out arc
+   angle" fields and confirm the preview follows.  Regression: kerf
+   auto (exterior) lead-in should now also be a 90° quarter roll
+   (was 270° too).
+2. In-app (same run): a circle op (circle + other entities in the
+   sketch) must generate WITHOUT the "sharp corner" / "Every corner"
+   pierce warnings — and the cut must still be a true circle arc in
+   the preview/G-code.
+3. In-app (same run): the circle profile in a mixed sketch must
+   render as a smooth circle in the sketch and CAM previews (the
+   16-gon polygon outline is gone).
+4. In-app (same run): a circle inside a rectangle must show ONE
+   smooth circle — the rectangle's hole outline must coincide with
+   the circle region's outline (no second polyline).  The laser
+   TOOLPATH around the circle hole must now also be a smooth circle
+   (one exact arc — no chord polygon on the ring), and the exported
+   G-code must carry G2/G3 for the hole.  Also verify after a
+   save/load that the hole stays smooth.
+5. In-app (same run): the circle must now be ONE smooth circle in the
+   sketch and CAM views — no second outline when the circle region
+   (or the containing rectangle) is hovered/selected; hover feedback
+   shows as the fill highlight; the circle stays smooth at extreme
+   zoom.
+6. Commit on user approval — popup + retract fix + preview smoothness
+   + arc sweep angle + circle pierce fix + circle-kind fix + the
+   double-outline UI fix together (or split as the user prefers) — no
+   Co-Authored-By trailer; message names the suites run (41/41 incl.
+   contour 18 / pocket 10 / cam_generators 53).
+
+---
+
 # Active task: 2D Contour CAM operation (cam/milling) — implemented, COMMITTED (2026-09-08)
 
 > **Branch:** `cam/milling` (HEAD fe6dbc9)
@@ -72,6 +358,27 @@ edges fall back to chord-tolerance polylines).
    sketch plane, G2/G3 in exported G-code, re-pick face, scope
    re-pick, delete, generate/export stats, Logs warnings; regression:
    face milling, pocket, laser.
+3. **Tauri callback-id warning — investigate (user-reported
+   2026-09-08):** Logs panel showed `[TAURI] Couldn't find callback id
+   1154042992. This might happen when the app is reloaded while Rust
+   is running an asynchronous operation.` — Tauri's invoke-callback
+   registry got a response for a dead id: an async invoke command
+   (file dialog, export write, …) resolved after the webview reloaded
+   (dev-mode HMR / Ctrl+R). Our Rust code has no explicit
+   Callback/Channel usage (grep: only `.invoke_handler` in
+   src-tauri/src/main.rs:249 + lib.rs:12), so this is Tauri's own
+   invoke plumbing — likely dev-mode noise but root it out anyway:
+   reproduce by firing a long async command then reloading the view.
+4. **Generate-result popup (user-requested 2026-09-08) — DONE,
+   uncommitted:** `cam_generation_result` core event + result popup
+   modal + export success toast (see the active task header at the
+   top of this file).
+5. **Retract-height WCS bug (user-reported 2026-09-08) — DONE,
+   uncommitted:** retract is machine Z above the WCS origin; the
+   guards/emission now use `setup_retract_plane_z` (world plane =
+   origin Z + height) in all three mill generators + regression
+   tests (contour 18 / pocket 10 / cam_generators 51).  See the
+   active task header above.
 
 ---
 

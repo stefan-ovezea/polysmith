@@ -43,6 +43,18 @@
           profile.inner_loops.push_back(std::move(loop));
         }
       }
+      if (profile_payload.contains("circle_holes") &&
+          profile_payload.at("circle_holes").is_array()) {
+        for (const auto& hole_payload : profile_payload.at("circle_holes")) {
+          profile.circle_holes.push_back(
+              polysmith::core::SketchProfileCircleHole{
+                  .loop_index = hole_payload.at("loop_index").get<int>(),
+                  .center_x = hole_payload.at("center_x").get<double>(),
+                  .center_y = hole_payload.at("center_y").get<double>(),
+                  .radius = hole_payload.at("radius").get<double>(),
+              });
+        }
+      }
       profile.source_circle_id =
           read_optional_string(profile_payload, "source_circle_id");
       profile.center_x = read_number(profile_payload, "center_x");

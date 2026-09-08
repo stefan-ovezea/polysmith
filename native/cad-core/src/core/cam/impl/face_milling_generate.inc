@@ -196,15 +196,18 @@ CamGenerateResult generate_face_milling_toolpath(
   const int rowCount =
       std::max(1, static_cast<int>(std::ceil((maxN - minN) / spacing)) + 1);
 
-  const double retractZ = context.setup.retract_height;
-  // Rapid-safety guard: when the retract height sits BELOW the face,
+  // The retract plane is WCS-relative (origin Z + retract height).
+  const double retractZ =
+      cam_planning::setup_retract_plane_z(context.setup);
+  // Rapid-safety guard: when the retract plane sits BELOW the face,
   // every rapid travels through the material and every entry move
   // rises up out of it — on the machine that crashes the tool.  v1
   // warns instead of failing; the operator raises it in the Setup.
   if (retractZ < faceZ) {
     std::ostringstream message;
-    message << "Retract height (" << retractZ
-            << " mm) is below the face height (" << faceZ
+    message << "Retract height (" << context.setup.retract_height
+            << " mm above the setup origin) reaches " << retractZ
+            << " mm — below the face height (" << faceZ
             << " mm) — rapids travel through the material. Raise it "
                "in the Setup.";
     result.warnings.push_back(message.str());
@@ -240,8 +243,9 @@ CamGenerateResult generate_face_milling_toolpath(
   // retract < face; this covers the band between face and stock top.
   if (levels.size() > 1 && haveStockTop && retractZ < stockTopZ) {
     std::ostringstream message;
-    message << "Retract height (" << retractZ
-            << " mm) is below the stock top (" << stockTopZ
+    message << "Retract height (" << context.setup.retract_height
+            << " mm above the setup origin) reaches " << retractZ
+            << " mm — below the stock top (" << stockTopZ
             << " mm) — rapids travel through unmilled stock. Raise it "
                "in the Setup.";
     result.warnings.push_back(message.str());
