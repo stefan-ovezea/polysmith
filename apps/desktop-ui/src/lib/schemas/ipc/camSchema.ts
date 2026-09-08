@@ -201,6 +201,17 @@ export const laserCutParametersSchema = z
   })
   .passthrough();
 
+// Single source of truth for 2D Contour defaults — the UI spreads this
+// instead of carrying a parallel constants block.  The C++ struct
+// defaults match (cam_types.h ContourParameters).
+export const contourParametersSchema = z
+  .object({
+    side: z.enum(["outside", "inside", "on_line"]).default("outside"),
+    depth_mm: z.number().positive().default(1),
+    stock_allowance_mm: z.number().min(0).default(0),
+  })
+  .passthrough();
+
 // Machine settings + test patterns (test_pattern is referenced by
 // camOperationParametersSchema below — must be declared first).
 export const laserMachineSettingsSchema = z
@@ -253,6 +264,7 @@ const camOperationParametersSchema = z
     dwell_seconds: z.number().optional(),
     engagement_angle_deg: z.number().optional(),
     zigzag_angle_deg: z.number().optional(),
+    contour: contourParametersSchema.optional(),
     laser: laserCutParametersSchema.optional(),
     test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),

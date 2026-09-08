@@ -294,6 +294,16 @@ struct LaserTestPatternParameters {
   bool cell_labels = true;
 };
 
+/// 2D contour parameters (only meaningful when type == "contour_2d").
+/// Follows the per-type optional block pattern of the other strategy
+/// fields so the operation struct stays one unified shape.
+struct ContourParameters {
+  std::string side = "outside";  // "outside" | "inside" | "on_line"
+                                 // — VALIDATED at payload parse
+  double depth_mm = 1.0;         // cut plane below the input face/sketch plane
+  double stock_allowance_mm = 0.0;  // extra radial allowance for finishing
+};
+
 struct CamOperationParameters {
   // Basic cutting.
   double spindle_rpm = 8000.0;
@@ -316,6 +326,7 @@ struct CamOperationParameters {
   std::optional<double> zigzag_angle_deg;           // for face milling
   std::optional<LaserCutParameters> laser;          // for laser_cut
   std::optional<LaserTestPatternParameters> test_pattern;  // laser_test_pattern
+  std::optional<ContourParameters> contour;         // for contour_2d
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"

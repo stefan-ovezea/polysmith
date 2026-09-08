@@ -68,6 +68,8 @@ export function CamOperationPanel({
         return t("cam.profile");
       case "pocket":
         return t("cam.pocket.label");
+      case "contour":
+        return t("cam.common.contour");
       case "drill":
         return t("cam.drill");
     }

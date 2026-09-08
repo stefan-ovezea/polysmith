@@ -153,6 +153,14 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
   return j;
 }
 
+json to_payload(const polysmith::core::ContourParameters& contour) {
+  return {
+      {"side", contour.side},
+      {"depth_mm", contour.depth_mm},
+      {"stock_allowance_mm", contour.stock_allowance_mm},
+  };
+}
+
 // ── GeometryReference ────────────────────────────────────────────
 
 json to_payload(const polysmith::core::GeometryReference& ref) {
@@ -283,6 +291,7 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
   if (p.zigzag_angle_deg.has_value())     j["zigzag_angle_deg"]     = p.zigzag_angle_deg.value();
   if (p.laser.has_value())                j["laser"]                = to_payload(p.laser.value());
   if (p.test_pattern.has_value())         j["test_pattern"]         = to_payload(p.test_pattern.value());
+  if (p.contour.has_value())              j["contour"]              = to_payload(p.contour.value());
   return j;
 }
 

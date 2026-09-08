@@ -198,6 +198,15 @@ export interface LaserCutParameters {
   cut_order: "inner_first" | "nearest_neighbor" | "by_area";
 }
 
+// 2D Contour parameters (only meaningful when type == "contour_2d").
+// cutting_direction lives in the SHARED base field above; this block
+// carries the contour-specific strategy only.
+export interface ContourParameters {
+  side: "outside" | "inside" | "on_line";
+  depth_mm: number;
+  stock_allowance_mm: number;
+}
+
 export interface CamOperationParameters {
   spindle_rpm: number;
   feedrate_mm_per_min: number;
@@ -215,6 +224,7 @@ export interface CamOperationParameters {
   dwell_seconds?: number;
   engagement_angle_deg?: number;
   zigzag_angle_deg?: number;     // for face milling
+  contour?: ContourParameters;   // for contour_2d
   laser?: LaserCutParameters;    // for laser_cut
   test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";

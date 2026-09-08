@@ -10,32 +10,42 @@ export interface CamMillingToolbarProps {
   hasSetup: boolean;
   // The currently selected body face — face milling requires one.
   selectedFaceId: string | null;
+  // Selected sketch profiles — 2D Contour's alternative input.
+  selectedProfileCount: number;
   onSetupClick: () => void;
   onFaceMillingClick: () => void;
   onPocketClick: () => void;
+  onContourClick: () => void;
 }
 
 export function CamMillingToolbar({
   disabled,
   hasSetup,
   selectedFaceId,
+  selectedProfileCount,
   onSetupClick,
   onFaceMillingClick,
   onPocketClick,
+  onContourClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
   const pushToast = useToastStore((state) => state.pushToast);
 
-  // Profile / Pocket / Drill have no generators yet (milestone work) —
+  // Profile / Drill / Engrave have no generators yet (milestone work) —
   // keep the buttons clickable but answer with a visible toast instead
   // of a silent no-op.
   const onNotImplemented = () =>
     pushToast("info", t("cam.common.notImplemented", "This operation is not implemented yet."));
 
   // Face milling and 2D pocket share the same trigger: a setup plus a
-  // selected body face (the milled top / pocket floor).
+  // selected body face (the milled top / pocket floor).  2D Contour
+  // accepts either a selected face OR selected sketch profiles.
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
   const pocketReady = faceReady;
+  const contourReady =
+    hasSetup &&
+    (Boolean(selectedFaceId) || selectedProfileCount > 0) &&
+    !disabled;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -118,8 +128,16 @@ export function CamMillingToolbar({
         </svg>
       </button>
 
-      <button type="button" className={ICON_BUTTON_DISABLED}
-        data-tooltip={t("cam.common.contour")} aria-label={t("cam.common.contour")} disabled>
+      <button type="button"
+        className={contourReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && !selectedFaceId && selectedProfileCount === 0
+            ? t("cam.contour.selectInputFirst", "Select a face or a sketch profile first")
+            : t("cam.common.contour")
+        }
+        aria-label={t("cam.common.contour")}
+        disabled={!contourReady}
+        onClick={onContourClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">

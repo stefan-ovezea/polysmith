@@ -349,6 +349,16 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   return laser;
 }
 
+polysmith::core::ContourParameters contour_parameters_from_payload(
+    const json& payload) {
+  polysmith::core::ContourParameters contour;
+  contour.side = cam_read_string(payload, "side", "outside");
+  contour.depth_mm = cam_read_number(payload, "depth_mm", 1.0);
+  contour.stock_allowance_mm =
+      cam_read_number(payload, "stock_allowance_mm", 0.0);
+  return contour;
+}
+
 polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
     const json& payload) {
   polysmith::core::CamOperationParameters p;
@@ -404,6 +414,9 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
       !payload.at("test_pattern").is_null()) {
     p.test_pattern =
         laser_test_pattern_parameters_from_payload(payload.at("test_pattern"));
+  }
+  if (payload.contains("contour") && !payload.at("contour").is_null()) {
+    p.contour = contour_parameters_from_payload(payload.at("contour"));
   }
   return p;
 }

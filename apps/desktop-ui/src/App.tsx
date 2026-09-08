@@ -119,6 +119,7 @@ import {
 import { computeFeatureActionAvailability } from "./app/featureActionAvailability";
 import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
 import { triggerCamPocket } from "./app/camPocketActions";
+import { triggerCamContour } from "./app/camContourActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
@@ -606,7 +607,10 @@ function App() {
     const operation = document?.cam.operations.find(
       (candidate) => candidate.op_id === selectedCamOperationId,
     );
-    if (!operation || operation.type !== "laser_cut") {
+    if (
+      !operation ||
+      (operation.type !== "laser_cut" && operation.type !== "contour_2d")
+    ) {
       finishCamProfileRepick();
     }
   }, [
@@ -1542,6 +1546,19 @@ function App() {
       translate: t,
     });
 
+  const triggerCamContourAction = () =>
+    triggerCamContour({
+      document,
+      viewport,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      camCaptureFaceReference,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
   // G-code export: pick a destination, let the core generate any stale
   // toolpaths and write the file with the configured post-processor.
   const exportCamGcodeAction = async () => {
@@ -1704,6 +1721,67 @@ function App() {
           : "cam.pocket.islandAdded",
       ),
     );
+  };
+
+  // Armed contour face pick: the next body-face click becomes the
+  // contour's machining region (replacing the previous one).  Stock
+  // faces cannot anchor a contour.
+  const [contourPickArmed, setContourPickArmed] = useState<{
+    opId: string;
+  } | null>(null);
+
+  // The pick belongs to the operation that armed it — switching the
+  // selected operation (or closing its panel) disarms it.
+  useEffect(() => {
+    setContourPickArmed(null);
+  }, [selectedCamOperationId]);
+
+  const applyContourFacePick = async (faceId: string) => {
+    const pick = contourPickArmed;
+    if (!pick) {
+      return;
+    }
+    if (faceId.startsWith("stock:")) {
+      addMessage(t("cam.contour.pickMissed"));
+      useToastStore.getState().pushToast("warn", t("cam.contour.pickMissed"));
+      return;
+    }
+    // TNP-safe witness capture — the same flow as the initial trigger.
+    let reference: GeometryReference | null = null;
+    await runAction(async () => {
+      const response = await camCaptureFaceReference(faceId);
+      const payload = response.payload;
+      if (payload?.attestation) {
+        reference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+      }
+    });
+    if (!reference) {
+      addMessage(t("cam.contour.captureFailed"));
+      useToastStore
+        .getState()
+        .pushToast("error", t("cam.contour.captureFailed"));
+      return;
+    }
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === pick.opId,
+    );
+    if (!operation) {
+      setContourPickArmed(null);
+      return;
+    }
+    await runAction(async () => {
+      await camOperationUpdate(pick.opId, {
+        geometry_references: {
+          ...operation.geometry_references,
+          machining_regions: [reference],
+        },
+      });
+    });
+    setContourPickArmed(null);
+    addMessage(t("cam.contour.faceSet"));
   };
 
   // Point-anchored WCS pick: the viewport snaps the click to geometry
@@ -2154,6 +2232,7 @@ function App() {
           triggerCamTestPattern={triggerCamTestPatternAction}
           triggerCamFaceMilling={triggerCamFaceMillingAction}
           triggerCamPocket={triggerCamPocketAction}
+          triggerCamContour={triggerCamContourAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 
@@ -2410,6 +2489,10 @@ function App() {
                 }
                 if (pocketPickArmed) {
                   await applyPocketFacePick(faceId);
+                  return;
+                }
+                if (contourPickArmed) {
+                  await applyContourFacePick(faceId);
                   return;
                 }
                 await handleViewportFaceSelection({
@@ -3945,6 +4028,7 @@ function App() {
                   // next viewport click too.
                   setOriginPickArmed(false);
                   setWcsPickArmed(false);
+                  setContourPickArmed(null);
                   setPocketPickArmed({ opId, target: "outer" });
                   addMessage(t("cam.pocket.repickFaceHint"));
                 }}
@@ -3961,12 +4045,32 @@ function App() {
                   // next viewport click too.
                   setOriginPickArmed(false);
                   setWcsPickArmed(false);
+                  setContourPickArmed(null);
                   setPocketPickArmed({ opId, target: "island" });
                   addMessage(t("cam.pocket.addIslandHint"));
                 }}
                 onCancelPocketPick={() => {
                   setPocketPickArmed(null);
                   addMessage(t("cam.pocket.pickCanceled"));
+                }}
+                contourPick={contourPickArmed}
+                onPickContourFace={(opId) => {
+                  if (contourPickArmed?.opId === opId) {
+                    setContourPickArmed(null);
+                    addMessage(t("cam.contour.pickCanceled"));
+                    return;
+                  }
+                  // One armed pick at a time: contour picks consume the
+                  // next viewport click too.
+                  setOriginPickArmed(false);
+                  setWcsPickArmed(false);
+                  setPocketPickArmed(null);
+                  setContourPickArmed({ opId });
+                  addMessage(t("cam.contour.repickFaceHint"));
+                }}
+                onCancelContourPick={() => {
+                  setContourPickArmed(null);
+                  addMessage(t("cam.contour.pickCanceled"));
                 }}
                 originPickArmed={originPickArmed}
                 onPickOrigin={() => {

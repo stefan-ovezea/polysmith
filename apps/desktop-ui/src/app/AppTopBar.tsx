@@ -159,6 +159,7 @@ interface AppTopBarProps {
   camMachineType: string | null;
   triggerCamFaceMilling: AsyncVoid;
   triggerCamPocket: AsyncVoid;
+  triggerCamContour: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
 }
 
@@ -461,6 +462,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       hasCamSetup={(props.document?.cam?.setups?.length ?? 0) > 0}
       selectedCamFaceId={props.document?.selected_face_id ?? null}
+      selectedCamProfileCount={
+        props.document?.selected_sketch_profile_ids?.length ?? 0
+      }
       camMachineType={props.camMachineType}
       onCamSetupClick={() => {
         props.setIsCamSetupPanelOpen((prev) => !prev);
@@ -470,6 +474,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onCamPocketClick={() => {
         void props.triggerCamPocket();
+      }}
+      onCamContourClick={() => {
+        void props.triggerCamContour();
       }}
       onCamTwoDCutClick={() => {
         void props.triggerCamLaserCut();

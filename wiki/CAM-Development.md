@@ -1543,9 +1543,10 @@ before the next operation depends on it:
 | 10. Face milling | ✅ Done — face-witness resolution, tool-radius miter inset with physical validation, clipped zigzag rows |
 | 11. G-code export | ✅ Done — `cam_export_gcode` + `document_exported` `format: "gcode"` |
 | 12. 5-axis scaffolding + mill machine library | ✅ Done (2026-09-04) — rotary A/B/C on the toolpath IR, per-op `tool_axis_mode`, mill machine fields (travel/kinematics/axis limits/tool-change position), 3 mill seeds, modal rotary words + G93 inverse-time feed in posts. Generators still 3-axis only |
-| 13. 2D Pocket toolpath generation | 🔲 registry slot |
-| 14. Drilling toolpath generation | 🔲 registry slot |
-| 15. Adaptive Clearing toolpath generation | 🔲 registry slot |
+| 13. 2D Pocket toolpath generation | ✅ Done (2026-09-08) — boss/hole classification, finishing contours, islands, single-pass hint |
+| 14. 2D Contour toolpath generation | ✅ Done (2026-09-08) — face or sketch-profile input, inside/outside/on-line offsets, exact G2/G3 arcs with polyline fallback, climb/conventional rule |
+| 15. Drilling toolpath generation | 🔲 registry slot |
+| 16. Adaptive Clearing toolpath generation | 🔲 registry slot |
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -1786,6 +1787,92 @@ of the pocket face changes nothing (the face's own inner wire is
 already avoided).  The core warns when an island lies on such a
 face-owned boss, and the UI shows a hint next to the island list when
 islands exist but no stepdown is set.
+
+## 2D Contour (2026-09-08)
+
+`contour_2d` follows a single closed wire with the tool center offset
+to one side — the profile-finishing step of the V1 milestone sequence
+(§"3. 2D Contour").  Two inputs, **face wins over profiles** (matching
+the panel and the core's precedence): a picked planar face contours its
+largest |signed area| outer wire at that face's height, or selected
+sketch profiles contour the profile boundary at the sketch plane.  With
+both selected the generator warns "Both a face and sketch profiles are
+selected — 2D Contour uses the face."
+
+### Wire → toolpath
+
+- The wire is walked with `BRepTools_WireExplorer` +
+  `BRepAdaptor_Curve::GetType()`.  Lines and circles become exact
+  `BaseSegment`s (a full circle is start==end + `ccw` flag, the laser
+  precedent); ANY other curve type (ellipse, spline, b-spline edge)
+  falls back to `sample_planar_wire` + `build_base_segments_from_points`
+  — a chord polyline, no arcs.  This keeps the **exact-arc** promise:
+  circular bosses export true G2/G3, never polylines.
+- The base loop is normalized CCW (material left) and `cam2d::
+  offset_closed_loop(base, d, out, round_joins=false)` produces the
+  offset.  Any arc in the base silently forces round joins (cam2d.cpp
+  rule) — accepted v1 behavior.
+- **Direction rule** (pocket-precedent, all four combos pinned by
+  tests): `reverse = (side == "inside") XOR (direction == "conventional")`,
+  `d = conventional ? −r_eff : +r_eff` where
+  `r_eff = tool_radius + stock_allowance_mm`.  Climb external = CCW
+  outside the wire, climb internal = CW inside it.
+- `"mixed"` cutting direction → warning "treated as climb".
+- **on_line**: the offset is skipped entirely (`d = 0` miter edge cases
+  avoided) and the base loop is emitted directly at the wire; a
+  positive stock allowance → warning "Stock allowance is ignored for an
+  on-line contour."
+- Guards: any offset arc radius ≤ 0 → error "tool does not fit inside
+  the contour"; inside offsets of tight wires get the
+  `offset_loop_self_intersects` check (laser-proven).
+- Cut plane: `faceZ − depth_mm` for the face path, `sketchZ − depth_mm`
+  for the profile path (depth default 1.0 when the block is absent).
+  Below-stock-bottom → warning.  Shape: rapid at retractZ → plunge at
+  plunge feedrate → closed loop at feedrate → rapid up.  **Single pass
+  only** — no stepdown, no `plan_stepdown_levels`.
+- Arc emission follows the laser rule: `kind = cw != flippedFrame ?
+  FeedArcCW : FeedArcCCW`, i/j = world center − world START.  The
+  flipped-frame correction applies ONLY to the sketch-space profile
+  path (left-handed sketch frames flip the sweep); the world-space face
+  path is never flipped.
+
+### Failure semantics (same family as pocket)
+
+Non-horizontal face → error; non-horizontal sketch plane → error; no
+face and no profiles → "2D Contour requires a selected face or a
+sketch profile."; broken reference → generation fails with the
+dependency_broken message.  Retract-below-face / below-stock-top are
+warning-only.
+
+### Deliberate v1 exclusions
+
+Only `side` / `depth_mm` / `stock_allowance_mm` of the
+§operation_params `contour_2d` schema are implemented — no
+`multiple_passes`/`finish_passes`.  Inner loops (face holes) are NOT
+contoured — single closed wire scope.  No leads, no tabs, no collision
+detection.  The shared base `stock_allowance_mm` field is ignored: the
+generator reads ONLY `parameters.contour->stock_allowance_mm` (default
+0.0) — the panel wires there, never to the base field (which defaults
+0.2 for the other ops).
+
+### Parameters block
+
+`cam_types.h` `ContourParameters { side, depth_mm, stock_allowance_mm }`
+as the optional `contour` block on `CamOperationParameters`, serialized
+both directions.  `cutting_direction` stays in the SHARED base field —
+not duplicated in the block.
+
+### UI
+
+Toolbar Contour button enables with a setup plus EITHER a selected face
+or selected sketch profiles.  The trigger mirrors the pocket face
+witness capture when a face is selected; otherwise the operation is
+created with EMPTY geometry references and the core captures the
+selected profiles (the laser flow, enabled by widening the two
+create/update capture gates in `cam_commands.inc` to `contour_2d`).
+The panel shows the input kind: face mode gets a Re-pick face button,
+profile mode gets the reference-sketch scope dropdown + profile re-pick
+(laser pattern).
 
 ## Architecture notes for extension
 

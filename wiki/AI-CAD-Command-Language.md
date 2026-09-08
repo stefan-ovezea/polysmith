@@ -697,9 +697,10 @@ referencing the deleted tool degrade to `status: "error"` with a message.
 Payload = serialized `CamOperation` without `op_id` (the core assigns
 `cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
 `"face_milling"` (zigzag facing of a horizontal face), `"pocket_2d"`
-(zigzag pocketing of a planar face, with optional islands), or
+(zigzag pocketing of a planar face, with optional islands),
+`"contour_2d"` (closed-wire profile finishing, face or sketch input), or
 `"laser_test_pattern"` (LightBurn-style material test cards) are
-implemented; contour/drill/turning are registry slots for later.
+implemented; drill/turning are registry slots for later.
 `tool_id` must reference an existing tool. Laser operations (cut and test
 patterns) require a laser machine setup.
 
@@ -744,6 +745,24 @@ Geometry input:
   faces are allowed — the face's own holes are avoided; `stock:` face
   ids are NOT valid pocket floors.  Islands live entirely in
   `avoidance_regions` (no dedicated island field).
+- `contour_2d`: FACE WINS over profiles.  With a face selected, pass
+  `machining_regions[0]` as the `FaceAttestation` witness (pocket
+  shape) — the generator contours the face's largest-area outer wire at
+  `faceZ − depth`.  With sketch profiles selected instead, send the
+  create with EMPTY `geometry_references` (the laser capture flow): the
+  core captures the selected profiles and contours the first boundary
+  at `sketchZ − depth` — this is why the create/update capture gates in
+  `cam_commands.inc` accept `contour_2d` alongside `laser_cut`.
+  Parameters live in `parameters.contour`: `side`
+  (`"outside"` | `"inside"` | `"on_line"`, default outside),
+  `depth_mm` (default 1), `stock_allowance_mm` (default 0).  The shared
+  base `stock_allowance_mm` is IGNORED by the generator.  Exact
+  G2/G3 arcs for circular edges (polyline fallback for other curves);
+  `parameters.cutting_direction` selects climb/conventional;
+  `cam_operation_set_scope` retargets a profile-based contour to a
+  reference sketch, and an empty-scope re-update with
+  `machining_regions: []` re-captures the current selection (the laser
+  re-pick pattern).
 - `laser_test_pattern`: NO geometry references — `parameters.test_pattern`
   drives the card (`pattern`: `engrave_grid` | `cut_grid` | `kerf_gauge`,
   power/speed min-max-steps, `cell_size_mm`, `cell_spacing_mm`,

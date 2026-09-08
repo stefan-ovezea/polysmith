@@ -42,6 +42,55 @@ island fixtures pinned the outer contour clipping against islands
 `pnpm core:build` + `pnpm test:core` (40/40) + `tsc --noEmit` green;
 user in-app verification pending before commit.
 
+### 2D Contour operation: face + sketch input, exact arcs (cam/milling)
+
+Third V1 milestone (§"3. 2D Contour" in CAM-Development.md): a
+`contour_2d` generator following a single closed wire with the tool
+center offset to one side.
+
+- **Inputs, face wins**: a picked planar face (largest |signed area|
+  outer wire, contoured at `faceZ − depth`) or selected sketch profiles
+  (first boundary, `sketchZ − depth`); both → warning "uses the face".
+  Create-time/update-time capture gates in `cam_commands.inc` widened
+  from laser-only to `laser_cut || contour_2d`, so profile-based
+  contour operations reuse the empty-region capture flow unchanged.
+- **Exact arcs + polyline fallback**: wires are walked with
+  `BRepTools_WireExplorer` + `BRepAdaptor_Curve::GetType()` —
+  lines/circles become exact `BaseSegment`s (G2/G3 in every post),
+  any other curve type falls back to chord-sampled polylines.  The
+  laser wire builders (`build_base_segments_from_edges/_from_points`,
+  `world_point`/`world_z`, `resolve_sketch_frame`, `kMaxCutPlaneTilt`)
+  were hoisted from `laser_generate.cpp` into `cam_planning.h/.cpp`
+  (charter: shared laser + face-milling helpers); the full laser suite
+  is the hoist's behavioral pin.
+- **Direction rule**: `reverse = (side=="inside") XOR
+  (direction=="conventional")`, `d = conventional ? −r_eff : +r_eff`
+  with `r_eff = tool_radius + stock_allowance_mm` — climb external =
+  CCW, climb internal = CW (the pocket precedent).  `on_line` emits the
+  base loop directly (no d=0 offset); allowance > 0 → warning + ignore.
+  Guards: offset arc radius ≤ 0 → "tool does not fit inside the
+  contour", `offset_loop_self_intersects` for tight inside offsets,
+  retract-below-face/stock warnings.  Single pass only.
+- **UI**: `camContourActions.ts` trigger (face witness capture or
+  empty-region profile capture), `CamContourPanel` (input-kind-aware
+  geometry row — face Re-pick vs profile scope dropdown + re-pick;
+  side/depth/allowance/feedrate/plunge/spindle), contour face pick in
+  App.tsx with mutual disarm across origin/WCS/pocket picks, Contour
+  toolbar button (setup + face OR profiles), sidebar type label,
+  `cam.contour.*` i18n block.  Zod `contourParametersSchema` is the
+  single source of panel defaults.
+
+Tests (`cad_core_contour_2d_test`, new suite, 17 cases): all four
+side×direction combos pinned by exact corner sets + shoelace walk sign;
+circle face pins exactly ONE FeedArcCCW/CW with radius + i/j
+(center−start); left-handed sketch frame flips the sweep; ellipse edges
+fall back to feeds with no arcs and every point outside the ellipse;
+on-line + allowance warning; face-wins precedence; depth default;
+empty-input and non-horizontal-face errors; multi-wire face ignores the
+hole; params payload round-trip.  Gates: `pnpm core:build` +
+`pnpm test:core` (41/41) + `tsc --noEmit` green; user in-app
+verification pending before commit.
+
 ## 2026-09-05
 
 ### CAM milling UX: multi-pass face milling + stock-aware WCS picking (cam/milling)

@@ -41,6 +41,7 @@ json to_payload(const polysmith::core::EdgeAttestation& att);
 json to_payload(const polysmith::core::SketchProfileAttestation& att);
 json to_payload(const polysmith::core::LaserCutParameters& laser);
 json to_payload(const polysmith::core::LaserTestPatternParameters& pattern);
+json to_payload(const polysmith::core::ContourParameters& contour);
 json to_payload(const polysmith::core::LaserMachineSettings& machine);
 json to_payload(const polysmith::core::GeometryReference& ref);
 json to_payload(const polysmith::core::StockDefinition& s);
@@ -85,6 +86,8 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
     const json& payload);
 polysmith::core::LaserTestPatternParameters
 laser_test_pattern_parameters_from_payload(const json& payload);
+polysmith::core::ContourParameters contour_parameters_from_payload(
+    const json& payload);
 polysmith::core::LaserMachineSettings laser_machine_settings_from_payload(
     const json& payload);
 polysmith::core::CamOperationDependencies cam_operation_dependencies_from_payload(

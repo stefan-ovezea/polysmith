@@ -348,10 +348,13 @@ interface AppHeaderProps
   hasCamSetup: boolean;
   // The document's viewport face selection — face milling requires one.
   selectedCamFaceId: string | null;
+  // Selected sketch profiles — the 2D Contour's alternative input.
+  selectedCamProfileCount: number;
   camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
   onCamPocketClick: () => void;
+  onCamContourClick: () => void;
   onCamTwoDCutClick: () => void;
   onCamTestPatternClick: () => void;
 }
@@ -461,10 +464,12 @@ export function AppHeader({
   onSelectCamOperation,
   hasCamSetup,
   selectedCamFaceId,
+  selectedCamProfileCount,
   camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
   onCamPocketClick,
+  onCamContourClick,
   onCamTwoDCutClick,
   onCamTestPatternClick,
 }: AppHeaderProps) {
@@ -948,9 +953,11 @@ export function AppHeader({
               disabled={disabled}
               hasSetup={hasCamSetup}
               selectedFaceId={selectedCamFaceId}
+              selectedProfileCount={selectedCamProfileCount}
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
               onPocketClick={onCamPocketClick}
+              onContourClick={onCamContourClick}
             />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />

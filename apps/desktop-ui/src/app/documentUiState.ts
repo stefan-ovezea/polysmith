@@ -71,6 +71,8 @@ function coreCamOperationTypeToUi(type: string): CamOperationType {
       return "laserCut";
     case "pocket_2d":
       return "pocket";
+    case "contour_2d":
+      return "contour";
     case "drilling":
       return "drill";
     default:

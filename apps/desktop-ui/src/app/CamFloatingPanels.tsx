@@ -12,21 +12,30 @@ import type {
 } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
 import {
+  CamContourPanel,
   CamFaceMillingPanel,
   CamLaserCutPanel,
   CamPocketPanel,
   CamSetupPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
+  type ContourFormState,
   type FaceMillingFormState,
   type PocketFormState,
 } from "../layout";
 import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
 import { DEFAULT_POCKET_PARAMS } from "../layout/CamPocketPanel";
+import {
+  DEFAULT_CONTOUR_FORM,
+  DEFAULT_CONTOUR_PARAMS,
+} from "../layout/CamContourPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
-import { laserOperationScopeSketchId } from "./camProfileSelection";
+import {
+  contourOperationInputKind,
+  laserOperationScopeSketchId,
+} from "./camProfileSelection";
 
 type RunAction = (action: () => Promise<void>) => Promise<void>;
 
@@ -70,6 +79,11 @@ interface CamFloatingPanelsProps {
   onPickPocketFace: (opId: string) => void;
   onPickIslandFace: (opId: string) => void;
   onCancelPocketPick: () => void;
+  // Armed contour face pick — opId whose machining region the next
+  // body-face click replaces.
+  contourPick: { opId: string } | null;
+  onPickContourFace: (opId: string) => void;
+  onCancelContourPick: () => void;
   camSetupCreate: (setup: CamSetup) => Promise<void>;
   camSetupUpdate: (setup: CamSetup) => Promise<void>;
   camMachineSettingsSet: (settings: LaserMachineSettings) => Promise<void>;
@@ -121,6 +135,9 @@ export function CamFloatingPanels({
   onPickPocketFace,
   onPickIslandFace,
   onCancelPocketPick,
+  contourPick,
+  onPickContourFace,
+  onCancelContourPick,
   camSetupCreate,
   camSetupUpdate,
   camMachineSettingsSet,
@@ -254,6 +271,9 @@ export function CamFloatingPanels({
         onPickPocketFace,
         onPickIslandFace,
         onCancelPocketPick,
+        contourPick,
+        onPickContourFace,
+        onCancelContourPick,
         t,
       })
     : null;
@@ -289,6 +309,9 @@ function buildOperationPanel({
   onPickPocketFace,
   onPickIslandFace,
   onCancelPocketPick,
+  contourPick,
+  onPickContourFace,
+  onCancelContourPick,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -314,6 +337,9 @@ function buildOperationPanel({
   | "onPickPocketFace"
   | "onPickIslandFace"
   | "onCancelPocketPick"
+  | "contourPick"
+  | "onPickContourFace"
+  | "onCancelContourPick"
 > & { t: (key: string, options?: Record<string, unknown>) => string }) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
@@ -592,6 +618,116 @@ function buildOperationPanel({
             await camOperationUpdate(operation.op_id, {
               tool_id: toolId,
               parameters: { ...parameters, ...partial },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "contour_2d") {
+    const parameters = operation.parameters;
+    const contour = parameters.contour ?? DEFAULT_CONTOUR_PARAMS;
+    const initialParams: ContourFormState = {
+      side: contour.side ?? DEFAULT_CONTOUR_FORM.side,
+      depth_mm: contour.depth_mm ?? DEFAULT_CONTOUR_FORM.depth_mm,
+      stock_allowance_mm:
+        contour.stock_allowance_mm ?? DEFAULT_CONTOUR_FORM.stock_allowance_mm,
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ?? DEFAULT_CONTOUR_FORM.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_CONTOUR_FORM.plunge_feedrate_mm_per_min,
+      spindle_rpm: parameters.spindle_rpm ?? DEFAULT_CONTOUR_FORM.spindle_rpm,
+    };
+    const tools =
+      document?.cam.tool_library.filter(
+        (entry) => entry.type === "endmill_flat",
+      ) ?? [];
+    // Same scope logic as laser: every profile-attesting machining
+    // region must come from one sketch for the dropdown to have a scope.
+    const scopeSketchId = laserOperationScopeSketchId(operation);
+    const inputKind = contourOperationInputKind(operation);
+    const sketches = (document?.feature_history ?? [])
+      .filter((feature) => feature.kind === "sketch")
+      .map((feature) => ({
+        feature_id: feature.feature_id,
+        name: feature.name || "Sketch",
+      }));
+    return (
+      <CamContourPanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        inputKind={inputKind}
+        geometryCount={operation.geometry_references.machining_regions.length}
+        selectedProfileCount={
+          document?.selected_sketch_profile_ids?.length ?? 0
+        }
+        repickArmed={camProfilePickArmed}
+        sketches={sketches}
+        scopeSketchId={scopeSketchId}
+        onSetScope={(featureId) => {
+          void runAction(async () => {
+            await camOperationSetScope(operation.op_id, featureId);
+          });
+        }}
+        onStartRepick={onStartRepickGeometry}
+        onCancelRepick={onCancelRepickGeometry}
+        onClearSelection={onClearRepickSelection}
+        onApplyRepick={() => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                machining_regions: [],
+                avoidance_regions: [],
+                guide_curves: [],
+                check_surfaces: [],
+              },
+            });
+            onApplyRepickGeometry();
+          });
+        }}
+        facePickArmed={
+          contourPick?.opId === operation.op_id && inputKind === "face"
+        }
+        onRepickFace={() => onPickContourFace(operation.op_id)}
+        onCancelFacePick={onCancelContourPick}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: {
+                ...parameters,
+                feedrate_mm_per_min:
+                  partial.feedrate_mm_per_min ?? parameters.feedrate_mm_per_min,
+                plunge_feedrate_mm_per_min:
+                  partial.plunge_feedrate_mm_per_min ??
+                  parameters.plunge_feedrate_mm_per_min,
+                spindle_rpm: partial.spindle_rpm ?? parameters.spindle_rpm,
+                contour: {
+                  ...contour,
+                  side: partial.side ?? contour.side,
+                  depth_mm: partial.depth_mm ?? contour.depth_mm,
+                  stock_allowance_mm:
+                    partial.stock_allowance_mm ?? contour.stock_allowance_mm,
+                },
+              },
             });
           });
         }}

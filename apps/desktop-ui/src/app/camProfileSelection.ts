@@ -58,3 +58,16 @@ export function laserOperationScopeSketchId(
   );
   return allSame ? candidate : null;
 }
+
+// How a contour operation's geometry was picked: a body face (face
+// attestation) or sketch profiles (profile attestations).  null = no
+// machining region yet.
+export function contourOperationInputKind(
+  operation: CamOperation | undefined,
+): "face" | "profile" | null {
+  const first = operation?.geometry_references.machining_regions[0];
+  if (!first?.attestation) {
+    return null;
+  }
+  return "sketch_feature_id" in first.attestation ? "profile" : "face";
+}

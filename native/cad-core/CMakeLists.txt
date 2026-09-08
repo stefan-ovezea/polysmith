@@ -145,6 +145,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_resolution.cpp
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
+  src/core/cam/contour_2d.cpp
   src/core/cam/face_milling.cpp
   src/core/cam/laser/laser_fill.cpp
   src/core/cam/laser/laser_generate.cpp
@@ -321,6 +322,11 @@ polysmith_add_core_test(cad_core_cam_generators_test tests/cam_generators_test.c
 # 2D Pocket generator suite — outer-wire selection, hole/island
 # subtraction, island-top levels, dependency degradation, payload.
 polysmith_add_core_test(cad_core_pocket_2d_test tests/pocket_2d_test.cpp)
+
+# 2D Contour generator suite — side × direction combos, on-line, exact
+# arcs + polyline fallback, profile input, frame mirroring, precedence,
+# defaults, error paths, payload round-trip.
+polysmith_add_core_test(cad_core_contour_2d_test tests/contour_2d_test.cpp)
 
 polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 

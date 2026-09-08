@@ -124,9 +124,12 @@ These are rules going forward, not goals to chase:
 
 ### CAM
 
-CAM is in early scaffolding. The workspace UI skeleton is wired, TNP witness
-resolution for face references is implemented and tested, and a basic face
-milling operation exists. The full plan is in [CAM-Development](CAM-Development).
+The CAM workspace is fully wired — TNP witness resolution for face references,
+stock-aware WCS picking, a saveable machine library, and four working
+operations: laser cut, multi-pass face milling, 2D pocket (with islands), and
+2D contour (face or sketch-profile input, inside/outside/on-line offsets,
+exact G2/G3 arcs). Next up: drilling and adaptive clearing. The full plan is
+in [CAM-Development](CAM-Development).
 
 ## Key Decisions and Constraints
 

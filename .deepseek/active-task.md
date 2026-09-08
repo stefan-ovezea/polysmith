@@ -1,6 +1,83 @@
-# Active Task: 2D Pocket CAM operation + refinement (cam/milling) — implemented, UNCOMMITTED
+# Active task: 2D Contour CAM operation (cam/milling) — implemented, COMMITTED (2026-09-08)
 
-> **Branch:** `cam/milling` (HEAD e9d4a64)
+> **Branch:** `cam/milling` (HEAD fe6dbc9)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+Next milestone in wiki/CAM-Development.md §V1: contour a closed wire on
+a planar face, offset by the tool radius.  Binding user decisions
+(2026-09-08): **both inputs in v1** (face pick AND sketch-profile pick)
+and **exact arcs** (circular wires emit true G2/G3; ellipse/spline
+edges fall back to chord-tolerance polylines).
+
+## Status — phases 1-6 implemented, uncommitted (working tree)
+
+- **P1** core params + serde: `ContourParameters` {side, depth_mm,
+  stock_allowance_mm} as optional `contour` block on
+  CamOperationParameters, serialized both directions.
+- **P2** hoist + wire builder + generator: laser wire builders hoisted
+  to cam_planning (laser suite stays green — the pin); NEW
+  `build_base_segments_from_wire` (exact line/circle BaseSegments,
+  `false` → polyline fallback); `contour_2d.h/.cpp` +
+  `impl/contour_2d_generate.inc` registered in cam_generators.cpp.
+  Semantics: face wins over profiles; largest |signed area| wire;
+  CCW normalization, `reverse = (side=="inside") XOR
+  (direction=="conventional")`, `d = conventional ? −r_eff : +r_eff`;
+  on_line skips offset and emits the base loop; allowance read ONLY
+  from the contour block; single pass at `planeZ − depth_mm`;
+  guards (non-horizontal face, tool-doesn't-fit, self-intersect).
+- **P3** command gates (only these two): cam_commands.inc create gate
+  `!= "laser_cut" && != "contour_2d"`, update gate `== "laser_cut" ||
+  == "contour_2d"` — profile-selected contour ops are created with
+  EMPTY geometry_references and the core captures.
+- **P4** `cad_core_contour_2d_test` suite (17 cases: all 4
+  side×direction combos, on_line ± allowance, exact arcs both sides,
+  spline fallback, profile inputs incl. left-handed frame, face-wins,
+  depth default, empty/non-horizontal/multi-wire rejections, serde).
+- **P5** UI: camContourActions trigger (face witness capture, else
+  empty-region profile create); CamContourPanel (side/depth/allowance
+  + feedrate/plunge/spindle, scope re-pick for profile input, armed
+  face re-pick, CamStatusLine); CamFloatingPanels contour_2d branch
+  (contour-block-aware onUpdate); App.tsx armed contour face pick with
+  mutual disarm vs origin/WCS/pocket; AppTopBar/AppHeader/
+  CamMillingToolbar threading (Contour button enabled on face OR
+  profile selection); camPanelShared prefix union, CamToolbar type
+  union, documentUiState/CamOperationPanel labels; full `cam.contour.*`
+  i18n block.  `tsc --noEmit` green.
+- **P6** docs: wiki/CAM-Development.md "## 2D Contour (2026-09-08)"
+  section + tracker rows; AI-CAD-Command-Language.md; Implementation-Log.md;
+  V1-Roadmap CAM paragraph refreshed; this tracker header.
+
+## Verification (so far)
+
+- `pnpm core:build` + `pnpm test:core` — 41/41 suites green (new
+  contour suite 17/17 + all 40 existing incl. laser hoist pin).
+- `tsc --noEmit` clean.
+- COMMITTED 2026-09-08 on user approval, WITHOUT the in-app pass
+  (user restarting — the in-app pass is owed, see next steps).
+
+## Next steps
+
+1. **Deferred by the user (2026-09-08): multi-pass stepdown for 2D
+   contour.**  v1 is single-pass only — no stepdown field, no
+   `plan_stepdown_levels` in the contour generator.  The user will
+   implement it later.
+2. In-app pass still owed: face/boss-face create, inside/outside/
+   on_line live flips, depth shifts Z, sketch-profile create at
+   sketch plane, G2/G3 in exported G-code, re-pick face, scope
+   re-pick, delete, generate/export stats, Logs warnings; regression:
+   face milling, pocket, laser.
+
+---
+
+# Previous task: 2D Pocket CAM operation + refinement (cam/milling) — COMMITTED fe6dbc9
+
+> **Branch:** `cam/milling` (HEAD fe6dbc9)
 > **Date:** 2026-09-08
 > **Plan:** approved plan at `.claude/plans/glittery-coalescing-kernighan.md`
 > (every commit gated on build/tests + user in-app verification —
@@ -62,30 +139,12 @@ path.  → implemented the refinement below.
 - `pnpm test:core` — all 40 suites green (pocket suite 12/12;
   cam_generators_test 50/50 incl. the pierce regressions).
 - `tsc --noEmit` clean (CamPocketPanel hint + en.json key).
-- **Pending:** user in-app verification (checklist below) → commit
-  approval (explicit, per the binding rules).
-
-## In-app verification checklist (before any commit)
-
-1. Their res/part.json (box + Ø42.3 boss): pocket on the floor →
-   rows avoid the boss AND a circular contour laps the boss; the outer
-   wall gets its closed contour; G-code export sane (retract ≥ stock
-   top 33.05 — the saved file used 25).
-2. Real through-hole part: rows now mill ACROSS the hole (no more
-   avoided plug) — regenerate and compare.
-3. Single-pass + island: the hint appears beside the island list;
-   stepdown set → hint disappears and the island-top flush level
-   appears.
-4. Stepdown 2 multi-pass: levels from stock top; contours at every
-   level.
-5. Face milling + laser ops unaffected.
+- User verified in-app 2026-09-08 ("OK is working now. make a
+  commit") → COMMITTED fe6dbc9 (32 files, +3703/−109).
 
 ## Next steps
 
-1. User in-app verification → single commit (core + tests + UI + docs;
-   needs explicit approval; no Co-Authored-By trailer; commit message
-   names the suites run).
-2. Next milestone per wiki/CAM-Development.md §V1: 2D contour.
+1. Next milestone per wiki/CAM-Development.md §V1: 2D contour.
 
 ---
 

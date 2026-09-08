@@ -7,10 +7,13 @@
 // generators both consume these (they previously each carried private
 // copies).
 
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "core/cam/cam2d.h"
+#include "core/sketch/sketch_feature_parameters.h"
+#include "core/sketch/sketch_profile_types.h"
 
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
@@ -48,6 +51,51 @@ bool plan_stepdown_levels(double stockTopZ, double faceZ, double stepdown,
 // Returns false when the sampling produced fewer than 3 points.
 bool sample_planar_wire(const TopoDS_Wire& wire, double chord_tolerance,
                         std::vector<cam2d::XY>& out_loop);
+
+// ── Exact base-segment builders (laser + contour generators) ────────
+//
+// Build the exact base loop for a sketch profile region or a body
+// wire (exact line/circle segments where possible, sampled-point
+// fallback otherwise).  Hoisted out of laser_generate.cpp so the
+// contour generator shares them.
+
+// Builds exact base segments from a profile region's boundary_edges.
+// When any edge is an ellipse or spline (no exact offset), returns
+// false — the caller falls back to sampled points.
+bool build_base_segments_from_edges(const SketchProfileRegion& region,
+                                    std::vector<cam2d::BaseSegment>& out);
+
+// Sampled-polygon fallback (legacy profiles without exact edges).
+// Assumes the points follow the walk orientation.
+void build_base_segments_from_points(
+    const std::vector<SketchProfilePoint>& points,
+    std::vector<cam2d::BaseSegment>& out);
+
+// Builds exact base segments from a world-space planar wire: straight
+// edges become line segments, circular edges become arcs (a full
+// circle is a start==end segment with ccw=true).  Any other curve
+// type (ellipse, spline) returns false so the caller falls back to
+// sample_planar_wire + a polyline build.  Edges are chained by
+// endpoint matching — pieces may arrive reversed, and flipped arcs
+// invert their sweep direction.
+bool build_base_segments_from_wire(const TopoDS_Wire& wire,
+                                   std::vector<cam2d::BaseSegment>& out);
+
+// World point of a sketch-local 2D point on the sketch plane.
+cam2d::XY world_point(
+    const SketchFeatureParameters::SketchPlaneFrame& frame,
+    const cam2d::XY& p);
+
+// World Z of a sketch-local 2D point offset along the plane normal
+// by `cut_plane_offset`.
+double world_z(const SketchFeatureParameters::SketchPlaneFrame& frame,
+               const cam2d::XY& p, double cut_plane_offset);
+
+// Sketch frames: cached plane_frame when present, else the hardcoded
+// origin-plane frame table (sketches on origin planes may not cache a
+// frame — the history dependency pass resolves it on demand).
+std::optional<SketchFeatureParameters::SketchPlaneFrame>
+resolve_sketch_frame(const SketchFeatureParameters& sketch);
 
 // Mid-UV point and (unnormalized, raw-parameterization) surface normal
 // of a face.  Returns false for degenerate surfaces.  Callers apply

@@ -137,7 +137,12 @@ export function CamStatusLine({
   status: string;
   statusMessage: string;
   toolpathStats: CamToolpathStats | null;
-  prefix: "cam.laserCut" | "cam.faceMilling" | "cam.testPattern" | "cam.pocket";
+  prefix:
+    | "cam.laserCut"
+    | "cam.faceMilling"
+    | "cam.testPattern"
+    | "cam.pocket"
+    | "cam.contour";
 }) {
   const { t } = useTranslation();
 
