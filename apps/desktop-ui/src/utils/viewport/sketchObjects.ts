@@ -24,6 +24,7 @@ import {
   makePlaneTransformMatrixFromFrame,
   shapeFromProfileLoops,
 } from "./primitiveObjects";
+import { smoothProfileHoleLoop } from "../../lib/viewportScene";
 import { themeColor } from "./themeColor";
 import { polygonArea2d, SKETCH_PLANE_OFFSET } from "./viewportMath";
 
@@ -253,7 +254,9 @@ export function buildSketchCircleObject(
   // planes use the legacy axis mapping for compatibility.
   const { xAxis, yAxis } = resolveSketchPlaneAxes(circle.planeId, planeFrame);
   const points = curve
-    .getPoints(64)
+    // 256 samples keeps the circle visually smooth at extreme zoom —
+    // a 64-gon shows visible facets once the view is zoomed in close.
+    .getPoints(256)
     .map(
       (point) =>
         new THREE.Vector3(
@@ -829,7 +832,7 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
   };
 
   if (profile.profileKind === "circle") {
-    const geometry = new THREE.CircleGeometry(profile.radius, 48);
+    const geometry = new THREE.CircleGeometry(profile.radius, 256);
     // CircleGeometry is centered at (0, 0) in 2D plane coords. The
     // core ships the actual circle center as `profile.start` (in 2D
     // sketch coords), so we translate the geometry to that center
@@ -840,22 +843,14 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     const mesh = new THREE.Mesh(geometry, fillMaterial);
     mesh.renderOrder = 6;
     mesh.userData.sketchProfileId = profile.profileId;
-    const points = new THREE.EllipseCurve(
-      profile.start[0],
-      profile.start[1],
-      profile.radius,
-      profile.radius,
-      0,
-      Math.PI * 2,
-      false,
-    ).getPoints(96);
+    // No edge loop here: the sketch circle entity already draws this
+    // exact boundary. A second coincident loop (different sample count
+    // and hover/selected color) reads as a doubled "circle + polygon"
+    // outline when the profile is hovered or selected. Hover/selection
+    // feedback comes from the fill; picking never needed the edge —
+    // the fill mesh carries the profile id and sketchProfilePicking
+    // has an analytic circle-containment fallback.
     group.add(mesh);
-    group.add(
-      makeEdgeLoop(
-        points.map((point) => [point.x, point.y] as [number, number]),
-        false,
-      ),
-    );
     group.applyMatrix4(
       profile.planeFrame
         ? makePlaneTransformMatrixFromFrame(
@@ -886,7 +881,14 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     };
   }
 
-  const shape = shapeFromProfileLoops(profile.profilePoints, profile.innerLoops);
+  // Circle holes render from their exact center/radius — the stored
+  // loop points are only a 16-point chord sample that would show as a
+  // polygon next to the smooth standalone circle region.
+  const holeLoops = profile.innerLoops.map((_, index) =>
+    smoothProfileHoleLoop(profile, index),
+  );
+
+  const shape = shapeFromProfileLoops(profile.profilePoints, holeLoops);
 
   const geometry = new THREE.ShapeGeometry(shape);
   const mesh = new THREE.Mesh(geometry, fillMaterial);
@@ -894,9 +896,15 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
   mesh.userData.sketchProfileId = profile.profileId;
   group.add(mesh);
   group.add(makeEdgeLoop(profile.profilePoints, false));
-  for (const loop of profile.innerLoops) {
+  // Exact-circle holes get no edge loop of their own — the sketch
+  // circle entity draws the same boundary, and a second coincident
+  // loop would double it (same issue as the standalone circle region).
+  holeLoops.forEach((loop, index) => {
+    if (profile.circleHoles.some((entry) => entry.loopIndex === index)) {
+      return;
+    }
     group.add(makeEdgeLoop(loop, true));
-  }
+  });
   group.applyMatrix4(
     profile.planeFrame
       ? makePlaneTransformMatrixFromFrame(
@@ -905,12 +913,17 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
         )
       : makePlaneTransformMatrix(profile.planeId, SKETCH_PLANE_OFFSET),
   );
+  const holeAreas = profile.innerLoops.map((loop, index) => {
+    const circle = profile.circleHoles.find(
+      (entry) => entry.loopIndex === index,
+    );
+    return circle
+      ? Math.PI * circle.radius * circle.radius
+      : polygonArea2d(loop);
+  });
   group.userData.sketchProfileArea =
     polygonArea2d(profile.profilePoints) -
-    profile.innerLoops.reduce(
-      (sum, loop) => sum + polygonArea2d(loop),
-      0,
-    );
+    holeAreas.reduce((sum, area) => sum + area, 0);
   return {
     group,
     visual: {

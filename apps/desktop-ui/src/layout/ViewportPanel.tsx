@@ -189,6 +189,8 @@ import { updateScreenSpaceSketchSprites } from "./viewport/screenSpaceSketchSpri
 import {
   buildCamOriginSnapCandidates,
   camOriginSnapLabelKey,
+  drillHoleCandidates,
+  liftDrillCandidates,
   resolveCamOriginSnap,
 } from "./viewport/camOriginSnap";
 import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
@@ -250,6 +252,10 @@ export function ViewportPanel({
   onSelectVertex,
   originPickPointEnabled,
   onOriginPickPoint,
+  wcsPickPointEnabled,
+  onWcsPickPoint,
+  drillPickPointEnabled,
+  onDrillPickPoint,
   onStartSketch,
   onStartSketchOnFace,
   onAddSketchLine,
@@ -354,7 +360,7 @@ export function ViewportPanel({
   // cancel, or closing the setup panel) so a stale label cannot stick
   // at the last pointer position.
   useEffect(() => {
-    if (originPickPointEnabled) {
+    if (originPickPointEnabled || drillPickPointEnabled) {
       // Scene hover is suppressed while the pick is armed (see the
       // pointer-move handler) — clear any highlight from before the
       // arm so a stale surface highlight doesn't sit frozen under
@@ -368,16 +374,20 @@ export function ViewportPanel({
       setHoveredSketchPoint(null);
       setHoveredSketchEntity(null);
     }
-    if (!originPickPointEnabled && camOriginSnapLabelActiveRef.current) {
+    if (
+      !originPickPointEnabled &&
+      !drillPickPointEnabled &&
+      camOriginSnapLabelActiveRef.current
+    ) {
       camOriginSnapLabelActiveRef.current = false;
       setSketchSnapLabel(null);
     }
-    if (!originPickPointEnabled) {
+    if (!originPickPointEnabled && !drillPickPointEnabled) {
       // The armed pick tracks the pointer position itself; a stale
       // position would keep the snap square visible after disarm.
       setCrosshairPointer(null);
     }
-  }, [originPickPointEnabled]);
+  }, [originPickPointEnabled, drillPickPointEnabled]);
   // Floating constraint-preview badge tracked relative to the
   // viewport container. Shown next to the cursor whenever the snap
   // resolver is producing a midpoint or perpendicular snap so the
@@ -612,6 +622,10 @@ export function ViewportPanel({
     new Map<string, SketchProfileInteractionState>(),
   );
   const faceMeshesRef = useRef<THREE.Mesh[]>([]);
+  // Stock box mesh (face-tagged via userData.stockFaceNames) for the WCS
+  // pick raycast — populated by addCamSceneObjects, cleared with the rest
+  // of the scene refs in clearViewportSceneObjectRefs.
+  const stockFaceMeshesRef = useRef<THREE.Mesh[]>([]);
   // Body edges materialized as THREE.Line objects. Raycasting against
   // these (with a small `params.Line.threshold`) drives edge picking
   // for the upcoming fillet/chamfer features. Edges are checked before
@@ -652,6 +666,14 @@ export function ViewportPanel({
   originPickPointEnabledRef.current = originPickPointEnabled;
   const originPickPointRef = useRef(onOriginPickPoint);
   originPickPointRef.current = onOriginPickPoint;
+  const wcsPickPointEnabledRef = useRef(wcsPickPointEnabled);
+  wcsPickPointEnabledRef.current = wcsPickPointEnabled;
+  const wcsPickPointRef = useRef(onWcsPickPoint);
+  wcsPickPointRef.current = onWcsPickPoint;
+  const drillPickPointEnabledRef = useRef(drillPickPointEnabled);
+  drillPickPointEnabledRef.current = drillPickPointEnabled;
+  const drillPickPointRef = useRef(onDrillPickPoint);
+  drillPickPointRef.current = onDrillPickPoint;
   const selectEdgeRef = useRef(onSelectEdge);
   const selectVertexRef = useRef(onSelectVertex);
   const startSketchRef = useRef(onStartSketch);
@@ -1206,6 +1228,15 @@ export function ViewportPanel({
   const showViewportGridRef = useRef(showViewportGrid);
   const showSketchGridRef = useRef(showSketchGrid);
   const documentRef = useRef(document);
+  // The pointer handlers below live in an effect keyed on
+  // activeSketchPlaneId only — their closures would otherwise see the
+  // mount-time document/viewport/stock state.  Stock snap candidates
+  // and the stock-face raycast read these refs so they track live
+  // values (body candidates come from scene refs and never had the
+  // problem — which is why stock snap looked like the only failure).
+  const viewportRef = useRef(viewport);
+  const showStockRef = useRef(showStock);
+  const activeCamSetupIdRef = useRef(activeCamSetupId);
   // Transform/Array center pick: armed from App while the panel's Pick
   // button is active. The next sketch-plane click reports the snapped
   // point instead of selecting.
@@ -1252,6 +1283,15 @@ export function ViewportPanel({
   useEffect(() => {
     documentRef.current = document;
   }, [document]);
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+  useEffect(() => {
+    showStockRef.current = showStock;
+  }, [showStock]);
+  useEffect(() => {
+    activeCamSetupIdRef.current = activeCamSetupId;
+  }, [activeCamSetupId]);
   useEffect(() => {
     draftDimensionSessionRef.current = draftDimensionSession;
   }, [draftDimensionSession]);
@@ -1535,6 +1575,7 @@ export function ViewportPanel({
     sketchProfileObjectsRef.current = [];
     meshesRef.current = [];
     faceMeshesRef.current = [];
+    stockFaceMeshesRef.current = [];
     edgeLineObjectsRef.current = [];
     vertexObjectsRef.current = [];
     cutPreviewObjectsRef.current = [];
@@ -3259,31 +3300,45 @@ export function ViewportPanel({
         }
       }
 
-      if (originPickPointEnabledRef.current) {
-        // Live snap preview while the origin pick is armed: label the
-        // snap kind whenever the cursor is within the snap threshold,
-        // so the user sees what the next click will snap to.  Also
-        // track the pointer position here — the sketch-mode crosshair
-        // update never runs in the CAM workspace, so without this the
-        // SnapCursorOverlay has no position to render the square +
-        // label chip at.
+      if (
+        originPickPointEnabledRef.current ||
+        wcsPickPointEnabledRef.current ||
+        drillPickPointEnabledRef.current
+      ) {
+        // Live snap preview while the origin, WCS, or drilling pick
+        // is armed: label the snap kind whenever the cursor is within
+        // the snap threshold, so the user sees what the next click
+        // will snap to.  Also track the pointer position here — the
+        // sketch-mode crosshair update never runs in the CAM
+        // workspace, so without this the SnapCursorOverlay has no
+        // position to render the square + label chip at.
         setPointerNdcFromEvent(pointer, event, renderer);
         const rect = renderer.domElement.getBoundingClientRect();
         setCrosshairPointer({
           x: event.clientX - rect.left,
           y: event.clientY - rect.top,
         });
-        const candidates = buildCamOriginSnapCandidates({
-          document,
-          activeCamSetupId,
-          viewport,
-          showStock,
+        const rawCandidates = buildCamOriginSnapCandidates({
+          document: documentRef.current,
+          activeCamSetupId: activeCamSetupIdRef.current,
+          viewport: viewportRef.current,
+          showStock: showStockRef.current,
           sketchPointObjects: sketchPointObjectsRef.current,
           sketchPrimitives: sceneDataRef.current,
           vertexObjects: vertexObjectsRef.current,
           edgeLineObjects: edgeLineObjectsRef.current,
           faceMeshes: faceMeshesRef.current,
         });
+        // The drill pick snaps to hole rims/walls only (body geometry,
+        // lifted to the material top and read from the RAW payload —
+        // a hidden sketch must never hide the holes); the origin/WCS
+        // picks keep every target.
+        const candidates = drillPickPointEnabledRef.current
+          ? liftDrillCandidates(
+              drillHoleCandidates(viewportRef.current),
+              faceMeshesRef.current,
+            )
+          : rawCandidates;
         const snapped = resolveCamOriginSnap({
           candidates,
           camera,
@@ -3559,10 +3614,10 @@ export function ViewportPanel({
           // the exact 3D point, LightBurn-style.
           const rect = renderer.domElement.getBoundingClientRect();
           const candidates = buildCamOriginSnapCandidates({
-            document,
-            activeCamSetupId,
-            viewport,
-            showStock,
+            document: documentRef.current,
+            activeCamSetupId: activeCamSetupIdRef.current,
+            viewport: viewportRef.current,
+            showStock: showStockRef.current,
             sketchPointObjects: sketchPointObjectsRef.current,
             sketchPrimitives: sceneDataRef.current,
             vertexObjects: vertexObjectsRef.current,
@@ -3610,6 +3665,245 @@ export function ViewportPanel({
             x: Math.round(hit.x * 1000) / 1000,
             y: Math.round(hit.y * 1000) / 1000,
             z: 0,
+          });
+        },
+        // Armed WCS pick: same pointer-up routing as the origin pick,
+        // but face hits take priority — a body face keeps the TNP face
+        // anchor, a stock face anchors to the stock face (or a snapped
+        // stock corner/midpoint as a pinned point) — and the result is
+        // a point anchor instead of a stock origin.
+        wcsPickPointEnabled: wcsPickPointEnabledRef.current,
+        wcsPickPoint: (pickEvent) => {
+          setPointerNdcFromEvent(pointer, pickEvent, renderer);
+          raycaster.setFromCamera(pointer, camera);
+          const rect = renderer.domElement.getBoundingClientRect();
+
+          // 1) Face raycast FIRST.  A body face keeps the TNP face
+          // anchor (selectFace → placeWcsFromFacePick).  Snap-first
+          // would degrade body-face picks into bare points — the snap
+          // set includes body face centers.  The stock box is the
+          // outermost surface when shown, so it intercepts first and
+          // routes to the stock branch below; hiding the stock
+          // restores body-face picks.
+          let stockFaceName: string | null = null;
+          let stockIntercepted = false;
+          const hits = raycaster
+            .intersectObjects(
+              [
+                ...faceMeshesRef.current,
+                ...(showStockRef.current ? stockFaceMeshesRef.current : []),
+              ],
+              false,
+            )
+            .sort((a, b) => a.distance - b.distance);
+          for (const hit of hits) {
+            if (hit.object.userData.isStockBox === true) {
+              stockIntercepted = true;
+              const names = hit.object.userData.stockFaceNames as
+                | Array<string | null>
+                | undefined;
+              stockFaceName =
+                names?.[hit.face?.materialIndex ?? -1] ?? null;
+              break;
+            }
+            if (typeof hit.object.userData.faceId === "string") {
+              void selectFaceRef.current(hit.object.userData.faceId);
+              return;
+            }
+          }
+
+          // 2) Snap within 12 px.  When the stock face intercepted the
+          // ray, only stock candidates are considered — they are the
+          // outermost surface and must stay reachable; otherwise the
+          // full set (body vertices/edges/faces, sketch points).
+          const allCandidates = buildCamOriginSnapCandidates({
+            document: documentRef.current,
+            activeCamSetupId: activeCamSetupIdRef.current,
+            viewport: viewportRef.current,
+            showStock: showStockRef.current,
+            sketchPointObjects: sketchPointObjectsRef.current,
+            sketchPrimitives: sceneDataRef.current,
+            vertexObjects: vertexObjectsRef.current,
+            edgeLineObjects: edgeLineObjectsRef.current,
+            faceMeshes: faceMeshesRef.current,
+          });
+          const candidates = stockIntercepted
+            ? allCandidates.filter(
+                (candidate) =>
+                  candidate.kind === "stock_corner" ||
+                  candidate.kind === "stock_midpoint",
+              )
+            : allCandidates;
+          const snapped = resolveCamOriginSnap({
+            candidates,
+            camera,
+            pointer,
+            rect,
+          });
+          if (snapped) {
+            const { x, y, z } = snapped.position;
+            wcsPickPointRef.current({
+              x: Math.round(x * 1000) / 1000,
+              y: Math.round(y * 1000) / 1000,
+              z: Math.round(z * 1000) / 1000,
+            });
+            return;
+          }
+
+          // 3) No snap + a named stock face → stock_face anchor (the
+          // core resolves it against the live stock extents).
+          if (stockFaceName) {
+            void selectFaceRef.current(`stock:${stockFaceName}`);
+            return;
+          }
+
+          // 4) Bed-plane fallback (z = 0, same 10 m guard as the
+          // origin pick) — also covers stock hits on the cylinder side
+          // (untagged: not a real cylinder face).
+          const hit = new THREE.Vector3();
+          if (
+            !raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+              hit,
+            )
+          ) {
+            wcsPickPointRef.current(null);
+            return;
+          }
+          if (Math.abs(hit.x) > 10000 || Math.abs(hit.y) > 10000) {
+            wcsPickPointRef.current(null);
+            return;
+          }
+          wcsPickPointRef.current({
+            x: Math.round(hit.x * 1000) / 1000,
+            y: Math.round(hit.y * 1000) / 1000,
+            z: 0,
+          });
+        },
+        // Armed drilling pick: the click reports a BODY reference when
+        // it lands on a hole (snap dot over the lifted candidates →
+        // rim edge / wall face; a rim edge line; a cylindrical wall
+        // face) — the caller captures a re-resolvable attestation.
+        // Every other surface reports the clicked world point (free
+        // pick), and a missed hit falls back to the bed plane (z = 0).
+        drillPickPointEnabled: drillPickPointEnabledRef.current,
+        drillPickPoint: (pickEvent) => {
+          setPointerNdcFromEvent(pointer, pickEvent, renderer);
+          raycaster.setFromCamera(pointer, camera);
+          const rect = renderer.domElement.getBoundingClientRect();
+          const round = (value: number) => Math.round(value * 1000) / 1000;
+
+          // 1) Snap within 12 px over the lifted hole candidates — the
+          // dot IS the hole.  A rim reports its edge, a wall its face,
+          // both lifted to the material top (a blind hole's wall axis
+          // sits at the hole bottom) like the live markers.
+          const candidates = liftDrillCandidates(
+            drillHoleCandidates(viewportRef.current),
+            faceMeshesRef.current,
+          );
+          const snapped = resolveCamOriginSnap({
+            candidates,
+            camera,
+            pointer,
+            rect,
+          });
+          if (snapped) {
+            if (snapped.kind === "hole_rim" && snapped.sourceId) {
+              drillPickPointRef.current({
+                mode: "edge",
+                id: snapped.sourceId,
+              });
+            } else if (snapped.kind === "hole_wall" && snapped.sourceId) {
+              drillPickPointRef.current({
+                mode: "face",
+                id: snapped.sourceId,
+              });
+            } else {
+              const { x, y, z } = snapped.position;
+              drillPickPointRef.current({
+                mode: "point",
+                point: { x: round(x), y: round(y), z: round(z) },
+              });
+            }
+            return;
+          }
+
+          // 2) Edge-line raycast: a click directly on a circular rim
+          // edge reports the edge for attestation capture (the same
+          // small line threshold as the selection pick).
+          const previousLineThreshold = raycaster.params.Line?.threshold ?? 1;
+          if (raycaster.params.Line) {
+            raycaster.params.Line.threshold = 1.2;
+          }
+          const [edgeHit] = raycaster.intersectObjects(
+            edgeLineObjectsRef.current,
+            false,
+          );
+          if (raycaster.params.Line) {
+            raycaster.params.Line.threshold = previousLineThreshold;
+          }
+          const edgeId = edgeHit?.object.userData.edgeId;
+          if (typeof edgeId === "string") {
+            drillPickPointRef.current({ mode: "edge", id: edgeId });
+            return;
+          }
+
+          // 3) Face raycast: a cylindrical wall face reports the FACE
+          // for attestation capture; every other surface (planar,
+          // stock, spline, and primitive body meshes — STL/cylinder
+          // bodies have no face primitives) reports the clicked point.
+          const hits = raycaster
+            .intersectObjects(
+              [
+                ...faceMeshesRef.current,
+                ...(showStockRef.current ? stockFaceMeshesRef.current : []),
+                ...meshesRef.current,
+              ],
+              false,
+            )
+            .sort((a, b) => a.distance - b.distance);
+          const faceHit = hits[0];
+          if (faceHit) {
+            const surfaceKind = faceHit.object.userData.surfaceKind as
+              | string
+              | undefined;
+            const faceId = faceHit.object.userData.faceId as
+              | string
+              | undefined;
+            if (surfaceKind === "cylinder" && typeof faceId === "string") {
+              drillPickPointRef.current({ mode: "face", id: faceId });
+            } else {
+              drillPickPointRef.current({
+                mode: "point",
+                point: {
+                  x: round(faceHit.point.x),
+                  y: round(faceHit.point.y),
+                  z: round(faceHit.point.z),
+                },
+              });
+            }
+            return;
+          }
+
+          // 4) Bed-plane fallback (z = 0, same 10 m guard as the
+          // origin pick).
+          const hit = new THREE.Vector3();
+          if (
+            !raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+              hit,
+            )
+          ) {
+            drillPickPointRef.current(null);
+            return;
+          }
+          if (Math.abs(hit.x) > 10000 || Math.abs(hit.y) > 10000) {
+            drillPickPointRef.current(null);
+            return;
+          }
+          drillPickPointRef.current({
+            mode: "point",
+            point: { x: round(hit.x), y: round(hit.y), z: 0 },
           });
         },
         activeSketchPlaneId,
@@ -4190,6 +4484,7 @@ export function ViewportPanel({
         referencePlaneVisuals: referencePlaneVisualsRef,
         referencePlaneStates: referencePlaneStatesRef,
         faceMeshes: faceMeshesRef,
+        stockFaceMeshes: stockFaceMeshesRef,
         solidFaceVisuals: solidFaceVisualsRef,
         solidFaceStates: solidFaceStatesRef,
         edgeLineObjects: edgeLineObjectsRef,
@@ -4218,7 +4513,15 @@ export function ViewportPanel({
       showStock,
       wcsOrientation,
       activeCamSetupId,
-      originPickArmed: originPickPointEnabled,
+      // All pick modes share the snap markers + hover suppression —
+      // sceneSync only needs to know that SOME pick is armed.
+      originPickArmed:
+        originPickPointEnabled ||
+        wcsPickPointEnabled ||
+        drillPickPointEnabled,
+      // The drill pick lifts its circle/face-center markers to the
+      // material top (holes whose sketch circles sit at the bottom).
+      drillPickArmed: drillPickPointEnabled,
       moveGizmo,
       clearViewportSceneObjectRefs,
       clearDragPreviewLines,
@@ -4236,7 +4539,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

@@ -10,6 +10,7 @@ export function addCamSceneObjects({
   showStock,
   wcsOrientation,
   activeCamSetupId,
+  stockFaceMeshes,
 }: {
   document: DocumentState | null;
   viewport: ViewportState | null;
@@ -17,6 +18,10 @@ export function addCamSceneObjects({
   showStock: boolean;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
+  /** Receives the stock box mesh (face-tagged) for the WCS pick
+   *  raycast — refs live in ViewportPanel and are cleared on scene
+   *  rebuild. */
+  stockFaceMeshes?: THREE.Mesh[];
 }) {
   const setup = resolveActiveCamSetup(document, activeCamSetupId);
   if (!setup) {
@@ -49,6 +54,7 @@ export function addCamSceneObjects({
       stock: setup.stock,
       viewport,
       referenceGroup,
+      stockFaceMeshes,
     });
   }
 }
@@ -243,10 +249,12 @@ function addStockBoundingBox({
   stock,
   viewport,
   referenceGroup,
+  stockFaceMeshes,
 }: {
   stock: StockDefinition;
   viewport: ViewportState | null;
   referenceGroup: THREE.Group;
+  stockFaceMeshes?: THREE.Mesh[];
 }) {
   const modelCenter = modelCenterFromBodies(viewport?.bodies ?? []);
   // The stock always WRAPS THE PART — it is centered on the model
@@ -259,8 +267,8 @@ function addStockBoundingBox({
   let stockWidth: number;
   let stockHeight: number;
   let stockDepth: number;
-  if (stock.type === "cylinder" && stock.diameter !== undefined) {
-    // Cylinder stock approximated by its bounding box for display.
+  const isCylinder = stock.type === "cylinder" && stock.diameter !== undefined;
+  if (isCylinder) {
     const diameter = stock.diameter + margin * 2;
     stockWidth = diameter;
     stockHeight = diameter;
@@ -272,11 +280,21 @@ function addStockBoundingBox({
     stockDepth = size[2] + margin * 2;
   }
 
-  const stockBox = new THREE.BoxGeometry(stockWidth, stockHeight, stockDepth);
+  // Cylinder stock renders as an actual cylinder (axis along Z); box
+  // stock as a box.  The snap candidates in camOriginSnap.ts share
+  // these extents.
+  const stockGeometry = isCylinder
+    ? new THREE.CylinderGeometry(
+        stockWidth / 2,
+        stockWidth / 2,
+        stockDepth,
+        32,
+      )
+    : new THREE.BoxGeometry(stockWidth, stockHeight, stockDepth);
   const stockColor = themeColor("--color-axis-z", "#4488ff");
 
   const stockMesh = new THREE.Mesh(
-    stockBox,
+    stockGeometry,
     new THREE.MeshBasicMaterial({
       color: stockColor,
       transparent: true,
@@ -289,8 +307,24 @@ function addStockBoundingBox({
   stockMesh.renderOrder = 0;
   referenceGroup.add(stockMesh);
 
+  // Face tagging for the WCS pick raycast.  Three.js BoxGeometry
+  // groups run px/nx/py/ny/pz/nz (verified against three 0.183.2
+  // BoxGeometry.js) → CAD convention right +X / left -X / front +Y /
+  // back -Y / top +Z / bottom -Z, matching cam_stock.cpp.  The hit
+  // face's materialIndex comes from the geometry group (Mesh.js
+  // raycast), so names[materialIndex] identifies the stock face.  A
+  // cylinder only has real top/bottom caps — its side stays untagged.
+  stockMesh.userData.isStockBox = true;
+  stockMesh.userData.stockFaceNames = isCylinder
+    ? [null, "top", "bottom"]
+    : ["right", "left", "front", "back", "top", "bottom"];
+  stockFaceMeshes?.push(stockMesh);
+
+  // EdgesGeometry's angle threshold hides the cylinder's side facets
+  // (dihedral ≈ 168.75° for 32 segments) while keeping the two cap
+  // circles.
   const stockEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(stockBox),
+    new THREE.EdgesGeometry(stockGeometry, isCylinder ? 12 : 1),
     new THREE.LineBasicMaterial({
       color: stockColor,
       transparent: true,

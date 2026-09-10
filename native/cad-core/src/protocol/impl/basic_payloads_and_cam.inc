@@ -90,6 +90,10 @@ json to_payload(const polysmith::core::EdgeAttestation& att) {
       nf.push_back(array3(n));
     j["adjacent_face_normals"] = nf;
   }
+  // Circle witness — emitted only when present (full-circle rim edges).
+  if (att.center.has_value()) j["center"] = array3(att.center.value());
+  if (att.axis.has_value()) j["axis"] = array3(att.axis.value());
+  if (att.radius.has_value()) j["radius"] = att.radius.value();
   return j;
 }
 
@@ -112,6 +116,10 @@ json to_payload(const polysmith::core::SketchProfileAttestation& att) {
   return j;
 }
 
+json to_payload(const polysmith::core::PointAttestation& att) {
+  return {{"point", array3(att.point)}};
+}
+
 json to_payload(const polysmith::core::LaserCutParameters& laser) {
   json j = {
       {"mode", laser.mode},
@@ -127,6 +135,8 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
       {"lead_out_style", laser.lead_out_style},
       {"lead_in_angle_deg", laser.lead_in_angle_deg},
       {"lead_out_angle_deg", laser.lead_out_angle_deg},
+      {"lead_in_arc_angle_deg", laser.lead_in_arc_angle_deg},
+      {"lead_out_arc_angle_deg", laser.lead_out_arc_angle_deg},
       {"overcut_mm", laser.overcut_mm},
       {"pierce_dwell_seconds", laser.pierce_dwell_seconds},
       {"pierce_position", laser.pierce_position},
@@ -151,6 +161,26 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
     j["pierce_angle_deg"] = laser.pierce_angle_deg.value();
   }
   return j;
+}
+
+json to_payload(const polysmith::core::ContourParameters& contour) {
+  return {
+      {"side", contour.side},
+      {"depth_mm", contour.depth_mm},
+      {"stock_allowance_mm", contour.stock_allowance_mm},
+  };
+}
+
+json to_payload(const polysmith::core::SlotParameters& slot) {
+  return {
+      {"depth_mm", slot.depth_mm},
+  };
+}
+
+json to_payload(const polysmith::core::EngraveParameters& engrave) {
+  return {
+      {"depth_mm", engrave.depth_mm},
+  };
 }
 
 // ── GeometryReference ────────────────────────────────────────────
@@ -194,6 +224,8 @@ json to_payload(const polysmith::core::MachineAxes& ma) {
 
 json to_payload(const polysmith::core::WcsOrigin& wcs) {
   json j{
+      {"anchor", wcs.anchor},
+      {"stock_face", wcs.stock_face},
       {"feature_id", wcs.feature_id},
       {"face_reference", to_payload(wcs.face_reference)}};
   if (wcs.position.has_value()) j["position"] = array3(wcs.position.value());
@@ -267,7 +299,9 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
       {"cutting_direction", p.cutting_direction},
       {"finish_pass", p.finish_pass},
       {"multiple_passes", p.multiple_passes},
+      {"through_hole", p.through_hole},
       {"coolant", p.coolant},
+      {"tool_axis_mode", p.tool_axis_mode},
   };
   if (p.stepdown_mm.has_value())         j["stepdown_mm"]         = p.stepdown_mm.value();
   if (p.stepover_percent.has_value())    j["stepover_percent"]    = p.stepover_percent.value();
@@ -280,6 +314,9 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
   if (p.zigzag_angle_deg.has_value())     j["zigzag_angle_deg"]     = p.zigzag_angle_deg.value();
   if (p.laser.has_value())                j["laser"]                = to_payload(p.laser.value());
   if (p.test_pattern.has_value())         j["test_pattern"]         = to_payload(p.test_pattern.value());
+  if (p.contour.has_value())              j["contour"]              = to_payload(p.contour.value());
+  if (p.slot.has_value())                 j["slot"]                 = to_payload(p.slot.value());
+  if (p.engrave.has_value())              j["engrave"]              = to_payload(p.engrave.value());
   return j;
 }
 
@@ -357,7 +394,7 @@ json to_payload(const polysmith::core::PostProcessor& pp) {
 }
 
 json to_payload(const polysmith::core::MachineDefinition& machine) {
-  return {
+  json j{
       {"name", machine.name},
       {"machine_type", machine.machine_type},
       {"post_processor", to_payload(machine.post_processor)},
@@ -365,7 +402,22 @@ json to_payload(const polysmith::core::MachineDefinition& machine) {
       {"work_area_y_mm", machine.work_area_y_mm},
       {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
       {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+      {"travel_x_mm", machine.travel_x_mm},
+      {"travel_y_mm", machine.travel_y_mm},
+      {"travel_z_mm", machine.travel_z_mm},
+      {"kinematics", machine.kinematics},
   };
+  json limits = json::array();
+  for (const auto& limit : machine.axis_limits) {
+    limits.push_back(
+        {{"axis", limit.axis}, {"min", limit.min}, {"max", limit.max}});
+  }
+  j["axis_limits"] = limits;
+  if (machine.tool_change_position.has_value()) {
+    j["tool_change_position"] =
+        array3(machine.tool_change_position.value());
+  }
+  return j;
 }
 
 // ── CamDocumentData ──────────────────────────────────────────────

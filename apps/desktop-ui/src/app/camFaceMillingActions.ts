@@ -5,6 +5,7 @@ import type {
   FaceAttestation,
   GeometryReference,
 } from "@/types";
+import { useToastStore } from "@/state/toastStore";
 
 interface CamFaceMillingContext {
   document: DocumentState | null;
@@ -41,13 +42,18 @@ export async function triggerCamFaceMilling({
   addMessage,
   translate,
 }: CamFaceMillingContext) {
+  // Failures surface as a toast — addMessage alone lands in the
+  // Logs panel, which the user does not see while clicking buttons.
+  const pushToast = useToastStore.getState().pushToast;
   if (!document) {
     addMessage(translate("cam.faceMilling.noDocument"));
+    pushToast("warn", translate("cam.faceMilling.noDocument"));
     return;
   }
   const faceId = document.selected_face_id;
   if (!faceId) {
     addMessage(translate("cam.faceMilling.noSelection"));
+    pushToast("warn", translate("cam.faceMilling.noSelection"));
     return;
   }
 
@@ -64,6 +70,7 @@ export async function triggerCamFaceMilling({
   });
   if (!reference) {
     addMessage(translate("cam.faceMilling.captureFailed"));
+    pushToast("error", translate("cam.faceMilling.captureFailed"));
     return;
   }
 
@@ -97,6 +104,7 @@ export async function triggerCamFaceMilling({
       finish_pass: false,
       multiple_passes: false,
       coolant: "off",
+      tool_axis_mode: "fixed_z",
     },
     dependencies: {
       parent_operation_ids: [],

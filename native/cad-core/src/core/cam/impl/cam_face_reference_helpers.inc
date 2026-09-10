@@ -26,8 +26,27 @@ double compute_face_area(const TopoDS_Face& face) {
 bool is_point_on_face(const gp_Pnt& pnt, const TopoDS_Face& face,
                       double tolerance = 1e-3) {
   try {
+    // Distance gate first: BRepClass_FaceClassifier's tolerance is a
+    // PROJECTION tolerance, not a distance gate — a point far from the
+    // surface still projects onto it (planes and cylinders extend
+    // forever) and classifies IN whenever the projection lands inside
+    // the face domain.  Without this check a wall attestation
+    // phantom-matches every other parallel wall of the same size.
+    GeomAPI_ProjectPointOnSurf projector(pnt, BRep_Tool::Surface(face));
+    if (projector.NbPoints() == 0) {
+      // The gradient search can come back empty on low-continuity
+      // sewn surfaces — retry with the tree walker before giving up
+      // (a false negative here drops the TRUE face below the score
+      // threshold and degrades the reference).
+      GeomAPI_ProjectPointOnSurf retry(pnt, BRep_Tool::Surface(face),
+                                       Extrema_ExtAlgo_Tree);
+      if (retry.NbPoints() == 0 || retry.LowerDistance() > tolerance) {
+        return false;
+      }
+    } else if (projector.LowerDistance() > tolerance) {
+      return false;
+    }
     BRepClass_FaceClassifier classifier;
-    // tolerance = maximum distance from face surface to consider "on".
     classifier.Perform(face, pnt, tolerance);
     return classifier.State() == TopAbs_ON ||
            classifier.State() == TopAbs_IN;

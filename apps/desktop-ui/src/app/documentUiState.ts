@@ -71,9 +71,19 @@ function coreCamOperationTypeToUi(type: string): CamOperationType {
       return "laserCut";
     case "pocket_2d":
       return "pocket";
+    case "adaptive_clearing":
+      return "adaptive";
+    case "contour_2d":
+      return "contour";
     case "drilling":
       return "drill";
+    case "slot":
+      return "slot";
+    case "engrave":
+      return "engrave";
+    case "laser_test_pattern":
+      return "laserTestPattern";
     default:
-      return "profile";
+      return "unknown";
   }
 }

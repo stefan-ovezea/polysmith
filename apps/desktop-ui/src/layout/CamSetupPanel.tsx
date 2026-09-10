@@ -41,7 +41,7 @@ export function createDefaultCamSetup(): CamSetup {
       position: [0, 0, 0],
     },
     safety_height: 50,
-    retract_height: 5,
+    retract_height: 25,
     units: "mm",
   };
 }
@@ -68,6 +68,11 @@ interface CamSetupFormState {
   stockType: StockType;
   origin: [number, number, number];
   wcsOrigin: [number, number, number];
+  // Set the moment the user edits the WCS X/Y/Z fields this panel
+  // session — only then does the saved setup pin the WCS as an
+  // authoritative "point" anchor (unrelated edits must not freeze a
+  // face-anchored WCS into a bare point).
+  wcsOriginDirty: boolean;
   size: [number, number, number];
   diameter: number;
   length: number;
@@ -113,13 +118,14 @@ function formStateFromSetup(setup: CamSetup): CamSetupFormState {
     stockType: setup.stock.type ?? "bounding_box",
     origin: setup.stock.origin ?? [0, 0, 0],
     wcsOrigin: setup.wcs_origin.position ?? [0, 0, 0],
+    wcsOriginDirty: false,
     size: setup.stock.size ?? [120, 120, 20],
     diameter: setup.stock.diameter ?? 40,
     length: setup.stock.length ?? 20,
     margin: setup.stock.margin ?? 3,
     machineType: setup.machine_type ?? "3_axis_mill",
     safetyHeight: setup.safety_height ?? 50,
-    retractHeight: setup.retract_height ?? 5,
+    retractHeight: setup.retract_height ?? 25,
     units: setup.units === "inch" ? "inch" : "mm",
   };
 }
@@ -142,7 +148,14 @@ function setupFromFormState(
     name: initial.name || "Setup",
     machine_type: state.machineType,
     stock,
-    wcs_origin: { ...initial.wcs_origin, position: state.wcsOrigin },
+    wcs_origin: {
+      ...initial.wcs_origin,
+      position: state.wcsOrigin,
+      // Only pin the anchor when the user actually edited X/Y/Z here —
+      // the "point" anchor makes the position authoritative and stops
+      // the CAM refresh pass from re-resolving (or clobbering) it.
+      ...(state.wcsOriginDirty ? { anchor: "point" } : {}),
+    },
     safety_height: state.safetyHeight,
     retract_height: state.retractHeight,
     units: state.units,
@@ -312,6 +325,14 @@ export function CamSetupPanel({
         work_area_y_mm: machineSettings?.work_area_y_mm ?? 400,
         pointer_offset_x_mm: machineSettings?.pointer_offset_x_mm ?? 0,
         pointer_offset_y_mm: machineSettings?.pointer_offset_y_mm ?? 0,
+        // Mill travel comes from the setup's machine axes for now; the
+        // full travel/kinematics/axis-limit form lands with the mill
+        // machine UI (M3).
+        travel_x_mm: initialSetup.machine_axes.x,
+        travel_y_mm: initialSetup.machine_axes.y,
+        travel_z_mm: initialSetup.machine_axes.z,
+        kinematics: "cartesian_3axis",
+        axis_limits: [],
       });
       setMachineNameInput("");
     } catch {
@@ -340,9 +361,17 @@ export function CamSetupPanel({
     value: type,
     label: t(`cam.setup.machineType.${type}`),
   }));
+  // from_solid / from_mesh have no picker flow yet (no solid/mesh
+  // reference is ever captured), so selecting them would silently do
+  // nothing — show them as disabled instead.
   const stockTypeOptions = STOCK_TYPES.map((type) => ({
     value: type,
-    label: t(`cam.setup.stockType.${type}`),
+    label:
+      type === "from_solid" || type === "from_mesh"
+        ? t(`cam.setup.stockType.${type}`) +
+          t("cam.setup.stockTypeDisabledNote", " (coming soon)")
+        : t(`cam.setup.stockType.${type}`),
+    disabled: type === "from_solid" || type === "from_mesh",
   }));
 
   // Laser/plasma machines cut from a sheet: the WCS is the sheet origin
@@ -791,10 +820,18 @@ export function CamSetupPanel({
 
               {/* Origin position */}
               <div className="grid grid-cols-3 gap-2">
-                <CamNumberField label="X" value={state.wcsOrigin[0]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [v, state.wcsOrigin[1], state.wcsOrigin[2]] })} />
-                <CamNumberField label="Y" value={state.wcsOrigin[1]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], v, state.wcsOrigin[2]] })} />
-                <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v] })} />
+                <CamNumberField label="X" value={state.wcsOrigin[0]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [v, state.wcsOrigin[1], state.wcsOrigin[2]], wcsOriginDirty: true })} />
+                <CamNumberField label="Y" value={state.wcsOrigin[1]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], v, state.wcsOrigin[2]], wcsOriginDirty: true })} />
+                <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v], wcsOriginDirty: true })} />
               </div>
+
+              {/* Manual edits pin the position; a face pick re-anchors. */}
+              <p className="text-[10px] leading-relaxed text-on-surface-muted">
+                {t(
+                  "cam.setup.wcsManualNote",
+                  "Manually entered origins pin the position; picking a face re-anchors it.",
+                )}
+              </p>
 
               {/* Orientation mode */}
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
@@ -836,6 +873,9 @@ export function CamSetupPanel({
                 disabled={disabled}
                 onChange={(v) => update({ retractHeight: v })}
               />
+              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.setup.retractNote", "Above the setup origin (WCS Z).")}
+              </p>
             </>
           )}
         </ScrollArea>

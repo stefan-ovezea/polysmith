@@ -2,6 +2,289 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-10
+
+### CAM Mill Engrave + Profile-button removal (cam/milling)
+
+Binding decisions (user): **remove the Profile toolbar button** (2D
+Contour is the V1 "profile finishing" op; the button was scaffolding)
+and **new mill "engrave" op** — traces sketch profile geometry
+ON-LINE (no offset, no leads) at a fixed depth below the sketch
+plane, the milling twin of laser engrave.
+
+- **Generator** (`engrave.{h,cpp}` + `impl/engrave_generate.inc`,
+  registered in `cam_generators.cpp`): SketchProfileAttestation
+  regions ONLY (mixed attestations rejected before the parallel
+  profiles/sketches arrays are touched); EVERY profile traced in
+  region order; per-region sketch frame + horizontal-plane guard;
+  `cutZ = world_z(frame, {0,0}, −depth)`; exact arcs with chord
+  fallback; standalone circles + circle holes synthesized as
+  full-circle arcs; outer CCW / holes CW (all bases stored CCW, the
+  hole flip makes the walk CW — the uniform-emission fix the tests
+  caught); rapid-plunge-feed-rapid per loop; retract/cut/stock guards;
+  depth ≤ 0 → "The engrave depth must be positive."
+- **Serde** (`cam_types.h` + `basic_payloads_and_cam.inc` +
+  `cam_from_payload.inc` + serialization.h): `EngraveParameters
+  { depth_mm = 0.5 }` optional per-type block (absent key → defaults).
+- **Gates**: cam_commands.inc create (:442) + update (:505) widened
+  with `"engrave"`; session laser-machine guard mirror
+  ("An engrave operation requires a milling machine setup"); the
+  default-tool branch already resolves endmill_flat.
+- **Tests** (`cam_engrave_test.cpp`, 12 tests): registry, rect + hole
+  (11 moves, hole = one exact CW arc, laser off), standalone circle
+  (CCW arc), depth validation, vertical-plane rejection, edge/empty
+  input rejection, tool-axis guard, climb/conventional reversal +
+  "mixed" warning, multi-profile region order (pinned dynamically —
+  the sketch's profile vector is not creation-ordered), guards
+  (raised-plane cutZ 9.5 pin + stock top/bottom warnings), broken
+  profile attestation (refresh + generate degrade — the centroid-only
+  corruption still clears the 0.7 threshold, so the test corrupts
+  centroid AND area), payload round-trip. `cam_generators_test`
+  registry gained the engrave-found assertion.
+- **UI**: `camEngraveActions.ts` (sketch-selection trigger, no
+  geometry references — core captures), `CamEngravePanel` (contour
+  panel minus face/side/allowance; no stepdown — single pass),
+  toolbar Engrave button enabled on setup + profile selection, i18n
+  `cam.engrave.*`. **Profile removal ripple**: button + `onNotImplemented`
+  + `cam.profile`/`cam.common.notImplemented` keys deleted; CamToolbar
+  union loses "profile", gains "engrave" | "laserTestPattern" |
+  "unknown"; `coreCamOperationTypeToUi` maps engrave and
+  laser_test_pattern explicitly with `default: "unknown"` (kills the
+  silent "Profile" fallback that mislabeled laser test-pattern ops);
+  CamOperationPanel labels the three new kinds; App.tsx profile
+  re-pick disarm condition widened with `"engrave"`.
+- Gates: `core:build` clean (app closed), `test:core` 44/44 suites,
+  `tsc --noEmit` clean.
+
+### CAM Slot Milling: open-edge slots (cam/milling)
+
+Binding design (user decisions): a picked STRAIGHT line edge is the
+slot's **open side** — the tool cuts a tool-width groove from the
+edge INTO the material, on the side of the adjacent horizontal top
+face. Depth = `slot.depth_mm` below that face's Z; optional stepdown
+multi-pass. Centerline/two-wall semantics, closed slots, and arc
+edges are OUT. Selection-based input (no armed pick): the trigger
+captures `selected_edge_ids`; Re-pick re-captures the current
+selection.
+
+- **Generator** (`slot.{h,cpp}` + `impl/slot_generate.inc`,
+  registered in `cam_generators.cpp`): per resolved edge — live-edge
+  re-open (drilling pattern), `GeomAbs_Line` guard, vertical guard,
+  top-face find (`MapShapesAndAncestors` + steepest upward
+  orientation-corrected normal ≥ `kMaxUpwardFaceTilt`), inward =
+  face-COM probe stripped of the edge-parallel component, climb walk
+  `W = (inward.y, −inward.x)` (material left; conventional flips),
+  path = edge + tool radius × inward, `plan_stepdown_levels` from the
+  stock top when stepdown set, CUT-major emission (each edge's levels
+  contiguous: rapid-plunge-feed-rapid per pass). Retract guards
+  ("below the face height" / "below the stock top"); non-positive
+  depth → "The slot depth must be positive."
+- **Edge resolution** (`cam_edge_reference_resolve.inc`): line
+  witnesses now resolve (previously circle-only — the slot op is the
+  first line-edge consumer). Endpoint proximity (0.5,
+  orientation-agnostic pairing), length ratio (0.25), absolute
+  direction dot (0.25); `kEdgeMaxEndpointDistance` = 5 mm. The circle
+  path is untouched (drilling unaffected).
+- **Serde** (`cam_types.h` + `basic_payloads_and_cam.inc` +
+  `cam_from_payload.inc`): `SlotParameters { depth_mm = 5.0 }` as an
+  optional per-type params block (the contour pattern — absent key
+  falls back to struct defaults).
+- **Tests** (`cam_slot_test.cpp`, 12 tests): registry, basic slot
+  (4 moves, path y=3, plunge 600/feed 1200, laser off), climb/
+  conventional walk flip + "mixed" warning, stepdown multipass
+  (levels {8,6,5} — stock tops are CENTERED on the model bbox),
+  multi-edge cut-major ordering, depth validation, full-circle rim
+  rejected ("straight line edges"), bottom-face edge rejected
+  ("horizontal face adjacent"), broken edge attestation (refresh AND
+  generate degrade with "was not found"), retract guards, payload
+  round-trip, material-side pin. `cam_generators_test` registry
+  assertion flipped (slot registered).
+- **UI**: `camSlotActions.ts` selection-based trigger +
+  `CamSlotPanel` (edge rows + Re-pick, depth, clearable stepdown),
+  toolbar button after Drill (open-slot glyph, gated on setup +
+  selected edges), `CamToolbar`/`documentUiState`/`CamOperationPanel`/
+  status-line unions, i18n `cam.slot.*` block. Zero driver/IPC
+  changes — the existing `cam_capture_edge_reference` command and
+  EdgeAttestation serde carry everything.
+- Gates: `core:build` clean, `test:core` 43/43 suites, `tsc --noEmit`
+  clean.
+
+### CAM Adaptive Clearing: contour-parallel spiral (cam/milling)
+
+Last milling-sprint milestone. v1 toolpath = concentric offset loops
+(user decision — trochoidal deferred; `engagement_angle_deg` reserved
+for the future upgrade).
+
+- **Generator** (`adaptive_clearing.{h,cpp}` +
+  `impl/adaptive_clearing_generate.inc`, registered in
+  `cam_generators.cpp`): outer boundary inset by
+  `rEff = radius + stock_allowance_mm`, then offset inward at
+  `spacing = max(diameter × stepover%, 0.1)` until collapse (each loop
+  validated against the family BASE: offset + sampling +
+  self-intersection + min-distance probe; k=0 failure = hard error).
+  Islands and floor bosses reuse the pocket's
+  `classify_inner_wire`/`grow_avoidance_loop` paths and get their own
+  outward-growing families. Climb-constant walks (outer CW, islands
+  CCW — the contour direction rule); "conventional" flips both.
+  Clipping: no segment enters a grown avoidance or the wall band;
+  island loops additionally clip inside the CCW outer inset. Arc-aware
+  (the grown corner quarter-discs leave notches machinable). Levels =
+  the shared stepdown planner with island-top flush passes; retract,
+  strategy, and direction warnings mirror the pocket.
+- **Tests** (`adaptive_clearing_test.cpp`, 13 tests): registry,
+  plain-box spiral (wall distances 3.2/6.2/9.2, CW climb pin, emission
+  shape), stepover 100% (= diameter spacing), 0.1 mm min-spacing
+  guard, island single-pass + corner-notch clip precision, island-top
+  levels {15,14,12,10} + flush pass, centered boss (CCW climb pin),
+  through-hole crossed, strategy/direction warnings, error paths,
+  broken-island degradation (refresh + generate), retract guards,
+  payload round-trip incl. engagement angle.
+- **UI**: `camAdaptiveActions.ts` trigger + `CamAdaptivePanel` (pocket
+  panel minus the zigzag field), toolbar button after Pocket
+  (concentric-squares icon), i18n `cam.adaptive.*` block. The armed
+  face/island pick is SHARED with the pocket (`kind` switches the
+  toast copy). No new IPC or schema changes — the op type and params
+  were already plumbed.
+- Gates: `core:build` clean, `test:core` 42/42 suites, `tsc --noEmit`
+  clean.
+
+## 2026-09-08
+
+### CAM pocket refinement: boss/hole classification + finishing contours (cam/milling)
+
+Response to in-app feedback on 2D Pocket: a join boss on the pocket face
+was avoided like a hole (wrong — the face's own inner wire was always
+subtracted), the zigzag left linear scallops around round bosses, and
+islands seemed to do nothing in single-pass mode.
+
+- **Inner-wire boss/hole classification** (`pocket_2d_generate.inc`):
+  each floor-face inner wire is probed via its adjacent walls
+  (`TopExp::MapShapesAndAncestors` edge→face map, excluding the floor);
+  any wall with centre of mass above the floor (`COM.z > faceZ + 0.1`)
+  → the wire is a boss standing on the face → avoided (grown by the
+  tool radius); all walls below/coplanar → an open hole through the
+  floor → rows mill straight ACROSS it (clears the stock plug that
+  would otherwise become a boss and block later drilling); no probe →
+  conservative avoid.
+- **Finishing contours**: after the rows at every level, closed climb
+  contours around each active avoidance (CCW, as-is) and the outer
+  inset wall (CW, reversed) clean the zigzag scallops and cut round
+  walls with circular motion. Each contour segment is clipped against
+  the other active avoidances (never itself), surviving pieces chain
+  when endpoints touch and rapid-plunge-feed-rapid. Unconditional —
+  also runs in single-pass mode.
+- **Island single-pass hint**: the core warns when an island lies on a
+  boss already owned by the pocket face (island only adds multi-pass
+  flush levels); the UI shows `cam.pocket.islandSinglePassHint` beside
+  the island list when islands exist without a stepdown.
+
+Tests (pocket_2d_test, fail-before/pass-after where fixing a bug):
+Test 2 rewritten — through-hole rows now CROSS the hole (segment
+through the hole centre, unsplit at the grown boundary); 2b — boss
+wire avoided + closed boss ring and outer-wall contours; 2c — boss +
+hole mixed; 2d — single-pass island on a face boss warns; 3/4 —
+island fixtures pinned the outer contour clipping against islands
+(feed inside a grown near-wall island before the fix). Full gates:
+`pnpm core:build` + `pnpm test:core` (40/40) + `tsc --noEmit` green;
+user in-app verification pending before commit.
+
+### 2D Contour operation: face + sketch input, exact arcs (cam/milling)
+
+Third V1 milestone (§"3. 2D Contour" in CAM-Development.md): a
+`contour_2d` generator following a single closed wire with the tool
+center offset to one side.
+
+- **Inputs, face wins**: a picked planar face (largest |signed area|
+  outer wire, contoured at `faceZ − depth`) or selected sketch profiles
+  (first boundary, `sketchZ − depth`); both → warning "uses the face".
+  Create-time/update-time capture gates in `cam_commands.inc` widened
+  from laser-only to `laser_cut || contour_2d`, so profile-based
+  contour operations reuse the empty-region capture flow unchanged.
+- **Exact arcs + polyline fallback**: wires are walked with
+  `BRepTools_WireExplorer` + `BRepAdaptor_Curve::GetType()` —
+  lines/circles become exact `BaseSegment`s (G2/G3 in every post),
+  any other curve type falls back to chord-sampled polylines.  The
+  laser wire builders (`build_base_segments_from_edges/_from_points`,
+  `world_point`/`world_z`, `resolve_sketch_frame`, `kMaxCutPlaneTilt`)
+  were hoisted from `laser_generate.cpp` into `cam_planning.h/.cpp`
+  (charter: shared laser + face-milling helpers); the full laser suite
+  is the hoist's behavioral pin.
+- **Direction rule**: `reverse = (side=="inside") XOR
+  (direction=="conventional")`, `d = conventional ? −r_eff : +r_eff`
+  with `r_eff = tool_radius + stock_allowance_mm` — climb external =
+  CCW, climb internal = CW (the pocket precedent).  `on_line` emits the
+  base loop directly (no d=0 offset); allowance > 0 → warning + ignore.
+  Guards: offset arc radius ≤ 0 → "tool does not fit inside the
+  contour", `offset_loop_self_intersects` for tight inside offsets,
+  retract-below-face/stock warnings.  Single pass only.
+- **UI**: `camContourActions.ts` trigger (face witness capture or
+  empty-region profile capture), `CamContourPanel` (input-kind-aware
+  geometry row — face Re-pick vs profile scope dropdown + re-pick;
+  side/depth/allowance/feedrate/plunge/spindle), contour face pick in
+  App.tsx with mutual disarm across origin/WCS/pocket picks, Contour
+  toolbar button (setup + face OR profiles), sidebar type label,
+  `cam.contour.*` i18n block.  Zod `contourParametersSchema` is the
+  single source of panel defaults.
+
+Tests (`cad_core_contour_2d_test`, new suite, 17 cases): all four
+side×direction combos pinned by exact corner sets + shoelace walk sign;
+circle face pins exactly ONE FeedArcCCW/CW with radius + i/j
+(center−start); left-handed sketch frame flips the sweep; ellipse edges
+fall back to feeds with no arcs and every point outside the ellipse;
+on-line + allowance warning; face-wins precedence; depth default;
+empty-input and non-horizontal-face errors; multi-wire face ignores the
+hole; params payload round-trip.  Gates: `pnpm core:build` +
+`pnpm test:core` (41/41) + `tsc --noEmit` green; user in-app
+verification pending before commit.
+
+## 2026-09-05
+
+### CAM milling UX: multi-pass face milling + stock-aware WCS picking (cam/milling)
+
+Addresses the user's CAM workspace complaints — no negative Z, no pass
+count, no snap on stock points, unpickable stock faces:
+
+- **Multi-pass face milling** (`face_milling_generate.inc` +
+  `cam_stock.h/.cpp`): with `stepdown_mm` set, passes plan from the
+  STOCK TOP down to the face (first cut `stockTop − stepdown`, last
+  level pinned to `faceZ`); unset/≤0 stepdown or unresolvable stock =
+  the legacy single pass. Global zigzag row index across levels, 100-
+  level cap + warning, new retract guard "below the stock top" for the
+  multi-pass case (guard 1 "below the face height" unchanged).
+- **WCS anchor model** (`cam_types.h` `WcsOrigin.anchor` /
+  `stock_face`): `""` derived (legacy), `"face"` (TNP witness),
+  `"stock_face"` (live stock extents), `"point"` (authoritative —
+  fixes the refresh pass clobbering manual WCS X/Y/Z edits),
+  `"stock_origin"`. Laser pointer offset applies only to non-`"point"`
+  anchors. Serialization lenient — old docs load as derived.
+- **Stock-face WCS picking** (`cam_commands.inc`): `cam_wcs_set_face`
+  accepts `"stock:<face>"` ids (top/bottom/front/back/left/right) — no
+  new IPC. Core resolves via `cam_stock::stock_face_center`, degrading
+  to the stock origin with a warning.
+- **Pick UX** (ViewportPanel / camSceneObjects / camOriginSnap /
+  CamSetupPanel): the stock box mesh is face-tagged via
+  `userData.stockFaceNames` (BoxGeometry group order 0-5 =
+  right/left/front/back/top/bottom; cylinder side untagged) and feeds
+  the WCS pick raycast. Routing: body face → TNP face anchor; stock
+  intercept → stock-only snap (top AND bottom corners/midpoints,
+  12 px) → `"point"`; no snap + named stock face → `"stock_face"`
+  anchor; else bed-plane fallback (z = 0, 10 m guard). Both pick modes
+  share snap markers and disarm each other. Setup panel X/Y/Z edits pin
+  `"point"` only when actually edited (`wcsOriginDirty`). Stepdown is a
+  clearable CamNumberField (empty = single pass).
+- **Deviation (deliberate):** the plan listed a stock bottom-FACE
+  CENTER snap candidate; it is not implemented (would need a new snap
+  kind + i18n label — top face has no center either, and corners +
+  edge midpoints cover the bottom face).
+
+Tests (fail-before/pass-after): `cam_generators_test` 47-50
+(multi-pass levels 21+20 for stock 23/face 20/step 2, no-stock single
+pass, 100-level cap, retract-below-stock-top guard), `cam_refresh_test`
+7-10 (point anchor survives refresh, stock_face resolves top/front,
+degrades to stock origin, payload round-trip), `cam_commands_test`
+stock_face round-trip through `cam_setup_update`. Full gates pending
+user in-app verification before any commit.
+
 ## 2026-09-04
 
 ### Core build speedup: static cad_core_lib + parallel compile + parallel test runner (core-build-speedup)
@@ -66,6 +349,53 @@ deprecated `TColgp_Array1OfPnt{,2d}` / `TColStd_Array1OfReal` /
 
 Verified: rebuild with zero warnings from our code; `pnpm test:core`
 38/38 in parallel and serial modes.
+
+### Milling M0 — 5-axis scaffolding + mill machine library (cam/milling)
+
+First milestone of the CAM milling plan: the data model, toolpath IR,
+posts, and machine definitions become 5-axis-ready up front, while every
+generator stays 3-axis. No user-visible behavior change; the three new
+machines are the only thing a user can notice.
+
+- **Toolpath IR** — `ToolpathMove` gains optional `a/b/c` (degrees,
+  absent = modal). Bounds/length/linearization deliberately ignore them
+  until a rotary generator exists (commented in `toolpath_geometry.cpp`).
+- **Machine definitions** — `MachineDefinition` gains
+  `travel_x/y/z_mm` (0 = unset → UI falls back to `setup.machine_axes`),
+  `kinematics` (`cartesian_3axis` | `rotary_table_a/b/c` | `head_table`
+  | `table_table` | `head_head`), `axis_limits`, and
+  `tool_change_position`. Parse is lenient both ways: old 8-field
+  machine JSON files load with defaults, and new keys are always
+  emitted. Validation covers the kinematics enum, axis letters, and
+  min<=max.
+- **Mill machine seeds (new slugs)** — GRBL CNC Router
+  (`grbl-cnc-router`, 3_axis_mill, grbl), LinuxCNC Rotary 4-Axis
+  (`linuxcnc-rotary-4axis`, 4_axis_mill, rotary_table_a, A 0–360),
+  LinuxCNC 5-Axis Table-Table (`linuxcnc-5axis-table-table`,
+  5_axis_mill, table_table, A −120–120 / C −360–360). Seeds never reuse
+  an old slug — a stale user file shadows the seed by name and is never
+  overwritten.
+- **Post engine** — modal A/B/C words emitted on change only (mirrors
+  Z); rapid and feed moves carry rotary words; `PostDefinition` gains
+  `feed_inverse_time` + `inverse_time_word` (linuxcnc seed:
+  `feed_inverse_time: true`) — a feed move carrying a rotary word prices
+  F = feedrate / path length under G93, with G94 restored for plain
+  3-axis moves. Toolpaths without rotary words never emit G93.
+- **Per-op tool axis mode** — `CamOperationParameters.tool_axis_mode`
+  (`"fixed_z"` today; `"3_plus_2"` / `"rotary_continuous"` reserved).
+  A shared `milling::check_tool_axis_supported` guard rejects non-fixed
+  modes with a clear error; face milling is the first consumer, every
+  future generator calls it too.
+- **Serialization** — protocol `.inc`s, TS types (`cam.ts`), and zod
+  (`camSchema.ts`, `.default().passthrough()` pattern) carry the new
+  fields; no IPC command/event changes.
+
+Verified: `pnpm core:rebuild` green (new `cad_core_linuxcnc_post_test`
+suite registered); `pnpm test:core` 39/39 (machine-library seeds +
+round-trip + legacy-defaults + kinematics validation; new linuxcnc post
+goldens — modal A words, no-G93-for-3-axis, inverse-time feed on the
+rotary line, G94 restore; `tool_axis_mode` save/load round-trip; grbl
+goldens unchanged); `tsc --noEmit` green.
 
 ## 2026-09-01
 
@@ -3234,3 +3564,69 @@ shared exact-curve layer and full entity-kind coverage:
 trim-split, four suite expectations updated to the new
 crossing-line-splits-regions semantics; all 30 suites green; tsc clean;
 user verified in-app (flower, ellipse trim + extrude, spline trim).
+
+## 2D Pocket + laser pierce corner fix (2026-09-07)
+
+Branch `cam/milling`, next CAM milestone after face milling.  Status:
+core + tests + UI implemented; `pnpm test:core` all 40 suites green
+(including the new `cad_core_pocket_2d_test` 9 cases); `tsc --noEmit`
+clean; awaiting user in-app verification before commit.
+
+### 2D pocket (`pocket_2d`)
+
+- **Shared level helper** — `plan_stepdown_levels` extracted from the
+  face-milling loop (stock top − stepdown descending, last level pinned
+  at the face, extra levels inserted in (faceZ, stockTop), deduped,
+  capped at 100 with a warning).  Face milling now calls it with empty
+  extras — behavior pinned by cam_generators_test 47-50.
+- **Generator** (`pocket_2d.cpp` + `impl/pocket_2d_generate.inc`):
+  largest-|area| face wire as the outer loop (multi-wire faces allowed
+  — face holes are pocketing's bread and butter), miter inset by the
+  tool radius with face-milling validation; face inner wires +
+  island footprints (`avoidance_regions`) grown by the tool radius
+  (round joins); per-level island filter (`islandTopZ > levelZ + eps`);
+  island-top levels inserted into multi-pass planning; face-milling row
+  planner with per-piece clipping (a row splits into MULTIPLE pieces
+  around holes/non-convex boundaries — every consecutive pair is
+  emitted) and CW-loop subtraction via `clip_segment_to_polygon`.
+- **Drivers** — `cam_generate.cpp` and `cam_refresh.cpp` now resolve
+  `avoidance_regions` into witnesses with the same
+  `resolve_geometry_reference` loop; a broken island fails generation
+  AND degrades refresh to `error` (never silently cut into a boss).
+- **CW clip pin** — `clip_segment_to_polygon` CCW-inside semantics
+  pinned in cam2d_test before the generator was built on it.
+- **Tests** — new `cad_core_pocket_2d_test` (9 cases): plain box fill,
+  through-hole row splitting, island avoided below its top, island-top
+  level insertion, single-pass + island, non-horizontal island error,
+  broken island attestation (generate fail + refresh error), level cap
+  + retract guards, avoidance payload round-trip.  `pnpm test:core`
+  40/40 suites green.
+- **UI** — `camPocketActions.ts` trigger (same witness-capture flow as
+  face milling, no default stepdown = single pass); pocket button in
+  CamMillingToolbar (gated like face milling); `CamPocketPanel` with
+  tool dropdown, geometry section (pocket face re-pick, indexed island
+  rows with remove, Add island), cutting params incl. clearable
+  stepdown, status line; armed pocket face pick in App.tsx
+  (`pocketPickArmed {opId, target: "outer"|"island"}`) — the next
+  body-face click becomes the floor (machining_regions[0]) or an island
+  (avoidance_regions appended); `stock:` faces rejected with a toast;
+  mutual disarm with the origin/WCS pick arms; disarm on
+  selected-operation change.  All copy via `cam.pocket.*` i18n keys.
+  `tsc --noEmit` clean.
+
+### Laser pierce corner fix (folded into the same working tree)
+
+Test 25 exposed a pierce-selection regression: cam2d emits MITER joins
+(no arc) at REFLEX corners with reachable miters, so the pierce corner
+filter — which samples base-piece tangents on either side of a join arc
+— saw no corner at all and returned π (candidate excluded as
+"pointed").  `base_corner_interior` now has three branches: candidate
+on a join arc → measure between the neighbouring base pieces; join arc
+immediately before the candidate → measure across it; otherwise (miter)
+→ measure between the two pieces meeting at the candidate.  Test 25's
+fixture re-pinned to a real notch (a shallow dent's corners are
+sub-60° pointed features the rule legitimately excludes) and Test 23's
+comment corrected: the triangle tip's MATERIAL wedge is ~168.6° obtuse
+(the ~11.4° figure is the walk's turn); the genuinely sharp corners are
+the ~5.7° base corners, excluded by the both-wedges rule.  All 50
+cam_generators cases green.

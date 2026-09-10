@@ -15,6 +15,7 @@ DetectedSketchProfiles detect_sketch_profiles(const FeatureEntry& feature) {
           .plane_frame = sketch.plane_frame,
           .points = profile.points,
           .inner_loops = profile.inner_loops,
+          .circle_holes = profile.circle_holes,
       });
       continue;
     }

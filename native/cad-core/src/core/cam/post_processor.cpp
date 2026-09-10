@@ -1,5 +1,6 @@
 #include "core/cam/post_processor.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -61,7 +62,11 @@ const char* kLinuxcncDefinition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "feed_inverse_time": true,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMach3Definition = R"JSON({
@@ -83,7 +88,10 @@ const char* kMach3Definition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMach4Definition = R"JSON({
@@ -105,7 +113,10 @@ const char* kMach4Definition = R"JSON({
   "power_max": 1000,
   "line_numbers": false,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMarlinDefinition = R"JSON({
@@ -149,7 +160,10 @@ const char* kFanucDefinition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 // Smoothieware: S values are normalized to 0..1.
@@ -303,6 +317,11 @@ std::vector<std::string> render_post(const PostContext& context,
   double lastFeed = -1.0;
   double currentZ = 0.0;
   bool haveZ = false;
+  // Rotary words are modal, mirroring Z: emitted once, then only on
+  // change.  Degrees never scale (inch setups keep degrees).
+  double currentA = 0.0, currentB = 0.0, currentC = 0.0;
+  bool haveA = false, haveB = false, haveC = false;
+  bool inverseTimeActive = false;  // G93 mode (feed_inverse_time posts)
 
   const auto power_for = [&](const ToolpathMove& move) {
     return move.power_percent / 100.0 * def.power_max;
@@ -353,8 +372,58 @@ std::vector<std::string> render_post(const PostContext& context,
     const double y = (move.y - originY) * scale;
     const double z = (move.z - originZ) * scale;
     const bool zChanged = !haveZ || z != currentZ;
-    const bool feedChanged = move.feedrate_mm_per_min > 0.0 &&
-                             move.feedrate_mm_per_min != lastFeed;
+    const bool hasRotary =
+        move.a.has_value() || move.b.has_value() || move.c.has_value();
+    const bool isFeedMove =
+        move.kind == ToolpathMoveKind::FeedLinear ||
+        move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW;
+    // Inverse-time feed: a feed move carrying a rotary word prices its
+    // feed as 1/min over the actual path length.  A mode switch forces
+    // an F re-emission — the same raw feedrate means a different F word
+    // on each side of G93/G94.
+    const bool wantInverseTime =
+        def.feed_inverse_time && hasRotary && isFeedMove && havePrevious;
+    const bool inverseModeChanged = wantInverseTime != inverseTimeActive;
+    const bool feedChanged =
+        move.feedrate_mm_per_min > 0.0 &&
+        (move.feedrate_mm_per_min != lastFeed || inverseModeChanged);
+    double feedValue = move.feedrate_mm_per_min;
+    if (wantInverseTime) {
+      const double length = move_length(previous, move);
+      feedValue = length > 1e-9 ? move.feedrate_mm_per_min / length : 0.0;
+    }
+    const auto syncInverseTimeMode = [&]() {
+      if (!inverseModeChanged) {
+        return;
+      }
+      if (wantInverseTime) {
+        emit(render_template(def.inverse_time_word, {}));
+      } else {
+        emit(render_template("G94", {}));  // also the header default
+      }
+      inverseTimeActive = wantInverseTime;
+    };
+    const auto appendRotaryWords = [&](std::string& line) {
+      if (move.a.has_value() &&
+          (!haveA || std::abs(move.a.value() - currentA) >= 1e-9)) {
+        line += " A" + fmt_number(move.a.value(), decimals);
+        currentA = move.a.value();
+        haveA = true;
+      }
+      if (move.b.has_value() &&
+          (!haveB || std::abs(move.b.value() - currentB) >= 1e-9)) {
+        line += " B" + fmt_number(move.b.value(), decimals);
+        currentB = move.b.value();
+        haveB = true;
+      }
+      if (move.c.has_value() &&
+          (!haveC || std::abs(move.c.value() - currentC) >= 1e-9)) {
+        line += " C" + fmt_number(move.c.value(), decimals);
+        currentC = move.c.value();
+        haveC = true;
+      }
+    };
     const auto moveVars = [&]() {
       auto vars = std::map<std::string, std::string>{
           {"x", fmt_number(x, decimals)},
@@ -362,8 +431,16 @@ std::vector<std::string> render_post(const PostContext& context,
           {"z", fmt_number(z, decimals)},
       };
       if (feedChanged) {
-        vars["feed"] = fmt_number(move.feedrate_mm_per_min, decimals);
+        vars["feed"] = fmt_number(feedValue, decimals);
       }
+      // Template slots for custom posts; the built-in templates have
+      // no {a}{b}{c} — rotary words are appended by the engine.
+      if (move.a.has_value())
+        vars["a"] = fmt_number(move.a.value(), decimals);
+      if (move.b.has_value())
+        vars["b"] = fmt_number(move.b.value(), decimals);
+      if (move.c.has_value())
+        vars["c"] = fmt_number(move.c.value(), decimals);
       return vars;
     };
 
@@ -375,12 +452,76 @@ std::vector<std::string> render_post(const PostContext& context,
         currentZ = z;
         haveZ = true;
       }
+      appendRotaryWords(line);
       emit(line);
+    } else if (move.kind == ToolpathMoveKind::DrillCycle) {
+      ensure_power_state(move);
+      syncInverseTimeMode();
+      // One IR move covers the whole retract → bottom → retract trip.
+      // z/r go through the unit-scaling path like every coordinate;
+      // {feed} is ALWAYS provided so a canned template can never leak
+      // the placeholder into the G-code.
+      const double r = (move.r_plane_z - originZ) * scale;
+      const double drillFeed = move.feedrate_mm_per_min;
+      auto vars = std::map<std::string, std::string>{
+          {"x", fmt_number(x, decimals)},
+          {"y", fmt_number(y, decimals)},
+          {"z", fmt_number(z, decimals)},
+          {"r", fmt_number(r, decimals)},
+          {"feed", fmt_number(drillFeed, decimals)},
+      };
+      const bool pecking = move.peck_depth_mm > 0.0;
+      if (pecking) {
+        vars["q"] = fmt_number(move.peck_depth_mm, decimals);
+      }
+      const std::string& cycleTemplate =
+          pecking ? def.drill_cycle_peck_template : def.drill_cycle_template;
+      const std::string rapidToR =
+          render_template(def.rapid, vars) + " Z" + fmt_number(r, decimals);
+      const auto feedToZ = [&](double depth) {
+        std::string line = render_template(def.feed, vars);
+        line += " Z" + fmt_number(depth, decimals);
+        line += " F" + fmt_number(drillFeed, decimals);
+        emit(line);
+      };
+      if (def.canned_cycles && !cycleTemplate.empty()) {
+        emit(render_template(cycleTemplate, vars));
+      } else {
+        // Longhand (GRBL and friends implement neither G81 nor G83):
+        // rapid to the R plane, plunge (G83 pecks retract to R between
+        // plunges), then retract to R — the G98 convention.  The
+        // approach rapid is skipped when the preceding IR rapid already
+        // positioned the tool at the R plane over the hole (the
+        // generator always emits that pair).
+        const bool positionedByPreviousRapid =
+            havePrevious && previous.kind == ToolpathMoveKind::Rapid &&
+            std::abs(previous.x - move.x) < 1e-9 &&
+            std::abs(previous.y - move.y) < 1e-9 &&
+            std::abs(previous.z - move.r_plane_z) < 1e-9;
+        if (!positionedByPreviousRapid) {
+          emit(rapidToR);
+        }
+        if (pecking) {
+          double depth = r - move.peck_depth_mm;
+          while (depth > z) {
+            feedToZ(depth);
+            emit(rapidToR);
+            depth -= move.peck_depth_mm;
+          }
+        }
+        feedToZ(z);
+        emit(rapidToR);
+      }
+      // The tool ends the cycle back at the R plane.
+      currentZ = r;
+      haveZ = true;
+      lastFeed = move.feedrate_mm_per_min;
     } else if (move.kind == ToolpathMoveKind::FeedArcCW ||
                move.kind == ToolpathMoveKind::FeedArcCCW) {
       const double radius = std::hypot(move.i, move.j);
       if (def.use_arcs && radius >= 0.001) {
         ensure_power_state(move);
+        syncInverseTimeMode();
         auto vars = moveVars();
         vars["i"] = fmt(move.i);
         vars["j"] = fmt(move.j);
@@ -389,7 +530,7 @@ std::vector<std::string> render_post(const PostContext& context,
                                                      : def.arc_ccw,
             vars);
         if (feedChanged) {
-          line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+          line += " F" + fmt_number(feedValue, decimals);
           lastFeed = move.feedrate_mm_per_min;
         }
         if (zChanged) {
@@ -397,9 +538,11 @@ std::vector<std::string> render_post(const PostContext& context,
           currentZ = z;
           haveZ = true;
         }
+        appendRotaryWords(line);
         emit(line);
       } else {
         ensure_power_state(move);
+        syncInverseTimeMode();
         std::vector<std::array<double, 3>> chords;
         if (context.toolpath.arc_segments_per_circle > 0) {
           const int steps = arc_steps_for(
@@ -409,7 +552,8 @@ std::vector<std::string> render_post(const PostContext& context,
           linearize_arc_move(previous, move, /*chord_tolerance_mm=*/0.01,
                              chords);
         }
-        for (const auto& point : chords) {
+        for (size_t i = 0; i < chords.size(); ++i) {
+          const auto& point = chords[i];
           auto vars = std::map<std::string, std::string>{
               {"x", fmt(point[0] - originX)},
               {"y", fmt(point[1] - originY)},
@@ -417,17 +561,23 @@ std::vector<std::string> render_post(const PostContext& context,
           };
           std::string line = render_template(def.feed, vars);
           if (feedChanged) {
-            line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+            line += " F" + fmt_number(feedValue, decimals);
             lastFeed = move.feedrate_mm_per_min;
+          }
+          // The rotary target is the arc endpoint: declare it on the
+          // final chord so A/B/C land with the XY endpoint.
+          if (i + 1 == chords.size()) {
+            appendRotaryWords(line);
           }
           emit(line);
         }
       }
     } else {
       ensure_power_state(move);
+      syncInverseTimeMode();
       std::string line = render_template(def.feed, moveVars());
       if (feedChanged) {
-        line += " F" + fmt_number(move.feedrate_mm_per_min, decimals);
+        line += " F" + fmt_number(feedValue, decimals);
         lastFeed = move.feedrate_mm_per_min;
       }
       if (zChanged) {
@@ -435,6 +585,7 @@ std::vector<std::string> render_post(const PostContext& context,
         currentZ = z;
         haveZ = true;
       }
+      appendRotaryWords(line);
       emit(line);
       if (move.dwell_seconds > 0.0) {
         emit(render_template(def.dwell,
@@ -550,6 +701,21 @@ bool parse_post_definition(const std::string& json_text,
     if (payload.contains("decimal_places") && payload.at("decimal_places").is_number_integer()) {
       definition.decimal_places = payload.at("decimal_places").get<int>();
     }
+    if (payload.contains("feed_inverse_time") &&
+        payload.at("feed_inverse_time").is_boolean()) {
+      definition.feed_inverse_time = payload.at("feed_inverse_time").get<bool>();
+    }
+    definition.inverse_time_word = read_optional_template(
+        payload, "inverse_time_word", definition.inverse_time_word);
+    if (payload.contains("canned_cycles") &&
+        payload.at("canned_cycles").is_boolean()) {
+      definition.canned_cycles = payload.at("canned_cycles").get<bool>();
+    }
+    definition.drill_cycle_template = read_optional_template(
+        payload, "drill_cycle_template", definition.drill_cycle_template);
+    definition.drill_cycle_peck_template = read_optional_template(
+        payload, "drill_cycle_peck_template",
+        definition.drill_cycle_peck_template);
     return true;
   } catch (const std::exception& exception) {
     error = std::string("invalid post definition JSON: ") + exception.what();

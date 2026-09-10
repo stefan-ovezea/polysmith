@@ -443,10 +443,10 @@ bool test_rounded_rect_with_touching_lines_and_circle() {
     return false;
   }
 
-  // The circle interior must exist.
+  // The circle interior must exist — an exact kind "circle" region.
   const bool has_circle = std::any_of(
       profiles.begin(), profiles.end(),
-      [](const auto& p) { return p.source_circle_id.has_value(); });
+      [](const auto& p) { return p.kind == "circle"; });
   if (!expect(has_circle, "touching-lines: circle profile must be detected")) {
     return false;
   }
@@ -569,10 +569,13 @@ bool test_concentric_circles_clean_bore() {
     return false;
   }
 
-  // The small circle must still be separately selectable.
+  // The small circle must still be separately selectable — an exact
+  // kind "circle" region whose boundary carries circle-2.
   const bool small_selectable = std::any_of(
       profiles.begin(), profiles.end(), [](const auto& p) {
-        return p.source_circle_id.has_value() && *p.source_circle_id == "circle-2";
+        return p.kind == "circle" &&
+               std::find(p.line_ids.begin(), p.line_ids.end(), "circle-2") !=
+                   p.line_ids.end();
       });
   if (!expect(small_selectable,
               "concentric: small circle must remain a selectable profile")) {
@@ -1470,12 +1473,12 @@ bool test_trimmed_circle_corner_extrudes_full_prism() {
   // exist, not just the outer polygon.  A 2026-08 face-walk change
   // silently dropped the circle-1 full-circle profile while the old
   // assertion (outer polygon + volume only) stayed green.
-  // Full circles in a mixed sketch are polygon-kind regions carrying
-  // source_circle_id (the "circle" kind is reserved for circles-only
-  // sketches) — assert that classification exactly.
+  // Full circles are exact kind "circle" regions (center/radius, no
+  // sampled points) even in a mixed sketch — assert that classification
+  // exactly.
   const std::vector<polysmith::test::ExpectedProfile> expected_profiles = {
-      {{"circle-1"}, "polygon", /*has_source_circle_id=*/true},
-      {{"circle-2"}, "polygon", /*has_source_circle_id=*/true},
+      {{"circle-1"}, "circle"},
+      {{"circle-2"}, "circle"},
       {{"arc-1", "arc-2", "arc-3", "circle-1", "line-1", "line-2",
         "line-3", "line-4"},
        "polygon"},

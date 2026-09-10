@@ -23,6 +23,11 @@ const bounds3DSchema = z
 
 // ── TNP-Safe References ───────────────────────────────────────────
 
+// Every field except sample_points carries a default so lenient parsing
+// survives old documents — but sample_points is REQUIRED: it is the one
+// key the core always emits for face attestations, and without it this
+// schema would match ANY object (a point or profile attestation would
+// parse as a face and round-trip corrupted into the core).
 const faceAttestationSchema = z
   .object({
     bounds: bounds3DSchema.default({
@@ -30,13 +35,13 @@ const faceAttestationSchema = z
     }),
     area: z.number().default(0),
     normal: vec3Schema.default([0, 0, 1]),
-    sample_points: z.array(vec3Schema).default([]),
+    sample_points: z.array(vec3Schema),
   })
   .passthrough();
 
 const edgeAttestationSchema = z
   .object({
-    start_point: vec3Schema.default([0, 0, 0]),
+    start_point: vec3Schema,
     end_point: vec3Schema.default([0, 0, 0]),
     length: z.number().default(0),
     tangent: vec3Schema.default([1, 0, 0]),
@@ -44,9 +49,21 @@ const edgeAttestationSchema = z
   })
   .passthrough();
 
+// point is REQUIRED — the discriminator that keeps this schema from
+// matching face/profile/edge attestations in the union below (a
+// round-tripped point must never re-parse as another kind).
+const pointAttestationSchema = z
+  .object({
+    point: vec3Schema,
+  })
+  .passthrough();
+
+// sketch_feature_id is REQUIRED for the same reason: every profile
+// attestation carries it, and without the requirement the all-default
+// shape would swallow the other attestation kinds.
 const sketchProfileAttestationSchema = z
   .object({
-    sketch_feature_id: z.string().default(""),
+    sketch_feature_id: z.string(),
     profile_id: z.string().default(""),
     center_x: z.number().default(0),
     center_y: z.number().default(0),
@@ -66,9 +83,15 @@ const geometryReferenceSchema = z
     persistent_id: z.string().default(""),
     attestation: z
       .union([
+        pointAttestationSchema,
         faceAttestationSchema,
         sketchProfileAttestationSchema,
         edgeAttestationSchema,
+        // Catch-all for unknown future variants — a CAM parse failure
+        // would take down the whole document, so leniency is the
+        // priority.  The four schemas above discriminate on required
+        // keys, so this only swallows shapes the core has not
+        // introduced yet.
         z.object({}).passthrough(),
       ])
       .nullable()
@@ -109,6 +132,8 @@ const machineAxesSchema = z
 
 const wcsOriginSchema = z
   .object({
+    anchor: z.string().optional(),
+    stock_face: z.string().optional(),
     feature_id: z.string().default(""),
     face_reference: geometryReferenceSchema.optional(),
     position: vec3Schema.optional(),
@@ -124,7 +149,7 @@ const camSetupSchema = z
     stock: stockDefinitionSchema.default({ type: "bounding_box", margin: 3 }),
     wcs_origin: wcsOriginSchema.default({ feature_id: "" }),
     safety_height: z.number().default(50),
-    retract_height: z.number().default(5),
+    retract_height: z.number().default(25),
     units: z.string().default("mm"),
   })
   .passthrough();
@@ -172,6 +197,11 @@ export const laserCutParametersSchema = z
     lead_out_style: z.enum(["line", "arc"]).default("line"),
     lead_in_angle_deg: z.number().default(0),
     lead_out_angle_deg: z.number().default(0),
+    // No min/max here: the core stores whatever the user typed and
+    // echoes it back — a stricter schema would reject every following
+    // document_state (e.g. a cleared input commits 0).
+    lead_in_arc_angle_deg: z.number().default(90),
+    lead_out_arc_angle_deg: z.number().default(90),
     overcut_mm: z.number().default(0),
     pierce_dwell_seconds: z.number().default(0.1),
     pierce_position: z
@@ -196,6 +226,34 @@ export const laserCutParametersSchema = z
     cut_order: z
       .enum(["inner_first", "nearest_neighbor", "by_area"])
       .default("inner_first"),
+  })
+  .passthrough();
+
+// Single source of truth for 2D Contour defaults — the UI spreads this
+// instead of carrying a parallel constants block.  The C++ struct
+// defaults match (cam_types.h ContourParameters).
+export const contourParametersSchema = z
+  .object({
+    side: z.enum(["outside", "inside", "on_line"]).default("outside"),
+    depth_mm: z.number().positive().default(1),
+    stock_allowance_mm: z.number().min(0).default(0),
+  })
+  .passthrough();
+
+// Single source of truth for open-slot defaults — the UI spreads this
+// instead of carrying a parallel constants block.  The C++ struct
+// defaults match (cam_types.h SlotParameters).
+export const slotParametersSchema = z
+  .object({
+    depth_mm: z.number().positive().default(5),
+  })
+  .passthrough();
+
+// Single source of truth for mill-engrave defaults — the C++ struct
+// defaults match (cam_types.h EngraveParameters).
+export const engraveParametersSchema = z
+  .object({
+    depth_mm: z.number().positive().default(0.5),
   })
   .passthrough();
 
@@ -249,11 +307,17 @@ const camOperationParametersSchema = z
     hole_depth_mm: z.number().optional(),
     peck_depth_mm: z.number().optional(),
     dwell_seconds: z.number().optional(),
+    through_hole: z.boolean().default(false),
     engagement_angle_deg: z.number().optional(),
     zigzag_angle_deg: z.number().optional(),
+    contour: contourParametersSchema.optional(),
+    slot: slotParametersSchema.optional(),
+    engrave: engraveParametersSchema.optional(),
     laser: laserCutParametersSchema.optional(),
     test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),
+    // 5-axis scaffolding: "fixed_z" is the only supported mode today.
+    tool_axis_mode: z.string().default("fixed_z"),
   })
   .passthrough();
 
@@ -320,7 +384,9 @@ const camOperationSchema = z
       cutting_direction: "climb",
       finish_pass: false,
       multiple_passes: false,
+      through_hole: false,
       coolant: "off",
+      tool_axis_mode: "fixed_z",
     }),
     dependencies: camOperationDependenciesSchema.default({
       parent_operation_ids: [],

@@ -10,11 +10,14 @@
 // model (passes, speed_mm_per_s, kerf_side, mode validation,
 // thickness warnings, score mode).
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,17 +27,27 @@
 #include "core/cam/cam_generator.h"
 #include "core/cam/cam_operation.h"
 #include "core/cam/cam_profile_reference.h"
+#include "core/cam/cam_runtime.h"
+#include "core/cam/cam_stock.h"
+#include "core/cam/toolpath.h"
 #include "core/cam/toolpath_geometry.h"
 #include "core/document/document.h"
 #include "core/sketch/sketch_feature_parameters.h"
 #include "core/geometry/body_compiler.h"
+#include "core/viewport/viewport.h"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRep_Tool.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
@@ -48,7 +61,9 @@ using polysmith::core::LaserCutParameters;
 using polysmith::core::SketchFeatureParameters;
 using polysmith::core::ToolEntry;
 using polysmith::core::Toolpath;
+using polysmith::core::ToolpathMove;
 using polysmith::core::ToolpathMoveKind;
+using polysmith::core::ViewportToolpathPrimitive;
 
 bool expect(bool condition, const char* message) {
   if (condition) {
@@ -212,7 +227,15 @@ std::string sketch_feature_id(const DocumentState& document) {
 bool test_registry() {
   return expect(polysmith::core::find_cam_generator("laser_cut") != nullptr,
                 "registry: laser_cut found") &&
-         expect(polysmith::core::find_cam_generator("pocket_2d") == nullptr,
+         expect(polysmith::core::find_cam_generator("pocket_2d") != nullptr,
+                "registry: pocket_2d found") &&
+         expect(polysmith::core::find_cam_generator("drilling") != nullptr,
+                "registry: drilling found") &&
+         expect(polysmith::core::find_cam_generator("slot") != nullptr,
+                "registry: slot found") &&
+         expect(polysmith::core::find_cam_generator("engrave") != nullptr,
+                "registry: engrave found") &&
+         expect(polysmith::core::find_cam_generator("chamfer") == nullptr,
                 "registry: unregistered type reports null");
 }
 
@@ -343,6 +366,40 @@ bool test_rectangle_with_hole() {
   }
   if (!expect(sawHoleRing,
               "rect+hole: hole loop offset INWARD by kerf/2")) {
+    return false;
+  }
+
+  // The hole ring must be ONE exact full-circle arc — the sampled
+  // 16-chord hole polygon would emit ~16 straight chords at the ring
+  // radius (the "one circle one polyline" double: a smooth circle
+  // outline with a polygonal cut path on top).  Auto kerf puts the
+  // ring at 2 − 0.1 = 1.9; a full-circle arc ends where it starts.
+  bool sawHoleArc = false;
+  int straightOnRing = 0;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      if (near(std::hypot(move.i, move.j), 1.9, 0.02)) {
+        sawHoleArc = true;
+        if (!expect(near(dist(move.x, move.y, 10.0, 5.0), 1.9, 0.02),
+                    "rect+hole: hole arc endpoint on the offset ring")) {
+          return false;
+        }
+      }
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               near(dist(move.x, move.y, 10.0, 5.0), 1.9, 0.02)) {
+      // The interior lead's entry point is allowed on the ring; the
+      // chord polyline would add ~16 more.
+      ++straightOnRing;
+    }
+  }
+  if (!expect(sawHoleArc,
+              "rect+hole: hole ring emitted as an exact full-circle arc")) {
+    return false;
+  }
+  if (!expect(straightOnRing <= 2,
+              "rect+hole: no chord polyline on the hole ring")) {
+    std::cerr << "  straight moves on ring: " << straightOnRing << "\n";
     return false;
   }
 
@@ -481,8 +538,19 @@ bool test_too_thin_for_kerf() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  DocumentState document =
-      manager.add_sketch_rectangle(0.0, 0.0, 20.0, 2.0);  // 2 mm tall
+  // A U-shaped outline with a 3 mm-wide bay.  With kerf 6 the offset
+  // is d = 3, wider than half the bay mouth, so the two bay walls'
+  // offset arcs cross across the mouth — the feature is narrower than
+  // the kerf.  (A plain thin outer rectangle cannot pin this check:
+  // its offset grows outward and never collapses.)
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 20.0, 0.0);
+  document = manager.add_sketch_line(20.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_line(20.0, 10.0, 10.0, 10.0);
+  document = manager.add_sketch_line(10.0, 10.0, 10.0, 1.0);
+  document = manager.add_sketch_line(10.0, 1.0, 7.0, 1.0);
+  document = manager.add_sketch_line(7.0, 1.0, 7.0, 10.0);
+  document = manager.add_sketch_line(7.0, 10.0, 0.0, 10.0);
+  document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);
 
   std::string profile;
   for (const auto& feature : document.feature_history) {
@@ -493,7 +561,7 @@ bool test_too_thin_for_kerf() {
   }
 
   LaserCutParameters laser;
-  laser.kerf_width_mm = 6.0;  // d = 3 > half height (1): collapses
+  laser.kerf_width_mm = 6.0;  // d = 3 > half the bay width (1.5)
   laser.lead_in_mm = 0.0;
   laser.lead_out_mm = 0.0;
   const std::string opId =
@@ -513,12 +581,64 @@ bool test_too_thin_for_kerf() {
 
 // Creates a mill setup + tool + face-milling op referencing the top
 // face of a box via the face witness machinery.  Returns the op id.
-std::string make_face_milling_op(DocumentManager& manager,
-                                 DocumentState& document) {
+// Z of the document body's upward face (orientation-corrected).  The
+// box builds UP from the XY plane, so read it instead of hardcoding it.
+double document_top_face_z(const DocumentState& document) {
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const auto& body = compiled.bodies[0];
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+  for (int i = 1; i <= faceMap.Extent(); ++i) {
+    const auto face = TopoDS::Face(faceMap(i));
+    try {
+      BRepAdaptor_Surface surface(face);
+      const double uMid =
+          0.5 * (surface.FirstUParameter() + surface.LastUParameter());
+      const double vMid =
+          0.5 * (surface.FirstVParameter() + surface.LastVParameter());
+      gp_Pnt center;
+      gp_Vec d1u, d1v;
+      surface.D1(uMid, vMid, center, d1u, d1v);
+      gp_Vec normal = d1u.Crossed(d1v);
+      if (normal.Magnitude() > 1e-12) {
+        normal.Normalize();
+        // Orientation-correct: both box caps parameterize +Z — only
+        // the face orientation picks the UPWARD side.
+        if (face.Orientation() == TopAbs_REVERSED) {
+          normal.Reverse();
+        }
+        if (normal.Z() > 0.99) {
+          return center.Z();
+        }
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  throw std::runtime_error("top face not found");
+}
+
+std::string make_face_milling_op(
+    DocumentManager& manager, DocumentState& document,
+    double retractHeight = 5.0,
+    const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
+    double stockMargin = 0.0,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt) {
   CamSetup setup;
   setup.name = "Mill setup";
   setup.machine_type = "3_axis_mill";
-  setup.retract_height = 5.0;
+  setup.retract_height = retractHeight;
+  if (wcsOrigin.has_value()) {
+    setup.wcs_origin.anchor = "point";
+    setup.wcs_origin.position = wcsOrigin;
+  }
+  if (stockSize.has_value()) {
+    // Stock box centered on the model bbox center (cam_stock parity —
+    // the UI draws the same extents).
+    setup.stock.type = "bounding_box";
+    setup.stock.size = stockSize;
+    setup.stock.margin = stockMargin;
+  }
   document = manager.cam_setup_create(setup);
 
   ToolEntry tool;
@@ -599,7 +719,7 @@ bool test_face_milling_box_top() {
   const std::string opId = make_face_milling_op(manager, document);
 
   // The box's top face height drives the expected feed Z (the box
-  // builds downward from the XY plane — don't hardcode it).
+  // builds UP from the XY plane — don't hardcode it).
   double faceZ = 0.0;
   {
     const auto compiled = polysmith::core::compile_bodies(document);
@@ -679,6 +799,17 @@ bool test_face_milling_box_top() {
               << ", " << maxY << "]\n";
     return false;
   }
+  // Rows must SPAN the full inset on both axes, not collapse to a
+  // point (regression: the segment clip once returned the exit
+  // intersection as both row ends, so every row degenerated onto the
+  // x=17 edge and the path rendered as a vertical line).
+  if (!expect(near(minX, 3.0, 0.05) && near(maxX, 17.0, 0.05) &&
+                  near(minY, 3.0, 0.05) && near(maxY, 17.0, 0.05),
+              "face milling: rows span the full tool-radius inset")) {
+    std::cerr << "  bounds: x[" << minX << ", " << maxX << "] y[" << minY
+              << ", " << maxY << "]\n";
+    return false;
+  }
   if (!expect(sawRetractZ && sawFaceZ,
               "face milling: rapids at retract height, feeds at face height")) {
     std::cerr << "  z values:";
@@ -697,6 +828,356 @@ bool test_face_milling_box_top() {
   // the face center line.
   return expect(rowsAbove && rowsBelow,
                 "face milling: rows on both sides of the center");
+}
+
+// ── Face milling: retract-height guard ───────────────────────────
+
+bool test_face_milling_retract_below_face_warns() {
+  // Retract below the face height means every rapid travels through
+  // the material and the entry moves rise UP out of it (regression:
+  // the laser-era 5 mm default sat below a 20 mm-tall face).  v1
+  // warns instead of failing.  Retract heights are expressed relative
+  // to the resolved face Z — the box builds UP from the XY plane, so
+  // its top face height is not a constant worth hardcoding.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const double faceZ = document_top_face_z(document);
+    const std::string opId =
+        make_face_milling_op(manager, document, faceZ - 5.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "retract below face: generation still succeeds")) {
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(warned,
+                "retract below face: warns about rapids through material")) {
+      return false;
+    }
+  }
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const double faceZ = document_top_face_z(document);
+    const std::string opId =
+        make_face_milling_op(manager, document, faceZ + 5.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "retract above face: generation succeeds")) {
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    return expect(!warned,
+                  "retract above face: no through-material warning");
+  }
+}
+
+// ── Test 47: stepdown plans passes from the stock top down ─────────
+//
+// Stock 24×24×16 (margin 0) centered on the 20×20×10 box → stock top
+// 13, face 10, stepdown 2 → levels 11, 10 (the last level is pinned to
+// the face).  Every rapid stays at the retract height.
+
+bool test_face_milling_stepdown_multipass() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const double faceZ = document_top_face_z(document);
+  const std::string opId = make_face_milling_op(
+      manager, document, /*retractHeight=*/20.0,
+      std::array<double, 3>{24.0, 24.0, 16.0}, /*margin=*/0.0);
+
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  if (!expect(op != document.cam.operations.end(), "stepdown: op found")) {
+    return false;
+  }
+  op->parameters.stepdown_mm = 2.0;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "stepdown: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("not supported") != std::string::npos) {
+      return expect(false, "stepdown: no 'not supported' warning");
+    }
+  }
+
+  const Toolpath& toolpath = outcome.result.toolpath;
+  bool sawLevel11 = false;
+  bool sawLevel10 = false;
+  bool otherFeedZ = false;
+  bool rapidNotAtRetract = false;
+  double lastFeedZ = 0.0;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::Rapid) {
+      if (!near(move.z, 20.0, 0.001)) {
+        rapidNotAtRetract = true;
+      }
+    } else {
+      lastFeedZ = move.z;
+      if (near(move.z, faceZ + 1.0, 0.001)) {
+        sawLevel11 = true;
+      } else if (near(move.z, faceZ, 0.001)) {
+        sawLevel10 = true;
+      } else {
+        otherFeedZ = true;
+      }
+    }
+  }
+  if (!expect(sawLevel11, "stepdown: feeds at the stock-top level")) {
+    return false;
+  }
+  if (!expect(sawLevel10, "stepdown: feeds at the face level")) {
+    return false;
+  }
+  if (!expect(!otherFeedZ, "stepdown: feeds ONLY at the two levels")) {
+    return false;
+  }
+  if (!expect(near(lastFeedZ, faceZ, 0.001),
+              "stepdown: final feed is at the face")) {
+    return false;
+  }
+  return expect(!rapidNotAtRetract, "stepdown: rapids stay at the retract");
+}
+
+// ── Test 48: stepdown with no resolvable stock = single pass ───────
+
+bool test_face_milling_stepdown_no_stock_single_pass() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const double faceZ = document_top_face_z(document);
+  const std::string opId = make_face_milling_op(manager, document,
+                                                /*retractHeight=*/20.0);
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  op->parameters.stepdown_mm = 2.0;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "no stock: generation succeeds")) {
+    return false;
+  }
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::Rapid &&
+        !near(move.z, faceZ, 0.001)) {
+      return expect(false, "no stock: every feed at the face only");
+    }
+  }
+  return true;
+}
+
+// ── Test 49: the level count is capped at 100 ──────────────────────
+
+bool test_face_milling_stepdown_level_cap() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const std::string opId = make_face_milling_op(
+      manager, document, /*retractHeight=*/300.0,
+      std::array<double, 3>{24.0, 24.0, 500.0}, /*margin=*/0.0);
+  auto op = std::find_if(document.cam.operations.begin(),
+                         document.cam.operations.end(),
+                         [&](const CamOperation& candidate) {
+                           return candidate.op_id == opId;
+                         });
+  op->parameters.stepdown_mm = 0.5;
+  document = manager.cam_operation_update(opId, *op);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "level cap: generation succeeds")) {
+    return false;
+  }
+  bool capped = false;
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("capped") != std::string::npos) {
+      capped = true;
+    }
+  }
+  if (!expect(capped, "level cap: warns about the cap")) {
+    return false;
+  }
+  std::set<double> feedZs;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::Rapid) {
+      feedZs.insert(move.z);
+    }
+  }
+  return expect(feedZs.size() <= 101,
+                "level cap: at most 101 distinct feed levels");
+}
+
+// ── Test 50: retract below the STOCK TOP warns (multi-pass) ────────
+
+bool test_face_milling_retract_below_stock_top_warns() {
+  const auto run_case = [](double retractHeight, bool expectWarned) {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 10.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, retractHeight,
+        std::array<double, 3>{24.0, 24.0, 16.0}, /*margin=*/0.0);
+    auto op = std::find_if(document.cam.operations.begin(),
+                           document.cam.operations.end(),
+                           [&](const CamOperation& candidate) {
+                             return candidate.op_id == opId;
+                           });
+    op->parameters.stepdown_mm = 2.0;
+    document = manager.cam_operation_update(opId, *op);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the stock top") != std::string::npos) {
+        warned = true;
+      }
+    }
+    return expect(warned == expectWarned,
+                  expectWarned
+                      ? "retract below stock top: warns"
+                      : "retract above stock top: no warning");
+  };
+
+  // Stock top 13, face 10.  Retract 12 sits BETWEEN them: guard 1
+  // (below the face) is silent, guard 2 (below the stock top) fires.
+  if (!run_case(12.0, true)) {
+    return false;
+  }
+  return run_case(20.0, false);
+}
+
+// ── Face milling: retract height is WCS-relative ──────────────────
+//
+// Same contract as the contour/pocket suites: retract_height is
+// machine Z above the WCS origin, so the retract PLANE is origin Z +
+// height.  Regression: the raw height was compared against the world
+// face height, so an origin above z=0 produced bogus warnings while
+// the post emitted rapids inside the stock.
+
+bool test_face_milling_retract_wcs_relative() {
+  // WCS z=20 + retract 25 → plane 45 clears the face 30: no retract
+  // warnings, rapids at world z=45.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, /*retractHeight=*/25.0,
+        /*stockSize=*/std::nullopt, /*stockMargin=*/0.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos ||
+          warning.find("below the stock top") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(!warned,
+                "wcs retract: retract 25 above the z=20 origin clears "
+                "the face 30")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    int rapids = 0;
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid) {
+        ++rapids;
+        if (!near(move.z, 45.0, 0.001)) {
+          std::cerr << "  rapid at z=" << move.z << " (expected 45)\n";
+          return expect(false, "wcs retract: rapids at world z=45");
+        }
+      }
+    }
+    return expect(rapids > 0, "wcs retract: at least one rapid");
+  }
+  // WCS z=20 + retract 9 → plane 29 sits below the face 30: the
+  // through-material warning must survive.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_box_feature(
+        {.width = 20.0, .height = 20.0, .depth = 30.0});
+    const std::string opId = make_face_milling_op(
+        manager, document, /*retractHeight=*/9.0,
+        /*stockSize=*/std::nullopt, /*stockMargin=*/0.0,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, 20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "wcs retract low: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the face height") != std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(warned,
+                "wcs retract low: plane 29 below the face 30 still "
+                "warns")) {
+      for (const auto& warning : outcome.result.warnings) {
+        std::cerr << "  warning: " << warning << "\n";
+      }
+      return false;
+    }
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::Rapid &&
+          !near(move.z, 29.0, 0.001)) {
+        std::cerr << "  rapid at z=" << move.z << " (expected 29)\n";
+        return expect(false, "wcs retract low: rapids at world z=29");
+      }
+    }
+    return true;
+  }
 }
 
 // ── Test 8: laser cut from a 3D face outline ─────────────────────
@@ -1802,8 +2283,12 @@ bool test_sharp_corner_pierce() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  // A thin triangle: the tip at (5, 0.5) has an interior angle of
-  // ~11° — far below the pierce threshold.
+  // A thin triangle: the tip's MATERIAL wedge is obtuse (~168.6°) — the
+  // ~11.4° figure is the walk's turn between edge directions — and the
+  // genuinely sharp corners are the ~5.7° base corners at (0,0)/(10,0).
+  // The pointedness rule (walk turn < 60°) excludes the tip junction;
+  // the both-wedges rule excludes the base corners; with every corner
+  // excluded the pierce falls back to a mid-edge point.
   DocumentState document = manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
   document = manager.add_sketch_line(10.0, 0.0, 5.0, 0.5);
   document = manager.add_sketch_line(5.0, 0.5, 0.0, 0.0);
@@ -1902,11 +2387,16 @@ bool test_pierce_position() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  // A square with a shallow dent in the bottom edge: the dent corner
-  // is nearest the centroid, the (0,0) corner is nearest the origin.
-  DocumentState document = manager.add_sketch_line(0.0, 0.0, 5.0, 0.0);
-  document = manager.add_sketch_line(5.0, 0.0, 5.1, -0.01);
-  document = manager.add_sketch_line(5.1, -0.01, 10.0, 0.0);
+  // A square with a notch in the bottom edge: the notch corners are
+  // nearest the centroid, the (0,0) corner is nearest the origin.
+  // (A shallow dent instead of a notch makes the dent corners sub-60°
+  // "pointed" features and the pierce rule excludes them — the fixture
+  // needs corners that legitimately qualify.)
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 4.97, 0.0);
+  document = manager.add_sketch_line(4.97, 0.0, 5.0, -0.2);
+  document = manager.add_sketch_line(5.0, -0.2, 5.03, -0.2);
+  document = manager.add_sketch_line(5.03, -0.2, 5.06, 0.0);
+  document = manager.add_sketch_line(5.06, 0.0, 10.0, 0.0);
   document = manager.add_sketch_line(10.0, 0.0, 10.0, 10.0);
   document = manager.add_sketch_line(10.0, 10.0, 0.0, 10.0);
   document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);
@@ -3146,6 +3636,1711 @@ bool test_kerf_inside_lead_inside() {
                 "kerf inside lead: lead-in length preserved");
 }
 
+// ── Test 52: arc lead sweep angle is configurable ────────────────
+
+// Sweep of an arc move in its travel direction: the angle at the arc
+// center between the previous move's endpoint (the arc start) and this
+// move's endpoint.  I/J are center offsets from the arc START (GRBL
+// convention).
+double arc_sweep_deg(const ToolpathMove& prev, const ToolpathMove& arc) {
+  constexpr double kPi = 3.14159265358979323846;
+  const double cx = prev.x + arc.i;
+  const double cy = prev.y + arc.j;
+  const double a = std::atan2(prev.y - cy, prev.x - cx);
+  const double b = std::atan2(arc.y - cy, arc.x - cx);
+  double sweep = (arc.kind == ToolpathMoveKind::FeedArcCCW) ? b - a
+                                                            : a - b;
+  if (sweep < 0.0) {
+    sweep += 2.0 * kPi;
+  }
+  return sweep * 180.0 / kPi;
+}
+
+bool test_arc_lead_sweep_angle() {
+  // Exterior (kerf auto on an outer contour): an explicit angle drives
+  // the roll sweep (the classic roll is 90°).
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document =
+        manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+
+    std::string profile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.lead_in_mm = 2.0;
+    laser.lead_out_mm = 0.0;
+    laser.lead_in_style = "arc";
+    laser.lead_in_arc_angle_deg = 135.0;
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), profile, laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: exterior generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    if (!expect(toolpath.moves.size() >= 3,
+                "arc sweep: exterior enough moves")) {
+      return false;
+    }
+    // The lead-in arc is the first arc move (the rectangle contour is
+    // all lines).
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = 1; i < toolpath.moves.size(); ++i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: exterior lead is an arc")) {
+      return false;
+    }
+    if (!expect(near(std::hypot(arc->i, arc->j), 2.0, 0.02),
+                "arc sweep: exterior radius stays lead_in_mm")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 135.0, 1.0),
+                "arc sweep: exterior roll sweeps 135°")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+  }
+
+  // Interior (kerf inside on a circle): the default 90° must produce a
+  // 90° roll entering inside the cut line — NOT the old ~270° curl.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+    std::string circleProfile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.kerf_side = "inside";
+    laser.lead_in_mm = 2.0;
+    laser.lead_out_mm = 0.0;
+    laser.lead_in_style = "arc";
+    laser.pierce_angle_deg = 90.0;  // top pierce
+    // lead_in_arc_angle_deg left at its 90° default.
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), circleProfile,
+        laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: interior generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = 1; i < toolpath.moves.size(); ++i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: interior lead is an arc")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 90.0, 1.0),
+                "arc sweep: interior default sweeps 90° (not 270°)")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+    // The entry (arc start) sits inside the cut line at radius 4.9.
+    if (!expect(dist(prev->x, prev->y, 10.0, 5.0) < 4.9,
+                "arc sweep: interior entry inside the cut line")) {
+      std::cerr << "  entry at (" << prev->x << ", " << prev->y
+                << ") r=" << dist(prev->x, prev->y, 10.0, 5.0) << "\n";
+      return false;
+    }
+  }
+
+  // Interior lead-out: an explicit angle drives the exit roll sweep.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    manager.start_sketch_on_plane("ref-plane-xy");
+    DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+
+    std::string circleProfile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      circleProfile = feature.sketch_parameters->profiles[0].id;
+    }
+
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.kerf_side = "inside";
+    laser.lead_in_mm = 0.0;
+    laser.lead_out_mm = 2.0;
+    laser.lead_out_style = "arc";
+    laser.lead_out_arc_angle_deg = 120.0;
+    laser.pierce_angle_deg = 90.0;  // top pierce
+    const std::string opId = make_laser_op(
+        manager, document, sketch_feature_id(document), circleProfile,
+        laser);
+
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "arc sweep: lead-out generation succeeds")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    // The lead-out arc is the LAST arc move (after the circle contour).
+    const ToolpathMove* arc = nullptr;
+    const ToolpathMove* prev = nullptr;
+    for (size_t i = toolpath.moves.size() - 1; i >= 1; --i) {
+      if (toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCW ||
+          toolpath.moves[i].kind == ToolpathMoveKind::FeedArcCCW) {
+        arc = &toolpath.moves[i];
+        prev = &toolpath.moves[i - 1];
+        break;
+      }
+    }
+    if (!expect(arc != nullptr, "arc sweep: lead-out is an arc")) {
+      return false;
+    }
+    if (!expect(near(arc_sweep_deg(*prev, *arc), 120.0, 1.0),
+                "arc sweep: lead-out roll sweeps 120°")) {
+      std::cerr << "  sweep=" << arc_sweep_deg(*prev, *arc) << "\n";
+      return false;
+    }
+    // The exit (arc end) sits inside the cut line at radius 4.9.
+    if (!expect(dist(arc->x, arc->y, 10.0, 5.0) < 4.9,
+                "arc sweep: lead-out exit inside the cut line")) {
+      std::cerr << "  exit at (" << arc->x << ", " << arc->y
+                << ") r=" << dist(arc->x, arc->y, 10.0, 5.0) << "\n";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ── Test 53: a circle in a mixed sketch pierces without corner
+// warnings ─────────────────────────────────────────────────────────
+//
+// A full-circle contour has no corners: its one vertex is the loop's
+// artificial self-join.  The corner classifier used to flag that join
+// as "sharp" and then claim a mid-segment pierce on "the longest
+// straight edge" — for a loop that is nothing but one arc.  Regressed
+// by the user's 2D Cut op on a circle sketch that also contained other
+// entities (the region is an exact kind "circle" region).
+
+bool test_circle_in_mixed_sketch_has_no_corner_warnings() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  // A separate rectangle makes this a mixed sketch — the circle region
+  // is still exact kind "circle" (center/radius, no sampled points)
+  // and carries the exact circle boundary edge.
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+  document = manager.add_sketch_rectangle(20.0, 0.0, 24.0, 4.0);
+
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (region.kind == "circle") {
+        circleProfile = region.id;
+      }
+    }
+  }
+  if (!expect(!circleProfile.empty(),
+              "mixed-sketch circle: exact circle region found")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.15;
+  laser.kerf_side = "inside";
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 2.0;
+  laser.lead_in_style = "arc";
+  laser.lead_out_style = "arc";
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), circleProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "mixed-sketch circle: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  // A circle has no corners: no corner warnings, no tessellation
+  // fallback, and the contour stays one exact arc.
+  for (const auto& warning : outcome.result.warnings) {
+    if (!expect(warning.find("sharp corner") == std::string::npos &&
+                    warning.find("Every corner") == std::string::npos &&
+                    warning.find("tessellated") == std::string::npos,
+                "mixed-sketch circle: no corner/tessellation warnings")) {
+      std::cerr << "  warning: " << warning << "\n";
+      return false;
+    }
+  }
+
+  // Kerf inside: the offset circle radius is 5 − 0.075 = 4.925.  The
+  // contour move is one exact full-circle arc (I/J = center offset
+  // from the arc start; endpoint == start for a full circle).
+  const Toolpath& toolpath = outcome.result.toolpath;
+  bool sawCircleArc = false;
+  for (const auto& move : toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::FeedArcCW &&
+        move.kind != ToolpathMoveKind::FeedArcCCW) {
+      continue;
+    }
+    if (near(std::hypot(move.i, move.j), 4.925, 0.02)) {
+      sawCircleArc = true;
+      if (!expect(near(dist(move.x, move.y, 10.0, 5.0), 4.925, 0.02),
+                  "mixed-sketch circle: contour arc endpoint on the "
+                  "offset circle")) {
+        return false;
+      }
+    }
+  }
+  return expect(sawCircleArc,
+                "mixed-sketch circle: contour emitted as an exact arc");
+}
+
+// ── Drilling tests ────────────────────────────────────────────────
+//
+// Drilling targets BODY geometry only — hole-wall faces and full-circle
+// rim edges — plus free-picked points.  The fixtures cut real holes
+// into a box with an extrude-cut, then capture wall/rim witnesses
+// through the same core APIs the UI commands use.
+
+// A hole cut into the fixture box: the sketch circle at (x, y).
+struct DrillHoleSpec {
+  double x = 0.0;
+  double y = 0.0;
+  double radius = 2.0;
+};
+
+// Circle-profile ids (exact circles or circle-sourced) of the named
+// sketch — the cut input set.
+std::vector<std::string> circle_profile_ids(
+    const DocumentState& document, const std::string& sketch_feature_id) {
+  for (const auto& feature : document.feature_history) {
+    if (feature.id != sketch_feature_id ||
+        !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    std::vector<std::string> ids;
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (region.kind == "circle" || region.source_circle_id.has_value()) {
+        ids.push_back(region.id);
+      }
+    }
+    return ids;
+  }
+  return {};
+}
+
+// 0-based face-map index of the first cylindrical face (any axis).
+int find_first_cylinder_face_index(
+    const polysmith::core::CompiledBody& body) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+  for (int i = 1; i <= faceMap.Extent(); ++i) {
+    try {
+      BRepAdaptor_Surface surface(TopoDS::Face(faceMap(i)));
+      if (surface.GetType() == GeomAbs_Cylinder) {
+        return i - 1;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// 0-based face-map index of the cylindrical wall whose axis location
+// is at (x, y) — the hole wall left by the cut.  -1 when absent.
+int find_cylinder_wall_index(const polysmith::core::CompiledBody& body,
+                             double x, double y) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+  for (int i = 1; i <= faceMap.Extent(); ++i) {
+    try {
+      BRepAdaptor_Surface surface(TopoDS::Face(faceMap(i)));
+      if (surface.GetType() != GeomAbs_Cylinder) {
+        continue;
+      }
+      const gp_Pnt location = surface.Cylinder().Location();
+      if (std::abs(location.X() - x) < 1e-6 &&
+          std::abs(location.Y() - y) < 1e-6) {
+        return i - 1;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// 0-based face-map index of the upward planar face (the box top).
+int find_upward_face_index(const polysmith::core::CompiledBody& body) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faceMap;
+  TopExp::MapShapes(body.shape, TopAbs_FACE, faceMap);
+  for (int i = 1; i <= faceMap.Extent(); ++i) {
+    try {
+      const auto face = TopoDS::Face(faceMap(i));
+      BRepAdaptor_Surface surface(face);
+      const double uMid = 0.5 * (surface.FirstUParameter() +
+                                 surface.LastUParameter());
+      const double vMid = 0.5 * (surface.FirstVParameter() +
+                                 surface.LastVParameter());
+      gp_Pnt center;
+      gp_Vec d1u;
+      gp_Vec d1v;
+      surface.D1(uMid, vMid, center, d1u, d1v);
+      gp_Vec normal = d1u.Crossed(d1v);
+      if (normal.Magnitude() > 1e-12) {
+        normal.Normalize();
+        if (face.Orientation() == TopAbs_REVERSED) {
+          normal.Reverse();
+        }
+        if (normal.Z() > 0.99) {
+          return i - 1;
+        }
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// 0-based edge-map index of the first full-circle edge (any position).
+int find_full_circle_edge_index(const polysmith::core::CompiledBody& body) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body.shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      const auto edge = TopoDS::Edge(edgeMap(i));
+      BRepAdaptor_Curve curve(edge);
+      if (curve.GetType() != GeomAbs_Circle) {
+        continue;
+      }
+      // Full-circle marker: both endpoints collapse to one point.
+      TopoDS_Vertex firstVertex;
+      TopoDS_Vertex lastVertex;
+      TopExp::Vertices(edge, firstVertex, lastVertex);
+      const double radius = curve.Circle().Radius();
+      if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) <=
+          std::max(1e-7, radius * 1e-7)) {
+        return i - 1;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// 0-based edge-map index of the full-circle rim at (x, y, rimZ).  -1
+// when absent.
+int find_full_circle_rim_index(const polysmith::core::CompiledBody& body,
+                               double x, double y, double rimZ) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body.shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      const auto edge = TopoDS::Edge(edgeMap(i));
+      BRepAdaptor_Curve curve(edge);
+      if (curve.GetType() != GeomAbs_Circle) {
+        continue;
+      }
+      TopoDS_Vertex firstVertex;
+      TopoDS_Vertex lastVertex;
+      TopExp::Vertices(edge, firstVertex, lastVertex);
+      const double radius = curve.Circle().Radius();
+      if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) >
+          std::max(1e-7, radius * 1e-7)) {
+        continue;  // arc — not a drilling rim
+      }
+      const gp_Pnt center = curve.Circle().Location();
+      if (std::abs(center.X() - x) < 1e-6 &&
+          std::abs(center.Y() - y) < 1e-6 &&
+          std::abs(center.Z() - rimZ) < 1e-6) {
+        return i - 1;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// 0-based edge-map index of the first line edge.
+int find_line_edge_index(const polysmith::core::CompiledBody& body) {
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body.shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      BRepAdaptor_Curve curve(TopoDS::Edge(edgeMap(i)));
+      if (curve.GetType() == GeomAbs_Line) {
+        return i - 1;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  return -1;
+}
+
+// Builds the drilling fixture: a box (from the XY plane up) with sketch
+// circles cut into it.  cutDepth < boxDepth leaves blind holes;
+// cutDepth == boxDepth pierces the box and adds a top rim.  Returns the
+// compiled box body (the cut keeps the box body id).
+polysmith::core::CompiledBody build_drilling_fixture(
+    DocumentManager& manager, DocumentState& document, double boxWidth,
+    double boxHeight, double boxDepth, const std::vector<DrillHoleSpec>& holes,
+    double cutDepth, std::string* boxId) {
+  document = manager.add_box_feature(
+      {.width = boxWidth, .height = boxHeight, .depth = boxDepth});
+  *boxId = document.feature_history.back().id;
+  if (!holes.empty()) {
+    document = manager.start_sketch_on_plane("ref-plane-xy");
+    const std::string sketchId = document.feature_history.back().id;
+    for (const auto& hole : holes) {
+      document = manager.add_sketch_circle(hole.x, hole.y, hole.radius);
+    }
+    const auto profileIds = circle_profile_ids(document, sketchId);
+    if (profileIds.size() != holes.size()) {
+      throw std::runtime_error("drilling fixture: circle profiles missing");
+    }
+    document = manager.extrude_profiles(profileIds, cutDepth, "cut", *boxId);
+  }
+  const auto compiled = polysmith::core::compile_bodies(document);
+  for (const auto& body : compiled.bodies) {
+    if (body.id == *boxId) {
+      return body;
+    }
+  }
+  throw std::runtime_error("drilling fixture: box body not found");
+}
+
+// Face attestation region for the hole wall at (x, y).
+polysmith::core::GeometryReference wall_face_ref(
+    const polysmith::core::CompiledBody& body, double x, double y) {
+  const int faceIndex = find_cylinder_wall_index(body, x, y);
+  if (faceIndex < 0) {
+    throw std::runtime_error("drilling fixture: hole wall not found");
+  }
+  const auto ref = polysmith::core::capture_face_reference(
+      body.id, body.shape, faceIndex, "hole wall");
+  if (!ref.has_value()) {
+    throw std::runtime_error("drilling fixture: wall capture failed");
+  }
+  polysmith::core::FaceAttestation att;
+  att.area = ref->capturedArea;
+  att.normal = ref->capturedNormal;
+  for (const auto& point : ref->samplePoints) {
+    att.sample_points.push_back(point);
+  }
+  polysmith::core::GeometryReference stored;
+  stored.persistent_id = body.id + ":face:" + std::to_string(faceIndex);
+  stored.attestation = att;
+  return stored;
+}
+
+// Edge attestation region for the full-circle rim at (x, y, rimZ).
+polysmith::core::GeometryReference rim_edge_ref(
+    const polysmith::core::CompiledBody& body, double x, double y,
+    double rimZ) {
+  const int edgeIndex = find_full_circle_rim_index(body, x, y, rimZ);
+  if (edgeIndex < 0) {
+    throw std::runtime_error("drilling fixture: hole rim not found");
+  }
+  const auto ref = polysmith::core::capture_edge_reference(
+      body.id, body.shape, edgeIndex, "hole rim");
+  if (!ref.has_value()) {
+    throw std::runtime_error("drilling fixture: rim capture failed");
+  }
+  polysmith::core::EdgeAttestation att;
+  att.start_point = ref->startPoint;
+  att.end_point = ref->endPoint;
+  att.length = ref->length;
+  att.tangent = ref->tangent;
+  att.center = ref->center;
+  att.axis = ref->axis;
+  att.radius = ref->radius;
+  polysmith::core::GeometryReference stored;
+  stored.persistent_id = body.id + ":edge:" + std::to_string(edgeIndex);
+  stored.attestation = att;
+  return stored;
+}
+
+// Adds a mill setup + tool + drilling op holding the given witness
+// regions (plus optional free points).  Returns the op id.
+std::string make_drilling_op_with_refs(
+    DocumentManager& manager, DocumentState& document,
+    const std::vector<polysmith::core::GeometryReference>& refs,
+    const std::string& cycle, double holeDepth, double peckDepth,
+    bool through, const std::string& toolType = "drill",
+    double retractHeight = 20.0,
+    const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt,
+    const std::vector<std::array<double, 3>>& points = {}) {
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.retract_height = retractHeight;
+  if (wcsOrigin.has_value()) {
+    setup.wcs_origin.anchor = "point";
+    setup.wcs_origin.position = wcsOrigin;
+  }
+  if (stockSize.has_value()) {
+    setup.stock.type = "bounding_box";
+    setup.stock.size = stockSize;
+    setup.stock.margin = 0.0;
+  }
+  document = manager.cam_setup_create(setup);
+
+  ToolEntry tool;
+  tool.name = toolType == "drill" ? "3mm drill" : "6mm endmill";
+  tool.type = toolType;
+  tool.diameter_mm = toolType == "drill" ? 3.0 : 6.0;
+  tool.default_plunge_feedrate_mm_per_min = 200.0;
+  document = manager.cam_tool_add(tool);
+
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  op.parameters.cycle_type = cycle;
+  op.parameters.hole_depth_mm = holeDepth;
+  op.parameters.peck_depth_mm = peckDepth;
+  op.parameters.through_hole = through;
+  op.parameters.plunge_feedrate_mm_per_min = 200.0;
+  op.geometry_references.machining_regions = refs;
+  for (const auto& point : points) {
+    // The real id-minting path — persistent ids read pt-1, pt-2, ...
+    op.geometry_references.machining_regions.push_back(
+        manager.cam_capture_point(point));
+  }
+  document = manager.cam_operation_add(op);
+  return document.cam.operations.back().op_id;
+}
+
+// Face-driven drilling op: each hole contributes its wall face.
+std::string make_drilling_face_op(
+    DocumentManager& manager, DocumentState& document,
+    const std::vector<DrillHoleSpec>& holes, double cutDepth,
+    const std::string& cycle, double holeDepth, double peckDepth,
+    bool through, const std::string& toolType = "drill",
+    double retractHeight = 20.0, double boxWidth = 60.0,
+    double boxHeight = 20.0, double boxDepth = 10.0,
+    const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt,
+    const std::vector<std::array<double, 3>>& points = {}) {
+  std::string boxId;
+  const auto body = build_drilling_fixture(
+      manager, document, boxWidth, boxHeight, boxDepth, holes, cutDepth,
+      &boxId);
+  std::vector<polysmith::core::GeometryReference> refs;
+  for (const auto& hole : holes) {
+    refs.push_back(wall_face_ref(body, hole.x, hole.y));
+  }
+  return make_drilling_op_with_refs(manager, document, refs, cycle,
+                                    holeDepth, peckDepth, through, toolType,
+                                    retractHeight, stockSize, wcsOrigin,
+                                    points);
+}
+
+// Edge-driven drilling op: each hole contributes the rim at rimZ (the
+// fixture cuts through the box so both rims exist).
+std::string make_drilling_edge_op(
+    DocumentManager& manager, DocumentState& document,
+    const std::vector<DrillHoleSpec>& holes, double rimZ,
+    const std::string& cycle, double holeDepth, double peckDepth,
+    bool through, const std::string& toolType = "drill",
+    double retractHeight = 20.0, double boxWidth = 60.0,
+    double boxHeight = 20.0, double boxDepth = 10.0,
+    const std::optional<std::array<double, 3>>& stockSize = std::nullopt,
+    const std::optional<std::array<double, 3>>& wcsOrigin = std::nullopt,
+    const std::vector<std::array<double, 3>>& points = {}) {
+  std::string boxId;
+  const auto body = build_drilling_fixture(
+      manager, document, boxWidth, boxHeight, boxDepth, holes, boxDepth,
+      &boxId);
+  std::vector<polysmith::core::GeometryReference> refs;
+  for (const auto& hole : holes) {
+    refs.push_back(rim_edge_ref(body, hole.x, hole.y, rimZ));
+  }
+  return make_drilling_op_with_refs(manager, document, refs, cycle,
+                                    holeDepth, peckDepth, through, toolType,
+                                    retractHeight, stockSize, wcsOrigin,
+                                    points);
+}
+
+// ── Test 54: G81 — wall faces, depth, retract, ordering ───────────
+
+bool test_drilling_g81_circles() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  const std::string opId = make_drilling_face_op(
+      manager, document, {{10.0, 5.0, 2.0}, {30.0, 5.0, 2.0}},
+      /*cutDepth=*/10.0, "g81_standard", /*holeDepth=*/5.0,
+      /*peckDepth=*/0.0, /*through=*/false);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "g81: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  if (!expect(outcome.result.warnings.empty(),
+              "g81: no warnings (retract clears the box top)")) {
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+  // Two holes × (Rapid + DrillCycle).  The walls arrive in face-map
+  // order — assert the hole SET plus the rapid/cycle pairing rather
+  // than a fixed sequence.  Blind depth 5 measures from the material
+  // top (box top z 10): target z 5.
+  if (!expect(toolpath.moves.size() == 4,
+              "g81: two rapid+cycle pairs")) {
+    return false;
+  }
+  bool sawFirst = false;
+  bool sawSecond = false;
+  for (size_t i = 0; i < toolpath.moves.size(); i += 2) {
+    const ToolpathMove& rapid = toolpath.moves[i];
+    const ToolpathMove& drill = toolpath.moves[i + 1];
+    if (!expect(rapid.kind == ToolpathMoveKind::Rapid &&
+                    drill.kind == ToolpathMoveKind::DrillCycle,
+                "g81: rapid then cycle")) {
+      return false;
+    }
+    if (!expect(near(rapid.x, drill.x) && near(rapid.y, drill.y) &&
+                    near(rapid.z, 20.0) && !rapid.laser_on,
+                "g81: rapid over the hole at the retract plane")) {
+      return false;
+    }
+    if (!expect(near(drill.z, 5.0) && near(drill.r_plane_z, 20.0) &&
+                    near(drill.peck_depth_mm, 0.0) &&
+                    near(drill.feedrate_mm_per_min, 200.0) &&
+                    !drill.laser_on,
+                "g81: plunge to top−depth with R and the plunge feed")) {
+      return false;
+    }
+    if (near(drill.x, 10.0, 1e-4) && near(drill.y, 5.0, 1e-4)) {
+      sawFirst = true;
+    } else if (near(drill.x, 30.0, 1e-4) && near(drill.y, 5.0, 1e-4)) {
+      sawSecond = true;
+    } else {
+      std::cerr << "  hole at (" << drill.x << ", " << drill.y << ")\n";
+      return expect(false, "g81: holes at the two wall axes");
+    }
+  }
+  if (!expect(sawFirst && sawSecond,
+              "g81: both wall axes drilled")) {
+    return false;
+  }
+  return expect(near(toolpath.bounds.min_z, 5.0) &&
+                    near(toolpath.bounds.max_z, 20.0),
+                "g81: bounds span the plunge depth to the retract");
+}
+
+// ── Test 55: G83 — the peck depth rides the cycle move ────────────
+
+bool test_drilling_g83_peck() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  const std::string opId = make_drilling_face_op(
+      manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+      "g83_peck", /*holeDepth=*/5.0,
+      /*peckDepth=*/2.0, /*through=*/false, "drill", 20.0,
+      /*boxWidth=*/20.0);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "g83: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+  if (!expect(toolpath.moves.size() == 2, "g83: one rapid + cycle")) {
+    return false;
+  }
+  const ToolpathMove& drill = toolpath.moves[1];
+  if (!expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                  near(drill.z, 5.0) && near(drill.r_plane_z, 20.0) &&
+                  near(drill.peck_depth_mm, 2.0),
+              "g83: peck depth rides the cycle move")) {
+    return false;
+  }
+  return true;
+}
+
+// ── Test 56: Through — the stock bottom is the hole target ────────
+
+bool test_drilling_through_stock_bottom() {
+  // The blind depth is ignored when Through is on: every cycle targets
+  // the stock bottom.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", /*holeDepth=*/5.0,
+        /*peckDepth=*/0.0, /*through=*/true, "drill",
+        /*retractHeight=*/20.0, /*boxWidth=*/20.0, /*boxHeight=*/20.0,
+        /*boxDepth=*/10.0, std::array<double, 3>{24.0, 24.0, 16.0});
+    // The box builds up from XY (bbox z 0..10, center 5); the stock
+    // box centers on the model bbox.  Read the same extents the
+    // generator reads instead of hardcoding the bottom.
+    const DocumentState finalDoc = manager.get_document().value();
+    const auto extents = polysmith::core::cam_stock::stock_box_extents(
+        finalDoc, finalDoc.cam.setups[0].stock);
+    if (!expect(extents.valid, "through: stock resolves")) {
+      return false;
+    }
+    const double expectedBottom = extents.center[2] - extents.size[2] / 2.0;
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        finalDoc, opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "through: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(outcome.result.warnings.empty(),
+                "through: no warnings (retract clears the stock top)")) {
+      return false;
+    }
+    for (const auto& move : outcome.result.toolpath.moves) {
+      if (move.kind == ToolpathMoveKind::DrillCycle &&
+          !near(move.z, expectedBottom)) {
+        std::cerr << "  drill at z=" << move.z << " (expected "
+                  << expectedBottom << ")\n";
+        return expect(false,
+                      "through: every cycle targets the stock bottom");
+      }
+    }
+  }
+  // Without a resolvable stock the through target cannot exist.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", /*holeDepth=*/5.0,
+        /*peckDepth=*/0.0, /*through=*/true, "drill", 20.0,
+        /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok,
+                "through no stock: generation fails loudly")) {
+      return false;
+    }
+    return expect(outcome.result.error_message.find("stock") !=
+                      std::string::npos,
+                  "through no stock: error names the missing stock");
+  }
+}
+
+// ── Test 56b: blind depth measures from the material top ──────────
+// The user-reported fixture: a blind hole cut into a box (cut depth
+// 5, box height 10).  The wall's cylinder axis sits at the hole's
+// BOTTOM (z 0), far below the material top (z 10) — the blind depth
+// must measure from the box's TOP face: 10 − 5 = 5, not 0 − 5 = −5
+// through the part.
+
+bool test_drilling_blind_from_top_surface() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  const std::string opId = make_drilling_face_op(
+      manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/5.0,
+      "g81_standard", /*holeDepth=*/5.0,
+      /*peckDepth=*/0.0, /*through=*/false, "drill", 20.0,
+      /*boxWidth=*/20.0);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "top-surface: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+  if (!expect(toolpath.moves.size() == 2,
+              "top-surface: one rapid + cycle pair")) {
+    return false;
+  }
+  const ToolpathMove& drill = toolpath.moves[1];
+  // Box top 10 mm − depth 5 mm = 5 mm; the wall's axis (z 0) would
+  // put the target at −5 mm — through the box.
+  return expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                    near(drill.z, 5.0),
+                "top-surface: blind depth measured from the box top");
+}
+
+// ── Test 56c: preview draws the travel from the origin ─────────────
+// The post's first G0 rides the implicit start at machine zero — no
+// toolpath move carries it — so the viewport emission synthesizes a
+// rapid from the resolved WCS origin.  Without it the drilling
+// preview shows only the plunge verticals and the travel to the
+// first hole is invisible.
+
+bool test_drilling_viewport_origin_travel() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  const std::array<double, 3> origin = {5.0, -3.0, 0.0};
+  const std::string opId = make_drilling_face_op(
+      manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+      "g81_standard", /*holeDepth=*/5.0,
+      /*peckDepth=*/0.0, /*through=*/false, /*toolType=*/"drill",
+      /*retractHeight=*/20.0, /*boxWidth=*/20.0, /*boxHeight=*/20.0,
+      /*boxDepth=*/10.0, /*stockSize=*/std::nullopt,
+      /*wcsOrigin=*/origin);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "origin travel: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // The command layer caches the generated path for the viewport
+  // emitter (cam_commands.inc stores preview + generated);
+  // generate_operation_toolpath alone leaves the cache empty.
+  polysmith::core::cam_runtime::store_generated(
+      manager.get_document().value(), opId, outcome.result.toolpath);
+  const auto viewport =
+      polysmith::core::build_viewport_state(manager.get_document());
+  const ViewportToolpathPrimitive* primitive = nullptr;
+  for (const auto& candidate : viewport.toolpaths) {
+    if (candidate.id == "tp:" + opId) {
+      primitive = &candidate;
+    }
+  }
+  if (!expect(primitive != nullptr,
+              "origin travel: toolpath primitive emitted")) {
+    return false;
+  }
+  // Origin rapid + Rapid(x,y,R) + R→bottom→R = 5 points.
+  if (!expect(primitive->points.size() == 5,
+              "origin travel: origin rapid + 4 cycle points")) {
+    return false;
+  }
+  const auto& first = primitive->points.front();
+  return expect(first.is_rapid && near(first.x, origin[0]) &&
+                    near(first.y, origin[1]) && near(first.z, origin[2]),
+                "origin travel: first point is a rapid at the WCS origin");
+}
+
+// ── Test 57: validation errors ────────────────────────────────────
+
+bool test_drilling_validation_errors() {
+  // Unknown cycle — hard error naming the supported pair.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g82_dwell", 5.0, 0.0, false, "drill", 20.0, /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("G81 and G83") !=
+                        std::string::npos,
+                "validation: unknown cycle names the supported pair")) {
+      return false;
+    }
+  }
+  // Blind drilling without a depth.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", 0.0, 0.0, false, "drill", 20.0,
+        /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find(
+                        "positive hole depth") != std::string::npos,
+                "validation: zero blind depth fails")) {
+      return false;
+    }
+  }
+  // G83 without a peck depth.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g83_peck", 5.0, 0.0, false, "drill", 20.0, /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("peck") !=
+                        std::string::npos,
+                "validation: zero peck depth fails")) {
+      return false;
+    }
+  }
+  // No faces, edges, or points.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find(
+                        "at least one hole face, rim edge, or point") !=
+                        std::string::npos,
+                "validation: nothing drillable fails")) {
+      return false;
+    }
+  }
+  // A non-cylinder face is not a drilling input — hard error.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    std::string boxId;
+    const auto body = build_drilling_fixture(
+        manager, document, 20.0, 20.0, 10.0, {}, 0.0, &boxId);
+    const int topIndex = find_upward_face_index(body);
+    if (!expect(topIndex >= 0, "validation: box top face found")) {
+      return false;
+    }
+    const auto ref = polysmith::core::capture_face_reference(
+        body.id, body.shape, topIndex, "top");
+    if (!expect(ref.has_value(), "validation: top face captured")) {
+      return false;
+    }
+    polysmith::core::FaceAttestation att;
+    att.area = ref->capturedArea;
+    att.normal = ref->capturedNormal;
+    for (const auto& point : ref->samplePoints) {
+      att.sample_points.push_back(point);
+    }
+    polysmith::core::GeometryReference stored;
+    stored.persistent_id = body.id + ":face:" + std::to_string(topIndex);
+    stored.attestation = att;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find(
+                        "not a cylindrical hole wall") !=
+                        std::string::npos,
+                "validation: non-cylinder face fails")) {
+      return false;
+    }
+  }
+  // A partial arc edge is not a drilling input — hard error (the
+  // attestation is hand-built from live arc geometry: the capture API
+  // rejects arcs outright, so the generator-level guard needs one).
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document = manager.add_cylinder_feature(
+        polysmith::core::CylinderFeatureParameters{.radius = 10.0,
+                                                   .height = 10.0});
+    const std::string cylinderId = document.feature_history.back().id;
+    // Cut the right half away: a rectangle prism over x >= 0 leaves a
+    // half cylinder whose circular rims are now arcs.
+    manager.start_sketch_on_plane("ref-plane-xy");
+    document = manager.add_sketch_rectangle(0.0, -12.0, 12.0, 12.0);
+    const std::string sketchId = document.feature_history.back().id;
+    std::string rectProfile;
+    for (const auto& feature : document.feature_history) {
+      if (feature.id == sketchId && feature.sketch_parameters.has_value()) {
+        rectProfile = feature.sketch_parameters->profiles[0].id;
+      }
+    }
+    document = manager.extrude_profile(rectProfile, 10.0, "cut", cylinderId);
+    const auto compiled = polysmith::core::compile_bodies(document);
+    const polysmith::core::CompiledBody* body = nullptr;
+    for (const auto& candidate : compiled.bodies) {
+      if (candidate.id == cylinderId) {
+        body = &candidate;
+      }
+    }
+    if (!expect(body != nullptr, "validation: half cylinder compiled")) {
+      return false;
+    }
+    // Find the first partial circular edge and read its witness.
+    int arcIndex = -1;
+    std::array<double, 3> arcStart{};
+    std::array<double, 3> arcEnd{};
+    double arcLength = 0.0;
+    std::array<double, 3> arcCenter{};
+    std::array<double, 3> arcAxis{};
+    double arcRadius = 0.0;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+    TopExp::MapShapes(body->shape, TopAbs_EDGE, edgeMap);
+    for (int i = 1; i <= edgeMap.Extent(); ++i) {
+      try {
+        const auto edge = TopoDS::Edge(edgeMap(i));
+        BRepAdaptor_Curve curve(edge);
+        if (curve.GetType() != GeomAbs_Circle) {
+          continue;
+        }
+        TopoDS_Vertex firstVertex;
+        TopoDS_Vertex lastVertex;
+        TopExp::Vertices(edge, firstVertex, lastVertex);
+        const double radius = curve.Circle().Radius();
+        if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) <=
+            std::max(1e-7, radius * 1e-7)) {
+          continue;  // skip full circles — find the arc
+        }
+        arcIndex = i - 1;
+        const gp_Pnt startPnt = BRep_Tool::Pnt(firstVertex);
+        const gp_Pnt endPnt = BRep_Tool::Pnt(lastVertex);
+        arcStart = {startPnt.X(), startPnt.Y(), startPnt.Z()};
+        arcEnd = {endPnt.X(), endPnt.Y(), endPnt.Z()};
+        arcLength = radius *
+                    std::abs(curve.LastParameter() - curve.FirstParameter());
+        const gp_Pnt center = curve.Circle().Location();
+        const gp_Dir axis = curve.Circle().Axis().Direction();
+        arcCenter = {center.X(), center.Y(), center.Z()};
+        arcAxis = {axis.X(), axis.Y(), axis.Z()};
+        arcRadius = radius;
+        break;
+      } catch (const std::exception&) {
+        continue;
+      }
+    }
+    if (!expect(arcIndex >= 0, "validation: partial rim edge found")) {
+      return false;
+    }
+    polysmith::core::EdgeAttestation att;
+    att.start_point = arcStart;
+    att.end_point = arcEnd;
+    att.length = arcLength;
+    att.tangent = {1.0, 0.0, 0.0};
+    att.center = arcCenter;
+    att.axis = arcAxis;
+    att.radius = arcRadius;
+    polysmith::core::GeometryReference stored;
+    stored.persistent_id = cylinderId + ":edge:" + std::to_string(arcIndex);
+    stored.attestation = att;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("only an arc") !=
+                        std::string::npos,
+                "validation: arc edge fails")) {
+      return false;
+    }
+  }
+  // A line edge RESOLVES (line witnesses score since the slot work) —
+  // drilling's own guard then rejects it with the rim-only message.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    std::string boxId;
+    const auto body = build_drilling_fixture(
+        manager, document, 20.0, 20.0, 10.0, {}, 0.0, &boxId);
+    const int lineIndex = find_line_edge_index(body);
+    if (!expect(lineIndex >= 0, "validation: box line edge found")) {
+      return false;
+    }
+    const auto ref = polysmith::core::capture_edge_reference(
+        body.id, body.shape, lineIndex, "line");
+    if (!expect(ref.has_value(), "validation: line edge captured")) {
+      return false;
+    }
+    polysmith::core::EdgeAttestation att;
+    att.start_point = ref->startPoint;
+    att.end_point = ref->endPoint;
+    att.length = ref->length;
+    att.tangent = ref->tangent;
+    polysmith::core::GeometryReference stored;
+    stored.persistent_id = body.id + ":edge:" + std::to_string(lineIndex);
+    stored.attestation = att;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("not a circular "
+                                                     "rim") !=
+                        std::string::npos,
+                "validation: line edge rejected by the rim-only guard")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+  }
+  return true;
+}
+
+// ── Test 58: retract and stock guards ─────────────────────────────
+
+bool test_drilling_retract_stock_guards() {
+  // (a) WCS origin below the box top: the retract plane lands
+  // below the hole starts — warn about rapids through the material.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", 5.0, 0.0, false,
+        "drill", /*retractHeight=*/5.0, /*boxWidth=*/20.0,
+        /*boxHeight=*/20.0, /*boxDepth=*/10.0, /*stockSize=*/std::nullopt,
+        /*wcsOrigin=*/std::array<double, 3>{0.0, 0.0, -20.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "retract guard: generation still succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    bool warned = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the highest hole start") !=
+          std::string::npos) {
+        warned = true;
+      }
+    }
+    if (!expect(warned, "retract guard: warns below the hole starts")) {
+      return false;
+    }
+    // The R plane is WCS-relative: −20 + 5 = −15.
+    const ToolpathMove& drill = outcome.result.toolpath.moves[1];
+    return expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                      near(drill.r_plane_z, -15.0),
+                  "retract guard: R plane at origin + height");
+  }
+  // (b) A stock box: the retract below the stock top AND a blind depth
+  // piercing below the stock bottom both warn — still generated.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", /*holeDepth=*/20.0,
+        /*peckDepth=*/0.0, /*through=*/false, "drill",
+        /*retractHeight=*/5.0, /*boxWidth=*/20.0, /*boxHeight=*/20.0,
+        /*boxDepth=*/10.0, std::array<double, 3>{24.0, 24.0, 16.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "stock guards: generation still succeeds")) {
+      return false;
+    }
+    bool sawStockTop = false;
+    bool sawPierce = false;
+    for (const auto& warning : outcome.result.warnings) {
+      if (warning.find("below the stock top") != std::string::npos) {
+        sawStockTop = true;
+      }
+      if (warning.find("breaks through the stock") != std::string::npos) {
+        sawPierce = true;
+      }
+    }
+    return expect(sawStockTop && sawPierce,
+                  "stock guards: retract + bed-pierce warnings both fire");
+  }
+  // (c) Sane parameters on the same fixture: no warnings at all.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_face_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+        "g81_standard", /*holeDepth=*/5.0,
+        /*peckDepth=*/0.0, /*through=*/false, "drill",
+        /*retractHeight=*/20.0, /*boxWidth=*/20.0, /*boxHeight=*/20.0,
+        /*boxDepth=*/10.0, std::array<double, 3>{24.0, 24.0, 16.0});
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "clean case: generation succeeds")) {
+      return false;
+    }
+    return expect(outcome.result.warnings.empty(),
+                  "clean case: no warnings");
+  }
+}
+
+// ── Test 59: a non-drill tool warns ───────────────────────────────
+
+bool test_drilling_tool_warning() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  const std::string opId = make_drilling_face_op(
+      manager, document, {{10.0, 5.0, 2.0}}, /*cutDepth=*/10.0,
+      "g81_standard", 5.0, 0.0, false,
+      /*toolType=*/"endmill_flat", 20.0, /*boxWidth=*/20.0);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "tool warning: generation still succeeds")) {
+    return false;
+  }
+  bool warned = false;
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("endmill_flat") != std::string::npos) {
+      warned = true;
+    }
+  }
+  return expect(warned, "tool warning: names the tool type");
+}
+
+// ── Test 60: free points — no body references needed ──────────────
+
+bool test_drilling_free_points() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  // Points only: the attestation Z is the hole start — 3 − 5 = −2.
+  const std::string opId = make_drilling_op_with_refs(
+      manager, document, {}, "g81_standard",
+      5.0, 0.0, false, "drill", /*retractHeight=*/20.0,
+      /*stockSize=*/std::nullopt, /*wcsOrigin=*/std::nullopt,
+      {{7.0, 8.0, 3.0}, {17.0, 8.0, 3.0}});
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "free points: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  if (!expect(outcome.result.warnings.empty(),
+              "free points: no warnings")) {
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+  if (!expect(toolpath.moves.size() == 4,
+              "free points: two rapid+cycle pairs")) {
+    return false;
+  }
+  const ToolpathMove& r1 = toolpath.moves[0];
+  const ToolpathMove& d1 = toolpath.moves[1];
+  const ToolpathMove& d2 = toolpath.moves[3];
+  if (!expect(r1.kind == ToolpathMoveKind::Rapid && near(r1.x, 7.0) &&
+                  near(r1.y, 8.0) && near(r1.z, 20.0),
+              "free points: rapid to the first point")) {
+    return false;
+  }
+  if (!expect(d1.kind == ToolpathMoveKind::DrillCycle && near(d1.z, -2.0) &&
+                  near(d1.r_plane_z, 20.0) && near(d1.peck_depth_mm, 0.0),
+              "free points: depth measured from the attestation Z")) {
+    return false;
+  }
+  if (!expect(d2.kind == ToolpathMoveKind::DrillCycle && near(d2.z, -2.0),
+              "free points: second cycle at the same depth")) {
+    return false;
+  }
+  // Greedy nearest-neighbor ordering, deterministic when the input
+  // order pins the start point: from (0,0) the next visit must be
+  // (1,0), not (100,0).
+  {
+    DocumentManager manager2;
+    manager2.create_document();
+    DocumentState document2;
+    const std::string opId2 = make_drilling_op_with_refs(
+        manager2, document2, {}, "g81_standard", 5.0, 0.0, false, "drill",
+        /*retractHeight=*/20.0,
+        /*stockSize=*/std::nullopt, /*wcsOrigin=*/std::nullopt,
+        {{0.0, 0.0, 3.0}, {100.0, 0.0, 3.0}, {1.0, 0.0, 3.0}});
+    const auto outcome2 = polysmith::core::generate_operation_toolpath(
+        manager2.get_document().value(), opId2, /*preview=*/false);
+    if (!expect(outcome2.found && outcome2.result.ok,
+                "greedy order: generation succeeds")) {
+      std::cerr << "  error: " << outcome2.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(outcome2.result.toolpath.moves.size() == 6,
+                "greedy order: three rapid+cycle pairs")) {
+      return false;
+    }
+    // The rapids (indices 0, 2, 4) carry the visit order.
+    return expect(near(outcome2.result.toolpath.moves[0].x, 0.0) &&
+                      near(outcome2.result.toolpath.moves[2].x, 1.0) &&
+                      near(outcome2.result.toolpath.moves[4].x, 100.0),
+                  "greedy order: nearest remaining hole first");
+  }
+}
+
+// ── Test 61: G81 from rim edges (top rim + bottom-rim lift) ────────
+
+bool test_drilling_rim_edge_g81() {
+  // The top rim: its circle center IS the material top — depth 5
+  // targets z 5 directly.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_edge_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*rimZ=*/10.0,
+        "g81_standard", 5.0, 0.0, false, "drill", 20.0,
+        /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "top rim: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    if (!expect(outcome.result.warnings.empty(),
+                "top rim: no warnings")) {
+      return false;
+    }
+    const Toolpath& toolpath = outcome.result.toolpath;
+    if (!expect(toolpath.moves.size() == 2,
+                "top rim: one rapid + cycle pair")) {
+      return false;
+    }
+    const ToolpathMove& rapid = toolpath.moves[0];
+    const ToolpathMove& drill = toolpath.moves[1];
+    if (!expect(rapid.kind == ToolpathMoveKind::Rapid &&
+                    near(rapid.x, 10.0) && near(rapid.y, 5.0) &&
+                    near(rapid.z, 20.0),
+                "top rim: rapid over the rim center")) {
+      return false;
+    }
+    if (!expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                    near(drill.x, 10.0) && near(drill.y, 5.0) &&
+                    near(drill.z, 5.0) && near(drill.r_plane_z, 20.0) &&
+                    near(drill.peck_depth_mm, 0.0),
+                "top rim: plunge to center − depth")) {
+      return false;
+    }
+  }
+  // The bottom rim (z 0) lifts to the material top: the same target.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    DocumentState document;
+    const std::string opId = make_drilling_edge_op(
+        manager, document, {{10.0, 5.0, 2.0}}, /*rimZ=*/0.0,
+        "g81_standard", 5.0, 0.0, false, "drill", 20.0,
+        /*boxWidth=*/20.0);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && outcome.result.ok,
+                "bottom rim: generation succeeds")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
+      return false;
+    }
+    const ToolpathMove& drill = outcome.result.toolpath.moves[1];
+    return expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                      near(drill.z, 5.0),
+                  "bottom rim: lifted to the material top (10 − 5)");
+  }
+}
+
+// ── Test 62: horizontal-axis wall and rim errors ──────────────────
+// A cylinder extruded along X (sketch on the YZ plane): its wall's
+// axis and its rims' axes are horizontal — not 3-axis drillable.
+
+bool test_drilling_horizontal_axis_errors() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-yz");
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 5.0);
+  const std::string sketchId = document.feature_history.back().id;
+  const auto profileIds = circle_profile_ids(document, sketchId);
+  if (!expect(profileIds.size() == 1, "horizontal: one circle profile")) {
+    return false;
+  }
+  document = manager.extrude_profile(profileIds[0], 20.0, "new_body");
+  const std::string bodyId = document.feature_history.back().id;
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const polysmith::core::CompiledBody* body = nullptr;
+  for (const auto& candidate : compiled.bodies) {
+    if (candidate.id == bodyId) {
+      body = &candidate;
+    }
+  }
+  if (!expect(body != nullptr, "horizontal: cylinder body compiled")) {
+    return false;
+  }
+  // Wall face: the cylinder surface (its axis runs horizontally).
+  {
+    const int wallIndex = find_first_cylinder_face_index(*body);
+    if (!expect(wallIndex >= 0, "horizontal: wall found")) {
+      return false;
+    }
+    const auto ref = polysmith::core::capture_face_reference(
+        body->id, body->shape, wallIndex, "wall");
+    if (!expect(ref.has_value(), "horizontal: wall captured")) {
+      return false;
+    }
+    polysmith::core::FaceAttestation att;
+    att.area = ref->capturedArea;
+    att.normal = ref->capturedNormal;
+    for (const auto& point : ref->samplePoints) {
+      att.sample_points.push_back(point);
+    }
+    polysmith::core::GeometryReference stored;
+    stored.persistent_id = bodyId + ":face:" + std::to_string(wallIndex);
+    stored.attestation = att;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("not vertical") !=
+                        std::string::npos,
+                "horizontal: wall fails")) {
+      return false;
+    }
+  }
+  // Rim edge: a full circle with a horizontal axis.
+  {
+    const int rimIndex = find_full_circle_edge_index(*body);
+    if (!expect(rimIndex >= 0, "horizontal: rim found")) {
+      return false;
+    }
+    const auto ref = polysmith::core::capture_edge_reference(
+        body->id, body->shape, rimIndex, "rim");
+    if (!expect(ref.has_value(), "horizontal: rim captured")) {
+      return false;
+    }
+    polysmith::core::EdgeAttestation att;
+    att.start_point = ref->startPoint;
+    att.end_point = ref->endPoint;
+    att.length = ref->length;
+    att.tangent = ref->tangent;
+    att.center = ref->center;
+    att.axis = ref->axis;
+    att.radius = ref->radius;
+    polysmith::core::GeometryReference stored;
+    stored.persistent_id = bodyId + ":edge:" + std::to_string(rimIndex);
+    stored.attestation = att;
+    const std::string opId = make_drilling_op_with_refs(
+        manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+    const auto outcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), opId, /*preview=*/false);
+    if (!expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find("not horizontal") !=
+                        std::string::npos,
+                "horizontal: rim fails")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// ── Test 63: legacy sketch-circle references fail with a migration
+// error — never a silent empty hole list.
+
+bool test_drilling_legacy_profile_migration_error() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_circle(10.0, 5.0, 2.0);
+  const std::string sketchId = document.feature_history.back().id;
+  // The document still holds the OLD reference form: a
+  // SketchProfileAttestation built through the profile capture API.
+  polysmith::core::SketchProfileRegion region;
+  bool foundRegion = false;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketchId && feature.sketch_parameters.has_value()) {
+      region = feature.sketch_parameters->profiles[0];
+      foundRegion = true;
+    }
+  }
+  if (!expect(foundRegion, "legacy: sketch profile found")) {
+    return false;
+  }
+  const auto ref = polysmith::core::capture_profile_reference(sketchId,
+                                                               region);
+  if (!expect(ref.has_value(), "legacy: profile witness captured")) {
+    return false;
+  }
+  polysmith::core::SketchProfileAttestation att;
+  att.sketch_feature_id = ref->sketchFeatureId;
+  att.profile_id = ref->profileId;
+  att.center_x = ref->centerX;
+  att.center_y = ref->centerY;
+  att.area = ref->area;
+  att.min_x = ref->minX;
+  att.min_y = ref->minY;
+  att.max_x = ref->maxX;
+  att.max_y = ref->maxY;
+  att.boundary_edge_kinds = ref->boundaryEdgeKinds;
+  att.inner_loop_count = ref->innerLoopCount;
+  att.source_circle_id = ref->sourceCircleId;
+  polysmith::core::GeometryReference stored;
+  stored.persistent_id = region.id;
+  stored.attestation = att;
+  const std::string opId = make_drilling_op_with_refs(
+      manager, document, {stored}, "g81_standard", 5.0, 0.0, false);
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  return expect(outcome.found && !outcome.result.ok &&
+                    outcome.result.error_message.find(
+                        "still uses sketch circles") != std::string::npos,
+                "legacy: migration error tells the user to re-pick on "
+                "the body");
+}
+
+// ── Test 64: the rim reference re-resolves after an edit ───────────
+// The stored edge index and center are only witnesses: after the hole
+// moves (delete + re-cut at a nearby position) the op re-resolves
+// against the live rim and follows the NEW axis.
+
+bool test_drilling_rim_re_resolves_after_edit() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  std::string boxId;
+  const auto body = build_drilling_fixture(
+      manager, document, 20.0, 20.0, 10.0, {{10.0, 5.0, 2.0}}, 10.0,
+      &boxId);
+  const std::string opId = make_drilling_op_with_refs(
+      manager, document, {rim_edge_ref(body, 10.0, 5.0, 10.0)},
+      "g81_standard", 5.0, 0.0, false);
+  const auto before = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(before.found && before.result.ok &&
+                  before.result.toolpath.moves.size() == 2,
+              "re-resolve: first generation succeeds")) {
+    return false;
+  }
+  if (!expect(near(before.result.toolpath.moves[1].x, 10.0),
+              "re-resolve: first hole at the original axis")) {
+    return false;
+  }
+
+  // Edit: remove the cut, sketch a circle at (10.2, 5), re-cut.  The
+  // op keeps its original witness (center (10, 5, 10), radius 2).
+  document = manager.delete_feature(document.feature_history.back().id);
+  document = manager.start_sketch_on_plane("ref-plane-xy");
+  const std::string sketch2Id = document.feature_history.back().id;
+  document = manager.add_sketch_circle(10.2, 5.0, 2.0);
+  const auto profileIds = circle_profile_ids(document, sketch2Id);
+  document = manager.extrude_profiles(profileIds, 10.0, "cut", boxId);
+
+  const CamOperation* op = nullptr;
+  for (const auto& candidate : document.cam.operations) {
+    if (candidate.op_id == opId) {
+      op = &candidate;
+    }
+  }
+  if (!expect(op != nullptr && op->status != "error",
+              "re-resolve: the edit does not degrade the op")) {
+    return false;
+  }
+
+  const auto after = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(after.found && after.result.ok,
+              "re-resolve: regeneration succeeds")) {
+    std::cerr << "  error: " << after.result.error_message << "\n";
+    return false;
+  }
+  return expect(near(after.result.toolpath.moves[1].x, 10.2, 1e-4) &&
+                    near(after.result.toolpath.moves[1].y, 5.0, 1e-4),
+                "re-resolve: the hole follows the new axis");
+}
+
+// ── Test 65: mixed wall + rim + point collection ──────────────────
+// One hole captured by its wall, one by its rim, plus a free point —
+// all three are drilling inputs in one op.
+
+bool test_drilling_mixed_face_edge_point() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  std::string boxId;
+  const auto body = build_drilling_fixture(
+      manager, document, 60.0, 20.0, 10.0,
+      {{10.0, 5.0, 2.0}, {30.0, 5.0, 2.0}}, 10.0, &boxId);
+  const std::string opId = make_drilling_op_with_refs(
+      manager, document,
+      {wall_face_ref(body, 10.0, 5.0), rim_edge_ref(body, 30.0, 5.0, 10.0)},
+      "g81_standard", 5.0, 0.0, false, "drill", 20.0, std::nullopt,
+      std::nullopt, {{50.0, 8.0, 10.0}});
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "mixed: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+  if (!expect(toolpath.moves.size() == 6,
+              "mixed: three rapid+cycle pairs")) {
+    return false;
+  }
+  bool sawWall = false;
+  bool sawRim = false;
+  bool sawPoint = false;
+  for (size_t i = 1; i < toolpath.moves.size(); i += 2) {
+    const ToolpathMove& drill = toolpath.moves[i];
+    if (!expect(drill.kind == ToolpathMoveKind::DrillCycle &&
+                    near(drill.z, 5.0),
+                "mixed: every hole measures from the material top")) {
+      return false;
+    }
+    if (near(drill.x, 10.0, 1e-4) && near(drill.y, 5.0, 1e-4)) {
+      sawWall = true;
+    } else if (near(drill.x, 30.0, 1e-4) && near(drill.y, 5.0, 1e-4)) {
+      sawRim = true;
+    } else if (near(drill.x, 50.0, 1e-4) && near(drill.y, 8.0, 1e-4)) {
+      sawPoint = true;
+    } else {
+      std::cerr << "  hole at (" << drill.x << ", " << drill.y << ")\n";
+      return expect(false, "mixed: unexpected hole position");
+    }
+  }
+  return expect(sawWall && sawRim && sawPoint,
+                "mixed: wall, rim, and point all drilled");
+}
+
 }  // namespace
 
 int main() {
@@ -3225,6 +5420,45 @@ int main() {
       test_hole_lead_from_interior);
   run("Test 45: kerf side inside pulls the lead inside an outer",
       test_kerf_inside_lead_inside);
+  run("Test 46: retract below the face warns",
+      test_face_milling_retract_below_face_warns);
+  run("Test 47: stepdown plans passes from the stock top down",
+      test_face_milling_stepdown_multipass);
+  run("Test 48: stepdown with no stock = single pass",
+      test_face_milling_stepdown_no_stock_single_pass);
+  run("Test 49: the level count is capped at 100",
+      test_face_milling_stepdown_level_cap);
+  run("Test 50: retract below the STOCK TOP warns (multi-pass)",
+      test_face_milling_retract_below_stock_top_warns);
+  run("Test 51: retract height is WCS-relative",
+      test_face_milling_retract_wcs_relative);
+  run("Test 52: arc lead sweep angle is configurable",
+      test_arc_lead_sweep_angle);
+  run("Test 53: circle in a mixed sketch has no corner warnings",
+      test_circle_in_mixed_sketch_has_no_corner_warnings);
+  run("Test 54: drilling G81 wall faces", test_drilling_g81_circles);
+  run("Test 55: drilling G83 peck rides the move", test_drilling_g83_peck);
+  run("Test 56: drilling through targets the stock bottom",
+      test_drilling_through_stock_bottom);
+  run("Test 56b: drilling blind depth measures from the material top",
+      test_drilling_blind_from_top_surface);
+  run("Test 56c: drilling preview draws the travel from the origin",
+      test_drilling_viewport_origin_travel);
+  run("Test 57: drilling validation errors", test_drilling_validation_errors);
+  run("Test 58: drilling retract and stock guards",
+      test_drilling_retract_stock_guards);
+  run("Test 59: drilling warns on a non-drill tool",
+      test_drilling_tool_warning);
+  run("Test 60: drilling free points", test_drilling_free_points);
+  run("Test 61: drilling G81 from rim edges", test_drilling_rim_edge_g81);
+  run("Test 62: drilling horizontal-axis wall and rim errors",
+      test_drilling_horizontal_axis_errors);
+  run("Test 63: drilling legacy profile migration error",
+      test_drilling_legacy_profile_migration_error);
+  run("Test 64: drilling rim re-resolves after an edit",
+      test_drilling_rim_re_resolves_after_edit);
+  run("Test 65: drilling mixed wall + rim + point",
+      test_drilling_mixed_face_edge_point);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

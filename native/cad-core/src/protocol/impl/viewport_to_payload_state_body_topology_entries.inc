@@ -34,14 +34,27 @@
       {"edges", [&viewport]() {
          json edges_json = json::array();
          for (const auto& edge : viewport.edges) {
-           edges_json.push_back({
+           json edge_json = {
                {"id", edge.id},
                {"owner_body_id", edge.owner_body_id},
                {"kind", edge.kind},
                {"points", edge.points},
                {"length", edge.length},
                {"is_selected", edge.is_selected},
-           });
+           };
+           // Circle witness — only for full-circle rim edges.
+           if (edge.center.has_value()) {
+             edge_json["center"] = {edge.center->at(0), edge.center->at(1),
+                                    edge.center->at(2)};
+           }
+           if (edge.axis.has_value()) {
+             edge_json["axis"] = {edge.axis->at(0), edge.axis->at(1),
+                                  edge.axis->at(2)};
+           }
+           if (edge.radius.has_value()) {
+             edge_json["radius"] = edge.radius.value();
+           }
+           edges_json.push_back(edge_json);
          }
          return edges_json;
        }()},

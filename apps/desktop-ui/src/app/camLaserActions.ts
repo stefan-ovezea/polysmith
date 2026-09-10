@@ -165,6 +165,7 @@ export async function triggerCamLaserCut({
       finish_pass: false,
       multiple_passes: false,
       coolant: "off",
+      tool_axis_mode: "fixed_z",
       laser: { ...DEFAULT_LASER_PARAMS },
     },
     dependencies: {

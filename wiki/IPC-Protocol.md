@@ -287,12 +287,35 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `FaceAttestation` witness from a body face (`"<body_id>:face:<index>"`)
   and replies `cam_face_attestation_result {persistent_id, attestation}`.
   The UI never fabricates witness geometry.
+- `cam_capture_edge_reference {edge_id}` captures a TNP-safe
+  `EdgeAttestation` witness from a body edge (`"<body_id>:edge:<index>"`)
+  and replies `cam_edge_attestation_result {persistent_id, attestation}`.
+  Lines capture endpoints/length/tangent; full circles additionally
+  carry the `center`/`axis`/`radius` circle witness (drilling hole
+  rims); partial arcs are REJECTED (an arc is not a stable drilling
+  input).  Errors: `BAD_EDGE_ID` / `EDGE_NOT_FOUND` /
+  `EDGE_CAPTURE_FAILED`.
+- `cam_capture_point {x, y, z}` mints a `PointAttestation` for a world
+  coordinate picked in the viewport (drilling free picks) and replies
+  `cam_attestation_result {persistent_id, attestation: {point: [x,y,z]}}`
+  — a coordinate, not topology (TNP doctrine: coordinates never go
+  stale, they just stop being where the user clicked).  The core mints
+  `pt-N` ids and restores the counter on load.
 - `cam_wcs_set_face {face_id, setup_id?}` anchors the WCS origin to a body
   face: the witness lands on the target setup's `wcs_origin.face_reference`
   and the refresh pass resolves the machine origin from the LIVE face
   (mid-UV point) on every recompute — a face-anchored WCS is TNP-safe.
+  `face_id` may also be `"stock:<face>"` (top/bottom/front/back/left/right):
+  instead of a witness the core stores `wcs_origin.anchor = "stock_face"` +
+  `wcs_origin.stock_face = <face>` and resolves the origin from the LIVE
+  stock extents (see `cam_stock`), degrading to the stock origin with a
+  warning when the stock is unresolvable.
   `setup_id` defaults to the first setup when absent (backward compatible);
   an unknown id replies `SETUP_NOT_FOUND`.
+- `wcs_origin` carries an `anchor` discriminator (`""` derived |
+  `"face"` | `"stock_face"` | `"point"` | `"stock_origin"`).  `"point"`
+  pins an authoritative position that the refresh pass never overwrites;
+  the laser pointer-offset shift applies only to non-`"point"` anchors.
 - `CamOperation` carries `setup_id` (empty = the first setup, legacy
   documents); generation, export, and refresh resolve each operation
   through ITS setup — multi-setup support.  The setup panel edits the
@@ -320,6 +343,11 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   run; generation stores the toolpath in the memory-only runtime cache and
   marks the operation `generated`. Toolpaths never serialize — the
   document's `ToolpathCache` carries metadata only.
+- After a GENERATE (never preview), the core emits `cam_generation_result`
+  `{op_id, ok, error_message, warnings: [string]}` after the
+  `document_state` reply — the UI's result popup reads it (success /
+  warnings list / failure), while the warnings also remain in the
+  structured log.
 - `LaserCutParameters` (the `laser` block of `cam_operation_create` /
   `cam_operation_update` payloads) carries the v2 model: `mode`
   (`cut|score|engrave`, validated), `power_percent`, `speed_mm_per_s`
@@ -327,7 +355,9 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `passes`, `dynamic_power`, `air_assist`, `kerf_width_mm`, `kerf_side`
   (`auto|outside|inside|none`), `lead_in_mm` / `lead_out_mm` +
   `lead_in_style` / `lead_out_style` (`line|arc`) +
-  `lead_in_angle_deg` / `lead_out_angle_deg`, `overcut_mm`,
+  `lead_in_angle_deg` / `lead_out_angle_deg`, `lead_in_arc_angle_deg` /
+  `lead_out_arc_angle_deg` (arc-style lead roll sweep, default 90°),
+  `overcut_mm`,
   `pierce_dwell_seconds` (default 0.1), `pierce_position`,
   `pierce_angle_deg` (nullable), `tabs_enabled` / `tab_width_mm` /
   `tab_spacing_mm` / `tab_power_percent` / `tabs_on_holes`,

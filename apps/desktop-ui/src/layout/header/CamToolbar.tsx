@@ -1,6 +1,11 @@
 export type CamOperationType =
   | "faceMilling"
-  | "profile"
   | "pocket"
+  | "adaptive"
+  | "contour"
   | "drill"
-  | "laserCut";
+  | "slot"
+  | "engrave"
+  | "laserCut"
+  | "laserTestPattern"
+  | "unknown";

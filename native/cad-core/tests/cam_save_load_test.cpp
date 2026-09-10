@@ -79,6 +79,24 @@ GeometryReference make_face_ref() {
   return ref;
 }
 
+// A hand-built full-circle rim witness (no OCCT in this suite — the
+// length literal is 2π × 2, avoiding M_PI/cmath).
+GeometryReference make_edge_ref() {
+  polysmith::core::EdgeAttestation att;
+  att.start_point = {10.0, 5.0, 10.0};
+  att.end_point = {10.0, 5.0, 10.0};  // closed rim: start == end
+  att.length = 12.566370614359172;
+  att.tangent = {1.0, 0.0, 0.0};
+  att.center = std::array<double, 3>{10.0, 5.0, 10.0};
+  att.axis = std::array<double, 3>{0.0, 0.0, 1.0};
+  att.radius = 2.0;
+
+  GeometryReference ref;
+  ref.persistent_id = "body-1:edge:4";
+  ref.attestation = att;
+  return ref;
+}
+
 CamDocumentData make_cam_data() {
   CamDocumentData cam;
 
@@ -157,6 +175,10 @@ CamDocumentData make_cam_data() {
   mill_op.tool_id = "tool-2";
   mill_op.geometry_references.machining_regions.push_back(make_face_ref());
   mill_op.parameters.zigzag_angle_deg = 30.0;
+  // Non-default tool axis mode proves the field round-trips (the
+  // value itself is reserved for future rotary generators — nothing
+  // in this test generates a toolpath for it).
+  mill_op.parameters.tool_axis_mode = "3_plus_2";
   mill_op.status = "error";
   mill_op.status_message = "The referenced face could not be resolved.";
   cam.operations.push_back(mill_op);
@@ -236,6 +258,9 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
     // toolpath cache is memory-only).  Compare the DATA only.
     if (oa.op_id != ob.op_id || oa.type != ob.type ||
         oa.tool_id != ob.tool_id) {
+      return false;
+    }
+    if (oa.parameters.tool_axis_mode != ob.parameters.tool_axis_mode) {
       return false;
     }
     if (oa.geometry_references.machining_regions.size() !=
@@ -519,6 +544,180 @@ bool test_legacy_laser_payload_defaults() {
                 "legacy: absent keys take the v2 defaults");
 }
 
+bool test_drilling_points_round_trip_twice() {
+  // A drilling op with PointAttestation refs and the through toggle
+  // must survive save → load → save → load.  On each load the pt-
+  // counter restores from the loaded refs (a stale counter would mint
+  // colliding ids for points captured after the reload).
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_drilling_points_round_trip_test.json";
+
+  DocumentManager manager;
+  manager.create_document();
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  DocumentState document = manager.cam_setup_create(setup);
+
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  op.parameters.cycle_type = "g83_peck";
+  op.parameters.hole_depth_mm = 5.0;
+  op.parameters.peck_depth_mm = 2.0;
+  op.parameters.through_hole = true;
+  op.geometry_references.machining_regions.push_back(
+      manager.cam_capture_point({1.0, 2.0, 3.0}));
+  op.geometry_references.machining_regions.push_back(
+      manager.cam_capture_point({4.0, 5.0, 6.0}));
+  document = manager.cam_operation_add(op);
+
+  const auto save = [&](const DocumentState& state) {
+    std::ofstream stream(path.string());
+    stream << polysmith::protocol::to_payload(state, true).dump(2);
+  };
+  save(document);
+
+  DocumentManager loaded;
+  loaded.create_document();
+  DocumentState first = loaded.load_document_from_path(path.string());
+
+  const auto& op1 = first.cam.operations[0];
+  if (!expect(op1.type == "drilling" && op1.parameters.through_hole &&
+                  op1.parameters.hole_depth_mm.has_value() &&
+                  near(op1.parameters.hole_depth_mm.value(), 5.0) &&
+                  op1.parameters.cycle_type.has_value() &&
+                  op1.parameters.cycle_type.value() == "g83_peck" &&
+                  op1.parameters.peck_depth_mm.has_value() &&
+                  near(op1.parameters.peck_depth_mm.value(), 2.0),
+              "drilling round trip: parameters survive")) {
+    return false;
+  }
+  const auto& regions1 = op1.geometry_references.machining_regions;
+  if (!expect(regions1.size() == 2 && regions1[0].persistent_id == "pt-1" &&
+                  regions1[1].persistent_id == "pt-2",
+              "drilling round trip: point refs survive with ids")) {
+    return false;
+  }
+  for (size_t i = 0; i < regions1.size(); ++i) {
+    if (!expect(std::holds_alternative<polysmith::core::PointAttestation>(
+                    regions1[i].attestation),
+                "drilling round trip: point attestation variant")) {
+      return false;
+    }
+  }
+  const auto& att1 = std::get<polysmith::core::PointAttestation>(
+      regions1[0].attestation);
+  if (!expect(att1.point[0] == 1.0 && att1.point[1] == 2.0 &&
+                  att1.point[2] == 3.0,
+              "drilling round trip: point coordinates survive")) {
+    return false;
+  }
+
+  // The counter restored from the loaded refs: the next minted point
+  // continues past pt-2, never colliding.
+  const auto third = loaded.cam_capture_point({7.0, 8.0, 9.0});
+  if (!expect(third.persistent_id == "pt-3",
+              "drilling round trip: point counter restored on load")) {
+    return false;
+  }
+
+  // Second cycle: append the new point and save again.
+  CamOperation updated = first.cam.operations[0];
+  updated.geometry_references.machining_regions.push_back(third);
+  first = loaded.cam_operation_update(updated.op_id, updated);
+  save(first);
+
+  DocumentManager reloaded;
+  reloaded.create_document();
+  const auto second = reloaded.load_document_from_path(path.string());
+  const auto& regions2 =
+      second.cam.operations[0].geometry_references.machining_regions;
+  if (!expect(regions2.size() == 3 && regions2[0].persistent_id == "pt-1" &&
+                  regions2[1].persistent_id == "pt-2" &&
+                  regions2[2].persistent_id == "pt-3",
+              "drilling round trip: second save keeps three distinct "
+              "point refs")) {
+    return false;
+  }
+  const auto& att3 = std::get<polysmith::core::PointAttestation>(
+      regions2[2].attestation);
+  return expect(att3.point[0] == 7.0 && att3.point[1] == 8.0 &&
+                    att3.point[2] == 9.0,
+                "drilling round trip: third point survives");
+}
+
+// A drilling op round-trips all three region kinds — face, edge (with
+// the circle witness), and point — preserving the variant per region
+// and every witness field.
+bool test_drilling_face_edge_round_trip() {
+  const auto path = std::filesystem::temp_directory_path() /
+                    "polysmith_drilling_face_edge_round_trip_test.json";
+
+  DocumentManager manager;
+  manager.create_document();
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  DocumentState document = manager.cam_setup_create(setup);
+
+  GeometryReference edgeRef = make_edge_ref();
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  op.parameters.cycle_type = "g83_peck";
+  op.parameters.hole_depth_mm = 5.0;
+  op.parameters.peck_depth_mm = 2.0;
+  op.parameters.through_hole = true;
+  op.geometry_references.machining_regions.push_back(make_face_ref());
+  op.geometry_references.machining_regions.push_back(edgeRef);
+  op.geometry_references.machining_regions.push_back(
+      manager.cam_capture_point({1.0, 2.0, 3.0}));
+  document = manager.cam_operation_add(op);
+
+  std::ofstream stream(path.string());
+  stream << polysmith::protocol::to_payload(document, true).dump(2);
+  stream.close();
+
+  DocumentManager loaded;
+  loaded.create_document();
+  const DocumentState restored = loaded.load_document_from_path(path.string());
+  const auto& regions =
+      restored.cam.operations[0].geometry_references.machining_regions;
+  if (!expect(regions.size() == 3,
+              "drilling face/edge round trip: three regions")) {
+    return false;
+  }
+  if (!expect(std::holds_alternative<polysmith::core::FaceAttestation>(
+                  regions[0].attestation),
+              "drilling face/edge round trip: face variant survives")) {
+    return false;
+  }
+  if (!expect(std::holds_alternative<polysmith::core::EdgeAttestation>(
+                  regions[1].attestation),
+              "drilling face/edge round trip: edge variant survives")) {
+    return false;
+  }
+  const auto& edge =
+      std::get<polysmith::core::EdgeAttestation>(regions[1].attestation);
+  if (!expect(edge.center.has_value() && edge.axis.has_value() &&
+                  edge.radius.has_value(),
+              "drilling face/edge round trip: circle witness survives")) {
+    return false;
+  }
+  if (!expect(edge.center.value()[0] == 10.0 && edge.center.value()[1] == 5.0 &&
+                  edge.center.value()[2] == 10.0 &&
+                  edge.axis.value()[2] == 1.0 &&
+                  near(edge.radius.value(), 2.0) &&
+                  near(edge.length, 12.566370614359172),
+              "drilling face/edge round trip: witness values survive")) {
+    return false;
+  }
+  return expect(std::holds_alternative<polysmith::core::PointAttestation>(
+                    regions[2].attestation),
+                "drilling face/edge round trip: point variant survives");
+}
+
 }  // namespace
 
 int main() {
@@ -559,6 +758,22 @@ int main() {
 
   std::cout << "  Test 5: legacy laser payload takes v2 defaults... ";
   if (test_legacy_laser_payload_defaults()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 6: drilling point refs round-trip twice... ";
+  if (test_drilling_points_round_trip_twice()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 7: drilling face + edge refs round-trip... ";
+  if (test_drilling_face_edge_round_trip()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

@@ -36,9 +36,16 @@ endforeach()
 # generated during install, which partially failed due to locked DLLs).
 set(OCCT_ROOT "${CMAKE_SOURCE_DIR}/../../third_party/occt8-build")
 add_library(occt_iface INTERFACE)
-# inc/ is the build-tree header location — works on both platforms without
-# requiring cmake --install (which fails on Windows due to locked DLLs).
-target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+# Build-tree header location is platform-specific: the Windows build
+# tree puts headers flat under inc/; Linux/macOS OCCT nests them under
+# include/opencascade/.  Neither requires cmake --install (which fails
+# on Windows due to locked DLLs).
+if(WIN32)
+  target_include_directories(occt_iface INTERFACE "${OCCT_ROOT}/inc")
+else()
+  target_include_directories(occt_iface INTERFACE
+                             "${OCCT_ROOT}/include/opencascade")
+endif()
 if(WIN32)
   target_link_directories(occt_iface INTERFACE "${OCCT_ROOT}/win64/vc14/lib")
 elseif(APPLE)
@@ -109,11 +116,13 @@ add_library(dxfrw STATIC
   ${LIBDXFRW_DIR}/src/drw_header.cpp
   ${LIBDXFRW_DIR}/src/drw_objects.cpp
   ${LIBDXFRW_DIR}/src/intern/drw_dbg.cpp
-  # dwgBuffer/dwgutil are plain byte-buffer/hex-string helpers the
+  # dwgbuffer/dwgutil are plain byte-buffer/hex-string helpers the
   # entity classes reference from their (unused in DXF builds)
   # parseDwg paths — needed at link time once any DRW_Entity subclass
   # is actually consumed. No iconv or DWG-reader dependency.
-  ${LIBDXFRW_DIR}/src/intern/dwgBuffer.cpp
+  # (Lowercase filename: case-sensitive filesystems reject the
+  # camelCase form.)
+  ${LIBDXFRW_DIR}/src/intern/dwgbuffer.cpp
   ${LIBDXFRW_DIR}/src/intern/dwgutil.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfreader.cpp
   ${LIBDXFRW_DIR}/src/intern/dxfwriter.cpp
@@ -125,6 +134,7 @@ add_library(dxfrw STATIC
 target_include_directories(dxfrw PUBLIC ${LIBDXFRW_DIR}/src)
 
 set(CAD_CORE_SOURCES
+  src/core/cam/adaptive_clearing.cpp
   src/core/cam/cam2d.cpp
   src/core/cam/cam_export.cpp
   src/core/cam/cam_generate.cpp
@@ -135,6 +145,9 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_refresh.cpp
   src/core/cam/cam_resolution.cpp
   src/core/cam/cam_runtime.cpp
+  src/core/cam/cam_stock.cpp
+  src/core/cam/contour_2d.cpp
+  src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
   src/core/cam/laser/laser_fill.cpp
   src/core/cam/laser/laser_generate.cpp
@@ -144,7 +157,11 @@ set(CAD_CORE_SOURCES
   src/core/cam/laser/laser_test_pattern.cpp
   src/core/cam/laser_cut.cpp
   src/core/cam/machine_library.cpp
+  src/core/cam/milling_common.cpp
+  src/core/cam/pocket_2d.cpp
   src/core/cam/post_processor.cpp
+  src/core/cam/slot.cpp
+  src/core/cam/engrave.cpp
   src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
   src/core/diagnostics/logger.cpp
@@ -302,7 +319,29 @@ polysmith_add_core_test(cad_core_cam_refresh_test tests/cam_refresh_test.cpp)
 
 polysmith_add_core_test(cad_core_grbl_post_test tests/grbl_post_test.cpp)
 
+polysmith_add_core_test(cad_core_linuxcnc_post_test tests/linuxcnc_post_test.cpp)
+
 polysmith_add_core_test(cad_core_cam_generators_test tests/cam_generators_test.cpp)
+
+# 2D Pocket generator suite — outer-wire selection, hole/island
+# subtraction, island-top levels, dependency degradation, payload.
+polysmith_add_core_test(cad_core_pocket_2d_test tests/pocket_2d_test.cpp)
+
+# 2D Contour generator suite — side × direction combos, on-line, exact
+# arcs + polyline fallback, profile input, frame mirroring, precedence,
+# defaults, error paths, payload round-trip.
+polysmith_add_core_test(cad_core_contour_2d_test tests/contour_2d_test.cpp)
+
+# Adaptive Clearing generator suite — concentric spiral families,
+# climb directions, island/boss avoidance, stepdown levels, warnings,
+# error paths, dependency degradation, payload round-trip.
+polysmith_add_core_test(cad_core_adaptive_clearing_test tests/adaptive_clearing_test.cpp)
+
+# Open Slot generator suite — edge → adjacent-top-face inward cut,
+# climb/conventional walk, stepdown levels, multi-edge ordering, error
+# paths, dependency degradation, guards, payload round-trip.
+polysmith_add_core_test(cad_core_cam_slot_test tests/cam_slot_test.cpp)
+polysmith_add_core_test(cad_core_cam_engrave_test tests/cam_engrave_test.cpp)
 
 polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 

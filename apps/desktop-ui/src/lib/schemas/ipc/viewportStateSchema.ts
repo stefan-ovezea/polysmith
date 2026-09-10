@@ -99,6 +99,19 @@ export const viewportStateSchema = z.object({
       triangle_indices: z.array(z.number()).default([]),
       is_selected: z.boolean(),
       appearance_color: z.string().nullable().default(null),
+      // CAM surface classification + cylinder witness (drilling hole
+      // walls).  Defaulted so snapshots from a core that predates
+      // these fields still validate.
+      surface_kind: z.string().default("other"),
+      cylinder_axis: z
+        .tuple([z.number(), z.number(), z.number()])
+        .nullable()
+        .default(null),
+      cylinder_location: z
+        .tuple([z.number(), z.number(), z.number()])
+        .nullable()
+        .default(null),
+      cylinder_radius: z.number().nullable().default(null),
     }),
   ),
   reference_planes: z.array(
@@ -491,6 +504,19 @@ export const viewportStateSchema = z.object({
           y: z.number(),
         }),
       ),
+      inner_loops: z
+        .array(z.array(z.object({ x: z.number(), y: z.number() })))
+        .default([]),
+      circle_holes: z
+        .array(
+          z.object({
+            loop_index: z.number(),
+            center_x: z.number(),
+            center_y: z.number(),
+            radius: z.number(),
+          }),
+        )
+        .default([]),
       start_x: z.number(),
       start_y: z.number(),
       width: z.number(),
@@ -574,6 +600,11 @@ export const viewportStateSchema = z.object({
         // new core builds always populate it.
         length: z.number().default(0),
         is_selected: z.boolean(),
+        // Circle witness — optional, present only for full-circle
+        // rims (drilling hole candidates).
+        center: z.tuple([z.number(), z.number(), z.number()]).optional(),
+        axis: z.tuple([z.number(), z.number(), z.number()]).optional(),
+        radius: z.number().optional(),
       }),
     )
     .default([]),

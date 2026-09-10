@@ -949,9 +949,8 @@ bool test_chamfered_rect_with_circle_produces_no_spurious_profiles() {
   const auto& profiles = feature.sketch_parameters->profiles;
 
   // Expect exactly 2 profiles: the outer filleted rectangle and the
-  // circle.  The circle is represented as a polygon profile with
-  // source_circle_id set (the cylinder shortcut consumes it) — the
-  // circle "kind" is only emitted when the arrangement path is inactive.
+  // circle.  The circle is an exact kind "circle" region
+  // (center/radius, no sampled points) even in a mixed sketch.
   if (!expect(profiles.size() == 2,
               "expected exactly 2 profiles (outer rect + circle)")) {
     return false;
@@ -960,7 +959,7 @@ bool test_chamfered_rect_with_circle_produces_no_spurious_profiles() {
   int polygon_count = 0;
   int circle_count = 0;
   for (const auto& p : profiles) {
-    if (p.kind == "polygon" && p.source_circle_id.has_value()) {
+    if (p.kind == "circle") {
       ++circle_count;
     } else if (p.kind == "polygon") {
       ++polygon_count;
@@ -1132,7 +1131,7 @@ bool test_trimmed_circle_corner_detects_outer_profile() {
   for (const auto& p : profiles) {
     if (p.kind == "polygon" && !p.source_circle_id.has_value()) {
       ++outer_count;
-    } else if (p.source_circle_id.has_value()) {
+    } else if (p.kind == "circle") {
       ++circle_count;
     }
   }

@@ -251,6 +251,172 @@ bool test_builtin_seeds_parse() {
                 "seeds: built-in fields are well-formed");
 }
 
+// The three mill seeds carry the extended (travel/kinematics/axis
+// limits) shape — they must list without a directory and parse
+// well-formed.
+bool test_mill_seeds_parse() {
+  set_machines_dir({});
+  const auto machines = load_machine_library();
+  const auto* router = find_machine(machines, "GRBL CNC Router");
+  const auto* rotary = find_machine(machines, "LinuxCNC Rotary 4-Axis");
+  const auto* five_axis =
+      find_machine(machines, "LinuxCNC 5-Axis (Table-Table)");
+  if (!expect(router != nullptr && rotary != nullptr && five_axis != nullptr,
+              "mill seeds: all three new built-ins list")) {
+    return false;
+  }
+  bool ok = expect(router->machine_type == "3_axis_mill" &&
+                       router->post_processor.type == "grbl" &&
+                       router->travel_x_mm == 500.0 &&
+                       router->travel_y_mm == 400.0 &&
+                       router->travel_z_mm == 100.0 &&
+                       router->kinematics == "cartesian_3axis" &&
+                       router->axis_limits.empty(),
+                   "mill seeds: GRBL router fields");
+  ok = expect(rotary->machine_type == "4_axis_mill" &&
+                  rotary->post_processor.type == "linuxcnc" &&
+                  rotary->kinematics == "rotary_table_a" &&
+                  rotary->axis_limits.size() == 1 &&
+                  rotary->axis_limits[0].axis == "a" &&
+                  rotary->axis_limits[0].min == 0.0 &&
+                  rotary->axis_limits[0].max == 360.0,
+              "mill seeds: rotary 4-axis fields") &&
+       ok;
+  ok = expect(five_axis->machine_type == "5_axis_mill" &&
+                  five_axis->kinematics == "table_table" &&
+                  five_axis->axis_limits.size() == 2 &&
+                  five_axis->axis_limits[0].axis == "a" &&
+                  five_axis->axis_limits[0].min == -120.0 &&
+                  five_axis->axis_limits[1].axis == "c" &&
+                  five_axis->axis_limits[1].min == -360.0 &&
+                  five_axis->axis_limits[1].max == 360.0,
+              "mill seeds: 5-axis table-table fields") &&
+       ok;
+  return ok;
+}
+
+MachineDefinition make_test_mill() {
+  MachineDefinition machine;
+  machine.name = "Test Rotary Mill";
+  machine.machine_type = "4_axis_mill";
+  machine.post_processor.type = "linuxcnc";
+  machine.travel_x_mm = 400.0;
+  machine.travel_y_mm = 300.0;
+  machine.travel_z_mm = 150.0;
+  machine.kinematics = "rotary_table_a";
+  machine.axis_limits = {{"a", 0.0, 360.0}};
+  machine.tool_change_position = std::array<double, 3>{0.0, 0.0, 100.0};
+  return machine;
+}
+
+bool test_extended_mill_round_trip() {
+  const auto dir = make_temp_dir();
+  set_machines_dir(dir);
+
+  std::string error;
+  const std::string slug =
+      save_machine_definition(make_test_mill(), error);
+  if (!expect(error.empty(), "mill save: no error") ||
+      !expect(slug == "test-rotary-mill", "mill save: slug")) {
+    return false;
+  }
+  const auto machines = load_machine_library();
+  const auto* saved = find_machine(machines, "Test Rotary Mill");
+  if (!expect(saved != nullptr, "mill save: listed after load")) {
+    return false;
+  }
+  bool ok = expect(saved->travel_x_mm == 400.0, "mill: travel x") &&
+            expect(saved->travel_y_mm == 300.0, "mill: travel y") &&
+            expect(saved->travel_z_mm == 150.0, "mill: travel z") &&
+            expect(saved->kinematics == "rotary_table_a",
+                   "mill: kinematics");
+  ok = expect(saved->axis_limits.size() == 1 &&
+                  saved->axis_limits[0].axis == "a" &&
+                  saved->axis_limits[0].min == 0.0 &&
+                  saved->axis_limits[0].max == 360.0,
+              "mill: axis limits round-trip") &&
+       ok;
+  ok = expect(saved->tool_change_position.has_value() &&
+                  saved->tool_change_position.value()[2] == 100.0,
+              "mill: tool change position round-trip") &&
+       ok;
+  return ok;
+}
+
+// A machine file saved before the mill fields existed (8-field shape)
+// must load with defaults: travel 0, cartesian kinematics, no limits.
+bool test_legacy_machine_loads_with_defaults() {
+  const auto dir = make_temp_dir();
+  set_machines_dir(dir);
+  load_machine_library();  // seed first
+  {
+    std::ofstream stream(dir / "legacy-mill.json");
+    stream << R"({
+      "name": "Legacy Mill",
+      "machine_type": "3_axis_mill",
+      "post_processor": { "type": "grbl", "filename": "" },
+      "work_area_x_mm": 400.0,
+      "work_area_y_mm": 400.0,
+      "pointer_offset_x_mm": 0.0,
+      "pointer_offset_y_mm": 0.0
+    })";
+  }
+  const auto machines = load_machine_library();
+  const auto* legacy = find_machine(machines, "Legacy Mill");
+  if (!expect(legacy != nullptr, "legacy: 8-field machine file loads")) {
+    return false;
+  }
+  return expect(legacy->travel_x_mm == 0.0 &&
+                    legacy->travel_y_mm == 0.0 &&
+                    legacy->travel_z_mm == 0.0 &&
+                    legacy->kinematics == "cartesian_3axis" &&
+                    legacy->axis_limits.empty() &&
+                    !legacy->tool_change_position.has_value(),
+                "legacy: mill fields default");
+}
+
+bool test_kinematics_validation() {
+  const auto dir = make_temp_dir();
+  set_machines_dir(dir);
+  load_machine_library();  // seed first so the count check is exact
+  const auto file_count = [&dir]() {
+    int count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+      (void)entry;
+      ++count;
+    }
+    return count;
+  };
+  const int before = file_count();
+
+  MachineDefinition bad_kinematics = make_test_mill();
+  bad_kinematics.name = "Bad Kinematics";
+  bad_kinematics.kinematics = "levitation";
+  std::string error;
+  save_machine_definition(bad_kinematics, error);
+  if (!expect(!error.empty(), "validation: unknown kinematics rejected")) {
+    return false;
+  }
+
+  MachineDefinition bad_axis = make_test_mill();
+  bad_axis.name = "Bad Axis";
+  bad_axis.axis_limits = {{"q", 0.0, 1.0}};
+  error.clear();
+  save_machine_definition(bad_axis, error);
+  if (!expect(!error.empty(), "validation: unknown limit axis rejected")) {
+    return false;
+  }
+
+  MachineDefinition inverted = make_test_mill();
+  inverted.name = "Inverted Limits";
+  inverted.axis_limits = {{"a", 360.0, 0.0}};
+  error.clear();
+  save_machine_definition(inverted, error);
+  return expect(!error.empty(), "validation: inverted limit rejected") &&
+         expect(file_count() == before,
+                "validation: no invalid machine was written");
+}
+
 }  // namespace
 
 int main() {
@@ -260,6 +426,10 @@ int main() {
   ok = test_save_rejects_invalid() && ok;
   ok = test_directory_env_override() && ok;
   ok = test_builtin_seeds_parse() && ok;
+  ok = test_mill_seeds_parse() && ok;
+  ok = test_extended_mill_round_trip() && ok;
+  ok = test_legacy_machine_loads_with_defaults() && ok;
+  ok = test_kinematics_validation() && ok;
   // Leave the env clean for whatever runs after the test process.
   set_machines_dir({});
   if (ok) {

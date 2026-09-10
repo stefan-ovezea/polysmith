@@ -139,6 +139,15 @@ DocumentState DocumentManager::load_document_from_path(
   }
   for (const auto& op : loaded.cam.operations) {
     next_cam_op_id_ = std::max(next_cam_op_id_, trailing_integer(op.op_id) + 1);
+    // Drilling point references ("pt-N") live in machining_regions —
+    // restore the counter so a reloaded document never mints colliding
+    // point ids.
+    for (const auto& ref : op.geometry_references.machining_regions) {
+      if (ref.persistent_id.rfind("pt-", 0) == 0) {
+        next_cam_point_ref_id_ = std::max(
+            next_cam_point_ref_id_, trailing_integer(ref.persistent_id) + 1);
+      }
+    }
   }
 
   // Rebuild sketch derived state (solver + profile regions) for every
@@ -410,6 +419,18 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     throw std::runtime_error(
         "A laser cut operation requires a laser machine setup");
   }
+  // Drilling is a milling operation — a laser machine has no Z plunge.
+  if (op.type == "drilling" && !document_->cam.setups.empty() &&
+      document_->cam.setups[0].machine_type == "laser") {
+    throw std::runtime_error(
+        "A drilling operation requires a milling machine setup");
+  }
+  // Engrave is a milling operation too — it plunges an endmill.
+  if (op.type == "engrave" && !document_->cam.setups.empty() &&
+      document_->cam.setups[0].machine_type == "laser") {
+    throw std::runtime_error(
+        "An engrave operation requires a milling machine setup");
+  }
   if (!op.op_id.empty()) {
     for (const auto& existing : document_->cam.operations) {
       if (existing.op_id == op.op_id) {
@@ -436,9 +457,12 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
   ToolEntry defaultTool;
   if (stored.tool_id.empty()) {
     const bool wantsLaser = stored.type == "laser_cut";
+    const bool wantsDrill = stored.type == "drilling";
     const ToolEntry* match = nullptr;
     for (const auto& tool : document_->cam.tool_library) {
-      if (wantsLaser ? tool.type == "laser" : tool.type == "endmill_flat") {
+      if (wantsLaser ? tool.type == "laser"
+                     : (wantsDrill ? tool.type == "drill"
+                                   : tool.type == "endmill_flat")) {
         match = &tool;
         break;
       }
@@ -453,6 +477,10 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
         // sensible cutting parameters.
         defaultTool.name = "CO2 laser (default)";
         defaultTool.type = "laser";
+      } else if (wantsDrill) {
+        defaultTool.name = "3mm drill (default)";
+        defaultTool.type = "drill";
+        defaultTool.diameter_mm = 3.0;
       } else {
         defaultTool.name = "6mm flat endmill (default)";
         defaultTool.type = "endmill_flat";
@@ -568,6 +596,20 @@ DocumentState DocumentManager::cam_operation_set_scope(
     }
   }
   throw std::runtime_error("CAM operation not found: " + operation_id);
+}
+
+GeometryReference DocumentManager::cam_capture_point(
+    const std::array<double, 3>& point) {
+  require_document();
+  // A bare world coordinate is its own identity (no witness math), so
+  // the core only mints the persistent id.  The caller appends the
+  // reference to the operation's machining_regions — this mutator
+  // itself does not touch the document (no undo step, no revision
+  // bump; the counter is monotonic like the other id counters).
+  GeometryReference ref;
+  ref.persistent_id = "pt-" + std::to_string(next_cam_point_ref_id_++);
+  ref.attestation = PointAttestation{point};
+  return ref;
 }
 
 DocumentState DocumentManager::cam_post_processor_set(

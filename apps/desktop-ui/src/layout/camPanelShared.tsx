@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { readNumberInputValue } from "./numberInput";
@@ -9,15 +9,26 @@ export function CamNumberField({
   disabled,
   step = 0.5,
   min = 0,
+  max,
+  clearable = false,
   onChange,
 }: {
   label: string;
-  value: number;
+  value: number | undefined;
   disabled: boolean;
   step?: number | "any";
   min?: number;
-  onChange: (value: number) => void;
+  max?: number;
+  /** Empty input commits undefined instead of 0 (optional parameters
+   *  like stepdown: cleared = "no multi-pass"). */
+  clearable?: boolean;
+  onChange: (value: number | undefined) => void;
 }) {
+  // String draft so a cleared input stays empty while the user types —
+  // a controlled number input would repaint "" as 0 immediately.
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft ?? (value === undefined ? "" : String(value));
+
   return (
     <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
       {label}
@@ -25,10 +36,19 @@ export function CamNumberField({
         className="cad-input mt-2"
         type="number"
         min={min}
+        max={max}
         step={step}
-        value={value}
+        value={display}
         disabled={disabled}
-        onChange={(event) => onChange(readNumberInputValue(event.currentTarget))}
+        onChange={(event) => {
+          const raw = event.currentTarget.value;
+          setDraft(raw);
+          if (clearable && raw === "") {
+            onChange(undefined);
+            return;
+          }
+          onChange(readNumberInputValue(event.currentTarget));
+        }}
       />
     </label>
   );
@@ -120,7 +140,16 @@ export function CamStatusLine({
   status: string;
   statusMessage: string;
   toolpathStats: CamToolpathStats | null;
-  prefix: "cam.laserCut" | "cam.faceMilling" | "cam.testPattern";
+  prefix:
+    | "cam.laserCut"
+    | "cam.faceMilling"
+    | "cam.testPattern"
+    | "cam.pocket"
+    | "cam.adaptive"
+    | "cam.contour"
+    | "cam.drilling"
+    | "cam.slot"
+    | "cam.engrave";
 }) {
   const { t } = useTranslation();
 

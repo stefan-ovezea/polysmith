@@ -346,9 +346,21 @@ interface AppHeaderProps
   activeCamOperation: CamOperationType | null;
   onSelectCamOperation: (op: CamOperationType) => void;
   hasCamSetup: boolean;
+  // The document's viewport face selection — face milling requires one.
+  selectedCamFaceId: string | null;
+  // Selected sketch profiles — the 2D Contour's alternative input.
+  selectedCamProfileCount: number;
+  // Selected body edges — each is a slot's open side.
+  selectedCamEdgeCount: number;
   camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
+  onCamPocketClick: () => void;
+  onCamAdaptiveClick: () => void;
+  onCamContourClick: () => void;
+  onCamDrillClick: () => void;
+  onCamSlotClick: () => void;
+  onCamEngraveClick: () => void;
   onCamTwoDCutClick: () => void;
   onCamTestPatternClick: () => void;
 }
@@ -457,9 +469,18 @@ export function AppHeader({
   activeCamOperation,
   onSelectCamOperation,
   hasCamSetup,
+  selectedCamFaceId,
+  selectedCamProfileCount,
+  selectedCamEdgeCount,
   camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
+  onCamPocketClick,
+  onCamAdaptiveClick,
+  onCamContourClick,
+  onCamDrillClick,
+  onCamSlotClick,
+  onCamEngraveClick,
   onCamTwoDCutClick,
   onCamTestPatternClick,
 }: AppHeaderProps) {
@@ -942,8 +963,17 @@ export function AppHeader({
             <CamMillingToolbar
               disabled={disabled}
               hasSetup={hasCamSetup}
+              selectedFaceId={selectedCamFaceId}
+              selectedProfileCount={selectedCamProfileCount}
+              selectedEdgeCount={selectedCamEdgeCount}
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
+              onPocketClick={onCamPocketClick}
+              onAdaptiveClick={onCamAdaptiveClick}
+              onContourClick={onCamContourClick}
+              onDrillClick={onCamDrillClick}
+              onSlotClick={onCamSlotClick}
+              onEngraveClick={onCamEngraveClick}
             />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />

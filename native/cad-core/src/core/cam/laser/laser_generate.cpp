@@ -29,8 +29,6 @@ namespace {
 
 using polysmith::core::CamGenerateResult;
 using polysmith::core::SketchFeatureParameters;
-using polysmith::core::SketchProfilePoint;
-using polysmith::core::SketchProfileRegion;
 using polysmith::core::Toolpath;
 using polysmith::core::ToolpathMove;
 using polysmith::core::ToolpathMoveKind;
@@ -48,74 +46,6 @@ using cam2d::sample_offset_loop;
 using cam2d::xy_centroid;
 using cam2d::xy_length;
 using cam2d::xy_signed_area;
-
-// A 2-axis gantry laser cuts in the machine XY plane (G17): sketch
-// planes and body faces that are not horizontal cannot be emitted as
-// valid arcs.  cos(5°) tolerance.
-constexpr double kMaxCutPlaneTilt = 0.9962;
-
-// ── Base-segment builders ────────────────────────────────────────
-//
-// Build the exact base loop for a sketch profile region (exact
-// boundary edges where possible, sampled-point fallback otherwise).
-
-// Builds exact base segments from the region's boundary_edges.  When
-// any edge is an ellipse or spline (no exact offset), falls back to
-// the sampled polygon.  Returns false for the fallback.
-bool build_base_segments_from_edges(const SketchProfileRegion& region,
-                                    std::vector<BaseSegment>& out) {
-  out.clear();
-  for (const auto& edge : region.boundary_edges) {
-    if (edge.entity_kind == "ellipse" || edge.entity_kind == "spline") {
-      return false;
-    }
-    BaseSegment segment;
-    segment.start = {edge.start_x, edge.start_y};
-    segment.end = {edge.end_x, edge.end_y};
-    if (edge.entity_kind == "circle" || edge.entity_kind == "arc") {
-      segment.is_arc = true;
-      segment.center = {edge.center_x, edge.center_y};
-      segment.radius = edge.radius;
-      segment.ccw = edge.ccw;
-    }
-    out.push_back(segment);
-  }
-  return !out.empty();
-}
-
-// Sampled-polygon fallback (legacy profiles without exact edges, or
-// edges we cannot offset exactly).  Assumes the points follow the
-// walk orientation.
-void build_base_segments_from_points(
-    const std::vector<SketchProfilePoint>& points,
-    std::vector<BaseSegment>& out) {
-  out.clear();
-  if (points.size() < 2) {
-    return;
-  }
-  for (size_t i = 0; i < points.size(); ++i) {
-    const auto& a = points[i];
-    const auto& b = points[(i + 1) % points.size()];
-    BaseSegment segment;
-    segment.start = {a.x, a.y};
-    segment.end = {b.x, b.y};
-    out.push_back(segment);
-  }
-}
-
-// World point of a sketch-local 2D point on the cut plane (the sketch
-// plane offset along its normal).
-XY world_point(const SketchFeatureParameters::SketchPlaneFrame& frame,
-               const XY& p) {
-  return XY{frame.origin_x + frame.x_axis_x * p.x + frame.y_axis_x * p.y,
-            frame.origin_y + frame.x_axis_y * p.x + frame.y_axis_y * p.y};
-}
-
-double world_z(const SketchFeatureParameters::SketchPlaneFrame& frame,
-               const XY& p, double cut_plane_offset) {
-  return frame.origin_z + frame.x_axis_z * p.x + frame.y_axis_z * p.y +
-         frame.normal_z * cut_plane_offset;
-}
 
 // Builds and offsets one loop (outer or hole) into a PlannedLoop.
 // Returns false with a human message on hard failure.
@@ -244,40 +174,6 @@ std::vector<OffsetSegment> contour_starting_at(
 
 }  // namespace
 
-std::optional<SketchFeatureParameters::SketchPlaneFrame> resolve_sketch_frame(
-    const SketchFeatureParameters& sketch) {
-  if (sketch.plane_frame.has_value()) {
-    return sketch.plane_frame;
-  }
-  if (sketch.plane_id == "ref-plane-xy") {
-    return SketchFeatureParameters::SketchPlaneFrame{
-        .origin_x = 0.0, .origin_y = 0.0, .origin_z = 0.0,
-        .x_axis_x = 1.0, .x_axis_y = 0.0, .x_axis_z = 0.0,
-        .y_axis_x = 0.0, .y_axis_y = 1.0, .y_axis_z = 0.0,
-        .normal_x = 0.0, .normal_y = 0.0, .normal_z = 1.0,
-    };
-  }
-  if (sketch.plane_id == "ref-plane-yz") {
-    return SketchFeatureParameters::SketchPlaneFrame{
-        .origin_x = 0.0, .origin_y = 0.0, .origin_z = 0.0,
-        .x_axis_x = 0.0, .x_axis_y = 1.0, .x_axis_z = 0.0,
-        .y_axis_x = 0.0, .y_axis_y = 0.0, .y_axis_z = 1.0,
-        .normal_x = 1.0, .normal_y = 0.0, .normal_z = 0.0,
-    };
-  }
-  // xz: x=(1,0,0), y=(0,0,-1) gives x×y=(0,1,0)=normal — the frame
-  // must stay right-handed or arc sweeps mirror in world space.
-  if (sketch.plane_id == "ref-plane-xz") {
-    return SketchFeatureParameters::SketchPlaneFrame{
-        .origin_x = 0.0, .origin_y = 0.0, .origin_z = 0.0,
-        .x_axis_x = 1.0, .x_axis_y = 0.0, .x_axis_z = 0.0,
-        .y_axis_x = 0.0, .y_axis_y = 0.0, .y_axis_z = -1.0,
-        .normal_x = 0.0, .normal_y = 1.0, .normal_z = 0.0,
-    };
-  }
-  return std::nullopt;
-}
-
 CamGenerateResult generate_laser_cut_toolpath(
     const polysmith::core::CamGenerateContext& context) {
   CamGenerateResult result;
@@ -317,7 +213,7 @@ CamGenerateResult generate_laser_cut_toolpath(
         return result;
       }
     }
-    frame = resolve_sketch_frame(*owningSketch);
+    frame = cam_planning::resolve_sketch_frame(*owningSketch);
     if (!frame.has_value()) {
       result.ok = false;
       result.error_message = "The sketch plane could not be resolved.";
@@ -325,7 +221,8 @@ CamGenerateResult generate_laser_cut_toolpath(
     }
     // A tilted or vertical sketch plane cannot be followed by a
     // 2-axis gantry laser — reject it before generating garbage arcs.
-    if (std::abs(frame->normal_z) < kMaxCutPlaneTilt) {
+    if (std::abs(frame->normal_z) <
+        cam_planning::kMaxUpwardFaceTilt) {
       result.ok = false;
       result.error_message =
           "Laser cuts must lie in a horizontal plane parallel to the "
@@ -413,11 +310,12 @@ CamGenerateResult generate_laser_cut_toolpath(
 
     // Outer loop.
     std::vector<BaseSegment> base;
-    const bool exact = build_base_segments_from_edges(region, base);
+    const bool exact =
+        cam_planning::build_base_segments_from_edges(region, base);
     if (!exact) {
       result.warnings.push_back(
           "Profile contour is tessellated (no exact arcs).");
-      build_base_segments_from_points(region.points, base);
+      cam_planning::build_base_segments_from_points(region.points, base);
     }
     // Standalone circle regions carry exact center/radius but no
     // boundary edges — synthesize a full-circle base segment.
@@ -468,10 +366,43 @@ CamGenerateResult generate_laser_cut_toolpath(
     }
 
     // Hole loops.
-    for (const auto& holePoints : region.inner_loops) {
+    for (size_t holeIndex = 0; holeIndex < region.inner_loops.size();
+         ++holeIndex) {
+      const auto& holePoints = region.inner_loops[holeIndex];
       std::vector<BaseSegment> holeBase;
-      build_base_segments_from_points(holePoints, holeBase);
-      if (holeBase.size() < 2) {
+      XY holeCentroid;
+      // Circle holes carry an exact center/radius descriptor — cut
+      // them as one full-circle arc, like the standalone circle
+      // region above.  The stored points are a coarse chord sample;
+      // cutting them would trace a visibly polygonal hole path next
+      // to the smooth circle outline.  The walk is CW (hole interior
+      // on the right) so the auto kerf still offsets inward, into
+      // the scrap side.  Non-circle holes keep the sampled points.
+      const auto circleHole = std::find_if(
+          region.circle_holes.begin(), region.circle_holes.end(),
+          [&](const auto& entry) {
+            return entry.loop_index == static_cast<int>(holeIndex);
+          });
+      if (circleHole != region.circle_holes.end()) {
+        BaseSegment full;
+        full.is_arc = true;
+        full.center = {circleHole->center_x, circleHole->center_y};
+        full.radius = circleHole->radius;
+        full.start = {full.center.x + full.radius, full.center.y};
+        full.end = full.start;
+        full.ccw = false;
+        holeBase.push_back(full);
+        holeCentroid = full.center;
+      } else {
+        cam_planning::build_base_segments_from_points(holePoints, holeBase);
+        std::vector<XY> holePointList;
+        for (const auto& segment : holeBase) {
+          holePointList.push_back(segment.start);
+        }
+        holeCentroid = xy_centroid(holePointList);
+      }
+      if (holeBase.size() < 2 &&
+          !(holeBase.size() == 1 && holeBase[0].is_arc)) {
         continue;
       }
       if (base_segments_signed_area(holeBase) > 0) {
@@ -480,15 +411,11 @@ CamGenerateResult generate_laser_cut_toolpath(
       if (conventional) {
         reverse_segments(holeBase);
       }
-      std::vector<XY> holePointList;
-      for (const auto& segment : holeBase) {
-        holePointList.push_back(segment.start);
-      }
       PlannedLoop loop;
       std::string error;
       const double holeKerf = kerf_for(/*is_hole=*/true);
       if (!plan_loop(holeBase, holeKerf, /*is_hole=*/true,
-                     xy_centroid(holePointList), loop, error)) {
+                     holeCentroid, loop, error)) {
         result.warnings.push_back("A hole contour was skipped: " + error);
         continue;
       }
@@ -547,7 +474,8 @@ CamGenerateResult generate_laser_cut_toolpath(
         }
         faceZ = center.Z();
         const double norm = normal.Magnitude();
-        if (std::abs(normal.Z() / norm) < kMaxCutPlaneTilt) {
+        if (std::abs(normal.Z() / norm) <
+            cam_planning::kMaxUpwardFaceTilt) {
           result.ok = false;
           result.error_message =
               "Laser cuts must lie in a horizontal plane parallel to the "
@@ -763,11 +691,14 @@ CamGenerateResult generate_laser_cut_toolpath(
       }
       const PlannedLoop& rep = group.front();
       const auto toWorld = [&](const XY& p) {
-        return rep.isWorldXY ? XY{p.x, p.y} : world_point(frame.value(), p);
+        return rep.isWorldXY ? XY{p.x, p.y}
+                             : cam_planning::world_point(frame.value(), p);
       };
       const auto toZ = [&](const XY& p) {
-        return rep.isWorldXY ? rep.worldZ
-                             : world_z(frame.value(), p, cut_plane_offset);
+        return rep.isWorldXY
+                   ? rep.worldZ
+                   : cam_planning::world_z(frame.value(), p,
+                                           cut_plane_offset);
       };
       const auto appendFillMove = [&](const XY& end, bool laserOn) {
         const XY w = toWorld(end);
@@ -820,11 +751,13 @@ CamGenerateResult generate_laser_cut_toolpath(
     // cut-plane height.
     // Sketch loops only exist when a sketch frame resolved above.
     const auto toWorld = [&](const XY& p) {
-      return loop.isWorldXY ? XY{p.x, p.y} : world_point(frame.value(), p);
+      return loop.isWorldXY ? XY{p.x, p.y}
+                            : cam_planning::world_point(frame.value(), p);
     };
     const auto toZ = [&](const XY& p) {
-      return loop.isWorldXY ? loop.worldZ
-                            : world_z(frame.value(), p, cut_plane_offset);
+      return loop.isWorldXY
+                 ? loop.worldZ
+                 : cam_planning::world_z(frame.value(), p, cut_plane_offset);
     };
     const auto append_rapid = [&](const XY& target) {
       const XY w = toWorld(target);

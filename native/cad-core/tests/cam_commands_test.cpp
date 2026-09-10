@@ -6,6 +6,8 @@
 // document untouched, ids are assigned monotonically, and undo/redo
 // covers CAM mutations.
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -15,7 +17,18 @@
 #include "core/document/document.h"
 #include "core/cam/cam_operation.h"
 #include "core/cam/cam_profile_reference.h"
+#include "core/geometry/body_compiler.h"
 #include "protocol/serialization.h"
+
+#include <BRepAdaptor_Curve.hxx>
+#include <BRep_Tool.hxx>
+#include <GeomAbs_CurveType.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <TopExp.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Vertex.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 
 namespace {
 
@@ -34,6 +47,10 @@ bool expect(bool condition, const char* message) {
   }
   std::cerr << "FAIL: " << message << "\n";
   return false;
+}
+
+bool near(double a, double b, double tolerance = 1e-6) {
+  return std::abs(a - b) < tolerance;
 }
 
 CamSetup make_setup(const std::string& machine = "3_axis_mill") {
@@ -589,9 +606,11 @@ bool test_select_sketch_profile_by_entity() {
     }
   }
   if (!expect(circleRegion != nullptr &&
-                  circleRegion->source_circle_id.has_value() &&
-                  circleRegion->source_circle_id.value() == circleId,
-              "by entity: circle selects the circle-sourced region")) {
+                  circleRegion->kind == "circle" &&
+                  std::find(circleRegion->line_ids.begin(),
+                            circleRegion->line_ids.end(),
+                            circleId) != circleRegion->line_ids.end(),
+              "by entity: circle selects the exact circle region")) {
     return false;
   }
 
@@ -783,10 +802,477 @@ bool test_wcs_face_update_targets_named_setup() {
     return false;
   }
   const auto first = manager.cam_setup_find("cam-setup-1");
-  return expect(first.has_value() &&
-                    first->wcs_origin.feature_id.empty() &&
-                    first->wcs_origin.face_reference.persistent_id.empty(),
-                "wcs face update: first setup untouched");
+  if (!expect(first.has_value() &&
+                  first->wcs_origin.feature_id.empty() &&
+                  first->wcs_origin.face_reference.persistent_id.empty(),
+              "wcs face update: first setup untouched")) {
+    return false;
+  }
+
+  // Stock-face anchor (the "stock:top" pick path): the WCS carries the
+  // anchor + face name instead of a body witness; the update must
+  // round-trip them on the targeted setup only.
+  auto stockTarget = manager.cam_setup_find("cam-setup-2");
+  if (!expect(stockTarget.has_value(), "wcs stock update: setup found")) {
+    return false;
+  }
+  stockTarget->wcs_origin.anchor = "stock_face";
+  stockTarget->wcs_origin.stock_face = "top";
+  stockTarget->wcs_origin.feature_id.clear();
+  stockTarget->wcs_origin.face_reference = GeometryReference{};
+  stockTarget->wcs_origin.position.reset();
+  const DocumentState afterStock = manager.cam_setup_update(stockTarget.value());
+  if (!expect(afterStock.cam.setups.size() == 2,
+              "wcs stock update: document keeps both setups")) {
+    return false;
+  }
+  const auto byIdStock = manager.cam_setup_find("cam-setup-2");
+  if (!expect(byIdStock.has_value() &&
+                  byIdStock->wcs_origin.anchor == "stock_face" &&
+                  byIdStock->wcs_origin.stock_face == "top" &&
+                  byIdStock->wcs_origin.feature_id.empty() &&
+                  byIdStock->wcs_origin.face_reference.persistent_id.empty(),
+              "wcs stock update: named setup received the stock anchor")) {
+    return false;
+  }
+  const auto firstAfter = manager.cam_setup_find("cam-setup-1");
+  return expect(firstAfter.has_value() && firstAfter->wcs_origin.anchor.empty(),
+                "wcs stock update: first setup untouched");
+}
+
+bool test_cam_capture_point() {
+  DocumentManager manager;
+  manager.create_document();
+
+  const GeometryReference first = manager.cam_capture_point({1.0, 2.0, 3.0});
+  if (!expect(first.persistent_id == "pt-1",
+              "capture point: first id is pt-1")) {
+    return false;
+  }
+  if (!expect(std::holds_alternative<polysmith::core::PointAttestation>(
+                  first.attestation),
+              "capture point: PointAttestation variant")) {
+    return false;
+  }
+  const auto& att =
+      std::get<polysmith::core::PointAttestation>(first.attestation);
+  if (!expect(att.point[0] == 1.0 && att.point[1] == 2.0 &&
+                  att.point[2] == 3.0,
+              "capture point: coordinates stored verbatim")) {
+    return false;
+  }
+  const GeometryReference second = manager.cam_capture_point({4.0, 5.0, 6.0});
+  if (!expect(second.persistent_id == "pt-2",
+              "capture point: ids increment monotonically")) {
+    return false;
+  }
+  // The mutator only mints the id — the document is untouched (the
+  // caller appends the reference to the operation).
+  if (!expect(manager.get_document()->cam.operations.empty(),
+              "capture point: document state untouched")) {
+    return false;
+  }
+
+  DocumentManager bare;
+  bool threw = false;
+  try {
+    bare.cam_capture_point({0.0, 0.0, 0.0});
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  return expect(threw, "capture point: no active document throws");
+}
+
+bool test_drilling_creates_default_tool() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup());  // 3_axis_mill
+
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  const DocumentState created = manager.cam_operation_add(op);
+  if (!expect(created.cam.operations.size() == 1 &&
+                  !created.cam.operations[0].tool_id.empty() &&
+                  created.cam.tool_library.size() == 1 &&
+                  created.cam.tool_library[0].type == "drill" &&
+                  created.cam.tool_library[0].name == "3mm drill (default)" &&
+                  created.cam.tool_library[0].diameter_mm == 3.0,
+              "default drill tool: auto-created for drilling")) {
+    return false;
+  }
+  if (!expect(created.cam.operations[0].tool_id ==
+                  created.cam.tool_library[0].tool_id,
+              "default drill tool: op references the new tool")) {
+    return false;
+  }
+
+  // A second drilling op reuses the library drill.
+  CamOperation second;
+  second.name = "Drill 2";
+  second.type = "drilling";
+  const DocumentState afterSecond = manager.cam_operation_add(second);
+  return expect(afterSecond.cam.tool_library.size() == 1 &&
+                    afterSecond.cam.operations[1].tool_id ==
+                        afterSecond.cam.tool_library[0].tool_id,
+                "default drill tool: existing drill reused");
+}
+
+bool test_drilling_requires_mill_machine() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup("laser"));
+
+  bool threw = false;
+  try {
+    manager.cam_operation_add(make_op("drilling", /*toolId=*/""));
+  } catch (const std::runtime_error& error) {
+    threw = std::string(error.what()).find("milling machine") !=
+            std::string::npos;
+  }
+  return expect(threw, "drilling op on a laser machine throws");
+}
+
+// A point attestation round-tripped through a lenient client-side
+// parse can arrive carrying leftover FACE keys (defaults injected by
+// the parse).  The point branch must win — the coordinate is the
+// identity that must survive, not the injected empty witness (which
+// would fail face resolution with "the face geometry was lost or
+// changed").
+bool test_point_attestation_wins_over_face_keys() {
+  const nlohmann::json corrupted = {
+      {"machining_regions",
+       nlohmann::json::array({{
+           {"persistent_id", "pt-11"},
+           {"attestation",
+            {{"point", {35.0, -20.0, 10.0}},
+             {"bounds",
+              {{"min_x", 0.0}, {"min_y", 0.0}, {"min_z", 0.0},
+               {"max_x", 0.0}, {"max_y", 0.0}, {"max_z", 0.0}}},
+             {"area", 0.0},
+             {"normal", {0.0, 0.0, 1.0}},
+             {"sample_points", nlohmann::json::array()}}},
+       }})},
+      {"avoidance_regions", nlohmann::json::array()},
+      {"guide_curves", nlohmann::json::array()},
+      {"check_surfaces", nlohmann::json::array()},
+  };
+  const auto parsed =
+      polysmith::protocol::cam_geometry_references_from_payload(corrupted);
+  if (!expect(parsed.machining_regions.size() == 1,
+              "mixed point/face payload: one region parses")) {
+    return false;
+  }
+  const auto& ref = parsed.machining_regions[0];
+  if (!expect(std::holds_alternative<polysmith::core::PointAttestation>(
+                  ref.attestation),
+              "mixed point/face payload: parses as PointAttestation")) {
+    return false;
+  }
+  const auto& att =
+      std::get<polysmith::core::PointAttestation>(ref.attestation);
+  return expect(att.point[0] == 35.0 && att.point[1] == -20.0 &&
+                    att.point[2] == 10.0,
+                "mixed point/face payload: coordinates survive verbatim");
+}
+
+// A genuine face attestation (no point key) must still parse as a
+// face — the reordering above must not regress the face branch.
+bool test_face_attestation_still_parses() {
+  const nlohmann::json face_payload = {
+      {"machining_regions",
+       nlohmann::json::array({{
+           {"persistent_id", "body-1:face:3"},
+           {"attestation",
+            {{"bounds",
+              {{"min_x", 0.0}, {"min_y", 0.0}, {"min_z", 0.0},
+               {"max_x", 100.0}, {"max_y", 70.0}, {"max_z", 10.0}}},
+             {"area", 7000.0},
+             {"normal", {0.0, 0.0, 1.0}},
+             {"sample_points", nlohmann::json::array({nlohmann::json::array({1.0, 2.0, 3.0})})}}},
+       }})},
+      {"avoidance_regions", nlohmann::json::array()},
+      {"guide_curves", nlohmann::json::array()},
+      {"check_surfaces", nlohmann::json::array()},
+  };
+  const auto parsed =
+      polysmith::protocol::cam_geometry_references_from_payload(face_payload);
+  if (!expect(parsed.machining_regions.size() == 1,
+              "face payload: one region parses")) {
+    return false;
+  }
+  const auto& ref = parsed.machining_regions[0];
+  if (!expect(std::holds_alternative<polysmith::core::FaceAttestation>(
+                  ref.attestation),
+              "face payload: parses as FaceAttestation")) {
+    return false;
+  }
+  const auto& att =
+      std::get<polysmith::core::FaceAttestation>(ref.attestation);
+  return expect(att.area == 7000.0 && att.sample_points.size() == 1 &&
+                    att.normal[2] == 1.0,
+                "face payload: witness fields parse");
+}
+
+// An edge attestation parses through the edge fallback branch of the
+// discriminator; the circle witness keys are optional (a line edge
+// carries none) and must survive verbatim when present.
+bool test_edge_attestation_parses() {
+  const nlohmann::json rim_payload = {
+      {"machining_regions",
+       nlohmann::json::array({{
+           {"persistent_id", "body-1:edge:4"},
+           {"attestation",
+            {{"start_point", {10.0, 5.0, 10.0}},
+             {"end_point", {10.0, 5.0, 10.0}},
+             {"length", 12.566370614359172},
+             {"tangent", {1.0, 0.0, 0.0}},
+             {"center", {10.0, 5.0, 10.0}},
+             {"axis", {0.0, 0.0, 1.0}},
+             {"radius", 2.0}}},
+       }})},
+      {"avoidance_regions", nlohmann::json::array()},
+      {"guide_curves", nlohmann::json::array()},
+      {"check_surfaces", nlohmann::json::array()},
+  };
+  const auto parsed =
+      polysmith::protocol::cam_geometry_references_from_payload(rim_payload);
+  if (!expect(parsed.machining_regions.size() == 1,
+              "edge payload: one region parses")) {
+    return false;
+  }
+  const auto& ref = parsed.machining_regions[0];
+  if (!expect(std::holds_alternative<polysmith::core::EdgeAttestation>(
+                  ref.attestation),
+              "edge payload: parses as EdgeAttestation")) {
+    return false;
+  }
+  const auto& att =
+      std::get<polysmith::core::EdgeAttestation>(ref.attestation);
+  if (!expect(att.center.has_value() && att.axis.has_value() &&
+                  att.radius.has_value(),
+              "edge payload: circle witness parses")) {
+    return false;
+  }
+  if (!expect(att.center.value()[0] == 10.0 && att.center.value()[1] == 5.0 &&
+                  att.center.value()[2] == 10.0 &&
+                  att.axis.value()[2] == 1.0 &&
+                  near(att.radius.value(), 2.0) &&
+                  near(att.length, 12.566370614359172),
+              "edge payload: witness values survive verbatim")) {
+    return false;
+  }
+
+  // A line edge (no circle keys) parses with the witness unset.
+  const nlohmann::json line_payload = {
+      {"machining_regions",
+       nlohmann::json::array({{
+           {"persistent_id", "body-1:edge:0"},
+           {"attestation",
+            {{"start_point", {0.0, 0.0, 10.0}},
+             {"end_point", {20.0, 0.0, 10.0}},
+             {"length", 20.0},
+             {"tangent", {1.0, 0.0, 0.0}}}},
+       }})},
+      {"avoidance_regions", nlohmann::json::array()},
+      {"guide_curves", nlohmann::json::array()},
+      {"check_surfaces", nlohmann::json::array()},
+  };
+  const auto lineParsed =
+      polysmith::protocol::cam_geometry_references_from_payload(line_payload);
+  if (!expect(lineParsed.machining_regions.size() == 1 &&
+                  std::holds_alternative<polysmith::core::EdgeAttestation>(
+                      lineParsed.machining_regions[0].attestation),
+              "line payload: parses as EdgeAttestation")) {
+    return false;
+  }
+  const auto& lineAtt = std::get<polysmith::core::EdgeAttestation>(
+      lineParsed.machining_regions[0].attestation);
+  return expect(!lineAtt.center.has_value() && !lineAtt.axis.has_value() &&
+                    !lineAtt.radius.has_value(),
+                "line payload: circle witness stays unset");
+}
+
+// capture_edge_reference stores line endpoints/length/tangent with no
+// circle witness, and the full circle witness (center/axis/radius) for
+// closed rim edges — the fields drilling resolution scores on.
+bool test_capture_edge_reference_witness() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      {.width = 20.0, .height = 20.0, .depth = 10.0});
+  const auto compiled = polysmith::core::compile_bodies(document);
+  if (!expect(compiled.bodies.size() == 1,
+              "capture: box body compiled")) {
+    return false;
+  }
+  const auto& box = compiled.bodies[0];
+  // Line edge: a box top/bottom edge (the box has 12 line edges — 8 of
+  // length 20, 4 vertical of length 10; take a length-20 one so the
+  // assertion below is deterministic).
+  int lineIndex = -1;
+  {
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+    TopExp::MapShapes(box.shape, TopAbs_EDGE, edgeMap);
+    for (int i = 1; i <= edgeMap.Extent(); ++i) {
+      try {
+        BRepAdaptor_Curve curve(TopoDS::Edge(edgeMap(i)));
+        if (curve.GetType() != GeomAbs_Line) {
+          continue;
+        }
+        const double length =
+            std::abs(curve.LastParameter() - curve.FirstParameter());
+        if (near(length, 20.0)) {
+          lineIndex = i - 1;
+          break;
+        }
+      } catch (const std::exception&) {
+        continue;
+      }
+    }
+  }
+  if (!expect(lineIndex >= 0, "capture: box line edge found")) {
+    return false;
+  }
+  const auto lineRef = polysmith::core::capture_edge_reference(
+      box.id, box.shape, lineIndex);
+  if (!expect(lineRef.has_value(), "capture: line edge captured")) {
+    return false;
+  }
+  if (!expect(near(lineRef->length, 20.0) && !lineRef->center.has_value() &&
+                  !lineRef->axis.has_value() && !lineRef->radius.has_value(),
+              "capture: line stores endpoints/length, no circle witness")) {
+    return false;
+  }
+
+  // Full-circle rim: a cylinder's top edge.  The document also holds
+  // the box — locate the cylinder by its feature id.
+  DocumentState cylinderDoc = manager.add_cylinder_feature(
+      polysmith::core::CylinderFeatureParameters{.radius = 10.0,
+                                                 .height = 10.0});
+  const std::string cylinderId = cylinderDoc.feature_history.back().id;
+  const auto cylinderCompiled =
+      polysmith::core::compile_bodies(cylinderDoc);
+  const polysmith::core::CompiledBody* cylinder = nullptr;
+  for (const auto& candidate : cylinderCompiled.bodies) {
+    if (candidate.id == cylinderId) {
+      cylinder = &candidate;
+    }
+  }
+  if (!expect(cylinder != nullptr, "capture: cylinder body compiled")) {
+    return false;
+  }
+  int rimIndex = -1;
+  {
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+    TopExp::MapShapes(cylinder->shape, TopAbs_EDGE, edgeMap);
+    for (int i = 1; i <= edgeMap.Extent(); ++i) {
+      try {
+        const auto edge = TopoDS::Edge(edgeMap(i));
+        BRepAdaptor_Curve curve(edge);
+        if (curve.GetType() != GeomAbs_Circle) {
+          continue;
+        }
+        TopoDS_Vertex firstVertex;
+        TopoDS_Vertex lastVertex;
+        TopExp::Vertices(edge, firstVertex, lastVertex);
+        const double radius = curve.Circle().Radius();
+        if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) <=
+            std::max(1e-7, radius * 1e-7)) {
+          rimIndex = i - 1;
+          break;
+        }
+      } catch (const std::exception&) {
+        continue;
+      }
+    }
+  }
+  if (!expect(rimIndex >= 0, "capture: cylinder rim edge found")) {
+    return false;
+  }
+  const auto rimRef = polysmith::core::capture_edge_reference(
+      cylinder->id, cylinder->shape, rimIndex);
+  if (!expect(rimRef.has_value(), "capture: rim edge captured")) {
+    return false;
+  }
+  if (!expect(rimRef->center.has_value() && rimRef->axis.has_value() &&
+                  rimRef->radius.has_value(),
+              "capture: rim stores the circle witness")) {
+    return false;
+  }
+  if (!expect(near(rimRef->radius.value(), 10.0) &&
+                  near(rimRef->axis.value()[2], 1.0),
+              "capture: rim radius and vertical axis")) {
+    return false;
+  }
+  return expect(rimRef->startPoint == rimRef->endPoint,
+                "capture: closed rim collapses both endpoints");
+}
+
+// Partial arcs are not drilling inputs — capture rejects them outright
+// (the full-circle test) so a bad pick never becomes a stored op.
+bool test_capture_edge_reference_rejects_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_cylinder_feature(
+      polysmith::core::CylinderFeatureParameters{.radius = 10.0,
+                                                 .height = 10.0});
+  const std::string cylinderId = document.feature_history.back().id;
+  // Cut the right half away: a rectangle prism over x >= 0 leaves a
+  // half cylinder whose circular rims are now arcs.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  document = manager.add_sketch_rectangle(0.0, -12.0, 12.0, 12.0);
+  const std::string sketchId = document.feature_history.back().id;
+  std::string rectProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketchId && feature.sketch_parameters.has_value()) {
+      rectProfile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+  if (!expect(!rectProfile.empty(), "arc: rectangle profile found")) {
+    return false;
+  }
+  document = manager.extrude_profile(rectProfile, 10.0, "cut", cylinderId);
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const polysmith::core::CompiledBody* body = nullptr;
+  for (const auto& candidate : compiled.bodies) {
+    if (candidate.id == cylinderId) {
+      body = &candidate;
+    }
+  }
+  if (!expect(body != nullptr, "arc: cut body compiled")) {
+    return false;
+  }
+  int arcIndex = -1;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body->shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      const auto edge = TopoDS::Edge(edgeMap(i));
+      BRepAdaptor_Curve curve(edge);
+      if (curve.GetType() != GeomAbs_Circle) {
+        continue;
+      }
+      TopoDS_Vertex firstVertex;
+      TopoDS_Vertex lastVertex;
+      TopExp::Vertices(edge, firstVertex, lastVertex);
+      const double radius = curve.Circle().Radius();
+      if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) >
+          std::max(1e-7, radius * 1e-7)) {
+        arcIndex = i - 1;
+        break;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  if (!expect(arcIndex >= 0, "arc: partial rim edge found")) {
+    return false;
+  }
+  return expect(!polysmith::core::capture_edge_reference(
+                    body->id, body->shape, arcIndex)
+                     .has_value(),
+                "arc: capture rejects the partial rim");
 }
 
 }  // namespace
@@ -917,6 +1403,70 @@ int main() {
 
   std::cout << "  Test 16: wcs face update targets named setup... ";
   if (test_wcs_face_update_targets_named_setup()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 17: cam_capture_point mints point refs... ";
+  if (test_cam_capture_point()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 18: drilling default drill tool... ";
+  if (test_drilling_creates_default_tool()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 19: drilling requires a mill machine... ";
+  if (test_drilling_requires_mill_machine()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 20: point attestation wins over injected face keys... ";
+  if (test_point_attestation_wins_over_face_keys()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 21: genuine face attestation still parses... ";
+  if (test_face_attestation_still_parses()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 22: edge attestation parses with/without witness... ";
+  if (test_edge_attestation_parses()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 23: capture_edge_reference witness fields... ";
+  if (test_capture_edge_reference_witness()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 24: capture rejects partial arcs... ";
+  if (test_capture_edge_reference_rejects_arc()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "core/sketch/sketch_profile_types.h"
 #include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
@@ -15,6 +16,10 @@ struct PolygonSketchProfile {
   std::optional<SketchFeatureParameters::SketchPlaneFrame> plane_frame;
   std::vector<SketchProfilePoint> points;
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
+  // Exact circle-hole descriptors (indexed into inner_loops) — lets
+  // the viewport draw full-circle holes smoothly instead of the
+  // sampled chord outline.
+  std::vector<SketchProfileCircleHole> circle_holes;
 };
 
 struct CircleSketchProfile {

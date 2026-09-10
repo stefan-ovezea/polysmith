@@ -22,7 +22,9 @@ struct ExpectedProfile {
   std::vector<std::string> entity_ids;
   // "polygon" or "circle" — SketchProfileRegion::kind.
   std::string kind;
-  // When true the profile must carry a source_circle_id (full circles).
+  // When true the profile must carry a source_circle_id (hole-bearing
+  // full circles and mixed-sketch full ellipses — hole-free circles are
+  // exact kind "circle" regions and carry none).
   bool has_source_circle_id = false;
 };
 

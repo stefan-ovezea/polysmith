@@ -53,6 +53,10 @@
   int next_cam_setup_id_ = 1;
   int next_cam_tool_id_ = 1;
   int next_cam_op_id_ = 1;
+  // Independent counter for drilling point references ("pt-N"),
+  // restored on load by scanning machining_regions like the other
+  // CAM counters.
+  int next_cam_point_ref_id_ = 1;
   int document_count_ = 0;
   std::optional<DocumentState> document_;
   std::vector<DocumentState> undo_stack_;

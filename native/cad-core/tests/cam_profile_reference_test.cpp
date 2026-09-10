@@ -15,6 +15,7 @@
 
 #include "core/cam/cam_profile_reference.h"
 #include "core/document/document.h"
+#include "protocol/serialization.h"
 #include "sketch_test_utils.h"
 
 namespace {
@@ -79,17 +80,50 @@ bool test_capture_rectangle_with_hole() {
     return false;
   }
 
-  // Both regions are kind "polygon" (the circle region is a sampled
-  // polygon too); identity comes from source_circle_id / hole count.
+  // The outer region is a polygon with one inner loop; the hole is an
+  // exact kind "circle" region (center/radius, no sampled points).
   const polysmith::core::SketchProfileRegion* outer = &params.profiles[0];
   const polysmith::core::SketchProfileRegion* circle = &params.profiles[1];
-  if (params.profiles[0].source_circle_id.has_value()) {
+  if (params.profiles[0].kind == "circle") {
     std::swap(outer, circle);
   }
-  if (!expect(outer->inner_loops.size() == 1 &&
-                  circle->source_circle_id.has_value(),
-              "capture: outer region with one hole + circle-sourced region")) {
+  if (!expect(outer->inner_loops.size() == 1 && circle->kind == "circle",
+              "capture: outer region with one hole + exact circle region")) {
     return false;
+  }
+
+  // The hole must carry its exact circle descriptor alongside the
+  // sampled outline — the renderer draws the hole from center/radius,
+  // otherwise the 16-point chord sample shows as a visible polygon
+  // next to the smooth standalone circle region (the double outline
+  // bug).
+  if (!expect(outer->circle_holes.size() == 1 &&
+                  outer->circle_holes[0].loop_index == 0 &&
+                  near(outer->circle_holes[0].center_x, 10.0) &&
+                  near(outer->circle_holes[0].center_y, 5.0) &&
+                  near(outer->circle_holes[0].radius, 2.0),
+              "capture: circle hole carries exact center/radius")) {
+    return false;
+  }
+
+  // The descriptor must survive the document serialize/deserialize
+  // round trip (the save/load path) or the hole degrades back to the
+  // sampled polygon after a reload.
+  {
+    const auto payload = polysmith::protocol::to_payload(document, true);
+    const auto restored = polysmith::protocol::document_from_payload(payload);
+    const auto& restored_params = sketch_params(restored);
+    const auto restored_outer = std::find_if(
+        restored_params.profiles.begin(), restored_params.profiles.end(),
+        [](const auto& region) { return !region.circle_holes.empty(); });
+    if (!expect(restored_outer != restored_params.profiles.end() &&
+                    restored_outer->circle_holes[0].loop_index == 0 &&
+                    near(restored_outer->circle_holes[0].center_x, 10.0) &&
+                    near(restored_outer->circle_holes[0].center_y, 5.0) &&
+                    near(restored_outer->circle_holes[0].radius, 2.0),
+                "capture: circle-hole descriptor survives round trip")) {
+      return false;
+    }
   }
 
   const auto outerRef =
@@ -116,9 +150,10 @@ bool test_capture_rectangle_with_hole() {
 
   const auto circleRef =
       capture_profile_reference(sketch_feature_id(document), *circle);
-  if (!expect(circleRef.has_value() &&
-                  circleRef->sourceCircleId.has_value(),
-              "capture: circle region carries its source circle id")) {
+  // Kind "circle" regions carry exact center/radius on their boundary
+  // edge — no source_circle_id needed.
+  if (!expect(circleRef.has_value() && !circleRef->sourceCircleId.has_value(),
+              "capture: circle region captured without a source id")) {
     return false;
   }
   if (!expect(near(circleRef->area, kPi * 4.0, 1.0e-4) &&
@@ -335,7 +370,7 @@ bool test_capture_from_selected_sketch_feature() {
   const auto& sketchParams = sketch_params(document);
   const auto circleRegion = std::find_if(
       sketchParams.profiles.begin(), sketchParams.profiles.end(),
-      [](const auto& region) { return region.source_circle_id.has_value(); });
+      [](const auto& region) { return region.kind == "circle"; });
   if (!expect(circleRegion != sketchParams.profiles.end(),
               "capture-explicit: circle region found")) {
     return false;

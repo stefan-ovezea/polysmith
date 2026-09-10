@@ -51,6 +51,7 @@ export async function triggerCamTestPattern({
       finish_pass: false,
       multiple_passes: false,
       coolant: "off",
+      tool_axis_mode: "fixed_z",
       test_pattern: { ...DEFAULT_TEST_PATTERN_PARAMS },
     },
     dependencies: {

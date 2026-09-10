@@ -121,6 +121,14 @@ export interface SketchProfileRegionEntry {
   line_ids: string[];
   points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
+  // Exact circle-hole descriptors (indexed into inner_loops); empty
+  // for legacy saves and non-circle holes.
+  circle_holes?: {
+    loop_index: number;
+    center_x: number;
+    center_y: number;
+    radius: number;
+  }[];
   source_circle_id: string | null;
   center_x: number;
   center_y: number;

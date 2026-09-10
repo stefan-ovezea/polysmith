@@ -90,6 +90,16 @@ export interface ViewportSolidFace {
   triangle_indices: number[];
   is_selected: boolean;
   appearance_color: string | null;
+  // Surface classification for CAM consumers (drilling hole-wall
+  // candidates): "planar" | "cylinder" | "cone" | "sphere" | "torus"
+  // | "spline" | "other".  Refines `sketchability`.
+  surface_kind?: string;
+  // Cylinder witness — non-null only when surface_kind === "cylinder":
+  // the hole axis (direction), a point on the axis, and the radius.
+  // `center` is a mid-UV point ON the wall — never the hole axis.
+  cylinder_axis?: Vector3 | null;
+  cylinder_location?: Vector3 | null;
+  cylinder_radius?: number | null;
 }
 
 export interface ViewportReferencePlane {
@@ -320,6 +330,13 @@ export interface ViewportSketchProfile {
   profile_kind: "polygon" | "circle" | "ellipse" | "spline";
   profile_points: SketchProfilePoint[];
   inner_loops: SketchProfilePoint[][];
+  // Exact circle-hole descriptors (indexed into inner_loops).
+  circle_holes?: {
+    loop_index: number;
+    center_x: number;
+    center_y: number;
+    radius: number;
+  }[];
   start_x: number;
   start_y: number;
   width: number;

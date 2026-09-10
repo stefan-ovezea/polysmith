@@ -28,6 +28,14 @@ export const CROSSHAIR_SIZE_FACTORS: Partial<Record<CrosshairMode, number>> = {
 };
 export const GRID_SNAP_SCREEN_DISTANCE_PX = 6;
 
+// The armed drilling pick's report: a BODY reference (hole rim edge
+// or cylindrical wall face — the caller captures an attestation via
+// the core) or a bare world point (free pick on any other surface).
+export type DrillPickTarget =
+  | { mode: "point"; point: { x: number; y: number; z: number } }
+  | { mode: "face"; id: string }
+  | { mode: "edge"; id: string };
+
 export type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 
 export interface SketchSelection {
@@ -59,6 +67,20 @@ export interface ViewportPanelProps {
   // angle) — the caller shows a hint instead of placing.
   originPickPointEnabled: boolean;
   onOriginPickPoint: (point: { x: number; y: number; z: number } | null) => void;
+  // Armed WCS pick: while true, every pointer-up routes to the WCS
+  // pick handler — body faces keep the TNP face anchor, stock faces
+  // anchor to the stock face (or a snapped stock corner/edge as a
+  // pinned point), anything else snaps like the origin pick or falls
+  // back to the bed plane (z = 0).
+  wcsPickPointEnabled: boolean;
+  onWcsPickPoint: (point: { x: number; y: number; z: number } | null) => void;
+  // Armed drilling pick: while true, every pointer-up reports a drill
+  // target instead of running scene selection.  A click on a hole
+  // (snap dot, rim edge, or cylindrical wall face) reports the BODY
+  // reference — the caller captures a re-resolvable attestation;
+  // every other click reports the world point (free pick).
+  drillPickPointEnabled: boolean;
+  onDrillPickPoint: (result: DrillPickTarget | null) => void;
   onSelectEdge: (edgeId: string, additive: boolean) => Promise<void>;
   onSelectVertex: (vertexId: string, additive: boolean) => Promise<void>;
   onStartSketch: (referenceId: string) => Promise<void>;

@@ -1,5 +1,6 @@
 #include "core/viewport/viewport.h"
 #include "core/diagnostics/logger.h"
+#include "core/cam/cam_resolution.h"
 
 #include <algorithm>
 #include <array>
@@ -39,6 +40,8 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Cylinder.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>

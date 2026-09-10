@@ -21,6 +21,7 @@ import { updateEndpointDragSceneObjects } from "./sceneIncrementalUpdate";
 import {
   addCamSceneObjects,
   addCamToolpathLines,
+  resolveActiveCamSetup,
 } from "./camSceneObjects";
 import { addCamOriginPickMarkerObjects } from "./camOriginSnap";
 import {
@@ -87,6 +88,10 @@ interface ViewportSceneSyncRefs {
   referencePlaneVisuals: MutableRef<Map<string, ReferencePlaneVisual>>;
   referencePlaneStates: MutableRef<Map<string, ReferencePlaneInteractionState>>;
   faceMeshes: MutableRef<THREE.Mesh[]>;
+  /** Stock box mesh (face-tagged via userData.stockFaceNames) for the
+   *  WCS pick raycast — populated by addCamSceneObjects, cleared by
+   *  clearViewportSceneObjectRefs. */
+  stockFaceMeshes: MutableRef<THREE.Mesh[]>;
   solidFaceVisuals: MutableRef<Map<string, SolidFaceVisual>>;
   solidFaceStates: MutableRef<Map<string, SolidFaceInteractionState>>;
   edgeLineObjects: MutableRef<THREE.Line[]>;
@@ -124,6 +129,12 @@ interface SyncViewportSceneParams {
   /** True while the CAM origin pick is armed — draws the snap-target
    *  markers and suppresses scene hover while picking. */
   originPickArmed: boolean;
+  /** True while the DRILLING point pick is armed — the marker dots
+   *  are restricted to circle centers and lift to the top surface
+   *  (see liftDrillCandidates).  Independent of originPickArmed:
+   *  arming either pick disarms the other, and the marker builder
+   *  renders when EITHER flag is set. */
+  drillPickArmed: boolean;
   moveGizmo: MoveGizmoDescriptor | null | undefined;
   clearViewportSceneObjectRefs: () => void;
   clearDragPreviewLines: () => void;
@@ -286,6 +297,7 @@ function viewportSceneBuildKey({
   wcsOrientation,
   activeCamSetupId,
   originPickArmed,
+  drillPickArmed,
   moveGizmo,
   document,
 }: SyncViewportSceneParams) {
@@ -299,10 +311,11 @@ function viewportSceneBuildKey({
   // The RESOLVED WCS position matters too: face-anchored WCS picks and
   // laser pointer-offset changes move the marker without touching the
   // stock origin.
-  const camSetup = document?.cam?.setups?.[0];
-  const wcsPosition = document?.cam?.setups
-    .find((setup) => setup.setup_id === activeCamSetupId)
-    ?.wcs_origin?.position ?? camSetup?.wcs_origin?.position;
+  // Resolve the ACTIVE setup (not setups[0]): the setup panel edits
+  // the active setup, and with multiple setups editing setups[1]'s
+  // stock would otherwise never invalidate this key.
+  const camSetup = resolveActiveCamSetup(document, activeCamSetupId);
+  const wcsPosition = camSetup?.wcs_origin?.position;
   const camSignature = camSetup
     ? [
         camSetup.stock?.origin?.join(",") ?? "",
@@ -323,8 +336,11 @@ function viewportSceneBuildKey({
     showStock ? "stock:on" : "stock:off",
     "cam:" + camSignature,
     // The origin-pick markers are added/removed on arm/disarm, so
-    // the arm state must be part of the rebuild key.
+    // the arm state must be part of the rebuild key.  The drill flag
+    // is tracked separately: switching between an armed origin pick
+    // and the armed drill pick must rebuild the lifted markers.
     originPickArmed ? "originpick:on" : "originpick:off",
+    drillPickArmed ? "drillpick:on" : "drillpick:off",
     wcsOrientation,
     moveGizmoKey(moveGizmo),
     displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),
@@ -376,6 +392,7 @@ function addModelSceneObjects(
     wcsOrientation,
     activeCamSetupId,
     originPickArmed,
+    drillPickArmed,
   }: SyncViewportSceneParams,
   { contentGroup, referenceGroup }: ReadyViewportSceneGroups,
 ) {
@@ -407,12 +424,7 @@ function addModelSceneObjects(
     showStock,
     wcsOrientation,
     activeCamSetupId,
-  });
-
-  addCamOriginPickMarkerObjects({
-    sceneData,
-    referenceGroup,
-    originPickArmed,
+    stockFaceMeshes: refs.stockFaceMeshes.current,
   });
 
   addSolidSceneObjects({
@@ -427,6 +439,22 @@ function addModelSceneObjects(
     edgeLineObjects: refs.edgeLineObjects.current,
     vertexObjects: refs.vertexObjects.current,
     cutPreviewObjects: refs.cutPreviewObjects.current,
+  });
+
+  // After addSolidSceneObjects so the vertex/edge/face refs are
+  // populated for this build (the marker loop reads them).
+  addCamOriginPickMarkerObjects({
+    sceneData,
+    referenceGroup,
+    originPickArmed,
+    drillPickArmed,
+    document,
+    activeCamSetupId,
+    viewport,
+    showStock,
+    vertexObjects: refs.vertexObjects.current,
+    edgeLineObjects: refs.edgeLineObjects.current,
+    faceMeshes: refs.faceMeshes.current,
   });
 
   refs.toolpathLines.current = addCamToolpathLines({

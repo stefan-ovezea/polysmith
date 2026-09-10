@@ -33,6 +33,12 @@ struct EdgeAttestation {
   double length = 0.0;
   std::array<double, 3> tangent = {1.0, 0.0, 0.0};
   std::optional<std::vector<std::array<double, 3>>> adjacent_face_normals;
+  // Circle witness (drilling hole rims).  Present only for full-circle
+  // edges — a closed rim has start == end, so the endpoint witness
+  // alone cannot identify it.  Arcs and lines leave these unset.
+  std::optional<std::array<double, 3>> center;
+  std::optional<std::array<double, 3>> axis;
+  std::optional<double> radius;
 };
 
 /// Witness data to re-identify a sketch profile region after sketch
@@ -51,10 +57,21 @@ struct SketchProfileAttestation {
   std::optional<std::string> source_circle_id;   // circle-sourced regions
 };
 
-/// TNP-safe reference to a 3D face, 3D edge, or sketch profile.
+/// A bare world-space point.  Unlike the witness attestations there is
+/// nothing to re-identify — a coordinate is its own identity (the laser
+/// `pierce_position` precedent).  Drilling operations use these for
+/// free-picked hole locations; the persistent_id is the only part that
+/// must survive document saves.
+struct PointAttestation {
+  std::array<double, 3> point = {0.0, 0.0, 0.0};
+};
+
+/// TNP-safe reference to a 3D face, 3D edge, sketch profile, or a bare
+/// world-space point.
 struct GeometryReference {
   std::string persistent_id;
-  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation>
+  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation,
+               PointAttestation>
       attestation;
 };
 
@@ -88,6 +105,18 @@ struct MachineAxes {
 
 /// Work Coordinate System origin anchored to a CAD face.
 struct WcsOrigin {
+  /// "" → derived (legacy): "face" if a face witness is stored, else
+  /// "stock_origin".  Explicit anchors:
+  ///   "face"         — body face witness (TNP-resolved every refresh)
+  ///   "stock_face"   — stock box face name in `stock_face`
+  ///   "point"        — authoritative machine point, NEVER overwritten
+  ///                    by the refresh (manual X/Y/Z edits in the Setup
+  ///                    panel ride this anchor)
+  ///   "stock_origin" — stock.origin (legacy default)
+  std::string anchor = "";
+  /// "top" | "bottom" | "front" | "back" | "left" | "right" — only
+  /// meaningful when anchor == "stock_face".
+  std::string stock_face = "top";
   std::string feature_id;            // CAD feature that defines origin
   GeometryReference face_reference;  // TNP-safe face reference
   /// Last-resolved machine origin, refreshed by the CAM dependency
@@ -108,7 +137,7 @@ struct CamSetup {
   StockDefinition stock;
   WcsOrigin wcs_origin;
   double safety_height = 50.0;   // mm
-  double retract_height = 5.0;   // mm
+  double retract_height = 25.0;  // mm — above the default 20 mm stock top
   std::string units = "mm";      // "mm" | "inch"
 };
 
@@ -200,6 +229,13 @@ struct LaserCutParameters {
   std::string lead_out_style = "line";  // "line" | "arc"
   double lead_in_angle_deg = 0.0;       // entry angle vs contour tangent
   double lead_out_angle_deg = 0.0;      // exit angle vs contour tangent
+  // Sweep of the "arc"-style lead roll, degrees.  90° is the classic
+  // tangent quarter-roll; interior leads sweep exactly this angle
+  // around the pierce→centroid spoke (270 reproduces the pre-input
+  // interior curl on circles; larger values curl deeper into the kerf
+  // side, useful past tight corners).
+  double lead_in_arc_angle_deg = 90.0;
+  double lead_out_arc_angle_deg = 90.0;
                                          // (0 = tangent continuation)
   double overcut_mm = 0.0;              // extend past the start/end joint
 
@@ -282,6 +318,32 @@ struct LaserTestPatternParameters {
   bool cell_labels = true;
 };
 
+/// 2D contour parameters (only meaningful when type == "contour_2d").
+/// Follows the per-type optional block pattern of the other strategy
+/// fields so the operation struct stays one unified shape.
+struct ContourParameters {
+  std::string side = "outside";  // "outside" | "inside" | "on_line"
+                                 // — VALIDATED at payload parse
+  double depth_mm = 1.0;         // cut plane below the input face/sketch plane
+  double stock_allowance_mm = 0.0;  // extra radial allowance for finishing
+};
+
+/// Open-slot parameters (only meaningful when type == "slot").
+/// The groove floor sits `depth_mm` below the adjacent horizontal
+/// face; the slot width is the tool diameter (multi-width offsets are
+/// a future refinement).
+struct SlotParameters {
+  double depth_mm = 5.0;  // groove floor below the adjacent top face
+};
+
+/// Mill engrave parameters (only meaningful when type == "engrave").
+/// Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+/// fixed depth below the sketch plane — the milling twin of laser
+/// engrave.  Single pass.
+struct EngraveParameters {
+  double depth_mm = 0.5;  // cut plane below the sketch plane
+};
+
 struct CamOperationParameters {
   // Basic cutting.
   double spindle_rpm = 8000.0;
@@ -300,13 +362,22 @@ struct CamOperationParameters {
   std::optional<double> hole_depth_mm;              // for drilling
   std::optional<double> peck_depth_mm;              // for peck drilling
   std::optional<double> dwell_seconds;              // for dwell cycles
+  bool through_hole = false;                        // drilling: to stock bottom
   std::optional<double> engagement_angle_deg;       // for adaptive clearing
   std::optional<double> zigzag_angle_deg;           // for face milling
   std::optional<LaserCutParameters> laser;          // for laser_cut
   std::optional<LaserTestPatternParameters> test_pattern;  // laser_test_pattern
+  std::optional<ContourParameters> contour;         // for contour_2d
+  std::optional<SlotParameters> slot;               // for slot
+  std::optional<EngraveParameters> engrave;         // for engrave
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"
+
+  // Tool axis (5-axis scaffolding).  "fixed_z" is the only supported
+  // mode today; "3_plus_2" and "rotary_continuous" are reserved for
+  // future rotary generators, which no current generator accepts.
+  std::string tool_axis_mode = "fixed_z";  // "fixed_z" | "3_plus_2" | "rotary_continuous"
 };
 
 /// Operation ordering dependencies.
@@ -372,6 +443,20 @@ struct PostProcessor {
   std::string filename;
 };
 
+/// Kinematics topology of a milling machine.  3-axis ops (fixed-Z tool
+/// axis) run on any of these; rotary axes exist so the UI and posts can
+/// describe 4/5-axis machines before a rotary generator ships.
+/// "cartesian_3axis" | "rotary_table_a" | "rotary_table_b" |
+/// "rotary_table_c" | "head_table" | "table_table" | "head_head"
+using MachineKinematics = std::string;
+
+/// Travel limit for one axis (mm for linear, degrees for rotary).
+struct MachineAxisLimit {
+  std::string axis = "x";
+  double min = 0.0;
+  double max = 0.0;
+};
+
 /// A saved, reusable machine definition — the physical machine, not the
 /// job.  Lives as <slug>.json files in the user's machines directory
 /// (see machine_library.h), seeded with built-ins on first use and
@@ -386,6 +471,17 @@ struct MachineDefinition {
   double work_area_y_mm = 400.0;
   double pointer_offset_x_mm = 0.0;
   double pointer_offset_y_mm = 0.0;
+  // Mill fields (5-axis scaffolding).  Travel is mm; 0 = unset, in
+  // which case the UI falls back to setup.machine_axes.  Kinematics
+  // default cartesian_3axis so old 8-field JSON files load unchanged.
+  double travel_x_mm = 0.0;
+  double travel_y_mm = 0.0;
+  double travel_z_mm = 0.0;
+  MachineKinematics kinematics = "cartesian_3axis";
+  std::vector<MachineAxisLimit> axis_limits;
+  // Park position for tool changes (world mm).  Absent = no safe
+  // position known; posts use their own default.
+  std::optional<std::array<double, 3>> tool_change_position;
 };
 
 // ══════════════════════════════════════════════════════════════════

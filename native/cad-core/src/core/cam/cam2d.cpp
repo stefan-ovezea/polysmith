@@ -60,25 +60,22 @@ bool line_line_intersection(const XY& p1, const XY& d1, const XY& p2,
 
 // Builds a round join arc around the shared original vertex between
 // two adjacent offset segments and appends [current + join] to `out`.
+//
+// The sweep is the SHORT way around the vertex (atan2's raw angle).
+// The wedge between the two offset rays is the scrap side for a right
+// offset and the material side for a left offset — the long way wraps
+// through the other side, so it is never the true boundary.  (A
+// reflex corner on the scrap side is miter-trimmed by the caller when
+// the miter is reachable; the short arc is the safe approximation
+// otherwise.)
 void append_round_join(OffsetSegment current, OffsetSegment nextOffset,
                        const XY& vertex, double d,
                        std::vector<OffsetSegment>& out) {
-  const double raw = std::atan2(
+  const double sweep = std::atan2(
       (nextOffset.start.y - vertex.y) * (current.end.x - vertex.x) -
           (nextOffset.start.x - vertex.x) * (current.end.y - vertex.y),
       (nextOffset.start.x - vertex.x) * (current.end.x - vertex.x) +
           (nextOffset.start.y - vertex.y) * (current.end.y - vertex.y));
-  const double turn = std::atan2(
-      (current.end.y - vertex.y) * (nextOffset.start.x - vertex.x) -
-          (current.end.x - vertex.x) * (nextOffset.start.y - vertex.y),
-      (current.end.x - vertex.x) * (nextOffset.start.x - vertex.x) +
-          (current.end.y - vertex.y) * (nextOffset.start.y - vertex.y));
-  double sweep = raw;
-  if (turn > 0 && sweep < 0) {
-    sweep += kTwoPiConst;
-  } else if (turn < 0 && sweep > 0) {
-    sweep -= kTwoPiConst;
-  }
 
   OffsetSegment join;
   join.is_arc = true;
@@ -215,7 +212,13 @@ std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
     const double edgeY = edgeEnd.y - edgeStart.y;
     for (size_t j = 0; j < input.size(); ++j) {
       const XY& current = input[j];
-      const XY& previous = input[(j + input.size() - 1) % input.size()];
+      // The input is an OPEN segment chain, not a closed ring: the
+      // first vertex has no predecessor, so pair it with itself and
+      // emit no crossing before it.  (The old wrap-around pairing
+      // processed the segment in both directions, duplicating the
+      // intersections and putting the far-end crossing first — every
+      // milling row collapsed onto its exit point.)
+      const XY& previous = (j == 0) ? input[j] : input[j - 1];
       const double dCurrent = edgeX * (current.y - edgeStart.y) -
                               edgeY * (current.x - edgeStart.x);
       const double dPrevious = edgeX * (previous.y - edgeStart.y) -
@@ -233,6 +236,69 @@ std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
                           previous.y + t * (current.y - previous.y)});
       }
     }
+  }
+  return output;
+}
+
+bool xy_point_in_polygon(const XY& p, const std::vector<XY>& poly) {
+  if (poly.size() < 3) {
+    return false;
+  }
+  bool inside = false;
+  for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+    const XY& a = poly[i];
+    const XY& b = poly[j];
+    if (((a.y > p.y) != (b.y > p.y)) &&
+        (p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+std::vector<XY> clip_segment_outside_polygon(XY p1, XY p2,
+                                             const std::vector<XY>& poly) {
+  if (poly.size() < 3) {
+    return {p1, p2};
+  }
+  const double dx = p2.x - p1.x;
+  const double dy = p2.y - p1.y;
+  // Crossing parameters along the p1→p2 span (t ∈ [0,1]).
+  std::vector<double> ts = {0.0, 1.0};
+  for (size_t i = 0; i < poly.size(); ++i) {
+    const XY& a = poly[i];
+    const XY& b = poly[(i + 1) % poly.size()];
+    const double ex = b.x - a.x;
+    const double ey = b.y - a.y;
+    const double denom = dx * ey - dy * ex;
+    if (std::abs(denom) < 1e-12) {
+      continue;  // parallel — a collinear overlap is resolved by the
+                 // interval midpoint tests below
+    }
+    const double t = ((a.x - p1.x) * ey - (a.y - p1.y) * ex) / denom;
+    const double s = ((a.x - p1.x) * dy - (a.y - p1.y) * dx) / denom;
+    if (t > 1e-12 && t < 1.0 - 1e-12 && s >= -1e-12 && s <= 1.0 + 1e-12) {
+      ts.push_back(t);
+    }
+  }
+  std::sort(ts.begin(), ts.end());
+
+  // Between two consecutive boundary crossings the segment is wholly
+  // inside or wholly outside — one midpoint decides each interval.
+  // Every kept interval emits exactly one pair, so the result always
+  // has an even point count (a vertex tangency emits two pieces that
+  // share the touching point — the caller retracts there, harmless).
+  std::vector<XY> output;
+  for (size_t i = 0; i + 1 < ts.size(); ++i) {
+    if (ts[i + 1] - ts[i] < 1e-9) {
+      continue;  // duplicate crossing (a row through a polygon vertex)
+    }
+    const double mid = 0.5 * (ts[i] + ts[i + 1]);
+    if (xy_point_in_polygon({p1.x + mid * dx, p1.y + mid * dy}, poly)) {
+      continue;
+    }
+    output.push_back({p1.x + ts[i] * dx, p1.y + ts[i] * dy});
+    output.push_back({p1.x + ts[i + 1] * dx, p1.y + ts[i + 1] * dy});
   }
   return output;
 }

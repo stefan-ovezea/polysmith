@@ -52,6 +52,19 @@ struct ProfileBoundaryEdge {
   std::vector<double> spline_pole_ys;
 };
 
+// Exact circle-hole descriptor: inner_loops[loop_index] is the sampled
+// chord outline of a full-circle hole whose exact geometry is this
+// circle.  Renderers draw these smoothly from center/radius (the
+// sampled points alone show a visible 16-gon next to the exact circle
+// region).  The sampled points stay in inner_loops: capture/area math
+// and operations created before the descriptor existed depend on them.
+struct SketchProfileCircleHole {
+  int loop_index = -1;  // index into SketchProfileRegion::inner_loops
+  double center_x = 0.0;
+  double center_y = 0.0;
+  double radius = 0.0;
+};
+
 struct SketchProfileRegion {
   std::string id;
   std::string kind;
@@ -64,6 +77,10 @@ struct SketchProfileRegion {
   // extrudes a face with a circular hole, while selecting the circle
   // separately extrudes the disk.
   std::vector<std::vector<SketchProfilePoint>> inner_loops;
+  // Exact circle-hole descriptors (see SketchProfileCircleHole).  One
+  // entry per full-circle inner loop; empty for legacy profiles and
+  // for regions whose holes are not exact circles.
+  std::vector<SketchProfileCircleHole> circle_holes;
   std::optional<std::string> source_circle_id;
   double center_x;
   double center_y;

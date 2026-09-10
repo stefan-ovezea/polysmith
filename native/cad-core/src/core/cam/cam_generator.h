@@ -16,6 +16,7 @@ struct CamSetup;
 struct CamOperation;
 struct ToolEntry;
 struct SketchProfileRegion;
+struct CompiledBodies;
 
 // ── Generator registry ────────────────────────────────────────────
 //
@@ -40,8 +41,15 @@ struct CamGenerateContext {
 
   struct Geometry {
     std::vector<ResolvedFaceRef> faces;                 // machining regions
+    std::vector<ResolvedFaceRef> avoidance_faces;       // islands (avoidance regions)
+    std::vector<ResolvedEdgeRef> edges;                 // machining-region edges (drilling rims)
     std::vector<ResolvedProfileRef> profiles;           // profile regions
     std::vector<const SketchFeatureParameters*> sketches;  // owning sketches
+    std::vector<PointAttestation> points;               // bare drilling points
+    // Compiled by the driver when a generator needs body faces
+    // (drilling lifts circle holes to the material top).  Null when
+    // the document has no bodies or none were needed.
+    const CompiledBodies* bodies = nullptr;
   } geometry;
 };
 

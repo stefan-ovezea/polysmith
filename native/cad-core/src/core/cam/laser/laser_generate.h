@@ -9,12 +9,10 @@
 
 #include <cstddef>
 #include <limits>
-#include <optional>
 #include <vector>
 
 #include "core/cam/cam2d.h"
 #include "core/cam/cam_generator.h"
-#include "core/sketch/sketch_feature_parameters.h"
 
 namespace polysmith::core::laser {
 
@@ -47,12 +45,6 @@ struct PlannedLoop {
   bool isWorldXY = false;
   double worldZ = 0.0;  // cut-plane Z for world-XY loops
 };
-
-// Sketch frames: cached plane_frame when present, else the hardcoded
-// origin-plane frame table (sketches on origin planes may not cache a
-// frame — the history dependency pass resolves it on demand).
-std::optional<SketchFeatureParameters::SketchPlaneFrame> resolve_sketch_frame(
-    const SketchFeatureParameters& sketch);
 
 CamGenerateResult generate_laser_cut_toolpath(
     const polysmith::core::CamGenerateContext& context);

@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <sstream>
 #include <vector>
 
 #include "core/cam/cam2d.h"
 #include "core/cam/cam_generator.h"
 #include "core/cam/cam_planning.h"
+#include "core/cam/cam_stock.h"
+#include "core/cam/milling_common.h"
 #include "core/diagnostics/logger.h"
 #include "core/geometry/body_compiler.h"
 

@@ -696,9 +696,12 @@ referencing the deleted tool degrade to `status: "error"` with a message.
 
 Payload = serialized `CamOperation` without `op_id` (the core assigns
 `cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
-`"face_milling"` (zigzag facing of a horizontal face), or
+`"face_milling"` (zigzag facing of a horizontal face), `"pocket_2d"`
+(zigzag pocketing of a planar face, with optional islands),
+`"contour_2d"` (closed-wire profile finishing, face or sketch input),
+`"drilling"` (G81/G83 drill cycles at point locations), or
 `"laser_test_pattern"` (LightBurn-style material test cards) are
-implemented; pocket/contour/drill/turning are registry slots for later.
+implemented; turning is a registry slot for later.
 `tool_id` must reference an existing tool. Laser operations (cut and test
 patterns) require a laser machine setup.
 
@@ -730,18 +733,86 @@ Geometry input:
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
   fill.
+- `pocket_2d`: same shape as face milling — `machining_regions[0]` is the
+  pocket-floor face witness.  `avoidance_regions` carries ISLAND faces
+  (boss tops, captured via the same `cam_capture_face_reference` flow):
+  the toolpath clears inside the outer boundary (inset by the tool
+  radius) minus the grown island footprints; below an island's top Z the
+  footprint is always avoided, and multi-pass level planning inserts a
+  level at each island top between the face and the stock top so the
+  stock above a boss is cleared flush.  `stepdown_mm` reuses the
+  face-milling multi-pass machinery (stock top → face, last level pinned
+  at the face); absent = single pass at the face level.  Multi-wire
+  faces are allowed — the face's own holes are avoided; `stock:` face
+  ids are NOT valid pocket floors.  Islands live entirely in
+  `avoidance_regions` (no dedicated island field).
+- `contour_2d`: FACE WINS over profiles.  With a face selected, pass
+  `machining_regions[0]` as the `FaceAttestation` witness (pocket
+  shape) — the generator contours the face's largest-area outer wire at
+  `faceZ − depth`.  With sketch profiles selected instead, send the
+  create with EMPTY `geometry_references` (the laser capture flow): the
+  core captures the selected profiles and contours the first boundary
+  at `sketchZ − depth` — this is why the create/update capture gates in
+  `cam_commands.inc` accept `contour_2d` alongside `laser_cut`.
+  Parameters live in `parameters.contour`: `side`
+  (`"outside"` | `"inside"` | `"on_line"`, default outside),
+  `depth_mm` (default 1), `stock_allowance_mm` (default 0).  The shared
+  base `stock_allowance_mm` is IGNORED by the generator.  Exact
+  G2/G3 arcs for circular edges (polyline fallback for other curves);
+  `parameters.cutting_direction` selects climb/conventional;
+  `cam_operation_set_scope` retargets a profile-based contour to a
+  reference sketch, and an empty-scope re-update with
+  `machining_regions: []` re-captures the current selection (the laser
+  re-pick pattern).
 - `laser_test_pattern`: NO geometry references — `parameters.test_pattern`
   drives the card (`pattern`: `engrave_grid` | `cut_grid` | `kerf_gauge`,
   power/speed min-max-steps, `cell_size_mm`, `cell_spacing_mm`,
   `start_x_mm`/`start_y_mm`, `line_spacing_mm`, gauge kerf/power/speed,
   `cell_labels`).  Power sweeps columns (left→right), speed sweeps rows
   (top→bottom); cells live in machine coordinates.
+- `drilling`: `machining_regions` mixes THREE attestation kinds — BODY
+  geometry and free points, never sketches.  A `FaceAttestation`
+  (serde key `"sample_points"`) is a hole-wall face: the generator reads
+  the resolved wall's cylinder axis for the hole XY (only vertical
+  cylindrical walls qualify).  An `EdgeAttestation` (serde key
+  `"start_point"` + optional `"center"`/`"axis"`/`"radius"` circle
+  witness) is a full-circle rim edge: the generator reads the resolved
+  rim's circle center (arcs and lines are rejected).  A
+  `PointAttestation` (serde key `"point"`) drills at its world
+  coordinate.  Create with EMPTY `geometry_references` — the core does
+  NOT capture any selection for drilling; holes are added one at a time
+  via `cam_capture_face_reference`, `cam_capture_edge_reference`, or
+  `cam_capture_point` + `cam_operation_update` (append the returned
+  attestation to `machining_regions`).  An empty `machining_regions`
+  on update means "user removed all holes".  LEGACY: operations still
+  holding `SketchProfileAttestation` regions (sketch circles) fail
+  generation with a migration error telling the user to re-pick the
+  holes on the body — never a silent empty hole list.  Parameters:
+  `cycle_type` (`"g81_standard"` | `"g83_peck"`), `hole_depth_mm`,
+  `peck_depth_mm`, `through_hole` (drill to stock bottom, stock
+  required), `plunge_feedrate_mm_per_min` is the drill feedrate.
+  Blind depths measure from the material top (the wall's axis often
+  sits at the hole bottom).  Posts with `canned_cycles` support
+  (linuxcnc, mach3, mach4, fanuc) emit real G81/G83; GRBL-family posts
+  emit longhand G0/G1 moves (GRBL implements neither cycle).
 
 Face references: `cam_capture_face_reference {face_id}` returns the
 TNP-safe `FaceAttestation` for a body face — use it to build operation
 `geometry_references` (never hand-craft witness data).
+`cam_capture_edge_reference {edge_id}` returns
+`cam_edge_attestation_result {persistent_id, attestation}` — the
+TNP-safe `EdgeAttestation` for a body edge (full circles carry the
+center/axis/radius witness; partial arcs are rejected).
+`cam_capture_point {x, y, z}` returns `cam_attestation_result
+{persistent_id, attestation: {point: [x, y, z]}}` — the core mints the
+`pt-N` id; the UI sends the world coordinate picked in the viewport.
 `cam_wcs_set_face {face_id}` anchors the WCS to a face; the refresh
-pass resolves the machine origin from the live face.
+pass resolves the machine origin from the live face.  `face_id` may also
+be `"stock:<face>"` (top/bottom/front/back/left/right) — the WCS then
+anchors to the live stock extents (`anchor: "stock_face"`) instead of a
+body-face witness.  `wcs_origin.anchor` may also be `"point"` (pinned
+position, never overwritten by refresh) or `"stock_origin"` (legacy
+derived default).
 
 Machine settings: `cam_machine_settings_set` stores
 `{work_area_x_mm, work_area_y_mm, pointer_offset_x_mm, pointer_offset_y_mm}`
@@ -770,7 +841,11 @@ event — the operation is never left half-retargeted. Undo covers the change.
 Payload `{op_id}`. Synchronous (both generators run in well under 100 ms);
 emits `cam_generation_progress` events `{op_id, percent}` (5/15/90/100), then
 `document_state` with `status: "generated"` (preview does not change status,
-it only fills the preview cache the viewport falls back to).
+it only fills the preview cache the viewport falls back to). Generate (not
+preview) additionally emits `cam_generation_result` `{op_id, ok,
+error_message, warnings: [string]}` after the document reply — success,
+generator warnings, or a failure message; the UI shows it in a result popup
+(the same warnings also land in the structured log).
 
 #### `cam_operation_delete` / `cam_post_processor_set` / `cam_export_gcode`
 

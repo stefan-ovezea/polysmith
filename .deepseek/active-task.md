@@ -1,4 +1,1113 @@
-# Active Task: Core build speedup + OCCT deprecation migration (core-build-speedup)
+# Active task: CAM Mill Engrave + Profile-button removal (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+
+> **Branch:** `cam/milling` (slot milestone UNCOMMITTED in the tree —
+> both ship as separate commits after the shared in-app pass)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 8 (user decisions, binding)
+
+The two remaining stub toolbar buttons. **Profile button: REMOVED** —
+"Profile finishing" was shipped as 2D Contour; the button was
+scaffolding with a notImplemented toast. **Engrave: NEW mill op**
+(`"engrave"`, already reserved in cam_types.h + TS unions): traces
+sketch profile geometry ON-LINE (no offset, no leads, single pass) at
+a fixed depth below the sketch plane — the milling twin of laser
+engrave. Text glyphs are closed tessellated contours, so profile
+capture covers text.
+
+## Phases
+
+- **P1 Native — DONE.** `engrave.{h,cpp}` +
+  `impl/engrave_generate.inc` (sketch-profile-only input checked
+  BEFORE the parallel profiles/sketches arrays; ALL profiles in
+  region order; per-region frame + horizontal guard; exact arcs +
+  chord fallback; standalone circles + circle holes as exact arcs;
+  outer CCW / holes CW via the uniform base-CCW-then-flip rule;
+  rapid-plunge-feed-rapid per loop; guards); `EngraveParameters
+  { depth_mm = 0.5 }` + serde both directions; registry + CMake;
+  cam_commands create/update gates widened with `"engrave"`;
+  session laser-machine guard mirror; cam_generators_test registry
+  gained the engrave-found assertion. Gate: core:build + test:core
+  43/43.
+- **P2 Native tests — DONE.** `tests/cam_engrave_test.cpp` (12 tests;
+  target `cad_core_cam_engrave_test`). Corrections the tests caught:
+  the hole synthesis stored CW and the uniform hole-flip made it CCW
+  — all bases now store CCW and the flip makes the walk CW; the
+  sketch's profile vector is NOT creation-ordered, so the multi-profile
+  test pins machining-region order dynamically; a centroid-only
+  witness corruption still clears the 0.7 score threshold (kinds 0.35
+  + area 0.3 + holes 0.1) — the broken-attestation test corrupts
+  centroid AND area. Gate: `pnpm test:core` **44/44 suites**.
+- **P3 UI — DONE.** `camEngraveActions.ts` (sketch-selection trigger,
+  no geometry references — core captures via the widened gate),
+  `CamEngravePanel` (contour panel minus face/side/allowance; NO
+  stepdown — single pass), toolbar Engrave button (gated on setup +
+  profile selection), AppHeader/AppTopBar/App.tsx threading incl. the
+  :617 re-pick disarm widening, CamFloatingPanels engrave branch,
+  unions (CamToolbar/documentUiState/CamOperationPanel/camPanelShared),
+  i18n `cam.engrave.*`. **Profile removal ripple**: button +
+  onNotImplemented + `cam.profile`/`cam.common.notImplemented` keys
+  deleted; `coreCamOperationTypeToUi` gains engrave +
+  laser_test_pattern cases with `default: "unknown"` (kills the
+  silent "Profile" mislabel of laser test-pattern ops); CamToolbar
+  union = faceMilling/pocket/adaptive/contour/drill/slot/engrave/
+  laserCut/laserTestPattern/unknown. Gate: `tsc --noEmit` clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md row 18 + deviation
+  note + Engrave section, Implementation-Log entry).
+
+## In-app verification checklist (user confirms before commits)
+
+1. Milling toolbar: NO Profile button; Engrave after Contour, disabled
+   without setup, "Select a sketch profile first" tooltip without
+   profile selection.
+2. Box + sketch on the top face (rect + inner circle), both selected
+   → Engrave → preview traces the rect AND the hole on-line at −0.5
+   below the sketch plane; rapids at retract.
+3. Depth/feed/plunge/spindle live-update; tool dropdown = flat
+   endmills; geometry summary counts profiles; scope dropdown shows
+   the sketch.
+4. Re-select geometry → pick → Apply; scope retarget captures another
+   sketch's profiles.
+5. Generate + Export G-code (plunge + trace moves); ops list labels it
+   "Engrave".
+6. Degrade: edit/delete the profiles → needs_regenerate/error;
+   restore → regenerate.
+7. A laser test-pattern op labels "Test Pattern", NOT "Profile".
+8. Engrave create on a laser-machine setup → clear error.
+9. Text glyphs (with counters) trace outer + counters.
+10. Regression: slot + all other ops still generate/export.
+11. **Slot checklist (round 7, still owed):** toolbar Slot after
+    Drill; top-edge slot preview at edge + radius inward; stepdown
+    multipass (8/6/5); two edges → two grooves; Re-pick edges; G-code;
+    save → reopen round-trips slot params + edge rows.
+
+## Next steps
+
+- User in-app verification (both rounds) → commit 1 = Slot milestone,
+  commit 2 = Engrave milestone (both on approval, no Co-Authored-By).
+
+---
+
+# Previous task: CAM Slot Milling — open-edge slots (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD af5fa0a at start)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 7 (user decisions, binding)
+
+Next milling-sprint milestone after Adaptive Clearing. **Slot design
+(2026-09-10):** a picked STRAIGHT line edge is the slot's OPEN side —
+the tool cuts a tool-width groove from the edge INTO the material, on
+the side of the adjacent horizontal top face. Depth =
+`slot.depth_mm` below that face's Z; optional stepdown multi-pass.
+Centerline/two-wall semantics, closed slots, and arc edges are OUT.
+**Selection-based input, no armed pick:** the trigger captures
+`selected_edge_ids`; Re-pick re-captures the current selection. Zero
+driver/IPC changes — the existing `cam_capture_edge_reference`
+command + EdgeAttestation serde carry everything.
+
+## Phases
+
+- **P1 Native generator + params + serde — DONE.** `slot.{h,cpp}` +
+  `impl/slot_generate.inc` (live-edge re-open, GeomAbs_Line guard,
+  top-face find via MapShapesAndAncestors + steepest upward normal,
+  inward = face-COM probe minus the edge-parallel component, climb
+  walk W = (inward.y, −inward.x), path = edge + tool radius × inward,
+  plan_stepdown_levels when stepdown set, CUT-major emission, retract
+  guards); `SlotParameters { depth_mm = 5.0 }` optional params block
+  (the contour serde pattern); registry flip in cam_generators_test.
+  Gate: `core:build` clean (app closed) + `test:core` 42/42.
+- **P2 Native tests — DONE.** `tests/cam_slot_test.cpp` (12 tests;
+  CMake target `cad_core_cam_slot_test`). **One design correction
+  during P2:** `resolve_edge_reference` resolved CIRCLE witnesses
+  only — line witnesses always scored NotFound (the slot op is the
+  first line-edge consumer). Added line scoring
+  (`cam_edge_reference_resolve.inc`): endpoint proximity 0.5
+  (orientation-agnostic pairing, `kEdgeMaxEndpointDistance` 5 mm),
+  length ratio 0.25, absolute direction dot 0.25; the circle path is
+  untouched (drilling unaffected). Fixture fixes: find_top_edge_index
+  picks by MAX coordinate (min-y ties between the y=0 and x=0 edges),
+  and the circle test needs a full rim witness (circle fields) so the
+  GENERATOR's line guard fires. Gate: `pnpm test:core` **43/43
+  suites**.
+- **P3 UI — DONE.** `camSlotActions.ts` (selection-based capture of
+  every selected edge), `CamSlotPanel` (edge rows + Re-pick, depth,
+  clearable stepdown), toolbar button after Drill (open-slot glyph,
+  gated on setup + selected edges), CamToolbar/documentUiState/
+  CamOperationPanel/status-line unions, i18n `cam.slot.*` block,
+  App.tsx `triggerCamSlotAction` + `handleRepickSlotEdges`,
+  CamFloatingPanels slot branch + `onRepickSlotEdges` threaded
+  through `buildOperationPanel`'s Pick type. Gate: `tsc --noEmit`
+  clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md slot section +
+  progress row 17, Implementation-Log entry).
+
+## In-app verification checklist (user confirms before commit)
+
+1. Toolbar shows Slot after Drill, disabled without setup;
+   "Select a straight edge first" tooltip without edge selection.
+2. Select the top edge of a box → Slot → preview: one pass at
+   edge + tool radius, inward (groove INTO the material), rapids at
+   retract, plunge + feed at the depth.
+3. Depth edit live; stepdown set → multipass levels; cleared →
+   single pass.
+4. Two selected edges → two grooves in selection order; remove a
+   row; re-select → Re-pick re-captures.
+5. Generate + Export G-code (GRBL) shows G0/G1 runs.
+6. Regression: pocket/adaptive/drill/contour/face/laser generate +
+   export; save → reopen round-trips slot params + edge attestations.
+
+## Next steps
+
+- User in-app verification → commit on approval (no Co-Authored-By).
+
+---
+
+# Previous task: CAM Adaptive Clearing — contour-parallel spiral (cam/milling) — COMMITTED af5fa0a (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD 6b1c7cf at start)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 6 (user decisions, binding)
+
+Last milling-sprint milestone. **Toolpath style (2026-09-10):** v1 =
+contour-parallel spiral — concentric offset loops stepping inward from
+the boundary at spacing = diameter × stepover%, rapids at retract +
+plunges per loop, constant climb direction, islands machined around.
+`engagement_angle_deg` accepted but reserved for a future trochoidal
+upgrade. No new IPC/protocol/driver changes (the op type and params
+were already plumbed end-to-end).
+
+## Phases
+
+- **P1 Native generator — DONE.** `adaptive_clearing.{h,cpp}` +
+  `impl/adaptive_clearing_generate.inc` (rEff inset, family building
+  with collapse validation, boss/hole classification + island
+  families, arc-aware clipping, shared stepdown planner, guards);
+  registered in `cam_generators.cpp`; CMake source line. Gate:
+  `core:build` clean (app closed).
+- **P2 Native tests — DONE.** `tests/adaptive_clearing_test.cpp`
+  (13 tests; CMake target). One design correction during P2: the
+  grown region's corner quarter-discs leave corner notches OUTSIDE the
+  clearance — outer loop 2's corner is legitimately machinable there
+  (the clip is arc-aware). Test 5 pins the notch piece positively.
+  Gate: `pnpm test:core` **42/42 suites**.
+- **P3 UI — DONE.** `camAdaptiveActions.ts`, `CamAdaptivePanel`
+  (pocket panel minus zigzag), toolbar button after Pocket
+  (concentric-squares icon), i18n `cam.adaptive.*` block; armed
+  face/island pick SHARED with the pocket (`kind` in `pocketPickArmed`
+  switches toast copy; arm handlers take `kind = "pocket"`). Gate:
+  `tsc --noEmit` clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md section + progress
+  row 16, Implementation-Log entry).
+
+## Verification
+
+- `pnpm test:core` 42/42 suites, `tsc --noEmit` clean, user verified
+  in-app ("OK it works. go ahead with commit and continue with
+  implementation") → COMMITTED af5fa0a (2026-09-10, user-approved; no
+  Co-Authored-By trailer).
+
+---
+
+# Active task: CAM Drilling — body-geometry targeting rework (cam/milling) — implemented P1–P10, COMMITTED 6b1c7cf (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD f169fc2)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 5 (binding user directive, 2026-09-09)
+
+> "The sketch should be involved only if the sketch is used directly
+> like in laser mode. In this cam mode we are working only with
+> bodies. If setup does not use the sketch why you are using in
+> drilling mode. If the geometry is imported from step or stl does
+> not have a sketch. I should be able to work with surfaces at this
+> point not sketch: like selecting the internal wall of a hole or
+> even the edge/circle."
+
+Drilling must target BODY geometry only (hole-wall faces, circular
+rim edges) and work on STEP/STL imports with no sketch.  Round 4 had
+re-introduced sketch-circle dependence (`drillSketchCenterCandidates`
+from the raw payload) — hiding the drilling sketch emptied the pick
+set again.  User decisions: **topological references** (clicking a
+wall stores a FaceAttestation, a rim circle an EdgeAttestation — both
+re-resolve on every recompute; free clicks stay PointAttestation
+coordinates) and **drop sketch input entirely** (legacy sketch-circle
+ops must fail with a CLEAR migration error, never a silent empty hole
+list).
+
+## Status — P1–P10 implemented, uncommitted (working tree)
+
+- **P1** EdgeAttestation witness: optional `center`/`axis` (array3) +
+  `radius` (double) in cam_types.h; optional serde keys both
+  directions (basic_payloads_and_cam.inc / cam_from_payload.inc —
+  old files parse unchanged); TS EdgeAttestation optionals.
+- **P2** Edge capture + resolution: `CamEdgeReference` +
+  `capture_edge_reference` (new cam_edge_reference_capture.inc —
+  lines store endpoints/length/tangent, full circles add the circle
+  witness, partial ARCS are rejected with nullopt);
+  `resolve_edge_reference` + scoring (new
+  cam_edge_reference_resolve.inc: circle edges only, 0.5 radius
+  proximity + 0.5 center-distance linear decay,
+  `kEdgeMaxCenterDistance` 5 mm — center Z disambiguates the top vs
+  bottom rim of one bore); 4th `on_edge` sink in
+  `resolve_geometry_reference`; failure message mirrors the face one.
+- **P3** IPC: `cam_capture_edge_reference` handler (BAD_EDGE_ID /
+  EDGE_NOT_FOUND / EDGE_CAPTURE_FAILED) + `cam_edge_attestation_result`
+  event; TS command + event types + factory + useCadCore hook.
+- **P4** Generate/refresh plumbing: `CamGenerateContext.geometry.edges`;
+  the needsFaces gate triggers on EdgeAttestation too; on_edge sinks
+  at all 4 call sites (generate ×2, refresh ×2).
+- **P5** Drilling generator rewrite (drilling_generate.inc): legacy
+  migration guard FIRST ("still uses sketch circles… re-pick the
+  holes on the body"); new FACES loop (GeomAbs_Cylinder + vertical
+  axis; hole XY from the live cylinder location; material-top lift);
+  new EDGES loop (GeomAbs_Circle + full-circle test + horizontal
+  guard; center XY); points loop unchanged; empty-set error reworded
+  ("at least one hole face, rim edge, or point").  Guards, ordering,
+  and emission unchanged.
+- **P6** Create gate: the selection-capture block in cam_commands.inc
+  is skipped for drilling (`op.type != "drilling"`) — drilling always
+  creates with empty regions, filled by the armed pick.
+- **P7** Viewport payload + zod: `ViewportEdgePrimitive` += optional
+  center/axis/radius (full circles ONLY); `ViewportSolidFace` +=
+  `surface_kind` + cylinder witness (axis/location/radius); both
+  to_payload sites; zod solid_faces + edges updated (the strict-strip
+  trap); TS viewport/ipc types; geometryKey includes surface_kind.
+- **P8** Native tests (all green):
+  - cam_generators_test: body fixtures (box + sketch circles cut via
+    `extrude_profiles(..., "cut", boxId)`, surface-type scans, capture
+    through the core APIs) — `make_drilling_face_op` /
+    `make_drilling_edge_op`; Tests 54-60 re-homed onto wall/rim
+    fixtures (drill.z now from the material top: blind 5 → z 5); NEW
+    Tests 61-65: rim G81 (top rim + bottom-rim lift), horizontal-axis
+    wall/rim errors, legacy profile migration message, rim
+    re-resolves after an edit (delete + re-cut at (10.2, 5) →
+    follows the new axis), mixed wall + rim + point collection.
+  - cam_commands_test 22-24: edge attestation parse (circle keys +
+    line without), capture witness fields, arc rejection.
+  - cam_save_load_test 7: face + edge + point round-trip.
+  - cam_refresh_test 11: EdgeAttestation op survives an unrelated edit.
+  - BAD_EDGE_ID command-level test dropped: command handlers write to
+    the process stdout (no in-process dispatcher harness) — the
+    capture/serde APIs are covered instead (noted for the commit
+    message).
+- **P8 bug found & fixed — is_point_on_face distance gate**: Test 54
+  exposed a REAL scoring bug: `BRepClass_FaceClassifier`'s tolerance
+  is a PROJECTION tolerance, not a distance gate, so a point far from
+  a face still projected onto its surface and classified IN — a wall
+  attestation scored 1.0 against EVERY other wall, and two-hole ops
+  degraded with "face not found" via the ambiguity rule (single-hole
+  ops happened to pass).  Fixed in cam_face_reference_helpers.inc:
+  a `GeomAPI_ProjectPointOnSurf` lower-distance gate (Grad, Tree
+  fallback) runs BEFORE the UV classification.  Full suite re-run:
+  41/41 green.
+- **P9 UI**: camOriginSnap.ts — `drillSketchCenterCandidates` DELETED;
+  new `drillHoleCandidates` (raw payload: edges kind "circle" WITH
+  the witness + |axis.z|≈1 → `hole_rim`; solid_faces surface_kind
+  "cylinder" + vertical axis → `hole_wall`; dedupe by quantized XY
+  1e-3 keeping max z; `sourceId` = "<body>:edge:<idx>" / face_id);
+  new kinds + label keys (`originSnapHoleRim`/`originSnapHoleWall`);
+  the lift covers both kinds; markers center-styled.  ViewportPanel:
+  drill pick chain = lifted snap (rim→edge, wall→face) → edge-line
+  raycast (Line threshold 1.2) → face raycast (surfaceKind
+  "cylinder" → face, else point; body meshes included for
+  STL/cylinder bodies) → bed plane; `onDrillPickPoint` is the
+  `DrillPickTarget` discriminated union.  primitiveObjects.ts
+  surfaceKind userData; scene.ts `SolidFaceScene.surfaceKind` +
+  makeSolidFace mapping (a P7 gap the tsc gate caught).  App.tsx
+  `applyDrillTargetPick` (point/face/edge capture + per-kind
+  messages, pick stays armed); camDrillingActions trigger = hasSetup
+  only (no face/profile gate, noSelection toast dropped);
+  CamMillingToolbar `drillReady = hasSetup && !disabled`;
+  CamFloatingPanels rows (wall/rim/point/legacy labels);
+  CamDrillingPanel hint + "Add hole"; i18n en.json block
+  (wallRow/rimRow/legacyRow/wallAdded/rimAdded/noSetup + snap labels).
+- **P10 docs**: this tracker; wiki/CAM-Development.md drilling section
+  rework (body-geometry inputs + legacy migration note);
+  wiki/IPC-Protocol.md (cam_capture_edge_reference +
+  cam_edge_attestation_result); AI-CAD-Command-Language.md drilling
+  bullet rework (three attestation kinds + legacy guard).
+
+## Gates
+
+- `pnpm core:build` — green (all targets, app closed; the modified
+  .inc shells touched: app.cpp, machine_library.cpp, document.cpp,
+  serialization.cpp — the stale-.inc trap).
+- `pnpm test:core` — **41/41 suites green** (incl. Tests 54-65 +
+  the is_point_on_face distance-gate fix).
+- `tsc --noEmit` — green (fixed: CamCaptureEdgeReferenceCommand in
+  the CoreCommand union, SolidFaceScene.surfaceKind).
+- **In-app verification round 5 PENDING** (binding before commit).
+
+## In-app verification round 5 (PENDING — checklist)
+
+1. Arm the drilling pick → ONE dot at the TOP center of every
+   circular hole (rim + wall deduped), visible from any angle, with
+   the drilling sketch HIDDEN and with a sketchless STEP part.
+2. Click the wall → "Hole wall" row; click the rim → "Hole rim" row;
+   free click on flat stock/face/bed → point rows; remove rows;
+   generate → preview shows the rapids from the WCS origin + the
+   plunge at each hole; blind depth measures from the material top;
+   through drills to the stock bottom.
+3. Legacy saved drilling op (sketch circles) → clear migration error
+   on generate, no crash; re-picking a wall/rim repairs it.
+4. STL import (no B-rep) → free-point drilling works (documented v1
+   limitation for mesh bodies).
+5. Rounds 3/4 re-check: travel line from the WCS origin; only hole
+   targets get dots; the origin pick unchanged.
+6. Regression: face milling, pocket, contour, laser still generate +
+   export; G81/G83 canned/longhand exports unchanged; save → reopen
+   round-trips face/edge refs.
+
+## Next steps
+
+1. User in-app verification round 5 (checklist above).
+2. Commit on explicit user approval (no Co-Authored-By trailer;
+   commit message notes the BAD_EDGE_ID test-scope adjustment).
+3. Push `cam/milling` + PR per user direction.
+
+---
+
+## Historical rounds 1-4 (superseded by the body-geometry rework)
+
+Rounds 1-4 below document the sketch-circle-driven drilling design
+that round 5 replaced.  Kept for the debugging history (the zod
+attestation-corruption fix, the top-surface lift, the origin-travel
+preview, and the hidden-sketch marker regression are all still
+relevant behavior).
+
+## In-app verification round 1 (2026-09-09) — multi-hole "face geometry lost" FIXED
+
+User in-app findings:
+1. Face milling rejecting the holed top face — pre-existing v1 scope
+   ("single boundary face" guard); no fix needed.
+2. Drill pick landing on a perimeter quadrant instead of the circle
+   center — fixed earlier via sketch-circle disc capture; user to
+   re-verify.
+3. **Multi-hole drilling error: "The face used by this operation was
+   not found (geometry changed — re-select it)"** — root-caused and
+   fixed (below).
+
+**Root cause (bug 3):** zod document-state schema leniency. Every
+attestation schema had all-default fields + `.passthrough()`, so
+`faceAttestationSchema` matched ANY object — a `{point:[...]}`
+attestation round-tripping through the UI's document-state parse got
+face defaults injected (`area:0, sample_points:[], normal:[0,0,1]`),
+and the C++ discriminator then checked `sample_points` BEFORE `point`,
+parsing the payload back as a FaceAttestation → face resolution
+failed → the error.  Corruption struck on the SECOND "Add point"
+update because `applyDrillPointPick` re-sends the full
+`machining_regions` list built from the corrupted UI document copy
+(one hole worked; the second poisoned the first).  Evidence: the
+user's saved `res/part.json` shows `pt-11` = `{area:0, bounds:0,
+normal:[0,0,1], sample_points:[]}` (corrupted) beside `pt-12` =
+`{point:[35,-20,10]}` (intact).
+
+**Fix — two layers:**
+- UI `apps/desktop-ui/src/lib/schemas/ipc/camSchema.ts`: the
+  discriminator keys are now REQUIRED — `sample_points` (face),
+  `start_point` (edge), `point` (point), `sketch_feature_id`
+  (profile) — and the union was reordered
+  [point, face, profile, edge, catch-all]; a real attestation can no
+  longer re-parse as another kind.
+- Native `native/cad-core/src/protocol/impl/cam_from_payload.inc`
+  (defense in depth): `point` is checked FIRST in the C++
+  discriminator — the coordinate, not the injected empty witness, is
+  the identity that must survive.
+
+**Regression tests** (`native/cad-core/tests/cam_commands_test.cpp`):
+- Test 20 `test_point_attestation_wins_over_face_keys` — a point
+  attestation carrying leftover face keys (bounds/area/normal/
+  sample_points) parses as PointAttestation with the coordinates
+  verbatim.  FAILED before the native fix, passes after.
+- Test 21 `test_face_attestation_still_parses` — a genuine face
+  payload (area, one sample, no point key) still parses as
+  FaceAttestation.
+- UI side additionally proven with a throwaway zod harness (old union
+  injected face keys into point AND profile attestations; new schema
+  parses point→point, face→face, profile→profile).
+
+**Gates after the fix:** `pnpm core:build` green; `pnpm test:core`
+**41/41 suites green**; `tsc --noEmit` green.
+
+## In-app verification round 2 (2026-09-09) — hole markers at the hole BOTTOM
+
+User report: "the center dot it is probably placed on the bottom of
+the hole instead of the top circle center and it is not visible at an
+angle. I need to change the view to to straite perpendicular on the
+surface to see the bottom of the hole to find the circle and is
+annoing".
+
+**Root cause:** the user's sketch is on ref-plane-xy (z=0) and the
+plate extrudes UP 20 mm, so the sketch circles sit at the BOTTOM of
+the through-holes.  Every drill-pick anchor used the sketch plane z:
+the armed-pick marker dots (addCamOriginPickMarkerObjects), the
+snap/disc-capture targets (circle.center), and the GENERATOR's start
+plane (start_z = sketch plane z — a blind 5 mm hole would have
+targeted z=−5, through the plate; their op was Through so it never
+bit).
+
+**Fix — two layers:**
+- Native `drilling_generate.inc`: circle holes lift to the topmost
+  upward-facing horizontal BODY face whose XY footprint contains the
+  hole XY (`top_surface_z_at` — TopExp_Explorer faces,
+  occ::down_cast<Geom_Plane>, orientation reversal for REVERSED
+  faces, upward-tilt guard, Bnd_Box footprint with 1e-4 tolerance);
+  `start_z = max(sketch_z, top_face_z)` — never pulled DOWN (a
+  circle floating above the part keeps its plane).  Bodies are
+  compiled for drilling ops (cam_generate.cpp needsFaces +
+  `CamGenerateContext::geometry.bodies`; body_compiler.h fwd decl).
+  Build note: `Geom_Plane.hxx` only fwd-declares gp_Pln — the helper
+  needs `#include <gp_Pln.hxx>` (the first build failed with
+  C2027/C2737 without it).
+- UI `camOriginSnap.ts` + ViewportPanel + sceneSync: drill-pick
+  candidates of kind sketch_center/face lift via
+  `liftDrillCandidates`/`topSurfaceZAt` (max face-mesh bbox z whose
+  XY footprint contains the target — bore walls top out at the top
+  rim, so through holes resolve to the top face height); applies to
+  the armed marker dots, the live snap square, the snap result and
+  the disc capture; point-kind targets (vertex/edge/stock/sketch
+  point) and free raycast hits keep exact positions (pocket-floor
+  drilling must stay); new `drillPickArmed` flag in sceneSync with
+  build key `drillpick:on/off` so swapping between armed origin pick
+  and armed drill pick rebuilds the lifted markers.
+
+**Regression test (fail-before verified):** cam_generators_test 56b
+"drilling blind depth measures from the material top" — circle on
+ref-plane-xy under a 20×20×10 box, blind 5 mm → drill.z must be 5
+(from the box top at z=10).  FAILED on the reverted build, passes
+with the fix.  Existing drilling suite 54-60 unaffected (no-body
+fixtures fall back to the sketch z; box fixtures still pass).
+
+**Gates:** `pnpm core:build` green; `pnpm test:core` 41/41 suites
+green (Test 56b PASS); `tsc --noEmit` green.
+
+## In-app verification round 3 (2026-09-09) — travel lines + marker noise
+
+User findings:
+1. "the point is visible now on top of the hole" (round-2 fix
+   confirmed) — but "I do not see the traveling from origin to the
+   holes" in the preview.  The G-code was correct (first `G0` rides
+   the implicit start at machine zero; inter-hole G0s at the R plane
+   exist); only the preview lacked the initial travel — the viewport
+   polyline started at the first hole.
+2. "I have so many visible dots like the quadrant or corners. Those
+   do not belong to a drill operation."  The armed drill pick reused
+   the full origin-snap marker set.
+
+**Fixes:**
+- Native `cam_toolpath_emit.inc` (+ viewport.cpp include of
+  cam_resolution.h): drilling previews prepend a rapid point at the
+  resolved WCS origin (machine zero in world coords =
+  wcs_origin.position ?? stock.origin ?? {0,0,0}) so the travel to
+  the first hole is visible.  Regression: cam_generators_test 56c —
+  explicit wcs origin {5,−3,0}, asserts the primitive's first point
+  is a rapid at that origin and the point count is 5 (origin +
+  rapid-to-R + R→bottom→R).  Fail-before verified (reverted build:
+  4 points, FAIL); pass-after: 41/41 suites green.  Test plumbing
+  note: the command layer stores generated paths in cam_runtime
+  (cam_commands.inc) — the test stores via store_generated itself,
+  since generate_operation_toolpath leaves the cache empty; also
+  `using polysmith::core::ViewportToolpathPrimitive;` added (the file
+  imports core names one by one).
+- UI `camOriginSnap.ts` + ViewportPanel: new `drillPickTargets`
+  filter — the drill pick shows/snaps to sketch circle CENTERS only
+  (lifted to the top surface); the origin pick keeps all targets;
+  free clicks still land anywhere via the face raycast.  Applied to
+  the armed marker dots, the click snap, and the pointer-move live
+  preview.
+
+**Gates:** `pnpm core:build` green; `pnpm test:core` 41/41 suites
+green (Test 56c PASS); `tsc --noEmit` green.
+
+## In-app verification round 4 (2026-09-10) — drill pick shows NO dots
+
+User finding: "Now I do not have any target dot in the hole and no
+dot in general."  Setup-mode dots still showed.  Root cause found by
+tracing where the drill pick's sketch targets come from:
+
+- `viewportScene.ts` (`buildViewportScene`) filters every sketch
+  primitive through `isSketchPlaneVisible` — a plane is hidden when
+  ALL sketches on it are hidden features
+  (`computeHiddenSketchPlaneIds`).  The user's file has the drilling
+  sketch hidden, so its circles were dropped from `sceneData`
+  entirely.  Setup-mode markers don't use sketch primitives (body
+  vertices/edges/faces/stock), which is why they still rendered.
+- The round-3 `drillPickTargets` filter kept only
+  `sketch_center` candidates derived from that filtered sceneData —
+  with the circles gone the filtered set was EMPTY, and the drill
+  pick rendered/snapped nothing.  (The round-3 noise complaint had
+  been the full origin marker set showing in the drill pick.)
+
+**Fix:** the drill pick no longer reads the filtered scene.  New
+`drillSketchCenterCandidates(rawViewport)` in camOriginSnap.ts
+derives circle/arc/ellipse centers from the RAW viewport payload
+(`ViewportState.sketch_circles/arcs/ellipses`, unfiltered by plane
+visibility, previews skipped).  The marker builder, the
+pointer-move live snap, and the click snap all use it (then
+`liftDrillCandidates` lifts to the material top).  `drillPickTargets`
+deleted — its scene-derived filtering is what emptied the set.
+
+**Gates:** `tsc --noEmit` green (UI-only change; no core rebuild
+needed).  In-app verification pending.
+
+## Next steps
+
+1. **User in-app re-verification round 4** (binding, before any
+   commit) — arm **Add point** and check:
+   - The marker dots ARE visible again — one dot at the TOP circle
+     center of each hole, visible from any viewing angle — even
+     with the drilling sketch HIDDEN in the hierarchy (targets now
+     come from the raw viewport payload, not the filtered scene).
+   - ONLY circle centers get dots (no vertices/edges/stock
+     corners/quadrants); the pick lands at the top rim center, not
+     the hole bottom.
+   - The origin pick (Set origin) still shows its full marker set.
+   - Round 3 items: the preview draws the travel line from the WCS
+     origin to the first hole (red rapid segment), plus the R-plane
+     rapids between holes.
+   - Suggested native check: a blind 5 mm hole on the 20 mm plate
+     (sketch at z=0) should target z=15 below the material top —
+     preview the plunge; export should show the right Z.
+   - Remaining round-1 checklist still owed: blind depth + G83 peck
+     preview + grbl longhand export (NO G81/G83) + linuxcnc canned
+     G81/G83 with R/Q; through toggle on a box with stock; remove a
+     point; empty list → clean error; regression: face milling,
+     pocket, contour, laser still generate + export.
+   - Multi-hole re-test note from round 1: the saved document still
+     holds the corrupted `pt-11` entry — press **Remove** on that row
+     and re-add the points (or recreate the operation).
+2. Commit on explicit user approval (no Co-Authored-By trailer).
+
+---
+
+# Previous task: CAM retract WCS fix + generate-result popup + arc lead sweep angle + circle pierce corner-warning fix + mixed-sketch circle kind fix + circle-hole double-rendering fix + circle-hole exact toolpath fix + sketch-circle double-outline UI fix (cam/milling) — COMMITTED f169fc2 (2026-09-08)
+
+> **Branch:** `cam/milling` (HEAD 0bc3ad8)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+Two user-reported items (2026-09-08), both implemented, both
+uncommitted in the working tree:
+
+1. **Generate-result popup**: pressing Generate shows a popup —
+   "generated without problem" or "generated with warnings/errors".
+   **User verified in-app ("it works well")** — popup gate passed.
+2. **Retract-height WCS bug**: origin at world z=20, boss top 30 +
+   3 mm stock → stock top 33, retract 25 warned and only 35 passed.
+   Root cause: the generators compared the RAW retract height (a
+   machine-Z-above-origin value) against WORLD face/stock heights;
+   the post subtracts the origin (machine = world − wcs_origin), so
+   the exported rapids sat at machine z=5 — inside the stock.  Fixed:
+   retract is now WCS-relative everywhere.
+
+## Status — implemented, uncommitted (working tree)
+
+- **Popup (user-verified)**: `make_cam_generation_result_event`
+  (protocol/ipc.{h,cpp}) `{op_id, ok, error_message, warnings[]}`;
+  emitted by cam_commands.inc after generate (NEVER preview) —
+  failure branch and after the document_state reply (so the UI's
+  stats lookup sees the fresh toolpath_cache); existing error event +
+  log_warn fan-out untouched; events.schema.json enum entry.
+  CamGenerationResultEvent type + zod schema + coreMessageSchema
+  union; cadCoreStore `generationResult` + `dismissGenerationResult`;
+  CamGenerationResultPopup modal (success / amber warnings list /
+  danger failure, stats line, Escape/OK/backdrop dismiss) mounted in
+  App.tsx; `dialogs.generateResult.*` i18n; export G-code success
+  toast (the path previously had NO visible feedback).
+- **Retract WCS fix**: `cam_planning::setup_retract_plane_z(setup)` —
+  world retract plane = `wcs_origin.position.value_or({0,0,0})[2] +
+  retract_height` (doc comment carries the post contract).  All three
+  mill generators (contour/pocket/face milling) use it for guards AND
+  emission; the warning strings now print the setup value AND the
+  resolved plane ("Retract height (25 mm above the setup origin)
+  reaches 45 mm — below the stock top (33 mm)…").  Unresolved origin
+  → {0,0,0}: legacy behavior unchanged.  **User verified in-app
+  ("it works well").**
+- **Preview arc smoothness fix**: cam_toolpath_emit.inc viewport chord
+  tolerance 0.05 → 0.005 mm (kPreviewChordToleranceMm) — 0.05 mm left
+  ~8° facets on a 20 mm circle; the pinned arc_segments_per_circle
+  path is untouched (pinned counts must show the real faceting).
+  Viewport-only; G-code export unaffected (true arcs / pinned count).
+  **User verified in-app ("yes it works now").**
+- **Arc lead sweep angle (user request 2026-09-08)**: kerf-inside +
+  arc leads curled a full 270° (the spoke-based roll geometry) —
+  "excesiv".  New `lead_in_arc_angle_deg` / `lead_out_arc_angle_deg`
+  (default 90) on LaserCutParameters + serde both directions; the four
+  arc branches in laser_leads.cpp now construct the entry/exit radius
+  direction as the pierce radius direction rotated by the requested
+  sweep, so the emitted arc sweeps exactly the input value (90° =
+  classic quarter roll; 270 reproduces the old interior curl).
+  Measurement during the fail-before run also showed the OLD code
+  swept 270° on the exterior LEAD-IN too (lead-out was 90°) — the new
+  default fixes both.  UI: two number fields in CamLaserCutPanel
+  (min 1 / max 360, disabled unless the style is "arc"; CamNumberField
+  gained a max prop) + i18n keys.  **In-app verification pending.**
+- **Arc sweep parse-error fix (user log 2026-09-08 15:34)**: a cleared
+  field commits `Number("") === 0`; the zod `.min(1)` then rejected
+  every document_state the core echoed back (parse-error cascade).
+  Fixed three ways: zod loosened (core is the source of truth — no
+  min/max, schema must accept what the core stores); the panel clamps
+  on commit to [1, 360]; the core clamps the sweep at use via
+  `arc_sweep_radians` (a stored 0° would emit a zero-length arc that
+  some controllers turn into a full circle).  Rebuilt + 41/41 green.
+- **Regression tests (fail-before verified)**: contour_2d_test 18,
+  pocket_2d_test 10, cam_generators_test 51 — WCS z=20 / retract 25 /
+  stock top 33: no retract warnings + rapids at world z=45; genuinely
+  too-low retract still warns; default-origin legacy still warns.
+  Verified failing against the pre-fix helper (temp revert) and
+  passing with the fix.
+- **Regression test (fail-before verified)**: cam_generators_test 52
+  "arc lead sweep angle is configurable" — exterior roll at 135°
+  sweeps 135° (measured sweep=270 on the old geometry); interior
+  circle at the 90° DEFAULT sweeps 90° with the entry inside the cut
+  line (r<4.9); interior lead-out at 120° sweeps 120° with the exit
+  inside.  Sweep measured from the move I/J center + start/end angles
+  (kind-aware).  Old geometry: Test 52 FAIL (sweep=270); fix: PASS.
+- **Circle pierce corner-warning fix (user 2026-09-08: "we should not
+  have polygon approximation anymore")**: the user's circle op logged
+  "1 sharp corner(s) were excluded from pierce placement" + "Every
+  corner is sharper than the pierce threshold — piercing mid-segment on
+  the longest straight edge".  NOT polygonization — the contour was
+  already one exact full-circle arc (a 16-gon would report 16 corners;
+  the profile id's 16 keys are the circle's SAMPLE points, and the
+  generator walks the exact boundary edge).  The corner classifier in
+  `select_pierce_vertex` flagged the circle's artificial self-join
+  vertex as sharp (interior = π → the |π − interior| pointedness guard
+  rejects it), then printed the straight-edge fallback message even
+  though the loop has no straight edges.  Fix: a loop lying entirely on
+  one circle (same center/radius on every arc segment) has no corners —
+  pierce by position rules alone, no corner warnings.  Regression:
+  cam_generators_test 53 "circle in a mixed sketch has no corner
+  warnings" — circle + separate rectangle (forces the polygon-kind
+  region path the user hit), kerf inside + arc leads: no corner/
+  tessellation warnings + the contour stays an exact full-circle arc at
+  the offset radius.  Fail-before verified (clean pre-fix build: only
+  Test 53 FAIL, warnings present); pass-after: all 41 suites green.
+  **In-app verification pending.**
+- **Mixed-sketch circle kind fix (user 2026-09-08: "Circle profiles in
+  sketches that also contain lines/arcs keep kind:'polygon' with a
+  16-point sample. it is looking very bad in cam preview. The path is
+  circle and the circle is poligons. Why I need that?")**: the CAM
+  preview drew the circle PROFILE as a 16-gon because the exact
+  profile engine gated kind "circle" (center/radius, no sampled
+  points) behind `circles_only` — a sketch-wide "no lines and no arcs"
+  test inherited from the OCCT-v8 port (8d845a6).  The toolpath was
+  always exact (boundary_edges carry the circle edge); only the
+  preview region was sampled.  Fix in sketch_profile_exact.inc: the
+  gate is now `(circles_only || circle_curve->kind == kCircle) &&
+  holes.empty()` — hole-free full CIRCLE faces become kind "circle"
+  even in mixed sketches.  Full ELLIPSES keep the circles_only gate
+  (their boundary edges are ellipse-kind, which
+  build_base_segments_from_edges cannot consume — the sampled points
+  remain their only contour input), and hole-bearing circles stay
+  polygon-kind (the UI polygon renderer draws the hole loops; the
+  circle renderer has no inner-loop path).  Downstream verified safe:
+  detect_sketch_profiles → circle viewport primitive → UI
+  EllipseCurve smooth render; extrude kind "circle" branch works
+  without source_circle_id; project/deletes find the circle via
+  line_ids/boundary_edges; CAM capture/planning read the exact
+  boundary edge.  Known degradation (pre-existing pattern): stored
+  "profile-poly-circle-…" ids in OLD documents do not re-resolve to
+  the new "profile-circle-…" ids (find_equivalent_profile has no
+  polygon→circle bridge) — dependency_broken + warning per TNP
+  doctrine, same as the mixed→circles-only transition today.
+  Test updates: circle_modes (3 expectations polygon→circle),
+  extrude_quality (small-selectable lookup, trim-extrude expectation
+  set, touching-lines lookup), sketch_profile (2 counting loops),
+  cam_commands (circle selection assertion), cam_profile_reference
+  (swap by kind, capture without source id, Test 7 lookup),
+  cam_generators 53 (lookup by kind), sketch_test_utils doc comment.
+  **In-app verification pending.**
+- **Circle-hole double-rendering fix (user 2026-09-08: "are you crazy?
+  the circle is nou double: one circle one polyline")**: after the
+  circle-kind fix the circle region drew smooth, but the CONTAINING
+  polygon still drew the circle as its hole outline from the 16-point
+  sample in inner_loops — two outlines at the same radius disagreed.
+  Fix: the exact detector now records a `SketchProfileCircleHole`
+  (loop_index + exact center/radius, same full-circle test the region
+  classification uses — hoisted into a shared `full_circle_curve`
+  lambda) alongside the sampled hole points.  The sampled points STAY
+  (capture/area math and operations created before the descriptor
+  existed depend on them — the attestation consistency constraint);
+  the descriptor is rendering-only metadata.  Carried end-to-end:
+  region → PolygonSketchProfile → ViewportSketchProfilePrimitive →
+  viewport wire + document save/load serde (both directions, lenient
+  parse) → zod (viewportState + documentState) → SketchProfileScene
+  `circleHoles` → renderer draws circle holes from center/radius with
+  the same 96-point smooth sampling as circle profiles (fill path AND
+  outline), and withDisplayProfileHoles bases its loop checks on the
+  smoothed loops.  Ellipse holes keep the sampled outline (a circle
+  descriptor cannot express the minor axis).  Regression:
+  cam_profile_reference_test Test 1 asserts the exact descriptor
+  (center 10/5, radius 2, loop_index 0) + a full
+  serialize/deserialize round trip preserves it.  Rebuilt (touched
+  sketch_profile.cpp / viewport.cpp / serialization.cpp shells) —
+  41/41 suites green; tsc clean.  **In-app verification pending.**
+- **Circle-hole exact toolpath fix (user 2026-09-08: "nothing
+  changed" after the hole-rendering fix)**: the region outline fix
+  worked, but the LASER CUT PATH around a circle hole was still built
+  from the 16-point sample (`build_base_segments_from_points` on
+  `inner_loops`) — ~16 straight chords at the hole radius, the
+  polyline the user saw on top of the smooth circle.  Fix in
+  laser_generate.cpp: the hole loop now looks up
+  `region.circle_holes` by loop index and, when present, synthesizes
+  one exact full-circle BaseSegment (CW walk — hole interior on the
+  right — so the auto kerf still offsets inward into the scrap;
+  `conventional` reversal unchanged; centroid = the circle center).
+  Non-circle holes keep the sampled path; the size gate now accepts a
+  single full-circle arc.  Regression: cam_generators Test 2 (rect +
+  circle hole) gained two assertions — the hole ring emits ONE exact
+  FeedArc at the offset radius (1.9) and ≤2 straight moves may touch
+  the ring (the old chord path put ~16 there).  Fail-before verified
+  (pre-fix build: Test 2 FAILS at "hole ring emitted as an exact
+  full-circle arc"); pass-after: 41/41 suites green.  Side effect:
+  exported G-code now carries G2/G3 for circle holes (was straight
+  chords).  **In-app verification pending.**
+- **Sketch-circle double-outline UI fix (user 2026-09-08: "the path
+  was good and circle but the circle of the sketch was double circle
+  and polygons")**: pixel forensics on the user's screenshot
+  (stdlib-only PNG decoder, PCA ridge separation, kink-angle
+  measurement — cross-checked with `bl vision describe`) identified
+  the double as TWO coincident UI outlines at the circle's radius,
+  not a core-data problem (a fresh core driven on the saved part.json
+  emits a fully smooth circle region + exact circle_holes): (A) the
+  sketch ENTITY circle — peach `--color-tertiary-plane-fill`,
+  64-point EllipseCurve; (B) the circle PROFILE edge loop — lavender
+  `--color-tertiary-plane-edge-hover`, 96 points, raised to opacity
+  0.98 only while hovered/selected (the CAM region is).  Different
+  sample counts + colors at extreme zoom read as "one circle + one
+  polygon".  Fix (UI-only, no core rebuild): circle-kind profiles no
+  longer draw an edge loop at all — the entity circle draws the same
+  boundary; hover/selection feedback stays via the fill; picking is
+  unaffected (fill mesh carries the profile id + the analytic circle
+  fallback in sketchProfilePicking).  Polygon holes that are exact
+  circles (circleHoles) skip their edge loop too — the rectangle's
+  hole loop was the third coincident candidate.  Sampling raised for
+  smoothness at extreme zoom: entity circle 64→256, circle fill
+  CircleGeometry 48→256, smoothProfileHoleLoop 96→256 (feeds the
+  fill's hole boundary).  Files: sketchObjects.ts + viewportScene.ts.
+  **In-app verification pending.**
+- Docs: IPC-Protocol.md + AI-CAD-Command-Language.md bullets (popup);
+  wiki/CAM-Development.md retract-semantics paragraph.
+
+## Gates
+
+- `pnpm core:build` — green (app closed to release the exe lock; rebuilt
+  again for the circle-hole fix with the three owning shells touched —
+  sketch_profile.cpp, viewport.cpp, serialization.cpp).
+- Circle-hole fix: `pnpm test:core` 41/41 green again (incl. the new
+  cam_profile_reference Test 1 descriptor + round-trip assertions);
+  `tsc --noEmit` clean.
+- Circle-hole toolpath fix: fail-before verified (Test 2 FAIL on the
+  pre-fix build) → pass-after `pnpm test:core` 41/41 green; final
+  `pnpm core:build` relinked cad_core.exe + spawn-path copy fresh.
+- `pnpm test:core` — 41/41 suites green (incl. cam_generators 53,
+  contour 18, pocket 10 — the arc-sweep, WCS-relative, and circle
+  pierce cases; the mixed-sketch circle-kind change rebuilt the core
+  with the touched sketch_profile.cpp shell and every suite passes
+  with the updated expectations).
+- `tsc --noEmit` — green (Setup panel retract hint: `cam.setup.retractNote`
+  "Above the setup origin (WCS Z)." + i18n key; laser panel arc-angle
+  fields).
+- Double-outline UI fix: `tsc --noEmit` green (sketchObjects.ts +
+  viewportScene.ts; UI-only — no core rebuild).
+- **Popup in-app pass — user confirmed ("it works well").**
+- **Retract fix in-app pass — user confirmed ("it works well",
+  2026-09-08).**
+- **Preview arc smoothness in-app pass — user confirmed ("yes it
+  works now", 2026-09-08).**
+- **Arc lead sweep in-app pass PENDING** — laser op, lead style Arc,
+  kerf inside on a circle: the lead arcs must now be 90° quarter
+  rolls (not 270° curls); change the arc angle fields and confirm the
+  preview/G-code sweep follows.
+- **Circle pierce warning fix in-app pass PENDING** — same op: the
+  Logs panel must no longer show "sharp corner(s) were excluded" /
+  "Every corner is sharper…" for a circle contour.
+- **Mixed-sketch circle kind fix in-app pass PENDING** — a sketch
+  with a circle PLUS lines/arcs: the circle's filled profile preview
+  (sketch + CAM) must now render as a smooth circle, not a 16-gon.
+
+## Next steps
+
+1. ~~In-app verification round~~ — user exercised the app across the
+   session and confirmed ("it works well" ×2, "yes it works now",
+   "now it is OK" for the circle double).  COMMITTED f169fc2
+   (2026-09-08, user-approved; 41/41 suites + tsc green; no
+   Co-Authored-By trailer).
+2. **Next integration milestone: Drilling (#4 in
+   wiki/CAM-Development.md §V1)** — G81/G83, point selection (sketch
+   points, circle centers, free picks), depth/peck/retract params.
+   Plan mode → approved plan → phases (core → tests → UI → docs).
+3. Still open (carried): multi-pass stepdown for 2D contour (user will
+   implement); Tauri callback-id warning investigation.
+
+---
+
+# Active task: 2D Contour CAM operation (cam/milling) — implemented, COMMITTED (2026-09-08)
+
+> **Branch:** `cam/milling` (HEAD fe6dbc9)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+Next milestone in wiki/CAM-Development.md §V1: contour a closed wire on
+a planar face, offset by the tool radius.  Binding user decisions
+(2026-09-08): **both inputs in v1** (face pick AND sketch-profile pick)
+and **exact arcs** (circular wires emit true G2/G3; ellipse/spline
+edges fall back to chord-tolerance polylines).
+
+## Status — phases 1-6 implemented, uncommitted (working tree)
+
+- **P1** core params + serde: `ContourParameters` {side, depth_mm,
+  stock_allowance_mm} as optional `contour` block on
+  CamOperationParameters, serialized both directions.
+- **P2** hoist + wire builder + generator: laser wire builders hoisted
+  to cam_planning (laser suite stays green — the pin); NEW
+  `build_base_segments_from_wire` (exact line/circle BaseSegments,
+  `false` → polyline fallback); `contour_2d.h/.cpp` +
+  `impl/contour_2d_generate.inc` registered in cam_generators.cpp.
+  Semantics: face wins over profiles; largest |signed area| wire;
+  CCW normalization, `reverse = (side=="inside") XOR
+  (direction=="conventional")`, `d = conventional ? −r_eff : +r_eff`;
+  on_line skips offset and emits the base loop; allowance read ONLY
+  from the contour block; single pass at `planeZ − depth_mm`;
+  guards (non-horizontal face, tool-doesn't-fit, self-intersect).
+- **P3** command gates (only these two): cam_commands.inc create gate
+  `!= "laser_cut" && != "contour_2d"`, update gate `== "laser_cut" ||
+  == "contour_2d"` — profile-selected contour ops are created with
+  EMPTY geometry_references and the core captures.
+- **P4** `cad_core_contour_2d_test` suite (17 cases: all 4
+  side×direction combos, on_line ± allowance, exact arcs both sides,
+  spline fallback, profile inputs incl. left-handed frame, face-wins,
+  depth default, empty/non-horizontal/multi-wire rejections, serde).
+- **P5** UI: camContourActions trigger (face witness capture, else
+  empty-region profile create); CamContourPanel (side/depth/allowance
+  + feedrate/plunge/spindle, scope re-pick for profile input, armed
+  face re-pick, CamStatusLine); CamFloatingPanels contour_2d branch
+  (contour-block-aware onUpdate); App.tsx armed contour face pick with
+  mutual disarm vs origin/WCS/pocket; AppTopBar/AppHeader/
+  CamMillingToolbar threading (Contour button enabled on face OR
+  profile selection); camPanelShared prefix union, CamToolbar type
+  union, documentUiState/CamOperationPanel labels; full `cam.contour.*`
+  i18n block.  `tsc --noEmit` green.
+- **P6** docs: wiki/CAM-Development.md "## 2D Contour (2026-09-08)"
+  section + tracker rows; AI-CAD-Command-Language.md; Implementation-Log.md;
+  V1-Roadmap CAM paragraph refreshed; this tracker header.
+
+## Verification (so far)
+
+- `pnpm core:build` + `pnpm test:core` — 41/41 suites green (new
+  contour suite 17/17 + all 40 existing incl. laser hoist pin).
+- `tsc --noEmit` clean.
+- COMMITTED 2026-09-08 on user approval, WITHOUT the in-app pass
+  (user restarting — the in-app pass is owed, see next steps).
+
+## Next steps
+
+1. **Deferred by the user (2026-09-08): multi-pass stepdown for 2D
+   contour.**  v1 is single-pass only — no stepdown field, no
+   `plan_stepdown_levels` in the contour generator.  The user will
+   implement it later.
+2. In-app pass still owed: face/boss-face create, inside/outside/
+   on_line live flips, depth shifts Z, sketch-profile create at
+   sketch plane, G2/G3 in exported G-code, re-pick face, scope
+   re-pick, delete, generate/export stats, Logs warnings; regression:
+   face milling, pocket, laser.
+3. **Tauri callback-id warning — investigate (user-reported
+   2026-09-08):** Logs panel showed `[TAURI] Couldn't find callback id
+   1154042992. This might happen when the app is reloaded while Rust
+   is running an asynchronous operation.` — Tauri's invoke-callback
+   registry got a response for a dead id: an async invoke command
+   (file dialog, export write, …) resolved after the webview reloaded
+   (dev-mode HMR / Ctrl+R). Our Rust code has no explicit
+   Callback/Channel usage (grep: only `.invoke_handler` in
+   src-tauri/src/main.rs:249 + lib.rs:12), so this is Tauri's own
+   invoke plumbing — likely dev-mode noise but root it out anyway:
+   reproduce by firing a long async command then reloading the view.
+4. **Generate-result popup (user-requested 2026-09-08) — DONE,
+   uncommitted:** `cam_generation_result` core event + result popup
+   modal + export success toast (see the active task header at the
+   top of this file).
+5. **Retract-height WCS bug (user-reported 2026-09-08) — DONE,
+   uncommitted:** retract is machine Z above the WCS origin; the
+   guards/emission now use `setup_retract_plane_z` (world plane =
+   origin Z + height) in all three mill generators + regression
+   tests (contour 18 / pocket 10 / cam_generators 51).  See the
+   active task header above.
+
+---
+
+# Previous task: 2D Pocket CAM operation + refinement (cam/milling) — COMMITTED fe6dbc9
+
+> **Branch:** `cam/milling` (HEAD fe6dbc9)
+> **Date:** 2026-09-08
+> **Plan:** approved plan at `.claude/plans/glittery-coalescing-kernighan.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+User: "No PR. continue with implementation." — the next milestone in
+the prioritized V1 CAM list is 2D Pocket.  Binding decisions: islands =
+full spec from day one (user-pickable boss faces stored as
+`avoidance_regions`); stepdown = reuse the face-milling multi-pass
+machinery (stock top → face, last level pinned at face).
+
+In-app feedback 2026-09-08 (their words, binding): a join boss on the
+pocket face is avoided "like a hole" (the zigzag leaves a stock plug
+that becomes a boss and blocks later drilling); the linear zigzag
+around a round boss "will create artifacts and a circular motion will
+be more appropriate"; islands added/deleted look identical to the
+path.  → implemented the refinement below.
+
+## Status — phases 1-5 implemented + refinement, uncommitted (working tree)
+
+- **P1** shared `plan_stepdown_levels` helper + face-milling level-loop
+  refactor (behavior pinned by cam_generators_test 47-50).
+- **P2** `pocket_2d` generator (`pocket_2d.cpp` + `impl/pocket_2d_generate.inc`)
+  + `cam_generate.cpp`/`cam_refresh.cpp` avoidance-region resolution.
+- **P3** `cad_core_pocket_2d_test` suite (12 cases) + cam2d CCW-clip pin.
+- **P4** UI: `camPocketActions.ts` trigger; pocket button in
+  CamMillingToolbar; `CamPocketPanel`; armed pocket face pick
+  (outer/island) in App.tsx with mutual disarm vs origin/WCS picks;
+  `cam.pocket.*` i18n.
+- **P5** docs: wiki/CAM-Development.md section, AI-CAD-Command-Language.md,
+  Implementation-Log.md, tracker (this file).
+- **Refinement R1 — inner-wire boss/hole classification**
+  (`pocket_2d_generate.inc`): floor-face inner wires probed via their
+  adjacent walls (edge→face ancestor map, floor excluded); wall COM
+  above the floor (`faceZ + 0.1`) → boss → avoided; all walls
+  below/coplanar → open hole → rows mill ACROSS it (clears the stock
+  plug); no probe → conservative avoid.  Tests 2/2b/2c.
+- **Refinement R2 — finishing contours**: after the rows at every
+  level, closed climb contours around each active avoidance (CCW, as
+  traced) + the outer inset wall (CW, reversed); each segment clipped
+  against the other active avoidances (never itself — tests 3/4
+  caught the unclipped version riding into a grown near-wall island),
+  surviving pieces chained (1e-6) and rapid-plunge-feed-rapid.
+  Unconditional, also in single-pass mode.
+- **Refinement R3 — island single-pass hint**: core warns when an
+  island lies on a boss already owned by the pocket face (only
+  multi-pass flush levels would change anything); UI
+  `cam.pocket.islandSinglePassHint` beside the island list when
+  islands exist without a stepdown.
+- **Laser pierce corner fix** (same working tree): mitered-reflex-corner
+  interior detection (`base_corner_interior` three branches in
+  laser_leads.cpp) + Test 23 comment / Test 25 fixture corrections.
+
+## Verification (so far)
+
+- `pnpm test:core` — all 40 suites green (pocket suite 12/12;
+  cam_generators_test 50/50 incl. the pierce regressions).
+- `tsc --noEmit` clean (CamPocketPanel hint + en.json key).
+- User verified in-app 2026-09-08 ("OK is working now. make a
+  commit") → COMMITTED fe6dbc9 (32 files, +3703/−109).
+
+## Next steps
+
+1. Next milestone per wiki/CAM-Development.md §V1: 2D contour.
+
+---
+
+# Previous task: CAM milling UX + 5-axis scaffolding (cam/milling) — COMMITTED e9d4a64
+
+> **Branch:** `cam/milling` (from `dev` @ c10ceba)
+> **Date:** 2026-09-05
+> **Plan:** approved plan at `.claude/plans/glittery-coalescing-kernighan.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context
+
+User feedback on the CAM milling workspace (their words, binding): "I
+still do not have -z value. I still do not have how many passes. I do
+not have 'snap' on the stoc points. I cannot select face of the stoc
+faces. I am having here a very bad implementation". User decisions:
+passes run from the STOCK TOP down to the face (multi-pass only when a
+Stepdown is set); WCS Z=0 = top of stock (pick the stock top face →
+cuts go negative).
+
+## Status — COMMITTED as `e9d4a64` (50 files, +2463/−180)
+
+- **M0 milling foundations** (from the earlier milestones, same commit):
+  MachineDefinition mill fields (travel/kinematics/axis limits/
+  tool-change position) + 3 mill seeds; ToolpathMove rotary a/b/c +
+  modal rotary words + G93 inverse-time feed; per-op tool_axis_mode
+  (fixed_z only); linuxcnc post with golden test.
+- **Multi-pass face milling**: stepdown plans levels from the stock top
+  down to the face (last level pinned at the face); cleared stepdown =
+  single pass; 100-level cap + retract-below-stock-top warning.
+- **WCS anchor model**: `""`/`face`/`stock_face`/`point`/`stock_origin`;
+  `"point"` pins manual X/Y/Z edits against the refresh clobber;
+  `cam_wcs_set_face` accepts `"stock:<face>"` ids (no new IPC).
+- **cam_stock helper** mirroring the UI stock-box extents (core/UI
+  parity contract, documented in wiki/CAM-Development.md).
+- **Stock-aware picking**: stock box face-tagged (`userData.stockFaceNames`)
+  and pickable; WCS pick snaps to stock corners/midpoints (top+bottom),
+  anchors to stock faces, falls back to the bed plane; snap markers
+  shared with the origin pick.
+- **Stale-closure fix** (the stock-snap root cause): the viewport
+  pointer handlers live in an effect keyed on activeSketchPlaneId only,
+  so their closures froze mount-time document/viewport/showStock/setup —
+  body snap worked (scene refs), stock candidates were silently never
+  built. Fixed with render-synced `documentRef`/`viewportRef`/
+  `showStockRef`/`activeCamSetupIdRef` at the three pick call sites.
+- **Deviation (deliberate)**: stock bottom-FACE CENTER snap candidate
+  from the plan omitted (would need a new snap kind + i18n label; top
+  face has no center either — corners + edge midpoints cover both).
+
+## Verification
+
+- `pnpm test:core` all 39 suites green — cam_generators_test (1-50:
+  multi-pass levels, level cap, retract-below-stock-top), cam_refresh_test
+  (1-10: point anchor survives refresh, stock_face resolves/degrades,
+  payload round-trip), cam_commands_test (stock_face round-trip),
+  cam_machine_library_test, linuxcnc_post_test, cam_save_load_test.
+- `tsc --noEmit` clean.
+- User-verified in-app: face milling multi-pass looks good; stock snap
+  square + label + stock face anchor work after the closure fix; manual
+  WCS edits survive refresh. "OK it is working now. commit and continue"
+  → commit approved.
+
+## Next steps
+
+1. ~~Push `cam/milling` and open the PR against `dev`~~ — SUPERSEDED by
+   the user's "No PR. continue with implementation."; work continues on
+   `cam/milling` (see the 2D Pocket task above).
+2. Deferred from the plan: stock bottom-face-center snap kind (if wanted).
+
+---
+
+# Previous task: Core build speedup + OCCT deprecation migration (core-build-speedup)
 
 > **Branch:** `core-build-speedup` (from `dev` @ 4d03d7b)
 > **Date:** 2026-09-04

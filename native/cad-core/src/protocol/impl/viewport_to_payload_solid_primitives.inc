@@ -136,12 +136,30 @@ json to_payload(const polysmith::core::ViewportPolygonExtrudePrimitive& primitiv
 }
 
 json to_payload(const polysmith::core::ViewportSolidFace& face) {
+  json cylinder_axis_json = nullptr;
+  if (face.cylinder_axis.has_value()) {
+    cylinder_axis_json = {face.cylinder_axis->at(0), face.cylinder_axis->at(1),
+                          face.cylinder_axis->at(2)};
+  }
+  json cylinder_location_json = nullptr;
+  if (face.cylinder_location.has_value()) {
+    cylinder_location_json = {face.cylinder_location->at(0),
+                              face.cylinder_location->at(1),
+                              face.cylinder_location->at(2)};
+  }
   return {
       {"face_id", face.face_id},
       {"owner_id", face.owner_id},
       {"owner_kind", face.owner_kind},
       {"label", face.label},
       {"sketchability", face.sketchability},
+      {"surface_kind", face.surface_kind},
+      {"cylinder_axis", cylinder_axis_json},
+      {"cylinder_location", cylinder_location_json},
+      {"cylinder_radius",
+       face.cylinder_radius.has_value()
+           ? json(face.cylinder_radius.value())
+           : json(nullptr)},
       {"center",
        {
            {"x", face.center_x},

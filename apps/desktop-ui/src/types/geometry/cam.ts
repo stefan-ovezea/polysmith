@@ -26,6 +26,19 @@ export interface EdgeAttestation {
   length: number;
   tangent: [number, number, number];
   adjacent_face_normals?: Array<[number, number, number]>;
+  // Circle witness (drilling hole rims) — present only for full-circle
+  // edges; a closed rim has start === end, so these identify it.
+  center?: [number, number, number];
+  axis?: [number, number, number];
+  radius?: number;
+}
+
+// A raw world-coordinate point (drilling hole locations).  A
+// coordinate is inherently TNP-stable — the core captures it from the
+// viewport pick and the generator resolves the region center for
+// circle profiles instead of trusting a stale center.
+export interface PointAttestation {
+  point: [number, number, number];
 }
 
 // Witness data to re-identify a sketch profile region after sketch
@@ -49,7 +62,11 @@ export interface SketchProfileAttestation {
 
 export interface GeometryReference {
   persistent_id: string;
-  attestation: FaceAttestation | EdgeAttestation | SketchProfileAttestation;
+  attestation:
+    | FaceAttestation
+    | EdgeAttestation
+    | SketchProfileAttestation
+    | PointAttestation;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -80,6 +97,12 @@ export interface MachineAxes {
 }
 
 export interface WcsOrigin {
+  /** "" derived (legacy) | "face" | "stock_face" | "point" |
+   *  "stock_origin".  "point" pins the position against refresh. */
+  anchor?: string;
+  /** "top" | "bottom" | "front" | "back" | "left" | "right" — only
+   *  meaningful when anchor === "stock_face". */
+  stock_face?: string;
   feature_id: string;
   face_reference: GeometryReference;
   /** Last-resolved machine origin, refreshed by the CAM dependency
@@ -170,6 +193,8 @@ export interface LaserCutParameters {
   lead_out_style: "line" | "arc";
   lead_in_angle_deg: number;        // entry angle vs contour tangent
   lead_out_angle_deg: number;       // exit angle vs contour tangent
+  lead_in_arc_angle_deg: number;    // "arc" lead roll sweep
+  lead_out_arc_angle_deg: number;   // "arc" lead roll sweep
   overcut_mm: number;               // extend past the start/end joint
   pierce_dwell_seconds: number;     // G4 dwell after pierce
   pierce_position: "auto" | "lead_start" | "nearest_centroid";
@@ -192,6 +217,31 @@ export interface LaserCutParameters {
   cut_order: "inner_first" | "nearest_neighbor" | "by_area";
 }
 
+// 2D Contour parameters (only meaningful when type == "contour_2d").
+// cutting_direction lives in the SHARED base field above; this block
+// carries the contour-specific strategy only.
+export interface ContourParameters {
+  side: "outside" | "inside" | "on_line";
+  depth_mm: number;
+  stock_allowance_mm: number;
+}
+
+// Open slot parameters (only meaningful when type == "slot").  Each
+// selected straight edge is a slot's open side; the tool cuts a
+// tool-width groove from the edge INTO the material, depth_mm below
+// the adjacent horizontal top face.
+export interface SlotParameters {
+  depth_mm: number;
+}
+
+// Mill engrave parameters (only meaningful when type == "engrave").
+// Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+// fixed depth below the sketch plane — the milling twin of laser
+// engrave.  Single pass.
+export interface EngraveParameters {
+  depth_mm: number;
+}
+
 export interface CamOperationParameters {
   spindle_rpm: number;
   feedrate_mm_per_min: number;
@@ -207,11 +257,21 @@ export interface CamOperationParameters {
   hole_depth_mm?: number;
   peck_depth_mm?: number;
   dwell_seconds?: number;
+  // Drilling: through holes drill to the stock bottom (stock required);
+  // blind holes drill hole_depth_mm below each point's start plane.
+  through_hole?: boolean;
   engagement_angle_deg?: number;
   zigzag_angle_deg?: number;     // for face milling
+  contour?: ContourParameters;   // for contour_2d
+  slot?: SlotParameters;         // for slot
+  engrave?: EngraveParameters;   // for engrave
   laser?: LaserCutParameters;    // for laser_cut
   test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";
+  // Tool axis (5-axis scaffolding).  "fixed_z" is the only supported
+  // mode today; "3_plus_2" and "rotary_continuous" are reserved for
+  // future rotary generators.
+  tool_axis_mode: "fixed_z" | "3_plus_2" | "rotary_continuous";
 }
 
 export interface CamOperationDependencies {
@@ -288,6 +348,18 @@ export interface PostProcessor {
   filename: string;
 }
 
+/// Kinematics topology of a milling machine (5-axis scaffolding).
+export type MachineKinematics =
+  | "cartesian_3axis" | "rotary_table_a" | "rotary_table_b"
+  | "rotary_table_c" | "head_table" | "table_table" | "head_head";
+
+/// Travel limit for one axis (mm for linear, degrees for rotary).
+export interface MachineAxisLimit {
+  axis: "x" | "y" | "z" | "a" | "b" | "c" | string;
+  min: number;
+  max: number;
+}
+
 /// A saved, reusable machine definition — the physical machine, not the
 /// job.  Lives as <slug>.json files in the user's machines directory
 /// (seeded with built-ins on first use), re-read on every
@@ -301,6 +373,14 @@ export interface MachineDefinition {
   work_area_y_mm: number;
   pointer_offset_x_mm: number;
   pointer_offset_y_mm: number;
+  // Mill fields (5-axis scaffolding).  Travel is mm; 0 = unset, in
+  // which case the UI falls back to setup.machine_axes.
+  travel_x_mm: number;
+  travel_y_mm: number;
+  travel_z_mm: number;
+  kinematics: MachineKinematics;
+  axis_limits: MachineAxisLimit[];
+  tool_change_position?: [number, number, number];
 }
 
 // ══════════════════════════════════════════════════════════════════

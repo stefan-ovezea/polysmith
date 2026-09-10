@@ -6,6 +6,8 @@
 // A toolpath cached at the current revision keeps an op "generated";
 // any real mutation invalidates it back to "needs_regenerate".
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <variant>
@@ -16,13 +18,20 @@
 #include "core/cam/cam_runtime.h"
 #include "core/document/document.h"
 #include "core/geometry/body_compiler.h"
+#include "protocol/serialization.h"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRep_Tool.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
@@ -32,6 +41,7 @@ using polysmith::core::CamOperation;
 using polysmith::core::CamSetup;
 using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
+using polysmith::core::EdgeAttestation;
 using polysmith::core::FaceAttestation;
 using polysmith::core::GeometryReference;
 using polysmith::core::SketchProfileAttestation;
@@ -388,6 +398,127 @@ bool test_wcs_origin_populated() {
                 "wcs: position follows the stock origin");
 }
 
+// ── Test 7: a manual WCS point survives the refresh ──────────────
+//
+// Regression: the refresh pass overwrote ANY non-face-anchored
+// wcs_origin.position with the stock origin — manual X/Y/Z edits in
+// the Setup panel were silently discarded.
+
+bool test_wcs_point_anchor_survives_refresh() {
+  DocumentManager manager;
+  manager.create_document();
+
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.origin = std::array<double, 3>{10.0, 20.0, 0.0};
+  DocumentState document = manager.cam_setup_create(setup);
+
+  auto modified = document.cam.setups[0];
+  modified.wcs_origin.anchor = "point";
+  modified.wcs_origin.position = std::array<double, 3>{1.0, 2.0, 3.0};
+  document = manager.cam_setup_update(modified);
+
+  const auto& position = document.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(), "point anchor: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({1.0, 2.0, 3.0}),
+                "point anchor: position survives the refresh");
+}
+
+// ── Test 8: stock-face anchor resolves to the stock box face center ──
+
+bool test_wcs_stock_face_anchor_resolves() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+
+  // The stock box is drawn centered on the model bbox center (10,10,5)
+  // with dims = size + 2*margin (UI parity — cam_stock.cpp must
+  // compute the same extents).
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.type = "bounding_box";
+  setup.stock.size = std::array<double, 3>{30.0, 30.0, 20.0};
+  setup.stock.margin = 0.0;
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  document = manager.cam_setup_create(setup);
+
+  const auto& top = document.cam.setups[0].wcs_origin.position;
+  if (!expect(top.has_value(), "stock face: top position populated")) {
+    return false;
+  }
+  if (!expect(top.value() == std::array<double, 3>({10.0, 10.0, 15.0}),
+              "stock face: top resolves to the box top center")) {
+    std::cerr << "  got: " << top.value()[0] << ", " << top.value()[1]
+              << ", " << top.value()[2] << "\n";
+    return false;
+  }
+
+  auto modified = document.cam.setups[0];
+  modified.wcs_origin.stock_face = "front";
+  document = manager.cam_setup_update(modified);
+  const auto& front = document.cam.setups[0].wcs_origin.position;
+  return expect(front.has_value() &&
+                    front.value() == std::array<double, 3>({10.0, 25.0, 5.0}),
+                "stock face: front resolves to the box front center");
+}
+
+// ── Test 9: unresolvable stock face falls back to the stock origin ──
+
+bool test_wcs_stock_face_anchor_degrades() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.machine_type = "3_axis_mill";
+  setup.stock.origin = std::array<double, 3>{7.0, 8.0, 9.0};
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  document = manager.cam_setup_create(setup);
+
+  const auto& position = document.cam.setups[0].wcs_origin.position;
+  if (!expect(position.has_value(),
+              "stock face degrade: position populated")) {
+    return false;
+  }
+  return expect(position.value() == std::array<double, 3>({7.0, 8.0, 9.0}),
+                "stock face degrade: falls back to the stock origin");
+}
+
+// ── Test 10: anchor fields round-trip the payload ──────────────────
+
+bool test_wcs_anchor_payload_round_trip() {
+  CamSetup setup;
+  setup.name = "Mill setup";
+  setup.wcs_origin.anchor = "stock_face";
+  setup.wcs_origin.stock_face = "top";
+  const auto payload = polysmith::protocol::to_payload(setup);
+  const auto loaded = polysmith::protocol::cam_setup_from_payload(payload);
+  if (!expect(loaded.wcs_origin.anchor == "stock_face" &&
+                  loaded.wcs_origin.stock_face == "top",
+              "round trip: anchor fields survive")) {
+    return false;
+  }
+
+  // Old documents carry no anchor — it must load empty so the refresh
+  // derives it (face witness → "face", else legacy stock-origin
+  // behavior).
+  CamSetup legacy;
+  legacy.name = "Legacy setup";
+  const auto loadedLegacy = polysmith::protocol::cam_setup_from_payload(
+      polysmith::protocol::to_payload(legacy));
+  return expect(loadedLegacy.wcs_origin.anchor.empty(),
+                "round trip: absent anchor loads empty (derived at refresh)");
+}
+
 bool test_pointer_offset_shifts_wcs() {
   DocumentManager manager;
   manager.create_document();
@@ -413,6 +544,127 @@ bool test_pointer_offset_shifts_wcs() {
   }
   return expect(position.value() == std::array<double, 3>({5.0, 17.0, 0.0}),
                 "pointer offset: WCS shifted by -offset");
+}
+
+// ── Test 11: an edge reference survives an unrelated edit ──────────
+// Mirrors Test 3 for EdgeAttestation: the 4th resolution sink must
+// exist on the refresh path or every edge-referencing op degrades.
+
+bool test_edge_op_survives_unrelated_edit() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+  const std::string boxId = document.feature_history.back().id;
+  manager.start_sketch_on_plane("ref-plane-xy");
+  document = manager.add_sketch_circle(10.0, 5.0, 2.0);
+  const std::string sketchId = document.feature_history.back().id;
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketchId && feature.sketch_parameters.has_value()) {
+      for (const auto& region : feature.sketch_parameters->profiles) {
+        if (region.kind == "circle") {
+          circleProfile = region.id;
+        }
+      }
+    }
+  }
+  if (!expect(!circleProfile.empty(), "edge: circle profile found")) {
+    return false;
+  }
+  document = manager.extrude_profile(circleProfile, 10.0, "cut", boxId);
+  manager.cam_setup_create(
+      [] {
+        CamSetup s;
+        s.name = "Mill setup";
+        s.machine_type = "3_axis_mill";
+        return s;
+      }());
+  document = manager.cam_tool_add(
+      [] {
+        ToolEntry t;
+        t.name = "3mm drill";
+        t.type = "drill";
+        return t;
+      }());
+
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const polysmith::core::CompiledBody* body = nullptr;
+  for (const auto& candidate : compiled.bodies) {
+    if (candidate.id == boxId) {
+      body = &candidate;
+    }
+  }
+  if (!expect(body != nullptr, "edge: cut box compiled")) {
+    return false;
+  }
+  // Find the top rim (full circle at z 10).
+  int rimIndex = -1;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body->shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      const auto edge = TopoDS::Edge(edgeMap(i));
+      BRepAdaptor_Curve curve(edge);
+      if (curve.GetType() != GeomAbs_Circle) {
+        continue;
+      }
+      TopoDS_Vertex firstVertex;
+      TopoDS_Vertex lastVertex;
+      TopExp::Vertices(edge, firstVertex, lastVertex);
+      const double radius = curve.Circle().Radius();
+      if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) >
+          std::max(1e-7, radius * 1e-7)) {
+        continue;  // arc
+      }
+      if (std::abs(curve.Circle().Location().Z() - 10.0) < 1e-6) {
+        rimIndex = i - 1;
+        break;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  if (!expect(rimIndex >= 0, "edge: top rim found")) {
+    return false;
+  }
+  const auto ref = polysmith::core::capture_edge_reference(
+      body->id, body->shape, rimIndex, "top rim");
+  if (!expect(ref.has_value(), "edge: rim witness captured")) {
+    return false;
+  }
+  EdgeAttestation att;
+  att.start_point = ref->startPoint;
+  att.end_point = ref->endPoint;
+  att.length = ref->length;
+  att.tangent = ref->tangent;
+  att.center = ref->center;
+  att.axis = ref->axis;
+  att.radius = ref->radius;
+  GeometryReference stored;
+  stored.persistent_id = boxId + ":edge:" + std::to_string(rimIndex);
+  stored.attestation = att;
+
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  op.parameters.cycle_type = "g81_standard";
+  op.parameters.hole_depth_mm = 5.0;
+  op.geometry_references.machining_regions.push_back(stored);
+  document = manager.cam_operation_add(op);
+  const std::string opId = document.cam.operations.back().op_id;
+  if (!expect(find_op(document, opId)->status == "pending",
+              "edge: fresh op pending (reference resolved)")) {
+    return false;
+  }
+
+  // An unrelated edit (second box) must not break the edge reference.
+  document = manager.add_box_feature(
+      {.width = 5.0, .height = 5.0, .depth = 5.0});
+  const auto* after = find_op(document, opId);
+  return expect(after->status != "error",
+                "edge: unrelated edit keeps the reference resolvable");
 }
 
 }  // namespace
@@ -447,6 +699,16 @@ int main() {
       test_ambiguous_reference_degrades);
   run("Test 5: WCS origin follows the stock origin", test_wcs_origin_populated);
   run("Test 6: pointer offset shifts the WCS", test_pointer_offset_shifts_wcs);
+  run("Test 7: point anchor survives the refresh",
+      test_wcs_point_anchor_survives_refresh);
+  run("Test 8: stock-face anchor resolves to the box face center",
+      test_wcs_stock_face_anchor_resolves);
+  run("Test 9: unresolvable stock face falls back to the stock origin",
+      test_wcs_stock_face_anchor_degrades);
+  run("Test 10: anchor fields round-trip the payload",
+      test_wcs_anchor_payload_round_trip);
+  run("Test 11: edge op survives unrelated edit",
+      test_edge_op_survives_unrelated_edit);
 
   if (allPassed) {
     std::cout << "cam_refresh_test passed\n";

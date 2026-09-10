@@ -48,7 +48,8 @@ cam2d::XY select_pierce_at_angle(const PlannedLoop& loop, double angle_deg,
 // Lead-in segment list from the pierce vertex:
 //   "line" — a straight segment entering at lead_in_angle_deg to the
 //            contour tangent;
-//   "arc"  — a 90° tangent roll-in arc of radius lead_in_mm.
+//   "arc"  — a tangent roll-in arc of radius lead_in_mm sweeping
+//            lead_in_arc_angle_deg (90° = classic quarter roll).
 // `contour` is the cut walk already rotated (and split) so it starts
 // and ends at the pierce; the lead tangents come from its exact
 // boundary segments.  Empty when lead_in_mm <= 0 or the mode is
@@ -67,7 +68,8 @@ std::vector<cam2d::OffsetSegment> build_lead_in(
 
 // Lead-out segment list leaving the pierce vertex along the exit
 // tangent (exterior side) or back INTO the interior along the spoke
-// (interior side — the lead retreats into the kerf side).  `overcut_mm`
+// (interior side — the lead retreats into the kerf side).  The "arc"
+// style rolls out sweeping lead_out_arc_angle_deg.  `overcut_mm`
 // extends the cut PAST the pierce vertex along the tangent (guaranteed
 // joint separation): a straight overcut segment for the "arc" style,
 // folded into the straight lead for the "line" style.

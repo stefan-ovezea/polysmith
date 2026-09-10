@@ -50,10 +50,23 @@ bool xy_segments_intersect(const XY& a1, const XY& a2, const XY& b1,
 double xy_point_segment_distance(const XY& p, const XY& a, const XY& b);
 
 // Sutherland–Hodgman clip of a segment against a CCW polygon (inside
-// = left of each edge).  Returns the clipped point list (0, 1, or 2
-// points).
+// = left of each edge).  Returns the clipped point list in p1→p2
+// order (empty when the segment lies fully outside; a non-convex
+// polygon may split the segment into more than two points).
 std::vector<XY> clip_segment_to_polygon(XY p1, XY p2,
                                         const std::vector<XY>& poly);
+
+// Ray-crossing point-in-polygon (orientation-independent).  Points
+// exactly on an edge are arbitrary — callers should sample interval
+// midpoints, never boundary points.
+bool xy_point_in_polygon(const XY& p, const std::vector<XY>& poly);
+
+// Complement of clip_segment_to_polygon: keeps the parts of the
+// segment OUTSIDE the closed polygon (any walk orientation), splitting
+// at boundary crossings.  Same return contract — points in p1→p2
+// order, consecutive pairs are the kept sub-segments.
+std::vector<XY> clip_segment_outside_polygon(XY p1, XY p2,
+                                             const std::vector<XY>& poly);
 
 // True when every vertex of `inner` lies inside `outer` AND the inner
 // centroid is strictly inside (bbox precheck + ray crossing).  Used

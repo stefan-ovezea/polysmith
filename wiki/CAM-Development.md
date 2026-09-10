@@ -1189,15 +1189,29 @@ but more complex than face milling (offset direction matters). By this
 point the tool library, stock, and viewport toolpath rendering are all in
 place from the first two operations.
 
-### 4. Drilling (Fourth — Point-Based, Forces Tool Table)
+### 4. Drilling (Fourth — Body-Geometry Targets, Forces Tool Table)
 
-**What it does:** Select points on a planar face. Generate G81/G83 cycles.
+**What it does:** Pick holes on a BODY — cylindrical hole-wall faces or
+full-circle rim edges — plus free-picked points. Generate G81/G83 cycles.
 
 **Scope for v1:**
-- Point selection (sketch points, circle centers, or free picks)
+- Body-geometry hole targets: a clicked hole wall is captured as a
+  `FaceAttestation`, a clicked rim circle as an `EdgeAttestation`
+  (with a center/axis/radius circle witness) — both re-resolve against
+  live topology on every recompute (TNP-safe). Free clicks elsewhere
+  are `PointAttestation` world coordinates.
 - G81 (simple drill) and G83 (peck drill) cycles
 - Depth, peck depth, retract height parameters
 - No spot drilling, no chip breaking beyond G83
+
+**Bodies only — sketches are not drilling inputs.** Drilling must work on
+STEP/STL imports that have no sketch, and hiding a sketch must never empty
+the hole set. The armed pick marks every circular hole (rim + wall deduped
+to one top dot); blind depths measure from the material top; through holes
+drill to the stock bottom. **Legacy migration:** saved operations that
+still reference sketch circles fail generation with a clear error telling
+the user to re-pick the holes on the body — never a silent empty hole
+list.
 
 **Why fourth:** Drilling is computationally trivial (single points, no offset
 curves, no path planning). It can be built at any point. Placing it fourth
@@ -1542,9 +1556,19 @@ before the next operation depends on it:
 | 9. Laser cutting from sketch | ✅ Done — kerf offset (outer outward/holes inward, miter at shallow corners), lead-in/out + pierce, hole-before-outer ordering, self-intersection detection |
 | 10. Face milling | ✅ Done — face-witness resolution, tool-radius miter inset with physical validation, clipped zigzag rows |
 | 11. G-code export | ✅ Done — `cam_export_gcode` + `document_exported` `format: "gcode"` |
-| 12. 2D Pocket toolpath generation | 🔲 registry slot |
-| 13. Drilling toolpath generation | 🔲 registry slot |
-| 14. Adaptive Clearing toolpath generation | 🔲 registry slot |
+| 12. 5-axis scaffolding + mill machine library | ✅ Done (2026-09-04) — rotary A/B/C on the toolpath IR, per-op `tool_axis_mode`, mill machine fields (travel/kinematics/axis limits/tool-change position), 3 mill seeds, modal rotary words + G93 inverse-time feed in posts. Generators still 3-axis only |
+| 13. 2D Pocket toolpath generation | ✅ Done (2026-09-08) — boss/hole classification, finishing contours, islands, single-pass hint |
+| 14. 2D Contour toolpath generation | ✅ Done (2026-09-08) — face or sketch-profile input, inside/outside/on-line offsets, exact G2/G3 arcs with polyline fallback, climb/conventional rule |
+| 15. Drilling toolpath generation | ✅ Done (2026-09-09) — G81/G83, circle-center + free-pick points, through-hole toggle, canned-where-supported posts (longhand for GRBL) |
+| 16. Adaptive Clearing toolpath generation | ✅ Done (2026-09-10) — contour-parallel spiral (v1): concentric offset loops with climb-constant walk, island/boss families, arc-aware clipping |
+| 17. Slot toolpath generation (open slot) | ✅ Done (2026-09-10) — straight-edge open side, adjacent-top-face inward cut, climb/conventional walk, stepdown multi-pass, cut-major emission |
+| 18. Engrave toolpath generation (mill) | ✅ Done (2026-09-10) — sketch-profile on-line trace at a fixed depth below the sketch plane, exact arcs + hole loops, ALL selected profiles, the laser-engrave twin |
+
+> **Deviation note (2026-09-10):** the scaffolding "Profile" toolbar button
+> was removed.  "Profile finishing" was always 2D Contour (§3 of the V1
+> list) — the button predates the contour op and only tosted
+> "not implemented".  The UI kind mapping now labels unknown core
+> types "Unknown" instead of silently calling them "Profile".
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -1559,6 +1583,650 @@ before the next operation depends on it:
 - **Toolpaths are memory-only, cached by document revision** (a concrete
   realization of §"Toolpaths as Generated Geometry"). `cam_runtime`
   holds them; `ToolpathCache` in the document carries metadata only.
+- **4/5-axis is scaffolding, not generation (2026-09-04).** The old
+  "2.5D only" v1 policy is softened to *5-axis-ready*: the toolpath IR,
+  machine definitions, and posts model rotary axes up front, but every
+  generator is 3-axis (`tool_axis_mode` is per-operation; only
+  `"fixed_z"` is accepted today, everything else errors via
+  `milling::check_tool_axis_supported`). Indexed/continuous 5-axis
+  generation is explicit future work.
+- **Basic simulation is now in scope** (final milestone of the milling
+  plan): height-map material removal + playback, 3-axis only — see
+  Implementation-Log for the milestone list.
+
+## Mill Machine Library & 5-Axis Scaffolding (2026-09-04)
+
+`MachineDefinition` (cam_types.h) gained mill fields, all defaulted so
+old 8-field machine JSON files load unchanged: `travel_x/y/z_mm`
+(0 = unset → UI falls back to `setup.machine_axes`), `kinematics`
+(`cartesian_3axis` | `rotary_table_a/b/c` | `head_table` |
+`table_table` | `head_head`), `axis_limits` (per-axis min/max, mm or
+degrees), and `tool_change_position`. Three mill seeds ship with NEW
+slugs (seeds never reuse an old slug — a stale user file shadows the
+seed by name and is never overwritten):
+
+| Seed | Type | Post | Kinematics |
+|---|---|---|---|
+| GRBL CNC Router | 3_axis_mill | grbl | cartesian_3axis |
+| LinuxCNC Rotary 4-Axis | 4_axis_mill | linuxcnc | rotary_table_a (A 0–360) |
+| LinuxCNC 5-Axis (Table-Table) | 5_axis_mill | linuxcnc | table_table (A −120–120, C −360–360) |
+
+Post-processing: `ToolpathMove.a/b/c` (degrees, optional) are modal —
+words are emitted on change only, mirroring Z. The linuxcnc seed
+declares `feed_inverse_time`: any feed move carrying a rotary word
+prices its feed as `F = feedrate / path_length` under G93, restoring
+G94 for plain 3-axis moves. Toolpaths without rotary words never emit
+G93. Per-op `tool_axis_mode` on `CamOperationParameters`
+(`"fixed_z"` today; `"3_plus_2"` / `"rotary_continuous"` reserved).
+
+## Multi-Pass Face Milling & WCS Anchors (2026-09-05)
+
+### Multi-pass face generation
+
+`face_milling` plans levels from the STOCK TOP down to the face when
+`parameters.stepdown_mm` is set: first cut at `stockTop − stepdown`,
+descending by stepdown, last level pinned to `faceZ` (stock 23 / face
+20 / stepdown 2 → 21, 20).  Unset or non-positive stepdown — or an
+unresolvable stock — generates exactly the legacy single pass at the
+face.  The zigzag alternation uses a GLOBAL row index across levels so
+the pass direction flips continuously; the level count is capped at 100
+with a "capped" warning.  With the WCS anchored to the stock top (see
+below), multi-pass cuts produce the negative Z values the user expects.
+
+Retract guards (both warning-only, never fatal):
+1. retract < faceZ → "below the face height" (existing).
+2. multi-pass only, retract < stock top → "below the stock top" —
+   rapids would travel through unmilled stock.
+
+**Retract height is WCS-relative.**  `setup.retract_height` is machine
+Z ABOVE the setup origin, not an absolute world Z: the retract PLANE in
+world coordinates is `wcs_origin.position.z + retract_height`
+(`cam_planning::setup_retract_plane_z`, the single source of truth used
+by all three mill generators for guards AND emission).  The
+post-processor subtracts the origin again (machine = world −
+wcs_origin), landing the rapids exactly at `retract_height` in machine
+Z.  An unresolved origin (never refreshed) resolves to {0,0,0} —
+legacy behavior unchanged.  Regression: comparing the raw height
+against world stock/face heights produced bogus warnings for origins
+above z=0 while the exported rapids sat inside the stock (origin z=20,
+retract 25, stock top 33 → machine Z 5).
+
+### WCS origin anchors
+
+`WcsOrigin.anchor` discriminates how `refresh_cam_dependencies`
+re-resolves the machine origin:
+
+| anchor | resolution | laser pointer offset |
+|---|---|---|
+| `""` (derived, legacy docs) | `"face"` if a face witness is stored, else `"stock_origin"` | applied |
+| `"face"` | TNP witness against the live body shape; degrades to `stock.origin` + warning | applied |
+| `"stock_face"` | `cam_stock::stock_face_center` against the live stock extents; degrades to `stock.origin` + warning | applied |
+| `"point"` | `wcs_origin.position` verbatim — NEVER overwritten (fixes the manual-edit clobber) | NOT applied (explicit machine point; an offset would double-shift) |
+| `"stock_origin"` | `stock.origin` | applied |
+
+The Setup panel pins `"point"` only when the user actually edited the
+WCS X/Y/Z fields that panel session (`wcsOriginDirty`); the WCS pick
+flow writes `"point"` for snapped stock corners/midpoints and
+`"stock_face"` for stock-face clicks.
+
+### Stock-extent parity rule (binding)
+
+`cam_stock.h/.cpp` (core) and `addStockBoundingBox` /
+`stockBoxFaceCandidates` (UI, camSceneObjects.ts / camOriginSnap.ts)
+compute the stock extents from the SAME definition — parity is the
+correctness contract and the mapping lives in exactly these two places:
+
+- Center = model bbox center (`compile_bodies(include_meshes=false)`,
+  union `Bnd_Box`; UI `modelCenterFromBodies`).
+- Box: dims = `size + 2·margin` — `size` is REQUIRED in the core (the
+  UI `[120,120,20]` is a rendering-only fallback, never stock state).
+- Cylinder: `diameter + 2·margin` wide, `(length ?? 20) + 2·margin`
+  deep; ONLY top/bottom are real cylinder faces — side picks must not
+  anchor to the cylinder side.
+- Face names (CAD convention): right +X, left −X, front +Y, back −Y,
+  top +Z, bottom −Z.  BoxGeometry group order px/nx/py/ny/pz/nz maps
+  0-5 to right/left/front/back/top/bottom; CylinderGeometry groups are
+  [side, top, bottom] — side untagged.
+
+### Stock-face WCS picking (UI)
+
+The stock box mesh is face-tagged (`userData.stockFaceNames`,
+`isStockBox`) and feeds the WCS pick raycast.  Routing order (binding):
+1. face raycast FIRST — a body face keeps the TNP `"face"` anchor
+   (snap-first would degrade body-face picks into bare points);
+2. stock intercepted → stock candidates ONLY (corners/midpoints, top
+   AND bottom faces) snap within 12 px → `"point"` anchor;
+3. no snap + named stock face → `"stock:<face>"` id through
+   `cam_wcs_set_face` → `"stock_face"` anchor;
+4. otherwise bed-plane fallback (z = 0, 10 m guard) like the origin
+   pick.
+
+With the stock shown it is the outermost surface, so clicks land on the
+stock (pick hint copy says so); hiding the stock restores body-face
+picks.
+
+## 2D Pocket (2026-09-07, refined 2026-09-08)
+
+`pocket_2d` clears material inside a planar face boundary with a zigzag
+fill at a configurable angle, with optional islands, followed by closed
+finishing contours around every avoidance at each level.  It reuses the
+face-milling machinery wherever it fits: the shared `plan_stepdown_levels`
+helper (levels from the stock top, last pinned at the face, island tops
+inserted as extra levels), the row planner, and the witness-capture
+trigger flow.
+
+### Region model
+
+The machinable area = outer boundary inset by the tool radius (miter,
+the face-milling pattern) minus avoidance polygons:
+
+1. **Outer loop** = the face wire with the largest |signed area|.
+   Multi-wire faces ARE allowed — pocketing around a face's own holes
+   is core to the feature (face milling rejects these, pocket must
+   not).  Inset by `tool.diameter/2` with the same min-distance +
+   self-intersection validation as face milling (smaller-than-tool →
+   error).
+2. **Face inner wires are classified boss vs hole** (2026-09-08).  For
+   each inner wire, the faces adjacent to its edges (excluding the
+   floor itself) are probed with `BRepGProp::SurfaceProperties`:
+   - any adjacent wall whose centre of mass sits ABOVE the floor face
+     (COM.z > faceZ + 0.1 mm) → the wire is a **boss** standing on the
+     floor → always-avoided polygon, grown outward by the tool radius
+     (round joins — growth is the opposite of the miter inset);
+   - all adjacent walls below/coplanar with the floor → the wire is an
+     **open hole** through the floor → NOT avoided: rows mill straight
+     across it, clearing the stock plug so the hole can be drilled or
+     milled later (the plug would otherwise become a boss anyway);
+   - no wall can be probed → conservative default: avoid.
+3. **Island faces** (`avoidance_regions`, user-picked boss tops,
+   resolved per refresh/generate like machining regions):
+   near-horizontal check (same `kMaxUpwardFaceTilt`
+   orientation-corrected test as face milling) → error if not;
+   footprint = its wires sampled in the pocket plane (XY), grown by the
+   tool radius.  Island top Z = `face_cut_plane` center.  Centroid
+   outside the outer loop → warning "has no effect" (no hard failure —
+   outside islands subtract nothing).
+
+### Per-level island filter
+
+At level Z, subtract an island footprint iff `islandTopZ > Z + eps`
+(the island is still solid there).  At `islandTopZ ≈ Z` the footprint
+is INCLUDED — the pass cuts the stock above the island flush with its
+top.  Below the island top it is always avoided, so no level ever cuts
+into a boss.
+
+### Island-top levels
+
+In multi-pass mode, every island top strictly between faceZ and
+stockTop is added as a level (deduped within eps, sorted descending) so
+the stock ABOVE a short boss is cleared down to the boss top before
+avoidance kicks in.  Single-pass mode (no stepdown): only the face
+level; islands above the face are avoided and the stock over them
+stays — consistent single-pass semantics.
+
+### Fill
+
+The face-milling row planner: `minN/maxN` sweep over the inset polygon
+along the row normal, `spacing = max(diam × stepover%, 0.1)`, last row
+pinned to maxN, GLOBAL row index for zigzag parity.  Per row: clip the
+infinite line against the inset polygon (CCW), then subtract each
+active avoidance polygon by clipping the resulting pieces against the
+hole's CW loop (`clip_segment_to_polygon` CCW-inside semantics, pinned
+in cam2d_test).  A row may split into MULTIPLE pieces (bosses,
+non-convex boundaries) — every consecutive pair is emitted, not just
+`[0]`/`[back]` as face milling does.  Each piece: rapid at retractZ →
+plunge at plunge feed → feed at cutting feed → rapid up (no linked-in
+zigzag in v1).  Zigzag reversal reverses the piece list AND swaps piece
+endpoints on odd global rows.
+
+### Finishing contours (2026-09-08)
+
+After the zigzag rows at EVERY level, closed climb contours clean the
+row scallops and machine the boss walls with circular motion:
+
+- each active avoidance loop is traced as-is (CCW grown loop = climb on
+  an internal profile — the round motion the zigzag cannot produce);
+- the outer inset loop is traced in reverse (CW = climb on an external
+  wall);
+- every contour segment is clipped against the OTHER active avoidances
+  (`clip_segment_outside_polygon` — never against itself), so a contour
+  can never ride through a neighbouring island's clearance; surviving
+  pieces chain when endpoints touch (1e-6) and each chain goes
+  rapid-plunge-feed-rapid.
+
+The contours are unconditional — there is no finish-pass toggle.  With
+a single pass (no stepdown) they still run at the pocket floor, giving
+the round walls their circular cut even in single-pass mode.
+
+### Failure semantics (same family as face milling)
+
+Non-horizontal outer face → error; non-horizontal island → error naming
+the island; broken outer OR island reference → generation FAILS with
+the dependency_broken message (never silently cut into a boss — both
+generate and refresh resolve avoidance refs); retract-below-face and
+retract-below-stock-top guards warning-only; level cap warning; "No
+machinable rows were produced" error.
+
+### Deliberate v1 exclusions
+
+No `stock_allowance_mm` honoring (face milling ignores it too); no
+linked-in zigzag (each piece retracts); no rest machining; no stepover
+parameter on the finishing contours (they are single laps at the grown
+clearance offset).
+
+### Island hint (2026-09-08)
+
+In single-pass mode islands only add avoidance — the island-top flush
+levels never exist, so an island picked on a boss that is already part
+of the pocket face changes nothing (the face's own inner wire is
+already avoided).  The core warns when an island lies on such a
+face-owned boss, and the UI shows a hint next to the island list when
+islands exist but no stepdown is set.
+
+## 2D Contour (2026-09-08)
+
+`contour_2d` follows a single closed wire with the tool center offset
+to one side — the profile-finishing step of the V1 milestone sequence
+(§"3. 2D Contour").  Two inputs, **face wins over profiles** (matching
+the panel and the core's precedence): a picked planar face contours its
+largest |signed area| outer wire at that face's height, or selected
+sketch profiles contour the profile boundary at the sketch plane.  With
+both selected the generator warns "Both a face and sketch profiles are
+selected — 2D Contour uses the face."
+
+### Wire → toolpath
+
+- The wire is walked with `BRepTools_WireExplorer` +
+  `BRepAdaptor_Curve::GetType()`.  Lines and circles become exact
+  `BaseSegment`s (a full circle is start==end + `ccw` flag, the laser
+  precedent); ANY other curve type (ellipse, spline, b-spline edge)
+  falls back to `sample_planar_wire` + `build_base_segments_from_points`
+  — a chord polyline, no arcs.  This keeps the **exact-arc** promise:
+  circular bosses export true G2/G3, never polylines.
+- The base loop is normalized CCW (material left) and `cam2d::
+  offset_closed_loop(base, d, out, round_joins=false)` produces the
+  offset.  Any arc in the base silently forces round joins (cam2d.cpp
+  rule) — accepted v1 behavior.
+- **Direction rule** (pocket-precedent, all four combos pinned by
+  tests): `reverse = (side == "inside") XOR (direction == "conventional")`,
+  `d = conventional ? −r_eff : +r_eff` where
+  `r_eff = tool_radius + stock_allowance_mm`.  Climb external = CCW
+  outside the wire, climb internal = CW inside it.
+- `"mixed"` cutting direction → warning "treated as climb".
+- **on_line**: the offset is skipped entirely (`d = 0` miter edge cases
+  avoided) and the base loop is emitted directly at the wire; a
+  positive stock allowance → warning "Stock allowance is ignored for an
+  on-line contour."
+- Guards: any offset arc radius ≤ 0 → error "tool does not fit inside
+  the contour"; inside offsets of tight wires get the
+  `offset_loop_self_intersects` check (laser-proven).
+- Cut plane: `faceZ − depth_mm` for the face path, `sketchZ − depth_mm`
+  for the profile path (depth default 1.0 when the block is absent).
+  Below-stock-bottom → warning.  Shape: rapid at retractZ → plunge at
+  plunge feedrate → closed loop at feedrate → rapid up.  **Single pass
+  only** — no stepdown, no `plan_stepdown_levels`.
+- Arc emission follows the laser rule: `kind = cw != flippedFrame ?
+  FeedArcCW : FeedArcCCW`, i/j = world center − world START.  The
+  flipped-frame correction applies ONLY to the sketch-space profile
+  path (left-handed sketch frames flip the sweep); the world-space face
+  path is never flipped.
+
+### Failure semantics (same family as pocket)
+
+Non-horizontal face → error; non-horizontal sketch plane → error; no
+face and no profiles → "2D Contour requires a selected face or a
+sketch profile."; broken reference → generation fails with the
+dependency_broken message.  Retract-below-face / below-stock-top are
+warning-only.
+
+### Deliberate v1 exclusions
+
+Only `side` / `depth_mm` / `stock_allowance_mm` of the
+§operation_params `contour_2d` schema are implemented — no
+`multiple_passes`/`finish_passes`.  Inner loops (face holes) are NOT
+contoured — single closed wire scope.  No leads, no tabs, no collision
+detection.  The shared base `stock_allowance_mm` field is ignored: the
+generator reads ONLY `parameters.contour->stock_allowance_mm` (default
+0.0) — the panel wires there, never to the base field (which defaults
+0.2 for the other ops).
+
+### Parameters block
+
+`cam_types.h` `ContourParameters { side, depth_mm, stock_allowance_mm }`
+as the optional `contour` block on `CamOperationParameters`, serialized
+both directions.  `cutting_direction` stays in the SHARED base field —
+not duplicated in the block.
+
+### UI
+
+Toolbar Contour button enables with a setup plus EITHER a selected face
+or selected sketch profiles.  The trigger mirrors the pocket face
+witness capture when a face is selected; otherwise the operation is
+created with EMPTY geometry references and the core captures the
+selected profiles (the laser flow, enabled by widening the two
+create/update capture gates in `cam_commands.inc` to `contour_2d`).
+The panel shows the input kind: face mode gets a Re-pick face button,
+profile mode gets the reference-sketch scope dropdown + profile re-pick
+(laser pattern).
+
+## Drilling (2026-09-09)
+
+`drilling` completes the V1 milestone sequence (§"4. Drilling"): G81
+simple drill and G83 peck drill, fed by circle-center points captured
+from selected sketch circles plus free picks.  No spot drilling, no
+G82/G84/G85 in v1.
+
+### Inputs
+
+Two attestation kinds, both held in `machining_regions`:
+
+- **Sketch circle profiles** — captured automatically at operation
+  creation when circles are selected (create-gate only, like contour).
+  The generator resolves the profile to its region and drills the
+  **resolved region's** center, never the stale attestation center
+  (TNP doctrine).
+- **Free picks** — `cam_capture_point {x,y,z}` → `cam_attestation_result`
+  carrying a new `PointAttestation {point}` variant (serde key
+  `"point"`, discriminated BEFORE the edge fallback in
+  `cam_from_payload.inc`).  The core mints `pt-N` persistent ids; the
+  counter is restored on load by scanning for the `pt-` prefix.  A
+  coordinate, not topology — the laser `pierce_position` precedent.
+
+Each point's start Z is its own reference plane (sketch plane or picked
+Z).  Non-horizontal sketch planes are rejected.  Holes are visited in
+nearest-neighbor order; each emits one rapid to the retract plane
+(`setup_retract_plane_z`) and one `DrillCycle` toolpath move.
+
+### Depth model
+
+- **Blind** (default): `hole_depth_mm` below the point's start plane.
+- **Through**: `through_hole` drills to the stock bottom
+  (`stock_box_extents` center.z − size.z/2).  Stock required — clean
+  error without it.
+- Retract plane below start Z or below stock top → warning-only.
+
+### G-code: canned where supported (user decision)
+
+GRBL implements **neither** G81 nor G83, so the output form depends on
+the post's capabilities:
+
+| Post | `canned_cycles` | G81 output | G83 output |
+|---|---|---|---|
+| linuxcnc, mach3, mach4, fanuc | yes (built-in templates) | `G81 X… Y… Z… R… F…` | `G83 X… Y… Z… R… Q… F…` |
+| grbl, marlin, smoothieware | no | longhand `G0`→`G1`→`G0` | longhand peck loop (retract to R between pecks) |
+| user post file without the new keys | defaults false | longhand | longhand |
+
+`PostDefinition` gained `canned_cycles` (default false),
+`drill_cycle_template`, `drill_cycle_peck_template`.  Capability check =
+flag AND non-empty template.  Template vars are `{x,y,z,r,q,feed}` —
+**feed is always provided**, even when the template omits `{feed}` would
+leak verbatim (post_processor placeholder rule).  After a drill move the
+post's currentZ is the R plane (G98 convention).
+
+**Backward compatibility (binding):** pre-existing user post files
+shadow the built-ins and never get the new keys rewritten — they stay
+longhand forever.  That is valid G-code and is by design.
+
+### Guards & failure semantics
+
+Blind drilling needs `hole_depth_mm > 0`; G83 needs `peck_depth_mm > 0`;
+cycle types other than `g81_standard`/`g83_peck` → clear error;
+nothing drillable → error; broken reference → `dependency_broken`.
+Drilling on a laser machine → clean error (mirrors laser-on-mill).
+Non-drill tools warn but generate.
+
+### Data model
+
+`ToolpathMoveKind::DrillCycle` with `r_plane_z` / `peck_depth_mm`
+appended AFTER `a/b/c` in `ToolpathMove` (aggregate-init compat).
+Viewport rendering synthesizes rapid→(x,y,r) / plunge→(x,y,z) /
+retract→(x,y,r).  `through_hole` on `CamOperationParameters`, serde +
+zod + TS.  Default tool: `cam_operation_add` prefers a `"drill"` tool,
+creating "3mm drill (default)" on demand (the endmill-default pattern).
+The empty-set re-capture gesture stays gated to laser/contour — for
+drilling, an empty `machining_regions` means "user removed all points".
+
+### UI
+
+Drill button enables with a setup plus a selected face OR selected
+circle profiles (created with defaults: G81, 5 mm, peck 2 mm, through
+off).  `CamDrillingPanel`: cycle dropdown (G81/G83), depth (disabled
+when through), peck (G83 only), through checkbox, drill-tool filter,
+points list with per-row remove and an armed "Add point" pick — every
+add/remove sends the FULL `machining_regions` list.  Point pick is
+snap-first (sketch points, circle centers, body vertices/edges/face
+centers, stock corners) → face raycast → bed-plane fallback, and stays
+armed across consecutive picks.  Armed drill pick mutually disarms with
+origin/WCS/pocket/contour picks.  `cam_capture_point` + the
+`cam_attestation_result` event are documented in
+[IPC-Protocol](IPC-Protocol.md) and
+[AI-CAD-Command-Language](AI-CAD-Command-Language.md).
+
+## Adaptive Clearing (2026-09-10)
+
+v1 toolpath = **contour-parallel spiral** (user decision): concentric
+offset loops stepping inward from the machined boundary, linked by
+rapids at the retract plane + plunges, constant climb direction,
+islands machined around. `engagement_angle_deg` is accepted and
+reserved for a future trochoidal upgrade — it does not drive v1
+geometry.
+
+### Region model
+
+- **Outer boundary** = the selected face's largest |area| wire.
+  `rEff = tool radius + stock_allowance_mm` — the allowance rides the
+  tool centre on EVERY pass (adaptive is roughing; the pocket uses the
+  bare radius). Loop k is offset from the FAMILY BASE at
+  `rEff + k·spacing` (never iterated from the previous loop — no error
+  accumulation), `spacing = max(diameter × stepover%, 0.1)`. Miter
+  corners (never round into the wall). A loop is accepted only when
+  the offset succeeds, samples to ≥ 3 points, does not self-intersect,
+  and every sample stays ≥ d − 1e-3 from the base boundary (segment
+  probe for miter families). k=0 failing = hard error ("The pocket is
+  smaller than the tool"); a later failure silently ends the family —
+  the remaining centre is covered by the innermost loop's slot sweep
+  (v1 limitation).
+- **Islands/bosses** = both pocket paths: floor-face inner wires
+  classified by adjacent-wall COM (`classify_inner_wire` — bosses
+  always avoided, open holes CROSSED by the spiral, clearing the stock
+  plug) and `avoidance_faces` ("Island N", active while
+  `topZ > levelZ`). Each region grows by rEff (round joins) and gets
+  its own OUTWARD-growing loop family — loop 0 rides the grown loop
+  (the island finishing pass).
+- **Climb directions** (the 2D contour rule — material left of the
+  walk; offsets go to the RIGHT of the walk): outer = inside contour →
+  climb walks **CW** (+d inward); islands = outside contours → climb
+  walks **CCW** (+d outward). `cutting_direction: "conventional"`
+  flips both walks and the offset sign; "mixed"/unknown warn and
+  behave as climb.
+- **Clipping policy**: overlap/double-cutting between families at one
+  Z is allowed; forbidden is entering a grown avoidance clearance or
+  the wall band (the rEff band between the outer inset and the wall).
+  Outer loops clip outside every active avoidance; island loops also
+  clip INSIDE the CCW outer-inset polygon and outside every OTHER
+  avoidance. Clipped pieces chain at 1e-6, each chain gets its own
+  rapid-plunge-feed-rapid cycle. The clip is arc-aware: the grown
+  region's corner quarter-discs leave corner notches machinable where
+  the tool legitimately fits (pinned by test).
+- **Levels** = the pocket planner: island tops join as extra levels;
+  at the island-top level the island is not subtracted (flush pass
+  over its top).
+
+### Failure semantics (same family as pocket)
+
+No face / degenerate face / tilted face / collapsed rEff inset /
+broken island attestation (generate AND refresh degrade with "was not
+found") / retract-below-face and retract-below-stock-top warnings /
+strategy ≠ "adaptive" warns "Only the adaptive strategy is
+implemented in v1 — generating the adaptive spiral."
+
+### Deliberate v1 exclusions
+
+No trochoidal paths (engagement angle reserved); holes in the floor
+are crossed, not contoured; the innermost region is covered only by
+the last loop's slot sweep; islands close to the wall may leave small
+uncut pockets where the tool cannot fit.
+
+### UI
+
+Toolbar button after Pocket (concentric-squares icon), gated on setup
++ selected face — same face-witness trigger as the pocket. Panel =
+pocket panel minus the zigzag field (feedrate, plunge, stepover %,
+stepdown, spindle, tool dropdown, face re-pick + island rows). The
+armed face pick is SHARED with the pocket (`kind` picks the toast
+copy). Stock allowance / cutting direction / engagement angle stay
+out of the UI in v1 (editable via JSON; params round-trip).
+
+## Slot Milling — Open Slot (2026-09-10)
+
+A picked STRAIGHT line edge is the slot's **open side**; the tool cuts
+a tool-width groove from the edge INTO the material, on the side of
+the adjacent horizontal top face. `slot.depth_mm` is the groove floor
+below that face's Z; an optional Stepdown cuts multi-pass levels from
+the stock top down to the floor. (User decisions, binding: open slot
+only — centerline/two-wall semantics and closed slots are OUT. Works
+for grooves from a plate edge AND re-cutting a finished slot's wall.)
+
+### Per resolved edge (live re-derivation, TNP-safe)
+
+1. **Live-edge re-open** (the drilling pattern — never trust stale
+   indices): `TopoDS::Edge(edgeMap(index+1))` from the resolved body;
+   `BRepAdaptor_Curve` must be `GeomAbs_Line` else "Slot requires
+   straight line edges …" (full circles and arcs are rejected — a
+   slot edge is an open side, not a rim); 2D length < 1e-9 →
+   "The selected edge is vertical — slot edges must lie horizontally."
+2. **Top-face find** (the pocket `classify_inner_wire` map pattern):
+   `TopExp::MapShapesAndAncestors(body, EDGE, FACE)`; the ancestor
+   with the steepest UPWARD orientation-corrected normal (≥
+   `kMaxUpwardFaceTilt`) is the machining face; its face_cut_plane
+   centre Z is the top. None → "Slot requires a horizontal face
+   adjacent to the selected edge."
+3. **Inward** = the face-interior perpendicular of the edge at its
+   midpoint: `V = faceCOM.xy − edgeMid.xy` (BRepGProp, mid-UV
+   fallback), `inward = normalize(V − E·(V·E))` (E = unit XY
+   tangent); degenerate (edge crosses the face centre) → "The slot's
+   inward direction could not be determined …".
+4. **Walk** (climb = material left — the 2D contour rule):
+   `W = (inward.y, −inward.x)`; "conventional" flips W; "mixed"/
+   unknown warn and behave as climb. Start/end oriented along W.
+5. **Path** = edge endpoints + `tool_radius × inward` — the groove
+   spans from the edge to a tool diameter into the material.
+   `bottomZ = topZ − depth_mm` (depth ≤ 0 → "The slot depth must be
+   positive."); levels = `plan_stepdown_levels(stockTopZ, bottomZ,
+   stepdown, {}, …)` when stepdown is set (stock top needed only
+   then), else `{bottomZ}`.
+6. **Emission is CUT-major** — each edge's levels contiguous
+   (rapid(start, retract) → feed(start, level, plunge) → feed(end,
+   level, feed) → rapid(end, retract) per pass), edges in region
+   order. Guards: retract < max face Z warns ("below the face
+   height"); multi-pass retract < stock top warns ("below the stock
+   top" — stock tops are CENTERED on the model bbox). Empty → "No
+   slot moves were produced."
+
+### Line-edge resolution (new with slot)
+
+`resolve_edge_reference` previously scored CIRCLE witnesses only —
+line witnesses always NotFound (the slot op is the first line-edge
+consumer). Line scoring: endpoint proximity (weight 0.5,
+orientation-agnostic pairing, `kEdgeMaxEndpointDistance` = 5 mm
+summed), length ratio (0.25), absolute direction dot (0.25 — a
+reversed edge is the same slot side). The circle path is untouched;
+drilling rims resolve exactly as before.
+
+### Failure semantics
+
+Empty edges / non-line edge / vertical edge / no adjacent horizontal
+face / degenerate inward / non-positive depth → hard errors with
+re-select guidance. Broken edge attestation degrades generate AND
+refresh with "The edge used by this operation was not found …" —
+never cut without a live edge.
+
+### Deliberate v1 exclusions
+
+No centerline or two-wall slot semantics; no closed slots; no arc
+edges; slot width is exactly the tool diameter (multi-offset widening
+is a future refinement).
+
+### UI
+
+Toolbar button after Drill in the 2.5D cluster (open-slot glyph),
+gated on setup + `selected_edge_ids.length > 0` ("Select a straight
+edge first" tooltip). **Selection-based input, no armed pick** — the
+trigger captures every selected edge as a TNP-safe witness at
+creation; Re-pick re-captures the current selection. Panel = indexed
+edge rows with remove + Re-pick, depth field, clearable stepdown +
+help, tool dropdown, shared feeds/spindle, status line
+(`cam.slot.*`). `SlotParameters { depth_mm = 5.0 }` as an optional
+per-type params block (the contour serde pattern — absent key falls
+back to struct defaults).
+
+## Engrave (mill) (2026-09-10)
+
+Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+fixed depth below the sketch plane — the milling twin of laser
+engrave. Text glyphs are closed tessellated contours, so profile
+capture covers text.
+
+### Semantics
+
+- **Input**: `SketchProfileAttestation` machining regions ONLY —
+  face/edge/point regions are rejected with "Engrave traces sketch
+  profiles only …" (checked BEFORE iterating: `geometry.profiles` and
+  `geometry.sketches` are parallel arrays filled together by the
+  driver). Every selected profile is traced in region order (contour's
+  first-only rule does NOT apply) — one rapid-plunge-feed-rapid per
+  loop.
+- **Per profile**: `resolve_sketch_frame(*geometry.sketches[r])` (a
+  mixed-sketch op maps each loop through its own plane);
+  `|normal_z| < kMaxUpwardFaceTilt` → "Engrave requires a horizontal
+  sketch plane…"; `cutZ = world_z(frame, {0,0}, −depth_mm)`.
+- **Outer loop**: `build_base_segments_from_edges` (exact arcs) with
+  `build_base_segments_from_points` fallback + tessellation warning;
+  standalone circles (`kind == "circle"` / `source_circle_id`)
+  synthesized as one full-circle arc; normalized CCW (material left).
+- **Inner loops TRACED** (laser-engrave parity — glyph counters like
+  "O"/"8" render hollow; no offset means no tool-fit collapse):
+  `circle_holes` descriptors as exact arcs, else sampled points;
+  holes walk CW (hole interior right). All bases stored CCW and the
+  hole flip makes the walk CW — the emission is uniform.
+- **Direction**: "conventional" flips both walks; "mixed"/unknown
+  warn and behave as climb. Left-handed frames flip arc sweeps.
+- **Guards** (warnings): retract < highest cut plane ("below the cut
+  plane"), retract < stock top, deepest cut < stock bottom ("below the
+  stock bottom" — EXPECTED for origin-plane sketches, cutZ = −depth
+  under a z=0 stock bottom). Depth ≤ 0 → "The engrave depth must be
+  positive."
+
+### Failure semantics
+
+Non-profile region / no regions / non-horizontal sketch plane /
+non-positive depth / tool-axis mode → hard errors. Broken profile
+attestation degrades generate AND refresh with "The sketch profile
+used by this operation was not found …".
+
+### Deliberate v1 exclusions
+
+No fill/hatch (laser has it), no lead-in/out, no depth passes
+(single pass by design — the panel has no stepdown field), sketch
+profile input only (no body faces).
+
+### UI
+
+Toolbar button after Contour (Engrave glyph), gated on setup +
+`selected_sketch_profile_ids.length > 0` ("Select a sketch profile
+first" tooltip). Trigger = the contour profile path without the face
+branch: created with NO geometry references — the core captures the
+selection (the create/update gates in cam_commands.inc widened with
+`"engrave"`). Panel = the contour panel minus the face branch, side,
+and allowance (depth + shared feeds/spindle + geometry summary + the
+scope-sketch dropdown + armed profile re-pick). `EngraveParameters
+{ depth_mm = 0.5 }` as an optional per-type params block. The
+laser-machine guard mirrors drilling ("An engrave operation requires
+a milling machine setup"). The scaffolding Profile button was removed
+(this op IS the profile-finishing step per §3); `coreCamOperationTypeToUi`
+now maps `engrave` and `laser_test_pattern` explicitly and unknown
+core types to "Unknown" (the old default silently labeled them
+"Profile").
 
 ## Architecture notes for extension
 
@@ -1581,9 +2249,10 @@ No changes to the document, refresh pass, IPC, or viewport machinery.
 - **Simulation.** Visual preview only, no material removal simulation.
 - **Tool wear compensation.** Not needed for hobbyist use.
 - **Binary IPC transport.** Chunked JSON is sufficient through v1.
-- **Turning and Printing operations.** Laser cutting and face milling are
-  implemented; turning/printing remain disabled scaffolding. Nesting,
-  common-cut, and bridge/tab for cutting are not built.
+- **Turning and Printing operations.** Laser cutting, face milling, and
+  2D pocket are implemented; turning/printing remain disabled
+  scaffolding. Nesting, common-cut, and bridge/tab for cutting are not
+  built.
 
 ---
 

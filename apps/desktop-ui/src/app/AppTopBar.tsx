@@ -158,6 +158,12 @@ interface AppTopBarProps {
   triggerCamLaserCut: AsyncVoid;
   camMachineType: string | null;
   triggerCamFaceMilling: AsyncVoid;
+  triggerCamPocket: AsyncVoid;
+  triggerCamAdaptive: AsyncVoid;
+  triggerCamContour: AsyncVoid;
+  triggerCamDrilling: AsyncVoid;
+  triggerCamSlot: AsyncVoid;
+  triggerCamEngrave: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
 }
 
@@ -459,12 +465,35 @@ export function AppTopBar(props: AppTopBarProps) {
         props.setActiveCamOperation((prev) => (prev === op ? null : op));
       }}
       hasCamSetup={(props.document?.cam?.setups?.length ?? 0) > 0}
+      selectedCamFaceId={props.document?.selected_face_id ?? null}
+      selectedCamProfileCount={
+        props.document?.selected_sketch_profile_ids?.length ?? 0
+      }
+      selectedCamEdgeCount={props.document?.selected_edge_ids?.length ?? 0}
       camMachineType={props.camMachineType}
       onCamSetupClick={() => {
         props.setIsCamSetupPanelOpen((prev) => !prev);
       }}
       onCamFaceMillingClick={() => {
         void props.triggerCamFaceMilling();
+      }}
+      onCamPocketClick={() => {
+        void props.triggerCamPocket();
+      }}
+      onCamAdaptiveClick={() => {
+        void props.triggerCamAdaptive();
+      }}
+      onCamContourClick={() => {
+        void props.triggerCamContour();
+      }}
+      onCamDrillClick={() => {
+        void props.triggerCamDrilling();
+      }}
+      onCamSlotClick={() => {
+        void props.triggerCamSlot();
+      }}
+      onCamEngraveClick={() => {
+        void props.triggerCamEngrave();
       }}
       onCamTwoDCutClick={() => {
         void props.triggerCamLaserCut();

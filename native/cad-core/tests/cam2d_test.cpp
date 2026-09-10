@@ -255,27 +255,28 @@ bool test_sampling_sagitta() {
 
 bool test_clip_segment() {
   const std::vector<XY> square{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-  // The polygon-clip form may repeat the intersection points; the
-  // consumers (milling rows) read clipped.front() and clipped.back().
+  // Consumers (milling rows) read clipped.front()/back() as row
+  // start/end, so the points must come back in p1→p2 order without
+  // duplicated intersections.
   const auto inside =
       clip_segment_to_polygon({-2, 0}, {2, 0}, square);
-  double minX = 1e9;
-  double maxX = -1e9;
-  for (const auto& p : inside) {
-    minX = std::min(minX, p.x);
-    maxX = std::max(maxX, p.x);
-    if (!near(p.y, 0.0, 1e-9)) {
-      return expect(false, "clip: clipped points stay on the line");
-    }
+  if (!expect(inside.size() == 2, "clip: crossing segment gives 2 points")) {
+    std::cerr << "  got " << inside.size() << " points\n";
+    return false;
   }
-  if (!expect(inside.size() >= 2 && near(minX, -1.0, 1e-9) &&
-                  near(maxX, 1.0, 1e-9),
-              "clip: crossing segment trimmed to [-1, 1]")) {
+  if (!expect(near(inside[0].x, -1.0, 1e-9) && near(inside[0].y, 0.0, 1e-9),
+              "clip: entry point is the left intersection")) {
+    std::cerr << "  entry (" << inside[0].x << ", " << inside[0].y << ")\n";
+    return false;
+  }
+  if (!expect(near(inside[1].x, 1.0, 1e-9) && near(inside[1].y, 0.0, 1e-9),
+              "clip: exit point is the right intersection")) {
+    std::cerr << "  exit (" << inside[1].x << ", " << inside[1].y << ")\n";
     return false;
   }
   const auto outside =
       clip_segment_to_polygon({5, 0}, {6, 0}, square);
-  return expect(outside.size() < 2, "clip: outside segment dropped");
+  return expect(outside.empty(), "clip: outside segment dropped");
 }
 
 // ── Test 7: loop containment ─────────────────────────────────────
@@ -455,6 +456,119 @@ bool test_self_intersection_scan() {
                 "scan: plain square clean");
 }
 
+// ── Test 11: CW clip = subtraction ───────────────────────────────
+//
+// The pocket generator subtracts avoidance regions by clipping rows
+// against CW-walked polygons: for a CW loop the "left of each edge"
+// test keeps the EXTERIOR.  The result pairs are the parts of the
+// segment that stay OUTSIDE the polygon, still in p1→p2 order.
+
+bool test_clip_segment_subtraction() {
+  // Subtraction runs against BOTH orientations: the outside clip is
+  // orientation-independent, the CW/CCW fixtures pin that.
+  const std::vector<XY> cwSquare{{-1, -1}, {-1, 1}, {1, 1}, {1, -1}};
+  const std::vector<XY> ccwSquare{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+  if (!expect(xy_signed_area(cwSquare) < 0 && xy_signed_area(ccwSquare) > 0,
+              "sub: fixture polygons have opposite orientations")) {
+    return false;
+  }
+  const auto checkAgainstBoth = [&](const XY& p1, const XY& p2,
+                                    const std::vector<XY>& expected,
+                                    const char* label) {
+    for (const auto& square : {cwSquare, ccwSquare}) {
+      const auto clipped = clip_segment_outside_polygon(p1, p2, square);
+      if (!expect(clipped.size() == expected.size(), label)) {
+        std::cerr << "  got " << clipped.size() << " points\n";
+        return false;
+      }
+      for (size_t i = 0; i < expected.size(); ++i) {
+        if (!expect(near(clipped[i].x, expected[i].x) &&
+                        near(clipped[i].y, expected[i].y),
+                    label)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  // Segment crossing the square: the two outside spans survive.
+  if (!checkAgainstBoth({-2, 0}, {2, 0},
+                        {{-2, 0}, {-1, 0}, {1, 0}, {2, 0}},
+                        "sub: crossing segment keeps 2 outside spans")) {
+    return false;
+  }
+  // Segment fully inside: nothing survives.
+  if (!checkAgainstBoth({-0.5, 0}, {0.5, 0}, {},
+                        "sub: interior segment fully subtracted")) {
+    return false;
+  }
+  // Segment fully outside: survives whole as one pair.
+  if (!checkAgainstBoth({3, 0}, {4, 0}, {{3, 0}, {4, 0}},
+                        "sub: exterior segment kept as one span")) {
+    return false;
+  }
+  // Segment through a vertex (tangent touch): both outside spans
+  // survive, sharing the touching point.
+  if (!checkAgainstBoth({0, 2}, {2, 0},
+                        {{0, 2}, {1, 1}, {1, 1}, {2, 0}},
+                        "sub: vertex tangency keeps both spans")) {
+    return false;
+  }
+  return true;
+}
+
+// ── Test 12: join arcs sweep the SHORT way around corners ─────────
+//
+// Regresses a sweep-normalization bug: join arcs at convex corners
+// swept the LONG (270°) way around the vertex, dipping through the
+// base polygon's interior (a grown island loop then let milling rows
+// cross into the island).  The grown loop of a square must stay
+// OUTSIDE the base square — no sampled point strictly inside (0,8)².
+// The long-way arc at (0,0) passes through (≈2.12, ≈2.12), inside.
+
+bool test_round_join_short_sweep() {
+  const XY pts[] = {{0, 0}, {8, 0}, {8, 8}, {0, 8}};
+  std::vector<BaseSegment> base;
+  for (size_t i = 0; i < 4; ++i) {
+    BaseSegment segment;
+    segment.start = pts[i];
+    segment.end = pts[(i + 1) % 4];
+    base.push_back(segment);
+  }
+  std::vector<OffsetSegment> out;
+  if (!expect(offset_closed_loop(base, 3.0, out, /*round_joins=*/true),
+              "sweep: offset succeeds")) {
+    return false;
+  }
+  if (!expect(loop_is_connected(out), "sweep: loop connected")) {
+    return false;
+  }
+  const auto samples = sample_offset_loop(out, /*tolerance=*/0.05);
+  for (const auto& p : samples) {
+    if (p.x > 0.01 && p.x < 7.99 && p.y > 0.01 && p.y < 7.99) {
+      std::cerr << "  grown point inside the base square: (" << p.x << ", "
+                << p.y << ")\n";
+      return expect(false,
+                    "sweep: grown loop stays outside the base square");
+    }
+  }
+  // The short arcs hug the corners: the grown loop must still reach
+  // the rounded-square extents (weak sanity — bbox is not the pin).
+  double minX = 1e9;
+  double maxX = -1e9;
+  double minY = 1e9;
+  double maxY = -1e9;
+  for (const auto& p : samples) {
+    minX = std::min(minX, p.x);
+    maxX = std::max(maxX, p.x);
+    minY = std::min(minY, p.y);
+    maxY = std::max(maxY, p.y);
+  }
+  return expect(minX <= -2.95 && maxX >= 10.95 && minY <= -2.95 &&
+                    maxY >= 10.95,
+                "sweep: grown loop reaches the rounded-square extents");
+}
+
 }  // namespace
 
 int main() {
@@ -488,6 +602,8 @@ int main() {
   run("Test 8: area centroid", test_area_centroid);
   run("Test 9: chord-tolerance wire sampling", test_wire_sampling);
   run("Test 10: self-intersection scan", test_self_intersection_scan);
+  run("Test 11: outside clip = subtraction", test_clip_segment_subtraction);
+  run("Test 12: join arcs sweep short", test_round_join_short_sweep);
 
   if (allPassed) {
     std::cout << "cam2d_test passed\n";

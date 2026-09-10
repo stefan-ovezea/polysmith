@@ -307,6 +307,15 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
     }
     inner_loops.push_back(loop_payload);
   }
+  json circle_holes = json::array();
+  for (const auto& hole : primitive.circle_holes) {
+    circle_holes.push_back({
+        {"loop_index", hole.loop_index},
+        {"center_x", hole.center_x},
+        {"center_y", hole.center_y},
+        {"radius", hole.radius},
+    });
+  }
 
   return {
       {"profile_id", primitive.profile_id},
@@ -343,6 +352,7 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
       {"profile_kind", primitive.profile_kind},
       {"profile_points", profile_points},
       {"inner_loops", inner_loops},
+      {"circle_holes", circle_holes},
       {"start_x", primitive.start_x},
       {"start_y", primitive.start_y},
       {"width", primitive.width},
