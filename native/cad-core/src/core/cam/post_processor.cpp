@@ -360,6 +360,10 @@ std::vector<std::string> render_post(const PostContext& context,
         currentPower = power;
       }
     } else if (!move.laser_on && laserOn) {
+      if (def.laser_off_with_power) {
+        emit(render_template(def.power_change,
+                             {{"power", fmt_number(0.0, decimals)}}));
+      }
       emit(render_template(def.laser_off, {}));
       laserOn = false;
     }
@@ -371,7 +375,11 @@ std::vector<std::string> render_post(const PostContext& context,
     const double x = (move.x - originX) * scale;
     const double y = (move.y - originY) * scale;
     const double z = (move.z - originZ) * scale;
-    const bool zChanged = !haveZ || z != currentZ;
+    // Laser programs are 2-axis: a gantry laser has no Z axis, so any
+    // Z word is lint — the generators write a constant focus-plane Z.
+    // Mill/drill programs keep Z fully modal as before.
+    const bool zChanged =
+        !context.laser.has_value() && (!haveZ || z != currentZ);
     const bool hasRotary =
         move.a.has_value() || move.b.has_value() || move.c.has_value();
     const bool isFeedMove =
@@ -618,6 +626,12 @@ std::vector<std::string> render_post(const PostContext& context,
           render_template(templ, common_vars(context)));
     }
   }
+  if (laserOn && def.laser_off_with_power) {
+    // Beam off at program end: drop power first (diode drivers latch
+    // the last S) — the footer's leading M5 still dedupes below.
+    emit(render_template(def.power_change,
+                         {{"power", fmt_number(0.0, decimals)}}));
+  }
   if (laserOn || spindleOn) {
     const std::string spindleOff = render_template(def.spindle_off, {});
     const bool footerStartsWithOff =
@@ -688,6 +702,11 @@ bool parse_post_definition(const std::string& json_text,
     if (payload.contains("laser_air_off") &&
         payload.at("laser_air_off").is_string()) {
       definition.laser_air_off = payload.at("laser_air_off").get<std::string>();
+    }
+    if (payload.contains("laser_off_with_power") &&
+        payload.at("laser_off_with_power").is_boolean()) {
+      definition.laser_off_with_power =
+          payload.at("laser_off_with_power").get<bool>();
     }
     if (payload.contains("power_max") && payload.at("power_max").is_number()) {
       definition.power_max = payload.at("power_max").get<double>();

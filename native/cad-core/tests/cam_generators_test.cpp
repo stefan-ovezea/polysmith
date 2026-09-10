@@ -2958,6 +2958,64 @@ bool test_laser_requires_laser_tool() {
                 "tool check: laser op with a mill tool is rejected");
 }
 
+// ── Test 66: test-pattern creation gate + default laser tool ──────
+
+bool test_test_pattern_create_gate_and_default_tool() {
+  // On a mill setup the create is rejected at creation time (the same
+  // gate as laser_cut) — before the operation lands in the document.
+  {
+    DocumentManager manager;
+    manager.create_document();
+    CamSetup mill;
+    mill.name = "Mill";
+    mill.machine_type = "3_axis_mill";
+    manager.cam_setup_create(mill);
+
+    CamOperation op;
+    op.name = "Test Pattern";
+    op.type = "laser_test_pattern";
+    polysmith::core::LaserTestPatternParameters pattern;
+    op.parameters.test_pattern = pattern;
+    bool threw = false;
+    try {
+      manager.cam_operation_add(op);
+    } catch (const std::exception& e) {
+      threw = std::string(e.what()).find("laser machine setup") !=
+              std::string::npos;
+    }
+    if (!expect(threw, "create gate: test pattern on a mill setup is rejected")) {
+      return false;
+    }
+  }
+
+  // On a laser setup with an empty tool library, the create resolves
+  // a default LASER tool (the old path fell through to an endmill,
+  // which generation then rejected).
+  {
+    DocumentManager manager;
+    manager.create_document();
+    CamSetup laser;
+    laser.name = "Laser";
+    laser.machine_type = "laser";
+    manager.cam_setup_create(laser);
+
+    CamOperation op;
+    op.name = "Test Pattern";
+    op.type = "laser_test_pattern";
+    polysmith::core::LaserTestPatternParameters pattern;
+    op.parameters.test_pattern = pattern;
+    const auto document = manager.cam_operation_add(op);
+    const auto& created = document.cam.operations.back();
+    if (!expect(document.cam.tool_library.size() == 1 &&
+                    document.cam.tool_library[0].type == "laser" &&
+                    created.tool_id == document.cam.tool_library[0].tool_id,
+                "default tool: test pattern auto-resolves a laser tool")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── Test 34: engrave test grid — power columns × speed rows ──────
 
 bool test_test_pattern_engrave_grid() {
@@ -5459,6 +5517,8 @@ int main() {
       test_drilling_rim_re_resolves_after_edit);
   run("Test 65: drilling mixed wall + rim + point",
       test_drilling_mixed_face_edge_point);
+  run("Test 66: test-pattern create gate + default laser tool",
+      test_test_pattern_create_gate_and_default_tool);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

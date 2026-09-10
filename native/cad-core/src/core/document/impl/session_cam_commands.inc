@@ -414,10 +414,11 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
   }
   // A laser operation makes no sense on a milling machine — catch the
   // mismatch at creation time instead of at export time.
-  if (op.type == "laser_cut" && !document_->cam.setups.empty() &&
+  if ((op.type == "laser_cut" || op.type == "laser_test_pattern") &&
+      !document_->cam.setups.empty() &&
       document_->cam.setups[0].machine_type != "laser") {
     throw std::runtime_error(
-        "A laser cut operation requires a laser machine setup");
+        "A laser operation requires a laser machine setup");
   }
   // Drilling is a milling operation — a laser machine has no Z plunge.
   if (op.type == "drilling" && !document_->cam.setups.empty() &&
@@ -456,7 +457,8 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
   bool createDefaultTool = false;
   ToolEntry defaultTool;
   if (stored.tool_id.empty()) {
-    const bool wantsLaser = stored.type == "laser_cut";
+    const bool wantsLaser =
+        stored.type == "laser_cut" || stored.type == "laser_test_pattern";
     const bool wantsDrill = stored.type == "drilling";
     const ToolEntry* match = nullptr;
     for (const auto& tool : document_->cam.tool_library) {

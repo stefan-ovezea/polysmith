@@ -169,11 +169,114 @@ bool test_laser_golden() {
     std::cerr << gcode;
     return false;
   }
-  // Z only on the moves that change it: the first rapid carries Z5,
-  // the dive to Z0 on the second rapid.
-  if (!expect(gcode.find("Z5.000") != std::string::npos,
-              "grbl: rapid carries the retract Z")) {
+  // Laser programs are 2-axis: NO move carries a Z word (a gantry
+  // laser has no Z axis — the generators write a constant focus-plane
+  // Z that must not leak into the program).
+  if (!expect(gcode.find('Z') == std::string::npos,
+              "grbl: laser program carries no Z words")) {
     std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
+bool test_s0_before_m5_via_user_file() {
+  // A user file opts into laser_off_with_power: a 0-power change
+  // precedes every M5 (mid-cut and program end) — diode drivers latch
+  // the last S.
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0,
+                        300.0, 85.0, true});
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 2.0, 2.0, 0.0, 0.0, 0.0,
+                        300.0, 0.0, false});
+
+  const auto dir = std::filesystem::temp_directory_path() /
+                   "polysmith_posts_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream stream(dir / "grbl.json", std::ios::trunc);
+    stream << R"({"laser_off_with_power": true, "line_numbers": false})";
+  }
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", dir.string().c_str());
+#else
+  setenv("POLYSMITH_POSTS_DIR", dir.string().c_str(), 1);
+#endif
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "S0",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", "");
+#else
+  unsetenv("POLYSMITH_POSTS_DIR");
+#endif
+  if (!expect(gcode.find("S0.000\nM5") != std::string::npos,
+              "file post: S0 precedes the mid-cut M5")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
+bool test_s0_at_program_end_and_no_s0_by_default() {
+  // Beam still on at the last move → S0/M5/M2 with no duplicate M5;
+  // the built-in grbl (no flag) emits the plain M5 — opt-in stays
+  // backward compatible with stale user post files.
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0,
+                        300.0, 85.0, true});
+
+  const auto dir = std::filesystem::temp_directory_path() /
+                   "polysmith_posts_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream stream(dir / "grbl.json", std::ios::trunc);
+    stream << R"({"laser_off_with_power": true, "line_numbers": false})";
+  }
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", dir.string().c_str());
+#else
+  setenv("POLYSMITH_POSTS_DIR", dir.string().c_str(), 1);
+#endif
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "S0End",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", "");
+#else
+  unsetenv("POLYSMITH_POSTS_DIR");
+#endif
+  if (!expect(gcode.find("S0.000\nM5\nM2") != std::string::npos &&
+                  gcode.find("M5\nM5") == std::string::npos,
+              "file post: program end reads S0/M5/M2, no duplicate M5")) {
+    std::cerr << gcode;
+    return false;
+  }
+
+  // Built-in grbl: no S0 power change at all (the flag is opt-in).
+  const std::string builtin = joined(post_process("grbl", context));
+  if (!expect(builtin.find("S0.000") == std::string::npos &&
+                  builtin.find("M5\nM2") != std::string::npos,
+              "builtin grbl: no S0 — output unchanged for existing users")) {
+    std::cerr << builtin;
     return false;
   }
   return true;
@@ -952,6 +1055,22 @@ int main() {
 
   std::cout << "  Test 18: drill inch scaling + WCS offset... ";
   if (test_drill_inch_scaling()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 19: S0 before the mid-cut M5 (user file)... ";
+  if (test_s0_before_m5_via_user_file()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 20: S0 at program end; built-in has no S0... ";
+  if (test_s0_at_program_end_and_no_s0_by_default()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";
