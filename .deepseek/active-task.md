@@ -1,6 +1,85 @@
-# Active task: CAM Adaptive Clearing — contour-parallel spiral (cam/milling) — P1–P3 implemented, in-app verification pending (2026-09-10)
+# Active task: CAM Slot Milling — open-edge slots (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
 
-> **Branch:** `cam/milling` (HEAD 6b1c7cf, clean tree)
+> **Branch:** `cam/milling` (HEAD af5fa0a at start)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 7 (user decisions, binding)
+
+Next milling-sprint milestone after Adaptive Clearing. **Slot design
+(2026-09-10):** a picked STRAIGHT line edge is the slot's OPEN side —
+the tool cuts a tool-width groove from the edge INTO the material, on
+the side of the adjacent horizontal top face. Depth =
+`slot.depth_mm` below that face's Z; optional stepdown multi-pass.
+Centerline/two-wall semantics, closed slots, and arc edges are OUT.
+**Selection-based input, no armed pick:** the trigger captures
+`selected_edge_ids`; Re-pick re-captures the current selection. Zero
+driver/IPC changes — the existing `cam_capture_edge_reference`
+command + EdgeAttestation serde carry everything.
+
+## Phases
+
+- **P1 Native generator + params + serde — DONE.** `slot.{h,cpp}` +
+  `impl/slot_generate.inc` (live-edge re-open, GeomAbs_Line guard,
+  top-face find via MapShapesAndAncestors + steepest upward normal,
+  inward = face-COM probe minus the edge-parallel component, climb
+  walk W = (inward.y, −inward.x), path = edge + tool radius × inward,
+  plan_stepdown_levels when stepdown set, CUT-major emission, retract
+  guards); `SlotParameters { depth_mm = 5.0 }` optional params block
+  (the contour serde pattern); registry flip in cam_generators_test.
+  Gate: `core:build` clean (app closed) + `test:core` 42/42.
+- **P2 Native tests — DONE.** `tests/cam_slot_test.cpp` (12 tests;
+  CMake target `cad_core_cam_slot_test`). **One design correction
+  during P2:** `resolve_edge_reference` resolved CIRCLE witnesses
+  only — line witnesses always scored NotFound (the slot op is the
+  first line-edge consumer). Added line scoring
+  (`cam_edge_reference_resolve.inc`): endpoint proximity 0.5
+  (orientation-agnostic pairing, `kEdgeMaxEndpointDistance` 5 mm),
+  length ratio 0.25, absolute direction dot 0.25; the circle path is
+  untouched (drilling unaffected). Fixture fixes: find_top_edge_index
+  picks by MAX coordinate (min-y ties between the y=0 and x=0 edges),
+  and the circle test needs a full rim witness (circle fields) so the
+  GENERATOR's line guard fires. Gate: `pnpm test:core` **43/43
+  suites**.
+- **P3 UI — DONE.** `camSlotActions.ts` (selection-based capture of
+  every selected edge), `CamSlotPanel` (edge rows + Re-pick, depth,
+  clearable stepdown), toolbar button after Drill (open-slot glyph,
+  gated on setup + selected edges), CamToolbar/documentUiState/
+  CamOperationPanel/status-line unions, i18n `cam.slot.*` block,
+  App.tsx `triggerCamSlotAction` + `handleRepickSlotEdges`,
+  CamFloatingPanels slot branch + `onRepickSlotEdges` threaded
+  through `buildOperationPanel`'s Pick type. Gate: `tsc --noEmit`
+  clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md slot section +
+  progress row 17, Implementation-Log entry).
+
+## In-app verification checklist (user confirms before commit)
+
+1. Toolbar shows Slot after Drill, disabled without setup;
+   "Select a straight edge first" tooltip without edge selection.
+2. Select the top edge of a box → Slot → preview: one pass at
+   edge + tool radius, inward (groove INTO the material), rapids at
+   retract, plunge + feed at the depth.
+3. Depth edit live; stepdown set → multipass levels; cleared →
+   single pass.
+4. Two selected edges → two grooves in selection order; remove a
+   row; re-select → Re-pick re-captures.
+5. Generate + Export G-code (GRBL) shows G0/G1 runs.
+6. Regression: pocket/adaptive/drill/contour/face/laser generate +
+   export; save → reopen round-trips slot params + edge attestations.
+
+## Next steps
+
+- User in-app verification → commit on approval (no Co-Authored-By).
+
+---
+
+# Previous task: CAM Adaptive Clearing — contour-parallel spiral (cam/milling) — COMMITTED af5fa0a (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD 6b1c7cf at start)
 > **Date:** 2026-09-10
 > **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
 > (every commit gated on build/tests + user in-app verification —
@@ -40,22 +119,12 @@ were already plumbed end-to-end).
 - **P4 Docs — DONE** (this file, CAM-Development.md section + progress
   row 16, Implementation-Log entry).
 
-## In-app verification checklist (user confirms before commit)
+## Verification
 
-1. Toolbar shows Adaptive after Pocket, disabled without setup/face.
-2. Create on a box face → preview: concentric inward spiral, climb
-   direction, rapids at retract, plunges per loop.
-3. Stepover % changes the loop spacing live; stepdown set → multi-pass
-   levels.
-4. Pick an island → loops wrap around it, no feed inside the grown
-   footprint; remove island; re-pick face.
-5. Generate + Export G-code.
-6. Regression: pocket/contour/drilling/face-milling/laser still
-   generate + export; save → reopen round-trips.
-
-## Next steps
-
-- User in-app verification → commit on approval (no Co-Authored-By).
+- `pnpm test:core` 42/42 suites, `tsc --noEmit` clean, user verified
+  in-app ("OK it works. go ahead with commit and continue with
+  implementation") → COMMITTED af5fa0a (2026-09-10, user-approved; no
+  Co-Authored-By trailer).
 
 ---
 

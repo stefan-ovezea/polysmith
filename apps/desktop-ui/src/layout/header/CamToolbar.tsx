@@ -5,4 +5,5 @@ export type CamOperationType =
   | "adaptive"
   | "contour"
   | "drill"
+  | "slot"
   | "laserCut";

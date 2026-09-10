@@ -74,6 +74,8 @@ export function CamOperationPanel({
         return t("cam.common.contour");
       case "drill":
         return t("cam.drill");
+      case "slot":
+        return t("cam.slot.label");
     }
   };
 

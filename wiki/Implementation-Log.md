@@ -4,6 +4,59 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-09-10
 
+### CAM Slot Milling: open-edge slots (cam/milling)
+
+Binding design (user decisions): a picked STRAIGHT line edge is the
+slot's **open side** — the tool cuts a tool-width groove from the
+edge INTO the material, on the side of the adjacent horizontal top
+face. Depth = `slot.depth_mm` below that face's Z; optional stepdown
+multi-pass. Centerline/two-wall semantics, closed slots, and arc
+edges are OUT. Selection-based input (no armed pick): the trigger
+captures `selected_edge_ids`; Re-pick re-captures the current
+selection.
+
+- **Generator** (`slot.{h,cpp}` + `impl/slot_generate.inc`,
+  registered in `cam_generators.cpp`): per resolved edge — live-edge
+  re-open (drilling pattern), `GeomAbs_Line` guard, vertical guard,
+  top-face find (`MapShapesAndAncestors` + steepest upward
+  orientation-corrected normal ≥ `kMaxUpwardFaceTilt`), inward =
+  face-COM probe stripped of the edge-parallel component, climb walk
+  `W = (inward.y, −inward.x)` (material left; conventional flips),
+  path = edge + tool radius × inward, `plan_stepdown_levels` from the
+  stock top when stepdown set, CUT-major emission (each edge's levels
+  contiguous: rapid-plunge-feed-rapid per pass). Retract guards
+  ("below the face height" / "below the stock top"); non-positive
+  depth → "The slot depth must be positive."
+- **Edge resolution** (`cam_edge_reference_resolve.inc`): line
+  witnesses now resolve (previously circle-only — the slot op is the
+  first line-edge consumer). Endpoint proximity (0.5,
+  orientation-agnostic pairing), length ratio (0.25), absolute
+  direction dot (0.25); `kEdgeMaxEndpointDistance` = 5 mm. The circle
+  path is untouched (drilling unaffected).
+- **Serde** (`cam_types.h` + `basic_payloads_and_cam.inc` +
+  `cam_from_payload.inc`): `SlotParameters { depth_mm = 5.0 }` as an
+  optional per-type params block (the contour pattern — absent key
+  falls back to struct defaults).
+- **Tests** (`cam_slot_test.cpp`, 12 tests): registry, basic slot
+  (4 moves, path y=3, plunge 600/feed 1200, laser off), climb/
+  conventional walk flip + "mixed" warning, stepdown multipass
+  (levels {8,6,5} — stock tops are CENTERED on the model bbox),
+  multi-edge cut-major ordering, depth validation, full-circle rim
+  rejected ("straight line edges"), bottom-face edge rejected
+  ("horizontal face adjacent"), broken edge attestation (refresh AND
+  generate degrade with "was not found"), retract guards, payload
+  round-trip, material-side pin. `cam_generators_test` registry
+  assertion flipped (slot registered).
+- **UI**: `camSlotActions.ts` selection-based trigger +
+  `CamSlotPanel` (edge rows + Re-pick, depth, clearable stepdown),
+  toolbar button after Drill (open-slot glyph, gated on setup +
+  selected edges), `CamToolbar`/`documentUiState`/`CamOperationPanel`/
+  status-line unions, i18n `cam.slot.*` block. Zero driver/IPC
+  changes — the existing `cam_capture_edge_reference` command and
+  EdgeAttestation serde carry everything.
+- Gates: `core:build` clean, `test:core` 43/43 suites, `tsc --noEmit`
+  clean.
+
 ### CAM Adaptive Clearing: contour-parallel spiral (cam/milling)
 
 Last milling-sprint milestone. v1 toolpath = concentric offset loops

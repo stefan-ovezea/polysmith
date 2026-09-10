@@ -10,6 +10,7 @@
 #include "core/cam/laser/laser_test_pattern.h"
 #include "core/cam/laser_cut.h"
 #include "core/cam/pocket_2d.h"
+#include "core/cam/slot.h"
 
 namespace polysmith::core {
 
@@ -49,6 +50,7 @@ void register_builtin_cam_generators() {
   register_adaptive_clearing_generator();
   register_contour_2d_generator();
   register_drilling_generator();
+  register_slot_generator();
   laser::register_laser_test_pattern_generator();
 }
 

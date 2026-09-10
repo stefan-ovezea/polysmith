@@ -19,6 +19,7 @@ import {
   CamLaserCutPanel,
   CamPocketPanel,
   CamSetupPanel,
+  CamSlotPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
   type AdaptiveFormState,
@@ -27,6 +28,7 @@ import {
   type DrillingFormState,
   type FaceMillingFormState,
   type PocketFormState,
+  type SlotFormState,
 } from "../layout";
 import { DEFAULT_ADAPTIVE_PARAMS } from "../layout/CamAdaptivePanel";
 import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
@@ -36,6 +38,7 @@ import {
   DEFAULT_CONTOUR_PARAMS,
 } from "../layout/CamContourPanel";
 import { DEFAULT_DRILLING_PARAMS } from "../layout/CamDrillingPanel";
+import { DEFAULT_SLOT_PARAMS } from "../layout/CamSlotPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
@@ -101,6 +104,9 @@ interface CamFloatingPanelsProps {
   drillPick: { opId: string } | null;
   onPickDrillPoint: (opId: string) => void;
   onCancelDrillPick: () => void;
+  // Slot Re-pick — re-captures the CURRENT edge selection (no armed
+  // pick state; selection is already the input).
+  onRepickSlotEdges: (opId: string) => void;
   camSetupCreate: (setup: CamSetup) => Promise<void>;
   camSetupUpdate: (setup: CamSetup) => Promise<void>;
   camMachineSettingsSet: (settings: LaserMachineSettings) => Promise<void>;
@@ -158,6 +164,7 @@ export function CamFloatingPanels({
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
+  onRepickSlotEdges,
   camSetupCreate,
   camSetupUpdate,
   camMachineSettingsSet,
@@ -297,6 +304,7 @@ export function CamFloatingPanels({
         drillPick,
         onPickDrillPoint,
         onCancelDrillPick,
+        onRepickSlotEdges,
         t,
       })
     : null;
@@ -338,6 +346,7 @@ function buildOperationPanel({
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
+  onRepickSlotEdges,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -369,6 +378,7 @@ function buildOperationPanel({
   | "drillPick"
   | "onPickDrillPoint"
   | "onCancelDrillPick"
+  | "onRepickSlotEdges"
 > & { t: (key: string, options?: Record<string, unknown>) => string }) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
@@ -959,6 +969,92 @@ function buildOperationPanel({
       />
     );
   }
+
+  if (operation.type === "slot") {
+    const parameters = operation.parameters;
+    const slot = parameters.slot ?? { depth_mm: DEFAULT_SLOT_PARAMS.depth_mm };
+    const initialParams: SlotFormState = {
+      depth_mm: slot.depth_mm ?? DEFAULT_SLOT_PARAMS.depth_mm,
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ?? DEFAULT_SLOT_PARAMS.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_SLOT_PARAMS.plunge_feedrate_mm_per_min,
+      spindle_rpm:
+        parameters.spindle_rpm ?? DEFAULT_SLOT_PARAMS.spindle_rpm,
+      // Absent in the params = single pass; never substitute a default
+      // number for a cleared stepdown.
+      stepdown_mm: parameters.stepdown_mm,
+    };
+    const tools =
+      document?.cam.tool_library.filter(
+        (entry) => entry.type === "endmill_flat",
+      ) ?? [];
+    const regions = operation.geometry_references.machining_regions;
+    return (
+      <CamSlotPanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        edgeCount={regions.length}
+        onRepickEdges={() => onRepickSlotEdges(operation.op_id)}
+        onRemoveEdge={(index) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                ...operation.geometry_references,
+                machining_regions: regions.filter(
+                  (_, entryIndex) => entryIndex !== index,
+                ),
+              },
+            });
+          });
+        }}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: {
+                ...parameters,
+                feedrate_mm_per_min:
+                  partial.feedrate_mm_per_min ??
+                  parameters.feedrate_mm_per_min,
+                plunge_feedrate_mm_per_min:
+                  partial.plunge_feedrate_mm_per_min ??
+                  parameters.plunge_feedrate_mm_per_min,
+                spindle_rpm:
+                  partial.spindle_rpm ?? parameters.spindle_rpm,
+                stepdown_mm:
+                  partial.stepdown_mm !== undefined
+                    ? partial.stepdown_mm
+                    : parameters.stepdown_mm,
+                slot: {
+                  ...slot,
+                  depth_mm: partial.depth_mm ?? slot.depth_mm,
+                },
+              },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
 
   // Unsupported operation kinds get no panel yet — the sidebar list
   // still shows them, and generation is not offered for them.

@@ -240,6 +240,15 @@ export const contourParametersSchema = z
   })
   .passthrough();
 
+// Single source of truth for open-slot defaults — the UI spreads this
+// instead of carrying a parallel constants block.  The C++ struct
+// defaults match (cam_types.h SlotParameters).
+export const slotParametersSchema = z
+  .object({
+    depth_mm: z.number().positive().default(5),
+  })
+  .passthrough();
+
 // Machine settings + test patterns (test_pattern is referenced by
 // camOperationParametersSchema below — must be declared first).
 export const laserMachineSettingsSchema = z
@@ -294,6 +303,7 @@ const camOperationParametersSchema = z
     engagement_angle_deg: z.number().optional(),
     zigzag_angle_deg: z.number().optional(),
     contour: contourParametersSchema.optional(),
+    slot: slotParametersSchema.optional(),
     laser: laserCutParametersSchema.optional(),
     test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),

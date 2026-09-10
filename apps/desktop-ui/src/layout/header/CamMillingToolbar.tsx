@@ -12,12 +12,15 @@ export interface CamMillingToolbarProps {
   selectedFaceId: string | null;
   // Selected sketch profiles — 2D Contour's alternative input.
   selectedProfileCount: number;
+  // Selected body edges — each is a slot's open side.
+  selectedEdgeCount: number;
   onSetupClick: () => void;
   onFaceMillingClick: () => void;
   onPocketClick: () => void;
   onAdaptiveClick: () => void;
   onContourClick: () => void;
   onDrillClick: () => void;
+  onSlotClick: () => void;
 }
 
 export function CamMillingToolbar({
@@ -25,12 +28,14 @@ export function CamMillingToolbar({
   hasSetup,
   selectedFaceId,
   selectedProfileCount,
+  selectedEdgeCount,
   onSetupClick,
   onFaceMillingClick,
   onPocketClick,
   onAdaptiveClick,
   onContourClick,
   onDrillClick,
+  onSlotClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
   const pushToast = useToastStore((state) => state.pushToast);
@@ -46,7 +51,8 @@ export function CamMillingToolbar({
   // accepts either a selected face OR selected sketch profiles.
   // Drilling needs only a setup — its holes are BODY geometry (wall
   // faces, rim edges) or free points, picked after the operation is
-  // created (sketch input is not a drilling target).
+  // created (sketch input is not a drilling target).  Slot needs a
+  // setup plus selected straight edges — each is a slot's open side.
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
   const pocketReady = faceReady;
   const adaptiveReady = faceReady;
@@ -55,6 +61,7 @@ export function CamMillingToolbar({
     (Boolean(selectedFaceId) || selectedProfileCount > 0) &&
     !disabled;
   const drillReady = hasSetup && !disabled;
+  const slotReady = hasSetup && selectedEdgeCount > 0 && !disabled;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -140,6 +147,24 @@ export function CamMillingToolbar({
           <circle cx="12" cy="12" r="3" />
           <circle cx="12" cy="12" r="1" fill="currentColor" />
           <path d="M12 15v4M10 19h4" />
+        </svg>
+      </button>
+
+      <button type="button"
+        className={slotReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && selectedEdgeCount === 0
+            ? t("cam.slot.selectEdgeFirst", "Select a straight edge first")
+            : t("cam.slot.label", "Slot")
+        }
+        aria-label={t("cam.slot.label", "Slot")}
+        disabled={!slotReady}
+        onClick={onSlotClick}>
+        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
+          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+          strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M8 12h10M8 8v10" />
         </svg>
       </button>
 

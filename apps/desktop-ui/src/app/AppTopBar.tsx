@@ -162,6 +162,7 @@ interface AppTopBarProps {
   triggerCamAdaptive: AsyncVoid;
   triggerCamContour: AsyncVoid;
   triggerCamDrilling: AsyncVoid;
+  triggerCamSlot: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
 }
 
@@ -467,6 +468,7 @@ export function AppTopBar(props: AppTopBarProps) {
       selectedCamProfileCount={
         props.document?.selected_sketch_profile_ids?.length ?? 0
       }
+      selectedCamEdgeCount={props.document?.selected_edge_ids?.length ?? 0}
       camMachineType={props.camMachineType}
       onCamSetupClick={() => {
         props.setIsCamSetupPanelOpen((prev) => !prev);
@@ -485,6 +487,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onCamDrillClick={() => {
         void props.triggerCamDrilling();
+      }}
+      onCamSlotClick={() => {
+        void props.triggerCamSlot();
       }}
       onCamTwoDCutClick={() => {
         void props.triggerCamLaserCut();

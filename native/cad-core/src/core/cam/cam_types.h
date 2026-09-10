@@ -328,6 +328,14 @@ struct ContourParameters {
   double stock_allowance_mm = 0.0;  // extra radial allowance for finishing
 };
 
+/// Open-slot parameters (only meaningful when type == "slot").
+/// The groove floor sits `depth_mm` below the adjacent horizontal
+/// face; the slot width is the tool diameter (multi-width offsets are
+/// a future refinement).
+struct SlotParameters {
+  double depth_mm = 5.0;  // groove floor below the adjacent top face
+};
+
 struct CamOperationParameters {
   // Basic cutting.
   double spindle_rpm = 8000.0;
@@ -352,6 +360,7 @@ struct CamOperationParameters {
   std::optional<LaserCutParameters> laser;          // for laser_cut
   std::optional<LaserTestPatternParameters> test_pattern;  // laser_test_pattern
   std::optional<ContourParameters> contour;         // for contour_2d
+  std::optional<SlotParameters> slot;               // for slot
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"

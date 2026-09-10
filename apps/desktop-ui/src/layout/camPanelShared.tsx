@@ -147,7 +147,8 @@ export function CamStatusLine({
     | "cam.pocket"
     | "cam.adaptive"
     | "cam.contour"
-    | "cam.drilling";
+    | "cam.drilling"
+    | "cam.slot"
 }) {
   const { t } = useTranslation();
 

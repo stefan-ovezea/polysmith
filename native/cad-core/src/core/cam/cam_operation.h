@@ -162,6 +162,12 @@ inline constexpr double kScoreThreshold = 0.7;
 // also sets how far apart two rims must be to stay unambiguous.
 inline constexpr double kEdgeMaxCenterDistance = 5.0;
 
+// Maximum endpoint drift (mm, summed over both endpoints) for an edge
+// LINE witness to keep scoring on the endpoint term; beyond this the
+// term is 0.  Together with length + direction the threshold tolerates
+// small recompute drift while still degrading broken references.
+inline constexpr double kEdgeMaxEndpointDistance = 5.0;
+
 // ── Toolpath (runtime, not serialized) ────────────────────────────
 
 struct CamToolpathPoint {

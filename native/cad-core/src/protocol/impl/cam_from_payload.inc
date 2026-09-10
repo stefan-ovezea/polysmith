@@ -387,6 +387,13 @@ polysmith::core::ContourParameters contour_parameters_from_payload(
   return contour;
 }
 
+polysmith::core::SlotParameters slot_parameters_from_payload(
+    const json& payload) {
+  polysmith::core::SlotParameters slot;
+  slot.depth_mm = cam_read_number(payload, "depth_mm", 5.0);
+  return slot;
+}
+
 polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
     const json& payload) {
   polysmith::core::CamOperationParameters p;
@@ -446,6 +453,9 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
   }
   if (payload.contains("contour") && !payload.at("contour").is_null()) {
     p.contour = contour_parameters_from_payload(payload.at("contour"));
+  }
+  if (payload.contains("slot") && !payload.at("slot").is_null()) {
+    p.slot = slot_parameters_from_payload(payload.at("slot"));
   }
   return p;
 }

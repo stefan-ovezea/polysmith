@@ -1561,6 +1561,8 @@ before the next operation depends on it:
 | 14. 2D Contour toolpath generation | ✅ Done (2026-09-08) — face or sketch-profile input, inside/outside/on-line offsets, exact G2/G3 arcs with polyline fallback, climb/conventional rule |
 | 15. Drilling toolpath generation | ✅ Done (2026-09-09) — G81/G83, circle-center + free-pick points, through-hole toggle, canned-where-supported posts (longhand for GRBL) |
 | 16. Adaptive Clearing toolpath generation | ✅ Done (2026-09-10) — contour-parallel spiral (v1): concentric offset loops with climb-constant walk, island/boss families, arc-aware clipping |
+| 17. Slot toolpath generation (open slot) | ✅ Done (2026-09-10) — straight-edge open side, adjacent-top-face inward cut, climb/conventional walk, stepdown multi-pass, cut-major emission |
+
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -2069,53 +2071,86 @@ armed face pick is SHARED with the pocket (`kind` picks the toast
 copy). Stock allowance / cutting direction / engagement angle stay
 out of the UI in v1 (editable via JSON; params round-trip).
 
-## Architecture notes for extension
+## Slot Milling — Open Slot (2026-09-10)
 
-New operation kinds are registry entries: implement a generator matching
-`CamGenerator` (`cam_generator.h`), register it in
-`register_builtin_cam_generators()` (`cam_generators.cpp`), add any
-per-type parameters as an optional block on `CamOperationParameters`
-(`cam_types.h`), and mirror the types in `apps/desktop-ui/src/types/geometry/cam.ts`.
-No changes to the document, refresh pass, IPC, or viewport machinery.
+A picked STRAIGHT line edge is the slot's **open side**; the tool cuts
+a tool-width groove from the edge INTO the material, on the side of
+the adjacent horizontal top face. `slot.depth_mm` is the groove floor
+below that face's Z; an optional Stepdown cuts multi-pass levels from
+the stock top down to the floor. (User decisions, binding: open slot
+only — centerline/two-wall semantics and closed slots are OUT. Works
+for grooves from a plate edge AND re-cutting a finished slot's wall.)
 
----
+### Per resolved edge (live re-derivation, TNP-safe)
 
-## What NOT to Build in V1
+1. **Live-edge re-open** (the drilling pattern — never trust stale
+   indices): `TopoDS::Edge(edgeMap(index+1))` from the resolved body;
+   `BRepAdaptor_Curve` must be `GeomAbs_Line` else "Slot requires
+   straight line edges …" (full circles and arcs are rejected — a
+   slot edge is an open side, not a rim); 2D length < 1e-9 →
+   "The selected edge is vertical — slot edges must lie horizontally."
+2. **Top-face find** (the pocket `classify_inner_wire` map pattern):
+   `TopExp::MapShapesAndAncestors(body, EDGE, FACE)`; the ancestor
+   with the steepest UPWARD orientation-corrected normal (≥
+   `kMaxUpwardFaceTilt`) is the machining face; its face_cut_plane
+   centre Z is the top. None → "Slot requires a horizontal face
+   adjacent to the selected edge."
+3. **Inward** = the face-interior perpendicular of the edge at its
+   midpoint: `V = faceCOM.xy − edgeMid.xy` (BRepGProp, mid-UV
+   fallback), `inward = normalize(V − E·(V·E))` (E = unit XY
+   tangent); degenerate (edge crosses the face centre) → "The slot's
+   inward direction could not be determined …".
+4. **Walk** (climb = material left — the 2D contour rule):
+   `W = (inward.y, −inward.x)`; "conventional" flips W; "mixed"/
+   unknown warn and behave as climb. Start/end oriented along W.
+5. **Path** = edge endpoints + `tool_radius × inward` — the groove
+   spans from the edge to a tool diameter into the material.
+   `bottomZ = topZ − depth_mm` (depth ≤ 0 → "The slot depth must be
+   positive."); levels = `plan_stepdown_levels(stockTopZ, bottomZ,
+   stepdown, {}, …)` when stepdown is set (stock top needed only
+   then), else `{bottomZ}`.
+6. **Emission is CUT-major** — each edge's levels contiguous
+   (rapid(start, retract) → feed(start, level, plunge) → feed(end,
+   level, feed) → rapid(end, retract) per pass), edges in region
+   order. Guards: retract < max face Z warns ("below the face
+   height"); multi-pass retract < stock top warns ("below the stock
+   top" — stock tops are CENTERED on the model bbox). Empty → "No
+   slot moves were produced."
 
-- **Collision detection.** Assume the user knows what they're doing. Toolpath
-  visualization lets them see obvious problems.
-- **Multi-pass roughing.** Single pass at full depth. Multi-pass is a
-  parameterization change, not an architectural one — add it later.
-- **4/5-axis.** 2.5D only. Everything is planar.
-- **Simulation.** Visual preview only, no material removal simulation.
-- **Tool wear compensation.** Not needed for hobbyist use.
-- **Binary IPC transport.** Chunked JSON is sufficient through v1.
-- **Turning and Printing operations.** Laser cutting, face milling, and
-  2D pocket are implemented; turning/printing remain disabled
-  scaffolding. Nesting, common-cut, and bridge/tab for cutting are not
-  built.
+### Line-edge resolution (new with slot)
 
----
+`resolve_edge_reference` previously scored CIRCLE witnesses only —
+line witnesses always NotFound (the slot op is the first line-edge
+consumer). Line scoring: endpoint proximity (weight 0.5,
+orientation-agnostic pairing, `kEdgeMaxEndpointDistance` = 5 mm
+summed), length ratio (0.25), absolute direction dot (0.25 — a
+reversed edge is the same slot side). The circle path is untouched;
+drilling rims resolve exactly as before.
 
-## Cross-Platform Notes
+### Failure semantics
 
-- **Windows:** Target Mach3/Mach4 and Grbl (common in hobby CNC). The IPC
-  wizard that launches OrcaSlicer can launch a post-processor.
-- **Linux:** LinuxCNC is the primary target. Native integration possible
-  (same machine runs both CAD and controller).
-- **macOS:** Development and simulation only — few real machines. Good
-  platform for testing because it catches POSIX assumptions.
+Empty edges / non-line edge / vertical edge / no adjacent horizontal
+face / degenerate inward / non-positive depth → hard errors with
+re-select guidance. Broken edge attestation degrades generate AND
+refresh with "The edge used by this operation was not found …" —
+never cut without a live edge.
 
-The post-processor abstraction hides platform differences. The G-code output
-is plain text — the transport (save to file, send over serial, network
-socket) is a separate concern outside the core.
+### Deliberate v1 exclusions
 
----
+No centerline or two-wall slot semantics; no closed slots; no arc
+edges; slot width is exactly the tool diameter (multi-offset widening
+is a future refinement).
 
-## References
+### UI
 
-- [Architecture Overview](Architecture-Overview) — system layout
-- [Topological Naming Problem](Topological-Naming-Problem) — TNP strategy
-- [IPC Protocol](IPC-Protocol) — communication contract
-- [Contextual Modeling Workflow](Contextual-Modeling-Workflow) — binding UX pattern (CAD version; CAM adapts it)
-- [V1 Roadmap](V1-Roadmap) — existing priorities (CAM is post-V1)
+Toolbar button after Drill in the 2.5D cluster (open-slot glyph),
+gated on setup + `selected_edge_ids.length > 0` ("Select a straight
+edge first" tooltip). **Selection-based input, no armed pick** — the
+trigger captures every selected edge as a TNP-safe witness at
+creation; Re-pick re-captures the current selection. Panel = indexed
+edge rows with remove + Re-pick, depth field, clearable stepdown +
+help, tool dropdown, shared feeds/spindle, status line
+(`cam.slot.*`). `SlotParameters { depth_mm = 5.0 }` as an optional
+per-type params block (the contour serde pattern — absent key falls
+back to struct defaults).
+

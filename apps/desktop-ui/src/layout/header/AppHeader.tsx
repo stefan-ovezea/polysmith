@@ -350,6 +350,8 @@ interface AppHeaderProps
   selectedCamFaceId: string | null;
   // Selected sketch profiles — the 2D Contour's alternative input.
   selectedCamProfileCount: number;
+  // Selected body edges — each is a slot's open side.
+  selectedCamEdgeCount: number;
   camMachineType: string | null;
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
@@ -357,6 +359,7 @@ interface AppHeaderProps
   onCamAdaptiveClick: () => void;
   onCamContourClick: () => void;
   onCamDrillClick: () => void;
+  onCamSlotClick: () => void;
   onCamTwoDCutClick: () => void;
   onCamTestPatternClick: () => void;
 }
@@ -467,6 +470,7 @@ export function AppHeader({
   hasCamSetup,
   selectedCamFaceId,
   selectedCamProfileCount,
+  selectedCamEdgeCount,
   camMachineType,
   onCamSetupClick,
   onCamFaceMillingClick,
@@ -474,6 +478,7 @@ export function AppHeader({
   onCamAdaptiveClick,
   onCamContourClick,
   onCamDrillClick,
+  onCamSlotClick,
   onCamTwoDCutClick,
   onCamTestPatternClick,
 }: AppHeaderProps) {
@@ -958,12 +963,14 @@ export function AppHeader({
               hasSetup={hasCamSetup}
               selectedFaceId={selectedCamFaceId}
               selectedProfileCount={selectedCamProfileCount}
+              selectedEdgeCount={selectedCamEdgeCount}
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
               onPocketClick={onCamPocketClick}
               onAdaptiveClick={onCamAdaptiveClick}
               onContourClick={onCamContourClick}
               onDrillClick={onCamDrillClick}
+              onSlotClick={onCamSlotClick}
             />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />

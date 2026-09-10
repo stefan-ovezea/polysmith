@@ -77,6 +77,8 @@ function coreCamOperationTypeToUi(type: string): CamOperationType {
       return "contour";
     case "drilling":
       return "drill";
+    case "slot":
+      return "slot";
     default:
       return "profile";
   }

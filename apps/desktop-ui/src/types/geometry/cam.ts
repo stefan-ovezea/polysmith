@@ -226,6 +226,14 @@ export interface ContourParameters {
   stock_allowance_mm: number;
 }
 
+// Open slot parameters (only meaningful when type == "slot").  Each
+// selected straight edge is a slot's open side; the tool cuts a
+// tool-width groove from the edge INTO the material, depth_mm below
+// the adjacent horizontal top face.
+export interface SlotParameters {
+  depth_mm: number;
+}
+
 export interface CamOperationParameters {
   spindle_rpm: number;
   feedrate_mm_per_min: number;
@@ -247,6 +255,7 @@ export interface CamOperationParameters {
   engagement_angle_deg?: number;
   zigzag_angle_deg?: number;     // for face milling
   contour?: ContourParameters;   // for contour_2d
+  slot?: SlotParameters;         // for slot
   laser?: LaserCutParameters;    // for laser_cut
   test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";

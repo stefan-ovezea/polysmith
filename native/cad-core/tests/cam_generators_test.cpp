@@ -231,7 +231,8 @@ bool test_registry() {
                 "registry: pocket_2d found") &&
          expect(polysmith::core::find_cam_generator("drilling") != nullptr,
                 "registry: drilling found") &&
-         expect(polysmith::core::find_cam_generator("slot") == nullptr,
+         expect(polysmith::core::find_cam_generator("slot") != nullptr,
+                "registry: slot found") &&
                 "registry: unregistered type reports null");
 }
 
@@ -4774,8 +4775,8 @@ bool test_drilling_validation_errors() {
       return false;
     }
   }
-  // A line edge carries no circle witness — resolution fails with the
-  // standard re-select message.
+  // A line edge RESOLVES (line witnesses score since the slot work) —
+  // drilling's own guard then rejects it with the rim-only message.
   {
     DocumentManager manager;
     manager.create_document();
@@ -4805,9 +4806,11 @@ bool test_drilling_validation_errors() {
     const auto outcome = polysmith::core::generate_operation_toolpath(
         manager.get_document().value(), opId, /*preview=*/false);
     if (!expect(outcome.found && !outcome.result.ok &&
-                    outcome.result.error_message.find("not found") !=
+                    outcome.result.error_message.find("not a circular "
+                                                     "rim") !=
                         std::string::npos,
-                "validation: line edge fails to resolve")) {
+                "validation: line edge rejected by the rim-only guard")) {
+      std::cerr << "  error: " << outcome.result.error_message << "\n";
       return false;
     }
   }

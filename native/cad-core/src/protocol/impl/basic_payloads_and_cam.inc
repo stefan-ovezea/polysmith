@@ -171,6 +171,12 @@ json to_payload(const polysmith::core::ContourParameters& contour) {
   };
 }
 
+json to_payload(const polysmith::core::SlotParameters& slot) {
+  return {
+      {"depth_mm", slot.depth_mm},
+  };
+}
+
 // ── GeometryReference ────────────────────────────────────────────
 
 json to_payload(const polysmith::core::GeometryReference& ref) {
@@ -303,6 +309,7 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
   if (p.laser.has_value())                j["laser"]                = to_payload(p.laser.value());
   if (p.test_pattern.has_value())         j["test_pattern"]         = to_payload(p.test_pattern.value());
   if (p.contour.has_value())              j["contour"]              = to_payload(p.contour.value());
+  if (p.slot.has_value())                 j["slot"]                 = to_payload(p.slot.value());
   return j;
 }
 

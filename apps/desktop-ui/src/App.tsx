@@ -124,6 +124,7 @@ import { triggerCamPocket } from "./app/camPocketActions";
 import { triggerCamAdaptive } from "./app/camAdaptiveActions";
 import { triggerCamContour } from "./app/camContourActions";
 import { triggerCamDrilling } from "./app/camDrillingActions";
+import { triggerCamSlot } from "./app/camSlotActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
@@ -1588,6 +1589,63 @@ function App() {
       translate: t,
     });
 
+  const triggerCamSlotAction = () =>
+    triggerCamSlot({
+      document,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      camCaptureEdgeReference,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
+  // Slot Re-pick: re-captures the CURRENT edge selection as the
+  // operation's machining regions — no armed pick state (selection is
+  // already the input).  Each edge is captured as a TNP-safe witness.
+  const handleRepickSlotEdges = (opId: string) => {
+    const edgeIds = document?.selected_edge_ids ?? [];
+    if (edgeIds.length === 0) {
+      addMessage(t("cam.slot.noSelection"));
+      useToastStore
+        .getState()
+        .pushToast("warn", t("cam.slot.noSelection"));
+      return;
+    }
+    void runAction(async () => {
+      const references: GeometryReference[] = [];
+      for (const edgeId of edgeIds) {
+        const response = await camCaptureEdgeReference(edgeId);
+        const payload = response.payload;
+        if (!payload?.attestation) {
+          addMessage(t("cam.slot.captureFailed"));
+          useToastStore
+            .getState()
+            .pushToast("error", t("cam.slot.captureFailed"));
+          return;
+        }
+        references.push({
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        });
+      }
+      const operation = document?.cam.operations.find(
+        (candidate) => candidate.op_id === opId,
+      );
+      if (!operation) {
+        return;
+      }
+      await camOperationUpdate(opId, {
+        geometry_references: {
+          ...operation.geometry_references,
+          machining_regions: references,
+        },
+      });
+      addMessage(t("cam.slot.edgesSet", { count: references.length }));
+    });
+  };
+
   // G-code export: pick a destination, let the core generate any stale
   // toolpaths and write the file with the configured post-processor.
   const exportCamGcodeAction = async () => {
@@ -2356,6 +2414,7 @@ function App() {
           triggerCamAdaptive={triggerCamAdaptiveAction}
           triggerCamContour={triggerCamContourAction}
           triggerCamDrilling={triggerCamDrillingAction}
+          triggerCamSlot={triggerCamSlotAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 
@@ -4261,6 +4320,7 @@ function App() {
                   setDrillPickArmed(null);
                   addMessage(t("cam.drilling.pickCanceled"));
                 }}
+                onRepickSlotEdges={handleRepickSlotEdges}
                 originPickArmed={originPickArmed}
                 onPickOrigin={() => {
                   if (originPickArmed) {
