@@ -425,6 +425,12 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     throw std::runtime_error(
         "A drilling operation requires a milling machine setup");
   }
+  // Engrave is a milling operation too — it plunges an endmill.
+  if (op.type == "engrave" && !document_->cam.setups.empty() &&
+      document_->cam.setups[0].machine_type == "laser") {
+    throw std::runtime_error(
+        "An engrave operation requires a milling machine setup");
+  }
   if (!op.op_id.empty()) {
     for (const auto& existing : document_->cam.operations) {
       if (existing.op_id == op.op_id) {

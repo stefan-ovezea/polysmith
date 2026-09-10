@@ -163,6 +163,7 @@ interface AppTopBarProps {
   triggerCamContour: AsyncVoid;
   triggerCamDrilling: AsyncVoid;
   triggerCamSlot: AsyncVoid;
+  triggerCamEngrave: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
 }
 
@@ -490,6 +491,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onCamSlotClick={() => {
         void props.triggerCamSlot();
+      }}
+      onCamEngraveClick={() => {
+        void props.triggerCamEngrave();
       }}
       onCamTwoDCutClick={() => {
         void props.triggerCamLaserCut();

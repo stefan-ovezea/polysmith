@@ -439,7 +439,8 @@
         // created with an EMPTY scope — the panel fills it in
         // afterwards (the reference-sketch dropdown).  Every other
         // operation type still requires geometry up front.
-        if (op.type != "laser_cut" && op.type != "contour_2d") {
+        if (op.type != "laser_cut" && op.type != "contour_2d" &&
+            op.type != "engrave") {
           polysmith::protocol::write_message(
               polysmith::protocol::make_error_event(
                   command.id, "NO_PROFILE_SELECTION",
@@ -503,7 +504,8 @@
       // explicit profile selection — an empty selection is an error,
       // never a silent fallback to the whole selected sketch.
       if (merged.geometry_references.machining_regions.empty() &&
-          (merged.type == "laser_cut" || merged.type == "contour_2d")) {
+          (merged.type == "laser_cut" || merged.type == "contour_2d" ||
+           merged.type == "engrave")) {
         if (document->selected_sketch_profile_ids.empty() ||
             !polysmith::core::capture_profile_references_from_profile_ids(
                 document.value(), document->selected_sketch_profile_ids,

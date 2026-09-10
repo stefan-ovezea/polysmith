@@ -79,7 +79,11 @@ function coreCamOperationTypeToUi(type: string): CamOperationType {
       return "drill";
     case "slot":
       return "slot";
+    case "engrave":
+      return "engrave";
+    case "laser_test_pattern":
+      return "laserTestPattern";
     default:
-      return "profile";
+      return "unknown";
   }
 }

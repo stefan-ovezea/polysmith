@@ -249,6 +249,14 @@ export const slotParametersSchema = z
   })
   .passthrough();
 
+// Single source of truth for mill-engrave defaults — the C++ struct
+// defaults match (cam_types.h EngraveParameters).
+export const engraveParametersSchema = z
+  .object({
+    depth_mm: z.number().positive().default(0.5),
+  })
+  .passthrough();
+
 // Machine settings + test patterns (test_pattern is referenced by
 // camOperationParametersSchema below — must be declared first).
 export const laserMachineSettingsSchema = z
@@ -304,6 +312,7 @@ const camOperationParametersSchema = z
     zigzag_angle_deg: z.number().optional(),
     contour: contourParametersSchema.optional(),
     slot: slotParametersSchema.optional(),
+    engrave: engraveParametersSchema.optional(),
     laser: laserCutParametersSchema.optional(),
     test_pattern: laserTestPatternParametersSchema.optional(),
     coolant: z.string().default("off"),

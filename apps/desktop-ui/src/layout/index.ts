@@ -30,6 +30,7 @@ export * from "./CamAdaptivePanel";
 export * from "./CamContourPanel";
 export * from "./CamDrillingPanel";
 export * from "./CamSlotPanel";
+export * from "./CamEngravePanel";
 export * from "./CamGenerationResultPopup";
 export * from "./MirrorToolPanel";
 export * from "./ParametersPanel";

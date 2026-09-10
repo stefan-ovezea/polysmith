@@ -64,8 +64,6 @@ export function CamOperationPanel({
           : operation.mode === "score"
             ? t("cam.laserCut.modeScore")
             : t("cam.cutting.twoD");
-      case "profile":
-        return t("cam.profile");
       case "pocket":
         return t("cam.pocket.label");
       case "adaptive":
@@ -76,6 +74,12 @@ export function CamOperationPanel({
         return t("cam.drill");
       case "slot":
         return t("cam.slot.label");
+      case "engrave":
+        return t("cam.common.engrave");
+      case "laserTestPattern":
+        return t("cam.testPattern.title");
+      case "unknown":
+        return t("cam.common.unknown");
     }
   };
 

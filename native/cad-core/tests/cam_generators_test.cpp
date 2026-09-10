@@ -233,6 +233,9 @@ bool test_registry() {
                 "registry: drilling found") &&
          expect(polysmith::core::find_cam_generator("slot") != nullptr,
                 "registry: slot found") &&
+         expect(polysmith::core::find_cam_generator("engrave") != nullptr,
+                "registry: engrave found") &&
+         expect(polysmith::core::find_cam_generator("chamfer") == nullptr,
                 "registry: unregistered type reports null");
 }
 

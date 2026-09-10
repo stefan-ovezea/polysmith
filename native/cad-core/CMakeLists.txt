@@ -161,6 +161,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/pocket_2d.cpp
   src/core/cam/post_processor.cpp
   src/core/cam/slot.cpp
+  src/core/cam/engrave.cpp
   src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
   src/core/diagnostics/logger.cpp
@@ -340,6 +341,7 @@ polysmith_add_core_test(cad_core_adaptive_clearing_test tests/adaptive_clearing_
 # climb/conventional walk, stepdown levels, multi-edge ordering, error
 # paths, dependency degradation, guards, payload round-trip.
 polysmith_add_core_test(cad_core_cam_slot_test tests/cam_slot_test.cpp)
+polysmith_add_core_test(cad_core_cam_engrave_test tests/cam_engrave_test.cpp)
 
 polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 

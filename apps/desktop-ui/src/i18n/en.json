@@ -212,7 +212,6 @@
     }
   },
   "cam": {
-    "profile": "Profile",
     "pocket": {
       "label": "Pocket",
       "title": "2D Pocket",
@@ -331,6 +330,42 @@
       "edgesSet": "{{count}} edge(s) set — the slots now cut from them.",
       "edgeRemoved": "Edge removed."
     },
+    "engrave": {
+      "label": "Engrave",
+      "title": "Engrave",
+      "tool": "Tool",
+      "cuttingParams": "Cutting Parameters",
+      "geometry": "Geometry",
+      "geometrySummary": "{{count}} profile(s) captured",
+      "pickHint": " — {{count}} profile(s) selected",
+      "scopeSketch": "Reference sketch",
+      "scopeNone": "No sketch selected",
+      "scopeMixed": "Selected profiles",
+      "reselectGeometry": "Re-select geometry",
+      "applyRepick": "Apply selection",
+      "cancelRepick": "Cancel",
+      "clearSelection": "Clear selection",
+      "selectProfileFirst": "Select a sketch profile first",
+      "depth": "Depth (mm)",
+      "depthHelp": "Cut depth below the sketch plane — a shallow single pass.",
+      "feedrate": "Feedrate (mm/min)",
+      "plungeFeedrate": "Plunge (mm/min)",
+      "spindleRpm": "Spindle (RPM)",
+      "help": "Changes update the toolpath preview in real time.",
+      "preview": "Preview",
+      "generate": "Generate",
+      "delete": "Delete",
+      "close": "Close",
+      "exportGcode": "Export G-code",
+      "statusPending": "Not generated yet.",
+      "statusGenerated": "Toolpath generated.",
+      "statusNeedsRegenerate": "Geometry changed — regenerate the toolpath.",
+      "statusError": "Generation failed.",
+      "statusStats": "{{length}} mm · {{time}} s estimated",
+      "noDocument": "Open a document before starting an engrave operation.",
+      "noSetup": "Create a CAM setup before starting an engrave operation.",
+      "noSelection": "Select a sketch profile before starting an engrave operation."
+    },
     "contour": {
       "label": "Contour",
       "title": "2D Contour",
@@ -441,7 +476,7 @@
       "contour": "Contour",
       "engrave": "Engrave",
       "selectFaceFirst": "Select a face first",
-      "notImplemented": "This operation is not implemented yet."
+      "unknown": "Unknown"
     },
     "setup": {
       "title": "Setup",

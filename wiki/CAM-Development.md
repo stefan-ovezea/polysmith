@@ -1562,7 +1562,13 @@ before the next operation depends on it:
 | 15. Drilling toolpath generation | ✅ Done (2026-09-09) — G81/G83, circle-center + free-pick points, through-hole toggle, canned-where-supported posts (longhand for GRBL) |
 | 16. Adaptive Clearing toolpath generation | ✅ Done (2026-09-10) — contour-parallel spiral (v1): concentric offset loops with climb-constant walk, island/boss families, arc-aware clipping |
 | 17. Slot toolpath generation (open slot) | ✅ Done (2026-09-10) — straight-edge open side, adjacent-top-face inward cut, climb/conventional walk, stepdown multi-pass, cut-major emission |
+| 18. Engrave toolpath generation (mill) | ✅ Done (2026-09-10) — sketch-profile on-line trace at a fixed depth below the sketch plane, exact arcs + hole loops, ALL selected profiles, the laser-engrave twin |
 
+> **Deviation note (2026-09-10):** the scaffolding "Profile" toolbar button
+> was removed.  "Profile finishing" was always 2D Contour (§3 of the V1
+> list) — the button predates the contour op and only tosted
+> "not implemented".  The UI kind mapping now labels unknown core
+> types "Unknown" instead of silently calling them "Profile".
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -2154,3 +2160,121 @@ help, tool dropdown, shared feeds/spindle, status line
 per-type params block (the contour serde pattern — absent key falls
 back to struct defaults).
 
+## Engrave (mill) (2026-09-10)
+
+Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+fixed depth below the sketch plane — the milling twin of laser
+engrave. Text glyphs are closed tessellated contours, so profile
+capture covers text.
+
+### Semantics
+
+- **Input**: `SketchProfileAttestation` machining regions ONLY —
+  face/edge/point regions are rejected with "Engrave traces sketch
+  profiles only …" (checked BEFORE iterating: `geometry.profiles` and
+  `geometry.sketches` are parallel arrays filled together by the
+  driver). Every selected profile is traced in region order (contour's
+  first-only rule does NOT apply) — one rapid-plunge-feed-rapid per
+  loop.
+- **Per profile**: `resolve_sketch_frame(*geometry.sketches[r])` (a
+  mixed-sketch op maps each loop through its own plane);
+  `|normal_z| < kMaxUpwardFaceTilt` → "Engrave requires a horizontal
+  sketch plane…"; `cutZ = world_z(frame, {0,0}, −depth_mm)`.
+- **Outer loop**: `build_base_segments_from_edges` (exact arcs) with
+  `build_base_segments_from_points` fallback + tessellation warning;
+  standalone circles (`kind == "circle"` / `source_circle_id`)
+  synthesized as one full-circle arc; normalized CCW (material left).
+- **Inner loops TRACED** (laser-engrave parity — glyph counters like
+  "O"/"8" render hollow; no offset means no tool-fit collapse):
+  `circle_holes` descriptors as exact arcs, else sampled points;
+  holes walk CW (hole interior right). All bases stored CCW and the
+  hole flip makes the walk CW — the emission is uniform.
+- **Direction**: "conventional" flips both walks; "mixed"/unknown
+  warn and behave as climb. Left-handed frames flip arc sweeps.
+- **Guards** (warnings): retract < highest cut plane ("below the cut
+  plane"), retract < stock top, deepest cut < stock bottom ("below the
+  stock bottom" — EXPECTED for origin-plane sketches, cutZ = −depth
+  under a z=0 stock bottom). Depth ≤ 0 → "The engrave depth must be
+  positive."
+
+### Failure semantics
+
+Non-profile region / no regions / non-horizontal sketch plane /
+non-positive depth / tool-axis mode → hard errors. Broken profile
+attestation degrades generate AND refresh with "The sketch profile
+used by this operation was not found …".
+
+### Deliberate v1 exclusions
+
+No fill/hatch (laser has it), no lead-in/out, no depth passes
+(single pass by design — the panel has no stepdown field), sketch
+profile input only (no body faces).
+
+### UI
+
+Toolbar button after Contour (Engrave glyph), gated on setup +
+`selected_sketch_profile_ids.length > 0` ("Select a sketch profile
+first" tooltip). Trigger = the contour profile path without the face
+branch: created with NO geometry references — the core captures the
+selection (the create/update gates in cam_commands.inc widened with
+`"engrave"`). Panel = the contour panel minus the face branch, side,
+and allowance (depth + shared feeds/spindle + geometry summary + the
+scope-sketch dropdown + armed profile re-pick). `EngraveParameters
+{ depth_mm = 0.5 }` as an optional per-type params block. The
+laser-machine guard mirrors drilling ("An engrave operation requires
+a milling machine setup"). The scaffolding Profile button was removed
+(this op IS the profile-finishing step per §3); `coreCamOperationTypeToUi`
+now maps `engrave` and `laser_test_pattern` explicitly and unknown
+core types to "Unknown" (the old default silently labeled them
+"Profile").
+
+## Architecture notes for extension
+
+New operation kinds are registry entries: implement a generator matching
+`CamGenerator` (`cam_generator.h`), register it in
+`register_builtin_cam_generators()` (`cam_generators.cpp`), add any
+per-type parameters as an optional block on `CamOperationParameters`
+(`cam_types.h`), and mirror the types in `apps/desktop-ui/src/types/geometry/cam.ts`.
+No changes to the document, refresh pass, IPC, or viewport machinery.
+
+---
+
+## What NOT to Build in V1
+
+- **Collision detection.** Assume the user knows what they're doing. Toolpath
+  visualization lets them see obvious problems.
+- **Multi-pass roughing.** Single pass at full depth. Multi-pass is a
+  parameterization change, not an architectural one — add it later.
+- **4/5-axis.** 2.5D only. Everything is planar.
+- **Simulation.** Visual preview only, no material removal simulation.
+- **Tool wear compensation.** Not needed for hobbyist use.
+- **Binary IPC transport.** Chunked JSON is sufficient through v1.
+- **Turning and Printing operations.** Laser cutting, face milling, and
+  2D pocket are implemented; turning/printing remain disabled
+  scaffolding. Nesting, common-cut, and bridge/tab for cutting are not
+  built.
+
+---
+
+## Cross-Platform Notes
+
+- **Windows:** Target Mach3/Mach4 and Grbl (common in hobby CNC). The IPC
+  wizard that launches OrcaSlicer can launch a post-processor.
+- **Linux:** LinuxCNC is the primary target. Native integration possible
+  (same machine runs both CAD and controller).
+- **macOS:** Development and simulation only — few real machines. Good
+  platform for testing because it catches POSIX assumptions.
+
+The post-processor abstraction hides platform differences. The G-code output
+is plain text — the transport (save to file, send over serial, network
+socket) is a separate concern outside the core.
+
+---
+
+## References
+
+- [Architecture Overview](Architecture-Overview) — system layout
+- [Topological Naming Problem](Topological-Naming-Problem) — TNP strategy
+- [IPC Protocol](IPC-Protocol) — communication contract
+- [Contextual Modeling Workflow](Contextual-Modeling-Workflow) — binding UX pattern (CAD version; CAM adapts it)
+- [V1 Roadmap](V1-Roadmap) — existing priorities (CAM is post-V1)

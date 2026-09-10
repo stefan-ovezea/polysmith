@@ -4,6 +4,58 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-09-10
 
+### CAM Mill Engrave + Profile-button removal (cam/milling)
+
+Binding decisions (user): **remove the Profile toolbar button** (2D
+Contour is the V1 "profile finishing" op; the button was scaffolding)
+and **new mill "engrave" op** — traces sketch profile geometry
+ON-LINE (no offset, no leads) at a fixed depth below the sketch
+plane, the milling twin of laser engrave.
+
+- **Generator** (`engrave.{h,cpp}` + `impl/engrave_generate.inc`,
+  registered in `cam_generators.cpp`): SketchProfileAttestation
+  regions ONLY (mixed attestations rejected before the parallel
+  profiles/sketches arrays are touched); EVERY profile traced in
+  region order; per-region sketch frame + horizontal-plane guard;
+  `cutZ = world_z(frame, {0,0}, −depth)`; exact arcs with chord
+  fallback; standalone circles + circle holes synthesized as
+  full-circle arcs; outer CCW / holes CW (all bases stored CCW, the
+  hole flip makes the walk CW — the uniform-emission fix the tests
+  caught); rapid-plunge-feed-rapid per loop; retract/cut/stock guards;
+  depth ≤ 0 → "The engrave depth must be positive."
+- **Serde** (`cam_types.h` + `basic_payloads_and_cam.inc` +
+  `cam_from_payload.inc` + serialization.h): `EngraveParameters
+  { depth_mm = 0.5 }` optional per-type block (absent key → defaults).
+- **Gates**: cam_commands.inc create (:442) + update (:505) widened
+  with `"engrave"`; session laser-machine guard mirror
+  ("An engrave operation requires a milling machine setup"); the
+  default-tool branch already resolves endmill_flat.
+- **Tests** (`cam_engrave_test.cpp`, 12 tests): registry, rect + hole
+  (11 moves, hole = one exact CW arc, laser off), standalone circle
+  (CCW arc), depth validation, vertical-plane rejection, edge/empty
+  input rejection, tool-axis guard, climb/conventional reversal +
+  "mixed" warning, multi-profile region order (pinned dynamically —
+  the sketch's profile vector is not creation-ordered), guards
+  (raised-plane cutZ 9.5 pin + stock top/bottom warnings), broken
+  profile attestation (refresh + generate degrade — the centroid-only
+  corruption still clears the 0.7 threshold, so the test corrupts
+  centroid AND area), payload round-trip. `cam_generators_test`
+  registry gained the engrave-found assertion.
+- **UI**: `camEngraveActions.ts` (sketch-selection trigger, no
+  geometry references — core captures), `CamEngravePanel` (contour
+  panel minus face/side/allowance; no stepdown — single pass),
+  toolbar Engrave button enabled on setup + profile selection, i18n
+  `cam.engrave.*`. **Profile removal ripple**: button + `onNotImplemented`
+  + `cam.profile`/`cam.common.notImplemented` keys deleted; CamToolbar
+  union loses "profile", gains "engrave" | "laserTestPattern" |
+  "unknown"; `coreCamOperationTypeToUi` maps engrave and
+  laser_test_pattern explicitly with `default: "unknown"` (kills the
+  silent "Profile" fallback that mislabeled laser test-pattern ops);
+  CamOperationPanel labels the three new kinds; App.tsx profile
+  re-pick disarm condition widened with `"engrave"`.
+- Gates: `core:build` clean (app closed), `test:core` 44/44 suites,
+  `tsc --noEmit` clean.
+
 ### CAM Slot Milling: open-edge slots (cam/milling)
 
 Binding design (user decisions): a picked STRAIGHT line edge is the

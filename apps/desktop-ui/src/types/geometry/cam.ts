@@ -234,6 +234,14 @@ export interface SlotParameters {
   depth_mm: number;
 }
 
+// Mill engrave parameters (only meaningful when type == "engrave").
+// Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+// fixed depth below the sketch plane — the milling twin of laser
+// engrave.  Single pass.
+export interface EngraveParameters {
+  depth_mm: number;
+}
+
 export interface CamOperationParameters {
   spindle_rpm: number;
   feedrate_mm_per_min: number;
@@ -256,6 +264,7 @@ export interface CamOperationParameters {
   zigzag_angle_deg?: number;     // for face milling
   contour?: ContourParameters;   // for contour_2d
   slot?: SlotParameters;         // for slot
+  engrave?: EngraveParameters;   // for engrave
   laser?: LaserCutParameters;    // for laser_cut
   test_pattern?: LaserTestPatternParameters;  // for laser_test_pattern
   coolant: "off" | "flood" | "mist" | "through_tool";

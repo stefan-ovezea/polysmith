@@ -149,6 +149,7 @@ export function CamStatusLine({
     | "cam.contour"
     | "cam.drilling"
     | "cam.slot"
+    | "cam.engrave";
 }) {
   const { t } = useTranslation();
 

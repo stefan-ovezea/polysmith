@@ -1,4 +1,98 @@
-# Active task: CAM Slot Milling — open-edge slots (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+# Active task: CAM Mill Engrave + Profile-button removal (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+
+> **Branch:** `cam/milling` (slot milestone UNCOMMITTED in the tree —
+> both ship as separate commits after the shared in-app pass)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 8 (user decisions, binding)
+
+The two remaining stub toolbar buttons. **Profile button: REMOVED** —
+"Profile finishing" was shipped as 2D Contour; the button was
+scaffolding with a notImplemented toast. **Engrave: NEW mill op**
+(`"engrave"`, already reserved in cam_types.h + TS unions): traces
+sketch profile geometry ON-LINE (no offset, no leads, single pass) at
+a fixed depth below the sketch plane — the milling twin of laser
+engrave. Text glyphs are closed tessellated contours, so profile
+capture covers text.
+
+## Phases
+
+- **P1 Native — DONE.** `engrave.{h,cpp}` +
+  `impl/engrave_generate.inc` (sketch-profile-only input checked
+  BEFORE the parallel profiles/sketches arrays; ALL profiles in
+  region order; per-region frame + horizontal guard; exact arcs +
+  chord fallback; standalone circles + circle holes as exact arcs;
+  outer CCW / holes CW via the uniform base-CCW-then-flip rule;
+  rapid-plunge-feed-rapid per loop; guards); `EngraveParameters
+  { depth_mm = 0.5 }` + serde both directions; registry + CMake;
+  cam_commands create/update gates widened with `"engrave"`;
+  session laser-machine guard mirror; cam_generators_test registry
+  gained the engrave-found assertion. Gate: core:build + test:core
+  43/43.
+- **P2 Native tests — DONE.** `tests/cam_engrave_test.cpp` (12 tests;
+  target `cad_core_cam_engrave_test`). Corrections the tests caught:
+  the hole synthesis stored CW and the uniform hole-flip made it CCW
+  — all bases now store CCW and the flip makes the walk CW; the
+  sketch's profile vector is NOT creation-ordered, so the multi-profile
+  test pins machining-region order dynamically; a centroid-only
+  witness corruption still clears the 0.7 score threshold (kinds 0.35
+  + area 0.3 + holes 0.1) — the broken-attestation test corrupts
+  centroid AND area. Gate: `pnpm test:core` **44/44 suites**.
+- **P3 UI — DONE.** `camEngraveActions.ts` (sketch-selection trigger,
+  no geometry references — core captures via the widened gate),
+  `CamEngravePanel` (contour panel minus face/side/allowance; NO
+  stepdown — single pass), toolbar Engrave button (gated on setup +
+  profile selection), AppHeader/AppTopBar/App.tsx threading incl. the
+  :617 re-pick disarm widening, CamFloatingPanels engrave branch,
+  unions (CamToolbar/documentUiState/CamOperationPanel/camPanelShared),
+  i18n `cam.engrave.*`. **Profile removal ripple**: button +
+  onNotImplemented + `cam.profile`/`cam.common.notImplemented` keys
+  deleted; `coreCamOperationTypeToUi` gains engrave +
+  laser_test_pattern cases with `default: "unknown"` (kills the
+  silent "Profile" mislabel of laser test-pattern ops); CamToolbar
+  union = faceMilling/pocket/adaptive/contour/drill/slot/engrave/
+  laserCut/laserTestPattern/unknown. Gate: `tsc --noEmit` clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md row 18 + deviation
+  note + Engrave section, Implementation-Log entry).
+
+## In-app verification checklist (user confirms before commits)
+
+1. Milling toolbar: NO Profile button; Engrave after Contour, disabled
+   without setup, "Select a sketch profile first" tooltip without
+   profile selection.
+2. Box + sketch on the top face (rect + inner circle), both selected
+   → Engrave → preview traces the rect AND the hole on-line at −0.5
+   below the sketch plane; rapids at retract.
+3. Depth/feed/plunge/spindle live-update; tool dropdown = flat
+   endmills; geometry summary counts profiles; scope dropdown shows
+   the sketch.
+4. Re-select geometry → pick → Apply; scope retarget captures another
+   sketch's profiles.
+5. Generate + Export G-code (plunge + trace moves); ops list labels it
+   "Engrave".
+6. Degrade: edit/delete the profiles → needs_regenerate/error;
+   restore → regenerate.
+7. A laser test-pattern op labels "Test Pattern", NOT "Profile".
+8. Engrave create on a laser-machine setup → clear error.
+9. Text glyphs (with counters) trace outer + counters.
+10. Regression: slot + all other ops still generate/export.
+11. **Slot checklist (round 7, still owed):** toolbar Slot after
+    Drill; top-edge slot preview at edge + radius inward; stepdown
+    multipass (8/6/5); two edges → two grooves; Re-pick edges; G-code;
+    save → reopen round-trips slot params + edge rows.
+
+## Next steps
+
+- User in-app verification (both rounds) → commit 1 = Slot milestone,
+  commit 2 = Engrave milestone (both on approval, no Co-Authored-By).
+
+---
+
+# Previous task: CAM Slot Milling — open-edge slots (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
 
 > **Branch:** `cam/milling` (HEAD af5fa0a at start)
 > **Date:** 2026-09-10

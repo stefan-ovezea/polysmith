@@ -336,6 +336,14 @@ struct SlotParameters {
   double depth_mm = 5.0;  // groove floor below the adjacent top face
 };
 
+/// Mill engrave parameters (only meaningful when type == "engrave").
+/// Traces sketch profile geometry ON-LINE (no offset, no leads) at a
+/// fixed depth below the sketch plane — the milling twin of laser
+/// engrave.  Single pass.
+struct EngraveParameters {
+  double depth_mm = 0.5;  // cut plane below the sketch plane
+};
+
 struct CamOperationParameters {
   // Basic cutting.
   double spindle_rpm = 8000.0;
@@ -361,6 +369,7 @@ struct CamOperationParameters {
   std::optional<LaserTestPatternParameters> test_pattern;  // laser_test_pattern
   std::optional<ContourParameters> contour;         // for contour_2d
   std::optional<SlotParameters> slot;               // for slot
+  std::optional<EngraveParameters> engrave;         // for engrave
 
   // Coolant.
   std::string coolant = "off";  // "off" | "flood" | "mist" | "through_tool"

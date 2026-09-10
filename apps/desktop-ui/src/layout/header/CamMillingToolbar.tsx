@@ -1,7 +1,5 @@
 import { useTranslation } from "react-i18next";
 
-import { useToastStore } from "@/state/toastStore";
-
 const ICON_BUTTON_BASE = "cad-icon-button cad-icon-tool h-9 w-9 p-0";
 const ICON_BUTTON_DISABLED = "cad-icon-button cad-icon-tool h-9 w-9 p-0 opacity-40";
 
@@ -10,7 +8,8 @@ export interface CamMillingToolbarProps {
   hasSetup: boolean;
   // The currently selected body face — face milling requires one.
   selectedFaceId: string | null;
-  // Selected sketch profiles — 2D Contour's alternative input.
+  // Selected sketch profiles — 2D Contour's alternative input and the
+  // engrave input.
   selectedProfileCount: number;
   // Selected body edges — each is a slot's open side.
   selectedEdgeCount: number;
@@ -21,6 +20,7 @@ export interface CamMillingToolbarProps {
   onContourClick: () => void;
   onDrillClick: () => void;
   onSlotClick: () => void;
+  onEngraveClick: () => void;
 }
 
 export function CamMillingToolbar({
@@ -36,15 +36,9 @@ export function CamMillingToolbar({
   onContourClick,
   onDrillClick,
   onSlotClick,
+  onEngraveClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
-  const pushToast = useToastStore((state) => state.pushToast);
-
-  // Profile / Engrave have no generators yet (milestone work) — keep
-  // the buttons clickable but answer with a visible toast instead of a
-  // silent no-op.
-  const onNotImplemented = () =>
-    pushToast("info", t("cam.common.notImplemented", "This operation is not implemented yet."));
 
   // Face milling and 2D pocket share the same trigger: a setup plus a
   // selected body face (the milled top / pocket floor).  2D Contour
@@ -53,6 +47,8 @@ export function CamMillingToolbar({
   // faces, rim edges) or free points, picked after the operation is
   // created (sketch input is not a drilling target).  Slot needs a
   // setup plus selected straight edges — each is a slot's open side.
+  // Engrave needs a setup plus selected sketch profiles (sketch-only
+  // input — it traces sketch geometry on-line).
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
   const pocketReady = faceReady;
   const adaptiveReady = faceReady;
@@ -62,6 +58,7 @@ export function CamMillingToolbar({
     !disabled;
   const drillReady = hasSetup && !disabled;
   const slotReady = hasSetup && selectedEdgeCount > 0 && !disabled;
+  const engraveReady = hasSetup && selectedProfileCount > 0 && !disabled;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -81,18 +78,6 @@ export function CamMillingToolbar({
       </button>
 
       <div className="w-px h-6 cad-panel-soft-border mx-1" />
-
-      <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.profile")} aria-label={t("cam.profile")}
-        disabled={disabled} onClick={onNotImplemented}>
-        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
-          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
-          strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <rect x="7" y="8" width="10" height="8" rx="1" />
-          <circle cx="12" cy="12" r="2" />
-        </svg>
-      </button>
 
       <button type="button"
         className={pocketReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
@@ -206,8 +191,16 @@ export function CamMillingToolbar({
         </svg>
       </button>
 
-      <button type="button" className={ICON_BUTTON_DISABLED}
-        data-tooltip={t("cam.common.engrave")} aria-label={t("cam.common.engrave")} disabled>
+      <button type="button"
+        className={engraveReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && selectedProfileCount === 0
+            ? t("cam.engrave.selectProfileFirst", "Select a sketch profile first")
+            : t("cam.common.engrave")
+        }
+        aria-label={t("cam.common.engrave")}
+        disabled={!engraveReady}
+        onClick={onEngraveClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">

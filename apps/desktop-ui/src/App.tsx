@@ -125,6 +125,7 @@ import { triggerCamAdaptive } from "./app/camAdaptiveActions";
 import { triggerCamContour } from "./app/camContourActions";
 import { triggerCamDrilling } from "./app/camDrillingActions";
 import { triggerCamSlot } from "./app/camSlotActions";
+import { triggerCamEngrave } from "./app/camEngraveActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
@@ -614,7 +615,9 @@ function App() {
     );
     if (
       !operation ||
-      (operation.type !== "laser_cut" && operation.type !== "contour_2d")
+      (operation.type !== "laser_cut" &&
+        operation.type !== "contour_2d" &&
+        operation.type !== "engrave")
     ) {
       finishCamProfileRepick();
     }
@@ -1601,6 +1604,17 @@ function App() {
       translate: t,
     });
 
+  const triggerCamEngraveAction = () =>
+    triggerCamEngrave({
+      document,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
   // Slot Re-pick: re-captures the CURRENT edge selection as the
   // operation's machining regions — no armed pick state (selection is
   // already the input).  Each edge is captured as a TNP-safe witness.
@@ -2415,6 +2429,7 @@ function App() {
           triggerCamContour={triggerCamContourAction}
           triggerCamDrilling={triggerCamDrillingAction}
           triggerCamSlot={triggerCamSlotAction}
+          triggerCamEngrave={triggerCamEngraveAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 

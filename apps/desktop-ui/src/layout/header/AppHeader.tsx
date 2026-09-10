@@ -360,6 +360,7 @@ interface AppHeaderProps
   onCamContourClick: () => void;
   onCamDrillClick: () => void;
   onCamSlotClick: () => void;
+  onCamEngraveClick: () => void;
   onCamTwoDCutClick: () => void;
   onCamTestPatternClick: () => void;
 }
@@ -479,6 +480,7 @@ export function AppHeader({
   onCamContourClick,
   onCamDrillClick,
   onCamSlotClick,
+  onCamEngraveClick,
   onCamTwoDCutClick,
   onCamTestPatternClick,
 }: AppHeaderProps) {
@@ -971,6 +973,7 @@ export function AppHeader({
               onContourClick={onCamContourClick}
               onDrillClick={onCamDrillClick}
               onSlotClick={onCamSlotClick}
+              onEngraveClick={onCamEngraveClick}
             />
           ) : activeCamWorkspace === "turning" ? (
             <CamTurningToolbar disabled={disabled} />

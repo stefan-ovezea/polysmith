@@ -15,6 +15,7 @@ import {
   CamAdaptivePanel,
   CamContourPanel,
   CamDrillingPanel,
+  CamEngravePanel,
   CamFaceMillingPanel,
   CamLaserCutPanel,
   CamPocketPanel,
@@ -26,6 +27,7 @@ import {
   type ContourFormState,
   type DrillPointRow,
   type DrillingFormState,
+  type EngraveFormState,
   type FaceMillingFormState,
   type PocketFormState,
   type SlotFormState,
@@ -39,6 +41,10 @@ import {
 } from "../layout/CamContourPanel";
 import { DEFAULT_DRILLING_PARAMS } from "../layout/CamDrillingPanel";
 import { DEFAULT_SLOT_PARAMS } from "../layout/CamSlotPanel";
+import {
+  DEFAULT_ENGRAVE_FORM,
+  DEFAULT_ENGRAVE_PARAMS,
+} from "../layout/CamEngravePanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
@@ -1055,6 +1061,106 @@ function buildOperationPanel({
     );
   }
 
+  if (operation.type === "engrave") {
+    const parameters = operation.parameters;
+    const engrave = parameters.engrave ?? DEFAULT_ENGRAVE_PARAMS;
+    const initialParams: EngraveFormState = {
+      depth_mm: engrave.depth_mm ?? DEFAULT_ENGRAVE_FORM.depth_mm,
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ??
+        DEFAULT_ENGRAVE_FORM.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_ENGRAVE_FORM.plunge_feedrate_mm_per_min,
+      spindle_rpm:
+        parameters.spindle_rpm ?? DEFAULT_ENGRAVE_FORM.spindle_rpm,
+    };
+    const tools =
+      document?.cam.tool_library.filter(
+        (entry) => entry.type === "endmill_flat",
+      ) ?? [];
+    // Sketch-profile geometry only — the same scope logic as the
+    // contour profile branch.
+    const scopeSketchId = laserOperationScopeSketchId(operation);
+    const sketches = (document?.feature_history ?? [])
+      .filter((feature) => feature.kind === "sketch")
+      .map((feature) => ({
+        feature_id: feature.feature_id,
+        name: feature.name || "Sketch",
+      }));
+    return (
+      <CamEngravePanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        geometryCount={operation.geometry_references.machining_regions.length}
+        selectedProfileCount={
+          document?.selected_sketch_profile_ids?.length ?? 0
+        }
+        repickArmed={camProfilePickArmed}
+        sketches={sketches}
+        scopeSketchId={scopeSketchId}
+        onSetScope={(featureId) => {
+          void runAction(async () => {
+            await camOperationSetScope(operation.op_id, featureId);
+          });
+        }}
+        onStartRepick={onStartRepickGeometry}
+        onCancelRepick={onCancelRepickGeometry}
+        onClearSelection={onClearRepickSelection}
+        onApplyRepick={() => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                machining_regions: [],
+                avoidance_regions: [],
+                guide_curves: [],
+                check_surfaces: [],
+              },
+            });
+            onApplyRepickGeometry();
+          });
+        }}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: {
+                ...parameters,
+                feedrate_mm_per_min:
+                  partial.feedrate_mm_per_min ??
+                  parameters.feedrate_mm_per_min,
+                plunge_feedrate_mm_per_min:
+                  partial.plunge_feedrate_mm_per_min ??
+                  parameters.plunge_feedrate_mm_per_min,
+                spindle_rpm:
+                  partial.spindle_rpm ?? parameters.spindle_rpm,
+                engrave: {
+                  ...engrave,
+                  depth_mm: partial.depth_mm ?? engrave.depth_mm,
+                },
+              },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
 
   // Unsupported operation kinds get no panel yet — the sidebar list
   // still shows them, and generation is not offered for them.

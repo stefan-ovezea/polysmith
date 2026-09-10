@@ -394,6 +394,13 @@ polysmith::core::SlotParameters slot_parameters_from_payload(
   return slot;
 }
 
+polysmith::core::EngraveParameters engrave_parameters_from_payload(
+    const json& payload) {
+  polysmith::core::EngraveParameters engrave;
+  engrave.depth_mm = cam_read_number(payload, "depth_mm", 0.5);
+  return engrave;
+}
+
 polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
     const json& payload) {
   polysmith::core::CamOperationParameters p;
@@ -456,6 +463,9 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
   }
   if (payload.contains("slot") && !payload.at("slot").is_null()) {
     p.slot = slot_parameters_from_payload(payload.at("slot"));
+  }
+  if (payload.contains("engrave") && !payload.at("engrave").is_null()) {
+    p.engrave = engrave_parameters_from_payload(payload.at("engrave"));
   }
   return p;
 }
