@@ -30,6 +30,16 @@ const char* kGrblLaserDefinition = R"JSON({
   "pointer_offset_y_mm": 0.0
 })JSON";
 
+const char* kLaserGrblMachineDefinition = R"JSON({
+  "name": "LaserGRBL",
+  "machine_type": "laser",
+  "post_processor": { "type": "lasergrbl", "filename": "" },
+  "work_area_x_mm": 430.0,
+  "work_area_y_mm": 430.0,
+  "pointer_offset_x_mm": 0.0,
+  "pointer_offset_y_mm": 0.0
+})JSON";
+
 const char* kSmoothiewareLaserDefinition = R"JSON({
   "name": "Smoothieware Laser",
   "machine_type": "laser",
@@ -107,6 +117,7 @@ const char* kLinuxcnc5AxisTableTableDefinition = R"JSON({
 std::vector<std::pair<std::string, std::string>> builtin_machine_definitions() {
   return {
       {"grbl-laser", kGrblLaserDefinition},
+      {"lasergrbl", kLaserGrblMachineDefinition},
       {"smoothieware-laser", kSmoothiewareLaserDefinition},
       {"generic-3-axis-mill", kGenericMillDefinition},
       {"grbl-cnc-router", kGrblCncRouterDefinition},

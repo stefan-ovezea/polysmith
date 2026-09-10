@@ -339,7 +339,8 @@ export type CamOperationPayload = Omit<
 
 export type PostProcessorType =
   | "fanuc" | "linuxcnc" | "mach3" | "mach4"
-  | "grbl" | "marlin" | "custom";
+  | "grbl" | "lasergrbl" | "marlin" | "smoothieware"
+  | "custom";
 
 /// The selected post processor.  Output shaping comes from the
 /// DEFINITION FILE — posts are first-class user-editable files.

@@ -43,6 +43,36 @@ const char* kGrblDefinition = R"JSON({
   "decimal_places": 3
 })JSON";
 
+// LaserGRBL is a GRBL 1.1 laser-mode host — same dialect as "grbl"
+// plus the host's own conventions: M8/M9 air assist on the coolant
+// relay, and S0 before every M5 so a diode driver never re-fires at
+// the previous power.
+const char* kLasergrblDefinition = R"JSON({
+  "units_mm": "G21",
+  "units_inch": "G20",
+  "header_lines": ["(op: {op_name})", "{units_word}", "G90", "G94", "G17", "M5"],
+  "rapid": "G0 X{x} Y{y}",
+  "feed": "G1 X{x} Y{y}",
+  "arc_cw": "G2 X{x} Y{y} I{i} J{j}",
+  "arc_ccw": "G3 X{x} Y{y} I{i} J{j}",
+  "dwell": "G4 P{seconds}",
+  "laser_on_dynamic": "M4 S{power}",
+  "laser_on_constant": "M3 S{power}",
+  "laser_off": "M5",
+  "spindle_on": "M3 S{rpm}",
+  "spindle_off": "M5",
+  "footer_lines": ["M5", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
+  "power_change": "S{power}",
+  "laser_air_on": "M8",
+  "laser_air_off": "M9",
+  "laser_off_with_power": true,
+  "power_max": 1000,
+  "line_numbers": false,
+  "use_arcs": true,
+  "decimal_places": 3
+})JSON";
+
 const char* kLinuxcncDefinition = R"JSON({
   "units_mm": "G21",
   "units_inch": "G20",
@@ -745,6 +775,7 @@ bool parse_post_definition(const std::string& json_text,
 std::vector<std::pair<std::string, std::string>> builtin_post_definitions() {
   return {
       {"grbl", kGrblDefinition},
+      {"lasergrbl", kLasergrblDefinition},
       {"linuxcnc", kLinuxcncDefinition},
       {"mach3", kMach3Definition},
       {"mach4", kMach4Definition},

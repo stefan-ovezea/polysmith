@@ -319,6 +319,8 @@ polysmith_add_core_test(cad_core_cam_refresh_test tests/cam_refresh_test.cpp)
 
 polysmith_add_core_test(cad_core_grbl_post_test tests/grbl_post_test.cpp)
 
+polysmith_add_core_test(cad_core_lasergrbl_post_test tests/lasergrbl_post_test.cpp)
+
 polysmith_add_core_test(cad_core_linuxcnc_post_test tests/linuxcnc_post_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_generators_test tests/cam_generators_test.cpp)
