@@ -145,7 +145,8 @@ export function CamStatusLine({
     | "cam.faceMilling"
     | "cam.testPattern"
     | "cam.pocket"
-    | "cam.contour";
+    | "cam.contour"
+    | "cam.drilling";
 }) {
   const { t } = useTranslation();
 

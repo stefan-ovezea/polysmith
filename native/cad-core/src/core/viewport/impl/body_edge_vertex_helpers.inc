@@ -184,6 +184,25 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
     primitive.id = body_id + ":edge:" + std::to_string(i - 1);
     primitive.owner_body_id = body_id;
     sample_edge(edge, primitive.points, primitive.kind);
+    // Circle witness for FULL circles only (drilling hole rims).  A
+    // closed rim collapses both endpoints to one point, so the sample
+    // polyline alone cannot identify it; arcs and lines stay unset —
+    // a partial arc has no unique circle witness.
+    if (is_full_circle_edge(edge)) {
+      try {
+        BRepAdaptor_Curve curve(edge);
+        const gp_Circ circle = curve.Circle();
+        const gp_Pnt center = circle.Location();
+        const gp_Dir axis = circle.Axis().Direction();
+        primitive.center =
+            std::array<double, 3>{center.X(), center.Y(), center.Z()};
+        primitive.axis = std::array<double, 3>{axis.X(), axis.Y(), axis.Z()};
+        primitive.radius = circle.Radius();
+      } catch (const std::exception&) {
+        // Leave the witness unset — the edge stays pickable as a rim
+        // line, it just gets no hole-dot candidate.
+      }
+    }
     if (primitive.points.size() < 6) {
       // Degenerate edges (fewer than 2 sample points) cannot be picked
       // or rendered; skip them rather than emit dead entries.

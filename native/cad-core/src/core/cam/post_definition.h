@@ -22,8 +22,9 @@ namespace polysmith::core {
 
 struct PostDefinition {
   // Template placeholders: {x} {y} {z} {feed} {i} {j} {power} {rpm}
-  // {seconds} {op_name} {units_word}.  Missing templates fall back to
-  // the GRBL-compatible defaults.
+  // {seconds} {op_name} {units_word}, plus {r} and {q} in the drill
+  // cycle templates.  Missing templates fall back to the
+  // GRBL-compatible defaults.
   std::string units_mm = "G21";
   std::string units_inch = "G20";
   std::vector<std::string> header_lines = {"(op: {op_name})", "{units_word}",
@@ -65,6 +66,15 @@ struct PostDefinition {
   // rotary words are unaffected (no G93 is ever emitted).
   bool feed_inverse_time = false;
   std::string inverse_time_word = "G93";
+
+  // Canned drill cycles (drilling ops).  When the post declares the
+  // capability AND a template, each hole emits one canned G81/G83
+  // line; otherwise the engine emits longhand G0/G1 plunges (GRBL and
+  // friends implement neither G81 nor G83).  Defaults are false/empty
+  // so stale user post files degrade to longhand G-code.
+  bool canned_cycles = false;
+  std::string drill_cycle_template;
+  std::string drill_cycle_peck_template;
 };
 
 // Parses a definition from JSON.  Unknown keys are ignored; missing

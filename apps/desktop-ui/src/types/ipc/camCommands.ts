@@ -26,6 +26,18 @@ export interface CamCaptureFaceReferenceCommand {
   payload: { face_id: string };
 }
 
+export interface CamCaptureEdgeReferenceCommand {
+  id: string;
+  type: "cam_capture_edge_reference";
+  payload: { edge_id: string };
+}
+
+export interface CamCapturePointCommand {
+  id: string;
+  type: "cam_capture_point";
+  payload: { x: number; y: number; z: number };
+}
+
 export interface CamWcsSetFaceCommand {
   id: string;
   type: "cam_wcs_set_face";

@@ -107,16 +107,24 @@ CamGenerateOutcome generate_operation_toolpath(
   // sketch's plane frame).
   bool needsFaces = false;
   for (const auto& ref : op->geometry_references.machining_regions) {
-    if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+    if (std::holds_alternative<FaceAttestation>(ref.attestation) ||
+        std::holds_alternative<EdgeAttestation>(ref.attestation)) {
       needsFaces = true;
       break;
     }
   }
   for (const auto& ref : op->geometry_references.avoidance_regions) {
-    if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+    if (std::holds_alternative<FaceAttestation>(ref.attestation) ||
+        std::holds_alternative<EdgeAttestation>(ref.attestation)) {
       needsFaces = true;
       break;
     }
+  }
+  // Drilling compiles bodies too: circle holes measure their start
+  // from the topmost body face at the hole XY (a sketch on the plate's
+  // bottom face must drill from the material top).
+  if (op->type == "drilling") {
+    needsFaces = true;
   }
   if (needsFaces) {
     ensure_bodies();
@@ -132,6 +140,12 @@ CamGenerateOutcome generate_operation_toolpath(
         },
         [&](const ResolvedFaceRef& resolved) {
           context.geometry.faces.push_back(resolved);
+        },
+        [&](const ResolvedEdgeRef& resolved) {
+          context.geometry.edges.push_back(resolved);
+        },
+        [&](const PointAttestation& point) {
+          context.geometry.points.push_back(point);
         },
         message);
     if (!ok) {
@@ -155,6 +169,12 @@ CamGenerateOutcome generate_operation_toolpath(
         [&](const ResolvedFaceRef& resolved) {
           context.geometry.avoidance_faces.push_back(resolved);
         },
+        [&](const ResolvedEdgeRef& resolved) {
+          context.geometry.edges.push_back(resolved);
+        },
+        [&](const PointAttestation& point) {
+          context.geometry.points.push_back(point);
+        },
         message);
     if (!ok) {
       outcome.result.ok = false;
@@ -163,6 +183,8 @@ CamGenerateOutcome generate_operation_toolpath(
     }
   }
   report(progress, 15);
+
+  context.geometry.bodies = compiled ? &bodies : nullptr;
 
   // A generator may omit its preview pass; fall back to the full
   // generate function (both are cheap in v1).

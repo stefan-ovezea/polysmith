@@ -146,6 +146,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
   src/core/cam/contour_2d.cpp
+  src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
   src/core/cam/laser/laser_fill.cpp
   src/core/cam/laser/laser_generate.cpp

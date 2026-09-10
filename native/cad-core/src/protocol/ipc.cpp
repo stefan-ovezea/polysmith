@@ -191,6 +191,23 @@ json make_cam_face_attestation_event(const std::string& id,
   };
 }
 
+json make_cam_edge_attestation_event(const std::string& id,
+                                     const json& payload) {
+  return {
+      {"id", id},
+      {"type", "cam_edge_attestation_result"},
+      {"payload", payload},
+  };
+}
+
+json make_cam_attestation_event(const std::string& id, const json& payload) {
+  return {
+      {"id", id},
+      {"type", "cam_attestation_result"},
+      {"payload", payload},
+  };
+}
+
 json make_cam_post_list_event(const std::string& id, const json& posts) {
   return {
       {"id", id},

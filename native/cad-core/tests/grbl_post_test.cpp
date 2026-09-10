@@ -78,6 +78,30 @@ Toolpath make_laser_toolpath() {
   return path;
 }
 
+ToolpathMove drill(double x, double y, double z, double r_plane, double peck,
+                   double feedrate) {
+  ToolpathMove move;
+  move.kind = ToolpathMoveKind::DrillCycle;
+  move.x = x;
+  move.y = y;
+  move.z = z;
+  move.r_plane_z = r_plane;
+  move.peck_depth_mm = peck;
+  move.feedrate_mm_per_min = feedrate;
+  move.laser_on = false;
+  return move;
+}
+
+// Rapid → G81-style single plunge, then rapid → G83 peck cycle (q=2).
+Toolpath make_drilling_toolpath() {
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::Rapid, 10.0, 5.0, 20.0});
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+  path.moves.push_back({ToolpathMoveKind::Rapid, 30.0, 5.0, 20.0});
+  path.moves.push_back(drill(30.0, 5.0, -5.0, 20.0, 2.0, 200.0));
+  return path;
+}
+
 bool test_laser_golden() {
   LaserCutParameters laser;
   laser.power_percent = 85.0;
@@ -678,6 +702,112 @@ bool test_footer_flag_gates_program_end() {
                 "footer flag: M2 only on the op that includes the footer");
 }
 
+bool test_drilling_longhand() {
+  ToolEntry mill;
+  mill.name = "3mm drill";
+  mill.type = "drill";
+
+  PostContext context{
+      .toolpath = make_drilling_toolpath(),
+      .setup = make_setup(),
+      .tool = mill,
+      .op_name = "Drill 1",
+      .spindle_rpm = 12000.0,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+
+  // GRBL implements neither G81 nor G83 — both cycles render as
+  // longhand G0/G1 moves.
+  if (!expect(gcode.find("G81") == std::string::npos &&
+                  gcode.find("G83") == std::string::npos,
+              "grbl drill: no canned G81/G83")) {
+    std::cerr << gcode;
+    return false;
+  }
+  // The spindle spins up on the first cycle.
+  if (!expect(gcode.find("M3 S12000") != std::string::npos,
+              "grbl drill: M3 with the spindle rpm")) {
+    std::cerr << gcode;
+    return false;
+  }
+  // Hole 1 (no peck): the preceding rapid already positioned the tool
+  // at the R plane, so no duplicated approach rapid — one plunge to
+  // the bottom and a retract back to R.
+  if (!expect(gcode.find("G1 X10.000 Y5.000 Z-5.000 F200.000") !=
+                  std::string::npos,
+              "grbl drill: single plunge to the hole bottom")) {
+    std::cerr << gcode;
+    return false;
+  }
+  // Hole 2 (q=2 from R20): first peck lands at Z18.000, retracts to
+  // the R plane, pecks to Z16.000, and ends with an exact-bottom
+  // plunge.
+  const size_t hole1Plunge = gcode.find("G1 X10.000 Y5.000 Z-5.000");
+  const size_t firstPeck = gcode.find("G1 X30.000 Y5.000 Z18.000 F200.000");
+  const size_t peckRetract = gcode.find("G0 X30.000 Y5.000 Z20.000");
+  const size_t secondPeck = gcode.find("G1 X30.000 Y5.000 Z16.000 F200.000");
+  const size_t finalPlunge = gcode.find("G1 X30.000 Y5.000 Z-5.000 F200.000");
+  return expect(firstPeck != std::string::npos &&
+                    peckRetract != std::string::npos &&
+                    secondPeck != std::string::npos &&
+                    finalPlunge != std::string::npos &&
+                    hole1Plunge < firstPeck && firstPeck < peckRetract &&
+                    peckRetract < secondPeck && secondPeck < finalPlunge,
+                "grbl drill: peck loop retracts to R between plunges");
+}
+
+bool test_drill_cycle_without_preceding_rapid() {
+  // A cycle as the FIRST move: the longhand path must emit its own
+  // approach rapid to the R plane (there is no preceding rapid to
+  // dedupe against).
+  Toolpath path;
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+  ToolEntry mill;
+  mill.name = "3mm drill";
+  mill.type = "drill";
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = mill,
+      .op_name = "Drill 2",
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  if (!expect(gcode.find("G0 X10.000 Y5.000 Z20.000") != std::string::npos &&
+                  gcode.find("G1 X10.000 Y5.000 Z-5.000") != std::string::npos,
+              "grbl drill: bare cycle emits its own approach rapid")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
+bool test_drill_inch_scaling() {
+  // Inch setup + WCS origin: the R plane and the hole bottom go
+  // through the 1/25.4 scaling like every other coordinate.
+  Toolpath path;
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+  ToolEntry mill;
+  mill.name = "3mm drill";
+  mill.type = "drill";
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup("inch"),
+      .tool = mill,
+      .op_name = "Drill 3",
+  };
+  context.wcs_origin = {2.0, 4.0, 0.0};
+  const std::string gcode = joined(post_process("grbl", context));
+  // 8 mm → 0.315 in, 1 mm → 0.039 in, 20 mm → 0.787 in, −5 mm →
+  // −0.197 in.
+  if (!expect(gcode.find("G0 X0.315 Y0.039 Z0.787") != std::string::npos &&
+                  gcode.find("G1 X0.315 Y0.039 Z-0.197") != std::string::npos,
+              "grbl drill: inch R plane and hole bottom scaled")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -798,6 +928,30 @@ int main() {
 
   std::cout << "  Test 15: no duplicate M5 when the beam ends on... ";
   if (test_no_duplicate_m5_with_laser_on_at_end()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 16: drilling longhand (no canned cycles)... ";
+  if (test_drilling_longhand()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 17: drill cycle without a preceding rapid... ";
+  if (test_drill_cycle_without_preceding_rapid()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 18: drill inch scaling + WCS offset... ";
+  if (test_drill_inch_scaling()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

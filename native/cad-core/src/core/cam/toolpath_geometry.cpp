@@ -51,6 +51,10 @@ double move_length(const ToolpathMove& from, const ToolpathMove& to) {
       to.kind == ToolpathMoveKind::FeedArcCCW) {
     return arc_length(from, to);
   }
+  if (to.kind == ToolpathMoveKind::DrillCycle) {
+    // One cycle covers the full retract → bottom → retract trip.
+    return 2.0 * std::abs(to.z - to.r_plane_z);
+  }
   return std::hypot(to.x - from.x, to.y - from.y,
                     to.z - from.z);
 }
@@ -159,6 +163,12 @@ void finalize_toolpath(Toolpath& toolpath) {
       toolpath.bounds.max_y = std::max(toolpath.bounds.max_y, move.y);
       toolpath.bounds.min_z = std::min(toolpath.bounds.min_z, move.z);
       toolpath.bounds.max_z = std::max(toolpath.bounds.max_z, move.z);
+    }
+    if (move.kind == ToolpathMoveKind::DrillCycle) {
+      // The cycle spans down to z and back to the R plane — the R
+      // plane belongs in the bounds even if no other move reaches it.
+      toolpath.bounds.min_z = std::min(toolpath.bounds.min_z, move.r_plane_z);
+      toolpath.bounds.max_z = std::max(toolpath.bounds.max_z, move.r_plane_z);
     }
 
     previous = move;

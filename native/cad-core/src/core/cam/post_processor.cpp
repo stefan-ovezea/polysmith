@@ -1,5 +1,6 @@
 #include "core/cam/post_processor.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -62,7 +63,10 @@ const char* kLinuxcncDefinition = R"JSON({
   "line_numbers": true,
   "use_arcs": true,
   "decimal_places": 3,
-  "feed_inverse_time": true
+  "feed_inverse_time": true,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMach3Definition = R"JSON({
@@ -84,7 +88,10 @@ const char* kMach3Definition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMach4Definition = R"JSON({
@@ -106,7 +113,10 @@ const char* kMach4Definition = R"JSON({
   "power_max": 1000,
   "line_numbers": false,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 const char* kMarlinDefinition = R"JSON({
@@ -150,7 +160,10 @@ const char* kFanucDefinition = R"JSON({
   "power_max": 1000,
   "line_numbers": true,
   "use_arcs": true,
-  "decimal_places": 3
+  "decimal_places": 3,
+  "canned_cycles": true,
+  "drill_cycle_template": "G81 X{x} Y{y} Z{z} R{r} F{feed}",
+  "drill_cycle_peck_template": "G83 X{x} Y{y} Z{z} R{r} Q{q} F{feed}"
 })JSON";
 
 // Smoothieware: S values are normalized to 0..1.
@@ -441,6 +454,68 @@ std::vector<std::string> render_post(const PostContext& context,
       }
       appendRotaryWords(line);
       emit(line);
+    } else if (move.kind == ToolpathMoveKind::DrillCycle) {
+      ensure_power_state(move);
+      syncInverseTimeMode();
+      // One IR move covers the whole retract → bottom → retract trip.
+      // z/r go through the unit-scaling path like every coordinate;
+      // {feed} is ALWAYS provided so a canned template can never leak
+      // the placeholder into the G-code.
+      const double r = (move.r_plane_z - originZ) * scale;
+      const double drillFeed = move.feedrate_mm_per_min;
+      auto vars = std::map<std::string, std::string>{
+          {"x", fmt_number(x, decimals)},
+          {"y", fmt_number(y, decimals)},
+          {"z", fmt_number(z, decimals)},
+          {"r", fmt_number(r, decimals)},
+          {"feed", fmt_number(drillFeed, decimals)},
+      };
+      const bool pecking = move.peck_depth_mm > 0.0;
+      if (pecking) {
+        vars["q"] = fmt_number(move.peck_depth_mm, decimals);
+      }
+      const std::string& cycleTemplate =
+          pecking ? def.drill_cycle_peck_template : def.drill_cycle_template;
+      const std::string rapidToR =
+          render_template(def.rapid, vars) + " Z" + fmt_number(r, decimals);
+      const auto feedToZ = [&](double depth) {
+        std::string line = render_template(def.feed, vars);
+        line += " Z" + fmt_number(depth, decimals);
+        line += " F" + fmt_number(drillFeed, decimals);
+        emit(line);
+      };
+      if (def.canned_cycles && !cycleTemplate.empty()) {
+        emit(render_template(cycleTemplate, vars));
+      } else {
+        // Longhand (GRBL and friends implement neither G81 nor G83):
+        // rapid to the R plane, plunge (G83 pecks retract to R between
+        // plunges), then retract to R — the G98 convention.  The
+        // approach rapid is skipped when the preceding IR rapid already
+        // positioned the tool at the R plane over the hole (the
+        // generator always emits that pair).
+        const bool positionedByPreviousRapid =
+            havePrevious && previous.kind == ToolpathMoveKind::Rapid &&
+            std::abs(previous.x - move.x) < 1e-9 &&
+            std::abs(previous.y - move.y) < 1e-9 &&
+            std::abs(previous.z - move.r_plane_z) < 1e-9;
+        if (!positionedByPreviousRapid) {
+          emit(rapidToR);
+        }
+        if (pecking) {
+          double depth = r - move.peck_depth_mm;
+          while (depth > z) {
+            feedToZ(depth);
+            emit(rapidToR);
+            depth -= move.peck_depth_mm;
+          }
+        }
+        feedToZ(z);
+        emit(rapidToR);
+      }
+      // The tool ends the cycle back at the R plane.
+      currentZ = r;
+      haveZ = true;
+      lastFeed = move.feedrate_mm_per_min;
     } else if (move.kind == ToolpathMoveKind::FeedArcCW ||
                move.kind == ToolpathMoveKind::FeedArcCCW) {
       const double radius = std::hypot(move.i, move.j);
@@ -632,6 +707,15 @@ bool parse_post_definition(const std::string& json_text,
     }
     definition.inverse_time_word = read_optional_template(
         payload, "inverse_time_word", definition.inverse_time_word);
+    if (payload.contains("canned_cycles") &&
+        payload.at("canned_cycles").is_boolean()) {
+      definition.canned_cycles = payload.at("canned_cycles").get<bool>();
+    }
+    definition.drill_cycle_template = read_optional_template(
+        payload, "drill_cycle_template", definition.drill_cycle_template);
+    definition.drill_cycle_peck_template = read_optional_template(
+        payload, "drill_cycle_peck_template",
+        definition.drill_cycle_peck_template);
     return true;
   } catch (const std::exception& exception) {
     error = std::string("invalid post definition JSON: ") + exception.what();

@@ -151,6 +151,8 @@ import type {
 } from "./ipc/bodyFeatureCommands";
 import type {
   CamCaptureFaceReferenceCommand,
+  CamCaptureEdgeReferenceCommand,
+  CamCapturePointCommand,
   CamMachineSettingsSetCommand,
   CamWcsSetFaceCommand,
   CamSetupCreateCommand,
@@ -182,8 +184,10 @@ import type {
 } from "./geometry/sketch";
 import type {
   CamDocumentData,
+  EdgeAttestation,
   FaceAttestation,
   MachineDefinition,
+  PointAttestation,
 } from "./geometry/cam";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
@@ -389,6 +393,11 @@ export interface ViewportEdgePrimitive {
   // selected.
   length: number;
   is_selected: boolean;
+  // Circle witness — present only for full-circle edges (drilling hole
+  // rims); arcs and lines omit these keys entirely.
+  center?: [number, number, number];
+  axis?: [number, number, number];
+  radius?: number;
 }
 
 // Selectable vertex of a body. Same id stability story as edges.
@@ -495,6 +504,30 @@ export interface CamFaceAttestationResultEvent extends BaseMessage {
   };
 }
 
+// Reply to cam_capture_edge_reference: the TNP-safe edge witness
+// captured by the core (never fabricated in the UI).  Drilling uses
+// this for circular hole rims.
+export interface CamEdgeAttestationResultEvent extends BaseMessage {
+  type: "cam_edge_attestation_result";
+  id: string;
+  payload: {
+    persistent_id: string;
+    attestation: EdgeAttestation;
+  };
+}
+
+// Reply to cam_capture_point: the core-minted point attestation for a
+// drilling hole location (the UI reports the clicked coordinates, the
+// core owns the persistent reference id).
+export interface CamAttestationResultEvent extends BaseMessage {
+  type: "cam_attestation_result";
+  id: string;
+  payload: {
+    persistent_id: string;
+    attestation: PointAttestation;
+  };
+}
+
 // Reply to cam_post_list / cam_post_import: every available post
 // processor (built-ins + files in the user's posts directory).
 export interface CamPostListResultEvent extends BaseMessage {
@@ -585,6 +618,8 @@ export type CoreMessage =
   | CamPostListResultEvent
   | CamMachineListResultEvent
   | CamFaceAttestationResultEvent
+  | CamEdgeAttestationResultEvent
+  | CamAttestationResultEvent
   | ErrorEvent;
 
 export interface PingCommand {
@@ -846,6 +881,8 @@ export type CoreCommand =
   | ConvertMeshToBodyCommand
   | CamMachineSettingsSetCommand
   | CamCaptureFaceReferenceCommand
+  | CamCaptureEdgeReferenceCommand
+  | CamCapturePointCommand
   | CamWcsSetFaceCommand
   | CamSetupCreateCommand
   | CamSetupUpdateCommand

@@ -22,6 +22,11 @@
   std::vector<ToolEntry> cam_tool_list() const;
 
   DocumentState cam_operation_add(const CamOperation& op);
+  // Mints the next free drilling point reference id ("pt-N") for a
+  // world-space point the UI captured.  Does not mutate the document —
+  // the caller appends the reference to the operation's
+  // machining_regions via cam_operation_update.
+  GeometryReference cam_capture_point(const std::array<double, 3>& point);
   DocumentState cam_operation_update(const std::string& operation_id, const CamOperation& op);
   DocumentState cam_operation_delete(const std::string& operation_id);
   // Re-targets an operation at the given sketch: captures fresh

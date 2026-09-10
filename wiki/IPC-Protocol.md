@@ -287,6 +287,20 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `FaceAttestation` witness from a body face (`"<body_id>:face:<index>"`)
   and replies `cam_face_attestation_result {persistent_id, attestation}`.
   The UI never fabricates witness geometry.
+- `cam_capture_edge_reference {edge_id}` captures a TNP-safe
+  `EdgeAttestation` witness from a body edge (`"<body_id>:edge:<index>"`)
+  and replies `cam_edge_attestation_result {persistent_id, attestation}`.
+  Lines capture endpoints/length/tangent; full circles additionally
+  carry the `center`/`axis`/`radius` circle witness (drilling hole
+  rims); partial arcs are REJECTED (an arc is not a stable drilling
+  input).  Errors: `BAD_EDGE_ID` / `EDGE_NOT_FOUND` /
+  `EDGE_CAPTURE_FAILED`.
+- `cam_capture_point {x, y, z}` mints a `PointAttestation` for a world
+  coordinate picked in the viewport (drilling free picks) and replies
+  `cam_attestation_result {persistent_id, attestation: {point: [x,y,z]}}`
+  — a coordinate, not topology (TNP doctrine: coordinates never go
+  stale, they just stop being where the user clicked).  The core mints
+  `pt-N` ids and restores the counter on load.
 - `cam_wcs_set_face {face_id, setup_id?}` anchors the WCS origin to a body
   face: the witness lands on the target setup's `wcs_origin.face_reference`
   and the refresh pass resolves the machine origin from the LIVE face

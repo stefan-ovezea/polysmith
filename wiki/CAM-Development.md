@@ -1189,15 +1189,29 @@ but more complex than face milling (offset direction matters). By this
 point the tool library, stock, and viewport toolpath rendering are all in
 place from the first two operations.
 
-### 4. Drilling (Fourth — Point-Based, Forces Tool Table)
+### 4. Drilling (Fourth — Body-Geometry Targets, Forces Tool Table)
 
-**What it does:** Select points on a planar face. Generate G81/G83 cycles.
+**What it does:** Pick holes on a BODY — cylindrical hole-wall faces or
+full-circle rim edges — plus free-picked points. Generate G81/G83 cycles.
 
 **Scope for v1:**
-- Point selection (sketch points, circle centers, or free picks)
+- Body-geometry hole targets: a clicked hole wall is captured as a
+  `FaceAttestation`, a clicked rim circle as an `EdgeAttestation`
+  (with a center/axis/radius circle witness) — both re-resolve against
+  live topology on every recompute (TNP-safe). Free clicks elsewhere
+  are `PointAttestation` world coordinates.
 - G81 (simple drill) and G83 (peck drill) cycles
 - Depth, peck depth, retract height parameters
 - No spot drilling, no chip breaking beyond G83
+
+**Bodies only — sketches are not drilling inputs.** Drilling must work on
+STEP/STL imports that have no sketch, and hiding a sketch must never empty
+the hole set. The armed pick marks every circular hole (rim + wall deduped
+to one top dot); blind depths measure from the material top; through holes
+drill to the stock bottom. **Legacy migration:** saved operations that
+still reference sketch circles fail generation with a clear error telling
+the user to re-pick the holes on the body — never a silent empty hole
+list.
 
 **Why fourth:** Drilling is computationally trivial (single points, no offset
 curves, no path planning). It can be built at any point. Placing it fourth
@@ -1545,7 +1559,7 @@ before the next operation depends on it:
 | 12. 5-axis scaffolding + mill machine library | ✅ Done (2026-09-04) — rotary A/B/C on the toolpath IR, per-op `tool_axis_mode`, mill machine fields (travel/kinematics/axis limits/tool-change position), 3 mill seeds, modal rotary words + G93 inverse-time feed in posts. Generators still 3-axis only |
 | 13. 2D Pocket toolpath generation | ✅ Done (2026-09-08) — boss/hole classification, finishing contours, islands, single-pass hint |
 | 14. 2D Contour toolpath generation | ✅ Done (2026-09-08) — face or sketch-profile input, inside/outside/on-line offsets, exact G2/G3 arcs with polyline fallback, climb/conventional rule |
-| 15. Drilling toolpath generation | 🔲 registry slot |
+| 15. Drilling toolpath generation | ✅ Done (2026-09-09) — G81/G83, circle-center + free-pick points, through-hole toggle, canned-where-supported posts (longhand for GRBL) |
 | 16. Adaptive Clearing toolpath generation | 🔲 registry slot |
 
 **Deviations from this document (binding):**
@@ -1886,6 +1900,99 @@ create/update capture gates in `cam_commands.inc` to `contour_2d`).
 The panel shows the input kind: face mode gets a Re-pick face button,
 profile mode gets the reference-sketch scope dropdown + profile re-pick
 (laser pattern).
+
+## Drilling (2026-09-09)
+
+`drilling` completes the V1 milestone sequence (§"4. Drilling"): G81
+simple drill and G83 peck drill, fed by circle-center points captured
+from selected sketch circles plus free picks.  No spot drilling, no
+G82/G84/G85 in v1.
+
+### Inputs
+
+Two attestation kinds, both held in `machining_regions`:
+
+- **Sketch circle profiles** — captured automatically at operation
+  creation when circles are selected (create-gate only, like contour).
+  The generator resolves the profile to its region and drills the
+  **resolved region's** center, never the stale attestation center
+  (TNP doctrine).
+- **Free picks** — `cam_capture_point {x,y,z}` → `cam_attestation_result`
+  carrying a new `PointAttestation {point}` variant (serde key
+  `"point"`, discriminated BEFORE the edge fallback in
+  `cam_from_payload.inc`).  The core mints `pt-N` persistent ids; the
+  counter is restored on load by scanning for the `pt-` prefix.  A
+  coordinate, not topology — the laser `pierce_position` precedent.
+
+Each point's start Z is its own reference plane (sketch plane or picked
+Z).  Non-horizontal sketch planes are rejected.  Holes are visited in
+nearest-neighbor order; each emits one rapid to the retract plane
+(`setup_retract_plane_z`) and one `DrillCycle` toolpath move.
+
+### Depth model
+
+- **Blind** (default): `hole_depth_mm` below the point's start plane.
+- **Through**: `through_hole` drills to the stock bottom
+  (`stock_box_extents` center.z − size.z/2).  Stock required — clean
+  error without it.
+- Retract plane below start Z or below stock top → warning-only.
+
+### G-code: canned where supported (user decision)
+
+GRBL implements **neither** G81 nor G83, so the output form depends on
+the post's capabilities:
+
+| Post | `canned_cycles` | G81 output | G83 output |
+|---|---|---|---|
+| linuxcnc, mach3, mach4, fanuc | yes (built-in templates) | `G81 X… Y… Z… R… F…` | `G83 X… Y… Z… R… Q… F…` |
+| grbl, marlin, smoothieware | no | longhand `G0`→`G1`→`G0` | longhand peck loop (retract to R between pecks) |
+| user post file without the new keys | defaults false | longhand | longhand |
+
+`PostDefinition` gained `canned_cycles` (default false),
+`drill_cycle_template`, `drill_cycle_peck_template`.  Capability check =
+flag AND non-empty template.  Template vars are `{x,y,z,r,q,feed}` —
+**feed is always provided**, even when the template omits `{feed}` would
+leak verbatim (post_processor placeholder rule).  After a drill move the
+post's currentZ is the R plane (G98 convention).
+
+**Backward compatibility (binding):** pre-existing user post files
+shadow the built-ins and never get the new keys rewritten — they stay
+longhand forever.  That is valid G-code and is by design.
+
+### Guards & failure semantics
+
+Blind drilling needs `hole_depth_mm > 0`; G83 needs `peck_depth_mm > 0`;
+cycle types other than `g81_standard`/`g83_peck` → clear error;
+nothing drillable → error; broken reference → `dependency_broken`.
+Drilling on a laser machine → clean error (mirrors laser-on-mill).
+Non-drill tools warn but generate.
+
+### Data model
+
+`ToolpathMoveKind::DrillCycle` with `r_plane_z` / `peck_depth_mm`
+appended AFTER `a/b/c` in `ToolpathMove` (aggregate-init compat).
+Viewport rendering synthesizes rapid→(x,y,r) / plunge→(x,y,z) /
+retract→(x,y,r).  `through_hole` on `CamOperationParameters`, serde +
+zod + TS.  Default tool: `cam_operation_add` prefers a `"drill"` tool,
+creating "3mm drill (default)" on demand (the endmill-default pattern).
+The empty-set re-capture gesture stays gated to laser/contour — for
+drilling, an empty `machining_regions` means "user removed all points".
+
+### UI
+
+Drill button enables with a setup plus a selected face OR selected
+circle profiles (created with defaults: G81, 5 mm, peck 2 mm, through
+off).  `CamDrillingPanel`: cycle dropdown (G81/G83), depth (disabled
+when through), peck (G83 only), through checkbox, drill-tool filter,
+points list with per-row remove and an armed "Add point" pick — every
+add/remove sends the FULL `machining_regions` list.  Point pick is
+snap-first (sketch points, circle centers, body vertices/edges/face
+centers, stock corners) → face raycast → bed-plane fallback, and stays
+armed across consecutive picks.  Armed drill pick mutually disarms with
+origin/WCS/pocket/contour picks.  `cam_capture_point` + the
+`cam_attestation_result` event are documented in
+[IPC-Protocol](IPC-Protocol.md) and
+[AI-CAD-Command-Language](AI-CAD-Command-Language.md).
 
 ## Architecture notes for extension
 

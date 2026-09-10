@@ -8,6 +8,8 @@ import {
   makeCamSetupDeleteCommand,
   makeCamMachineSettingsSetCommand,
   makeCamCaptureFaceReferenceCommand,
+  makeCamCaptureEdgeReferenceCommand,
+  makeCamCapturePointCommand,
   makeCamWcsSetFaceCommand,
   makeCamStockSetCommand,
   makeCamToolAddCommand,
@@ -204,6 +206,7 @@ import type {
   CamSetup,
   CoreCommand,
   ExtrudeAdvancedParameters,
+  EdgeAttestation,
   FaceAttestation,
   ExtrudeFeatureParameters,
   ExtrudeMode,
@@ -213,6 +216,7 @@ import type {
   LaserMachineSettings,
   MachineDefinition,
   MoveFeatureParameters,
+  PointAttestation,
   PostProcessor,
   SelectionFilterUpdate,
   StockDefinition,
@@ -1569,6 +1573,35 @@ export function useCadCore() {
         payload?: {
           persistent_id: string;
           attestation: FaceAttestation;
+        };
+      };
+    },
+    camCaptureEdgeReference: async (edgeId: string) => {
+      // Awaited: the reply is a cam_edge_attestation_result event
+      // carrying the TNP-safe edge witness captured by the core.
+      // Partial arcs and unsupported curves are rejected core-side.
+      const response = await sendCoreCommandAwaited(
+        makeCamCaptureEdgeReferenceCommand(edgeId) as CoreCommand & {
+          id: string;
+        },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: EdgeAttestation;
+        };
+      };
+    },
+    camCapturePoint: async (point: { x: number; y: number; z: number }) => {
+      // Awaited: the reply is a cam_attestation_result event with the
+      // core-minted persistent_id for the drilling point.
+      const response = await sendCoreCommandAwaited(
+        makeCamCapturePointCommand(point) as CoreCommand & { id: string },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: PointAttestation;
         };
       };
     },

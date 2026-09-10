@@ -120,6 +120,16 @@ polysmith::core::EdgeAttestation edge_attestation_from_payload(
     att.adjacent_face_normals =
         cam_read_array3_list(payload, "adjacent_face_normals");
   }
+  // Circle witness (drilling hole rims) — optional keys.
+  if (payload.contains("center")) {
+    att.center = cam_read_array3(payload, "center", {0.0, 0.0, 0.0});
+  }
+  if (payload.contains("axis")) {
+    att.axis = cam_read_array3(payload, "axis", {0.0, 0.0, 1.0});
+  }
+  if (payload.contains("radius")) {
+    att.radius = cam_read_number(payload, "radius", 0.0);
+  }
   return att;
 }
 
@@ -145,9 +155,21 @@ sketch_profile_attestation_from_payload(const json& payload) {
   return att;
 }
 
+polysmith::core::PointAttestation point_attestation_from_payload(
+    const json& payload) {
+  polysmith::core::PointAttestation att;
+  att.point = cam_read_array3(payload, "point", {0.0, 0.0, 0.0});
+  return att;
+}
+
 // Discriminates the attestation variant by which witness keys the
-// payload carries: sketch refs have sketch_feature_id, face refs have
-// sample_points, edge refs have start_point/tangent.
+// payload carries: point refs have a point array, sketch refs have
+// sketch_feature_id, face refs have sample_points, edge refs have
+// start_point/tangent.  The point branch MUST come first: a
+// round-tripped point attestation can arrive carrying leftover face
+// keys (a lenient client-side parse may have injected face defaults
+// into it), and the coordinate — not the injected empty witness — is
+// the identity that must survive.
 polysmith::core::GeometryReference geometry_reference_from_payload(
     const json& payload) {
   polysmith::core::GeometryReference ref;
@@ -159,7 +181,9 @@ polysmith::core::GeometryReference geometry_reference_from_payload(
     return ref;
   }
   const auto& att = payload.at("attestation");
-  if (att.contains("sketch_feature_id")) {
+  if (att.contains("point")) {
+    ref.attestation = point_attestation_from_payload(att);
+  } else if (att.contains("sketch_feature_id")) {
     ref.attestation = sketch_profile_attestation_from_payload(att);
   } else if (att.contains("sample_points")) {
     ref.attestation = face_attestation_from_payload(att);
@@ -375,6 +399,7 @@ polysmith::core::CamOperationParameters cam_operation_parameters_from_payload(
   p.cutting_direction = cam_read_string(payload, "cutting_direction", "climb");
   p.finish_pass = cam_read_bool(payload, "finish_pass", false);
   p.multiple_passes = cam_read_bool(payload, "multiple_passes", false);
+  p.through_hole = cam_read_bool(payload, "through_hole", false);
   p.coolant = cam_read_string(payload, "coolant", "off");
   p.tool_axis_mode = cam_read_string(payload, "tool_axis_mode", "fixed_z");
   if (payload.contains("stepdown_mm") && !payload.at("stepdown_mm").is_null()) {

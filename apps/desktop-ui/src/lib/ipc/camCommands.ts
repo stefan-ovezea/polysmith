@@ -30,6 +30,31 @@ export function makeCamCaptureFaceReferenceCommand(
   };
 }
 
+export function makeCamCaptureEdgeReferenceCommand(
+  edgeId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_capture_edge_reference",
+    payload: { edge_id: edgeId },
+  };
+}
+
+// Drilling hole locations: the UI reports the clicked world point, the
+// core mints the persistent reference id and replies with a
+// cam_attestation_result event.
+export function makeCamCapturePointCommand(point: {
+  x: number;
+  y: number;
+  z: number;
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_capture_point",
+    payload: { x: point.x, y: point.y, z: point.z },
+  };
+}
+
 export function makeCamWcsSetFaceCommand(
   faceId: string,
   setupId?: string,

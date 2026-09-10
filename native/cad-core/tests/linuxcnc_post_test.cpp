@@ -6,6 +6,9 @@
 // inverse-time feed (G93, F = feedrate / path length) with the G94
 // restore, and rotary words on rapids (no G93 for non-feed moves).
 
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -60,6 +63,20 @@ ToolpathMove feed(double x, double y, double z, double feedrate) {
   move.x = x;
   move.y = y;
   move.z = z;
+  move.feedrate_mm_per_min = feedrate;
+  move.laser_on = false;
+  return move;
+}
+
+ToolpathMove drill(double x, double y, double z, double r_plane, double peck,
+                   double feedrate) {
+  ToolpathMove move;
+  move.kind = ToolpathMoveKind::DrillCycle;
+  move.x = x;
+  move.y = y;
+  move.z = z;
+  move.r_plane_z = r_plane;
+  move.peck_depth_mm = peck;
   move.feedrate_mm_per_min = feedrate;
   move.laser_on = false;
   return move;
@@ -220,6 +237,152 @@ bool test_rapid_carries_rotary_word() {
                 "linuxcnc: no G93 for a rapid-only toolpath");
 }
 
+// Canned G81: the linuxcnc built-in declares canned_cycles — one
+// G81 line per hole with X/Y/Z/R/F, no longhand plunge, no
+// duplicated rapid (the cycle starts from the preceding rapid).
+bool test_canned_g81() {
+  Toolpath path;
+  path.moves.push_back(rapid(10.0, 5.0, 20.0));
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_mill_tool(),
+      .op_name = "Drill 1",
+      .spindle_rpm = 12000.0,
+  };
+  const std::string gcode = joined(post_process("linuxcnc", context));
+  if (!expect(gcode.find("G81 X10.000 Y5.000 Z-5.000 R20.000 F200.000") !=
+                  std::string::npos,
+              "linuxcnc: canned G81 with X/Y/Z/R/F")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return expect(count_occurrences(gcode, "Z-5.000") == 1 &&
+                    gcode.find("G1 X10.000") == std::string::npos,
+                "linuxcnc: canned cycle replaces the longhand plunge");
+}
+
+// Canned G83: the peck template carries Q for the peck depth.
+bool test_canned_g83_peck() {
+  Toolpath path;
+  path.moves.push_back(rapid(10.0, 5.0, 20.0));
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 2.5, 200.0));
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_mill_tool(),
+      .op_name = "Drill 2",
+  };
+  const std::string gcode = joined(post_process("linuxcnc", context));
+  return expect(
+      gcode.find("G83 X10.000 Y5.000 Z-5.000 R20.000 Q2.500 F200.000") !=
+          std::string::npos,
+      "linuxcnc: canned G83 carries Q for the peck depth");
+}
+
+// The canned capability is per-dialect: linuxcnc/mach3/mach4/fanuc
+// emit canned cycles; grbl/marlin/smoothieware stay longhand.
+bool test_builtin_canned_matrix() {
+  Toolpath path;
+  path.moves.push_back(rapid(10.0, 5.0, 20.0));
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_mill_tool(),
+      .op_name = "Drill 3",
+  };
+  for (const char* canned : {"linuxcnc", "mach3", "mach4", "fanuc"}) {
+    const std::string gcode = joined(post_process(canned, context));
+    if (gcode.find("G81 X10.000 Y5.000 Z-5.000 R20.000") ==
+        std::string::npos) {
+      std::cerr << "FAIL: " << canned << " missing the canned G81\n";
+      return false;
+    }
+  }
+  for (const char* longhand : {"grbl", "marlin", "smoothieware"}) {
+    const std::string gcode = joined(post_process(longhand, context));
+    if (gcode.find("G81") != std::string::npos ||
+        gcode.find("Z-5") == std::string::npos) {
+      std::cerr << "FAIL: " << longhand << " must drill longhand\n";
+      return false;
+    }
+  }
+  return true;
+}
+
+// A stale user post file (seeded before canned_cycles existed) has no
+// cycle keys: drilling must degrade to longhand.  Even a post that
+// declares canned_cycles WITHOUT a template stays longhand — the
+// capability requires both.
+bool test_stale_post_drilling_longhand() {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   "polysmith_posts_stale_drill_test";
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream stream(dir / "linuxcnc.json");
+    stream << R"JSON({
+      "rapid": "G0 X{x} Y{y}",
+      "feed": "G1 X{x} Y{y}",
+      "spindle_on": "M3 S{rpm}",
+      "spindle_off": "M5",
+      "footer_lines": ["M5", "M2"],
+      "decimal_places": 3,
+      "line_numbers": false
+    })JSON";
+  }
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", dir.string().c_str());
+#else
+  setenv("POLYSMITH_POSTS_DIR", dir.string().c_str(), 1);
+#endif
+
+  Toolpath path;
+  path.moves.push_back(rapid(10.0, 5.0, 20.0));
+  path.moves.push_back(drill(10.0, 5.0, -5.0, 20.0, 0.0, 200.0));
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_mill_tool(),
+      .op_name = "Drill 4",
+  };
+  const std::string stale = joined(post_process("linuxcnc", context));
+  if (!expect(stale.find("G81") == std::string::npos &&
+                  stale.find("G1 X10.000 Y5.000 Z-5.000") !=
+                      std::string::npos,
+              "stale post: drilling degrades to longhand")) {
+    std::cerr << stale;
+    return false;
+  }
+
+  // Declares the flag but no template: still longhand.
+  {
+    std::ofstream stream(dir / "linuxcnc.json", std::ios::trunc);
+    stream << R"JSON({
+      "rapid": "G0 X{x} Y{y}",
+      "feed": "G1 X{x} Y{y}",
+      "canned_cycles": true,
+      "footer_lines": ["M5", "M2"],
+      "decimal_places": 3,
+      "line_numbers": false
+    })JSON";
+  }
+  const std::string flaggedOnly = joined(post_process("linuxcnc", context));
+#ifdef _WIN32
+  _putenv_s("POLYSMITH_POSTS_DIR", "");
+#else
+  unsetenv("POLYSMITH_POSTS_DIR");
+#endif
+  return expect(flaggedOnly.find("G81") == std::string::npos &&
+                    flaggedOnly.find("G1 X10.000 Y5.000 Z-5.000") !=
+                        std::string::npos,
+                "stale post: canned flag without a template stays longhand");
+}
+
 }  // namespace
 
 int main() {
@@ -228,6 +391,10 @@ int main() {
   ok = test_no_rotary_no_g93() && ok;
   ok = test_inverse_time_feed() && ok;
   ok = test_rapid_carries_rotary_word() && ok;
+  ok = test_canned_g81() && ok;
+  ok = test_canned_g83_peck() && ok;
+  ok = test_builtin_canned_matrix() && ok;
+  ok = test_stale_post_drilling_longhand() && ok;
   if (ok) {
     std::cout << "linuxcnc_post_test: all tests passed\n";
     return 0;

@@ -134,6 +134,99 @@
     return;
   }
 
+  if (command.type == "cam_capture_edge_reference") {
+    // The UI asks the core to capture a TNP-safe edge witness from a
+    // selected body edge ("<body_id>:edge:<index>") — the witness math
+    // lives in the core, never in TypeScript.  Drilling uses this for
+    // circular hole rims; partial arcs are rejected at capture.
+    const std::string edge_id = command.payload.value("edge_id", "");
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    const auto separator = edge_id.rfind(":edge:");
+    if (separator == std::string::npos) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_EDGE_ID", "The edge id is malformed: " + edge_id));
+      return;
+    }
+    const std::string body_id = edge_id.substr(0, separator);
+    int edge_index = 0;
+    try {
+      edge_index = std::stoi(edge_id.substr(separator + 6));
+    } catch (const std::exception&) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "BAD_EDGE_ID", "The edge id is malformed: " + edge_id));
+      return;
+    }
+
+    const auto bodies =
+        polysmith::core::compile_bodies(document.value(),
+                                 /*include_meshes=*/false);
+    const polysmith::core::CompiledBody* body = nullptr;
+    for (const auto& candidate : bodies.bodies) {
+      if (candidate.id == body_id) {
+        body = &candidate;
+        break;
+      }
+    }
+    if (body == nullptr) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "EDGE_NOT_FOUND",
+          "The body of the selected edge no longer exists."));
+      return;
+    }
+    const auto captured =
+        polysmith::core::capture_edge_reference(body_id, body->shape,
+                                                 edge_index);
+    if (!captured.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "EDGE_CAPTURE_FAILED",
+          "The edge witness could not be captured (partial arcs and "
+          "unsupported curves are not drilling inputs)."));
+      return;
+    }
+    polysmith::core::EdgeAttestation attestation;
+    attestation.start_point = captured->startPoint;
+    attestation.end_point = captured->endPoint;
+    attestation.length = captured->length;
+    attestation.tangent = captured->tangent;
+    attestation.center = captured->center;
+    attestation.axis = captured->axis;
+    attestation.radius = captured->radius;
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_edge_attestation_event(
+            command.id,
+            {{"persistent_id", edge_id},
+             {"attestation", polysmith::protocol::to_payload(attestation)}}));
+    return;
+  }
+
+  if (command.type == "cam_capture_point") {
+    // The UI asks the core to mint a drilling point reference for a
+    // world-space location.  A coordinate is its own identity (the TNP
+    // doctrine has no topology to protect), so the "witness" is the
+    // point itself — only the persistent id survives document saves.
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    const auto point = std::array<double, 3>{
+        command.payload.value("x", 0.0),
+        command.payload.value("y", 0.0),
+        command.payload.value("z", 0.0),
+    };
+    const auto ref = document_manager().cam_capture_point(point);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_attestation_event(
+            command.id, polysmith::protocol::to_payload(ref)));
+    return;
+  }
+
   if (command.type == "cam_wcs_set_face") {
     // Anchor the WCS origin to a body face: capture the TNP-safe
     // witness, store it on the target setup's WCS, and let the refresh
@@ -327,8 +420,12 @@
     auto op = polysmith::protocol::cam_operation_from_payload(command.payload);
     // When the payload carries no geometry references, capture witness
     // references from the selected sketch profiles (the contextual
-    // workflow: select profiles → invoke the operation).
-    if (op.geometry_references.machining_regions.empty()) {
+    // workflow: select profiles → invoke the operation).  Drilling
+    // skips this entirely — it targets BODY geometry only (hole walls,
+    // rim edges, free points), and its regions are filled by the armed
+    // pick.  Sketch circles are not drilling inputs.
+    if (op.geometry_references.machining_regions.empty() &&
+        op.type != "drilling") {
       const auto document = document_manager().get_document();
       if (!document.has_value()) {
         polysmith::protocol::write_message(
@@ -339,9 +436,9 @@
       if (!polysmith::core::capture_profile_references_from_selection(
               document.value(), op)) {
         // Laser and 2D contour operations without a pre-selection are
-        // created with an EMPTY scope — the panel's reference-sketch
-        // dropdown fills it in afterwards.  Every other operation type
-        // still requires geometry up front.
+        // created with an EMPTY scope — the panel fills it in
+        // afterwards (the reference-sketch dropdown).  Every other
+        // operation type still requires geometry up front.
         if (op.type != "laser_cut" && op.type != "contour_2d") {
           polysmith::protocol::write_message(
               polysmith::protocol::make_error_event(

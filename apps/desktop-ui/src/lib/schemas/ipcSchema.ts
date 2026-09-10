@@ -143,6 +143,44 @@ const camFaceAttestationResultEventSchema = z.object({
   }),
 });
 
+// Reply to cam_capture_edge_reference — see CamEdgeAttestationResultEvent
+// in types/ipc.ts. Payload mirrors make_cam_edge_attestation_event
+// (native/cad-core/src/app/impl/cam_commands.inc).  The circle witness
+// keys are optional — they exist only for full-circle edges.
+const camEdgeAttestationResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_edge_attestation_result"),
+  payload: z.object({
+    persistent_id: z.string(),
+    attestation: z.object({
+      start_point: z.tuple([z.number(), z.number(), z.number()]),
+      end_point: z.tuple([z.number(), z.number(), z.number()]),
+      length: z.number(),
+      tangent: z.tuple([z.number(), z.number(), z.number()]),
+      adjacent_face_normals: z
+        .array(z.tuple([z.number(), z.number(), z.number()]))
+        .optional(),
+      center: z.tuple([z.number(), z.number(), z.number()]).optional(),
+      axis: z.tuple([z.number(), z.number(), z.number()]).optional(),
+      radius: z.number().optional(),
+    }),
+  }),
+});
+
+// Reply to cam_capture_point — see CamAttestationResultEvent in
+// types/ipc.ts. Payload mirrors make_cam_attestation_event
+// (native/cad-core/src/app/impl/cam_commands.inc).
+const camAttestationResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_attestation_result"),
+  payload: z.object({
+    persistent_id: z.string(),
+    attestation: z.object({
+      point: z.tuple([z.number(), z.number(), z.number()]),
+    }),
+  }),
+});
+
 const documentSavedEventSchema = z.object({
   id: z.string(),
   type: z.literal("document_saved"),
@@ -212,6 +250,8 @@ export const coreMessageSchema = z.union([
   camPostListResultEventSchema,
   camMachineListResultEventSchema,
   camFaceAttestationResultEventSchema,
+  camEdgeAttestationResultEventSchema,
+  camAttestationResultEventSchema,
   errorEventSchema,
 ]);
 

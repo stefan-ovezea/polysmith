@@ -33,6 +33,12 @@ struct EdgeAttestation {
   double length = 0.0;
   std::array<double, 3> tangent = {1.0, 0.0, 0.0};
   std::optional<std::vector<std::array<double, 3>>> adjacent_face_normals;
+  // Circle witness (drilling hole rims).  Present only for full-circle
+  // edges — a closed rim has start == end, so the endpoint witness
+  // alone cannot identify it.  Arcs and lines leave these unset.
+  std::optional<std::array<double, 3>> center;
+  std::optional<std::array<double, 3>> axis;
+  std::optional<double> radius;
 };
 
 /// Witness data to re-identify a sketch profile region after sketch
@@ -51,10 +57,21 @@ struct SketchProfileAttestation {
   std::optional<std::string> source_circle_id;   // circle-sourced regions
 };
 
-/// TNP-safe reference to a 3D face, 3D edge, or sketch profile.
+/// A bare world-space point.  Unlike the witness attestations there is
+/// nothing to re-identify — a coordinate is its own identity (the laser
+/// `pierce_position` precedent).  Drilling operations use these for
+/// free-picked hole locations; the persistent_id is the only part that
+/// must survive document saves.
+struct PointAttestation {
+  std::array<double, 3> point = {0.0, 0.0, 0.0};
+};
+
+/// TNP-safe reference to a 3D face, 3D edge, sketch profile, or a bare
+/// world-space point.
 struct GeometryReference {
   std::string persistent_id;
-  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation>
+  std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation,
+               PointAttestation>
       attestation;
 };
 
@@ -329,6 +346,7 @@ struct CamOperationParameters {
   std::optional<double> hole_depth_mm;              // for drilling
   std::optional<double> peck_depth_mm;              // for peck drilling
   std::optional<double> dwell_seconds;              // for dwell cycles
+  bool through_hole = false;                        // drilling: to stock bottom
   std::optional<double> engagement_angle_deg;       // for adaptive clearing
   std::optional<double> zigzag_angle_deg;           // for face milling
   std::optional<LaserCutParameters> laser;          // for laser_cut

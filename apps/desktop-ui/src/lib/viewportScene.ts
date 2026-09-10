@@ -894,6 +894,7 @@ function makeSolidFace(face: ViewportSolidFace): SolidFaceScene {
     triangleIndices: Uint32Array.from(face.triangle_indices ?? []),
     isSelected: face.is_selected,
     appearanceColor: face.appearance_color ?? null,
+    surfaceKind: face.surface_kind,
   };
 }
 
@@ -1236,7 +1237,7 @@ export function createViewportScene(
           // changes — e.g. after a fillet/chamfer/cut. Otherwise the
           // pick mesh would stay frozen on the prior topology.
           (face) =>
-            `solid-face:${face.faceId}:${face.ownerId}:${face.sketchability}:${face.center.join(":")}:${face.trianglePositions.length}:${face.triangleIndices.length}:${face.isSelected}:${face.appearanceColor ?? ""}`,
+            `solid-face:${face.faceId}:${face.ownerId}:${face.sketchability}:${face.surfaceKind ?? ""}:${face.center.join(":")}:${face.trianglePositions.length}:${face.triangleIndices.length}:${face.isSelected}:${face.appearanceColor ?? ""}`,
         ),
       )
       .concat(

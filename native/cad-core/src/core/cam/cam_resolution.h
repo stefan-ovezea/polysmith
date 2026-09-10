@@ -32,6 +32,13 @@ struct ResolvedFaceRef {
   double score = 0.0;
 };
 
+struct ResolvedEdgeRef {
+  bool found = false;
+  const CompiledBody* body = nullptr;  // valid when found
+  int edgeIndex = -1;                  // 0-based index in the body's edge map
+  double score = 0.0;
+};
+
 struct ResolvedProfileRef {
   bool found = false;
   const SketchProfileRegion* region = nullptr;  // valid when found
@@ -42,6 +49,11 @@ struct ResolvedProfileRef {
 // The serialized attestation carries no body id (bodies are rebuilt by
 // compile_bodies on every recompute), so all bodies are candidates.
 ResolvedFaceRef resolve_face_attestation(const FaceAttestation& attestation,
+                                         const CompiledBodies& bodies);
+
+// Resolves an edge attestation against every body in the compiled set
+// (same all-bodies-candidate rule as face attestations).
+ResolvedEdgeRef resolve_edge_attestation(const EdgeAttestation& attestation,
                                          const CompiledBodies& bodies);
 
 // Resolves a profile attestation against a sketch feature's current
@@ -55,6 +67,7 @@ ResolvedProfileRef resolve_profile_attestation(
 // reference, following the dependency_broken doctrine: never throw,
 // never guess.
 std::string face_reference_failure_message(const ResolvedFaceRef& face);
+std::string edge_reference_failure_message(const ResolvedEdgeRef& edge);
 std::string profile_reference_failure_message(
     const ResolvedProfileRef& profile);
 
@@ -69,13 +82,17 @@ const CamSetup* setup_for(const DocumentState& document,
 // state, invoking the sink on success.  The generate driver pushes the
 // resolved geometry into its context; the refresh pass passes empty
 // sinks and only needs the found flag.  `bodies` must already be
-// compiled when the reference is a face attestation.
+// compiled when the reference is a face attestation.  Point references
+// need no resolution — a coordinate is its own identity — the sink
+// receives the attestation verbatim.
 bool resolve_geometry_reference(
     const GeometryReference& ref, const DocumentState& document,
     const CompiledBodies& bodies,
     const std::function<void(const ResolvedProfileRef&, const FeatureEntry&)>&
         on_profile,
     const std::function<void(const ResolvedFaceRef&)>& on_face,
+    const std::function<void(const ResolvedEdgeRef&)>& on_edge,
+    const std::function<void(const PointAttestation&)>& on_point,
     std::string& message);
 
 }  // namespace polysmith::core

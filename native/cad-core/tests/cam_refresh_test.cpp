@@ -6,6 +6,8 @@
 // A toolpath cached at the current revision keeps an op "generated";
 // any real mutation invalidates it back to "needs_regenerate".
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <variant>
@@ -18,12 +20,18 @@
 #include "core/geometry/body_compiler.h"
 #include "protocol/serialization.h"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRep_Tool.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
@@ -33,6 +41,7 @@ using polysmith::core::CamOperation;
 using polysmith::core::CamSetup;
 using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
+using polysmith::core::EdgeAttestation;
 using polysmith::core::FaceAttestation;
 using polysmith::core::GeometryReference;
 using polysmith::core::SketchProfileAttestation;
@@ -537,6 +546,127 @@ bool test_pointer_offset_shifts_wcs() {
                 "pointer offset: WCS shifted by -offset");
 }
 
+// ── Test 11: an edge reference survives an unrelated edit ──────────
+// Mirrors Test 3 for EdgeAttestation: the 4th resolution sink must
+// exist on the refresh path or every edge-referencing op degrades.
+
+bool test_edge_op_survives_unrelated_edit() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document =
+      manager.add_box_feature({.width = 20.0, .height = 20.0, .depth = 10.0});
+  const std::string boxId = document.feature_history.back().id;
+  manager.start_sketch_on_plane("ref-plane-xy");
+  document = manager.add_sketch_circle(10.0, 5.0, 2.0);
+  const std::string sketchId = document.feature_history.back().id;
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketchId && feature.sketch_parameters.has_value()) {
+      for (const auto& region : feature.sketch_parameters->profiles) {
+        if (region.kind == "circle") {
+          circleProfile = region.id;
+        }
+      }
+    }
+  }
+  if (!expect(!circleProfile.empty(), "edge: circle profile found")) {
+    return false;
+  }
+  document = manager.extrude_profile(circleProfile, 10.0, "cut", boxId);
+  manager.cam_setup_create(
+      [] {
+        CamSetup s;
+        s.name = "Mill setup";
+        s.machine_type = "3_axis_mill";
+        return s;
+      }());
+  document = manager.cam_tool_add(
+      [] {
+        ToolEntry t;
+        t.name = "3mm drill";
+        t.type = "drill";
+        return t;
+      }());
+
+  const auto compiled = polysmith::core::compile_bodies(document);
+  const polysmith::core::CompiledBody* body = nullptr;
+  for (const auto& candidate : compiled.bodies) {
+    if (candidate.id == boxId) {
+      body = &candidate;
+    }
+  }
+  if (!expect(body != nullptr, "edge: cut box compiled")) {
+    return false;
+  }
+  // Find the top rim (full circle at z 10).
+  int rimIndex = -1;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
+  TopExp::MapShapes(body->shape, TopAbs_EDGE, edgeMap);
+  for (int i = 1; i <= edgeMap.Extent(); ++i) {
+    try {
+      const auto edge = TopoDS::Edge(edgeMap(i));
+      BRepAdaptor_Curve curve(edge);
+      if (curve.GetType() != GeomAbs_Circle) {
+        continue;
+      }
+      TopoDS_Vertex firstVertex;
+      TopoDS_Vertex lastVertex;
+      TopExp::Vertices(edge, firstVertex, lastVertex);
+      const double radius = curve.Circle().Radius();
+      if (BRep_Tool::Pnt(firstVertex).Distance(BRep_Tool::Pnt(lastVertex)) >
+          std::max(1e-7, radius * 1e-7)) {
+        continue;  // arc
+      }
+      if (std::abs(curve.Circle().Location().Z() - 10.0) < 1e-6) {
+        rimIndex = i - 1;
+        break;
+      }
+    } catch (const std::exception&) {
+      continue;
+    }
+  }
+  if (!expect(rimIndex >= 0, "edge: top rim found")) {
+    return false;
+  }
+  const auto ref = polysmith::core::capture_edge_reference(
+      body->id, body->shape, rimIndex, "top rim");
+  if (!expect(ref.has_value(), "edge: rim witness captured")) {
+    return false;
+  }
+  EdgeAttestation att;
+  att.start_point = ref->startPoint;
+  att.end_point = ref->endPoint;
+  att.length = ref->length;
+  att.tangent = ref->tangent;
+  att.center = ref->center;
+  att.axis = ref->axis;
+  att.radius = ref->radius;
+  GeometryReference stored;
+  stored.persistent_id = boxId + ":edge:" + std::to_string(rimIndex);
+  stored.attestation = att;
+
+  CamOperation op;
+  op.name = "Drill 1";
+  op.type = "drilling";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  op.parameters.cycle_type = "g81_standard";
+  op.parameters.hole_depth_mm = 5.0;
+  op.geometry_references.machining_regions.push_back(stored);
+  document = manager.cam_operation_add(op);
+  const std::string opId = document.cam.operations.back().op_id;
+  if (!expect(find_op(document, opId)->status == "pending",
+              "edge: fresh op pending (reference resolved)")) {
+    return false;
+  }
+
+  // An unrelated edit (second box) must not break the edge reference.
+  document = manager.add_box_feature(
+      {.width = 5.0, .height = 5.0, .depth = 5.0});
+  const auto* after = find_op(document, opId);
+  return expect(after->status != "error",
+                "edge: unrelated edit keeps the reference resolvable");
+}
+
 }  // namespace
 
 int main() {
@@ -577,6 +707,8 @@ int main() {
       test_wcs_stock_face_anchor_degrades);
   run("Test 10: anchor fields round-trip the payload",
       test_wcs_anchor_payload_round_trip);
+  run("Test 11: edge op survives unrelated edit",
+      test_edge_op_survives_unrelated_edit);
 
   if (allPassed) {
     std::cout << "cam_refresh_test passed\n";

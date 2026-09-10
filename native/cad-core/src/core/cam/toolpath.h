@@ -25,6 +25,7 @@ enum class ToolpathMoveKind {
   FeedLinear,   // G1
   FeedArcCW,    // G2
   FeedArcCCW,   // G3
+  DrillCycle,   // canned drill cycle (G81/G83) or longhand plunge
 };
 
 struct ToolpathMove {
@@ -45,6 +46,12 @@ struct ToolpathMove {
   std::optional<double> a;
   std::optional<double> b;
   std::optional<double> c;
+  // Drill cycle (kind == DrillCycle): the R plane (retract height) and
+  // the peck depth (0 = single G81-style plunge; >0 = G83 pecking).
+  // `z` is the hole bottom — one move covers the whole
+  // retract → bottom → retract trip.
+  double r_plane_z = 0.0;
+  double peck_depth_mm = 0.0;
 };
 
 struct Toolpath {

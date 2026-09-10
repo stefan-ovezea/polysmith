@@ -698,9 +698,10 @@ Payload = serialized `CamOperation` without `op_id` (the core assigns
 `cam-op-N`). `type` is a string: `"laser_cut"` (laser cutting from sketch),
 `"face_milling"` (zigzag facing of a horizontal face), `"pocket_2d"`
 (zigzag pocketing of a planar face, with optional islands),
-`"contour_2d"` (closed-wire profile finishing, face or sketch input), or
+`"contour_2d"` (closed-wire profile finishing, face or sketch input),
+`"drilling"` (G81/G83 drill cycles at point locations), or
 `"laser_test_pattern"` (LightBurn-style material test cards) are
-implemented; drill/turning are registry slots for later.
+implemented; turning is a registry slot for later.
 `tool_id` must reference an existing tool. Laser operations (cut and test
 patterns) require a laser machine setup.
 
@@ -769,10 +770,42 @@ Geometry input:
   `start_x_mm`/`start_y_mm`, `line_spacing_mm`, gauge kerf/power/speed,
   `cell_labels`).  Power sweeps columns (left→right), speed sweeps rows
   (top→bottom); cells live in machine coordinates.
+- `drilling`: `machining_regions` mixes THREE attestation kinds — BODY
+  geometry and free points, never sketches.  A `FaceAttestation`
+  (serde key `"sample_points"`) is a hole-wall face: the generator reads
+  the resolved wall's cylinder axis for the hole XY (only vertical
+  cylindrical walls qualify).  An `EdgeAttestation` (serde key
+  `"start_point"` + optional `"center"`/`"axis"`/`"radius"` circle
+  witness) is a full-circle rim edge: the generator reads the resolved
+  rim's circle center (arcs and lines are rejected).  A
+  `PointAttestation` (serde key `"point"`) drills at its world
+  coordinate.  Create with EMPTY `geometry_references` — the core does
+  NOT capture any selection for drilling; holes are added one at a time
+  via `cam_capture_face_reference`, `cam_capture_edge_reference`, or
+  `cam_capture_point` + `cam_operation_update` (append the returned
+  attestation to `machining_regions`).  An empty `machining_regions`
+  on update means "user removed all holes".  LEGACY: operations still
+  holding `SketchProfileAttestation` regions (sketch circles) fail
+  generation with a migration error telling the user to re-pick the
+  holes on the body — never a silent empty hole list.  Parameters:
+  `cycle_type` (`"g81_standard"` | `"g83_peck"`), `hole_depth_mm`,
+  `peck_depth_mm`, `through_hole` (drill to stock bottom, stock
+  required), `plunge_feedrate_mm_per_min` is the drill feedrate.
+  Blind depths measure from the material top (the wall's axis often
+  sits at the hole bottom).  Posts with `canned_cycles` support
+  (linuxcnc, mach3, mach4, fanuc) emit real G81/G83; GRBL-family posts
+  emit longhand G0/G1 moves (GRBL implements neither cycle).
 
 Face references: `cam_capture_face_reference {face_id}` returns the
 TNP-safe `FaceAttestation` for a body face — use it to build operation
 `geometry_references` (never hand-craft witness data).
+`cam_capture_edge_reference {edge_id}` returns
+`cam_edge_attestation_result {persistent_id, attestation}` — the
+TNP-safe `EdgeAttestation` for a body edge (full circles carry the
+center/axis/radius witness; partial arcs are rejected).
+`cam_capture_point {x, y, z}` returns `cam_attestation_result
+{persistent_id, attestation: {point: [x, y, z]}}` — the core mints the
+`pt-N` id; the UI sends the world coordinate picked in the viewport.
 `cam_wcs_set_face {face_id}` anchors the WCS to a face; the refresh
 pass resolves the machine origin from the live face.  `face_id` may also
 be `"stock:<face>"` (top/bottom/front/back/left/right) — the WCS then

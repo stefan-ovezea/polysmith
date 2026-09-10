@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -119,6 +120,18 @@ struct ViewportSolidFace {
   std::vector<int> triangle_indices;
   bool is_selected;
   std::optional<std::string> appearance_color;
+  // Surface classification for CAM consumers (drilling hole-wall
+  // candidates): "planar" | "cylinder" | "cone" | "sphere" | "torus"
+  // | "spline" | "other".  Refines `sketchability`: a cylinder wall
+  // is "non-planar" for sketching but a drillable hole wall.
+  std::string surface_kind = "other";
+  // Cylinder witness — set only when surface_kind == "cylinder": the
+  // cylinder axis (direction), a point on the axis, and the radius.
+  // Drilling derives the hole center from cylinder_location — the
+  // `center` field is a mid-UV point ON the wall, not the axis.
+  std::optional<std::array<double, 3>> cylinder_axis;
+  std::optional<std::array<double, 3>> cylinder_location;
+  std::optional<double> cylinder_radius;
 };
 
 }  // namespace polysmith::core

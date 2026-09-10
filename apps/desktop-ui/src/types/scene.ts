@@ -430,4 +430,8 @@ export interface SolidFaceScene {
   triangleIndices: Uint32Array;
   isSelected: boolean;
   appearanceColor: string | null;
+  // Surface classification for CAM consumers (drilling hole-wall
+  // detection): "planar" | "cylinder" | "cone" | "sphere" | "torus"
+  // | "spline" | "other".  Undefined for legacy payloads.
+  surfaceKind?: string;
 }

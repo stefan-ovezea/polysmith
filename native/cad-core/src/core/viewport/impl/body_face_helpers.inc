@@ -16,6 +16,13 @@ struct FaceFrameInfo {
   double normal_y;
   double normal_z;
   bool is_planar;
+  // Surface classification + cylinder witness (drilling hole-wall
+  // candidates).  surface_kind mirrors ViewportSolidFace::surface_kind;
+  // the cylinder fields are set only for GeomAbs_Cylinder surfaces.
+  std::string surface_kind = "other";
+  std::optional<std::array<double, 3>> cylinder_axis;
+  std::optional<std::array<double, 3>> cylinder_location;
+  std::optional<double> cylinder_radius;
 };
 
 FaceFrameInfo derive_face_frame(const TopoDS_Face& face) {
@@ -32,6 +39,44 @@ FaceFrameInfo derive_face_frame(const TopoDS_Face& face) {
   try {
     BRepAdaptor_Surface surface(face);
     const GeomAbs_SurfaceType type = surface.GetType();
+
+    // Classify the underlying surface once; CAM consumers (drilling)
+    // read this to find hole walls.  Cylinder faces additionally
+    // carry the axis witness — the hole center lives on the cylinder
+    // axis, not at the mid-UV `center` point.
+    switch (type) {
+      case GeomAbs_Plane:
+        info.surface_kind = "planar";
+        break;
+      case GeomAbs_Cylinder: {
+        info.surface_kind = "cylinder";
+        const gp_Cylinder cylinder = surface.Cylinder();
+        const gp_Pnt location = cylinder.Location();
+        const gp_Dir axis = cylinder.Axis().Direction();
+        info.cylinder_location =
+            std::array<double, 3>{location.X(), location.Y(), location.Z()};
+        info.cylinder_axis =
+            std::array<double, 3>{axis.X(), axis.Y(), axis.Z()};
+        info.cylinder_radius = cylinder.Radius();
+        break;
+      }
+      case GeomAbs_Cone:
+        info.surface_kind = "cone";
+        break;
+      case GeomAbs_Sphere:
+        info.surface_kind = "sphere";
+        break;
+      case GeomAbs_Torus:
+        info.surface_kind = "torus";
+        break;
+      case GeomAbs_BezierSurface:
+      case GeomAbs_BSplineSurface:
+        info.surface_kind = "spline";
+        break;
+      default:
+        info.surface_kind = "other";
+        break;
+    }
 
     gp_Pnt center;
     gp_Vec normal;
@@ -223,6 +268,10 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     primitive.normal_y = frame_info.normal_y;
     primitive.normal_z = frame_info.normal_z;
     primitive.plane_frame = frame_info.frame;
+    primitive.surface_kind = frame_info.surface_kind;
+    primitive.cylinder_axis = frame_info.cylinder_axis;
+    primitive.cylinder_location = frame_info.cylinder_location;
+    primitive.cylinder_radius = frame_info.cylinder_radius;
     primitive.is_selected = selected_face_id.has_value() &&
                             selected_face_id.value() == face_id;
     primitive.appearance_color =

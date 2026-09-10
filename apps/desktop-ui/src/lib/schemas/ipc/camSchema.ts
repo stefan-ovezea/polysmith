@@ -23,6 +23,11 @@ const bounds3DSchema = z
 
 // ── TNP-Safe References ───────────────────────────────────────────
 
+// Every field except sample_points carries a default so lenient parsing
+// survives old documents — but sample_points is REQUIRED: it is the one
+// key the core always emits for face attestations, and without it this
+// schema would match ANY object (a point or profile attestation would
+// parse as a face and round-trip corrupted into the core).
 const faceAttestationSchema = z
   .object({
     bounds: bounds3DSchema.default({
@@ -30,13 +35,13 @@ const faceAttestationSchema = z
     }),
     area: z.number().default(0),
     normal: vec3Schema.default([0, 0, 1]),
-    sample_points: z.array(vec3Schema).default([]),
+    sample_points: z.array(vec3Schema),
   })
   .passthrough();
 
 const edgeAttestationSchema = z
   .object({
-    start_point: vec3Schema.default([0, 0, 0]),
+    start_point: vec3Schema,
     end_point: vec3Schema.default([0, 0, 0]),
     length: z.number().default(0),
     tangent: vec3Schema.default([1, 0, 0]),
@@ -44,9 +49,21 @@ const edgeAttestationSchema = z
   })
   .passthrough();
 
+// point is REQUIRED — the discriminator that keeps this schema from
+// matching face/profile/edge attestations in the union below (a
+// round-tripped point must never re-parse as another kind).
+const pointAttestationSchema = z
+  .object({
+    point: vec3Schema,
+  })
+  .passthrough();
+
+// sketch_feature_id is REQUIRED for the same reason: every profile
+// attestation carries it, and without the requirement the all-default
+// shape would swallow the other attestation kinds.
 const sketchProfileAttestationSchema = z
   .object({
-    sketch_feature_id: z.string().default(""),
+    sketch_feature_id: z.string(),
     profile_id: z.string().default(""),
     center_x: z.number().default(0),
     center_y: z.number().default(0),
@@ -66,9 +83,15 @@ const geometryReferenceSchema = z
     persistent_id: z.string().default(""),
     attestation: z
       .union([
+        pointAttestationSchema,
         faceAttestationSchema,
         sketchProfileAttestationSchema,
         edgeAttestationSchema,
+        // Catch-all for unknown future variants — a CAM parse failure
+        // would take down the whole document, so leniency is the
+        // priority.  The four schemas above discriminate on required
+        // keys, so this only swallows shapes the core has not
+        // introduced yet.
         z.object({}).passthrough(),
       ])
       .nullable()
@@ -267,6 +290,7 @@ const camOperationParametersSchema = z
     hole_depth_mm: z.number().optional(),
     peck_depth_mm: z.number().optional(),
     dwell_seconds: z.number().optional(),
+    through_hole: z.boolean().default(false),
     engagement_angle_deg: z.number().optional(),
     zigzag_angle_deg: z.number().optional(),
     contour: contourParametersSchema.optional(),
@@ -341,6 +365,7 @@ const camOperationSchema = z
       cutting_direction: "climb",
       finish_pass: false,
       multiple_passes: false,
+      through_hole: false,
       coolant: "off",
       tool_axis_mode: "fixed_z",
     }),

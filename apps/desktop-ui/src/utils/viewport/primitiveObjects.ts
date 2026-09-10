@@ -445,6 +445,10 @@ export function buildSolidFaceObject(face: SolidFaceScene) {
   }
   mesh.userData.faceId = face.faceId;
   mesh.userData.ownerKind = face.ownerKind;
+  // CAM pick classification (drilling hole walls): copied from the
+  // payload so the armed drill pick can tell a cylindrical wall from
+  // a planar face without re-deriving surface types client-side.
+  mesh.userData.surfaceKind = face.surfaceKind ?? null;
   mesh.renderOrder = 4;
   return {
     mesh,

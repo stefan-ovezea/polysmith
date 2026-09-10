@@ -1,4 +1,380 @@
-# Active task: CAM retract WCS fix + generate-result popup + arc lead sweep angle + circle pierce corner-warning fix + mixed-sketch circle kind fix + circle-hole double-rendering fix + circle-hole exact toolpath fix + sketch-circle double-outline UI fix (cam/milling) — implemented, UNCOMMITTED
+# Active task: CAM Drilling — body-geometry targeting rework (cam/milling) — implemented P1–P10, UNCOMMITTED (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD f169fc2)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 5 (binding user directive, 2026-09-09)
+
+> "The sketch should be involved only if the sketch is used directly
+> like in laser mode. In this cam mode we are working only with
+> bodies. If setup does not use the sketch why you are using in
+> drilling mode. If the geometry is imported from step or stl does
+> not have a sketch. I should be able to work with surfaces at this
+> point not sketch: like selecting the internal wall of a hole or
+> even the edge/circle."
+
+Drilling must target BODY geometry only (hole-wall faces, circular
+rim edges) and work on STEP/STL imports with no sketch.  Round 4 had
+re-introduced sketch-circle dependence (`drillSketchCenterCandidates`
+from the raw payload) — hiding the drilling sketch emptied the pick
+set again.  User decisions: **topological references** (clicking a
+wall stores a FaceAttestation, a rim circle an EdgeAttestation — both
+re-resolve on every recompute; free clicks stay PointAttestation
+coordinates) and **drop sketch input entirely** (legacy sketch-circle
+ops must fail with a CLEAR migration error, never a silent empty hole
+list).
+
+## Status — P1–P10 implemented, uncommitted (working tree)
+
+- **P1** EdgeAttestation witness: optional `center`/`axis` (array3) +
+  `radius` (double) in cam_types.h; optional serde keys both
+  directions (basic_payloads_and_cam.inc / cam_from_payload.inc —
+  old files parse unchanged); TS EdgeAttestation optionals.
+- **P2** Edge capture + resolution: `CamEdgeReference` +
+  `capture_edge_reference` (new cam_edge_reference_capture.inc —
+  lines store endpoints/length/tangent, full circles add the circle
+  witness, partial ARCS are rejected with nullopt);
+  `resolve_edge_reference` + scoring (new
+  cam_edge_reference_resolve.inc: circle edges only, 0.5 radius
+  proximity + 0.5 center-distance linear decay,
+  `kEdgeMaxCenterDistance` 5 mm — center Z disambiguates the top vs
+  bottom rim of one bore); 4th `on_edge` sink in
+  `resolve_geometry_reference`; failure message mirrors the face one.
+- **P3** IPC: `cam_capture_edge_reference` handler (BAD_EDGE_ID /
+  EDGE_NOT_FOUND / EDGE_CAPTURE_FAILED) + `cam_edge_attestation_result`
+  event; TS command + event types + factory + useCadCore hook.
+- **P4** Generate/refresh plumbing: `CamGenerateContext.geometry.edges`;
+  the needsFaces gate triggers on EdgeAttestation too; on_edge sinks
+  at all 4 call sites (generate ×2, refresh ×2).
+- **P5** Drilling generator rewrite (drilling_generate.inc): legacy
+  migration guard FIRST ("still uses sketch circles… re-pick the
+  holes on the body"); new FACES loop (GeomAbs_Cylinder + vertical
+  axis; hole XY from the live cylinder location; material-top lift);
+  new EDGES loop (GeomAbs_Circle + full-circle test + horizontal
+  guard; center XY); points loop unchanged; empty-set error reworded
+  ("at least one hole face, rim edge, or point").  Guards, ordering,
+  and emission unchanged.
+- **P6** Create gate: the selection-capture block in cam_commands.inc
+  is skipped for drilling (`op.type != "drilling"`) — drilling always
+  creates with empty regions, filled by the armed pick.
+- **P7** Viewport payload + zod: `ViewportEdgePrimitive` += optional
+  center/axis/radius (full circles ONLY); `ViewportSolidFace` +=
+  `surface_kind` + cylinder witness (axis/location/radius); both
+  to_payload sites; zod solid_faces + edges updated (the strict-strip
+  trap); TS viewport/ipc types; geometryKey includes surface_kind.
+- **P8** Native tests (all green):
+  - cam_generators_test: body fixtures (box + sketch circles cut via
+    `extrude_profiles(..., "cut", boxId)`, surface-type scans, capture
+    through the core APIs) — `make_drilling_face_op` /
+    `make_drilling_edge_op`; Tests 54-60 re-homed onto wall/rim
+    fixtures (drill.z now from the material top: blind 5 → z 5); NEW
+    Tests 61-65: rim G81 (top rim + bottom-rim lift), horizontal-axis
+    wall/rim errors, legacy profile migration message, rim
+    re-resolves after an edit (delete + re-cut at (10.2, 5) →
+    follows the new axis), mixed wall + rim + point collection.
+  - cam_commands_test 22-24: edge attestation parse (circle keys +
+    line without), capture witness fields, arc rejection.
+  - cam_save_load_test 7: face + edge + point round-trip.
+  - cam_refresh_test 11: EdgeAttestation op survives an unrelated edit.
+  - BAD_EDGE_ID command-level test dropped: command handlers write to
+    the process stdout (no in-process dispatcher harness) — the
+    capture/serde APIs are covered instead (noted for the commit
+    message).
+- **P8 bug found & fixed — is_point_on_face distance gate**: Test 54
+  exposed a REAL scoring bug: `BRepClass_FaceClassifier`'s tolerance
+  is a PROJECTION tolerance, not a distance gate, so a point far from
+  a face still projected onto its surface and classified IN — a wall
+  attestation scored 1.0 against EVERY other wall, and two-hole ops
+  degraded with "face not found" via the ambiguity rule (single-hole
+  ops happened to pass).  Fixed in cam_face_reference_helpers.inc:
+  a `GeomAPI_ProjectPointOnSurf` lower-distance gate (Grad, Tree
+  fallback) runs BEFORE the UV classification.  Full suite re-run:
+  41/41 green.
+- **P9 UI**: camOriginSnap.ts — `drillSketchCenterCandidates` DELETED;
+  new `drillHoleCandidates` (raw payload: edges kind "circle" WITH
+  the witness + |axis.z|≈1 → `hole_rim`; solid_faces surface_kind
+  "cylinder" + vertical axis → `hole_wall`; dedupe by quantized XY
+  1e-3 keeping max z; `sourceId` = "<body>:edge:<idx>" / face_id);
+  new kinds + label keys (`originSnapHoleRim`/`originSnapHoleWall`);
+  the lift covers both kinds; markers center-styled.  ViewportPanel:
+  drill pick chain = lifted snap (rim→edge, wall→face) → edge-line
+  raycast (Line threshold 1.2) → face raycast (surfaceKind
+  "cylinder" → face, else point; body meshes included for
+  STL/cylinder bodies) → bed plane; `onDrillPickPoint` is the
+  `DrillPickTarget` discriminated union.  primitiveObjects.ts
+  surfaceKind userData; scene.ts `SolidFaceScene.surfaceKind` +
+  makeSolidFace mapping (a P7 gap the tsc gate caught).  App.tsx
+  `applyDrillTargetPick` (point/face/edge capture + per-kind
+  messages, pick stays armed); camDrillingActions trigger = hasSetup
+  only (no face/profile gate, noSelection toast dropped);
+  CamMillingToolbar `drillReady = hasSetup && !disabled`;
+  CamFloatingPanels rows (wall/rim/point/legacy labels);
+  CamDrillingPanel hint + "Add hole"; i18n en.json block
+  (wallRow/rimRow/legacyRow/wallAdded/rimAdded/noSetup + snap labels).
+- **P10 docs**: this tracker; wiki/CAM-Development.md drilling section
+  rework (body-geometry inputs + legacy migration note);
+  wiki/IPC-Protocol.md (cam_capture_edge_reference +
+  cam_edge_attestation_result); AI-CAD-Command-Language.md drilling
+  bullet rework (three attestation kinds + legacy guard).
+
+## Gates
+
+- `pnpm core:build` — green (all targets, app closed; the modified
+  .inc shells touched: app.cpp, machine_library.cpp, document.cpp,
+  serialization.cpp — the stale-.inc trap).
+- `pnpm test:core` — **41/41 suites green** (incl. Tests 54-65 +
+  the is_point_on_face distance-gate fix).
+- `tsc --noEmit` — green (fixed: CamCaptureEdgeReferenceCommand in
+  the CoreCommand union, SolidFaceScene.surfaceKind).
+- **In-app verification round 5 PENDING** (binding before commit).
+
+## In-app verification round 5 (PENDING — checklist)
+
+1. Arm the drilling pick → ONE dot at the TOP center of every
+   circular hole (rim + wall deduped), visible from any angle, with
+   the drilling sketch HIDDEN and with a sketchless STEP part.
+2. Click the wall → "Hole wall" row; click the rim → "Hole rim" row;
+   free click on flat stock/face/bed → point rows; remove rows;
+   generate → preview shows the rapids from the WCS origin + the
+   plunge at each hole; blind depth measures from the material top;
+   through drills to the stock bottom.
+3. Legacy saved drilling op (sketch circles) → clear migration error
+   on generate, no crash; re-picking a wall/rim repairs it.
+4. STL import (no B-rep) → free-point drilling works (documented v1
+   limitation for mesh bodies).
+5. Rounds 3/4 re-check: travel line from the WCS origin; only hole
+   targets get dots; the origin pick unchanged.
+6. Regression: face milling, pocket, contour, laser still generate +
+   export; G81/G83 canned/longhand exports unchanged; save → reopen
+   round-trips face/edge refs.
+
+## Next steps
+
+1. User in-app verification round 5 (checklist above).
+2. Commit on explicit user approval (no Co-Authored-By trailer;
+   commit message notes the BAD_EDGE_ID test-scope adjustment).
+3. Push `cam/milling` + PR per user direction.
+
+---
+
+## Historical rounds 1-4 (superseded by the body-geometry rework)
+
+Rounds 1-4 below document the sketch-circle-driven drilling design
+that round 5 replaced.  Kept for the debugging history (the zod
+attestation-corruption fix, the top-surface lift, the origin-travel
+preview, and the hidden-sketch marker regression are all still
+relevant behavior).
+
+## In-app verification round 1 (2026-09-09) — multi-hole "face geometry lost" FIXED
+
+User in-app findings:
+1. Face milling rejecting the holed top face — pre-existing v1 scope
+   ("single boundary face" guard); no fix needed.
+2. Drill pick landing on a perimeter quadrant instead of the circle
+   center — fixed earlier via sketch-circle disc capture; user to
+   re-verify.
+3. **Multi-hole drilling error: "The face used by this operation was
+   not found (geometry changed — re-select it)"** — root-caused and
+   fixed (below).
+
+**Root cause (bug 3):** zod document-state schema leniency. Every
+attestation schema had all-default fields + `.passthrough()`, so
+`faceAttestationSchema` matched ANY object — a `{point:[...]}`
+attestation round-tripping through the UI's document-state parse got
+face defaults injected (`area:0, sample_points:[], normal:[0,0,1]`),
+and the C++ discriminator then checked `sample_points` BEFORE `point`,
+parsing the payload back as a FaceAttestation → face resolution
+failed → the error.  Corruption struck on the SECOND "Add point"
+update because `applyDrillPointPick` re-sends the full
+`machining_regions` list built from the corrupted UI document copy
+(one hole worked; the second poisoned the first).  Evidence: the
+user's saved `res/part.json` shows `pt-11` = `{area:0, bounds:0,
+normal:[0,0,1], sample_points:[]}` (corrupted) beside `pt-12` =
+`{point:[35,-20,10]}` (intact).
+
+**Fix — two layers:**
+- UI `apps/desktop-ui/src/lib/schemas/ipc/camSchema.ts`: the
+  discriminator keys are now REQUIRED — `sample_points` (face),
+  `start_point` (edge), `point` (point), `sketch_feature_id`
+  (profile) — and the union was reordered
+  [point, face, profile, edge, catch-all]; a real attestation can no
+  longer re-parse as another kind.
+- Native `native/cad-core/src/protocol/impl/cam_from_payload.inc`
+  (defense in depth): `point` is checked FIRST in the C++
+  discriminator — the coordinate, not the injected empty witness, is
+  the identity that must survive.
+
+**Regression tests** (`native/cad-core/tests/cam_commands_test.cpp`):
+- Test 20 `test_point_attestation_wins_over_face_keys` — a point
+  attestation carrying leftover face keys (bounds/area/normal/
+  sample_points) parses as PointAttestation with the coordinates
+  verbatim.  FAILED before the native fix, passes after.
+- Test 21 `test_face_attestation_still_parses` — a genuine face
+  payload (area, one sample, no point key) still parses as
+  FaceAttestation.
+- UI side additionally proven with a throwaway zod harness (old union
+  injected face keys into point AND profile attestations; new schema
+  parses point→point, face→face, profile→profile).
+
+**Gates after the fix:** `pnpm core:build` green; `pnpm test:core`
+**41/41 suites green**; `tsc --noEmit` green.
+
+## In-app verification round 2 (2026-09-09) — hole markers at the hole BOTTOM
+
+User report: "the center dot it is probably placed on the bottom of
+the hole instead of the top circle center and it is not visible at an
+angle. I need to change the view to to straite perpendicular on the
+surface to see the bottom of the hole to find the circle and is
+annoing".
+
+**Root cause:** the user's sketch is on ref-plane-xy (z=0) and the
+plate extrudes UP 20 mm, so the sketch circles sit at the BOTTOM of
+the through-holes.  Every drill-pick anchor used the sketch plane z:
+the armed-pick marker dots (addCamOriginPickMarkerObjects), the
+snap/disc-capture targets (circle.center), and the GENERATOR's start
+plane (start_z = sketch plane z — a blind 5 mm hole would have
+targeted z=−5, through the plate; their op was Through so it never
+bit).
+
+**Fix — two layers:**
+- Native `drilling_generate.inc`: circle holes lift to the topmost
+  upward-facing horizontal BODY face whose XY footprint contains the
+  hole XY (`top_surface_z_at` — TopExp_Explorer faces,
+  occ::down_cast<Geom_Plane>, orientation reversal for REVERSED
+  faces, upward-tilt guard, Bnd_Box footprint with 1e-4 tolerance);
+  `start_z = max(sketch_z, top_face_z)` — never pulled DOWN (a
+  circle floating above the part keeps its plane).  Bodies are
+  compiled for drilling ops (cam_generate.cpp needsFaces +
+  `CamGenerateContext::geometry.bodies`; body_compiler.h fwd decl).
+  Build note: `Geom_Plane.hxx` only fwd-declares gp_Pln — the helper
+  needs `#include <gp_Pln.hxx>` (the first build failed with
+  C2027/C2737 without it).
+- UI `camOriginSnap.ts` + ViewportPanel + sceneSync: drill-pick
+  candidates of kind sketch_center/face lift via
+  `liftDrillCandidates`/`topSurfaceZAt` (max face-mesh bbox z whose
+  XY footprint contains the target — bore walls top out at the top
+  rim, so through holes resolve to the top face height); applies to
+  the armed marker dots, the live snap square, the snap result and
+  the disc capture; point-kind targets (vertex/edge/stock/sketch
+  point) and free raycast hits keep exact positions (pocket-floor
+  drilling must stay); new `drillPickArmed` flag in sceneSync with
+  build key `drillpick:on/off` so swapping between armed origin pick
+  and armed drill pick rebuilds the lifted markers.
+
+**Regression test (fail-before verified):** cam_generators_test 56b
+"drilling blind depth measures from the material top" — circle on
+ref-plane-xy under a 20×20×10 box, blind 5 mm → drill.z must be 5
+(from the box top at z=10).  FAILED on the reverted build, passes
+with the fix.  Existing drilling suite 54-60 unaffected (no-body
+fixtures fall back to the sketch z; box fixtures still pass).
+
+**Gates:** `pnpm core:build` green; `pnpm test:core` 41/41 suites
+green (Test 56b PASS); `tsc --noEmit` green.
+
+## In-app verification round 3 (2026-09-09) — travel lines + marker noise
+
+User findings:
+1. "the point is visible now on top of the hole" (round-2 fix
+   confirmed) — but "I do not see the traveling from origin to the
+   holes" in the preview.  The G-code was correct (first `G0` rides
+   the implicit start at machine zero; inter-hole G0s at the R plane
+   exist); only the preview lacked the initial travel — the viewport
+   polyline started at the first hole.
+2. "I have so many visible dots like the quadrant or corners. Those
+   do not belong to a drill operation."  The armed drill pick reused
+   the full origin-snap marker set.
+
+**Fixes:**
+- Native `cam_toolpath_emit.inc` (+ viewport.cpp include of
+  cam_resolution.h): drilling previews prepend a rapid point at the
+  resolved WCS origin (machine zero in world coords =
+  wcs_origin.position ?? stock.origin ?? {0,0,0}) so the travel to
+  the first hole is visible.  Regression: cam_generators_test 56c —
+  explicit wcs origin {5,−3,0}, asserts the primitive's first point
+  is a rapid at that origin and the point count is 5 (origin +
+  rapid-to-R + R→bottom→R).  Fail-before verified (reverted build:
+  4 points, FAIL); pass-after: 41/41 suites green.  Test plumbing
+  note: the command layer stores generated paths in cam_runtime
+  (cam_commands.inc) — the test stores via store_generated itself,
+  since generate_operation_toolpath leaves the cache empty; also
+  `using polysmith::core::ViewportToolpathPrimitive;` added (the file
+  imports core names one by one).
+- UI `camOriginSnap.ts` + ViewportPanel: new `drillPickTargets`
+  filter — the drill pick shows/snaps to sketch circle CENTERS only
+  (lifted to the top surface); the origin pick keeps all targets;
+  free clicks still land anywhere via the face raycast.  Applied to
+  the armed marker dots, the click snap, and the pointer-move live
+  preview.
+
+**Gates:** `pnpm core:build` green; `pnpm test:core` 41/41 suites
+green (Test 56c PASS); `tsc --noEmit` green.
+
+## In-app verification round 4 (2026-09-10) — drill pick shows NO dots
+
+User finding: "Now I do not have any target dot in the hole and no
+dot in general."  Setup-mode dots still showed.  Root cause found by
+tracing where the drill pick's sketch targets come from:
+
+- `viewportScene.ts` (`buildViewportScene`) filters every sketch
+  primitive through `isSketchPlaneVisible` — a plane is hidden when
+  ALL sketches on it are hidden features
+  (`computeHiddenSketchPlaneIds`).  The user's file has the drilling
+  sketch hidden, so its circles were dropped from `sceneData`
+  entirely.  Setup-mode markers don't use sketch primitives (body
+  vertices/edges/faces/stock), which is why they still rendered.
+- The round-3 `drillPickTargets` filter kept only
+  `sketch_center` candidates derived from that filtered sceneData —
+  with the circles gone the filtered set was EMPTY, and the drill
+  pick rendered/snapped nothing.  (The round-3 noise complaint had
+  been the full origin marker set showing in the drill pick.)
+
+**Fix:** the drill pick no longer reads the filtered scene.  New
+`drillSketchCenterCandidates(rawViewport)` in camOriginSnap.ts
+derives circle/arc/ellipse centers from the RAW viewport payload
+(`ViewportState.sketch_circles/arcs/ellipses`, unfiltered by plane
+visibility, previews skipped).  The marker builder, the
+pointer-move live snap, and the click snap all use it (then
+`liftDrillCandidates` lifts to the material top).  `drillPickTargets`
+deleted — its scene-derived filtering is what emptied the set.
+
+**Gates:** `tsc --noEmit` green (UI-only change; no core rebuild
+needed).  In-app verification pending.
+
+## Next steps
+
+1. **User in-app re-verification round 4** (binding, before any
+   commit) — arm **Add point** and check:
+   - The marker dots ARE visible again — one dot at the TOP circle
+     center of each hole, visible from any viewing angle — even
+     with the drilling sketch HIDDEN in the hierarchy (targets now
+     come from the raw viewport payload, not the filtered scene).
+   - ONLY circle centers get dots (no vertices/edges/stock
+     corners/quadrants); the pick lands at the top rim center, not
+     the hole bottom.
+   - The origin pick (Set origin) still shows its full marker set.
+   - Round 3 items: the preview draws the travel line from the WCS
+     origin to the first hole (red rapid segment), plus the R-plane
+     rapids between holes.
+   - Suggested native check: a blind 5 mm hole on the 20 mm plate
+     (sketch at z=0) should target z=15 below the material top —
+     preview the plunge; export should show the right Z.
+   - Remaining round-1 checklist still owed: blind depth + G83 peck
+     preview + grbl longhand export (NO G81/G83) + linuxcnc canned
+     G81/G83 with R/Q; through toggle on a box with stock; remove a
+     point; empty list → clean error; regression: face milling,
+     pocket, contour, laser still generate + export.
+   - Multi-hole re-test note from round 1: the saved document still
+     holds the corrupted `pt-11` entry — press **Remove** on that row
+     and re-add the points (or recreate the operation).
+2. Commit on explicit user approval (no Co-Authored-By trailer).
+
+---
+
+# Previous task: CAM retract WCS fix + generate-result popup + arc lead sweep angle + circle pierce corner-warning fix + mixed-sketch circle kind fix + circle-hole double-rendering fix + circle-hole exact toolpath fix + sketch-circle double-outline UI fix (cam/milling) — COMMITTED f169fc2 (2026-09-08)
 
 > **Branch:** `cam/milling` (HEAD 0bc3ad8)
 > **Date:** 2026-09-08
@@ -252,35 +628,17 @@ uncommitted in the working tree:
 
 ## Next steps
 
-1. In-app: laser cut, kerf inside, lead-in/out style Arc → the arcs
-   roll 90° by default; try e.g. 120° in the new "Lead-in/out arc
-   angle" fields and confirm the preview follows.  Regression: kerf
-   auto (exterior) lead-in should now also be a 90° quarter roll
-   (was 270° too).
-2. In-app (same run): a circle op (circle + other entities in the
-   sketch) must generate WITHOUT the "sharp corner" / "Every corner"
-   pierce warnings — and the cut must still be a true circle arc in
-   the preview/G-code.
-3. In-app (same run): the circle profile in a mixed sketch must
-   render as a smooth circle in the sketch and CAM previews (the
-   16-gon polygon outline is gone).
-4. In-app (same run): a circle inside a rectangle must show ONE
-   smooth circle — the rectangle's hole outline must coincide with
-   the circle region's outline (no second polyline).  The laser
-   TOOLPATH around the circle hole must now also be a smooth circle
-   (one exact arc — no chord polygon on the ring), and the exported
-   G-code must carry G2/G3 for the hole.  Also verify after a
-   save/load that the hole stays smooth.
-5. In-app (same run): the circle must now be ONE smooth circle in the
-   sketch and CAM views — no second outline when the circle region
-   (or the containing rectangle) is hovered/selected; hover feedback
-   shows as the fill highlight; the circle stays smooth at extreme
-   zoom.
-6. Commit on user approval — popup + retract fix + preview smoothness
-   + arc sweep angle + circle pierce fix + circle-kind fix + the
-   double-outline UI fix together (or split as the user prefers) — no
-   Co-Authored-By trailer; message names the suites run (41/41 incl.
-   contour 18 / pocket 10 / cam_generators 53).
+1. ~~In-app verification round~~ — user exercised the app across the
+   session and confirmed ("it works well" ×2, "yes it works now",
+   "now it is OK" for the circle double).  COMMITTED f169fc2
+   (2026-09-08, user-approved; 41/41 suites + tsc green; no
+   Co-Authored-By trailer).
+2. **Next integration milestone: Drilling (#4 in
+   wiki/CAM-Development.md §V1)** — G81/G83, point selection (sketch
+   points, circle centers, free picks), depth/peck/retract params.
+   Plan mode → approved plan → phases (core → tests → UI → docs).
+3. Still open (carried): multi-pass stepdown for 2D contour (user will
+   implement); Tauri callback-id warning investigation.
 
 ---
 

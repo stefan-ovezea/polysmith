@@ -26,6 +26,19 @@ export interface EdgeAttestation {
   length: number;
   tangent: [number, number, number];
   adjacent_face_normals?: Array<[number, number, number]>;
+  // Circle witness (drilling hole rims) — present only for full-circle
+  // edges; a closed rim has start === end, so these identify it.
+  center?: [number, number, number];
+  axis?: [number, number, number];
+  radius?: number;
+}
+
+// A raw world-coordinate point (drilling hole locations).  A
+// coordinate is inherently TNP-stable — the core captures it from the
+// viewport pick and the generator resolves the region center for
+// circle profiles instead of trusting a stale center.
+export interface PointAttestation {
+  point: [number, number, number];
 }
 
 // Witness data to re-identify a sketch profile region after sketch
@@ -49,7 +62,11 @@ export interface SketchProfileAttestation {
 
 export interface GeometryReference {
   persistent_id: string;
-  attestation: FaceAttestation | EdgeAttestation | SketchProfileAttestation;
+  attestation:
+    | FaceAttestation
+    | EdgeAttestation
+    | SketchProfileAttestation
+    | PointAttestation;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -224,6 +241,9 @@ export interface CamOperationParameters {
   hole_depth_mm?: number;
   peck_depth_mm?: number;
   dwell_seconds?: number;
+  // Drilling: through holes drill to the stock bottom (stock required);
+  // blind holes drill hole_depth_mm below each point's start plane.
+  through_hole?: boolean;
   engagement_angle_deg?: number;
   zigzag_angle_deg?: number;     // for face milling
   contour?: ContourParameters;   // for contour_2d

@@ -122,13 +122,15 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
     }
     bool needs_faces = false;
     for (const auto& ref : op.geometry_references.machining_regions) {
-      if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+      if (std::holds_alternative<FaceAttestation>(ref.attestation) ||
+          std::holds_alternative<EdgeAttestation>(ref.attestation)) {
         needs_faces = true;
         break;
       }
     }
     for (const auto& ref : op.geometry_references.avoidance_regions) {
-      if (std::holds_alternative<FaceAttestation>(ref.attestation)) {
+      if (std::holds_alternative<FaceAttestation>(ref.attestation) ||
+          std::holds_alternative<EdgeAttestation>(ref.attestation)) {
         needs_faces = true;
         break;
       }
@@ -147,7 +149,9 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
     for (const auto& ref : op.geometry_references.machining_regions) {
       if (!resolve_geometry_reference(ref, document, bodies,
                                       /*on_profile=*/{},
-                                      /*on_face=*/{}, message)) {
+                                      /*on_face=*/{},
+                                      /*on_edge=*/{},
+                                      /*on_point=*/{}, message)) {
         resolved_all = false;
         break;
       }
@@ -155,7 +159,9 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
     for (const auto& ref : op.geometry_references.avoidance_regions) {
       if (!resolve_geometry_reference(ref, document, bodies,
                                       /*on_profile=*/{},
-                                      /*on_face=*/{}, message)) {
+                                      /*on_face=*/{},
+                                      /*on_edge=*/{},
+                                      /*on_point=*/{}, message)) {
         resolved_all = false;
         break;
       }

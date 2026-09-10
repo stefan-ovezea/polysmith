@@ -16,6 +16,7 @@ export interface CamMillingToolbarProps {
   onFaceMillingClick: () => void;
   onPocketClick: () => void;
   onContourClick: () => void;
+  onDrillClick: () => void;
 }
 
 export function CamMillingToolbar({
@@ -27,25 +28,30 @@ export function CamMillingToolbar({
   onFaceMillingClick,
   onPocketClick,
   onContourClick,
+  onDrillClick,
 }: CamMillingToolbarProps) {
   const { t } = useTranslation();
   const pushToast = useToastStore((state) => state.pushToast);
 
-  // Profile / Drill / Engrave have no generators yet (milestone work) —
-  // keep the buttons clickable but answer with a visible toast instead
-  // of a silent no-op.
+  // Profile / Engrave have no generators yet (milestone work) — keep
+  // the buttons clickable but answer with a visible toast instead of a
+  // silent no-op.
   const onNotImplemented = () =>
     pushToast("info", t("cam.common.notImplemented", "This operation is not implemented yet."));
 
   // Face milling and 2D pocket share the same trigger: a setup plus a
   // selected body face (the milled top / pocket floor).  2D Contour
   // accepts either a selected face OR selected sketch profiles.
+  // Drilling needs only a setup — its holes are BODY geometry (wall
+  // faces, rim edges) or free points, picked after the operation is
+  // created (sketch input is not a drilling target).
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
   const pocketReady = faceReady;
   const contourReady =
     hasSetup &&
     (Boolean(selectedFaceId) || selectedProfileCount > 0) &&
     !disabled;
+  const drillReady = hasSetup && !disabled;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -96,9 +102,16 @@ export function CamMillingToolbar({
         </svg>
       </button>
 
-      <button type="button" className={ICON_BUTTON_BASE}
-        data-tooltip={t("cam.drill")} aria-label={t("cam.drill")}
-        disabled={disabled} onClick={onNotImplemented}>
+      <button type="button"
+        className={drillReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && !selectedFaceId && selectedProfileCount === 0
+            ? t("cam.contour.selectInputFirst", "Select a face or a sketch profile first")
+            : t("cam.drill")
+        }
+        aria-label={t("cam.drill")}
+        disabled={!drillReady}
+        onClick={onDrillClick}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
           stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
           strokeLinejoin="round" aria-hidden="true">

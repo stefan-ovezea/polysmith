@@ -90,6 +90,10 @@ json to_payload(const polysmith::core::EdgeAttestation& att) {
       nf.push_back(array3(n));
     j["adjacent_face_normals"] = nf;
   }
+  // Circle witness — emitted only when present (full-circle rim edges).
+  if (att.center.has_value()) j["center"] = array3(att.center.value());
+  if (att.axis.has_value()) j["axis"] = array3(att.axis.value());
+  if (att.radius.has_value()) j["radius"] = att.radius.value();
   return j;
 }
 
@@ -110,6 +114,10 @@ json to_payload(const polysmith::core::SketchProfileAttestation& att) {
   if (att.source_circle_id.has_value())
     j["source_circle_id"] = att.source_circle_id.value();
   return j;
+}
+
+json to_payload(const polysmith::core::PointAttestation& att) {
+  return {{"point", array3(att.point)}};
 }
 
 json to_payload(const polysmith::core::LaserCutParameters& laser) {
@@ -279,6 +287,7 @@ json to_payload(const polysmith::core::CamOperationParameters& p) {
       {"cutting_direction", p.cutting_direction},
       {"finish_pass", p.finish_pass},
       {"multiple_passes", p.multiple_passes},
+      {"through_hole", p.through_hole},
       {"coolant", p.coolant},
       {"tool_axis_mode", p.tool_axis_mode},
   };

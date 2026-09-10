@@ -22,6 +22,7 @@ import {
   createDefaultCamSetup,
 } from "./layout";
 import type { CategoryId } from "./layout";
+import type { DrillPickTarget } from "./layout/viewport/viewportPanelTypes";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { ArmedSketchConstraint } from "./types";
@@ -121,6 +122,7 @@ import { computeFeatureActionAvailability } from "./app/featureActionAvailabilit
 import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
 import { triggerCamPocket } from "./app/camPocketActions";
 import { triggerCamContour } from "./app/camContourActions";
+import { triggerCamDrilling } from "./app/camDrillingActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import { pickGcodeExportPath } from "./app/documentDialogs";
@@ -938,6 +940,8 @@ function App() {
     camSetupDelete,
     camMachineSettingsSet,
     camCaptureFaceReference,
+    camCaptureEdgeReference,
+    camCapturePoint,
     camWcsSetFace,
     camOperationCreate,
     camOperationUpdate,
@@ -1560,6 +1564,17 @@ function App() {
       translate: t,
     });
 
+  const triggerCamDrillingAction = () =>
+    triggerCamDrilling({
+      document,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
   // G-code export: pick a destination, let the core generate any stale
   // toolpaths and write the file with the configured post-processor.
   const exportCamGcodeAction = async () => {
@@ -1787,6 +1802,79 @@ function App() {
     });
     setContourPickArmed(null);
     addMessage(t("cam.contour.faceSet"));
+  };
+
+  // Armed drilling pick: the next viewport click reports a drill
+  // target — a BODY reference (hole rim edge or cylindrical wall
+  // face, captured as a re-resolvable attestation) or a bare world
+  // point — and appends it to the drilling operation's holes.  The
+  // pick stays armed after each add so several holes can be picked in
+  // a row — the panel button cancels it.
+  const [drillPickArmed, setDrillPickArmed] = useState<{
+    opId: string;
+  } | null>(null);
+
+  // The pick belongs to the operation that armed it — switching the
+  // selected operation (or closing its panel) disarms it.
+  useEffect(() => {
+    setDrillPickArmed(null);
+  }, [selectedCamOperationId]);
+
+  const applyDrillTargetPick = async (target: DrillPickTarget) => {
+    const pick = drillPickArmed;
+    if (!pick) {
+      return;
+    }
+    // The core mints the persistent reference id — the UI only
+    // reports the clicked body reference or coordinates.
+    let reference: GeometryReference | null = null;
+    await runAction(async () => {
+      const response =
+        target.mode === "point"
+          ? await camCapturePoint(target.point)
+          : target.mode === "face"
+            ? await camCaptureFaceReference(target.id)
+            : await camCaptureEdgeReference(target.id);
+      const payload = response.payload;
+      if (payload?.attestation) {
+        reference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+      }
+    });
+    if (!reference) {
+      addMessage(t("cam.drilling.captureFailed"));
+      useToastStore
+        .getState()
+        .pushToast("error", t("cam.drilling.captureFailed"));
+      return;
+    }
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === pick.opId,
+    );
+    if (!operation) {
+      setDrillPickArmed(null);
+      return;
+    }
+    const regions = operation.geometry_references.machining_regions;
+    await runAction(async () => {
+      await camOperationUpdate(pick.opId, {
+        geometry_references: {
+          ...operation.geometry_references,
+          machining_regions: [...regions, reference],
+        },
+      });
+    });
+    addMessage(
+      t(
+        target.mode === "point"
+          ? "cam.drilling.pointAdded"
+          : target.mode === "face"
+            ? "cam.drilling.wallAdded"
+            : "cam.drilling.rimAdded",
+      ),
+    );
   };
 
   // Point-anchored WCS pick: the viewport snaps the click to geometry
@@ -2238,6 +2326,7 @@ function App() {
           triggerCamFaceMilling={triggerCamFaceMillingAction}
           triggerCamPocket={triggerCamPocketAction}
           triggerCamContour={triggerCamContourAction}
+          triggerCamDrilling={triggerCamDrillingAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
         />
 
@@ -2352,6 +2441,14 @@ function App() {
                 }
                 void placeWcsFromPointPick(point);
               }}
+              drillPickPointEnabled={drillPickArmed !== null}
+              onDrillPickPoint={(target) => {
+                if (!target) {
+                  addMessage(t("cam.setup.originPickMissed"));
+                  return;
+                }
+                void applyDrillTargetPick(target);
+              }}
               moveGizmo={
                 moveAction?.phase === "active" && activeMoveParameters
                   ? (() => {
@@ -2387,7 +2484,10 @@ function App() {
                 // the owning sketch.  Not while the origin pick is
                 // armed, so that click falls through to the vertex/face
                 // pick instead.
-                (workspaceView === "cam" && !originPickArmed && !wcsPickArmed)
+                (workspaceView === "cam" &&
+                  !originPickArmed &&
+                  !wcsPickArmed &&
+                  !drillPickArmed)
               }
               onPickInactiveSketchLine={async (lineId) => {
                 if (workspaceView === "cam") {
@@ -4034,6 +4134,7 @@ function App() {
                   setOriginPickArmed(false);
                   setWcsPickArmed(false);
                   setContourPickArmed(null);
+                  setDrillPickArmed(null);
                   setPocketPickArmed({ opId, target: "outer" });
                   addMessage(t("cam.pocket.repickFaceHint"));
                 }}
@@ -4051,6 +4152,7 @@ function App() {
                   setOriginPickArmed(false);
                   setWcsPickArmed(false);
                   setContourPickArmed(null);
+                  setDrillPickArmed(null);
                   setPocketPickArmed({ opId, target: "island" });
                   addMessage(t("cam.pocket.addIslandHint"));
                 }}
@@ -4070,12 +4172,33 @@ function App() {
                   setOriginPickArmed(false);
                   setWcsPickArmed(false);
                   setPocketPickArmed(null);
+                  setDrillPickArmed(null);
                   setContourPickArmed({ opId });
                   addMessage(t("cam.contour.repickFaceHint"));
                 }}
                 onCancelContourPick={() => {
                   setContourPickArmed(null);
                   addMessage(t("cam.contour.pickCanceled"));
+                }}
+                drillPick={drillPickArmed}
+                onPickDrillPoint={(opId) => {
+                  if (drillPickArmed?.opId === opId) {
+                    setDrillPickArmed(null);
+                    addMessage(t("cam.drilling.pickCanceled"));
+                    return;
+                  }
+                  // One armed pick at a time: drilling picks consume
+                  // the next viewport click too.
+                  setOriginPickArmed(false);
+                  setWcsPickArmed(false);
+                  setPocketPickArmed(null);
+                  setContourPickArmed(null);
+                  setDrillPickArmed({ opId });
+                  addMessage(t("cam.drilling.pickHintShort"));
+                }}
+                onCancelDrillPick={() => {
+                  setDrillPickArmed(null);
+                  addMessage(t("cam.drilling.pickCanceled"));
                 }}
                 originPickArmed={originPickArmed}
                 onPickOrigin={() => {
@@ -4088,6 +4211,7 @@ function App() {
                   // next viewport click.
                   setWcsPickArmed(false);
                   setPocketPickArmed(null);
+                  setDrillPickArmed(null);
                   setOriginPickArmed(true);
                   addMessage(t("cam.setup.originPickHint"));
                 }}
@@ -4103,6 +4227,7 @@ function App() {
                   // next viewport click.
                   setOriginPickArmed(false);
                   setPocketPickArmed(null);
+                  setDrillPickArmed(null);
                   setWcsPickArmed(true);
                   addMessage(t("cam.setup.wcsPickHint"));
                 }}

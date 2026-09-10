@@ -13,6 +13,7 @@ import type {
 import type { DocumentState, ViewportState } from "../types";
 import {
   CamContourPanel,
+  CamDrillingPanel,
   CamFaceMillingPanel,
   CamLaserCutPanel,
   CamPocketPanel,
@@ -20,6 +21,8 @@ import {
   CamTestPatternPanel,
   createDefaultCamSetup,
   type ContourFormState,
+  type DrillPointRow,
+  type DrillingFormState,
   type FaceMillingFormState,
   type PocketFormState,
 } from "../layout";
@@ -29,6 +32,7 @@ import {
   DEFAULT_CONTOUR_FORM,
   DEFAULT_CONTOUR_PARAMS,
 } from "../layout/CamContourPanel";
+import { DEFAULT_DRILLING_PARAMS } from "../layout/CamDrillingPanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
@@ -84,6 +88,11 @@ interface CamFloatingPanelsProps {
   contourPick: { opId: string } | null;
   onPickContourFace: (opId: string) => void;
   onCancelContourPick: () => void;
+  // Armed drilling point pick — opId whose hole locations gain the
+  // next viewport point click.  Stays armed across adds.
+  drillPick: { opId: string } | null;
+  onPickDrillPoint: (opId: string) => void;
+  onCancelDrillPick: () => void;
   camSetupCreate: (setup: CamSetup) => Promise<void>;
   camSetupUpdate: (setup: CamSetup) => Promise<void>;
   camMachineSettingsSet: (settings: LaserMachineSettings) => Promise<void>;
@@ -138,6 +147,9 @@ export function CamFloatingPanels({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  drillPick,
+  onPickDrillPoint,
+  onCancelDrillPick,
   camSetupCreate,
   camSetupUpdate,
   camMachineSettingsSet,
@@ -274,6 +286,9 @@ export function CamFloatingPanels({
         contourPick,
         onPickContourFace,
         onCancelContourPick,
+        drillPick,
+        onPickDrillPoint,
+        onCancelDrillPick,
         t,
       })
     : null;
@@ -312,6 +327,9 @@ function buildOperationPanel({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  drillPick,
+  onPickDrillPoint,
+  onCancelDrillPick,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -340,6 +358,9 @@ function buildOperationPanel({
   | "contourPick"
   | "onPickContourFace"
   | "onCancelContourPick"
+  | "drillPick"
+  | "onPickDrillPoint"
+  | "onCancelDrillPick"
 > & { t: (key: string, options?: Record<string, unknown>) => string }) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
@@ -728,6 +749,111 @@ function buildOperationPanel({
                     partial.stock_allowance_mm ?? contour.stock_allowance_mm,
                 },
               },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "drilling") {
+    const parameters = operation.parameters;
+    const initialParams: DrillingFormState = {
+      cycle_type:
+        parameters.cycle_type ?? DEFAULT_DRILLING_PARAMS.cycle_type,
+      hole_depth_mm:
+        parameters.hole_depth_mm ?? DEFAULT_DRILLING_PARAMS.hole_depth_mm,
+      peck_depth_mm:
+        parameters.peck_depth_mm ?? DEFAULT_DRILLING_PARAMS.peck_depth_mm,
+      through_hole: parameters.through_hole ?? false,
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ??
+        DEFAULT_DRILLING_PARAMS.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_DRILLING_PARAMS.plunge_feedrate_mm_per_min,
+      spindle_rpm:
+        parameters.spindle_rpm ?? DEFAULT_DRILLING_PARAMS.spindle_rpm,
+    };
+    const tools =
+      document?.cam.tool_library.filter((entry) => entry.type === "drill") ??
+      [];
+    const regions = operation.geometry_references.machining_regions;
+    // User-facing row labels only — a captured wall/rim names itself by
+    // kind, free picks show their coordinates, and legacy sketch-circle
+    // refs (no longer drilling inputs) tell the user to re-pick on the
+    // body.  Internal ids never reach the panel.
+    const points: DrillPointRow[] = regions.map((region, index) => {
+      const attestation = region.attestation;
+      if (
+        attestation &&
+        "point" in attestation &&
+        Array.isArray(attestation.point)
+      ) {
+        const [x, y, z] = attestation.point;
+        return {
+          kind: "point",
+          label: `X ${x.toFixed(2)}  Y ${y.toFixed(2)}  Z ${z.toFixed(2)}`,
+        };
+      }
+      if (attestation && "sample_points" in attestation) {
+        return {
+          kind: "wall",
+          label: t("cam.drilling.wallRow", { index: index + 1 }),
+        };
+      }
+      if (attestation && "start_point" in attestation) {
+        return {
+          kind: "rim",
+          label: t("cam.drilling.rimRow", { index: index + 1 }),
+        };
+      }
+      return {
+        kind: "legacy",
+        label: t("cam.drilling.legacyRow", { index: index + 1 }),
+      };
+    });
+    return (
+      <CamDrillingPanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        points={points}
+        pickArmed={drillPick?.opId === operation.op_id}
+        onPickPoint={() => onPickDrillPoint(operation.op_id)}
+        onCancelPick={onCancelDrillPick}
+        onRemovePoint={(index) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                ...operation.geometry_references,
+                machining_regions: regions.filter(
+                  (_, entryIndex) => entryIndex !== index,
+                ),
+              },
+            });
+          });
+        }}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: { ...parameters, ...partial },
             });
           });
         }}

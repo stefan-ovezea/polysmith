@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,6 +45,14 @@ struct ViewportEdgePrimitive {
   // the UI wants to show "selected edge: X mm".
   double length;
   bool is_selected;
+  // Circle witness — set ONLY for full-circle edges (drilling hole
+  // rims): the underlying GeomAbs_Circle curve's center, axis
+  // direction, and radius.  Arcs and lines leave these unset; a
+  // closed rim has start == end, so the sample polyline alone cannot
+  // identify it.
+  std::optional<std::array<double, 3>> center;
+  std::optional<std::array<double, 3>> axis;
+  std::optional<double> radius;
 };
 
 struct ViewportVertexPrimitive {
