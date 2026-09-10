@@ -159,6 +159,20 @@ function normalizeOrcaSlicerConfig(
   };
 }
 
+function normalizeLaserGrblConfig(
+  input: Partial<AppConfig>["laserGrbl"],
+): AppConfig["laserGrbl"] {
+  const defaults = defaultAppConfig.laserGrbl;
+  return {
+    enabled:
+      typeof input?.enabled === "boolean" ? input.enabled : defaults.enabled,
+    binaryPath:
+      typeof input?.binaryPath === "string"
+        ? input.binaryPath
+        : defaults.binaryPath,
+  };
+}
+
 function cloneConfig(config: AppConfig): AppConfig {
   return JSON.parse(JSON.stringify(config)) as AppConfig;
 }
@@ -173,6 +187,7 @@ function mergeAppConfig(input: Partial<AppConfig>): AppConfig {
     },
     ai: normalizeAiConfig(input.ai),
     orcaSlicer: normalizeOrcaSlicerConfig(input.orcaSlicer),
+    laserGrbl: normalizeLaserGrblConfig(input.laserGrbl),
     hotkeys: {
       ...defaultAppConfig.hotkeys,
       ...input.hotkeys,

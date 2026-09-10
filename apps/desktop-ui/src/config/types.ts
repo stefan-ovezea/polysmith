@@ -69,6 +69,11 @@ export interface OrcaSlicerConfig {
   webUrl: string;
 }
 
+export interface LaserGrblConfig {
+  enabled: boolean;
+  binaryPath: string;
+}
+
 export type ThemeSelection =
   | "system"
   | "dark"
@@ -87,6 +92,7 @@ export interface AppConfig {
   viewport: ViewportConfig;
   ai: AiConfig;
   orcaSlicer: OrcaSlicerConfig;
+  laserGrbl: LaserGrblConfig;
   displayUnits: DisplayUnits;
 }
 

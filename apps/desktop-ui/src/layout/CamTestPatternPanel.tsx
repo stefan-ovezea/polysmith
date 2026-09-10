@@ -28,6 +28,8 @@ interface CamTestPatternPanelProps {
   onPreview: () => void;
   onGenerate: () => void;
   onExport: () => void;
+  // Export + launch LaserGRBL with the file (external handoff).
+  onExportAndOpen: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -43,6 +45,7 @@ export function CamTestPatternPanel({
   onPreview,
   onGenerate,
   onExport,
+  onExportAndOpen,
   onDelete,
   onClose,
 }: CamTestPatternPanelProps) {
@@ -307,6 +310,17 @@ export function CamTestPatternPanel({
             onClick={onExport}
           >
             {t("cam.testPattern.exportGcode", "Export G-code")}
+          </button>
+          <button
+            type="button"
+            className="cad-action-ghost col-span-2"
+            disabled={disabled}
+            onClick={onExportAndOpen}
+          >
+            {t(
+              "cam.testPattern.exportAndOpen",
+              "Export & open in LaserGRBL",
+            )}
           </button>
         </div>
       </form>

@@ -4,6 +4,7 @@
 mod ai_key;
 mod app_config;
 mod cad_core;
+mod laser_grbl;
 mod orca_slicer;
 mod plugin_config;
 mod project_metadata;
@@ -185,6 +186,13 @@ fn launch_orca_slicer(
 }
 
 #[tauri::command]
+fn launch_laser_grbl(
+    request: laser_grbl::LaserGrblLaunchRequest,
+) -> Result<laser_grbl::LaserGrblLaunchResult, String> {
+    laser_grbl::launch_laser_grbl(request)
+}
+
+#[tauri::command]
 fn embed_orca_window(
     window: tauri::WebviewWindow,
     state: tauri::State<OrcaSlicerState>,
@@ -262,6 +270,7 @@ pub fn run() {
             show_main_window,
             prepare_orca_export_path,
             launch_orca_slicer,
+            launch_laser_grbl,
             embed_orca_window,
             resize_orca_window,
             hide_orca_window,

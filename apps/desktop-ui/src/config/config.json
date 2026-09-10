@@ -21,6 +21,10 @@
     "binaryPath": "",
     "webUrl": "http://localhost:33000"
   },
+  "laserGrbl": {
+    "enabled": false,
+    "binaryPath": ""
+  },
   "hotkeys": {
     "global": {
       "undo": { "code": "KeyZ", "label": "Z", "ctrlOrMeta": true },

@@ -77,6 +77,8 @@ interface CamFloatingPanelsProps {
   runAction: RunAction;
   addMessage: (message: string) => void;
   onExportGcode: () => void;
+  // Export + external LaserGRBL launch (laser panels only).
+  onExportAndOpen: () => void;
   onPostProcessorChange: (postType: string) => void;
   postProcessorType: string;
   posts: Array<{ name: string; path: string }>;
@@ -147,6 +149,7 @@ export function CamFloatingPanels({
   runAction,
   addMessage,
   onExportGcode,
+  onExportAndOpen,
   onPostProcessorChange,
   postProcessorType,
   posts,
@@ -295,6 +298,7 @@ export function CamFloatingPanels({
         runAction,
         addMessage,
         onExportGcode,
+        onExportAndOpen,
         camOperationUpdate,
         camOperationDelete,
         camOperationSetScope,
@@ -337,6 +341,7 @@ function buildOperationPanel({
   runAction,
   addMessage,
   onExportGcode,
+  onExportAndOpen,
   camOperationUpdate,
   camOperationDelete,
   camOperationSetScope,
@@ -369,6 +374,7 @@ function buildOperationPanel({
   | "runAction"
   | "addMessage"
   | "onExportGcode"
+  | "onExportAndOpen"
   | "camOperationUpdate"
   | "camOperationDelete"
   | "camOperationSetScope"
@@ -510,6 +516,7 @@ function buildOperationPanel({
         }}
         onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
+        onExportAndOpen={onExportAndOpen}
         onDelete={() => {
           void runAction(async () => {
             await camOperationDelete(operation.op_id);
@@ -545,6 +552,7 @@ function buildOperationPanel({
         }}
         onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
+        onExportAndOpen={onExportAndOpen}
         onDelete={() => {
           void runAction(async () => {
             await camOperationDelete(operation.op_id);
