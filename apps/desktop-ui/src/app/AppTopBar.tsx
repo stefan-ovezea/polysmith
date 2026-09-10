@@ -159,6 +159,7 @@ interface AppTopBarProps {
   camMachineType: string | null;
   triggerCamFaceMilling: AsyncVoid;
   triggerCamPocket: AsyncVoid;
+  triggerCamAdaptive: AsyncVoid;
   triggerCamContour: AsyncVoid;
   triggerCamDrilling: AsyncVoid;
   triggerCamTestPattern: AsyncVoid;
@@ -475,6 +476,9 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onCamPocketClick={() => {
         void props.triggerCamPocket();
+      }}
+      onCamAdaptiveClick={() => {
+        void props.triggerCamAdaptive();
       }}
       onCamContourClick={() => {
         void props.triggerCamContour();

@@ -354,6 +354,7 @@ interface AppHeaderProps
   onCamSetupClick: () => void;
   onCamFaceMillingClick: () => void;
   onCamPocketClick: () => void;
+  onCamAdaptiveClick: () => void;
   onCamContourClick: () => void;
   onCamDrillClick: () => void;
   onCamTwoDCutClick: () => void;
@@ -470,6 +471,7 @@ export function AppHeader({
   onCamSetupClick,
   onCamFaceMillingClick,
   onCamPocketClick,
+  onCamAdaptiveClick,
   onCamContourClick,
   onCamDrillClick,
   onCamTwoDCutClick,
@@ -959,6 +961,7 @@ export function AppHeader({
               onSetupClick={onCamSetupClick}
               onFaceMillingClick={onCamFaceMillingClick}
               onPocketClick={onCamPocketClick}
+              onAdaptiveClick={onCamAdaptiveClick}
               onContourClick={onCamContourClick}
               onDrillClick={onCamDrillClick}
             />

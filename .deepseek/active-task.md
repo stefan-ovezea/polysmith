@@ -1,4 +1,65 @@
-# Active task: CAM Drilling — body-geometry targeting rework (cam/milling) — implemented P1–P10, UNCOMMITTED (2026-09-10)
+# Active task: CAM Adaptive Clearing — contour-parallel spiral (cam/milling) — P1–P3 implemented, in-app verification pending (2026-09-10)
+
+> **Branch:** `cam/milling` (HEAD 6b1c7cf, clean tree)
+> **Date:** 2026-09-10
+> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> (every commit gated on build/tests + user in-app verification —
+> CLAUDE.md: no untested commits, no git mutations without explicit
+> approval, no Co-Authored-By trailer.)
+
+## Context — round 6 (user decisions, binding)
+
+Last milling-sprint milestone. **Toolpath style (2026-09-10):** v1 =
+contour-parallel spiral — concentric offset loops stepping inward from
+the boundary at spacing = diameter × stepover%, rapids at retract +
+plunges per loop, constant climb direction, islands machined around.
+`engagement_angle_deg` accepted but reserved for a future trochoidal
+upgrade. No new IPC/protocol/driver changes (the op type and params
+were already plumbed end-to-end).
+
+## Phases
+
+- **P1 Native generator — DONE.** `adaptive_clearing.{h,cpp}` +
+  `impl/adaptive_clearing_generate.inc` (rEff inset, family building
+  with collapse validation, boss/hole classification + island
+  families, arc-aware clipping, shared stepdown planner, guards);
+  registered in `cam_generators.cpp`; CMake source line. Gate:
+  `core:build` clean (app closed).
+- **P2 Native tests — DONE.** `tests/adaptive_clearing_test.cpp`
+  (13 tests; CMake target). One design correction during P2: the
+  grown region's corner quarter-discs leave corner notches OUTSIDE the
+  clearance — outer loop 2's corner is legitimately machinable there
+  (the clip is arc-aware). Test 5 pins the notch piece positively.
+  Gate: `pnpm test:core` **42/42 suites**.
+- **P3 UI — DONE.** `camAdaptiveActions.ts`, `CamAdaptivePanel`
+  (pocket panel minus zigzag), toolbar button after Pocket
+  (concentric-squares icon), i18n `cam.adaptive.*` block; armed
+  face/island pick SHARED with the pocket (`kind` in `pocketPickArmed`
+  switches toast copy; arm handlers take `kind = "pocket"`). Gate:
+  `tsc --noEmit` clean.
+- **P4 Docs — DONE** (this file, CAM-Development.md section + progress
+  row 16, Implementation-Log entry).
+
+## In-app verification checklist (user confirms before commit)
+
+1. Toolbar shows Adaptive after Pocket, disabled without setup/face.
+2. Create on a box face → preview: concentric inward spiral, climb
+   direction, rapids at retract, plunges per loop.
+3. Stepover % changes the loop spacing live; stepdown set → multi-pass
+   levels.
+4. Pick an island → loops wrap around it, no feed inside the grown
+   footprint; remove island; re-pick face.
+5. Generate + Export G-code.
+6. Regression: pocket/contour/drilling/face-milling/laser still
+   generate + export; save → reopen round-trips.
+
+## Next steps
+
+- User in-app verification → commit on approval (no Co-Authored-By).
+
+---
+
+# Active task: CAM Drilling — body-geometry targeting rework (cam/milling) — implemented P1–P10, COMMITTED 6b1c7cf (2026-09-10)
 
 > **Branch:** `cam/milling` (HEAD f169fc2)
 > **Date:** 2026-09-10

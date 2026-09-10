@@ -1560,7 +1560,7 @@ before the next operation depends on it:
 | 13. 2D Pocket toolpath generation | ✅ Done (2026-09-08) — boss/hole classification, finishing contours, islands, single-pass hint |
 | 14. 2D Contour toolpath generation | ✅ Done (2026-09-08) — face or sketch-profile input, inside/outside/on-line offsets, exact G2/G3 arcs with polyline fallback, climb/conventional rule |
 | 15. Drilling toolpath generation | ✅ Done (2026-09-09) — G81/G83, circle-center + free-pick points, through-hole toggle, canned-where-supported posts (longhand for GRBL) |
-| 16. Adaptive Clearing toolpath generation | 🔲 registry slot |
+| 16. Adaptive Clearing toolpath generation | ✅ Done (2026-09-10) — contour-parallel spiral (v1): concentric offset loops with climb-constant walk, island/boss families, arc-aware clipping |
 
 **Deviations from this document (binding):**
 - **Laser/cutting promoted into v1** — the original plan scoped v1 to
@@ -1993,6 +1993,81 @@ origin/WCS/pocket/contour picks.  `cam_capture_point` + the
 `cam_attestation_result` event are documented in
 [IPC-Protocol](IPC-Protocol.md) and
 [AI-CAD-Command-Language](AI-CAD-Command-Language.md).
+
+## Adaptive Clearing (2026-09-10)
+
+v1 toolpath = **contour-parallel spiral** (user decision): concentric
+offset loops stepping inward from the machined boundary, linked by
+rapids at the retract plane + plunges, constant climb direction,
+islands machined around. `engagement_angle_deg` is accepted and
+reserved for a future trochoidal upgrade — it does not drive v1
+geometry.
+
+### Region model
+
+- **Outer boundary** = the selected face's largest |area| wire.
+  `rEff = tool radius + stock_allowance_mm` — the allowance rides the
+  tool centre on EVERY pass (adaptive is roughing; the pocket uses the
+  bare radius). Loop k is offset from the FAMILY BASE at
+  `rEff + k·spacing` (never iterated from the previous loop — no error
+  accumulation), `spacing = max(diameter × stepover%, 0.1)`. Miter
+  corners (never round into the wall). A loop is accepted only when
+  the offset succeeds, samples to ≥ 3 points, does not self-intersect,
+  and every sample stays ≥ d − 1e-3 from the base boundary (segment
+  probe for miter families). k=0 failing = hard error ("The pocket is
+  smaller than the tool"); a later failure silently ends the family —
+  the remaining centre is covered by the innermost loop's slot sweep
+  (v1 limitation).
+- **Islands/bosses** = both pocket paths: floor-face inner wires
+  classified by adjacent-wall COM (`classify_inner_wire` — bosses
+  always avoided, open holes CROSSED by the spiral, clearing the stock
+  plug) and `avoidance_faces` ("Island N", active while
+  `topZ > levelZ`). Each region grows by rEff (round joins) and gets
+  its own OUTWARD-growing loop family — loop 0 rides the grown loop
+  (the island finishing pass).
+- **Climb directions** (the 2D contour rule — material left of the
+  walk; offsets go to the RIGHT of the walk): outer = inside contour →
+  climb walks **CW** (+d inward); islands = outside contours → climb
+  walks **CCW** (+d outward). `cutting_direction: "conventional"`
+  flips both walks and the offset sign; "mixed"/unknown warn and
+  behave as climb.
+- **Clipping policy**: overlap/double-cutting between families at one
+  Z is allowed; forbidden is entering a grown avoidance clearance or
+  the wall band (the rEff band between the outer inset and the wall).
+  Outer loops clip outside every active avoidance; island loops also
+  clip INSIDE the CCW outer-inset polygon and outside every OTHER
+  avoidance. Clipped pieces chain at 1e-6, each chain gets its own
+  rapid-plunge-feed-rapid cycle. The clip is arc-aware: the grown
+  region's corner quarter-discs leave corner notches machinable where
+  the tool legitimately fits (pinned by test).
+- **Levels** = the pocket planner: island tops join as extra levels;
+  at the island-top level the island is not subtracted (flush pass
+  over its top).
+
+### Failure semantics (same family as pocket)
+
+No face / degenerate face / tilted face / collapsed rEff inset /
+broken island attestation (generate AND refresh degrade with "was not
+found") / retract-below-face and retract-below-stock-top warnings /
+strategy ≠ "adaptive" warns "Only the adaptive strategy is
+implemented in v1 — generating the adaptive spiral."
+
+### Deliberate v1 exclusions
+
+No trochoidal paths (engagement angle reserved); holes in the floor
+are crossed, not contoured; the innermost region is covered only by
+the last loop's slot sweep; islands close to the wall may leave small
+uncut pockets where the tool cannot fit.
+
+### UI
+
+Toolbar button after Pocket (concentric-squares icon), gated on setup
++ selected face — same face-witness trigger as the pocket. Panel =
+pocket panel minus the zigzag field (feedrate, plunge, stepover %,
+stepdown, spindle, tool dropdown, face re-pick + island rows). The
+armed face pick is SHARED with the pocket (`kind` picks the toast
+copy). Stock allowance / cutting direction / engagement angle stay
+out of the UI in v1 (editable via JSON; params round-trip).
 
 ## Architecture notes for extension
 

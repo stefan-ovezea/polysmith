@@ -134,6 +134,7 @@ add_library(dxfrw STATIC
 target_include_directories(dxfrw PUBLIC ${LIBDXFRW_DIR}/src)
 
 set(CAD_CORE_SOURCES
+  src/core/cam/adaptive_clearing.cpp
   src/core/cam/cam2d.cpp
   src/core/cam/cam_export.cpp
   src/core/cam/cam_generate.cpp
@@ -328,6 +329,11 @@ polysmith_add_core_test(cad_core_pocket_2d_test tests/pocket_2d_test.cpp)
 # arcs + polyline fallback, profile input, frame mirroring, precedence,
 # defaults, error paths, payload round-trip.
 polysmith_add_core_test(cad_core_contour_2d_test tests/contour_2d_test.cpp)
+
+# Adaptive Clearing generator suite — concentric spiral families,
+# climb directions, island/boss avoidance, stepdown levels, warnings,
+# error paths, dependency degradation, payload round-trip.
+polysmith_add_core_test(cad_core_adaptive_clearing_test tests/adaptive_clearing_test.cpp)
 
 polysmith_add_core_test(cad_core_plugin_feature_test tests/plugin_feature_test.cpp)
 

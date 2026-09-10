@@ -2,6 +2,47 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-10
+
+### CAM Adaptive Clearing: contour-parallel spiral (cam/milling)
+
+Last milling-sprint milestone. v1 toolpath = concentric offset loops
+(user decision — trochoidal deferred; `engagement_angle_deg` reserved
+for the future upgrade).
+
+- **Generator** (`adaptive_clearing.{h,cpp}` +
+  `impl/adaptive_clearing_generate.inc`, registered in
+  `cam_generators.cpp`): outer boundary inset by
+  `rEff = radius + stock_allowance_mm`, then offset inward at
+  `spacing = max(diameter × stepover%, 0.1)` until collapse (each loop
+  validated against the family BASE: offset + sampling +
+  self-intersection + min-distance probe; k=0 failure = hard error).
+  Islands and floor bosses reuse the pocket's
+  `classify_inner_wire`/`grow_avoidance_loop` paths and get their own
+  outward-growing families. Climb-constant walks (outer CW, islands
+  CCW — the contour direction rule); "conventional" flips both.
+  Clipping: no segment enters a grown avoidance or the wall band;
+  island loops additionally clip inside the CCW outer inset. Arc-aware
+  (the grown corner quarter-discs leave notches machinable). Levels =
+  the shared stepdown planner with island-top flush passes; retract,
+  strategy, and direction warnings mirror the pocket.
+- **Tests** (`adaptive_clearing_test.cpp`, 13 tests): registry,
+  plain-box spiral (wall distances 3.2/6.2/9.2, CW climb pin, emission
+  shape), stepover 100% (= diameter spacing), 0.1 mm min-spacing
+  guard, island single-pass + corner-notch clip precision, island-top
+  levels {15,14,12,10} + flush pass, centered boss (CCW climb pin),
+  through-hole crossed, strategy/direction warnings, error paths,
+  broken-island degradation (refresh + generate), retract guards,
+  payload round-trip incl. engagement angle.
+- **UI**: `camAdaptiveActions.ts` trigger + `CamAdaptivePanel` (pocket
+  panel minus the zigzag field), toolbar button after Pocket
+  (concentric-squares icon), i18n `cam.adaptive.*` block. The armed
+  face/island pick is SHARED with the pocket (`kind` switches the
+  toast copy). No new IPC or schema changes — the op type and params
+  were already plumbed.
+- Gates: `core:build` clean, `test:core` 42/42 suites, `tsc --noEmit`
+  clean.
+
 ## 2026-09-08
 
 ### CAM pocket refinement: boss/hole classification + finishing contours (cam/milling)

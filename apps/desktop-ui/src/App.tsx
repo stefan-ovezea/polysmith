@@ -121,6 +121,7 @@ import {
 import { computeFeatureActionAvailability } from "./app/featureActionAvailability";
 import { triggerCamFaceMilling } from "./app/camFaceMillingActions";
 import { triggerCamPocket } from "./app/camPocketActions";
+import { triggerCamAdaptive } from "./app/camAdaptiveActions";
 import { triggerCamContour } from "./app/camContourActions";
 import { triggerCamDrilling } from "./app/camDrillingActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
@@ -1551,6 +1552,18 @@ function App() {
       translate: t,
     });
 
+  const triggerCamAdaptiveAction = () =>
+    triggerCamAdaptive({
+      document,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      camCaptureFaceReference,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+
   const triggerCamContourAction = () =>
     triggerCamContour({
       document,
@@ -1673,10 +1686,13 @@ function App() {
 
   // Armed pocket face pick: the next body-face click becomes the
   // pocket floor ("outer") or an island boss ("island", stored as an
-  // avoidance region).  Stock faces cannot anchor a pocket.
+  // avoidance region).  Stock faces cannot anchor a pocket.  Adaptive
+  // Clearing reuses the same armed pick — `kind` only switches the
+  // toast copy (the witness capture and region update are identical).
   const [pocketPickArmed, setPocketPickArmed] = useState<{
     opId: string;
     target: "outer" | "island";
+    kind: "pocket" | "adaptive";
   } | null>(null);
 
   // The pick belongs to the operation that armed it — switching the
@@ -1690,9 +1706,25 @@ function App() {
     if (!pick) {
       return;
     }
+    // The pick is shared by the pocket and Adaptive Clearing panels —
+    // the toast copy is the only per-kind difference.
+    const keys =
+      pick.kind === "adaptive"
+        ? {
+            pickMissed: "cam.adaptive.pickMissed",
+            captureFailed: "cam.adaptive.captureFailed",
+            faceSet: "cam.adaptive.faceSet",
+            islandAdded: "cam.adaptive.islandAdded",
+          }
+        : {
+            pickMissed: "cam.pocket.pickMissed",
+            captureFailed: "cam.pocket.captureFailed",
+            faceSet: "cam.pocket.faceSet",
+            islandAdded: "cam.pocket.islandAdded",
+          };
     if (faceId.startsWith("stock:")) {
-      addMessage(t("cam.pocket.pickMissed"));
-      useToastStore.getState().pushToast("warn", t("cam.pocket.pickMissed"));
+      addMessage(t(keys.pickMissed));
+      useToastStore.getState().pushToast("warn", t(keys.pickMissed));
       return;
     }
     // TNP-safe witness capture — the same flow as the initial trigger.
@@ -1708,10 +1740,10 @@ function App() {
       }
     });
     if (!reference) {
-      addMessage(t("cam.pocket.captureFailed"));
+      addMessage(t(keys.captureFailed));
       useToastStore
         .getState()
-        .pushToast("error", t("cam.pocket.captureFailed"));
+        .pushToast("error", t(keys.captureFailed));
       return;
     }
     const operation = document?.cam.operations.find(
@@ -1735,11 +1767,7 @@ function App() {
     });
     setPocketPickArmed(null);
     addMessage(
-      t(
-        pick.target === "outer"
-          ? "cam.pocket.faceSet"
-          : "cam.pocket.islandAdded",
-      ),
+      t(pick.target === "outer" ? keys.faceSet : keys.islandAdded),
     );
   };
 
@@ -2325,6 +2353,7 @@ function App() {
           triggerCamTestPattern={triggerCamTestPatternAction}
           triggerCamFaceMilling={triggerCamFaceMillingAction}
           triggerCamPocket={triggerCamPocketAction}
+          triggerCamAdaptive={triggerCamAdaptiveAction}
           triggerCamContour={triggerCamContourAction}
           triggerCamDrilling={triggerCamDrillingAction}
           camMachineType={document?.cam?.setups?.[0]?.machine_type ?? null}
@@ -4120,13 +4149,20 @@ function App() {
                 }}
                 onEditPost={editCamPostAction}
                 pocketPick={pocketPickArmed}
-                onPickPocketFace={(opId) => {
+                onPickPocketFace={(opId, kind = "pocket") => {
                   if (
                     pocketPickArmed?.opId === opId &&
-                    pocketPickArmed.target === "outer"
+                    pocketPickArmed.target === "outer" &&
+                    pocketPickArmed.kind === kind
                   ) {
                     setPocketPickArmed(null);
-                    addMessage(t("cam.pocket.pickCanceled"));
+                    addMessage(
+                      t(
+                        kind === "adaptive"
+                          ? "cam.adaptive.pickCanceled"
+                          : "cam.pocket.pickCanceled",
+                      ),
+                    );
                     return;
                   }
                   // One armed pick at a time: pocket picks consume the
@@ -4135,16 +4171,29 @@ function App() {
                   setWcsPickArmed(false);
                   setContourPickArmed(null);
                   setDrillPickArmed(null);
-                  setPocketPickArmed({ opId, target: "outer" });
-                  addMessage(t("cam.pocket.repickFaceHint"));
+                  setPocketPickArmed({ opId, target: "outer", kind });
+                  addMessage(
+                    t(
+                      kind === "adaptive"
+                        ? "cam.adaptive.repickFaceHint"
+                        : "cam.pocket.repickFaceHint",
+                    ),
+                  );
                 }}
-                onPickIslandFace={(opId) => {
+                onPickIslandFace={(opId, kind = "pocket") => {
                   if (
                     pocketPickArmed?.opId === opId &&
-                    pocketPickArmed.target === "island"
+                    pocketPickArmed.target === "island" &&
+                    pocketPickArmed.kind === kind
                   ) {
                     setPocketPickArmed(null);
-                    addMessage(t("cam.pocket.pickCanceled"));
+                    addMessage(
+                      t(
+                        kind === "adaptive"
+                          ? "cam.adaptive.pickCanceled"
+                          : "cam.pocket.pickCanceled",
+                      ),
+                    );
                     return;
                   }
                   // One armed pick at a time: pocket picks consume the
@@ -4153,12 +4202,24 @@ function App() {
                   setWcsPickArmed(false);
                   setContourPickArmed(null);
                   setDrillPickArmed(null);
-                  setPocketPickArmed({ opId, target: "island" });
-                  addMessage(t("cam.pocket.addIslandHint"));
+                  setPocketPickArmed({ opId, target: "island", kind });
+                  addMessage(
+                    t(
+                      kind === "adaptive"
+                        ? "cam.adaptive.addIslandHint"
+                        : "cam.pocket.addIslandHint",
+                    ),
+                  );
                 }}
                 onCancelPocketPick={() => {
                   setPocketPickArmed(null);
-                  addMessage(t("cam.pocket.pickCanceled"));
+                  addMessage(
+                    t(
+                      pocketPickArmed?.kind === "adaptive"
+                        ? "cam.adaptive.pickCanceled"
+                        : "cam.pocket.pickCanceled",
+                    ),
+                  );
                 }}
                 contourPick={contourPickArmed}
                 onPickContourFace={(opId) => {

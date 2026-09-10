@@ -3,6 +3,7 @@
 #include <cassert>
 #include <unordered_map>
 
+#include "core/cam/adaptive_clearing.h"
 #include "core/cam/contour_2d.h"
 #include "core/cam/drilling_generator.h"
 #include "core/cam/face_milling.h"
@@ -45,6 +46,7 @@ void register_builtin_cam_generators() {
   register_laser_cut_generator();
   register_face_milling_generator();
   register_pocket_2d_generator();
+  register_adaptive_clearing_generator();
   register_contour_2d_generator();
   register_drilling_generator();
   laser::register_laser_test_pattern_generator();

@@ -15,6 +15,7 @@ export interface CamMillingToolbarProps {
   onSetupClick: () => void;
   onFaceMillingClick: () => void;
   onPocketClick: () => void;
+  onAdaptiveClick: () => void;
   onContourClick: () => void;
   onDrillClick: () => void;
 }
@@ -27,6 +28,7 @@ export function CamMillingToolbar({
   onSetupClick,
   onFaceMillingClick,
   onPocketClick,
+  onAdaptiveClick,
   onContourClick,
   onDrillClick,
 }: CamMillingToolbarProps) {
@@ -47,6 +49,7 @@ export function CamMillingToolbar({
   // created (sketch input is not a drilling target).
   const faceReady = hasSetup && Boolean(selectedFaceId) && !disabled;
   const pocketReady = faceReady;
+  const adaptiveReady = faceReady;
   const contourReady =
     hasSetup &&
     (Boolean(selectedFaceId) || selectedProfileCount > 0) &&
@@ -99,6 +102,25 @@ export function CamMillingToolbar({
           strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M7 8h10M7 12h10M7 16h6" />
+        </svg>
+      </button>
+
+      <button type="button"
+        className={adaptiveReady ? ICON_BUTTON_BASE : ICON_BUTTON_DISABLED}
+        data-tooltip={
+          hasSetup && !selectedFaceId
+            ? t("cam.common.selectFaceFirst", "Select a face first")
+            : t("cam.adaptive.label", "Adaptive Clearing")
+        }
+        aria-label={t("cam.adaptive.label", "Adaptive Clearing")}
+        disabled={!adaptiveReady}
+        onClick={onAdaptiveClick}>
+        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
+          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+          strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <rect x="8" y="8" width="8" height="8" rx="1" />
+          <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
         </svg>
       </button>
 

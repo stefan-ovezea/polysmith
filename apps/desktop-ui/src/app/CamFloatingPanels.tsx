@@ -12,6 +12,7 @@ import type {
 } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
 import {
+  CamAdaptivePanel,
   CamContourPanel,
   CamDrillingPanel,
   CamFaceMillingPanel,
@@ -20,12 +21,14 @@ import {
   CamSetupPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
+  type AdaptiveFormState,
   type ContourFormState,
   type DrillPointRow,
   type DrillingFormState,
   type FaceMillingFormState,
   type PocketFormState,
 } from "../layout";
+import { DEFAULT_ADAPTIVE_PARAMS } from "../layout/CamAdaptivePanel";
 import { DEFAULT_FACE_MILLING_PARAMS } from "../layout/CamFaceMillingPanel";
 import { DEFAULT_POCKET_PARAMS } from "../layout/CamPocketPanel";
 import {
@@ -79,9 +82,14 @@ interface CamFloatingPanelsProps {
   wcsPickArmed: boolean;
   onPickWcsFace: () => void;
   // Armed pocket face pick — opId + which face it will replace.
-  pocketPick: { opId: string; target: "outer" | "island" } | null;
-  onPickPocketFace: (opId: string) => void;
-  onPickIslandFace: (opId: string) => void;
+  // Adaptive Clearing reuses the pick; `kind` picks the toast copy.
+  pocketPick: {
+    opId: string;
+    target: "outer" | "island";
+    kind: "pocket" | "adaptive";
+  } | null;
+  onPickPocketFace: (opId: string, kind?: "pocket" | "adaptive") => void;
+  onPickIslandFace: (opId: string, kind?: "pocket" | "adaptive") => void;
   onCancelPocketPick: () => void;
   // Armed contour face pick — opId whose machining region the next
   // body-face click replaces.
@@ -618,6 +626,83 @@ function buildOperationPanel({
         }
         onRepickFace={() => onPickPocketFace(operation.op_id)}
         onAddIsland={() => onPickIslandFace(operation.op_id)}
+        onRemoveIsland={(index) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              geometry_references: {
+                machining_regions:
+                  operation.geometry_references.machining_regions,
+                avoidance_regions: avoidance.filter(
+                  (_, entryIndex) => entryIndex !== index,
+                ),
+                guide_curves: [],
+                check_surfaces: [],
+              },
+            });
+          });
+        }}
+        onCancelPick={onCancelPocketPick}
+        onUpdate={(partial, toolId) => {
+          void runAction(async () => {
+            await camOperationUpdate(operation.op_id, {
+              tool_id: toolId,
+              parameters: { ...parameters, ...partial },
+            });
+          });
+        }}
+        onPreview={() => {
+          void runAction(async () => {
+            await camOperationPreview(operation.op_id);
+          });
+        }}
+        onGenerate={makeGenerateHandler(operation.op_id)}
+        onExport={onExportGcode}
+        onDelete={() => {
+          void runAction(async () => {
+            await camOperationDelete(operation.op_id);
+            setSelectedOperationId(null);
+          });
+        }}
+        onClose={() => setSelectedOperationId(null)}
+      />
+    );
+  }
+
+  if (operation.type === "adaptive_clearing") {
+    const parameters = operation.parameters;
+    const initialParams: AdaptiveFormState = {
+      feedrate_mm_per_min:
+        parameters.feedrate_mm_per_min ??
+        DEFAULT_ADAPTIVE_PARAMS.feedrate_mm_per_min,
+      plunge_feedrate_mm_per_min:
+        parameters.plunge_feedrate_mm_per_min ??
+        DEFAULT_ADAPTIVE_PARAMS.plunge_feedrate_mm_per_min,
+      stepover_percent:
+        parameters.stepover_percent ??
+        DEFAULT_ADAPTIVE_PARAMS.stepover_percent,
+      spindle_rpm:
+        parameters.spindle_rpm ?? DEFAULT_ADAPTIVE_PARAMS.spindle_rpm,
+      // Absent in the params = single pass; never substitute a default
+      // number for a cleared stepdown.
+      stepdown_mm: parameters.stepdown_mm,
+    };
+    const tools =
+      document?.cam.tool_library.filter(
+        (entry) => entry.type === "endmill_flat",
+      ) ?? [];
+    const avoidance = operation.geometry_references.avoidance_regions;
+    return (
+      <CamAdaptivePanel
+        {...shared}
+        initialParams={initialParams}
+        initialToolId={operation.tool_id}
+        tools={tools}
+        islandCount={avoidance.length}
+        pickTarget={
+          pocketPick?.opId === operation.op_id ? pocketPick.target : null
+        }
+        onRepickFace={() => onPickPocketFace(operation.op_id, "adaptive")}
+        onAddIsland={() => onPickIslandFace(operation.op_id, "adaptive")}
         onRemoveIsland={(index) => {
           void runAction(async () => {
             await camOperationUpdate(operation.op_id, {
