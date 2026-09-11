@@ -4,6 +4,7 @@
 mod ai_key;
 mod app_config;
 mod cad_core;
+mod gcode_parser;
 mod gcode_sender;
 mod laser_grbl;
 mod orca_slicer;
@@ -287,7 +288,8 @@ pub fn run() {
             gcode_sender::grbl_reset,
             gcode_sender::grbl_home,
             gcode_sender::grbl_unlock,
-            gcode_sender::grbl_jog
+            gcode_sender::grbl_jog,
+            gcode_parser::grbl_parse_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
