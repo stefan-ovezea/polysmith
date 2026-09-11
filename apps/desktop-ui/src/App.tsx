@@ -1723,6 +1723,24 @@ function App() {
     }
   };
 
+  // Export AND jump to the GRBL workspace with the file loaded for
+  // preview/streaming (the in-app alternative to LaserGRBL).
+  const [grblPreviewFile, setGrblPreviewFile] = useState<string | null>(null);
+
+  const exportCamGcodeToGrblWorkspaceAction = async () => {
+    const filePath = await pickGcodeExportPath({
+      translate: t,
+      documentName: document?.name,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+    await doExportGcode(filePath);
+    setGrblPreviewFile(filePath);
+    void showGrblView();
+  };
+
   const setCamPostProcessorAction = (postType: string) =>
     runAction(async () => {
       // Output shaping comes from the post DEFINITION FILE — the
@@ -2506,8 +2524,16 @@ function App() {
               addMessage={addMessage}
             />
           ) : workspaceView === "grbl" ? (
-            // CAM handoff wiring (the file path) lands in P4.
-            <GrblWorkspace embeddedFilePath={null} />
+            <GrblWorkspace
+              embeddedFilePath={null}
+              machineSettings={document?.cam.machine_settings ?? null}
+              theme={config.theme}
+              addMessage={addMessage}
+              previewFile={grblPreviewFile}
+              onPreviewFileConsumed={() => {
+                setGrblPreviewFile(null);
+              }}
+            />
           ) : (
             <>
               <AppSidebar
@@ -4265,6 +4291,9 @@ function App() {
                 }}
                 onExportAndOpen={() => {
                   void exportCamGcodeAndOpenLaserGrblAction();
+                }}
+                onSendToGrbl={() => {
+                  void exportCamGcodeToGrblWorkspaceAction();
                 }}
                 onPostProcessorChange={(postType) => {
                   void setCamPostProcessorAction(postType);

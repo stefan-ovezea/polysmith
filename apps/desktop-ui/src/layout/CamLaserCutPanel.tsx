@@ -52,6 +52,8 @@ interface CamLaserCutPanelProps {
   onExport: () => void;
   // Export + launch LaserGRBL with the file (external handoff).
   onExportAndOpen: () => void;
+  // Export + jump to the GRBL workspace with the file loaded.
+  onSendToGrbl: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -79,6 +81,7 @@ export function CamLaserCutPanel({
   onGenerate,
   onExport,
   onExportAndOpen,
+  onSendToGrbl,
   onDelete,
   onClose,
 }: CamLaserCutPanelProps) {
@@ -711,6 +714,17 @@ export function CamLaserCutPanel({
             {t(
               "cam.laserCut.exportAndOpen",
               "Export & open in LaserGRBL",
+            )}
+          </button>
+          <button
+            type="button"
+            className="cad-action-ghost col-span-2"
+            disabled={disabled}
+            onClick={onSendToGrbl}
+          >
+            {t(
+              "cam.laserCut.sendToGrbl",
+              "Send to GRBL workspace",
             )}
           </button>
         </div>

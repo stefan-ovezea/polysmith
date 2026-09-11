@@ -1,8 +1,9 @@
-//! Direct GRBL streaming over serial.
+//! Direct GRBL streaming over serial or TCP.
 //!
 //! PolySmith stays a file producer for the G-code itself (the CAD core
 //! exports `.nc`); this module is the shell-side transport: it opens a
-//! serial port, streams a file line-by-line with GRBL's ok/error
+//! serial port or a TCP connection (FluidNC's text port 23), streams
+//! a file line-by-line with GRBL's ok/error
 //! handshake inside a byte-sized send window (GRBL's RX buffer is 128
 //! bytes), polls `?` status, and forwards jog/home/pause commands.
 //!
@@ -17,6 +18,7 @@ use serde::Serialize;
 use serialport::SerialPort;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -66,7 +68,10 @@ pub enum GrblMachineState {
 pub enum GrblResponse {
     Ok,
     Error { code: u32 },
-    Status { state: GrblMachineState, mpos: Option<[f64; 3]> },
+    /// GRBL/FluidNC `ALARM:n` line — motion is locked and buffered
+    /// lines will never execute.
+    Alarm { code: u32 },
+    Status { state: GrblMachineState, mpos: Option<[f64; 3]>, wpos: Option<[f64; 3]> },
     Other,
 }
 
@@ -110,6 +115,12 @@ pub fn parse_grbl_response(line: &str) -> GrblResponse {
         let code = rest.trim().parse::<u32>().unwrap_or(0);
         return GrblResponse::Error { code };
     }
+    // FluidNC soft-limit / homing alarms arrive as `ALARM:n` lines;
+    // GRBL 1.1 emits them too.
+    if let Some(rest) = trimmed.strip_prefix("ALARM:") {
+        let code = rest.trim().parse::<u32>().unwrap_or(0);
+        return GrblResponse::Alarm { code };
+    }
     if trimmed.starts_with('<') && trimmed.ends_with('>') {
         let inner = &trimmed[1..trimmed.len() - 1];
         let mut parts = inner.split('|');
@@ -126,6 +137,8 @@ pub fn parse_grbl_response(line: &str) -> GrblResponse {
             _ => GrblMachineState::Idle,
         };
         let mut mpos = None;
+        let mut wpos = None;
+        let mut wco = None;
         for part in parts {
             if let Some(rest) = part.strip_prefix("MPos:") {
                 let coords: Vec<f64> =
@@ -134,8 +147,37 @@ pub fn parse_grbl_response(line: &str) -> GrblResponse {
                     mpos = Some([coords[0], coords[1], coords[2]]);
                 }
             }
+            // WPos = MPos minus the G92/G54 offset — the job
+            // coordinates the .nc uses. After "Zero XY" (G92) MPos
+            // keeps the machine position while WPos drops to 0,0.
+            if let Some(rest) = part.strip_prefix("WPos:") {
+                let coords: Vec<f64> =
+                    rest.split(',').filter_map(|v| v.parse().ok()).collect();
+                if coords.len() >= 3 {
+                    wpos = Some([coords[0], coords[1], coords[2]]);
+                }
+            }
+            // FluidNC reports the work coordinate OFFSET instead of
+            // the resulting work position (GRBL's WPos field) — derive
+            // WPos = MPos - WCO so Zero XY reads 0,0 on both firmwares.
+            if let Some(rest) = part.strip_prefix("WCO:") {
+                let coords: Vec<f64> =
+                    rest.split(',').filter_map(|v| v.parse().ok()).collect();
+                if coords.len() >= 3 {
+                    wco = Some([coords[0], coords[1], coords[2]]);
+                }
+            }
         }
-        return GrblResponse::Status { state, mpos };
+        if wpos.is_none() {
+            if let (Some(m), Some(offset)) = (mpos, wco) {
+                wpos = Some([
+                    m[0] - offset[0],
+                    m[1] - offset[1],
+                    m[2] - offset[2],
+                ]);
+            }
+        }
+        return GrblResponse::Status { state, mpos, wpos };
     }
     GrblResponse::Other
 }
@@ -153,6 +195,7 @@ pub struct GrblStreamEvent {
     pub percent: Option<f64>,
     pub state: Option<GrblMachineState>,
     pub mpos: Option<[f64; 3]>,
+    pub wpos: Option<[f64; 3]>,
 }
 
 #[derive(Debug, Serialize)]
@@ -172,6 +215,34 @@ enum WorkerMsg {
     Home,
     Unlock,
     Jog { x: Option<f64>, y: Option<f64>, feed: f64 },
+    ZeroXy,
+    Raw { line: String },
+    ConnectTcp { host: String, port: u16 },
+}
+
+/// The open transport to the machine: a USB serial port or FluidNC's
+/// TCP text port (23).  Both carry the identical line protocol
+/// (ok/error/status), so the worker treats them the same; only the
+/// read/write plumbing differs.
+enum GrblLink {
+    Serial(Box<dyn SerialPort>),
+    Tcp(TcpStream),
+}
+
+impl GrblLink {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            GrblLink::Serial(serial) => serial.read(buffer),
+            GrblLink::Tcp(stream) => stream.read(buffer),
+        }
+    }
+
+    fn write_all(&mut self, buffer: &[u8]) -> std::io::Result<()> {
+        match self {
+            GrblLink::Serial(serial) => serial.write_all(buffer),
+            GrblLink::Tcp(stream) => stream.write_all(buffer),
+        }
+    }
 }
 
 pub struct GrblState {
@@ -200,7 +271,7 @@ impl GrblState {
 struct Worker {
     rx: Receiver<WorkerMsg>,
     app: AppHandle,
-    port: Option<Box<dyn SerialPort>>,
+    port: Option<GrblLink>,
     port_name: Option<String>,
     baud_rate: Option<u32>,
     window: ByteWindow,
@@ -216,6 +287,9 @@ struct Worker {
     last_status_emit: Instant,
     last_poll: Instant,
     rx_buffer: Vec<u8>,
+    // Latest machine position from the status stream — Zero XY derives
+    // the new WCO from it locally (see the ZeroXy handler).
+    last_mpos: Option<[f64; 3]>,
 }
 
 fn event(kind: &str, message: &str) -> GrblStreamEvent {
@@ -229,6 +303,7 @@ fn event(kind: &str, message: &str) -> GrblStreamEvent {
         percent: None,
         state: None,
         mpos: None,
+        wpos: None,
     }
 }
 
@@ -263,13 +338,10 @@ impl Worker {
             .open();
         match opened {
             Ok(serial) => {
-                self.port = Some(serial);
+                self.port = Some(GrblLink::Serial(serial));
                 self.port_name = Some(port.clone());
                 self.baud_rate = Some(baud_rate);
-                let mut payload = event("connected", "Connected to GRBL");
-                payload.port_name = Some(port);
-                payload.baud_rate = Some(baud_rate);
-                self.emit(payload);
+                self.emit(event("connected", "Connected to GRBL"));
             }
             Err(error) => {
                 self.emit(event(
@@ -280,10 +352,49 @@ impl Worker {
         }
     }
 
+    /// FluidNC's telnet port (23) carries the same line protocol as
+    /// USB serial — connect over the network instead of a COM port.
+    /// Resolves first so the connection itself can carry a timeout
+    /// (a bare connect to an unreachable host can hang for minutes).
+    fn connect_tcp(&mut self, host: String, port: u16) {
+        self.close_port();
+        let opened = (|| -> std::io::Result<TcpStream> {
+            let mut addresses = (host.as_str(), port).to_socket_addrs()?;
+            let address = addresses.next().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::AddrNotAvailable,
+                    "no address resolved",
+                )
+            })?;
+            let stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))?;
+            // FluidNC's port is a raw text stream; nodelay keeps
+            // status/ok round-trips immediate.
+            stream.set_nodelay(true)?;
+            // Match the serial port's 50 ms read timeout so the
+            // worker loop stays responsive.
+            stream.set_read_timeout(Some(Duration::from_millis(50)))?;
+            Ok(stream)
+        })();
+        match opened {
+            Ok(stream) => {
+                self.port = Some(GrblLink::Tcp(stream));
+                self.port_name = Some(format!("{host}:{port}"));
+                self.baud_rate = None;
+                self.emit(event("connected", "Connected to GRBL"));
+            }
+            Err(error) => {
+                self.emit(event(
+                    "error",
+                    &format!("Could not connect to {host}:{port}: {error}"),
+                ));
+            }
+        }
+    }
+
     fn write_line(&mut self, line: &str) {
-        if let Some(serial) = self.port.as_mut() {
+        if let Some(link) = self.port.as_mut() {
             let bytes = format!("{line}\n");
-            let _ = serial.write_all(bytes.as_bytes());
+            let _ = link.write_all(bytes.as_bytes());
         }
     }
 
@@ -398,12 +509,31 @@ impl Worker {
                 self.lines_total = 0;
                 self.emit(event("error", &grbl_error_text(code)));
             }
-            GrblResponse::Status { state, mpos } => {
+            GrblResponse::Alarm { code } => {
+                // Motion is locked — the buffered tail will never
+                // execute.  Abort instead of letting the queue drain
+                // into a fake "completed".
+                self.pending.clear();
+                self.sent_lengths.clear();
+                self.window = ByteWindow::new();
+                self.lines_total = 0;
+                self.emit(event(
+                    "error",
+                    &format!(
+                        "Machine alarm (code {code}) — motion is locked. Press Reset, then Unlock ($X)."
+                    ),
+                ));
+            }
+            GrblResponse::Status { state, mpos, wpos } => {
+                // Track the position even between throttled emits so
+                // Zero XY can derive the new WCO at press time.
+                self.last_mpos = mpos;
                 // Throttle status events to 5 Hz.
                 if self.last_status_emit.elapsed() >= Duration::from_millis(200) {
                     let mut payload = event("status", "");
                     payload.state = Some(state);
                     payload.mpos = mpos;
+                    payload.wpos = wpos;
                     self.emit(payload);
                     self.last_status_emit = Instant::now();
                 }
@@ -415,6 +545,7 @@ impl Worker {
     fn handle_message(&mut self, message: WorkerMsg) {
         match message {
             WorkerMsg::Connect { port, baud_rate } => self.connect(port, baud_rate),
+            WorkerMsg::ConnectTcp { host, port } => self.connect_tcp(host, port),
             WorkerMsg::Disconnect => {
                 if self.port.is_some() {
                     // GRBL keeps executing its buffered lines without
@@ -455,6 +586,36 @@ impl Worker {
             WorkerMsg::Unlock => {
                 self.write_line("$X");
             }
+            WorkerMsg::ZeroXy => {
+                // Set the WCS origin to the current position — the
+                // LightBurn-style "set origin": the job's (0,0) lands
+                // where the head sits now.  G92 is the universally
+                // supported form (GRBL 1.1 and FluidNC alike; G10 L20
+                // is GRBL-only) and WPos drops to 0,0 immediately.
+                // $X first makes the button self-sufficient: FluidNC
+                // locks G-code out in alarm state, and $X is a no-op
+                // when already unlocked (GRBL clears G92 offsets on
+                // $X, so G92 is sent after).
+                self.write_line("$X");
+                self.write_line("G92 X0 Y0 Z0");
+                // Update the UI locally instead of waiting for the
+                // board: FluidNC can take seconds to publish a G92 in
+                // its status reports, which made Zero XY feel like it
+                // hung and the preview jump later out of nowhere.
+                // G92 X0 Y0 Z0 ⇒ WPos = (0,0,0) at the current machine
+                // position, so the new WCO equals the last known MPos.
+                // The next real status report confirms (or corrects, if
+                // the board rejected the G92) these values.
+                let mut payload = event("zeroed", "WCS origin set to current position");
+                payload.mpos = self.last_mpos;
+                payload.wpos = Some([0.0, 0.0, 0.0]);
+                self.emit(payload);
+            }
+            WorkerMsg::Raw { line } => {
+                // Mini console — arbitrary $-settings / g-code sent
+                // verbatim (e.g. "$20=0" to disable soft limits).
+                self.write_line(&line);
+            }
             WorkerMsg::Jog { x, y, feed } => {
                 let mut jog = String::from("$J=G91");
                 if let Some(value) = x {
@@ -474,11 +635,11 @@ impl Worker {
             // Drain available serial bytes into response lines.  The
             // port borrow ends before responses are handled, so the
             // handler can freely mutate the job state.
-            if let Some(serial) = self.port.as_mut() {
+            if let Some(link) = self.port.as_mut() {
                 let mut responses: Vec<GrblResponse> = Vec::new();
                 loop {
                     let mut chunk = [0u8; 256];
-                    match serial.read(&mut chunk) {
+                    match link.read(&mut chunk) {
                         Ok(0) => break,
                         Ok(count) => {
                             self.rx_buffer.extend_from_slice(&chunk[..count]);
@@ -499,7 +660,7 @@ impl Worker {
                 }
                 // Status poll every 500 ms while connected.
                 if self.last_poll.elapsed() >= Duration::from_millis(500) {
-                    let _ = serial.write_all(b"?\n");
+                    let _ = link.write_all(b"?\n");
                     self.last_poll = Instant::now();
                 }
                 for response in responses {
@@ -539,6 +700,7 @@ fn start_worker(app: AppHandle, state: &GrblState) -> Result<(), String> {
         last_status_emit: Instant::now(),
         last_poll: Instant::now(),
         rx_buffer: Vec::new(),
+        last_mpos: None,
     };
     std::thread::spawn(move || worker.run());
     *guard = Some(tx);
@@ -568,6 +730,17 @@ pub fn grbl_connect(
 ) -> Result<(), String> {
     start_worker(app, &state)?;
     state.send(WorkerMsg::Connect { port, baud_rate })
+}
+
+#[tauri::command]
+pub fn grbl_connect_tcp(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    host: String,
+    port: u16,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::ConnectTcp { host, port })
 }
 
 #[tauri::command]
@@ -626,4 +799,26 @@ pub fn grbl_jog(
 ) -> Result<(), String> {
     start_worker(app, &state)?;
     state.send(WorkerMsg::Jog { x, y, feed })
+}
+
+#[tauri::command]
+pub fn grbl_zero_xy(app: AppHandle, state: State<'_, GrblState>) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::ZeroXy)
+}
+
+#[tauri::command]
+pub fn grbl_send_raw(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    line: String,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    state.send(WorkerMsg::Raw {
+        line: trimmed.to_string(),
+    })
 }

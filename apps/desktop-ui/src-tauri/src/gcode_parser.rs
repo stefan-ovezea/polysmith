@@ -15,7 +15,10 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
+// camelCase, NOT lowercase: the UI matches "arcCw"/"arcCcw" — a
+// lowercase rename serializes "arccw", which silently broke every arc
+// in the preview (they rendered as chords; full circles vanished).
+#[serde(rename_all = "camelCase")]
 pub enum GcodeMoveKind {
     Rapid,
     Feed,
@@ -584,5 +587,23 @@ M2\n";
         assert_near(info.moves[0].end[0], 1.0, 1e-9, "rapid x");
         assert_near(info.moves[0].end[1], 2.0, 1e-9, "rapid y");
         assert_near(info.moves[1].end[0], 3.0, 1e-9, "feed x");
+    }
+
+    #[test]
+    fn move_kind_serializes_to_the_ui_names() {
+        // Regression: the UI matches "arcCw"/"arcCcw" — a lowercase
+        // rename would emit "arccw" and silently break arc rendering.
+        assert_eq!(
+            serde_json::to_value(GcodeMoveKind::ArcCw).unwrap(),
+            serde_json::json!("arcCw"),
+        );
+        assert_eq!(
+            serde_json::to_value(GcodeMoveKind::ArcCcw).unwrap(),
+            serde_json::json!("arcCcw"),
+        );
+        assert_eq!(
+            serde_json::to_value(GcodeMoveKind::Rapid).unwrap(),
+            serde_json::json!("rapid"),
+        );
     }
 }
