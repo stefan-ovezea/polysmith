@@ -1,4 +1,4 @@
-# Active task: GRBL workspace (feature/grbl) — MILESTONE COMMITTED adf2572; TCP transport implemented (uncommitted) (2026-09-11)
+# Active task: GRBL workspace — MERGED to dev as PR #78 (squash, 2026-09-12)
 
 > **Branch:** `feature/grbl` (from `dev` @ 48bd7c4)
 > **Date:** 2026-09-11
@@ -51,19 +51,22 @@ Key FluidNC findings baked into the code:
   template) hosting CamGrblPanel embedded (optional embedded/
   embeddedFilePath props — CAM setup path untouched). Gates: tsc +
   in-app (connect/stream verified by the user).
-- **P3+P4 — COMMITTED adf2572** as ONE feature commit (user asked for
-  a single commit): "feat(desktop): GRBL workspace preview, CAM
-  handoff, FluidNC transport fixes". Everything from the two bullets
-  above plus the follow-up fixes: panel Load always visible beside
-  Cycle Start and feeding the workspace preview via `onFileLoaded`
-  (disk-pick previously streamed a file the preview never showed);
-  Zero XY derives WPos=(0,0,0) at the last known MPos LOCALLY and
-  applies it instantly (FluidNC can take seconds to publish a G92 in
-  its status reports — that latency was the "Zero XY hangs" and
-  "preview changes by itself" reports). Gates: cargo test 8/8 +
-  check + tsc; real-machine pass done (user: "well now it works").
+- **P3+P4 — COMMITTED 58eae86** as ONE feature commit (user asked for
+  a single commit; originally adf2572, AMENDED to 58eae86 because the
+  first `git add` pathspec `apps/desktop-ui/src` missed the three
+  `src-tauri/src` files — the original commit had old Rust under new
+  TS): "feat(desktop): GRBL workspace preview, CAM handoff, FluidNC
+  fixes, TCP transport". Everything from the two bullets above plus
+  the follow-up fixes: panel Load always visible beside Cycle Start
+  and feeding the workspace preview via `onFileLoaded` (disk-pick
+  previously streamed a file the preview never showed); Zero XY
+  derives WPos=(0,0,0) at the last known MPos LOCALLY and applies it
+  instantly (FluidNC can take seconds to publish a G92 in its status
+  reports — that latency was the "Zero XY hangs" and "preview changes
+  by itself" reports). Gates: cargo test 8/8 + check + tsc;
+  real-machine pass done (user: "well now it works").
 
-## Increment: Network (TCP) transport — IMPLEMENTED (uncommitted)
+## Increment: Network (TCP) transport — COMMITTED in 58eae86
 
 User installed FigUI (FluidNC WebUI) at http://192.168.1.19/ and
 asked for network support in the GRBL workspace. Implemented **TCP
@@ -72,22 +75,20 @@ USB serial, so the worker's port became a `GrblLink` enum
 (Serial | Tcp) with matching read/write; new `grbl_connect_tcp`
 command (resolve → connect_timeout 5 s → nodelay → 50 ms read
 timeout); panel Connection section gained a Transport dropdown
-(Serial (USB) / Network (TCP), host + port inputs); grblStore
-connected-log omits baud for TCP. WebSocket (81) deliberately NOT
-done — same control capability, much heavier handshake; revisit only
-if asked. Gates: cargo test 8/8 + check + tsc. **NOT yet exercised
-against the real board — user must restart the app and connect to
-192.168.1.19:23.**
+(Serial (USB) / Network (TCP), host + port inputs, last host/port
+remembered in localStorage); grblStore connected-log omits baud for
+TCP. WebSocket (81) deliberately NOT done — same control capability,
+much heavier handshake; revisit only if asked. Gates: cargo test 8/8
++ check + tsc; **user verified against the real board** ("well it
+works") — note the Connect button is disabled until a host is typed
+(the grey text is a placeholder, now prefixed "e.g." to avoid that
+confusion).
 
-## Next session checklist
+## Post-merge notes
 
-- Have the user verify the TCP path on the real board: restart →
-  Transport: Network (TCP) → 192.168.1.19:23 → connect → status/jog/
-  zero/stream identical to serial. (If the board refuses a second
-  connection while FigUI is open, close FigUI — the board only
-  serves so many clients.)
-- Then commit the TCP increment (or fold into the push), push
-  feature/grbl, draft PR to dev; hold for the user's final look,
-  merge on approval, delete branch.
+- Merged as PR #78 (squash); remote + local `feature/grbl` deleted.
+- Follow-ups the user deferred ("iron it later"): WebSocket (port 81)
+  transport if ever wanted (TCP 23 already covers desktop control);
+  remaining GRBL workspace rough edges from the user's list.
 - dist/ gotcha: fresh clones need `pnpm --filter desktop-ui build`
   before cargo runs (dist/ is gitignored; generate_context! needs it).
