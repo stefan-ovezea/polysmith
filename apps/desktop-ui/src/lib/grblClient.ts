@@ -19,7 +19,14 @@ export type GrblStreamEventKind =
   | "paused"
   | "resumed"
   | "reset"
-  | "zeroed";
+  | "zeroed"
+  | "settings";
+
+/** One GRBL $ setting (`key` keeps the dollar prefix, e.g. "$20"). */
+export interface GrblSetting {
+  key: string;
+  value: string;
+}
 
 export interface GrblStreamEvent {
   kind: GrblStreamEventKind;
@@ -33,6 +40,8 @@ export interface GrblStreamEvent {
   mpos?: [number, number, number] | null;
   /** WCS position (MPos minus the G54 offset) — the job coordinates. */
   wpos?: [number, number, number] | null;
+  /** `$$` dump result (kind "settings"). */
+  settings?: GrblSetting[] | null;
 }
 
 export function listGrblPorts(): Promise<GrblPortInfo[]> {
@@ -194,6 +203,12 @@ export function grblLaserPower(percent: number | null): Promise<void> {
 // expected — real-time commands are acknowledged by silence.
 export function grblWriteByte(byte: number): Promise<void> {
   return invoke("grbl_write_byte", { byte });
+}
+
+// Requests a `$$` dump — the result arrives as a grbl-stream event of
+// kind "settings".
+export function grblGetSettings(): Promise<void> {
+  return invoke("grbl_get_settings");
 }
 
 export function grblUtilityProgram(

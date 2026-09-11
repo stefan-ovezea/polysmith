@@ -122,37 +122,36 @@ so every `grbl_utility_program` invoke rejected with "missing field
 deserializing the exact TS payload (verified: fails without the fix,
 17/17 with it). User re-verification pending.
 
-## P5+P6 status (implemented 2026-09-12, user verification pending)
+## P2–P6 — COMMITTED fb7ea0b (user verified the round in-app)
 
-- **P5 live overrides + stats**: WorkerMsg::WriteByte (bare byte, no
-  newline, bypasses the RX window) + `grbl_write_byte` command with an
-  8-byte allowlist (0x90–0x94 feed, 0x99–0x9B power); CamGrblPanel
-  gains two sliders committed on pointer-up via deterministic
-  reset-and-step (0x90/0x99 then n×±10 % + m×±1 % feed steps — the
-  worker stays stateless), elapsed/ETA row (ticks while streaming,
-  freezes on completion, resets on the next start), FluidNC caveat
-  line; grblClient.grblWriteByte; i18n cam.grbl.feedOverride/
-  powerOverride/overrideCaveat/elapsed/eta.
-- **P6 bed check + alarm decode**: `grbl_alarm_message` table (GRBL
-  1.1 codes 1–9 + unknown fallback) baked into the Alarm error event
-  (test pins every code); GrblWorkspace shows a non-blocking
-  "program exceeds the work area" banner when the parsed bounds
-  escape the bed (WCS coordinates, warning only); i18n
-  grbl.jobExceedsBed.
-- **Gates**: cargo test 18/18, tsc --noEmit clean. No C++ changes.
+## P7 status (implemented 2026-09-12, user verification pending)
+
+- **`$$` settings dialog**: WorkerMsg::GetSettings sends `$$`; the
+  run loop collects `$N=value` lines into a SettingsCollect with a
+  1.5 s deadline (GRBL ends the dump with ok → immediate emit;
+  FluidNC may not → deadline fallback emits whatever arrived); new
+  "settings" grbl-stream event kind carrying `settings: [{key,
+  value}]` (grblStore caches it, cleared on connect/disconnect);
+  `parse_settings_line` pure helper pinned by unit tests.
+  UI: "GRBL settings…" button in the console fieldset opens
+  `layout/GrblSettingsDialog.tsx` (rows: key | value input |
+  description | Apply per row → `$k=v` via grblSendRaw; FluidNC
+  caveat + empty/loading states; Escape closes) with descriptions
+  from `layout/grblSettingsMeta.ts` mapping $0–$132 to
+  cam.grbl.settingsDesc.* i18n keys (~35 descriptions).
+- **Console history**: up/down-arrow recall of sent raw commands in
+  the console input (local state, resets on send).
+- **Gates**: cargo test 19/19, tsc --noEmit clean. No C++ changes.
+- **Note**: the user runs `pnpm dev` live; they saw transient
+  compile errors from the dev watcher rebuilding mid-edit — resolved
+  once all edits landed.
 
 ## Next session checklist
 
-1. User verification round on the FluidNC machine (`pnpm dev`), now
-   covering P2–P6 together:
-   - Machine dropdown resizes the bed; selection survives restart.
-   - Red pointer toggle + crosshair at MPos + offset (VERIFY SIGN).
-   - Test fire / focus pulse / framing all run after the serde fix
-     (restart the app first — the shell rebuilt).
-   - Feed/power override sliders: record what FluidNC actually does
-     with 0x90–0x94/0x99–0x9B (partial support expected — the caveat
-     line says so); elapsed/ETA tick and reset across jobs.
-   - Bed banner on an oversized program (or pick a small machine);
-     trigger a real alarm → decoded text.
-2. On confirmation: commit P2–P6 (no Co-Authored-By trailer),
-   then P7 (console history + $$ settings dialog).
+1. User verification: console up-arrow recalls; GRBL settings…
+   opens, fills on a GRBL 1.1 reference, shows the caveat/list-or-
+   empty on FluidNC, Apply sends `$k=v`.
+2. On confirmation: commit P7 (no Co-Authored-By trailer). Then the
+   GRBL polish plan is complete (P8 was covered by P1+P4) — the user
+   can decide on remaining deferred items (WebSocket transport,
+   machine-def extensions) or move to other work.

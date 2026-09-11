@@ -7,6 +7,7 @@ import {
   grblConnect,
   grblConnectTcp,
   grblDisconnect,
+  grblGetSettings,
   grblHome,
   grblJog,
   grblPause,
@@ -22,6 +23,7 @@ import {
   type GrblPortInfo,
 } from "@/lib/grblClient";
 import { initGrblStreamListener, useGrblStore, useToastStore } from "@/state";
+import { GrblSettingsDialog } from "./GrblSettingsDialog";
 import { useCamEscapeCancel } from "./camPanelShared";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400];
@@ -118,6 +120,12 @@ export function CamGrblPanel({
     null,
   );
   const [rawCommand, setRawCommand] = useState("");
+  // Console history (P7): up-arrow recalls, down-arrow steps forward.
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  // `$$` settings dialog state.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settings = useGrblStore((state) => state.settings);
 
   const formatPosition = (position: [number, number, number]) =>
     `X ${position[0].toFixed(2)}  Y ${position[1].toFixed(2)}  Z ${position[2].toFixed(2)}`;
@@ -730,6 +738,30 @@ export function CamGrblPanel({
             placeholder="$20=0"
             onChange={(event) => setRawCommand(event.target.value)}
             onKeyDown={(event) => {
+              // Up/down recall the sent-command history.
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                const current = historyIndex ?? commandHistory.length;
+                const next = current - 1;
+                if (next >= 0) {
+                  setHistoryIndex(next);
+                  setRawCommand(commandHistory[next]);
+                }
+                return;
+              }
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                const current = historyIndex ?? commandHistory.length;
+                const next = current + 1;
+                if (next < commandHistory.length) {
+                  setHistoryIndex(next);
+                  setRawCommand(commandHistory[next]);
+                } else {
+                  setHistoryIndex(null);
+                  setRawCommand("");
+                }
+                return;
+              }
               if (event.key !== "Enter" || !connected || busy) {
                 return;
               }
@@ -738,6 +770,8 @@ export function CamGrblPanel({
                 return;
               }
               void runCommand(() => grblSendRaw(command));
+              setCommandHistory((previous) => [...previous, command]);
+              setHistoryIndex(null);
               setRawCommand("");
             }}
           />
@@ -751,18 +785,45 @@ export function CamGrblPanel({
                 return;
               }
               void runCommand(() => grblSendRaw(command));
+              setCommandHistory((previous) => [...previous, command]);
+              setHistoryIndex(null);
               setRawCommand("");
             }}
           >
             {t("cam.grbl.send", "Send")}
           </button>
         </div>
+        <button
+          type="button"
+          className="cad-action-ghost h-8 w-full"
+          disabled={!connected || busy}
+          onClick={() => {
+            setSettingsOpen(true);
+            void grblGetSettings().catch((error) => {
+              useToastStore.getState().pushToast("error", String(error));
+            });
+          }}
+        >
+          {t("cam.grbl.settingsButton", "GRBL settings…")}
+        </button>
         {lastMessage ? (
           <p className="font-mono text-[10px] leading-snug text-on-surface-dim">
             {lastMessage}
           </p>
         ) : null}
       </fieldset>
+
+      {settingsOpen ? (
+        <GrblSettingsDialog
+          settings={settings}
+          onClose={() => {
+            setSettingsOpen(false);
+          }}
+          onApply={(key, value) => {
+            void runCommand(() => grblSendRaw(`${key}=${value}`));
+          }}
+        />
+      ) : null}
     </section>
   );
 }

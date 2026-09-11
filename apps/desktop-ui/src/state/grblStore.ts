@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { create } from "zustand";
 
 import { makeUiLogEntry } from "@/lib";
-import type { GrblStreamEvent } from "@/lib/grblClient";
+import type { GrblSetting, GrblStreamEvent } from "@/lib/grblClient";
 import { useCadCoreStore } from "./cadCoreStore";
 import { useToastStore } from "./toastStore";
 
@@ -26,6 +26,7 @@ interface GrblStoreState {
   wpos: [number, number, number] | null;
   lastError: string | null;
   lastMessage: string | null;
+  settings: GrblSetting[] | null;
   applyEvent: (event: GrblStreamEvent) => void;
 }
 
@@ -50,6 +51,7 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
   wpos: null,
   lastError: null,
   lastMessage: null,
+  settings: null,
   applyEvent: (event) => {
     switch (event.kind) {
       case "connected":
@@ -75,6 +77,7 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           wpos: null,
           lastError: null,
           lastMessage: event.message,
+          settings: null,
         });
         break;
       case "disconnected":
@@ -94,6 +97,7 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           wpos: null,
           lastError: null,
           lastMessage: event.message,
+          settings: null,
         });
         break;
       case "progress":
@@ -167,6 +171,11 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           lastError: null,
           lastMessage: event.message,
         });
+        break;
+      case "settings":
+        // `$$` dump result — feeds the settings dialog.
+        log("info", event.message);
+        set({ settings: event.settings ?? [] });
         break;
     }
   },

@@ -288,6 +288,7 @@ pub fn run() {
             gcode_sender::grbl_send_program,
             gcode_sender::grbl_laser_power,
             gcode_sender::grbl_write_byte,
+            gcode_sender::grbl_get_settings,
             grbl_utilities::grbl_utility_program,
             gcode_sender::grbl_pause,
             gcode_sender::grbl_resume,
