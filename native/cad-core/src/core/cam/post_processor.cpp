@@ -43,6 +43,36 @@ const char* kGrblDefinition = R"JSON({
   "decimal_places": 3
 })JSON";
 
+// LaserGRBL is a GRBL 1.1 laser-mode host — same dialect as "grbl"
+// plus the host's own conventions: M8/M9 air assist on the coolant
+// relay, and S0 before every M5 so a diode driver never re-fires at
+// the previous power.
+const char* kLasergrblDefinition = R"JSON({
+  "units_mm": "G21",
+  "units_inch": "G20",
+  "header_lines": ["(op: {op_name})", "{units_word}", "G90", "G94", "G17", "M5"],
+  "rapid": "G0 X{x} Y{y}",
+  "feed": "G1 X{x} Y{y}",
+  "arc_cw": "G2 X{x} Y{y} I{i} J{j}",
+  "arc_ccw": "G3 X{x} Y{y} I{i} J{j}",
+  "dwell": "G4 P{seconds}",
+  "laser_on_dynamic": "M4 S{power}",
+  "laser_on_constant": "M3 S{power}",
+  "laser_off": "M5",
+  "spindle_on": "M3 S{rpm}",
+  "spindle_off": "M5",
+  "footer_lines": ["M5", "M2"],
+  "laser_footer_lines": ["M5", "M2"],
+  "power_change": "S{power}",
+  "laser_air_on": "M8",
+  "laser_air_off": "M9",
+  "laser_off_with_power": true,
+  "power_max": 1000,
+  "line_numbers": false,
+  "use_arcs": true,
+  "decimal_places": 3
+})JSON";
+
 const char* kLinuxcncDefinition = R"JSON({
   "units_mm": "G21",
   "units_inch": "G20",
@@ -360,6 +390,10 @@ std::vector<std::string> render_post(const PostContext& context,
         currentPower = power;
       }
     } else if (!move.laser_on && laserOn) {
+      if (def.laser_off_with_power) {
+        emit(render_template(def.power_change,
+                             {{"power", fmt_number(0.0, decimals)}}));
+      }
       emit(render_template(def.laser_off, {}));
       laserOn = false;
     }
@@ -371,7 +405,11 @@ std::vector<std::string> render_post(const PostContext& context,
     const double x = (move.x - originX) * scale;
     const double y = (move.y - originY) * scale;
     const double z = (move.z - originZ) * scale;
-    const bool zChanged = !haveZ || z != currentZ;
+    // Laser programs are 2-axis: a gantry laser has no Z axis, so any
+    // Z word is lint — the generators write a constant focus-plane Z.
+    // Mill/drill programs keep Z fully modal as before.
+    const bool zChanged =
+        !context.laser.has_value() && (!haveZ || z != currentZ);
     const bool hasRotary =
         move.a.has_value() || move.b.has_value() || move.c.has_value();
     const bool isFeedMove =
@@ -445,6 +483,10 @@ std::vector<std::string> render_post(const PostContext& context,
     };
 
     if (move.kind == ToolpathMoveKind::Rapid) {
+      // Travel moves carry the beam OFF — without this, a rapid
+      // following a laser-on move would keep firing during the
+      // travel (the beam latches the last S on GRBL laser mode).
+      ensure_power_state(move);
       auto vars = moveVars();
       std::string line = render_template(def.rapid, vars);
       if (zChanged) {
@@ -618,6 +660,12 @@ std::vector<std::string> render_post(const PostContext& context,
           render_template(templ, common_vars(context)));
     }
   }
+  if (laserOn && def.laser_off_with_power) {
+    // Beam off at program end: drop power first (diode drivers latch
+    // the last S) — the footer's leading M5 still dedupes below.
+    emit(render_template(def.power_change,
+                         {{"power", fmt_number(0.0, decimals)}}));
+  }
   if (laserOn || spindleOn) {
     const std::string spindleOff = render_template(def.spindle_off, {});
     const bool footerStartsWithOff =
@@ -689,6 +737,11 @@ bool parse_post_definition(const std::string& json_text,
         payload.at("laser_air_off").is_string()) {
       definition.laser_air_off = payload.at("laser_air_off").get<std::string>();
     }
+    if (payload.contains("laser_off_with_power") &&
+        payload.at("laser_off_with_power").is_boolean()) {
+      definition.laser_off_with_power =
+          payload.at("laser_off_with_power").get<bool>();
+    }
     if (payload.contains("power_max") && payload.at("power_max").is_number()) {
       definition.power_max = payload.at("power_max").get<double>();
     }
@@ -726,6 +779,7 @@ bool parse_post_definition(const std::string& json_text,
 std::vector<std::pair<std::string, std::string>> builtin_post_definitions() {
   return {
       {"grbl", kGrblDefinition},
+      {"lasergrbl", kLasergrblDefinition},
       {"linuxcnc", kLinuxcncDefinition},
       {"mach3", kMach3Definition},
       {"mach4", kMach4Definition},

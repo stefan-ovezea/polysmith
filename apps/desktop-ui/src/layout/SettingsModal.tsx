@@ -1028,6 +1028,88 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </label>
                   )}
                 </fieldset>
+
+              <div className="rounded-md border border-white/10 bg-white/[0.025] px-4 py-4">
+                <label className="flex items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-sm font-medium text-on-surface">
+                      {t("settings.enableLaserGrbl")}
+                    </span>
+                    <span className="mt-1 block text-xs text-on-surface-muted">
+                      {t("settings.enableLaserGrblDescription")}
+                    </span>
+                  </span>
+                  <Checkbox
+                    checked={config.laserGrbl.enabled}
+                    ariaLabel={t("settings.enableLaserGrbl")}
+                    onCheckedChange={(enabled) => {
+                      updateConfig((current) => ({
+                        ...current,
+                        laserGrbl: {
+                          ...current.laserGrbl,
+                          enabled,
+                        },
+                      }));
+                    }}
+                  />
+                </label>
+
+                <fieldset
+                  disabled={!config.laserGrbl.enabled}
+                  className={
+                    config.laserGrbl.enabled
+                      ? "m-0 space-y-5 border-0 p-0"
+                      : "m-0 space-y-5 border-0 p-0 opacity-45"
+                  }
+                >
+                  <label className="block">
+                    <span className="cad-kicker">
+                      {t("settings.laserGrblBinaryPath")}
+                    </span>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-on-surface outline-none transition-colors focus:border-primary-edge"
+                        value={config.laserGrbl.binaryPath}
+                        placeholder={t(
+                          "settings.laserGrblBinaryPlaceholder",
+                        )}
+                        onChange={(event) => {
+                          updateConfig((current) => ({
+                            ...current,
+                            laserGrbl: {
+                              ...current.laserGrbl,
+                              binaryPath: event.target.value,
+                            },
+                          }));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="cad-ribbon-action"
+                        onClick={async () => {
+                          const selectedPath = await open({
+                            title: t("settings.selectLaserGrblBinary"),
+                            multiple: false,
+                            directory: false,
+                          });
+                          if (typeof selectedPath !== "string") {
+                            return;
+                          }
+                          updateConfig((current) => ({
+                            ...current,
+                            laserGrbl: {
+                              ...current.laserGrbl,
+                              binaryPath: selectedPath,
+                            },
+                          }));
+                        }}
+                      >
+                        {t("common.browse")}
+                      </button>
+                    </div>
+                  </label>
+                </fieldset>
+              </div>
               </div>
             )}
           </div>

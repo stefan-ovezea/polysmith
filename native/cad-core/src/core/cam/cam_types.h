@@ -214,6 +214,10 @@ struct LaserCutParameters {
   std::optional<double> speed_mm_per_s;  // laser-native speed (mm/s);
                                          // absent → legacy feedrate fallback
   int passes = 1;              // contour repetitions, laser stays on
+  // Per-pass power ramp: pass p cuts at max(1, power_percent − p ×
+  // step).  0 keeps every pass at the base power.  Leads and the
+  // pierce always run at the base power.
+  double pass_power_step_percent = 0.0;
   bool dynamic_power = true;   // true -> M4 (power scales with feed)
   bool air_assist = false;     // M8/M9 around cuts (post-supported)
 

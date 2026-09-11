@@ -71,6 +71,20 @@ CamExportResult export_cam_gcode(const DocumentState& document,
         std::array<double, 3>{0.0, 0.0, 0.0});
     entry.laser =
         op.type == "laser_cut" ? op.parameters.laser : std::nullopt;
+    // Test patterns are laser programs too — synthesize a minimal
+    // laser context so the post engine emits real M3/M4 S… power
+    // moves and the Z-free laser footer, instead of a spindle program
+    // (the old path exported "M3 S0" with a G0 Z lift at the end).
+    if (op.type == "laser_test_pattern" &&
+        op.parameters.test_pattern.has_value()) {
+      LaserCutParameters synth;
+      synth.mode =
+          op.parameters.test_pattern->pattern == "engrave_grid" ? "engrave"
+                                                                : "cut";
+      synth.dynamic_power = true;
+      synth.air_assist = false;
+      entry.laser = synth;
+    }
 
     // Use the cached path when it is current; generate on demand
     // otherwise.  Export has no side effects on the cache.

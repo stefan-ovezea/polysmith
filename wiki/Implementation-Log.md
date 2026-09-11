@@ -2,6 +2,61 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-11
+
+### Laser post-polish + LaserGRBL integration (laser/post-polish)
+
+Real-machine feedback drove four laser fixes and full LaserGRBL
+compatibility.  Five commits, one per phase (P1–P4 on the branch;
+P5 below):
+
+- **P1 — laser post correctness** (`6d55f67`): test-pattern ops now
+  export as laser programs (synthesized `LaserCutParameters` — M3 for
+  `engrave_grid`, M4+dynamic for `cut_grid`/`kerf_gauge`) instead of
+  spindle programs; the first move of a laser program no longer
+  carries a Z word; opt-in `laser_off_with_power` post flag emits
+  `S0` before every `M5` (diode drivers latch the last S);
+  test-pattern create gained the laser-machine gate + default laser
+  tool.  Gates: core:rebuild + test:core (grbl_post Tests 19/20 +
+  cam_generators Test 66).
+- **P2 — lasergrbl post + machine seed** (`cda8a24`): built-in
+  `lasergrbl` post (GRBL 1.1 laser dialect, M8/M9 air assist,
+  S0-before-M5, `power_max` 1000, Z-free footer, no line numbers) +
+  LaserGRBL machine seed (430×430); `PostProcessorType` union gained
+  `lasergrbl` + the missing `smoothieware`; new
+  `cad_core_lasergrbl_post_test` suite (7 tests).  Gates:
+  core:rebuild + test:core + tsc.
+- **P3 — export & open in LaserGRBL** (`14b18a7`): shell-side launch
+  command (`laser_grbl.rs`, the OrcaSlicer external-launch pattern),
+  LaserGRBL path in Settings, secondary "Export & open in LaserGRBL"
+  buttons on the laser panels (missing path warns but still writes
+  the file).  Gates: cargo check + tsc.
+- **P4 — direct GRBL streaming** (`5120710`): `serialport = "4"`
+  directly (no Tauri plugin — custom commands are not
+  capability-gated); `gcode_sender.rs` worker owns the port with the
+  ok/error:N handshake inside a 127-byte send window (GRBL RX buffer
+  = 128), 500 ms status polling (≤ 5 Hz events), jog/home/unlock/
+  pause/resume/reset; `grbl-stream` events; GRBL panel (port/baud/
+  connect, status + MPos, stream via file dialog, progress, jog pad)
+  opened from the Setup panel's Machine tab.  Safety: over-long lines
+  rejected up front; Disconnect soft-resets a running job.  Gates:
+  cargo check clean + tsc clean; desk items user-verified in-app;
+  real-machine stream test deferred (tracked in active-task.md).
+- **P5 — per-pass power ramp** (this commit): `pass_power_step_percent`
+  on `LaserCutParameters` (default 0 = no ramp) — pass p cuts at
+  `max(1, power_percent − p × step)`; leads and the pierce keep the
+  base power; tab logic untouched; post engine untouched (it already
+  renders mid-cut S changes).  Serde both directions; zod default;
+  "Power step / pass (%)" field beside Passes + hint.  Tests:
+  cam_generators_test 13b (3 passes × step 10 → 85/75/65, pierce +
+  leads at 85, floor clamp at 1%) + lasergrbl_post_test 8 (golden
+  S850 → S750 → S650 in order).  Gates: core:rebuild + test:core
+  45/45 + tsc.
+
+Docs: this log, CAM-Development.md (LaserGRBL integration section +
+progress rows 19–21), IPC-Protocol.md (`pass_power_step_percent`,
+`lasergrbl` built-in + seed, shell-side GRBL transport note).
+
 ## 2026-09-10
 
 ### CAM Mill Engrave + Profile-button removal (cam/milling)

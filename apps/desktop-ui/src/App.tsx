@@ -25,6 +25,7 @@ import type { CategoryId } from "./layout";
 import type { DrillPickTarget } from "./layout/viewport/viewportPanelTypes";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { launchLaserGrbl } from "./lib/laserGrblClient";
 import { ArmedSketchConstraint } from "./types";
 import type {
   DocumentState,
@@ -537,6 +538,8 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  // Shell-side GRBL streaming panel (serial transport, gcode_sender.rs).
+  const [isGrblPanelOpen, setIsGrblPanelOpen] = useState(false);
   // The ACTIVE CAM setup: new operations join it, the setup panel
   // edits it.  Follows the first setup until the user picks another.
   const [activeCamSetupId, setActiveCamSetupId] = useState<string | null>(
@@ -1662,6 +1665,17 @@ function App() {
 
   // G-code export: pick a destination, let the core generate any stale
   // toolpaths and write the file with the configured post-processor.
+  const doExportGcode = async (filePath: string) => {
+    await runAction(async () => {
+      await camExportGcode(filePath);
+      addMessage(t("cam.gcodeWritten", { path: filePath }));
+      // The Logs panel line is easy to miss — surface the success.
+      useToastStore
+        .getState()
+        .pushToast("info", t("cam.gcodeWritten", { path: filePath }));
+    });
+  };
+
   const exportCamGcodeAction = async () => {
     const filePath = await pickGcodeExportPath({
       translate: t,
@@ -1671,14 +1685,41 @@ function App() {
     if (!filePath) {
       return;
     }
-    await runAction(async () => {
-      await camExportGcode(filePath);
-      addMessage(t("cam.gcodeWritten", { path: filePath }));
-      // The Logs panel line is easy to miss — surface the success.
+    await doExportGcode(filePath);
+  };
+
+  // Export AND hand the file to LaserGRBL (external launch).  The
+  // export always succeeds — a missing binary path only skips the
+  // launch, with an explicit warning instead of a silent fallback.
+  const exportCamGcodeAndOpenLaserGrblAction = async () => {
+    const filePath = await pickGcodeExportPath({
+      translate: t,
+      documentName: document?.name,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+    await doExportGcode(filePath);
+    const binaryPath = config.laserGrbl.binaryPath.trim();
+    if (!binaryPath) {
       useToastStore
         .getState()
-        .pushToast("info", t("cam.gcodeWritten", { path: filePath }));
-    });
+        .pushToast("warn", t("cam.laserGrblBinaryMissing"));
+      return;
+    }
+    try {
+      const result = await launchLaserGrbl({
+        binaryPath,
+        gcodeFilePath: filePath,
+      });
+      addMessage(`LaserGRBL launched (pid ${result.processId})`);
+    } catch (error) {
+      addMessage(String(error));
+      useToastStore
+        .getState()
+        .pushToast("error", t("cam.laserGrblLaunchFailed"));
+    }
   };
 
   const setCamPostProcessorAction = (postType: string) =>
@@ -4187,6 +4228,12 @@ function App() {
                 viewport={viewport}
                 disabled={status !== "connected"}
                 isSetupPanelOpen={isCamSetupPanelOpen}
+                isGrblPanelOpen={isGrblPanelOpen}
+                setGrblPanelOpen={setIsGrblPanelOpen}
+                onOpenGrblControls={() => {
+                  closeCamSetupPanel();
+                  setIsGrblPanelOpen(true);
+                }}
                 selectedOperationId={selectedCamOperationId}
                 activeSetupId={activeCamSetupId}
                 camProfilePickArmed={camProfilePickArmed}
@@ -4209,6 +4256,9 @@ function App() {
                 addMessage={addMessage}
                 onExportGcode={() => {
                   void exportCamGcodeAction();
+                }}
+                onExportAndOpen={() => {
+                  void exportCamGcodeAndOpenLaserGrblAction();
                 }}
                 onPostProcessorChange={(postType) => {
                   void setCamPostProcessorAction(postType);

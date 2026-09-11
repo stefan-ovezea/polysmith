@@ -21,6 +21,7 @@ import {
   CamPocketPanel,
   CamSetupPanel,
   CamSlotPanel,
+  CamGrblPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
   type AdaptiveFormState,
@@ -73,10 +74,16 @@ interface CamFloatingPanelsProps {
   setShowStock: (show: boolean) => void;
   setWcsOrientation: (mode: string) => void;
   setSetupPanelOpen: (open: boolean) => void;
+  // Shell-side GRBL streaming panel (serial transport to the machine).
+  isGrblPanelOpen: boolean;
+  setGrblPanelOpen: (open: boolean) => void;
+  onOpenGrblControls: () => void;
   setSelectedOperationId: (operationId: string | null) => void;
   runAction: RunAction;
   addMessage: (message: string) => void;
   onExportGcode: () => void;
+  // Export + external LaserGRBL launch (laser panels only).
+  onExportAndOpen: () => void;
   onPostProcessorChange: (postType: string) => void;
   postProcessorType: string;
   posts: Array<{ name: string; path: string }>;
@@ -143,10 +150,14 @@ export function CamFloatingPanels({
   setShowStock,
   setWcsOrientation,
   setSetupPanelOpen,
+  isGrblPanelOpen,
+  setGrblPanelOpen,
+  onOpenGrblControls,
   setSelectedOperationId,
   runAction,
   addMessage,
   onExportGcode,
+  onExportAndOpen,
   onPostProcessorChange,
   postProcessorType,
   posts,
@@ -254,6 +265,7 @@ export function CamFloatingPanels({
       machines={machines}
       onApplyMachine={applyMachine}
       onSaveMachine={onSaveMachine}
+      onOpenGrblControls={onOpenGrblControls}
       onPickOrigin={onPickOrigin}
       pickedOrigin={pickedOrigin}
       originPickArmed={originPickArmed}
@@ -295,6 +307,7 @@ export function CamFloatingPanels({
         runAction,
         addMessage,
         onExportGcode,
+        onExportAndOpen,
         camOperationUpdate,
         camOperationDelete,
         camOperationSetScope,
@@ -315,10 +328,17 @@ export function CamFloatingPanels({
       })
     : null;
 
+  // Shell-side GRBL streaming — independent of document CAM state, so
+  // it gets its own floating panel branch.
+  const grblPanel = isGrblPanelOpen ? (
+    <CamGrblPanel onClose={() => setGrblPanelOpen(false)} />
+  ) : null;
+
   return (
     <>
       {setupPanel}
       {operationPanel}
+      {grblPanel}
     </>
   );
 }
@@ -337,6 +357,7 @@ function buildOperationPanel({
   runAction,
   addMessage,
   onExportGcode,
+  onExportAndOpen,
   camOperationUpdate,
   camOperationDelete,
   camOperationSetScope,
@@ -369,6 +390,7 @@ function buildOperationPanel({
   | "runAction"
   | "addMessage"
   | "onExportGcode"
+  | "onExportAndOpen"
   | "camOperationUpdate"
   | "camOperationDelete"
   | "camOperationSetScope"
@@ -510,6 +532,7 @@ function buildOperationPanel({
         }}
         onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
+        onExportAndOpen={onExportAndOpen}
         onDelete={() => {
           void runAction(async () => {
             await camOperationDelete(operation.op_id);
@@ -545,6 +568,7 @@ function buildOperationPanel({
         }}
         onGenerate={makeGenerateHandler(operation.op_id)}
         onExport={onExportGcode}
+        onExportAndOpen={onExportAndOpen}
         onDelete={() => {
           void runAction(async () => {
             await camOperationDelete(operation.op_id);

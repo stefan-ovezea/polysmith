@@ -50,6 +50,8 @@ interface CamLaserCutPanelProps {
   onPreview: () => void;
   onGenerate: () => void;
   onExport: () => void;
+  // Export + launch LaserGRBL with the file (external handoff).
+  onExportAndOpen: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -76,6 +78,7 @@ export function CamLaserCutPanel({
   onPreview,
   onGenerate,
   onExport,
+  onExportAndOpen,
   onDelete,
   onClose,
 }: CamLaserCutPanelProps) {
@@ -262,6 +265,16 @@ export function CamLaserCutPanel({
                 onChange={(v) => update({ passes: Math.max(1, Math.round(v)) })}
               />
               <CamNumberField
+                label={t("cam.laserCut.powerStepPerPass", "Power step / pass (%)")}
+                value={params.pass_power_step_percent}
+                disabled={disabled}
+                step={1}
+                min={0}
+                onChange={(v) =>
+                  update({ pass_power_step_percent: Math.max(0, v) })
+                }
+              />
+              <CamNumberField
                 label={t("cam.laserCut.kerf", "Kerf width (mm)")}
                 value={params.kerf_width_mm}
                 disabled={disabled}
@@ -284,6 +297,11 @@ export function CamLaserCutPanel({
                 }
               />
             </div>
+            {params.pass_power_step_percent > 0 && params.passes > 1 ? (
+              <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.laserCut.powerStepNote")}
+              </p>
+            ) : null}
             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.kerfSide", "Kerf side")}
               <Dropdown
@@ -683,6 +701,17 @@ export function CamLaserCutPanel({
             onClick={onExport}
           >
             {t("cam.laserCut.exportGcode", "Export G-code")}
+          </button>
+          <button
+            type="button"
+            className="cad-action-ghost col-span-2"
+            disabled={disabled}
+            onClick={onExportAndOpen}
+          >
+            {t(
+              "cam.laserCut.exportAndOpen",
+              "Export & open in LaserGRBL",
+            )}
           </button>
         </div>
       </form>

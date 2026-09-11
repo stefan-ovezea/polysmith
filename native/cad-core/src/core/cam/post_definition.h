@@ -43,6 +43,12 @@ struct PostDefinition {
   // Emitted when the laser stays on but the move power changes (tabs,
   // pass power ramps).
   std::string power_change = "S{power}";
+  // When true, a 0-power {power} change is emitted immediately before
+  // every laser_off (mid-cut and at program end).  Diode drivers latch
+  // the last S value, so without it the next M3/M4 can flash at the
+  // previous power.  Opt-in: stale user post files without the key
+  // keep byte-identical output.
+  bool laser_off_with_power = false;
   // Laser ops use these footer lines instead of footer_lines (a gantry
   // laser may not have a Z axis — never lift at the end of a laser
   // program).

@@ -105,6 +105,8 @@ interface CamSetupPanelProps {
   machines: MachineDefinition[];
   onApplyMachine: (machine: MachineDefinition) => void;
   onSaveMachine: (machine: MachineDefinition) => Promise<void>;
+  // Opens the GRBL streaming panel (shell-side serial transport).
+  onOpenGrblControls: () => void;
   disabled: boolean;
   onUpdate: (setup: CamSetup) => void;
   onConfirm: () => void;
@@ -215,6 +217,7 @@ export function CamSetupPanel({
   machines,
   onApplyMachine,
   onSaveMachine,
+  onOpenGrblControls,
   disabled,
   onUpdate,
   onConfirm,
@@ -485,6 +488,17 @@ export function CamSetupPanel({
               <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
                 {t("cam.setup.machineNote")}
               </p>
+
+              {/* Shell-side GRBL streaming (serial) — a separate
+                  floating panel; no CAM state involved. */}
+              <button
+                type="button"
+                className="cad-action-ghost w-full"
+                disabled={disabled}
+                onClick={onOpenGrblControls}
+              >
+                {t("cam.setup.grblControls", "GRBL machine controls…")}
+              </button>
 
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
                 {t("cam.setup.machineTypeLabel", "Machine type")}
