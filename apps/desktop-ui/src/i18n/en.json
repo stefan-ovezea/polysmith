@@ -225,7 +225,28 @@
     "legendCut": "Cut",
     "legendExecuted": "Executed",
     "legendPosition": "Position",
-    "camJobLabel": "CAM job — {{name}}"
+    "legendPointer": "Laser pointer",
+    "camJobLabel": "CAM job — {{name}}",
+    "machineLabel": "Machine",
+    "machineNone": "— none —",
+    "pointerOn": "Pointer on",
+    "pointerOff": "Pointer off",
+    "pointerHint": "The red dot sits at the machine position plus the selected machine's pointer offset.",
+    "jobExceedsBed": "The program exceeds the configured work area ({{width}} × {{height}} mm) — check the job placement before starting.",
+    "util": {
+      "title": "Laser utilities",
+      "testFire": "Test fire",
+      "testFireHint": "Hold to fire — the beam stays on while the button is pressed.",
+      "powerPercent": "Power %",
+      "durationSeconds": "Duration (s)",
+      "focusPulse": "Focus pulse",
+      "framing": "Frame job",
+      "framingNoJob": "Load a program to trace its bounds at low power.",
+      "feed": "Feed (mm/min)",
+      "margin": "Margin (mm)",
+      "clearOverlay": "Clear overlay",
+      "runFailed": "Failed to run the laser utility."
+    }
   },
   "cam": {
     "pocket": {
@@ -629,6 +650,11 @@
       "jog": "Jog",
       "jogStep": "Step (mm)",
       "jogFeed": "Feed (mm/min)",
+      "feedOverride": "Feed override",
+      "powerOverride": "Power override",
+      "overrideCaveat": "Real-time override support varies by firmware — FluidNC implements only part of it.",
+      "elapsed": "Elapsed",
+      "eta": "ETA",
       "jogXPlus": "+X",
       "jogXMinus": "-X",
       "jogYPlus": "+Y",

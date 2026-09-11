@@ -33,6 +33,8 @@
     "--cad-toolpath-rapid": "#ed8796",
     "--cad-toolpath-feed": "#a6da95",
     "--cad-toolpath-executed": "#eed49f",
+    "--cad-pointer-dot": "#ed8796",
+    "--cad-framing-overlay": "#f5a97f",
     "--color-tertiary-plane-fill": "#f5a97f",
     "--color-tertiary-plane-edge": "#f5a97f",
     "--color-tertiary-plane-selected": "#f4dbd6",

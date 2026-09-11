@@ -159,3 +159,45 @@ export function grblParseText(
 ): Promise<GcodeFileInfo> {
   return invoke("grbl_parse_text", { text, label });
 }
+
+// ── Laser utilities (shell-side grbl_utilities.rs) ──────────────────
+
+/** Framing box / focus pulse request — mirrors the Rust tagged enum. */
+export type GrblUtilityRequest =
+  | {
+      kind: "framing";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      powerPercent: number;
+      feed: number;
+    }
+  | {
+      kind: "focusPulse";
+      powerPercent: number;
+      durationSeconds: number;
+    };
+
+export interface GrblUtilityProgram {
+  text: string;
+  label: string;
+}
+
+// Test fire: `Some(percent)` → M3 S{scaled}, `None` → M5 (hold-to-fire).
+export function grblLaserPower(percent: number | null): Promise<void> {
+  return invoke("grbl_laser_power", { percent });
+}
+
+// Sends one GRBL real-time override byte (allowlisted shell-side):
+// 0x90–0x94 feed-rate, 0x99–0x9B spindle/laser power.  No reply is
+// expected — real-time commands are acknowledged by silence.
+export function grblWriteByte(byte: number): Promise<void> {
+  return invoke("grbl_write_byte", { byte });
+}
+
+export function grblUtilityProgram(
+  request: GrblUtilityRequest,
+): Promise<GrblUtilityProgram> {
+  return invoke("grbl_utility_program", { request });
+}

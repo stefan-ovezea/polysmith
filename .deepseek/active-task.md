@@ -70,14 +70,89 @@ reference to the temporary optional (get_document returns by value),
 Windows file-lock on remove (read+close before delete), missing
 DocumentState using-declaration.
 
+## P1 — COMMITTED a67b26d (user verified the handoff in-app)
+
+## P2+P3+P4 status (implemented 2026-09-12, user verification pending)
+
+User asked for P2+P3+P4 together (they were looking for the "test"
+utilities inside the GRBL page). All three implemented:
+
+- **P2 machine picker**: GrblWorkspace fetches `camMachineList` on
+  entry, dropdown in the header (selection persisted under
+  `polysmith.grbl.machineName`, `__none__` option); bed fallback
+  machine → document machine_settings → default; machine list failure
+  toasts `cam.setup.machineListFailed`.
+- **P3 red pointer**: `buildGrblPointerMarker`/`updateGrblPointerMarker`
+  in grblPreviewScene (token `--cad-pointer-dot`, renderOrder 21,
+  refactored shared crosshair builder); viewport props pointerOffset +
+  pointerOn with a live effect at MPos + offset; toggle in the new
+  utilities panel sends `M3 S13` (≈5 % of 255) / `M5` via grblSendRaw;
+  legend entry; pointerOn resets on disconnect.
+- **P4 laser utilities**: new `src-tauri/src/grbl_utilities.rs`
+  (GrblUtilityRequest tagged enum framing/focusPulse, scale_power
+  clamp 1..255, generate_utility_program, grbl_utility_program
+  command, 3 unit tests incl. parse-through of both programs);
+  WorkerMsg::LaserPower + grbl_laser_power (hold-to-fire); new
+  GrblUtilitiesPanel.tsx under CamGrblPanel in the left aside (pointer
+  toggle, hold-to-fire test fire, focus pulse, frame-job-from-bounds +
+  margin/feed, clear overlay); workspace overlayProgram + sendingTarget
+  state so utility progress highlights only the overlay
+  (`--cad-framing-overlay` materials, executed still swaps to the
+  standard executed color); CamGrblPanel onCycleStart callback clears
+  the overlay when the main job starts.
+- **Themes**: `--cad-pointer-dot` + `--cad-framing-overlay` added to
+  all 6 theme JSONs. i18n: `grbl.machine*`, `grbl.pointer*`,
+  `grbl.legendPointer`, `grbl.util.*`.
+- **Fixed while type-checking**: the TS CoreCommand union + command
+  interface were missing `cam_export_gcode_text` from P1
+  (types/ipc/camCommands.ts + types/ipc.ts) — surfaced once the new
+  code touched the union.
+
+**Gates — ALL GREEN**: cargo test 17/17 (after the utility-invoke
+serde fix below), tsc --noEmit clean. No C++ changes in this batch.
+
+**User-reported bug fixed (2026-09-12):** focus pulse + frame job
+toasted "Failed to run the laser utility" on the machine. Root cause:
+serde's enum-level `rename_all` renames only VARIANT names, not
+struct-variant fields — the UI sends `powerPercent`/`durationSeconds`
+(camelCase), the Rust enum expected `power_percent`/`duration_seconds`,
+so every `grbl_utility_program` invoke rejected with "missing field
+`power_percent`" before any G-code was generated. Fixed with
+`rename_all_fields = "camelCase"` (serde 1.0.228) + a regression test
+deserializing the exact TS payload (verified: fails without the fix,
+17/17 with it). User re-verification pending.
+
+## P5+P6 status (implemented 2026-09-12, user verification pending)
+
+- **P5 live overrides + stats**: WorkerMsg::WriteByte (bare byte, no
+  newline, bypasses the RX window) + `grbl_write_byte` command with an
+  8-byte allowlist (0x90–0x94 feed, 0x99–0x9B power); CamGrblPanel
+  gains two sliders committed on pointer-up via deterministic
+  reset-and-step (0x90/0x99 then n×±10 % + m×±1 % feed steps — the
+  worker stays stateless), elapsed/ETA row (ticks while streaming,
+  freezes on completion, resets on the next start), FluidNC caveat
+  line; grblClient.grblWriteByte; i18n cam.grbl.feedOverride/
+  powerOverride/overrideCaveat/elapsed/eta.
+- **P6 bed check + alarm decode**: `grbl_alarm_message` table (GRBL
+  1.1 codes 1–9 + unknown fallback) baked into the Alarm error event
+  (test pins every code); GrblWorkspace shows a non-blocking
+  "program exceeds the work area" banner when the parsed bounds
+  escape the bed (WCS coordinates, warning only); i18n
+  grbl.jobExceedsBed.
+- **Gates**: cargo test 18/18, tsc --noEmit clean. No C++ changes.
+
 ## Next session checklist
 
-1. Hand to the user for in-app verification on the FluidNC machine
-   (`pnpm dev`): laser-cut → "Send to GRBL workspace" shows NO
-   dialog, preview shows the job labeled "CAM job — <name>", Cycle
-   Start streams it, progress matches preview (filter parity
-   regression to watch). Also confirm manual Export G-code +
-   LaserGRBL launch still behave as before.
-2. On user confirmation: commit P1 (no Co-Authored-By trailer;
-   message names the suites that ran), then continue P2+P3 (machine
-   picker + red pointer).
+1. User verification round on the FluidNC machine (`pnpm dev`), now
+   covering P2–P6 together:
+   - Machine dropdown resizes the bed; selection survives restart.
+   - Red pointer toggle + crosshair at MPos + offset (VERIFY SIGN).
+   - Test fire / focus pulse / framing all run after the serde fix
+     (restart the app first — the shell rebuilt).
+   - Feed/power override sliders: record what FluidNC actually does
+     with 0x90–0x94/0x99–0x9B (partial support expected — the caveat
+     line says so); elapsed/ETA tick and reset across jobs.
+   - Bed banner on an oversized program (or pick a small machine);
+     trigger a real alarm → decoded text.
+2. On confirmation: commit P2–P6 (no Co-Authored-By trailer),
+   then P7 (console history + $$ settings dialog).

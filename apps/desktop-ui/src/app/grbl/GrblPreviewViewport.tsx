@@ -20,9 +20,12 @@ import { frameCamera } from "@/utils/viewport/viewportMath";
 import {
   applyGrblProgress,
   buildGrblBedGroup,
+  buildGrblOverlayToolpathGroup,
+  buildGrblPointerMarker,
   buildGrblPositionMarker,
   buildGrblToolpathGroup,
   disposeGrblToolpathGroup,
+  updateGrblPointerMarker,
   updateGrblPositionMarker,
   type GrblBed,
   type GrblToolpathObjects,
@@ -44,6 +47,14 @@ interface GrblPreviewViewportProps {
    *  space into machine space, so "Zero XY" moves the job onto the
    *  crosshair like LightBurn's origin handling. */
   wco: [number, number, number] | null;
+  /** Red laser pointer: XY offset from the focal point (machine
+   *  definition) and whether the user turned the dot on. */
+  pointerOffset: [number, number] | null;
+  pointerOn: boolean;
+  /** Utility program overlay (framing/focus pulse) drawn on top of
+   *  the real toolpath with its own highlight count. */
+  overlayInfo: GcodeFileInfo | null;
+  overlayExecutedLines: number;
   theme: string;
 }
 
@@ -53,6 +64,10 @@ export function GrblPreviewViewport({
   executedLines,
   mpos,
   wco,
+  pointerOffset,
+  pointerOn,
+  overlayInfo,
+  overlayExecutedLines,
   theme,
 }: GrblPreviewViewportProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +79,8 @@ export function GrblPreviewViewport({
   const bedGroupRef = useRef<THREE.Group | null>(null);
   const toolpathRef = useRef<GrblToolpathObjects | null>(null);
   const markerRef = useRef<THREE.Group | null>(null);
+  const pointerMarkerRef = useRef<THREE.Group | null>(null);
+  const overlayRef = useRef<GrblToolpathObjects | null>(null);
   // Latest values for the progress/content effects to read without
   // re-subscribing to each other's dependencies.
   const infoRef = useRef<GcodeFileInfo | null>(info);
@@ -72,6 +89,10 @@ export function GrblPreviewViewport({
   executedLinesRef.current = executedLines;
   const wcoRef = useRef<[number, number, number] | null>(wco);
   wcoRef.current = wco;
+  const overlayInfoRef = useRef<GcodeFileInfo | null>(overlayInfo);
+  overlayInfoRef.current = overlayInfo;
+  const overlayExecutedLinesRef = useRef(overlayExecutedLines);
+  overlayExecutedLinesRef.current = overlayExecutedLines;
 
   // One-time renderer/scene/camera setup + render loop (mount only).
   useEffect(() => {
@@ -104,11 +125,16 @@ export function GrblPreviewViewport({
     marker.visible = false;
     scene.add(marker);
 
+    const pointerMarker = buildGrblPointerMarker();
+    pointerMarker.visible = false;
+    scene.add(pointerMarker);
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
     controlsRef.current = controls;
     markerRef.current = marker;
+    pointerMarkerRef.current = pointerMarker;
 
     let frameId: number | null = null;
     const animate = () => {
@@ -155,12 +181,14 @@ export function GrblPreviewViewport({
       host.removeEventListener("wheel", onWheel);
       controls.dispose();
       disposeGroup(marker);
+      disposeGroup(pointerMarker);
       renderer.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
       markerRef.current = null;
+      pointerMarkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -246,6 +274,69 @@ export function GrblPreviewViewport({
       executedLines,
     );
   }, [executedLines]);
+
+  // Utility overlay (framing/focus pulse): built separately from the
+  // main toolpath so it can appear and clear without touching the job.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+    disposeGrblToolpathGroup(overlayRef.current);
+    overlayRef.current = null;
+    const overlay = overlayInfoRef.current;
+    if (!overlay) {
+      return;
+    }
+    const objects = buildGrblOverlayToolpathGroup(overlay);
+    const offset = wcoRef.current ?? [0, 0, 0];
+    objects.group.position.set(offset[0], offset[1], offset[2]);
+    overlayRef.current = objects;
+    scene.add(objects.group);
+    applyGrblProgress(
+      overlay,
+      objects.lineObjects,
+      objects.materials,
+      overlayExecutedLinesRef.current,
+    );
+    return () => {
+      disposeGrblToolpathGroup(overlayRef.current);
+      overlayRef.current = null;
+    };
+  }, [overlayInfo]);
+
+  // Overlay progress, tracked independently from the main toolpath so
+  // a utility run never mis-highlights the job (and vice versa).
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const overlayInfoNow = overlayInfoRef.current;
+    if (!overlay || !overlayInfoNow) {
+      return;
+    }
+    applyGrblProgress(
+      overlayInfoNow,
+      overlay.lineObjects,
+      overlay.materials,
+      overlayExecutedLines,
+    );
+  }, [overlayExecutedLines]);
+
+  // Live red laser pointer: MPos + the machine's pointer offset.
+  useEffect(() => {
+    const pointerMarker = pointerMarkerRef.current;
+    if (!pointerMarker) {
+      return;
+    }
+    if (pointerOn && mpos && pointerOffset) {
+      updateGrblPointerMarker(pointerMarker, [
+        mpos[0] + pointerOffset[0],
+        mpos[1] + pointerOffset[1],
+        mpos[2],
+      ]);
+    } else {
+      pointerMarker.visible = false;
+    }
+  }, [pointerOn, mpos, pointerOffset]);
 
   // Live WCS-offset updates: re-zeroing moves the whole toolpath onto
   // the machine position without rebuilding it.

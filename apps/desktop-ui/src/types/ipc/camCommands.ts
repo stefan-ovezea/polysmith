@@ -179,3 +179,11 @@ export interface CamExportGcodeCommand {
   type: "cam_export_gcode";
   payload: { file_path: string };
 }
+
+// In-memory posting for the GRBL workspace handoff — replies with the
+// posted text (cam_export_gcode_text_result), no file written.
+export interface CamExportGcodeTextCommand {
+  id: string;
+  type: "cam_export_gcode_text";
+  payload: Record<string, never>;
+}

@@ -218,6 +218,8 @@ enum WorkerMsg {
     ZeroXy,
     Raw { line: String },
     ConnectTcp { host: String, port: u16 },
+    LaserPower { percent: Option<f64> },
+    WriteByte { byte: u8 },
 }
 
 /// The open transport to the machine: a USB serial port or FluidNC's
@@ -309,6 +311,22 @@ fn event(kind: &str, message: &str) -> GrblStreamEvent {
 
 fn grbl_error_text(code: u32) -> String {
     format!("GRBL error {}: {}", code, grbl_error_message(code))
+}
+
+/// Human-readable GRBL alarm descriptions (GRBL 1.1 `ALARM:n`).
+fn grbl_alarm_message(code: u32) -> &'static str {
+    match code {
+        1 => "hard limit triggered — machine position may be lost, re-home",
+        2 => "soft limit — the job moved outside the configured work area",
+        3 => "abort during cycle",
+        4 => "probe failed — no contact before the target",
+        5 => "probe failed — initial probe state wrong",
+        6 => "homing failed — reset was issued during homing",
+        7 => "homing failed — safety door opened during homing",
+        8 => "homing failed — pull-off failed to clear the limit switch",
+        9 => "homing failed — limit switch not found",
+        _ => "unknown alarm",
+    }
 }
 
 /// GRBL-safe preprocessing shared by file and in-memory jobs: the
@@ -537,7 +555,8 @@ impl Worker {
                 self.emit(event(
                     "error",
                     &format!(
-                        "Machine alarm (code {code}) — motion is locked. Press Reset, then Unlock ($X)."
+                        "Machine alarm {code} ({}) — motion is locked. Press Reset, then Unlock ($X).",
+                        grbl_alarm_message(code)
                     ),
                 ));
             }
@@ -577,6 +596,27 @@ impl Worker {
             }
             WorkerMsg::SendFile { file_path } => self.start_job(&file_path),
             WorkerMsg::SendProgram { text } => self.start_program(&text),
+            WorkerMsg::LaserPower { percent } => match percent {
+                Some(percent) => {
+                    let scaled = crate::grbl_utilities::scale_power(percent);
+                    self.write_line(&format!("M3 S{scaled}"));
+                }
+                None => self.write_line("M5"),
+            },
+            WorkerMsg::WriteByte { byte } => {
+                // Real-time override commands are bare bytes — NO
+                // newline, and they bypass the RX window (the
+                // controller processes them out-of-band).  The
+                // allowlist lives in the command.
+                if let Some(link) = self.port.as_mut() {
+                    if let Err(error) = link.write_all(&[byte]) {
+                        self.emit(event(
+                            "error",
+                            &format!("Could not send real-time command: {error}"),
+                        ));
+                    }
+                }
+            }
             WorkerMsg::Pause => {
                 self.paused = true;
                 self.write_line("!");
@@ -789,6 +829,38 @@ pub fn grbl_send_program(
     state.send(WorkerMsg::SendProgram { text })
 }
 
+/// Laser test fire: `Some(percent)` sends `M3 S{scaled}` at the given
+/// power, `None` sends `M5` (beam off) — hold-to-fire in the UI.
+#[tauri::command]
+pub fn grbl_laser_power(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    percent: Option<f64>,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::LaserPower { percent })
+}
+
+/// Sends one GRBL real-time override byte (no newline).  Allowlisted
+/// to the override set only — the UI never writes arbitrary bytes to
+/// the controller.  Success is silent by design: real-time commands
+/// get no ok/error reply, and FluidNC's override support is partial.
+#[tauri::command]
+pub fn grbl_write_byte(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    byte: u8,
+) -> Result<(), String> {
+    const ALLOWED: [u8; 8] = [0x90, 0x91, 0x92, 0x93, 0x94, 0x99, 0x9A, 0x9B];
+    if !ALLOWED.contains(&byte) {
+        return Err(format!(
+            "Byte 0x{byte:02X} is not an allowed override command"
+        ));
+    }
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::WriteByte { byte })
+}
+
 #[tauri::command]
 pub fn grbl_pause(app: AppHandle, state: State<'_, GrblState>) -> Result<(), String> {
     start_worker(app, &state)?;
@@ -902,5 +974,21 @@ mod tests {
         window.add(10);
         window.ack(20);
         assert_eq!(window.unacked, 0);
+    }
+
+    // The alarm decoder turns `ALARM:n` into actionable text — the
+    // table covers the full GRBL 1.1 range.
+    #[test]
+    fn alarm_messages_decode_known_and_unknown_codes() {
+        assert_eq!(grbl_alarm_message(1), "hard limit triggered — machine position may be lost, re-home");
+        assert_eq!(grbl_alarm_message(2), "soft limit — the job moved outside the configured work area");
+        assert_eq!(grbl_alarm_message(3), "abort during cycle");
+        assert_eq!(grbl_alarm_message(4), "probe failed — no contact before the target");
+        assert_eq!(grbl_alarm_message(5), "probe failed — initial probe state wrong");
+        assert_eq!(grbl_alarm_message(6), "homing failed — reset was issued during homing");
+        assert_eq!(grbl_alarm_message(7), "homing failed — safety door opened during homing");
+        assert_eq!(grbl_alarm_message(8), "homing failed — pull-off failed to clear the limit switch");
+        assert_eq!(grbl_alarm_message(9), "homing failed — limit switch not found");
+        assert_eq!(grbl_alarm_message(42), "unknown alarm");
     }
 }

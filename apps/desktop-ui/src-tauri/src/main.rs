@@ -6,6 +6,7 @@ mod app_config;
 mod cad_core;
 mod gcode_parser;
 mod gcode_sender;
+mod grbl_utilities;
 mod laser_grbl;
 mod orca_slicer;
 mod plugin_config;
@@ -285,6 +286,9 @@ pub fn run() {
             gcode_sender::grbl_disconnect,
             gcode_sender::grbl_send_file,
             gcode_sender::grbl_send_program,
+            gcode_sender::grbl_laser_power,
+            gcode_sender::grbl_write_byte,
+            grbl_utilities::grbl_utility_program,
             gcode_sender::grbl_pause,
             gcode_sender::grbl_resume,
             gcode_sender::grbl_reset,

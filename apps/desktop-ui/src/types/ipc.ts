@@ -177,6 +177,7 @@ import type {
   CamOperationGenerateCommand,
   CamOperationPreviewCommand,
   CamExportGcodeCommand,
+  CamExportGcodeTextCommand,
 } from "./ipc/camCommands";
 import type {
   FeatureEntry,
@@ -918,6 +919,7 @@ export type CoreCommand =
   | CamOperationGenerateCommand
   | CamOperationPreviewCommand
   | CamExportGcodeCommand
+  | CamExportGcodeTextCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand

@@ -15,6 +15,7 @@ import {
   grblSendFile,
   grblSendProgram,
   grblSendRaw,
+  grblWriteByte,
   grblUnlock,
   grblZeroXy,
   listGrblPorts,
@@ -52,11 +53,16 @@ export function CamGrblPanel({
   embedded,
   embeddedProgram,
   onFileLoaded,
+  onCycleStart,
 }: {
   onClose: () => void;
   embedded?: boolean;
   embeddedProgram?: GrblPanelProgram | null;
   onFileLoaded?: (path: string) => void;
+  // Notified right before a job is streamed — the GRBL workspace uses
+  // it to drop the laser-utility overlay so the main program's
+  // progress highlights correctly again.
+  onCycleStart?: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -95,6 +101,12 @@ export function CamGrblPanel({
   const [jogStep, setJogStep] = useState(10);
   const [jogFeed, setJogFeed] = useState(1000);
   const [busy, setBusy] = useState(false);
+  // Live overrides (P5): slider targets; committed to the controller
+  // as real-time bytes on release.
+  const [feedOverride, setFeedOverride] = useState(100);
+  const [powerOverride, setPowerOverride] = useState(100);
+  // Job timer: ticks while streaming, freezes on completion.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   // The program loaded for streaming.  Loading NEVER sends — Cycle
   // Start does.  Two sources: a disk file (loadedPath, streamed via
   // grbl_send_file) or in-memory posted text (loadedProgram, the CAM
@@ -207,6 +219,69 @@ export function CamGrblPanel({
   };
 
   const showProgress = streaming || (connected && linesTotal > 0 && percent > 0);
+
+  // Deterministic reset-and-step: GRBL override bytes are RELATIVE
+  // (+10 %, +1 % …), so a commit = reset to 100 % then step to the
+  // target.  The worker stays stateless — only the UI knows the
+  // slider's target.
+  const writeFeedOverride = async (target: number) => {
+    const clamped = Math.max(10, Math.min(200, Math.round(target)));
+    const delta = clamped - 100;
+    if (delta === 0) {
+      await grblWriteByte(0x90); // set 100 %
+      return;
+    }
+    await grblWriteByte(0x90);
+    const step10 = delta > 0 ? 0x91 : 0x92;
+    const step1 = delta > 0 ? 0x93 : 0x94;
+    const tens = Math.floor(Math.abs(delta) / 10);
+    const ones = Math.abs(delta) % 10;
+    for (let i = 0; i < tens; i++) {
+      await grblWriteByte(step10);
+    }
+    for (let i = 0; i < ones; i++) {
+      await grblWriteByte(step1);
+    }
+  };
+
+  // Power override steps in 10 % units (GRBL has no 1 % spindle step).
+  const writePowerOverride = async (target: number) => {
+    const clamped = Math.max(10, Math.min(100, Math.round(target)));
+    const delta = clamped - 100;
+    if (delta === 0) {
+      await grblWriteByte(0x99); // set 100 %
+      return;
+    }
+    await grblWriteByte(0x99);
+    const step = delta > 0 ? 0x9a : 0x9b;
+    const tens = Math.floor(Math.abs(delta) / 10);
+    for (let i = 0; i < tens; i++) {
+      await grblWriteByte(step);
+    }
+  };
+
+  // Elapsed ticks while a job streams, freezes on completion, and
+  // resets when the next job starts.
+  useEffect(() => {
+    if (!streaming) {
+      return;
+    }
+    setElapsedSeconds(0);
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((Date.now() - startedAt) / 1000);
+    }, 500);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [streaming]);
+
+  const formatDuration = (seconds: number) => {
+    const total = Math.max(0, Math.round(seconds));
+    const minutes = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
 
   // Connect is enabled once the selected transport has its inputs.
   const canConnect =
@@ -437,6 +512,7 @@ export function CamGrblPanel({
               !connected || (!loadedPath && !loadedProgram) || streaming || busy
             }
             onClick={() => {
+              onCycleStart?.();
               if (loadedProgram) {
                 void runCommand(() => grblSendProgram(loadedProgram.text));
               } else if (loadedPath) {
@@ -471,8 +547,50 @@ export function CamGrblPanel({
                 style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
               />
             </div>
+            <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-on-surface-dim">
+              <span>
+                {t("cam.grbl.elapsed", "Elapsed")}{" "}
+                {formatDuration(elapsedSeconds)}
+              </span>
+              {streaming && percent > 0 ? (
+                <span>
+                  {t("cam.grbl.eta", "ETA")}{" "}
+                  {formatDuration(elapsedSeconds * (100 / percent - 1))}
+                </span>
+              ) : null}
+            </div>
           </div>
         ) : null}
+
+        {/* ── Live overrides (real-time bytes, P5) ──────────────── */}
+        <OverrideSlider
+          label={t("cam.grbl.feedOverride", "Feed override")}
+          value={feedOverride}
+          min={10}
+          max={200}
+          disabled={!connected || busy}
+          onChange={setFeedOverride}
+          onCommit={(target) => {
+            void runCommand(() => writeFeedOverride(target));
+          }}
+        />
+        <OverrideSlider
+          label={t("cam.grbl.powerOverride", "Power override")}
+          value={powerOverride}
+          min={10}
+          max={100}
+          disabled={!connected || busy}
+          onChange={setPowerOverride}
+          onCommit={(target) => {
+            void runCommand(() => writePowerOverride(target));
+          }}
+        />
+        <p className="text-[10px] leading-snug text-on-surface-dim">
+          {t(
+            "cam.grbl.overrideCaveat",
+            "Real-time override support varies by firmware — FluidNC implements only part of it.",
+          )}
+        </p>
 
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -667,5 +785,45 @@ function JogButton({
     >
       {label}
     </button>
+  );
+}
+
+// Slider that commits on release: dragging updates the label only;
+// the real-time override bytes fire once, on pointer-up.
+function OverrideSlider({
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+  onCommit: (value: number) => void;
+}) {
+  return (
+    <label className="block text-[10px] uppercase tracking-wider text-on-surface-muted">
+      <span className="flex items-center justify-between">
+        {label}
+        <span className="font-mono text-on-surface-dim">{value}%</span>
+      </span>
+      <input
+        type="range"
+        className="mt-1 w-full"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(Number(event.target.value))}
+        onPointerUp={(event) => onCommit(Number(event.currentTarget.value))}
+      />
+    </label>
   );
 }
