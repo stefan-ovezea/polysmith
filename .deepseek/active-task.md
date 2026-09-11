@@ -66,7 +66,7 @@ checklist; the engineering work is the integration.
   stream + pause/resume/reset, error toast + Logs). **Real-machine
   stream test DEFERRED** — no laser machine at hand; the user will
   verify with the real equipment (tracked below).
-- **P5 — IMPLEMENTED, uncommitted (working tree)** "feat(cam): laser
+- **P5 — COMMITTED 15cffe5** "feat(cam): laser
   per-pass power ramp; docs for LaserGRBL milestone":
   `LaserCutParameters.pass_power_step_percent = 0.0` (cam_types.h,
   serde both directions, zod default, TS type) — pass p cuts at
@@ -94,10 +94,12 @@ checklist; the engineering work is the integration.
 
 ## Next steps
 
-- In-app verification P5 (multi-pass ramp in preview/export) → commit
-  on approval (no Co-Authored-By; commit message names the suites).
-- Then: push `laser/post-polish` + **draft PR to dev**, held until
-  the real-machine checklist passes (task #58).
+- **MERGED: PR #77 squash-merged to dev (700cc81, 2026-09-11).**
+  The user verified the real machine ("it works with the machine
+  also") — laser file runs in LaserGRBL, direct stream cuts, ramp
+  behaves.  Remote + local `laser/post-polish` deleted.
+- Follow-up only if future real-machine runs surface defects
+  (fail-before regression tests per the project rule).
 - Flagged, NOT fixed per plan: `protocol/schema/commands.schema.json`
   command-name enum drift (e.g. `cam_capture_edge_reference` from
   drilling is missing) — pre-existing, schemas are lenient in

@@ -36,6 +36,7 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
   are experimental)
 - Sketches on origin planes, solid faces, or construction planes; sketch re-entry
 - 2D sketch fillets (line-line corners)
+- Sketch arrays — linear and circular patterns of sketch entities
 - Project tool (face/edge/vertex) with live parametric re-projection links
 - Save/load `.polysmith` documents (core-owned JSON format)
 - STEP + STL export (honours cut/join booleans)
@@ -63,8 +64,23 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
 - Materials (body/face colour overrides, HSV picker)
 - View cube with cardinal face snaps, sketch-plane rotation arrows
 - Dynamic zoom-aware grids (millimetric spacing, sketch-plane back grid)
-- CAM workspace scaffolding (UI skeleton, TNP face witness resolution, face milling)
+- Sketched text (glyph contours as sketch entities)
+- Display units preference (mm/inch)
 - Natural-language AI command bar
+- CAM workspace: setups + saveable machine library (built-in seeds),
+  stock/WCS with origin and face picking, tool library, live toolpath
+  previews
+- Mill operations: face milling (multi-pass stepdown), 2D pocket (islands,
+  finishing contours), adaptive clearing, 2D contour, drilling (G81/G83,
+  body wall/rim/point targeting), slot milling, engrave
+- Laser operations: laser cut (kerf, leads, pierce, tabs, fill, cut order,
+  per-pass power ramp), laser engrave, LightBurn-style material test
+  patterns
+- Post processors: grbl, lasergrbl, linuxcnc, smoothieware + user-editable
+  post files; G-code export
+- LaserGRBL integration: "Export & open in LaserGRBL" handoff + direct GRBL
+  streaming over serial (connect, ok-handshake streaming, status polling,
+  jog/home, pause/resume)
 
 ## The Project's Mantra: Topological Naming Problem (TNP)
 
@@ -76,13 +92,11 @@ Every modeling feature follows: **select inputs → invoke action → floating c
 
 ## What's Next (V1 Remaining)
 
-The bulk of the original v1 roadmap is shipped. Remaining items:
+Remaining from the original v1 roadmap:
 
-1. **Pattern features** — linear and circular
-2. **Measure tool** — point-to-point, edge length, face area
-3. **Display units toggle** — metric/inch, UI-layer only (architecture designed in `Display-Units`)
-4. **Text tool** — sketched text via OCCT `StdPrs_BRepFont` (plan in `Text-Tool-Implementation-Plan`)
-5. **CAM** — beyond the current scaffolding (face milling shipped; full plan in `CAM-Development`)
+1. **Measure tool** — point-to-point distance, edge length, face area
+2. **Pattern features (3D)** — linear/circular patterns of features and
+   bodies; sketch-level linear and circular arrays are already shipped
 
 ## Cross-Platform
 
@@ -291,7 +305,9 @@ PolySmith does not currently aim to support:
 - Enterprise features
 - Complex assemblies
 
-CAM is in early scaffolding (face milling shipped). The full CAM roadmap is in [CAM-Development](wiki/CAM-Development.md).
+CAM is fully wired for v1 — mill and laser operations, post processors,
+machine definitions, LaserGRBL integration, and direct GRBL streaming are
+shipped. The full roadmap is in [CAM-Development](wiki/CAM-Development.md).
 
 ## Repository Layout
 
@@ -318,17 +334,19 @@ third_party/
 
 ## Current Status
 
-PolySmith is in active development. The original v1 milestones are largely
-complete — the core modeling features (extrude, revolve, sweep, loft,
-fillet/chamfer, shell, hole, construction geometry), the sketch system
-(constraints, dimensions, trim, project, fillets), and the interaction
-layer (snap, drag, selection, view cube, draft dimensions) are all shipped.
+PolySmith is in active development. The original v1 milestones are shipped:
+core modeling (extrude, revolve, sweep, loft, fillet/chamfer, shell, hole,
+helix/thread/fastener, construction geometry), the sketch system (constraints,
+dimensions, trim, project, fillets, sketched text), the interaction layer
+(snap, drag, selection, view cube, draft dimensions), and the full CAM
+workspace (mill + laser operations, post processors, machine library,
+LaserGRBL integration, direct GRBL streaming — verified on the user's real
+machine).
 
 Current focus:
 
-- rounding out the remaining v1 features (patterns, measure tool, display units)
-- CAM workspace: face milling shipped, pocket/contour/drilling next
-- hardening and bug fixing (OpenCascade 8 migration, exact-curve profile detection, dimension system consolidation)
+- the last remaining v1 feature: the measure tool
+- laser workflow polish from real-machine feedback
 
 ## Wiki
 

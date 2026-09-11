@@ -10,8 +10,10 @@ PolySmith v1 is intentionally narrow:
 - a familiar, modern parametric CAD workflow
 - a strong architecture boundary between UI and native CAD logic
 
-This roadmap intentionally avoids CAM, cloud collaboration, simulation,
-enterprise features, and complex assemblies.
+This roadmap intentionally avoids cloud collaboration, simulation,
+enterprise features, and complex assemblies. CAM was originally out of
+scope; a full CAM workspace (mill + laser) has since been built — see
+[CAM-Development](CAM-Development.md).
 
 ## Current Repo Status
 
@@ -76,8 +78,16 @@ The original v1 milestones 0–3 are complete. The codebase now has:
 - Materials: body/face colour overrides with HSV picker, saved in `.polysmith`
 - Helix, Thread, and Fastener features (threaded holes, cosmetic + modeled threads;
   see Known Modeling Issues below for modeled-thread caveats)
-- CAM workspace scaffolding: UI skeleton with Milling/Turning/Printing/Cutting tabs,
-  TNP witness resolution for face references, face milling operation
+- CAM workspace: setups + saveable machine library (built-in seeds), stock/WCS
+  with origin and face picking, tool library, live toolpath previews; mill
+  operations (face milling with multi-pass stepdown, 2D pocket with islands,
+  adaptive clearing, 2D contour, drilling G81/G83, slot milling, engrave) and
+  laser operations (laser cut with kerf/leads/pierce/tabs/fill/cut-order and
+  per-pass power ramp, laser engrave, LightBurn-style test-pattern cards);
+  post processors (grbl, lasergrbl, linuxcnc, smoothieware) + user-editable
+  post files + G-code export; LaserGRBL integration ("Export & open" handoff +
+  direct GRBL streaming over serial with ok-handshake streaming, status
+  polling, jog/home)
 - ISO Drawing workspace scaffolding: workspace type, dropdown entry, Sheet tab,
   placeholder toolbar. Reserved for future ISO dimensioning from 3D models.
 - Natural-language AI command bar
@@ -104,9 +114,8 @@ These are rules going forward, not goals to chase:
 
 | Feature | Notes |
 |---|---|
-| **Pattern features** | Linear and circular patterns of features/bodies |
+| **Pattern features (3D)** | Linear and circular patterns of features/bodies — sketch-level linear and circular arrays are already shipped |
 | **Measure tool** | Point-to-point, edge length, face area |
-| **Text tool** | Text as sketch entities via OCCT `StdPrs_BRepFont`. Plan in `Text-Tool-Implementation-Plan`. |
 | **Sketch arc constraints & dimension drive** | Arc endpoints are fixed for v1; reshape/dimension-drive follow-up |
 | **Line-arc and arc-arc sketch fillets** | Currently line-line only |
 | **Perpendicular snap** | General perpendicular-to-line; perpendicular-foot (start-on-host-line) works |
@@ -124,12 +133,14 @@ These are rules going forward, not goals to chase:
 
 ### CAM
 
-The CAM workspace is fully wired — TNP witness resolution for face references,
-stock-aware WCS picking, a saveable machine library, and four working
-operations: laser cut, multi-pass face milling, 2D pocket (with islands), and
-2D contour (face or sketch-profile input, inside/outside/on-line offsets,
-exact G2/G3 arcs). Next up: drilling and adaptive clearing. The full plan is
-in [CAM-Development](CAM-Development).
+The CAM workspace is shipped — TNP witness resolution for face/edge/point
+references, stock-aware WCS picking, a saveable machine library, and eight
+mill operations (face milling, pocket, adaptive clearing, contour, drilling,
+slot, engrave, mill engrave) plus laser operations (cut, engrave, test
+patterns). Post processors include `grbl`, `lasergrbl`, `linuxcnc`, and
+`smoothieware`, with user-editable post files. LaserGRBL integration covers
+the export-and-open handoff and direct GRBL streaming over serial from the
+app. The full plan and progress is in [CAM-Development](CAM-Development).
 
 ## Key Decisions and Constraints
 
@@ -146,9 +157,9 @@ in [CAM-Development](CAM-Development).
 
 ## Near-Term Recommended Next Tasks
 
-1. **Pattern features** — linear and circular, highest remaining UX impact
-2. **Measure tool** — small, self-contained, high day-to-day value
+1. **Measure tool** — small, self-contained, high day-to-day value
+2. **Pattern features (3D)** — linear and circular patterns of features/bodies
+   (sketch-level arrays are shipped; this is the feature/body level)
 3. **Dimension mode implementation** — `radius`/`diameter`/`angular` mode-specific filtering;
    `linear` horizontal/vertical projection; `arc_length` core support.
    See [Sketch-Dimension-Implementation-Status](Sketch-Dimension-Implementation-Status).
-4. **Text tool** — blocked by font bundling decision but plan is written
