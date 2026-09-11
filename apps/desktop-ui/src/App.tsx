@@ -135,6 +135,7 @@ import { createRecentProjectHandlers } from "./app/recentProjectHandlers";
 import * as selectionSources from "./app/selectionSources";
 import { SketchDeleteConfirmationPanel } from "./app/SketchDeleteConfirmationPanel";
 import { SlicerWorkspace } from "./app/SlicerWorkspace";
+import { GrblWorkspace } from "./app/GrblWorkspace";
 import {
   createSketchToolActions,
   type SketchConstraintVertexKind,
@@ -2191,6 +2192,7 @@ function App() {
     showCamView,
     showDrawingView,
     showSlicerView,
+    showGrblView,
   } = useSlicerWorkspaceActions({
     workspaceView,
     hasOrcaEmbedSession,
@@ -2366,6 +2368,7 @@ function App() {
           showCamView={showCamView}
           showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
+          showGrblView={showGrblView}
           status={status}
           canUndo={session?.can_undo ?? false}
           canRedo={session?.can_redo ?? false}
@@ -2502,6 +2505,9 @@ function App() {
               openInBrowserLabel={t("workspace.openInBrowser")}
               addMessage={addMessage}
             />
+          ) : workspaceView === "grbl" ? (
+            // CAM handoff wiring (the file path) lands in P4.
+            <GrblWorkspace embeddedFilePath={null} />
           ) : (
             <>
               <AppSidebar

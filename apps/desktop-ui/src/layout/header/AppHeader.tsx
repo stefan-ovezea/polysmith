@@ -29,7 +29,7 @@ const workspaces = ["create", "modify", "construct", "sketch"] as const;
 const camWorkspaces = ["milling", "turning", "printing", "cutting"] as const;
 const drawingWorkspaces = ["sheet"] as const;
 type CamWorkspace = (typeof camWorkspaces)[number];
-type WorkspaceView = "cad" | "slicer" | "cam" | "drawing";
+type WorkspaceView = "cad" | "slicer" | "cam" | "drawing" | "grbl";
 type AppHeaderCreateToolbarProps = Omit<
   CreateToolbarProps,
   "disabled" | "openMenu" | "setOpenMenu"
@@ -547,7 +547,9 @@ export function AppHeader({
                   ? t("workspace.cam")
                   : workspaceView === "drawing"
                     ? t("workspace.drawing")
-                    : t("workspace.slicer")
+                    : workspaceView === "grbl"
+                      ? t("workspace.grbl")
+                      : t("workspace.slicer")
             }
             items={[
               {
@@ -566,6 +568,10 @@ export function AppHeader({
                 label: t("workspace.slicer"),
                 disabled: !canOpenSlicerView,
                 onSelect: () => onSetWorkspaceView("slicer"),
+              },
+              {
+                label: t("workspace.grbl"),
+                onSelect: () => onSetWorkspaceView("grbl"),
               },
             ]}
             onOpenChange={onWorkspaceDropdownOpenChange}

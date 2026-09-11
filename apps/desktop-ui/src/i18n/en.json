@@ -203,7 +203,9 @@
     "slicerView": "Slicer View",
     "slicerWaiting": "Slicer view is waiting for OrcaSlicer.",
     "drawing": "ISO Drawing",
-    "drawingView": "ISO Drawing View"
+    "drawingView": "ISO Drawing View",
+    "grbl": "GRBL",
+    "grblView": "GRBL View"
   },
   "drawing": {
     "placeholder": "ISO Drawing workspace ready — dimension and sheet tools coming soon.",
@@ -593,6 +595,7 @@
       "disconnectedState": "Offline",
       "position": "Position",
       "streamFile": "Stream G-code file…",
+      "streamLoaded": "Stream loaded file…",
       "gcodeFiles": "G-code files",
       "pause": "Pause",
       "resume": "Resume",

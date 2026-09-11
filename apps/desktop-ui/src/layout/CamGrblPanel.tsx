@@ -21,11 +21,28 @@ import { useCamEscapeCancel } from "./camPanelShared";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400];
 
+// Stable no-op for the embedded Escape handler (see below).
+const NOOP = () => {};
+
 // Direct GRBL transport panel.  The shell (gcode_sender.rs) owns the
 // serial port; this panel only issues commands and renders the
 // `grbl-stream` events from useGrblStore.  No document interaction —
 // it streams already-exported .nc files, exactly like LaserGRBL.
-export function CamGrblPanel({ onClose }: { onClose: () => void }) {
+//
+// `embedded` turns this into the GRBL workspace's fixed left column:
+// no Close button, no Escape-to-cancel, and a full-height plain panel
+// instead of the floating card. `embeddedFilePath` (when set) makes
+// Stream send that file directly instead of opening a picker — used by
+// the CAM handoff. The CAM setup entry passes neither prop.
+export function CamGrblPanel({
+  onClose,
+  embedded,
+  embeddedFilePath,
+}: {
+  onClose: () => void;
+  embedded?: boolean;
+  embeddedFilePath?: string | null;
+}) {
   const { t } = useTranslation();
 
   const connected = useGrblStore((state) => state.connected);
@@ -44,7 +61,7 @@ export function CamGrblPanel({ onClose }: { onClose: () => void }) {
   const [jogFeed, setJogFeed] = useState(1000);
   const [busy, setBusy] = useState(false);
 
-  useCamEscapeCancel(onClose);
+  useCamEscapeCancel(embedded ? NOOP : onClose);
 
   const refreshPorts = async () => {
     try {
@@ -86,6 +103,11 @@ export function CamGrblPanel({ onClose }: { onClose: () => void }) {
   };
 
   const streamFile = async () => {
+    // The CAM handoff path already picked a file — stream it directly.
+    if (embeddedFilePath) {
+      await runCommand(() => grblSendFile(embeddedFilePath));
+      return;
+    }
     try {
       const selected = await open({
         multiple: false,
@@ -108,16 +130,24 @@ export function CamGrblPanel({ onClose }: { onClose: () => void }) {
   const showProgress = streaming || (connected && linesTotal > 0 && percent > 0);
 
   return (
-    <section className="pointer-events-auto cad-floating-panel flex max-h-full min-h-0 w-[320px] max-w-full flex-col overflow-hidden px-5 py-5">
+    <section
+      className={`flex max-h-full min-h-0 flex-col overflow-hidden ${
+        embedded
+          ? "h-full w-full px-4 py-4"
+          : "pointer-events-auto cad-floating-panel w-[320px] max-w-full px-5 py-5"
+      }`}
+    >
       <div className="flex items-center justify-between">
         <p className="cad-kicker">{t("cam.grbl.title", "GRBL Machine")}</p>
-        <button
-          type="button"
-          className="cad-action-ghost h-7 px-2 text-[10px] uppercase tracking-wider text-danger hover:opacity-80"
-          onClick={onClose}
-        >
-          {t("cam.grbl.close", "Close")}
-        </button>
+        {embedded ? null : (
+          <button
+            type="button"
+            className="cad-action-ghost h-7 px-2 text-[10px] uppercase tracking-wider text-danger hover:opacity-80"
+            onClick={onClose}
+          >
+            {t("cam.grbl.close", "Close")}
+          </button>
+        )}
       </div>
 
       {/* ── Connection ─────────────────────────────────────────── */}
@@ -228,7 +258,9 @@ export function CamGrblPanel({ onClose }: { onClose: () => void }) {
             void streamFile();
           }}
         >
-          {t("cam.grbl.streamFile", "Stream G-code file…")}
+          {embeddedFilePath
+            ? t("cam.grbl.streamLoaded", "Stream loaded file…")
+            : t("cam.grbl.streamFile", "Stream G-code file…")}
         </button>
 
         {showProgress ? (
