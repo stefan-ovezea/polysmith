@@ -4,6 +4,7 @@
 mod ai_key;
 mod app_config;
 mod cad_core;
+mod gcode_sender;
 mod laser_grbl;
 mod orca_slicer;
 mod plugin_config;
@@ -238,6 +239,7 @@ pub fn run() {
             child: Mutex::new(None),
         })
         .manage(OrcaSlicerState::default())
+        .manage(gcode_sender::GrblState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -275,7 +277,17 @@ pub fn run() {
             resize_orca_window,
             hide_orca_window,
             set_orca_mapped,
-            read_ai_settings
+            read_ai_settings,
+            gcode_sender::grbl_list_ports,
+            gcode_sender::grbl_connect,
+            gcode_sender::grbl_disconnect,
+            gcode_sender::grbl_send_file,
+            gcode_sender::grbl_pause,
+            gcode_sender::grbl_resume,
+            gcode_sender::grbl_reset,
+            gcode_sender::grbl_home,
+            gcode_sender::grbl_unlock,
+            gcode_sender::grbl_jog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

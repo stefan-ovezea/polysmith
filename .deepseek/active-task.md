@@ -1,98 +1,98 @@
-# Active task: CAM Mill Engrave + Profile-button removal (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+# Active task: Laser post-polish + LaserGRBL integration (laser/post-polish) — P1–P3 COMMITTED, P4 implemented, in-app verification pending (2026-09-11)
 
-> **Branch:** `cam/milling` (slot milestone UNCOMMITTED in the tree —
-> both ship as separate commits after the shared in-app pass)
-> **Date:** 2026-09-10
+> **Branch:** `laser/post-polish` (from `dev` @ bfbd893)
+> **Date:** 2026-09-11
 > **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
 > (every commit gated on build/tests + user in-app verification —
 > CLAUDE.md: no untested commits, no git mutations without explicit
 > approval, no Co-Authored-By trailer.)
 
-## Context — round 8 (user decisions, binding)
+## Context
 
-The two remaining stub toolbar buttons. **Profile button: REMOVED** —
-"Profile finishing" was shipped as 2D Contour; the button was
-scaffolding with a notImplemented toast. **Engrave: NEW mill op**
-(`"engrave"`, already reserved in cam_types.h + TS unions): traces
-sketch profile geometry ON-LINE (no offset, no leads, single pass) at
-a fixed depth below the sketch plane — the milling twin of laser
-engrave. Text glyphs are closed tessellated contours, so profile
-capture covers text.
+User tested the laser on a real machine with **LaserGRBL** (GRBL 1.1
+laser-mode host) and asked for **full integration**: a LaserGRBL-
+compatible post profile, "Export & open in LaserGRBL" handoff, and
+**direct GRBL streaming over serial** from the app (connect, ok-
+handshake stream, status polling, jog/home) — plus polish in four
+feedback areas (power/speed, pierce/lead/start-end, kerf/tabs/passes,
+file handoff). The four feedback areas ride on the real-machine
+checklist; the engineering work is the integration.
 
 ## Phases
 
-- **P1 Native — DONE.** `engrave.{h,cpp}` +
-  `impl/engrave_generate.inc` (sketch-profile-only input checked
-  BEFORE the parallel profiles/sketches arrays; ALL profiles in
-  region order; per-region frame + horizontal guard; exact arcs +
-  chord fallback; standalone circles + circle holes as exact arcs;
-  outer CCW / holes CW via the uniform base-CCW-then-flip rule;
-  rapid-plunge-feed-rapid per loop; guards); `EngraveParameters
-  { depth_mm = 0.5 }` + serde both directions; registry + CMake;
-  cam_commands create/update gates widened with `"engrave"`;
-  session laser-machine guard mirror; cam_generators_test registry
-  gained the engrave-found assertion. Gate: core:build + test:core
-  43/43.
-- **P2 Native tests — DONE.** `tests/cam_engrave_test.cpp` (12 tests;
-  target `cad_core_cam_engrave_test`). Corrections the tests caught:
-  the hole synthesis stored CW and the uniform hole-flip made it CCW
-  — all bases now store CCW and the flip makes the walk CW; the
-  sketch's profile vector is NOT creation-ordered, so the multi-profile
-  test pins machining-region order dynamically; a centroid-only
-  witness corruption still clears the 0.7 score threshold (kinds 0.35
-  + area 0.3 + holes 0.1) — the broken-attestation test corrupts
-  centroid AND area. Gate: `pnpm test:core` **44/44 suites**.
-- **P3 UI — DONE.** `camEngraveActions.ts` (sketch-selection trigger,
-  no geometry references — core captures via the widened gate),
-  `CamEngravePanel` (contour panel minus face/side/allowance; NO
-  stepdown — single pass), toolbar Engrave button (gated on setup +
-  profile selection), AppHeader/AppTopBar/App.tsx threading incl. the
-  :617 re-pick disarm widening, CamFloatingPanels engrave branch,
-  unions (CamToolbar/documentUiState/CamOperationPanel/camPanelShared),
-  i18n `cam.engrave.*`. **Profile removal ripple**: button +
-  onNotImplemented + `cam.profile`/`cam.common.notImplemented` keys
-  deleted; `coreCamOperationTypeToUi` gains engrave +
-  laser_test_pattern cases with `default: "unknown"` (kills the
-  silent "Profile" mislabel of laser test-pattern ops); CamToolbar
-  union = faceMilling/pocket/adaptive/contour/drill/slot/engrave/
-  laserCut/laserTestPattern/unknown. Gate: `tsc --noEmit` clean.
-- **P4 Docs — DONE** (this file, CAM-Development.md row 18 + deviation
-  note + Engrave section, Implementation-Log entry).
+- **P1 — COMMITTED 6d55f67** "fix(cam): laser test-pattern export,
+  no-Z laser programs, S0-before-M5": test-pattern ops now export as
+  laser programs (synth LaserCutParameters in cam_export.cpp; M3 for
+  engrave_grid, M4+dynamic for cut_grid/kerf_gauge); first move of a
+  laser program no longer carries Z (mill/drill unchanged);
+  opt-in `laser_off_with_power` post flag emits S0 before M5
+  (mid-cut + program end, no duplicate M5); test-pattern create gate
+  + default laser tool widened in session_cam_commands.inc. Gates:
+  core:rebuild + test:core (grbl_post Tests 19/20 + cam_generators
+  Test 66).
+- **P2 — COMMITTED cda8a24** "feat(cam): lasergrbl post processor +
+  LaserGRBL machine seed": built-in `lasergrbl` post (M4 dynamic /
+  M3 constant, M8/M9 air assist, S0-before-M5, power_max 1000, no
+  line numbers, arcs, Z-free footer M5/M2); machine seed "LaserGRBL"
+  (slug lasergrbl, 430×430); PostProcessorType += lasergrbl +
+  smoothieware; new cad_core_lasergrbl_post_test (7 tests). Gates:
+  core:rebuild + test:core + tsc.
+- **P3 — COMMITTED 14b18a7** "feat(desktop): export G-code and open
+  in LaserGRBL": laser_grbl.rs launch command (Orca precedent);
+  LaserGrblConfig + SettingsModal section; doExportGcode refactor;
+  exportCamGcodeAndOpenLaserGrblAction (warn toast when the path is
+  unset); secondary "Export & open in LaserGRBL" buttons on the two
+  laser panels; i18n. Gates: cargo check + tsc.
+- **P4 — IMPLEMENTED, uncommitted (working tree)** "feat(desktop):
+  direct GRBL streaming over serial": `serialport = "4"` (direct
+  crate — NO tauri plugin; custom commands are not capability-gated);
+  `src-tauri/src/gcode_sender.rs` (worker thread owns the port;
+  127-byte send window `unacked + len + 1 ≤ 127`; ok/error:N
+  handshake; `(...)` comments + blanks stripped; 500 ms `?` status
+  poll emitted ≤5 Hz; pure `parse_grbl_response` + `ByteWindow` for
+  future tests); commands grbl_list_ports/connect(baud default
+  115200)/disconnect/send_file/pause/resume/reset/home/unlock/jog;
+  `grbl-stream` events; safety: >127-char lines rejected up front,
+  disconnect sends 0x18 when a job is running (GRBL would keep
+  executing buffered lines), reset emits a "reset" kind (no error
+  toast). UI: lib/grblClient.ts, state/grblStore.ts (+
+  initGrblStreamListener once-guard; errors → Logs panel + toast),
+  CamGrblPanel (port/baud/connect, status + MPos, stream via file
+  open dialog, progress bar, pause/resume/reset/home/unlock, jog pad
+  ±X/±Y with step + feed), "GRBL machine controls…" row in the
+  CamSetupPanel Machine tab, third floating-panel branch, i18n
+  cam.grbl.*. Gates: cargo check clean + tsc clean (no Rust test
+  infra — manual checklist is the runtime gate).
+- **P5 — pending**: per-pass power ramp + docs (pass_power_step_percent
+  on LaserCutParameters, leads keep base power; tests; wiki docs).
 
-## In-app verification checklist (user confirms before commits)
+## In-app verification checklist P4 (user confirms before commit)
 
-1. Milling toolbar: NO Profile button; Engrave after Contour, disabled
-   without setup, "Select a sketch profile first" tooltip without
-   profile selection.
-2. Box + sketch on the top face (rect + inner circle), both selected
-   → Engrave → preview traces the rect AND the hole on-line at −0.5
-   below the sketch plane; rapids at retract.
-3. Depth/feed/plunge/spindle live-update; tool dropdown = flat
-   endmills; geometry summary counts profiles; scope dropdown shows
-   the sketch.
-4. Re-select geometry → pick → Apply; scope retarget captures another
-   sketch's profiles.
-5. Generate + Export G-code (plunge + trace moves); ops list labels it
-   "Engrave".
-6. Degrade: edit/delete the profiles → needs_regenerate/error;
-   restore → regenerate.
-7. A laser test-pattern op labels "Test Pattern", NOT "Profile".
-8. Engrave create on a laser-machine setup → clear error.
-9. Text glyphs (with counters) trace outer + counters.
-10. Regression: slot + all other ops still generate/export.
-11. **Slot checklist (round 7, still owed):** toolbar Slot after
-    Drill; top-edge slot preview at edge + radius inward; stepdown
-    multipass (8/6/5); two edges → two grooves; Re-pick edges; G-code;
-    save → reopen round-trips slot params + edge rows.
+1. CAM → Setup panel → Machine tab → "GRBL machine controls…" opens
+   the panel; port list populates; baud dropdown defaults 115200.
+2. Connect to the GRBL controller → status line shows Idle/Run/Hold +
+   MPos position; disconnect works.
+3. Jog pad moves the head ±X/±Y at the step/feed values; Home runs
+   $H; Unlock runs $X.
+4. Stream a previously exported .nc → progress bar counts lines,
+   GRBL executes; Pause (!) / Resume (~) hold and continue; Reset
+   stops cleanly.
+5. Errors surface as toasts + Logs panel entries (e.g., connect to a
+   wrong port).
+6. Real machine: the direct stream cuts a test-pattern card correctly
+   (this is the whole point of P4).
 
 ## Next steps
 
-- User in-app verification (both rounds) → commit 1 = Slot milestone,
-  commit 2 = Engrave milestone (both on approval, no Co-Authored-By).
+- User in-app verification P4 → commit on approval (no
+  Co-Authored-By; commit message states cargo check + tsc + manual
+  checklist).
+- P5: per-pass power ramp + docs → draft PR to dev, held until the
+  real-machine checklist passes.
 
 ---
 
-# Previous task: CAM Slot Milling — open-edge slots (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
+# Previous task: CAM Mill Engrave + Profile-button removal (cam/milling) — P1–P4 implemented, in-app verification pending (2026-09-10)
 
 > **Branch:** `cam/milling` (HEAD af5fa0a at start)
 > **Date:** 2026-09-10

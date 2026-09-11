@@ -21,6 +21,7 @@ import {
   CamPocketPanel,
   CamSetupPanel,
   CamSlotPanel,
+  CamGrblPanel,
   CamTestPatternPanel,
   createDefaultCamSetup,
   type AdaptiveFormState,
@@ -73,6 +74,10 @@ interface CamFloatingPanelsProps {
   setShowStock: (show: boolean) => void;
   setWcsOrientation: (mode: string) => void;
   setSetupPanelOpen: (open: boolean) => void;
+  // Shell-side GRBL streaming panel (serial transport to the machine).
+  isGrblPanelOpen: boolean;
+  setGrblPanelOpen: (open: boolean) => void;
+  onOpenGrblControls: () => void;
   setSelectedOperationId: (operationId: string | null) => void;
   runAction: RunAction;
   addMessage: (message: string) => void;
@@ -145,6 +150,9 @@ export function CamFloatingPanels({
   setShowStock,
   setWcsOrientation,
   setSetupPanelOpen,
+  isGrblPanelOpen,
+  setGrblPanelOpen,
+  onOpenGrblControls,
   setSelectedOperationId,
   runAction,
   addMessage,
@@ -257,6 +265,7 @@ export function CamFloatingPanels({
       machines={machines}
       onApplyMachine={applyMachine}
       onSaveMachine={onSaveMachine}
+      onOpenGrblControls={onOpenGrblControls}
       onPickOrigin={onPickOrigin}
       pickedOrigin={pickedOrigin}
       originPickArmed={originPickArmed}
@@ -319,10 +328,17 @@ export function CamFloatingPanels({
       })
     : null;
 
+  // Shell-side GRBL streaming — independent of document CAM state, so
+  // it gets its own floating panel branch.
+  const grblPanel = isGrblPanelOpen ? (
+    <CamGrblPanel onClose={() => setGrblPanelOpen(false)} />
+  ) : null;
+
   return (
     <>
       {setupPanel}
       {operationPanel}
+      {grblPanel}
     </>
   );
 }

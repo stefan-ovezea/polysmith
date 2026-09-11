@@ -538,6 +538,8 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  // Shell-side GRBL streaming panel (serial transport, gcode_sender.rs).
+  const [isGrblPanelOpen, setIsGrblPanelOpen] = useState(false);
   // The ACTIVE CAM setup: new operations join it, the setup panel
   // edits it.  Follows the first setup until the user picks another.
   const [activeCamSetupId, setActiveCamSetupId] = useState<string | null>(
@@ -4226,6 +4228,12 @@ function App() {
                 viewport={viewport}
                 disabled={status !== "connected"}
                 isSetupPanelOpen={isCamSetupPanelOpen}
+                isGrblPanelOpen={isGrblPanelOpen}
+                setGrblPanelOpen={setIsGrblPanelOpen}
+                onOpenGrblControls={() => {
+                  closeCamSetupPanel();
+                  setIsGrblPanelOpen(true);
+                }}
                 selectedOperationId={selectedCamOperationId}
                 activeSetupId={activeCamSetupId}
                 camProfilePickArmed={camProfilePickArmed}
