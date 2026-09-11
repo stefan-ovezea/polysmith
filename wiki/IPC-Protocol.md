@@ -418,6 +418,10 @@ and produce toolpaths, never B-rep. All CAM commands reply with
 - `cam_export_gcode { file_path }` generates stale toolpaths on demand,
   serializes every enabled operation through the selected post definition,
   and replies `document_exported` with `format: "gcode"`.
+- `cam_export_gcode_text {}` is the same posting pipeline without the file —
+  replies `cam_export_gcode_text_result` with `{text, format: "gcode",
+  exported_feature_count}`.  The GRBL workspace handoff consumes this so the
+  posted program never touches disk.
 - Built-in posts now include `lasergrbl` (GRBL 1.1 laser dialect: M4
   dynamic / M3 constant, `power_max` 1000, M8/M9 air assist,
   `laser_off_with_power` so every laser-off emits `S0` before `M5`,

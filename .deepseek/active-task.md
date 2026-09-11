@@ -1,94 +1,83 @@
-# Active task: GRBL workspace — MERGED to dev as PR #78 (squash, 2026-09-12)
+# Active task: GRBL workspace polish — P1 internal CAM→GRBL handoff (IN PROGRESS)
 
-> **Branch:** `feature/grbl` (from `dev` @ 48bd7c4)
-> **Date:** 2026-09-11
-> **Plan:** approved plan at `.claude/plans/woolly-crunching-balloon.md`
+> **Branch:** `feature/grbl-polish` (from `dev` @ d0db60d)
+> **Date:** 2026-09-12
+> **Plan:** approved plan at `.claude/plans/jaunty-sleeping-moth.md`
 > (every commit gated on build/tests + user in-app verification —
 > CLAUDE.md: no untested commits, no git mutations without explicit
 > approval, no Co-Authored-By trailer.)
 
 ## Context
 
-User wanted a NEW standalone **GRBL workspace** (like CAD/CAM/ISO
-Drawing) hosting the existing GRBL machine panel plus a **toolpath
-preview**: parsed .nc rendering (dashed rapids, solid cuts, arcs),
-live executed-progress highlight, live machine crosshair from MPos,
-bed/work-area grid. Job sources: in-page open-file dialog AND a CAM
-handoff ("Send to GRBL workspace" on the two laser panels). User
-chose ALL preview features, KEEP BOTH panel entries (CAM setup +
-workspace), BOTH job sources.
+The GRBL workspace (#78) works, but "Send to GRBL workspace" pops a
+file-save dialog and round-trips the posted G-code through disk. The
+user wants a proper internal sender with LaserGRBL-style features.
+Approved scope: P1 internal handoff (no file), P2 machine picker
+(disk machine library → bed + pointer offset), P3 red laser pointer
+crosshair + toggle, P4 laser utilities (test fire / focus pulse /
+framing), P5 live overrides (FRO/SRO real-time bytes) + elapsed/ETA,
+P6 bed check + alarm decode, P7 console history + $$ settings dialog,
+P8 CAM test patterns ride the internal handoff.
 
-**Real machine: FluidNC v4.0.3 (esp32s3-wifi), COM7 @ 115200.** The
-transport was debugged and verified against it over serial traces.
-Key FluidNC findings baked into the code:
+## P1 status (implemented, gates running)
 
-- FluidNC status reports `WCO:` (work coordinate OFFSET), not GRBL's
-  `WPos:` — the parser derives WPos = MPos − WCO (Zero XY reads 0,0).
-- `G10 L20 P0` (MCS zero) is acked but silently does nothing on
-  FluidNC v4 — the "Zero machine" button was removed; **Home ($H) is
-  the real re-sync** (it resets the MCS; the job only ran after it).
-- `$20=0` (soft-limit toggle) is REJECTED on FluidNC v4 (error 162) —
-  soft limits are config.yaml-only; the panel shows an
-  outside-work-area hint instead.
-- FluidNC emits `ALARM:n` lines; soft-limit alarms made the sender
-  fake-complete (buffered lines kept acking). Now ALARM aborts the
-  job with a clear error.
-- Zero XY sends `$X` + `G92 X0 Y0` — one press, works in alarm state
-  (GRBL 1.1 and FluidNC alike).
+Internal handoff = in-memory posted G-code text end to end:
 
-## Phases
+- **C++ core**: `cam_export.h/.cpp` — `post_cam_gcode_text` +
+  `CamGcodeTextResult`; posting pipeline extracted into a shared
+  `post_document` helper so file export and text export stay
+  byte-identical. DocumentManager method
+  (`document_manager_io_commands.inc` decl,
+  `document_io_commands.inc` def), dispatch branch
+  `cam_export_gcode_text` in `app/impl/cam_commands.inc`, event maker
+  `make_cam_export_gcode_text_result_event` in `protocol/ipc.h/.cpp`.
+  `document_manager.h` now includes `core/cam/cam_export.h` (the .inc
+  declaration needs the struct — first build caught this).
+- **Protocol**: `cam_export_gcode_text` command + result event in
+  `protocol/schema/*.json`; documented in `wiki/IPC-Protocol.md` and
+  `wiki/AI-CAD-Command-Language.md`.
+- **TS**: `makeCamExportGcodeTextCommand` (camCommands.ts),
+  `CamExportGcodeTextResultEvent` (types/ipc.ts), zod schema + union
+  entry (ipcSchema.ts), `camExportGcodeText` awaited wrapper
+  (useCadCore.ts).
+- **Rust**: `grbl_parse_text(text, label)` (gcode_parser.rs, wraps
+  pure parse_gcode); `gcode_sender.rs` — `prepare_job_lines` (now
+  uses `gcode_parser::filter_lines`, the single-source parity
+  contract) + `begin_job` split out of `start_job`, new
+  `WorkerMsg::SendProgram` + `grbl_send_program` command; 5 new unit
+  tests (filter/guard/ByteWindow). Registered in main.rs.
+- **UI**: `grblClient.ts` (`grblParseText`, `grblSendProgram`);
+  App.tsx — `grblHandoff {text,label}` state replaces `grblPreviewFile`,
+  `exportCamGcodeToGrblWorkspaceAction` posts in memory (no dialog,
+  no disk write; failure toast `cam.gcodePostFailed`); GrblWorkspace —
+  `LoadedGrblProgram {source: "file"|"internal", text, label, info}`,
+  handoff arrival parses via `grblParseText`; CamGrblPanel —
+  `embeddedProgram` prop, Cycle Start streams `grblSendProgram(text)`
+  for internal programs / `grblSendFile(path)` for disk picks.
+- **Tests**: `native/cad-core/tests/cam_export_test.cpp`
+  (laser test-pattern doc → non-empty post with header + M5 footer,
+  file export byte-equals text, no-setup throws; main wrapped in
+  try/catch per the 0xC0000409 trap), registered in CMakeLists.
 
-- **P1 — COMMITTED 413abac** "feat(desktop): pure G-code parser for
-  the GRBL preview": `gcode_parser.rs` (pure `parse_gcode` +
-  `grbl_parse_file` command, filter parity with gcode_sender so
-  `move.line` == `linesSent`; G0/G1/G2/G3 I/J + full circles, G20/
-  G91/G4, M3/M4/M5, N-prefix/comments, warnings for G92/R-arcs) +
-  the project's first Rust test module (7 tests incl. golden
-  fixture from the user's real export). Gates: cargo test + check.
-- **P2 — COMMITTED 9c91073** "feat(desktop): GRBL workspace in the
-  switcher reusing the GRBL panel": WorkspaceView += grbl (both
-  union copies), switcher entry, GrblWorkspace page (SlicerWorkspace
-  template) hosting CamGrblPanel embedded (optional embedded/
-  embeddedFilePath props — CAM setup path untouched). Gates: tsc +
-  in-app (connect/stream verified by the user).
-- **P3+P4 — COMMITTED 58eae86** as ONE feature commit (user asked for
-  a single commit; originally adf2572, AMENDED to 58eae86 because the
-  first `git add` pathspec `apps/desktop-ui/src` missed the three
-  `src-tauri/src` files — the original commit had old Rust under new
-  TS): "feat(desktop): GRBL workspace preview, CAM handoff, FluidNC
-  fixes, TCP transport". Everything from the two bullets above plus
-  the follow-up fixes: panel Load always visible beside Cycle Start
-  and feeding the workspace preview via `onFileLoaded` (disk-pick
-  previously streamed a file the preview never showed); Zero XY
-  derives WPos=(0,0,0) at the last known MPos LOCALLY and applies it
-  instantly (FluidNC can take seconds to publish a G92 in its status
-  reports — that latency was the "Zero XY hangs" and "preview changes
-  by itself" reports). Gates: cargo test 8/8 + check + tsc;
-  real-machine pass done (user: "well now it works").
+**Gates — ALL GREEN (2026-09-12)**: cargo test 13/13 ✓, tsc --noEmit
+✓, core rebuilt via the VS2022 wrapper (first pass failed on the
+missing cam_export.h include in document_manager.h — .inc trap;
+fixed), `pnpm test:core` **46/46 suites passed** ✓. New
+`cad_core_cam_export_test` pins: non-empty post with operation
+header + M5 footer, file export byte-equals in-memory text, no-setup
+throws. Test-side bugs found and fixed along the way: dangling
+reference to the temporary optional (get_document returns by value),
+Windows file-lock on remove (read+close before delete), missing
+DocumentState using-declaration.
 
-## Increment: Network (TCP) transport — COMMITTED in 58eae86
+## Next session checklist
 
-User installed FigUI (FluidNC WebUI) at http://192.168.1.19/ and
-asked for network support in the GRBL workspace. Implemented **TCP
-(port 23)** — FluidNC's telnet port carries the same text protocol as
-USB serial, so the worker's port became a `GrblLink` enum
-(Serial | Tcp) with matching read/write; new `grbl_connect_tcp`
-command (resolve → connect_timeout 5 s → nodelay → 50 ms read
-timeout); panel Connection section gained a Transport dropdown
-(Serial (USB) / Network (TCP), host + port inputs, last host/port
-remembered in localStorage); grblStore connected-log omits baud for
-TCP. WebSocket (81) deliberately NOT done — same control capability,
-much heavier handshake; revisit only if asked. Gates: cargo test 8/8
-+ check + tsc; **user verified against the real board** ("well it
-works") — note the Connect button is disabled until a host is typed
-(the grey text is a placeholder, now prefixed "e.g." to avoid that
-confusion).
-
-## Post-merge notes
-
-- Merged as PR #78 (squash); remote + local `feature/grbl` deleted.
-- Follow-ups the user deferred ("iron it later"): WebSocket (port 81)
-  transport if ever wanted (TCP 23 already covers desktop control);
-  remaining GRBL workspace rough edges from the user's list.
-- dist/ gotcha: fresh clones need `pnpm --filter desktop-ui build`
-  before cargo runs (dist/ is gitignored; generate_context! needs it).
+1. Hand to the user for in-app verification on the FluidNC machine
+   (`pnpm dev`): laser-cut → "Send to GRBL workspace" shows NO
+   dialog, preview shows the job labeled "CAM job — <name>", Cycle
+   Start streams it, progress matches preview (filter parity
+   regression to watch). Also confirm manual Export G-code +
+   LaserGRBL launch still behave as before.
+2. On user confirmation: commit P1 (no Co-Authored-By trailer;
+   message names the suites that ran), then continue P2+P3 (machine
+   picker + red pointer).

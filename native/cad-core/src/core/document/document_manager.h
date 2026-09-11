@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "core/cam/cam_export.h"
 #include "core/cam/cam_operation.h"
 #include "core/document/document_state.h"
 #include "core/export/export.h"

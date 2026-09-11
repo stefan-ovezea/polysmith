@@ -13,6 +13,7 @@ import {
   grblReset,
   grblResume,
   grblSendFile,
+  grblSendProgram,
   grblSendRaw,
   grblUnlock,
   grblZeroXy,
@@ -30,24 +31,31 @@ const NOOP = () => {};
 // Direct GRBL transport panel.  The shell (gcode_sender.rs) owns the
 // serial port; this panel only issues commands and renders the
 // `grbl-stream` events from useGrblStore.  No document interaction —
-// it streams already-exported .nc files, exactly like LaserGRBL.
+// it streams .nc files picked from disk, or in-memory programs posted
+// by the CAM workspace, exactly like LaserGRBL.
 //
 // `embedded` turns this into the GRBL workspace's fixed left column:
 // no Close button, no Escape-to-cancel, and a full-height plain panel
-// instead of the floating card. `embeddedFilePath` (when set) makes
-// Stream send that file directly instead of opening a picker — used by
-// the CAM handoff. `onFileLoaded` lets the host (the workspace) learn
-// about a disk-picked file so its preview parses the same program the
-// panel will stream. The CAM setup entry passes neither optional prop.
+// instead of the floating card. `embeddedProgram` (when set) makes
+// Cycle Start stream that in-memory program directly instead of
+// opening a picker — used by the CAM handoff. `onFileLoaded` lets the
+// host (the workspace) learn about a disk-picked file so its preview
+// parses the same program the panel will stream. The CAM setup entry
+// passes neither optional prop.
+export interface GrblPanelProgram {
+  text: string;
+  label: string;
+}
+
 export function CamGrblPanel({
   onClose,
   embedded,
-  embeddedFilePath,
+  embeddedProgram,
   onFileLoaded,
 }: {
   onClose: () => void;
   embedded?: boolean;
-  embeddedFilePath?: string | null;
+  embeddedProgram?: GrblPanelProgram | null;
   onFileLoaded?: (path: string) => void;
 }) {
   const { t } = useTranslation();
@@ -88,9 +96,15 @@ export function CamGrblPanel({
   const [jogFeed, setJogFeed] = useState(1000);
   const [busy, setBusy] = useState(false);
   // The program loaded for streaming.  Loading NEVER sends — Cycle
-  // Start does.  In the GRBL workspace the host passes the previewed
-  // file down; in the CAM panel Load picks it.
+  // Start does.  Two sources: a disk file (loadedPath, streamed via
+  // grbl_send_file) or in-memory posted text (loadedProgram, the CAM
+  // handoff, streamed via grbl_send_program).  In the GRBL workspace
+  // the host passes the previewed program down; in the CAM panel Load
+  // picks a file.
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
+  const [loadedProgram, setLoadedProgram] = useState<GrblPanelProgram | null>(
+    null,
+  );
   const [rawCommand, setRawCommand] = useState("");
 
   const formatPosition = (position: [number, number, number]) =>
@@ -122,13 +136,13 @@ export function CamGrblPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The workspace/handoff path is the program to send; keep it in
-  // sync so Cycle Start always sends what the preview shows.
+  // The workspace/handoff program is what Cycle Start sends; keep it
+  // in sync so the button always streams what the preview shows.
   useEffect(() => {
-    if (embeddedFilePath) {
-      setLoadedPath(embeddedFilePath);
+    if (embeddedProgram) {
+      setLoadedProgram(embeddedProgram);
     }
-  }, [embeddedFilePath]);
+  }, [embeddedProgram]);
 
   const runCommand = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -181,7 +195,10 @@ export function CamGrblPanel({
         ],
       });
       if (typeof selected === "string") {
+        // A disk pick replaces any in-memory program — the preview
+        // and Cycle Start must agree on the single loaded program.
         setLoadedPath(selected);
+        setLoadedProgram(null);
         onFileLoaded?.(selected);
       }
     } catch (error) {
@@ -416,9 +433,13 @@ export function CamGrblPanel({
           <button
             type="button"
             className="cad-action-primary"
-            disabled={!connected || !loadedPath || streaming || busy}
+            disabled={
+              !connected || (!loadedPath && !loadedProgram) || streaming || busy
+            }
             onClick={() => {
-              if (loadedPath) {
+              if (loadedProgram) {
+                void runCommand(() => grblSendProgram(loadedProgram.text));
+              } else if (loadedPath) {
                 void runCommand(() => grblSendFile(loadedPath));
               }
             }}
@@ -426,7 +447,11 @@ export function CamGrblPanel({
             {t("cam.grbl.start", "Cycle Start")}
           </button>
         </div>
-        {loadedPath ? (
+        {loadedProgram ? (
+          <div className="truncate font-mono text-[10px] text-on-surface-dim">
+            {loadedProgram.label}
+          </div>
+        ) : loadedPath ? (
           <div className="truncate font-mono text-[10px] text-on-surface-dim">
             {loadedPath.split(/[\\/]/).pop()}
           </div>

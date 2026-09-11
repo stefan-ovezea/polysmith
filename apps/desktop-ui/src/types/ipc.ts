@@ -466,6 +466,18 @@ export interface DocumentExportedEvent extends BaseMessage {
   payload: DocumentExportResult;
 }
 
+// In-memory G-code posting (cam_export_gcode_text) — the GRBL workspace
+// handoff parses and streams `text` without a file on disk.
+export interface CamExportGcodeTextResultEvent extends BaseMessage {
+  type: "cam_export_gcode_text_result";
+  id: string;
+  payload: {
+    text: string;
+    format: string;
+    exported_feature_count: number;
+  };
+}
+
 // Emitted by the core while a CAM toolpath is being generated
 // (cam_operation_generate / cam_operation_preview). The event echoes the
 // command id, so it can arrive interleaved with the final

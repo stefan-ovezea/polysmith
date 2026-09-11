@@ -284,6 +284,7 @@ pub fn run() {
             gcode_sender::grbl_connect_tcp,
             gcode_sender::grbl_disconnect,
             gcode_sender::grbl_send_file,
+            gcode_sender::grbl_send_program,
             gcode_sender::grbl_pause,
             gcode_sender::grbl_resume,
             gcode_sender::grbl_reset,
@@ -292,7 +293,8 @@ pub fn run() {
             gcode_sender::grbl_jog,
             gcode_sender::grbl_zero_xy,
             gcode_sender::grbl_send_raw,
-            gcode_parser::grbl_parse_file
+            gcode_parser::grbl_parse_file,
+            gcode_parser::grbl_parse_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

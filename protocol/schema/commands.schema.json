@@ -33,6 +33,7 @@
         "add_sketch_vertex_distance_dimension",
         "cam_capture_face_reference",
         "cam_export_gcode",
+        "cam_export_gcode_text",
         "cam_machine_list",
         "cam_machine_save",
         "cam_machine_settings_set",

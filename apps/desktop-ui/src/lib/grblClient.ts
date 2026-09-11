@@ -56,6 +56,12 @@ export function grblSendFile(filePath: string): Promise<void> {
   return invoke("grbl_send_file", { filePath });
 }
 
+// In-memory program send (CAM→GRBL handoff) — same worker pipeline as
+// grblSendFile, no file on disk.
+export function grblSendProgram(text: string): Promise<void> {
+  return invoke("grbl_send_program", { text });
+}
+
 export function grblPause(): Promise<void> {
   return invoke("grbl_pause");
 }
@@ -144,4 +150,12 @@ export interface GcodeFileInfo {
 
 export function grblParseFile(filePath: string): Promise<GcodeFileInfo> {
   return invoke("grbl_parse_file", { filePath });
+}
+
+// In-memory parse for the CAM→GRBL handoff: `label` becomes fileName.
+export function grblParseText(
+  text: string,
+  label: string,
+): Promise<GcodeFileInfo> {
+  return invoke("grbl_parse_text", { text, label });
 }

@@ -224,7 +224,8 @@
     "legendRapid": "Rapid",
     "legendCut": "Cut",
     "legendExecuted": "Executed",
-    "legendPosition": "Position"
+    "legendPosition": "Position",
+    "camJobLabel": "CAM job — {{name}}"
   },
   "cam": {
     "pocket": {
@@ -773,6 +774,7 @@
     },
     "toolpathGenerated": "toolpath generated: {{length}}, estimated {{time}}",
     "gcodeWritten": "G-code written: {{path}}",
+    "gcodePostFailed": "Failed to post G-code for the GRBL workspace.",
     "laserGrblBinaryMissing": "The file was exported, but the LaserGRBL binary path is not configured — set it in Settings to open it automatically.",
     "laserGrblLaunchFailed": "LaserGRBL could not be launched — check the path in Settings.",
     "postImported": "post processor imported",

@@ -153,6 +153,11 @@ ExportResult DocumentManager::export_cam_gcode(
                       result.exported_feature_count};
 }
 
+CamGcodeTextResult DocumentManager::export_cam_gcode_text() const {
+  require_document();
+  return polysmith::core::post_cam_gcode_text(document_.value());
+}
+
 ExportResult DocumentManager::export_document_as_iges(
     const std::string& file_path) const {
   require_document();

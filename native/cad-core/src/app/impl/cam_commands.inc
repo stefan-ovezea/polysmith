@@ -639,6 +639,23 @@
     return;
   }
 
+  // In-memory variant for the GRBL workspace handoff — same posting
+  // pipeline as cam_export_gcode, but the text travels in the reply
+  // instead of a file on disk.
+  if (command.type == "cam_export_gcode_text") {
+    const auto text_result = document_manager().export_cam_gcode_text();
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_export_gcode_text_result_event(
+            command.id,
+            polysmith::protocol::json{
+                {"text", text_result.text},
+                {"format", text_result.format},
+                {"exported_feature_count",
+                 text_result.exported_feature_count},
+            }));
+    return;
+  }
+
   if (command.type == "cam_operation_generate" ||
       command.type == "cam_operation_preview") {
     const bool preview = command.type == "cam_operation_preview";

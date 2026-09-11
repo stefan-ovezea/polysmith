@@ -1,18 +1,17 @@
 //! Direct GRBL streaming over serial or TCP.
 //!
-//! PolySmith stays a file producer for the G-code itself (the CAD core
-//! exports `.nc`); this module is the shell-side transport: it opens a
-//! serial port or a TCP connection (FluidNC's text port 23), streams
-//! a file line-by-line with GRBL's ok/error
-//! handshake inside a byte-sized send window (GRBL's RX buffer is 128
-//! bytes), polls `?` status, and forwards jog/home/pause commands.
+//! This module is the shell-side transport: it opens a serial port or
+//! a TCP connection (FluidNC's text port 23), streams a program
+//! line-by-line with GRBL's ok/error handshake inside a byte-sized
+//! send window (GRBL's RX buffer is 128 bytes), polls `?` status, and
+//! forwards jog/home/pause commands.  Programs arrive either as a
+//! file (grbl_send_file) or as in-memory text from the CAM→GRBL
+//! handoff (grbl_send_program) — both run the same pipeline.
 //!
 //! A single worker thread owns the port for its whole lifetime;
 //! commands travel to it over an mpsc channel, state travels back to
-//! the UI as `grbl-stream` Tauri events.  The parser and the send
-//! window are pure functions so they can be unit-tested when Rust
-//! test infrastructure lands (none exists yet — `cargo check` + the
-//! manual app checklist are today's gates).
+//! the UI as `grbl-stream` Tauri events.  The preprocessing and the
+//! send window are pure functions, unit-tested in the `tests` module.
 
 use serde::Serialize;
 use serialport::SerialPort;
@@ -209,6 +208,7 @@ enum WorkerMsg {
     Connect { port: String, baud_rate: u32 },
     Disconnect,
     SendFile { file_path: String },
+    SendProgram { text: String },
     Pause,
     Resume,
     Reset,
@@ -311,6 +311,27 @@ fn grbl_error_text(code: u32) -> String {
     format!("GRBL error {}: {}", code, grbl_error_message(code))
 }
 
+/// GRBL-safe preprocessing shared by file and in-memory jobs: the
+/// parser's canonical filter (blank lines and `(`-prefixed full-line
+/// comments stripped — the same rule `parse_gcode` uses, keeping
+/// `linesSent` aligned with the preview's `move.line`), plus the
+/// send-window guard.  Pure — unit-tested below.
+fn prepare_job_lines(text: &str) -> Result<Vec<String>, String> {
+    let lines = crate::gcode_parser::filter_lines(text);
+    if lines.is_empty() {
+        return Err("The program contains no G-code lines".to_string());
+    }
+    // A line that can never fit the send window would stall the job
+    // at a fixed percent forever — reject the program up front.
+    if let Some(long_line) = lines.iter().find(|line| line.len() + 1 > 127) {
+        return Err(format!(
+            "Line too long for GRBL ({} bytes, limit 127): {long_line}",
+            long_line.len() + 1
+        ));
+    }
+    Ok(lines)
+}
+
 impl Worker {
     fn emit(&self, mut payload: GrblStreamEvent) {
         payload.port_name = self.port_name.clone();
@@ -410,31 +431,27 @@ impl Worker {
                 return;
             }
         };
-        // GRBL-safe preprocessing: strip full-line comments and blanks.
-        // Parenthesized comments are PolySmith's own post headers —
-        // they only cost serial time, never correctness.
-        let lines: Vec<String> = text
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('('))
-            .map(str::to_string)
-            .collect();
-        if lines.is_empty() {
-            self.emit(event("error", "The file contains no G-code lines"));
+        match prepare_job_lines(&text) {
+            Ok(lines) => self.begin_job(lines),
+            Err(message) => self.emit(event("error", &message)),
+        }
+    }
+
+    /// In-memory program entry point (the CAM→GRBL handoff): the same
+    /// pipeline as start_job, no file on disk.
+    fn start_program(&mut self, text: &str) {
+        if self.port.is_none() {
+            self.emit(event("error", "Not connected — connect a port first"));
             return;
         }
-        // A line that can never fit the send window would stall the
-        // job at a fixed percent forever — reject the file up front.
-        if let Some(long_line) = lines.iter().find(|line| line.len() + 1 > 127) {
-            self.emit(event(
-                "error",
-                &format!(
-                    "Line too long for GRBL ({} bytes, limit 127): {long_line}",
-                    long_line.len() + 1
-                ),
-            ));
-            return;
+        match prepare_job_lines(text) {
+            Ok(lines) => self.begin_job(lines),
+            Err(message) => self.emit(event("error", &message)),
         }
+    }
+
+    /// Queue a prepared, validated line list and start streaming.
+    fn begin_job(&mut self, lines: Vec<String>) {
         self.pending.clear();
         self.sent_lengths.clear();
         self.window = ByteWindow::new();
@@ -559,6 +576,7 @@ impl Worker {
                 }
             }
             WorkerMsg::SendFile { file_path } => self.start_job(&file_path),
+            WorkerMsg::SendProgram { text } => self.start_program(&text),
             WorkerMsg::Pause => {
                 self.paused = true;
                 self.write_line("!");
@@ -759,6 +777,18 @@ pub fn grbl_send_file(
     state.send(WorkerMsg::SendFile { file_path })
 }
 
+/// Streams an in-memory program (the CAM→GRBL handoff) — same worker
+/// pipeline as grbl_send_file, no file on disk.
+#[tauri::command]
+pub fn grbl_send_program(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    text: String,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::SendProgram { text })
+}
+
 #[tauri::command]
 pub fn grbl_pause(app: AppHandle, state: State<'_, GrblState>) -> Result<(), String> {
     start_worker(app, &state)?;
@@ -821,4 +851,56 @@ pub fn grbl_send_raw(
     state.send(WorkerMsg::Raw {
         line: trimmed.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The sender's RX window is 127 bytes: a line fits only while
+    // unacked bytes + line (+ newline) stay inside it.  A line that
+    // can never fit would stall the job forever — rejected up front.
+    #[test]
+    fn prepare_rejects_blank_and_comment_only_programs() {
+        assert!(prepare_job_lines("").is_err());
+        assert!(prepare_job_lines("\n\n").is_err());
+        assert!(prepare_job_lines("(header only)\n(another)").is_err());
+    }
+
+    #[test]
+    fn prepare_strips_blanks_and_full_line_comments() {
+        let lines = prepare_job_lines("G21\n\n(header)\nG90\n").expect("valid program");
+        assert_eq!(lines, vec!["G21".to_string(), "G90".to_string()]);
+    }
+
+    #[test]
+    fn prepare_rejects_lines_over_the_window() {
+        // 126 content bytes + newline = 127: admitted.  127 content
+        // bytes + newline = 128: never fits, rejected.
+        let fits = "G1 X".to_string() + &"1".repeat(122); // 4 + 122 = 126
+        let too_long = "G1 X".to_string() + &"1".repeat(123); // 127 content bytes
+        assert_eq!(fits.len(), 126);
+        assert_eq!(too_long.len(), 127);
+        assert!(prepare_job_lines(&fits).is_ok());
+        let error = prepare_job_lines(&too_long).expect_err("must reject");
+        assert!(error.contains("127"), "message names the limit: {error}");
+    }
+
+    #[test]
+    fn byte_window_admits_until_full() {
+        let mut window = ByteWindow::new();
+        assert!(window.admit(127));
+        window.add(127);
+        assert!(!window.admit(1), "no room past 127 unacked bytes");
+        window.ack(100);
+        assert!(window.admit(1), "ack frees room");
+    }
+
+    #[test]
+    fn byte_window_ack_never_underflows() {
+        let mut window = ByteWindow::new();
+        window.add(10);
+        window.ack(20);
+        assert_eq!(window.unacked, 0);
+    }
 }

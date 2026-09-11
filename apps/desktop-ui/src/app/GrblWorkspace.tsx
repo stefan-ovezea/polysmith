@@ -6,27 +6,39 @@ import { CamGrblPanel } from "../layout";
 import { useGrblStore, useToastStore } from "../state";
 import {
   grblParseFile,
+  grblParseText,
   type GcodeFileInfo,
 } from "@/lib/grblClient";
 import type { LaserMachineSettings } from "@/types";
 import { GrblPreviewViewport } from "./grbl/GrblPreviewViewport";
 import { DEFAULT_GRBL_BED, type GrblBed } from "./grbl/grblPreviewScene";
 
+// A program handed over by the CAM workspace — posted G-code text in
+// memory, no file on disk.
+export interface GrblHandoffProgram {
+  text: string;
+  label: string;
+}
+
 interface GrblWorkspaceProps {
-  // File selected by the CAM "Send to GRBL workspace" handoff (P4), or
+  // Program selected by the CAM "Send to GRBL workspace" handoff, or
   // null when the user arrived via the workspace switcher.
-  embeddedFilePath: string | null;
+  embeddedProgram: GrblHandoffProgram | null;
   machineSettings: LaserMachineSettings | null;
   theme: string;
   addMessage: (message: string) => void;
-  // Handoff wiring (P4): set together — the workspace parses
-  // `previewFile` on arrival and reports back that it was consumed.
-  previewFile?: string | null;
-  onPreviewFileConsumed?: () => void;
+  // Handoff wiring: set together — the workspace parses the in-memory
+  // program on arrival and reports back that it was consumed.
+  handoffProgram?: GrblHandoffProgram | null;
+  onHandoffConsumed?: () => void;
 }
 
-interface LoadedGrblFile {
-  path: string;
+interface LoadedGrblProgram {
+  // "file" = a disk pick (streamed from path); "internal" = in-memory
+  // posted text (CAM handoff, streamed via grbl_send_program).
+  source: "file" | "internal";
+  text: string;
+  label: string;
   info: GcodeFileInfo;
 }
 
@@ -37,12 +49,12 @@ interface LoadedGrblFile {
 // no timeline, no CAM panels — the page template follows
 // SlicerWorkspace.
 export function GrblWorkspace({
-  embeddedFilePath,
+  embeddedProgram,
   machineSettings,
   theme,
   addMessage,
-  previewFile,
-  onPreviewFileConsumed,
+  handoffProgram,
+  onHandoffConsumed,
 }: GrblWorkspaceProps) {
   const { t } = useTranslation();
 
@@ -52,7 +64,8 @@ export function GrblWorkspace({
   const mpos = useGrblStore((state) => state.mpos);
   const wpos = useGrblStore((state) => state.wpos);
 
-  const [loadedFile, setLoadedFile] = useState<LoadedGrblFile | null>(null);
+  const [loadedProgram, setLoadedProgram] =
+    useState<LoadedGrblProgram | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -75,7 +88,25 @@ export function GrblWorkspace({
     setLoadError(null);
     try {
       const info = await grblParseFile(path);
-      setLoadedFile({ path, info });
+      setLoadedProgram({ source: "file", text: "", label: info.fileName, info });
+    } catch (error) {
+      const message = String(error);
+      setLoadError(message);
+      addMessage(`grbl preview: ${message}`);
+      useToastStore.getState().pushToast("error", t("grbl.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Internal (CAM handoff) path: parse the posted text in memory —
+  // the same program Cycle Start streams, never touching disk.
+  const loadProgram = async (text: string, label: string) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const info = await grblParseText(text, label);
+      setLoadedProgram({ source: "internal", text, label, info });
     } catch (error) {
       const message = String(error);
       setLoadError(message);
@@ -106,28 +137,28 @@ export function GrblWorkspace({
     }
   };
 
-  // CAM handoff: parse the file the CAM workspace exported for us.
+  // CAM handoff: parse the program the CAM workspace posted for us.
   useEffect(() => {
-    if (previewFile) {
-      void loadFile(previewFile);
-      onPreviewFileConsumed?.();
+    if (handoffProgram) {
+      void loadProgram(handoffProgram.text, handoffProgram.label);
+      onHandoffConsumed?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewFile]);
+  }, [handoffProgram]);
 
   // Executed-line mapping: `linesSent` counts buffered-not-executed
   // lines (≤127-byte lead) — the same approximation LaserGRBL shows.
   // On completion every line is highlighted; reset clears to zero.
   const executedLines = useMemo(() => {
-    if (!loadedFile) {
+    if (!loadedProgram) {
       return 0;
     }
     if (completed) {
-      const moves = loadedFile.info.moves;
+      const moves = loadedProgram.info.moves;
       return moves.length > 0 ? moves[moves.length - 1].line : 0;
     }
     return streaming ? linesSent : 0;
-  }, [loadedFile, completed, streaming, linesSent]);
+  }, [loadedProgram, completed, streaming, linesSent]);
 
   // WCS offset (WCO = MPos − WPos): shifts the previewed toolpath
   // from file space into machine space, so the MPos crosshair
@@ -163,11 +194,11 @@ export function GrblWorkspace({
         >
           {t("grbl.openFile")}
         </button>
-        {loadedFile ? (
+        {loadedProgram ? (
           <span className="min-w-0 truncate font-mono text-[10px] text-on-surface-dim">
-            {loadedFile.info.fileName}
+            {loadedProgram.info.fileName}
             {" · "}
-            {t("grbl.moves", { count: loadedFile.info.moves.length })}
+            {t("grbl.moves", { count: loadedProgram.info.moves.length })}
           </span>
         ) : null}
       </div>
@@ -175,9 +206,13 @@ export function GrblWorkspace({
         <aside className="min-h-0 w-[340px] shrink-0 border-r border-[var(--cad-panel-soft-border)] bg-surface-lowest">
           <CamGrblPanel
             embedded
-            // The previewed file becomes the program Cycle Start sends;
-            // the CAM handoff path (P4) fills in when no file is open.
-            embeddedFilePath={loadedFile?.path ?? embeddedFilePath}
+            // The previewed program becomes what Cycle Start sends; the
+            // CAM handoff program fills in when nothing is loaded yet.
+            embeddedProgram={
+              loadedProgram?.source === "internal"
+                ? { text: loadedProgram.text, label: loadedProgram.label }
+                : embeddedProgram
+            }
             // A file picked through the panel's Load button must parse
             // and preview here too — same pipeline as the header Open
             // button, otherwise Cycle Start would stream a program the
@@ -190,7 +225,7 @@ export function GrblWorkspace({
         </aside>
         <div className="relative flex min-h-0 min-w-0 flex-1 bg-surface-lowest">
           <GrblPreviewViewport
-            info={loadedFile?.info ?? null}
+            info={loadedProgram?.info ?? null}
             bed={bed}
             executedLines={executedLines}
             // Machine-space overlay: the crosshair is the raw machine
@@ -208,7 +243,7 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {!loadedFile && !loading ? (
+          {!loadedProgram && !loading ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span className="max-w-xl px-6 text-center text-sm text-on-surface-muted">
                 {loadError ? t("grbl.loadError") : t("grbl.noFile")}
@@ -224,7 +259,7 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {loadedFile && !loading ? (
+          {loadedProgram && !loading ? (
             <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-3 rounded-md bg-[var(--cad-panel-soft-bg)] px-2.5 py-1.5">
               {legend.map((entry) => (
                 <span
@@ -241,13 +276,13 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {loadedFile && !loading && loadedFile.info.warnings.length > 0 ? (
+          {loadedProgram && !loading && loadedProgram.info.warnings.length > 0 ? (
             <div className="absolute bottom-3 right-3 max-w-[45%] rounded-md bg-[var(--cad-panel-soft-bg)] px-2.5 py-1.5">
               <p className="text-[10px] uppercase tracking-wider text-on-surface-muted">
                 {t("grbl.parseWarnings")}
               </p>
               <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto font-mono text-[10px] text-on-surface-dim">
-                {loadedFile.info.warnings.map((warning) => (
+                {loadedProgram.info.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>

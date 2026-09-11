@@ -415,6 +415,16 @@ pub fn grbl_parse_file(file_path: String) -> Result<GcodeFileInfo, String> {
     Ok(info)
 }
 
+/// In-memory parse for the CAM→GRBL handoff: identical pipeline to
+/// grbl_parse_file, but the text arrives in the command instead of a
+/// file.  `label` becomes `fileName` (the UI shows it, never a path).
+#[tauri::command]
+pub fn grbl_parse_text(text: String, label: String) -> GcodeFileInfo {
+    let mut info = parse_gcode(&text);
+    info.file_name = label;
+    info
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

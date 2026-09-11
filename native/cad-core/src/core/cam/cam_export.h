@@ -24,4 +24,14 @@ struct CamExportResult {
 CamExportResult export_cam_gcode(const DocumentState& document,
                                  const std::string& file_path);
 
+// In-memory variant: identical posting pipeline, no file.  The GRBL
+// workspace streams this text directly — the UI never sees a path.
+struct CamGcodeTextResult {
+  std::string text;
+  std::string format = "gcode";
+  int exported_feature_count = 0;
+};
+
+CamGcodeTextResult post_cam_gcode_text(const DocumentState& document);
+
 }  // namespace polysmith::core
