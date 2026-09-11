@@ -135,6 +135,7 @@ import { createRecentProjectHandlers } from "./app/recentProjectHandlers";
 import * as selectionSources from "./app/selectionSources";
 import { SketchDeleteConfirmationPanel } from "./app/SketchDeleteConfirmationPanel";
 import { SlicerWorkspace } from "./app/SlicerWorkspace";
+import { GrblWorkspace } from "./app/GrblWorkspace";
 import {
   createSketchToolActions,
   type SketchConstraintVertexKind,
@@ -1722,6 +1723,24 @@ function App() {
     }
   };
 
+  // Export AND jump to the GRBL workspace with the file loaded for
+  // preview/streaming (the in-app alternative to LaserGRBL).
+  const [grblPreviewFile, setGrblPreviewFile] = useState<string | null>(null);
+
+  const exportCamGcodeToGrblWorkspaceAction = async () => {
+    const filePath = await pickGcodeExportPath({
+      translate: t,
+      documentName: document?.name,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+    await doExportGcode(filePath);
+    setGrblPreviewFile(filePath);
+    void showGrblView();
+  };
+
   const setCamPostProcessorAction = (postType: string) =>
     runAction(async () => {
       // Output shaping comes from the post DEFINITION FILE — the
@@ -2191,6 +2210,7 @@ function App() {
     showCamView,
     showDrawingView,
     showSlicerView,
+    showGrblView,
   } = useSlicerWorkspaceActions({
     workspaceView,
     hasOrcaEmbedSession,
@@ -2366,6 +2386,7 @@ function App() {
           showCamView={showCamView}
           showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
+          showGrblView={showGrblView}
           status={status}
           canUndo={session?.can_undo ?? false}
           canRedo={session?.can_redo ?? false}
@@ -2501,6 +2522,17 @@ function App() {
               externalMessage={t("workspace.slicerExternalInfo")}
               openInBrowserLabel={t("workspace.openInBrowser")}
               addMessage={addMessage}
+            />
+          ) : workspaceView === "grbl" ? (
+            <GrblWorkspace
+              embeddedFilePath={null}
+              machineSettings={document?.cam.machine_settings ?? null}
+              theme={config.theme}
+              addMessage={addMessage}
+              previewFile={grblPreviewFile}
+              onPreviewFileConsumed={() => {
+                setGrblPreviewFile(null);
+              }}
             />
           ) : (
             <>
@@ -4259,6 +4291,9 @@ function App() {
                 }}
                 onExportAndOpen={() => {
                   void exportCamGcodeAndOpenLaserGrblAction();
+                }}
+                onSendToGrbl={() => {
+                  void exportCamGcodeToGrblWorkspaceAction();
                 }}
                 onPostProcessorChange={(postType) => {
                   void setCamPostProcessorAction(postType);

@@ -427,15 +427,29 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   built-in `grbl` post output is unchanged.
 - **Shell-side GRBL transport (no core IPC):** the desktop shell can
   stream an exported `.nc` directly over serial (see the GRBL panel
-  under the Setup panel's Machine tab).  Rust commands
+  under the Setup panel's Machine tab, and the standalone GRBL
+  workspace).  Rust commands
   (`grbl_list_ports`, `grbl_connect {port, baudRate}`, `grbl_send_file
   {filePath}`, `grbl_pause`/`grbl_resume`/`grbl_reset`/`grbl_home`/
-  `grbl_unlock`/`grbl_jog {x?, y?, feed}`) drive a worker that owns
+  `grbl_unlock`/`grbl_jog {x?, y?, feed}`, `grbl_zero_xy` — sends
+  `$X` + `G92 X0 Y0` — and `grbl_send_raw {line}` for arbitrary
+  commands) drive a worker that owns
   the port; state returns as `grbl-stream` Tauri events
   (`connected|disconnected|progress|status|error|completed|paused|
-  resumed|reset` with lines/percent/state/MPos).  Sending respects
+  resumed|reset|zeroed` with lines/percent/state/MPos/WPos).  Sending respects
   GRBL's 128-byte RX buffer via a 127-byte window and the ok/error:N
   handshake; the status poll runs at 500 ms, emitted ≤ 5 Hz.
+  FluidNC quirks handled: `WCO:` reports the work-coordinate offset
+  (WPos is derived), `ALARM:n` lines abort the active job, and
+  `$20=0`/`G10 L20 P0` are rejected/no-op on FluidNC v4 (soft limits
+  live in the board's config.yaml).
+- **Shell-side G-code parsing (no core IPC):** `grbl_parse_file
+  {filePath}` returns structured moves for the GRBL workspace preview
+  (`fileName`, `moves[]` with `index`/`line`/`kind`/`start`/`end`/
+  `center`/`radius`/`feed`/`power`/`laserOn`/`dwellSeconds`, `bounds`,
+  `unitsMm`, `absolute`, `warnings[]`).  Line filtering matches the
+  sender byte-for-byte, so `move.line` equals the sender's
+  `linesSent` progress counter.
 - `LaserTestPatternParameters` (the `test_pattern` block of
   `cam_operation_create` / `cam_operation_update` for
   `type: "laser_test_pattern"` ops) drives LightBurn-style material test

@@ -104,6 +104,10 @@ export function useSlicerWorkspaceActions({
     setWorkspaceView("drawing");
   }
 
+  async function showGrblView() {
+    setWorkspaceView("grbl");
+  }
+
   async function prepareExportedSlicerFile(
     format: SlicerExportFormat,
     bodyId: string,
@@ -279,5 +283,6 @@ export function useSlicerWorkspaceActions({
     showCamView,
     showDrawingView,
     showSlicerView,
+    showGrblView,
   };
 }

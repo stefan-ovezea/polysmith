@@ -57,6 +57,40 @@ Docs: this log, CAM-Development.md (LaserGRBL integration section +
 progress rows 19–21), IPC-Protocol.md (`pass_power_step_percent`,
 `lasergrbl` built-in + seed, shell-side GRBL transport note).
 
+### GRBL workspace with toolpath preview (feature/grbl)
+
+Standalone **GRBL workspace** in the switcher (CAD/CAM/ISO Drawing
+sibling): the GRBL machine panel embedded as a fixed left column
+(CAM setup entry unchanged — both coexist) + a Three.js **toolpath
+preview** with live progress and machine position.  Job sources: an
+in-page open-file dialog and a CAM handoff ("Send to GRBL workspace"
+on both laser panels — exports and jumps with the file loaded).
+
+- **Pure G-code parser (Rust)** — `gcode_parser.rs` + `grbl_parse_file`
+  command; filter parity with the sender so `move.line` maps 1:1 onto
+  the stream progress counter; G0/G1/G2/G3 (I/J, full circles), G20/
+  G91 scaling, G4 dwells, M3/M4/M5 laser state, N-prefixes + comments
+  stripped, G92/R-arcs warn-and-skip.  The project's first Rust test
+  module (7 tests incl. a golden fixture from a real export).
+- **Preview** — pure THREE scene builders (`app/grbl/grblPreviewScene.ts`,
+  self-contained viewport `GrblPreviewViewport.tsx` reusing the shared
+  viewport helpers): bed grid + outline (machine settings or 430×430),
+  dashed rapids, solid cuts, 0.01 mm arc tessellation, dwell pierce
+  dots, executed-line highlight (new `--cad-toolpath-executed` token,
+  all six themes), WCS crosshair from status reports; the camera
+  frames the TOOLPATH bounds (exports can exceed the configured bed).
+- **Load / Cycle Start split** — loading never sends; Cycle Start
+  streams the loaded program (the laser workflow needs preview and
+  origin zeroing between the two).
+- **FluidNC v4.0.3 verified over serial traces** — WCO parsing
+  (FluidNC reports the work-coordinate offset, not WPos: WPos =
+  MPos − WCO), `ALARM:n` lines abort the job instead of fake-
+  completing, Zero XY sends `$X` + `G92 X0 Y0` (one press, GRBL +
+  FluidNC), mini command console, WCS/MCS DRO, alarm +
+  outside-work-area hints (Home re-syncs a drifted MCS), panel
+  scrolling.  `$20=0` and `G10 L20 P0` are rejected/no-op on FluidNC
+  v4 — soft limits live in the board's config.yaml.
+
 ## 2026-09-10
 
 ### CAM Mill Engrave + Profile-button removal (cam/milling)

@@ -34,6 +34,7 @@ interface AppTopBarProps {
   showCamView: AsyncVoid;
   showDrawingView: AsyncVoid;
   showSlicerView: AsyncVoid;
+  showGrblView: AsyncVoid;
   status: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -183,6 +184,10 @@ export function AppTopBar(props: AppTopBarProps) {
         }
         if (view === "drawing") {
           void props.showDrawingView();
+          return;
+        }
+        if (view === "grbl") {
+          void props.showGrblView();
           return;
         }
         void props.showSlicerView();

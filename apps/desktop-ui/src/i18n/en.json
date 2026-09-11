@@ -203,13 +203,28 @@
     "slicerView": "Slicer View",
     "slicerWaiting": "Slicer view is waiting for OrcaSlicer.",
     "drawing": "ISO Drawing",
-    "drawingView": "ISO Drawing View"
+    "drawingView": "ISO Drawing View",
+    "grbl": "GRBL",
+    "grblView": "GRBL View"
   },
   "drawing": {
     "placeholder": "ISO Drawing workspace ready — dimension and sheet tools coming soon.",
     "category": {
       "sheet": "Sheet"
     }
+  },
+  "grbl": {
+    "openFile": "Open G-code file…",
+    "gcodeFiles": "G-code files",
+    "noFile": "Open a G-code file to preview the toolpath.",
+    "loading": "Parsing toolpath…",
+    "loadError": "Failed to parse the G-code file.",
+    "parseWarnings": "Warnings",
+    "moves": "{{count}} moves",
+    "legendRapid": "Rapid",
+    "legendCut": "Cut",
+    "legendExecuted": "Executed",
+    "legendPosition": "Position"
   },
   "cam": {
     "pocket": {
@@ -582,6 +597,10 @@
     "grbl": {
       "title": "GRBL Machine",
       "close": "Close",
+      "transport": "Transport",
+      "serialTransport": "Serial (USB)",
+      "tcpTransport": "Network (TCP)",
+      "host": "Host",
       "port": "Port",
       "noPorts": "No serial ports found",
       "refreshPorts": "Refresh",
@@ -591,8 +610,15 @@
       "status": "Status",
       "connecting": "…",
       "disconnectedState": "Offline",
-      "position": "Position",
-      "streamFile": "Stream G-code file…",
+      "wcsPosition": "WCS",
+      "mcsPosition": "MCS",
+      "zeroXY": "Zero XY",
+      "command": "Command",
+      "send": "Send",
+      "loadFile": "Load G-code…",
+      "start": "Cycle Start",
+      "alarmHint": "Alarm — press Reset, then Unlock ($X).",
+      "outsideWorkArea": "Machine position is outside the work area — jog inside, then press Zero XY.",
       "gcodeFiles": "G-code files",
       "pause": "Pause",
       "resume": "Resume",
@@ -733,7 +759,8 @@
       "sketchSelected": "Sketch selected: {{name}} — click 2D Cut to cut it.",
       "defaultToolCreated": "Added a default laser tool.",
       "exportGcode": "Export G-code",
-      "exportAndOpen": "Export & open in LaserGRBL"
+      "exportAndOpen": "Export & open in LaserGRBL",
+      "sendToGrbl": "Send to GRBL workspace"
     },
     "setupsTitle": "Setups",
     "newSetup": "New setup",
@@ -812,6 +839,7 @@
       "generate": "Generate",
       "exportGcode": "Export G-code",
       "exportAndOpen": "Export & open in LaserGRBL",
+      "sendToGrbl": "Send to GRBL workspace",
       "delete": "Delete",
       "close": "Close",
       "createFailed": "The test pattern could not be created.",

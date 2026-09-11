@@ -23,6 +23,7 @@ interface GrblStoreState {
   percent: number;
   machineState: string | null;
   mpos: [number, number, number] | null;
+  wpos: [number, number, number] | null;
   lastError: string | null;
   lastMessage: string | null;
   applyEvent: (event: GrblStreamEvent) => void;
@@ -46,12 +47,19 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
   percent: 0,
   machineState: null,
   mpos: null,
+  wpos: null,
   lastError: null,
   lastMessage: null,
   applyEvent: (event) => {
     switch (event.kind) {
       case "connected":
-        log("info", `connected to ${event.portName ?? ""} @ ${event.baudRate ?? ""}`);
+        // TCP links have no baud rate — omit it from the log line.
+        log(
+          "info",
+          event.baudRate
+            ? `connected to ${event.portName ?? ""} @ ${event.baudRate}`
+            : `connected to ${event.portName ?? ""}`,
+        );
         set({
           connected: true,
           portName: event.portName ?? null,
@@ -64,6 +72,7 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           percent: 0,
           machineState: null,
           mpos: null,
+          wpos: null,
           lastError: null,
           lastMessage: event.message,
         });
@@ -82,6 +91,7 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           percent: 0,
           machineState: null,
           mpos: null,
+          wpos: null,
           lastError: null,
           lastMessage: event.message,
         });
@@ -109,7 +119,21 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
         set({
           machineState: event.state ?? null,
           mpos: event.mpos ?? null,
+          wpos: event.wpos ?? null,
         });
+        break;
+      case "zeroed":
+        // The worker derives the result of G92 X0 Y0 Z0 locally
+        // (WPos = 0,0,0 at the last known MPos) so the DRO and the
+        // toolpath shift instantly — FluidNC can take seconds to
+        // publish the new WCO in its status reports.  The next real
+        // status report confirms or corrects these values.
+        log("info", event.message);
+        set((state) => ({
+          mpos: event.mpos ?? state.mpos,
+          wpos: event.wpos ?? state.wpos,
+          lastMessage: event.message,
+        }));
         break;
       case "paused":
         set({ paused: true, lastMessage: event.message });
