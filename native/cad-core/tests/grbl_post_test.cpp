@@ -282,6 +282,43 @@ bool test_s0_at_program_end_and_no_s0_by_default() {
   return true;
 }
 
+bool test_laser_off_before_travel_rapid() {
+  // A rapid between regions must travel with the beam OFF — GRBL
+  // latches the last S, so an unguarded rapid keeps firing across
+  // the part.  Pins the post engine's rapid branch running the power
+  // state machine (bug: the beam stayed on during inter-region
+  // travel; the built-in grbl emits a plain M5 — no S0).
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});  // region 1 cut
+  path.moves.push_back({ToolpathMoveKind::Rapid, 10.0, 10.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, false});  // travel, beam off
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 11.0, 10.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});  // region 2 pierce
+
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_laser_tool(),
+      .op_name = "Travel",
+      .laser = laser,
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  const size_t travel = gcode.find("G0 X10.000 Y10.000");
+  const size_t reOn = gcode.find("M4 S850.000", travel);  // after the travel
+  const size_t feed2 = gcode.find("G1 X11.000 Y10.000", travel);
+  if (!expect(gcode.find("M5\nG0 X10.000 Y10.000") != std::string::npos &&
+                  reOn != std::string::npos && reOn < feed2,
+              "grbl: M5 before the inter-region rapid, M4 re-arms the beam")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
 bool test_engrave_uses_m3() {
   LaserCutParameters laser;
   laser.power_percent = 30.0;
@@ -1071,6 +1108,14 @@ int main() {
 
   std::cout << "  Test 20: S0 at program end; built-in has no S0... ";
   if (test_s0_at_program_end_and_no_s0_by_default()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 21: laser off before inter-region travel rapid... ";
+  if (test_laser_off_before_travel_rapid()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

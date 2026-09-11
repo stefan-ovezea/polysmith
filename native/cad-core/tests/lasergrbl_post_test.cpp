@@ -266,6 +266,38 @@ bool test_grbl_builtin_unchanged() {
                 "grbl regression pin: no S0, plain M5/M2 footer");
 }
 
+bool test_laser_off_before_travel_rapid() {
+  // A rapid between regions must travel with the beam OFF — GRBL
+  // latches the last S, so an unguarded rapid keeps firing across
+  // the part.  Pins the post engine's rapid branch running the power
+  // state machine (bug: the beam stayed on during inter-region
+  // travel).  The lasergrbl post emits S0 before the M5.
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});  // region 1 cut
+  path.moves.push_back({ToolpathMoveKind::Rapid, 10.0, 10.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, false});  // travel, beam off
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 11.0, 10.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});  // region 2 pierce
+
+  const std::string gcode = joined(
+      post_process("lasergrbl", make_context(path, laser, "Travel")));
+  const size_t travel = gcode.find("G0 X10.000 Y10.000");
+  const size_t reOn = gcode.find("M4 S850.000", travel);  // after the travel
+  const size_t feed2 = gcode.find("G1 X11.000 Y10.000", travel);
+  if (!expect(gcode.find("S0.000\nM5\nG0 X10.000 Y10.000") !=
+                      std::string::npos &&
+                  reOn != std::string::npos && reOn < feed2,
+              "travel: S0/M5 before the inter-region rapid, M4 re-arms")) {
+    std::cerr << gcode;
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -288,6 +320,8 @@ int main() {
   run("Test 5: power scale", test_power_scale);
   run("Test 6: LaserGRBL machine seed", test_machine_seed);
   run("Test 7: built-in grbl unchanged", test_grbl_builtin_unchanged);
+  run("Test 9: laser off before inter-region travel rapid",
+      test_laser_off_before_travel_rapid);
 
   if (allPassed) {
     std::cout << "lasergrbl_post_test passed\n";

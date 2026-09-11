@@ -483,6 +483,10 @@ std::vector<std::string> render_post(const PostContext& context,
     };
 
     if (move.kind == ToolpathMoveKind::Rapid) {
+      // Travel moves carry the beam OFF — without this, a rapid
+      // following a laser-on move would keep firing during the
+      // travel (the beam latches the last S on GRBL laser mode).
+      ensure_power_state(move);
       auto vars = moveVars();
       std::string line = render_template(def.rapid, vars);
       if (zChanged) {
