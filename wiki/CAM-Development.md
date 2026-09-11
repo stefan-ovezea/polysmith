@@ -1563,6 +1563,9 @@ before the next operation depends on it:
 | 16. Adaptive Clearing toolpath generation | ✅ Done (2026-09-10) — contour-parallel spiral (v1): concentric offset loops with climb-constant walk, island/boss families, arc-aware clipping |
 | 17. Slot toolpath generation (open slot) | ✅ Done (2026-09-10) — straight-edge open side, adjacent-top-face inward cut, climb/conventional walk, stepdown multi-pass, cut-major emission |
 | 18. Engrave toolpath generation (mill) | ✅ Done (2026-09-10) — sketch-profile on-line trace at a fixed depth below the sketch plane, exact arcs + hole loops, ALL selected profiles, the laser-engrave twin |
+| 19. LaserGRBL compatibility (post + machine seed) | ✅ Done (2026-09-11) — built-in `lasergrbl` post (GRBL 1.1 laser dialect, M8/M9 air assist, S0-before-M5, no Z/N), LaserGRBL machine seed (430×430), opt-in `laser_off_with_power` post flag |
+| 20. Export & open in LaserGRBL | ✅ Done (2026-09-11) — shell-side launch command (OrcaSlicer precedent), LaserGRBL path in Settings, "Export & open" on the laser panels |
+| 21. Direct GRBL streaming + per-pass power ramp | ✅ Done (2026-09-11) — serial transport in the shell (connect, ok-handshake 127-byte send window, status polling, jog/home, progress), `pass_power_step_percent` ramp per re-cut pass |
 
 > **Deviation note (2026-09-10):** the scaffolding "Profile" toolbar button
 > was removed.  "Profile finishing" was always 2D Contour (§3 of the V1
@@ -2227,6 +2230,47 @@ a milling machine setup"). The scaffolding Profile button was removed
 now maps `engrave` and `laser_test_pattern` explicitly and unknown
 core types to "Unknown" (the old default silently labeled them
 "Profile").
+
+## LaserGRBL integration (2026-09-11)
+
+Real-machine feedback drove a LaserGRBL-compatibility milestone
+(branch `laser/post-polish`).  Four pieces:
+
+- **`lasergrbl` post processor** (built-in, `post_processor.cpp`):
+  GRBL 1.1 laser dialect — M4 dynamic / M3 constant, `S{power}` with
+  `power_max` 1000, `use_arcs`, no line numbers, Z-free laser footer
+  (`M5`/`M2`), M8/M9 air assist on the coolant relay, and
+  `laser_off_with_power: true` so every laser-off reads `S0` before
+  `M5` (diode drivers latch the last S).  The S0-before-M5 behavior
+  is **opt-in per post** — the built-in `grbl` post is byte-identical
+  to before.  A **LaserGRBL machine seed** (430×430, post `lasergrbl`)
+  applies the whole configuration from the machine dropdown.
+- **Export & open in LaserGRBL**: a shell-side launch command
+  (`laser_grbl.rs`, the OrcaSlicer external-launch pattern) plus a
+  configured binary path in Settings.  The laser panels carry a
+  secondary "Export & open in LaserGRBL" button; a missing path warns
+  but still writes the file.
+- **Direct GRBL streaming** (`gcode_sender.rs`, shell-side — no core
+  IPC): the app opens the serial port itself, streams an exported
+  `.nc` with GRBL's ok/error handshake inside a 127-byte send window
+  (GRBL's RX buffer is 128 bytes), polls `?` status at 500 ms
+  (emitted ≤ 5 Hz), and forwards jog (`$J=G91 …`), home (`$H`),
+  unlock (`$X`), pause (`!`), resume (`~`), and reset (0x18).
+  Safety: over-long lines are rejected up front, and Disconnect
+  soft-resets when a job is running (GRBL keeps executing buffered
+  lines without the host).  State travels to the UI as `grbl-stream`
+  Tauri events; the GRBL panel opens from the Setup panel's Machine
+  tab.
+- **Per-pass power ramp**: `LaserCutParameters.pass_power_step_percent`
+  (default 0 = every pass at the base power) drops the power on each
+  re-cut pass — `max(1, power_percent − pass × step)` — so later
+  passes stop burning the kerf.  Leads and the pierce always run at
+  the base power; tab power and the post engine are untouched (the
+  post already renders mid-cut `S` changes).
+
+The transport deliberately lives in the **shell**, not the core: the
+core stays a file producer (G-code export), and serial streaming is a
+presentation/transport concern like the OrcaSlicer launch.
 
 ## Architecture notes for extension
 

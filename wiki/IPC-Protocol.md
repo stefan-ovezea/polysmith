@@ -352,7 +352,9 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   `cam_operation_update` payloads) carries the v2 model: `mode`
   (`cut|score|engrave`, validated), `power_percent`, `speed_mm_per_s`
   (laser-native speed; absent → the legacy `feedrate_mm_per_min` fallback),
-  `passes`, `dynamic_power`, `air_assist`, `kerf_width_mm`, `kerf_side`
+  `passes`, `pass_power_step_percent` (per-pass power ramp: pass p cuts
+  at `max(1, power_percent − p × step)`; leads and the pierce keep the
+  base power; 0 = no ramp), `dynamic_power`, `air_assist`, `kerf_width_mm`, `kerf_side`
   (`auto|outside|inside|none`), `lead_in_mm` / `lead_out_mm` +
   `lead_in_style` / `lead_out_style` (`line|arc`) +
   `lead_in_angle_deg` / `lead_out_angle_deg`, `lead_in_arc_angle_deg` /
@@ -416,6 +418,24 @@ and produce toolpaths, never B-rep. All CAM commands reply with
 - `cam_export_gcode { file_path }` generates stale toolpaths on demand,
   serializes every enabled operation through the selected post definition,
   and replies `document_exported` with `format: "gcode"`.
+- Built-in posts now include `lasergrbl` (GRBL 1.1 laser dialect: M4
+  dynamic / M3 constant, `power_max` 1000, M8/M9 air assist,
+  `laser_off_with_power` so every laser-off emits `S0` before `M5`,
+  Z-free footer, no line numbers) and the machine library seeds a
+  **LaserGRBL** machine (430×430, post `lasergrbl`).  The
+  `laser_off_with_power` flag is opt-in per post definition — the
+  built-in `grbl` post output is unchanged.
+- **Shell-side GRBL transport (no core IPC):** the desktop shell can
+  stream an exported `.nc` directly over serial (see the GRBL panel
+  under the Setup panel's Machine tab).  Rust commands
+  (`grbl_list_ports`, `grbl_connect {port, baudRate}`, `grbl_send_file
+  {filePath}`, `grbl_pause`/`grbl_resume`/`grbl_reset`/`grbl_home`/
+  `grbl_unlock`/`grbl_jog {x?, y?, feed}`) drive a worker that owns
+  the port; state returns as `grbl-stream` Tauri events
+  (`connected|disconnected|progress|status|error|completed|paused|
+  resumed|reset` with lines/percent/state/MPos).  Sending respects
+  GRBL's 128-byte RX buffer via a 127-byte window and the ok/error:N
+  handshake; the status poll runs at 500 ms, emitted ≤ 5 Hz.
 - `LaserTestPatternParameters` (the `test_pattern` block of
   `cam_operation_create` / `cam_operation_update` for
   `type: "laser_test_pattern"` ops) drives LightBurn-style material test

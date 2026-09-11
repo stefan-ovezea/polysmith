@@ -125,6 +125,7 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
       {"mode", laser.mode},
       {"power_percent", laser.power_percent},
       {"passes", laser.passes},
+      {"pass_power_step_percent", laser.pass_power_step_percent},
       {"dynamic_power", laser.dynamic_power},
       {"air_assist", laser.air_assist},
       {"kerf_width_mm", laser.kerf_width_mm},

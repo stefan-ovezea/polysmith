@@ -298,6 +298,36 @@ bool test_laser_off_before_travel_rapid() {
   return true;
 }
 
+bool test_power_ramp_golden() {
+  // The generator writes a ramped power per pass; the post must emit
+  // each mid-cut S in order (the S0/M5 footer follows the last one).
+  Toolpath path;
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 1.0, 1.0, 0.0, 0.0, 0.0,
+                        500.0, 85.0, true});  // pass 0
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 2.0, 1.0, 0.0, 0.0, 0.0,
+                        500.0, 75.0, true});  // pass 1
+  path.moves.push_back({ToolpathMoveKind::FeedLinear, 3.0, 1.0, 0.0, 0.0, 0.0,
+                        500.0, 65.0, true});  // pass 2
+
+  LaserCutParameters laser;
+  laser.power_percent = 85.0;
+  laser.passes = 3;
+  laser.pass_power_step_percent = 10.0;
+
+  const std::string gcode = joined(
+      post_process("lasergrbl", make_context(path, laser, "Ramp")));
+  const size_t s850 = gcode.find("S850.000");
+  const size_t s750 = gcode.find("S750.000");
+  const size_t s650 = gcode.find("S650.000");
+  return expect(s850 != std::string::npos &&
+                    s850 < s750 &&
+                    s750 < s650 &&
+                    s650 != std::string::npos &&
+                    gcode.find("S650.000\n", s650) != std::string::npos &&
+                    gcode.find("S0.000\nM5\nM2") != std::string::npos,
+                "ramp golden: S850 → S750 → S650 in order, S0/M5/M2 footer");
+}
+
 }  // namespace
 
 int main() {
@@ -320,6 +350,7 @@ int main() {
   run("Test 5: power scale", test_power_scale);
   run("Test 6: LaserGRBL machine seed", test_machine_seed);
   run("Test 7: built-in grbl unchanged", test_grbl_builtin_unchanged);
+  run("Test 8: per-pass power ramp golden", test_power_ramp_golden);
   run("Test 9: laser off before inter-region travel rapid",
       test_laser_off_before_travel_rapid);
 

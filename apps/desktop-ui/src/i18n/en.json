@@ -701,6 +701,8 @@
       "cutOrderNearest": "Nearest neighbor",
       "cutOrderByArea": "By area",
       "passes": "Passes",
+      "powerStepPerPass": "Power step / pass (%)",
+      "powerStepNote": "Each re-cut pass drops power by the step — later passes burn less into the kerf. Leads and the pierce keep the base power.",
       "materialThickness": "Thickness (mm)",
       "cutPlaneOffset": "Cut plane offset (mm)",
       "preview": "Preview",

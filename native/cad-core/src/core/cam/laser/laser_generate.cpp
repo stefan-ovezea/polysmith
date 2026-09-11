@@ -862,13 +862,20 @@ CamGenerateResult generate_laser_cut_toolpath(
     // between passes.  Tabs (M6) split the rotated contour at tab
     // boundaries, landing relative to the pierce seam — never on
     // leads.
+    // Per-pass power ramp: pass p drops `pass_power_step_percent` per
+    // re-cut, never below 1%.  Leads and the pierce stay at the base
+    // power (they run before the first pass).
+    const auto passPower = [&](int pass) {
+      return std::max(1.0, laser.power_percent -
+                               pass * laser.pass_power_step_percent);
+    };
     PlannedLoop contourLoop = loop;
     contourLoop.segments = contour;
     const auto tabbed = apply_loop_tabs(contourLoop, laser, result.warnings);
     if (tabbed.empty()) {
       for (int pass = 0; pass < passCount; ++pass) {
         for (const auto& segment : contour) {
-          append_segment(segment, laser.power_percent, /*laserOn=*/true);
+          append_segment(segment, passPower(pass), /*laserOn=*/true);
         }
       }
     } else {
@@ -877,7 +884,7 @@ CamGenerateResult generate_laser_cut_toolpath(
           const bool cutOn = !piece.in_tab || laser.tab_power_percent > 0.0;
           append_segment(piece.segment,
                          piece.in_tab ? laser.tab_power_percent
-                                      : laser.power_percent,
+                                      : passPower(pass),
                          cutOn);
         }
       }

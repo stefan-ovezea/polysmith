@@ -187,6 +187,7 @@ export const laserCutParametersSchema = z
     power_percent: z.number().default(85),
     speed_mm_per_s: z.number().optional(),
     passes: z.number().default(1),
+    pass_power_step_percent: z.number().default(0),
     dynamic_power: z.boolean().default(true),
     air_assist: z.boolean().default(false),
     kerf_width_mm: z.number().default(0.15),

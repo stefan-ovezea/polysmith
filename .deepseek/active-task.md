@@ -43,9 +43,9 @@ checklist; the engineering work is the integration.
   exportCamGcodeAndOpenLaserGrblAction (warn toast when the path is
   unset); secondary "Export & open in LaserGRBL" buttons on the two
   laser panels; i18n. Gates: cargo check + tsc.
-- **P4 — IMPLEMENTED, uncommitted (working tree)** "feat(desktop):
-  direct GRBL streaming over serial": `serialport = "4"` (direct
-  crate — NO tauri plugin; custom commands are not capability-gated);
+- **P4 — COMMITTED 5120710** "feat(desktop): direct GRBL streaming
+  over serial": `serialport = "4"` (direct crate — NO tauri plugin;
+  custom commands are not capability-gated);
   `src-tauri/src/gcode_sender.rs` (worker thread owns the port;
   127-byte send window `unacked + len + 1 ≤ 127`; ok/error:N
   handshake; `(...)` comments + blanks stripped; 500 ms `?` status
@@ -61,34 +61,47 @@ checklist; the engineering work is the integration.
   open dialog, progress bar, pause/resume/reset/home/unlock, jog pad
   ±X/±Y with step + feed), "GRBL machine controls…" row in the
   CamSetupPanel Machine tab, third floating-panel branch, i18n
-  cam.grbl.*. Gates: cargo check clean + tsc clean (no Rust test
-  infra — manual checklist is the runtime gate).
-- **P5 — pending**: per-pass power ramp + docs (pass_power_step_percent
-  on LaserCutParameters, leads keep base power; tests; wiki docs).
+  cam.grbl.*. Gates: cargo check clean + tsc clean; desk items
+  user-verified in-app (panel, ports, jog/home/unlock commands,
+  stream + pause/resume/reset, error toast + Logs). **Real-machine
+  stream test DEFERRED** — no laser machine at hand; the user will
+  verify with the real equipment (tracked below).
+- **P5 — IMPLEMENTED, uncommitted (working tree)** "feat(cam): laser
+  per-pass power ramp; docs for LaserGRBL milestone":
+  `LaserCutParameters.pass_power_step_percent = 0.0` (cam_types.h,
+  serde both directions, zod default, TS type) — pass p cuts at
+  `max(1, power_percent − p × step)`; leads + pierce keep the base
+  power; tab logic untouched; post engine untouched. UI: "Power
+  step / pass (%)" field beside Passes (clamped ≥ 0) + conditional
+  hint; i18n. Tests: cam_generators_test 13b (3 passes × step 10 →
+  85/75/65, pierce + leads 85, floor clamp 1%) + lasergrbl_post_test
+  8 (golden S850 → S750 → S650 in order). Docs: CAM-Development.md
+  (LaserGRBL integration section + progress rows 19-21),
+  IPC-Protocol.md (ramp field, lasergrbl built-in + seed, shell-side
+  GRBL transport note), Implementation-Log.md entry. Gates:
+  core:rebuild (app closed) + test:core 45/45 + tsc — all green.
 
-## In-app verification checklist P4 (user confirms before commit)
+## Real-machine checklist (deferred, user-driven)
 
-1. CAM → Setup panel → Machine tab → "GRBL machine controls…" opens
-   the panel; port list populates; baud dropdown defaults 115200.
-2. Connect to the GRBL controller → status line shows Idle/Run/Hold +
-   MPos position; disconnect works.
-3. Jog pad moves the head ±X/±Y at the step/feed values; Home runs
-   $H; Unlock runs $X.
-4. Stream a previously exported .nc → progress bar counts lines,
-   GRBL executes; Pause (!) / Resume (~) hold and continue; Reset
-   stops cleanly.
-5. Errors surface as toasts + Logs panel entries (e.g., connect to a
-   wrong port).
-6. Real machine: the direct stream cuts a test-pattern card correctly
-   (this is the whole point of P4).
+8. lasergrbl file loads and runs in LaserGRBL (M4 dynamics, G2/G3
+   accepted, S0-before-M5, M8/M9 with air assist).
+9. Direct stream from PolySmith cuts a test-pattern card correctly;
+   pause/resume mid-job; reset stops cleanly.
+10. Ramp: re-cut passes stop burning the kerf.
+11. One pass over each feedback area (power/speed, pierce/lead/
+    start-end, kerf/tabs/passes, handoff); defects → follow-up
+    commits with fail-before regression tests.
 
 ## Next steps
 
-- User in-app verification P4 → commit on approval (no
-  Co-Authored-By; commit message states cargo check + tsc + manual
-  checklist).
-- P5: per-pass power ramp + docs → draft PR to dev, held until the
-  real-machine checklist passes.
+- In-app verification P5 (multi-pass ramp in preview/export) → commit
+  on approval (no Co-Authored-By; commit message names the suites).
+- Then: push `laser/post-polish` + **draft PR to dev**, held until
+  the real-machine checklist passes (task #58).
+- Flagged, NOT fixed per plan: `protocol/schema/commands.schema.json`
+  command-name enum drift (e.g. `cam_capture_edge_reference` from
+  drilling is missing) — pre-existing, schemas are lenient in
+  practice.
 
 ---
 

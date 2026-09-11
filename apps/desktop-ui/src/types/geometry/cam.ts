@@ -183,6 +183,7 @@ export interface LaserCutParameters {
   power_percent: number;            // 0..100
   speed_mm_per_s?: number;          // laser-native speed (mm/s)
   passes: number;                   // contour repetitions, laser stays on
+  pass_power_step_percent: number;  // per-pass power drop; 0 = no ramp
   dynamic_power: boolean;           // true -> M4 (power scales with feed)
   air_assist: boolean;              // M8/M9 around cuts
   kerf_width_mm: number;            // full cut width; halved per side

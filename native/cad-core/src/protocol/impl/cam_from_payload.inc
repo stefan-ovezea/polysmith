@@ -328,6 +328,8 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   laser.mode = cam_read_string(payload, "mode", "cut");
   laser.power_percent = cam_read_number(payload, "power_percent", 85.0);
   laser.passes = cam_read_int(payload, "passes", 1);
+  laser.pass_power_step_percent =
+      cam_read_number(payload, "pass_power_step_percent", 0.0);
   laser.dynamic_power = cam_read_bool(payload, "dynamic_power", true);
   laser.air_assist = cam_read_bool(payload, "air_assist", false);
   laser.kerf_width_mm = cam_read_number(payload, "kerf_width_mm", 0.15);

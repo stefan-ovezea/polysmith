@@ -1656,6 +1656,93 @@ bool test_laser_passes() {
   return true;
 }
 
+// ── Test 13b: per-pass power ramp, leads keep the base power ───────
+
+bool test_laser_pass_power_ramp() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(0.0, 0.0, 20.0, 10.0);
+
+  std::string profile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    profile = feature.sketch_parameters->profiles[0].id;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 2.0;
+  laser.lead_out_mm = 2.0;
+  laser.passes = 3;
+  laser.pass_power_step_percent = 10.0;  // 85 → 75 → 65
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), profile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "ramp: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+
+  // Rapid + pierce + lead-in + 3 × 8 contour moves + lead-out.
+  if (!expect(toolpath.moves.size() == 1 + 1 + 1 + 3 * 8 + 1,
+              "ramp: rapid + pierce + lead-in + 3×8 contour + lead-out")) {
+    std::cerr << "  moves=" << toolpath.moves.size() << "\n";
+    return false;
+  }
+  // Pierce (index 1) and leads (2, 27) run at the BASE power; pass 0
+  // at 85, pass 1 at 75, pass 2 at 65.
+  if (!expect(near(toolpath.moves[1].power_percent, 85.0, 0.001) &&
+                  near(toolpath.moves[2].power_percent, 85.0, 0.001) &&
+                  near(toolpath.moves[27].power_percent, 85.0, 0.001),
+              "ramp: pierce + leads keep the base power")) {
+    return false;
+  }
+  const double expected[3] = {85.0, 75.0, 65.0};
+  for (int pass = 0; pass < 3; ++pass) {
+    for (int i = 0; i < 8; ++i) {
+      const size_t index = 3 + pass * 8 + i;
+      if (!near(toolpath.moves[index].power_percent, expected[pass],
+                0.001)) {
+        std::cerr << "  pass " << pass << " move " << i << " power="
+                  << toolpath.moves[index].power_percent << "\n";
+        return expect(false, "ramp: per-pass power drops by the step");
+      }
+    }
+  }
+  // Floor clamp: the ramp never drops below 1%.
+  {
+    LaserCutParameters clamped;
+    clamped.kerf_width_mm = 0.2;
+    clamped.lead_in_mm = 0.0;
+    clamped.lead_out_mm = 0.0;
+    clamped.passes = 2;
+    clamped.pass_power_step_percent = 100.0;  // 85 → would be −15
+    const std::string clampedId = make_laser_op(
+        manager, document, sketch_feature_id(document), profile, clamped);
+    const auto clampedOutcome = polysmith::core::generate_operation_toolpath(
+        manager.get_document().value(), clampedId, /*preview=*/false);
+    if (!expect(clampedOutcome.found && clampedOutcome.result.ok,
+                "ramp: clamped generation succeeds")) {
+      return false;
+    }
+    for (const auto& move : clampedOutcome.result.toolpath.moves) {
+      if (move.laser_on && move.power_percent < 1.0) {
+        std::cerr << "  power " << move.power_percent << "\n";
+        return expect(false, "ramp: pass power floors at 1%");
+      }
+    }
+  }
+  return true;
+}
+
 // ── Test 14: speed_mm_per_s drives the feedrate; legacy fallback ─
 
 bool test_laser_speed() {
@@ -5438,6 +5525,7 @@ int main() {
       test_non_horizontal_plane_rejected);
   run("Test 12: hairline slot degrades", test_hairline_slot_degrades);
   run("Test 13: passes repeat the contour", test_laser_passes);
+  run("Test 13b: per-pass power ramp", test_laser_pass_power_ramp);
   run("Test 14: speed drives the feedrate", test_laser_speed);
   run("Test 15: kerf side overrides", test_kerf_side_override);
   run("Test 16: mode validation + thickness warning",

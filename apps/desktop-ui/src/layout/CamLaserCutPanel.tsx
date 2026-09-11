@@ -265,6 +265,16 @@ export function CamLaserCutPanel({
                 onChange={(v) => update({ passes: Math.max(1, Math.round(v)) })}
               />
               <CamNumberField
+                label={t("cam.laserCut.powerStepPerPass", "Power step / pass (%)")}
+                value={params.pass_power_step_percent}
+                disabled={disabled}
+                step={1}
+                min={0}
+                onChange={(v) =>
+                  update({ pass_power_step_percent: Math.max(0, v) })
+                }
+              />
+              <CamNumberField
                 label={t("cam.laserCut.kerf", "Kerf width (mm)")}
                 value={params.kerf_width_mm}
                 disabled={disabled}
@@ -287,6 +297,11 @@ export function CamLaserCutPanel({
                 }
               />
             </div>
+            {params.pass_power_step_percent > 0 && params.passes > 1 ? (
+              <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                {t("cam.laserCut.powerStepNote")}
+              </p>
+            ) : null}
             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.kerfSide", "Kerf side")}
               <Dropdown
