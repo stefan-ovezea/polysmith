@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "core/cam/cam2d.h"
 #include "core/cam/cam_export.h"
 #include "core/cam/cam_generate.h"
 #include "core/cam/cam_generator.h"
@@ -4190,6 +4191,252 @@ int find_upward_face_index(const polysmith::core::CompiledBody& body) {
   return -1;
 }
 
+// ── Laser face-path + contour cleanup tests ───────────────────────
+
+// Captures the upward face of `body` as a TNP-safe attestation (the
+// same field mapping as the other face tests).
+polysmith::core::GeometryReference attest_upward_face(
+    const polysmith::core::CompiledBody& body) {
+  const int index = find_upward_face_index(body);
+  if (index < 0) {
+    throw std::runtime_error("upward face not found");
+  }
+  const auto ref =
+      polysmith::core::capture_face_reference(body.id, body.shape, index,
+                                              "top");
+  polysmith::core::FaceAttestation att;
+  att.area = ref->capturedArea;
+  att.normal = ref->capturedNormal;
+  for (const auto& p : ref->samplePoints) {
+    att.sample_points.push_back(p);
+  }
+  polysmith::core::GeometryReference stored;
+  stored.persistent_id = body.id + ":face:" + std::to_string(index);
+  stored.attestation = att;
+  return stored;
+}
+
+// Laser setup + tool + op cutting one body-face reference.  Returns
+// the op id.
+std::string make_laser_face_op(DocumentManager& manager,
+                               DocumentState& document,
+                               const polysmith::core::GeometryReference& faceRef,
+                               const LaserCutParameters& laser) {
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  CamOperation op;
+  op.name = "2D Cut (face)";
+  op.type = "laser_cut";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  op.parameters.laser = laser;
+  op.geometry_references.machining_regions.push_back(faceRef);
+  document = manager.cam_operation_add(op);
+  return document.cam.operations.back().op_id;
+}
+
+// A circular face must cut as ONE exact arc — the chord-polyline
+// sampling the old face path used would emit ~180 tiny G1 moves.
+bool test_laser_face_circular_exact_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_cylinder_feature(
+      polysmith::core::CylinderFeatureParameters{.radius = 10.0,
+                                                 .height = 10.0});
+  const auto compiled = polysmith::core::compile_bodies(document);
+  if (!expect(!compiled.bodies.empty(), "circle face: body compiled")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_face_op(manager, document,
+                         attest_upward_face(compiled.bodies[0]), laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "circle face: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int arcs = 0;
+  int laserOnLines = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      ++arcs;
+      // Concentric kerf offset: radius 10 + kerf/2 = 10.1.
+      if (!expect(near(std::hypot(move.i, move.j), 10.1, 0.02),
+                  "circle face: arc I/J equal the offset radius")) {
+        return false;
+      }
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               move.dwell_seconds <= 0.0) {
+      // The pierce move carries the dwell — it is not a chord cut.
+      ++laserOnLines;
+    }
+  }
+  if (!expect(arcs == 1, "circle face: exactly one arc cut")) {
+    std::cerr << "  saw " << arcs << " arcs\n";
+    return false;
+  }
+  return expect(laserOnLines == 0,
+                "circle face: no chord-polyline linear cuts");
+}
+
+// A sketch rectangle with one side split into two collinear lines
+// must cut that side as ONE move (the contour cleanup merges before
+// the kerf offset).  Regression: without cleanup the same profile
+// posts two bottom moves and five feeds.
+bool test_sketch_split_side_merges() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
+  document = manager.add_sketch_line(10.0, 0.0, 20.0, 0.0);  // split side
+  document = manager.add_sketch_line(20.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_line(20.0, 10.0, 0.0, 10.0);
+  document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);
+
+  std::string profile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_op(manager, document, sketch_feature_id(document), profile,
+                    laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "split side: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int laserOnLines = 0;
+  int bottomMoves = 0;
+  double prevX = 0.0;
+  double prevY = 0.0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    // The pierce move carries the dwell and is zero-length; skip it
+    // (and any other degenerate remnant) so only real cuts count.
+    const bool countedFeed =
+        move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+        move.dwell_seconds <= 0.0 &&
+        std::hypot(move.x - prevX, move.y - prevY) > 1e-6;
+    if (countedFeed) {
+      ++laserOnLines;
+      // The bottom side offsets outward to y = -0.1 (kerf 0.2 → d 0.1)
+      // and must span the full width in ONE move (either walk
+      // direction — the pierce rotation picks the start corner).  The
+      // offset lines are not miter-trimmed (the corners are degenerate
+      // join arcs), so the line runs x 0 → 20.
+      if (near(move.y, -0.1, 0.05) && near(prevY, -0.1, 0.05) &&
+          ((near(move.x, 20.0, 0.05) && near(prevX, 0.0, 0.05)) ||
+           (near(move.x, 0.0, 0.05) && near(prevX, 20.0, 0.05)))) {
+        ++bottomMoves;
+      }
+    }
+    prevX = move.x;
+    prevY = move.y;
+  }
+  if (!expect(laserOnLines == 4,
+              "split side: four cuts (the split side merged)")) {
+    std::cerr << "  saw " << laserOnLines << " laser-on lines\n";
+    return false;
+  }
+  return expect(bottomMoves == 1, "split side: bottom side is a single move");
+}
+
+// A fine polyline around a circle (120 facets, 3° corners) with a
+// small kerf must post ZERO arcs: every facet corner is below the
+// join-snap threshold, so the offset snaps instead of emitting a
+// micron-scale G2/G3 per corner (the noise class that flooded the
+// real mesh-derived part file).  Regression: pre-snap, this toolpath
+// carried one degenerate join arc per facet.
+bool test_faceted_circle_no_degenerate_arcs() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const int facets = 120;
+  const double radius = 50.0;
+  const double step = 2.0 * polysmith::core::cam2d::kPi / facets;
+  DocumentState document;
+  for (int k = 0; k < facets; ++k) {
+    const double a1 = k * step;
+    const double a2 = (k + 1) * step;
+    document = manager.add_sketch_line(radius * std::cos(a1),
+                                       radius * std::sin(a1),
+                                       radius * std::cos(a2),
+                                       radius * std::sin(a2));
+  }
+
+  std::string profile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.15;  // d = 0.075 — the observed join radius
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_op(manager, document, sketch_feature_id(document), profile,
+                    laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "faceted circle: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int arcs = 0;
+  int lines = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      ++arcs;
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               move.dwell_seconds <= 0.0) {
+      // The pierce move carries the dwell — not a facet cut.
+      ++lines;
+    }
+  }
+  if (!expect(arcs == 0,
+              "faceted circle: zero arcs (shallow corners snap)")) {
+    std::cerr << "  saw " << arcs << " arcs\n";
+    return false;
+  }
+  // One line per facet — plus at most one extra when the pierce lands
+  // mid-facet and contour_starting_at splits that segment in two.
+  return expect(lines == facets || lines == facets + 1,
+                "faceted circle: one line per facet (pierce may split one)");
+}
+
 // 0-based edge-map index of the first full-circle edge (any position).
 int find_full_circle_edge_index(const polysmith::core::CompiledBody& body) {
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
@@ -5519,6 +5766,12 @@ int main() {
   run("Test 7: face smaller than tool",
       test_face_milling_face_smaller_than_tool);
   run("Test 8: laser from face outline", test_laser_from_face_outline);
+  run("Test 8b: circular face emits one exact arc",
+      test_laser_face_circular_exact_arc);
+  run("Test 8c: split sketch side merges into one cut",
+      test_sketch_split_side_merges);
+  run("Test 8d: faceted circle emits zero degenerate arcs",
+      test_faceted_circle_no_degenerate_arcs);
   run("Test 9: rotated plane arcs", test_rotated_plane_arcs);
   run("Test 10: mirrored frame flips sweep", test_mirrored_frame_flips_sweep);
   run("Test 11: non-horizontal plane rejected",

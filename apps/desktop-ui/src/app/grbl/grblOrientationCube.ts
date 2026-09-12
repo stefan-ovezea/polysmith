@@ -1,63 +1,46 @@
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-// Mini orientation cube for the GRBL preview viewport: a small
-// always-on-top widget that mirrors the main camera's rotation and
-// snaps the view to a clicked face (top/front/right/…).  The GRBL
-// scene is Z-up (camera.up = (0,0,1)), so the cube's Z face is the
-// bed's top view.
-//
-// Owns a second renderer on its own canvas (corner overlay) — the
-// main viewport calls update() from its rAF loop so the cube tracks
-// the camera with zero extra state.
+import {
+  animateCameraTowardTarget,
+  applyCubeHover,
+  buildViewCubeGroup,
+  clearCubeHover,
+  createViewCubeCamera,
+  createViewCubeScene,
+  disposeViewCubeGroup,
+  getCubeHitTargetDirection,
+  getQuantizedCubeUp,
+  raycastViewCube,
+  syncCubeCamera,
+} from "@/utils";
+
+// Mini orientation cube for the GRBL preview viewport.  The cube
+// itself — mesh build, face/edge/corner picking, hover, snap
+// direction math, camera sync — comes from the shared
+// `@/utils` cube core the CAD viewport uses (same Z-up world
+// convention: TOP = +Z, FRONT = −Y), so both cubes stay in sync by
+// construction.  Only the GRBL-specific shell lives here: its own
+// renderer on a small overlay canvas (the CAD viewport blits into
+// its own render target instead), pointer wiring, and the per-frame
+// update the main rAF calls.
 
 const CUBE_CANVAS_SIZE = 96;
-const CUBE_VIEW_DISTANCE = 400; // snap distance for the main camera
+const SNAP_VIEW_DISTANCE = 400; // ortho: only the direction matters
 
-function readCssColor(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-  return value || fallback;
-}
-
-// Draws one cube face (background + axis letter) onto a canvas
-// texture.  The letter stays glued to the face, so the cube reads
-// correctly at any rotation.
-function faceTexture(letter: string, background: string): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.fillStyle = background;
-    context.fillRect(0, 0, 128, 128);
-    context.fillStyle = "rgba(255,255,255,0.92)";
-    context.font = "600 56px system-ui, sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText(letter, 64, 64);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+interface SnapAnimationState {
+  animating: boolean;
+  start: number;
+  startPosition: THREE.Vector3;
+  targetPosition: THREE.Vector3;
+  startUp: THREE.Vector3;
+  targetUp: THREE.Vector3;
 }
 
 export interface GrblOrientationCube {
   update(mainCamera: THREE.OrthographicCamera, controls: OrbitControls): void;
   dispose(): void;
 }
-
-interface CubeInternals {
-  renderer: THREE.WebGLRenderer;
-  scene: THREE.Scene;
-  camera: THREE.OrthographicCamera;
-  cube: THREE.Mesh;
-  raycaster: THREE.Raycaster;
-  mouse: THREE.Vector2;
-}
-
-const FACE_LETTERS = ["+X", "−X", "+Y", "−Y", "+Z", "−Z"];
 
 export function buildGrblOrientationCube({
   canvas,
@@ -76,81 +59,63 @@ export function buildGrblOrientationCube({
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(CUBE_CANVAS_SIZE, CUBE_CANVAS_SIZE, false);
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-3, 3, 3, -3, -20, 20);
-  camera.up.set(0, 0, 1);
-  camera.position.set(2.6, 2.6, 2.6).normalize().multiplyScalar(6);
-  camera.lookAt(0, 0, 0);
-
-  // Axis-colored faces; the negative faces dim their axis color so
-  // ± pairs are distinguishable at a glance.
-  const axisX = readCssColor("--cad-cube-x", "#e07a7a");
-  const axisY = readCssColor("--cad-cube-y", "#7fb86e");
-  const axisZ = readCssColor("--cad-cube-z", "#6f9fd8");
-  const dim = (hex: string) => {
-    const color = new THREE.Color(hex);
-    return `#${color.multiplyScalar(0.55).getHexString()}`;
-  };
-  const faceColors = [axisX, dim(axisX), axisY, dim(axisY), axisZ, dim(axisZ)];
-  const materials = FACE_LETTERS.map((letter, index) => {
-    const material = new THREE.MeshBasicMaterial({
-      map: faceTexture(letter, faceColors[index]),
-      toneMapped: false,
-    });
-    return material;
-  });
-
-  const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), materials);
-  scene.add(cube);
-
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2)),
-    new THREE.LineBasicMaterial({
-      color: readCssColor("--cad-cube-edge", "#8a8f98"),
-      transparent: true,
-      opacity: 0.9,
-    }),
-  );
-  cube.add(edges);
-
-  // Face picking: the raycast happens in the cube's rotated object
-  // space, so the result stays valid as the cube mirrors the camera.
+  const cubeGroup = buildViewCubeGroup();
+  const scene = createViewCubeScene(cubeGroup);
+  const camera = createViewCubeCamera();
   const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  const internals: CubeInternals = { renderer, scene, camera, cube, raycaster, mouse };
+
+  const animation: SnapAnimationState = {
+    animating: false,
+    start: 0,
+    startPosition: new THREE.Vector3(),
+    targetPosition: new THREE.Vector3(),
+    startUp: new THREE.Vector3(),
+    targetUp: new THREE.Vector3(),
+  };
+
+  const setRaycaster = (event: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, camera);
+  };
 
   const onPointerDown = (event: PointerEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObject(cube, false);
-    const hit = hits.find((entry) => entry.face !== undefined);
-    const faceNormal = hit?.face?.normal;
-    if (!faceNormal) {
+    setRaycaster(event);
+    const hit = raycastViewCube(raycaster, cubeGroup);
+    if (!hit || hit.type === "rotation_arrow") {
       return;
     }
-    // World-space direction of the clicked face (the face normal is
-    // in the cube's object space; the quaternion mirrors the main
-    // camera's rotation).
-    const direction = faceNormal
-      .clone()
-      .applyQuaternion(cube.quaternion)
+    // Face/edge/corner → view direction in world space (the cube
+    // group is unrotated; the CUBE CAMERA mirrors the main camera).
+    const direction = getCubeHitTargetDirection(hit);
+    animation.startPosition.copy(mainCamera.position);
+    animation.targetPosition
+      .copy(controls.target)
+      .addScaledVector(direction, SNAP_VIEW_DISTANCE);
+    animation.startUp.copy(mainCamera.up).normalize();
+    animation.targetUp
+      .copy(getQuantizedCubeUp(direction, mainCamera.up))
       .normalize();
-    // Snap the main camera to look at the scene along that axis.
-    const center = controls.target.clone();
-    mainCamera.position.copy(
-      center.clone().add(direction.clone().multiplyScalar(CUBE_VIEW_DISTANCE)),
-    );
-    // Top/bottom faces: screen-up follows the bed's Y axis; all
-    // other faces keep the scene's Z as screen-up.
-    mainCamera.up.set(0, 0, 1);
-    if (Math.abs(direction.z) > 0.9) {
-      mainCamera.up.set(0, 1, 0);
-    }
-    controls.update();
+    animation.start = performance.now();
+    animation.animating = true;
+    controls.enabled = false;
   };
+
+  const onPointerMove = (event: PointerEvent) => {
+    setRaycaster(event);
+    applyCubeHover(cubeGroup, raycastViewCube(raycaster, cubeGroup));
+  };
+
+  const onPointerLeave = () => {
+    clearCubeHover(cubeGroup);
+  };
+
   canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerleave", onPointerLeave);
 
   let disposed = false;
   return {
@@ -158,18 +123,31 @@ export function buildGrblOrientationCube({
       if (disposed) {
         return;
       }
-      cube.quaternion.copy(mainCamera.quaternion).invert();
+      syncCubeCamera(mainCamera, controls.target, camera);
+      if (animation.animating) {
+        const done = animateCameraTowardTarget(
+          mainCamera,
+          controls,
+          animation.startPosition,
+          animation.targetPosition,
+          animation.start,
+          performance.now(),
+          animation.startUp,
+          animation.targetUp,
+        );
+        if (done) {
+          animation.animating = false;
+          controls.enabled = true;
+        }
+      }
       renderer.render(scene, camera);
     },
     dispose() {
       disposed = true;
       canvas.removeEventListener("pointerdown", onPointerDown);
-      cube.geometry.dispose();
-      edges.geometry.dispose();
-      for (const material of materials) {
-        material.map?.dispose();
-        material.dispose();
-      }
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
+      disposeViewCubeGroup(cubeGroup);
       renderer.dispose();
     },
   };

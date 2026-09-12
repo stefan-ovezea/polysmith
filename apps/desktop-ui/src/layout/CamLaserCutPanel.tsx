@@ -41,6 +41,14 @@ interface CamLaserCutPanelProps {
   // (core clear_selection — not undoable, by design: the armed state is
   // a staging area, not part of the operation yet).
   onClearSelection: () => void;
+  // Body-face cut: the op's machining region is a face attestation —
+  // the geometry section shows the face re-pick instead of the sketch
+  // scope dropdown.  facePickArmed = the next viewport face click
+  // replaces the region.
+  faceRegion: boolean;
+  facePickArmed: boolean;
+  onPickFace: () => void;
+  onCancelFacePick: () => void;
   // Reference sketch: the sketch this operation cuts.  null/"" means
   // no sketch scope (custom profile selection or none yet).
   sketches: Array<{ feature_id: string; name: string }>;
@@ -73,6 +81,10 @@ export function CamLaserCutPanel({
   onCancelRepick,
   onApplyRepick,
   onClearSelection,
+  faceRegion,
+  facePickArmed,
+  onPickFace,
+  onCancelFacePick,
   sketches,
   scopeSketchId,
   onSetScope,
@@ -157,67 +169,108 @@ export function CamLaserCutPanel({
                   })
                 : null}
             </p>
-            <Dropdown
-              className="w-full"
-              value={scopeSketchId ?? ""}
-              label={t("cam.laserCut.scopeLabel", "Reference sketch")}
-              options={[
-                {
-                  value: "",
-                  label: scopeSketchId
-                    ? t("cam.laserCut.scopeMixed", "Selected profiles")
-                    : t("cam.laserCut.scopeNone", "No sketch selected"),
-                },
-                ...sketches.map((sketch) => ({
-                  value: sketch.feature_id,
-                  label: sketch.name,
-                })),
-              ]}
-              disabled={disabled || repickArmed}
-              onChange={(value) => {
-                if (value) {
-                  onSetScope(value);
-                }
-              }}
-            />
-            {repickArmed ? (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  className="cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
-                  disabled={disabled}
-                  onClick={onApplyRepick}
-                >
-                  {t("cam.laserCut.applyRepick", "Apply selection")}
-                </button>
-                <button
-                  type="button"
-                  className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
-                  disabled={disabled}
-                  onClick={onCancelRepick}
-                >
-                  {t("cam.laserCut.cancelRepick", "Cancel")}
-                </button>
-                {selectedProfileCount > 0 ? (
+            {faceRegion ? (
+              // Body-face cut: the sketch scope controls do not apply —
+              // the op follows the face outline at its height.  The
+              // armed pick replaces the region with the next viewport
+              // face click (stock faces cannot anchor a cut).
+              <div className="space-y-2">
+                <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                  {t("cam.laserCut.faceRegion", "Cut from body face")}
+                </p>
+                {facePickArmed ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <p className="col-span-2 text-[10px] leading-relaxed text-on-surface-dim">
+                      {t(
+                        "cam.laserCut.facePickHint",
+                        "Click a flat body face to re-target the cut.",
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                      disabled={disabled}
+                      onClick={onCancelFacePick}
+                    >
+                      {t("cam.laserCut.cancelRepick", "Cancel")}
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    className="cad-action-ghost col-span-2 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
                     disabled={disabled}
-                    onClick={onClearSelection}
+                    onClick={onPickFace}
                   >
-                    {t("cam.laserCut.clearSelection", "Clear selection")}
+                    {t("cam.laserCut.pickFace", "Pick face")}
                   </button>
-                ) : null}
+                )}
               </div>
             ) : (
-              <button
-                type="button"
-                className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
-                disabled={disabled}
-                onClick={onStartRepick}
-              >
-                {t("cam.laserCut.reselectGeometry", "Re-select geometry")}
-              </button>
+              <>
+                <Dropdown
+                  className="w-full"
+                  value={scopeSketchId ?? ""}
+                  label={t("cam.laserCut.scopeLabel", "Reference sketch")}
+                  options={[
+                    {
+                      value: "",
+                      label: scopeSketchId
+                        ? t("cam.laserCut.scopeMixed", "Selected profiles")
+                        : t("cam.laserCut.scopeNone", "No sketch selected"),
+                    },
+                    ...sketches.map((sketch) => ({
+                      value: sketch.feature_id,
+                      label: sketch.name,
+                    })),
+                  ]}
+                  disabled={disabled || repickArmed}
+                  onChange={(value) => {
+                    if (value) {
+                      onSetScope(value);
+                    }
+                  }}
+                />
+                {repickArmed ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                      disabled={disabled}
+                      onClick={onApplyRepick}
+                    >
+                      {t("cam.laserCut.applyRepick", "Apply selection")}
+                    </button>
+                    <button
+                      type="button"
+                      className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                      disabled={disabled}
+                      onClick={onCancelRepick}
+                    >
+                      {t("cam.laserCut.cancelRepick", "Cancel")}
+                    </button>
+                    {selectedProfileCount > 0 ? (
+                      <button
+                        type="button"
+                        className="cad-action-ghost col-span-2 px-2 py-1 text-[10px] uppercase tracking-wider"
+                        disabled={disabled}
+                        onClick={onClearSelection}
+                      >
+                        {t("cam.laserCut.clearSelection", "Clear selection")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                    disabled={disabled}
+                    onClick={onStartRepick}
+                  >
+                    {t("cam.laserCut.reselectGeometry", "Re-select geometry")}
+                  </button>
+                )}
+              </>
             )}
           </fieldset>
 

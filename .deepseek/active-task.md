@@ -5,6 +5,10 @@
 > **2026-09-13 (this machine): connection-loss investigation COMPLETE — root
 > cause found and fixed in `gcode_sender.rs` + workspace; see "Root cause" below.
 > UNCOMMITTED on `cam/laser-testing`; pending user in-app verification.**
+> **2026-09-13 round 2 (this machine): GRBL workspace polish + gcode generation
+> work — orientation cube consolidated, burned-color cut progress, big STOP
+> button, laser cut from body faces with contour cleanup. All 46 core suites
+> green + tsc clean. UNCOMMITTED; pending user verification on the machine.**
 
 ## ROOT CAUSE of the first-cut failures (found 2026-09-13, this machine)
 
@@ -67,12 +71,76 @@ Board must be in CHECK MODE (`$C`, status shows `<Check|…>`) before use.
    there); USB error:36 should be gone with the poll fix (the CH340 drop was
    our over-send, not the FIFO).
 3. LaserGRBL's failure (~raw 1700) is separate — if it persists after our
-   fixes, the board planner / file density is still a factor; the CAM-side
-   arc-span/line-merge/dedupe optimization stays on the roadmap.
+   fixes, the board planner / file density is still a factor.
 4. WS note: FluidNC never acks the final line over WS — jobs end via the
    Idle fallback now; TCP acks everything, so TCP remains the recommended
    transport for streaming on this board.
 5. Commit after verification (no Co-Authored-By trailer).
+
+## G-code generation round (2026-09-13, uncommitted on this machine)
+
+The burn-test file is terrible at the SOURCE: the part is mesh → body →
+**projected sketch**, and the laser op cut the sketch profiles — the
+projection/arrangement splits curves into ~1° arc fragments and duplicates
+edges. Fix: cut the BODY directly (the laser generator already had a face
+path) + heal every contour before the kerf offset.
+
+- **Face-path exactness** (`laser/laser_generate.cpp`): the face path now
+  builds `build_base_segments_from_wire` (exact line/circle edges → real
+  G2/G3, one arc per circle) with the old sampled-polyline fallback for
+  spline/ellipse wires. Full-circle loop area + orientation resolved via a
+  wireLoopArea helper (shoelace is 0 for start == end).
+- **Contour cleanup** (`cam2d.h/.cpp` — `cleanup_base_segments`): merges
+  consecutive collinear lines (angle eps 1e-4 rad, both signs tested),
+  consecutive co-circular arcs (center/radius eps 1e-4), drops consecutive
+  exact duplicates, out-and-back spurs, and zero-length lines. Applied in
+  `plan_loop` — one choke point for profile outers/holes AND face wires.
+  One structured log line per generate: "contour cleanup: merged N lines…"
+  (tag `cam_laser`, visible in the Logs panel).
+- **UI** (`CamLaserCutPanel` + `CamFloatingPanels` + `App.tsx`): laser ops
+  with a face region show "Cut from body face" + a **Pick face** armed pick
+  (mirrors the contour op's face pick; TNP-safe capture, stock faces
+  rejected). Face selection at 2D-Cut time already worked
+  (`camLaserActions.ts`); this adds RE-picking for existing ops.
+- **GRBL workspace polish (same uncommitted batch)**: orientation cube
+  deduplicated into the shared `@/utils` cube core (GRBL shell only);
+  executed toolpath segments render in the new `--cad-toolpath-burned`
+  token (all 6 themes) — "Cut (burned)" legend; big STOP button in the
+  workspace toolbar (bg-danger, grblReset + overlay clear, disabled when
+  disconnected).
+- **Tests**: `cam2d_test.cpp` Test 13 (cleanup unit rules, both epsilon
+  signs); `cam_generators_test.cpp` Tests 8b (circular face → ONE exact
+  arc, no chord polylines) + 8c (split sketch side merges into one cut).
+  All 46 suites green (`pnpm test:core`), `tsc --noEmit` clean.
+
+## Join-arc snap round (2026-09-13, after analyzing untitled-part2.nc)
+
+The user regenerated: **untitled-part2.nc (1877 lines) vs
+untitled-part.nc (3489)** — the face path + cleanup halved the file. File
+analysis found the remaining noise: every G1 is followed by a **2-micron
+G3 with radius 0.075 (= kerf/2) and 1.5–2° sweep** — degenerate
+round-join arcs from `append_round_join`. They fire at REFLEX facet
+corners where the miter crossing (distance ≈ d/sin θ) lands beyond the
+short segment ends; convex corners miter at the corner point (t ≈ 1).
+332 such G3s in part2.
+
+Fix: `offset_closed_loop` now snaps the corner (current.end =
+nextOffset.start) when |sweep| < 5° (kJoinSnapSweepRad) — the arc's
+sagitta there is ~6 µm, far below the 150 µm kerf. Tests: cam2d Test 14
+(reflex notch fixture, both sides of 5°: dy 0.02 → snap / dy 0.0225 →
+one join in [5°,6°]) + cam_generators 8d (120-gon → ZERO arcs, pre-fix
+it carried 120 degenerate joins). All 46 suites green.
+
+Remaining in part2 after this fix (≈1545 lines): ~950 facet G1s ≥1 mm
+(the mesh's own resolution) + ~320 micro-facets <0.2 mm at tight corners
+(real model geometry). Optional next step: Douglas-Peucker polyline
+simplification of the base loop at ~0.02–0.05 mm deviation.
+
+**User verification on the machine (binding):** RESTART the app (a
+running `pnpm dev` locks cad_core.exe — MSB3073), select the mesh body's
+top face → 2D Cut → Generate → check the Logs panel for the cleanup
+counts → export (untitled-part3) + burn. Acceptance: no G3 noise, GRBL
+runs it clean.
 
 ## Machine state (all hardware verified in-hand)
 

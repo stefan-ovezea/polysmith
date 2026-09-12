@@ -571,6 +571,285 @@ bool test_round_join_short_sweep() {
 
 }  // namespace
 
+namespace {
+
+using polysmith::core::cam2d::SegmentCleanupStats;
+using polysmith::core::cam2d::cleanup_base_segments;
+
+// ── Test 14: shallow corners snap instead of degenerate join arcs ─
+
+// A CW loop with a shallow REFLEX notch at (0.5, −dy): the notch
+// corner turns by θ = 2·atan(dy/0.5).  The 0.5 mm notch legs are
+// shorter than the miter crossing distance (d/sin θ ≈ 0.9 mm at
+// d = 0.075), so the corner reaches the round-join path — exactly the
+// facet-corner situation the user's mesh file hit (convex corners
+// miter at the corner point, which is why a plain V fixture never
+// exercises this branch).
+std::vector<BaseSegment> make_shallow_corner_loop(double dy) {
+  const XY pts[] = {{0, 0}, {0.5, -dy}, {1, 0}, {1, -1}, {0, -1}};
+  std::vector<BaseSegment> base;
+  for (size_t i = 0; i < 5; ++i) {
+    BaseSegment segment;
+    segment.start = pts[i];
+    segment.end = pts[(i + 1) % 5];
+    base.push_back(segment);
+  }
+  return base;
+}
+
+// Geometric SHORT-way angle between a join arc's endpoints around its
+// center — the quantity the snap threshold actually compares (the cw
+// convention of offset_arc_sweep wraps it the long way, so measure it
+// directly).
+double join_short_sweep(const OffsetSegment& segment) {
+  const double startAngle = std::atan2(segment.start.y - segment.center.y,
+                                       segment.start.x - segment.center.x);
+  const double endAngle = std::atan2(segment.end.y - segment.center.y,
+                                     segment.end.x - segment.center.x);
+  double sweep = endAngle - startAngle;
+  const double kPiConst = polysmith::core::cam2d::kPi;
+  while (sweep > kPiConst) {
+    sweep -= 2.0 * kPiConst;
+  }
+  while (sweep < -kPiConst) {
+    sweep += 2.0 * kPiConst;
+  }
+  return std::abs(sweep);
+}
+
+bool test_shallow_corner_join_snap() {
+  // The steep corners may miter or join depending on convexity — only
+  // the SHALLOW corner's behavior is pinned: below 5° it snaps (no
+  // join arc), above it keeps its join.  Both signs of the boundary
+  // matter — the tangency rule.
+  const double kSnapSweep =
+      5.0 * polysmith::core::cam2d::kPi / 180.0;  // 5° in radians
+  const double kSixDeg =
+      6.0 * polysmith::core::cam2d::kPi / 180.0;
+  // θ ≈ 4.58° (dy = 0.02) — below the threshold: no join arc sweeps
+  // under 5°.
+  {
+    std::vector<OffsetSegment> out;
+    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.02), 0.075, out,
+                                   /*round_joins=*/true),
+                "snap: offset succeeds")) {
+      return false;
+    }
+    int tinyJoins = 0;
+    for (const auto& segment : out) {
+      if (segment.is_arc && segment.is_join &&
+          join_short_sweep(segment) < kSnapSweep) {
+        ++tinyJoins;
+      }
+    }
+    if (!expect(tinyJoins == 0,
+                "snap: no join arc below the 5° threshold")) {
+      return false;
+    }
+    if (!expect(loop_is_connected(out), "snap: loop connected")) {
+      return false;
+    }
+  }
+  // θ ≈ 5.15° (dy = 0.0225) — just above the threshold: exactly one
+  // join arc in [5°, 6°] (the shallow corner's), none below 5°.
+  {
+    std::vector<OffsetSegment> out;
+    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.0225), 0.075,
+                                   out,
+                                   /*round_joins=*/true),
+                "join: offset succeeds")) {
+      return false;
+    }
+    int tinyJoins = 0;
+    int shallowJoins = 0;
+    for (const auto& segment : out) {
+      if (!segment.is_arc || !segment.is_join) {
+        continue;
+      }
+      const double sweep = join_short_sweep(segment);
+      if (sweep < kSnapSweep) {
+        ++tinyJoins;
+      } else if (sweep <= kSixDeg) {
+        ++shallowJoins;
+      }
+    }
+    if (!expect(tinyJoins == 0 && shallowJoins == 1,
+                "join: exactly one join in [5°, 6°], none below 5°")) {
+      return false;
+    }
+    if (!expect(loop_is_connected(out), "join: loop connected")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+BaseSegment make_line_seg(double x1, double y1, double x2, double y2) {
+  BaseSegment segment;
+  segment.start = {x1, y1};
+  segment.end = {x2, y2};
+  return segment;
+}
+
+BaseSegment make_arc_seg(double cx, double cy, double radius,
+                         double startDeg, double endDeg, bool ccw) {
+  const double start = startDeg * polysmith::core::cam2d::kPi / 180.0;
+  const double end = endDeg * polysmith::core::cam2d::kPi / 180.0;
+  BaseSegment segment;
+  segment.is_arc = true;
+  segment.center = {cx, cy};
+  segment.radius = radius;
+  segment.start = {cx + radius * std::cos(start), cy + radius * std::sin(start)};
+  segment.end = {cx + radius * std::cos(end), cy + radius * std::sin(end)};
+  segment.ccw = ccw;
+  return segment;
+}
+
+// ── Test 13: contour cleanup (collinear/co-circular merges, drops) ─
+
+bool test_contour_cleanup_units() {
+  // Consecutive collinear lines merge into one.
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(10, 0, 20, 0)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.merged_lines == 1,
+                "cleanup: collinear lines merge")) {
+      return false;
+    }
+    if (!expect(near(segs[0].start.x, 0.0) && near(segs[0].end.x, 20.0) &&
+                    near(segs[0].end.y, 0.0),
+                "cleanup: merged line spans both pieces")) {
+      return false;
+    }
+  }
+  // A bend just above the angle epsilon stays separate — BOTH signs
+  // (the tangency rule: regressions hide at the boundary).
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(10, 0, 20, 0.01)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 2 && stats.merged_lines == 0,
+                "cleanup: 1e-3 rad bend does not merge (+)")) {
+      return false;
+    }
+  }
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(10, 0, 20, -0.01)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 2 && stats.merged_lines == 0,
+                "cleanup: 1e-3 rad bend does not merge (-)")) {
+      return false;
+    }
+  }
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(10, 0, 20, 0.0001)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.merged_lines == 1,
+                "cleanup: 1e-5 rad bend merges (+)")) {
+      return false;
+    }
+  }
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(10, 0, 20, -0.0001)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.merged_lines == 1,
+                "cleanup: 1e-5 rad bend merges (-)")) {
+      return false;
+    }
+  }
+  // Consecutive co-circular arcs merge; four quarters become one full
+  // circle (start == end, the synthesized-circle convention).
+  {
+    std::vector<BaseSegment> segs = {make_arc_seg(0, 0, 10, 0, 90, true),
+                                     make_arc_seg(0, 0, 10, 90, 180, true)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.merged_arcs == 1,
+                "cleanup: co-circular arcs merge")) {
+      return false;
+    }
+    if (!expect(near(segs[0].start.x, 10.0, 1e-6) &&
+                    near(segs[0].end.x, -10.0, 1e-6),
+                "cleanup: merged arc spans both sweeps")) {
+      return false;
+    }
+  }
+  {
+    std::vector<BaseSegment> segs = {
+        make_arc_seg(0, 0, 10, 0, 90, true),
+        make_arc_seg(0, 0, 10, 90, 180, true),
+        make_arc_seg(0, 0, 10, 180, 270, true),
+        make_arc_seg(0, 0, 10, 270, 360, true)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.merged_arcs == 3,
+                "cleanup: quarters merge into a full circle")) {
+      return false;
+    }
+    if (!expect(near(segs[0].start.x, segs[0].end.x) &&
+                    near(segs[0].start.y, segs[0].end.y),
+                "cleanup: merged circle closes (start == end)")) {
+      return false;
+    }
+  }
+  // The same arc walked back immediately is an out-and-back spur —
+  // both halves go.
+  {
+    std::vector<BaseSegment> segs = {make_arc_seg(0, 0, 10, 0, 90, true),
+                                     make_arc_seg(0, 0, 10, 90, 0, false)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.empty() && stats.dropped_spurs == 1,
+                "cleanup: arc retrace spur is dropped")) {
+      return false;
+    }
+  }
+  // Different circles stay separate even when chained.
+  {
+    std::vector<BaseSegment> segs = {make_arc_seg(0, 0, 10, 0, 90, true),
+                                     make_arc_seg(1, 0, 10, 0, 90, true)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 2 && stats.merged_arcs == 0,
+                "cleanup: different centers do not merge")) {
+      return false;
+    }
+  }
+  // Exact consecutive duplicates drop (the double-line case).
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 10, 0),
+                                     make_line_seg(0, 0, 10, 0)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.dropped_duplicates == 1,
+                "cleanup: consecutive duplicate drops")) {
+      return false;
+    }
+  }
+  // A zero-length line vanishes without breaking the chain; a
+  // full-circle arc (start == end by convention) is preserved.
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(5, 5, 5, 5),
+                                     make_line_seg(5, 5, 10, 5)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && stats.dropped_degenerate == 1 &&
+                    near(segs[0].end.x, 10.0),
+                "cleanup: zero-length line drops, chain survives")) {
+      return false;
+    }
+  }
+  {
+    std::vector<BaseSegment> segs = {make_arc_seg(0, 0, 5, 0, 360, true)};
+    const auto stats = cleanup_base_segments(segs);
+    if (!expect(segs.size() == 1 && !stats.any(),
+                "cleanup: full-circle arc preserved")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 int main() {
   bool allPassed = true;
 
@@ -604,6 +883,9 @@ int main() {
   run("Test 10: self-intersection scan", test_self_intersection_scan);
   run("Test 11: outside clip = subtraction", test_clip_segment_subtraction);
   run("Test 12: join arcs sweep short", test_round_join_short_sweep);
+  run("Test 13: contour cleanup unit rules", test_contour_cleanup_units);
+  run("Test 14: shallow corners snap (no degenerate joins)",
+      test_shallow_corner_join_snap);
 
   if (allPassed) {
     std::cout << "cam2d_test passed\n";

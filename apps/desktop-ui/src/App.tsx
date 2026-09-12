@@ -1977,6 +1977,68 @@ function App() {
     addMessage(t("cam.contour.faceSet"));
   };
 
+  // Armed laser face pick: the next body-face click becomes the laser
+  // cut operation's machining region (replacing the previous one).
+  // Stock faces cannot anchor a cut.
+  const [laserFacePickArmed, setLaserFacePickArmed] = useState<{
+    opId: string;
+  } | null>(null);
+
+  // The pick belongs to the operation that armed it — switching the
+  // selected operation (or closing its panel) disarms it.
+  useEffect(() => {
+    setLaserFacePickArmed(null);
+  }, [selectedCamOperationId]);
+
+  const applyLaserFacePick = async (faceId: string) => {
+    const pick = laserFacePickArmed;
+    if (!pick) {
+      return;
+    }
+    if (faceId.startsWith("stock:")) {
+      addMessage(t("cam.laserCut.facePickMissed"));
+      useToastStore.getState().pushToast("warn", t("cam.laserCut.facePickMissed"));
+      return;
+    }
+    // TNP-safe witness capture — the same flow as the initial 2D Cut
+    // trigger.
+    let reference: GeometryReference | null = null;
+    await runAction(async () => {
+      const response = await camCaptureFaceReference(faceId);
+      const payload = response.payload;
+      if (payload?.attestation) {
+        reference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+      }
+    });
+    if (!reference) {
+      addMessage(t("cam.laserCut.faceCaptureFailed"));
+      useToastStore
+        .getState()
+        .pushToast("error", t("cam.laserCut.faceCaptureFailed"));
+      return;
+    }
+    const operation = document?.cam.operations.find(
+      (candidate) => candidate.op_id === pick.opId,
+    );
+    if (!operation) {
+      setLaserFacePickArmed(null);
+      return;
+    }
+    await runAction(async () => {
+      await camOperationUpdate(pick.opId, {
+        geometry_references: {
+          ...operation.geometry_references,
+          machining_regions: [reference],
+        },
+      });
+    });
+    setLaserFacePickArmed(null);
+    addMessage(t("cam.laserCut.faceSet"));
+  };
+
   // Armed drilling pick: the next viewport click reports a drill
   // target — a BODY reference (hole rim edge or cylindrical wall
   // face, captured as a re-resolvable attestation) or a bare world
@@ -2787,6 +2849,10 @@ function App() {
                 }
                 if (contourPickArmed) {
                   await applyContourFacePick(faceId);
+                  return;
+                }
+                if (laserFacePickArmed) {
+                  await applyLaserFacePick(faceId);
                   return;
                 }
                 await handleViewportFaceSelection({
@@ -4406,12 +4472,34 @@ function App() {
                   setWcsPickArmed(false);
                   setPocketPickArmed(null);
                   setDrillPickArmed(null);
+                  setLaserFacePickArmed(null);
                   setContourPickArmed({ opId });
                   addMessage(t("cam.contour.repickFaceHint"));
                 }}
                 onCancelContourPick={() => {
                   setContourPickArmed(null);
                   addMessage(t("cam.contour.pickCanceled"));
+                }}
+                laserFacePick={laserFacePickArmed}
+                onPickLaserFace={(opId) => {
+                  if (laserFacePickArmed?.opId === opId) {
+                    setLaserFacePickArmed(null);
+                    addMessage(t("cam.laserCut.facePickCanceled"));
+                    return;
+                  }
+                  // One armed pick at a time: laser face picks consume
+                  // the next viewport click too.
+                  setOriginPickArmed(false);
+                  setWcsPickArmed(false);
+                  setPocketPickArmed(null);
+                  setDrillPickArmed(null);
+                  setContourPickArmed(null);
+                  setLaserFacePickArmed({ opId });
+                  addMessage(t("cam.laserCut.facePickHint"));
+                }}
+                onCancelLaserPick={() => {
+                  setLaserFacePickArmed(null);
+                  addMessage(t("cam.laserCut.facePickCanceled"));
                 }}
                 drillPick={drillPickArmed}
                 onPickDrillPoint={(opId) => {
@@ -4426,6 +4514,7 @@ function App() {
                   setWcsPickArmed(false);
                   setPocketPickArmed(null);
                   setContourPickArmed(null);
+                  setLaserFacePickArmed(null);
                   setDrillPickArmed({ opId });
                   addMessage(t("cam.drilling.pickHintShort"));
                 }}
