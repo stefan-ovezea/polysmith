@@ -45,6 +45,19 @@ WS 80 (hand-rolled WS client), synthetic dense-job generator (830 1° arcs +
 G1 fill). Usage: `node grbl_replay.mjs [host] [port] [file|synthetic] [pollMs] [tcp|ws]`.
 Board must be in CHECK MODE (`$C`, status shows `<Check|…>`) before use.
 
+## Follow-up (not urgent)
+
+- **Orientation cube duplication:** `app/grbl/grblOrientationCube.ts` is a
+  second implementation next to the main viewport's
+  `layout/viewport/viewCubeRender.ts` + `utils/viewCube.utils.ts`. The
+  split is architectural (GRBL preview = own renderer/canvas, Z-up bed
+  convention; main cube = render-target blit inside the CAD viewport's
+  renderer, Y-up, animated snaps). Still ~80% of the face-texture /
+  token / edge / picking logic is shared — extract a common
+  `orientationCubeCore` (mesh build + picking, parameterized by up-axis
+  and snap-vs-animate) and let both consume it. Do AFTER the cutting
+  tests (touches the CAD viewport's cube).
+
 ## Next-session checklist
 
 1. **User verification in the app** (binding): stream the real .nc over TCP

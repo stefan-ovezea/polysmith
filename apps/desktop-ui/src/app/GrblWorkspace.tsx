@@ -80,6 +80,9 @@ export function GrblWorkspace({
 
   const [loadedProgram, setLoadedProgram] =
     useState<LoadedGrblProgram | null>(null);
+  // Disk path of the loaded program — flows down to the panel so the
+  // toolbar Open button also enables Cycle Start there.
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -269,6 +272,7 @@ export function GrblWorkspace({
     try {
       const info = await grblParseFile(path);
       setLoadedProgram({ source: "file", text: "", label: info.fileName, info });
+      setLoadedFilePath(path);
       clearOverlay();
     } catch (error) {
       const message = String(error);
@@ -288,6 +292,7 @@ export function GrblWorkspace({
     try {
       const info = await grblParseText(text, label);
       setLoadedProgram({ source: "internal", text, label, info });
+      setLoadedFilePath(null);
       clearOverlay();
     } catch (error) {
       const message = String(error);
@@ -480,6 +485,9 @@ export function GrblWorkspace({
               // Per-machine $$ snapshot persistence (Restore in the
               // settings dialog).
               settingsMachineName={selectedMachineName}
+              // Toolbar Open loads a disk file here — hand the path
+              // down so the panel's Cycle Start streams it too.
+              externalPath={loadedFilePath}
               // The previewed program becomes what Cycle Start sends; the
               // CAM handoff program fills in when nothing is loaded yet.
               embeddedProgram={panelProgram}

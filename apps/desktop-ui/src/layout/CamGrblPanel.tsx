@@ -66,6 +66,7 @@ export function CamGrblPanel({
   onClose,
   embedded,
   embeddedProgram,
+  externalPath,
   machinePrefs,
   settingsMachineName,
   onFileLoaded,
@@ -74,6 +75,10 @@ export function CamGrblPanel({
   onClose: () => void;
   embedded?: boolean;
   embeddedProgram?: GrblPanelProgram | null;
+  // A file loaded through the HOST's toolbar Open button arrives as a
+  // path — the panel syncs it into loadedPath so Cycle Start is
+  // enabled (the panel's own Load sets loadedPath directly).
+  externalPath?: string | null;
   machinePrefs?: GrblMachinePrefs | null;
   // Machine name from the workspace's machine picker — when set, the
   // last $$ dump is persisted per machine and the settings dialog
@@ -263,6 +268,16 @@ export function CamGrblPanel({
       setLoadedProgram(embeddedProgram);
     }
   }, [embeddedProgram, loadedProgram]);
+
+  // Host-loaded disk file (toolbar Open): the path becomes the
+  // streamed program, replacing any in-memory one.  Null leaves the
+  // panel state alone — internal programs arrive via embeddedProgram.
+  useEffect(() => {
+    if (externalPath) {
+      setLoadedPath(externalPath);
+      setLoadedProgram(null);
+    }
+  }, [externalPath]);
 
   const runCommand = async (action: () => Promise<void>) => {
     setBusy(true);
