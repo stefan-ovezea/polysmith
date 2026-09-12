@@ -11,6 +11,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
   add_compile_definitions(_USE_MATH_DEFINES)
   add_compile_options(/EHsc)
+  # Sources are UTF-8 and contain non-ASCII string literals (e.g. "∞", "◎").
+  # Without /utf-8, MSVC reads sources using the system codepage (e.g. 936)
+  # and mis-parses multi-byte sequences as C2001 "newline in constant".
+  add_compile_options(/utf-8)
   # Parallel per-TU compilation via MSBuild's multi-tool task scheduler:
   # one cl.exe per TU, total process count bounded by the /m value that
   # `cmake --build --parallel N` passes.  Do NOT combine with /MP — MTT

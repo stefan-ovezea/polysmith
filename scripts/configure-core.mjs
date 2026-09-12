@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { cmake } from "./find-cmake.mjs";
 
 // ---------------------------------------------------------------------------
 // paths
@@ -33,8 +34,10 @@ function run(command, args, opts = {}) {
   const env = { ...process.env, ...extraEnv };
 
   if (isWindows) {
-    const quoted = args.map((a) => (a.includes(" ") ? `"${a}"` : a));
-    const cmdline = [command, ...quoted].join(" ");
+    // Quote the command too: the resolved cmake path may contain spaces
+    // (e.g. the Visual Studio installation directory).
+    const quoted = [command, ...args].map((a) => (a.includes(" ") ? `"${a}"` : a));
+    const cmdline = quoted.join(" ");
     console.log(`\n> ${cmdline}`);
     const result = spawnSync(cmdline, [], {
       cwd,
@@ -97,7 +100,7 @@ if (isWindows) {
 // VS 2022 auto-injects its bundled vcpkg toolchain.  Set VCPKG_ROOT
 // in the process environment so the toolchain (whichever one loads)
 // finds the correct installed packages.
-run("cmake", args, isWindows ? { env: { VCPKG_ROOT: vcpkgRoot } } : {});
+run(cmake, args, isWindows ? { env: { VCPKG_ROOT: vcpkgRoot } } : {});
 
 console.log("\n✅  CAD core configured successfully.");
 console.log("    Next: pnpm core:build");

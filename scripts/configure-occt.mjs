@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { cmake } from "./find-cmake.mjs";
 
 // ---------------------------------------------------------------------------
 // paths
@@ -42,8 +43,10 @@ function run(command, args, opts = {}) {
 
   if (isWindows) {
     // Manual quoting for cmd.exe: arguments with spaces need double-quotes.
-    const quoted = args.map((a) => (a.includes(" ") ? `"${a}"` : a));
-    const cmdline = [command, ...quoted].join(" ");
+    // Quote the command too: the resolved cmake path may contain spaces
+    // (e.g. the Visual Studio installation directory).
+    const quoted = [command, ...args].map((a) => (a.includes(" ") ? `"${a}"` : a));
+    const cmdline = quoted.join(" ");
     console.log(`\n> ${cmdline}`);
     const result = spawnSync(cmdline, [], {
       cwd,
@@ -102,15 +105,15 @@ function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
   }
 
   args.push(...extraArgs);
-  run("cmake", args);
+  run(cmake, args);
 }
 
 function cmakeBuild(buildDir, config = "Release") {
-  run("cmake", ["--build", buildDir, "--config", config, "--parallel"]);
+  run(cmake, ["--build", buildDir, "--config", config, "--parallel"]);
 }
 
 function cmakeInstall(buildDir, config = "Release") {
-  run("cmake", ["--install", buildDir, "--config", config]);
+  run(cmake, ["--install", buildDir, "--config", config]);
 }
 
 // ---------------------------------------------------------------------------

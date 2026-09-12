@@ -16,6 +16,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cmake } from "./find-cmake.mjs";
 
 // ---------------------------------------------------------------------------
 // paths
@@ -34,8 +35,10 @@ function run(command, args, opts = {}) {
   const env = { ...process.env, ...extraEnv };
 
   if (isWindows) {
-    const quoted = args.map((a) => (a.includes(" ") ? `"${a}"` : a));
-    const cmdline = [command, ...quoted].join(" ");
+    // Quote the command too: the resolved cmake path may contain spaces
+    // (e.g. the Visual Studio installation directory).
+    const quoted = [command, ...args].map((a) => (a.includes(" ") ? `"${a}"` : a));
+    const cmdline = quoted.join(" ");
     console.log(`\n> ${cmdline}`);
     const result = spawnSync(cmdline, [], {
       cwd,
@@ -76,7 +79,7 @@ const jobs = Number.isFinite(requested) && requested > 0
   : Math.max(1, os.cpus().length);
 console.log(`Jobs     : ${jobs}`);
 
-run("cmake", [
+run(cmake, [
   "--build", coreBuild,
   "--config", "Release",
   "--parallel", String(jobs),
