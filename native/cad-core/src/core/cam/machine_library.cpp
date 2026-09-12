@@ -27,7 +27,11 @@ const char* kGrblLaserDefinition = R"JSON({
   "work_area_x_mm": 400.0,
   "work_area_y_mm": 400.0,
   "pointer_offset_x_mm": 0.0,
-  "pointer_offset_y_mm": 0.0
+  "pointer_offset_y_mm": 0.0,
+  "jog_step_mm": 10.0,
+  "jog_feed_mm_per_min": 1000.0,
+  "homing_enabled": true,
+  "pointer_power_percent": 5.0
 })JSON";
 
 const char* kLaserGrblMachineDefinition = R"JSON({
@@ -37,7 +41,11 @@ const char* kLaserGrblMachineDefinition = R"JSON({
   "work_area_x_mm": 430.0,
   "work_area_y_mm": 430.0,
   "pointer_offset_x_mm": 0.0,
-  "pointer_offset_y_mm": 0.0
+  "pointer_offset_y_mm": 0.0,
+  "jog_step_mm": 10.0,
+  "jog_feed_mm_per_min": 1000.0,
+  "homing_enabled": true,
+  "pointer_power_percent": 5.0
 })JSON";
 
 const char* kSmoothiewareLaserDefinition = R"JSON({
@@ -47,7 +55,11 @@ const char* kSmoothiewareLaserDefinition = R"JSON({
   "work_area_x_mm": 400.0,
   "work_area_y_mm": 400.0,
   "pointer_offset_x_mm": 0.0,
-  "pointer_offset_y_mm": 0.0
+  "pointer_offset_y_mm": 0.0,
+  "jog_step_mm": 10.0,
+  "jog_feed_mm_per_min": 1000.0,
+  "homing_enabled": true,
+  "pointer_power_percent": 5.0
 })JSON";
 
 const char* kGenericMillDefinition = R"JSON({
@@ -189,6 +201,15 @@ bool validate_machine(const MachineDefinition& machine, std::string& error) {
     error = "laser machines need a positive work area";
     return false;
   }
+  if (machine.jog_step_mm <= 0.0 || machine.jog_feed_mm_per_min <= 0.0) {
+    error = "jog step and jog feed must be positive";
+    return false;
+  }
+  if (machine.pointer_power_percent < 0.0 ||
+      machine.pointer_power_percent > 100.0) {
+    error = "pointer power must be between 0 and 100 percent";
+    return false;
+  }
   if (!is_supported_kinematics(machine.kinematics)) {
     error = "unknown kinematics: " + machine.kinematics;
     return false;
@@ -224,6 +245,13 @@ std::string read_string(const json& payload, const char* key,
   return payload.at(key).get<std::string>();
 }
 
+bool read_bool(const json& payload, const char* key, bool fallback) {
+  if (!payload.contains(key) || payload.at(key).is_null()) {
+    return fallback;
+  }
+  return payload.at(key).get<bool>();
+}
+
 // Missing fields fall back to the struct defaults so machine files
 // saved before a field existed still load (same convention as the
 // protocol deserializers).
@@ -250,6 +278,12 @@ std::optional<MachineDefinition> parse_machine_definition(
         read_number(payload, "pointer_offset_x_mm", 0.0);
     machine.pointer_offset_y_mm =
         read_number(payload, "pointer_offset_y_mm", 0.0);
+    machine.jog_step_mm = read_number(payload, "jog_step_mm", 10.0);
+    machine.jog_feed_mm_per_min =
+        read_number(payload, "jog_feed_mm_per_min", 1000.0);
+    machine.homing_enabled = read_bool(payload, "homing_enabled", true);
+    machine.pointer_power_percent =
+        read_number(payload, "pointer_power_percent", 5.0);
     machine.travel_x_mm = read_number(payload, "travel_x_mm", 0.0);
     machine.travel_y_mm = read_number(payload, "travel_y_mm", 0.0);
     machine.travel_z_mm = read_number(payload, "travel_z_mm", 0.0);
@@ -323,6 +357,10 @@ json to_json(const MachineDefinition& machine) {
       {"work_area_y_mm", machine.work_area_y_mm},
       {"pointer_offset_x_mm", machine.pointer_offset_x_mm},
       {"pointer_offset_y_mm", machine.pointer_offset_y_mm},
+      {"jog_step_mm", machine.jog_step_mm},
+      {"jog_feed_mm_per_min", machine.jog_feed_mm_per_min},
+      {"homing_enabled", machine.homing_enabled},
+      {"pointer_power_percent", machine.pointer_power_percent},
       {"travel_x_mm", machine.travel_x_mm},
       {"travel_y_mm", machine.travel_y_mm},
       {"travel_z_mm", machine.travel_z_mm},

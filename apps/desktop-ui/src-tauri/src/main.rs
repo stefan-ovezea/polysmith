@@ -283,6 +283,7 @@ pub fn run() {
             gcode_sender::grbl_list_ports,
             gcode_sender::grbl_connect,
             gcode_sender::grbl_connect_tcp,
+            gcode_sender::grbl_connect_ws,
             gcode_sender::grbl_disconnect,
             gcode_sender::grbl_send_file,
             gcode_sender::grbl_send_program,

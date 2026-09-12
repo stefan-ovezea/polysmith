@@ -27,10 +27,6 @@ export interface GrblHandoffProgram {
   label: string;
 }
 
-// The red pointer fires at ~5 % of GRBL's 255-unit laser scale —
-// visible for aiming, safe to leave on.
-const POINTER_POWER_S = 13;
-
 // localStorage key pattern matches the host/port persistence in
 // CamGrblPanel ("polysmith.grbl.*").
 const MACHINE_STORAGE_KEY = "polysmith.grbl.machineName";
@@ -192,6 +188,28 @@ export function GrblWorkspace({
   // renders the dot; the utilities panel hosts the toggle.
   const [pointerOn, setPointerOn] = useState(false);
 
+  // Pointer laser power from the selected machine (percentage of
+  // GRBL's 255-unit laser scale).  5 % ≈ S13, the previous hardcoded
+  // value; clamped so a 0 % machine still fires visibly at minimum.
+  const pointerPowerS = useMemo(() => {
+    const percent = selectedMachine?.pointer_power_percent ?? 5;
+    return Math.min(255, Math.max(1, Math.round((255 * percent) / 100)));
+  }, [selectedMachine]);
+
+  // GRBL prefs from the selected machine (jog presets + homing).
+  // Null when no machine is selected — the panel keeps its editable
+  // defaults in that case (same as the standalone CAM panel).
+  const grblMachinePrefs = useMemo(() => {
+    if (!selectedMachine) {
+      return null;
+    }
+    return {
+      jogStepMm: selectedMachine.jog_step_mm,
+      jogFeedMmPerMin: selectedMachine.jog_feed_mm_per_min,
+      homingEnabled: selectedMachine.homing_enabled,
+    };
+  }, [selectedMachine]);
+
   // Disconnecting drops the beam — never leave the toggle claiming it
   // is still on after a reconnect.
   useEffect(() => {
@@ -203,7 +221,7 @@ export function GrblWorkspace({
   const togglePointer = async () => {
     const next = !pointerOn;
     try {
-      await grblSendRaw(next ? `M3 S${POINTER_POWER_S}` : "M5");
+      await grblSendRaw(next ? `M3 S${pointerPowerS}` : "M5");
       setPointerOn(next);
     } catch (error) {
       useToastStore.getState().pushToast("error", String(error));
@@ -410,6 +428,28 @@ export function GrblWorkspace({
             }
           />
         </label>
+        {/* The picked machine's facts — bed, pointer offset, homing —
+            all come from the machine definition (CAM → Setup →
+            Machine), so the values behind the preview are visible
+            right here. */}
+        {selectedMachine ? (
+          <span className="font-mono text-[9px] text-on-surface-dim">
+            {t("grbl.machineFacts", {
+              width: selectedMachine.work_area_x_mm,
+              height: selectedMachine.work_area_y_mm,
+              offsetX: selectedMachine.pointer_offset_x_mm,
+              offsetY: selectedMachine.pointer_offset_y_mm,
+              homing: selectedMachine.homing_enabled
+                ? t("grbl.homingYes")
+                : t("grbl.homingNo"),
+              power: selectedMachine.pointer_power_percent,
+            })}
+          </span>
+        ) : (
+          <span className="text-[9px] leading-snug text-on-surface-dim">
+            {t("grbl.machineNoneHint")}
+          </span>
+        )}
         {loadedProgram ? (
           <span className="min-w-0 truncate font-mono text-[10px] text-on-surface-dim">
             {loadedProgram.info.fileName}
@@ -423,6 +463,12 @@ export function GrblWorkspace({
           <div className="min-h-0 flex-1">
             <CamGrblPanel
               embedded
+              // Jog presets + Home availability from the picked machine
+              // (null = no machine → editable defaults, Home visible).
+              machinePrefs={grblMachinePrefs}
+              // Per-machine $$ snapshot persistence (Restore in the
+              // settings dialog).
+              settingsMachineName={selectedMachineName}
               // The previewed program becomes what Cycle Start sends; the
               // CAM handoff program fills in when nothing is loaded yet.
               embeddedProgram={

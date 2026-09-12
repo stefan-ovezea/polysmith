@@ -22,6 +22,9 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
+use tungstenite::{
+    client::IntoClientRequest, handshake::client::ClientHandshake, Message, WebSocket,
+};
 
 /// GRBL's RX buffer is 128 bytes; the sender admits a line only while
 /// unacked bytes + the line (plus its newline) fit inside 127.
@@ -227,18 +230,92 @@ enum WorkerMsg {
     ZeroXy,
     Raw { line: String },
     ConnectTcp { host: String, port: u16 },
+    ConnectWs { host: String, port: u16 },
     LaserPower { percent: Option<f64> },
     WriteByte { byte: u8 },
     GetSettings,
 }
 
-/// The open transport to the machine: a USB serial port or FluidNC's
-/// TCP text port (23).  Both carry the identical line protocol
-/// (ok/error/status), so the worker treats them the same; only the
-/// read/write plumbing differs.
+/// The open transport to the machine: a USB serial port, FluidNC's
+/// TCP text port (23), or FluidNC's WebSocket port (81).  All three
+/// carry the identical line protocol (ok/error/status), so the worker
+/// treats them the same; only the read/write plumbing differs.
 enum GrblLink {
     Serial(Box<dyn SerialPort>),
     Tcp(TcpStream),
+    Ws(WsLink),
+}
+
+/// WebSocket framing adapter.  tungstenite 0.26 deliberately dropped
+/// the `std::io::Read`/`Write` impls from `WebSocket` (message
+/// semantics never mapped cleanly onto byte streams), so this keeps
+/// the worker's chunked read/write contract and translates it to one
+/// message per write and per message on read.  FluidNC's WS endpoint
+/// emits exactly one text message per response line (plus broadcast
+/// WebUI chatter, which the line parser ignores).
+struct WsLink {
+    socket: WebSocket<TcpStream>,
+    // Bytes of the current message not yet handed to the reader.
+    pending: Vec<u8>,
+    pos: usize,
+}
+
+fn ws_error(error: tungstenite::Error) -> std::io::Error {
+    match error {
+        tungstenite::Error::Io(io) => io,
+        other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+    }
+}
+
+impl WsLink {
+    fn new(socket: WebSocket<TcpStream>) -> Self {
+        Self {
+            socket,
+            pending: Vec::new(),
+            pos: 0,
+        }
+    }
+
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            if self.pos < self.pending.len() {
+                let count = (self.pending.len() - self.pos).min(buffer.len());
+                buffer[..count]
+                    .copy_from_slice(&self.pending[self.pos..self.pos + count]);
+                self.pos += count;
+                if self.pos == self.pending.len() {
+                    self.pending.clear();
+                    self.pos = 0;
+                }
+                return Ok(count);
+            }
+            self.pending.clear();
+            self.pos = 0;
+            match self.socket.read() {
+                Ok(Message::Text(text)) => {
+                    self.pending = text.as_str().as_bytes().to_vec();
+                }
+                Ok(Message::Binary(bytes)) => self.pending = bytes.to_vec(),
+                Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_)) => continue,
+                // Close frame = end of stream, same as EOF on the
+                // serial/TCP links (the drain loop just stops).
+                Ok(Message::Close(_)) => return Ok(0),
+                Err(error) => return Err(ws_error(error)),
+            }
+        }
+    }
+
+    fn write_all(&mut self, buffer: &[u8]) -> std::io::Result<()> {
+        // Every caller write is either a newline-terminated line or a
+        // single real-time byte.  Text when it is valid UTF-8 (all
+        // protocol traffic), Binary otherwise; FluidNC treats both
+        // identically over WS.
+        let message = match std::str::from_utf8(buffer) {
+            Ok(text) => Message::Text(text.to_string().into()),
+            Err(_) => Message::Binary(buffer.to_vec().into()),
+        };
+        self.socket.send(message).map_err(ws_error)
+    }
 }
 
 impl GrblLink {
@@ -246,6 +323,7 @@ impl GrblLink {
         match self {
             GrblLink::Serial(serial) => serial.read(buffer),
             GrblLink::Tcp(stream) => stream.read(buffer),
+            GrblLink::Ws(link) => link.read(buffer),
         }
     }
 
@@ -253,6 +331,7 @@ impl GrblLink {
         match self {
             GrblLink::Serial(serial) => serial.write_all(buffer),
             GrblLink::Tcp(stream) => stream.write_all(buffer),
+            GrblLink::Ws(link) => link.write_all(buffer),
         }
     }
 }
@@ -474,6 +553,64 @@ impl Worker {
         }
     }
 
+    /// FluidNC's WebSocket endpoint: the same text protocol over
+    /// `ws://host:port/`.  Verified against a real FluidNC v4.0.x
+    /// board: the raw GRBL channel shares the HTTP/WebUI port (80)
+    /// and the upgrade path is `/` — `/ws` and port 81 (the
+    /// HTTP-port-plus-one convention of newer configs) are both
+    /// rejected when not configured.  WebUI broadcasts (`currentID`
+    /// lines) interleave with the GRBL replies; the parser ignores
+    /// unknown lines.  The HTTP upgrade gets a 5 s window, then the
+    /// read timeout returns to the worker's 50 ms cadence.
+    fn connect_ws(&mut self, host: String, port: u16) {
+        self.close_port();
+        let opened = (|| -> Result<WsLink, String> {
+            let mut addresses = (host.as_str(), port)
+                .to_socket_addrs()
+                .map_err(|error| error.to_string())?;
+            let address = addresses
+                .next()
+                .ok_or_else(|| "no address resolved".to_string())?;
+            let stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))
+                .map_err(|error| error.to_string())?;
+            stream
+                .set_nodelay(true)
+                .map_err(|error| error.to_string())?;
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .map_err(|error| error.to_string())?;
+            let url = format!("ws://{host}:{port}/");
+            let request = url
+                .into_client_request()
+                .map_err(|error| error.to_string())?;
+            // ClientHandshake::start + handshake() is the 0.26 spelling
+            // of the old one-call `client(url, stream)` helper.
+            let (socket, _response) = ClientHandshake::start(stream, request, None)
+                .map_err(|error| error.to_string())?
+                .handshake()
+                .map_err(|error| error.to_string())?;
+            socket
+                .get_ref()
+                .set_read_timeout(Some(Duration::from_millis(50)))
+                .map_err(|error| error.to_string())?;
+            Ok(WsLink::new(socket))
+        })();
+        match opened {
+            Ok(link) => {
+                self.port = Some(GrblLink::Ws(link));
+                self.port_name = Some(format!("{host}:{port} (ws)"));
+                self.baud_rate = None;
+                self.emit(event("connected", "Connected to GRBL"));
+            }
+            Err(error) => {
+                self.emit(event(
+                    "error",
+                    &format!("Could not connect to {host}:{port}: {error}"),
+                ));
+            }
+        }
+    }
+
     fn write_line(&mut self, line: &str) {
         if let Some(link) = self.port.as_mut() {
             let bytes = format!("{line}\n");
@@ -631,6 +768,7 @@ impl Worker {
         match message {
             WorkerMsg::Connect { port, baud_rate } => self.connect(port, baud_rate),
             WorkerMsg::ConnectTcp { host, port } => self.connect_tcp(host, port),
+            WorkerMsg::ConnectWs { host, port } => self.connect_ws(host, port),
             WorkerMsg::Disconnect => {
                 if self.port.is_some() {
                     // GRBL keeps executing its buffered lines without
@@ -884,6 +1022,21 @@ pub fn grbl_connect_tcp(
 ) -> Result<(), String> {
     start_worker(app, &state)?;
     state.send(WorkerMsg::ConnectTcp { host, port })
+}
+
+/// FluidNC's WebSocket endpoint — same line protocol as TCP 23, one
+/// text message per line.  Verified on a real v4.0.x board: the raw
+/// GRBL channel shares the HTTP/WebUI port (default 80), upgrade
+/// path "/" (newer configs may use 81 = HTTP port + 1).
+#[tauri::command]
+pub fn grbl_connect_ws(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    host: String,
+    port: u16,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::ConnectWs { host, port })
 }
 
 #[tauri::command]

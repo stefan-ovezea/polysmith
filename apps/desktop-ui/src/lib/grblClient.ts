@@ -57,6 +57,14 @@ export function grblConnectTcp(host: string, port: number): Promise<void> {
   return invoke("grbl_connect_tcp", { host, port });
 }
 
+/** FluidNC's WebSocket endpoint — one text message per line, same
+ *  protocol as TCP 23.  Verified on a real v4.0.x board: the raw
+ *  GRBL channel shares the HTTP/WebUI port (default 80), upgrade
+ *  path "/" (newer configs may use 81 = HTTP port + 1). */
+export function grblConnectWs(host: string, port: number): Promise<void> {
+  return invoke("grbl_connect_ws", { host, port });
+}
+
 export function grblDisconnect(): Promise<void> {
   return invoke("grbl_disconnect");
 }

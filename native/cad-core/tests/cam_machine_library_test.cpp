@@ -60,6 +60,10 @@ MachineDefinition make_test_laser() {
   machine.work_area_y_mm = 200.0;
   machine.pointer_offset_x_mm = 5.5;
   machine.pointer_offset_y_mm = -6.5;
+  machine.jog_step_mm = 25.0;
+  machine.jog_feed_mm_per_min = 1500.0;
+  machine.homing_enabled = false;
+  machine.pointer_power_percent = 8.0;
   return machine;
 }
 
@@ -139,6 +143,11 @@ bool test_save_load_round_trip() {
             expect(saved->work_area_y_mm == 200.0, "load: work area y") &&
             expect(saved->pointer_offset_x_mm == 5.5, "load: pointer offset x") &&
             expect(saved->pointer_offset_y_mm == -6.5, "load: pointer offset y");
+  ok = expect(saved->jog_step_mm == 25.0, "load: jog step") &&
+       expect(saved->jog_feed_mm_per_min == 1500.0, "load: jog feed") &&
+       expect(!saved->homing_enabled, "load: homing enabled flag") &&
+       expect(saved->pointer_power_percent == 8.0, "load: pointer power") &&
+       ok;
 
   // Re-saving updates the file in place (save = user intent).
   MachineDefinition updated = make_test_laser();
@@ -190,6 +199,23 @@ bool test_save_rejects_invalid() {
   error.clear();
   save_machine_definition(zero_area, error);
   if (!expect(!error.empty(), "validation: laser with zero work area rejected")) {
+    return false;
+  }
+
+  MachineDefinition zero_jog = make_test_laser();
+  zero_jog.jog_step_mm = 0.0;
+  error.clear();
+  save_machine_definition(zero_jog, error);
+  if (!expect(!error.empty(), "validation: zero jog step rejected")) {
+    return false;
+  }
+
+  MachineDefinition hot_pointer = make_test_laser();
+  hot_pointer.pointer_power_percent = 150.0;
+  error.clear();
+  save_machine_definition(hot_pointer, error);
+  if (!expect(!error.empty(),
+              "validation: pointer power over 100 % rejected")) {
     return false;
   }
 
@@ -246,6 +272,10 @@ bool test_builtin_seeds_parse() {
   return expect(grbl->machine_type == "laser" &&
                     grbl->post_processor.type == "grbl" &&
                     grbl->work_area_x_mm > 0.0 &&
+                    grbl->jog_step_mm == 10.0 &&
+                    grbl->jog_feed_mm_per_min == 1000.0 &&
+                    grbl->homing_enabled &&
+                    grbl->pointer_power_percent == 5.0 &&
                     smoothie->post_processor.type == "smoothieware" &&
                     mill->machine_type == "3_axis_mill",
                 "seeds: built-in fields are well-formed");
@@ -371,7 +401,11 @@ bool test_legacy_machine_loads_with_defaults() {
                     legacy->travel_z_mm == 0.0 &&
                     legacy->kinematics == "cartesian_3axis" &&
                     legacy->axis_limits.empty() &&
-                    !legacy->tool_change_position.has_value(),
+                    !legacy->tool_change_position.has_value() &&
+                    legacy->jog_step_mm == 10.0 &&
+                    legacy->jog_feed_mm_per_min == 1000.0 &&
+                    legacy->homing_enabled &&
+                    legacy->pointer_power_percent == 5.0,
                 "legacy: mill fields default");
 }
 

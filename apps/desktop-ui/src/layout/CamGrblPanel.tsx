@@ -6,6 +6,7 @@ import { Dropdown } from "@/lib";
 import {
   grblConnect,
   grblConnectTcp,
+  grblConnectWs,
   grblDisconnect,
   grblGetSettings,
   grblHome,
@@ -21,6 +22,7 @@ import {
   grblZeroXy,
   listGrblPorts,
   type GrblPortInfo,
+  type GrblSetting,
 } from "@/lib/grblClient";
 import { initGrblStreamListener, useGrblStore, useToastStore } from "@/state";
 import { GrblSettingsDialog } from "./GrblSettingsDialog";
@@ -50,16 +52,33 @@ export interface GrblPanelProgram {
   label: string;
 }
 
+// Machine-level GRBL prefs from the machine library (see the core's
+// MachineDefinition).  The workspace passes the picked machine's
+// values; the standalone CAM panel passes nothing and keeps editable
+// defaults.
+export interface GrblMachinePrefs {
+  jogStepMm: number;
+  jogFeedMmPerMin: number;
+  homingEnabled: boolean;
+}
+
 export function CamGrblPanel({
   onClose,
   embedded,
   embeddedProgram,
+  machinePrefs,
+  settingsMachineName,
   onFileLoaded,
   onCycleStart,
 }: {
   onClose: () => void;
   embedded?: boolean;
   embeddedProgram?: GrblPanelProgram | null;
+  machinePrefs?: GrblMachinePrefs | null;
+  // Machine name from the workspace's machine picker — when set, the
+  // last $$ dump is persisted per machine and the settings dialog
+  // offers to restore it (FluidNC drops runtime $ writes on reboot).
+  settingsMachineName?: string | null;
   onFileLoaded?: (path: string) => void;
   // Notified right before a job is streamed — the GRBL workspace uses
   // it to drop the laser-utility overlay so the main program's
@@ -82,10 +101,13 @@ export function CamGrblPanel({
   const [ports, setPorts] = useState<GrblPortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState<string | null>(null);
   const [baudRate, setBaudRate] = useState("115200");
-  // Transport: USB serial (COM port + baud) or FluidNC's TCP text
-  // port (host + port 23) — both speak the same line protocol.
-  const [connectMode, setConnectMode] = useState<"serial" | "tcp">("serial");
-  // Remember the last TCP target so reconnecting is one click.
+  // Transport: USB serial (COM port + baud) or FluidNC's network
+  // ports — TCP text (host + 23) or WebSocket (host + 81, path /ws).
+  // All three speak the same line protocol.
+  const [connectMode, setConnectMode] = useState<"serial" | "tcp" | "ws">(
+    "serial",
+  );
+  // Remember the last network target so reconnecting is one click.
   const [host, setHost] = useState(() => {
     try {
       return localStorage.getItem("polysmith.grbl.host") ?? "";
@@ -100,8 +122,26 @@ export function CamGrblPanel({
       return "23";
     }
   });
-  const [jogStep, setJogStep] = useState(10);
-  const [jogFeed, setJogFeed] = useState(1000);
+  // Key is V2: the V1 key stored our pre-fix default 81 from failed
+  // connect attempts (the transport never worked on 81), and a stored
+  // value always wins over the code default — renaming drops it.
+  const [wsPort, setWsPort] = useState(() => {
+    try {
+      return localStorage.getItem("polysmith.grbl.wsPortV2") ?? "80";
+    } catch {
+      return "80";
+    }
+  });
+  // Seeded from the picked machine's prefs; the user can still edit
+  // them live for this session (a machine switch re-seeds).
+  const [jogStep, setJogStep] = useState(machinePrefs?.jogStepMm ?? 10);
+  const [jogFeed, setJogFeed] = useState(machinePrefs?.jogFeedMmPerMin ?? 1000);
+  useEffect(() => {
+    if (machinePrefs) {
+      setJogStep(machinePrefs.jogStepMm);
+      setJogFeed(machinePrefs.jogFeedMmPerMin);
+    }
+  }, [machinePrefs]);
   const [busy, setBusy] = useState(false);
   // Live overrides (P5): slider targets; committed to the controller
   // as real-time bytes on release.
@@ -126,6 +166,59 @@ export function CamGrblPanel({
   // `$$` settings dialog state.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settings = useGrblStore((state) => state.settings);
+  // Per-machine snapshot loaded when the dialog opens (null = none
+  // stored yet or no machine selected).
+  const [storedSettings, setStoredSettings] = useState<GrblSetting[] | null>(
+    null,
+  );
+
+  const settingsStorageKey = settingsMachineName
+    ? `polysmith.grbl.settings.${settingsMachineName}`
+    : null;
+
+  // Persist the last $$ dump per machine — the snapshot the dialog's
+  // Restore re-applies after a reboot.
+  useEffect(() => {
+    if (!settingsStorageKey || !settings) {
+      return;
+    }
+    try {
+      localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+    } catch {
+      // localStorage can be unavailable in odd webview contexts —
+      // non-fatal, the snapshot just won't persist.
+    }
+  }, [settings, settingsStorageKey]);
+
+  const readStoredSettings = (): GrblSetting[] | null => {
+    if (!settingsStorageKey) {
+      return null;
+    }
+    try {
+      const raw = localStorage.getItem(settingsStorageKey);
+      if (raw === null) {
+        return null;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as GrblSetting[]) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Re-applies every persisted `$k=v`, then re-dumps so the dialog
+  // shows what the controller reports back.
+  const restoreSettings = () => {
+    if (!storedSettings || storedSettings.length === 0) {
+      return;
+    }
+    void runCommand(async () => {
+      for (const setting of storedSettings) {
+        await grblSendRaw(`${setting.key}=${setting.value}`);
+      }
+      await grblGetSettings();
+    });
+  };
 
   const formatPosition = (position: [number, number, number]) =>
     `X ${position[0].toFixed(2)}  Y ${position[1].toFixed(2)}  Z ${position[2].toFixed(2)}`;
@@ -176,20 +269,32 @@ export function CamGrblPanel({
   };
 
   const connect = async () => {
-    if (connectMode === "tcp") {
+    if (connectMode === "tcp" || connectMode === "ws") {
       const trimmedHost = host.trim();
       if (!trimmedHost) {
         return;
       }
-      const portNumber = Number(tcpPort) || 23;
+      const defaultPort = connectMode === "ws" ? 80 : 23;
+      const portNumber = Number(
+        connectMode === "ws" ? wsPort : tcpPort,
+      ) || defaultPort;
       try {
         localStorage.setItem("polysmith.grbl.host", trimmedHost);
-        localStorage.setItem("polysmith.grbl.tcpPort", String(portNumber));
+        localStorage.setItem(
+          connectMode === "ws"
+            ? "polysmith.grbl.wsPortV2"
+            : "polysmith.grbl.tcpPort",
+          String(portNumber),
+        );
       } catch {
         // localStorage can be unavailable in odd webview contexts —
         // non-fatal, the connection still proceeds.
       }
-      await runCommand(() => grblConnectTcp(trimmedHost, portNumber));
+      const action =
+        connectMode === "ws"
+          ? () => grblConnectWs(trimmedHost, portNumber)
+          : () => grblConnectTcp(trimmedHost, portNumber);
+      await runCommand(action);
       return;
     }
     if (!selectedPort) {
@@ -293,7 +398,9 @@ export function CamGrblPanel({
 
   // Connect is enabled once the selected transport has its inputs.
   const canConnect =
-    connectMode === "tcp" ? host.trim().length > 0 : selectedPort !== null;
+    connectMode === "tcp" || connectMode === "ws"
+      ? host.trim().length > 0
+      : selectedPort !== null;
 
   // One button for both transports — connects or disconnects
   // whichever mode is active.
@@ -354,10 +461,16 @@ export function CamGrblPanel({
                 value: "tcp",
                 label: t("cam.grbl.tcpTransport", "Network (TCP)"),
               },
+              {
+                value: "ws",
+                label: t("cam.grbl.wsTransport", "Network (WebSocket)"),
+              },
             ]}
             disabled={connected}
             onChange={(value) =>
-              setConnectMode(value === "tcp" ? "tcp" : "serial")
+              setConnectMode(
+                value === "tcp" || value === "ws" ? value : "serial",
+              )
             }
           />
         </label>
@@ -437,9 +550,13 @@ export function CamGrblPanel({
                 <input
                   type="number"
                   className="cad-input mt-2 w-full font-mono"
-                  value={tcpPort}
+                  value={connectMode === "ws" ? wsPort : tcpPort}
                   disabled={connected || busy}
-                  onChange={(event) => setTcpPort(event.target.value)}
+                  onChange={(event) =>
+                    connectMode === "ws"
+                      ? setWsPort(event.target.value)
+                      : setTcpPort(event.target.value)
+                  }
                 />
               </label>
             </div>
@@ -631,16 +748,20 @@ export function CamGrblPanel({
           >
             {t("cam.grbl.reset", "Reset")}
           </button>
-          <button
-            type="button"
-            className="cad-action-ghost"
-            disabled={!connected || busy}
-            onClick={() => {
-              void runCommand(() => grblHome());
-            }}
-          >
-            {t("cam.grbl.home", "Home")}
-          </button>
+          {/* Machines without homing (homing_enabled false) hide the
+              button — $H would just alarm on them. */}
+          {!machinePrefs || machinePrefs.homingEnabled ? (
+            <button
+              type="button"
+              className="cad-action-ghost"
+              disabled={!connected || busy}
+              onClick={() => {
+                void runCommand(() => grblHome());
+              }}
+            >
+              {t("cam.grbl.home", "Home")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="cad-action-ghost col-span-2"
@@ -798,6 +919,7 @@ export function CamGrblPanel({
           className="cad-action-ghost h-8 w-full"
           disabled={!connected || busy}
           onClick={() => {
+            setStoredSettings(readStoredSettings());
             setSettingsOpen(true);
             void grblGetSettings().catch((error) => {
               useToastStore.getState().pushToast("error", String(error));
@@ -816,6 +938,8 @@ export function CamGrblPanel({
       {settingsOpen ? (
         <GrblSettingsDialog
           settings={settings}
+          storedSettings={storedSettings}
+          onRestoreAll={restoreSettings}
           onClose={() => {
             setSettingsOpen(false);
           }}

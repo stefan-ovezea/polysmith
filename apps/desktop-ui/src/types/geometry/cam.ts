@@ -375,6 +375,13 @@ export interface MachineDefinition {
   work_area_y_mm: number;
   pointer_offset_x_mm: number;
   pointer_offset_y_mm: number;
+  // GRBL workspace prefs — jog presets, homing availability, and the
+  // red-pointer laser power used by the workspace's pointer toggle.
+  // Mirrors the core defaults (cam_types.h).
+  jog_step_mm: number;
+  jog_feed_mm_per_min: number;
+  homing_enabled: boolean;
+  pointer_power_percent: number;
   // Mill fields (5-axis scaffolding).  Travel is mm; 0 = unset, in
   // which case the UI falls back to setup.machine_axes.
   travel_x_mm: number;

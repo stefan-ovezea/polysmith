@@ -229,6 +229,10 @@
     "camJobLabel": "CAM job — {{name}}",
     "machineLabel": "Machine",
     "machineNone": "— none —",
+    "machineFacts": "Bed {{width}}×{{height}} mm · Pointer offset ({{offsetX}}, {{offsetY}}) mm · Homing {{homing}} · Pointer {{power}} %",
+    "machineNoneHint": "Machine facts (bed, pointer offset, homing, jog prefs) come from the machine definition — edit in CAM → Setup → Machine.",
+    "homingYes": "yes",
+    "homingNo": "no",
     "pointerOn": "Pointer on",
     "pointerOff": "Pointer off",
     "pointerHint": "The red dot sits at the machine position plus the selected machine's pointer offset.",
@@ -622,6 +626,7 @@
       "transport": "Transport",
       "serialTransport": "Serial (USB)",
       "tcpTransport": "Network (TCP)",
+      "wsTransport": "Network (WebSocket)",
       "host": "Host",
       "port": "Port",
       "noPorts": "No serial ports found",
@@ -661,6 +666,8 @@
       "settingsLoading": "Waiting for the $$ reply…",
       "settingsEmpty": "The controller returned no settings.",
       "settingsApply": "Apply",
+      "settingsRestore": "Restore saved ({{count}})",
+      "settingsRestoreHint": "Re-applies the $ settings last fetched for this machine — FluidNC drops runtime $ writes on reboot.",
       "settingsFluidNcCaveat": "These $ settings belong to GRBL 1.1. FluidNC keeps most of its configuration in config.yaml — $ may list only a subset or nothing.",
       "settingsDesc": {
         "stepPulse": "Step pulse width (µs) — too short loses steps, too long stalls.",
@@ -878,7 +885,12 @@
       "workAreaY": "Work area Y (mm)",
       "pointerOffsetX": "Red pointer offset X (mm)",
       "pointerOffsetY": "Red pointer offset Y (mm)",
-      "pointerNote": "The red pointer sits at this offset from the laser focal point. Parts are framed under the dot, so exported coordinates shift by −offset — the cut lands where the dot was."
+      "pointerNote": "The red pointer sits at this offset from the laser focal point. Parts are framed under the dot, so exported coordinates shift by −offset — the cut lands where the dot was.",
+      "jogStep": "Jog step (mm)",
+      "jogFeed": "Jog feed (mm/min)",
+      "pointerPower": "Pointer power (%)",
+      "homingEnabled": "Homing available",
+      "grblPrefsNote": "GRBL workspace preferences: saved with this machine and used by the sender — jog button step/feed, the Home button, and the red-pointer toggle power."
     },
     "testPattern": {
       "title": "Test Pattern",
