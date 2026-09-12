@@ -1,86 +1,101 @@
-# Active task: GRBL transport sprint — CODE COMPLETE, verification pending (2026-09-12)
+# Active task: Laser machine bring-up — FluidNC board swap + first cut (2026-09-13)
 
-> **Branch:** `feature/grbl-transport` (from `dev` @ 5ca9550 — the
-> squash-merged PR #79 that closed the polish sprint)
-> **Plan:** `.claude/plans/jaunty-sleeping-moth.md` (P1–P8) + the
-> follow-up scope approved by the user: WebSocket (port 81)
-> transport, richer machine-definition JSON (homing/jog prefs),
-> persisting $ settings.
-> **Commits:** none yet — no commit without user verification +
-> explicit approval (CLAUDE.md).
+> **Branch:** `cam/laser-testing` (checked out; pushes to origin with this update)
+> **Previous sprint (GRBL transport, PR #80) is merged — this file now tracks the live-machine work.**
 
-## Shipped in this sprint (all three items code-complete)
+## Machine state (all hardware verified in-hand)
 
-### A — WebSocket (port 81) transport
+- Old board MKS DLC32 (GRBL 1.1h) replaced by **MKS LS ESP32 PRO V2.1_002**,
+  mainline **FluidNC v4.0.3 esp32s3-wifi**, WiFi STA `192.168.1.19`.
+- Wiring: fully plug-and-play (DLC32 V2.1 shares XH connectors). Exceptions:
+  - Dual-Y gantry: old PCB mirrored the Y2 pins, LS does NOT → swap BOTH
+    phase pairs (A↔B) on ONE Y motor plug (verified working).
+  - 2-pin power-switch port next to the DC jack must be jumpered (installed).
+  - SPREAD jumpers ON (SpreadCycle — audible hum is normal).
+  - No limit switches on this machine; Zero XY at the part corner before run.
+- Live config: `C:\Users\PC\grbl_tools\laser-board.yaml` (uploaded to board):
+  - `engine: Timed` — **I2S_STATIC causes "Configuration is invalid"
+    error:152 on the S3 build; RMT is not compiled in.** Runtime switch:
+    `$X` then `$/Stepping/Engine=Timed` (case-sensitive).
+  - X step/dir gpio.16/15, Y gpio.7/**6:low** (`:low` = direction invert —
+    FluidNC inverts direction via the pin attribute, not a stepstick field),
+    limits gpio.39/40 (unused), laser gpio.2, 80 steps/mm, 6000 feed,
+    500 accel, `junction_deviation_mm: 0.03`, `arc_tolerance_mm: 0.05`,
+    `planner_blocks: 60` (all tuned 2026-09-13, not yet proven by a full cut).
+- HTTP upload protocol that works: `POST /files` multipart with `path=/`,
+  `/<name>S=<size>`, `myfile[]=@<win-path>;filename=/<name>` (curl must use
+  a Windows path — `/tmp` breaks; filename override is REQUIRED or the file
+  lands under the local basename).
 
-- **Rust** (`src-tauri`): `tungstenite = "0.26"` dependency;
-  `GrblLink::Ws(WsLink)` — a framing adapter because tungstenite 0.26
-  dropped the `std::io::Read/Write` impls (pending-bytes buffer, one
-  message per read; write = Text if valid UTF-8 else Binary; Close
-  frame → EOF). `connect_ws`: TCP connect 5 s → nodelay → 5 s read
-  timeout → `ClientHandshake::start(stream, url.into_client_request(),
-  None)?.handshake()` → 50 ms timeout. New `grbl_connect_ws` command
-  registered in main.rs.
-- **TS**: `grblConnectWs` client wrapper; CamGrblPanel third
-  transport option "Network (WebSocket)", port input default 81
-  persisted as `polysmith.grbl.wsPort`; i18n `cam.grbl.wsTransport`.
+## First-cut failures (the open problem)
 
-### B — Richer machine-definition JSON (homing/jog prefs)
+The job (`res/untitled-part.nc`, 3490 raw / 1875 filtered lines, 830 tiny
+1°-step arcs) does not complete on ANY transport:
 
-- **Core**: `MachineDefinition` grew `jog_step_mm` (10),
-  `jog_feed_mm_per_min` (1000), `homing_enabled` (true),
-  `pointer_power_percent` (5). machine_library.cpp: parse with
-  fallbacks (old JSON files load unchanged — pinned by the legacy
-  test), to_json, validation (jog > 0, pointer power 0–100), laser
-  seeds extended. Protocol: to_payload + from_payload in both .inc
-  files (touch serialization.cpp — .inc trap).
-- **TS**: MachineDefinition type + zod `cam_machine_list_result`
-  event schema; CamSetupPanel GRBL-prefs fieldset (jog step/feed,
-  pointer power, homing checkbox; seeded from a picked machine,
-  included in findMatchingMachine + saved with the definition).
-- **Workspace**: CamGrblPanel `machinePrefs` prop seeds the jog
-  inputs and hides Home when `homing_enabled` is false; the pointer
-  toggle now fires `M3 S{clamp(255·pct/100, 1, 255)}` from the
-  machine instead of the hardcoded S13.
+| Path | Failure |
+|---|---|
+| App USB (CH340, 115200) | FluidNC **error 36** "no offsets in plane" at ~line 468 — I/J tail of the arc line dropped. Old GRBL board had error 1 at the SAME line (same cause). |
+| App TCP :23 | Board drops the connection at ~filtered line 862 (reproduced in check mode with the app's exact 127-byte window accounting). Board survives. |
+| App WS :80 | Dies within the first ~3 holes. |
+| LaserGRBL USB | Died ~raw line 1700 ("board died" = connection drop; board survives). |
 
-### C — Persist $ settings per machine + restore
+Working theory, two stacked causes:
+1. **CH340 USB has no flow control** (tiny FIFO) — 127-byte bursts drop bytes
+   mid-line → the clean parse errors (36/1) at a repeatable spot.
+2. **The dense file overwhelms FluidNC v4.0.3** (1° arc steps × tight
+   tolerances → planner churn; user saw jerky motion right before failures).
+   Connection drops at varying lines per transport; check-mode replay
+   reproduced it over TCP.
 
-- `polysmith.grbl.settings.<machineName>` snapshot written whenever a
-  $$ dump arrives while a machine is selected (workspace passes
-  `settingsMachineName`). GrblSettingsDialog gained
-  `storedSettings` + Restore ("Restore saved (N)") — re-applies every
-  persisted `$k=v`, then re-fetches. i18n keys added.
+Fixes applied so far: tolerance/planner tuning (above). Not yet verified.
+**Discriminator test for the other station:** upload the .nc to the board FS
+and run `$SD/Run=untitled-part.nc` (no host streaming). Completes → host
+transports are the problem; dies → file/firmware. Also: stream a trivial
+30-line square over each transport; try a FluidNC build newer than v4.0.3.
 
-## Gates run (all green)
+**Safety gap:** when a connection dies mid-job the board KEEPS CUTTING
+(buffered lines + laser on). Hit Reset immediately. App bug: on link
+EOF/error while a job is in flight, `gcode_sender.rs` run() just stops
+reading — no abort, no loud error event. Fix alongside the React bug.
 
-- `cargo test` — **19/19** (exit code un-masked this time; see the
-  trap note below)
-- `pnpm --filter desktop-ui exec tsc --noEmit` — clean
-- C++ rebuild via the VS2022 cmake wrapper + `pnpm test:core` —
-  **46/46 suites**, including the extended cam_machine_library_test
-  (new-field round trip, legacy defaults, validation rejections,
-  seed prefs)
+## React bug found 2026-09-13 — "Maximum update depth exceeded" (TCP)
 
-**Traps hit this sprint (recorded in memory):** piping gates through
-`| tail` masks the exit code — two masked cargo failures were
-reported as green before the real errors surfaced; run gates with no
-pipe. tungstenite 0.26 has no io::Read/Write, no
-`handshake::client::client()`, no `Error::WriteZero`,
-`write_message`→`send`, `Text(Utf8Bytes)`/`Binary(Bytes)` payload
-types — full notes in `cam-rebuild-build-env.md`.
+- `apps/desktop-ui/src/app/GrblWorkspace.tsx` ~line 474:
+  ```tsx
+  embeddedProgram={
+    loadedProgram?.source === "internal"
+      ? { text: loadedProgram.text, label: loadedProgram.label }  // NEW OBJECT EVERY RENDER
+      : embeddedProgram
+  }
+  ```
+- `apps/desktop-ui/src/layout/CamGrblPanel.tsx` line 254:
+  ```tsx
+  useEffect(() => { if (embeddedProgram) setLoadedProgram(embeddedProgram); },
+    [embeddedProgram]);
+  ```
+- Object identity changes every render → effect → setState → render → loop.
+  TCP makes it hot: 5 Hz status events re-render the workspace.
+- **Fix:** wrap the object in `useMemo(..., [loadedProgram, embeddedProgram])`
+  in GrblWorkspace (canonical), or compare by content in the panel effect.
 
-## Next session checklist
+## Next-session checklist
 
-1. **User verification on the real FluidNC** (binding per CLAUDE.md):
-   - Transport dropdown → "Network (WebSocket)", host + port 81:
-     connects, status polls, jog/pointer work (FigUI on the same
-     port proves the endpoint).
-   - Machine picker → machine prefs: jog step/feed seed the inputs,
-     pointer power fires at the machine's %, Home hides when the
-     machine says no homing.
-   - Settings dialog: fetch, edit, then Restore after a FluidNC
-     reboot (runtime $ writes are dropped on reboot — the point of
-     the feature).
-2. Commit with explicit user approval (no Co-Authored-By trailer),
-   then PR `feature/grbl-transport` → `dev` (squash), delete the
-   branch.
+1. Fix the React loop (useMemo) — verify by connecting TCP and watching for
+   the warning to disappear.
+2. Fix the connection-loss safety gap in gcode_sender.rs (emit error + abort).
+3. Run the discriminator tests on the other station ($SD/Run, simple square,
+   newer FluidNC).
+4. CAM-side optimization (the real cam/laser-testing work): bigger arc spans
+   (5–10°), merge collinear G1s, dedupe the 36 duplicate holes — a leaner
+   file reduces load on every transport and fixes the jerky section.
+5. First completed cut → calibration check (jog 100 mm vs ruler), laser power
+   curve, then commit CAM changes with test coverage.
+
+## Key files
+
+- `apps/desktop-ui/src-tauri/src/gcode_sender.rs` — worker, ByteWindow(127),
+  500 ms `?` poll, EOF handling gap
+- `apps/desktop-ui/src/app/GrblWorkspace.tsx` — embeddedProgram loop source
+- `apps/desktop-ui/src/layout/CamGrblPanel.tsx` — loop consumer (effect 254)
+- `C:\Users\PC\grbl_tools\laser-board.yaml` — machine config (mirror of board)
+- `res/untitled-part.nc` — the problem job (bounds 0..232.7 × 0..172.4)
