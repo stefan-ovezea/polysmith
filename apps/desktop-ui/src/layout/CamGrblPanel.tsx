@@ -251,11 +251,18 @@ export function CamGrblPanel({
 
   // The workspace/handoff program is what Cycle Start sends; keep it
   // in sync so the button always streams what the preview shows.
+  // Content-compare, never identity-compare: setting state on every
+  // prop change with an identity check loops when the caller builds a
+  // fresh object each render ("Maximum update depth exceeded").
   useEffect(() => {
-    if (embeddedProgram) {
+    if (
+      embeddedProgram &&
+      (loadedProgram?.text !== embeddedProgram.text ||
+        loadedProgram?.label !== embeddedProgram.label)
+    ) {
       setLoadedProgram(embeddedProgram);
     }
-  }, [embeddedProgram]);
+  }, [embeddedProgram, loadedProgram]);
 
   const runCommand = async (action: () => Promise<void>) => {
     setBusy(true);

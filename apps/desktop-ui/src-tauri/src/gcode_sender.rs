@@ -383,6 +383,11 @@ struct Worker {
     last_mpos: Option<[f64; 3]>,
     // In-flight `$$` dump collection (see GetSettings).
     collecting: Option<SettingsCollect>,
+    // Latest machine state + how long it has been Idle — the honest
+    // completion fallback for controllers that never ack the final
+    // job line (FluidNC's WS channel does exactly that).
+    last_state: Option<GrblMachineState>,
+    idle_since: Option<Instant>,
 }
 
 /// Collection state for a `$$` settings dump: the controller prints
@@ -407,6 +412,32 @@ fn event(kind: &str, message: &str) -> GrblStreamEvent {
         mpos: None,
         wpos: None,
         settings: None,
+    }
+}
+
+/// A read that returned no data yet — routine poll cadence, not a
+/// dead link.  Anything else (EOF, reset, aborted) is fatal.
+fn is_benign_read_error(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::Interrupted
+    )
+}
+
+/// The error-event text for a dead link.  Mid-job losses must be
+/// unmissable: the controller keeps executing buffered lines without
+/// the host, so the user needs to hit Reset / cut power NOW.
+fn link_loss_message(mid_job: bool, reason: &str) -> String {
+    if mid_job {
+        format!(
+            "CONNECTION LOST mid-job: {reason}. \
+             The controller may keep cutting its buffered lines — \
+             press Reset or cut power immediately."
+        )
+    } else {
+        format!("Connection lost: {reason}")
     }
 }
 
@@ -491,6 +522,8 @@ impl Worker {
         self.lines_total = 0;
         self.completed_emitted = false;
         self.paused = false;
+        self.last_state = None;
+        self.idle_since = None;
     }
 
     fn connect(&mut self, port: String, baud_rate: u32) {
@@ -681,6 +714,37 @@ impl Worker {
         self.emit_progress();
     }
 
+    /// Emits the one-shot "completed" event and resets the job
+    /// bookkeeping.  Both the normal path (final ok drains the queue)
+    /// and the Idle fallback (controllers that never ack the final
+    /// line) end here.
+    fn emit_completed(&mut self) {
+        self.completed_emitted = true;
+        self.sent_lengths.clear();
+        self.pending.clear();
+        self.window = ByteWindow::new();
+        let mut payload = event("completed", "Job complete");
+        payload.lines_sent = Some(self.lines_total);
+        payload.lines_total = Some(self.lines_total);
+        payload.percent = Some(100.0);
+        self.emit(payload);
+    }
+
+    /// FluidNC's WS channel never acks the FINAL line of a job — the
+    /// controller is done (Idle, every line sent) but the last ok
+    /// never arrives, so the queue can never drain on its own.  The
+    /// board's own status is the honest signal: all lines sent +
+    /// sustained Idle = nothing left executing.
+    fn maybe_complete_on_idle(&mut self) {
+        if self.lines_total == 0
+            || self.lines_sent < self.lines_total
+            || self.completed_emitted
+        {
+            return;
+        }
+        self.emit_completed();
+    }
+
     /// Progress (and, once, completion) for the UI.
     fn emit_progress(&mut self) {
         if self.lines_total == 0 {
@@ -689,12 +753,7 @@ impl Worker {
         let finished = self.pending.is_empty() && self.sent_lengths.is_empty();
         let percent = self.lines_sent as f64 / self.lines_total as f64 * 100.0;
         if finished && !self.completed_emitted {
-            self.completed_emitted = true;
-            let mut payload = event("completed", "Job complete");
-            payload.lines_sent = Some(self.lines_sent);
-            payload.lines_total = Some(self.lines_total);
-            payload.percent = Some(100.0);
-            self.emit(payload);
+            self.emit_completed();
             return;
         }
         if finished {
@@ -717,6 +776,15 @@ impl Worker {
                 }
                 if let Some(len) = self.sent_lengths.pop_front() {
                     self.window.ack(len);
+                } else if self.lines_total > 0 {
+                    // A stray ok mid-job (controller quirk, e.g. an
+                    // ack for a real-time command sent as a line).
+                    // Never ack a line for it — that is exactly the
+                    // window corruption that over-drives the board.
+                    eprintln!(
+                        "grbl: stray ok ignored ({} lines outstanding in window)",
+                        self.window.unacked
+                    );
                 }
                 // pump() emits progress, and completion when the last
                 // ok drains the queue.
@@ -750,6 +818,24 @@ impl Worker {
                 // Track the position even between throttled emits so
                 // Zero XY can derive the new WCO at press time.
                 self.last_mpos = mpos;
+                // Idle tracking: three consecutive Idle reports
+                // (1.5 s at the 500 ms poll cadence) with every line
+                // sent mean the board finished — the WS final-ack
+                // fallback.
+                self.last_state = Some(state);
+                if state == GrblMachineState::Idle {
+                    match self.idle_since {
+                        None => self.idle_since = Some(Instant::now()),
+                        Some(since)
+                            if since.elapsed() >= Duration::from_millis(1500) =>
+                        {
+                            self.maybe_complete_on_idle();
+                        }
+                        Some(_) => {}
+                    }
+                } else {
+                    self.idle_since = None;
+                }
                 // Throttle status events to 5 Hz.
                 if self.last_status_emit.elapsed() >= Duration::from_millis(200) {
                     let mut payload = event("status", "");
@@ -884,6 +970,25 @@ impl Worker {
         }
     }
 
+    /// The link died (peer EOF or a hard read error).  Abort the job
+    /// state, try a last-ditch reset byte, and tell the UI loudly —
+    /// the controller keeps executing its buffered lines without the
+    /// host, and with the laser on that is dangerous.  Emitting
+    /// "disconnected" flips the UI to Offline so no stale progress
+    /// remains.
+    fn link_lost(&mut self, reason: &str) {
+        let mid_job = self.lines_total > 0 && !self.completed_emitted;
+        // Best-effort: on a half-closed TCP link a write can still
+        // land and stop the laser before the buffered lines finish.
+        if let Some(link) = self.port.as_mut() {
+            let _ = link.write_all(&[0x18]);
+        }
+        self.close_port();
+        let message = link_loss_message(mid_job, reason);
+        self.emit(event("error", &message));
+        self.emit(event("disconnected", "Disconnected"));
+    }
+
     fn run(mut self) {
         loop {
             // Drain available serial bytes into response lines.  The
@@ -891,10 +996,17 @@ impl Worker {
             // handler can freely mutate the job state.
             if let Some(link) = self.port.as_mut() {
                 let mut responses: Vec<GrblResponse> = Vec::new();
+                let mut lost: Option<String> = None;
                 loop {
                     let mut chunk = [0u8; 256];
                     match link.read(&mut chunk) {
-                        Ok(0) => break,
+                        Ok(0) => {
+                            // Peer closed cleanly (TCP FIN / WS close)
+                            // — distinct from a timeout, and fatal.
+                            lost =
+                                Some("the controller closed the connection".to_string());
+                            break;
+                        }
                         Ok(count) => {
                             self.rx_buffer.extend_from_slice(&chunk[..count]);
                             while let Some(pos) =
@@ -921,17 +1033,34 @@ impl Worker {
                                 responses.push(parse_grbl_response(&line));
                             }
                         }
-                        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => break,
-                        Err(_) => break,
+                        Err(error) if is_benign_read_error(error.kind()) => {
+                            // Routine no-data-yet — nothing fatal.
+                            break;
+                        }
+                        Err(error) => {
+                            lost = Some(error.to_string());
+                            break;
+                        }
                     }
                 }
-                // Status poll every 500 ms while connected.
-                if self.last_poll.elapsed() >= Duration::from_millis(500) {
-                    let _ = link.write_all(b"?\n");
-                    self.last_poll = Instant::now();
-                }
-                for response in responses {
-                    self.handle_response(response);
+                if let Some(reason) = lost {
+                    self.link_lost(&reason);
+                } else {
+                    // Status poll every 500 ms while connected.  MUST
+                    // be the bare real-time byte: FluidNC acks a
+                    // newline-terminated "?" with an EXTRA ok, which
+                    // corrupts the 127-byte window accounting (each
+                    // spurious ok frees a line slot that was never
+                    // sent) and over-drives the controller's input
+                    // queue — root cause of the mid-job byte drops
+                    // and connection losses seen on the real board.
+                    if self.last_poll.elapsed() >= Duration::from_millis(500) {
+                        let _ = link.write_all(&[b'?']);
+                        self.last_poll = Instant::now();
+                    }
+                    for response in responses {
+                        self.handle_response(response);
+                    }
                 }
             }
 
@@ -982,6 +1111,8 @@ fn start_worker(app: AppHandle, state: &GrblState) -> Result<(), String> {
         rx_buffer: Vec::new(),
         last_mpos: None,
         collecting: None,
+        last_state: None,
+        idle_since: None,
     };
     std::thread::spawn(move || worker.run());
     *guard = Some(tx);
@@ -1223,6 +1354,47 @@ mod tests {
         window.add(10);
         window.ack(20);
         assert_eq!(window.unacked, 0);
+    }
+
+    // ── Link-loss classification ──────────────────────────────────
+    // A dead link must never look like a timeout: timeouts keep the
+    // worker poll cadence alive, EOF/reset/abort must abort the job
+    // and alert the user (the controller keeps cutting buffered
+    // lines without the host).
+    #[test]
+    fn benign_read_errors_are_only_the_no_data_kinds() {
+        use std::io::ErrorKind;
+        assert!(is_benign_read_error(ErrorKind::TimedOut));
+        assert!(is_benign_read_error(ErrorKind::WouldBlock));
+        assert!(is_benign_read_error(ErrorKind::Interrupted));
+        assert!(!is_benign_read_error(ErrorKind::ConnectionReset));
+        assert!(!is_benign_read_error(ErrorKind::ConnectionAborted));
+        assert!(!is_benign_read_error(ErrorKind::UnexpectedEof));
+        assert!(!is_benign_read_error(ErrorKind::BrokenPipe));
+        assert!(!is_benign_read_error(ErrorKind::Other));
+    }
+
+    #[test]
+    fn link_loss_message_is_loud_only_mid_job() {
+        let idle = link_loss_message(false, "peer closed");
+        assert!(
+            idle.starts_with("Connection lost: peer closed"),
+            "idle loss keeps a plain prefix: {idle}"
+        );
+        assert!(
+            !idle.contains("Reset"),
+            "idle loss must not shout safety actions: {idle}"
+        );
+
+        let mid_job = link_loss_message(true, "peer closed");
+        assert!(
+            mid_job.starts_with("CONNECTION LOST mid-job"),
+            "mid-job loss must be unmissable: {mid_job}"
+        );
+        assert!(
+            mid_job.contains("Reset") && mid_job.contains("cut power"),
+            "mid-job loss must tell the user to stop the laser: {mid_job}"
+        );
     }
 
     // The settings collector accepts `$N=value` lines and rejects

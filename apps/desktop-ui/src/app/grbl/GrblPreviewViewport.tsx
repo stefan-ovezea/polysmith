@@ -30,6 +30,10 @@ import {
   type GrblBed,
   type GrblToolpathObjects,
 } from "./grblPreviewScene";
+import {
+  buildGrblOrientationCube,
+  type GrblOrientationCube,
+} from "./grblOrientationCube";
 
 // Self-contained Three.js viewport for the GRBL toolpath preview.  It
 // owns its canvas/renderer/camera/controls (the CAD ViewportPanel
@@ -72,6 +76,8 @@ export function GrblPreviewViewport({
 }: GrblPreviewViewportProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cubeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cubeRef = useRef<GrblOrientationCube | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
@@ -120,6 +126,12 @@ export function GrblPreviewViewport({
     camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     configureViewportControls({ controls, canvas });
+    // The shared config reserves both mouse buttons (CAD picking
+    // semantics) — this viewport has nothing to pick, so the left
+    // drag rotates the grid and the right drag pans it.  Together
+    // with the orientation cube this makes the view fully orientable.
+    controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
 
     const marker = buildGrblPositionMarker();
     marker.visible = false;
@@ -140,6 +152,10 @@ export function GrblPreviewViewport({
     const animate = () => {
       controls.update();
       renderer.render(scene, camera);
+      // The orientation cube mirrors the camera every frame (the
+      // widget owns its renderer; the ref indirection lets theme
+      // changes rebuild it without restarting this loop).
+      cubeRef.current?.update(camera, controls);
       frameId = requestAnimationFrame(animate);
     };
     frameId = requestAnimationFrame(animate);
@@ -192,6 +208,22 @@ export function GrblPreviewViewport({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Orientation cube: built once the main camera/controls exist and
+  // rebuilt on theme change (its face colors come from CSS tokens).
+  useEffect(() => {
+    const canvas = cubeCanvasRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!canvas || !camera || !controls) {
+      return undefined;
+    }
+    cubeRef.current = buildGrblOrientationCube({ canvas, mainCamera: camera, controls });
+    return () => {
+      cubeRef.current?.dispose();
+      cubeRef.current = null;
+    };
+  }, [theme]);
 
   // Rebuild bed + toolpath when the file, bed, or theme changes.
   useEffect(() => {
@@ -364,6 +396,13 @@ export function GrblPreviewViewport({
   return (
     <div ref={hostRef} className="relative h-full w-full overflow-hidden">
       <canvas ref={canvasRef} className="block h-full w-full" />
+      {/* Orientation cube overlay: click a face to snap the view
+          (top/front/right/…), drag the main view to rotate. */}
+      <canvas
+        ref={cubeCanvasRef}
+        aria-label="Orientation cube"
+        className="pointer-events-auto absolute right-3 top-3 h-24 w-24 cursor-pointer"
+      />
     </div>
   );
 }

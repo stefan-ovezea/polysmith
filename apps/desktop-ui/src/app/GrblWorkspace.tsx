@@ -358,6 +358,17 @@ export function GrblWorkspace({
     return streaming ? linesSent : 0;
   }, [overlayProgram, sendingTarget, completed, streaming, linesSent]);
 
+  // The program handed down to the machine panel.  Memoized: the
+  // panel syncs its internal copy in an identity-keyed effect, and a
+  // fresh object every render made that effect setState each pass —
+  // "Maximum update depth exceeded" (hot over TCP status events).
+  const panelProgram = useMemo(() => {
+    if (loadedProgram?.source === "internal") {
+      return { text: loadedProgram.text, label: loadedProgram.label };
+    }
+    return embeddedProgram ?? null;
+  }, [loadedProgram, embeddedProgram]);
+
   // Bed check (P6): the parsed bounds are WCS coordinates (origin =
   // the job's own 0,0), so anything below 0 or beyond the work area
   // would trip the soft limits once cut.  Warning only — the user may
@@ -471,11 +482,7 @@ export function GrblWorkspace({
               settingsMachineName={selectedMachineName}
               // The previewed program becomes what Cycle Start sends; the
               // CAM handoff program fills in when nothing is loaded yet.
-              embeddedProgram={
-                loadedProgram?.source === "internal"
-                  ? { text: loadedProgram.text, label: loadedProgram.label }
-                  : embeddedProgram
-              }
+              embeddedProgram={panelProgram}
               // A file picked through the panel's Load button must parse
               // and preview here too — same pipeline as the header Open
               // button, otherwise Cycle Start would stream a program the

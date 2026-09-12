@@ -2,6 +2,64 @@
 
 > **Branch:** `cam/laser-testing` (checked out; pushes to origin with this update)
 > **Previous sprint (GRBL transport, PR #80) is merged — this file now tracks the live-machine work.**
+> **2026-09-13 (this machine): connection-loss investigation COMPLETE — root
+> cause found and fixed in `gcode_sender.rs` + workspace; see "Root cause" below.
+> UNCOMMITTED on `cam/laser-testing`; pending user in-app verification.**
+
+## ROOT CAUSE of the first-cut failures (found 2026-09-13, this machine)
+
+The sender's status poll sent **`?` WITH a newline** every 500 ms. On this
+FluidNC board a newline-terminated `?` is a LINE command: it answers with the
+status AND an extra **ok**. Each spurious ok pops a real line's slot from the
+127-byte window accounting → the window drifts open without bound → the sender
+over-drives the board's input queue → dropped bytes (USB error:36 "I/J tail
+dropped"), dropped TCP connections (~line 862), and the WS channel wedging
+silently. Verified empirically on the board (bare `?` → status only, no ok;
+`?\n` → status + ok) and by replay (a faithful sender replica with `?\n`
+fails, with bare `?` the whole 1876-line dense synthetic job completes on
+TCP AND WS). LaserGRBL's separate failure at ~raw 1700 is not this bug (it
+polls with a bare byte) — likely the board planner + file density, TBD.
+
+Fixes applied in this working tree (gcode_sender.rs, uncommitted):
+1. **Poll sends the bare real-time byte** `?` (no newline) — never an ok.
+2. **Stray-ok guard**: an ok with nothing in sent_lengths mid-job is logged
+   and ignored, never acked against a line.
+3. **Link-loss handling**: EOF or hard read error mid-job now aborts the job
+   state, tries a last-ditch reset byte, emits a loud error event
+   ("CONNECTION LOST mid-job … press Reset or cut power immediately") +
+   disconnected. EOF no longer busy-spins the worker.
+4. **WS final-ack fallback**: FluidNC's WS channel never acks the FINAL line
+   of a job (verified: 3-line job gets 2 oks) — completion now also fires
+   when all lines are sent and the board reports Idle for 1.5 s.
+5. **React loop fixed**: `GrblWorkspace` memoizes the embeddedProgram object
+   (was: fresh object every render → panel effect → setState → "Maximum
+   update depth exceeded"); the panel effect now content-compares too.
+6. **GRBL viewport orientation**: left-drag rotates, right-drag pans (the
+   shared config disabled both), plus a mini orientation cube overlay
+   (click a face to snap top/front/right/…; new tokens --cad-cube-x/y/z/edge
+   in all 6 themes).
+
+Diagnostic harness: `%TEMP%\grbl_replay.mjs` — faithful sender replica
+(filter parity, 127-byte window, pump-on-ok, poll cadence) for TCP 23 and
+WS 80 (hand-rolled WS client), synthetic dense-job generator (830 1° arcs +
+G1 fill). Usage: `node grbl_replay.mjs [host] [port] [file|synthetic] [pollMs] [tcp|ws]`.
+Board must be in CHECK MODE (`$C`, status shows `<Check|…>`) before use.
+
+## Next-session checklist
+
+1. **User verification in the app** (binding): stream the real .nc over TCP
+   and WS — it should complete now; watch for the stray-ok warnings in the
+   console on any transport.
+2. Re-test the real file on the OTHER station (the 3490-line one lives
+   there); USB error:36 should be gone with the poll fix (the CH340 drop was
+   our over-send, not the FIFO).
+3. LaserGRBL's failure (~raw 1700) is separate — if it persists after our
+   fixes, the board planner / file density is still a factor; the CAM-side
+   arc-span/line-merge/dedupe optimization stays on the roadmap.
+4. WS note: FluidNC never acks the final line over WS — jobs end via the
+   Idle fallback now; TCP acks everything, so TCP remains the recommended
+   transport for streaming on this board.
+5. Commit after verification (no Co-Authored-By trailer).
 
 ## Machine state (all hardware verified in-hand)
 
