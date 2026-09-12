@@ -124,6 +124,12 @@ const camMachineListResultEventSchema = z.object({
         work_area_y_mm: z.number(),
         pointer_offset_x_mm: z.number(),
         pointer_offset_y_mm: z.number(),
+        // GRBL workspace prefs (sent by the core since cam_types.h
+        // grew them — kept in sync with to_payload(MachineDefinition)).
+        jog_step_mm: z.number(),
+        jog_feed_mm_per_min: z.number(),
+        homing_enabled: z.boolean(),
+        pointer_power_percent: z.number(),
       }),
     ),
   }),

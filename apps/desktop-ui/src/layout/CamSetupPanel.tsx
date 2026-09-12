@@ -167,12 +167,19 @@ function setupFromFormState(
 // The library machine matching the CURRENT panel state — the dropdown
 // preselects it, and it re-derives to "— none —" the moment any field
 // diverges.  Mill machines match on type + post only (their work-area
-// fields are not exposed in the panel).
+// fields are not exposed in the panel).  Laser machines also match the
+// GRBL workspace prefs so editing them deselects the library entry.
 function findMatchingMachine(
   machineType: MachineType,
   postType: string,
   settings: LaserMachineSettings | null,
   library: MachineDefinition[],
+  prefs: {
+    jog_step_mm: number;
+    jog_feed_mm_per_min: number;
+    homing_enabled: boolean;
+    pointer_power_percent: number;
+  },
 ): MachineDefinition | null {
   return (
     library.find((machine) => {
@@ -187,7 +194,11 @@ function findMatchingMachine(
           machine.work_area_x_mm === settings.work_area_x_mm &&
           machine.work_area_y_mm === settings.work_area_y_mm &&
           machine.pointer_offset_x_mm === settings.pointer_offset_x_mm &&
-          machine.pointer_offset_y_mm === settings.pointer_offset_y_mm
+          machine.pointer_offset_y_mm === settings.pointer_offset_y_mm &&
+          machine.jog_step_mm === prefs.jog_step_mm &&
+          machine.jog_feed_mm_per_min === prefs.jog_feed_mm_per_min &&
+          machine.homing_enabled === prefs.homing_enabled &&
+          machine.pointer_power_percent === prefs.pointer_power_percent
         );
       }
       return true;
@@ -231,6 +242,12 @@ export function CamSetupPanel({
   // Inline "save current as machine…" row: name input + save button.
   const [machineNameInput, setMachineNameInput] = useState("");
   const [savingMachine, setSavingMachine] = useState(false);
+  // GRBL workspace prefs (machine-level): seeded from a picked library
+  // machine and written back into the definition by saveCurrentMachine.
+  const [jogStepMm, setJogStepMm] = useState(10);
+  const [jogFeed, setJogFeed] = useState(1000);
+  const [homingEnabled, setHomingEnabled] = useState(true);
+  const [pointerPowerPercent, setPointerPowerPercent] = useState(5);
   const confirmRef = useRef(onConfirm);
   confirmRef.current = onConfirm;
   const serialized = JSON.stringify(state);
@@ -336,6 +353,12 @@ export function CamSetupPanel({
         travel_z_mm: initialSetup.machine_axes.z,
         kinematics: "cartesian_3axis",
         axis_limits: [],
+        // GRBL workspace prefs — panel-local state, seeded from the
+        // picked machine and persisted with the definition.
+        jog_step_mm: jogStepMm,
+        jog_feed_mm_per_min: jogFeed,
+        homing_enabled: homingEnabled,
+        pointer_power_percent: pointerPowerPercent,
       });
       setMachineNameInput("");
     } catch {
@@ -424,6 +447,12 @@ export function CamSetupPanel({
                     postProcessorType,
                     machineSettings,
                     machines,
+                    {
+                      jog_step_mm: jogStepMm,
+                      jog_feed_mm_per_min: jogFeed,
+                      homing_enabled: homingEnabled,
+                      pointer_power_percent: pointerPowerPercent,
+                    },
                   )?.name ?? "__none__"}
                   label={t("cam.setup.machineLibraryLabel", "Machine")}
                   options={[
@@ -449,6 +478,12 @@ export function CamSetupPanel({
                     update({
                       machineType: machine.machine_type as MachineType,
                     });
+                    // Seed the GRBL workspace prefs from the picked
+                    // machine so Save writes back what was loaded.
+                    setJogStepMm(machine.jog_step_mm);
+                    setJogFeed(machine.jog_feed_mm_per_min);
+                    setHomingEnabled(machine.homing_enabled);
+                    setPointerPowerPercent(machine.pointer_power_percent);
                     onApplyMachine(machine);
                   }}
                 />
@@ -585,6 +620,55 @@ export function CamSetupPanel({
                   </div>
                   <p className="text-[10px] leading-relaxed text-on-surface-dim">
                     {t("cam.machine.pointerNote")}
+                  </p>
+                  {/* GRBL workspace prefs — machine-level, consumed by
+                      the workspace (jog presets, Home visibility,
+                      pointer toggle power). */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <CamNumberField
+                      label={t("cam.machine.jogStep", "Jog step (mm)")}
+                      value={jogStepMm}
+                      disabled={disabled}
+                      step={1}
+                      min={0.1}
+                      onChange={(v) => v !== undefined && setJogStepMm(v)}
+                    />
+                    <CamNumberField
+                      label={t("cam.machine.jogFeed", "Jog feed (mm/min)")}
+                      value={jogFeed}
+                      disabled={disabled}
+                      step={100}
+                      min={1}
+                      onChange={(v) => v !== undefined && setJogFeed(v)}
+                    />
+                    <CamNumberField
+                      label={t("cam.machine.pointerPower", "Pointer power (%)")}
+                      value={pointerPowerPercent}
+                      disabled={disabled}
+                      step={1}
+                      min={0}
+                      max={100}
+                      onChange={(v) =>
+                        v !== undefined && setPointerPowerPercent(v)
+                      }
+                    />
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      className="cad-checkbox"
+                      checked={homingEnabled}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        setHomingEnabled(event.target.checked)
+                      }
+                    />
+                    <span className="text-on-surface-muted">
+                      {t("cam.machine.homingEnabled", "Homing available")}
+                    </span>
+                  </label>
+                  <p className="text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.machine.grblPrefsNote")}
                   </p>
                 </fieldset>
               ) : null}

@@ -8,15 +8,21 @@ import { GRBL_SETTINGS_DESC_KEYS } from "./grblSettingsMeta";
 // from the grbl-store (filled by the "settings" stream event);
 // `null` = the dump has not arrived yet.  Each row edits locally and
 // applies with `$k=v` — GRBL echoes every change back in the status
-// stream, FluidNC may not.
+// stream, FluidNC may not.  `storedSettings` is the per-machine
+// snapshot persisted by the panel; when present the Restore action
+// re-applies it (FluidNC drops runtime $ writes on reboot).
 interface GrblSettingsDialogProps {
   settings: GrblSetting[] | null;
+  storedSettings: GrblSetting[] | null;
+  onRestoreAll: () => void;
   onClose: () => void;
   onApply: (key: string, value: string) => void;
 }
 
 export function GrblSettingsDialog({
   settings,
+  storedSettings,
+  onRestoreAll,
   onClose,
   onApply,
 }: GrblSettingsDialogProps) {
@@ -77,6 +83,21 @@ export function GrblSettingsDialog({
             "These $ settings belong to GRBL 1.1. FluidNC keeps most of its configuration in config.yaml — $ may list only a subset or nothing.",
           )}
         </p>
+
+        {storedSettings && storedSettings.length > 0 ? (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              className="cad-action-ghost h-7 shrink-0 px-2 text-[10px] uppercase tracking-wider"
+              onClick={onRestoreAll}
+            >
+              {t("cam.grbl.settingsRestore", { count: storedSettings.length })}
+            </button>
+            <span className="text-[9px] leading-snug text-on-surface-dim">
+              {t("cam.grbl.settingsRestoreHint")}
+            </span>
+          </div>
+        ) : null}
 
         {settings === null ? (
           <p className="mt-3 font-mono text-[10px] text-on-surface-muted">

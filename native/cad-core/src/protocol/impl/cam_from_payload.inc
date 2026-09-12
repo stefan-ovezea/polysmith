@@ -631,6 +631,12 @@ polysmith::core::MachineDefinition machine_definition_from_payload(
       cam_read_number(payload, "pointer_offset_x_mm", 0.0);
   machine.pointer_offset_y_mm =
       cam_read_number(payload, "pointer_offset_y_mm", 0.0);
+  machine.jog_step_mm = cam_read_number(payload, "jog_step_mm", 10.0);
+  machine.jog_feed_mm_per_min =
+      cam_read_number(payload, "jog_feed_mm_per_min", 1000.0);
+  machine.homing_enabled = cam_read_bool(payload, "homing_enabled", true);
+  machine.pointer_power_percent =
+      cam_read_number(payload, "pointer_power_percent", 5.0);
   machine.travel_x_mm = cam_read_number(payload, "travel_x_mm", 0.0);
   machine.travel_y_mm = cam_read_number(payload, "travel_y_mm", 0.0);
   machine.travel_z_mm = cam_read_number(payload, "travel_z_mm", 0.0);

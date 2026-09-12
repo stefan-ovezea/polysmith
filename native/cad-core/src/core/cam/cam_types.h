@@ -475,6 +475,13 @@ struct MachineDefinition {
   double work_area_y_mm = 400.0;
   double pointer_offset_x_mm = 0.0;
   double pointer_offset_y_mm = 0.0;
+  // GRBL workspace prefs — jog presets, homing availability, and the
+  // red-pointer laser power used by the workspace's pointer toggle.
+  // Defaults match the previous hardcoded workspace values.
+  double jog_step_mm = 10.0;
+  double jog_feed_mm_per_min = 1000.0;
+  bool homing_enabled = true;
+  double pointer_power_percent = 5.0;
   // Mill fields (5-axis scaffolding).  Travel is mm; 0 = unset, in
   // which case the UI falls back to setup.machine_axes.  Kinematics
   // default cartesian_3axis so old 8-field JSON files load unchanged.
