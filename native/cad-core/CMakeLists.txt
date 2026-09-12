@@ -313,6 +313,8 @@ polysmith_add_core_test(cad_core_cam_commands_test tests/cam_commands_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_machine_library_test tests/cam_machine_library_test.cpp)
 
+polysmith_add_core_test(cad_core_cam_export_test tests/cam_export_test.cpp)
+
 polysmith_add_core_test(cad_core_cam_profile_reference_test tests/cam_profile_reference_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_refresh_test tests/cam_refresh_test.cpp)

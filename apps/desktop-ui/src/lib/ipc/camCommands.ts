@@ -265,3 +265,13 @@ export function makeCamExportGcodeCommand(filePath: string): CoreCommand {
     payload: { file_path: filePath },
   };
 }
+
+// In-memory posting for the GRBL workspace handoff — same pipeline as
+// cam_export_gcode, but the reply carries the program text.
+export function makeCamExportGcodeTextCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_export_gcode_text",
+    payload: {},
+  };
+}

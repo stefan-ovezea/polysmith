@@ -208,6 +208,15 @@ json make_cam_attestation_event(const std::string& id, const json& payload) {
   };
 }
 
+json make_cam_export_gcode_text_result_event(const std::string& id,
+                                              const json& payload) {
+  return {
+      {"id", id},
+      {"type", "cam_export_gcode_text_result"},
+      {"payload", payload},
+  };
+}
+
 json make_cam_post_list_event(const std::string& id, const json& posts) {
   return {
       {"id", id},

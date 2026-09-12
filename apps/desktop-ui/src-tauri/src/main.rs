@@ -6,6 +6,7 @@ mod app_config;
 mod cad_core;
 mod gcode_parser;
 mod gcode_sender;
+mod grbl_utilities;
 mod laser_grbl;
 mod orca_slicer;
 mod plugin_config;
@@ -284,6 +285,11 @@ pub fn run() {
             gcode_sender::grbl_connect_tcp,
             gcode_sender::grbl_disconnect,
             gcode_sender::grbl_send_file,
+            gcode_sender::grbl_send_program,
+            gcode_sender::grbl_laser_power,
+            gcode_sender::grbl_write_byte,
+            gcode_sender::grbl_get_settings,
+            grbl_utilities::grbl_utility_program,
             gcode_sender::grbl_pause,
             gcode_sender::grbl_resume,
             gcode_sender::grbl_reset,
@@ -292,7 +298,8 @@ pub fn run() {
             gcode_sender::grbl_jog,
             gcode_sender::grbl_zero_xy,
             gcode_sender::grbl_send_raw,
-            gcode_parser::grbl_parse_file
+            gcode_parser::grbl_parse_file,
+            gcode_parser::grbl_parse_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

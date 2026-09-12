@@ -211,10 +211,58 @@ function buildGrblToolpathMaterials(): GrblToolpathMaterials {
   };
 }
 
+// Single-color materials for utility programs (framing box, focus
+// pulse) so they read as an overlay on the real toolpath; executed
+// lines still swap to the standard executed color.
+function buildGrblOverlayMaterials(): GrblToolpathMaterials {
+  const color = themeColor("--cad-framing-overlay", "#ff9f43");
+  const solid = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const dashed = new THREE.LineDashedMaterial({
+    color,
+    dashSize: 1,
+    gapSize: 0.6,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+    depthWrite: false,
+  });
+  return {
+    rapid: dashed,
+    feed: solid,
+    executed: new THREE.LineBasicMaterial({
+      color: themeColor("--cad-toolpath-executed", "#ffe784"),
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+    }),
+    dwellOn: new THREE.PointsMaterial({
+      color,
+      size: 5,
+      sizeAttenuation: false,
+      depthTest: false,
+      depthWrite: false,
+    }),
+    dwellOff: new THREE.PointsMaterial({
+      color,
+      size: 5,
+      sizeAttenuation: false,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  };
+}
+
 export function buildGrblToolpathGroup(
   info: GcodeFileInfo,
+  materials: GrblToolpathMaterials = buildGrblToolpathMaterials(),
 ): GrblToolpathObjects {
-  const materials = buildGrblToolpathMaterials();
   const group = new THREE.Group();
   const lineObjects: (THREE.Line | undefined)[] = [];
 
@@ -259,6 +307,14 @@ export function buildGrblToolpathGroup(
   return { group, lineObjects, materials };
 }
 
+// Utility-program variant (framing/focus pulse): same geometry
+// pipeline, overlay-colored materials.
+export function buildGrblOverlayToolpathGroup(
+  info: GcodeFileInfo,
+): GrblToolpathObjects {
+  return buildGrblToolpathGroup(info, buildGrblOverlayMaterials());
+}
+
 // Swaps every line whose filtered-line index is at or below
 // `executedLines` onto the executed material.  `linesSent` is the
 // buffered-not-executed approximation (≤127-byte lead) — the same one
@@ -300,14 +356,18 @@ export function disposeGrblToolpathGroup(
   disposeMaterial(objects.materials.dwellOff);
 }
 
-// ── Live machine position marker ────────────────────────────────────
+// ── Live machine position markers ───────────────────────────────────
 
-// Two short axis lines + a center dot at the GRBL MPos.  Lives in the
-// same machine-coordinate space as the toolpath, so idle jogging and
-// in-cut positions overlay the preview directly.
-export function buildGrblPositionMarker(): THREE.Group {
+// Two short axis lines + a center dot.  Both markers live in the same
+// machine-coordinate space as the toolpath, so idle jogging and
+// in-cut positions overlay the preview directly.  The red pointer
+// crosshair (the physical laser dot) sits at MPos + the machine's
+// pointer offset and draws after the position marker.
+function buildCrosshairMarker(
+  color: string,
+  renderOrder: number,
+): THREE.Group {
   const group = new THREE.Group();
-  const color = themeColor("--color-primary-edge-active", "#c3f5ff");
   const lineMaterial = new THREE.LineBasicMaterial({
     color,
     transparent: true,
@@ -325,7 +385,7 @@ export function buildGrblPositionMarker(): THREE.Group {
     ]),
     lineMaterial,
   );
-  crosshair.renderOrder = 20;
+  crosshair.renderOrder = renderOrder;
   group.add(crosshair);
 
   const dot = new THREE.Mesh(
@@ -338,10 +398,24 @@ export function buildGrblPositionMarker(): THREE.Group {
       depthWrite: false,
     }),
   );
-  dot.renderOrder = 20;
+  dot.renderOrder = renderOrder;
   group.add(dot);
 
   return group;
+}
+
+// Machine position (MCS) crosshair — the "head is here" marker.
+export function buildGrblPositionMarker(): THREE.Group {
+  return buildCrosshairMarker(
+    themeColor("--color-primary-edge-active", "#c3f5ff"),
+    20,
+  );
+}
+
+// Red laser pointer crosshair — the physical dot, offset from the
+// focal point by the selected machine's pointer offset.
+export function buildGrblPointerMarker(): THREE.Group {
+  return buildCrosshairMarker(themeColor("--cad-pointer-dot", "#ff3b30"), 21);
 }
 
 export function updateGrblPositionMarker(
@@ -349,5 +423,13 @@ export function updateGrblPositionMarker(
   mpos: [number, number, number],
 ): void {
   marker.position.set(mpos[0], mpos[1], mpos[2]);
+  marker.visible = true;
+}
+
+export function updateGrblPointerMarker(
+  marker: THREE.Group,
+  position: [number, number, number],
+): void {
+  marker.position.set(position[0], position[1], position[2]);
   marker.visible = true;
 }

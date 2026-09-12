@@ -47,6 +47,8 @@ json make_cam_edge_attestation_event(const std::string& id,
 // Generic geometry-attestation result — cam_capture_point replies with
 // a PointAttestation payload under the "cam_attestation_result" type.
 json make_cam_attestation_event(const std::string& id, const json& payload);
+json make_cam_export_gcode_text_result_event(const std::string& id,
+                                             const json& payload);
 json make_cam_post_list_event(const std::string& id, const json& posts);
 json make_cam_machine_list_event(const std::string& id, const json& machines);
 

@@ -27,6 +27,7 @@ import {
   makeCamMachineListCommand,
   makeCamMachineSaveCommand,
   makeCamExportGcodeCommand,
+  makeCamExportGcodeTextCommand,
   makeAddBoxFeatureCommand,
   makeAddCylinderFeatureCommand,
   makeAddSketchArcCommand,
@@ -1706,6 +1707,29 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    camExportGcodeText: async () => {
+      // Awaited: the reply is a cam_export_gcode_text_result event
+      // carrying the posted program (no file written).
+      const response = await sendCoreCommandAwaited(
+        makeCamExportGcodeTextCommand() as CoreCommand & { id: string },
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+      const payload = (
+        response as {
+          payload?: {
+            text?: string;
+            format?: string;
+            exported_feature_count?: number;
+          };
+        }
+      ).payload;
+      return {
+        text: payload?.text ?? "",
+        format: payload?.format ?? "gcode",
+        exported_feature_count: payload?.exported_feature_count ?? 0,
+      };
     },
   };
 }

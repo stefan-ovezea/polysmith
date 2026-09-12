@@ -22,19 +22,17 @@ std::string post_processor_type(const DocumentState& document) {
   return "grbl";
 }
 
-}  // namespace
+struct PostedGcode {
+  std::string text;
+  int exported_feature_count = 0;
+};
 
-CamExportResult export_cam_gcode(const DocumentState& document,
-                                 const std::string& file_path) {
-  CamExportResult result;
-  result.file_path = file_path;
-
-  if (file_path.empty()) {
-    throw std::runtime_error("Export path cannot be empty");
-  }
-  if (document.cam.setups.empty()) {
-    throw std::runtime_error("Create a CAM setup before exporting G-code");
-  }
+// Shared posting pipeline: collect the enabled operations, post each
+// through the configured post processor, and join everything into one
+// program string.  Both the file export and the in-memory GRBL handoff
+// consume this — the two outputs must stay byte-identical.
+PostedGcode post_document(const DocumentState& document) {
+  PostedGcode posted;
   const auto type = post_processor_type(document);
 
   // Collect the exportable operations first so the program-end footer
@@ -157,7 +155,7 @@ CamExportResult export_cam_gcode(const DocumentState& document,
       continue;
     }
     all_lines.insert(all_lines.end(), lines.begin(), lines.end());
-    ++result.exported_feature_count;
+    ++posted.exported_feature_count;
   }
 
   std::ostringstream buffer;
@@ -165,15 +163,48 @@ CamExportResult export_cam_gcode(const DocumentState& document,
     buffer << line << "\n";
   }
 
+  posted.text = buffer.str();
+  return posted;
+}
+
+}  // namespace
+
+CamExportResult export_cam_gcode(const DocumentState& document,
+                                 const std::string& file_path) {
+  CamExportResult result;
+  result.file_path = file_path;
+
+  if (file_path.empty()) {
+    throw std::runtime_error("Export path cannot be empty");
+  }
+  if (document.cam.setups.empty()) {
+    throw std::runtime_error("Create a CAM setup before exporting G-code");
+  }
+
+  const PostedGcode posted = post_document(document);
+  result.exported_feature_count = posted.exported_feature_count;
+
   std::ofstream stream(file_path);
   if (!stream.is_open()) {
     throw std::runtime_error("Failed to open file for writing: " + file_path);
   }
-  stream << buffer.str();
+  stream << posted.text;
   if (!stream.good()) {
     throw std::runtime_error("Failed to write G-code to: " + file_path);
   }
 
+  return result;
+}
+
+CamGcodeTextResult post_cam_gcode_text(const DocumentState& document) {
+  if (document.cam.setups.empty()) {
+    throw std::runtime_error("Create a CAM setup before exporting G-code");
+  }
+
+  const PostedGcode posted = post_document(document);
+  CamGcodeTextResult result;
+  result.text = posted.text;
+  result.exported_feature_count = posted.exported_feature_count;
   return result;
 }
 

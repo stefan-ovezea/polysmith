@@ -61,6 +61,16 @@ const documentExportedEventSchema = z.object({
   }),
 });
 
+const camExportGcodeTextResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_export_gcode_text_result"),
+  payload: z.object({
+    text: z.string(),
+    format: z.string(),
+    exported_feature_count: z.number(),
+  }),
+});
+
 const camGenerationProgressEventSchema = z.object({
   id: z.string(),
   type: z.literal("cam_generation_progress"),
@@ -242,6 +252,7 @@ export const coreMessageSchema = z.union([
   sessionStateEventSchema,
   viewportStateEventSchema,
   documentExportedEventSchema,
+  camExportGcodeTextResultEventSchema,
   documentSavedEventSchema,
   logEventSchema,
   trimPreviewResultEventSchema,

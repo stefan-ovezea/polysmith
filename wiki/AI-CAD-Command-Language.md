@@ -858,6 +858,10 @@ generator warnings, or a failure message; the UI shows it in a result popup
 - `cam_export_gcode`: payload `{file_path}` — generates any stale toolpaths on
   demand, serializes every enabled operation in order through the selected
   post definition, replies `document_exported` with `format: "gcode"`.
+- `cam_export_gcode_text`: payload `{}` — the same posting pipeline in memory,
+  replies `cam_export_gcode_text_result` with
+  `{text, format: "gcode", exported_feature_count}`.  Used by the GRBL
+  workspace handoff instead of exporting a file.
 
 #### `cam_post_list` / `cam_post_import`
 

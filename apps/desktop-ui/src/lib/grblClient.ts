@@ -19,7 +19,14 @@ export type GrblStreamEventKind =
   | "paused"
   | "resumed"
   | "reset"
-  | "zeroed";
+  | "zeroed"
+  | "settings";
+
+/** One GRBL $ setting (`key` keeps the dollar prefix, e.g. "$20"). */
+export interface GrblSetting {
+  key: string;
+  value: string;
+}
 
 export interface GrblStreamEvent {
   kind: GrblStreamEventKind;
@@ -33,6 +40,8 @@ export interface GrblStreamEvent {
   mpos?: [number, number, number] | null;
   /** WCS position (MPos minus the G54 offset) — the job coordinates. */
   wpos?: [number, number, number] | null;
+  /** `$$` dump result (kind "settings"). */
+  settings?: GrblSetting[] | null;
 }
 
 export function listGrblPorts(): Promise<GrblPortInfo[]> {
@@ -54,6 +63,12 @@ export function grblDisconnect(): Promise<void> {
 
 export function grblSendFile(filePath: string): Promise<void> {
   return invoke("grbl_send_file", { filePath });
+}
+
+// In-memory program send (CAM→GRBL handoff) — same worker pipeline as
+// grblSendFile, no file on disk.
+export function grblSendProgram(text: string): Promise<void> {
+  return invoke("grbl_send_program", { text });
 }
 
 export function grblPause(): Promise<void> {
@@ -144,4 +159,60 @@ export interface GcodeFileInfo {
 
 export function grblParseFile(filePath: string): Promise<GcodeFileInfo> {
   return invoke("grbl_parse_file", { filePath });
+}
+
+// In-memory parse for the CAM→GRBL handoff: `label` becomes fileName.
+export function grblParseText(
+  text: string,
+  label: string,
+): Promise<GcodeFileInfo> {
+  return invoke("grbl_parse_text", { text, label });
+}
+
+// ── Laser utilities (shell-side grbl_utilities.rs) ──────────────────
+
+/** Framing box / focus pulse request — mirrors the Rust tagged enum. */
+export type GrblUtilityRequest =
+  | {
+      kind: "framing";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      powerPercent: number;
+      feed: number;
+    }
+  | {
+      kind: "focusPulse";
+      powerPercent: number;
+      durationSeconds: number;
+    };
+
+export interface GrblUtilityProgram {
+  text: string;
+  label: string;
+}
+
+// Test fire: `Some(percent)` → M3 S{scaled}, `None` → M5 (hold-to-fire).
+export function grblLaserPower(percent: number | null): Promise<void> {
+  return invoke("grbl_laser_power", { percent });
+}
+
+// Sends one GRBL real-time override byte (allowlisted shell-side):
+// 0x90–0x94 feed-rate, 0x99–0x9B spindle/laser power.  No reply is
+// expected — real-time commands are acknowledged by silence.
+export function grblWriteByte(byte: number): Promise<void> {
+  return invoke("grbl_write_byte", { byte });
+}
+
+// Requests a `$$` dump — the result arrives as a grbl-stream event of
+// kind "settings".
+export function grblGetSettings(): Promise<void> {
+  return invoke("grbl_get_settings");
+}
+
+export function grblUtilityProgram(
+  request: GrblUtilityRequest,
+): Promise<GrblUtilityProgram> {
+  return invoke("grbl_utility_program", { request });
 }

@@ -1,62 +1,162 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 
+import { useCadCore } from "../hooks";
 import { CamGrblPanel } from "../layout";
 import { useGrblStore, useToastStore } from "../state";
+import { Dropdown } from "@/lib";
 import {
   grblParseFile,
+  grblParseText,
+  grblSendProgram,
+  grblSendRaw,
+  grblUtilityProgram,
   type GcodeFileInfo,
+  type GrblUtilityRequest,
 } from "@/lib/grblClient";
-import type { LaserMachineSettings } from "@/types";
+import type { LaserMachineSettings, MachineDefinition } from "@/types";
 import { GrblPreviewViewport } from "./grbl/GrblPreviewViewport";
+import { GrblUtilitiesPanel } from "./grbl/GrblUtilitiesPanel";
 import { DEFAULT_GRBL_BED, type GrblBed } from "./grbl/grblPreviewScene";
 
+// A program handed over by the CAM workspace — posted G-code text in
+// memory, no file on disk.
+export interface GrblHandoffProgram {
+  text: string;
+  label: string;
+}
+
+// The red pointer fires at ~5 % of GRBL's 255-unit laser scale —
+// visible for aiming, safe to leave on.
+const POINTER_POWER_S = 13;
+
+// localStorage key pattern matches the host/port persistence in
+// CamGrblPanel ("polysmith.grbl.*").
+const MACHINE_STORAGE_KEY = "polysmith.grbl.machineName";
+
 interface GrblWorkspaceProps {
-  // File selected by the CAM "Send to GRBL workspace" handoff (P4), or
+  // Program selected by the CAM "Send to GRBL workspace" handoff, or
   // null when the user arrived via the workspace switcher.
-  embeddedFilePath: string | null;
+  embeddedProgram: GrblHandoffProgram | null;
   machineSettings: LaserMachineSettings | null;
   theme: string;
   addMessage: (message: string) => void;
-  // Handoff wiring (P4): set together — the workspace parses
-  // `previewFile` on arrival and reports back that it was consumed.
-  previewFile?: string | null;
-  onPreviewFileConsumed?: () => void;
+  // Handoff wiring: set together — the workspace parses the in-memory
+  // program on arrival and reports back that it was consumed.
+  handoffProgram?: GrblHandoffProgram | null;
+  onHandoffConsumed?: () => void;
 }
 
-interface LoadedGrblFile {
-  path: string;
+interface LoadedGrblProgram {
+  // "file" = a disk pick (streamed from path); "internal" = in-memory
+  // posted text (CAM handoff, streamed via grbl_send_program).
+  source: "file" | "internal";
+  text: string;
+  label: string;
   info: GcodeFileInfo;
 }
 
 // Standalone GRBL workspace page: fixed left column hosting the same
 // GRBL machine panel the CAM setup entry uses (both coexist — the panel
-// is rendered embedded here, floating there), right side showing the
-// parsed toolpath with live progress and machine position.  No sidebar,
+// is rendered embedded here, floating there) plus the laser utilities
+// section, right side showing the parsed toolpath with live progress,
+// machine position, red pointer dot, and utility overlay.  No sidebar,
 // no timeline, no CAM panels — the page template follows
 // SlicerWorkspace.
 export function GrblWorkspace({
-  embeddedFilePath,
+  embeddedProgram,
   machineSettings,
   theme,
   addMessage,
-  previewFile,
-  onPreviewFileConsumed,
+  handoffProgram,
+  onHandoffConsumed,
 }: GrblWorkspaceProps) {
   const { t } = useTranslation();
+  const { camMachineList } = useCadCore();
 
+  const connected = useGrblStore((state) => state.connected);
   const completed = useGrblStore((state) => state.completed);
   const streaming = useGrblStore((state) => state.streaming);
   const linesSent = useGrblStore((state) => state.linesSent);
   const mpos = useGrblStore((state) => state.mpos);
   const wpos = useGrblStore((state) => state.wpos);
 
-  const [loadedFile, setLoadedFile] = useState<LoadedGrblFile | null>(null);
+  const [loadedProgram, setLoadedProgram] =
+    useState<LoadedGrblProgram | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Machine library (P2): definitions are JSON files on disk, listed
+  // by the core.  The selection is a workspace-local override (like
+  // the host/port fields) — it does not write back to the document.
+  const [machines, setMachines] = useState<MachineDefinition[]>([]);
+  const [selectedMachineName, setSelectedMachineName] = useState<
+    string | null
+  >(() => {
+    try {
+      return localStorage.getItem(MACHINE_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const machineFetchArmedRef = useRef(true);
+
+  useEffect(() => {
+    if (!machineFetchArmedRef.current) {
+      return;
+    }
+    machineFetchArmedRef.current = false;
+    let cancelled = false;
+    camMachineList()
+      .then((list) => {
+        if (!cancelled) {
+          setMachines(list);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        addMessage(`grbl machines: ${String(error)}`);
+        useToastStore
+          .getState()
+          .pushToast("error", t("cam.setup.machineListFailed"));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedMachine = useMemo(
+    () => machines.find((machine) => machine.name === selectedMachineName) ?? null,
+    [machines, selectedMachineName],
+  );
+
+  const handleMachineChange = (name: string) => {
+    setSelectedMachineName(name);
+    try {
+      localStorage.setItem(MACHINE_STORAGE_KEY, name);
+    } catch {
+      // localStorage can be unavailable in odd webview contexts —
+      // non-fatal, the selection just won't persist.
+    }
+  };
+
+  // Bed fallback order: selected machine → document machine settings
+  // → the LaserGRBL-style default seed.
   const bed = useMemo<GrblBed>(() => {
+    if (
+      selectedMachine &&
+      selectedMachine.work_area_x_mm > 0 &&
+      selectedMachine.work_area_y_mm > 0
+    ) {
+      return {
+        widthMm: selectedMachine.work_area_x_mm,
+        heightMm: selectedMachine.work_area_y_mm,
+      };
+    }
     if (
       machineSettings &&
       machineSettings.work_area_x_mm > 0 &&
@@ -68,14 +168,109 @@ export function GrblWorkspace({
       };
     }
     return DEFAULT_GRBL_BED;
-  }, [machineSettings]);
+  }, [selectedMachine, machineSettings]);
 
+  // Red pointer offset (P3): selected machine wins, the document's
+  // machine settings follow, [0,0] otherwise.
+  const pointerOffset = useMemo<[number, number]>(() => {
+    if (selectedMachine) {
+      return [
+        selectedMachine.pointer_offset_x_mm,
+        selectedMachine.pointer_offset_y_mm,
+      ];
+    }
+    if (machineSettings) {
+      return [
+        machineSettings.pointer_offset_x_mm,
+        machineSettings.pointer_offset_y_mm,
+      ];
+    }
+    return [0, 0];
+  }, [selectedMachine, machineSettings]);
+
+  // Red pointer state (P3): the workspace owns it because the viewport
+  // renders the dot; the utilities panel hosts the toggle.
+  const [pointerOn, setPointerOn] = useState(false);
+
+  // Disconnecting drops the beam — never leave the toggle claiming it
+  // is still on after a reconnect.
+  useEffect(() => {
+    if (!connected) {
+      setPointerOn(false);
+    }
+  }, [connected]);
+
+  const togglePointer = async () => {
+    const next = !pointerOn;
+    try {
+      await grblSendRaw(next ? `M3 S${POINTER_POWER_S}` : "M5");
+      setPointerOn(next);
+    } catch (error) {
+      useToastStore.getState().pushToast("error", String(error));
+    }
+  };
+
+  // Utility overlay (P4): the framing box / focus pulse program is
+  // parsed like any job, drawn in the overlay color, and streamed with
+  // its own progress count.  `sendingTarget` tracks which program the
+  // stream counters belong to.
+  const [overlayProgram, setOverlayProgram] = useState<{
+    info: GcodeFileInfo;
+    text: string;
+    label: string;
+  } | null>(null);
+  const [sendingTarget, setSendingTarget] = useState<"main" | "utility">(
+    "main",
+  );
+
+  const runUtility = async (request: GrblUtilityRequest) => {
+    if (!connected) {
+      return;
+    }
+    try {
+      const { text, label } = await grblUtilityProgram(request);
+      const info = await grblParseText(text, label);
+      setOverlayProgram({ info, text, label });
+      setSendingTarget("utility");
+      await grblSendProgram(text);
+    } catch (error) {
+      addMessage(`grbl utility: ${String(error)}`);
+      useToastStore.getState().pushToast("error", t("grbl.util.runFailed"));
+    }
+  };
+
+  const clearOverlay = () => {
+    setOverlayProgram(null);
+    setSendingTarget("main");
+  };
+
+  // A new main program replaces any utility overlay.
   const loadFile = async (path: string) => {
     setLoading(true);
     setLoadError(null);
     try {
       const info = await grblParseFile(path);
-      setLoadedFile({ path, info });
+      setLoadedProgram({ source: "file", text: "", label: info.fileName, info });
+      clearOverlay();
+    } catch (error) {
+      const message = String(error);
+      setLoadError(message);
+      addMessage(`grbl preview: ${message}`);
+      useToastStore.getState().pushToast("error", t("grbl.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Internal (CAM handoff) path: parse the posted text in memory —
+  // the same program Cycle Start streams, never touching disk.
+  const loadProgram = async (text: string, label: string) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const info = await grblParseText(text, label);
+      setLoadedProgram({ source: "internal", text, label, info });
+      clearOverlay();
     } catch (error) {
       const message = String(error);
       setLoadError(message);
@@ -106,28 +301,61 @@ export function GrblWorkspace({
     }
   };
 
-  // CAM handoff: parse the file the CAM workspace exported for us.
+  // CAM handoff: parse the program the CAM workspace posted for us.
   useEffect(() => {
-    if (previewFile) {
-      void loadFile(previewFile);
-      onPreviewFileConsumed?.();
+    if (handoffProgram) {
+      void loadProgram(handoffProgram.text, handoffProgram.label);
+      onHandoffConsumed?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewFile]);
+  }, [handoffProgram]);
 
   // Executed-line mapping: `linesSent` counts buffered-not-executed
   // lines (≤127-byte lead) — the same approximation LaserGRBL shows.
   // On completion every line is highlighted; reset clears to zero.
   const executedLines = useMemo(() => {
-    if (!loadedFile) {
+    if (!loadedProgram) {
       return 0;
     }
     if (completed) {
-      const moves = loadedFile.info.moves;
+      const moves = loadedProgram.info.moves;
       return moves.length > 0 ? moves[moves.length - 1].line : 0;
     }
     return streaming ? linesSent : 0;
-  }, [loadedFile, completed, streaming, linesSent]);
+  }, [loadedProgram, completed, streaming, linesSent]);
+
+  // While a utility streams, the counters belong to the overlay — the
+  // main toolpath highlight freezes at zero so a framing run never
+  // mis-highlights the job.
+  const mainExecutedLines = sendingTarget === "utility" ? 0 : executedLines;
+
+  const overlayExecutedLines = useMemo(() => {
+    if (!overlayProgram || sendingTarget !== "utility") {
+      return 0;
+    }
+    if (completed) {
+      const moves = overlayProgram.info.moves;
+      return moves.length > 0 ? moves[moves.length - 1].line : 0;
+    }
+    return streaming ? linesSent : 0;
+  }, [overlayProgram, sendingTarget, completed, streaming, linesSent]);
+
+  // Bed check (P6): the parsed bounds are WCS coordinates (origin =
+  // the job's own 0,0), so anything below 0 or beyond the work area
+  // would trip the soft limits once cut.  Warning only — the user may
+  // frame the job anywhere.
+  const jobExceedsBed = useMemo(() => {
+    const bounds = loadedProgram?.info.bounds ?? null;
+    if (!bounds) {
+      return false;
+    }
+    return (
+      bounds.minX < 0 ||
+      bounds.minY < 0 ||
+      bounds.maxX > bed.widthMm ||
+      bounds.maxY > bed.heightMm
+    );
+  }, [loadedProgram, bed]);
 
   // WCS offset (WCO = MPos − WPos): shifts the previewed toolpath
   // from file space into machine space, so the MPos crosshair
@@ -148,6 +376,7 @@ export function GrblWorkspace({
     { label: t("grbl.legendCut"), token: "--cad-toolpath-feed" },
     { label: t("grbl.legendExecuted"), token: "--cad-toolpath-executed" },
     { label: t("grbl.legendPosition"), token: "--color-primary-edge-active" },
+    { label: t("grbl.legendPointer"), token: "--cad-pointer-dot" },
   ];
 
   return (
@@ -163,40 +392,86 @@ export function GrblWorkspace({
         >
           {t("grbl.openFile")}
         </button>
-        {loadedFile ? (
+        <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-on-surface-muted">
+          {t("grbl.machineLabel")}
+          <Dropdown
+            className="w-44"
+            value={selectedMachineName ?? "__none__"}
+            label={t("grbl.machineLabel")}
+            options={[
+              { value: "__none__", label: t("grbl.machineNone") },
+              ...machines.map((machine) => ({
+                value: machine.name,
+                label: machine.name,
+              })),
+            ]}
+            onChange={(value) =>
+              handleMachineChange(value === "__none__" ? "" : value)
+            }
+          />
+        </label>
+        {loadedProgram ? (
           <span className="min-w-0 truncate font-mono text-[10px] text-on-surface-dim">
-            {loadedFile.info.fileName}
+            {loadedProgram.info.fileName}
             {" · "}
-            {t("grbl.moves", { count: loadedFile.info.moves.length })}
+            {t("grbl.moves", { count: loadedProgram.info.moves.length })}
           </span>
         ) : null}
       </div>
       <div className="flex min-h-0 w-full min-w-0 flex-1">
-        <aside className="min-h-0 w-[340px] shrink-0 border-r border-[var(--cad-panel-soft-border)] bg-surface-lowest">
-          <CamGrblPanel
-            embedded
-            // The previewed file becomes the program Cycle Start sends;
-            // the CAM handoff path (P4) fills in when no file is open.
-            embeddedFilePath={loadedFile?.path ?? embeddedFilePath}
-            // A file picked through the panel's Load button must parse
-            // and preview here too — same pipeline as the header Open
-            // button, otherwise Cycle Start would stream a program the
-            // viewport never shows.
-            onFileLoaded={(path) => {
-              void loadFile(path);
+        <aside className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-[var(--cad-panel-soft-border)] bg-surface-lowest">
+          <div className="min-h-0 flex-1">
+            <CamGrblPanel
+              embedded
+              // The previewed program becomes what Cycle Start sends; the
+              // CAM handoff program fills in when nothing is loaded yet.
+              embeddedProgram={
+                loadedProgram?.source === "internal"
+                  ? { text: loadedProgram.text, label: loadedProgram.label }
+                  : embeddedProgram
+              }
+              // A file picked through the panel's Load button must parse
+              // and preview here too — same pipeline as the header Open
+              // button, otherwise Cycle Start would stream a program the
+              // viewport never shows.
+              onFileLoaded={(path) => {
+                void loadFile(path);
+              }}
+              // Cycle Start streams the MAIN program — drop the utility
+              // overlay so the highlight tracks the job again.
+              onCycleStart={() => {
+                clearOverlay();
+              }}
+              onClose={() => {}}
+            />
+          </div>
+          <GrblUtilitiesPanel
+            connected={connected}
+            pointerOn={pointerOn}
+            onTogglePointer={() => {
+              void togglePointer();
             }}
-            onClose={() => {}}
+            jobBounds={loadedProgram?.info.bounds ?? null}
+            onRunUtility={(request) => {
+              void runUtility(request);
+            }}
+            hasOverlay={overlayProgram !== null}
+            onClearOverlay={clearOverlay}
           />
         </aside>
         <div className="relative flex min-h-0 min-w-0 flex-1 bg-surface-lowest">
           <GrblPreviewViewport
-            info={loadedFile?.info ?? null}
+            info={loadedProgram?.info ?? null}
             bed={bed}
-            executedLines={executedLines}
+            executedLines={mainExecutedLines}
             // Machine-space overlay: the crosshair is the raw machine
             // position; the toolpath is shifted by the WCS offset.
             mpos={mpos}
             wco={wco}
+            pointerOffset={pointerOffset}
+            pointerOn={pointerOn}
+            overlayInfo={overlayProgram?.info ?? null}
+            overlayExecutedLines={overlayExecutedLines}
             theme={theme}
           />
 
@@ -208,7 +483,18 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {!loadedFile && !loading ? (
+          {loadedProgram && !loading && jobExceedsBed ? (
+            <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+              <span className="rounded-md border border-[var(--cad-panel-soft-border)] bg-[var(--cad-panel-soft-bg)] px-3 py-1.5 font-mono text-[10px] text-on-surface">
+                {t("grbl.jobExceedsBed", {
+                  width: bed.widthMm,
+                  height: bed.heightMm,
+                })}
+              </span>
+            </div>
+          ) : null}
+
+          {!loadedProgram && !loading ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span className="max-w-xl px-6 text-center text-sm text-on-surface-muted">
                 {loadError ? t("grbl.loadError") : t("grbl.noFile")}
@@ -224,7 +510,7 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {loadedFile && !loading ? (
+          {loadedProgram && !loading ? (
             <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-3 rounded-md bg-[var(--cad-panel-soft-bg)] px-2.5 py-1.5">
               {legend.map((entry) => (
                 <span
@@ -241,13 +527,13 @@ export function GrblWorkspace({
             </div>
           ) : null}
 
-          {loadedFile && !loading && loadedFile.info.warnings.length > 0 ? (
+          {loadedProgram && !loading && loadedProgram.info.warnings.length > 0 ? (
             <div className="absolute bottom-3 right-3 max-w-[45%] rounded-md bg-[var(--cad-panel-soft-bg)] px-2.5 py-1.5">
               <p className="text-[10px] uppercase tracking-wider text-on-surface-muted">
                 {t("grbl.parseWarnings")}
               </p>
               <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto font-mono text-[10px] text-on-surface-dim">
-                {loadedFile.info.warnings.map((warning) => (
+                {loadedProgram.info.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>

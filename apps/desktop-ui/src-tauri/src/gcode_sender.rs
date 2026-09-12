@@ -1,18 +1,17 @@
 //! Direct GRBL streaming over serial or TCP.
 //!
-//! PolySmith stays a file producer for the G-code itself (the CAD core
-//! exports `.nc`); this module is the shell-side transport: it opens a
-//! serial port or a TCP connection (FluidNC's text port 23), streams
-//! a file line-by-line with GRBL's ok/error
-//! handshake inside a byte-sized send window (GRBL's RX buffer is 128
-//! bytes), polls `?` status, and forwards jog/home/pause commands.
+//! This module is the shell-side transport: it opens a serial port or
+//! a TCP connection (FluidNC's text port 23), streams a program
+//! line-by-line with GRBL's ok/error handshake inside a byte-sized
+//! send window (GRBL's RX buffer is 128 bytes), polls `?` status, and
+//! forwards jog/home/pause commands.  Programs arrive either as a
+//! file (grbl_send_file) or as in-memory text from the CAM→GRBL
+//! handoff (grbl_send_program) — both run the same pipeline.
 //!
 //! A single worker thread owns the port for its whole lifetime;
 //! commands travel to it over an mpsc channel, state travels back to
-//! the UI as `grbl-stream` Tauri events.  The parser and the send
-//! window are pure functions so they can be unit-tested when Rust
-//! test infrastructure lands (none exists yet — `cargo check` + the
-//! manual app checklist are today's gates).
+//! the UI as `grbl-stream` Tauri events.  The preprocessing and the
+//! send window are pure functions, unit-tested in the `tests` module.
 
 use serde::Serialize;
 use serialport::SerialPort;
@@ -182,11 +181,19 @@ pub fn parse_grbl_response(line: &str) -> GrblResponse {
     GrblResponse::Other
 }
 
+/// One GRBL $ setting (`key` keeps the dollar prefix, e.g. "$20").
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrblSetting {
+    pub key: String,
+    pub value: String,
+}
+
 /// UI-facing event payload (`grbl-stream`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrblStreamEvent {
-    pub kind: String, // connected|disconnected|progress|status|error|completed|paused|resumed|reset
+    pub kind: String, // connected|disconnected|progress|status|error|completed|paused|resumed|reset|settings
     pub message: String,
     pub port_name: Option<String>,
     pub baud_rate: Option<u32>,
@@ -196,6 +203,7 @@ pub struct GrblStreamEvent {
     pub state: Option<GrblMachineState>,
     pub mpos: Option<[f64; 3]>,
     pub wpos: Option<[f64; 3]>,
+    pub settings: Option<Vec<GrblSetting>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -209,6 +217,7 @@ enum WorkerMsg {
     Connect { port: String, baud_rate: u32 },
     Disconnect,
     SendFile { file_path: String },
+    SendProgram { text: String },
     Pause,
     Resume,
     Reset,
@@ -218,6 +227,9 @@ enum WorkerMsg {
     ZeroXy,
     Raw { line: String },
     ConnectTcp { host: String, port: u16 },
+    LaserPower { percent: Option<f64> },
+    WriteByte { byte: u8 },
+    GetSettings,
 }
 
 /// The open transport to the machine: a USB serial port or FluidNC's
@@ -290,6 +302,17 @@ struct Worker {
     // Latest machine position from the status stream — Zero XY derives
     // the new WCO from it locally (see the ZeroXy handler).
     last_mpos: Option<[f64; 3]>,
+    // In-flight `$$` dump collection (see GetSettings).
+    collecting: Option<SettingsCollect>,
+}
+
+/// Collection state for a `$$` settings dump: the controller prints
+/// one `$N=value` line per setting, terminated by `ok` on GRBL 1.1.
+/// FluidNC may print the same lines without the trailing ok — the
+/// deadline fallback emits whatever arrived.
+struct SettingsCollect {
+    entries: Vec<GrblSetting>,
+    deadline: Instant,
 }
 
 fn event(kind: &str, message: &str) -> GrblStreamEvent {
@@ -304,11 +327,65 @@ fn event(kind: &str, message: &str) -> GrblStreamEvent {
         state: None,
         mpos: None,
         wpos: None,
+        settings: None,
     }
+}
+
+/// Parses one `$N=value` settings line.  None for everything else
+/// (status reports, comments, ok/error replies).
+fn parse_settings_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    let eq = line.find('=')?;
+    let key = line[..eq].trim();
+    if !key.starts_with('$') {
+        return None;
+    }
+    let digits = &key[1..];
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some((key.to_string(), line[eq + 1..].trim().to_string()))
 }
 
 fn grbl_error_text(code: u32) -> String {
     format!("GRBL error {}: {}", code, grbl_error_message(code))
+}
+
+/// Human-readable GRBL alarm descriptions (GRBL 1.1 `ALARM:n`).
+fn grbl_alarm_message(code: u32) -> &'static str {
+    match code {
+        1 => "hard limit triggered — machine position may be lost, re-home",
+        2 => "soft limit — the job moved outside the configured work area",
+        3 => "abort during cycle",
+        4 => "probe failed — no contact before the target",
+        5 => "probe failed — initial probe state wrong",
+        6 => "homing failed — reset was issued during homing",
+        7 => "homing failed — safety door opened during homing",
+        8 => "homing failed — pull-off failed to clear the limit switch",
+        9 => "homing failed — limit switch not found",
+        _ => "unknown alarm",
+    }
+}
+
+/// GRBL-safe preprocessing shared by file and in-memory jobs: the
+/// parser's canonical filter (blank lines and `(`-prefixed full-line
+/// comments stripped — the same rule `parse_gcode` uses, keeping
+/// `linesSent` aligned with the preview's `move.line`), plus the
+/// send-window guard.  Pure — unit-tested below.
+fn prepare_job_lines(text: &str) -> Result<Vec<String>, String> {
+    let lines = crate::gcode_parser::filter_lines(text);
+    if lines.is_empty() {
+        return Err("The program contains no G-code lines".to_string());
+    }
+    // A line that can never fit the send window would stall the job
+    // at a fixed percent forever — reject the program up front.
+    if let Some(long_line) = lines.iter().find(|line| line.len() + 1 > 127) {
+        return Err(format!(
+            "Line too long for GRBL ({} bytes, limit 127): {long_line}",
+            long_line.len() + 1
+        ));
+    }
+    Ok(lines)
 }
 
 impl Worker {
@@ -316,6 +393,12 @@ impl Worker {
         payload.port_name = self.port_name.clone();
         payload.baud_rate = self.baud_rate;
         let _ = self.app.emit("grbl-stream", payload);
+    }
+
+    fn emit_settings(&self, entries: Vec<GrblSetting>) {
+        let mut payload = event("settings", &format!("{} settings", entries.len()));
+        payload.settings = Some(entries);
+        self.emit(payload);
     }
 
     fn close_port(&mut self) {
@@ -410,31 +493,27 @@ impl Worker {
                 return;
             }
         };
-        // GRBL-safe preprocessing: strip full-line comments and blanks.
-        // Parenthesized comments are PolySmith's own post headers —
-        // they only cost serial time, never correctness.
-        let lines: Vec<String> = text
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('('))
-            .map(str::to_string)
-            .collect();
-        if lines.is_empty() {
-            self.emit(event("error", "The file contains no G-code lines"));
+        match prepare_job_lines(&text) {
+            Ok(lines) => self.begin_job(lines),
+            Err(message) => self.emit(event("error", &message)),
+        }
+    }
+
+    /// In-memory program entry point (the CAM→GRBL handoff): the same
+    /// pipeline as start_job, no file on disk.
+    fn start_program(&mut self, text: &str) {
+        if self.port.is_none() {
+            self.emit(event("error", "Not connected — connect a port first"));
             return;
         }
-        // A line that can never fit the send window would stall the
-        // job at a fixed percent forever — reject the file up front.
-        if let Some(long_line) = lines.iter().find(|line| line.len() + 1 > 127) {
-            self.emit(event(
-                "error",
-                &format!(
-                    "Line too long for GRBL ({} bytes, limit 127): {long_line}",
-                    long_line.len() + 1
-                ),
-            ));
-            return;
+        match prepare_job_lines(text) {
+            Ok(lines) => self.begin_job(lines),
+            Err(message) => self.emit(event("error", &message)),
         }
+    }
+
+    /// Queue a prepared, validated line list and start streaming.
+    fn begin_job(&mut self, lines: Vec<String>) {
         self.pending.clear();
         self.sent_lengths.clear();
         self.window = ByteWindow::new();
@@ -494,6 +573,11 @@ impl Worker {
     fn handle_response(&mut self, response: GrblResponse) {
         match response {
             GrblResponse::Ok => {
+                if let Some(collect) = self.collecting.take() {
+                    // GRBL terminates the `$$` dump with ok — emit
+                    // the collected settings right away.
+                    self.emit_settings(collect.entries);
+                }
                 if let Some(len) = self.sent_lengths.pop_front() {
                     self.window.ack(len);
                 }
@@ -520,7 +604,8 @@ impl Worker {
                 self.emit(event(
                     "error",
                     &format!(
-                        "Machine alarm (code {code}) — motion is locked. Press Reset, then Unlock ($X)."
+                        "Machine alarm {code} ({}) — motion is locked. Press Reset, then Unlock ($X).",
+                        grbl_alarm_message(code)
                     ),
                 ));
             }
@@ -559,6 +644,37 @@ impl Worker {
                 }
             }
             WorkerMsg::SendFile { file_path } => self.start_job(&file_path),
+            WorkerMsg::SendProgram { text } => self.start_program(&text),
+            WorkerMsg::LaserPower { percent } => match percent {
+                Some(percent) => {
+                    let scaled = crate::grbl_utilities::scale_power(percent);
+                    self.write_line(&format!("M3 S{scaled}"));
+                }
+                None => self.write_line("M5"),
+            },
+            WorkerMsg::WriteByte { byte } => {
+                // Real-time override commands are bare bytes — NO
+                // newline, and they bypass the RX window (the
+                // controller processes them out-of-band).  The
+                // allowlist lives in the command.
+                if let Some(link) = self.port.as_mut() {
+                    if let Err(error) = link.write_all(&[byte]) {
+                        self.emit(event(
+                            "error",
+                            &format!("Could not send real-time command: {error}"),
+                        ));
+                    }
+                }
+            }
+            WorkerMsg::GetSettings => {
+                // Ask for a `$$` dump; the run loop collects $k=v
+                // lines until ok (GRBL) or the deadline (FluidNC).
+                self.collecting = Some(SettingsCollect {
+                    entries: Vec::new(),
+                    deadline: Instant::now() + Duration::from_millis(1500),
+                });
+                self.write_line("$$");
+            }
             WorkerMsg::Pause => {
                 self.paused = true;
                 self.write_line("!");
@@ -651,6 +767,19 @@ impl Worker {
                                 let line = String::from_utf8_lossy(
                                     &line_bytes[..line_bytes.len() - 1],
                                 );
+                                // Settings collection: capture $k=v
+                                // lines verbatim while a `$$` dump is
+                                // in flight (parse_grbl_response treats
+                                // them as Other and discards the text).
+                                if let Some(collect) = self.collecting.as_mut() {
+                                    if let Some((key, value)) =
+                                        parse_settings_line(&line)
+                                    {
+                                        collect
+                                            .entries
+                                            .push(GrblSetting { key, value });
+                                    }
+                                }
                                 responses.push(parse_grbl_response(&line));
                             }
                         }
@@ -672,6 +801,19 @@ impl Worker {
                 Ok(message) => self.handle_message(message),
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => return,
+            }
+
+            // FluidNC may print the `$$` lines without a trailing ok —
+            // emit whatever arrived once the collection deadline
+            // passes.
+            let deadline_passed = match self.collecting.as_ref() {
+                Some(collect) => Instant::now() >= collect.deadline,
+                None => false,
+            };
+            if deadline_passed {
+                if let Some(collect) = self.collecting.take() {
+                    self.emit_settings(collect.entries);
+                }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -701,6 +843,7 @@ fn start_worker(app: AppHandle, state: &GrblState) -> Result<(), String> {
         last_poll: Instant::now(),
         rx_buffer: Vec::new(),
         last_mpos: None,
+        collecting: None,
     };
     std::thread::spawn(move || worker.run());
     *guard = Some(tx);
@@ -757,6 +900,61 @@ pub fn grbl_send_file(
 ) -> Result<(), String> {
     start_worker(app, &state)?;
     state.send(WorkerMsg::SendFile { file_path })
+}
+
+/// Streams an in-memory program (the CAM→GRBL handoff) — same worker
+/// pipeline as grbl_send_file, no file on disk.
+#[tauri::command]
+pub fn grbl_send_program(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    text: String,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::SendProgram { text })
+}
+
+/// Laser test fire: `Some(percent)` sends `M3 S{scaled}` at the given
+/// power, `None` sends `M5` (beam off) — hold-to-fire in the UI.
+#[tauri::command]
+pub fn grbl_laser_power(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    percent: Option<f64>,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::LaserPower { percent })
+}
+
+/// Requests a `$$` settings dump — the result arrives as a
+/// `grbl-stream` event of kind "settings".
+#[tauri::command]
+pub fn grbl_get_settings(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+) -> Result<(), String> {
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::GetSettings)
+}
+
+/// Sends one GRBL real-time override byte (no newline).  Allowlisted
+/// to the override set only — the UI never writes arbitrary bytes to
+/// the controller.  Success is silent by design: real-time commands
+/// get no ok/error reply, and FluidNC's override support is partial.
+#[tauri::command]
+pub fn grbl_write_byte(
+    app: AppHandle,
+    state: State<'_, GrblState>,
+    byte: u8,
+) -> Result<(), String> {
+    const ALLOWED: [u8; 8] = [0x90, 0x91, 0x92, 0x93, 0x94, 0x99, 0x9A, 0x9B];
+    if !ALLOWED.contains(&byte) {
+        return Err(format!(
+            "Byte 0x{byte:02X} is not an allowed override command"
+        ));
+    }
+    start_worker(app, &state)?;
+    state.send(WorkerMsg::WriteByte { byte })
 }
 
 #[tauri::command]
@@ -821,4 +1019,96 @@ pub fn grbl_send_raw(
     state.send(WorkerMsg::Raw {
         line: trimmed.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The sender's RX window is 127 bytes: a line fits only while
+    // unacked bytes + line (+ newline) stay inside it.  A line that
+    // can never fit would stall the job forever — rejected up front.
+    #[test]
+    fn prepare_rejects_blank_and_comment_only_programs() {
+        assert!(prepare_job_lines("").is_err());
+        assert!(prepare_job_lines("\n\n").is_err());
+        assert!(prepare_job_lines("(header only)\n(another)").is_err());
+    }
+
+    #[test]
+    fn prepare_strips_blanks_and_full_line_comments() {
+        let lines = prepare_job_lines("G21\n\n(header)\nG90\n").expect("valid program");
+        assert_eq!(lines, vec!["G21".to_string(), "G90".to_string()]);
+    }
+
+    #[test]
+    fn prepare_rejects_lines_over_the_window() {
+        // 126 content bytes + newline = 127: admitted.  127 content
+        // bytes + newline = 128: never fits, rejected.
+        let fits = "G1 X".to_string() + &"1".repeat(122); // 4 + 122 = 126
+        let too_long = "G1 X".to_string() + &"1".repeat(123); // 127 content bytes
+        assert_eq!(fits.len(), 126);
+        assert_eq!(too_long.len(), 127);
+        assert!(prepare_job_lines(&fits).is_ok());
+        let error = prepare_job_lines(&too_long).expect_err("must reject");
+        assert!(error.contains("127"), "message names the limit: {error}");
+    }
+
+    #[test]
+    fn byte_window_admits_until_full() {
+        let mut window = ByteWindow::new();
+        assert!(window.admit(127));
+        window.add(127);
+        assert!(!window.admit(1), "no room past 127 unacked bytes");
+        window.ack(100);
+        assert!(window.admit(1), "ack frees room");
+    }
+
+    #[test]
+    fn byte_window_ack_never_underflows() {
+        let mut window = ByteWindow::new();
+        window.add(10);
+        window.ack(20);
+        assert_eq!(window.unacked, 0);
+    }
+
+    // The settings collector accepts `$N=value` lines and rejects
+    // everything else that streams past (status, comments, ok).
+    #[test]
+    fn settings_lines_parse_and_junk_is_rejected() {
+        assert_eq!(
+            parse_settings_line("$20=0"),
+            Some(("$20".to_string(), "0".to_string()))
+        );
+        assert_eq!(
+            parse_settings_line("  $130=200.000  "),
+            Some(("$130".to_string(), "200.000".to_string()))
+        );
+        assert_eq!(
+            parse_settings_line("$32=1\r"),
+            Some(("$32".to_string(), "1".to_string()))
+        );
+        assert_eq!(parse_settings_line("ok"), None);
+        assert_eq!(parse_settings_line("<Idle|MPos:0.000,0.000,0.000|FS:0,0>"), None);
+        assert_eq!(parse_settings_line("(comment)"), None);
+        assert_eq!(parse_settings_line("$H"), None);
+        assert_eq!(parse_settings_line("$=1"), None);
+        assert_eq!(parse_settings_line("G0 X10=2"), None);
+    }
+
+    // The alarm decoder turns `ALARM:n` into actionable text — the
+    // table covers the full GRBL 1.1 range.
+    #[test]
+    fn alarm_messages_decode_known_and_unknown_codes() {
+        assert_eq!(grbl_alarm_message(1), "hard limit triggered — machine position may be lost, re-home");
+        assert_eq!(grbl_alarm_message(2), "soft limit — the job moved outside the configured work area");
+        assert_eq!(grbl_alarm_message(3), "abort during cycle");
+        assert_eq!(grbl_alarm_message(4), "probe failed — no contact before the target");
+        assert_eq!(grbl_alarm_message(5), "probe failed — initial probe state wrong");
+        assert_eq!(grbl_alarm_message(6), "homing failed — reset was issued during homing");
+        assert_eq!(grbl_alarm_message(7), "homing failed — safety door opened during homing");
+        assert_eq!(grbl_alarm_message(8), "homing failed — pull-off failed to clear the limit switch");
+        assert_eq!(grbl_alarm_message(9), "homing failed — limit switch not found");
+        assert_eq!(grbl_alarm_message(42), "unknown alarm");
+    }
 }

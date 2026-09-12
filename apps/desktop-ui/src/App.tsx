@@ -964,6 +964,7 @@ function App() {
     camMachineList,
     camMachineSave,
     camExportGcode,
+    camExportGcodeText,
   } = useCadCore();
 
   const {
@@ -1723,22 +1724,34 @@ function App() {
     }
   };
 
-  // Export AND jump to the GRBL workspace with the file loaded for
-  // preview/streaming (the in-app alternative to LaserGRBL).
-  const [grblPreviewFile, setGrblPreviewFile] = useState<string | null>(null);
+  // Post in memory AND jump to the GRBL workspace with the program
+  // loaded for preview/streaming (the in-app alternative to
+  // LaserGRBL).  No file dialog, no disk file — the posted text
+  // travels straight to the workspace.
+  const [grblHandoff, setGrblHandoff] = useState<{
+    text: string;
+    label: string;
+  } | null>(null);
 
   const exportCamGcodeToGrblWorkspaceAction = async () => {
-    const filePath = await pickGcodeExportPath({
-      translate: t,
-      documentName: document?.name,
-      addMessage,
+    await runAction(async () => {
+      try {
+        const result = await camExportGcodeText();
+        if (!result.text) {
+          throw new Error("core posted an empty G-code program");
+        }
+        setGrblHandoff({
+          text: result.text,
+          label: t("grbl.camJobLabel", { name: document?.name ?? "" }),
+        });
+        void showGrblView();
+      } catch (error) {
+        addMessage(String(error));
+        useToastStore
+          .getState()
+          .pushToast("error", t("cam.gcodePostFailed"));
+      }
     });
-    if (!filePath) {
-      return;
-    }
-    await doExportGcode(filePath);
-    setGrblPreviewFile(filePath);
-    void showGrblView();
   };
 
   const setCamPostProcessorAction = (postType: string) =>
@@ -2525,13 +2538,13 @@ function App() {
             />
           ) : workspaceView === "grbl" ? (
             <GrblWorkspace
-              embeddedFilePath={null}
+              embeddedProgram={null}
               machineSettings={document?.cam.machine_settings ?? null}
               theme={config.theme}
               addMessage={addMessage}
-              previewFile={grblPreviewFile}
-              onPreviewFileConsumed={() => {
-                setGrblPreviewFile(null);
+              handoffProgram={grblHandoff}
+              onHandoffConsumed={() => {
+                setGrblHandoff(null);
               }}
             />
           ) : (

@@ -177,6 +177,7 @@ import type {
   CamOperationGenerateCommand,
   CamOperationPreviewCommand,
   CamExportGcodeCommand,
+  CamExportGcodeTextCommand,
 } from "./ipc/camCommands";
 import type {
   FeatureEntry,
@@ -464,6 +465,18 @@ export interface DocumentExportedEvent extends BaseMessage {
   type: "document_exported";
   id: string;
   payload: DocumentExportResult;
+}
+
+// In-memory G-code posting (cam_export_gcode_text) — the GRBL workspace
+// handoff parses and streams `text` without a file on disk.
+export interface CamExportGcodeTextResultEvent extends BaseMessage {
+  type: "cam_export_gcode_text_result";
+  id: string;
+  payload: {
+    text: string;
+    format: string;
+    exported_feature_count: number;
+  };
 }
 
 // Emitted by the core while a CAM toolpath is being generated
@@ -906,6 +919,7 @@ export type CoreCommand =
   | CamOperationGenerateCommand
   | CamOperationPreviewCommand
   | CamExportGcodeCommand
+  | CamExportGcodeTextCommand
   | DetachBodyProjectionsCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand
