@@ -10,11 +10,14 @@ namespace {
 
 constexpr double kTwoPiConst = 6.28318530717958647692;
 
-// Join snap threshold (5°): below this corner angle the round join
-// arc's sagitta is under ~7 µm at kerf-scale offsets — snapping the
+// Join snap threshold (10°): below this corner angle the round join
+// arc's sagitta is under ~0.3 µm at kerf-scale offsets — snapping the
 // two offset endpoints together costs less precision than a laser
-// kerf and spares GRBL a near-coincident arc per facet corner.
-constexpr double kJoinSnapSweepRad = 0.08726646259971647884;  // 5°
+// kerf and spares GRBL a near-coincident arc per facet corner.  10°
+// (not 5°): the Douglas-Peucker pass re-spaces the surviving facet
+// corners near 2·acos(1 − eps/r) — ~6.3° at r = 20, eps = 0.03 —
+// which the old 5° cutoff no longer covered.
+constexpr double kJoinSnapSweepRad = 0.1745329251994329577;  // 10°
 
 // Offsets one base segment by `d` to the right of the walk.
 //   line  → parallel line at distance d
@@ -500,6 +503,105 @@ SegmentCleanupStats cleanup_base_segments(std::vector<BaseSegment>& segments) {
     cleaned.push_back(segment);
   }
   segments.swap(cleaned);
+  return stats;
+}
+
+SimplifyStats simplify_polyline_dp(std::vector<BaseSegment>& segments,
+                                   double epsilon) {
+  SimplifyStats stats;
+  if (segments.empty() || epsilon <= 0.0) {
+    return stats;
+  }
+  const double epsSq = epsilon * epsilon;
+
+  std::vector<BaseSegment> simplified;
+  simplified.reserve(segments.size());
+
+  size_t i = 0;
+  while (i < segments.size()) {
+    // Arcs are exact anchors — copied through untouched.
+    if (segments[i].is_arc) {
+      simplified.push_back(segments[i]);
+      ++i;
+      continue;
+    }
+    // Collect the maximal run of consecutive chained lines.  An
+    // all-line loop wraps around to its start — one cyclic run whose
+    // last vertex repeats the first.
+    std::vector<XY> pts;
+    pts.push_back(segments[i].start);
+    size_t j = i;
+    while (j < segments.size() && !segments[j].is_arc &&
+           (j == i || cleanup_same_point(pts.back(), segments[j].start))) {
+      pts.push_back(segments[j].end);
+      ++j;
+    }
+    const bool closed = cleanup_same_point(pts.front(), pts.back());
+    size_t count = pts.size();
+    if (closed) {
+      --count;  // the last entry repeats the first vertex
+    }
+    if (count < 3) {
+      // Nothing interior to drop — copy the run as is.
+      for (size_t k = i; k < j; ++k) {
+        simplified.push_back(segments[k]);
+      }
+      i = j;
+      continue;
+    }
+
+    // Recursive Douglas-Peucker: the vertex with the largest distance
+    // to the current span's edge is kept when it exceeds the
+    // tolerance, and the two halves recursed.  Endpoints are always
+    // kept — arc junctions and the loop closure depend on them.
+    std::vector<bool> keep(count, false);
+    keep[0] = true;
+    keep[count - 1] = true;
+    const auto recurse = [&](auto&& self, size_t lo, size_t hi) -> void {
+      double maxDistSq = 0.0;
+      size_t maxIdx = lo + 1;
+      for (size_t k = lo + 1; k < hi; ++k) {
+        const double d = xy_point_segment_distance(pts[k], pts[lo], pts[hi]);
+        if (d * d > maxDistSq) {
+          maxDistSq = d * d;
+          maxIdx = k;
+        }
+      }
+      if (maxDistSq <= epsSq) {
+        return;  // every interior vertex is within tolerance
+      }
+      keep[maxIdx] = true;
+      if (maxIdx > lo + 1) {
+        self(self, lo, maxIdx);
+      }
+      if (hi > maxIdx + 1) {
+        self(self, maxIdx, hi);
+      }
+    };
+    recurse(recurse, 0, count - 1);
+
+    // Re-emit the kept vertices as line segments; a cyclic run also
+    // re-emits the closing edge back to the first vertex.
+    stats.vertices_before += static_cast<int>(count);
+    std::vector<XY> kept;
+    kept.reserve(count);
+    for (size_t k = 0; k < count; ++k) {
+      if (keep[k]) {
+        kept.push_back(pts[k]);
+      }
+    }
+    stats.vertices_after += static_cast<int>(kept.size());
+    const size_t steps = closed ? kept.size() : kept.size() - 1;
+    for (size_t k = 0; k < steps; ++k) {
+      BaseSegment line;
+      line.start = kept[k];
+      line.end = kept[(k + 1) % kept.size()];
+      simplified.push_back(line);
+    }
+    i = j;
+  }
+
+  segments.swap(simplified);
   return stats;
 }
 

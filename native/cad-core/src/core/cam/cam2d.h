@@ -124,6 +124,34 @@ struct SegmentCleanupStats {
   }
 };
 
+// What simplify_polyline_dp changed — one line in the structured log
+// tells the user how much facet noise the pass removed.
+struct SimplifyStats {
+  int vertices_before = 0;  // vertices across all line runs visited
+  int vertices_after = 0;   // vertices kept by the Douglas-Peucker pass
+
+  SimplifyStats& operator+=(const SimplifyStats& other) {
+    vertices_before += other.vertices_before;
+    vertices_after += other.vertices_after;
+    return *this;
+  }
+
+  // True when the pass dropped anything — gates the structured log.
+  bool any() const { return vertices_before > vertices_after; }
+};
+
+// Douglas-Peucker simplification of a closed contour's LINE runs at a
+// maximum deviation of `epsilon`.  Arc segments are exact anchors:
+// they are copied through untouched and bound each run, so a run's
+// first and last vertex are never dropped and loop closure survives.
+// A vertex is dropped only when every vertex of the span it belongs
+// to lies within `epsilon` of the replacement edge (the recursive DP
+// guarantee).  Mesh-derived bodies flood contours with micro-facets
+// far finer than the laser kerf — this pass collapses the noise
+// before the kerf offset posts it move-for-move.
+SimplifyStats simplify_polyline_dp(std::vector<BaseSegment>& segments,
+                                   double epsilon);
+
 // Heals a closed contour in place: merges consecutive collinear line
 // segments and consecutive co-circular arcs (same center/radius/walk
 // direction), and drops consecutive exact duplicates, out-and-back

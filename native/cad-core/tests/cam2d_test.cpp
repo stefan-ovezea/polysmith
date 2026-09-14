@@ -191,8 +191,9 @@ bool test_round_mode_shallow_miter() {
   // offset lines cross INSIDE both truncated segments (the miter
   // point IS the true boundary), so round mode miter-trims there.
   // The neighbouring shallow CONVEX corner at (5.1, -0.01) crosses
-  // past the segment ends, so it still gets a join arc — convex
-  // corners never miter.
+  // past the segment ends and reaches the round-join path — but its
+  // ~5.8° sweep is below the 10° snap threshold, so the join SNAPS
+  // instead of emitting a degenerate arc.
   const XY pts[] = {{0, 0}, {5, 0}, {5.1, -0.01}, {10, 0}, {10, 10}, {0, 10}};
   std::vector<BaseSegment> base;
   for (size_t i = 0; i < 6; ++i) {
@@ -218,8 +219,15 @@ bool test_round_mode_shallow_miter() {
       ++lines;
     }
   }
-  return expect(joins == 5 && lines == 6,
-                "dent: 5 join arcs, the reflex dent corner miter-trimmed");
+  // The snap removes the join arc but keeps both adjacent lines (they
+  // meet at the snapped corner), so the line count stays 6.
+  if (!expect(joins == 4 && lines == 6,
+              "dent: 4 join arcs — the reflex dent miter-trims, the "
+              "shallow convex corner snaps")) {
+    std::cerr << "  saw " << joins << " joins, " << lines << " lines\n";
+    return false;
+  }
+  return true;
 }
 
 // ── Test 5: sampling sagitta bound ───────────────────────────────
@@ -574,17 +582,20 @@ bool test_round_join_short_sweep() {
 namespace {
 
 using polysmith::core::cam2d::SegmentCleanupStats;
+using polysmith::core::cam2d::SimplifyStats;
 using polysmith::core::cam2d::cleanup_base_segments;
+using polysmith::core::cam2d::simplify_polyline_dp;
 
 // ── Test 14: shallow corners snap instead of degenerate join arcs ─
 
 // A CW loop with a shallow REFLEX notch at (0.5, −dy): the notch
-// corner turns by θ = 2·atan(dy/0.5).  The 0.5 mm notch legs are
-// shorter than the miter crossing distance (d/sin θ ≈ 0.9 mm at
-// d = 0.075), so the corner reaches the round-join path — exactly the
-// facet-corner situation the user's mesh file hit (convex corners
-// miter at the corner point, which is why a plain V fixture never
-// exercises this branch).
+// corner turns by θ = 2·atan(dy/0.5).  When the miter crossing
+// distance (d/sin θ) lands beyond the 0.5 mm notch legs the corner
+// reaches the round-join path — exactly the facet-corner situation the
+// user's mesh file hit (convex corners miter at the corner point,
+// which is why a plain V fixture never exercises this branch).  The
+// crossing condition bounds θ below asin(d/0.5) ≈ 8.6° at d = 0.075,
+// so the join-side block uses a larger d.
 std::vector<BaseSegment> make_shallow_corner_loop(double dy) {
   const XY pts[] = {{0, 0}, {0.5, -dy}, {1, 0}, {1, -1}, {0, -1}};
   std::vector<BaseSegment> base;
@@ -619,19 +630,21 @@ double join_short_sweep(const OffsetSegment& segment) {
 
 bool test_shallow_corner_join_snap() {
   // The steep corners may miter or join depending on convexity — only
-  // the SHALLOW corner's behavior is pinned: below 5° it snaps (no
+  // the SHALLOW corner's behavior is pinned: below 10° it snaps (no
   // join arc), above it keeps its join.  Both signs of the boundary
   // matter — the tangency rule.
   const double kSnapSweep =
-      5.0 * polysmith::core::cam2d::kPi / 180.0;  // 5° in radians
-  const double kSixDeg =
-      6.0 * polysmith::core::cam2d::kPi / 180.0;
-  // θ ≈ 4.58° (dy = 0.02) — below the threshold: no join arc sweeps
-  // under 5°.
+      10.0 * polysmith::core::cam2d::kPi / 180.0;  // 10° in radians
+  const double kTwelveDeg =
+      12.0 * polysmith::core::cam2d::kPi / 180.0;
+  // θ ≈ 8.01° (dy = 0.035) — below the threshold (and the crossing
+  // distance d/sin θ ≈ 0.54 mm still lands beyond the 0.5 mm legs, so
+  // the corner genuinely reaches the round-join path): no join arc
+  // sweeps under 10°.
   {
     std::vector<OffsetSegment> out;
-    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.02), 0.075, out,
-                                   /*round_joins=*/true),
+    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.035), 0.075,
+                                   out, /*round_joins=*/true),
                 "snap: offset succeeds")) {
       return false;
     }
@@ -643,18 +656,20 @@ bool test_shallow_corner_join_snap() {
       }
     }
     if (!expect(tinyJoins == 0,
-                "snap: no join arc below the 5° threshold")) {
+                "snap: no join arc below the 10° threshold")) {
       return false;
     }
     if (!expect(loop_is_connected(out), "snap: loop connected")) {
       return false;
     }
   }
-  // θ ≈ 5.15° (dy = 0.0225) — just above the threshold: exactly one
-  // join arc in [5°, 6°] (the shallow corner's), none below 5°.
+  // θ ≈ 11.42° (dy = 0.05) — just above the threshold: exactly one
+  // join arc in [10°, 12°] (the shallow corner's), none below 10°.
+  // d = 0.15 keeps the crossing distance (0.76 mm) beyond the 0.5 mm
+  // legs so the corner still reaches the round-join path.
   {
     std::vector<OffsetSegment> out;
-    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.0225), 0.075,
+    if (!expect(offset_closed_loop(make_shallow_corner_loop(0.05), 0.15,
                                    out,
                                    /*round_joins=*/true),
                 "join: offset succeeds")) {
@@ -669,12 +684,12 @@ bool test_shallow_corner_join_snap() {
       const double sweep = join_short_sweep(segment);
       if (sweep < kSnapSweep) {
         ++tinyJoins;
-      } else if (sweep <= kSixDeg) {
+      } else if (sweep <= kTwelveDeg) {
         ++shallowJoins;
       }
     }
     if (!expect(tinyJoins == 0 && shallowJoins == 1,
-                "join: exactly one join in [5°, 6°], none below 5°")) {
+                "join: exactly one join in [10°, 12°], none below 10°")) {
       return false;
     }
     if (!expect(loop_is_connected(out), "join: loop connected")) {
@@ -848,6 +863,121 @@ bool test_contour_cleanup_units() {
   return true;
 }
 
+// ── Test 15: Douglas-Peucker polyline simplification ─────────────
+
+// Every segment must end exactly where the next begins.
+bool dp_loop_is_connected(const std::vector<BaseSegment>& segs) {
+  for (size_t k = 0; k < segs.size(); ++k) {
+    const auto& a = segs[k];
+    const auto& b = segs[(k + 1) % segs.size()];
+    if (xy_length(a.end.x - b.start.x, a.end.y - b.start.y) > 1e-9) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool test_polyline_dp_units() {
+  // A chain of collinear lines collapses to one spanning segment.
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 1, 0),
+                                     make_line_seg(1, 0, 2, 0),
+                                     make_line_seg(2, 0, 3, 0),
+                                     make_line_seg(3, 0, 4, 0)};
+    const SimplifyStats stats = simplify_polyline_dp(segs, 0.03);
+    if (!expect(stats.vertices_before == 5 && stats.vertices_after == 2,
+                "dp: collinear chain drops every interior vertex")) {
+      return false;
+    }
+    if (!expect(segs.size() == 1 && !segs[0].is_arc &&
+                    near(segs[0].start.x, 0.0) && near(segs[0].end.x, 4.0),
+                "dp: chain becomes one spanning line")) {
+      return false;
+    }
+  }
+  // A bulge vertex is kept only when its deviation EXCEEDS epsilon —
+  // both signs of the boundary (the tangency rule).
+  for (const double bulge : {0.02, 0.04}) {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 2, bulge),
+                                     make_line_seg(2, bulge, 4, 0)};
+    const SimplifyStats stats = simplify_polyline_dp(segs, 0.03);
+    const bool kept = bulge > 0.03;
+    if (!expect(stats.vertices_after == (kept ? 3 : 2) &&
+                    segs.size() == (kept ? 2u : 1u),
+                kept ? "dp: bulge above epsilon is kept"
+                     : "dp: bulge below epsilon is dropped")) {
+      return false;
+    }
+  }
+  // Arcs anchor their neighbouring runs: the line runs simplify, the
+  // arcs pass through untouched, and the loop stays connected.
+  {
+    std::vector<BaseSegment> segs = {
+        make_line_seg(0, 0, 1, 0),
+        make_line_seg(1, 0, 2, 0),
+        make_arc_seg(3, 0, 1, 180, 0, /*ccw=*/false),  // top half
+        make_line_seg(4, 0, 5, 0),
+        make_line_seg(5, 0, 6, 0),
+        make_arc_seg(3, 0, 3, 0, 180, /*ccw=*/false),  // bottom half back
+    };
+    const SimplifyStats stats = simplify_polyline_dp(segs, 0.03);
+    if (!expect(stats.vertices_before == 6 && stats.vertices_after == 4,
+                "dp: both line runs simplify, arcs counted untouched")) {
+      return false;
+    }
+    if (!expect(segs.size() == 4, "dp: two lines + two arcs survive")) {
+      return false;
+    }
+    if (!expect(!segs[0].is_arc && near(segs[0].start.x, 0.0) &&
+                    near(segs[0].end.x, 2.0) && segs[1].is_arc &&
+                    near(segs[1].center.x, 3.0) && near(segs[1].radius, 1.0) &&
+                    !segs[2].is_arc && near(segs[2].start.x, 4.0) &&
+                    near(segs[2].end.x, 6.0) && segs[3].is_arc &&
+                    near(segs[3].center.x, 3.0) && near(segs[3].radius, 3.0),
+                "dp: arcs copied exactly, runs span their anchors")) {
+      return false;
+    }
+    if (!expect(dp_loop_is_connected(segs), "dp: loop stays connected")) {
+      return false;
+    }
+  }
+  // An all-line loop is one cyclic run: the wrap-around corner is
+  // re-emitted, the in-tolerance wobble drops, and the loop closes.
+  {
+    std::vector<BaseSegment> segs = {
+        make_line_seg(0, 0, 2, 0.02), make_line_seg(2, 0.02, 4, 0),
+        make_line_seg(4, 0, 4, 4), make_line_seg(4, 4, 0, 4),
+        make_line_seg(0, 4, 0, 0)};
+    const SimplifyStats stats = simplify_polyline_dp(segs, 0.03);
+    if (!expect(stats.vertices_before == 5 && stats.vertices_after == 4,
+                "dp: closed loop drops the in-tolerance wobble")) {
+      return false;
+    }
+    if (!expect(segs.size() == 4, "dp: closed loop keeps its four corners")) {
+      return false;
+    }
+    if (!expect(dp_loop_is_connected(segs), "dp: closed loop stays connected")) {
+      return false;
+    }
+    if (!expect(near(segs.back().end.x, segs.front().start.x) &&
+                    near(segs.back().end.y, segs.front().start.y),
+                "dp: closing edge re-emitted (loop closes)")) {
+      return false;
+    }
+  }
+  // Non-positive epsilon never touches the contour.
+  {
+    std::vector<BaseSegment> segs = {make_line_seg(0, 0, 1, 0),
+                                     make_line_seg(1, 0, 2, 0)};
+    const SimplifyStats stats = simplify_polyline_dp(segs, 0.0);
+    if (!expect(segs.size() == 2 && !stats.any(),
+                "dp: zero epsilon leaves the loop as is")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -886,6 +1016,8 @@ int main() {
   run("Test 13: contour cleanup unit rules", test_contour_cleanup_units);
   run("Test 14: shallow corners snap (no degenerate joins)",
       test_shallow_corner_join_snap);
+  run("Test 15: Douglas-Peucker polyline simplification",
+      test_polyline_dp_units);
 
   if (allPassed) {
     std::cout << "cam2d_test passed\n";

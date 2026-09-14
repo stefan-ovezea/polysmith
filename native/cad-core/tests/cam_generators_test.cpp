@@ -4379,7 +4379,10 @@ bool test_faceted_circle_no_degenerate_arcs() {
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
   const int facets = 120;
-  const double radius = 50.0;
+  // r = 20 keeps the 2-facet span deviation r·(1−cos 3°) ≈ 0.027 mm
+  // under the DP tolerance (0.03 mm) — at r = 50 it is 0.069 mm and
+  // no facet is simplifiable.
+  const double radius = 20.0;
   const double step = 2.0 * polysmith::core::cam2d::kPi / facets;
   DocumentState document;
   for (int k = 0; k < facets; ++k) {
@@ -4431,10 +4434,22 @@ bool test_faceted_circle_no_degenerate_arcs() {
     std::cerr << "  saw " << arcs << " arcs\n";
     return false;
   }
-  // One line per facet — plus at most one extra when the pierce lands
-  // mid-facet and contour_starting_at splits that segment in two.
-  return expect(lines == facets || lines == facets + 1,
-                "faceted circle: one line per facet (pierce may split one)");
+  // The Douglas-Peucker pass collapses the micro-facets inside its
+  // 0.03 mm tolerance: the 2-facet span deviation is r·(1−cos 3°) ≈
+  // 0.027 mm, so roughly every other vertex drops — the cut posts
+  // fewer lines than facets, at most one extra when the pierce lands
+  // mid-segment and contour_starting_at splits it in two.  Regression:
+  // pre-DP this was one line per facet.
+  if (!expect(lines < facets,
+              "faceted circle: facets simplify below the DP tolerance")) {
+    std::cerr << "  saw " << lines << " lines for " << facets << " facets\n";
+    return false;
+  }
+  // The simplification must not decimate the circle: at least every
+  // other facet vertex survives (the dyadic DP keeps a ~0.5 density
+  // on a regular polygon).
+  return expect(lines >= facets / 2,
+                "faceted circle: simplification keeps the circle dense");
 }
 
 // 0-based edge-map index of the first full-circle edge (any position).

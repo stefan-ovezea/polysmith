@@ -9,6 +9,13 @@
 > work — orientation cube consolidated, burned-color cut progress, big STOP
 > button, laser cut from body faces with contour cleanup. All 46 core suites
 > green + tsc clean. UNCOMMITTED; pending user verification on the machine.**
+> **2026-09-13 round 3 (this machine): Douglas-Peucker base-loop
+> simplification (0.03 mm deviation) wired into plan_loop; join-snap
+> threshold raised 5° → 10°; Test 15 added, Tests 4/8d/14 re-pinned.
+> All 46 core suites green. UNCOMMITTED; pending user verification on
+> the machine. IN PARALLEL: user is flashing FluidNC 4.1.0 (Timed-engine
+> fixes) — board config must be re-uploaded as `/config.yaml` afterwards
+> (see Machine state).**
 
 ## ROOT CAUSE of the first-cut failures (found 2026-09-13, this machine)
 
@@ -136,16 +143,71 @@ Remaining in part2 after this fix (≈1545 lines): ~950 facet G1s ≥1 mm
 (real model geometry). Optional next step: Douglas-Peucker polyline
 simplification of the base loop at ~0.02–0.05 mm deviation.
 
+## Douglas-Peucker round (2026-09-13, this machine, uncommitted)
+
+- `cam2d.h/.cpp`: `simplify_polyline_dp(segments, epsilon)` — recursive
+  DP over maximal runs of consecutive chained LINES; arcs are exact
+  anchors (copied untouched, bound each run, so loop closure survives).
+  A vertex drops only when its whole span lies within epsilon of the
+  replacement edge (segment distance, `xy_point_segment_distance`).
+  All-line loops form one cyclic run (closing edge re-emitted).
+  `SimplifyStats { vertices_before, vertices_after }`.
+- `laser/laser_generate.cpp`: wired into `plan_loop` after
+  `cleanup_base_segments`, before the kerf offset — one choke point for
+  profile outers, holes, AND face wires. `kDpSimplifyEpsilonMm = 0.03`
+  (well below kerf/2 = 0.075 and arc_tolerance 0.05). Log line:
+  "contour simplify: N points -> M (max deviation 0.03 mm)" (cam_laser).
+- Tests: cam2d Test 15 (collinear chain collapses; both epsilon signs of
+  a bulge vertex; arcs anchor runs + connectivity; closed all-line loop
+  keeps corners/closure; zero epsilon = no-op). cam_generators 8d pin
+  updated: 120-gon at r = 20 now posts `lines < facets` (pre-DP: one
+  line per facet) and keeps ≥ facets/2 — the DP metric is the 2-facet
+  span deviation r·(1−cos 3°) ≈ 0.027 mm < 0.03 mm at r = 20 (at the
+  old r = 50 it was 0.069 mm and nothing simplified).
+- **Join-snap threshold raised 5° → 10°** (kJoinSnapSweepRad, cam2d.cpp).
+  WHY: DP re-spaces the surviving facet corners near 2·acos(1−eps/r) —
+  ~6.3° at r = 20, eps = 0.03 — so the post-DP corners escaped the old
+  5° snap and the degenerate-join noise class returned (8d saw 46 arcs
+  at 6°). At 10° the snapped join's sagitta at kerf scale is still
+  < 0.3 µm. Tests re-pinned: cam2d Test 14 (both sides of 10° — snap at
+  θ ≈ 8.0°, dy 0.035, d 0.075; join kept at θ ≈ 11.4°, dy 0.05, d 0.15
+  — d must be large enough that the miter crossing still lands beyond
+  the 0.5 mm legs, else the corner miters instead of joining), Test 4
+  (the 5.8° convex corner now snaps: 4 joins + 6 lines). All 46 suites
+  green.
+
 **User verification on the machine (binding):** RESTART the app (a
 running `pnpm dev` locks cad_core.exe — MSB3073), select the mesh body's
 top face → 2D Cut → Generate → check the Logs panel for the cleanup
 counts → export (untitled-part3) + burn. Acceptance: no G3 noise, GRBL
-runs it clean.
+runs it clean. With the DP round: regenerate (untitled-part4), expect
+"contour simplify: N -> M (max deviation 0.03 mm)" in the Logs panel —
+the acceptance test for the lost-steps/noise problem. After the 4.1.0
+flash: re-upload the config (above), rejoin WiFi, re-zero XY, then burn.
 
 ## Machine state (all hardware verified in-hand)
 
 - Old board MKS DLC32 (GRBL 1.1h) replaced by **MKS LS ESP32 PRO V2.1_002**,
-  mainline **FluidNC v4.0.3 esp32s3-wifi**, WiFi STA `192.168.1.19`.
+  mainline FluidNC esp32s3-wifi, WiFi STA `192.168.1.19`. Was v4.0.3;
+  **user is flashing 4.1.0 now (Timed-engine bug fixes)** — the flash
+  erases the config, so re-upload after flashing, AS `/config.yaml`
+  (the fresh build boots the default name; the old board used an
+  alternate `$Config/Filename`):
+  ```bash
+  curl -F "path=/" -F "/config.yamlS=2234" -F "myfile[]=@C:/Users/PC/grbl_tools/laser-board.yaml;filename=/config.yaml" http://192.168.1.19/files
+  ```
+  Engine: the X/Y step pins (gpio.16/15, gpio.7/6) ARE RMT-routable on
+  the S3 (RMT goes through the GPIO matrix — pins are NOT the problem).
+  The blocker is firmware: FluidNC S3 RMT support was added in PR #1622,
+  reverted in PR #1792, re-added in current rmt_engine.c — but the
+  official builds still don't compile it. **Verified on the flashed
+  4.1.0 (esp32s3-wifi, 2026-09-13): config.yaml with `engine: RMT`
+  (2232 B) boots with the merged `$CD` dump showing `engine: Timed` —
+  silent fallback, same as I2S_STREAM on 4.0.3. Runtime set also
+  rejected ("Runtime setting of step_engine objects is not supported").
+  RMT is dead on this board until someone compiles a custom S3 build.
+  Final stack: `engine: Timed` + 4.1.0's Timed fixes + DP-simplified
+  gcode.**
 - Wiring: fully plug-and-play (DLC32 V2.1 shares XH connectors). Exceptions:
   - Dual-Y gantry: old PCB mirrored the Y2 pins, LS does NOT → swap BOTH
     phase pairs (A↔B) on ONE Y motor plug (verified working).
@@ -153,9 +215,11 @@ runs it clean.
   - SPREAD jumpers ON (SpreadCycle — audible hum is normal).
   - No limit switches on this machine; Zero XY at the part corner before run.
 - Live config: `C:\Users\PC\grbl_tools\laser-board.yaml` (uploaded to board):
-  - `engine: Timed` — **I2S_STATIC causes "Configuration is invalid"
-    error:152 on the S3 build; RMT is not compiled in.** Runtime switch:
-    `$X` then `$/Stepping/Engine=Timed` (case-sensitive).
+  - `engine: Timed` — on v4.0.3, **I2S_STATIC caused "Configuration is
+    invalid" error:152 on the S3 build; the I2S engines target the
+    I2SO shift-register architecture and RMT needs physical pins this
+    board doesn't wire — Timed is the only engine, on any version**.
+    Runtime switch: `$X` then `$/Stepping/Engine=Timed` (case-sensitive).
   - X step/dir gpio.16/15, Y gpio.7/**6:low** (`:low` = direction invert —
     FluidNC inverts direction via the pin attribute, not a stepstick field),
     limits gpio.39/40 (unused), laser gpio.2, 80 steps/mm, 6000 feed,

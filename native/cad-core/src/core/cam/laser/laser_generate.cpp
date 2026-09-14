@@ -37,6 +37,7 @@ using polysmith::core::ToolpathMoveKind;
 using cam2d::BaseSegment;
 using cam2d::OffsetSegment;
 using cam2d::SegmentCleanupStats;
+using cam2d::SimplifyStats;
 using cam2d::XY;
 using cam2d::base_segments_signed_area;
 using cam2d::cleanup_base_segments;
@@ -47,15 +48,23 @@ using cam2d::offset_loop_length;
 using cam2d::offset_loop_self_intersects;
 using cam2d::reverse_segments;
 using cam2d::sample_offset_loop;
+using cam2d::simplify_polyline_dp;
 using cam2d::xy_centroid;
 using cam2d::xy_length;
 using cam2d::xy_signed_area;
+
+// Douglas-Peucker deviation for the base loop: facet vertices within
+// this of the simplified path are dropped.  Well below the kerf
+// half-width (0.075 mm default) and the arc tolerance (0.05 mm), far
+// above float noise.
+constexpr double kDpSimplifyEpsilonMm = 0.03;
 
 // Builds and offsets one loop (outer or hole) into a PlannedLoop.
 // Returns false with a human message on hard failure.
 bool plan_loop(const std::vector<BaseSegment>& base, double kerf,
                bool is_hole, const XY& centroid, PlannedLoop& out,
-               SegmentCleanupStats& cleanup_stats, std::string& error) {
+               SegmentCleanupStats& cleanup_stats,
+               SimplifyStats& simplify_stats, std::string& error) {
   out.is_hole = is_hole;
   out.centroid = centroid;
   // Heal the contour before the kerf offset: fragmented sketch
@@ -64,6 +73,11 @@ bool plan_loop(const std::vector<BaseSegment>& base, double kerf,
   // touched, so loop closure survives.
   std::vector<BaseSegment> cleaned = base;
   cleanup_stats += cleanup_base_segments(cleaned);
+  // Faceted bodies flood the contour with micro-facets far finer than
+  // the laser kerf — the Douglas-Peucker pass drops line-run vertices
+  // within the deviation tolerance.  Arcs stay exact anchors, so
+  // circle edges still post as one G2/G3.
+  simplify_stats += simplify_polyline_dp(cleaned, kDpSimplifyEpsilonMm);
   if (!offset_closed_loop(cleaned, kerf, out.segments)) {
     error = "A profile contour could not be offset (check the kerf width).";
     return false;
@@ -317,6 +331,7 @@ CamGenerateResult generate_laser_cut_toolpath(
   // structured log line at the end (the user's Logs panel shows how
   // much the generated G-code shrank).
   SegmentCleanupStats cleanupStats;
+  SimplifyStats simplifyStats;
   std::vector<std::vector<PlannedLoop>> groups;
   for (size_t r = 0; r < context.geometry.profiles.size(); ++r) {
     const auto& region = *context.geometry.profiles[r].region;
@@ -366,7 +381,7 @@ CamGenerateResult generate_laser_cut_toolpath(
       std::string error;
       const double outerKerf = kerf_for(/*is_hole=*/false);
       if (!plan_loop(base, outerKerf, /*is_hole=*/false, centroid, loop,
-                     cleanupStats, error)) {
+                     cleanupStats, simplifyStats, error)) {
         // Drop the whole region: cutting a region's holes after its
         // outline failed would separate material with no release cut.
         if (firstSkipReason.empty()) {
@@ -429,7 +444,8 @@ CamGenerateResult generate_laser_cut_toolpath(
       std::string error;
       const double holeKerf = kerf_for(/*is_hole=*/true);
       if (!plan_loop(holeBase, holeKerf, /*is_hole=*/true,
-                     holeCentroid, loop, cleanupStats, error)) {
+                     holeCentroid, loop, cleanupStats, simplifyStats,
+                     error)) {
         result.warnings.push_back("A hole contour was skipped: " + error);
         continue;
       }
@@ -567,7 +583,7 @@ CamGenerateResult generate_laser_cut_toolpath(
         std::string error;
         const double faceKerf = kerf_for(isHole);
         if (!plan_loop(base, faceKerf, isHole, centroid, loop,
-                       cleanupStats, error)) {
+                       cleanupStats, simplifyStats, error)) {
           // A failed outer boundary drops the whole face; a failed
           // hole drops only that hole.
           if (!isHole) {
@@ -983,6 +999,15 @@ CamGenerateResult generate_laser_cut_toolpath(
             std::to_string(cleanupStats.dropped_spurs) + " spur(s), " +
             std::to_string(cleanupStats.dropped_degenerate) +
             " degenerate segment(s)");
+  }
+  if (simplifyStats.any()) {
+    log_info("cam_laser",
+             "contour simplify: " +
+                 std::to_string(simplifyStats.vertices_before) +
+                 " points -> " +
+                 std::to_string(simplifyStats.vertices_after) +
+                 " (max deviation " +
+                 std::to_string(kDpSimplifyEpsilonMm) + " mm)");
   }
 
   result.toolpath = std::move(toolpath);
