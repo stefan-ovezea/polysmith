@@ -302,6 +302,65 @@ function App() {
   // them.
   const sketchTransformCreatedIdsRef = useRef<string[]>([]);
 
+  // Opens the Transform / Array floating panel for the current sketch
+  // selection, pre-filling the center with the selection centroid.
+  // Shared by the right-click Move/Copy entry and the toolbar Array
+  // button.
+  function openTransformArrayPanel() {
+    const snapshot = useCadCoreStore.getState().document;
+    const featureId = snapshot?.active_sketch_feature_id;
+    const feature = featureId
+      ? snapshot?.feature_history.find(
+          (entry) => entry.feature_id === featureId,
+        )
+      : undefined;
+    const params = feature?.sketch_parameters;
+    const selectedIds = new Set<string>(
+      snapshot?.selected_sketch_entity_ids ?? [],
+    );
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    const add = (x: number, y: number) => {
+      sumX += x;
+      sumY += y;
+      count += 1;
+    };
+    if (params) {
+      for (const line of params.lines) {
+        if (selectedIds.has(line.line_id)) {
+          add((line.start_x + line.end_x) / 2,
+              (line.start_y + line.end_y) / 2);
+        }
+      }
+      for (const circle of params.circles) {
+        if (selectedIds.has(circle.circle_id)) {
+          add(circle.center_x, circle.center_y);
+        }
+      }
+      for (const arc of params.arcs ?? []) {
+        if (selectedIds.has(arc.arc_id)) {
+          add(arc.center_x, arc.center_y);
+        }
+      }
+      for (const ellipse of params.ellipses) {
+        if (selectedIds.has(ellipse.ellipse_id)) {
+          add(ellipse.center_x, ellipse.center_y);
+        }
+      }
+      for (const slot of params.slots) {
+        if (selectedIds.has(slot.slot_id)) {
+          add(slot.center_x, slot.center_y);
+        }
+      }
+    }
+    sketchTransformCreatedIdsRef.current = [];
+    setSketchTransformPanel({
+      centerX: count > 0 ? sumX / count : 0,
+      centerY: count > 0 ? sumY / count : 0,
+    });
+  }
+
   // Creates one offset copy of `sourceEntityId` at `distance` and
   // returns the new entity id (null when the round-trip times out).
   // Used by both the click handler and the distance fan-out.
@@ -851,6 +910,7 @@ function App() {
     createMove,
     createBodyCopy,
     unlinkBodyCopy,
+    removeSketchProjections,
     updateMoveParameters,
     confirmMove,
     updateOffsetPlane,
@@ -2270,7 +2330,7 @@ function App() {
     });
   }
 
-  function deleteSketchSelectionNow(selection: SketchDeleteSelection) {
+  function deleteSketchSelectionNow(selection: SketchDeleteSelection | null) {
     deleteSketchSelectionFromContext({
       selection,
       runAction,
@@ -2409,6 +2469,8 @@ function App() {
           selectedFaceId={selectedSketchableFace?.face_id ?? null}
           armedSketchConstraint={armedSketchConstraint}
           isMirrorToolOpen={isMirrorToolOpen}
+          isArrayPanelOpen={sketchTransformPanel !== null}
+          onStartArrayTool={openTransformArrayPanel}
           arcToolMode={arcToolMode}
           setArcToolMode={setArcToolMode}
           rectangleToolMode={rectangleToolMode}
@@ -2611,6 +2673,27 @@ function App() {
               status={status}
               document={document}
               viewport={viewport}
+              onRemoveSketchProjections={async (keepGeometry) => {
+                const featureId = document?.active_sketch_feature_id;
+                if (!featureId) {
+                  return;
+                }
+                await removeSketchProjections(featureId, keepGeometry);
+              }}
+              showSketchProjectionActions={(() => {
+                if (!document?.active_sketch_feature_id) {
+                  return false;
+                }
+                const active = document.feature_history.find(
+                  (feature) =>
+                    feature.feature_id ===
+                    document.active_sketch_feature_id,
+                );
+                return (
+                  active?.kind === "sketch" &&
+                  (active.sketch_parameters?.projections?.length ?? 0) > 0
+                );
+              })()}
               showStock={showStock && workspaceView === "cam"}
               wcsOrientation={wcsOrientation}
               activeCamSetupId={activeCamSetupId}
@@ -3769,60 +3852,7 @@ function App() {
                 );
                 setArrayCenterPicking(false);
               }}
-              onOpenTransformArray={() => {
-                const snapshot = useCadCoreStore.getState().document;
-                const featureId = snapshot?.active_sketch_feature_id;
-                const feature = featureId
-                  ? snapshot?.feature_history.find(
-                      (entry) => entry.feature_id === featureId,
-                    )
-                  : undefined;
-                const params = feature?.sketch_parameters;
-                const selectedIds = new Set<string>(
-                  snapshot?.selected_sketch_entity_ids ?? [],
-                );
-                let sumX = 0;
-                let sumY = 0;
-                let count = 0;
-                const add = (x: number, y: number) => {
-                  sumX += x;
-                  sumY += y;
-                  count += 1;
-                };
-                if (params) {
-                  for (const line of params.lines) {
-                    if (selectedIds.has(line.line_id)) {
-                      add((line.start_x + line.end_x) / 2,
-                          (line.start_y + line.end_y) / 2);
-                    }
-                  }
-                  for (const circle of params.circles) {
-                    if (selectedIds.has(circle.circle_id)) {
-                      add(circle.center_x, circle.center_y);
-                    }
-                  }
-                  for (const arc of params.arcs ?? []) {
-                    if (selectedIds.has(arc.arc_id)) {
-                      add(arc.center_x, arc.center_y);
-                    }
-                  }
-                  for (const ellipse of params.ellipses) {
-                    if (selectedIds.has(ellipse.ellipse_id)) {
-                      add(ellipse.center_x, ellipse.center_y);
-                    }
-                  }
-                  for (const slot of params.slots) {
-                    if (selectedIds.has(slot.slot_id)) {
-                      add(slot.center_x, slot.center_y);
-                    }
-                  }
-                }
-                sketchTransformCreatedIdsRef.current = [];
-                setSketchTransformPanel({
-                  centerX: count > 0 ? sumX / count : 0,
-                  centerY: count > 0 ? sumY / count : 0,
-                });
-              }}
+              onOpenTransformArray={openTransformArrayPanel}
               onUpdateSketchPoint={async (vertexId, x, y) => {
                 await runAction(async () => {
                   await updateSketchPoint(vertexId, x, y);
@@ -4479,7 +4509,11 @@ function App() {
                   confirmation={pendingSketchDeleteConfirmation}
                   onConfirm={(selection) => {
                     setPendingSketchDeleteConfirmation(null);
-                    deleteSketchSelectionNow(selection);
+                    deleteSketchSelectionNow(
+                      pendingSketchDeleteConfirmation.deleteCurrentOnConfirm
+                        ? null
+                        : selection,
+                    );
                   }}
                   onCancel={() => setPendingSketchDeleteConfirmation(null)}
                 />

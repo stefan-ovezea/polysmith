@@ -67,6 +67,8 @@ interface ViewportContextMenuActions {
   moveBody: () => void | Promise<void>;
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
+  removeSketchProjections: () => void | Promise<void>;
+  unlinkSketchProjections: () => void | Promise<void>;
   exportBodyMesh: () => void | Promise<void>;
   exportBodyStep: () => void | Promise<void>;
   sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
@@ -133,6 +135,7 @@ interface ViewportPanelShellProps {
   selectedReference: { label: string } | null;
   selectedSketchDimension: SketchDimensionScene | null;
   selectionRect: SelectionRectOverlay | null;
+  showSketchProjectionActions: boolean;
   showSketchGrid: boolean;
   showViewportGrid: boolean;
   sketchSnapLabel: string | null;
@@ -235,6 +238,7 @@ export function ViewportPanelShell({
   selectedReference,
   selectedSketchDimension,
   selectionRect,
+  showSketchProjectionActions,
   showSketchGrid,
   showViewportGrid,
   sketchSnapLabel,
@@ -295,6 +299,13 @@ export function ViewportPanelShell({
             onMoveBody={contextMenuActions.moveBody}
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}
+            onRemoveSketchProjections={
+              contextMenuActions.removeSketchProjections
+            }
+            onUnlinkSketchProjections={
+              contextMenuActions.unlinkSketchProjections
+            }
+            showSketchProjectionActions={showSketchProjectionActions}
             onExportBodyMesh={contextMenuActions.exportBodyMesh}
             onExportBodyStep={contextMenuActions.exportBodyStep}
             onSendBodyToSlicer={contextMenuActions.sendBodyToSlicer}

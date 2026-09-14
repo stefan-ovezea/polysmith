@@ -34,6 +34,13 @@ DocumentState DocumentManager::select_sketch_profile(const std::string& profile_
     }
   } else {
     document_->selected_sketch_profile_ids = {profile_id};
+    // A non-additive profile click REPLACES the previous selection:
+    // entity and vertex ids survive here otherwise, so a Delete after
+    // clicking a surface would remove BOTH the previously-selected
+    // entities and the surface's boundary — deleting more than the
+    // user can see selected.
+    document_->selected_sketch_entity_ids.clear();
+    document_->selected_sketch_vertex_ids.clear();
   }
   document_->selected_sketch_profile_id =
       document_->selected_sketch_profile_ids.empty()

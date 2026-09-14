@@ -95,6 +95,7 @@ Common command payloads:
 - project_profile_into_sketch { profile_id }
 - project_edge_into_sketch { edge_id }
 - project_vertex_into_sketch { vertex_id }
+- remove_sketch_projections { feature_id, keep_geometry: boolean }
 - set_timeline_cursor { included_action_count }
 - clear_selection {}, undo {}, redo {}
 

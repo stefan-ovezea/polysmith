@@ -115,7 +115,7 @@ export function buildSketchLineObject(line: SketchLineScene) {
   const isDashed = line.isConstruction || line.isPreview;
   const baseColor = line.isProjected
     ? themeColor("--cad-sketch-projected", "#a678d6")
-    : themeColor("--color-tertiary-plane-fill", "#fff7c0");
+    : themeColor("--color-tertiary-plane-edge", "#ffe784");
   const material = isDashed
     ? new THREE.LineDashedMaterial({
         color: line.isSelected
@@ -174,7 +174,7 @@ export function buildSketchPolygonObject(polygon: SketchPolygonScene) {
   }
   points[n] = points[0]; // close the loop
   const isDashed = polygon.isConstruction;
-  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const baseColor = themeColor("--color-tertiary-plane-edge", "#ffe784");
   const material = isDashed
     ? new THREE.LineDashedMaterial({
         color: polygon.isSelected
@@ -221,7 +221,7 @@ export function buildSketchCircleObject(
   const isDashed = circle.isPreview || circle.isConstruction;
   const baseColor = circle.isProjected
     ? themeColor("--cad-sketch-projected", "#ff4fd8")
-    : themeColor("--color-tertiary-plane-fill", "#fff7c0");
+    : themeColor("--color-tertiary-plane-edge", "#ffe784");
   const material = isDashed
     ? new THREE.LineDashedMaterial({
         color: circle.isSelected
@@ -292,7 +292,7 @@ export function buildSketchEllipseObject(
   planeFrame: SketchPlaneFrame | null = null,
 ) {
   const isDashed = ellipse.isPreview || ellipse.isConstruction;
-  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const baseColor = themeColor("--color-tertiary-plane-edge", "#ffe784");
   const material = isDashed
     ? new THREE.LineDashedMaterial({
         color: ellipse.isSelected
@@ -370,7 +370,7 @@ export function buildSketchSplineObject(spline: SketchSplineScene): {
   poles: THREE.Line;
 } {
   const isDashed = spline.isPreview || spline.isConstruction;
-  const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
+  const baseColor = themeColor("--color-tertiary-plane-edge", "#ffe784");
   const activeColor = themeColor("--color-primary-edge-active", "#c3f5ff");
   const curveMaterial = isDashed
     ? new THREE.LineDashedMaterial({
@@ -430,7 +430,7 @@ export function buildSketchArcObject(
 ) {
   const baseColor = arc.isProjected
     ? themeColor("--cad-sketch-projected", "#ff4fd8")
-    : themeColor("--color-tertiary-plane-fill", "#fff7c0");
+    : themeColor("--color-tertiary-plane-edge", "#ffe784");
   const material = arc.isPreview
     ? new THREE.LineDashedMaterial({
         color: arc.isSelected
@@ -514,9 +514,10 @@ export function buildSketchArcObject(
 }
 
 export function buildSketchPointObject(point: SketchVertexScene) {
-  // Projected points get a slightly larger sphere in a cyan-violet
-  // to read as "derived from a body vertex" — matches the CAD
-  // visual convention. Endpoint / center keep the original look.
+  // Projected points get a slightly larger sphere in the projected
+  // entity color so they read as the same family as projected
+  // lines/arcs (user-requested consistency). Center points keep the
+  // axis-blue look.
   const radius =
     point.kind === "center" ? 0.9 : point.kind === "projected" ? 0.85 : 0.7;
   const geometry = new THREE.SphereGeometry(radius, 12, 12);
@@ -526,7 +527,7 @@ export function buildSketchPointObject(point: SketchVertexScene) {
       : point.kind === "center"
         ? themeColor("--color-axis-z", "#6db4ff")
         : point.kind === "projected"
-          ? themeColor("--color-axis-z", "#6db4ff")
+          ? themeColor("--cad-sketch-projected", "#a678d6")
           : themeColor("--color-tertiary-plane-edge", "#ffe784"),
     transparent: true,
     opacity: 0.95,

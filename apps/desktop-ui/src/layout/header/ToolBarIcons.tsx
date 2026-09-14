@@ -402,6 +402,32 @@ const MirrorConstraintIcon = () => (
   </svg>
 );
 
+const ArrayConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {/* 3×2 dot grid — the CAD convention for a pattern/array of
+        copies (the selected entity duplicated along two axes). */}
+    {[
+      [7, 8],
+      [12, 8],
+      [17, 8],
+      [7, 16],
+      [12, 16],
+      [17, 16],
+    ].map(([cx, cy]) => (
+      <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" fill="currentColor" stroke="none" />
+    ))}
+  </svg>
+);
+
 const ClearConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -1037,6 +1063,8 @@ export function ConstraintIcon({ kind }: { kind: ConstraintType }) {
       return <FixConstraintIcon />;
     case "mirror":
       return <MirrorConstraintIcon />;
+    case "array":
+      return <ArrayConstraintIcon />;
     default:
       return <ClearConstraintIcon />;
   }

@@ -338,6 +338,8 @@ export function ViewportPanel({
   onExportBodyStep,
   onSendBodyToSlicer,
   onUnlinkBodyCopy,
+  onRemoveSketchProjections,
+  showSketchProjectionActions,
   hiddenFeatureIds,
   hiddenSketchPlaneIds,
   hideReferences,
@@ -649,6 +651,7 @@ export function ViewportPanel({
   const exportBodyStepRef = useRef(onExportBodyStep);
   const sendBodyToSlicerRef = useRef(onSendBodyToSlicer);
   const unlinkBodyCopyRef = useRef(onUnlinkBodyCopy);
+  const removeSketchProjectionsRef = useRef(onRemoveSketchProjections);
   const pendingMoveGizmoParametersRef = useRef<MoveFeatureParameters | null>(
     null,
   );
@@ -2367,6 +2370,7 @@ export function ViewportPanel({
       exportBodyStepRef,
       sendBodyToSlicerRef,
       unlinkBodyCopyRef,
+      removeSketchProjectionsRef,
     },
     {
       onSelectPrimitive,
@@ -2441,6 +2445,7 @@ export function ViewportPanel({
       onExportBodyStep,
       onSendBodyToSlicer,
       onUnlinkBodyCopy,
+      onRemoveSketchProjections,
     },
   );
 
@@ -2755,6 +2760,22 @@ export function ViewportPanel({
         sketchDimensionObjects: sketchDimensionObjectsRef.current,
         sketchConstraintObjects: sketchConstraintObjectsRef.current,
       });
+      // Body vertex dots stay a constant SCREEN size. The fixed
+      // world-space sphere (0.25 units) is sub-pixel on large parts —
+      // corner clicks fell through to the adjacent edge/face picks,
+      // making vertex projection unusable ("does not work"). A
+      // screen-size dot matches the sketch-point behavior and makes
+      // the Project-tool vertex target hittable at any zoom.
+      const vertexWorldUnitsPerPixel =
+        getOrthographicViewHeight(camera) /
+        Math.max(renderer.domElement.clientHeight, 1);
+      for (const mesh of vertexObjectsRef.current) {
+        const id = mesh.userData.vertexId as string | undefined;
+        const boosted =
+          (id !== undefined && id === hoveredVertexIdRef.current) ||
+          mesh.userData.isSelected === true;
+        mesh.scale.setScalar(vertexWorldUnitsPerPixel * (boosted ? 5 : 4));
+      }
       try {
         renderDraftDimensions();
       } catch (err) {
@@ -4706,6 +4727,7 @@ export function ViewportPanel({
     exportBodyStepRef,
     sendBodyToSlicerRef,
     unlinkBodyCopyRef,
+    removeSketchProjectionsRef,
     deleteSketchSelectionRef,
     deleteSketchDimensionRef,
     toggleSketchDimensionDrivenRef,
@@ -4820,6 +4842,7 @@ export function ViewportPanel({
       contextMenu={contextMenu}
       currentGridSpacing={currentGridSpacing}
       contextMenuActions={contextMenuActions}
+      showSketchProjectionActions={showSketchProjectionActions ?? false}
       sketchMovePanelOpen={activeSketchTool === "move"}
       sketchMovePanelValues={movePanelValues}
       onSketchMovePanelValuesChange={(values) => {

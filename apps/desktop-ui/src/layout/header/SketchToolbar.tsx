@@ -23,6 +23,9 @@ interface SketchToolbarProps {
   // an armed constraint. The toolbar uses this flag only to
   // light up the Mirror button while the panel is open.
   isMirrorToolOpen: boolean;
+  // Array tool (Transform/Array panel) — same pattern: the flag only
+  // lights up the Array button while the panel is open.
+  isArrayPanelOpen: boolean;
   // Arc tool's creation mode. Lifted from App.tsx so the toolbar can
   // render a small segmented control next to the Arc button when the
   // arc tool is active. v1 supports two modes; the toolbar passes
@@ -41,6 +44,7 @@ interface SketchToolbarProps {
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
   onArmSketchConstraint: (constraint: ConstraintType) => Promise<void>;
   onStartMirrorTool: () => Promise<void>;
+  onStartArrayTool: () => void;
   onSetArcToolMode: (mode: "three_point" | "center_start_end") => void;
   onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point") => void;
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
@@ -106,6 +110,7 @@ export function SketchToolbar({
   selectedFaceId,
   armedSketchConstraint,
   isMirrorToolOpen,
+  isArrayPanelOpen,
   arcToolMode,
   rectangleToolMode,
   circleToolMode,
@@ -116,6 +121,7 @@ export function SketchToolbar({
   onSetSketchTool,
   onArmSketchConstraint,
   onStartMirrorTool,
+  onStartArrayTool,
   onSetArcToolMode,
   onSetRectangleToolMode,
   onSetCircleToolMode,
@@ -410,8 +416,10 @@ export function SketchToolbar({
         activeSketchPlaneId={activeSketchPlaneId}
         armedSketchConstraint={armedSketchConstraint}
         isMirrorToolOpen={isMirrorToolOpen}
+        isArrayPanelOpen={isArrayPanelOpen}
         onArmSketchConstraint={onArmSketchConstraint}
         onStartMirrorTool={onStartMirrorTool}
+        onStartArrayTool={onStartArrayTool}
       />
       <div className="h-8 w-px bg-white/10" />
       <Dropdown

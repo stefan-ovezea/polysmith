@@ -120,7 +120,12 @@ export function buildDynamicGrid(
     // fragments in WebGL, so the offset approach never helped.)
     depthTest: false,
   });
-  return new THREE.LineSegments(geometry, material);
+  const axes = new THREE.LineSegments(geometry, material);
+  // Above the body face fills (renderOrder 4), below the sketch
+  // entities (7). Set on the RENDERABLE object — renderOrder on the
+  // parent Group does not propagate to children in three's sort.
+  axes.renderOrder = 6;
+  return axes;
 }
 
 const AXIS_LINE_HALF_LENGTH = 100000;
@@ -165,7 +170,12 @@ export function buildAxisLines(
     // fragments in WebGL, so the offset approach never helped.)
     depthTest: false,
   });
-  return new THREE.LineSegments(geometry, material);
+  const grid = new THREE.LineSegments(geometry, material);
+  // Above the body face fills (renderOrder 4), below the sketch
+  // entities (7). Set on the RENDERABLE object — renderOrder on the
+  // parent Group does not propagate to children in three's sort.
+  grid.renderOrder = 5;
+  return grid;
 }
 
 const AXIS_LABEL_TARGET_PX = 28;
@@ -249,6 +259,8 @@ function makeAxisLabelSprite(
   pos.addScaledVector(frame.yAxis, scale * 0.54);
   sprite.position.copy(pos);
   sprite.scale.set(scale * 2, scale, 1);
+  // Same ladder as the axes (renderOrder only works on renderables).
+  sprite.renderOrder = 6;
   return sprite;
 }
 

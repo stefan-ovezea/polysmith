@@ -300,6 +300,9 @@ interface ViewportCallbackRefTargets {
   unlinkBodyCopyRef: MutableRefObject<
     ((featureId: string) => Promise<void> | void) | undefined
   >;
+  removeSketchProjectionsRef: MutableRefObject<
+    ((keepGeometry: boolean) => Promise<void> | void) | undefined
+  >;
 }
 
 interface ViewportCallbackRefValues
@@ -312,6 +315,7 @@ interface ViewportCallbackRefValues
     | "onSelectVertex"
     | "onStartSketch"
     | "onStartSketchOnFace"
+    | "onRemoveSketchProjections"
   > {
   onSetSketchMidpointAnchor: ViewportCallbackRefTargets["setSketchMidpointAnchorRef"]["current"];
   onSetSketchPointLineAnchor: ViewportCallbackRefTargets["setSketchPointLineAnchorRef"]["current"];
@@ -496,5 +500,7 @@ export function useViewportCallbackRefs(
     refs.exportBodyStepRef.current = values.onExportBodyStep;
     refs.sendBodyToSlicerRef.current = values.onSendBodyToSlicer;
     refs.unlinkBodyCopyRef.current = values.onUnlinkBodyCopy;
+    refs.removeSketchProjectionsRef.current =
+      values.onRemoveSketchProjections;
   }, [refs, values]);
 }

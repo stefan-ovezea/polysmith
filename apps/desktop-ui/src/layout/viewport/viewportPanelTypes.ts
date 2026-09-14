@@ -342,6 +342,15 @@ export interface ViewportPanelProps {
     format: SlicerExportFormat,
   ) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
+  // Right-click heal for projections: false = delete all projected
+  // entities, true = keep them and drop only the live links. Wired
+  // from App with the active sketch's feature id.
+  onRemoveSketchProjections?: (
+    keepGeometry: boolean,
+  ) => Promise<void> | void;
+  // Show the Remove / Unlink projections entries in the sketch
+  // right-click menu (true when the active sketch has projections).
+  showSketchProjectionActions?: boolean;
   hiddenFeatureIds?: ReadonlySet<string>;
   hiddenSketchPlaneIds?: ReadonlySet<string>;
   hideReferences?: boolean;

@@ -129,6 +129,7 @@
         "project_vertex_into_sketch",
         "redo",
         "reenter_sketch",
+        "remove_sketch_projections",
         "rename_feature",
         "revolve_profile",
         "save_document",

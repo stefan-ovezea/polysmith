@@ -20,16 +20,22 @@ interface SketchConstraintControlsProps {
   activeSketchPlaneId: string | null;
   armedSketchConstraint: ArmedSketchConstraint;
   isMirrorToolOpen: boolean;
+  // Transform/Array panel (Move/Copy) — the Array toolbar button
+  // lights up while that panel is open.
+  isArrayPanelOpen: boolean;
   onArmSketchConstraint: (constraint: ConstraintType) => Promise<void>;
   onStartMirrorTool: () => Promise<void>;
+  onStartArrayTool: () => void;
 }
 
 export function SketchConstraintControls({
   activeSketchPlaneId,
   armedSketchConstraint,
   isMirrorToolOpen,
+  isArrayPanelOpen,
   onArmSketchConstraint,
   onStartMirrorTool,
+  onStartArrayTool,
 }: SketchConstraintControlsProps) {
   const { t } = useTranslation();
   const disabled = !activeSketchPlaneId;
@@ -63,6 +69,18 @@ export function SketchConstraintControls({
         }}
       >
         <ConstraintIcon kind="mirror" />
+      </button>
+      {/* Array opens the same Transform/Array floating panel as the
+          right-click Move/Copy entry — the toolbar button is just the
+          discoverable path to the same tool. */}
+      <button
+        className={constraintButtonClass(activeSketchPlaneId, isArrayPanelOpen)}
+        data-tooltip={t("toolbar.array")}
+        aria-label={t("toolbar.array")}
+        disabled={disabled}
+        onClick={onStartArrayTool}
+      >
+        <ConstraintIcon kind="array" />
       </button>
     </>
   );

@@ -22,7 +22,11 @@ export type ConstraintType =
   // Mirror tool (technically an editing op, not a constraint, but
   // it shares the armed-sketch-constraint flow: pick axis line,
   // pick entities, each pick mirrors immediately).
-  | "mirror";
+  | "mirror"
+  // Array tool (also an editing op — linear/circular exploded copies
+  // of the current selection). Shares the toolbar icon slot with the
+  // constraint buttons; opens its own floating panel.
+  | "array";
 
 export type ArmedSketchConstraint =
   | null

@@ -260,7 +260,6 @@ function handleSketchDeleteKey(
 
   event.preventDefault();
   deleteSelectedSketchItems({
-    document: documentRef.current,
     selectedConstraintRef,
     setSelectedConstraint,
     clearSketchConstraint: clearSketchConstraintRef.current,
@@ -363,13 +362,11 @@ function clearSketchGeometrySelection({
 }
 
 function deleteSelectedSketchItems({
-  document,
   selectedConstraintRef,
   setSelectedConstraint,
   clearSketchConstraint,
   deleteSketchSelection,
 }: {
-  document: DocumentState | null;
   selectedConstraintRef: MutableRef<SelectedConstraintState | null>;
   setSelectedConstraint: (constraint: SelectedConstraintState | null) => void;
   clearSketchConstraint: (
@@ -390,24 +387,10 @@ function deleteSelectedSketchItems({
     return;
   }
 
-  const entityIds = document?.selected_sketch_entity_ids ?? [];
-  const entityId = document?.selected_sketch_entity_id;
-  const vertexIds = document?.selected_sketch_vertex_ids ?? [];
-  const profileIds = document?.selected_sketch_profile_ids ?? [];
-  const allEntityIds = entityId
-    ? entityIds.includes(entityId)
-      ? entityIds
-      : [...entityIds, entityId]
-    : entityIds;
-
-  if (allEntityIds.length > 0 || vertexIds.length > 0 || profileIds.length > 0) {
-    void deleteSketchSelection({
-      entityIds: allEntityIds,
-      vertexIds,
-      profileIds,
-    });
-    return;
-  }
-
+  // NO selection snapshot: the core resolves the CURRENT selection at
+  // command time. The UI state can lag the last marquee while its
+  // selection events are still in flight; a snapshot built here
+  // previously deleted a pre-marquee profile's boundary (the
+  // perimeter) while the marquee's entities survived.
   void deleteSketchSelection();
 }

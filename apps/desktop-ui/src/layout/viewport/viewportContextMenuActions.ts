@@ -31,6 +31,7 @@ export function createViewportContextMenuActions({
   exportBodyStepRef,
   sendBodyToSlicerRef,
   unlinkBodyCopyRef,
+  removeSketchProjectionsRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
   toggleSketchDimensionDrivenRef,
@@ -78,6 +79,9 @@ export function createViewportContextMenuActions({
   >;
   unlinkBodyCopyRef: MutableRef<
     ((featureId: string) => Promise<void> | void) | undefined
+  >;
+  removeSketchProjectionsRef: MutableRef<
+    ((keepGeometry: boolean) => Promise<void> | void) | undefined
   >;
   deleteSketchSelectionRef: MutableRef<
     (selection: NonNullable<ViewportContextMenuState["sketchDeleteSelection"]>) => Promise<void>
@@ -187,6 +191,16 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await unlinkBodyCopyRef.current?.(bodyId);
+  }
+
+  async function removeSketchProjections() {
+    setContextMenu(null);
+    await removeSketchProjectionsRef.current?.(false);
+  }
+
+  async function unlinkSketchProjections() {
+    setContextMenu(null);
+    await removeSketchProjectionsRef.current?.(true);
   }
 
   async function deleteSketchSelection() {
@@ -383,6 +397,8 @@ export function createViewportContextMenuActions({
     exportBodyStep,
     sendBodyToSlicer,
     unlinkBodyCopy,
+    removeSketchProjections,
+    unlinkSketchProjections,
     deleteSketchSelection,
     moveCopy,
     transformArray,

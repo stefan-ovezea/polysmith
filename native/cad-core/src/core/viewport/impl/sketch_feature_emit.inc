@@ -51,9 +51,13 @@
       std::unordered_set<std::string> projection_vertex_ids;
       const auto& sketch_params = *feature.sketch_parameters;
       for (const auto& projection : sketch_params.projections) {
-        if (!projection.generated_vertex_id.empty()) {
-          projection_vertex_ids.insert(projection.generated_vertex_id);
-        }
+        // NOTE: projection.generated_vertex_id (a standalone projected
+        // POINT) deliberately does NOT enter the skip set — the point
+        // IS the entity, with no line to carry its visual, so it must
+        // render as a point sphere (the vertex projection otherwise
+        // lands invisibly; the info panel counted it while the
+        // viewport drew nothing). Only line/arc/circle ENDPOINTS are
+        // derived bookkeeping.
         for (const auto& line_id : projection.generated_line_ids) {
           const auto it =
               std::find_if(sketch_params.lines.begin(),

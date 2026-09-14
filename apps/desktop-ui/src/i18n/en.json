@@ -992,6 +992,7 @@
     "thread": "Thread",
     "midplane": "Midplane",
     "mirror": "Mirror",
+    "array": "Array",
     "move": "Move",
     "moveSketch": "Move",
     "offsetPlane": "Offset Plane",
@@ -1672,5 +1673,9 @@
       "fontLoadFailed": "Failed to load font file",
       "renderFailed": "Failed to render text"
     }
+  },
+  "sketch": {
+    "removeProjections": "Remove projections",
+    "unlinkProjections": "Unlink projections"
   }
 }

@@ -62,7 +62,27 @@ export function beginSelectPointerDown({
     return { handled: true, clearPointerDown: true };
   }
 
-  if (!hit) {
+  // Fusion-style: a click-drag anywhere on the sketch starts the
+  // marquee selection — including drags that begin on a profile
+  // surface, on an entity, or on a FIXED vertex (projected endpoints
+  // can't be dragged, so a drag from them must marquee instead of
+  // doing nothing). Non-fixed vertices still start the endpoint drag
+  // above. A plain click (no movement) falls through:
+  // finishRectangleSelectionDrag only consumes real drags, so the
+  // pointer-up click handler still selects the hit entity / surface.
+  // On an ACTIVE sketch, drags over BODY geometry (face/edge/vertex
+  // hits) marquee too — sketch-on-face puts the whole sketch plane
+  // on top of the model, and refusing to marquee there made window
+  // selection impossible over the body. 3D mode (no active sketch)
+  // keeps its own rules: marquee from empty space only.
+  const startsMarquee =
+    !hit ||
+    hit.kind === "sketch_profile" ||
+    hit.kind === "sketch_entity" ||
+    hit.kind === "sketch_point" ||
+    (activeSketchPlaneId !== null &&
+      (hit.kind === "face" || hit.kind === "edge" || hit.kind === "vertex"));
+  if (startsMarquee) {
     selectionDragRef.current = {
       startX: event.clientX,
       startY: event.clientY,

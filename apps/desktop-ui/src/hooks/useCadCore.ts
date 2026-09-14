@@ -89,6 +89,7 @@ import {
   makeImportIgesCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
+  makeRemoveSketchProjectionsCommand,
   makeLoadDocumentCommand,
   makeProjectEdgeIntoSketchCommand,
   makeProjectFaceIntoSketchCommand,
@@ -625,6 +626,16 @@ export function useCadCore() {
     },
     unlinkBodyCopy: async (featureId: string) => {
       await sendCoreCommand(makeUnlinkBodyCopyCommand(featureId));
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    removeSketchProjections: async (
+      featureId: string,
+      keepGeometry: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeRemoveSketchProjectionsCommand(featureId, keepGeometry),
+      );
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },

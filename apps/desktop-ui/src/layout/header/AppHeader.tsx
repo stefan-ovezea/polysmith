@@ -271,6 +271,7 @@ interface AppHeaderProps
   selectedFaceId: string | null;
   armedSketchConstraint: ArmedSketchConstraint;
   isMirrorToolOpen: boolean;
+  isArrayPanelOpen: boolean;
   // Arc tool's creation mode + setter — see SketchToolbar for the
   // segmented control's behaviour.
   arcToolMode: "three_point" | "center_start_end";
@@ -330,6 +331,7 @@ interface AppHeaderProps
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
   onArmSketchConstraint: (constraint: ConstraintType) => Promise<void>;
   onStartMirrorTool: () => Promise<void>;
+  onStartArrayTool: () => void;
   onCancelSketchConstraint: () => void;
   onWorkspaceDropdownOpenChange?: (isOpen: boolean) => void;
   // Parameters panel
@@ -379,6 +381,7 @@ export function AppHeader({
   selectedFaceId,
   armedSketchConstraint,
   isMirrorToolOpen,
+  isArrayPanelOpen,
   arcToolMode,
   onSetArcToolMode,
   rectangleToolMode,
@@ -455,6 +458,7 @@ export function AppHeader({
   onSetSketchTool,
   onArmSketchConstraint,
   onStartMirrorTool,
+  onStartArrayTool,
   onCancelSketchConstraint,
   onWorkspaceDropdownOpenChange,
   parametersPanelOpen,
@@ -937,6 +941,7 @@ export function AppHeader({
                 selectedFaceId={selectedFaceId}
                 armedSketchConstraint={armedSketchConstraint}
                 isMirrorToolOpen={isMirrorToolOpen}
+                isArrayPanelOpen={isArrayPanelOpen}
                 arcToolMode={arcToolMode}
                 onSetArcToolMode={onSetArcToolMode}
                 rectangleToolMode={rectangleToolMode}
@@ -955,6 +960,7 @@ export function AppHeader({
                 onSetSketchTool={onSetSketchTool}
                 onArmSketchConstraint={onArmSketchConstraint}
                 onStartMirrorTool={onStartMirrorTool}
+                onStartArrayTool={onStartArrayTool}
               />
             ) : null}
             {activeCadWorkspace === "sketch" ? <SketchDofBadge /> : null}

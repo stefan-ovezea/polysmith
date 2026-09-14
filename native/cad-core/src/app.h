@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "protocol/ipc.h"
+
 namespace polysmith {
 
 class CadCoreApp {
@@ -10,7 +12,7 @@ class CadCoreApp {
 
  private:
   void init_occt() const;
-  void handle_command_line(const std::string& line);
+  void handle_command_line(const polysmith::protocol::CommandMessage& command);
 };
 
 }  // namespace polysmith
