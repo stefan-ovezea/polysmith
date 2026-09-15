@@ -1007,8 +1007,92 @@ entities, drops only the live links).
 - `test_unlink_projections_keeps_geometry_and_clears_alarm` — partial
   delete flags the sketch (pinned as accepted), unlink mode: records
   gone, entities stay, vertex styling cleared, alarm cleared.
+---
+# Active task: Laser machine bring-up — FluidNC board swap + first cut (2026-09-13)
 
-## Gates run (all green)
+> **Branch:** `cam/laser-testing` (checked out; pushes to origin with this update)
+> **Previous sprint (GRBL transport, PR #80) is merged — this file now tracks the live-machine work.**
+> **2026-09-13 (this machine): connection-loss investigation COMPLETE — root
+> cause found and fixed in `gcode_sender.rs` + workspace; see "Root cause" below.
+> UNCOMMITTED on `cam/laser-testing`; pending user in-app verification.**
+> **2026-09-13 round 2 (this machine): GRBL workspace polish + gcode generation
+> work — orientation cube consolidated, burned-color cut progress, big STOP
+> button, laser cut from body faces with contour cleanup. All 46 core suites
+> green + tsc clean. UNCOMMITTED; pending user verification on the machine.**
+> **2026-09-13 round 3 (this machine): Douglas-Peucker base-loop
+> simplification (0.03 mm deviation) wired into plan_loop; join-snap
+> threshold raised 5° → 10°; Test 15 added, Tests 4/8d/14 re-pinned.
+> All 46 core suites green. UNCOMMITTED; pending user verification on
+> the machine. IN PARALLEL: user is flashing FluidNC 4.1.0 (Timed-engine
+> fixes) — board config must be re-uploaded as `/config.yaml` afterwards
+> (see Machine state).**
+
+## ROOT CAUSE of the first-cut failures (found 2026-09-13, this machine)
+
+The sender's status poll sent **`?` WITH a newline** every 500 ms. On this
+FluidNC board a newline-terminated `?` is a LINE command: it answers with the
+status AND an extra **ok**. Each spurious ok pops a real line's slot from the
+127-byte window accounting → the window drifts open without bound → the sender
+over-drives the board's input queue → dropped bytes (USB error:36 "I/J tail
+dropped"), dropped TCP connections (~line 862), and the WS channel wedging
+silently. Verified empirically on the board (bare `?` → status only, no ok;
+`?\n` → status + ok) and by replay (a faithful sender replica with `?\n`
+fails, with bare `?` the whole 1876-line dense synthetic job completes on
+TCP AND WS). LaserGRBL's separate failure at ~raw 1700 is not this bug (it
+polls with a bare byte) — likely the board planner + file density, TBD.
+
+Fixes applied in this working tree (gcode_sender.rs, uncommitted):
+1. **Poll sends the bare real-time byte** `?` (no newline) — never an ok.
+2. **Stray-ok guard**: an ok with nothing in sent_lengths mid-job is logged
+   and ignored, never acked against a line.
+3. **Link-loss handling**: EOF or hard read error mid-job now aborts the job
+   state, tries a last-ditch reset byte, emits a loud error event
+   ("CONNECTION LOST mid-job … press Reset or cut power immediately") +
+   disconnected. EOF no longer busy-spins the worker.
+4. **WS final-ack fallback**: FluidNC's WS channel never acks the FINAL line
+   of a job (verified: 3-line job gets 2 oks) — completion now also fires
+   when all lines are sent and the board reports Idle for 1.5 s.
+5. **React loop fixed**: `GrblWorkspace` memoizes the embeddedProgram object
+   (was: fresh object every render → panel effect → setState → "Maximum
+   update depth exceeded"); the panel effect now content-compares too.
+6. **GRBL viewport orientation**: left-drag rotates, right-drag pans (the
+   shared config disabled both), plus a mini orientation cube overlay
+   (click a face to snap top/front/right/…; new tokens --cad-cube-x/y/z/edge
+   in all 6 themes).
+
+Diagnostic harness: `%TEMP%\grbl_replay.mjs` — faithful sender replica
+(filter parity, 127-byte window, pump-on-ok, poll cadence) for TCP 23 and
+WS 80 (hand-rolled WS client), synthetic dense-job generator (830 1° arcs +
+G1 fill). Usage: `node grbl_replay.mjs [host] [port] [file|synthetic] [pollMs] [tcp|ws]`.
+Board must be in CHECK MODE (`$C`, status shows `<Check|…>`) before use.
+
+## Follow-up (not urgent)
+
+- **Orientation cube duplication:** `app/grbl/grblOrientationCube.ts` is a
+  second implementation next to the main viewport's
+  `layout/viewport/viewCubeRender.ts` + `utils/viewCube.utils.ts`. The
+  split is architectural (GRBL preview = own renderer/canvas, Z-up bed
+  convention; main cube = render-target blit inside the CAD viewport's
+  renderer, Y-up, animated snaps). Still ~80% of the face-texture /
+  token / edge / picking logic is shared — extract a common
+  `orientationCubeCore` (mesh build + picking, parameterized by up-axis
+  and snap-vs-animate) and let both consume it. Do AFTER the cutting
+  tests (touches the CAD viewport's cube).
+
+## Next-session checklist
+
+1. **User verification in the app** (binding): stream the real .nc over TCP
+   and WS — it should complete now; watch for the stray-ok warnings in the
+   console on any transport.
+2. Re-test the real file on the OTHER station (the 3490-line one lives
+   there); USB error:36 should be gone with the poll fix (the CH340 drop was
+   our over-send, not the FIFO).
+3. LaserGRBL's failure (~raw 1700) is separate — if it persists after our
+   fixes, the board planner / file density is still a factor.
+4. WS note: FluidNC never acks the final line over WS — jobs end via the
+   Idle fallback now; TCP acks everything, so TCP remains the recommended
+   transport for streaming on this board.
+5. Commit after verification (no Co-Authored-By trailer).
 
 - VS-wrapper build OK (document.cpp + app.cpp touched after .inc
   edits — stale-build trap)
@@ -1260,8 +1344,42 @@ constraint group, opening the same panel:
 Gates: tsc clean + en.json parses. Awaiting in-app verification
 (button opens the panel, Linear/Circular Array still work from both
 entries).
+---
+## G-code generation round (2026-09-13, uncommitted on this machine)
 
-## Next session checklist
+The burn-test file is terrible at the SOURCE: the part is mesh → body →
+**projected sketch**, and the laser op cut the sketch profiles — the
+projection/arrangement splits curves into ~1° arc fragments and duplicates
+edges. Fix: cut the BODY directly (the laser generator already had a face
+path) + heal every contour before the kerf offset.
+
+- **Face-path exactness** (`laser/laser_generate.cpp`): the face path now
+  builds `build_base_segments_from_wire` (exact line/circle edges → real
+  G2/G3, one arc per circle) with the old sampled-polyline fallback for
+  spline/ellipse wires. Full-circle loop area + orientation resolved via a
+  wireLoopArea helper (shoelace is 0 for start == end).
+- **Contour cleanup** (`cam2d.h/.cpp` — `cleanup_base_segments`): merges
+  consecutive collinear lines (angle eps 1e-4 rad, both signs tested),
+  consecutive co-circular arcs (center/radius eps 1e-4), drops consecutive
+  exact duplicates, out-and-back spurs, and zero-length lines. Applied in
+  `plan_loop` — one choke point for profile outers/holes AND face wires.
+  One structured log line per generate: "contour cleanup: merged N lines…"
+  (tag `cam_laser`, visible in the Logs panel).
+- **UI** (`CamLaserCutPanel` + `CamFloatingPanels` + `App.tsx`): laser ops
+  with a face region show "Cut from body face" + a **Pick face** armed pick
+  (mirrors the contour op's face pick; TNP-safe capture, stock faces
+  rejected). Face selection at 2D-Cut time already worked
+  (`camLaserActions.ts`); this adds RE-picking for existing ops.
+- **GRBL workspace polish (same uncommitted batch)**: orientation cube
+  deduplicated into the shared `@/utils` cube core (GRBL shell only);
+  executed toolpath segments render in the new `--cad-toolpath-burned`
+  token (all 6 themes) — "Cut (burned)" legend; big STOP button in the
+  workspace toolbar (bg-danger, grblReset + overlay clear, disabled when
+  disconnected).
+- **Tests**: `cam2d_test.cpp` Test 13 (cleanup unit rules, both epsilon
+  signs); `cam_generators_test.cpp` Tests 8b (circular face → ONE exact
+  arc, no chord polylines) + 8c (split sketch side merges into one cut).
+  All 46 suites green (`pnpm test:core`), `tsc --noEmit` clean.
 
 0.5. **CAM program polish (Round 18, user: "Check your facts and also
    add for the next step what is neccessary").** Verified facts +
@@ -1731,3 +1849,186 @@ project now emits FOUR warning lines total (dedupe note, 6-sharp ×12,
 Note: the app was running during the final rebuild — cad_core.exe
 copy hit the known MSB3073 lock (harmless; test exes all rebuilt) —
 the user must restart the app to pick up the pierce/dedupe core.
+---
+## Join-arc snap round (2026-09-13, after analyzing untitled-part2.nc)
+
+The user regenerated: **untitled-part2.nc (1877 lines) vs
+untitled-part.nc (3489)** — the face path + cleanup halved the file. File
+analysis found the remaining noise: every G1 is followed by a **2-micron
+G3 with radius 0.075 (= kerf/2) and 1.5–2° sweep** — degenerate
+round-join arcs from `append_round_join`. They fire at REFLEX facet
+corners where the miter crossing (distance ≈ d/sin θ) lands beyond the
+short segment ends; convex corners miter at the corner point (t ≈ 1).
+332 such G3s in part2.
+
+Fix: `offset_closed_loop` now snaps the corner (current.end =
+nextOffset.start) when |sweep| < 5° (kJoinSnapSweepRad) — the arc's
+sagitta there is ~6 µm, far below the 150 µm kerf. Tests: cam2d Test 14
+(reflex notch fixture, both sides of 5°: dy 0.02 → snap / dy 0.0225 →
+one join in [5°,6°]) + cam_generators 8d (120-gon → ZERO arcs, pre-fix
+it carried 120 degenerate joins). All 46 suites green.
+
+Remaining in part2 after this fix (≈1545 lines): ~950 facet G1s ≥1 mm
+(the mesh's own resolution) + ~320 micro-facets <0.2 mm at tight corners
+(real model geometry). Optional next step: Douglas-Peucker polyline
+simplification of the base loop at ~0.02–0.05 mm deviation.
+
+## Douglas-Peucker round (2026-09-13, this machine, uncommitted)
+
+- `cam2d.h/.cpp`: `simplify_polyline_dp(segments, epsilon)` — recursive
+  DP over maximal runs of consecutive chained LINES; arcs are exact
+  anchors (copied untouched, bound each run, so loop closure survives).
+  A vertex drops only when its whole span lies within epsilon of the
+  replacement edge (segment distance, `xy_point_segment_distance`).
+  All-line loops form one cyclic run (closing edge re-emitted).
+  `SimplifyStats { vertices_before, vertices_after }`.
+- `laser/laser_generate.cpp`: wired into `plan_loop` after
+  `cleanup_base_segments`, before the kerf offset — one choke point for
+  profile outers, holes, AND face wires. `kDpSimplifyEpsilonMm = 0.03`
+  (well below kerf/2 = 0.075 and arc_tolerance 0.05). Log line:
+  "contour simplify: N points -> M (max deviation 0.03 mm)" (cam_laser).
+- Tests: cam2d Test 15 (collinear chain collapses; both epsilon signs of
+  a bulge vertex; arcs anchor runs + connectivity; closed all-line loop
+  keeps corners/closure; zero epsilon = no-op). cam_generators 8d pin
+  updated: 120-gon at r = 20 now posts `lines < facets` (pre-DP: one
+  line per facet) and keeps ≥ facets/2 — the DP metric is the 2-facet
+  span deviation r·(1−cos 3°) ≈ 0.027 mm < 0.03 mm at r = 20 (at the
+  old r = 50 it was 0.069 mm and nothing simplified).
+- **Join-snap threshold raised 5° → 10°** (kJoinSnapSweepRad, cam2d.cpp).
+  WHY: DP re-spaces the surviving facet corners near 2·acos(1−eps/r) —
+  ~6.3° at r = 20, eps = 0.03 — so the post-DP corners escaped the old
+  5° snap and the degenerate-join noise class returned (8d saw 46 arcs
+  at 6°). At 10° the snapped join's sagitta at kerf scale is still
+  < 0.3 µm. Tests re-pinned: cam2d Test 14 (both sides of 10° — snap at
+  θ ≈ 8.0°, dy 0.035, d 0.075; join kept at θ ≈ 11.4°, dy 0.05, d 0.15
+  — d must be large enough that the miter crossing still lands beyond
+  the 0.5 mm legs, else the corner miters instead of joining), Test 4
+  (the 5.8° convex corner now snaps: 4 joins + 6 lines). All 46 suites
+  green.
+
+**User verification on the machine (binding):** RESTART the app (a
+running `pnpm dev` locks cad_core.exe — MSB3073), select the mesh body's
+top face → 2D Cut → Generate → check the Logs panel for the cleanup
+counts → export (untitled-part3) + burn. Acceptance: no G3 noise, GRBL
+runs it clean. With the DP round: regenerate (untitled-part4), expect
+"contour simplify: N -> M (max deviation 0.03 mm)" in the Logs panel —
+the acceptance test for the lost-steps/noise problem. After the 4.1.0
+flash: re-upload the config (above), rejoin WiFi, re-zero XY, then burn.
+
+## Machine state (all hardware verified in-hand)
+
+- Old board MKS DLC32 (GRBL 1.1h) replaced by **MKS LS ESP32 PRO V2.1_002**,
+  mainline FluidNC esp32s3-wifi, WiFi STA `192.168.1.19`. Was v4.0.3;
+  **user is flashing 4.1.0 now (Timed-engine bug fixes)** — the flash
+  erases the config, so re-upload after flashing, AS `/config.yaml`
+  (the fresh build boots the default name; the old board used an
+  alternate `$Config/Filename`):
+  ```bash
+  curl -F "path=/" -F "/config.yamlS=2234" -F "myfile[]=@C:/Users/PC/grbl_tools/laser-board.yaml;filename=/config.yaml" http://192.168.1.19/files
+  ```
+  Engine: the X/Y step pins (gpio.16/15, gpio.7/6) ARE RMT-routable on
+  the S3 (RMT goes through the GPIO matrix — pins are NOT the problem).
+  The blocker is firmware: FluidNC S3 RMT support was added in PR #1622,
+  reverted in PR #1792, re-added in current rmt_engine.c — but the
+  official builds still don't compile it. **Verified on the flashed
+  4.1.0 (esp32s3-wifi, 2026-09-13): config.yaml with `engine: RMT`
+  (2232 B) boots with the merged `$CD` dump showing `engine: Timed` —
+  silent fallback, same as I2S_STREAM on 4.0.3. Runtime set also
+  rejected ("Runtime setting of step_engine objects is not supported").
+  RMT is dead on this board until someone compiles a custom S3 build.
+  Final stack: `engine: Timed` + 4.1.0's Timed fixes + DP-simplified
+  gcode.**
+- Wiring: fully plug-and-play (DLC32 V2.1 shares XH connectors). Exceptions:
+  - Dual-Y gantry: old PCB mirrored the Y2 pins, LS does NOT → swap BOTH
+    phase pairs (A↔B) on ONE Y motor plug (verified working).
+  - 2-pin power-switch port next to the DC jack must be jumpered (installed).
+  - SPREAD jumpers ON (SpreadCycle — audible hum is normal).
+  - No limit switches on this machine; Zero XY at the part corner before run.
+- Live config: `C:\Users\PC\grbl_tools\laser-board.yaml` (uploaded to board):
+  - `engine: Timed` — on v4.0.3, **I2S_STATIC caused "Configuration is
+    invalid" error:152 on the S3 build; the I2S engines target the
+    I2SO shift-register architecture and RMT needs physical pins this
+    board doesn't wire — Timed is the only engine, on any version**.
+    Runtime switch: `$X` then `$/Stepping/Engine=Timed` (case-sensitive).
+  - X step/dir gpio.16/15, Y gpio.7/**6:low** (`:low` = direction invert —
+    FluidNC inverts direction via the pin attribute, not a stepstick field),
+    limits gpio.39/40 (unused), laser gpio.2, 80 steps/mm, 6000 feed,
+    500 accel, `junction_deviation_mm: 0.03`, `arc_tolerance_mm: 0.05`,
+    `planner_blocks: 60` (all tuned 2026-09-13, not yet proven by a full cut).
+- HTTP upload protocol that works: `POST /files` multipart with `path=/`,
+  `/<name>S=<size>`, `myfile[]=@<win-path>;filename=/<name>` (curl must use
+  a Windows path — `/tmp` breaks; filename override is REQUIRED or the file
+  lands under the local basename).
+
+## First-cut failures (the open problem)
+
+The job (`res/untitled-part.nc`, 3490 raw / 1875 filtered lines, 830 tiny
+1°-step arcs) does not complete on ANY transport:
+
+| Path | Failure |
+|---|---|
+| App USB (CH340, 115200) | FluidNC **error 36** "no offsets in plane" at ~line 468 — I/J tail of the arc line dropped. Old GRBL board had error 1 at the SAME line (same cause). |
+| App TCP :23 | Board drops the connection at ~filtered line 862 (reproduced in check mode with the app's exact 127-byte window accounting). Board survives. |
+| App WS :80 | Dies within the first ~3 holes. |
+| LaserGRBL USB | Died ~raw line 1700 ("board died" = connection drop; board survives). |
+
+Working theory, two stacked causes:
+1. **CH340 USB has no flow control** (tiny FIFO) — 127-byte bursts drop bytes
+   mid-line → the clean parse errors (36/1) at a repeatable spot.
+2. **The dense file overwhelms FluidNC v4.0.3** (1° arc steps × tight
+   tolerances → planner churn; user saw jerky motion right before failures).
+   Connection drops at varying lines per transport; check-mode replay
+   reproduced it over TCP.
+
+Fixes applied so far: tolerance/planner tuning (above). Not yet verified.
+**Discriminator test for the other station:** upload the .nc to the board FS
+and run `$SD/Run=untitled-part.nc` (no host streaming). Completes → host
+transports are the problem; dies → file/firmware. Also: stream a trivial
+30-line square over each transport; try a FluidNC build newer than v4.0.3.
+
+**Safety gap:** when a connection dies mid-job the board KEEPS CUTTING
+(buffered lines + laser on). Hit Reset immediately. App bug: on link
+EOF/error while a job is in flight, `gcode_sender.rs` run() just stops
+reading — no abort, no loud error event. Fix alongside the React bug.
+
+## React bug found 2026-09-13 — "Maximum update depth exceeded" (TCP)
+
+- `apps/desktop-ui/src/app/GrblWorkspace.tsx` ~line 474:
+  ```tsx
+  embeddedProgram={
+    loadedProgram?.source === "internal"
+      ? { text: loadedProgram.text, label: loadedProgram.label }  // NEW OBJECT EVERY RENDER
+      : embeddedProgram
+  }
+  ```
+- `apps/desktop-ui/src/layout/CamGrblPanel.tsx` line 254:
+  ```tsx
+  useEffect(() => { if (embeddedProgram) setLoadedProgram(embeddedProgram); },
+    [embeddedProgram]);
+  ```
+- Object identity changes every render → effect → setState → render → loop.
+  TCP makes it hot: 5 Hz status events re-render the workspace.
+- **Fix:** wrap the object in `useMemo(..., [loadedProgram, embeddedProgram])`
+  in GrblWorkspace (canonical), or compare by content in the panel effect.
+
+## Next-session checklist
+
+1. Fix the React loop (useMemo) — verify by connecting TCP and watching for
+   the warning to disappear.
+2. Fix the connection-loss safety gap in gcode_sender.rs (emit error + abort).
+3. Run the discriminator tests on the other station ($SD/Run, simple square,
+   newer FluidNC).
+4. CAM-side optimization (the real cam/laser-testing work): bigger arc spans
+   (5–10°), merge collinear G1s, dedupe the 36 duplicate holes — a leaner
+   file reduces load on every transport and fixes the jerky section.
+5. First completed cut → calibration check (jog 100 mm vs ruler), laser power
+   curve, then commit CAM changes with test coverage.
+
+## Key files
+
+- `apps/desktop-ui/src-tauri/src/gcode_sender.rs` — worker, ByteWindow(127),
+  500 ms `?` poll, EOF handling gap
+- `apps/desktop-ui/src/app/GrblWorkspace.tsx` — embeddedProgram loop source
+- `apps/desktop-ui/src/layout/CamGrblPanel.tsx` — loop consumer (effect 254)
+- `C:\Users\PC\grbl_tools\laser-board.yaml` — machine config (mirror of board)
+- `res/untitled-part.nc` — the problem job (bounds 0..232.7 × 0..172.4)

@@ -66,6 +66,7 @@ export function CamGrblPanel({
   onClose,
   embedded,
   embeddedProgram,
+  externalPath,
   machinePrefs,
   settingsMachineName,
   onFileLoaded,
@@ -74,6 +75,10 @@ export function CamGrblPanel({
   onClose: () => void;
   embedded?: boolean;
   embeddedProgram?: GrblPanelProgram | null;
+  // A file loaded through the HOST's toolbar Open button arrives as a
+  // path — the panel syncs it into loadedPath so Cycle Start is
+  // enabled (the panel's own Load sets loadedPath directly).
+  externalPath?: string | null;
   machinePrefs?: GrblMachinePrefs | null;
   // Machine name from the workspace's machine picker — when set, the
   // last $$ dump is persisted per machine and the settings dialog
@@ -251,11 +256,28 @@ export function CamGrblPanel({
 
   // The workspace/handoff program is what Cycle Start sends; keep it
   // in sync so the button always streams what the preview shows.
+  // Content-compare, never identity-compare: setting state on every
+  // prop change with an identity check loops when the caller builds a
+  // fresh object each render ("Maximum update depth exceeded").
   useEffect(() => {
-    if (embeddedProgram) {
+    if (
+      embeddedProgram &&
+      (loadedProgram?.text !== embeddedProgram.text ||
+        loadedProgram?.label !== embeddedProgram.label)
+    ) {
       setLoadedProgram(embeddedProgram);
     }
-  }, [embeddedProgram]);
+  }, [embeddedProgram, loadedProgram]);
+
+  // Host-loaded disk file (toolbar Open): the path becomes the
+  // streamed program, replacing any in-memory one.  Null leaves the
+  // panel state alone — internal programs arrive via embeddedProgram.
+  useEffect(() => {
+    if (externalPath) {
+      setLoadedPath(externalPath);
+      setLoadedProgram(null);
+    }
+  }, [externalPath]);
 
   const runCommand = async (action: () => Promise<void>) => {
     setBusy(true);

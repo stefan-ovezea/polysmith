@@ -115,6 +115,11 @@ interface CamFloatingPanelsProps {
   contourPick: { opId: string } | null;
   onPickContourFace: (opId: string) => void;
   onCancelContourPick: () => void;
+  // Armed laser face pick — opId whose face machining region the next
+  // body-face click replaces (laser cut from 3D geometry).
+  laserFacePick: { opId: string } | null;
+  onPickLaserFace: (opId: string) => void;
+  onCancelLaserPick: () => void;
   // Armed drilling point pick — opId whose hole locations gain the
   // next viewport point click.  Stays armed across adds.
   drillPick: { opId: string } | null;
@@ -189,6 +194,9 @@ export function CamFloatingPanels({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  laserFacePick,
+  onPickLaserFace,
+  onCancelLaserPick,
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
@@ -333,6 +341,9 @@ export function CamFloatingPanels({
         contourPick,
         onPickContourFace,
         onCancelContourPick,
+        laserFacePick,
+        onPickLaserFace,
+        onCancelLaserPick,
         drillPick,
         onPickDrillPoint,
         onCancelDrillPick,
@@ -385,6 +396,9 @@ function buildOperationPanel({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  laserFacePick,
+  onPickLaserFace,
+  onCancelLaserPick,
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
@@ -420,6 +434,9 @@ function buildOperationPanel({
   | "contourPick"
   | "onPickContourFace"
   | "onCancelContourPick"
+  | "laserFacePick"
+  | "onPickLaserFace"
+  | "onCancelLaserPick"
   | "drillPick"
   | "onPickDrillPoint"
   | "onCancelDrillPick"
@@ -539,6 +556,16 @@ function buildOperationPanel({
           document?.selected_sketch_profile_ids?.length ?? 0
         }
         repickArmed={camProfilePickArmed}
+        faceRegion={
+          operation.geometry_references.machining_regions.some(
+            (region) =>
+              region.attestation &&
+              "sample_points" in region.attestation,
+          )
+        }
+        facePickArmed={laserFacePick?.opId === operation.op_id}
+        onPickFace={() => onPickLaserFace(operation.op_id)}
+        onCancelFacePick={onCancelLaserPick}
         onStartRepick={onStartRepickGeometry}
         onCancelRepick={onCancelRepickGeometry}
         onClearSelection={onClearRepickSelection}

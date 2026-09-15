@@ -10,6 +10,15 @@ namespace {
 
 constexpr double kTwoPiConst = 6.28318530717958647692;
 
+// Join snap threshold (10°): below this corner angle the round join
+// arc's sagitta is under ~0.3 µm at kerf-scale offsets — snapping the
+// two offset endpoints together costs less precision than a laser
+// kerf and spares GRBL a near-coincident arc per facet corner.  10°
+// (not 5°): the Douglas-Peucker pass re-spaces the surviving facet
+// corners near 2·acos(1 − eps/r) — ~6.3° at r = 20, eps = 0.03 —
+// which the old 5° cutoff no longer covered.
+constexpr double kJoinSnapSweepRad = 0.1745329251994329577;  // 10°
+
 // Offsets one base segment by `d` to the right of the walk.
 //   line  → parallel line at distance d
 //   arc   → concentric arc, radius +/- d (right of a CCW walk is
@@ -60,6 +69,7 @@ bool line_line_intersection(const XY& p1, const XY& d1, const XY& p2,
 
 // Builds a round join arc around the shared original vertex between
 // two adjacent offset segments and appends [current + join] to `out`.
+// Returns false when the join was SNAPPED instead (no arc emitted).
 //
 // The sweep is the SHORT way around the vertex (atan2's raw angle).
 // The wedge between the two offset rays is the scrap side for a right
@@ -68,14 +78,28 @@ bool line_line_intersection(const XY& p1, const XY& d1, const XY& p2,
 // reflex corner on the scrap side is miter-trimmed by the caller when
 // the miter is reachable; the short arc is the safe approximation
 // otherwise.)
-void append_round_join(OffsetSegment current, OffsetSegment nextOffset,
-                       const XY& vertex, double d,
+//
+// Shallow-corner snap: when |sweep| is below `min_sweep_rad`, the join
+// arc degenerates to a few microns of length (its sagitta is
+// d·(1−cos(θ/2)), ~6 µm at θ=5° with d=0.075) — far below any laser
+// kerf.  Emitting it produces a nearly-coincident G2/G3 per corner
+// that GRBL must still plan, and some controllers treat near-zero
+// arcs as full circles.  The two offset endpoints are snapped together
+// instead — the introduced deviation is the same sagitta.
+bool append_round_join(OffsetSegment current, OffsetSegment nextOffset,
+                       const XY& vertex, double d, double min_sweep_rad,
                        std::vector<OffsetSegment>& out) {
   const double sweep = std::atan2(
       (nextOffset.start.y - vertex.y) * (current.end.x - vertex.x) -
           (nextOffset.start.x - vertex.x) * (current.end.y - vertex.y),
       (nextOffset.start.x - vertex.x) * (current.end.x - vertex.x) +
           (nextOffset.start.y - vertex.y) * (current.end.y - vertex.y));
+
+  if (std::abs(sweep) < min_sweep_rad) {
+    current.end = nextOffset.start;
+    out.push_back(current);
+    return false;
+  }
 
   OffsetSegment join;
   join.is_arc = true;
@@ -90,6 +114,7 @@ void append_round_join(OffsetSegment current, OffsetSegment nextOffset,
   join.cw = sweep < 0;
   out.push_back(current);
   out.push_back(join);
+  return true;
 }
 
 // True when (px,py) is strictly inside the polygon (ray crossing).
@@ -107,6 +132,89 @@ bool point_inside(const std::vector<XY>& poly, const XY& p) {
     }
   }
   return inside;
+}
+
+// Tolerance choices for cleanup_base_segments: chaining endpoints must
+// match to 1e-6 mm (loops are closed by construction); merged circles
+// must share center/radius to 1e-4 mm; collinear lines must have a
+// direction angle difference below 1e-4 rad (~0.006°).  Real
+// fragmentations are EXACT splits (same circle, same line), so these
+// margins only absorb projected-geometry noise — anything bending more
+// stays a separate segment.
+constexpr double kCleanupPointEps = 1e-6;
+constexpr double kCleanupCircleEps = 1e-4;
+constexpr double kCleanupAngleEps = 1e-4;
+
+bool cleanup_same_point(const XY& a, const XY& b) {
+  return xy_length(a.x - b.x, a.y - b.y) < kCleanupPointEps;
+}
+
+// Chained: the next segment continues where the previous one ended.
+bool cleanup_chained(const BaseSegment& a, const BaseSegment& b) {
+  return cleanup_same_point(a.end, b.start);
+}
+
+// Reversed spur: the same geometric piece walked backwards immediately
+// after itself (A→B then B→A).  Arcs match on center/radius with the
+// sweep flipped; lines match by swapped endpoints alone.
+bool cleanup_is_reverse(const BaseSegment& a, const BaseSegment& b) {
+  if (!cleanup_same_point(a.start, b.end) ||
+      !cleanup_same_point(a.end, b.start)) {
+    return false;
+  }
+  if (a.is_arc != b.is_arc) {
+    return false;
+  }
+  if (a.is_arc) {
+    return xy_length(a.center.x - b.center.x, a.center.y - b.center.y) <
+               kCleanupCircleEps &&
+           std::abs(a.radius - b.radius) < kCleanupCircleEps &&
+           a.ccw != b.ccw;
+  }
+  return true;
+}
+
+// Exact repeat of the previous segment (double line from duplicated
+// sketch entities).
+bool cleanup_is_duplicate(const BaseSegment& a, const BaseSegment& b) {
+  if (!cleanup_same_point(a.start, b.start) ||
+      !cleanup_same_point(a.end, b.end)) {
+    return false;
+  }
+  if (a.is_arc != b.is_arc) {
+    return false;
+  }
+  if (a.is_arc) {
+    return xy_length(a.center.x - b.center.x, a.center.y - b.center.y) <
+               kCleanupCircleEps &&
+           std::abs(a.radius - b.radius) < kCleanupCircleEps &&
+           a.ccw == b.ccw;
+  }
+  return true;
+}
+
+// Collinear and same-direction continuation (the |cross|/(la·lb) ratio
+// is the sine of the direction angle difference).
+bool cleanup_lines_collinear(const BaseSegment& a, const BaseSegment& b) {
+  const double dax = a.end.x - a.start.x;
+  const double day = a.end.y - a.start.y;
+  const double dbx = b.end.x - b.start.x;
+  const double dby = b.end.y - b.start.y;
+  const double la = xy_length(dax, day);
+  const double lb = xy_length(dbx, dby);
+  if (la < kCleanupPointEps || lb < kCleanupPointEps) {
+    return false;
+  }
+  const double cross = dax * dby - day * dbx;
+  const double dot = dax * dbx + day * dby;
+  return std::abs(cross) < kCleanupAngleEps * la * lb && dot > 0.0;
+}
+
+// Same circle, same walk direction — consecutive fragments of one arc.
+bool cleanup_arcs_mergeable(const BaseSegment& a, const BaseSegment& b) {
+  return xy_length(a.center.x - b.center.x, a.center.y - b.center.y) <
+             kCleanupCircleEps &&
+         std::abs(a.radius - b.radius) < kCleanupCircleEps && a.ccw == b.ccw;
 }
 
 }  // namespace
@@ -446,6 +554,154 @@ double base_segments_signed_area(const std::vector<BaseSegment>& segments) {
   return twiceArea / 2.0;
 }
 
+SegmentCleanupStats cleanup_base_segments(std::vector<BaseSegment>& segments) {
+  SegmentCleanupStats stats;
+  if (segments.size() < 2) {
+    return stats;
+  }
+  std::vector<BaseSegment> cleaned;
+  cleaned.reserve(segments.size());
+  for (const BaseSegment& segment : segments) {
+    // Zero-length lines carry no geometry (full-circle arcs keep
+    // start == end by convention and are never dropped on length).
+    if (!segment.is_arc && cleanup_same_point(segment.start, segment.end)) {
+      ++stats.dropped_degenerate;
+      continue;
+    }
+    if (!cleaned.empty()) {
+      BaseSegment& prev = cleaned.back();
+      if (cleanup_is_reverse(prev, segment)) {
+        // Out-and-back spur: the pair retraces itself — both go.
+        cleaned.pop_back();
+        ++stats.dropped_spurs;
+        continue;
+      }
+      if (cleanup_is_duplicate(prev, segment)) {
+        ++stats.dropped_duplicates;
+        continue;
+      }
+      if (!prev.is_arc && !segment.is_arc && cleanup_chained(prev, segment) &&
+          cleanup_lines_collinear(prev, segment)) {
+        prev.end = segment.end;
+        ++stats.merged_lines;
+        continue;
+      }
+      if (prev.is_arc && segment.is_arc && cleanup_chained(prev, segment) &&
+          cleanup_arcs_mergeable(prev, segment)) {
+        // Merging two halves of one circle can land start == end —
+        // the full-circle convention (sweep from the walk direction)
+        // is exactly what offset_closed_loop, offset_arc_sweep, and
+        // the laser emitter already handle for synthesized circles.
+        prev.end = segment.end;
+        ++stats.merged_arcs;
+        continue;
+      }
+    }
+    cleaned.push_back(segment);
+  }
+  segments.swap(cleaned);
+  return stats;
+}
+
+SimplifyStats simplify_polyline_dp(std::vector<BaseSegment>& segments,
+                                   double epsilon) {
+  SimplifyStats stats;
+  if (segments.empty() || epsilon <= 0.0) {
+    return stats;
+  }
+  const double epsSq = epsilon * epsilon;
+
+  std::vector<BaseSegment> simplified;
+  simplified.reserve(segments.size());
+
+  size_t i = 0;
+  while (i < segments.size()) {
+    // Arcs are exact anchors — copied through untouched.
+    if (segments[i].is_arc) {
+      simplified.push_back(segments[i]);
+      ++i;
+      continue;
+    }
+    // Collect the maximal run of consecutive chained lines.  An
+    // all-line loop wraps around to its start — one cyclic run whose
+    // last vertex repeats the first.
+    std::vector<XY> pts;
+    pts.push_back(segments[i].start);
+    size_t j = i;
+    while (j < segments.size() && !segments[j].is_arc &&
+           (j == i || cleanup_same_point(pts.back(), segments[j].start))) {
+      pts.push_back(segments[j].end);
+      ++j;
+    }
+    const bool closed = cleanup_same_point(pts.front(), pts.back());
+    size_t count = pts.size();
+    if (closed) {
+      --count;  // the last entry repeats the first vertex
+    }
+    if (count < 3) {
+      // Nothing interior to drop — copy the run as is.
+      for (size_t k = i; k < j; ++k) {
+        simplified.push_back(segments[k]);
+      }
+      i = j;
+      continue;
+    }
+
+    // Recursive Douglas-Peucker: the vertex with the largest distance
+    // to the current span's edge is kept when it exceeds the
+    // tolerance, and the two halves recursed.  Endpoints are always
+    // kept — arc junctions and the loop closure depend on them.
+    std::vector<bool> keep(count, false);
+    keep[0] = true;
+    keep[count - 1] = true;
+    const auto recurse = [&](auto&& self, size_t lo, size_t hi) -> void {
+      double maxDistSq = 0.0;
+      size_t maxIdx = lo + 1;
+      for (size_t k = lo + 1; k < hi; ++k) {
+        const double d = xy_point_segment_distance(pts[k], pts[lo], pts[hi]);
+        if (d * d > maxDistSq) {
+          maxDistSq = d * d;
+          maxIdx = k;
+        }
+      }
+      if (maxDistSq <= epsSq) {
+        return;  // every interior vertex is within tolerance
+      }
+      keep[maxIdx] = true;
+      if (maxIdx > lo + 1) {
+        self(self, lo, maxIdx);
+      }
+      if (hi > maxIdx + 1) {
+        self(self, maxIdx, hi);
+      }
+    };
+    recurse(recurse, 0, count - 1);
+
+    // Re-emit the kept vertices as line segments; a cyclic run also
+    // re-emits the closing edge back to the first vertex.
+    stats.vertices_before += static_cast<int>(count);
+    std::vector<XY> kept;
+    kept.reserve(count);
+    for (size_t k = 0; k < count; ++k) {
+      if (keep[k]) {
+        kept.push_back(pts[k]);
+      }
+    }
+    stats.vertices_after += static_cast<int>(kept.size());
+    const size_t steps = closed ? kept.size() : kept.size() - 1;
+    for (size_t k = 0; k < steps; ++k) {
+      BaseSegment line;
+      line.start = kept[k];
+      line.end = kept[(k + 1) % kept.size()];
+      simplified.push_back(line);
+    }
+    i = j;
+  }
+
+  segments.swap(simplified);
+  return stats;
+}
+
 bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
                         std::vector<OffsetSegment>& out, bool round_joins) {
   out.clear();
@@ -567,7 +823,11 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
           startOverride[nextIndex] = miter;
           continue;
         }
-        append_round_join(current, nextOffset, base[i].end, d, out);
+        // Fallback round join (corners that turn away, or a sharp
+        // corner whose miter is unreachable): keep the shallow-corner
+        // snap so a near-tangent fallback never emits a micron arc.
+        append_round_join(current, nextOffset, base[i].end, d,
+                          kJoinSnapSweepRad, out);
       } else {
         current.end = nextOffset.start;
         out.push_back(current);
@@ -636,8 +896,11 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
       startOverride[nextIndex] = crossing;
     } else {
       // Steep corner (or the crossing lies away from both pieces): the
-      // round join arc is the true boundary.
-      append_round_join(current, nextOffset, base[i].end, d, out);
+      // round join arc is the true boundary — unless the corner is so
+      // shallow the join would degenerate into a micron-scale arc, in
+      // which case the two offset endpoints are snapped together.
+      append_round_join(current, nextOffset, base[i].end, d,
+                        kJoinSnapSweepRad, out);
     }
   }
   // Patch the wrap-around corner: a miter at the LAST corner overrides
