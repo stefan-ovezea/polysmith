@@ -48,6 +48,7 @@ import {
   makeUpdateSketchFilletRadiusCommand,
   makeUpdateSketchTextCommand,
   makeDeleteSketchFilletCommand,
+  makeMergeCoincidentSketchPointsCommand,
   makeDeleteSketchTextCommand,
   makeDeleteSketchDimensionCommand,
   makeToggleSketchDimensionDrivenCommand,
@@ -89,6 +90,8 @@ import {
   makeImportIgesCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
+  makeRemoveSketchProjectionsCommand,
+  makeRedefineSketchPlaneCommand,
   makeLoadDocumentCommand,
   makeProjectEdgeIntoSketchCommand,
   makeProjectFaceIntoSketchCommand,
@@ -628,6 +631,23 @@ export function useCadCore() {
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    removeSketchProjections: async (
+      featureId: string,
+      keepGeometry: boolean,
+    ) => {
+      await sendCoreCommand(
+        makeRemoveSketchProjectionsCommand(featureId, keepGeometry),
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    redefineSketchPlane: async (featureId: string, planeId: string) => {
+      await sendCoreCommand(
+        makeRedefineSketchPlaneCommand(featureId, planeId),
+      );
+      await sendCoreCommand(makeGetSessionStateCommand());
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     updateMoveParameters: async (
       featureId: string,
       parameters: Partial<MoveFeatureParameters>,
@@ -1009,12 +1029,21 @@ export function useCadCore() {
     },
     addSketchFillet: async (
       cornerPointId: string,
-      lineAId: string,
-      lineBId: string,
+      entityAId: string,
+      entityAKind: "line" | "arc",
+      entityBId: string,
+      entityBKind: "line" | "arc",
       radius: number,
     ) => {
       await sendCoreCommand(
-        makeAddSketchFilletCommand(cornerPointId, lineAId, lineBId, radius),
+        makeAddSketchFilletCommand(
+          cornerPointId,
+          entityAKind === "line" ? entityAId : "",
+          entityBKind === "line" ? entityBId : "",
+          radius,
+          entityAKind === "arc" ? entityAId : "",
+          entityBKind === "arc" ? entityBId : "",
+        ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -1026,6 +1055,10 @@ export function useCadCore() {
     },
     deleteSketchFillet: async (filletId: string) => {
       await sendCoreCommand(makeDeleteSketchFilletCommand(filletId));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    mergeCoincidentSketchPoints: async (featureId: string) => {
+      await sendCoreCommand(makeMergeCoincidentSketchPointsCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchChamfer: async (
@@ -1362,9 +1395,17 @@ export function useCadCore() {
       await sendCoreCommand(makeSelectSketchProfileCommand(profileId, additive));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    selectSketchProfileByEntity: async (entityId: string, additive = false) => {
+    selectSketchProfileByEntity: async (
+      entityId: string,
+      additive = false,
+      smallestOnly = false,
+    ) => {
       await sendCoreCommand(
-        makeSelectSketchProfileByEntityCommand(entityId, additive),
+        makeSelectSketchProfileByEntityCommand(
+          entityId,
+          additive,
+          smallestOnly,
+        ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -1641,6 +1682,36 @@ export function useCadCore() {
     },
     camOperationUpdate: async (opId: string, partial: Partial<CamOperation>) => {
       await sendAndRefreshSessionViewport(makeCamOperationUpdateCommand(opId, partial));
+    },
+    // The laser/contour/engrave "Apply selection" commit: empties the
+    // op's regions with the explicit profile ids attached, AWAITING the
+    // core response so a NO_PROFILE_SELECTION rejection surfaces as an
+    // error instead of silently keeping the old whole-sketch regions.
+    camOperationApplySelection: async (
+      opId: string,
+      profileIds: string[],
+    ): Promise<void> => {
+      const response = await sendCoreCommandAwaited(
+        makeCamOperationUpdateCommand(
+          opId,
+          {
+            geometry_references: {
+              machining_regions: [],
+              avoidance_regions: [],
+              guide_curves: [],
+              check_surfaces: [],
+            },
+          },
+          { selected_profile_ids: profileIds },
+        ) as CoreCommand & { id: string },
+      );
+      if (response.type === "error") {
+        const payload = response.payload as { message?: string } | undefined;
+        throw new Error(
+          payload?.message ?? "the core rejected the profile selection",
+        );
+      }
+      await sendCoreCommand(makeGetViewportStateCommand());
     },
     camOperationDelete: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationDeleteCommand(opId));

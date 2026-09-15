@@ -319,6 +319,13 @@ export interface CamOperation {
   /** Human-readable degrade info (the CAM analogue of
    *  FeatureEntry::dependency_warning). Empty when healthy. */
   status_message: string;
+  /** How the machining regions were captured: "sketch" = whole-sketch
+   *  scope (set_scope or a selected-feature capture), "selected" = an
+   *  explicit profile subset (the re-select gesture).  Persisted so the
+   *  scope dropdown survives a save/load cycle; documents saved before
+   *  the field existed default to "sketch" in the core.  Optional on
+   *  the CREATE payload — the core stamps it during capture. */
+  geometry_scope?: "sketch" | "selected" | string;
 }
 
 // Payload for `cam_operation_create`: a serialized CamOperation whose

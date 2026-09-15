@@ -228,6 +228,10 @@ struct HoleSignature {
   double center_x = 0.0;
   double center_y = 0.0;
   double radius = 0.0;
+  double min_x = 0.0;
+  double min_y = 0.0;
+  double max_x = 0.0;
+  double max_y = 0.0;
 };
 
 std::optional<HoleSignature> hole_signature(
@@ -237,9 +241,17 @@ std::optional<HoleSignature> hole_signature(
   }
   double cx = 0.0;
   double cy = 0.0;
+  double minX = loop[0].x;
+  double minY = loop[0].y;
+  double maxX = loop[0].x;
+  double maxY = loop[0].y;
   for (const auto& point : loop) {
     cx += point.x;
     cy += point.y;
+    minX = std::min(minX, point.x);
+    minY = std::min(minY, point.y);
+    maxX = std::max(maxX, point.x);
+    maxY = std::max(maxY, point.y);
   }
   cx /= loop.size();
   cy /= loop.size();
@@ -248,23 +260,35 @@ std::optional<HoleSignature> hole_signature(
     radius += std::hypot(point.x - cx, point.y - cy);
   }
   radius /= loop.size();
-  return HoleSignature{cx, cy, radius};
+  return HoleSignature{cx, cy, radius, minX, minY, maxX, maxY};
 }
 
 // A standalone region duplicates a hole loop of another region when its
-// center/radius match the loop's within a small tolerance.
+// centroid AND bounding box match the loop's.  The bbox is the
+// discriminating test: for a non-circular hole (a lens, a slot) the
+// radius-from-area and the mean point radius disagree wildly, so the
+// old radius-only comparison missed every non-circular duplicate and
+// whole-sketch capture recorded the hole twice.
 bool matches_hole(const CamProfileReference& region,
                   const HoleSignature& hole) {
   const double centerDistance =
       std::hypot(region.centerX - hole.center_x,
                  region.centerY - hole.center_y);
-  const double radiusTolerance =
-      0.05 + 0.02 * std::max(region.area > 0.0 ? std::sqrt(region.area / 3.14159265358979323846)
-                                              : 0.0,
-                             hole.radius);
-  return centerDistance < radiusTolerance &&
-         std::abs(std::sqrt(region.area / 3.14159265358979323846) -
-                  hole.radius) < radiusTolerance;
+  const double radius = std::max(
+      region.area > 0.0
+          ? std::sqrt(region.area / 3.14159265358979323846)
+          : 0.0,
+      hole.radius);
+  const double centerTolerance = 0.05 + 0.02 * radius;
+  // The hole loop is a point sample of the same boundary, so its bbox
+  // may sit slightly inside the true bbox at arc extremes — a slightly
+  // looser tolerance than the centroid's.
+  const double bboxTolerance = 0.25 + 0.02 * radius;
+  return centerDistance < centerTolerance &&
+         std::abs(region.minX - hole.min_x) < bboxTolerance &&
+         std::abs(region.minY - hole.min_y) < bboxTolerance &&
+         std::abs(region.maxX - hole.max_x) < bboxTolerance &&
+         std::abs(region.maxY - hole.max_y) < bboxTolerance;
 }
 
 }  // namespace

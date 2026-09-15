@@ -103,11 +103,19 @@ TopoDS_Shape wrap_with_additional_profiles(
       wire_params.additional_sketch_edge_ids.clear();
       wire_params.additional_arc_descriptors.clear();
       wire_params.additional_boundary_edges.clear();
+      // Additional profiles do not carry per-hole exact edges — keep
+      // the sampled-loop fallback for their holes instead of misaligning
+      // the primary profile's inner_loop_edges with the additional
+      // profile's inner_loops.
+      wire_params.inner_loop_edges.clear();
       try {
         builder.Add(compound, make_wire_extrude_shape(wire_params));
         used_wire = true;
       } catch (const std::exception& e) {
-        polysmith::core::log_debug("extrude_shape",
+        // warn, not debug: a polygon fallback silently changes the
+        // geometry the user extrudes (arcs become chords), so it must
+        // be visible in the Logs panel whenever it happens.
+        polysmith::core::log_warn("extrude_shape",
             "Additional profile wire path failed — "
             "falling back to polygon: " + std::string(e.what()));
       }

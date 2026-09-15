@@ -115,6 +115,11 @@ interface CamFloatingPanelsProps {
   contourPick: { opId: string } | null;
   onPickContourFace: (opId: string) => void;
   onCancelContourPick: () => void;
+  // Armed laser face pick — opId whose face machining region the next
+  // body-face click replaces (laser cut from 3D geometry).
+  laserFacePick: { opId: string } | null;
+  onPickLaserFace: (opId: string) => void;
+  onCancelLaserPick: () => void;
   // Armed drilling point pick — opId whose hole locations gain the
   // next viewport point click.  Stays armed across adds.
   drillPick: { opId: string } | null;
@@ -129,6 +134,13 @@ interface CamFloatingPanelsProps {
   camOperationUpdate: (
     opId: string,
     partial: Partial<CamOperation>,
+  ) => Promise<void>;
+  // Awaited selection commit: empties the op's regions with the
+  // explicit profile ids — rejects (instead of silently no-op'ing)
+  // when the core refuses the capture.
+  camOperationApplySelection: (
+    opId: string,
+    profileIds: string[],
   ) => Promise<void>;
   camOperationDelete: (opId: string) => Promise<void>;
   camOperationSetScope: (opId: string, featureId: string) => Promise<void>;
@@ -182,6 +194,9 @@ export function CamFloatingPanels({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  laserFacePick,
+  onPickLaserFace,
+  onCancelLaserPick,
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
@@ -190,6 +205,7 @@ export function CamFloatingPanels({
   camSetupUpdate,
   camMachineSettingsSet,
   camOperationUpdate,
+  camOperationApplySelection,
   camOperationDelete,
   camOperationSetScope,
   camOperationPreview,
@@ -325,10 +341,14 @@ export function CamFloatingPanels({
         contourPick,
         onPickContourFace,
         onCancelContourPick,
+        laserFacePick,
+        onPickLaserFace,
+        onCancelLaserPick,
         drillPick,
         onPickDrillPoint,
         onCancelDrillPick,
         onRepickSlotEdges,
+        camOperationApplySelection,
         t,
       })
     : null;
@@ -376,10 +396,14 @@ function buildOperationPanel({
   contourPick,
   onPickContourFace,
   onCancelContourPick,
+  laserFacePick,
+  onPickLaserFace,
+  onCancelLaserPick,
   drillPick,
   onPickDrillPoint,
   onCancelDrillPick,
   onRepickSlotEdges,
+  camOperationApplySelection,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -410,11 +434,20 @@ function buildOperationPanel({
   | "contourPick"
   | "onPickContourFace"
   | "onCancelContourPick"
+  | "laserFacePick"
+  | "onPickLaserFace"
+  | "onCancelLaserPick"
   | "drillPick"
   | "onPickDrillPoint"
   | "onCancelDrillPick"
   | "onRepickSlotEdges"
-> & { t: (key: string, options?: Record<string, unknown>) => string }) {
+> & {
+  camOperationApplySelection: (
+    opId: string,
+    profileIds: string[],
+  ) => Promise<void>;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
   const operation = document?.cam.operations.find(
     (candidate) => candidate.op_id === selectedOperationId,
   );
@@ -440,6 +473,29 @@ function buildOperationPanel({
     statusMessage: operation.status_message,
     toolpathStats,
     disabled,
+  };
+
+  // Commits the live profile picks into the operation (laser, 2D
+  // contour, engrave): the update carries the explicit ids (the core
+  // does not read its own selection state), is AWAITED so a rejection
+  // surfaces instead of silently keeping the old whole-sketch regions,
+  // and only on success disarms the re-pick.  Returns false when there
+  // is nothing to apply (the op keeps its current regions).
+  const applyRepickSelection = async (op: CamOperation): Promise<boolean> => {
+    const ids = document?.selected_sketch_profile_ids ?? [];
+    if (ids.length === 0) {
+      addMessage(t("cam.laserCut.applyRepickNoSelection"));
+      return false;
+    }
+    try {
+      await camOperationApplySelection(op.op_id, ids);
+    } catch (error) {
+      addMessage(`action error: ${String(error)}`);
+      return false;
+    }
+    addMessage(t("cam.laserCut.appliedProfiles", { count: ids.length }));
+    onApplyRepickGeometry();
+    return true;
   };
 
   // Shared generate handler (laser + face milling): run the generator,
@@ -489,6 +545,7 @@ function buildOperationPanel({
         feature_id: feature.feature_id,
         name: feature.name || "Sketch",
       }));
+
     return (
       <CamLaserCutPanel
         {...shared}
@@ -499,24 +556,25 @@ function buildOperationPanel({
           document?.selected_sketch_profile_ids?.length ?? 0
         }
         repickArmed={camProfilePickArmed}
+        faceRegion={
+          operation.geometry_references.machining_regions.some(
+            (region) =>
+              region.attestation &&
+              "sample_points" in region.attestation,
+          )
+        }
+        facePickArmed={laserFacePick?.opId === operation.op_id}
+        onPickFace={() => onPickLaserFace(operation.op_id)}
+        onCancelFacePick={onCancelLaserPick}
         onStartRepick={onStartRepickGeometry}
         onCancelRepick={onCancelRepickGeometry}
         onClearSelection={onClearRepickSelection}
         onApplyRepick={() => {
-          void runAction(async () => {
-            await camOperationUpdate(operation.op_id, {
-              geometry_references: {
-                machining_regions: [],
-                avoidance_regions: [],
-                guide_curves: [],
-                check_surfaces: [],
-              },
-            });
-            onApplyRepickGeometry();
-          });
+          void applyRepickSelection(operation);
         }}
         sketches={sketches}
         scopeSketchId={scopeSketchId}
+        customProfileScope={operation.geometry_scope === "selected"}
         onSetScope={(featureId) => {
           void runAction(async () => {
             await camOperationSetScope(operation.op_id, featureId);
@@ -533,11 +591,31 @@ function buildOperationPanel({
           });
         }}
         onPreview={() => {
-          void runAction(async () => {
-            await camOperationPreview(operation.op_id);
-          });
+          void (async () => {
+            // Preview reflects the LIVE picks while the re-pick is
+            // armed — commit them first, exactly like Generate.
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            await runAction(async () => {
+              await camOperationPreview(operation.op_id);
+            });
+          })();
         }}
-        onGenerate={makeGenerateHandler(operation.op_id)}
+        onGenerate={() => {
+          void (async () => {
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            makeGenerateHandler(operation.op_id)();
+          })();
+        }}
         onExport={onExportGcode}
         onExportAndOpen={onExportAndOpen}
         onSendToGrbl={onSendToGrbl}
@@ -837,6 +915,7 @@ function buildOperationPanel({
         repickArmed={camProfilePickArmed}
         sketches={sketches}
         scopeSketchId={scopeSketchId}
+        customProfileScope={operation.geometry_scope === "selected"}
         onSetScope={(featureId) => {
           void runAction(async () => {
             await camOperationSetScope(operation.op_id, featureId);
@@ -846,17 +925,7 @@ function buildOperationPanel({
         onCancelRepick={onCancelRepickGeometry}
         onClearSelection={onClearRepickSelection}
         onApplyRepick={() => {
-          void runAction(async () => {
-            await camOperationUpdate(operation.op_id, {
-              geometry_references: {
-                machining_regions: [],
-                avoidance_regions: [],
-                guide_curves: [],
-                check_surfaces: [],
-              },
-            });
-            onApplyRepickGeometry();
-          });
+          void applyRepickSelection(operation);
         }}
         facePickArmed={
           contourPick?.opId === operation.op_id && inputKind === "face"
@@ -887,11 +956,29 @@ function buildOperationPanel({
           });
         }}
         onPreview={() => {
-          void runAction(async () => {
-            await camOperationPreview(operation.op_id);
-          });
+          void (async () => {
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            await runAction(async () => {
+              await camOperationPreview(operation.op_id);
+            });
+          })();
         }}
-        onGenerate={makeGenerateHandler(operation.op_id)}
+        onGenerate={() => {
+          void (async () => {
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            makeGenerateHandler(operation.op_id)();
+          })();
+        }}
         onExport={onExportGcode}
         onDelete={() => {
           void runAction(async () => {
@@ -1134,6 +1221,7 @@ function buildOperationPanel({
         repickArmed={camProfilePickArmed}
         sketches={sketches}
         scopeSketchId={scopeSketchId}
+        customProfileScope={operation.geometry_scope === "selected"}
         onSetScope={(featureId) => {
           void runAction(async () => {
             await camOperationSetScope(operation.op_id, featureId);
@@ -1143,17 +1231,7 @@ function buildOperationPanel({
         onCancelRepick={onCancelRepickGeometry}
         onClearSelection={onClearRepickSelection}
         onApplyRepick={() => {
-          void runAction(async () => {
-            await camOperationUpdate(operation.op_id, {
-              geometry_references: {
-                machining_regions: [],
-                avoidance_regions: [],
-                guide_curves: [],
-                check_surfaces: [],
-              },
-            });
-            onApplyRepickGeometry();
-          });
+          void applyRepickSelection(operation);
         }}
         onUpdate={(partial, toolId) => {
           void runAction(async () => {
@@ -1178,11 +1256,29 @@ function buildOperationPanel({
           });
         }}
         onPreview={() => {
-          void runAction(async () => {
-            await camOperationPreview(operation.op_id);
-          });
+          void (async () => {
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            await runAction(async () => {
+              await camOperationPreview(operation.op_id);
+            });
+          })();
         }}
-        onGenerate={makeGenerateHandler(operation.op_id)}
+        onGenerate={() => {
+          void (async () => {
+            if (
+              camProfilePickArmed &&
+              !(await applyRepickSelection(operation))
+            ) {
+              return;
+            }
+            makeGenerateHandler(operation.op_id)();
+          })();
+        }}
         onExport={onExportGcode}
         onDelete={() => {
           void runAction(async () => {

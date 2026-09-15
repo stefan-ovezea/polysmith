@@ -80,9 +80,7 @@ void CadCoreApp::init_occt() const {
   polysmith::core::log_info("cad_core", "OCCT box created successfully");
 }
 
-void CadCoreApp::handle_command_line(const std::string& line) {
-  const CommandMessage command = polysmith::protocol::parse_command(line);
-
+void CadCoreApp::handle_command_line(const CommandMessage& command) {
 #include "app/impl/document_session_commands.inc"
 #include "app/impl/mesh_command_handlers.inc"
 #include "app/impl/dxf_command_handlers.inc"
@@ -124,8 +122,15 @@ void CadCoreApp::run() {
       continue;
     }
 
+    // Parse BEFORE the try so the catch can carry the command id into
+    // the error event. The UI correlates responses by id — an error
+    // event with an EMPTY id never settled the awaited promise, so a
+    // failing command (e.g. vertex projection on an unresolvable id)
+    // left the UI hanging with no feedback ("never comes back").
+    polysmith::protocol::CommandMessage command;
     try {
-      handle_command_line(line);
+      command = polysmith::protocol::parse_command(line);
+      handle_command_line(command);
     } catch (const std::runtime_error& error) {
       if (std::string(error.what()) == "__POLYSMITH_SHUTDOWN__") {
         polysmith::core::log_info("cad_core", "Shutdown requested");
@@ -134,11 +139,11 @@ void CadCoreApp::run() {
 
       polysmith::core::log_error("cad_core", error.what());
       polysmith::protocol::write_message(polysmith::protocol::make_error_event(
-          "", "INVALID_COMMAND", error.what()));
+          command.id, "INVALID_COMMAND", error.what()));
     } catch (const std::exception& error) {
       polysmith::core::log_error("cad_core", error.what());
       polysmith::protocol::write_message(polysmith::protocol::make_error_event(
-          "", "INVALID_JSON", error.what()));
+          command.id, "INVALID_JSON", error.what()));
     }
   }
 }

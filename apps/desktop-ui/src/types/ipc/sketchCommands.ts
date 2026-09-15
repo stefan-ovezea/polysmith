@@ -216,9 +216,12 @@ export interface AddSketchArcCommand {
   };
 }
 
-// Round a corner shared by two sketch lines into a tangent arc.
-// `corner_vertex_id` must be an endpoint of both lines; the v1 core
-// rejects mismatches and oversized radii with a structured error.
+// Round a corner shared by two sketch entities (two lines, a line
+// and an arc, or two arcs) into a tangent arc. `corner_vertex_id`
+// must be an endpoint of both entities; exactly one of
+// {line_a_id, arc_a_id} (and the same for side B) is sent — old
+// line-line callers send only the line ids. The core rejects
+// mismatches and oversized radii with a structured error.
 export interface AddSketchFilletCommand {
   id: string;
   type: "add_sketch_fillet";
@@ -227,6 +230,8 @@ export interface AddSketchFilletCommand {
     line_a_id: string;
     line_b_id: string;
     radius: number;
+    arc_a_id?: string;
+    arc_b_id?: string;
   };
 }
 
@@ -244,6 +249,16 @@ export interface DeleteSketchFilletCommand {
   type: "delete_sketch_fillet";
   payload: {
     fillet_id: string;
+  };
+}
+
+// Heals split vertices left behind by legacy projections: merges every
+// vertex within the coincident tolerance onto one id per cluster.
+export interface MergeCoincidentSketchPointsCommand {
+  id: string;
+  type: "merge_coincident_sketch_points";
+  payload: {
+    feature_id: string;
   };
 }
 
@@ -711,6 +726,9 @@ export interface SelectSketchProfileCommand {
     profile_id?: string;
     entity_id?: string;
     additive?: boolean;
+    // Entity-id variant: a shared outline (spoke arc that is also a
+    // plate-hole edge) then selects only the smallest owning region.
+    smallest_only?: boolean;
   };
 }
 

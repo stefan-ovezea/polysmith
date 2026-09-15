@@ -258,6 +258,12 @@ struct ViewportSketchProfilePrimitive {
   // draws these holes from center/radius so they match the smooth
   // outline of the standalone circle region.
   std::vector<SketchProfileCircleHole> circle_holes;
+  // Exact outer-boundary edges in walk order; the UI builds the fill
+  // from these so arc-bounded surfaces render as true arcs.  Empty
+  // for legacy profiles (the UI falls back to the chord samples).
+  std::vector<ProfileBoundaryEdge> boundary_edges;
+  // Exact per-hole boundary edges, one entry per inner_loops entry.
+  std::vector<std::vector<ProfileBoundaryEdge>> inner_loop_edges;
   double start_x;
   double start_y;
   double width;

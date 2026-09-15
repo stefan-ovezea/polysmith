@@ -93,6 +93,12 @@ struct SketchProfileRegion {
   // profiles restored from old saves — the wire builder then falls back
   // to the legacy grouping/descriptor path.
   std::vector<ProfileBoundaryEdge> boundary_edges;
+  // Exact boundary edges per inner loop (one entry per inner_loops
+  // index, in the hole's walk order).  Empty for legacy profiles —
+  // consumers (extrude wire builder, laser generator) fall back to the
+  // sampled inner_loops points, which is what used to be the only
+  // option and why hole cuts came out polygonal.
+  std::vector<std::vector<ProfileBoundaryEdge>> inner_loop_edges;
 };
 
 }  // namespace polysmith::core

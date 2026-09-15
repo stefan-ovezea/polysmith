@@ -603,6 +603,7 @@ polysmith::core::CamOperation cam_operation_from_payload(const json& payload) {
   }
   op.status = cam_read_string(payload, "status", "pending");
   op.status_message = cam_read_string(payload, "status_message", "");
+  op.geometry_scope = cam_read_string(payload, "geometry_scope", "sketch");
   return op;
 }
 

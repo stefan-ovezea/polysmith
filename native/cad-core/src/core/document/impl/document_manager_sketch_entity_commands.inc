@@ -70,10 +70,22 @@
   DocumentState add_sketch_fillet(const std::string& corner_vertex_id,
                                   const std::string& line_a_id,
                                   const std::string& line_b_id,
-                                  double radius);
+                                  double radius,
+                                  const std::string& arc_a_id = "",
+                                  const std::string& arc_b_id = "");
   DocumentState update_sketch_fillet_radius(const std::string& fillet_id,
                                             double radius);
   DocumentState delete_sketch_fillet(const std::string& fillet_id);
+  // Merge every pair of sketch vertices that sits within the
+  // coincident tolerance (0.01 mm) into a single shared vertex —
+  // heals legacy sketches whose projections were created before the
+  // endpoint welding existed (the classic symptom: two entities meet
+  // at a corner but hold two vertex ids a few microns apart, so the
+  // fillet tool refuses the corner).  Entity endpoint / center ids,
+  // fillet and chamfer corner/trim ids, and coincident-constraint
+  // target ids are remapped; entity cached coords are snapped to the
+  // representative vertex's position.  Single undoable action.
+  DocumentState merge_coincident_sketch_points(const std::string& feature_id);
   // Sketch chamfer — bevel a corner shared by two sketch lines into a
   // straight chamfer line, trimming each line by its own distance.
   // Parametric like the fillet (see `SketchChamfer`), with its own

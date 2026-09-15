@@ -317,6 +317,41 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
     });
   }
 
+  // Exact boundary edges — same shape as the document-side profile
+  // serialization, so the UI builds arc-true fills instead of the
+  // chord-sampled polygon.  Empty arrays for legacy profiles.
+  auto edge_payload = [](const polysmith::core::ProfileBoundaryEdge& edge) {
+    return json{
+        {"entity_id", edge.entity_id},
+        {"entity_kind", edge.entity_kind},
+        {"param_start", edge.param_start},
+        {"param_end", edge.param_end},
+        {"start_x", edge.start_x},
+        {"start_y", edge.start_y},
+        {"end_x", edge.end_x},
+        {"end_y", edge.end_y},
+        {"center_x", edge.center_x},
+        {"center_y", edge.center_y},
+        {"radius", edge.radius},
+        {"ccw", edge.ccw},
+        {"spline_degree", edge.spline_degree},
+        {"spline_pole_xs", edge.spline_pole_xs},
+        {"spline_pole_ys", edge.spline_pole_ys},
+    };
+  };
+  json boundary_edges = json::array();
+  for (const auto& edge : primitive.boundary_edges) {
+    boundary_edges.push_back(edge_payload(edge));
+  }
+  json inner_loop_edges = json::array();
+  for (const auto& loop_edges : primitive.inner_loop_edges) {
+    json loop_payload = json::array();
+    for (const auto& edge : loop_edges) {
+      loop_payload.push_back(edge_payload(edge));
+    }
+    inner_loop_edges.push_back(loop_payload);
+  }
+
   return {
       {"profile_id", primitive.profile_id},
       {"plane_id", primitive.plane_id},
@@ -353,6 +388,8 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
       {"profile_points", profile_points},
       {"inner_loops", inner_loops},
       {"circle_holes", circle_holes},
+      {"boundary_edges", boundary_edges},
+      {"inner_loop_edges", inner_loop_edges},
       {"start_x", primitive.start_x},
       {"start_y", primitive.start_y},
       {"width", primitive.width},

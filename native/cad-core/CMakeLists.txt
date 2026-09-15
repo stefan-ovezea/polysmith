@@ -376,6 +376,13 @@ polysmith_add_core_test(cad_core_slot_test tests/slot_test.cpp)
 # full profile set on a chamfered rectangle, fillet conflict.
 polysmith_add_core_test(cad_core_sketch_chamfer_test tests/sketch_chamfer_test.cpp)
 
+# Sketch fillet arc-operand regression suite — line-arc / arc-arc
+# creation (hand-computed tangent-circle geometry), corner-at-END
+# mutation, radius edit, delete restore, oversized/tangent/
+# construction rejections, enforcement after operand edits, profile
+# set, sibling cleanup, and the v1 line-line regression.
+polysmith_add_core_test(cad_core_sketch_fillet_arc_test tests/sketch_fillet_arc_test.cpp)
+
 # Sketch extend regression suite — line/arc extension both directions,
 # closed-loop profile after extend, generated-entity rejection,
 # constraint preservation, arc angle dim flips to driven.

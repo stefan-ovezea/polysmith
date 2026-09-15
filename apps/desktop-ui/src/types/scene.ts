@@ -398,11 +398,27 @@ export interface SketchProfileScene {
   profilePoints: [number, number][];
   innerLoops: [number, number][][];
   circleHoles: SketchProfileCircleHoleScene[];
+  // Exact boundary edges (walk order) — the fill renderer builds
+  // arc-true shapes from these; empty for legacy profiles.
+  boundaryEdges: ProfileBoundaryEdgeScene[];
+  innerLoopEdges: ProfileBoundaryEdgeScene[][];
   start: [number, number];
   width: number;
   height: number;
   radius: number;
   isSelected: boolean;
+}
+
+export interface ProfileBoundaryEdgeScene {
+  entityId: string;
+  entityKind: string;
+  paramStart: number;
+  paramEnd: number;
+  start: [number, number];
+  end: [number, number];
+  center: [number, number];
+  radius: number;
+  ccw: boolean;
 }
 
 export interface SolidFaceScene {

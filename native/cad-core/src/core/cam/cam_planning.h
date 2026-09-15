@@ -76,6 +76,12 @@ bool sample_planar_wire(const TopoDS_Wire& wire, double chord_tolerance,
 bool build_base_segments_from_edges(const SketchProfileRegion& region,
                                     std::vector<cam2d::BaseSegment>& out);
 
+// Same contract, for a single boundary-edge list — the region's outer
+// boundary or one exact inner loop (hole).
+bool build_base_segments_from_edges(
+    const std::vector<ProfileBoundaryEdge>& edges,
+    std::vector<cam2d::BaseSegment>& out);
+
 // Sampled-polygon fallback (legacy profiles without exact edges).
 // Assumes the points follow the walk orientation.
 void build_base_segments_from_points(

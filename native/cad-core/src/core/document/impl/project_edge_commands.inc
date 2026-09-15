@@ -219,6 +219,11 @@ DocumentState DocumentManager::project_edge_into_sketch(
                                              /*refresh_immediately=*/false);
   }
 
+  // Register the link LAST — the record's generated-id vectors above
+  // are read by the arc-fixing loop, and a moved-from record has
+  // empty id vectors.
+  sketch_it->sketch_parameters->projections.push_back(std::move(record));
+
   refresh_linked_extrudes(*document_, *sketch_it);
   document_->selected_feature_id = sketch_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;

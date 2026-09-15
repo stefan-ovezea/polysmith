@@ -102,7 +102,6 @@ export function updateDynamicGrids({
           new THREE.Color(themeColor("--color-cad-grid-axis", "#7a7a7c")),
           0.34,
         );
-        worldGrid.renderOrder = -10;
         group.add(worldGrid);
         return group;
       },
@@ -144,7 +143,6 @@ export function updateDynamicGrids({
         new THREE.Color(themeColor("--cad-sketch-grid-center-axis", "#7a8a8f")),
         0.48,
       );
-      sketchGrid.renderOrder = -9;
       group.add(sketchGrid);
 
       // Infinite coordinate axes on top of the sketch grid
@@ -154,7 +152,6 @@ export function updateDynamicGrids({
         new THREE.Color(themeColor("--color-axis-y", "#2bd978")),
         0.72,
       );
-      axes.renderOrder = -8;
       group.add(axes);
 
       // Axis tick labels at major intervals
@@ -166,7 +163,6 @@ export function updateDynamicGrids({
         new THREE.Color(themeColor("--color-axis-y", "#2bd978")),
         worldUnitsPerPixel,
       );
-      tickLabels.renderOrder = -7;
       group.add(tickLabels);
       return group;
     },

@@ -184,8 +184,14 @@ bool sample_planar_wire(const TopoDS_Wire& wire, double chord_tolerance,
 
 bool build_base_segments_from_edges(const SketchProfileRegion& region,
                                     std::vector<BaseSegment>& out) {
+  return build_base_segments_from_edges(region.boundary_edges, out);
+}
+
+bool build_base_segments_from_edges(
+    const std::vector<ProfileBoundaryEdge>& edges,
+    std::vector<BaseSegment>& out) {
   out.clear();
-  for (const auto& edge : region.boundary_edges) {
+  for (const auto& edge : edges) {
     if (edge.entity_kind == "ellipse" || edge.entity_kind == "spline") {
       return false;
     }

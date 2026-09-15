@@ -7,6 +7,7 @@
 //   - clear_selection covers selected_sketch_text_id.
 // Live selections must survive ordinary mutations (negative control).
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -323,6 +324,144 @@ bool test_live_selection_survives_move() {
                 "negative: live selection survives a plain move");
 }
 
+// Regression for the hotkey-delete race: the UI's hotkey delete sends
+// EMPTY id lists and the core resolves the CURRENT selection at
+// command time. The UI state can lag the last marquee while its
+// selection events are still in flight; deleting a stale snapshot
+// removed a pre-marquee profile's boundary (the perimeter) while the
+// marquee's entities survived. With the pre-fix core, empty lists
+// deleted nothing at all.
+bool test_delete_empty_ids_resolves_current_selection() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_line(60.0, 0.0, 80.0, 0.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string extra_line_id = sketch.lines.back().id;
+  const std::string profile_id = sketch.profiles.front().id;
+
+  // A prior interior click selected the surface, then a marquee
+  // cleared it and selected the extra line — the state a hotkey
+  // delete sees after the marquee lands.
+  document = manager.select_sketch_profile(profile_id, false);
+  document = manager.clear_selection();
+  document = manager.select_sketch_entity(extra_line_id, false);
+
+  document = manager.delete_sketch_selection({}, {}, {});
+  const auto& after = document.feature_history.back().sketch_parameters.value();
+  const bool extra_deleted = std::none_of(
+      after.lines.begin(), after.lines.end(),
+      [&](const auto& line) { return line.id == extra_line_id; });
+  if (!expect(extra_deleted && after.lines.size() == 4,
+              "empty delete resolves the live entity selection (not a "
+              "stale profile snapshot)")) {
+    return false;
+  }
+
+  // And when the surface IS the live selection, the empty delete
+  // removes its boundary — the profile-expansion behavior with
+  // core-resolved ids.
+  document = manager.select_sketch_profile(profile_id, false);
+  document = manager.delete_sketch_selection({}, {}, {});
+  return expect(document.feature_history.back()
+                        .sketch_parameters->lines.empty(),
+                "empty delete removes the live profile's boundary");
+}
+
+// Regression for the surface-click + Delete accident: a non-additive
+// profile click REPLACES the previous entity selection. Without the
+// clear, deleting after a surface click removes BOTH the
+// previously-selected entities and the surface's boundary — the
+// reported "deleting inside geometry deletes the perimeter" bug.
+bool test_profile_click_replaces_entity_selection() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_line(60.0, 0.0, 80.0, 0.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string extra_line_id = sketch.lines.back().id;
+  const std::string profile_id = sketch.profiles.front().id;
+
+  document = manager.select_sketch_entity(extra_line_id, false);
+  document = manager.select_sketch_profile(profile_id, false);
+  if (!expect(document.selected_sketch_entity_ids.empty(),
+              "profile click replaces the entity selection")) {
+    return false;
+  }
+
+  // Delete with the profile selection: the surface's boundary goes,
+  // the replaced (previously-selected) entity stays.
+  document = manager.delete_sketch_selection(
+      document.selected_sketch_entity_ids, {},
+      document.selected_sketch_profile_ids);
+  const auto& after = document.feature_history.back().sketch_parameters.value();
+  const bool extra_survives = std::any_of(
+      after.lines.begin(), after.lines.end(),
+      [&](const auto& line) { return line.id == extra_line_id; });
+  return expect(extra_survives && after.lines.size() == 1,
+                "delete removes only the surface boundary");
+}
+
+// CAM re-pick semantics: an outline click on a boundary SHARED by two
+// regions toggles every owning region by default.  `smallest_only`
+// (the CAM flow) must reduce it to the smallest owning region so an
+// outline click behaves like an interior click — the plate must not
+// jump in and out of the selection when the user picks spokes.
+bool test_shared_boundary_click_smallest_only() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  // Divider at y=15: top region 40x5, bottom region 40x15.
+  document = manager.add_sketch_line(0.0, 15.0, 40.0, 15.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string divider_id = sketch.lines.back().id;
+  if (!expect(sketch.profiles.size() == 2,
+              "shared-boundary: divider splits the rectangle into 2")) {
+    return false;
+  }
+
+  // Default behaviour: both owning regions selected.
+  document = manager.select_sketch_profile_by_entity(divider_id, false);
+  if (!expect(document.selected_sketch_profile_ids.size() == 2,
+              "shared-boundary: default selects both regions")) {
+    return false;
+  }
+
+  // CAM smallest-only: only the smaller (top, 40x5) region.
+  document = manager.select_sketch_profile_by_entity(
+      divider_id, false, /*smallest_only=*/true);
+  if (!expect(document.selected_sketch_profile_ids.size() == 1,
+              "shared-boundary: smallest_only selects one region")) {
+    return false;
+  }
+  const auto& profiles = document.feature_history.back().sketch_parameters->profiles;
+  const auto selected = std::find_if(
+      profiles.begin(), profiles.end(), [&](const auto& profile) {
+        return profile.id == document.selected_sketch_profile_ids.front();
+      });
+  if (!expect(selected != profiles.end(),
+              "shared-boundary: selected profile exists")) {
+    return false;
+  }
+  // Shoelace area of the selected region: the smaller (top) region is
+  // 40x5 = 200; the larger (bottom) is 40x15 = 600.
+  double twice_area = 0.0;
+  const auto& pts = selected->points;
+  for (size_t i = 0; i < pts.size(); ++i) {
+    const auto& a = pts[i];
+    const auto& b = pts[(i + 1) % pts.size()];
+    twice_area += a.x * b.y - b.x * a.y;
+  }
+  return expect(std::abs(twice_area) / 2.0 < 400.0,
+                "shared-boundary: smallest_only picks the smaller (top) region");
+}
+
 }  // namespace
 
 #define RUN_TEST(name)                    \
@@ -343,6 +482,9 @@ int main() {
   RUN_TEST(test_clear_selection_clears_text);
   RUN_TEST(test_load_prunes_orphans);
   RUN_TEST(test_live_selection_survives_move);
+  RUN_TEST(test_profile_click_replaces_entity_selection);
+  RUN_TEST(test_delete_empty_ids_resolves_current_selection);
+  RUN_TEST(test_shared_boundary_click_smallest_only);
 
   std::cout << "cad_core_selection_test passed\n";
   return 0;

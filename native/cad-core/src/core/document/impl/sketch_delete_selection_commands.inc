@@ -8,6 +8,47 @@ DocumentState DocumentManager::delete_sketch_selection(
     throw std::runtime_error("No active sketch");
   }
 
+  // Empty id lists mean "delete the current selection", resolved HERE
+  // at command time. The UI's hotkey delete may fire while the last
+  // marquee's selection events are still in flight; deleting ids from
+  // a stale UI snapshot removed the WRONG geometry — a profile the
+  // user had selected before the marquee, whose boundary (the outer
+  // perimeter) then vanished while the marquee's entities stayed
+  // ("delete removed the perimeter" bug). Resolving against the live
+  // document state makes the hotkey delete race-proof. Explicit-id
+  // callers (context menu snapshot, trim, the projection heal) are
+  // unaffected.
+  std::vector<std::string> resolved_entity_ids(entity_ids.begin(),
+                                               entity_ids.end());
+  std::vector<std::string> resolved_point_ids(point_ids.begin(),
+                                              point_ids.end());
+  std::vector<std::string> resolved_profile_ids(profile_ids.begin(),
+                                                profile_ids.end());
+  if (resolved_entity_ids.empty() && resolved_point_ids.empty() &&
+      resolved_profile_ids.empty()) {
+    if (document_->selected_sketch_entity_id.has_value()) {
+      resolved_entity_ids.push_back(
+          document_->selected_sketch_entity_id.value());
+    }
+    resolved_entity_ids.insert(resolved_entity_ids.end(),
+                               document_->selected_sketch_entity_ids.begin(),
+                               document_->selected_sketch_entity_ids.end());
+    if (document_->selected_sketch_vertex_id.has_value()) {
+      resolved_point_ids.push_back(
+          document_->selected_sketch_vertex_id.value());
+    }
+    resolved_point_ids.insert(resolved_point_ids.end(),
+                              document_->selected_sketch_vertex_ids.begin(),
+                              document_->selected_sketch_vertex_ids.end());
+    if (document_->selected_sketch_profile_id.has_value()) {
+      resolved_profile_ids.push_back(
+          document_->selected_sketch_profile_id.value());
+    }
+    resolved_profile_ids.insert(resolved_profile_ids.end(),
+                                document_->selected_sketch_profile_ids.begin(),
+                                document_->selected_sketch_profile_ids.end());
+  }
+
   const auto feature_it = std::find_if(
       document_->feature_history.begin(),
       document_->feature_history.end(),
@@ -31,9 +72,9 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> ellipse_ids;
   std::unordered_set<std::string> spline_ids;
 
-  add_ids(selected_point_ids, point_ids);
+  add_ids(selected_point_ids, resolved_point_ids);
 
-  for (const auto& profile_id : profile_ids) {
+  for (const auto& profile_id : resolved_profile_ids) {
     const auto profile_it = std::find_if(
         parameters.profiles.begin(),
         parameters.profiles.end(),
@@ -49,7 +90,7 @@ DocumentState DocumentManager::delete_sketch_selection(
     }
   }
 
-  for (const auto& entity_id : entity_ids) {
+  for (const auto& entity_id : resolved_entity_ids) {
     add_id(line_ids, entity_id);
     add_id(circle_ids, entity_id);
     add_id(arc_ids, entity_id);
@@ -152,6 +193,8 @@ DocumentState DocumentManager::delete_sketch_selection(
   for (const auto& fillet : parameters.fillets) {
     if (id_in_set(line_ids, fillet.line_a_id) ||
         id_in_set(line_ids, fillet.line_b_id) ||
+        id_in_set(arc_ids, fillet.arc_a_id) ||
+        id_in_set(arc_ids, fillet.arc_b_id) ||
         id_in_set(arc_ids, fillet.arc_id) ||
         id_in_set(selected_point_ids, fillet.corner_vertex_id) ||
         id_in_set(selected_point_ids, fillet.trim_a_vertex_id) ||
@@ -422,6 +465,13 @@ DocumentState DocumentManager::delete_sketch_selection(
                               id_in_set(line_ids, anchor.line_id);
                      }),
       parameters.point_line_anchors.end());
+  // Deleting projected entities prunes their ids from the projection
+  // records. A PARTIAL delete leaves a record whose count no longer
+  // matches the source outline, so refresh_sketch_projections flags
+  // the sketch dependency_broken — accepted: the live link is
+  // meaningful and the user has an explicit heal
+  // (remove_sketch_projections: "Remove / Unlink projections" in the
+  // right-click menu). A FULL delete drops the record naturally here.
   for (auto& projection : parameters.projections) {
     remove_ids_from_vector(projection.generated_line_ids, line_ids);
     remove_ids_from_vector(projection.generated_circle_ids, circle_ids);

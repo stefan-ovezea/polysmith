@@ -13,6 +13,30 @@ import { pickSketchProfileId } from "./sketchProfilePicking";
 import { getOrthographicViewHeight } from "./grid";
 import { trimWorldPointToLocal } from "./trimHoverPreview";
 
+// Among the threshold-filtered entity hits, pick the geometry closest
+// to the click ray. `intersectObjects` sorts line hits by along-ray
+// distance `t`, not by proximity to the cursor: for sketch entities
+// sharing one plane (a head-on view makes every `t` identical) the
+// stable sort keeps array order and the first-emitted entity wins —
+// clicking an inner loop selected the outer boundary. `hit.point` is
+// the point ON the segment (three.js sets it that way), so its
+// distance to the ray is the true pick distance.
+function nearestEntityIntersection(
+  raycaster: THREE.Raycaster,
+  objects: (THREE.Line | THREE.LineLoop)[],
+): THREE.Intersection<THREE.Object3D> | undefined {
+  let best: THREE.Intersection<THREE.Object3D> | undefined;
+  let bestDistance = Infinity;
+  for (const hit of raycaster.intersectObjects(objects, false)) {
+    const distance = raycaster.ray.distanceToPoint(hit.point);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = hit;
+    }
+  }
+  return best;
+}
+
 export function pickVisibleSketchLineScreenSpace({
   event,
   sceneData,
@@ -183,9 +207,9 @@ export function intersectViewportSceneTargets({
         worldPoint: [0, 0, 0] as const,
       };
     }
-    const [sketchEntityHit] = raycaster.intersectObjects(
+    const sketchEntityHit = nearestEntityIntersection(
+      raycaster,
       sketchEntityObjects,
-      false,
     );
     const sketchEntitySelectionHit =
       sketchEntitySelectionHitFromIntersection(sketchEntityHit, "line");
@@ -202,9 +226,9 @@ export function intersectViewportSceneTargets({
   }
 
   if (inactiveSketchEntityPickEnabled && !projectMode) {
-    const [sketchEntityHit] = raycaster.intersectObjects(
+    const sketchEntityHit = nearestEntityIntersection(
+      raycaster,
       sketchEntityObjects,
-      false,
     );
     const sketchEntitySelectionHit =
       sketchEntitySelectionHitFromIntersection(sketchEntityHit);
@@ -330,8 +354,7 @@ function pickActiveSketchTarget({
     // except in the gaps between vertices.  The 2px outline rule for
     // circle/arc entities is deliberately skipped here too: the trim
     // tool has no profile hover to protect.
-    const [entityHit] = raycaster.intersectObjects(
-      sketchEntityObjects, false);
+    const entityHit = nearestEntityIntersection(raycaster, sketchEntityObjects);
     const entityResult =
       sketchEntitySelectionHitFromIntersection(entityHit);
     if (entityResult) {
@@ -362,8 +385,7 @@ function pickActiveSketchTarget({
 
   // Entities (for non-dimension tools, checked after dimensions so
   // dimension labels/arcs can still be clicked for editing).
-  const [entityHit] = raycaster.intersectObjects(
-    sketchEntityObjects, false);
+  const entityHit = nearestEntityIntersection(raycaster, sketchEntityObjects);
   let entityResult =
     sketchEntitySelectionHitFromIntersection(entityHit);
   if (entityResult) {

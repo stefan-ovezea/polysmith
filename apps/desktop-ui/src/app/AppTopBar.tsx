@@ -44,6 +44,8 @@ interface AppTopBarProps {
   selectedFaceId: string | null;
   armedSketchConstraint: ArmedSketchConstraint;
   isMirrorToolOpen: boolean;
+  isArrayPanelOpen: boolean;
+  onStartArrayTool: () => void;
   arcToolMode: "three_point" | "center_start_end";
   setArcToolMode: (mode: "three_point" | "center_start_end") => void;
   rectangleToolMode: "corner_corner" | "center_point" | "three_point";
@@ -202,6 +204,7 @@ export function AppTopBar(props: AppTopBarProps) {
       selectedFaceId={props.selectedFaceId}
       armedSketchConstraint={props.armedSketchConstraint}
       isMirrorToolOpen={props.isMirrorToolOpen}
+      isArrayPanelOpen={props.isArrayPanelOpen}
       arcToolMode={props.arcToolMode}
       onSetArcToolMode={props.setArcToolMode}
       rectangleToolMode={props.rectangleToolMode}
@@ -224,6 +227,7 @@ export function AppTopBar(props: AppTopBarProps) {
           props.clearArmedSketchConstraint();
         });
       }}
+      onStartArrayTool={props.onStartArrayTool}
       onCreateDocument={async () => {
         props.requestUnsavedGate({ kind: "new" });
       }}

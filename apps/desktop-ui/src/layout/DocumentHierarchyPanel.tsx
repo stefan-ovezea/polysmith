@@ -46,6 +46,23 @@ interface DocumentHierarchyPanelProps {
     featureId: string,
     suppressed: boolean,
   ) => Promise<void>;
+  // Sketch entries: re-parent the sketch plane onto another plane /
+  // face, and the projection heal (Remove / Unlink). The face-pick
+  // variant arms a viewport click that completes the redefinition.
+  onRedefineSketchPlane?: (
+    featureId: string,
+    planeId: string,
+  ) => Promise<void> | void;
+  onPickFaceForSketchPlane?: (featureId: string) => Promise<void> | void;
+  onRemoveSketchProjections?: (
+    featureId: string,
+    keepGeometry: boolean,
+  ) => Promise<void> | void;
+  // Heals split corners left by legacy projections: merges every
+  // vertex within the coincident tolerance onto one id per cluster.
+  onMergeCoincidentSketchPoints?: (
+    featureId: string,
+  ) => Promise<void> | void;
 }
 
 interface ContextMenuState {
@@ -495,6 +512,10 @@ export function DocumentHierarchyPanel({
   onDetachBodyProjections,
   onUnlinkBodyCopy,
   onSetFeatureSuppressed,
+  onRedefineSketchPlane,
+  onPickFaceForSketchPlane,
+  onRemoveSketchProjections,
+  onMergeCoincidentSketchPoints,
 }: DocumentHierarchyPanelProps) {
   const { t } = useTranslation();
   const [openCategories, setOpenCategories] = useState<Set<CategoryId>>(
@@ -555,6 +576,20 @@ export function DocumentHierarchyPanel({
   const contextIsLinkedCopy =
     contextFeature?.kind === "body_copy" &&
     contextFeature.body_copy_parameters?.copy_mode === "linked";
+  // The heal entries also cover orphaned projected points (the list
+  // can outlive the records when projected entities were deleted
+  // individually) — showing them lets the user sweep the strays.
+  const contextSketchHasProjections =
+    contextFeature?.kind === "sketch" &&
+    ((contextFeature.sketch_parameters?.projections?.length ?? 0) > 0 ||
+      (contextFeature.sketch_parameters?.projected_points?.length ?? 0) > 0);
+  const constructionPlanes = useMemo(
+    () =>
+      features.filter(
+        (feature) => feature.kind === "construction_plane",
+      ),
+    [features],
+  );
   const sketches = useMemo(
     () => features.filter((feature) => feature.kind === "sketch"),
     [features],
@@ -1022,6 +1057,105 @@ export function DocumentHierarchyPanel({
                       }}
                     >
                       {t("common.detachProjections")}
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+              {contextFeature?.kind === "sketch" ? (
+                <>
+                  <div className="group/replane relative">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                    >
+                      <span>{t("timeline.redefinePlane")}</span>
+                      <span className="text-on-surface-dim">&gt;</span>
+                    </button>
+                    <div className="cad-context-menu invisible absolute left-full top-0 z-40 ml-1 min-w-[170px] rounded-xl p-1 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-opacity group-hover/replane:visible group-hover/replane:opacity-100">
+                      {(["ref-plane-xy", "ref-plane-xz", "ref-plane-yz"] as const).map(
+                        (planeId) => (
+                          <button
+                            key={planeId}
+                            type="button"
+                            className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                            onClick={() => {
+                              const id = contextMenu.featureId;
+                              setContextMenu(null);
+                              void onRedefineSketchPlane?.(id, planeId);
+                            }}
+                          >
+                            {planeId === "ref-plane-xy"
+                              ? t("timeline.planeXY")
+                              : planeId === "ref-plane-xz"
+                                ? t("timeline.planeXZ")
+                                : t("timeline.planeYZ")}
+                          </button>
+                        ),
+                      )}
+                      {constructionPlanes.map((plane) => (
+                        <button
+                          key={plane.feature_id}
+                          type="button"
+                          className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                          onClick={() => {
+                            const id = contextMenu.featureId;
+                            setContextMenu(null);
+                            void onRedefineSketchPlane?.(id, plane.feature_id);
+                          }}
+                        >
+                          {featureNameById.get(plane.feature_id) ?? plane.kind}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                        onClick={() => {
+                          const id = contextMenu.featureId;
+                          setContextMenu(null);
+                          void onPickFaceForSketchPlane?.(id);
+                        }}
+                      >
+                        {t("timeline.pickFace")}
+                      </button>
+                    </div>
+                  </div>
+                  {contextSketchHasProjections ? (
+                    <>
+                      <button
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                        onClick={() => {
+                          const id = contextMenu.featureId;
+                          setContextMenu(null);
+                          void onRemoveSketchProjections?.(id, false);
+                        }}
+                      >
+                        {t("sketch.removeProjections")}
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                        onClick={() => {
+                          const id = contextMenu.featureId;
+                          setContextMenu(null);
+                          void onRemoveSketchProjections?.(id, true);
+                        }}
+                      >
+                        {t("sketch.unlinkProjections")}
+                      </button>
+                    </>
+                  ) : null}
+                  {onMergeCoincidentSketchPoints ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10"
+                      onClick={() => {
+                        const id = contextMenu.featureId;
+                        setContextMenu(null);
+                        void onMergeCoincidentSketchPoints(id);
+                      }}
+                    >
+                      {t("sketch.mergeCoincidentPoints")}
                     </button>
                   ) : null}
                 </>

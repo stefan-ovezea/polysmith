@@ -4,7 +4,8 @@
   "viewport": {
     "crosshair": "default",
     "showGrid": true,
-    "showSketchGrid": true
+    "showSketchGrid": true,
+    "showConstraints": false
   },
   "ai": {
     "enabled": false,
@@ -27,26 +28,71 @@
   },
   "hotkeys": {
     "global": {
-      "undo": { "code": "KeyZ", "label": "Z", "ctrlOrMeta": true },
-      "redo": { "code": "KeyZ", "label": "Z", "ctrlOrMeta": true, "shift": true }
+      "undo": {
+        "code": "KeyZ",
+        "label": "Z",
+        "ctrlOrMeta": true
+      },
+      "redo": {
+        "code": "KeyZ",
+        "label": "Z",
+        "ctrlOrMeta": true,
+        "shift": true
+      }
     },
     "toolbar": {
-      "extrude": { "code": "KeyE", "label": "E" },
-      "fillet": { "code": "KeyF", "label": "F" },
-      "project": { "code": "KeyP", "label": "P" }
+      "extrude": {
+        "code": "KeyE",
+        "label": "E"
+      },
+      "fillet": {
+        "code": "KeyF",
+        "label": "F"
+      },
+      "project": {
+        "code": "KeyP",
+        "label": "P"
+      }
     },
     "viewport": {
-      "toggleGrid": { "code": "KeyG", "label": "G" }
+      "toggleGrid": {
+        "code": "KeyG",
+        "label": "G"
+      }
     },
     "sketchToolbar": {
-      "createSketch": { "code": "KeyS", "label": "S" },
-      "line": { "code": "KeyL", "label": "L" },
-      "rectangle": { "code": "KeyR", "label": "R" },
-      "circle": { "code": "KeyC", "label": "C" },
-      "dimension": { "code": "KeyD", "label": "D" },
-      "trim": { "code": "KeyT", "label": "T" },
-      "move": { "code": "KeyM", "label": "M" },
-      "toggleConstruction": { "code": "KeyX", "label": "X" }
+      "createSketch": {
+        "code": "KeyS",
+        "label": "S"
+      },
+      "line": {
+        "code": "KeyL",
+        "label": "L"
+      },
+      "rectangle": {
+        "code": "KeyR",
+        "label": "R"
+      },
+      "circle": {
+        "code": "KeyC",
+        "label": "C"
+      },
+      "dimension": {
+        "code": "KeyD",
+        "label": "D"
+      },
+      "trim": {
+        "code": "KeyT",
+        "label": "T"
+      },
+      "move": {
+        "code": "KeyM",
+        "label": "M"
+      },
+      "toggleConstruction": {
+        "code": "KeyX",
+        "label": "X"
+      }
     }
   }
 }

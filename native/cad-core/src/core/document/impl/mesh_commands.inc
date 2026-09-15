@@ -240,6 +240,28 @@ DocumentState DocumentManager::project_body_into_sketch(
     }
   }
 
+  // A body projection re-describes the WHOLE part — stacking it over
+  // a TARGETED projection (face/edge/vertex/profile, e.g. a face
+  // projection of the same body) doubles the entities and garbles the
+  // profiles, which also makes deletions look like no-ops (one of two
+  // coincident copies remains on screen). Refuse unless the links are
+  // removed or unlinked first. Other body projections stay allowed:
+  // section + silhouette of the same body coexist by design (pinned
+  // by stl_import_test "both modes coexist"), and projecting several
+  // parts into one sketch is legitimate. The same-source no-op above
+  // keeps accidental re-clicks of the identical source silent.
+  const auto has_targeted_projection = std::any_of(
+      sketch_it->sketch_parameters->projections.begin(),
+      sketch_it->sketch_parameters->projections.end(),
+      [](const SketchProjection& projection) {
+        return projection.source_kind != "body";
+      });
+  if (has_targeted_projection) {
+    throw std::runtime_error(
+        "Sketch already has projected geometry. Remove or unlink the "
+        "existing projections before projecting the body again.");
+  }
+
   const auto polylines =
       mode == "section"
           ? compute_mesh_section_polylines(mesh_shape, frame.value())

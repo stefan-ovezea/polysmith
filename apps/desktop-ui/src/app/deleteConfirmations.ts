@@ -11,7 +11,20 @@ type RunAction = (action: () => Promise<void>) => void;
 export interface PendingSketchDeleteConfirmation {
   selection: SketchDeleteSelection;
   affectedFeatureNames: string[];
+  // Number of sketch entities in the selection — used to confirm
+  // LARGE deletes (a lag-invisible marquee once deleted 24 spokes in
+  // one hotkey press with no dialog at all).
+  entityCount: number;
+  // Hotkey deletes carry no trustworthy snapshot (the UI state can lag
+  // the last marquee) — on confirm the core resolves the CURRENT
+  // selection instead of deleting the snapshot ids.
+  deleteCurrentOnConfirm: boolean;
 }
+
+// Deleting many entities at once is the dangerous case: with a laggy
+// UI the marquee rectangle may never have rendered, so the user never
+// saw WHAT was selected. Force a look at the count before it goes.
+export const LARGE_SKETCH_DELETE_THRESHOLD = 5;
 
 interface FeatureDeleteContext {
   document: DocumentState | null;
@@ -70,7 +83,11 @@ function confirmDependentFeatureDelete(dependents: FeatureEntry[]) {
 }
 
 interface SketchSelectionDeleteContext {
-  selection: SketchDeleteSelection;
+  // null = delete the core's CURRENT selection (hotkey flow): the
+  // core resolves it at command time, immune to UI state lagging the
+  // last marquee. A snapshot is still passed when it carries user
+  // intent (context menu right-click).
+  selection: SketchDeleteSelection | null;
   runAction: RunAction;
   deleteSketchSelection: (
     entityIds: string[],
@@ -85,11 +102,16 @@ export function deleteSketchSelectionFromContext({
   deleteSketchSelection,
 }: SketchSelectionDeleteContext) {
   runAction(async () => {
-    await deleteSketchSelection(
-      selection.entityIds,
-      selection.vertexIds,
-      selection.profileIds,
-    );
+    if (selection) {
+      await deleteSketchSelection(
+        selection.entityIds,
+        selection.vertexIds,
+        selection.profileIds,
+      );
+      return;
+    }
+    // Empty ids: the core resolves the live selection at command time.
+    await deleteSketchSelection([], [], []);
   });
 }
 
@@ -115,6 +137,10 @@ export function confirmAndDeleteSketchSelectionFromContext({
     return;
   }
 
+  // No snapshot on the hotkey path — resolve from the freshest UI
+  // state for the dependents check only; the deletion itself goes to
+  // the core with empty ids so it deletes the live selection.
+  const deleteCurrent = !selection;
   const deleteSelection = selection ?? currentSketchDeleteSelection(document);
   if (isEmptySketchDeleteSelection(deleteSelection)) {
     return;
@@ -125,16 +151,21 @@ export function confirmAndDeleteSketchSelectionFromContext({
     activeSketchFeature,
     selection: deleteSelection,
   });
-  if (dependents.length > 0) {
+  const entityCount =
+    deleteSelection.entityIds.length + deleteSelection.profileIds.length;
+  if (dependents.length > 0 ||
+      entityCount >= LARGE_SKETCH_DELETE_THRESHOLD) {
     setPendingSketchDeleteConfirmation({
       selection: deleteSelection,
       affectedFeatureNames: dependents.map((entry) => entry.name || entry.kind),
+      entityCount,
+      deleteCurrentOnConfirm: deleteCurrent,
     });
     return;
   }
 
   deleteSketchSelectionFromContext({
-    selection: deleteSelection,
+    selection: deleteCurrent ? null : deleteSelection,
     runAction,
     deleteSketchSelection,
   });

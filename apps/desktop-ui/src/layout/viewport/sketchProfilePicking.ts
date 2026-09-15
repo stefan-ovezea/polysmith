@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import type { SketchProfileScene } from "@/types";
 import {
+  exactProfileContour,
+  smoothProfileHoleLoop,
+} from "@/lib/viewportScene";
+import {
   pointInPolygon2d,
   polygonArea2d,
   legacySketchPlane,
@@ -82,10 +86,15 @@ function containsProfilePoint(
     const dy = point[1] - profile.start[1];
     return dx * dx + dy * dy <= profile.radius * profile.radius;
   }
-  if (!pointInPolygon2d(point, profile.profilePoints)) {
+  // Test against the exact boundary contours (arcs resampled at a
+  // sagitta bound), not the coarse stored chord sample — points near
+  // the boundary classify identically to the rendered fill.
+  if (!pointInPolygon2d(point, exactProfileContour(profile))) {
     return false;
   }
-  return !profile.innerLoops.some((loop) => pointInPolygon2d(point, loop));
+  return !profile.innerLoops.some((_, index) =>
+    pointInPolygon2d(point, smoothProfileHoleLoop(profile, index)),
+  );
 }
 
 export function pickSketchProfileId({

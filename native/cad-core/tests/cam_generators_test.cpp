@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "core/cam/cam2d.h"
 #include "core/cam/cam_export.h"
 #include "core/cam/cam_generate.h"
 #include "core/cam/cam_generator.h"
@@ -147,12 +148,14 @@ std::string make_laser_op(DocumentManager& manager, DocumentState& document,
 }
 
 // Creates a laser setup + tool + op capturing MULTIPLE named sketch
-// profiles as witness references.  Returns the op id.
+// profiles as witness references.  Capturing by explicit ids matches
+// the "selected" scope semantics (no hole dedup).  Returns the op id.
 std::string make_multi_laser_op(
     DocumentManager& manager, DocumentState& document,
     const std::string& sketch_feature_id,
     const std::vector<std::string>& profile_ids,
-    const LaserCutParameters& laser) {
+    const LaserCutParameters& laser,
+    const std::string& geometry_scope = "selected") {
   CamSetup setup;
   setup.name = "Laser setup";
   setup.machine_type = "laser";
@@ -168,6 +171,7 @@ std::string make_multi_laser_op(
   op.type = "laser_cut";
   op.tool_id = document.cam.tool_library[0].tool_id;
   op.parameters.laser = laser;
+  op.geometry_scope = geometry_scope;
 
   for (const auto& profile_id : profile_ids) {
     for (const auto& feature : document.feature_history) {
@@ -1604,6 +1608,97 @@ bool test_hairline_slot_degrades() {
     }
   }
   return expect(sawOuter, "hairline slot: outer contour still cut");
+}
+
+// ── Test 67: non-circle hole cuts as exact arcs ────────────────────
+//
+// Regression: holes stored only as chord samples were cut polygonally
+// (no arcs in the G-code).  A slot hole (two lines + two arc caps)
+// must cut its rounded caps as true G2/G3 moves now that the region
+// carries exact per-hole boundary edges.
+bool test_slot_hole_cuts_exact_arcs() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(0.0, 0.0, 20.0, 20.0);
+  // Slot hole: length 8 along X, cap radius 2, centered at (10, 10).
+  document = manager.add_sketch_slot(10.0, 10.0, 8.0, 2.0, 0.0, false);
+
+  std::string outerProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch") {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (!region.inner_loops.empty()) {
+        outerProfile = region.id;
+      }
+    }
+  }
+  if (!expect(!outerProfile.empty(), "slot hole: outer region found")) {
+    return false;
+  }
+
+  // Pin the slot shape itself: the left cap must bulge WEST through
+  // (4,10) — a ccw=false left cap sweeps the wrong half (east bulge
+  // through (8,10)) and cuts back into the slot interior.
+  {
+    bool sawWestApex = false;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch") {
+        continue;
+      }
+      for (const auto& region : feature.sketch_parameters->profiles) {
+        for (const auto& loop : region.inner_loops) {
+          for (const auto& p : loop) {
+            if (std::abs(p.x - 4.0) < 1e-6 && std::abs(p.y - 10.0) < 1e-6) {
+              sawWestApex = true;
+            }
+          }
+        }
+      }
+    }
+    if (!expect(sawWestApex,
+                "slot hole: left cap bulges west through (4,10)")) {
+      return false;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), outerProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "slot hole: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  // Count true arcs: the slot caps (r ≈ 2 − kerf/2 = 1.9) must appear
+  // as G2/G3 moves.  Kerf corner-rounding arcs are r = kerf/2 = 0.1,
+  // so a 0.5–2.5 radius band separates them.
+  int bigArcs = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::FeedArcCW &&
+        move.kind != ToolpathMoveKind::FeedArcCCW) {
+      continue;
+    }
+    const double r = std::hypot(move.i, move.j);
+    if (r > 0.5 && r < 2.5) {
+      ++bigArcs;
+    }
+  }
+  if (!expect(bigArcs >= 2, "slot hole: cap arcs cut as G2/G3")) {
+    std::cerr << "  big arc count: " << bigArcs << "\n";
+    return false;
+  }
+  return true;
 }
 
 // ── Test 13: passes repeat the contour, laser stays on ───────────
@@ -4190,6 +4285,267 @@ int find_upward_face_index(const polysmith::core::CompiledBody& body) {
   return -1;
 }
 
+// ── Laser face-path + contour cleanup tests ───────────────────────
+
+// Captures the upward face of `body` as a TNP-safe attestation (the
+// same field mapping as the other face tests).
+polysmith::core::GeometryReference attest_upward_face(
+    const polysmith::core::CompiledBody& body) {
+  const int index = find_upward_face_index(body);
+  if (index < 0) {
+    throw std::runtime_error("upward face not found");
+  }
+  const auto ref =
+      polysmith::core::capture_face_reference(body.id, body.shape, index,
+                                              "top");
+  polysmith::core::FaceAttestation att;
+  att.area = ref->capturedArea;
+  att.normal = ref->capturedNormal;
+  for (const auto& p : ref->samplePoints) {
+    att.sample_points.push_back(p);
+  }
+  polysmith::core::GeometryReference stored;
+  stored.persistent_id = body.id + ":face:" + std::to_string(index);
+  stored.attestation = att;
+  return stored;
+}
+
+// Laser setup + tool + op cutting one body-face reference.  Returns
+// the op id.
+std::string make_laser_face_op(DocumentManager& manager,
+                               DocumentState& document,
+                               const polysmith::core::GeometryReference& faceRef,
+                               const LaserCutParameters& laser) {
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  CamOperation op;
+  op.name = "2D Cut (face)";
+  op.type = "laser_cut";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  op.parameters.laser = laser;
+  op.geometry_references.machining_regions.push_back(faceRef);
+  document = manager.cam_operation_add(op);
+  return document.cam.operations.back().op_id;
+}
+
+// A circular face must cut as ONE exact arc — the chord-polyline
+// sampling the old face path used would emit ~180 tiny G1 moves.
+bool test_laser_face_circular_exact_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_cylinder_feature(
+      polysmith::core::CylinderFeatureParameters{.radius = 10.0,
+                                                 .height = 10.0});
+  const auto compiled = polysmith::core::compile_bodies(document);
+  if (!expect(!compiled.bodies.empty(), "circle face: body compiled")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_face_op(manager, document,
+                         attest_upward_face(compiled.bodies[0]), laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "circle face: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int arcs = 0;
+  int laserOnLines = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      ++arcs;
+      // Concentric kerf offset: radius 10 + kerf/2 = 10.1.
+      if (!expect(near(std::hypot(move.i, move.j), 10.1, 0.02),
+                  "circle face: arc I/J equal the offset radius")) {
+        return false;
+      }
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               move.dwell_seconds <= 0.0) {
+      // The pierce move carries the dwell — it is not a chord cut.
+      ++laserOnLines;
+    }
+  }
+  if (!expect(arcs == 1, "circle face: exactly one arc cut")) {
+    std::cerr << "  saw " << arcs << " arcs\n";
+    return false;
+  }
+  return expect(laserOnLines == 0,
+                "circle face: no chord-polyline linear cuts");
+}
+
+// A sketch rectangle with one side split into two collinear lines
+// must cut that side as ONE move (the contour cleanup merges before
+// the kerf offset).  Regression: without cleanup the same profile
+// posts two bottom moves and five feeds.
+bool test_sketch_split_side_merges() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
+  document = manager.add_sketch_line(10.0, 0.0, 20.0, 0.0);  // split side
+  document = manager.add_sketch_line(20.0, 0.0, 20.0, 10.0);
+  document = manager.add_sketch_line(20.0, 10.0, 0.0, 10.0);
+  document = manager.add_sketch_line(0.0, 10.0, 0.0, 0.0);
+
+  std::string profile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_op(manager, document, sketch_feature_id(document), profile,
+                    laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "split side: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int laserOnLines = 0;
+  int bottomMoves = 0;
+  double prevX = 0.0;
+  double prevY = 0.0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    // The pierce move carries the dwell and is zero-length; skip it
+    // (and any other degenerate remnant) so only real cuts count.
+    const bool countedFeed =
+        move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+        move.dwell_seconds <= 0.0 &&
+        std::hypot(move.x - prevX, move.y - prevY) > 1e-6;
+    if (countedFeed) {
+      ++laserOnLines;
+      // The bottom side offsets outward to y = -0.1 (kerf 0.2 → d 0.1)
+      // and must span the full width in ONE move (either walk
+      // direction — the pierce rotation picks the start corner).  The
+      // offset lines are not miter-trimmed (the corners are degenerate
+      // join arcs), so the line runs x 0 → 20.
+      if (near(move.y, -0.1, 0.05) && near(prevY, -0.1, 0.05) &&
+          ((near(move.x, 20.0, 0.05) && near(prevX, 0.0, 0.05)) ||
+           (near(move.x, 0.0, 0.05) && near(prevX, 20.0, 0.05)))) {
+        ++bottomMoves;
+      }
+    }
+    prevX = move.x;
+    prevY = move.y;
+  }
+  if (!expect(laserOnLines == 4,
+              "split side: four cuts (the split side merged)")) {
+    std::cerr << "  saw " << laserOnLines << " laser-on lines\n";
+    return false;
+  }
+  return expect(bottomMoves == 1, "split side: bottom side is a single move");
+}
+
+// A fine polyline around a circle (120 facets, 3° corners) with a
+// small kerf must post ZERO arcs: every facet corner is below the
+// join-snap threshold, so the offset snaps instead of emitting a
+// micron-scale G2/G3 per corner (the noise class that flooded the
+// real mesh-derived part file).  Regression: pre-snap, this toolpath
+// carried one degenerate join arc per facet.
+bool test_faceted_circle_no_degenerate_arcs() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const int facets = 120;
+  // r = 20 keeps the 2-facet span deviation r·(1−cos 3°) ≈ 0.027 mm
+  // under the DP tolerance (0.03 mm) — at r = 50 it is 0.069 mm and
+  // no facet is simplifiable.
+  const double radius = 20.0;
+  const double step = 2.0 * polysmith::core::cam2d::kPi / facets;
+  DocumentState document;
+  for (int k = 0; k < facets; ++k) {
+    const double a1 = k * step;
+    const double a2 = (k + 1) * step;
+    document = manager.add_sketch_line(radius * std::cos(a1),
+                                       radius * std::sin(a1),
+                                       radius * std::cos(a2),
+                                       radius * std::sin(a2));
+  }
+
+  std::string profile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      profile = feature.sketch_parameters->profiles[0].id;
+    }
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.15;  // d = 0.075 — the observed join radius
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId =
+      make_laser_op(manager, document, sketch_feature_id(document), profile,
+                    laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "faceted circle: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+
+  int arcs = 0;
+  int lines = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind == ToolpathMoveKind::FeedArcCW ||
+        move.kind == ToolpathMoveKind::FeedArcCCW) {
+      ++arcs;
+    } else if (move.kind == ToolpathMoveKind::FeedLinear && move.laser_on &&
+               move.dwell_seconds <= 0.0) {
+      // The pierce move carries the dwell — not a facet cut.
+      ++lines;
+    }
+  }
+  if (!expect(arcs == 0,
+              "faceted circle: zero arcs (shallow corners snap)")) {
+    std::cerr << "  saw " << arcs << " arcs\n";
+    return false;
+  }
+  // The Douglas-Peucker pass collapses the micro-facets inside its
+  // 0.03 mm tolerance: the 2-facet span deviation is r·(1−cos 3°) ≈
+  // 0.027 mm, so roughly every other vertex drops — the cut posts
+  // fewer lines than facets, at most one extra when the pierce lands
+  // mid-segment and contour_starting_at splits it in two.  Regression:
+  // pre-DP this was one line per facet.
+  if (!expect(lines < facets,
+              "faceted circle: facets simplify below the DP tolerance")) {
+    std::cerr << "  saw " << lines << " lines for " << facets << " facets\n";
+    return false;
+  }
+  // The simplification must not decimate the circle: at least every
+  // other facet vertex survives (the dyadic DP keeps a ~0.5 density
+  // on a regular polygon).
+  return expect(lines >= facets / 2,
+                "faceted circle: simplification keeps the circle dense");
+}
+
 // 0-based edge-map index of the first full-circle edge (any position).
 int find_full_circle_edge_index(const polysmith::core::CompiledBody& body) {
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edgeMap;
@@ -5486,6 +5842,323 @@ bool test_drilling_mixed_face_edge_point() {
                 "mixed: wall, rim, and point all drilled");
 }
 
+// ── Test 68: laser duplicate holes are cut once ──────────────────
+//
+// Whole-sketch capture records a hole TWICE: as an inner loop of the
+// plate region and as a standalone region.  The generator must keep
+// the hole cut (its kerf offset lies on the scrap side) and drop the
+// standalone outer — whose kerf offset would cut into the stock —
+// instead of tracing the same ring twice.
+bool test_laser_duplicate_holes_cut_once() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(-50.0, -50.0, 50.0, 50.0);
+  document = manager.add_sketch_circle(0.0, 0.0, 10.0);
+
+  std::string rectProfile;
+  std::string circleProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (region.kind == "polygon" && !region.source_circle_id.has_value()) {
+        rectProfile = region.id;
+      } else if (region.kind == "circle" ||
+                 region.source_circle_id.has_value()) {
+        circleProfile = region.id;
+      }
+    }
+  }
+  if (!expect(!rectProfile.empty() && !circleProfile.empty(),
+              "dupe: plate and circle profiles detected")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  // Captures the rect AND the standalone circle with whole-sketch
+  // scope — like an op saved by a capture that predates the bbox
+  // hole matcher (which missed non-circular holes).
+  const std::string opId = make_multi_laser_op(
+      manager, document, sketch_feature_id(document),
+      {rectProfile, circleProfile}, laser, "sketch");
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "dupe: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // The circle must appear exactly once, as the plate's hole arc at
+  // radius 10 − kerf/2 = 9.9.  The dropped standalone duplicate would
+  // have traced a second arc at 10 + kerf/2 = 10.1.  (The rectangle's
+  // 4 corner round joins are tiny arcs of radius kerf/2 = 0.1.)
+  int holeArcs = 0;
+  int dupArcs = 0;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (move.kind != ToolpathMoveKind::FeedArcCW &&
+        move.kind != ToolpathMoveKind::FeedArcCCW) {
+      continue;
+    }
+    const double arcRadius = std::hypot(move.i, move.j);
+    if (std::abs(arcRadius - 9.9) < 0.05) {
+      ++holeArcs;
+    }
+    if (std::abs(arcRadius - 10.1) < 0.05) {
+      ++dupArcs;
+    }
+  }
+  if (!expect(holeArcs == 1, "dupe: hole cut exactly once")) {
+    std::cerr << "  hole-radius arc moves: " << holeArcs << "\n";
+    return false;
+  }
+  if (!expect(dupArcs == 0, "dupe: no standalone duplicate cut")) {
+    std::cerr << "  duplicate-radius arc moves: " << dupArcs << "\n";
+    return false;
+  }
+  bool warned = false;
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("duplicate holes of other regions") !=
+            std::string::npos &&
+        warning.find("cut once") != std::string::npos) {
+      warned = true;
+    }
+  }
+  return expect(warned, "dupe: warning reports the single cut");
+}
+
+// ── Test 69: whole-sketch capture dedupes non-circular holes ──────
+//
+// The capture-time hole matcher compared the region's
+// radius-from-area with the hole loop's mean point radius — for a
+// non-circular hole (a lens) the two disagree wildly, so whole-sketch
+// capture recorded the hole TWICE (as the plate's inner loop AND as a
+// standalone region) and the generator then cut it twice.  The matcher
+// must recognize the duplicate by centroid + bounding box.
+bool test_capture_dedupes_lens_hole() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(-50.0, -50.0, 50.0, 50.0);
+  // Lens hole: two arcs of circles (0,0)/r10 and (12,0)/r10 meeting at
+  // (6,±8).  Non-circular — the radius-from-area heuristic cannot
+  // match it against its own mean point radius.
+  document = manager.add_sketch_arc(6.0, 8.0, 6.0, -8.0, 0.0, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_arc(6.0, -8.0, 6.0, 8.0, 12.0, 0.0,
+                                    "center_start_end");
+
+  // Both the plate region (with the lens as a hole) and the standalone
+  // lens region must exist before capture.
+  int plateRegions = 0;
+  int lensRegions = 0;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (!region.inner_loops.empty()) {
+        ++plateRegions;
+      } else if (!region.source_circle_id.has_value() &&
+                 region.boundary_edges.size() == 2) {
+        ++lensRegions;
+      }
+    }
+  }
+  if (!expect(plateRegions == 1 && lensRegions == 1,
+              "capture-dupe: plate + standalone lens regions detected")) {
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+        continue;
+      }
+      const auto& sketch = feature.sketch_parameters.value();
+      std::cerr << "  lines=" << sketch.lines.size()
+                << " arcs=" << sketch.arcs.size() << "\n";
+      for (const auto& arc : sketch.arcs) {
+        std::cerr << "  arc c=(" << arc.center_x << "," << arc.center_y
+                  << ") s=(" << arc.start_x << "," << arc.start_y
+                  << ") e=(" << arc.end_x << "," << arc.end_y
+                  << ") ccw=" << arc.ccw << "\n";
+      }
+      for (const auto& region : sketch.profiles) {
+        std::cerr << "  region " << region.kind
+                  << " edges=" << region.boundary_edges.size()
+                  << " holes=" << region.inner_loops.size()
+                  << " pts=" << region.points.size()
+                  << " circle=" << region.source_circle_id.has_value() << "\n";
+      }
+    }
+    return false;
+  }
+
+  CamOperation op;
+  op.type = "laser_cut";
+  const bool captured = polysmith::core::capture_profile_references_from_sketch(
+      manager.get_document().value(), sketch_feature_id(document), op);
+  if (!expect(captured, "capture-dupe: capture succeeds")) {
+    return false;
+  }
+  return expect(op.geometry_references.machining_regions.size() == 1,
+                "capture-dupe: the lens is not captured twice");
+}
+
+// ── Test 70: all-sharp arc holes pierce mid-arc, warnings deduped ─
+//
+// The user's petal holes have every corner below the 60° pierce
+// threshold.  The old fallback claimed "piercing mid-segment on the
+// longest straight edge" but scanned only straight pieces — an
+// all-arc hole fell through to the nearest vertex, and the two
+// pierce notes repeated once per contour.  The fallback must pierce
+// mid-segment on the longest EDGE (arcs included), and identical
+// warnings must collapse into one counted line.
+bool test_all_sharp_hole_pierces_mid_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document =
+      manager.add_sketch_rectangle(-200.0, -200.0, 200.0, 200.0);
+  // One petal hole at the user's exact wheel coordinates + a second
+  // copy shifted +150 in X (exercises the warning dedupe).
+  const auto add_petal = [&](double shiftX) {
+    document = manager.add_sketch_arc(
+        -42.797058105468253 + shiftX, 9.7543182373047248,
+        -49.720581054687251 + shiftX, -2.6634063720702734,
+        -105.08492923935869 + shiftX, 36.344119490276988,
+        "center_start_end");
+    document = manager.add_sketch_arc(
+        -49.720581054687251 + shiftX, -2.6634063720702734,
+        -75.138923016298421 + shiftX, 1.0417130934194034,
+        -54.715822198817875 + shiftX, 52.109290715970374,
+        "center_start_end");
+    document = manager.add_sketch_arc(
+        -75.138923016298421 + shiftX, 1.0417130934194034,
+        -62.631344404574548 + shiftX, 8.8271461214015261,
+        -105.23047599194608 + shiftX, 63.324531239794212,
+        "center_start_end");
+    document = manager.add_sketch_arc(
+        -62.631344404574548 + shiftX, 8.8271461214015261,
+        -42.797058105468253 + shiftX, 9.7543182373047248,
+        -54.715822198817875 + shiftX, 52.109290715970374,
+        "center_start_end");
+  };
+  add_petal(0.0);
+  add_petal(150.0);
+
+  std::string rectProfile;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    for (const auto& region : feature.sketch_parameters->profiles) {
+      if (!region.inner_loops.empty()) {
+        rectProfile = region.id;
+      }
+    }
+  }
+  if (!expect(!rectProfile.empty(), "mid-arc: plate region found")) {
+    return false;
+  }
+
+  LaserCutParameters laser;
+  laser.kerf_width_mm = 0.2;
+  laser.lead_in_mm = 0.0;
+  laser.lead_out_mm = 0.0;
+  const std::string opId = make_laser_op(
+      manager, document, sketch_feature_id(document), rectProfile, laser);
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), opId, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "mid-arc: generation succeeds")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  // One counted line per repeated pierce note — not one per hole.
+  int fallbackLines = 0;
+  int sharpLines = 0;
+  bool sawStraightEdgeCopy = false;
+  for (const auto& warning : outcome.result.warnings) {
+    if (warning.find("Every corner is sharper") != std::string::npos) {
+      ++fallbackLines;
+      if (warning.find("(×2)") == std::string::npos) {
+        std::cerr << "  fallback warning lacks the count: " << warning
+                  << "\n";
+        return expect(false, "mid-arc: fallback warning counted once");
+      }
+    }
+    if (warning.find("sharp corner(s) were excluded") != std::string::npos) {
+      ++sharpLines;
+    }
+    if (warning.find("straight edge") != std::string::npos) {
+      sawStraightEdgeCopy = true;
+    }
+  }
+  if (!expect(fallbackLines == 1 && sharpLines == 1,
+              "mid-arc: pierce notes appear once with counts")) {
+    return false;
+  }
+  if (!expect(!sawStraightEdgeCopy,
+              "mid-arc: copy names the longest edge, not a straight edge")) {
+    return false;
+  }
+  // Both hole pierces land mid-arc on the longest offset piece: the
+  // r=55 hub arc, offset inward by kerf/2 to 54.9, far from every
+  // corner.  The pierce is the zero-length laser-on move at the start
+  // of each loop.
+  int midArcPierces = 0;
+  double prevX = 0.0;
+  double prevY = 0.0;
+  bool havePrev = false;
+  for (const auto& move : outcome.result.toolpath.moves) {
+    if (!move.laser_on || move.kind != ToolpathMoveKind::FeedLinear) {
+      havePrev = true;
+      prevX = move.x;
+      prevY = move.y;
+      continue;
+    }
+    if (havePrev && dist(move.x, move.y, prevX, prevY) < 1e-9) {
+      // Pierce at (move.x, move.y): on the w2 offset circle of petal
+      // 1 or 2, and clear of every corner vertex.
+      for (const double w2Cx : {-54.715822198817875, 95.284177801182125}) {
+        if (std::abs(dist(move.x, move.y, w2Cx, 52.109290715970374) -
+                     54.9) > 0.15) {
+          continue;
+        }
+        const double cornerVerts[][2] = {
+            {-42.797058105468253 + (w2Cx > 0.0 ? 150.0 : 0.0),
+             9.7543182373047248},
+            {-49.720581054687251 + (w2Cx > 0.0 ? 150.0 : 0.0),
+             -2.6634063720702734},
+            {-75.138923016298421 + (w2Cx > 0.0 ? 150.0 : 0.0),
+             1.0417130934194034},
+            {-62.631344404574548 + (w2Cx > 0.0 ? 150.0 : 0.0),
+             8.8271461214015261}};
+        bool nearCorner = false;
+        for (const auto& corner : cornerVerts) {
+          if (dist(move.x, move.y, corner[0], corner[1]) < 10.0) {
+            nearCorner = true;
+          }
+        }
+        if (!nearCorner) {
+          ++midArcPierces;
+        }
+      }
+    }
+    havePrev = true;
+    prevX = move.x;
+    prevY = move.y;
+  }
+  return expect(midArcPierces == 2,
+                "mid-arc: both holes pierce mid-arc on the longest piece");
+}
+
 }  // namespace
 
 int main() {
@@ -5519,6 +6192,12 @@ int main() {
   run("Test 7: face smaller than tool",
       test_face_milling_face_smaller_than_tool);
   run("Test 8: laser from face outline", test_laser_from_face_outline);
+  run("Test 8b: circular face emits one exact arc",
+      test_laser_face_circular_exact_arc);
+  run("Test 8c: split sketch side merges into one cut",
+      test_sketch_split_side_merges);
+  run("Test 8d: faceted circle emits zero degenerate arcs",
+      test_faceted_circle_no_degenerate_arcs);
   run("Test 9: rotated plane arcs", test_rotated_plane_arcs);
   run("Test 10: mirrored frame flips sweep", test_mirrored_frame_flips_sweep);
   run("Test 11: non-horizontal plane rejected",
@@ -5607,6 +6286,13 @@ int main() {
       test_drilling_mixed_face_edge_point);
   run("Test 66: test-pattern create gate + default laser tool",
       test_test_pattern_create_gate_and_default_tool);
+  run("Test 67: slot hole cuts exact arcs", test_slot_hole_cuts_exact_arcs);
+  run("Test 68: laser duplicate holes cut once",
+      test_laser_duplicate_holes_cut_once);
+  run("Test 69: whole-sketch capture dedupes lens holes",
+      test_capture_dedupes_lens_hole);
+  run("Test 70: all-sharp arc holes pierce mid-arc, warnings deduped",
+      test_all_sharp_hole_pierces_mid_arc);
 
   if (allPassed) {
     std::cout << "cam_generators_test passed\n";

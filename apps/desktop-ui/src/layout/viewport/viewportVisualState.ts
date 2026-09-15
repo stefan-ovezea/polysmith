@@ -182,7 +182,7 @@ export function createViewportVisualStateActions({
         const status = dofMap.get(id)!;
         material.color.set(status === "full" ? 0x8899aa : 0xff4444);
       } else {
-        material.color.set(themeColor("--color-tertiary-plane-fill", "#fff7c0"));
+        material.color.set(themeColor("--color-tertiary-plane-edge", "#ffe784"));
       }
       material.opacity = isSelected || isHovered ? 1 : 0.98;
       material.linewidth = isSelected ? 3 : isHovered ? 2.5 : 1;
@@ -213,13 +213,16 @@ export function createViewportVisualStateActions({
           ? themeColor("--color-primary-edge-active", "#c3f5ff")
           : isHovered
             ? themeColor("--color-tertiary-plane-edge-hover", "#fff2b2")
-            : kind === "center" || kind === "projected" || kind === "quadrant"
-              ? themeColor("--color-axis-z", "#6db4ff")
-              : themeColor("--color-tertiary-plane-edge", "#ffe784"),
+            : kind === "projected"
+              ? themeColor("--cad-sketch-projected", "#a678d6")
+              : kind === "center" || kind === "quadrant"
+                ? themeColor("--color-axis-z", "#6db4ff")
+                : themeColor("--color-tertiary-plane-edge", "#ffe784"),
       );
       material.opacity = isSelected || isHovered ? 1 : 0.95;
-      const scale = isSelected ? 1.35 : isHovered ? 1.25 : 1;
-      mesh.scale.setScalar(scale);
+      // Scale is owned by the ViewportPanel render loop — points stay
+      // a constant SCREEN size (hover/selection get a pixel boost
+      // there), not a world-space size that balloons on zoom-in.
     }
   }
 

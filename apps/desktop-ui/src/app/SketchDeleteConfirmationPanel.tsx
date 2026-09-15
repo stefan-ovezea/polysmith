@@ -1,6 +1,9 @@
 import { useTranslation } from "react-i18next";
 import type { SketchDeleteSelection } from "./appState";
-import type { PendingSketchDeleteConfirmation } from "./deleteConfirmations";
+import {
+  LARGE_SKETCH_DELETE_THRESHOLD,
+  type PendingSketchDeleteConfirmation,
+} from "./deleteConfirmations";
 
 interface SketchDeleteConfirmationPanelProps {
   confirmation: PendingSketchDeleteConfirmation;
@@ -15,6 +18,8 @@ export function SketchDeleteConfirmationPanel({
 }: SketchDeleteConfirmationPanelProps) {
   const { t } = useTranslation();
   const affectedCount = confirmation.affectedFeatureNames.length;
+  const isLargeSelection =
+    confirmation.entityCount >= LARGE_SKETCH_DELETE_THRESHOLD;
 
   return (
     <section className="pointer-events-auto cad-floating-panel px-5 py-5">
@@ -41,14 +46,22 @@ export function SketchDeleteConfirmationPanel({
             {t("sketchDelete.warning")}
           </p>
           <h2 className="mt-2 font-display text-lg text-on-surface">
-            {t("sketchDelete.title")}
+            {isLargeSelection
+              ? t("sketchDelete.manyTitle", {
+                  count: confirmation.entityCount,
+                })
+              : t("sketchDelete.title")}
           </h2>
           <p className="mt-3 text-sm leading-5 text-on-surface-muted">
-            {t("sketchDelete.body", {
-              count: affectedCount,
-              plural: affectedCount === 1 ? "" : "s",
-              names: confirmation.affectedFeatureNames.join(", "),
-            })}
+            {isLargeSelection
+              ? t("sketchDelete.manyBody", {
+                  count: confirmation.entityCount,
+                })
+              : t("sketchDelete.body", {
+                  count: affectedCount,
+                  plural: affectedCount === 1 ? "" : "s",
+                  names: confirmation.affectedFeatureNames.join(", "),
+                })}
           </p>
         </div>
       </div>

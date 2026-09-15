@@ -10,6 +10,7 @@
 #include "core/cam/cam_planning.h"
 #include "core/cam/laser/laser_fill.h"
 #include "core/cam/laser/laser_leads.h"
+#include "core/diagnostics/logger.h"
 #include "core/cam/laser/laser_order.h"
 #include "core/cam/laser/laser_tabs.h"
 #include "core/diagnostics/logger.h"
@@ -35,26 +36,49 @@ using polysmith::core::ToolpathMoveKind;
 
 using cam2d::BaseSegment;
 using cam2d::OffsetSegment;
+using cam2d::SegmentCleanupStats;
+using cam2d::SimplifyStats;
 using cam2d::XY;
 using cam2d::base_segments_signed_area;
+using cam2d::cleanup_base_segments;
 using cam2d::kOffsetEps;
+using cam2d::kPi;
 using cam2d::offset_closed_loop;
 using cam2d::offset_loop_length;
 using cam2d::offset_loop_self_intersects;
 using cam2d::reverse_segments;
 using cam2d::sample_offset_loop;
+using cam2d::simplify_polyline_dp;
 using cam2d::xy_centroid;
 using cam2d::xy_length;
 using cam2d::xy_signed_area;
+
+// Douglas-Peucker deviation for the base loop: facet vertices within
+// this of the simplified path are dropped.  Well below the kerf
+// half-width (0.075 mm default) and the arc tolerance (0.05 mm), far
+// above float noise.
+constexpr double kDpSimplifyEpsilonMm = 0.03;
 
 // Builds and offsets one loop (outer or hole) into a PlannedLoop.
 // Returns false with a human message on hard failure.
 bool plan_loop(const std::vector<BaseSegment>& base, double kerf,
                bool is_hole, const XY& centroid, PlannedLoop& out,
-               std::string& error) {
+               SegmentCleanupStats& cleanup_stats,
+               SimplifyStats& simplify_stats, std::string& error) {
   out.is_hole = is_hole;
   out.centroid = centroid;
-  if (!offset_closed_loop(base, kerf, out.segments)) {
+  // Heal the contour before the kerf offset: fragmented sketch
+  // profiles (split arcs, double lines, projection spurs) would
+  // otherwise be posted move-for-move.  Only consecutive pairs are
+  // touched, so loop closure survives.
+  std::vector<BaseSegment> cleaned = base;
+  cleanup_stats += cleanup_base_segments(cleaned);
+  // Faceted bodies flood the contour with micro-facets far finer than
+  // the laser kerf — the Douglas-Peucker pass drops line-run vertices
+  // within the deviation tolerance.  Arcs stay exact anchors, so
+  // circle edges still post as one G2/G3.
+  simplify_stats += simplify_polyline_dp(cleaned, kDpSimplifyEpsilonMm);
+  if (!offset_closed_loop(cleaned, kerf, out.segments)) {
     error = "A profile contour could not be offset (check the kerf width).";
     return false;
   }
@@ -303,6 +327,11 @@ CamGenerateResult generate_laser_cut_toolpath(
 
   // ── Plan loops: per selected region, holes first, then the outer ─
   std::string firstSkipReason;
+  // Accumulated contour-heal counts across every loop, reported in one
+  // structured log line at the end (the user's Logs panel shows how
+  // much the generated G-code shrank).
+  SegmentCleanupStats cleanupStats;
+  SimplifyStats simplifyStats;
   std::vector<std::vector<PlannedLoop>> groups;
   for (size_t r = 0; r < context.geometry.profiles.size(); ++r) {
     const auto& region = *context.geometry.profiles[r].region;
@@ -352,7 +381,7 @@ CamGenerateResult generate_laser_cut_toolpath(
       std::string error;
       const double outerKerf = kerf_for(/*is_hole=*/false);
       if (!plan_loop(base, outerKerf, /*is_hole=*/false, centroid, loop,
-                     error)) {
+                     cleanupStats, simplifyStats, error)) {
         // Drop the whole region: cutting a region's holes after its
         // outline failed would separate material with no release cut.
         if (firstSkipReason.empty()) {
@@ -377,7 +406,7 @@ CamGenerateResult generate_laser_cut_toolpath(
       // cutting them would trace a visibly polygonal hole path next
       // to the smooth circle outline.  The walk is CW (hole interior
       // on the right) so the auto kerf still offsets inward, into
-      // the scrap side.  Non-circle holes keep the sampled points.
+      // the scrap side.
       const auto circleHole = std::find_if(
           region.circle_holes.begin(), region.circle_holes.end(),
           [&](const auto& entry) {
@@ -393,6 +422,18 @@ CamGenerateResult generate_laser_cut_toolpath(
         full.ccw = false;
         holeBase.push_back(full);
         holeCentroid = full.center;
+      } else if (holeIndex < region.inner_loop_edges.size() &&
+                 !region.inner_loop_edges[holeIndex].empty() &&
+                 cam_planning::build_base_segments_from_edges(
+                     region.inner_loop_edges[holeIndex], holeBase)) {
+        // Exact hole edges (new profiles) — non-circle holes cut as
+        // true line/arc segments instead of the polygonal chord
+        // sample.  Spline/ellipse holes still fall back to points.
+        std::vector<XY> holePointList;
+        for (const auto& segment : holeBase) {
+          holePointList.push_back(segment.start);
+        }
+        holeCentroid = xy_centroid(holePointList);
       } else {
         cam_planning::build_base_segments_from_points(holePoints, holeBase);
         std::vector<XY> holePointList;
@@ -415,7 +456,8 @@ CamGenerateResult generate_laser_cut_toolpath(
       std::string error;
       const double holeKerf = kerf_for(/*is_hole=*/true);
       if (!plan_loop(holeBase, holeKerf, /*is_hole=*/true,
-                     holeCentroid, loop, error)) {
+                     holeCentroid, loop, cleanupStats, simplifyStats,
+                     error)) {
         result.warnings.push_back("A hole contour was skipped: " + error);
         continue;
       }
@@ -445,15 +487,34 @@ CamGenerateResult generate_laser_cut_toolpath(
         return result;
       }
 
-      std::vector<std::vector<XY>> wireLoops;
+      // Exact wire segments first: line and circle edges become real
+      // segments (circles post as one G2/G3 instead of a ~180-piece
+      // chord polyline).  Wires with spline/ellipse edges (mesh-fitted
+      // bodies) have no exact segment form — fall back to the sampled
+      // polyline, the historical behavior.  Mesh-derived facets are
+      // straight lines, so the exact path preserves them verbatim.
+      std::vector<std::vector<BaseSegment>> wireLoops;
       for (TopExp_Explorer wireExp(face, TopAbs_WIRE); wireExp.More();
            wireExp.Next()) {
-        std::vector<XY> loop;
-        if (cam_planning::sample_planar_wire(
-                TopoDS::Wire(wireExp.Current()), /*chord_tolerance=*/0.05,
-                loop)) {
-          wireLoops.push_back(std::move(loop));
+        const TopoDS_Wire wire = TopoDS::Wire(wireExp.Current());
+        std::vector<BaseSegment> loop;
+        if (!cam_planning::build_base_segments_from_wire(wire, loop)) {
+          loop.clear();
+          std::vector<XY> points;
+          if (!cam_planning::sample_planar_wire(
+                  wire, /*chord_tolerance=*/0.05, points)) {
+            continue;
+          }
+          for (size_t i = 0; i < points.size(); ++i) {
+            const auto& a = points[i];
+            const auto& b = points[(i + 1) % points.size()];
+            BaseSegment segment;
+            segment.start = a;
+            segment.end = b;
+            loop.push_back(segment);
+          }
         }
+        wireLoops.push_back(std::move(loop));
       }
       if (wireLoops.empty()) {
         result.ok = false;
@@ -484,39 +545,57 @@ CamGenerateResult generate_laser_cut_toolpath(
         }
       }
 
+      // Signed loop area with the full-circle convention resolved: a
+      // loop of one circle (start == end) has a zero shoelace, so its
+      // area comes from the walk direction.
+      const auto wireLoopArea = [](const std::vector<BaseSegment>& loop) {
+        const double area = base_segments_signed_area(loop);
+        if (loop.size() == 1 && loop[0].is_arc &&
+            xy_length(loop[0].end.x - loop[0].start.x,
+                      loop[0].end.y - loop[0].start.y) < 1e-9) {
+          return (loop[0].ccw ? 1.0 : -1.0) * kPi * loop[0].radius *
+                 loop[0].radius;
+        }
+        return area;
+      };
+
       // The largest loop is the outer boundary; the rest are holes.
       std::sort(wireLoops.begin(), wireLoops.end(),
-                [](const auto& a, const auto& b) {
-                  return std::abs(xy_signed_area(a)) >
-                         std::abs(xy_signed_area(b));
+                [&](const auto& a, const auto& b) {
+                  return std::abs(wireLoopArea(a)) >
+                         std::abs(wireLoopArea(b));
                 });
 
       bool faceGroupDropped = false;
       std::vector<PlannedLoop> faceGroup;
       for (size_t w = 0; w < wireLoops.size(); ++w) {
         const bool isHole = w > 0;
-        std::vector<BaseSegment> base;
-        for (size_t i = 0; i < wireLoops[w].size(); ++i) {
-          const auto& a = wireLoops[w][i];
-          const auto& b = wireLoops[w][(i + 1) % wireLoops[w].size()];
-          BaseSegment segment;
-          segment.start = a;
-          segment.end = b;
-          base.push_back(segment);
-        }
-        // Normalize: outer CCW (material left), holes CW.
-        const double area = base_segments_signed_area(base);
+        std::vector<BaseSegment> base = wireLoops[w];
+        // Normalize: outer CCW (material left), holes CW.  The area
+        // helper resolves full-circle orientation the same way the
+        // sketch path's synthesized circles do.
+        const double area = wireLoopArea(base);
         if ((!isHole && area < 0) || (isHole && area > 0)) {
           reverse_segments(base);
         }
         if (conventional) {
           reverse_segments(base);
         }
+        // Pierce anchor centroid: segment endpoints, or the circle
+        // center for a single full-circle loop (the profile path's
+        // convention).
+        std::vector<XY> basePoints;
+        for (const auto& segment : base) {
+          basePoints.push_back(segment.start);
+        }
+        const XY centroid =
+            base.size() == 1 && base[0].is_arc ? base[0].center
+                                               : xy_centroid(basePoints);
         PlannedLoop loop;
         std::string error;
         const double faceKerf = kerf_for(isHole);
-        if (!plan_loop(base, faceKerf, isHole,
-                       xy_centroid(wireLoops[w]), loop, error)) {
+        if (!plan_loop(base, faceKerf, isHole, centroid, loop,
+                       cleanupStats, simplifyStats, error)) {
           // A failed outer boundary drops the whole face; a failed
           // hole drops only that hole.
           if (!isHole) {
@@ -606,14 +685,23 @@ CamGenerateResult generate_laser_cut_toolpath(
   };
   compute_nesting(ordered);
 
-  // Warn once when a selected loop coincides with another region's
-  // loop ring (nested-but-separate profiles are legitimately distinct
-  // parts; only coincident geometry is genuinely cut twice).
+  // A selected loop that coincides with another region's loop ring is
+  // genuinely cut twice.  Whole-sketch capture is SUPPOSED to skip
+  // standalone regions that duplicate another region's holes, but the
+  // capture matcher only recognized circular holes — sketch-scoped ops
+  // saved before that fix still carry the duplicates.  For them the
+  // generator drops the standalone outer (its kerf offset would cut
+  // into the stock) and keeps the HOLE cut (kerf on the scrap side).
+  // Explicitly selected regions are honored as-is — nested separate
+  // parts are a legitimate design — and only warned.
   // `hole_signature`/`matches_hole` at capture time stay the single
   // hole-matching implementation for attestation; this generate-time
-  // scan surfaces the same condition on the planned loops.
+  // pass heals operations captured before the capture matcher
+  // recognized non-circular holes.
+  const bool dedupe = op.geometry_scope != "selected";
   {
     int duplicates = 0;
+    std::vector<bool> drop(ordered.size(), false);
     for (size_t i = 0; i < ordered.size(); ++i) {
       for (size_t j = i + 1; j < ordered.size(); ++j) {
         if (ordered[i].group == ordered[j].group) {
@@ -630,15 +718,37 @@ CamGenerateResult generate_laser_cut_toolpath(
         if (distance < 0.05 + 0.02 * radius &&
             std::abs(ratio - 1.0) < 0.25) {
           ++duplicates;
+          if (dedupe) {
+            if (!ordered[i].is_hole && ordered[j].is_hole) {
+              drop[i] = true;  // keep the hole cut, drop the outer
+            } else {
+              drop[j] = true;
+            }
+          }
           break;
         }
       }
     }
     if (duplicates > 0) {
-      result.warnings.push_back(
-          std::to_string(duplicates) +
-          " selected profile(s) duplicate holes of other regions — they may "
-          "be cut twice.");
+      if (dedupe) {
+        std::vector<PlannedLoop> kept;
+        kept.reserve(ordered.size());
+        for (size_t i = 0; i < ordered.size(); ++i) {
+          if (!drop[i]) {
+            kept.push_back(std::move(ordered[i]));
+          }
+        }
+        ordered = std::move(kept);
+        result.warnings.push_back(
+            std::to_string(duplicates) +
+            " selected profile(s) duplicate holes of other regions — they are "
+            "cut once.");
+      } else {
+        result.warnings.push_back(
+            std::to_string(duplicates) +
+            " selected profile(s) duplicate holes of other regions — they "
+            "may be cut twice.");
+      }
     }
   }
 
@@ -920,6 +1030,56 @@ CamGenerateResult generate_laser_cut_toolpath(
     result.warnings.push_back(
         std::to_string(skippedDegenerate) +
         " contour(s) were too small to sample and were skipped.");
+  }
+  if (cleanupStats.any()) {
+    log_info(
+        "cam_laser",
+        "contour cleanup: merged " + std::to_string(cleanupStats.merged_lines) +
+            " lines, " + std::to_string(cleanupStats.merged_arcs) +
+            " arcs; dropped " +
+            std::to_string(cleanupStats.dropped_duplicates) +
+            " duplicate segment(s), " +
+            std::to_string(cleanupStats.dropped_spurs) + " spur(s), " +
+            std::to_string(cleanupStats.dropped_degenerate) +
+            " degenerate segment(s)");
+  }
+  if (simplifyStats.any()) {
+    log_info("cam_laser",
+             "contour simplify: " +
+                 std::to_string(simplifyStats.vertices_before) +
+                 " points -> " +
+                 std::to_string(simplifyStats.vertices_after) +
+                 " (max deviation " +
+                 std::to_string(kDpSimplifyEpsilonMm) + " mm)");
+  }
+
+  // Collapse repeated identical warnings into one line with a count —
+  // the per-loop pierce notes otherwise flood the Logs panel once per
+  // contour (a 36-hole part: 72 lines of two messages).
+  {
+    std::vector<std::string> collapsed;
+    std::vector<int> counts;
+    for (const auto& warning : result.warnings) {
+      bool seen = false;
+      for (size_t k = 0; k < collapsed.size(); ++k) {
+        if (collapsed[k] == warning) {
+          ++counts[k];
+          seen = true;
+          break;
+        }
+      }
+      if (!seen) {
+        collapsed.push_back(warning);
+        counts.push_back(1);
+      }
+    }
+    result.warnings.clear();
+    for (size_t k = 0; k < collapsed.size(); ++k) {
+      result.warnings.push_back(
+          counts[k] > 1
+              ? collapsed[k] + " (×" + std::to_string(counts[k]) + ")"
+              : collapsed[k]);
+    }
   }
 
   result.toolpath = std::move(toolpath);

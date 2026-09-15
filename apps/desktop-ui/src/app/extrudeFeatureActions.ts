@@ -198,15 +198,30 @@ export function useExtrudeFeatureActions({
       return;
     }
 
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
       if (!extrudeFeatureIsPresent(pendingFeatureIds)) {
         return;
       }
-      const documentPromise = awaitDocumentChange(() => true);
+      // If the undo fails ("Nothing to undo" — e.g. the undo stack was
+      // cleared by a document load, or an earlier undo already removed
+      // the preview), there is nothing more to undo: stop immediately
+      // instead of hammering the core with retries and hanging on the
+      // document-change wait (each failed undo emits no document event,
+      // so the wait would time out and abort the whole cancel).
+      const documentPromise = awaitDocumentChange(() => true, 1500);
       await runAction(async () => {
         await undo();
       });
-      await documentPromise;
+      if (extrudeFeatureIsPresent(pendingFeatureIds)) {
+        try {
+          await documentPromise;
+        } catch {
+          // No document change arrived — the undo did not remove the
+          // preview.  Retrying cannot help; leave the rest to the
+          // caller (the cancel handler closes the panel regardless).
+          return;
+        }
+      }
     }
   }
 

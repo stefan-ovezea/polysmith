@@ -20,6 +20,13 @@ struct PolygonSketchProfile {
   // the viewport draw full-circle holes smoothly instead of the
   // sampled chord outline.
   std::vector<SketchProfileCircleHole> circle_holes;
+  // Exact outer-boundary edges (walk order) — the viewport builds the
+  // profile fill from these so arc-bounded surfaces render as true
+  // arcs, not the chord-sampled polygon.  Empty for legacy profiles.
+  std::vector<ProfileBoundaryEdge> boundary_edges;
+  // Exact per-hole boundary edges, one entry per inner_loops entry
+  // (same ordering contract as SketchProfileRegion::inner_loop_edges).
+  std::vector<std::vector<ProfileBoundaryEdge>> inner_loop_edges;
 };
 
 struct CircleSketchProfile {

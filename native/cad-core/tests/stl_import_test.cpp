@@ -20,6 +20,11 @@
 #include <vector>
 
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -35,6 +40,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Vertex.hxx>
+#include <TopTools.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Trsf.hxx>
@@ -48,6 +54,7 @@
 #include "core/geometry/face_geometry.h"
 #include "core/geometry/feature_shape.h"
 #include "core/geometry/mesh_projection.h"
+#include "core/viewport/facet_edge_filter.h"
 #include "core/viewport/viewport.h"
 #include "protocol/serialization.h"
 
@@ -1394,6 +1401,237 @@ bool test_mesh_body_export_step() {
                 "mesh STEP export: file must start with the STEP header");
 }
 
+// Direct pin of the facet-edge filter contract on a hand-built
+// faceted solid: a box whose top face is split into two coplanar
+// triangles. The shared A-C diagonal is a triangulation seam and must
+// be dropped; the 12 box edges separate non-coplanar faces and must
+// stay. This is the case that matters for large converted meshes
+// (coplanar-face unification is skipped above the face-count limit —
+// see facet_edge_filter.h).
+bool test_facet_edge_filter_drops_coplanar_seams() {
+  const auto make_face = [](const std::vector<gp_Pnt>& points) {
+    BRepBuilderAPI_MakePolygon polygon;
+    for (const auto& point : points) {
+      polygon.Add(point);
+    }
+    polygon.Close();
+    BRepBuilderAPI_MakeFace face(polygon.Wire());
+    return face.Face();
+  };
+
+  // Box corners: bottom z=0, top z=10.
+  const gp_Pnt a(-10.0, -10.0, 10.0);  // top
+  const gp_Pnt b(10.0, -10.0, 10.0);
+  const gp_Pnt c(10.0, 10.0, 10.0);
+  const gp_Pnt d(-10.0, 10.0, 10.0);
+  const gp_Pnt e(-10.0, -10.0, 0.0);  // bottom
+  const gp_Pnt f(10.0, -10.0, 0.0);
+  const gp_Pnt g(10.0, 10.0, 0.0);
+  const gp_Pnt h(-10.0, 10.0, 0.0);
+
+  BRepBuilderAPI_Sewing sewer(1e-6);
+  sewer.Add(make_face({e, f, g, h}));      // bottom
+  sewer.Add(make_face({a, b, f, e}));      // front
+  sewer.Add(make_face({b, c, g, f}));      // right
+  sewer.Add(make_face({c, d, h, g}));      // back
+  sewer.Add(make_face({d, a, e, h}));      // left
+  sewer.Add(make_face({a, b, c}));         // top triangle 1
+  sewer.Add(make_face({a, c, d}));         // top triangle 2 (A-C seam)
+  sewer.Perform();
+  const TopoDS_Shape& sewn = sewer.SewedShape();
+  if (!expect(!sewn.IsNull(), "filter: shell sews")) {
+    return false;
+  }
+  BRepBuilderAPI_MakeSolid solid_maker(TopoDS::Shell(sewn));
+  if (!expect(solid_maker.IsDone(), "filter: solid builds")) {
+    return false;
+  }
+
+  const polysmith::core::FacetEdgeFilter filter(solid_maker.Solid());
+  // Unique edges via MapShapes (TopExp_Explorer revisits each shared
+  // edge once per adjacent face — 26 visits for 13 unique edges).
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> unique_edges;
+  TopExp::MapShapes(solid_maker.Solid(), TopAbs_EDGE, unique_edges);
+  int total_edges = 0;
+  int kept_edges = 0;
+  bool dropped_is_seam = true;
+  for (int i = 1; i <= unique_edges.Extent(); ++i) {
+    const TopoDS_Edge edge = TopoDS::Edge(unique_edges(i));
+    ++total_edges;
+    if (filter.keep(edge)) {
+      ++kept_edges;
+      continue;
+    }
+    // The dropped edge must be exactly the A-C diagonal.
+    TopoDS_Vertex first;
+    TopoDS_Vertex last;
+    TopExp::Vertices(edge, first, last, /*CumOri=*/false);
+    const bool touches_a = BRep_Tool::Pnt(first).Distance(a) < 1e-6 ||
+                           BRep_Tool::Pnt(last).Distance(a) < 1e-6;
+    const bool touches_c = BRep_Tool::Pnt(first).Distance(c) < 1e-6 ||
+                           BRep_Tool::Pnt(last).Distance(c) < 1e-6;
+    if (!(touches_a && touches_c)) {
+      dropped_is_seam = false;
+    }
+  }
+  if (total_edges != 13 || kept_edges != 12) {
+    std::cerr << "  total=" << total_edges << " kept=" << kept_edges << "\n";
+  }
+  return expect(total_edges == 13 && kept_edges == 12,
+                "filter: 13 edges total, the coplanar A-C seam dropped") &&
+         expect(dropped_is_seam,
+                "filter: the dropped edge is exactly the A-C seam");
+}
+
+// Converted mesh bodies emit per-edge and per-vertex pick entries so
+// the Project tool can pick individual outline segments and corners
+// (previously only whole-face projection was available on them),
+// filtered to the SEMANTIC edges: triangulation seams between
+// coplanar faces are dropped, keeping the outline, steps, and hole
+// rims without flooding the viewport payload with facet noise.
+bool test_converted_body_emits_semantic_edges_and_vertices() {
+  const std::string path = write_l_shape_stl("semantic_edges");
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_stl(path, 1.0);
+  const std::string body_id = document.feature_history.back().id;
+  document = manager.convert_mesh_to_body(body_id);
+  const std::string converted_id = document.feature_history.back().id;
+
+  const auto viewport = polysmith::core::build_viewport_state(
+      std::optional<DocumentState>(document));
+  if (!expect(!viewport.edges.empty() && !viewport.vertices.empty(),
+              "semantic: converted body emits edges and vertices")) {
+    return false;
+  }
+
+  // The filter contract: every emitted edge separates NON-coplanar
+  // faces (facet seams on flat regions never reach the UI), and the
+  // emitted set stays below the raw facet-edge count of the solid.
+  const auto compiled = compile_bodies(document);
+  const auto body_it = std::find_if(
+      compiled.bodies.begin(), compiled.bodies.end(),
+      [&](const auto& body) { return body.id == converted_id; });
+  if (!expect(body_it != compiled.bodies.end(),
+              "semantic: converted body compiles")) {
+    return false;
+  }
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
+  TopExp::MapShapes(body_it->shape, TopAbs_EDGE, edge_map);
+  NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>,
+                             TopTools_ShapeMapHasher>
+      edge_faces;
+  TopExp::MapShapesAndAncestors(body_it->shape, TopAbs_EDGE, TopAbs_FACE,
+                                edge_faces);
+  const auto face_plane_normal = [](const TopoDS_Face& face) -> gp_Dir {
+    BRepAdaptor_Surface surface(face);
+    return surface.Plane().Axis().Direction();
+  };
+  for (const auto& edge : viewport.edges) {
+    if (!expect(edge.owner_body_id == converted_id,
+                "semantic: edge belongs to the converted body")) {
+      return false;
+    }
+    // Ids match enumerate_body_edges (":edge:<n>", n = map index - 1)
+    // over the SAME compiled shape — mesh_to_body pick_shape is null.
+    const auto id_pos = edge.id.rfind(":edge:");
+    const int index = std::stoi(edge.id.substr(id_pos + 6));
+    const TopoDS_Edge occ_edge = TopoDS::Edge(edge_map(index + 1));
+    const NCollection_List<TopoDS_Shape>* faces = edge_faces.Seek(occ_edge);
+    if (faces == nullptr || faces->Size() < 2) {
+      continue;  // boundary edge — always semantic
+    }
+    NCollection_List<TopoDS_Shape>::Iterator iterator(*faces);
+    const gp_Dir normal_a = face_plane_normal(TopoDS::Face(iterator.Value()));
+    iterator.Next();
+    const gp_Dir normal_b = face_plane_normal(TopoDS::Face(iterator.Value()));
+    if (!expect(std::abs(normal_a.Dot(normal_b)) < 0.99996,
+                "semantic: no coplanar facet seams are emitted")) {
+      return false;
+    }
+  }
+  // NOTE: no "emitted < raw count" assertion here — the conversion
+  // unifies coplanar faces for meshes this small, so the raw solid
+  // already has no seams. The seam-dropping contract is pinned
+  // directly against FacetEdgeFilter in
+  // test_facet_edge_filter_drops_coplanar_seams below.
+
+  // End-to-end: project one TOP-face edge and one TOP-face vertex
+  // into a sketch on the bottom face (z=0 plane, standard frame).
+  const auto top_edge = std::find_if(
+      viewport.edges.begin(), viewport.edges.end(), [](const auto& edge) {
+        return edge.points.size() >= 6 &&
+               std::abs(edge.points[2] - 5.0) < 1e-6 &&
+               std::abs(edge.points[5] - 5.0) < 1e-6;
+      });
+  const auto top_vertex = std::find_if(
+      viewport.vertices.begin(), viewport.vertices.end(),
+      [](const auto& vertex) { return std::abs(vertex.z - 5.0) < 1e-6; });
+  if (!expect(top_edge != viewport.edges.end() &&
+                  top_vertex != viewport.vertices.end(),
+              "semantic: top-face edge and vertex are pickable")) {
+    return false;
+  }
+
+  const int bottom_index = find_bottom_face_index(body_it->shape);
+  const std::string bottom_face_id =
+      converted_id + ":face:" + std::to_string(bottom_index);
+  document = manager.start_sketch_on_face(
+      bottom_face_id,
+      polysmith::core::SketchFeatureParameters::SketchPlaneFrame{
+          0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0});
+  document = manager.project_edge_into_sketch(top_edge->id);
+  document = manager.project_vertex_into_sketch(top_vertex->id);
+
+  const auto& sketch =
+      document.feature_history.back().sketch_parameters.value();
+  const bool has_edge_record = std::any_of(
+      sketch.projections.begin(), sketch.projections.end(),
+      [&](const auto& projection) {
+        return projection.source_kind == "edge" &&
+               projection.source_id == top_edge->id;
+      });
+  const bool has_vertex_record = std::any_of(
+      sketch.projections.begin(), sketch.projections.end(),
+      [&](const auto& projection) {
+        return projection.source_kind == "vertex" &&
+               projection.source_id == top_vertex->id;
+      });
+  if (!(has_edge_record && has_vertex_record && !sketch.lines.empty())) {
+    std::cerr << "  projections=" << sketch.projections.size()
+              << " lines=" << sketch.lines.size() << "\n";
+    for (const auto& projection : sketch.projections) {
+      std::cerr << "    record kind=" << projection.source_kind
+                << " source=" << projection.source_id << "\n";
+    }
+  }
+  if (!expect(has_edge_record && has_vertex_record && !sketch.lines.empty(),
+              "semantic: edge and vertex projections land on the sketch")) {
+    return false;
+  }
+
+  // The projected POINT must also be VISIBLE in the viewport — the
+  // sketch vertex emit skipped every projection-owned vertex id, which
+  // silently dropped standalone projected points (their record is
+  // their only geometry; nothing else carries the visual).
+  const auto projected_point_id =
+      std::find_if(sketch.projections.begin(), sketch.projections.end(),
+                   [&](const auto& projection) {
+                     return projection.source_kind == "vertex";
+                   })
+          ->generated_vertex_id;
+  const auto visible = polysmith::core::build_viewport_state(
+      std::optional<polysmith::core::DocumentState>(document));
+  const bool point_visible = std::any_of(
+      visible.sketch_vertices.begin(), visible.sketch_vertices.end(),
+      [&](const auto& vertex) {
+        return vertex.vertex_id == projected_point_id;
+      });
+  return expect(point_visible,
+                "semantic: the projected point renders in the viewport");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1465,6 +1703,10 @@ int main(int argc, char** argv) {
   if (!test_converted_solid_orientation_normalized()) return 1;
   std::cerr << "[stl_import_test] test 20: mesh body STEP export\n";
   if (!test_mesh_body_export_step()) return 1;
+  std::cerr << "[stl_import_test] test 21: converted body semantic edges\n";
+  if (!test_converted_body_emits_semantic_edges_and_vertices()) return 1;
+  std::cerr << "[stl_import_test] test 22: facet-edge filter drops seams\n";
+  if (!test_facet_edge_filter_drops_coplanar_seams()) return 1;
 
   std::cout << "stl_import_test passed\n";
   return 0;

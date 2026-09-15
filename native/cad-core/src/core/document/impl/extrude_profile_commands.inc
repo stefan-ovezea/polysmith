@@ -27,6 +27,19 @@ DocumentState DocumentManager::extrude_profiles(
     throw std::runtime_error("Sketch profile not found: " + profile_ids.front());
   }
 
+  // A broken sketch would compile to NO body (the compiler skips
+  // flagged features) — refusing here with the sketch's own warning
+  // beats a silently missing surface. Fix the sketch (redefine its
+  // plane, or heal its projections) and extrude again.
+  if (feature_it->dependency_broken) {
+    throw std::runtime_error(
+        "The sketch is flagged as broken" +
+        (feature_it->dependency_warning.empty()
+             ? std::string{"."}
+             : std::string{" — "} + feature_it->dependency_warning) +
+        " Fix the sketch before extruding.");
+  }
+
   const auto& sketch = feature_it->sketch_parameters.value();
   std::vector<SketchProfileRegion> selected_profiles;
   for (const auto& profile_id : profile_ids) {

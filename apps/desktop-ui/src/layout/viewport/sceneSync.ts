@@ -124,6 +124,9 @@ interface SyncViewportSceneParams {
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   showReferencePlanes: boolean;
   showStock: boolean;
+  /** Only the CAM workspace renders the generated toolpath — leaving
+   *  CAM must not leave the cut path drawn over the CAD model. */
+  showCamToolpath: boolean;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
   /** True while the CAM origin pick is armed — draws the snap-target
@@ -389,6 +392,7 @@ function addModelSceneObjects(
     viewport,
     showReferencePlanes,
     showStock,
+    showCamToolpath,
     wcsOrientation,
     activeCamSetupId,
     originPickArmed,
@@ -457,10 +461,12 @@ function addModelSceneObjects(
     faceMeshes: refs.faceMeshes.current,
   });
 
-  refs.toolpathLines.current = addCamToolpathLines({
-    viewport,
-    contentGroup,
-  });
+  if (showCamToolpath) {
+    refs.toolpathLines.current = addCamToolpathLines({
+      viewport,
+      contentGroup,
+    });
+  }
 }
 
 function addMoveGizmoSceneObject(

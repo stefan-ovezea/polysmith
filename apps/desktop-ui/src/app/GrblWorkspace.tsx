@@ -9,6 +9,7 @@ import { Dropdown } from "@/lib";
 import {
   grblParseFile,
   grblParseText,
+  grblReset,
   grblSendProgram,
   grblSendRaw,
   grblUtilityProgram,
@@ -80,6 +81,9 @@ export function GrblWorkspace({
 
   const [loadedProgram, setLoadedProgram] =
     useState<LoadedGrblProgram | null>(null);
+  // Disk path of the loaded program — flows down to the panel so the
+  // toolbar Open button also enables Cycle Start there.
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -96,31 +100,48 @@ export function GrblWorkspace({
       return null;
     }
   });
-  const machineFetchArmedRef = useRef(true);
+  // The list fetch is retried with backoff: the workspace can mount
+  // before the core process has been registered by the shell (app
+  // launch restoring the GRBL page), and a one-shot fetch fails
+  // permanently with "cad_core is not running" — an empty machine
+  // dropdown that never recovers.  Up to 4 attempts over ~6 s.
+  const machineFetchAttemptsRef = useRef(0);
 
   useEffect(() => {
-    if (!machineFetchArmedRef.current) {
-      return;
-    }
-    machineFetchArmedRef.current = false;
     let cancelled = false;
-    camMachineList()
-      .then((list) => {
-        if (!cancelled) {
-          setMachines(list);
-        }
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-        addMessage(`grbl machines: ${String(error)}`);
-        useToastStore
-          .getState()
-          .pushToast("error", t("cam.setup.machineListFailed"));
-      });
+    let retryTimer: number | undefined;
+    const attempt = () => {
+      camMachineList()
+        .then((list) => {
+          if (!cancelled) {
+            setMachines(list);
+          }
+        })
+        .catch((error) => {
+          if (cancelled) {
+            return;
+          }
+          machineFetchAttemptsRef.current += 1;
+          const attemptNumber = machineFetchAttemptsRef.current;
+          if (attemptNumber < 4) {
+            retryTimer = window.setTimeout(
+              attempt,
+              800 * attemptNumber,
+            );
+            return;
+          }
+          addMessage(`grbl machines: ${String(error)}`);
+          useToastStore
+            .getState()
+            .pushToast("error", t("cam.setup.machineListFailed"));
+        });
+    };
+    attempt();
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -262,6 +283,17 @@ export function GrblWorkspace({
     setSendingTarget("main");
   };
 
+  // Big STOP: hard-abort whatever the machine is doing right now.  The
+  // soft reset (0x18) stops motion and drops the laser; the utility
+  // overlay is cleared so the preview matches the machine state.
+  const handleStop = () => {
+    void grblReset().catch((error) => {
+      addMessage(`grbl stop: ${String(error)}`);
+      useToastStore.getState().pushToast("error", t("grbl.stopError"));
+    });
+    clearOverlay();
+  };
+
   // A new main program replaces any utility overlay.
   const loadFile = async (path: string) => {
     setLoading(true);
@@ -269,6 +301,7 @@ export function GrblWorkspace({
     try {
       const info = await grblParseFile(path);
       setLoadedProgram({ source: "file", text: "", label: info.fileName, info });
+      setLoadedFilePath(path);
       clearOverlay();
     } catch (error) {
       const message = String(error);
@@ -288,6 +321,7 @@ export function GrblWorkspace({
     try {
       const info = await grblParseText(text, label);
       setLoadedProgram({ source: "internal", text, label, info });
+      setLoadedFilePath(null);
       clearOverlay();
     } catch (error) {
       const message = String(error);
@@ -358,6 +392,17 @@ export function GrblWorkspace({
     return streaming ? linesSent : 0;
   }, [overlayProgram, sendingTarget, completed, streaming, linesSent]);
 
+  // The program handed down to the machine panel.  Memoized: the
+  // panel syncs its internal copy in an identity-keyed effect, and a
+  // fresh object every render made that effect setState each pass —
+  // "Maximum update depth exceeded" (hot over TCP status events).
+  const panelProgram = useMemo(() => {
+    if (loadedProgram?.source === "internal") {
+      return { text: loadedProgram.text, label: loadedProgram.label };
+    }
+    return embeddedProgram ?? null;
+  }, [loadedProgram, embeddedProgram]);
+
   // Bed check (P6): the parsed bounds are WCS coordinates (origin =
   // the job's own 0,0), so anything below 0 or beyond the work area
   // would trip the soft limits once cut.  Warning only — the user may
@@ -392,7 +437,7 @@ export function GrblWorkspace({
   const legend = [
     { label: t("grbl.legendRapid"), token: "--cad-toolpath-rapid" },
     { label: t("grbl.legendCut"), token: "--cad-toolpath-feed" },
-    { label: t("grbl.legendExecuted"), token: "--cad-toolpath-executed" },
+    { label: t("grbl.legendExecuted"), token: "--cad-toolpath-burned" },
     { label: t("grbl.legendPosition"), token: "--color-primary-edge-active" },
     { label: t("grbl.legendPointer"), token: "--cad-pointer-dot" },
   ];
@@ -457,6 +502,18 @@ export function GrblWorkspace({
             {t("grbl.moves", { count: loadedProgram.info.moves.length })}
           </span>
         ) : null}
+        {/* The one button that must never be subtle: kills the job
+            instantly, same 0x18 path as the panel Reset but styled
+            like the emergency it is. */}
+        <button
+          type="button"
+          className="ml-auto rounded-md bg-danger px-4 py-1.5 text-sm font-bold uppercase tracking-wider text-on-primary hover:bg-danger/90 disabled:opacity-40"
+          disabled={!connected}
+          onClick={handleStop}
+          title={t("grbl.stopTitle")}
+        >
+          {t("grbl.stop")}
+        </button>
       </div>
       <div className="flex min-h-0 w-full min-w-0 flex-1">
         <aside className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-[var(--cad-panel-soft-border)] bg-surface-lowest">
@@ -469,13 +526,12 @@ export function GrblWorkspace({
               // Per-machine $$ snapshot persistence (Restore in the
               // settings dialog).
               settingsMachineName={selectedMachineName}
+              // Toolbar Open loads a disk file here — hand the path
+              // down so the panel's Cycle Start streams it too.
+              externalPath={loadedFilePath}
               // The previewed program becomes what Cycle Start sends; the
               // CAM handoff program fills in when nothing is loaded yet.
-              embeddedProgram={
-                loadedProgram?.source === "internal"
-                  ? { text: loadedProgram.text, label: loadedProgram.label }
-                  : embeddedProgram
-              }
+              embeddedProgram={panelProgram}
               // A file picked through the panel's Load button must parse
               // and preview here too — same pipeline as the header Open
               // button, otherwise Cycle Start would stream a program the

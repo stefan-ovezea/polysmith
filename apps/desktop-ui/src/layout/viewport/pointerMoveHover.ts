@@ -75,7 +75,14 @@ export function applySelectToolHover(
   actions.setHoveredVertex(null);
   actions.setHoveredSketchPoint(hitId(hit, "sketch_point"));
   actions.setHoveredSketchEntity(hitId(hit, "sketch_entity"));
-  actions.setHoveredSketchProfile(hitId(hit, "sketch_profile"));
+  // NO surface hover in sketch mode (Fusion behavior): over a dense
+  // projection the region interior flickers on/off as the pointer
+  // crosses the projected lines. The CLICK decides surface selection
+  // — pickActiveSketchTarget falls through to the profile only when
+  // no entity/point was hit, and the selected profile renders its
+  // boundary highlight as feedback. Scene mode (applySceneHover)
+  // keeps its surface hover.
+  actions.setHoveredSketchProfile(null);
 }
 
 export function applyProjectToolHover(

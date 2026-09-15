@@ -210,6 +210,15 @@ parse_extrude_parameters_from_payload(const json& payload) {
       payload.at("boundary_edges").is_array()) {
     params.boundary_edges = parse_boundary_edges(payload.at("boundary_edges"));
   }
+  // Exact per-hole edges (one array per inner_loops entry).  Older
+  // saves lack the key — empty inner_loop_edges keeps the sampled-point
+  // fallback active.
+  if (payload.contains("inner_loop_edges") &&
+      payload.at("inner_loop_edges").is_array()) {
+    for (const auto& loop_payload : payload.at("inner_loop_edges")) {
+      params.inner_loop_edges.push_back(parse_boundary_edges(loop_payload));
+    }
+  }
   params.depth = read_number(payload, "depth");
   params.extent_mode =
       read_optional_string_value(payload, "extent_mode", params.extent_mode);

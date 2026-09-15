@@ -67,6 +67,8 @@ interface ViewportContextMenuActions {
   moveBody: () => void | Promise<void>;
   copyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   unlinkBodyCopy: () => void | Promise<void>;
+  removeSketchProjections: () => void | Promise<void>;
+  unlinkSketchProjections: () => void | Promise<void>;
   exportBodyMesh: () => void | Promise<void>;
   exportBodyStep: () => void | Promise<void>;
   sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
@@ -133,6 +135,7 @@ interface ViewportPanelShellProps {
   selectedReference: { label: string } | null;
   selectedSketchDimension: SketchDimensionScene | null;
   selectionRect: SelectionRectOverlay | null;
+  showSketchProjectionActions: boolean;
   showSketchGrid: boolean;
   showViewportGrid: boolean;
   sketchSnapLabel: string | null;
@@ -169,6 +172,8 @@ interface ViewportPanelShellProps {
   onSketchToolConstructionChange: (checked: boolean) => void;
   onSubmitDimensionEdit: () => void | Promise<void>;
   onToggleGrid: () => void;
+  onToggleConstraints: () => void;
+  showConstraints: boolean;
   getDraftFieldInputValue: (
     session: DraftDimensionSession,
     field: DraftDimensionField,
@@ -235,6 +240,7 @@ export function ViewportPanelShell({
   selectedReference,
   selectedSketchDimension,
   selectionRect,
+  showSketchProjectionActions,
   showSketchGrid,
   showViewportGrid,
   sketchSnapLabel,
@@ -263,6 +269,8 @@ export function ViewportPanelShell({
   onSketchToolConstructionChange,
   onSubmitDimensionEdit,
   onToggleGrid,
+  onToggleConstraints,
+  showConstraints,
   getDraftFieldInputValue,
   getDraftParameterSuggestions,
   getDraftScreenPosition,
@@ -295,6 +303,13 @@ export function ViewportPanelShell({
             onMoveBody={contextMenuActions.moveBody}
             onCopyBody={contextMenuActions.copyBody}
             onUnlinkBodyCopy={contextMenuActions.unlinkBodyCopy}
+            onRemoveSketchProjections={
+              contextMenuActions.removeSketchProjections
+            }
+            onUnlinkSketchProjections={
+              contextMenuActions.unlinkSketchProjections
+            }
+            showSketchProjectionActions={showSketchProjectionActions}
             onExportBodyMesh={contextMenuActions.exportBodyMesh}
             onExportBodyStep={contextMenuActions.exportBodyStep}
             onSendBodyToSlicer={contextMenuActions.sendBodyToSlicer}
@@ -325,6 +340,17 @@ export function ViewportPanelShell({
                 : translate("viewport.showViewportGrid")
           } (${formatHotkey(viewportGridHotkey)})`}
           onToggle={onToggleGrid}
+          secondToggle={
+            isSketchMode
+              ? {
+                  active: showConstraints,
+                  label: showConstraints
+                    ? translate("viewport.hideConstraints")
+                    : translate("viewport.showConstraints"),
+                  onToggle: onToggleConstraints,
+                }
+              : undefined
+          }
         />
         <CrosshairGuideOverlay
           pointer={crosshairPointer}

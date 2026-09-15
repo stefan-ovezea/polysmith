@@ -43,6 +43,63 @@ DocumentState DocumentManager::start_sketch_on_face(
   return document_.value();
 }
 
+DocumentState DocumentManager::redefine_sketch_plane(
+    const std::string& feature_id,
+    const std::string& new_plane_id) {
+  require_document();
+
+  auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) { return feature.id == feature_id; });
+  if (feature_it == document_->feature_history.end() ||
+      feature_it->kind != "sketch" ||
+      !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error(
+        "redefine_sketch_plane requires a sketch feature");
+  }
+
+  // Origin reference planes keep the legacy no-frame convention
+  // (hardcoded mappings); construction planes and face targets
+  // resolve their frame from the current document — the same sources
+  // start_sketch_on_plane / start_sketch_on_face accept. A plane
+  // that cannot be resolved (e.g. a face on a deleted body) is
+  // rejected up front.
+  std::optional<SketchFeatureParameters::SketchPlaneFrame> sketch_frame;
+  if (!is_origin_plane_reference(new_plane_id)) {
+    const auto frame = resolve_plane_source_frame(*document_, new_plane_id);
+    if (!frame.has_value()) {
+      throw std::runtime_error(
+          "Sketch plane source could not be resolved: " + new_plane_id);
+    }
+    sketch_frame = to_sketch_plane_frame(frame.value());
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+
+  auto& parameters = *feature_it->sketch_parameters;
+  parameters.plane_id = new_plane_id;
+  parameters.plane_frame = sketch_frame;
+  feature_it->dependency_broken = false;
+  feature_it->dependency_warning.clear();
+
+  // Keep the session state consistent when the redefined sketch is
+  // the ACTIVE one (face picks carry active_sketch_face_id; plane
+  // picks leave it empty — mirrors the start_sketch_* setters).
+  if (document_->active_sketch_feature_id.has_value() &&
+      document_->active_sketch_feature_id.value() == feature_id) {
+    document_->active_sketch_plane_id = new_plane_id;
+    document_->active_sketch_face_id =
+        face_owner_id(new_plane_id).empty()
+            ? std::nullopt
+            : std::optional<std::string>(new_plane_id);
+  }
+
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::set_sketch_tool(const std::string& tool) {
   require_document();
 

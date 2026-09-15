@@ -391,3 +391,119 @@ DocumentState DocumentManager::project_face_into_sketch(
 
   return document_.value();
 }
+
+DocumentState DocumentManager::remove_sketch_projections(
+    const std::string& feature_id,
+    bool keep_geometry) {
+  require_document();
+
+  auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) { return feature.id == feature_id; });
+  if (feature_it == document_->feature_history.end() ||
+      feature_it->kind != "sketch" ||
+      !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error(
+        "remove_sketch_projections requires a sketch feature");
+  }
+
+  // Collect the generated ids BEFORE mutating anything — the remove
+  // path below erases the records while it deletes.
+  std::vector<std::string> generated_entity_ids;
+  std::vector<std::string> generated_point_ids;
+  for (const auto& projection : feature_it->sketch_parameters->projections) {
+    generated_entity_ids.insert(generated_entity_ids.end(),
+                                projection.generated_line_ids.begin(),
+                                projection.generated_line_ids.end());
+    generated_entity_ids.insert(generated_entity_ids.end(),
+                                projection.generated_circle_ids.begin(),
+                                projection.generated_circle_ids.end());
+    generated_entity_ids.insert(generated_entity_ids.end(),
+                                projection.generated_arc_ids.begin(),
+                                projection.generated_arc_ids.end());
+    if (!projection.generated_vertex_id.empty()) {
+      generated_point_ids.push_back(projection.generated_vertex_id);
+    }
+  }
+
+  // Erase every projection-derived `projected_points` entry (the list
+  // is the only place the vertex rebuild can mint "projected"-kind
+  // points from). DXF-imported standalone points share the list with
+  // source_id "dxf:point:N" and must stay. Captures `feature_it` by
+  // reference — the Remove path re-locates it after the delete.
+  const auto erase_projection_derived_points = [&]() {
+    auto& points = feature_it->sketch_parameters->projected_points;
+    points.erase(
+        std::remove_if(points.begin(), points.end(),
+                       [](const SketchProjectedPoint& point) {
+                         return point.source_id.rfind("dxf:", 0) != 0;
+                       }),
+        points.end());
+  };
+
+  if (!keep_geometry) {
+    // Remove mode: delete the projected entities. Reuse
+    // delete_sketch_selection so every cleanup rule applies (owning
+    // fillets/slots/texts, referencing dimensions/constraints/
+    // anchors, projection record pruning). It targets the ACTIVE
+    // sketch, so temporarily point it at this feature and restore
+    // the session state afterwards. Its bump_geometry_revision runs
+    // the dependency walker, which clears the alarm once the records
+    // are gone.
+    const std::optional<std::string> previous_active =
+        document_->active_sketch_feature_id;
+    document_->active_sketch_feature_id = feature_id;
+    delete_sketch_selection(generated_entity_ids, generated_point_ids, {});
+    document_->active_sketch_feature_id = previous_active;
+    feature_it = std::find_if(
+        document_->feature_history.begin(),
+        document_->feature_history.end(),
+        [&](const FeatureEntry& feature) { return feature.id == feature_id; });
+    feature_it->sketch_parameters->projected_sources.clear();
+    // The delete above only removes the points referenced by the
+    // records — if the records were already gone (projected entities
+    // deleted individually), orphaned `projected_points` entries
+    // survive and the vertex rebuild re-mints them as stray
+    // "projected" points. Sweep every projection-derived entry so
+    // Remove always clears ALL projected geometry. DXF-imported
+    // standalone points share this list (source_id "dxf:point:N")
+    // and stay.
+    erase_projection_derived_points();
+    return document_.value();
+  }
+
+  // Unlink mode: the entities stay; only the live links go. With no
+  // records left, the projection refresher has nothing to validate
+  // and the dependency_broken alarm clears on the next walker run.
+  push_undo_state();
+  clear_redo_stack();
+  auto& parameters = *feature_it->sketch_parameters;
+  parameters.projections.clear();
+  parameters.projected_sources.clear();
+  // Same stray-point sweep as Remove mode: `projected_points` is the
+  // only place the vertex rebuild can mint "projected"-kind points
+  // from, so it must be cleared BEFORE the refresh below — otherwise
+  // the styling-clear loop fights a fresh re-flag on the next bump.
+  erase_projection_derived_points();
+  refresh_sketch_derived_state(*feature_it);
+  // The vertex-table rebuild above may re-flag vertices; clear the
+  // projected styling AFTER it so the formerly-projected geometry
+  // renders as plain sketch entities.
+  for (auto& vertex : parameters.vertices) {
+    vertex.is_projected = false;
+    vertex.source_type.reset();
+    vertex.source_feature_id.reset();
+    vertex.source_edge_id.reset();
+  }
+  document_->selected_feature_id = feature_id;
+  document_->selected_sketch_vertex_id = std::nullopt;
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+  document_->selected_sketch_vertex_ids.clear();
+  document_->selected_sketch_entity_ids.clear();
+  bump_geometry_revision();
+  return document_.value();
+}

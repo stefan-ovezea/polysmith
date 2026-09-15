@@ -20,8 +20,14 @@
   // two regions selects both — no guessing.  Throws when the entity
   // does not exist or lies on no profile boundary (e.g. construction
   // lines, interior entities).
+  // `smallest_only`: a shared outline (e.g. a spoke arc that is also
+  // a plate-hole edge) then selects only the smallest owning region —
+  // the CAM re-pick flow uses this so an outline click behaves like
+  // an interior click instead of toggling every region sharing the
+  // boundary.
   DocumentState select_sketch_profile_by_entity(const std::string& entity_id,
-                                                bool additive = false);
+                                                bool additive = false,
+                                                bool smallest_only = false);
   DocumentState select_sketch_vertex(const std::string& vertex_id,
                                     bool additive = false);
   DocumentState select_sketch_entity(const std::string& entity_id,

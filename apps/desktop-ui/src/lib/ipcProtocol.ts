@@ -221,6 +221,34 @@ export function makeDetachBodyProjectionsCommand(
   };
 }
 
+export function makeRemoveSketchProjectionsCommand(
+  featureId: string,
+  keepGeometry: boolean,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "remove_sketch_projections",
+    payload: {
+      feature_id: featureId,
+      keep_geometry: keepGeometry,
+    },
+  };
+}
+
+export function makeRedefineSketchPlaneCommand(
+  featureId: string,
+  planeId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "redefine_sketch_plane",
+    payload: {
+      feature_id: featureId,
+      plane_id: planeId,
+    },
+  };
+}
+
 export function makeProjectBodyIntoSketchCommand(
   bodyId: string,
   mode: "section" | "silhouette",

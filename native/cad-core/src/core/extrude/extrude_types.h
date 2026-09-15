@@ -62,6 +62,11 @@ struct ExtrudeFeatureParameters {
   // without guessing from polygon samples.
   std::vector<SketchArcDescriptor> arc_descriptors;
   std::vector<ProfileBoundaryEdge> boundary_edges;
+  // Exact boundary edges per hole of the main profile (one entry per
+  // inner_loops index, in walk order).  When empty (legacy profiles /
+  // old saves), hole wires fall back to the sampled inner_loops
+  // points — which is why hole cuts used to come out polygonal.
+  std::vector<std::vector<ProfileBoundaryEdge>> inner_loop_edges;
   double depth;
   // "one_side", "symmetric", or "two_sides".
   std::string extent_mode = "one_side";

@@ -377,6 +377,7 @@ json to_payload(const polysmith::core::CamOperation& op) {
       {"dependencies", to_payload(op.dependencies)},
       {"status", op.status},
       {"status_message", op.status_message},
+      {"geometry_scope", op.geometry_scope},
   };
   if (op.toolpath_cache.has_value())
     j["toolpath_cache"] = to_payload(op.toolpath_cache.value());

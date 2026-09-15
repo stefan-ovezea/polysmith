@@ -115,7 +115,13 @@ TopoDS_Edge make_circle_arc_edge(const SketchCircle& circle,
           " mid=(" + std::to_string(best_mid_x) + "," + std::to_string(best_mid_y) +
           ")  circle r=" + std::to_string(circle.radius));
     }
-    if (!best_edge.IsNull()) return best_edge;
+    if (!best_edge.IsNull()) {
+      // Variant 1 builds the complement arc end→start — orient it back
+      // to the walk direction (same wire-chain requirement as
+      // make_wire_from_boundary_edges).
+      if (best_variant == 1) best_edge.Reverse();
+      return best_edge;
+    }
   }
 
   // Fallback: try both directions (start→end and end→start), preferring
@@ -185,18 +191,19 @@ const SketchCircle* find_circle_for_edge(
   return it != circles.end() ? &(*it) : nullptr;
 }
 
-// Exact wire from the profile's boundary_edges list: one OCCT edge per
-// boundary edge, anchored to the entity's exact parametric geometry.
-// Circular pieces are built via GC_MakeArcOfCircle with the sense
-// disambiguated by comparing the arc midpoint against the expected
-// midpoint in the walk's parametric direction (the local parameter
-// direction of gp_Ax2 may be mirrored relative to the sketch frame).
-// Full circles (span ≈ 2π) become a single gp_Circ edge.
-TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
-                                   const PlaneFrame& frame) {
+// Exact wire from a boundary-edge list: one OCCT edge per boundary
+// edge, anchored to the entity's exact parametric geometry.  Used for
+// both the outer boundary and the per-hole inner loops.  Circular
+// pieces are built via GC_MakeArcOfCircle with the sense disambiguated
+// by comparing the arc midpoint against the expected midpoint in the
+// walk's parametric direction (the local parameter direction of gp_Ax2
+// may be mirrored relative to the sketch frame).  Full circles
+// (span ≈ 2π) become a single gp_Circ edge.
+TopoDS_Wire make_wire_from_boundary_edges(
+    const std::vector<ProfileBoundaryEdge>& edges, const PlaneFrame& frame) {
   constexpr double kExactPi = 3.14159265358979323846;
-  BRepBuilderAPI_MakeWire wire_builder;
-  for (const auto& be : parameters.boundary_edges) {
+  std::vector<TopoDS_Edge> edge_list;
+  for (const auto& be : edges) {
     if (be.entity_kind == "line") {
       const gp_Pnt p1 = to_world_point(frame, be.start_x, be.start_y);
       const gp_Pnt p2 = to_world_point(frame, be.end_x, be.end_y);
@@ -204,7 +211,7 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       if (!seg.IsDone()) {
         throw std::runtime_error("Failed to create exact line edge");
       }
-      wire_builder.Add(BRepBuilderAPI_MakeEdge(seg.Value()));
+      edge_list.push_back(BRepBuilderAPI_MakeEdge(seg.Value()));
       continue;
     }
 
@@ -234,10 +241,10 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       }
       const double span = std::abs(be.param_end - be.param_start);
       if (span < 2.0 * M_PI - 1e-9) {
-        wire_builder.Add(BRepBuilderAPI_MakeEdge(
+        edge_list.push_back(BRepBuilderAPI_MakeEdge(
             new Geom_TrimmedCurve(ell.Value(), be.param_start, be.param_end)));
       } else {
-        wire_builder.Add(BRepBuilderAPI_MakeEdge(ell.Value()));
+        edge_list.push_back(BRepBuilderAPI_MakeEdge(ell.Value()));
       }
       continue;
     }
@@ -280,7 +287,7 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
           std::abs(be.param_end - 1.0) > 1e-12) {
         piece = new Geom_TrimmedCurve(piece, be.param_start, be.param_end);
       }
-      wire_builder.Add(BRepBuilderAPI_MakeEdge(piece));
+      edge_list.push_back(BRepBuilderAPI_MakeEdge(piece));
       continue;
     }
 
@@ -291,7 +298,7 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
     // Full circle: one analytic edge.
     if (std::abs(std::abs(be.param_end - be.param_start) - 2.0 * kExactPi) <
         1e-9) {
-      wire_builder.Add(BRepBuilderAPI_MakeEdge(circ));
+      edge_list.push_back(BRepBuilderAPI_MakeEdge(circ));
       continue;
     }
 
@@ -317,9 +324,20 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
           (curve->FirstParameter() + curve->LastParameter()) * 0.5;
       gp_Pnt mid_actual;
       curve->D0(mid_param, mid_actual);
-      constexpr double kMidTol = 1e-4;  // mm (endpoints are exact)
+      // The walk's stored angles and the arc-maker's projected
+      // parameters differ by ~1e-4 rad (trim-engine error on the
+      // nodes), so the two midpoints can disagree by ~1e-3 mm on
+      // typical radii.  The wrong (major/complementary) arc is tens of
+      // mm off, so 0.5 mm separates them by two orders of magnitude.
+      constexpr double kMidTol = 0.5;  // mm (endpoints are exact)
       if (mid_actual.SquareDistance(mid_expected) <= kMidTol * kMidTol) {
         edge = BRepBuilderAPI_MakeEdge(curve);
+        // The swapped variant built the arc end→start (GC_MakeArcOfCircle
+        // only sweeps the circle's positive sense, so a CW walk needs
+        // swapped endpoints).  Orient the edge back to the walk
+        // direction — otherwise its end vertex is the walk's start and
+        // the wire chain breaks ("Failed to build exact sketch wire").
+        if (swap) edge.Reverse();
         made = true;
         break;
       }
@@ -333,12 +351,92 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
       }
       edge = BRepBuilderAPI_MakeEdge(arc_maker.Value());
     }
+    edge_list.push_back(edge);
+  }
+
+  // Watertight joints: the walk's shared nodes carry the trim-engine
+  // tolerance (~1e-2 mm) off the analytic curves, and building each
+  // arc edge through its own circle projects a shared joint onto two
+  // slightly different points — enough to make BRepBuilderAPI_MakeWire
+  // refuse the wire ("Failed to build exact sketch wire").  Snap every
+  // vertex back to the walk's shared node and widen its tolerance to
+  // cover the projection split — the same healing the legacy polygon
+  // path does by projecting endpoints onto adjacent circles.
+  if (edge_list.size() > 1) {
+    BRep_Builder snap_builder;
+    for (size_t i = 0; i < edge_list.size(); ++i) {
+      const auto& be = edges[i];
+      TopoDS_Edge& cur = edge_list[i];
+      // Snap by POSITION: an edge's walk-start vertex is the one lying
+      // at the walk's start node, regardless of the edge's orientation
+      // (reversed arcs keep their built vertex positions, and
+      // TopExp::FirstVertex does not account for orientation in this
+      // OCCT build — snapping "first/last" would drag a reversed
+      // edge's vertices across the loop).
+      for (const bool first : {true, false}) {
+        const gp_Pnt target = to_world_point(
+            frame, first ? be.start_x : be.end_x,
+            first ? be.start_y : be.end_y);
+        TopoDS_Vertex v;
+        double best = 1e18;
+        for (TopExp_Explorer vex(cur, TopAbs_VERTEX); vex.More();
+             vex.Next()) {
+          const TopoDS_Vertex& cand = TopoDS::Vertex(vex.Current());
+          const double d = BRep_Tool::Pnt(cand).Distance(target);
+          if (d < best) {
+            best = d;
+            v = cand;
+          }
+        }
+        if (best > 1e-7) {
+          snap_builder.UpdateVertex(v, target, best + 1e-4);
+          // The face-level curve-on-surface check measures the
+          // snapped vertex against the edge's curve with the EDGE's
+          // tolerance, which MakeEdge left at ~1e-7 — far below the
+          // snap distance.  Widen it to match the vertex, or
+          // BRepCheck marks every face with a snapped vertex invalid
+          // (free edges / missing surfaces after extrusion).
+          const double edge_tol = BRep_Tool::Tolerance(cur);
+          snap_builder.UpdateEdge(cur, std::max(edge_tol, best + 1e-4));
+        }
+      }
+    }
+  }
+
+  BRepBuilderAPI_MakeWire wire_builder;
+  for (const auto& edge : edge_list) {
     wire_builder.Add(edge);
   }
   if (!wire_builder.IsDone()) {
     throw std::runtime_error("Failed to build exact sketch wire");
   }
   return wire_builder.Wire();
+}
+
+// Sketch plane frame for a set of extrude parameters — the captured
+// plane_frame wins, then the named construction planes, then XY.
+// Shared by the outer wire and the exact hole wires.
+PlaneFrame resolve_sketch_plane_frame(
+    const ExtrudeFeatureParameters& parameters) {
+  if (parameters.plane_frame.has_value()) {
+    return parameters.plane_frame.value();
+  }
+  if (parameters.plane_id == "ref-plane-xy") {
+    return PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
+                      .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
+                      .y_axis_x=0,.y_axis_y=1,.y_axis_z=0,
+                      .normal_x=0,.normal_y=0,.normal_z=1};
+  }
+  if (parameters.plane_id == "ref-plane-yz") {
+    return PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
+                      .x_axis_x=0,.x_axis_y=1,.x_axis_z=0,
+                      .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
+                      .normal_x=1,.normal_y=0,.normal_z=0};
+  }
+  return PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
+                    .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
+                    .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
+                    .normal_x=0,.normal_y=1,.normal_z=0};
 }
 
 // Build a closed OCCT wire from the profile boundary points and ordered
@@ -353,33 +451,15 @@ TopoDS_Wire make_sketch_wire_exact(const ExtrudeFeatureParameters& parameters,
 //
 // Legacy path: used when the profile carries no boundary_edges (old
 // saved documents).  New profiles always carry boundary_edges and use
-// make_sketch_wire_exact instead.
+// make_wire_from_boundary_edges instead.
 TopoDS_Wire make_sketch_wire(
     const ExtrudeFeatureParameters& parameters) {
-  PlaneFrame frame;
-  if (parameters.plane_frame.has_value()) {
-    frame = parameters.plane_frame.value();
-  } else if (parameters.plane_id == "ref-plane-xy") {
-    frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
-                       .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
-                       .y_axis_x=0,.y_axis_y=1,.y_axis_z=0,
-                       .normal_x=0,.normal_y=0,.normal_z=1};
-  } else if (parameters.plane_id == "ref-plane-yz") {
-    frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
-                       .x_axis_x=0,.x_axis_y=1,.x_axis_z=0,
-                       .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
-                       .normal_x=1,.normal_y=0,.normal_z=0};
-  } else {
-    frame = PlaneFrame{.origin_x=0,.origin_y=0,.origin_z=0,
-                       .x_axis_x=1,.x_axis_y=0,.x_axis_z=0,
-                       .y_axis_x=0,.y_axis_y=0,.y_axis_z=1,
-                       .normal_x=0,.normal_y=1,.normal_z=0};
-  }
+  const PlaneFrame frame = resolve_sketch_plane_frame(parameters);
 
   // Exact-curve path: profiles built by the exact arrangement detector
   // carry boundary_edges — one exact OCCT edge per boundary edge.
   if (!parameters.boundary_edges.empty()) {
-    return make_sketch_wire_exact(parameters, frame);
+    return make_wire_from_boundary_edges(parameters.boundary_edges, frame);
   }
 
   const auto raw_pts = deduplicate_adjacent_points(parameters.profile_points);
@@ -654,11 +734,43 @@ TopoDS_Shape make_wire_extrude_shape(
       }
     }
   }
-  for (const auto& loop : parameters.inner_loops) {
+  const PlaneFrame frame = resolve_sketch_plane_frame(parameters);
+  for (size_t hole_index = 0; hole_index < parameters.inner_loops.size();
+       ++hole_index) {
+    const auto& loop = parameters.inner_loops[hole_index];
     if (loop.size() < 3) continue;
     try {
-      TopoDS_Wire hole_wire = make_profile_wire(parameters, loop);
-      if (signed_wire_area(hole_wire) * face_normal_z > 0.0) {
+      TopoDS_Wire hole_wire;
+      // Exact per-hole edges when the detector emitted them (new
+      // profiles) — holes become true analytic wires instead of
+      // polygon-approximated cutouts.  Fall back to the sampled-loop
+      // path (auto circle detection / polygon) for legacy profiles.
+      if (hole_index < parameters.inner_loop_edges.size() &&
+          !parameters.inner_loop_edges[hole_index].empty()) {
+        hole_wire = make_wire_from_boundary_edges(
+            parameters.inner_loop_edges[hole_index], frame);
+      } else {
+        hole_wire = make_profile_wire(parameters, loop);
+      }
+      // Orientation decision from the WALK DATA's chord shoelace —
+      // signed_wire_area samples through the OCCT adaptor, whose
+      // parameterization flips on reversed arc edges and misreports
+      // the sign (a CW hole reads CCW, the wire gets reversed into an
+      // island and the face turns invalid).  A full-circle hole has
+      // start==end and zero chord area — fall back to the sampler
+      // there (one analytic edge, no reversals).
+      double hole_orientation_area = 0.0;
+      if (hole_index < parameters.inner_loop_edges.size() &&
+          !parameters.inner_loop_edges[hole_index].empty()) {
+        for (const auto& e : parameters.inner_loop_edges[hole_index]) {
+          hole_orientation_area += e.start_x * e.end_y - e.end_x * e.start_y;
+        }
+        hole_orientation_area *= 0.5;
+      }
+      if (std::abs(hole_orientation_area) < 1e-12) {
+        hole_orientation_area = signed_wire_area(hole_wire);
+      }
+      if (hole_orientation_area * face_normal_z > 0.0) {
         hole_wire.Reverse();
       }
       face_maker.Add(hole_wire);

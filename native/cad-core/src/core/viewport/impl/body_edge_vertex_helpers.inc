@@ -135,6 +135,10 @@ bool edge_contains_vertex(const TopoDS_Edge& edge, const TopoDS_Vertex& vertex) 
          (!last.IsNull() && last.IsSame(vertex));
 }
 
+// FacetEdgeFilter (core/viewport/facet_edge_filter.h) drops
+// triangulation seams between coplanar faces — see the header for the
+// rationale (payload flood on faceted converted bodies).
+
 bool is_nonsemantic_circle_seam_vertex(const TopoDS_Shape& body_shape,
                                        const TopoDS_Vertex& vertex) {
   if (body_shape.IsNull() || vertex.IsNull()) {
@@ -167,6 +171,7 @@ bool is_nonsemantic_circle_seam_vertex(const TopoDS_Shape& body_shape,
 void enumerate_body_edges(const TopoDS_Shape& body_shape,
                           const std::string& body_id,
                           const std::vector<std::string>& selected_edge_ids,
+                          const FacetEdgeFilter* facet_filter,
                           std::vector<ViewportEdgePrimitive>& out) {
   if (body_shape.IsNull()) {
     return;
@@ -177,7 +182,14 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
 
   for (int i = 1; i <= edge_map.Extent(); ++i) {
     const TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
-    if (is_nonsemantic_seam_line_edge(body_shape, edge)) {
+    // The seam-line probe iterates every face per edge (O(E×F)) and
+    // only finds closing edges of closed CAD surfaces — faceted STL
+    // bodies have none, so skip it for them.
+    if (facet_filter == nullptr &&
+        is_nonsemantic_seam_line_edge(body_shape, edge)) {
+      continue;
+    }
+    if (facet_filter != nullptr && !facet_filter->keep(edge)) {
       continue;
     }
     ViewportEdgePrimitive primitive{};
@@ -208,16 +220,29 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
       // or rendered; skip them rather than emit dead entries.
       continue;
     }
-    // Exact length via OCCT mass-property integration. We swallow
-    // failures here (defaulting to 0) because a rare degenerate edge
-    // shouldn't take the whole snapshot down — the UI just shows
-    // 0 mm for that edge.
-    try {
-      GProp_GProps props;
-      BRepGProp::LinearProperties(edge, props);
-      primitive.length = props.Mass();
-    } catch (const std::exception&) {
-      primitive.length = 0.0;
+    if (facet_filter != nullptr) {
+      // Facet bodies: polyline length from the sampled points (exact
+      // for straight facet edges, within sampling deflection for
+      // curves). BRepGProp integration per edge is the slow path —
+      // measured seconds across a few thousand facet edges.
+      for (size_t k = 0; k + 3 < primitive.points.size(); k += 3) {
+        const double dx = primitive.points[k + 3] - primitive.points[k];
+        const double dy = primitive.points[k + 4] - primitive.points[k + 1];
+        const double dz = primitive.points[k + 5] - primitive.points[k + 2];
+        primitive.length += std::sqrt(dx * dx + dy * dy + dz * dz);
+      }
+    } else {
+      // Exact length via OCCT mass-property integration. We swallow
+      // failures here (defaulting to 0) because a rare degenerate edge
+      // shouldn't take the whole snapshot down — the UI just shows
+      // 0 mm for that edge.
+      try {
+        GProp_GProps props;
+        BRepGProp::LinearProperties(edge, props);
+        primitive.length = props.Mass();
+      } catch (const std::exception&) {
+        primitive.length = 0.0;
+      }
     }
     primitive.is_selected =
         std::find(selected_edge_ids.begin(),
@@ -233,9 +258,37 @@ void enumerate_body_vertices(
     const TopoDS_Shape& body_shape,
     const std::string& body_id,
     const std::vector<std::string>& selected_vertex_ids,
+    const FacetEdgeFilter* facet_filter,
     std::vector<ViewportVertexPrimitive>& out) {
   if (body_shape.IsNull()) {
     return;
+  }
+
+  // Facet filter for mesh-converted bodies: a vertex is emitted only
+  // when it ends at least one SEMANTIC edge (see FacetEdgeFilter) —
+  // outline corners stay, triangulation nodes on flat regions go.
+  // The filter instance is shared with the edge enumeration — its
+  // face-normal cache makes this pass cheap.
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>
+      kept_vertex_map;
+  if (facet_filter != nullptr) {
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
+    TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
+    for (int i = 1; i <= edge_map.Extent(); ++i) {
+      const TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
+      if (edge.IsNull() || !facet_filter->keep(edge)) {
+        continue;
+      }
+      TopoDS_Vertex first;
+      TopoDS_Vertex last;
+      TopExp::Vertices(edge, first, last, /*CumOri=*/false);
+      if (!first.IsNull() && !kept_vertex_map.Contains(first)) {
+        kept_vertex_map.Add(first);
+      }
+      if (!last.IsNull() && !kept_vertex_map.Contains(last)) {
+        kept_vertex_map.Add(last);
+      }
+    }
   }
 
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> vertex_map;
@@ -246,7 +299,15 @@ void enumerate_body_vertices(
     if (vertex.IsNull()) {
       continue;
     }
-    if (is_nonsemantic_circle_seam_vertex(body_shape, vertex)) {
+    if (facet_filter != nullptr) {
+      if (!kept_vertex_map.Contains(vertex)) {
+        continue;
+      }
+      // Skip the circle-seam probe for faceted bodies: it rebuilds
+      // the whole edge map PER VERTEX (O(V×E), seconds on facet
+      // clouds) and only finds seam vertices of closed CAD surfaces —
+      // faceted STL circles are chorded polygons, no seams.
+    } else if (is_nonsemantic_circle_seam_vertex(body_shape, vertex)) {
       continue;
     }
     gp_Pnt position;

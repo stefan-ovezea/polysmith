@@ -569,7 +569,50 @@ std::vector<SketchProfileRegion> build_exact_profiles(
         c.kind == ExactCurve::Kind::kSpline) {
       seq = ps;
     } else {
-      for (double p : ps) seq.push_back(exact_lift_to_sweep(c, p));
+      const bool open_arc =
+          c.kind == ExactCurve::Kind::kArc ||
+          (c.kind == ExactCurve::Kind::kEllipse && c.has_sweep);
+      // The lifted-param domain of the drawn sweep (a cw sweep that
+      // wraps past 2π lifts its end a full turn down; a ccw sweep
+      // never lifts a legit param above its end).
+      double valid_lo = 0.0;
+      double valid_hi = 0.0;
+      if (open_arc) {
+        if (c.ccw) {
+          valid_lo = c.sweep_start;
+          valid_hi = c.sweep_end;
+          if (valid_hi <= valid_lo) valid_hi += 2.0 * kExactPi;
+        } else {
+          valid_hi = c.sweep_start;
+          valid_lo = c.sweep_end;
+          if (valid_lo >= valid_hi) valid_lo -= 2.0 * kExactPi;
+        }
+      }
+      for (double p : ps) {
+        const double lifted = exact_lift_to_sweep(c, p);
+        if (open_arc && (lifted < valid_lo - kExactParamEps ||
+                         lifted > valid_hi + kExactParamEps)) {
+          // A split point off the drawn sweep is an intersection with
+          // the carrier circle, not with the arc itself.  The lift
+          // must never turn it into a phantom major-arc piece:
+          // user-reported wheel regression where 2-ulp float noise
+          // below sweep_start (the intersection solver's angle for a
+          // shared corner) lifted a full turn and the face walk took
+          // a 334° half-edge instead of the drawn 26° — the hole
+          // wire wrapped around the whole hub circle and collided
+          // with every neighbouring hole edge.
+          continue;
+        }
+        seq.push_back(lifted);
+      }
+      if (open_arc) {
+        // The arc's own endpoints are unconditional members of the
+        // sweep — the unique pass above may have collapsed one of
+        // them into an epsilon-adjacent split that the filter then
+        // dropped, which must never erase the endpoint itself.
+        seq.push_back(exact_lift_to_sweep(c, c.sweep_start));
+        seq.push_back(exact_lift_to_sweep(c, c.sweep_end));
+      }
       if (c.kind == ExactCurve::Kind::kCircle || full_ellipse) {
         std::sort(seq.begin(), seq.end());
         seq.push_back(seq.front() + 2.0 * kExactPi);  // closing entry
@@ -1107,6 +1150,9 @@ std::vector<SketchProfileRegion> build_exact_profiles(
     // center/radius for smooth rendering; the sampled points above
     // stay for capture math and legacy consumers.
     const ExactCurve* circle_curve = nullptr;
+    // The hole's face in the arrangement (cw cycle) — its half-edge
+    // sequence produces the region's inner_loop_edges.
+    size_t face_idx = 0;
   };
   struct RegionBuild {
     size_t face_idx;
@@ -1203,6 +1249,10 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             .first_entity_id = face_geo[f].ids.empty()
                                    ? std::string()
                                    : face_geo[f].ids.front(),
+            // Keep the owning cw face so the region can emit the hole's
+            // exact boundary edges (inner_loop_edges), not just the
+            // sampled outline.
+            .face_idx = f,
         };
         // Exact circle hole: same full-circle test the region
         // classification uses.  Ellipse holes keep their sampled
@@ -1221,61 +1271,13 @@ std::vector<SketchProfileRegion> build_exact_profiles(
 
   const bool circles_only = !has_solid_lines && !has_solid_arcs;
 
-  for (const auto& b : builds) {
-    const ExactFace& face = faces[b.face_idx];
-    const FaceGeo& geo = face_geo[b.face_idx];
-
-    // Full-circle face classification (see full_circle_curve above —
-    // the same test the hole assignment uses).
-    const ExactCurve* circle_curve = full_circle_curve(face);
-    const bool full_circle = circle_curve != nullptr;
-
-    std::vector<std::string> unique_ids = geo.ids;
-    std::sort(unique_ids.begin(), unique_ids.end());
-    unique_ids.erase(std::unique(unique_ids.begin(), unique_ids.end()),
-                     unique_ids.end());
-
-    SketchProfileRegion region;
-    region.vertex_ids = geo.vertex_keys;
-    region.line_ids = unique_ids;
-    region.ordered_edge_ids = geo.ids;
-    region.points = geo.points;
-    for (size_t hole_index = 0; hole_index < b.holes.size(); ++hole_index) {
-      const HoleLoop& hole = b.holes[hole_index];
-      region.inner_loops.push_back(hole.points);
-      if (hole.circle_curve != nullptr) {
-        region.circle_holes.push_back(SketchProfileCircleHole{
-            .loop_index = static_cast<int>(hole_index),
-            .center_x = hole.circle_curve->cx,
-            .center_y = hole.circle_curve->cy,
-            .radius = hole.circle_curve->r,
-        });
-      }
-    }
-    region.center_x = 0.0;
-    region.center_y = 0.0;
-    region.radius = 0.0;
-
-    // Arc descriptors for circular pieces of circle entities (kept for
-    // legacy consumers).
-    for (const int e : face.edges) {
-      const ExactHalfEdge& h = half_edges[e];
-      const ExactCurve& c = curves[h.curve];
-      if (c.kind != ExactCurve::Kind::kCircle) continue;
-      region.arc_descriptors.push_back(SketchArcDescriptor{
-          .circle_id = c.id,
-          .center_x = c.cx,
-          .center_y = c.cy,
-          .radius = c.r,
-          .start_angle_rad = exact_wrap_angle(h.param_start),
-          .end_angle_rad = exact_wrap_angle(h.param_end),
-          .ccw = h.forward,
-      });
-    }
-
-    // Exact boundary edges (walk order) — the wire builder's primary
-    // input.
-    for (const int e : face.edges) {
+  // Exact boundary edges for one arrangement face (outer region or
+  // hole) in the face's walk order — the shared input of the wire
+  // builder and the CAM generators.  Extracted from the region loop
+  // so holes emit the same data as the outer boundary.
+  auto build_loop_edges = [&](const ExactFace& loop_face) {
+    std::vector<ProfileBoundaryEdge> edges;
+    for (const int e : loop_face.edges) {
       const ExactHalfEdge& h = half_edges[e];
       const ExactCurve& c = curves[h.curve];
       ProfileBoundaryEdge be;
@@ -1311,8 +1313,72 @@ std::vector<SketchProfileRegion> build_exact_profiles(
             (c.kind == ExactCurve::Kind::kCircle) || c.ccw;
         be.ccw = h.forward ? inc_is_ccw : !inc_is_ccw;
       }
-      region.boundary_edges.push_back(std::move(be));
+      edges.push_back(std::move(be));
     }
+    return edges;
+  };
+
+  for (const auto& b : builds) {
+    const ExactFace& face = faces[b.face_idx];
+    const FaceGeo& geo = face_geo[b.face_idx];
+
+    // Full-circle face classification (see full_circle_curve above —
+    // the same test the hole assignment uses).
+    const ExactCurve* circle_curve = full_circle_curve(face);
+    const bool full_circle = circle_curve != nullptr;
+
+    std::vector<std::string> unique_ids = geo.ids;
+    std::sort(unique_ids.begin(), unique_ids.end());
+    unique_ids.erase(std::unique(unique_ids.begin(), unique_ids.end()),
+                     unique_ids.end());
+
+    SketchProfileRegion region;
+    region.vertex_ids = geo.vertex_keys;
+    region.line_ids = unique_ids;
+    region.ordered_edge_ids = geo.ids;
+    region.points = geo.points;
+    for (size_t hole_index = 0; hole_index < b.holes.size(); ++hole_index) {
+      const HoleLoop& hole = b.holes[hole_index];
+      region.inner_loops.push_back(hole.points);
+      // Exact hole boundary (same edge data as the outer loop) — the
+      // extrude wire builder and the laser generator consume it; the
+      // sampled points remain the fallback for legacy consumers.
+      region.inner_loop_edges.push_back(
+          build_loop_edges(faces[hole.face_idx]));
+      if (hole.circle_curve != nullptr) {
+        region.circle_holes.push_back(SketchProfileCircleHole{
+            .loop_index = static_cast<int>(hole_index),
+            .center_x = hole.circle_curve->cx,
+            .center_y = hole.circle_curve->cy,
+            .radius = hole.circle_curve->r,
+        });
+      }
+    }
+    region.center_x = 0.0;
+    region.center_y = 0.0;
+    region.radius = 0.0;
+
+    // Arc descriptors for circular pieces of circle entities (kept for
+    // legacy consumers).
+    for (const int e : face.edges) {
+      const ExactHalfEdge& h = half_edges[e];
+      const ExactCurve& c = curves[h.curve];
+      if (c.kind != ExactCurve::Kind::kCircle) continue;
+      region.arc_descriptors.push_back(SketchArcDescriptor{
+          .circle_id = c.id,
+          .center_x = c.cx,
+          .center_y = c.cy,
+          .radius = c.r,
+          .start_angle_rad = exact_wrap_angle(h.param_start),
+          .end_angle_rad = exact_wrap_angle(h.param_end),
+          .ccw = h.forward,
+      });
+    }
+
+    // Exact boundary edges (walk order) — the wire builder's primary
+    // input (shared lambda above: outer loop and holes emit the same
+    // shape).
+    region.boundary_edges = build_loop_edges(face);
 
     if (full_circle) {
       // A full circle carries exact geometry — emit kind "circle"

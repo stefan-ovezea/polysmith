@@ -42,8 +42,30 @@ void delete_sketch_fillet(FeatureEntry &feature, const std::string &fillet_id) {
       line_it->end_y = corner_y;
     }
   };
+  // Arc operands restore the same way — the corner endpoint swaps
+  // back from the trim point to the shared corner vertex.
+  const auto restore_arc = [&](const std::string &arc_id,
+                               const std::string &trim_point_id) {
+    const auto arc_it = std::find_if(
+        parameters.arcs.begin(), parameters.arcs.end(),
+        [&](const SketchArc &arc) { return arc.id == arc_id; });
+    if (arc_it == parameters.arcs.end()) {
+      return;
+    }
+    if (arc_it->start_vertex_id == trim_point_id) {
+      arc_it->start_vertex_id = fillet_copy.corner_vertex_id;
+      arc_it->start_x = corner_x;
+      arc_it->start_y = corner_y;
+    } else if (arc_it->end_vertex_id == trim_point_id) {
+      arc_it->end_vertex_id = fillet_copy.corner_vertex_id;
+      arc_it->end_x = corner_x;
+      arc_it->end_y = corner_y;
+    }
+  };
   restore_line(fillet_copy.line_a_id, fillet_copy.trim_a_vertex_id);
   restore_line(fillet_copy.line_b_id, fillet_copy.trim_b_vertex_id);
+  restore_arc(fillet_copy.arc_a_id, fillet_copy.trim_a_vertex_id);
+  restore_arc(fillet_copy.arc_b_id, fillet_copy.trim_b_vertex_id);
 
   // Remove the generated arc.
   parameters.arcs.erase(std::remove_if(parameters.arcs.begin(),

@@ -45,6 +45,14 @@ std::optional<std::string> read_optional_string(
   return payload.at(key).get<std::string>();
 }
 
+bool read_bool(const polysmith::protocol::json& payload, const char* key) {
+  if (!payload.contains(key) || !payload.at(key).is_boolean()) {
+    throw std::runtime_error(std::string("Command payload is missing bool field '") +
+                             key + "'");
+  }
+  return payload.at(key).get<bool>();
+}
+
 double read_optional_dimension(const polysmith::protocol::json& payload,
                                const char* key,
                                double fallback) {

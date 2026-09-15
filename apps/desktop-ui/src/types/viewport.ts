@@ -337,12 +337,34 @@ export interface ViewportSketchProfile {
     center_y: number;
     radius: number;
   }[];
+  // Exact boundary edges (line/arc) in walk order — the renderer
+  // builds arc-true fills from these.  Empty for legacy profiles.
+  boundary_edges?: ProfileBoundaryEdge[];
+  inner_loop_edges?: ProfileBoundaryEdge[][];
   start_x: number;
   start_y: number;
   width: number;
   height: number;
   radius: number;
   is_selected: boolean;
+}
+
+export interface ProfileBoundaryEdge {
+  entity_id: string;
+  entity_kind: string;
+  param_start: number;
+  param_end: number;
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  center_x: number;
+  center_y: number;
+  radius: number;
+  ccw: boolean;
+  spline_degree: number;
+  spline_pole_xs: number[];
+  spline_pole_ys: number[];
 }
 
 export interface ViewportSceneBounds {

@@ -46,6 +46,10 @@ interface BindSketchHotkeysParams {
   deleteSketchSelectionRef: MutableRef<
     (selection?: SketchDeleteSelection) => Promise<void>
   >;
+  // Routed through the confirm-and-delete flow so LARGE selections
+  // (the lag-invisible-marquee accident: 24 spokes deleted in one
+  // hotkey press) get a look-before-you-delete dialog.
+  confirmDeleteSketchSelectionRef: MutableRef<() => void>;
   setSketchToolRef: MutableRef<(tool: SketchTool) => Promise<void>>;
   clearPreviewDimension: () => void;
   finishDimensionPlacement: () => void;
@@ -239,6 +243,7 @@ function handleSketchDeleteKey(
     clearSketchConstraintRef,
     clearSketchSelectionRef,
     deleteSketchSelectionRef,
+    confirmDeleteSketchSelectionRef,
     setSelectedConstraint,
     cancelActiveSketchDraft,
   }: Omit<BindSketchHotkeysParams, "activeSketchPlaneId">,
@@ -260,11 +265,10 @@ function handleSketchDeleteKey(
 
   event.preventDefault();
   deleteSelectedSketchItems({
-    document: documentRef.current,
     selectedConstraintRef,
     setSelectedConstraint,
     clearSketchConstraint: clearSketchConstraintRef.current,
-    deleteSketchSelection: deleteSketchSelectionRef.current,
+    confirmDeleteSketchSelection: confirmDeleteSketchSelectionRef.current,
   });
   return true;
 }
@@ -363,13 +367,11 @@ function clearSketchGeometrySelection({
 }
 
 function deleteSelectedSketchItems({
-  document,
   selectedConstraintRef,
   setSelectedConstraint,
   clearSketchConstraint,
-  deleteSketchSelection,
+  confirmDeleteSketchSelection,
 }: {
-  document: DocumentState | null;
   selectedConstraintRef: MutableRef<SelectedConstraintState | null>;
   setSelectedConstraint: (constraint: SelectedConstraintState | null) => void;
   clearSketchConstraint: (
@@ -377,7 +379,7 @@ function deleteSelectedSketchItems({
     entityId: string,
     relatedEntityId: string | null,
   ) => Promise<void>;
-  deleteSketchSelection: (selection?: SketchDeleteSelection) => Promise<void>;
+  confirmDeleteSketchSelection: () => void;
 }) {
   const selectedConstraint = selectedConstraintRef.current;
   if (selectedConstraint) {
@@ -390,24 +392,12 @@ function deleteSelectedSketchItems({
     return;
   }
 
-  const entityIds = document?.selected_sketch_entity_ids ?? [];
-  const entityId = document?.selected_sketch_entity_id;
-  const vertexIds = document?.selected_sketch_vertex_ids ?? [];
-  const profileIds = document?.selected_sketch_profile_ids ?? [];
-  const allEntityIds = entityId
-    ? entityIds.includes(entityId)
-      ? entityIds
-      : [...entityIds, entityId]
-    : entityIds;
-
-  if (allEntityIds.length > 0 || vertexIds.length > 0 || profileIds.length > 0) {
-    void deleteSketchSelection({
-      entityIds: allEntityIds,
-      vertexIds,
-      profileIds,
-    });
-    return;
-  }
-
-  void deleteSketchSelection();
+  // NO selection snapshot: the core resolves the CURRENT selection at
+  // command time. The UI state can lag the last marquee while its
+  // selection events are still in flight; a snapshot built here
+  // previously deleted a pre-marquee profile's boundary (the
+  // perimeter) while the marquee's entities survived. The confirm
+  // flow shows a dialog for LARGE selections before anything is
+  // deleted (see deleteConfirmations.ts).
+  confirmDeleteSketchSelection();
 }

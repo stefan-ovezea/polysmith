@@ -9,8 +9,56 @@ void DocumentManager::push_undo_state() {
   undo_stack_.push_back(document_.value());
 }
 
+void DocumentManager::sync_sketch_id_counters() {
+  if (!document_.has_value()) {
+    return;
+  }
+  // Numeric suffix of a "kind-N" id; ids without a plain numeric
+  // suffix (e.g. "vertex-text-3", "line-glyph-7") don't consume the
+  // user counters and are skipped — same rule as the load-time
+  // counter restore.
+  const auto next_index = [](const std::string& id) {
+    const size_t dash = id.rfind('-');
+    if (dash == std::string::npos || dash + 1 >= id.size()) {
+      return 0;
+    }
+    const std::string suffix = id.substr(dash + 1);
+    if (suffix.find_first_not_of("0123456789") != std::string::npos) {
+      return 0;
+    }
+    return std::stoi(suffix) + 1;
+  };
+  const auto bump = [](int& counter, int candidate) {
+    counter = std::max(counter, candidate);
+  };
+
+  for (const auto& feature : document_->feature_history) {
+    if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+      continue;
+    }
+    const auto& sketch = feature.sketch_parameters.value();
+    for (const auto& e : sketch.lines) bump(next_sketch_line_id_, next_index(e.id));
+    for (const auto& e : sketch.circles) bump(next_sketch_circle_id_, next_index(e.id));
+    for (const auto& e : sketch.polygons) bump(next_sketch_polygon_id_, next_index(e.id));
+    for (const auto& e : sketch.arcs) bump(next_sketch_arc_id_, next_index(e.id));
+    for (const auto& e : sketch.ellipses) bump(next_sketch_ellipse_id_, next_index(e.id));
+    for (const auto& e : sketch.splines) bump(next_sketch_spline_id_, next_index(e.id));
+    for (const auto& e : sketch.slots) bump(next_sketch_slot_id_, next_index(e.id));
+    for (const auto& e : sketch.fillets) bump(next_sketch_fillet_id_, next_index(e.id));
+    for (const auto& e : sketch.chamfers) bump(next_sketch_chamfer_id_, next_index(e.id));
+    for (const auto& e : sketch.projected_points) {
+      bump(next_sketch_projected_point_id_, next_index(e.id));
+    }
+    for (const auto& e : sketch.projections) {
+      bump(next_sketch_projection_id_, next_index(e.id));
+    }
+    for (const auto& e : sketch.texts) bump(next_sketch_text_id_, next_index(e.id));
+  }
+}
+
 void DocumentManager::bump_geometry_revision() {
   require_document();
+  sync_sketch_id_counters();
   refresh_history_dependencies(*document_);
   // CAM operations re-resolve their geometry references against the
   // live document after every geometry bump — the CAM analogue of the

@@ -55,6 +55,10 @@ export function pickSketchChamferCorner({
   if (alreadyChamfered) {
     return null;
   }
+  // Fillet records carry the line operands in line_a_id / line_b_id
+  // even for line-arc fillets (arc operands live in the optional
+  // arc_a_id / arc_b_id), so the line match above already covers
+  // every fillet shape that shares a chamfer line.
   const alreadyFilleted = (sketch.fillets ?? []).some((fillet) =>
     sharesCorner(
       fillet.line_a_id,

@@ -187,8 +187,11 @@ function buildGrblToolpathMaterials(): GrblToolpathMaterials {
       depthTest: false,
       depthWrite: false,
     }),
+    // The cut portion reads as BURNED, not highlighted — a charred
+    // color distinct from the uncut feed/rapid palette, so progress
+    // across the geometry is visible at a glance.
     executed: new THREE.LineBasicMaterial({
-      color: themeColor("--cad-toolpath-executed", "#ffe784"),
+      color: themeColor("--cad-toolpath-burned", "#8a5a2b"),
       transparent: true,
       opacity: 1,
       depthTest: false,
@@ -213,7 +216,7 @@ function buildGrblToolpathMaterials(): GrblToolpathMaterials {
 
 // Single-color materials for utility programs (framing box, focus
 // pulse) so they read as an overlay on the real toolpath; executed
-// lines still swap to the standard executed color.
+// lines still swap to the burned color.
 function buildGrblOverlayMaterials(): GrblToolpathMaterials {
   const color = themeColor("--cad-framing-overlay", "#ff9f43");
   const solid = new THREE.LineBasicMaterial({
@@ -236,7 +239,7 @@ function buildGrblOverlayMaterials(): GrblToolpathMaterials {
     rapid: dashed,
     feed: solid,
     executed: new THREE.LineBasicMaterial({
-      color: themeColor("--cad-toolpath-executed", "#ffe784"),
+      color: themeColor("--cad-toolpath-burned", "#8a5a2b"),
       transparent: true,
       opacity: 1,
       depthTest: false,

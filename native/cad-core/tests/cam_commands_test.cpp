@@ -469,12 +469,56 @@ bool test_operation_set_scope_sketch() {
               "set scope: status resets to needs_regenerate")) {
     return false;
   }
+  if (!expect(doc.cam.operations[0].geometry_scope == "sketch",
+              "set scope: geometry_scope records the whole-sketch capture")) {
+    return false;
+  }
 
   // One undo step restores the previous (empty) geometry.
   const DocumentState undone = manager.undo();
   return expect(undone.cam.operations[0]
                     .geometry_references.machining_regions.empty(),
                 "set scope: undo restores the previous regions");
+}
+
+bool test_geometry_scope_payload_round_trip() {
+  // The scope mode survives payload serialize/parse (the document
+  // save/load path), and documents saved before the field existed
+  // default to "sketch".
+  CamOperation op;
+  op.op_id = "cam-op-1";
+  op.type = "laser_cut";
+  op.geometry_scope = "selected";
+
+  const auto payload = polysmith::protocol::to_payload(op);
+  if (!expect(payload.contains("geometry_scope") &&
+                  payload.at("geometry_scope").get<std::string>() ==
+                      "selected",
+              "payload: geometry_scope serialized")) {
+    return false;
+  }
+  const auto parsed = polysmith::protocol::cam_operation_from_payload(payload);
+  if (!expect(parsed.geometry_scope == "selected",
+              "payload: geometry_scope round-trips through parse")) {
+    return false;
+  }
+
+  // A pre-scope payload (no field) must default to "sketch", not fail.
+  const auto legacy = polysmith::protocol::cam_operation_from_payload(
+      nlohmann::json{{"op_id", "cam-op-2"}, {"type", "laser_cut"}});
+  if (!expect(legacy.geometry_scope == "sketch",
+              "payload: absent geometry_scope defaults to sketch")) {
+    return false;
+  }
+
+  // An unknown value must not crash anything downstream — the scope
+  // dropdown just falls back to its sketch-resolution logic.
+  const auto unknown = polysmith::protocol::cam_operation_from_payload(
+      nlohmann::json{{"op_id", "cam-op-3"},
+                     {"type", "laser_cut"},
+                     {"geometry_scope", "weird"}});
+  return expect(unknown.geometry_scope == "weird",
+                "payload: unknown geometry_scope value is carried verbatim");
 }
 
 bool test_operation_set_scope_errors() {
@@ -1467,6 +1511,14 @@ int main() {
 
   std::cout << "  Test 24: capture rejects partial arcs... ";
   if (test_capture_edge_reference_rejects_arc()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 25: geometry_scope payload round-trip... ";
+  if (test_geometry_scope_payload_round_trip()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

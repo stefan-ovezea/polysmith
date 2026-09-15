@@ -168,11 +168,18 @@ export function makeCamOperationCreateCommand(
 export function makeCamOperationUpdateCommand(
   opId: string,
   partial: Partial<CamOperation>,
+  options?: {
+    // Carried alongside an emptied geometry_references: the explicit
+    // profile ids the core must re-capture (the panel's Apply).  With
+    // them the capture does not depend on the live document selection
+    // still being present when the command is processed.
+    selected_profile_ids?: string[];
+  },
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
     type: "cam_operation_update",
-    payload: { op_id: opId, ...partial },
+    payload: { op_id: opId, ...partial, ...(options ?? {}) },
   };
 }
 

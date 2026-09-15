@@ -27,7 +27,9 @@ void add_sketch_fillet(FeatureEntry& feature,
                        const std::string& corner_vertex_id,
                        const std::string& line_a_id,
                        const std::string& line_b_id,
-                       double radius);
+                       double radius,
+                       const std::string& arc_a_id = "",
+                       const std::string& arc_b_id = "");
 void update_sketch_fillet_radius(FeatureEntry& feature,
                                  const std::string& fillet_id,
                                  double radius);

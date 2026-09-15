@@ -10,6 +10,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -29,11 +30,13 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
+#include <GeomLProp_SLProps.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
+#include <TopTools.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
@@ -48,6 +51,7 @@
 #include <gp_Vec.hxx>
 
 #include "core/geometry/body_compiler.h"
+#include "core/viewport/facet_edge_filter.h"
 #include "core/cam/cam_runtime.h"
 #include "core/cam/toolpath.h"
 #include "core/cam/toolpath_geometry.h"
@@ -179,20 +183,32 @@ void append_cached_body_topology(
 
     const TopoDS_Shape& edge_pick_shape =
         body.pick_shape.IsNull() ? body.shape : body.pick_shape;
-    // Mesh bodies (imported AND converted) carry thousands of facet
-    // edges/vertices; per-edge/per-vertex pick primitives are useless
-    // there (fillets on them are gated off anyway) and would flood the
-    // viewport payload (measured ~10k edges + ~4.7k vertices, ~2MB of
-    // JSON per refresh for a fan panel) — the facet-vertex cloud reads
-    // as stray "highlighted points" over the body.
-    if (body_kind != "mesh_to_body" && body_kind != "mesh_import") {
+    // Imported meshes emit NO per-edge/per-vertex pick entries: their
+    // raw triangle soup carries ~10k facet edges + ~4.7k facet
+    // vertices (~2MB of JSON per refresh on a fan panel), and the
+    // facet-vertex cloud reads as stray "highlighted points".
+    // Converted bodies (mesh_to_body) DO emit edges and vertices so
+    // the Project tool can pick individual outline segments and
+    // corners, but filtered to the SEMANTIC ones: FacetEdgeFilter
+    // drops triangulation seams between coplanar faces (flat region
+    // interiors), keeping the outline, steps, and hole rims.
+    if (body_kind != "mesh_import") {
+      // One shared FacetEdgeFilter for the mesh_to_body body — its
+      // face-normal cache is reused by both enumerations (building it
+      // twice doubled the viewport rebuild cost).
+      const std::unique_ptr<FacetEdgeFilter> facet_filter =
+          body_kind == "mesh_to_body"
+              ? std::make_unique<FacetEdgeFilter>(body.shape)
+              : nullptr;
       enumerate_body_edges(edge_pick_shape,
                            body.id,
                            document.selected_edge_ids,
+                           facet_filter.get(),
                            next.edges);
       enumerate_body_vertices(body.shape,
                               body.id,
                               document.selected_vertex_ids,
+                              facet_filter.get(),
                               next.vertices);
     }
 

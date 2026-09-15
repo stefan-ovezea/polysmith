@@ -18,6 +18,9 @@ interface ViewportContextMenuProps {
   onMoveBody: () => void | Promise<void>;
   onCopyBody: (copyMode: "linked" | "standalone") => void | Promise<void>;
   onUnlinkBodyCopy: () => void | Promise<void>;
+  onRemoveSketchProjections: () => void | Promise<void>;
+  onUnlinkSketchProjections: () => void | Promise<void>;
+  showSketchProjectionActions: boolean;
   onExportBodyMesh: () => void | Promise<void>;
   onExportBodyStep: () => void | Promise<void>;
   onSendBodyToSlicer: (
@@ -42,6 +45,9 @@ export function ViewportContextMenu({
   onMoveBody,
   onCopyBody,
   onUnlinkBodyCopy,
+  onRemoveSketchProjections,
+  onUnlinkSketchProjections,
+  showSketchProjectionActions,
   onExportBodyMesh,
   onExportBodyStep,
   onSendBodyToSlicer,
@@ -134,6 +140,24 @@ export function ViewportContextMenu({
             >
               Toggle Construction
             </button>
+          ) : null}
+          {showSketchProjectionActions ? (
+            <>
+              <button
+                type="button"
+                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                onClick={onRemoveSketchProjections}
+              >
+                {translate("sketch.removeProjections")}
+              </button>
+              <button
+                type="button"
+                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                onClick={onUnlinkSketchProjections}
+              >
+                {translate("sketch.unlinkProjections")}
+              </button>
+            </>
           ) : null}
           <button
             type="button"

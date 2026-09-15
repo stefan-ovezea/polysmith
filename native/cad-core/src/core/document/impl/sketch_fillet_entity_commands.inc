@@ -2,7 +2,9 @@ DocumentState DocumentManager::add_sketch_fillet(
     const std::string& corner_vertex_id,
     const std::string& line_a_id,
     const std::string& line_b_id,
-    double radius) {
+    double radius,
+    const std::string& arc_a_id,
+    const std::string& arc_b_id) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -35,7 +37,9 @@ DocumentState DocumentManager::add_sketch_fillet(
                                      corner_vertex_id,
                                      line_a_id,
                                      line_b_id,
-                                     radius);
+                                     radius,
+                                     arc_a_id,
+                                     arc_b_id);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;

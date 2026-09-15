@@ -99,6 +99,70 @@ void reverse_segments(std::vector<BaseSegment>& segments);
 // Signed area of a segment list (shoelace over the endpoints).
 double base_segments_signed_area(const std::vector<BaseSegment>& segments);
 
+// What cleanup_base_segments changed — one line in the structured log
+// tells the user how much a sketch's fragmented contour was healed.
+struct SegmentCleanupStats {
+  int merged_lines = 0;      // consecutive collinear lines joined
+  int merged_arcs = 0;       // consecutive co-circular arcs joined
+  int dropped_duplicates = 0;  // exact consecutive repeats removed
+  int dropped_spurs = 0;     // A→B immediately followed by B→A removed
+  int dropped_degenerate = 0;  // zero-length line segments removed
+
+  SegmentCleanupStats& operator+=(const SegmentCleanupStats& other) {
+    merged_lines += other.merged_lines;
+    merged_arcs += other.merged_arcs;
+    dropped_duplicates += other.dropped_duplicates;
+    dropped_spurs += other.dropped_spurs;
+    dropped_degenerate += other.dropped_degenerate;
+    return *this;
+  }
+
+  // True when the pass changed anything — gates the structured log.
+  bool any() const {
+    return merged_lines || merged_arcs || dropped_duplicates ||
+           dropped_spurs || dropped_degenerate;
+  }
+};
+
+// What simplify_polyline_dp changed — one line in the structured log
+// tells the user how much facet noise the pass removed.
+struct SimplifyStats {
+  int vertices_before = 0;  // vertices across all line runs visited
+  int vertices_after = 0;   // vertices kept by the Douglas-Peucker pass
+
+  SimplifyStats& operator+=(const SimplifyStats& other) {
+    vertices_before += other.vertices_before;
+    vertices_after += other.vertices_after;
+    return *this;
+  }
+
+  // True when the pass dropped anything — gates the structured log.
+  bool any() const { return vertices_before > vertices_after; }
+};
+
+// Douglas-Peucker simplification of a closed contour's LINE runs at a
+// maximum deviation of `epsilon`.  Arc segments are exact anchors:
+// they are copied through untouched and bound each run, so a run's
+// first and last vertex are never dropped and loop closure survives.
+// A vertex is dropped only when every vertex of the span it belongs
+// to lies within `epsilon` of the replacement edge (the recursive DP
+// guarantee).  Mesh-derived bodies flood contours with micro-facets
+// far finer than the laser kerf — this pass collapses the noise
+// before the kerf offset posts it move-for-move.
+SimplifyStats simplify_polyline_dp(std::vector<BaseSegment>& segments,
+                                   double epsilon);
+
+// Heals a closed contour in place: merges consecutive collinear line
+// segments and consecutive co-circular arcs (same center/radius/walk
+// direction), and drops consecutive exact duplicates, out-and-back
+// spurs, and zero-length lines.  Only ADJACENT pairs are touched —
+// never re-arranged — so loop closure is preserved by construction.
+// Sketch profiles arrive fragmented (arrangement splits entities at
+// every intersection; projected mesh bodies duplicate edges), and the
+// posted G-code inherits that fragmentation 1:1 — this pass is what
+// collapses the 1° arc shards and double lines before the kerf offset.
+SegmentCleanupStats cleanup_base_segments(std::vector<BaseSegment>& segments);
+
 // Offsets one closed, orientation-normalized loop by `d` to the right
 // of the walk (the scrap side).  Corner handling:
 //   - round_joins=true (laser kerf on the scrap side): round join arcs

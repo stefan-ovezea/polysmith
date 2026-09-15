@@ -748,6 +748,103 @@ RectWithCorner make_rect_with_top_right_corner(int feature_index) {
   return result;
 }
 
+// User-reported wheel regression: a hole-boundary arc whose START
+// point is shared with another hole-boundary arc drawn on a different
+// circle that crosses the arc's carrier circle exactly there.  The
+// intersection solver's angle for the shared corner lands 2 ulps
+// BELOW the arc's sweep_start (pure float noise — the user's file
+// part-stefan-fillet.json carries exactly this); exact_lift_to_sweep
+// then lifts that split param a full turn beyond the sweep, and the
+// arrangement gains a phantom major-arc half-edge (334° instead of
+// the drawn 26°).  The face walk took the phantom edge: the hole
+// wire wrapped around the whole hub circle and collided with the
+// neighbouring hole edges ("3 pairs of holes touch", invalid cap
+// faces, refused extrude).
+//
+// Repro topology: the user's hole loop 12 verbatim (arc-98/arc-134/
+// arc-96/arc-20 with their exact stored doubles) inside a plate
+// rectangle.  Same bits in → same solver arithmetic → same phantom.
+bool test_hole_arc_walks_short_span_not_major_arc() {
+  FeatureEntry feature = create_sketch_feature(/*feature_index=*/40,
+                                               "ref-plane-xy");
+  int next_line_index = 1;
+  add_sketch_rectangle(feature, next_line_index, -150.0, -150.0, 150.0,
+                       150.0);
+
+  // The user's exact stored geometry (full double precision, from
+  // part-stefan-fillet.json).
+  const double c1x = -54.715822198817875, c1y = 52.109290715970374;
+  const double c2x = -18.977481548618609, c2y = 90.946883012702713;
+  const double c4x = -5.3612284886810073, c4y = 67.653934409350356;
+
+  // arc-1 = arc-98: 26° on the r=44 hub circle (the edge that walked
+  // 334°).
+  add_sketch_arc(feature, /*arc_index=*/1, /*start_point_index=*/100,
+                 /*end_point_index=*/101,
+                 /*start_x=*/-69.501851181697234, /*start_y=*/93.550488568016647,
+                 /*end_x=*/-86.21527027144306, /*end_y=*/82.830363347227618,
+                 c1x, c1y, 43.999994687442772, /*ccw=*/true);
+  // arc-2 = arc-134: starts at arc-1's END corner; its circle crosses
+  // arc-1's circle at arc-1's START corner (the intersection record
+  // that produced the 2-ulp split).
+  add_sketch_arc(feature, 2, 102, 103,
+                 -86.42817647168458, 97.046217255938203,
+                 -86.21527027144306, 82.830363347227618,
+                 c2x, c2y, 67.725904377979504, /*ccw=*/true);
+  // arc-3 = arc-96: r=55, concentric with arc-1 (no intersections).
+  add_sketch_arc(feature, 3, 104, 105,
+                 -62.562686878104493, 106.54666065557352,
+                 -86.42817647168458, 97.046217255938203,
+                 c1x, c1y, 54.999994801713491, /*ccw=*/true);
+  // arc-4 = arc-20: closes back to arc-1's START corner — its circle
+  // passes exactly through that corner.
+  add_sketch_arc(feature, 4, 106, 107,
+                 -62.562686878104493, 106.54666065557352,
+                 -69.501851181697234, 93.550488568016647,
+                 c4x, c4y, 69.171171717273978, /*ccw=*/true);
+
+  feature.sketch_parameters->profiles =
+      build_sketch_profile_regions(feature.sketch_parameters.value());
+
+  const auto& profiles = feature.sketch_parameters->profiles;
+  // Full expected region set: exactly the plate polygon (with the one
+  // hole) plus the hole's own polygon region.
+  if (profiles.size() != 2) {
+    std::cerr << "hole-arc: got " << profiles.size() << " profiles:\n";
+    for (const auto& p : profiles) {
+      std::cerr << "  kind=" << p.kind << " edges=" << p.ordered_edge_ids.size()
+                << " holes=" << p.inner_loops.size()
+                << " hole_edges=" << p.inner_loop_edges.size() << "\n";
+    }
+    return expect(false, "hole-arc: expected plate + hole regions");
+  }
+  const auto rect_it = std::find_if(
+      profiles.begin(), profiles.end(), [](const auto& p) {
+        return std::find(p.ordered_edge_ids.begin(), p.ordered_edge_ids.end(),
+                         "line-1") != p.ordered_edge_ids.end();
+      });
+  if (!expect(rect_it != profiles.end(),
+              "hole-arc: plate region must exist")) {
+    return false;
+  }
+  if (!expect(rect_it->inner_loop_edges.size() == 1 &&
+                  rect_it->inner_loop_edges[0].size() == 4,
+              "hole-arc: plate must have one 4-edge hole loop")) {
+    return false;
+  }
+
+  // Every hole edge must walk the SHORT way around its circle — the
+  // bug emitted a 334° span for arc-1.
+  for (const auto& edge : rect_it->inner_loop_edges[0]) {
+    const double span = std::fabs(edge.param_end - edge.param_start);
+    if (!expect(span < 3.141592653589793,
+                "hole-arc: walked arc span must stay below 180 degrees")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool test_fillet_creates_arc_and_trims_lines() {
   RectWithCorner setup = make_rect_with_top_right_corner(20);
   if (setup.top_right_corner_id.empty() || setup.top_line_id.empty() ||
@@ -1178,8 +1275,39 @@ bool test_trimmed_circle_corner_detects_outer_profile() {
   }
 
   // The inner circle must nest as a hole of the outer profile.
-  return expect(outer.inner_loops.size() == 1,
-                "inner circle should nest as a hole of the outer profile");
+  if (!expect(outer.inner_loops.size() == 1,
+              "inner circle should nest as a hole of the outer profile")) {
+    return false;
+  }
+
+  // Exact per-hole boundary edges (the polygonal-hole fix): the hole
+  // walk must carry one exact full-circle edge so the extrude wire
+  // builder and the laser generator cut a true circle instead of the
+  // chord sample.  Before this fix the region carried only the sampled
+  // inner_loops points and every non-circle hole was cut polygonally.
+  if (!expect(outer.inner_loop_edges.size() == 1,
+              "hole should carry one exact boundary-edge loop")) {
+    return false;
+  }
+  if (!expect(outer.inner_loop_edges[0].size() == 1,
+              "circle hole should be a single exact edge")) {
+    return false;
+  }
+  const auto& hole_edge = outer.inner_loop_edges[0][0];
+  constexpr double kTwoPi = 6.283185307179586;
+  if (!expect(hole_edge.entity_kind == "circle" &&
+                  std::abs(std::abs(hole_edge.param_end -
+                                    hole_edge.param_start) - kTwoPi) < 1e-9,
+              "hole edge should be an exact full circle")) {
+    return false;
+  }
+  if (!expect(std::abs(hole_edge.center_x) < 1e-9 &&
+                  std::abs(hole_edge.center_y) < 1e-9 &&
+                  std::abs(hole_edge.radius - 14.693138517113884) < 1e-9,
+              "hole edge circle should match the inner circle entity")) {
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -1237,6 +1365,9 @@ int main() {
     return EXIT_FAILURE;
   }
   if (!test_detects_polygon_loop_with_line_and_arc_edges()) {
+    return EXIT_FAILURE;
+  }
+  if (!test_hole_arc_walks_short_span_not_major_arc()) {
     return EXIT_FAILURE;
   }
   if (!test_fillet_creates_arc_and_trims_lines()) {

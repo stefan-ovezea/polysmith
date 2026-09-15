@@ -52,6 +52,9 @@ interface CamContourPanelProps {
   repickArmed: boolean;
   sketches: Array<{ feature_id: string; name: string }>;
   scopeSketchId: string | null;
+  // The op cuts an explicit profile subset, not the whole sketch —
+  // the Cut geometry dropdown shows "Selected profiles".
+  customProfileScope: boolean;
   onSetScope: (featureId: string) => void;
   onStartRepick: () => void;
   onCancelRepick: () => void;
@@ -84,6 +87,7 @@ export function CamContourPanel({
   repickArmed,
   sketches,
   scopeSketchId,
+  customProfileScope,
   onSetScope,
   onStartRepick,
   onCancelRepick,
@@ -198,9 +202,7 @@ export function CamContourPanel({
                   options={[
                     {
                       value: "",
-                      label: scopeSketchId
-                        ? t("cam.contour.scopeMixed", "Selected profiles")
-                        : t("cam.contour.scopeNone", "No sketch selected"),
+                      label: t("cam.contour.scopeNone", "No sketch selected"),
                     },
                     ...sketches.map((sketch) => ({
                       value: sketch.feature_id,
@@ -211,6 +213,52 @@ export function CamContourPanel({
                   onChange={(value) => {
                     if (value) {
                       onSetScope(value);
+                    }
+                  }}
+                />
+                <Dropdown
+                  className="w-full"
+                  // "" = no sketch chosen yet; otherwise the persisted
+                  // geometry_scope decides — while the re-pick is armed
+                  // it always reads "selected".
+                  value={
+                    !scopeSketchId
+                      ? ""
+                      : repickArmed || customProfileScope
+                        ? "selected"
+                        : "sketch"
+                  }
+                  label={t("cam.contour.scopeModeLabel", "Cut geometry")}
+                  options={[
+                    {
+                      value: "",
+                      label: t(
+                        "cam.contour.scopeModeNoSketch",
+                        "Choose a sketch first",
+                      ),
+                    },
+                    {
+                      value: "sketch",
+                      label: t("cam.contour.scopeModeSketch", "Whole sketch"),
+                    },
+                    {
+                      value: "selected",
+                      label: t(
+                        "cam.contour.scopeModeSelected",
+                        "Selected profiles",
+                      ),
+                    },
+                  ]}
+                  disabled={disabled || repickArmed || !scopeSketchId}
+                  onChange={(value) => {
+                    if (value === "sketch") {
+                      if (scopeSketchId) {
+                        onSetScope(scopeSketchId);
+                      }
+                    } else if (value === "selected") {
+                      // Arm the viewport re-pick so geometry clicks
+                      // select profiles additively.
+                      onStartRepick();
                     }
                   }}
                 />

@@ -69,6 +69,12 @@ export const commandPayloadSchemas = {
     .strict(),
   convert_mesh_to_body: z.object({ body_id: stringField }).strict(),
   detach_body_projections: z.object({ body_id: stringField }).strict(),
+  remove_sketch_projections: z
+    .object({
+      feature_id: stringField,
+      keep_geometry: z.boolean(),
+    })
+    .strict(),
   save_document: z.object({ file_path: stringField }).strict(),
   load_document: z.object({ file_path: stringField }).strict(),
   project_face_into_sketch: z.object({ face_id: stringField }).strict(),
@@ -397,6 +403,9 @@ export const commandPayloadSchemas = {
       corner_vertex_id: stringField,
       line_a_id: stringField,
       line_b_id: stringField,
+      // Arc operands (line-arc / arc-arc fillets) — optional.
+      arc_a_id: stringField.optional(),
+      arc_b_id: stringField.optional(),
       radius: numberField,
     })
     .strict(),
