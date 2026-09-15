@@ -630,6 +630,10 @@ export const documentStateSchema = z.object({
                 corner_y: z.number(),
                 line_a_id: z.string(),
                 line_b_id: z.string(),
+                // Arc operands (line-arc / arc-arc fillets) — optional;
+                // line-line records and older cores omit them.
+                arc_a_id: z.string().optional(),
+                arc_b_id: z.string().optional(),
                 trim_a_vertex_id: z.string(),
                 trim_b_vertex_id: z.string(),
                 arc_id: z.string(),
@@ -825,6 +829,53 @@ export const documentStateSchema = z.object({
                     center_y: z.number(),
                     radius: z.number(),
                   }),
+                )
+                .default([]),
+              // Exact boundary edges (line/arc) — the UI builds
+              // arc-true profile fills from these.  Empty for legacy
+              // profiles.
+              boundary_edges: z
+                .array(
+                  z.object({
+                    entity_id: z.string(),
+                    entity_kind: z.string(),
+                    param_start: z.number(),
+                    param_end: z.number(),
+                    start_x: z.number(),
+                    start_y: z.number(),
+                    end_x: z.number(),
+                    end_y: z.number(),
+                    center_x: z.number(),
+                    center_y: z.number(),
+                    radius: z.number(),
+                    ccw: z.boolean(),
+                    spline_degree: z.number(),
+                    spline_pole_xs: z.array(z.number()),
+                    spline_pole_ys: z.array(z.number()),
+                  }),
+                )
+                .default([]),
+              inner_loop_edges: z
+                .array(
+                  z.array(
+                    z.object({
+                      entity_id: z.string(),
+                      entity_kind: z.string(),
+                      param_start: z.number(),
+                      param_end: z.number(),
+                      start_x: z.number(),
+                      start_y: z.number(),
+                      end_x: z.number(),
+                      end_y: z.number(),
+                      center_x: z.number(),
+                      center_y: z.number(),
+                      radius: z.number(),
+                      ccw: z.boolean(),
+                      spline_degree: z.number(),
+                      spline_pole_xs: z.array(z.number()),
+                      spline_pole_ys: z.array(z.number()),
+                    }),
+                  ),
                 )
                 .default([]),
               source_circle_id: z.string().nullable(),

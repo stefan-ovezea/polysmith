@@ -309,6 +309,8 @@ ViewportSketchProfilePrimitive make_rectangle_profile_primitive(
       .profile_points = profile.points,
       .inner_loops = profile.inner_loops,
       .circle_holes = profile.circle_holes,
+      .boundary_edges = profile.boundary_edges,
+      .inner_loop_edges = profile.inner_loop_edges,
       .start_x = 0.0,
       .start_y = 0.0,
       .width = 0.0,

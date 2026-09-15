@@ -382,6 +382,10 @@
       "scopeSketch": "Reference sketch",
       "scopeNone": "No sketch selected",
       "scopeMixed": "Selected profiles",
+      "scopeModeLabel": "Cut geometry",
+      "scopeModeNoSketch": "Choose a sketch first",
+      "scopeModeSketch": "Whole sketch",
+      "scopeModeSelected": "Selected profiles",
       "reselectGeometry": "Re-select geometry",
       "applyRepick": "Apply selection",
       "cancelRepick": "Cancel",
@@ -423,6 +427,10 @@
       "scopeSketch": "Reference sketch",
       "scopeNone": "No sketch selected",
       "scopeMixed": "Selected profiles",
+      "scopeModeLabel": "Cut geometry",
+      "scopeModeNoSketch": "Choose a sketch first",
+      "scopeModeSketch": "Whole sketch",
+      "scopeModeSelected": "Selected profiles",
       "reselectGeometry": "Re-select geometry",
       "applyRepick": "Apply selection",
       "cancelRepick": "Cancel",
@@ -563,6 +571,8 @@
       "margin": "Margin (mm)",
       "marginNote": "Extra material beyond the part bounds on each axis.",
       "wcs": "WCS Origin",
+      "wcsSheetAnchor": "Sheet origin",
+      "wcsSheetNote": "The WCS is the sheet origin — exported coordinates are relative to this point. Pick a sheet corner or a sketch point on the bed.",
       "orientation": "Orientation",
       "orientModel": "Model orientation",
       "orientZUp": "Z axis up",
@@ -824,10 +834,17 @@
       "scopeLabel": "Reference sketch",
       "scopeNone": "No sketch selected",
       "scopeMixed": "Selected profiles",
+      "scopeModeLabel": "Cut geometry",
+      "scopeModeNoSketch": "Choose a sketch first",
+      "scopeModeSketch": "Whole sketch",
+      "scopeModeSelected": "Selected profiles",
+      "scopeCustomNote": "Custom selection active — switch Cut geometry to Whole sketch to cut everything in it.",
       "scopePickHint": "2D Cut created — choose the reference sketch in the panel.",
       "reselectGeometry": "Re-select geometry",
       "repickHint": " {{count}} profile(s) picked — click profiles in the viewport, then apply.",
       "applyRepick": "Apply selection",
+      "applyRepickNoSelection": "Select at least one profile in the viewport first.",
+      "appliedProfiles": "Applied {{count}} profile(s) to the operation.",
       "cancelRepick": "Cancel",
       "profilePicked": "profile added to the selection ({{count}} total).",
       "profileRemoved": "profile removed from the selection ({{count}} total).",
@@ -1430,9 +1447,11 @@
   },
   "logs": {
     "close": "Close logs",
+    "hideDebug": "Hide debug",
     "level": "Level",
     "message": "Message",
     "noLogs": "No logs yet.",
+    "showDebug": "Show debug",
     "source": "Source",
     "time": "Time",
     "title": "Logs"
@@ -1517,6 +1536,12 @@
   "timeline": {
     "activeSketchDeleteBlocked": "Finish the active sketch before deleting it",
     "cursor": "History cursor",
+    "pickFace": "Pick a face…",
+    "planeXY": "XY plane",
+    "planeXZ": "XZ plane",
+    "planeYZ": "YZ plane",
+    "redefinePlane": "Redefine sketch plane",
+    "redefinePlaneArmed": "Click a face to use as the new sketch plane (Esc to cancel)",
     "suppressed": "suppressed"
   },
   "aiAssistant": {
@@ -1599,6 +1624,8 @@
   },
   "sketchDelete": {
     "body": "This will break {{count}} downstream feature{{plural}}: {{names}}.",
+    "manyBody": "This selection contains {{count}} sketch entities. Confirm that everything highlighted is meant to be deleted.",
+    "manyTitle": "Delete {{count}} sketch entities?",
     "title": "Delete sketch geometry?",
     "warning": "Warning"
   },
@@ -1628,6 +1655,7 @@
     "dimensionSelected": "Dimension selected",
     "dimensionTool": "Dimension Tool",
     "entitySelected": "Entity selected",
+    "hideConstraints": "Hide constraints",
     "hideGrid": "Hide grid",
     "hideSketchGrid": "Hide sketch grid",
     "hideViewportGrid": "Hide viewport grid",
@@ -1643,6 +1671,7 @@
     "projectPrompt": "Click a face, edge, or vertex to project",
     "selectionMode": "Selection mode · press a sketch tool to draw",
     "showGrid": "Show grid",
+    "showConstraints": "Show constraints",
     "showSketchGrid": "Show sketch grid",
     "showViewportGrid": "Show viewport grid",
     "sketchStatus": "Sketching · {{tool}} · {{lineCount}}L · {{circleCount}}C · {{arcCount}}A · {{pointCount}}P",
@@ -1676,6 +1705,7 @@
   },
   "sketch": {
     "removeProjections": "Remove projections",
-    "unlinkProjections": "Unlink projections"
+    "unlinkProjections": "Unlink projections",
+    "mergeCoincidentPoints": "Merge coincident points"
   }
 }

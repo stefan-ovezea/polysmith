@@ -164,16 +164,13 @@ std::vector<TrimIntersection> intersect_circle_circle(
   // coincidence tolerance are the same point by this project's own
   // definition, so bail out before the division either way.
   if (d <= kTrimCoincidentTolerance) {
-    // Debug, not warn: coincident SUPPORT circles are routine when two
-    // arcs split from the same circle are tested against each other —
-    // hover previews recompute this per pointer move, and a warn here
-    // floods the Logs panel with hundreds of identical lines.
-    if (std::abs(r1 - r2) <= kTrimCoincidentTolerance) {
-      log_debug("trim",
-                "coincident circles '" + target.id + "' and '" + other.id +
-                    "' have no discrete intersections; ignoring as a cutting "
-                    "edge");
-    }
+    // Coincident SUPPORT circles are routine when arcs split from the
+    // same circle (every array copy is concentric) are tested against
+    // each other. This path also runs inside the PROFILE face walk on
+    // every geometry bump: a log here fires ~800 structured log lines
+    // per sketch command, each one a UI event + store update — enough
+    // to stall a sketch editor ("line takes seconds to appear").
+    // Silent by design: the guard itself is the important part.
     return result;
   }
 

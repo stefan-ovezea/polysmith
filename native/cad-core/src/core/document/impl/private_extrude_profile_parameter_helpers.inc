@@ -1,3 +1,126 @@
+// Touching or overlapping hole wires make the planar cap face invalid —
+// OCCT cannot classify a face whose hole wires touch or cross, and the
+// extrude used to emit a silently-broken body (user-reported: flower
+// petals drawn with sub-0.01 mm slits against the hub boundary arrived
+// here as hole loops sharing welded vertices; the plate compiled with 2
+// invalid faces).  Refuse with a clear message instead.  Only exact
+// boundary-edge profiles are checked (legacy sampled profiles keep the
+// old path).
+void validate_hole_separation(const ExtrudeFeatureParameters& params) {
+  constexpr double kMinHoleSeparation = 0.05;  // mm
+  if (params.inner_loop_edges.empty() && params.inner_loops.empty()) {
+    return;
+  }
+
+  // Sample a set of edges into points.  Lines contribute endpoints;
+  // circular pieces are sampled along their param span (the span's
+  // direction does not matter — the same geometric arc results from
+  // either walk direction).
+  const auto sample = [](const std::vector<ProfileBoundaryEdge>& edges) {
+    constexpr int kSamples = 16;
+    std::vector<SketchProfilePoint> pts;
+    for (const auto& e : edges) {
+      if (e.entity_kind == "line") {
+        pts.push_back(SketchProfilePoint{.x = e.start_x, .y = e.start_y});
+        pts.push_back(SketchProfilePoint{.x = e.end_x, .y = e.end_y});
+        continue;
+      }
+      for (int i = 0; i <= kSamples; ++i) {
+        const double t = static_cast<double>(i) / kSamples;
+        const double a = e.param_start + (e.param_end - e.param_start) * t;
+        pts.push_back(SketchProfilePoint{
+            .x = e.center_x + e.radius * std::cos(a),
+            .y = e.center_y + e.radius * std::sin(a)});
+      }
+    }
+    return pts;
+  };
+  const auto gap_between = [](const std::vector<SketchProfilePoint>& a,
+                              const std::vector<SketchProfilePoint>& b) {
+    double best = std::numeric_limits<double>::max();
+    for (const auto& pa : a) {
+      for (const auto& pb : b) {
+        best = std::min(best, std::hypot(pa.x - pb.x, pa.y - pb.y));
+      }
+    }
+    return best;
+  };
+  const auto format_gap = [](double gap) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%.3f", gap);
+    return std::string(buffer);
+  };
+
+  const std::vector<SketchProfilePoint> boundary = sample(params.boundary_edges);
+  std::vector<std::vector<SketchProfilePoint>> holes;
+  for (size_t h = 0; h < params.inner_loop_edges.size(); ++h) {
+    const auto exact = sample(params.inner_loop_edges[h]);
+    // Circle holes keep the circle_holes descriptor path and may leave
+    // inner_loop_edges empty — fall back to the sampled loop (which
+    // also covers legacy profiles).
+    holes.push_back(exact.empty() && h < params.inner_loops.size()
+                        ? params.inner_loops[h]
+                        : exact);
+  }
+  // Sampled-only holes beyond the exact-edge list (legacy profiles).
+  for (size_t h = params.inner_loop_edges.size();
+       h < params.inner_loops.size(); ++h) {
+    holes.push_back(params.inner_loops[h]);
+  }
+
+  // A hole must not touch the outer outline — a dangling stub welded
+  // to the boundary produces a degenerate lens hole exactly there.
+  // Collect EVERY violation first (the user's flower had three
+  // touching pairs at once) and refuse once with the complete picture.
+  int boundary_hits = 0;
+  int pair_hits = 0;
+  double worst_gap = std::numeric_limits<double>::max();
+  for (size_t h = 0; h < holes.size(); ++h) {
+    const double gap = gap_between(holes[h], boundary);
+    if (gap < kMinHoleSeparation) {
+      worst_gap = std::min(worst_gap, gap);
+      ++boundary_hits;
+      log_warn("extrude",
+               "hole loop " + std::to_string(h) +
+                   " touches the profile outline (gap " + format_gap(gap) +
+                   " mm)");
+    }
+  }
+  // And holes must not touch each other.
+  for (size_t a = 0; a < holes.size(); ++a) {
+    for (size_t b = a + 1; b < holes.size(); ++b) {
+      const double gap = gap_between(holes[a], holes[b]);
+      if (gap < kMinHoleSeparation) {
+        worst_gap = std::min(worst_gap, gap);
+        ++pair_hits;
+        log_warn("extrude",
+                 "hole loops " + std::to_string(a) + " and " +
+                     std::to_string(b) + " touch (gap " + format_gap(gap) +
+                     " mm)");
+      }
+    }
+  }
+  if (boundary_hits == 0 && pair_hits == 0) {
+    return;
+  }
+
+  std::string problem;
+  if (boundary_hits > 0 && pair_hits == 0) {
+    problem = "a hole touches the profile outline";
+  } else if (boundary_hits == 0 && pair_hits == 1) {
+    problem = "two holes touch or overlap";
+  } else if (boundary_hits == 0) {
+    problem = std::to_string(pair_hits) + " pairs of holes touch or overlap";
+  } else {
+    problem = "holes touch the profile outline or each other";
+  }
+  throw std::runtime_error(
+      "Extrude refused: " + problem + " (smallest gap " +
+      format_gap(worst_gap) +
+      " mm). Separate the pieces by at least 0.05 mm and extrude "
+      "again.");
+}
+
 std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
     const FeatureEntry& sketch_feature,
     const SketchProfileRegion& profile,
@@ -53,6 +176,11 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
     params.arc_descriptors = profile.arc_descriptors;
     // Exact boundary edges — the wire builder's primary input.
     params.boundary_edges = profile.boundary_edges;
+    // Exact per-hole edges — holes become exact wires instead of
+    // polygon-approximated cutouts (empty for legacy profiles).
+    params.inner_loop_edges = profile.inner_loop_edges;
+
+    validate_hole_separation(params);
 
     return params;
   }
@@ -129,6 +257,9 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profile(
     }
     params.arc_descriptors = profile.arc_descriptors;
     params.boundary_edges = profile.boundary_edges;
+    params.inner_loop_edges = profile.inner_loop_edges;
+
+    validate_hole_separation(params);
 
     return params;
   }
@@ -200,6 +331,7 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
     parameters.sketch_edge_ids = first.ordered_edge_ids;
   }
   parameters.boundary_edges = first.boundary_edges;
+  parameters.inner_loop_edges = first.inner_loop_edges;
 
   for (size_t index = 1; index < profiles.size(); ++index) {
     const auto& profile = profiles[index];
@@ -213,6 +345,8 @@ std::optional<ExtrudeFeatureParameters> make_extrude_parameters_for_profiles(
     parameters.additional_boundary_edges.push_back(
         profile.boundary_edges);
   }
+
+  validate_hole_separation(parameters);
 
   return parameters;
 }
@@ -244,6 +378,7 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.sketch_circles = source.sketch_circles;
   target.arc_descriptors = source.arc_descriptors;
   target.boundary_edges = source.boundary_edges;
+  target.inner_loop_edges = source.inner_loop_edges;
 }
 
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {

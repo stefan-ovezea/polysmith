@@ -24,7 +24,10 @@ import {
   makePlaneTransformMatrixFromFrame,
   shapeFromProfileLoops,
 } from "./primitiveObjects";
-import { smoothProfileHoleLoop } from "../../lib/viewportScene";
+import {
+  exactProfileContour,
+  smoothProfileHoleLoop,
+} from "../../lib/viewportScene";
 import { themeColor } from "./themeColor";
 import { polygonArea2d, SKETCH_PLANE_OFFSET } from "./viewportMath";
 
@@ -889,14 +892,19 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     smoothProfileHoleLoop(profile, index),
   );
 
-  const shape = shapeFromProfileLoops(profile.profilePoints, holeLoops);
+  // The outer contour comes from the exact boundary edges when the
+  // profile carries them — arc-bounded surfaces then render as true
+  // arcs instead of the coarse chord-sampled polygon.
+  const contour = exactProfileContour(profile);
+
+  const shape = shapeFromProfileLoops(contour, holeLoops);
 
   const geometry = new THREE.ShapeGeometry(shape);
   const mesh = new THREE.Mesh(geometry, fillMaterial);
   mesh.renderOrder = 6;
   mesh.userData.sketchProfileId = profile.profileId;
   group.add(mesh);
-  group.add(makeEdgeLoop(profile.profilePoints, false));
+  group.add(makeEdgeLoop(contour, false));
   // Exact-circle holes get no edge loop of their own — the sketch
   // circle entity draws the same boundary, and a second coincident
   // loop would double it (same issue as the standalone circle region).

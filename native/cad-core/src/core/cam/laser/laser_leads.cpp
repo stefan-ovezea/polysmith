@@ -280,27 +280,40 @@ cam2d::XY select_pierce_vertex(const PlannedLoop& loop,
   }
   warnings.push_back(
       "Every corner is sharper than the pierce threshold — piercing "
-      "mid-segment on the longest straight edge.");
+      "mid-segment on the longest edge.");
+  // Mid-piece pierce on the longest edge (arc or line): as far from
+  // every excluded corner as the contour allows.  contour_starting_at
+  // splits the containing piece.  Arc length uses the geometric sweep
+  // (the endpoint chord would pick the wrong winner on a long shallow
+  // arc).
   size_t longest = candidates.size();
   double longestLen = -1.0;
   for (size_t i = 0; i < loop.segments.size(); ++i) {
+    double len = 0.0;
     if (loop.segments[i].is_arc) {
-      continue;
+      len = loop.segments[i].radius *
+            std::abs(cam2d::offset_arc_sweep(loop.segments[i]));
+    } else {
+      len = xy_length(loop.segments[i].end.x - loop.segments[i].start.x,
+                      loop.segments[i].end.y - loop.segments[i].start.y);
     }
-    const double len =
-        xy_length(loop.segments[i].end.x - loop.segments[i].start.x,
-                  loop.segments[i].end.y - loop.segments[i].start.y);
     if (len > longestLen) {
       longestLen = len;
       longest = i;
     }
   }
   if (longest < loop.segments.size() && longestLen > 1e-12) {
-    // Mid-piece pierce: as far from every excluded corner as the
-    // contour allows.  contour_starting_at splits the piece.
     const auto& segment = loop.segments[longest];
-    return XY{0.5 * (segment.start.x + segment.end.x),
-              0.5 * (segment.start.y + segment.end.y)};
+    if (!segment.is_arc) {
+      return XY{0.5 * (segment.start.x + segment.end.x),
+                0.5 * (segment.start.y + segment.end.y)};
+    }
+    const double startAngle = std::atan2(segment.start.y - segment.center.y,
+                                         segment.start.x - segment.center.x);
+    const double midAngle =
+        startAngle + cam2d::offset_arc_sweep(segment) * 0.5;
+    return XY{segment.center.x + segment.radius * std::cos(midAngle),
+              segment.center.y + segment.radius * std::sin(midAngle)};
   }
   return candidates[best];
 }

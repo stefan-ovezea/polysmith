@@ -258,6 +258,35 @@
                     }
                     return arr;
                   }()},
+                 {"inner_loop_edges",
+                  [&feature]() {
+                    json loops = json::array();
+                    for (const auto& edges :
+                         feature.extrude_parameters->inner_loop_edges) {
+                      json arr = json::array();
+                      for (const auto& edge : edges) {
+                        arr.push_back({
+                            {"entity_id", edge.entity_id},
+                            {"entity_kind", edge.entity_kind},
+                            {"param_start", edge.param_start},
+                            {"param_end", edge.param_end},
+                            {"start_x", edge.start_x},
+                            {"start_y", edge.start_y},
+                            {"end_x", edge.end_x},
+                            {"end_y", edge.end_y},
+                            {"center_x", edge.center_x},
+                            {"center_y", edge.center_y},
+                            {"radius", edge.radius},
+                            {"ccw", edge.ccw},
+                            {"spline_degree", edge.spline_degree},
+                            {"spline_pole_xs", edge.spline_pole_xs},
+                            {"spline_pole_ys", edge.spline_pole_ys},
+                        });
+                      }
+                      loops.push_back(arr);
+                    }
+                    return loops;
+                  }()},
                  {"depth", feature.extrude_parameters->depth},
                  {"extent_mode", feature.extrude_parameters->extent_mode},
                  {"side1",

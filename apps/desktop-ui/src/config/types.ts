@@ -42,6 +42,7 @@ export interface ViewportConfig {
   crosshair: CrosshairMode;
   showGrid: boolean;
   showSketchGrid: boolean;
+  showConstraints: boolean;
 }
 
 // "deepseek" speaks to api.deepseek.com in either of two API shapes:

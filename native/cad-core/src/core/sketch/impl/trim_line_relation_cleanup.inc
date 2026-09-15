@@ -76,6 +76,8 @@ params.fillets.erase(std::remove_if(params.fillets.begin(),
                                     [&](const SketchFillet &f) {
                                       return f.line_a_id == entity_id ||
                                              f.line_b_id == entity_id ||
+                                             f.arc_a_id == entity_id ||
+                                             f.arc_b_id == entity_id ||
                                              f.arc_id == entity_id ||
                                              f.corner_vertex_id == old_sp_id ||
                                              f.corner_vertex_id == old_ep_id ||

@@ -448,6 +448,16 @@ struct ProjectionHealFixture {
     const auto top = top_face(document);
     document = manager.start_sketch_on_face(top->face_id, frame_of(*top));
     document = manager.project_face_into_sketch(top->face_id);
+    // Also project one body vertex — the standalone-point path whose
+    // `projected_points` entries the heal must sweep.
+    {
+      const auto viewport = polysmith::core::build_viewport_state(
+          std::optional<polysmith::core::DocumentState>(document));
+      if (!viewport.vertices.empty()) {
+        document =
+            manager.project_vertex_into_sketch(viewport.vertices.front().id);
+      }
+    }
     document = manager.add_sketch_line(0.0, 30.0, 40.0, 30.0);
 
     sketch_feature_id = document.feature_history.back().id;
@@ -500,6 +510,10 @@ bool test_remove_projections_deletes_projected_geometry() {
               "remove: projected arcs are gone")) {
     return false;
   }
+  if (!expect(parameters.projected_points.empty(),
+              "remove: no stray projected points remain")) {
+    return false;
+  }
   return expect(!sketch_it->dependency_broken &&
                     sketch_it->dependency_warning.empty(),
                 "remove: no dependency alarm after the heal");
@@ -530,6 +544,15 @@ bool test_unlink_projections_keeps_geometry_and_clears_alarm() {
   }
   const size_t lines_after_delete =
       sketch_after_delete->sketch_parameters->lines.size();
+  // Fail-before sanity: the projected vertex's standalone point entry
+  // is present while the projection links live — this is exactly the
+  // entry the heal must sweep or the vertex rebuild re-mints it as a
+  // stray purple "projected" point on every later bump.
+  if (!expect(!sketch_after_delete->sketch_parameters->projected_points
+                   .empty(),
+              "unlink: projected point entry exists before the heal")) {
+    return false;
+  }
 
   fixture.document = fixture.manager.remove_sketch_projections(
       fixture.sketch_feature_id, /*keep_geometry=*/true);
@@ -552,6 +575,18 @@ bool test_unlink_projections_keeps_geometry_and_clears_alarm() {
       [](const auto& vertex) { return vertex.is_projected; });
   if (!expect(!any_projected_vertex,
               "unlink: projected vertex styling cleared")) {
+    return false;
+  }
+  if (!expect(parameters.projected_points.empty(),
+              "unlink: no stray projected points remain")) {
+    return false;
+  }
+  if (!expect(std::none_of(parameters.vertices.begin(),
+                           parameters.vertices.end(),
+                           [](const auto& vertex) {
+                             return vertex.kind == "projected";
+                           }),
+              "unlink: no projected-kind vertices after the refresh")) {
     return false;
   }
   return expect(!sketch_it->dependency_broken &&
@@ -629,6 +664,253 @@ bool test_body_projection_refused_over_targeted_projection() {
       "guard: body projection works again after the heal");
 }
 
+// Redefine sketch plane: deleting the body a face sketch lives on
+// flags the sketch (correct behaviour, pinned here), and redefining
+// the sketch's plane clears the alarm while keeping the geometry in
+// sketch-local coordinates.
+bool test_redefine_sketch_plane_reparents_and_clears_alarm() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto& sketch =
+      document.feature_history.back().sketch_parameters.value();
+  document = manager.extrude_profiles({sketch.profiles.front().id}, 10.0,
+                                      "new_body");
+  const std::string body_id = document.feature_history.back().id;
+
+  const auto top = top_face(document);
+  if (!expect(top.has_value(), "redefine: top face found")) {
+    return false;
+  }
+  // The construction plane must precede the sketch in the timeline —
+  // the dependency walker resolves only UPSTREAM sources (parametric
+  // ordering, Fusion-style).
+  document = manager.create_offset_plane(top->face_id, 20.0);
+  const std::string plane_id = document.feature_history.back().id;
+  document = manager.start_sketch_on_face(top->face_id, frame_of(*top));
+  document = manager.add_sketch_line(5.0, 5.0, 35.0, 15.0);
+  const std::string sketch_id = document.feature_history.back().id;
+
+  const auto sketch_feature = [&](const DocumentState& state) {
+    return std::find_if(
+        state.feature_history.begin(), state.feature_history.end(),
+        [&](const auto& feature) { return feature.id == sketch_id; });
+  };
+
+  // Deleting the body breaks the sketch's plane face — the alarm is
+  // CORRECT (the user redefines the plane to recover).
+  document = manager.delete_feature(body_id);
+  if (!expect(sketch_feature(document) != document.feature_history.end() &&
+                  sketch_feature(document)->dependency_broken,
+              "redefine: deleting the body flags the sketch")) {
+    return false;
+  }
+
+  // Redefine onto an origin plane: alarm clears, geometry untouched.
+  document = manager.redefine_sketch_plane(sketch_id, "ref-plane-xz");
+  auto it = sketch_feature(document);
+  if (!expect(it != document.feature_history.end() &&
+                  it->sketch_parameters.has_value(),
+              "redefine: sketch survives")) {
+    return false;
+  }
+  const auto& parameters = it->sketch_parameters.value();
+  if (!expect(parameters.plane_id == "ref-plane-xz" &&
+                  !parameters.plane_frame.has_value(),
+              "redefine: plane re-parented to the origin plane")) {
+    return false;
+  }
+  if (!expect(!it->dependency_broken && it->dependency_warning.empty(),
+              "redefine: dependency alarm cleared")) {
+    return false;
+  }
+  if (!expect(parameters.lines.back().start_x == 5.0 &&
+                  parameters.lines.back().start_y == 5.0 &&
+                  parameters.lines.back().end_x == 35.0 &&
+                  parameters.lines.back().end_y == 15.0,
+              "redefine: geometry keeps sketch-local coordinates")) {
+    return false;
+  }
+  if (!expect(!parameters.vertices.empty(),
+              "redefine: derived state intact after the bump")) {
+    return false;
+  }
+
+  // An unresolvable plane (face on a deleted body) is rejected.
+  bool refused = false;
+  try {
+    manager.redefine_sketch_plane(sketch_id, "feature-999:face:0");
+  } catch (const std::exception&) {
+    refused = true;
+  }
+  if (!expect(refused, "redefine: unresolvable plane refused")) {
+    return false;
+  }
+
+  // Redefine onto the upstream construction plane — which the body
+  // deletion detached (frozen cached frame, no alarm) — the frame
+  // still resolves and the sketch stays healthy.
+  document = manager.redefine_sketch_plane(sketch_id, plane_id);
+  it = sketch_feature(document);
+  const auto& parameters_after = it->sketch_parameters.value();
+  if (!expect(parameters_after.plane_id == plane_id,
+              "redefine: construction plane re-parent sets plane_id")) {
+    std::cerr << "  plane_id=" << plane_id
+              << " actual=" << parameters_after.plane_id << "\n";
+    return false;
+  }
+  if (!expect(parameters_after.plane_frame.has_value(),
+              "redefine: construction plane re-parent stores frame")) {
+    return false;
+  }
+  if (!expect(!it->dependency_broken,
+              "redefine: construction plane re-parent stays healthy")) {
+    std::cerr << "  warning=" << it->dependency_warning << "\n";
+    return false;
+  }
+  return true;
+}
+
+// The recommended "body -> construction plane -> sketch" workflow:
+// deleting the body must detach the plane (frozen cached frame, NO
+// alarm) and the sketch on that plane stays healthy — the alarm
+// pattern the user expects. Pins the walker behaviour so a future
+// change can't propagate the body's disappearance onto the sketch.
+bool test_construction_plane_shields_sketch_from_body_deletion() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto& sketch =
+      document.feature_history.back().sketch_parameters.value();
+  document = manager.extrude_profiles({sketch.profiles.front().id}, 10.0,
+                                      "new_body");
+  const std::string body_id = document.feature_history.back().id;
+
+  const auto top = top_face(document);
+  if (!expect(top.has_value(), "shield: top face found")) {
+    return false;
+  }
+
+  // Construction plane offset from the top face, then a sketch on it.
+  document = manager.create_offset_plane(top->face_id, 20.0);
+  const std::string plane_id = document.feature_history.back().id;
+  document = manager.start_sketch_on_plane(plane_id);
+  document = manager.add_sketch_line(2.0, 2.0, 8.0, 8.0);
+  const std::string sketch_id = document.feature_history.back().id;
+
+  document = manager.delete_feature(body_id);
+
+  const auto plane_it = std::find_if(
+      document.feature_history.begin(), document.feature_history.end(),
+      [&](const auto& feature) { return feature.id == plane_id; });
+  const auto sketch_it = std::find_if(
+      document.feature_history.begin(), document.feature_history.end(),
+      [&](const auto& feature) { return feature.id == sketch_id; });
+  if (!expect(plane_it != document.feature_history.end() &&
+                  plane_it->construction_plane_parameters.has_value() &&
+                  plane_it->construction_plane_parameters->plane_type ==
+                      "detached" &&
+                  !plane_it->dependency_broken,
+              "shield: plane detaches without an alarm")) {
+    return false;
+  }
+  return expect(sketch_it != document.feature_history.end() &&
+                    !sketch_it->dependency_broken &&
+                    sketch_it->dependency_warning.empty(),
+                "shield: sketch on the plane stays healthy");
+}
+
+// Extruding a sketch with a broken plane must refuse LOUDLY — the
+// compiler skips flagged features, so an extrude on a broken sketch
+// silently produced no body at all ("not generating a full surface").
+bool test_extrude_refused_on_broken_sketch() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto& sketch =
+      document.feature_history.back().sketch_parameters.value();
+  document = manager.extrude_profiles({sketch.profiles.front().id}, 10.0,
+                                      "new_body");
+  const std::string body_id = document.feature_history.back().id;
+
+  const auto top = top_face(document);
+  if (!expect(top.has_value(), "extrude-refuse: top face found")) {
+    return false;
+  }
+  document = manager.start_sketch_on_face(top->face_id, frame_of(*top));
+  // A closed rectangle guarantees at least one profile exists, so the
+  // guard (not "profile not found") is what refuses the extrude.
+  document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const std::string sketch_id = document.feature_history.back().id;
+
+  // Delete the body → the sketch's plane face disappears → broken.
+  document = manager.delete_feature(body_id);
+  const auto broken_it = std::find_if(
+      document.feature_history.begin(), document.feature_history.end(),
+      [&](const auto& feature) { return feature.id == sketch_id; });
+  if (!expect(broken_it != document.feature_history.end() &&
+                  broken_it->dependency_broken,
+              "extrude-refuse: sketch is flagged after the body delete")) {
+    return false;
+  }
+
+  const std::string profile_id =
+      broken_it->sketch_parameters->profiles.front().id;
+  bool refused = false;
+  try {
+    manager.extrude_profiles({profile_id}, 5.0, "new_body");
+  } catch (const std::exception& error) {
+    refused = true;
+    std::cerr << "  message: " << error.what() << "\n";
+  }
+  return expect(refused, "extrude-refuse: broken sketch extrude refused");
+}
+
+// The viewport must ship the EXACT profile boundary edges, not just
+// the chord samples: the UI builds the surface fills from them, so a
+// projected fillet-arc profile would otherwise render as a visible
+// polygon.  Pins the payload contract end-to-end.
+bool test_viewport_profiles_carry_exact_boundary_edges() {
+  ProjectionHealFixture fixture;
+
+  const auto viewport = polysmith::core::build_viewport_state(
+      std::optional<polysmith::core::DocumentState>(fixture.document));
+  if (!expect(!viewport.sketch_profiles.empty(),
+              "viewport-edges: profile primitives exist")) {
+    return false;
+  }
+
+  // The rounded-rect region is the largest profile; the hand-drawn
+  // line adds no region of its own.
+  const auto plate = std::max_element(
+      viewport.sketch_profiles.begin(), viewport.sketch_profiles.end(),
+      [](const auto& lhs, const auto& rhs) {
+        return lhs.profile_points.size() < rhs.profile_points.size();
+      });
+  if (!expect(plate != viewport.sketch_profiles.end() &&
+                  plate->boundary_edges.size() == 8,
+              "viewport-edges: plate carries 8 exact boundary edges")) {
+    return false;
+  }
+  size_t lines = 0;
+  size_t arcs = 0;
+  for (const auto& edge : plate->boundary_edges) {
+    if (edge.entity_kind == "line") ++lines;
+    if (edge.entity_kind == "arc") {
+      ++arcs;
+      if (!expect(edge.radius > 0.0 && edge.ccw,
+                  "viewport-edges: fillet arc edge has radius and sense")) {
+        return false;
+      }
+    }
+  }
+  return expect(lines == 4 && arcs == 4,
+                "viewport-edges: 4 line + 4 fillet-arc boundary edges");
+}
+
 }  // namespace
 
 #define RUN_TEST(name)                    \
@@ -645,6 +927,10 @@ int main() {
   RUN_TEST(test_remove_projections_deletes_projected_geometry);
   RUN_TEST(test_unlink_projections_keeps_geometry_and_clears_alarm);
   RUN_TEST(test_body_projection_refused_over_targeted_projection);
+  RUN_TEST(test_redefine_sketch_plane_reparents_and_clears_alarm);
+  RUN_TEST(test_construction_plane_shields_sketch_from_body_deletion);
+  RUN_TEST(test_extrude_refused_on_broken_sketch);
+  RUN_TEST(test_viewport_profiles_carry_exact_boundary_edges);
   // RUN_TEST(test_mesh_face_projection_stays_healthy_after_load);
   // (see Implementation-Log: the mesh-with-hole conversion crashes in
   // the test harness — pre-existing, tracked separately)

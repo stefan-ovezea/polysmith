@@ -8,6 +8,7 @@ import type {
   HoleFeatureParameters,
   LoftFeatureParameters,
   MoveFeatureParameters,
+  ProfileBoundaryEdge,
   RevolveFeatureParameters,
   SweepFeatureParameters,
   ThreadFeatureParameters,
@@ -129,6 +130,10 @@ export interface SketchProfileRegionEntry {
     center_y: number;
     radius: number;
   }[];
+  // Exact boundary edges (line/arc) in walk order — the renderer
+  // builds arc-true fills from these.  Empty for legacy profiles.
+  boundary_edges?: ProfileBoundaryEdge[];
+  inner_loop_edges?: ProfileBoundaryEdge[][];
   source_circle_id: string | null;
   center_x: number;
   center_y: number;
@@ -211,6 +216,9 @@ export interface SketchPolygonEntry {
 // references it; the core refreshes them on every recompute.
 // `radius` is the user-controlled parameter; everything else is
 // generated geometry kept in sync with `lines` and `arcs`.
+// Operands may be two lines, a line and an arc, or two arcs: exactly
+// one of {line_a_id, arc_a_id} is set per side (line-line records —
+// the v1 shape — omit the arc ids entirely).
 export interface SketchFilletEntry {
   fillet_id: string;
   corner_vertex_id: string;
@@ -218,6 +226,8 @@ export interface SketchFilletEntry {
   corner_y: number;
   line_a_id: string;
   line_b_id: string;
+  arc_a_id?: string;
+  arc_b_id?: string;
   trim_a_vertex_id: string;
   trim_b_vertex_id: string;
   arc_id: string;

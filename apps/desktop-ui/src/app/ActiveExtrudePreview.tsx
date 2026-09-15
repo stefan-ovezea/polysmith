@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import { ExtrudePreviewPanel } from "../layout/ExtrudePreviewPanel";
+import { useCadCoreStore } from "../state";
 import type {
   ExtrudeAdvancedParameters,
   ExtrudeMode,
@@ -195,7 +196,20 @@ async function updateExtrudeFeatures(
   featureIds: readonly string[],
   updateFeature: (featureId: string) => Promise<void>,
 ) {
+  // Guard against stale feature ids: after an undo race or a failed
+  // cancel the panel may still hold ids that no longer exist in the
+  // document.  Sending an update for one makes the core answer
+  // "Feature not found: <id>" and, worse, the panel keeps issuing
+  // more updates for the same ghost feature on every interaction.
+  const liveIds = new Set(
+    (useCadCoreStore.getState().document?.feature_history ?? []).map(
+      (entry) => entry.feature_id,
+    ),
+  );
   for (const featureId of featureIds) {
+    if (!liveIds.has(featureId)) {
+      continue;
+    }
     await updateFeature(featureId);
   }
 }

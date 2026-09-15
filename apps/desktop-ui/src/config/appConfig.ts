@@ -224,6 +224,10 @@ function mergeAppConfig(input: Partial<AppConfig>): AppConfig {
         typeof config.viewport.showSketchGrid === "boolean"
           ? config.viewport.showSketchGrid
           : defaultAppConfig.viewport.showSketchGrid,
+      showConstraints:
+        typeof config.viewport.showConstraints === "boolean"
+          ? config.viewport.showConstraints
+          : defaultAppConfig.viewport.showConstraints,
     },
   };
 }

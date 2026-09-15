@@ -31,7 +31,9 @@ sweep_profile { profile_id, path_entity_id }.
 viewport_state.bodies for boolean targets. Read viewport_state.edges for body
 fillet/chamfer and create_move targets. Read sketch lines, circles, arcs, points, profiles, and dimensions from
 feature_history[].sketch_parameters. Use create_fillet/create_chamfer for body
-edges, create_move for whole-body 3D transforms, and add_sketch_fillet for sketch corners. Projection commands are
+edges, create_move for whole-body 3D transforms, and add_sketch_fillet for sketch corners (operands may be two
+lines, a line and an arc, or two arcs: send the line ids in line_a_id/line_b_id and arc operands in the optional
+arc_a_id/arc_b_id — exactly one of each pair). Projection commands are
 project_face_into_sketch, project_profile_into_sketch, project_edge_into_sketch, and
 project_vertex_into_sketch. Never invent IDs.
 `.trim();

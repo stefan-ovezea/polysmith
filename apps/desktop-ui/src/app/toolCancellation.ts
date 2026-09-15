@@ -1,4 +1,5 @@
 import type { MutableRefObject } from "react";
+import { useCadCoreStore } from "../state";
 import type {
   FastenerFeatureParameters,
   MoveFeatureParameters,
@@ -99,8 +100,17 @@ export async function cancelActiveToolFromContext({
   ...context
 }: CancelActiveToolContext) {
   for (const handler of cancellationHandlers) {
-    if (await handler(context)) {
-      return true;
+    // A handler must never abort the whole cancel — a failing undo or
+    // a timed-out document wait would leave the panel open and every
+    // later Escape press would fail the same way ("I cannot cancel").
+    try {
+      if (await handler(context)) {
+        return true;
+      }
+    } catch (error) {
+      useCadCoreStore
+        .getState()
+        .addMessage(`cancel handler failed: ${String(error)}`);
     }
   }
   return false;
@@ -139,10 +149,16 @@ async function cancelExtrudeTool(context: CancelActiveToolContext) {
   if (!extrudeAction) {
     return false;
   }
-  if (extrudeAction.phase === "active" && extrudeAction.featureId) {
-    await restoreOrUndoExtrude(context, extrudeAction);
+  try {
+    if (extrudeAction.phase === "active" && extrudeAction.featureId) {
+      await restoreOrUndoExtrude(context, extrudeAction);
+    }
+  } finally {
+    // The panel must close even when the undo/restore path failed —
+    // a failed undo already left the document untouched, so closing
+    // the panel is the complete cancel in that case.
+    context.setters.setExtrudeAction(null);
   }
-  context.setters.setExtrudeAction(null);
   await context.restoreTimelineCursorAfterEdit();
   return true;
 }

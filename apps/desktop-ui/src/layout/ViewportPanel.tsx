@@ -242,6 +242,7 @@ export function ViewportPanel({
   document,
   viewport,
   showStock = true,
+  showCamToolpath = true,
   wcsOrientation = "z_up",
   activeCamSetupId = null,
   onSnapshotCaptureReady,
@@ -317,6 +318,7 @@ export function ViewportPanel({
   onSelectSketchProfile,
   onTrimSketchEntity,
   onDeleteSketchSelection,
+  onConfirmDeleteSketchSelection,
   onDeleteSketchDimension,
   onToggleSketchDimensionDriven,
   onSetSketchLineConstruction,
@@ -351,6 +353,7 @@ export function ViewportPanel({
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
   const showViewportGrid = config.viewport.showGrid;
   const showSketchGrid = config.viewport.showSketchGrid;
+  const showConstraints = config.viewport.showConstraints;
   const [contextMenu, setContextMenu] =
     useState<ViewportContextMenuState | null>(null);
   const [sketchSnapLabel, setSketchSnapLabel] = useState<string | null>(null);
@@ -815,6 +818,7 @@ export function ViewportPanel({
   const selectSketchProfileRef = useRef(onSelectSketchProfile);
   const trimSketchEntityRef = useRef(onTrimSketchEntity);
   const deleteSketchSelectionRef = useRef(onDeleteSketchSelection);
+  const confirmDeleteSketchSelectionRef = useRef(onConfirmDeleteSketchSelection);
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
   const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
   const setSketchLineConstructionRef = useRef(onSetSketchLineConstruction);
@@ -1230,6 +1234,7 @@ export function ViewportPanel({
   const activeSketchPlaneFrameRef = useRef(activeSketchPlaneFrame);
   const showViewportGridRef = useRef(showViewportGrid);
   const showSketchGridRef = useRef(showSketchGrid);
+  const showConstraintsRef = useRef(showConstraints);
   const documentRef = useRef(document);
   // The pointer handlers below live in an effect keyed on
   // activeSketchPlaneId only — their closures would otherwise see the
@@ -1284,6 +1289,9 @@ export function ViewportPanel({
     showSketchGridRef.current = showSketchGrid;
   }, [showSketchGrid]);
   useEffect(() => {
+    showConstraintsRef.current = showConstraints;
+  }, [showConstraints]);
+  useEffect(() => {
     documentRef.current = document;
   }, [document]);
   useEffect(() => {
@@ -1321,6 +1329,16 @@ export function ViewportPanel({
           kind === "sketch"
             ? !current.viewport.showSketchGrid
             : current.viewport.showSketchGrid,
+      },
+    }));
+  }
+
+  function toggleConstraintsVisibility() {
+    updateConfig((current) => ({
+      ...current,
+      viewport: {
+        ...current.viewport,
+        showConstraints: !current.viewport.showConstraints,
       },
     }));
   }
@@ -2766,15 +2784,50 @@ export function ViewportPanel({
       // making vertex projection unusable ("does not work"). A
       // screen-size dot matches the sketch-point behavior and makes
       // the Project-tool vertex target hittable at any zoom.
+      // While a sketch is ACTIVE the dots are clutter (depthTest off
+      // draws them over the sketch); their only sketch-mode job is
+      // being Project-tool targets, so they show there only while the
+      // Project tool is armed. 3D mode keeps them at all times.
+      const showBodyVertexDots =
+        activeSketchPlaneIdRef.current === null ||
+        activeSketchToolRef.current === "project";
       const vertexWorldUnitsPerPixel =
         getOrthographicViewHeight(camera) /
         Math.max(renderer.domElement.clientHeight, 1);
       for (const mesh of vertexObjectsRef.current) {
+        if (!showBodyVertexDots) {
+          mesh.visible = false;
+          continue;
+        }
+        mesh.visible = true;
         const id = mesh.userData.vertexId as string | undefined;
         const boosted =
           (id !== undefined && id === hoveredVertexIdRef.current) ||
           mesh.userData.isSelected === true;
-        mesh.scale.setScalar(vertexWorldUnitsPerPixel * (boosted ? 5 : 4));
+        mesh.scale.setScalar(vertexWorldUnitsPerPixel * (boosted ? 4 : 3));
+      }
+      // Sketch points get the same treatment: their world-space radii
+      // (0.7–0.9) balloon when zooming into a sketch ("all the dots
+      // are huge again" after re-entering). Normalize by each mesh's
+      // geometry radius so every point kind shares the body-dot pixel
+      // size (3 px, 4 px hovered/selected).
+      for (const mesh of sketchPointObjectsRef.current) {
+        const radius =
+          (mesh.geometry as THREE.SphereGeometry).parameters.radius ?? 0.7;
+        const id = mesh.userData.sketchPointId as string | undefined;
+        const boosted =
+          (id !== undefined && id === hoveredSketchPointIdRef.current) ||
+          mesh.userData.isSelected === true;
+        mesh.scale.setScalar(
+          (vertexWorldUnitsPerPixel * (boosted ? 4 : 3)) / radius,
+        );
+      }
+      // Constraint glyphs (Fix/H/V/…) are OFF by default — they sit on
+      // top of dense sketch geometry and read as noise. The toolbar
+      // toggle flips this ref; the override runs per frame so it also
+      // covers sprites rebuilt by scene sync.
+      for (const obj of sketchConstraintObjectsRef.current) {
+        obj.visible = showConstraintsRef.current;
       }
       try {
         renderDraftDimensions();
@@ -4532,6 +4585,7 @@ export function ViewportPanel({
       activeSketchPlaneFrame,
       showReferencePlanes,
       showStock,
+      showCamToolpath,
       wcsOrientation,
       activeCamSetupId,
       // All pick modes share the snap markers + hover suppression —
@@ -4560,7 +4614,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;
@@ -4639,6 +4693,7 @@ export function ViewportPanel({
         clearSketchConstraintRef,
         clearSketchSelectionRef,
         deleteSketchSelectionRef,
+        confirmDeleteSketchSelectionRef,
         setSketchToolRef,
         clearPreviewDimension,
         finishDimensionPlacement,
@@ -4893,6 +4948,7 @@ export function ViewportPanel({
       selectedReference={selectedReference}
       selectedSketchDimension={selectedSketchDimension}
       selectionRect={selectionRect}
+      showConstraints={showConstraints}
       showSketchGrid={showSketchGrid}
       showViewportGrid={showViewportGrid}
       sketchSnapLabel={sketchSnapLabel}
@@ -4952,6 +5008,7 @@ export function ViewportPanel({
       onToggleGrid={() => {
         toggleGridVisibility(isSketchMode ? "sketch" : "viewport");
       }}
+      onToggleConstraints={toggleConstraintsVisibility}
     />
   );
 }

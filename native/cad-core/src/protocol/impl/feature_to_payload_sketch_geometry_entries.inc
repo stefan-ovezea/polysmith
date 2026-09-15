@@ -124,7 +124,7 @@
                   [&feature]() {
                     json fillets = json::array();
                     for (const auto& fillet : feature.sketch_parameters->fillets) {
-                      fillets.push_back({
+                      json fillet_entry = {
                           {"fillet_id", fillet.id},
                           {"corner_vertex_id", fillet.corner_vertex_id},
                           {"corner_x", fillet.corner_x},
@@ -135,7 +135,17 @@
                           {"trim_b_vertex_id", fillet.trim_b_vertex_id},
                           {"arc_id", fillet.arc_id},
                           {"radius", fillet.radius},
-                      });
+                      };
+                      // Arc operands are optional (line-line fillets —
+                      // the v1 shape — save without them so old builds
+                      // keep loading line-line files).
+                      if (!fillet.arc_a_id.empty()) {
+                        fillet_entry["arc_a_id"] = fillet.arc_a_id;
+                      }
+                      if (!fillet.arc_b_id.empty()) {
+                        fillet_entry["arc_b_id"] = fillet.arc_b_id;
+                      }
+                      fillets.push_back(std::move(fillet_entry));
                     }
                     return fillets;
                   }()},

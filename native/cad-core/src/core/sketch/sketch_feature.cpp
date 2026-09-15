@@ -34,6 +34,7 @@ namespace {
 
 #include "core/sketch/impl/private_basic_helpers.inc"
 #include "core/sketch/impl/private_point_profile_helpers.inc"
+#include "core/sketch/impl/private_fillet_arc_solver.inc"
 #include "core/sketch/impl/private_fillet_refresh.inc"
 #include "core/sketch/impl/private_chamfer_refresh.inc"
 #include "core/sketch/impl/private_point_propagation.inc"

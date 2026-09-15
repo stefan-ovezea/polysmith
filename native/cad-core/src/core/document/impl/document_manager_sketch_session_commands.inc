@@ -2,6 +2,15 @@
   DocumentState start_sketch_on_face(
       const std::string& face_id,
       const SketchFeatureParameters::SketchPlaneFrame& plane_frame);
+  // Redefine the sketch's plane (Fusion-style "Redefine Sketch
+  // Plane"): re-parent an existing sketch onto another origin
+  // reference plane, construction plane, or body face. The sketch
+  // geometry keeps its sketch-local coordinates — only the world
+  // placement changes. Clears the dependency alarm; the walker
+  // re-validates (and re-resolves any live projections) on the next
+  // bump.
+  DocumentState redefine_sketch_plane(const std::string& feature_id,
+                                      const std::string& new_plane_id);
   DocumentState set_sketch_tool(const std::string& tool);
   // Mirror tool — contextual modeling pending preview lifecycle. Each
   // method maps directly onto the sketch_feature core ops; the

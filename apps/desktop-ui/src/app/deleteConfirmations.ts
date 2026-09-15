@@ -11,11 +11,20 @@ type RunAction = (action: () => Promise<void>) => void;
 export interface PendingSketchDeleteConfirmation {
   selection: SketchDeleteSelection;
   affectedFeatureNames: string[];
+  // Number of sketch entities in the selection — used to confirm
+  // LARGE deletes (a lag-invisible marquee once deleted 24 spokes in
+  // one hotkey press with no dialog at all).
+  entityCount: number;
   // Hotkey deletes carry no trustworthy snapshot (the UI state can lag
   // the last marquee) — on confirm the core resolves the CURRENT
   // selection instead of deleting the snapshot ids.
   deleteCurrentOnConfirm: boolean;
 }
+
+// Deleting many entities at once is the dangerous case: with a laggy
+// UI the marquee rectangle may never have rendered, so the user never
+// saw WHAT was selected. Force a look at the count before it goes.
+export const LARGE_SKETCH_DELETE_THRESHOLD = 5;
 
 interface FeatureDeleteContext {
   document: DocumentState | null;
@@ -142,10 +151,14 @@ export function confirmAndDeleteSketchSelectionFromContext({
     activeSketchFeature,
     selection: deleteSelection,
   });
-  if (dependents.length > 0) {
+  const entityCount =
+    deleteSelection.entityIds.length + deleteSelection.profileIds.length;
+  if (dependents.length > 0 ||
+      entityCount >= LARGE_SKETCH_DELETE_THRESHOLD) {
     setPendingSketchDeleteConfirmation({
       selection: deleteSelection,
       affectedFeatureNames: dependents.map((entry) => entry.name || entry.kind),
+      entityCount,
       deleteCurrentOnConfirm: deleteCurrent,
     });
     return;

@@ -166,6 +166,9 @@ CamDocumentData make_cam_data() {
   laser_op.parameters.laser = laser;
   laser_op.status = "generated";
   laser_op.status_message = "";
+  // Non-default scope proves the field survives document save/load
+  // (a re-selected profile subset must not come back as whole-sketch).
+  laser_op.geometry_scope = "selected";
   cam.operations.push_back(laser_op);
 
   CamOperation mill_op;
@@ -258,6 +261,9 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
     // toolpath cache is memory-only).  Compare the DATA only.
     if (oa.op_id != ob.op_id || oa.type != ob.type ||
         oa.tool_id != ob.tool_id) {
+      return false;
+    }
+    if (oa.geometry_scope != ob.geometry_scope) {
       return false;
     }
     if (oa.parameters.tool_axis_mode != ob.parameters.tool_axis_mode) {

@@ -121,8 +121,10 @@ export interface ActiveSketchPointerUpContext {
   addMessage: (message: string) => void;
   addSketchFillet: (
     cornerPointId: string,
-    lineAId: string,
-    lineBId: string,
+    entityAId: string,
+    entityAKind: "line" | "arc",
+    entityBId: string,
+    entityBKind: "line" | "arc",
   ) => Promise<void>;
   pendingDimensionPlacement: boolean;
   pendingDimensionSourceId: string | null;

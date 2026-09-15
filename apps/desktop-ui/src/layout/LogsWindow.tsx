@@ -1,5 +1,5 @@
 import type { LogEntry, LogLevel } from "@/types";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface LogsWindowProps {
@@ -29,6 +29,13 @@ function formatLogTime(timestamp: string) {
 
 export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
   const { t } = useTranslation();
+  // Debug entries (e.g. per-pointer-move trim diagnostics) flood the
+  // panel — hide them by default, opt in via the toggle.
+  const [showDebug, setShowDebug] = useState(false);
+  const visibleLogs = useMemo(
+    () => (showDebug ? logs : logs.filter((entry) => entry.level !== "debug")),
+    [logs, showDebug],
+  );
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -50,10 +57,17 @@ export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
           <div>
             <p className="cad-kicker">{t("logs.title")}</p>
             <p className="mt-1 text-xs text-on-surface-dim">
-              {t("common.entries", { count: logs.length })}
+              {t("common.entries", { count: visibleLogs.length })}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="cad-ribbon-action"
+              onClick={() => setShowDebug((value) => !value)}
+            >
+              {showDebug ? t("logs.hideDebug") : t("logs.showDebug")}
+            </button>
             <button
               type="button"
               className="cad-ribbon-action"
@@ -73,7 +87,7 @@ export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
           </div>
         </div>
         <div className="cad-scrollbar max-h-[min(520px,calc(100vh-190px))] overflow-auto">
-          {logs.length === 0 ? (
+          {visibleLogs.length === 0 ? (
             <div className="px-4 py-10 text-sm text-on-surface-muted">
               {t("logs.noLogs")}
             </div>
@@ -88,7 +102,7 @@ export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((entry, index) => (
+                {visibleLogs.map((entry, index) => (
                   <tr
                     key={`${entry.timestamp}-${entry.source}-${index}`}
                     className="border-t border-white/10 align-top"

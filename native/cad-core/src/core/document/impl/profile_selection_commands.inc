@@ -77,7 +77,7 @@ bool profile_owns_entity(const SketchProfileRegion& profile,
 }  // namespace
 
 DocumentState DocumentManager::select_sketch_profile_by_entity(
-    const std::string& entity_id, bool additive) {
+    const std::string& entity_id, bool additive, bool smallest_only) {
   require_document();
 
   // The clicked entity belongs to one sketch feature; scan the history
@@ -114,6 +114,41 @@ DocumentState DocumentManager::select_sketch_profile_by_entity(
   if (owning_profile_ids.empty()) {
     throw std::runtime_error(
         "Sketch entity is not on a profile boundary: " + entity_id);
+  }
+
+  if (smallest_only && owning_profile_ids.size() > 1) {
+    // Shared-boundary click: keep the smallest owning region so an
+    // outline click behaves like an interior click.  Circle regions
+    // use πr²; polygon regions use the shoelace area of their
+    // sampled points (the ordering is robust — a plate region is
+    // orders of magnitude larger than a spoke sharing its hole edge).
+    const auto area_of = [&](const std::string& profile_id) {
+      const auto it = std::find_if(
+          feature_it->sketch_parameters->profiles.begin(),
+          feature_it->sketch_parameters->profiles.end(),
+          [&](const SketchProfileRegion& profile) {
+            return profile.id == profile_id;
+          });
+      if (it == feature_it->sketch_parameters->profiles.end()) {
+        return std::numeric_limits<double>::infinity();
+      }
+      if (it->kind == "circle") {
+        return 3.14159265358979323846 * it->radius * it->radius;
+      }
+      double twice_area = 0.0;
+      const auto& pts = it->points;
+      for (size_t i = 0; i < pts.size(); ++i) {
+        const auto& a = pts[i];
+        const auto& b = pts[(i + 1) % pts.size()];
+        twice_area += a.x * b.y - b.x * a.y;
+      }
+      return std::abs(twice_area) / 2.0;
+    };
+    owning_profile_ids = {*std::min_element(
+        owning_profile_ids.begin(), owning_profile_ids.end(),
+        [&](const std::string& lhs, const std::string& rhs) {
+          return area_of(lhs) < area_of(rhs);
+        })};
   }
 
   document_->selected_feature_id = feature_it->id;

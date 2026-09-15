@@ -149,8 +149,10 @@ interface ViewportCallbackRefTargets {
   addSketchFilletRef: MutableRefObject<
     (
       cornerPointId: string,
-      lineAId: string,
-      lineBId: string,
+      entityAId: string,
+      entityAKind: "line" | "arc",
+      entityBId: string,
+      entityBKind: "line" | "arc",
     ) => Promise<void>
   >;
   addSketchChamferRef: MutableRefObject<

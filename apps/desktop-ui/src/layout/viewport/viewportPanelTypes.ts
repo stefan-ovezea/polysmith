@@ -49,6 +49,9 @@ export interface ViewportPanelProps {
   document: DocumentState | null;
   viewport: ViewportState | null;
   showStock?: boolean;
+  // Only the CAM workspace draws the generated toolpath — leaving CAM
+  // must not leave the cut path over the CAD model.
+  showCamToolpath?: boolean;
   wcsOrientation?: string;
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.
@@ -221,8 +224,10 @@ export interface ViewportPanelProps {
   ) => Promise<void>;
   onAddSketchFillet: (
     cornerPointId: string,
-    lineAId: string,
-    lineBId: string,
+    entityAId: string,
+    entityAKind: "line" | "arc",
+    entityBId: string,
+    entityBKind: "line" | "arc",
   ) => Promise<void>;
   // Sketch Text tool: place a new text anchored at the given
   // sketch-local point with core-default parameters. The App opens /
@@ -289,6 +294,7 @@ export interface ViewportPanelProps {
     previewId?: string,
   ) => Promise<void>;
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
+  onConfirmDeleteSketchSelection: () => void;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;
   onToggleSketchDimensionDriven: (dimensionId: string) => Promise<void>;
   onSetSketchLineConstruction: (

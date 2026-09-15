@@ -302,6 +302,16 @@ function App() {
   // them.
   const sketchTransformCreatedIdsRef = useRef<string[]>([]);
 
+  // Timeline "Redefine sketch plane" → "Pick a face…": while armed,
+  // the next face selection in the viewport completes the sketch
+  // plane redefinition. `previousFaceId` guards against the arm
+  // re-firing on a face that was already selected when the pick was
+  // armed (the effect below runs on every render of the arm itself).
+  const [sketchPlaneRedefinePick, setSketchPlaneRedefinePick] = useState<{
+    featureId: string;
+    previousFaceId: string | null;
+  } | null>(null);
+
   // Opens the Transform / Array floating panel for the current sketch
   // selection, pre-filling the center with the selection centroid.
   // Shared by the right-click Move/Copy entry and the toolbar Array
@@ -911,6 +921,8 @@ function App() {
     createBodyCopy,
     unlinkBodyCopy,
     removeSketchProjections,
+    mergeCoincidentSketchPoints,
+    redefineSketchPlane,
     updateMoveParameters,
     confirmMove,
     updateOffsetPlane,
@@ -1014,6 +1026,7 @@ function App() {
     camWcsSetFace,
     camOperationCreate,
     camOperationUpdate,
+    camOperationApplySelection,
     camOperationDelete,
     camOperationSetScope,
     camOperationPreview,
@@ -1026,6 +1039,37 @@ function App() {
     camExportGcode,
     camExportGcodeText,
   } = useCadCore();
+
+  // Completes an armed "Pick a face…" sketch-plane redefinition: the
+  // next face selection in the viewport redefines the sketch's plane
+  // to it. `previousFaceId` guards against re-firing on a face that
+  // was already selected when the pick was armed (this effect runs on
+  // the arm's own render).
+  useEffect(() => {
+    const pick = sketchPlaneRedefinePick;
+    const faceId = document?.selected_face_id ?? null;
+    if (!pick || faceId === null || faceId === pick.previousFaceId) {
+      return;
+    }
+    setSketchPlaneRedefinePick(null);
+    void runAction(async () => {
+      await redefineSketchPlane(pick.featureId, faceId);
+    });
+  }, [sketchPlaneRedefinePick, document?.selected_face_id, redefineSketchPlane, runAction]);
+
+  // Escape cancels an armed face pick for the plane redefinition.
+  useEffect(() => {
+    if (!sketchPlaneRedefinePick) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSketchPlaneRedefinePick(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sketchPlaneRedefinePick]);
 
   const {
     timelineEditVisibleFeatureIds,
@@ -1851,10 +1895,24 @@ function App() {
       Math.round(point.y * 1000) / 1000,
       Math.round(point.z * 1000) / 1000,
     ];
+    // Sheet machines (laser/plasma) have no body face: the picked
+    // origin IS the WCS — write both so the export offsets the
+    // program from the sheet origin, not just the stock box.
+    const isSheetMachine =
+      setup.machine_type === "laser" || setup.machine_type === "plasma";
     await runAction(async () => {
       await camSetupUpdate({
         ...setup,
         stock: { ...setup.stock, origin },
+        ...(isSheetMachine
+          ? {
+              wcs_origin: {
+                ...setup.wcs_origin,
+                anchor: "point" as const,
+                position: origin,
+              },
+            }
+          : {}),
       });
     });
     setPickedOrigin(origin);
@@ -2157,6 +2215,56 @@ function App() {
     setWcsPickArmed(false);
   };
 
+  // When a sketch becomes active (created, re-entered, or via AI),
+  // leave any CAM context: floating panels and armed picks would
+  // otherwise linger over the sketch, and the CAM origin pick's
+  // pointer handlers never run while a sketch is active (the sketch
+  // branch in the pointer-move handler returns before the pick
+  // branch). Sketching is a CAD action — switch the workspace back.
+  const previousActiveSketchPlaneIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousActiveSketchPlaneIdRef.current;
+    previousActiveSketchPlaneIdRef.current = activeSketchPlaneId;
+    if (!activeSketchPlaneId || previous !== null) {
+      return;
+    }
+    closeCamSetupPanel();
+    setIsGrblPanelOpen(false);
+    setSelectedCamOperationId(null);
+    setCamProfilePickArmed(false);
+    if (workspaceView !== "cad") {
+      setWorkspaceView("cad");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSketchPlaneId, workspaceView]);
+
+  // CAM → CAD transition cleanup: floating panels and armed picks are
+  // CAM-workspace context — they must not linger over the CAD model.
+  // The origin pick's snap dots would keep drawing (and swallowing
+  // clicks, blocking extrude profile selection), the setup/operation
+  // panels would overlay the viewport, and the generated path would
+  // stay drawn (the toolpath gate above handles the render side).
+  const previousWorkspaceViewRef = useRef<WorkspaceView>("cad");
+  useEffect(() => {
+    const previous = previousWorkspaceViewRef.current;
+    previousWorkspaceViewRef.current = workspaceView;
+    if (workspaceView !== "cad" || previous === "cad") {
+      return;
+    }
+    closeCamSetupPanel();
+    setIsGrblPanelOpen(false);
+    setSelectedCamOperationId(null);
+    if (camProfilePickArmed) {
+      finishCamProfileRepick();
+    } else {
+      setCamProfilePickArmed(false);
+    }
+    setPocketPickArmed(null);
+    setContourPickArmed(null);
+    setDrillPickArmed(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceView]);
+
   // Post-processor management: the list refreshes when entering the CAM
   // workspace; importing copies a definition into the user's posts
   // directory; editing opens the file in the system editor.
@@ -2298,7 +2406,18 @@ function App() {
       stepWebUnsupported: t("workspace.slicerStepWebUnsupported"),
       exporting: t("workspace.exportingToSlicer"),
     },
-    setWorkspaceView,
+    setWorkspaceView: (view) => {
+      // Leaving the CAD workspace with a sketch still active closes
+      // the sketch first — otherwise the CAM/drawing/GRBL workspace
+      // runs with the sketch session open, its pointer handlers
+      // swallow the CAM origin pick (the sketch branch returns
+      // before the pick branch), and sketch tooling overlaps the
+      // workspace panels.
+      if (view !== "cad" && activeSketchPlaneId) {
+        finishActiveSketch();
+      }
+      setWorkspaceView(view);
+    },
     setSlicerStatus,
     setHasOrcaEmbedSession,
     exportBodyStl,
@@ -2614,6 +2733,33 @@ function App() {
               <AppSidebar
                 activeProjectPath={currentProjectPath}
                 bodyContextActions={bodyContextActionsWithSlicer}
+                sketchContextActions={{
+                  onRedefineSketchPlane: async (featureId, planeId) => {
+                    await runAction(async () => {
+                      await redefineSketchPlane(featureId, planeId);
+                    });
+                  },
+                  onPickFaceForSketchPlane: (featureId) => {
+                    setSketchPlaneRedefinePick({
+                      featureId,
+                      previousFaceId: document?.selected_face_id ?? null,
+                    });
+                    addMessage(t("timeline.redefinePlaneArmed"));
+                  },
+                  onRemoveSketchProjections: async (
+                    featureId,
+                    keepGeometry,
+                  ) => {
+                    await runAction(async () => {
+                      await removeSketchProjections(featureId, keepGeometry);
+                    });
+                  },
+                  onMergeCoincidentSketchPoints: async (featureId) => {
+                    await runAction(async () => {
+                      await mergeCoincidentSketchPoints(featureId);
+                    });
+                  },
+                }}
                 camOpenSetup={(setupId) => {
                   setActiveCamSetupId(setupId);
                   setIsCamSetupPanelOpen(true);
@@ -2695,6 +2841,9 @@ function App() {
                 );
               })()}
               showStock={showStock && workspaceView === "cam"}
+              // The generated cut path is a CAM-workspace visual —
+              // leaving CAM must not leave it drawn over the model.
+              showCamToolpath={workspaceView === "cam"}
               wcsOrientation={wcsOrientation}
               activeCamSetupId={activeCamSetupId}
               originPickPointEnabled={originPickArmed}
@@ -2765,13 +2914,21 @@ function App() {
                 if (workspaceView === "cam") {
                   if (camProfilePickArmed) {
                     // Re-pick armed: the clicked outline entity selects
-                    // the profile(s) whose boundary includes it.
+                    // the profile(s) whose boundary includes it.  A
+                    // shared outline (spoke arc that is also a
+                    // plate-hole edge) selects only the smallest
+                    // owning region — the visible surface under the
+                    // click, not every region sharing the boundary.
                     await reportCamProfileSelectionChange({
                       beforeCount:
                         document?.selected_sketch_profile_ids?.length ?? 0,
                       runSelection: () =>
                         runAction(async () => {
-                          await selectSketchProfileByEntity(lineId, true);
+                          await selectSketchProfileByEntity(
+                            lineId,
+                            true,
+                            true,
+                          );
                         }),
                       addMessage,
                       translate: t,
@@ -3204,7 +3361,13 @@ function App() {
                   );
                 });
               }}
-              onAddSketchFillet={async (cornerPointId, lineAId, lineBId) => {
+              onAddSketchFillet={async (
+                cornerPointId,
+                entityAId,
+                entityAKind,
+                entityBId,
+                entityBKind,
+              ) => {
                 // Panel must be open in either phase for adds to be
                 // accepted. The viewport's eligibility filter is the
                 // primary guard; this is just a defence against a
@@ -3242,8 +3405,10 @@ function App() {
                 await runAction(async () => {
                   await addSketchFillet(
                     cornerPointId,
-                    lineAId,
-                    lineBId,
+                    entityAId,
+                    entityAKind,
+                    entityBId,
+                    entityBKind,
                     sessionRadius,
                   );
                 });
@@ -3580,12 +3745,19 @@ function App() {
                 if (camProfilePickArmed) {
                   // Re-pick armed: clicking a sketch entity's outline
                   // selects the profile(s) whose boundary includes it.
+                  // Smallest-only: a shared outline (spoke arc that is
+                  // also a plate-hole edge) selects the visible region
+                  // under the click, not every region sharing it.
                   await reportCamProfileSelectionChange({
                     beforeCount:
                       document?.selected_sketch_profile_ids?.length ?? 0,
                     runSelection: () =>
                       runAction(async () => {
-                        await selectSketchProfileByEntity(entityId, true);
+                        await selectSketchProfileByEntity(
+                          entityId,
+                          true,
+                          true,
+                        );
                       }),
                     addMessage,
                     translate: t,
@@ -3778,6 +3950,12 @@ function App() {
               }}
               onDeleteSketchSelection={async (selection) => {
                 confirmAndDeleteSketchSelection(selection);
+              }}
+              onConfirmDeleteSketchSelection={() => {
+                // Hotkey delete: no snapshot — the confirm flow resolves
+                // the freshest UI state for the count and lets the core
+                // resolve the live selection on confirm.
+                confirmAndDeleteSketchSelection(undefined);
               }}
               onTrimSketchEntity={async (
                 entityId,
@@ -4346,6 +4524,7 @@ function App() {
                 machines={camMachines}
                 onSaveMachine={saveCamMachineAction}
                 camPostProcessorSet={camPostProcessorSet}
+                camOperationApplySelection={camOperationApplySelection}
                 onImportPost={() => {
                   void importCamPostAction();
                 }}

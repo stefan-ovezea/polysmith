@@ -725,10 +725,14 @@ Geometry input:
   outer loops get them outside the disc (interior leads run along the
   pierce→centroid spoke — tangent leads cannot lie inside a closed
   contour); `inside|outside` forces both the kerf and the lead side.
-- `select_sketch_profile` accepts `{entity_id, additive}` instead of
-  `{profile_id, additive}`: the core selects every profile whose boundary
-  includes the entity (used for outline clicks during the CAM re-pick flow;
-  a shared edge selects both owning regions, construction entities throw).
+- `select_sketch_profile` accepts `{entity_id, additive, smallest_only?}`
+  instead of `{profile_id, additive}`: the core selects every profile whose
+  boundary includes the entity (used for outline clicks during the CAM re-pick
+  flow; a shared edge selects both owning regions, construction entities
+  throw).  With `smallest_only=true` a shared outline selects only the
+  smallest owning region — outline clicks then behave like interior clicks
+  (the plate no longer toggles when picking a spoke that shares its hole
+  edge).
 - `face_milling`: pass `geometry_references.machining_regions` with a
   `FaceAttestation` witness (area, normal, sample points) captured from the
   selected face; `parameters.zigzag_angle_deg` and `stepover_percent` tune the
@@ -826,6 +830,20 @@ its own setup.
 Merge patch: `{op_id, name?, type?, enabled?, tool_id?, geometry_references?,
 parameters?}`. Only present keys overwrite. Any change resets the operation to
 `needs_regenerate`.
+
+Two re-select details: (1) sending an explicitly EMPTY
+`geometry_references` on a `laser_cut` / `contour_2d` / `engrave` op is the
+"re-select geometry" gesture — the core re-captures TNP-safe witnesses for
+the selected profiles into `machining_regions` and sets the op's
+`geometry_scope` to `"selected"`; with NO selection it replies
+`NO_PROFILE_SELECTION` and the op keeps its old regions.  (2) An optional
+`selected_profile_ids: [string]` in the same payload pins WHICH profiles the
+gesture captures — with it present the core ignores its own live selection
+state (the panel's Apply uses this so the capture cannot race other commands).
+`CamOperation` also carries a persisted `geometry_scope` field
+(`"sketch"` = whole-sketch capture, `"selected"` = explicit profile subset;
+absent in old documents → `"sketch"`), set by create/set_scope/update and
+preserved through generate.
 
 #### `cam_operation_set_scope`
 
@@ -1879,7 +1897,10 @@ owning text.
 
 #### `add_sketch_fillet`
 
-Rounds a sketch corner shared by two sketch lines into a tangent arc.
+Rounds a sketch corner shared by two sketch entities into a tangent
+arc. Operands may be two lines, a line and an arc, or two arcs —
+exactly one of `{line_a_id, arc_a_id}` (and the same for side B) is
+sent; line-line callers omit the arc ids.
 
 Payload:
 
@@ -1888,12 +1909,15 @@ Payload:
   corner_point_id: string;
   line_a_id: string;
   line_b_id: string;
+  arc_a_id?: string;   // optional — arc operand for side A
+  arc_b_id?: string;   // optional — arc operand for side B
   radius: number;
 }
 ```
 
-The corner point must be an endpoint of both lines. Read `corner_point_id`,
-`line_a_id`, and `line_b_id` from the active sketch's `points[]` and `lines[]`.
+The corner point must be an endpoint of both entities. Read
+`corner_point_id` and the entity ids from the active sketch's
+`points[]`, `lines[]`, and `arcs[]`.
 
 ### Sketch Geometry Updates
 
@@ -2175,13 +2199,18 @@ Payload:
 
 ```ts
 {
-  profile_id: string;
+  profile_id?: string;   // by profile id
+  entity_id?: string;    // or by entity id (outline clicks)
   additive?: boolean;
+  smallest_only?: boolean;  // entity-id variant only
 }
 ```
 
 Profiles can be selected from any sketch in the document. The core resolves the
-owning sketch.
+owning sketch.  The entity-id variant selects every profile whose boundary
+includes the entity; with `smallest_only=true` a shared outline (e.g. a spoke
+arc that is also a plate-hole edge) selects only the smallest owning region —
+the CAM re-pick flow uses this so outline clicks behave like interior clicks.
 
 ### Sketch Constraints and Anchors
 

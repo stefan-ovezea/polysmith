@@ -430,6 +430,13 @@ struct CamOperation {
   /// Human-readable degrade info (the CAM analogue of
   /// FeatureEntry::dependency_warning).  Empty when healthy.
   std::string status_message;
+  /// How the machining regions were captured: "sketch" = whole-sketch
+  /// scope (set_scope or a selected-feature capture), "selected" = an
+  /// explicit profile subset (captured from selected_sketch_profile_ids
+  /// via the re-select gesture).  Persisted so the UI can show which
+  /// mode the operation is in after a document reload.  Defaults to
+  /// "sketch" so pre-scope documents load unchanged.
+  std::string geometry_scope = "sketch";  // "sketch" | "selected"
 };
 
 // ══════════════════════════════════════════════════════════════════

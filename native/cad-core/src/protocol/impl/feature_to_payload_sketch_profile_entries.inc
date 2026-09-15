@@ -80,6 +80,34 @@
                         });
                       }
 
+                      // Exact per-hole boundary edges — one array per
+                      // inner_loops entry, same edge shape as
+                      // boundary_edges.  Empty for legacy profiles.
+                      json inner_loop_edges = json::array();
+                      for (const auto& loop_edges : profile.inner_loop_edges) {
+                        json loop_payload = json::array();
+                        for (const auto& edge : loop_edges) {
+                          loop_payload.push_back({
+                              {"entity_id", edge.entity_id},
+                              {"entity_kind", edge.entity_kind},
+                              {"param_start", edge.param_start},
+                              {"param_end", edge.param_end},
+                              {"start_x", edge.start_x},
+                              {"start_y", edge.start_y},
+                              {"end_x", edge.end_x},
+                              {"end_y", edge.end_y},
+                              {"center_x", edge.center_x},
+                              {"center_y", edge.center_y},
+                              {"radius", edge.radius},
+                              {"ccw", edge.ccw},
+                              {"spline_degree", edge.spline_degree},
+                              {"spline_pole_xs", edge.spline_pole_xs},
+                              {"spline_pole_ys", edge.spline_pole_ys},
+                          });
+                        }
+                        inner_loop_edges.push_back(loop_payload);
+                      }
+
                       profiles.push_back({
                           {"profile_id", profile.id},
                           {"kind", profile.kind},
@@ -91,6 +119,7 @@
                           {"circle_holes", circle_holes},
                           {"arc_descriptors", arc_descriptors},
                           {"boundary_edges", boundary_edges},
+                          {"inner_loop_edges", inner_loop_edges},
                           {"source_circle_id",
                            profile.source_circle_id.has_value()
                                ? json(profile.source_circle_id.value())

@@ -81,7 +81,10 @@ void append_round_join(OffsetSegment current, OffsetSegment nextOffset,
   join.is_arc = true;
   join.is_join = true;
   join.center = vertex;
-  join.radius = d;
+  // The endpoints sit at |d| from the corner regardless of the offset
+  // side — a signed radius would mirror the arc onto the wrong side
+  // when d < 0 (kerf_side "outside" on holes, conventional cuts).
+  join.radius = std::abs(d);
   join.start = current.end;
   join.end = nextOffset.start;
   join.cw = sweep < 0;
@@ -337,6 +340,100 @@ void reverse_segments(std::vector<BaseSegment>& segments) {
   }
 }
 
+// Up to two intersection points of the unit-direction line P + t·u
+// with circle (C, r).  Candidates are written to out[0..count-1].
+void line_circle_intersections(const XY& p, const XY& u, const XY& c,
+                               double r, XY out[2], int& count) {
+  count = 0;
+  const double fx = p.x - c.x;
+  const double fy = p.y - c.y;
+  const double f = fx * u.x + fy * u.y;
+  const double s2 = r * r - (fx * fx + fy * fy - f * f);
+  if (s2 < 0.0) {
+    return;
+  }
+  const double s = std::sqrt(s2);
+  if (s < 1e-12) {
+    out[count++] = XY{p.x - f * u.x, p.y - f * u.y};
+    return;
+  }
+  out[count++] = XY{p.x - (f - s) * u.x, p.y - (f - s) * u.y};
+  out[count++] = XY{p.x - (f + s) * u.x, p.y - (f + s) * u.y};
+}
+
+// Up to two intersection points of circles (C1, r1) and (C2, r2).
+void circle_circle_intersections(const XY& c1, double r1, const XY& c2,
+                                 double r2, XY out[2], int& count) {
+  count = 0;
+  if (r1 <= 0.0 || r2 <= 0.0) {
+    return;
+  }
+  const double dx = c2.x - c1.x;
+  const double dy = c2.y - c1.y;
+  const double dist = xy_length(dx, dy);
+  if (dist < 1e-12 || dist > r1 + r2 || dist < std::abs(r1 - r2)) {
+    return;
+  }
+  const double a = (dist * dist + r1 * r1 - r2 * r2) / (2.0 * dist);
+  const double h2 = r1 * r1 - a * a;
+  if (h2 < 0.0) {
+    return;
+  }
+  const double h = std::sqrt(std::max(0.0, h2));
+  const double mx = c1.x + a * dx / dist;
+  const double my = c1.y + a * dy / dist;
+  const double px = -dy / dist;
+  const double py = dx / dist;
+  if (h < 1e-12) {
+    out[count++] = XY{mx, my};
+    return;
+  }
+  out[count++] = XY{mx + h * px, my + h * py};
+  out[count++] = XY{mx - h * px, my - h * py};
+}
+
+// The miter crossing of the two offset curves nearest the base corner,
+// capped so a nearly-tangent corner cannot spike (beyond the cap the
+// round join's deviation from the true boundary is invisible).  False
+// when the curves never meet within the cap — callers fall back to the
+// round join.
+bool offset_miter_point(const OffsetSegment& current,
+                        const OffsetSegment& next, const XY& corner,
+                        double d, XY& out) {
+  XY candidates[2];
+  int count = 0;
+  if (current.is_arc && next.is_arc) {
+    circle_circle_intersections(current.center, current.radius, next.center,
+                                next.radius, candidates, count);
+  } else {
+    const OffsetSegment& arc = current.is_arc ? current : next;
+    if (arc.radius <= 0.0) {
+      return false;
+    }
+    const OffsetSegment& line = current.is_arc ? next : current;
+    XY dir{line.end.x - line.start.x, line.end.y - line.start.y};
+    const double len = xy_length(dir.x, dir.y);
+    if (len < 1e-12) {
+      return false;
+    }
+    dir.x /= len;
+    dir.y /= len;
+    line_circle_intersections(line.start, dir, arc.center, arc.radius,
+                              candidates, count);
+  }
+  const double cap = 20.0 * std::max(std::abs(d), 1e-6);
+  double best = -1.0;
+  for (int k = 0; k < count; ++k) {
+    const double dist = xy_length(candidates[k].x - corner.x,
+                                  candidates[k].y - corner.y);
+    if (dist <= cap && (best < 0.0 || dist < best)) {
+      best = dist;
+      out = candidates[k];
+    }
+  }
+  return best >= 0.0;
+}
+
 double base_segments_signed_area(const std::vector<BaseSegment>& segments) {
   if (segments.empty()) {
     return 0.0;
@@ -430,10 +527,46 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
     }
 
     if (current.is_arc || nextOffset.is_arc) {
-      // Arc corner: tangent by sketch construction — snap the shared
-      // endpoint; non-tangent gaps get a join arc.
+      // Arc corner: tangent corners snap the shared endpoint; gaps get
+      // joined.  A corner that turns TOWARD the offset side (a right
+      // turn for d > 0) makes the two offset curves cross ahead of the
+      // corner — the true boundary is the miter there, and a round
+      // join would bulge into the stock and self-intersect.  Trim to
+      // the crossing; corners that turn away (reflex on the offset
+      // side) keep the round join (rolling-ball rule).
       if (xy_length(current.end.x - nextOffset.start.x,
                     current.end.y - nextOffset.start.y) > 1e-9) {
+        const auto corner_tangent = [&](const BaseSegment& s, bool at_end) {
+          XY t;
+          if (!s.is_arc) {
+            t = XY{s.end.x - s.start.x, s.end.y - s.start.y};
+          } else {
+            const double px = at_end ? s.end.x : s.start.x;
+            const double py = at_end ? s.end.y : s.start.y;
+            const double rx = px - s.center.x;
+            const double ry = py - s.center.y;
+            t = s.ccw ? XY{-ry, rx} : XY{ry, -rx};
+          }
+          const double len = xy_length(t.x, t.y);
+          if (len > 1e-12) {
+            t.x /= len;
+            t.y /= len;
+          }
+          return t;
+        };
+        const XY tIn = corner_tangent(base[i], /*at_end=*/true);
+        const XY tOut =
+            corner_tangent(base[(i + 1) % count], /*at_end=*/false);
+        const double turn = std::atan2(tIn.x * tOut.y - tIn.y * tOut.x,
+                                       tIn.x * tOut.x + tIn.y * tOut.y);
+        XY miter;
+        if (turn * d < 0.0 &&
+            offset_miter_point(current, nextOffset, base[i].end, d, miter)) {
+          current.end = miter;
+          out.push_back(current);
+          startOverride[nextIndex] = miter;
+          continue;
+        }
         append_round_join(current, nextOffset, base[i].end, d, out);
       } else {
         current.end = nextOffset.start;
@@ -457,6 +590,29 @@ bool offset_closed_loop(const std::vector<BaseSegment>& base, double d,
       current.end = nextOffset.start;
       out.push_back(current);
       continue;
+    }
+    // Near-collinear corner (tessellated chord outlines): the round
+    // join arc here is a sliver — sweep of a fraction of a degree,
+    // length far below any controller's move resolution.  Those
+    // micro-arcs stall GRBL machines (user-reported).  Snap the
+    // offset ends together instead; the deviation from the true
+    // boundary stays below d·tan(θ/2) ≈ 0.007mm at the threshold,
+    // invisible to the beam.
+    {
+      const double lenCurrent = std::hypot(dCurrent.x, dCurrent.y);
+      const double lenNext = std::hypot(dNext.x, dNext.y);
+      if (lenCurrent > kOffsetEps && lenNext > kOffsetEps) {
+        const double cross = dCurrent.x * dNext.y - dCurrent.y * dNext.x;
+        const double dot = dCurrent.x * dNext.x + dCurrent.y * dNext.y;
+        const double turn = std::atan2(cross, dot);
+        constexpr double kCollinearTurnRad =
+            10.0 * 3.14159265358979323846 / 180.0;
+        if (std::abs(turn) <= kCollinearTurnRad) {
+          current.end = nextOffset.start;
+          out.push_back(current);
+          continue;
+        }
+      }
     }
     // Parameter of the crossing along each segment (0 = start, 1 = end).
     const double tCurrent =

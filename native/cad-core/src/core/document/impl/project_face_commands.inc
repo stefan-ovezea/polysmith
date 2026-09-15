@@ -427,6 +427,21 @@ DocumentState DocumentManager::remove_sketch_projections(
     }
   }
 
+  // Erase every projection-derived `projected_points` entry (the list
+  // is the only place the vertex rebuild can mint "projected"-kind
+  // points from). DXF-imported standalone points share the list with
+  // source_id "dxf:point:N" and must stay. Captures `feature_it` by
+  // reference — the Remove path re-locates it after the delete.
+  const auto erase_projection_derived_points = [&]() {
+    auto& points = feature_it->sketch_parameters->projected_points;
+    points.erase(
+        std::remove_if(points.begin(), points.end(),
+                       [](const SketchProjectedPoint& point) {
+                         return point.source_id.rfind("dxf:", 0) != 0;
+                       }),
+        points.end());
+  };
+
   if (!keep_geometry) {
     // Remove mode: delete the projected entities. Reuse
     // delete_sketch_selection so every cleanup rule applies (owning
@@ -446,6 +461,15 @@ DocumentState DocumentManager::remove_sketch_projections(
         document_->feature_history.end(),
         [&](const FeatureEntry& feature) { return feature.id == feature_id; });
     feature_it->sketch_parameters->projected_sources.clear();
+    // The delete above only removes the points referenced by the
+    // records — if the records were already gone (projected entities
+    // deleted individually), orphaned `projected_points` entries
+    // survive and the vertex rebuild re-mints them as stray
+    // "projected" points. Sweep every projection-derived entry so
+    // Remove always clears ALL projected geometry. DXF-imported
+    // standalone points share this list (source_id "dxf:point:N")
+    // and stay.
+    erase_projection_derived_points();
     return document_.value();
   }
 
@@ -457,6 +481,11 @@ DocumentState DocumentManager::remove_sketch_projections(
   auto& parameters = *feature_it->sketch_parameters;
   parameters.projections.clear();
   parameters.projected_sources.clear();
+  // Same stray-point sweep as Remove mode: `projected_points` is the
+  // only place the vertex rebuild can mint "projected"-kind points
+  // from, so it must be cleared BEFORE the refresh below — otherwise
+  // the styling-clear loop fights a fresh re-flag on the next bump.
+  erase_projection_derived_points();
   refresh_sketch_derived_state(*feature_it);
   // The vertex-table rebuild above may re-flag vertices; clear the
   // projected styling AFTER it so the formerly-projected geometry

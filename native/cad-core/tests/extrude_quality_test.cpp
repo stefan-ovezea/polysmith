@@ -604,6 +604,162 @@ bool test_concentric_circles_clean_bore() {
                 "holes");
 }
 
+// User-reported regression: pieces drawn with sub-0.01 mm slits (the
+// flower petals against the hub boundary) arrive as hole loops that
+// share welded vertices.  The extrude used to compile a silently
+// INVALID body (2 broken cap faces) — it must now refuse with a
+// clear message.
+//
+// Repro topology (the user's exact shape, minimized): a plate with a
+// D-shaped hub (half-circle arc + closing line) and a petal whose two
+// on-circle corners sit exactly on the hub's arc.  The detector welds
+// the petal's corners onto the hub boundary, so the plate's two hole
+// loops share vertices — the face with both hole wires is invalid.
+bool test_touching_holes_refused() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document =
+      manager.add_sketch_rectangle(-80.0, -80.0, 80.0, 80.0);
+  // Hub: left half of the r=40 circle + closing diameter line.
+  document = manager.add_sketch_arc(0.0, 40.0, 0.0, -40.0, 0.0, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_line(0.0, -40.0, 0.0, 40.0);
+  // Petal: a 45° piece ON the hub circle (45°→90°) + two lines back.
+  document = manager.add_sketch_arc(28.28, 28.28, 0.0, 40.0, 0.0, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_line(0.0, 40.0, 40.0, 40.0);
+  document = manager.add_sketch_line(40.0, 40.0, 28.28, 28.28);
+
+  const auto& profiles =
+      document.feature_history.back().sketch_parameters->profiles;
+  const auto rect_it = std::find_if(
+      profiles.begin(), profiles.end(),
+      [](const auto& p) {
+        return p.kind == "polygon" && !p.source_circle_id.has_value();
+      });
+  if (!expect(rect_it != profiles.end(),
+              "touching: rect profile must exist")) {
+    return false;
+  }
+
+  bool threw = false;
+  std::string message;
+  try {
+    (void)manager.extrude_profiles({rect_it->id}, 10.0, "new_body");
+  } catch (const std::exception& e) {
+    threw = true;
+    message = e.what();
+  }
+  return expect(threw && message.find("touch") != std::string::npos,
+                "touching: extrude must refuse with a clear message");
+}
+
+// The same plate with the petal lifted 0.2 mm off the hub circle
+// extrudes normally — the guard must not fire on properly separated
+// holes.
+bool test_separated_holes_extrude() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document =
+      manager.add_sketch_rectangle(-80.0, -80.0, 80.0, 80.0);
+  document = manager.add_sketch_arc(0.0, 40.0, 0.0, -40.0, 0.0, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_line(0.0, -40.0, 0.0, 40.0);
+  // Petal fully lifted to r=40.2 from the hub center — every corner
+  // keeps at least a 0.19 mm gap to the hub boundary.
+  document = manager.add_sketch_arc(28.43, 28.43, 0.0, 40.2, 0.0, 0.0,
+                                    "center_start_end");
+  document = manager.add_sketch_line(0.0, 40.2, 40.0, 40.2);
+  document = manager.add_sketch_line(40.0, 40.2, 28.43, 28.43);
+
+  const auto& profiles =
+      document.feature_history.back().sketch_parameters->profiles;
+  const auto rect_it = std::find_if(
+      profiles.begin(), profiles.end(),
+      [](const auto& p) {
+        return p.kind == "polygon" && !p.source_circle_id.has_value();
+      });
+  if (!expect(rect_it != profiles.end(),
+              "separated: rect profile must exist")) {
+    return false;
+  }
+
+  DocumentState extruded;
+  bool threw = false;
+  try {
+    extruded = manager.extrude_profiles({rect_it->id}, 10.0, "new_body");
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  if (!expect(!threw, "separated: extrude must succeed")) {
+    return false;
+  }
+  const auto extrude_it = std::find_if(
+      extruded.feature_history.begin(), extruded.feature_history.end(),
+      [](const auto& f) {
+        return f.kind == "extrude" && f.extrude_parameters.has_value();
+      });
+  return expect(extrude_it != extruded.feature_history.end() &&
+                    extrude_it->status == "healthy",
+                "separated: extrude feature healthy");
+}
+
+// Same touching-petal topology twice in one plate: the refusal must
+// name EVERY violating pair in one message (the user's flower had
+// three at once) instead of throwing on the first and forcing a
+// fix-and-retry round per slit.
+bool test_multiple_touching_pairs_named() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document =
+      manager.add_sketch_rectangle(-200.0, -200.0, 200.0, 200.0);
+  // Cluster A (same D-hub + petal as test_touching_holes_refused,
+  // at the origin) and cluster B (shifted to x=120, well clear of the
+  // rect edge at x=200).
+  for (const double cx : {0.0, 120.0}) {
+    document = manager.add_sketch_arc(cx, 40.0, cx, -40.0, cx, 0.0,
+                                      "center_start_end");
+    document = manager.add_sketch_line(cx, -40.0, cx, 40.0);
+    document = manager.add_sketch_arc(cx + 28.28, 28.28, cx, 40.0, cx, 0.0,
+                                      "center_start_end");
+    document = manager.add_sketch_line(cx, 40.0, cx + 40.0, 40.0);
+    document = manager.add_sketch_line(cx + 40.0, 40.0, cx + 28.28, 28.28);
+  }
+
+  const auto& profiles =
+      document.feature_history.back().sketch_parameters->profiles;
+  const auto rect_it = std::find_if(
+      profiles.begin(), profiles.end(),
+      [](const auto& p) {
+        return p.kind == "polygon" && !p.source_circle_id.has_value();
+      });
+  if (!expect(rect_it != profiles.end(),
+              "multi-pair: rect profile must exist")) {
+    return false;
+  }
+
+  bool threw = false;
+  std::string message;
+  try {
+    (void)manager.extrude_profiles({rect_it->id}, 10.0, "new_body");
+  } catch (const std::exception& e) {
+    threw = true;
+    message = e.what();
+  }
+  return expect(threw &&
+                    message.find("2 pairs of holes touch or overlap") !=
+                        std::string::npos,
+                ("multi-pair: extrude must refuse naming BOTH pairs: " +
+                 message)
+                    .c_str());
+}
+
 
 // User-reported regression: selecting the rect AND the big concentric
 // circle must extrude the big circle as a solid boss with the smaller
@@ -1545,6 +1701,9 @@ int main() {
   if (!test_filleted_rectangle_clockwise_walk_extrudes_full_prism()) return 1;
   if (!test_rounded_rect_with_touching_lines_and_circle()) return 1;
   if (!test_concentric_circles_clean_bore()) return 1;
+  if (!test_touching_holes_refused()) return 1;
+  if (!test_separated_holes_extrude()) return 1;
+  if (!test_multiple_touching_pairs_named()) return 1;
   if (!test_big_circle_selection_boss_with_holes()) return 1;
   if (!test_load_preserves_circle_center_vertex()) return 1;
   if (!test_trim_entity_ids_never_collide()) return 1;

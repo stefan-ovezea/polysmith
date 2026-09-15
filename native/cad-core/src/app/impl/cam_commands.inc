@@ -447,6 +447,13 @@
                   "Select sketch profiles for the CAM operation first"));
           return;
         }
+      } else {
+        // The capture ran one of two modes — record which, so the
+        // scope dropdown survives a save/load cycle.
+        op.geometry_scope =
+            document->selected_sketch_profile_ids.empty()
+                ? "sketch"
+                : "selected";
       }
     }
     const auto document = document_manager().cam_operation_add(op);
@@ -506,16 +513,36 @@
       if (merged.geometry_references.machining_regions.empty() &&
           (merged.type == "laser_cut" || merged.type == "contour_2d" ||
            merged.type == "engrave")) {
-        if (document->selected_sketch_profile_ids.empty() ||
+        // The "re-select geometry" gesture.  When the payload carries
+        // selected_profile_ids explicitly (the panel's Apply), those
+        // win — the capture must not depend on the live selection
+        // still being present when the command is processed.
+        // Otherwise fall back to the document selection (legacy
+        // callers that rely on the gesture semantics).
+        std::vector<std::string> profile_ids;
+        if (p.contains("selected_profile_ids") &&
+            p.at("selected_profile_ids").is_array()) {
+          for (const auto& value : p.at("selected_profile_ids")) {
+            if (value.is_string()) {
+              profile_ids.push_back(value.get<std::string>());
+            }
+          }
+        } else {
+          profile_ids = document->selected_sketch_profile_ids;
+        }
+        if (profile_ids.empty() ||
             !polysmith::core::capture_profile_references_from_profile_ids(
-                document.value(), document->selected_sketch_profile_ids,
-                merged)) {
+                document.value(), profile_ids, merged)) {
           polysmith::protocol::write_message(
               polysmith::protocol::make_error_event(
                   command.id, "NO_PROFILE_SELECTION",
                   "Select sketch profiles for the CAM operation first"));
           return;
         }
+        // Re-selected from an explicit profile pick — a custom subset
+        // by definition, persisted so the dropdown shows it after
+        // reload.
+        merged.geometry_scope = "selected";
       }
     }
     if (p.contains("parameters")) {

@@ -28,9 +28,18 @@ type BodyContextActions = Pick<
   | "onUnlinkBodyCopy"
 >;
 
+type SketchContextActions = Pick<
+  ComponentProps<typeof DocumentHierarchyPanel>,
+  | "onRedefineSketchPlane"
+  | "onPickFaceForSketchPlane"
+  | "onRemoveSketchProjections"
+  | "onMergeCoincidentSketchPoints"
+>;
+
 interface AppSidebarProps {
   activeProjectPath: string | null;
   bodyContextActions: BodyContextActions;
+  sketchContextActions: SketchContextActions;
   camOpenSetup: (setupId: string) => void;
   camOperationDelete: (operationId: string) => Promise<void>;
   camOperations: CamOperation[];
@@ -98,6 +107,7 @@ export function AppSidebar({
   onNewCamSetup,
   activeProjectPath,
   bodyContextActions,
+  sketchContextActions,
   camOperationDelete,
   camOperations,
   confirmAndDeleteFeature,
@@ -192,6 +202,7 @@ export function AppSidebar({
         confirmAndDeleteFeature(featureId);
       }}
       {...bodyContextActions}
+      {...sketchContextActions}
       onSetFeatureSuppressed={async (featureId, suppressed) => {
         await runAction(async () => {
           await setFeatureSuppressed(featureId, suppressed);

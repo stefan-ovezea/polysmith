@@ -166,6 +166,12 @@
       fillet.corner_y = read_number(fillet_payload, "corner_y");
       fillet.line_a_id = read_string(fillet_payload, "line_a_id");
       fillet.line_b_id = read_string(fillet_payload, "line_b_id");
+      // Arc operands (line-arc / arc-arc fillets) — optional; old
+      // saves and line-line fillets omit them.
+      fillet.arc_a_id =
+          read_optional_string(fillet_payload, "arc_a_id").value_or("");
+      fillet.arc_b_id =
+          read_optional_string(fillet_payload, "arc_b_id").value_or("");
       // Accept both "trim_a_vertex_id" (new) and "trim_a_point_id" (old saves).
       fillet.trim_a_vertex_id = fillet_payload.contains("trim_a_vertex_id")
           ? read_string(fillet_payload, "trim_a_vertex_id")

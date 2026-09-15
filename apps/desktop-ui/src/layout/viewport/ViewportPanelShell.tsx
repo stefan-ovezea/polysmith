@@ -172,6 +172,8 @@ interface ViewportPanelShellProps {
   onSketchToolConstructionChange: (checked: boolean) => void;
   onSubmitDimensionEdit: () => void | Promise<void>;
   onToggleGrid: () => void;
+  onToggleConstraints: () => void;
+  showConstraints: boolean;
   getDraftFieldInputValue: (
     session: DraftDimensionSession,
     field: DraftDimensionField,
@@ -267,6 +269,8 @@ export function ViewportPanelShell({
   onSketchToolConstructionChange,
   onSubmitDimensionEdit,
   onToggleGrid,
+  onToggleConstraints,
+  showConstraints,
   getDraftFieldInputValue,
   getDraftParameterSuggestions,
   getDraftScreenPosition,
@@ -336,6 +340,17 @@ export function ViewportPanelShell({
                 : translate("viewport.showViewportGrid")
           } (${formatHotkey(viewportGridHotkey)})`}
           onToggle={onToggleGrid}
+          secondToggle={
+            isSketchMode
+              ? {
+                  active: showConstraints,
+                  label: showConstraints
+                    ? translate("viewport.hideConstraints")
+                    : translate("viewport.showConstraints"),
+                  onToggle: onToggleConstraints,
+                }
+              : undefined
+          }
         />
         <CrosshairGuideOverlay
           pointer={crosshairPointer}

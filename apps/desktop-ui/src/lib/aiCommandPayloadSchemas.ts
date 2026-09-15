@@ -403,6 +403,9 @@ export const commandPayloadSchemas = {
       corner_vertex_id: stringField,
       line_a_id: stringField,
       line_b_id: stringField,
+      // Arc operands (line-arc / arc-arc fillets) — optional.
+      arc_a_id: stringField.optional(),
+      arc_b_id: stringField.optional(),
       radius: numberField,
     })
     .strict(),

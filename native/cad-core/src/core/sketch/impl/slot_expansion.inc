@@ -12,7 +12,7 @@
 //   line-slot-<id>-bottom  bl -> br   (CCW loop)
 //   arc-slot-<id>-right    br -> tr   (ccw=true:  angle −90°→+90° about c_right)
 //   line-slot-<id>-top     tr -> tl
-//   arc-slot-<id>-left     tl -> bl   (ccw=false: angle +90°→−90° about c_left)
+//   arc-slot-<id>-left     tl -> bl   (ccw=true:  angle +90°→+270° about c_left)
 //
 // The generated ids are deterministic and live OUTSIDE the user id
 // counters, so slot re-expansion never collides with user entity ids.
@@ -113,7 +113,10 @@ void refresh_sketch_slots(SketchFeatureParameters& parameters) {
         .is_construction = false,
         .generated_by = "slot:" + slot.id,
     });
-    // Left arc: tl -> bl, clockwise about c_left.
+    // Left arc: tl -> bl, counter-clockwise about c_left — the sweep
+    // +90° → +270° (through the west bulge).  A ccw=false arc with the
+    // same endpoints sweeps the WRONG half (−90°: the east bulge), which
+    // made the slot's west cap cut back INTO the slot interior.
     parameters.arcs.push_back(SketchArc{
         .id = "arc-" + prefix + "-left",
         .start_vertex_id = vertex("tl"),
@@ -126,7 +129,7 @@ void refresh_sketch_slots(SketchFeatureParameters& parameters) {
         .start_y = tl_y,
         .end_x = bl_x,
         .end_y = bl_y,
-        .ccw = false,
+        .ccw = true,
         .is_construction = false,
         .generated_by = "slot:" + slot.id,
     });

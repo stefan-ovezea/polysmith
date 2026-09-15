@@ -356,9 +356,13 @@ export function makeSelectSketchProfileCommand(
 // Entity-id variant: the core selects every profile whose boundary
 // includes the clicked sketch entity (used by the CAM re-pick flow,
 // where clicking a shape's outline must pick the shape).
+// `smallestOnly`: a shared outline (spoke arc that is also a
+// plate-hole edge) then selects only the smallest owning region,
+// matching the interior-click behaviour the CAM re-pick expects.
 export function makeSelectSketchProfileByEntityCommand(
   entityId: string,
   additive = false,
+  smallestOnly = false,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -366,6 +370,7 @@ export function makeSelectSketchProfileByEntityCommand(
     payload: {
       entity_id: entityId,
       additive,
+      smallest_only: smallestOnly,
     },
   };
 }
@@ -693,15 +698,17 @@ export function makeSelectSketchVertexCommand(
 }
 
 
-// Sketch fillet — round a corner shared by two sketch lines into a
-// tangent arc. The corner is identified by the sketch point id
-// shared by both lines. v1 fillets are line-line only; line-arc
-// and arc-arc remain follow-ups.
+// Sketch fillet — round a corner shared by two sketch entities (two
+// lines, a line and an arc, or two arcs) into a tangent arc. The
+// corner is identified by the sketch point id shared by both. Arc
+// operands are optional (line-line callers omit them).
 export function makeAddSketchFilletCommand(
   cornerVertexId: string,
   lineAId: string,
   lineBId: string,
   radius: number,
+  arcAId = "",
+  arcBId = "",
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -711,6 +718,8 @@ export function makeAddSketchFilletCommand(
       line_a_id: lineAId,
       line_b_id: lineBId,
       radius,
+      ...(arcAId ? { arc_a_id: arcAId } : {}),
+      ...(arcBId ? { arc_b_id: arcBId } : {}),
     },
   };
 }
@@ -737,6 +746,18 @@ export function makeDeleteSketchFilletCommand(filletId: string): CoreCommand {
     type: "delete_sketch_fillet",
     payload: {
       fillet_id: filletId,
+    },
+  };
+}
+
+export function makeMergeCoincidentSketchPointsCommand(
+  featureId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "merge_coincident_sketch_points",
+    payload: {
+      feature_id: featureId,
     },
   };
 }

@@ -301,6 +301,8 @@ export function CamSetupPanel({
 
   // A graphical origin pick (viewport click) updates the document
   // directly through the parent — mirror it into the form fields.
+  // For sheet machines the pick IS the WCS origin, so it lands in
+  // both fields (the stock sheet and the WCS are one point there).
   const lastPickedOriginRef = useRef<string | null>(null);
   useEffect(() => {
     if (!pickedOrigin) {
@@ -311,10 +313,24 @@ export function CamSetupPanel({
       return;
     }
     lastPickedOriginRef.current = key;
-    setState((prev) => ({
-      ...prev,
-      origin: [pickedOrigin[0], pickedOrigin[1], pickedOrigin[2]],
-    }));
+    setState((prev) => {
+      const sheet =
+        prev.machineType === "laser" || prev.machineType === "plasma";
+      return {
+        ...prev,
+        origin: [pickedOrigin[0], pickedOrigin[1], pickedOrigin[2]],
+        ...(sheet
+          ? {
+              wcsOrigin: [
+                pickedOrigin[0],
+                pickedOrigin[1],
+                pickedOrigin[2],
+              ] as [number, number, number],
+              wcsOriginDirty: true,
+            }
+          : {}),
+      };
+    });
   }, [pickedOrigin]);
 
   function update(patch: Partial<CamSetupFormState>) {
@@ -413,7 +429,10 @@ export function CamSetupPanel({
       <div className="mt-3 flex gap-1">
         {tabBtn("machine", t("cam.setup.machine", "Machine"))}
         {tabBtn("stock", t("cam.setup.stock", "Stock"))}
-        {!isSheetMachine && tabBtn("wcs", t("cam.setup.wcs", "WCS"))}
+        {/* Sheet machines get the WCS tab too: for laser/plasma the
+            WCS IS the sheet origin — editable fields + bed pick,
+            without the body-face anchor (see the tab body). */}
+        {tabBtn("wcs", t("cam.setup.wcs", "WCS"))}
       </div>
 
       <form
@@ -434,7 +453,7 @@ export function CamSetupPanel({
           {/* ════════════════════════════════════════════════════════
               TAB: Machine
               ════════════════════════════════════════════════════════ */}
-          {(tab === "machine" || (tab === "wcs" && isSheetMachine)) && (
+          {tab === "machine" && (
             <>
               {/* Machine library: saved definitions apply their type,
                   post processor, and (laser) settings to this setup. */}
@@ -894,27 +913,47 @@ export function CamSetupPanel({
               ════════════════════════════════════════════════════════ */}
           {tab === "wcs" && (
             <>
-              {/* Face-anchored WCS: pick a face, the core captures the
-                  TNP-safe witness and resolves the origin from it. */}
-              <div className="flex items-end gap-2">
-                <span className="flex-1 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-                  {t("cam.setup.wcsFaceAnchor", "Face anchor")}
-                </span>
-                <button
-                  type="button"
-                  className={
-                    wcsPickArmed
-                      ? "cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
-                      : "cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
-                  }
-                  disabled={disabled}
-                  onClick={onPickWcsFace}
-                >
-                  {wcsPickArmed
-                    ? t("cam.setup.pickWcsFaceArmed", "Click a face…")
-                    : t("cam.setup.pickWcsFace", "Pick WCS face…")}
-                </button>
-              </div>
+              {isSheetMachine ? (
+                <div className="flex items-end gap-2">
+                  <span className="flex-1 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                    {t("cam.setup.wcsSheetAnchor", "Sheet origin")}
+                  </span>
+                  <button
+                    type="button"
+                    className={
+                      originPickArmed
+                        ? "cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                        : "cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                    }
+                    disabled={disabled}
+                    onClick={onPickOrigin}
+                  >
+                    {originPickArmed
+                      ? t("cam.setup.pickOriginArmed", "Click geometry or the bed…")
+                      : t("cam.setup.pickOrigin", "Pick origin…")}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <span className="flex-1 text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                    {t("cam.setup.wcsFaceAnchor", "Face anchor")}
+                  </span>
+                  <button
+                    type="button"
+                    className={
+                      wcsPickArmed
+                        ? "cad-action-primary px-2 py-1 text-[10px] uppercase tracking-wider"
+                        : "cad-action-ghost px-2 py-1 text-[10px] uppercase tracking-wider"
+                    }
+                    disabled={disabled}
+                    onClick={onPickWcsFace}
+                  >
+                    {wcsPickArmed
+                      ? t("cam.setup.pickWcsFaceArmed", "Click a face…")
+                      : t("cam.setup.pickWcsFace", "Pick WCS face…")}
+                  </button>
+                </div>
+              )}
 
               {/* Origin position */}
               <div className="grid grid-cols-3 gap-2">
@@ -923,57 +962,66 @@ export function CamSetupPanel({
                 <CamNumberField label="Z" value={state.wcsOrigin[2]} disabled={disabled} min={undefined} step="any" onChange={(v) => update({ wcsOrigin: [state.wcsOrigin[0], state.wcsOrigin[1], v], wcsOriginDirty: true })} />
               </div>
 
-              {/* Manual edits pin the position; a face pick re-anchors. */}
+              {/* Manual edits pin the position; a pick re-anchors. */}
               <p className="text-[10px] leading-relaxed text-on-surface-muted">
-                {t(
-                  "cam.setup.wcsManualNote",
-                  "Manually entered origins pin the position; picking a face re-anchors it.",
-                )}
+                {isSheetMachine
+                  ? t(
+                      "cam.setup.wcsSheetNote",
+                      "The WCS is the sheet origin — exported coordinates are relative to this point. Pick a sheet corner or a sketch point on the bed.",
+                    )
+                  : t(
+                      "cam.setup.wcsManualNote",
+                      "Manually entered origins pin the position; picking a face re-anchors it.",
+                    )}
               </p>
 
-              {/* Orientation mode */}
-              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-                {t("cam.setup.orientation", "Orientation")}
-                <Dropdown
-                  className="mt-2 w-full"
-                  value={wcsOrientation}
-                  label={t("cam.setup.orientation", "Orientation")}
-                  options={[
-                    { value: "model", label: t("cam.setup.orientModel", "Model orientation") },
-                    { value: "z_up", label: t("cam.setup.orientZUp", "Z axis up") },
-                    { value: "z_x", label: t("cam.setup.orientZX", "Select Z axis/plane & X axis"), disabled: true },
-                    { value: "z_y", label: t("cam.setup.orientZY", "Select Z axis/plane & Y axis"), disabled: true },
-                    { value: "x_y", label: t("cam.setup.orientXY", "Select X & Y axes"), disabled: true },
-                    { value: "cs", label: t("cam.setup.orientCS", "Select coordinate system"), disabled: true },
-                  ]}
-                  disabled={disabled}
-                  onChange={(value) => onWcsOrientationChange(value)}
-                />
-              </label>
+              {!isSheetMachine && (
+                <>
+                  {/* Orientation mode */}
+                  <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                    {t("cam.setup.orientation", "Orientation")}
+                    <Dropdown
+                      className="mt-2 w-full"
+                      value={wcsOrientation}
+                      label={t("cam.setup.orientation", "Orientation")}
+                      options={[
+                        { value: "model", label: t("cam.setup.orientModel", "Model orientation") },
+                        { value: "z_up", label: t("cam.setup.orientZUp", "Z axis up") },
+                        { value: "z_x", label: t("cam.setup.orientZX", "Select Z axis/plane & X axis"), disabled: true },
+                        { value: "z_y", label: t("cam.setup.orientZY", "Select Z axis/plane & Y axis"), disabled: true },
+                        { value: "x_y", label: t("cam.setup.orientXY", "Select X & Y axes"), disabled: true },
+                        { value: "cs", label: t("cam.setup.orientCS", "Select coordinate system"), disabled: true },
+                      ]}
+                      disabled={disabled}
+                      onChange={(value) => onWcsOrientationChange(value)}
+                    />
+                  </label>
 
-              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
-                {t("cam.setup.orientModelNote", "WCS axes follow the model coordinate system.")}
-              </p>
+                  <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.setup.orientModelNote", "WCS axes follow the model coordinate system.")}
+                  </p>
 
-              {/* Safety / retract plane */}
-              <CamNumberField
-                label={t("cam.setup.safetyHeight", "Safety height (mm)")}
-                value={state.safetyHeight}
-                disabled={disabled}
-                onChange={(v) => update({ safetyHeight: v })}
-              />
-              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
-                {t("cam.setup.safetyNote", "Z height for rapid moves between operations.")}
-              </p>
-              <CamNumberField
-                label={t("cam.setup.retractHeight", "Retract height (mm)")}
-                value={state.retractHeight}
-                disabled={disabled}
-                onChange={(v) => update({ retractHeight: v })}
-              />
-              <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
-                {t("cam.setup.retractNote", "Above the setup origin (WCS Z).")}
-              </p>
+                  {/* Safety / retract plane */}
+                  <CamNumberField
+                    label={t("cam.setup.safetyHeight", "Safety height (mm)")}
+                    value={state.safetyHeight}
+                    disabled={disabled}
+                    onChange={(v) => update({ safetyHeight: v })}
+                  />
+                  <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.setup.safetyNote", "Z height for rapid moves between operations.")}
+                  </p>
+                  <CamNumberField
+                    label={t("cam.setup.retractHeight", "Retract height (mm)")}
+                    value={state.retractHeight}
+                    disabled={disabled}
+                    onChange={(v) => update({ retractHeight: v })}
+                  />
+                  <p className="-mt-2 text-[10px] leading-relaxed text-on-surface-dim">
+                    {t("cam.setup.retractNote", "Above the setup origin (WCS Z).")}
+                  </p>
+                </>
+              )}
             </>
           )}
         </ScrollArea>

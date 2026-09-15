@@ -1,5 +1,6 @@
 #include "core/document/impl/sketch_basic_entity_commands.inc"
 #include "core/document/impl/sketch_fillet_entity_commands.inc"
+#include "core/document/impl/sketch_merge_coincident_points_commands.inc"
 #include "core/document/impl/sketch_chamfer_entity_commands.inc"
 #include "core/document/impl/sketch_text_entity_commands.inc"
 #include "core/document/impl/sketch_entity_dimension_commands.inc"

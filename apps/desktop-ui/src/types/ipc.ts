@@ -39,6 +39,7 @@ import type {
   AddSketchFilletCommand,
   UpdateSketchFilletRadiusCommand,
   DeleteSketchFilletCommand,
+  MergeCoincidentSketchPointsCommand,
   AddSketchChamferCommand,
   UpdateSketchChamferCommand,
   DeleteSketchChamferCommand,
@@ -796,6 +797,20 @@ export interface RemoveSketchProjectionsCommand {
   };
 }
 
+// Redefine sketch plane (Fusion-style "Redefine Sketch Plane"):
+// re-parent an existing sketch onto another origin reference plane,
+// construction plane, or body face. The sketch geometry keeps its
+// sketch-local coordinates; the core clears the dependency alarm and
+// re-validates on the next recompute.
+export interface RedefineSketchPlaneCommand {
+  id: string;
+  type: "redefine_sketch_plane";
+  payload: {
+    feature_id: string;
+    plane_id: string;
+  };
+}
+
 export interface ProjectBodyIntoSketchCommand {
   id: string;
   type: "project_body_into_sketch";
@@ -934,6 +949,7 @@ export type CoreCommand =
   | CamExportGcodeTextCommand
   | DetachBodyProjectionsCommand
   | RemoveSketchProjectionsCommand
+  | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand
   | ProjectProfileIntoSketchCommand
   | ProjectEdgeIntoSketchCommand
@@ -1058,6 +1074,7 @@ export type CoreCommand =
   | AddSketchFilletCommand
   | UpdateSketchFilletRadiusCommand
   | DeleteSketchFilletCommand
+  | MergeCoincidentSketchPointsCommand
   | AddSketchChamferCommand
   | UpdateSketchChamferCommand
   | DeleteSketchChamferCommand

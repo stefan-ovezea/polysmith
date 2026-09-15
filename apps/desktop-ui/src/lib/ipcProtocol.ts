@@ -235,6 +235,20 @@ export function makeRemoveSketchProjectionsCommand(
   };
 }
 
+export function makeRedefineSketchPlaneCommand(
+  featureId: string,
+  planeId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "redefine_sketch_plane",
+    payload: {
+      feature_id: featureId,
+      plane_id: planeId,
+    },
+  };
+}
+
 export function makeProjectBodyIntoSketchCommand(
   bodyId: string,
   mode: "section" | "silhouette",

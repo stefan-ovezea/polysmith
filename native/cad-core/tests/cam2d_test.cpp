@@ -186,13 +186,10 @@ bool test_miter_collinear_propagation() {
 // ── Test 4: round mode miter-trims shallow corners ───────────────
 
 bool test_round_mode_shallow_miter() {
-  // A square with a shallow dent in the bottom edge.  The dent corner
-  // at (5, 0) is a shallow REFLEX corner (~5.7° right turn): the two
-  // offset lines cross INSIDE both truncated segments (the miter
-  // point IS the true boundary), so round mode miter-trims there.
-  // The neighbouring shallow CONVEX corner at (5.1, -0.01) crosses
-  // past the segment ends, so it still gets a join arc — convex
-  // corners never miter.
+  // A square with a shallow dent in the bottom edge.  The dent corners
+  // (~5.7° turns) are NEAR-COLLINEAR: the offset snaps them instead
+  // of emitting a sliver join arc (the micro-arc machine-killer —
+  // see Test 13).  Only the four real square corners keep join arcs.
   const XY pts[] = {{0, 0}, {5, 0}, {5.1, -0.01}, {10, 0}, {10, 10}, {0, 10}};
   std::vector<BaseSegment> base;
   for (size_t i = 0; i < 6; ++i) {
@@ -218,8 +215,9 @@ bool test_round_mode_shallow_miter() {
       ++lines;
     }
   }
-  return expect(joins == 5 && lines == 6,
-                "dent: 5 join arcs, the reflex dent corner miter-trimmed");
+  return expect(joins == 4 && lines == 6,
+                "dent: 4 join arcs (square corners); near-collinear dent "
+                "corners snapped with no sliver arcs");
 }
 
 // ── Test 5: sampling sagitta bound ───────────────────────────────
@@ -569,6 +567,214 @@ bool test_round_join_short_sweep() {
                 "sweep: grown loop reaches the rounded-square extents");
 }
 
+// ── Test 13: near-collinear corners get no micro join arcs ───────
+//
+// Tessellated chord outlines (projected STL geometry) bend by a
+// fraction of a degree at every chord junction.  The kerf-offset
+// round join at such a corner is an arc a few microns long — a
+// machine-killer (user-reported: GRBL stalls on sub-0.05mm arcs).
+// The offset must snap near-collinear corners so no emitted segment
+// is shorter than 0.05mm.
+bool test_no_micro_joins_on_near_collinear_corners() {
+  // Two 2° corners on the bottom edge (tessellation-like), sharp
+  // closing corners elsewhere.
+  const XY pts[] = {{0, 0}, {10, 0}, {20, 0.35}, {30, 1.05}, {30, 10}, {0, 10}};
+  std::vector<BaseSegment> base;
+  for (size_t i = 0; i < 6; ++i) {
+    BaseSegment segment;
+    segment.start = pts[i];
+    segment.end = pts[(i + 1) % 6];
+    base.push_back(segment);
+  }
+  const double d = 0.075;  // kerf/2 — the user's laser kerf
+  std::vector<OffsetSegment> out;
+  if (!expect(offset_closed_loop(base, d, out, /*round_joins=*/true),
+              "micro-join: offset succeeds")) {
+    return false;
+  }
+  if (!expect(loop_is_connected(out), "micro-join: loop connected")) {
+    return false;
+  }
+  for (const auto& segment : out) {
+    double length = 0.0;
+    if (!segment.is_arc) {
+      length = xy_length(segment.end.x - segment.start.x,
+                         segment.end.y - segment.start.y);
+    } else {
+      const double startAngle =
+          std::atan2(segment.start.y - segment.center.y,
+                     segment.start.x - segment.center.x);
+      const double endAngle =
+          std::atan2(segment.end.y - segment.center.y,
+                     segment.end.x - segment.center.x);
+      double sweep = endAngle - startAngle;
+      if (segment.cw && sweep > 0) sweep -= 6.28318530717958647692;
+      if (!segment.cw && sweep < 0) sweep += 6.28318530717958647692;
+      length = segment.radius * std::abs(sweep);
+    }
+    if (!expect(length >= 0.05,
+                "micro-join: no segment shorter than 0.05mm")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// ── Test 14: sharp arc corners miter-trim instead of round-joining ─
+//
+// User-reported regression (laser-cut wheel): every hole bounded by
+// trimmed circles was skipped as "self-intersects after the kerf
+// offset".  The old arc-corner path always drew a round join — for a
+// corner that turns toward the offset side the two offset curves cross
+// ahead of the corner, so the join bulged into the stock and crossed
+// the neighbouring offset arc.  The true boundary is the miter at the
+// crossing.  Corners that turn away keep the round join (rolling ball).
+
+bool test_arc_corner_miter() {
+  // Lens hole: circle A (0,0) r=10 and circle B (12,0) r=10 intersect
+  // at (6,±8).  CW walk (interior on the right): down the right arc of
+  // A through (10,0), up the left arc of B through (2,0).  The tips
+  // are 73.7° on the interior side.
+  const auto make_lens = []() {
+    std::vector<BaseSegment> base;
+    BaseSegment a;
+    a.is_arc = true;
+    a.center = {0.0, 0.0};
+    a.radius = 10.0;
+    a.start = {6.0, 8.0};
+    a.end = {6.0, -8.0};
+    a.ccw = false;
+    base.push_back(a);
+    BaseSegment b;
+    b.is_arc = true;
+    b.center = {12.0, 0.0};
+    b.radius = 10.0;
+    b.start = {6.0, -8.0};
+    b.end = {6.0, 8.0};
+    b.ccw = false;
+    base.push_back(b);
+    return base;
+  };
+
+  // Inward (hole-side) offset: the tips must miter — no join arcs, no
+  // self-intersection, and the whole offset stays inside the lens.
+  const auto lens = make_lens();
+  std::vector<OffsetSegment> in;
+  if (!expect(offset_closed_loop(lens, 0.075, in, /*round_joins=*/true),
+              "arc-miter: inward offset succeeds")) {
+    return false;
+  }
+  if (!expect(loop_is_connected(in), "arc-miter: inward loop connected")) {
+    return false;
+  }
+  int joins = 0;
+  for (const auto& segment : in) {
+    if (segment.is_join) {
+      ++joins;
+    }
+  }
+  if (!expect(joins == 0, "arc-miter: no join arcs at the sharp tips")) {
+    return false;
+  }
+  const auto inSamples = sample_offset_loop(in, /*tolerance=*/0.05);
+  if (!expect(!offset_loop_self_intersects(inSamples),
+              "arc-miter: inward offset must not self-intersect")) {
+    return false;
+  }
+  for (const auto& p : inSamples) {
+    if (xy_length(p.x, p.y) > 10.0 + 1e-9 &&
+        xy_length(p.x - 12.0, p.y) > 10.0 + 1e-9) {
+      std::cerr << "  inward sample outside the lens: (" << p.x << ", "
+                << p.y << ")\n";
+      return expect(false, "arc-miter: inward offset stays inside the lens");
+    }
+  }
+
+  // Outward (stock-side) offset: the tips are reflex there — the round
+  // join is the rolling ball and must survive, still without
+  // self-intersecting, and no sample may fall inside the lens.
+  std::vector<OffsetSegment> out;
+  if (!expect(offset_closed_loop(lens, -0.075, out, /*round_joins=*/true),
+              "arc-miter: outward offset succeeds")) {
+    return false;
+  }
+  if (!expect(loop_is_connected(out), "arc-miter: outward loop connected")) {
+    return false;
+  }
+  joins = 0;
+  for (const auto& segment : out) {
+    if (segment.is_join) {
+      ++joins;
+    }
+  }
+  if (!expect(joins == 2, "arc-miter: outward keeps join arcs at the tips")) {
+    return false;
+  }
+  const auto outSamples = sample_offset_loop(out, /*tolerance=*/0.05);
+  if (!expect(!offset_loop_self_intersects(outSamples),
+              "arc-miter: outward offset must not self-intersect")) {
+    return false;
+  }
+  for (const auto& p : outSamples) {
+    if (xy_length(p.x, p.y) < 10.0 - 1e-9 &&
+        xy_length(p.x - 12.0, p.y) < 10.0 - 1e-9) {
+      std::cerr << "  outward sample inside the lens: (" << p.x << ", "
+                << p.y << ")\n";
+      return expect(false, "arc-miter: outward offset stays outside the lens");
+    }
+  }
+
+  // The user's wheel hole, exact literals (one petal hole between the
+  // hub circles, trimmed by two row-2 circles).  Must offset cleanly
+  // at the laser kerf.
+  std::vector<BaseSegment> wheel;
+  BaseSegment w1;
+  w1.is_arc = true;
+  w1.center = {-105.08492923935869, 36.344119490276988};
+  w1.radius = 67.725904377979504;
+  w1.start = {-42.797058105468253, 9.7543182373047248};
+  w1.end = {-49.720581054687251, -2.6634063720702734};
+  w1.ccw = false;
+  wheel.push_back(w1);
+  BaseSegment w2;
+  w2.is_arc = true;
+  w2.center = {-54.715822198817875, 52.109290715970374};
+  w2.radius = 54.999994801713491;
+  w2.start = {-49.720581054687251, -2.6634063720702734};
+  w2.end = {-75.138923016298421, 1.0417130934194034};
+  w2.ccw = false;
+  wheel.push_back(w2);
+  BaseSegment w3;
+  w3.is_arc = true;
+  w3.center = {-105.23047599194608, 63.324531239794212};
+  w3.radius = 69.171171717273978;
+  w3.start = {-75.138923016298421, 1.0417130934194034};
+  w3.end = {-62.631344404574548, 8.8271461214015261};
+  w3.ccw = true;
+  wheel.push_back(w3);
+  BaseSegment w4;
+  w4.is_arc = true;
+  w4.center = {-54.715822198817875, 52.109290715970374};
+  w4.radius = 43.999994687442772;
+  w4.start = {-62.631344404574548, 8.8271461214015261};
+  w4.end = {-42.797058105468253, 9.7543182373047248};
+  w4.ccw = true;
+  wheel.push_back(w4);
+
+  std::vector<OffsetSegment> wheelOut;
+  if (!expect(offset_closed_loop(wheel, 0.075, wheelOut,
+                                 /*round_joins=*/true),
+              "arc-miter: wheel hole offset succeeds")) {
+    return false;
+  }
+  if (!expect(loop_is_connected(wheelOut), "arc-miter: wheel loop connected")) {
+    return false;
+  }
+  const auto wheelSamples = sample_offset_loop(wheelOut, /*tolerance=*/0.05);
+  return expect(!offset_loop_self_intersects(wheelSamples),
+                "arc-miter: wheel hole must not self-intersect");
+}
+
 }  // namespace
 
 int main() {
@@ -604,6 +810,9 @@ int main() {
   run("Test 10: self-intersection scan", test_self_intersection_scan);
   run("Test 11: outside clip = subtraction", test_clip_segment_subtraction);
   run("Test 12: join arcs sweep short", test_round_join_short_sweep);
+  run("Test 13: near-collinear corners get no micro joins",
+      test_no_micro_joins_on_near_collinear_corners);
+  run("Test 14: sharp arc corners miter-trim", test_arc_corner_miter);
 
   if (allPassed) {
     std::cout << "cam2d_test passed\n";

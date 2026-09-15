@@ -590,6 +590,9 @@ DocumentState DocumentManager::cam_operation_set_scope(
         log_warn("cam", "set scope on sketch '" + sketch->name +
                             "' which has no profile regions");
       }
+      // Whole-sketch capture by definition — the scope dropdown must
+      // show the sketch, not a custom selection, after this retarget.
+      existing.geometry_scope = "sketch";
       existing.status = "needs_regenerate";
       existing.status_message.clear();
       existing.toolpath_cache.reset();
@@ -629,8 +632,15 @@ DocumentState DocumentManager::cam_operation_set_generated(
   require_document();
   for (auto& existing : document_->cam.operations) {
     if (existing.op_id == operation_id) {
+      // The whole-op replace must not downgrade a persisted custom
+      // scope: generation payloads are built from the UI's document
+      // copy, which carries the field today, but keep the stored
+      // value authoritative so an older payload can never silently
+      // flip "selected" back to the default.
+      const std::string scope = existing.geometry_scope;
       existing = op;
       existing.op_id = operation_id;  // the id is the lookup key, not the payload
+      existing.geometry_scope = scope;
       existing.status = "generated";
       existing.status_message.clear();
       // Deliberately no bump_geometry_revision: generation is derived

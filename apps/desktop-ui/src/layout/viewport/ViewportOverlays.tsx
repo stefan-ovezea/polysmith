@@ -18,12 +18,43 @@ interface GridToggleToolbarProps {
   active: boolean;
   label: string;
   onToggle: () => void;
+  // Optional second toggle (constraint glyphs) rendered in the same
+  // mini toolbar — shown only in sketch mode.
+  secondToggle?: {
+    active: boolean;
+    label: string;
+    onToggle: () => void;
+  };
+}
+
+export function ConstraintsMiniIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-[18px] w-[18px]"
+      viewBox="0 0 16 16"
+      fill="none"
+    >
+      <path
+        d="M3 5.5C3 4.4 3.9 3.5 5 3.5H11C12.1 3.5 13 4.4 13 5.5V10.5C13 11.6 12.1 12.5 11 12.5H5C3.9 12.5 3 11.6 3 10.5V5.5Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+      />
+      <path
+        d="M6.2 6.8V9.2M9.8 6.8V9.2"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 export function GridToggleToolbar({
   active,
   label,
   onToggle,
+  secondToggle,
 }: GridToggleToolbarProps) {
   return (
     <div className="pointer-events-auto absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
@@ -43,6 +74,23 @@ export function GridToggleToolbar({
             <GridMiniIcon />
           </button>
         </ToolbarTooltip>
+        {secondToggle ? (
+          <ToolbarTooltip label={secondToggle.label}>
+            <button
+              type="button"
+              className={
+                secondToggle.active
+                  ? "cad-view-mini-button cad-view-mini-button-active"
+                  : "cad-view-mini-button"
+              }
+              aria-label={secondToggle.label}
+              aria-pressed={secondToggle.active}
+              onClick={secondToggle.onToggle}
+            >
+              <ConstraintsMiniIcon />
+            </button>
+          </ToolbarTooltip>
+        ) : null}
       </div>
     </div>
   );

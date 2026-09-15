@@ -377,7 +377,7 @@ CamGenerateResult generate_laser_cut_toolpath(
       // cutting them would trace a visibly polygonal hole path next
       // to the smooth circle outline.  The walk is CW (hole interior
       // on the right) so the auto kerf still offsets inward, into
-      // the scrap side.  Non-circle holes keep the sampled points.
+      // the scrap side.
       const auto circleHole = std::find_if(
           region.circle_holes.begin(), region.circle_holes.end(),
           [&](const auto& entry) {
@@ -393,6 +393,18 @@ CamGenerateResult generate_laser_cut_toolpath(
         full.ccw = false;
         holeBase.push_back(full);
         holeCentroid = full.center;
+      } else if (holeIndex < region.inner_loop_edges.size() &&
+                 !region.inner_loop_edges[holeIndex].empty() &&
+                 cam_planning::build_base_segments_from_edges(
+                     region.inner_loop_edges[holeIndex], holeBase)) {
+        // Exact hole edges (new profiles) — non-circle holes cut as
+        // true line/arc segments instead of the polygonal chord
+        // sample.  Spline/ellipse holes still fall back to points.
+        std::vector<XY> holePointList;
+        for (const auto& segment : holeBase) {
+          holePointList.push_back(segment.start);
+        }
+        holeCentroid = xy_centroid(holePointList);
       } else {
         cam_planning::build_base_segments_from_points(holePoints, holeBase);
         std::vector<XY> holePointList;
@@ -606,14 +618,23 @@ CamGenerateResult generate_laser_cut_toolpath(
   };
   compute_nesting(ordered);
 
-  // Warn once when a selected loop coincides with another region's
-  // loop ring (nested-but-separate profiles are legitimately distinct
-  // parts; only coincident geometry is genuinely cut twice).
+  // A selected loop that coincides with another region's loop ring is
+  // genuinely cut twice.  Whole-sketch capture is SUPPOSED to skip
+  // standalone regions that duplicate another region's holes, but the
+  // capture matcher only recognized circular holes — sketch-scoped ops
+  // saved before that fix still carry the duplicates.  For them the
+  // generator drops the standalone outer (its kerf offset would cut
+  // into the stock) and keeps the HOLE cut (kerf on the scrap side).
+  // Explicitly selected regions are honored as-is — nested separate
+  // parts are a legitimate design — and only warned.
   // `hole_signature`/`matches_hole` at capture time stay the single
   // hole-matching implementation for attestation; this generate-time
-  // scan surfaces the same condition on the planned loops.
+  // pass heals operations captured before the capture matcher
+  // recognized non-circular holes.
+  const bool dedupe = op.geometry_scope != "selected";
   {
     int duplicates = 0;
+    std::vector<bool> drop(ordered.size(), false);
     for (size_t i = 0; i < ordered.size(); ++i) {
       for (size_t j = i + 1; j < ordered.size(); ++j) {
         if (ordered[i].group == ordered[j].group) {
@@ -630,15 +651,37 @@ CamGenerateResult generate_laser_cut_toolpath(
         if (distance < 0.05 + 0.02 * radius &&
             std::abs(ratio - 1.0) < 0.25) {
           ++duplicates;
+          if (dedupe) {
+            if (!ordered[i].is_hole && ordered[j].is_hole) {
+              drop[i] = true;  // keep the hole cut, drop the outer
+            } else {
+              drop[j] = true;
+            }
+          }
           break;
         }
       }
     }
     if (duplicates > 0) {
-      result.warnings.push_back(
-          std::to_string(duplicates) +
-          " selected profile(s) duplicate holes of other regions — they may "
-          "be cut twice.");
+      if (dedupe) {
+        std::vector<PlannedLoop> kept;
+        kept.reserve(ordered.size());
+        for (size_t i = 0; i < ordered.size(); ++i) {
+          if (!drop[i]) {
+            kept.push_back(std::move(ordered[i]));
+          }
+        }
+        ordered = std::move(kept);
+        result.warnings.push_back(
+            std::to_string(duplicates) +
+            " selected profile(s) duplicate holes of other regions — they are "
+            "cut once.");
+      } else {
+        result.warnings.push_back(
+            std::to_string(duplicates) +
+            " selected profile(s) duplicate holes of other regions — they "
+            "may be cut twice.");
+      }
     }
   }
 
@@ -920,6 +963,35 @@ CamGenerateResult generate_laser_cut_toolpath(
     result.warnings.push_back(
         std::to_string(skippedDegenerate) +
         " contour(s) were too small to sample and were skipped.");
+  }
+
+  // Collapse repeated identical warnings into one line with a count —
+  // the per-loop pierce notes otherwise flood the Logs panel once per
+  // contour (a 36-hole part: 72 lines of two messages).
+  {
+    std::vector<std::string> collapsed;
+    std::vector<int> counts;
+    for (const auto& warning : result.warnings) {
+      bool seen = false;
+      for (size_t k = 0; k < collapsed.size(); ++k) {
+        if (collapsed[k] == warning) {
+          ++counts[k];
+          seen = true;
+          break;
+        }
+      }
+      if (!seen) {
+        collapsed.push_back(warning);
+        counts.push_back(1);
+      }
+    }
+    result.warnings.clear();
+    for (size_t k = 0; k < collapsed.size(); ++k) {
+      result.warnings.push_back(
+          counts[k] > 1
+              ? collapsed[k] + " (×" + std::to_string(counts[k]) + ")"
+              : collapsed[k]);
+    }
   }
 
   result.toolpath = std::move(toolpath);

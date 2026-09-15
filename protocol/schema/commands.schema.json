@@ -128,6 +128,7 @@
         "project_profile_into_sketch",
         "project_vertex_into_sketch",
         "redo",
+        "redefine_sketch_plane",
         "reenter_sketch",
         "remove_sketch_projections",
         "rename_feature",

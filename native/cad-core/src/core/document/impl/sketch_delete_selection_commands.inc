@@ -193,6 +193,8 @@ DocumentState DocumentManager::delete_sketch_selection(
   for (const auto& fillet : parameters.fillets) {
     if (id_in_set(line_ids, fillet.line_a_id) ||
         id_in_set(line_ids, fillet.line_b_id) ||
+        id_in_set(arc_ids, fillet.arc_a_id) ||
+        id_in_set(arc_ids, fillet.arc_b_id) ||
         id_in_set(arc_ids, fillet.arc_id) ||
         id_in_set(selected_point_ids, fillet.corner_vertex_id) ||
         id_in_set(selected_point_ids, fillet.trim_a_vertex_id) ||

@@ -16,6 +16,14 @@
   // load) can never leave a dangling highlight. Pure selection
   // mutators do not run it.
   void prune_document_selection();
+  // Re-derive every sketch id counter from the live feature history
+  // (monotonic — never lowers).  Sketch-layer minting (array copies,
+  // trims, offsets — all via next_trim_entity_index) bypasses these
+  // counters, so a later document-layer mint (fillet / chamfer) would
+  // otherwise reuse an id already in the sketch and corrupt wires.
+  // Called from bump_geometry_revision — the choke point every
+  // mutator passes through.
+  void sync_sketch_id_counters();
 
   int next_document_id_ = 1;
   int next_feature_id_ = 1;

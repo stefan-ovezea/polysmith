@@ -406,6 +406,62 @@ bool test_profile_click_replaces_entity_selection() {
                 "delete removes only the surface boundary");
 }
 
+// CAM re-pick semantics: an outline click on a boundary SHARED by two
+// regions toggles every owning region by default.  `smallest_only`
+// (the CAM flow) must reduce it to the smallest owning region so an
+// outline click behaves like an interior click — the plate must not
+// jump in and out of the selection when the user picks spokes.
+bool test_shared_boundary_click_smallest_only() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  // Divider at y=15: top region 40x5, bottom region 40x15.
+  document = manager.add_sketch_line(0.0, 15.0, 40.0, 15.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string divider_id = sketch.lines.back().id;
+  if (!expect(sketch.profiles.size() == 2,
+              "shared-boundary: divider splits the rectangle into 2")) {
+    return false;
+  }
+
+  // Default behaviour: both owning regions selected.
+  document = manager.select_sketch_profile_by_entity(divider_id, false);
+  if (!expect(document.selected_sketch_profile_ids.size() == 2,
+              "shared-boundary: default selects both regions")) {
+    return false;
+  }
+
+  // CAM smallest-only: only the smaller (top, 40x5) region.
+  document = manager.select_sketch_profile_by_entity(
+      divider_id, false, /*smallest_only=*/true);
+  if (!expect(document.selected_sketch_profile_ids.size() == 1,
+              "shared-boundary: smallest_only selects one region")) {
+    return false;
+  }
+  const auto& profiles = document.feature_history.back().sketch_parameters->profiles;
+  const auto selected = std::find_if(
+      profiles.begin(), profiles.end(), [&](const auto& profile) {
+        return profile.id == document.selected_sketch_profile_ids.front();
+      });
+  if (!expect(selected != profiles.end(),
+              "shared-boundary: selected profile exists")) {
+    return false;
+  }
+  // Shoelace area of the selected region: the smaller (top) region is
+  // 40x5 = 200; the larger (bottom) is 40x15 = 600.
+  double twice_area = 0.0;
+  const auto& pts = selected->points;
+  for (size_t i = 0; i < pts.size(); ++i) {
+    const auto& a = pts[i];
+    const auto& b = pts[(i + 1) % pts.size()];
+    twice_area += a.x * b.y - b.x * a.y;
+  }
+  return expect(std::abs(twice_area) / 2.0 < 400.0,
+                "shared-boundary: smallest_only picks the smaller (top) region");
+}
+
 }  // namespace
 
 #define RUN_TEST(name)                    \
@@ -428,6 +484,7 @@ int main() {
   RUN_TEST(test_live_selection_survives_move);
   RUN_TEST(test_profile_click_replaces_entity_selection);
   RUN_TEST(test_delete_empty_ids_resolves_current_selection);
+  RUN_TEST(test_shared_boundary_click_smallest_only);
 
   std::cout << "cad_core_selection_test passed\n";
   return 0;

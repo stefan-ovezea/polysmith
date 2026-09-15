@@ -220,8 +220,9 @@ export function createViewportVisualStateActions({
                 : themeColor("--color-tertiary-plane-edge", "#ffe784"),
       );
       material.opacity = isSelected || isHovered ? 1 : 0.95;
-      const scale = isSelected ? 1.35 : isHovered ? 1.25 : 1;
-      mesh.scale.setScalar(scale);
+      // Scale is owned by the ViewportPanel render loop — points stay
+      // a constant SCREEN size (hover/selection get a pixel boost
+      // there), not a world-space size that balloons on zoom-in.
     }
   }
 

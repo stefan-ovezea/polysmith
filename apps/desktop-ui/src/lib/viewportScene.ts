@@ -35,6 +35,7 @@ import type {
   SketchVertexScene,
   SketchPolygonScene,
   SketchProfileScene,
+  ProfileBoundaryEdgeScene,
   SolidFaceScene,
   SceneEdge,
   SceneVertex,
@@ -647,6 +648,30 @@ function makeSketchProfile(profile: ViewportSketchProfile): SketchProfileScene {
       centerY: hole.center_y,
       radius: hole.radius,
     })),
+    boundaryEdges: (profile.boundary_edges ?? []).map((edge) => ({
+      entityId: edge.entity_id,
+      entityKind: edge.entity_kind,
+      paramStart: edge.param_start,
+      paramEnd: edge.param_end,
+      start: [edge.start_x, edge.start_y],
+      end: [edge.end_x, edge.end_y],
+      center: [edge.center_x, edge.center_y],
+      radius: edge.radius,
+      ccw: edge.ccw,
+    })),
+    innerLoopEdges: (profile.inner_loop_edges ?? []).map((loop) =>
+      loop.map((edge) => ({
+        entityId: edge.entity_id,
+        entityKind: edge.entity_kind,
+        paramStart: edge.param_start,
+        paramEnd: edge.param_end,
+        start: [edge.start_x, edge.start_y],
+        end: [edge.end_x, edge.end_y],
+        center: [edge.center_x, edge.center_y],
+        radius: edge.radius,
+        ccw: edge.ccw,
+      })),
+    ),
     start: [profile.start_x, profile.start_y],
     width: profile.width,
     height: profile.height,
@@ -704,6 +729,30 @@ function makeSketchProfileFromDocument(
       centerY: hole.center_y,
       radius: hole.radius,
     })),
+    boundaryEdges: (profile.boundary_edges ?? []).map((edge) => ({
+      entityId: edge.entity_id,
+      entityKind: edge.entity_kind,
+      paramStart: edge.param_start,
+      paramEnd: edge.param_end,
+      start: [edge.start_x, edge.start_y],
+      end: [edge.end_x, edge.end_y],
+      center: [edge.center_x, edge.center_y],
+      radius: edge.radius,
+      ccw: edge.ccw,
+    })),
+    innerLoopEdges: (profile.inner_loop_edges ?? []).map((loop) =>
+      loop.map((edge) => ({
+        entityId: edge.entity_id,
+        entityKind: edge.entity_kind,
+        paramStart: edge.param_start,
+        paramEnd: edge.param_end,
+        start: [edge.start_x, edge.start_y],
+        end: [edge.end_x, edge.end_y],
+        center: [edge.center_x, edge.center_y],
+        radius: edge.radius,
+        ccw: edge.ccw,
+      })),
+    ),
     start: [profile.center_x, profile.center_y],
     width: 0,
     height: 0,
@@ -712,14 +761,91 @@ function makeSketchProfileFromDocument(
   };
 }
 
-// The hole loop a profile displays at `index`: for exact circle holes
-// (circleHoles) this is a dense sample of the circle — the stored
-// innerLoops points are only a 16-point chord outline and would show
-// as a visible polygon next to the smooth standalone circle region.
+// Dense polyline of a list of exact boundary edges (walk order).
+// The chord-sampled profilePoints facets each arc at a fixed low
+// count and reads as a visible polygon at zoom; this resamples the
+// exact line/arc edges at a sagitta bound so the fill and outline
+// look identical to true arcs.
+function sampleBoundaryEdges(
+  edges: ProfileBoundaryEdgeScene[],
+): [number, number][] {
+  const points: [number, number][] = [];
+  const push = (x: number, y: number) => {
+    const last = points[points.length - 1];
+    // Trim-engine noise (~0.006mm) can leave a hairline gap between
+    // consecutive edges — dedupe within 1e-9 so the loop stays clean.
+    if (!last || Math.hypot(last[0] - x, last[1] - y) > 1e-9) {
+      points.push([x, y]);
+    }
+  };
+  for (const edge of edges) {
+    push(edge.start[0], edge.start[1]);
+    if (edge.entityKind === "line") {
+      push(edge.end[0], edge.end[1]);
+      continue;
+    }
+    if (edge.entityKind !== "arc" && edge.entityKind !== "circle") {
+      // Ellipse/spline edges: the stored endpoints are the fallback.
+      push(edge.end[0], edge.end[1]);
+      continue;
+    }
+    const [cx, cy] = edge.center;
+    const startAngle = Math.atan2(edge.start[1] - cy, edge.start[0] - cx);
+    const endAngle = Math.atan2(edge.end[1] - cy, edge.end[0] - cx);
+    let sweep = endAngle - startAngle;
+    if (edge.ccw) {
+      if (sweep < 0) sweep += 2 * Math.PI;
+    } else if (sweep > 0) {
+      sweep -= 2 * Math.PI;
+    }
+    if (Math.abs(sweep) < 1e-9 && edge.entityKind === "circle") {
+      // Full-circle edge (start == end): sweep the whole turn.
+      sweep = edge.ccw ? 2 * Math.PI : -2 * Math.PI;
+    }
+    // Sagitta bound 0.005mm: the chord deviation stays invisible at
+    // any zoom; cap the per-edge count so degenerate slivers can't
+    // explode the mesh.
+    const sagittaBound = 0.005;
+    const maxStep = Math.min(
+      Math.PI / 2,
+      Math.max(
+        (2 * Math.PI) / 180,
+        2 * Math.acos(Math.max(0, 1 - sagittaBound / Math.max(edge.radius, 1e-6))),
+      ),
+    );
+    const steps = Math.max(2, Math.min(256, Math.ceil(Math.abs(sweep) / maxStep)));
+    for (let i = 1; i < steps; i += 1) {
+      const angle = startAngle + sweep * (i / steps);
+      push(cx + edge.radius * Math.cos(angle), cy + edge.radius * Math.sin(angle));
+    }
+    push(edge.end[0], edge.end[1]);
+  }
+  return points;
+}
+
+// Exact outer-boundary contour when the profile carries boundary
+// edges (every new profile does); falls back to the legacy chord
+// sample.  Circle-kind profiles have no boundary edges and are
+// handled by their caller.
+export function exactProfileContour(
+  profile: SketchProfileScene,
+): [number, number][] {
+  if (profile.boundaryEdges.length > 0) {
+    return sampleBoundaryEdges(profile.boundaryEdges);
+  }
+  return profile.profilePoints;
+}
+
+// The hole loop a profile displays at `index`.  Priority order:
+// exact per-hole boundary edges (true arcs), exact circle-hole
+// descriptors, and last the stored 16-point chord outline.
 export function smoothProfileHoleLoop(
   profile: SketchProfileScene,
   index: number,
 ): [number, number][] {
+  if (profile.innerLoopEdges[index]?.length) {
+    return sampleBoundaryEdges(profile.innerLoopEdges[index]);
+  }
   const circle = profile.circleHoles.find(
     (entry) => entry.loopIndex === index,
   );
@@ -753,7 +879,7 @@ function profileContour(profile: SketchProfileScene): [number, number][] {
     }
     return points;
   }
-  return profile.profilePoints;
+  return exactProfileContour(profile);
 }
 
 function profileContainmentPoint(profile: SketchProfileScene): [number, number] {
