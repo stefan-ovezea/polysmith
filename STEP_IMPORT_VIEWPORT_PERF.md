@@ -52,18 +52,24 @@ picking.
 
 ## Known regression — must be resolved before this can land on dev
 
-Oversized imports now have **no per-face pick entries**, which breaks two
-workflows that previously worked:
+Step 2 (the pick-entry threshold) removed the per-face pick entries for
+oversized imports, which breaks two workflows. **Both worked after step 1**
+(the load was fast and the viewport sluggish, but sketch-on-face and the
+silhouette projection of the board still functioned — confirmed by the user who
+tested the intermediate state):
 
 1. **Sketch on body face** — cannot start a sketch on a face of the imported
    board (face placement resolves through per-face pick entries).
 2. **Project tool on the body** — projecting the board's silhouette/section into
-   a sketch does nothing. Before these modifications the silhouette projection
-   of the board worked very well and was a valued workflow. The UI's body-hit
-   routing (`handleProjectFacePick` in
+   a sketch does nothing. Before step 2 the silhouette projection of the board
+   worked very well and was a valued workflow. The UI's body-hit routing
+   (`handleProjectFacePick` in
    `apps/desktop-ui/src/app/viewportFaceSelection.ts`) only maps body-id clicks
    to `project_body_into_sketch` for `mesh_import`/`mesh_to_body` kinds; it needs
    `step_import`/`iges_import` added.
+
+Since step 1 alone (commit 873ff65) is a pure speed win with no behavior change,
+it can be kept independently of step 2 if desired.
 
 Ideas for the follow-up: emit decimated per-face pick proxies for oversized
 imports (precedent: `kMaxMeshFacePickTriangles` decimation for `mesh_to_body`),
