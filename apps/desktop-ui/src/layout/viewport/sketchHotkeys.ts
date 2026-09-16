@@ -4,6 +4,7 @@ import { matchesHotkey } from "@/config";
 import type { AppHotkeys } from "@/config/types";
 import type { DocumentState, SketchTool } from "@/types";
 import { isDraftDimensionTool, type DimensionLabelDragState } from "./draftDimensions";
+import type { SelectionDrag } from "./selectionGeometry";
 import type { SelectedConstraintState } from "./contextMenuState";
 
 interface MutableRef<T> {
@@ -34,6 +35,12 @@ interface BindSketchHotkeysParams {
   controlsRef: MutableRef<{ enabled: boolean } | null>;
   selectedConstraintRef: MutableRef<SelectedConstraintState | null>;
   sketchToolConstructionRef: MutableRef<boolean>;
+  // The marquee drag state. Delete is ignored while a drag is in
+  // progress: the selection isn't applied until pointer-up, so a
+  // delete would resolve the PRE-marquee selection (e.g. the profile
+  // selected before the drag — historically this deleted the outside
+  // contour while the marquee'd entities survived).
+  selectionDragRef: MutableRef<SelectionDrag | null>;
   deleteSketchDimensionRef: MutableRef<(dimensionId: string) => Promise<void>>;
   clearSketchConstraintRef: MutableRef<
     (
@@ -246,6 +253,7 @@ function handleSketchDeleteKey(
     confirmDeleteSketchSelectionRef,
     setSelectedConstraint,
     cancelActiveSketchDraft,
+    selectionDragRef,
   }: Omit<BindSketchHotkeysParams, "activeSketchPlaneId">,
 ) {
   if (event.code === "Escape") {
@@ -261,6 +269,13 @@ function handleSketchDeleteKey(
 
   if (event.code !== "Delete" && event.code !== "Backspace") {
     return false;
+  }
+
+  // Ignore Delete while a marquee drag is in progress — see the
+  // selectionDragRef field comment.
+  if (selectionDragRef.current?.active) {
+    event.preventDefault();
+    return true;
   }
 
   event.preventDefault();

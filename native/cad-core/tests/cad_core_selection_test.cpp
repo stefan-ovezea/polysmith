@@ -272,6 +272,10 @@ bool test_load_prunes_orphans() {
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
   DocumentState document = manager.add_sketch_line(0.0, 0.0, 30.0, 0.0);
+  // Draws leave nothing selected (the selection rule); select the
+  // line explicitly so the load round-trip has a LIVE selection to
+  // preserve.
+  document = manager.select_sketch_entity("line-1", false);
 
   // The document legitimately selects the new line; inject orphaned
   // selections alongside and serialize the MODIFIED snapshot directly
@@ -406,6 +410,263 @@ bool test_profile_click_replaces_entity_selection() {
                 "delete removes only the surface boundary");
 }
 
+// Regression for the marquee flood + stale-profile delete race: the
+// old UI fired one select command per marquee'd entity (a 151-entity
+// marquee = 151 commands, each answered with a full document payload)
+// — the highlight took seconds, and a Delete pressed while the flood
+// was in flight resolved the PRE-marquee profile selection and
+// deleted the outside contour while the marquee'd entities survived.
+// The batch command replaces the selection in ONE step, and the
+// hotkey delete (empty ids) then resolves it.
+bool test_batch_select_replaces_profile_selection() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  // Internal geometry to marquee — well inside the rectangle.
+  document = manager.add_sketch_circle(10.0, 10.0, 3.0);
+  document = manager.add_sketch_circle(25.0, 10.0, 3.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string profile_id = sketch.profiles.front().id;
+  const std::string circle_a = sketch.circles[0].id;
+  const std::string circle_b = sketch.circles[1].id;
+
+  // The pre-marquee state: an interior click selected the surface
+  // (the outside contour).
+  document = manager.select_sketch_profile(profile_id, false);
+  if (!expect(document.selected_sketch_profile_ids.size() == 1,
+              "batch: profile selected (the pre-marquee state)")) {
+    return false;
+  }
+
+  // The marquee: ONE batch command selects both circles and clears
+  // the profile.
+  document = manager.select_sketch_entities({circle_a, circle_b}, false);
+  if (!expect(!document.selected_sketch_profile_id.has_value() &&
+                  document.selected_sketch_profile_ids.empty(),
+              "batch: profile selection cleared")) {
+    return false;
+  }
+  if (!expect(document.selected_sketch_entity_ids.size() == 2,
+              "batch: both entities selected")) {
+    return false;
+  }
+
+  // The hotkey delete resolves the batch selection: the circles go,
+  // the perimeter lines survive.
+  document = manager.delete_sketch_selection({}, {}, {});
+  const auto& after = document.feature_history.back().sketch_parameters.value();
+  const bool circles_gone = after.circles.empty();
+  const bool perimeter_survives = after.lines.size() == 4;
+  return expect(circles_gone && perimeter_survives,
+                "batch: empty delete removes the marquee'd entities, "
+                "the perimeter survives");
+}
+
+// Batch additive toggle + unknown-id skipping (a stale scene snapshot
+// can carry ids that no longer exist — one bad id must not abort the
+// batch).
+bool test_batch_select_additive_and_unknown_ids() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_circle(10.0, 10.0, 3.0);
+  document = manager.add_sketch_circle(25.0, 10.0, 3.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string circle_a = sketch.circles[0].id;
+  const std::string circle_b = sketch.circles[1].id;
+
+  document = manager.select_sketch_entities({circle_a, "circle-999"}, false);
+  if (!expect(document.selected_sketch_entity_ids.size() == 1 &&
+                  document.selected_sketch_entity_ids.front() == circle_a,
+              "batch: unknown id skipped, valid id selected")) {
+    return false;
+  }
+
+  // Additive batch: the new id joins, the repeated id toggles OUT.
+  document = manager.select_sketch_entities({circle_a, circle_b}, true);
+  if (!expect(document.selected_sketch_entity_ids.size() == 1 &&
+                  document.selected_sketch_entity_ids.front() == circle_b,
+              "batch: additive joins circle_b and toggles circle_a off")) {
+    return false;
+  }
+  return true;
+}
+
+// The marquee resolves CORE-side (select_sketch_rect): sketch-local
+// corners + the screen drag direction. The old UI-side screen-space
+// collection walked the scene data with projection math — a stale
+// scene mis-collected and the following delete removed the perimeter
+// instead of the marquee'd entities. The core sees the exact
+// geometry, so the marquee can never disagree with what gets deleted.
+bool test_rect_select_window_and_crossing() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_circle(10.0, 10.0, 3.0);
+  document = manager.add_sketch_circle(25.0, 10.0, 3.0);
+  // A divider line that CROSSES the circles' window rect.
+  document = manager.add_sketch_line(15.0, 0.0, 15.0, 20.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string circle_a = sketch.circles[0].id;
+  const std::string circle_b = sketch.circles[1].id;
+
+  // Window mode over both circles (rect 5,5 -> 30,15): the circles'
+  // bounding squares are fully inside; the rectangle perimeter and
+  // the divider (crossing the rect, endpoints outside) stay out.
+  document = manager.select_sketch_rect(5.0, 5.0, 30.0, 15.0,
+                                        /*window_mode=*/true, false);
+  if (!expect(document.selected_sketch_entity_ids.size() == 2 &&
+                  std::find(document.selected_sketch_entity_ids.begin(),
+                            document.selected_sketch_entity_ids.end(),
+                            circle_a) !=
+                      document.selected_sketch_entity_ids.end() &&
+                  std::find(document.selected_sketch_entity_ids.begin(),
+                            document.selected_sketch_entity_ids.end(),
+                            circle_b) !=
+                      document.selected_sketch_entity_ids.end(),
+              "rect window: only the two fully-inside circles selected")) {
+    return false;
+  }
+
+  // Crossing mode over the same rect: the divider line's segment
+  // crosses it, so it joins the selection.
+  document = manager.select_sketch_rect(5.0, 5.0, 30.0, 15.0,
+                                        /*window_mode=*/false, false);
+  const auto& lines = document.feature_history.back().sketch_parameters->lines;
+  const bool divider_selected = std::any_of(
+      document.selected_sketch_entity_ids.begin(),
+      document.selected_sketch_entity_ids.end(), [&](const std::string& id) {
+        return std::any_of(lines.begin(), lines.end(),
+                           [&](const auto& line) {
+                             return line.id == id && line.start_x == 15.0;
+                           });
+      });
+  return expect(document.selected_sketch_entity_ids.size() == 3 &&
+                     divider_selected,
+                 "rect crossing: the crossing divider joins the circles");
+}
+
+// The user's regression end-to-end: a surface click selects the
+// profile, a window marquee over the internal circles replaces it,
+// and the hotkey delete removes the circles while the perimeter
+// survives.
+bool test_rect_select_then_delete_keeps_perimeter() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_circle(10.0, 10.0, 3.0);
+  document = manager.add_sketch_circle(25.0, 10.0, 3.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string profile_id = sketch.profiles.front().id;
+
+  document = manager.select_sketch_profile(profile_id, false);
+  if (!expect(document.selected_sketch_profile_ids.size() == 1,
+              "rect-delete: profile selected (the pre-marquee state)")) {
+    return false;
+  }
+
+  document = manager.select_sketch_rect(5.0, 5.0, 30.0, 15.0,
+                                        /*window_mode=*/true, false);
+  if (!expect(document.selected_sketch_entity_ids.size() == 2 &&
+                  document.selected_sketch_profile_ids.empty(),
+              "rect-delete: marquee selects the circles and clears the "
+              "profile")) {
+    return false;
+  }
+
+  document = manager.delete_sketch_selection({}, {}, {});
+  const auto& after = document.feature_history.back().sketch_parameters.value();
+  return expect(after.circles.empty() && after.lines.size() == 4,
+                "rect-delete: circles removed, the perimeter survives");
+}
+
+// The user's selection rule: drawing must NOT leave the new entity
+// selected ("make a rectangle and the last line remains selected").
+// The auto-dimension selection stays (the dimension editor opens on
+// it); the ENTITY selection is cleared.
+bool test_draw_leaves_nothing_selected() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_line(0.0, 0.0, 30.0, 0.0);
+
+  if (!expect(!document.selected_sketch_entity_id.has_value() &&
+                  document.selected_sketch_entity_ids.empty(),
+              "draw: line leaves no entity selected")) {
+    return false;
+  }
+  if (!expect(document.selected_sketch_dimension_id.has_value(),
+              "draw: the auto line dimension stays selected (dim editor)")) {
+    return false;
+  }
+
+  document = manager.add_sketch_circle(50.0, 0.0, 10.0);
+  return expect(!document.selected_sketch_entity_id.has_value() &&
+                    document.selected_sketch_entity_ids.empty(),
+                "draw: circle leaves no entity selected (the auto radius "
+                "dimension stays for the dim editor)");
+}
+
+// The singular ids are a legacy echo — a stale last-drawn entity used
+// to join the delete set ("Delete on 2 clicked arcs deleted 9").
+// When the PLURAL list is non-empty the singular must be ignored.
+// Built through the load path so the crafted stale singular survives
+// the orphan prune (both ids are live entities).
+bool test_delete_ignores_stale_singular_when_plural_present() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  document = manager.add_sketch_line(60.0, 0.0, 80.0, 0.0);
+
+  const auto& sketch = document.feature_history.back().sketch_parameters.value();
+  const std::string perimeter_line = sketch.lines.front().id;
+  const std::string extra_line = sketch.lines.back().id;
+
+  // Craft the stale state: singular points at the perimeter line,
+  // plural holds the extra line (the real selection).
+  document.selected_sketch_entity_id = perimeter_line;
+  document.selected_sketch_entity_ids = {extra_line};
+
+  const std::string path =
+      (std::filesystem::temp_directory_path() /
+       "polysmith_selection_stale_singular.polysmith")
+          .string();
+  {
+    std::ofstream stream(path);
+    stream << polysmith::protocol::to_payload(document).dump();
+  }
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  DocumentState loaded = loaded_manager.load_document_from_path(path);
+  if (!expect(loaded.selected_sketch_entity_ids.size() == 1 &&
+                  loaded.selected_sketch_entity_id.has_value(),
+              "stale-singular: both ids survive the load prune")) {
+    return false;
+  }
+
+  loaded = loaded_manager.delete_sketch_selection({}, {}, {});
+  const auto& after =
+      loaded.feature_history.back().sketch_parameters.value();
+  const bool extra_deleted = std::none_of(
+      after.lines.begin(), after.lines.end(),
+      [&](const auto& line) { return line.id == extra_line; });
+  const bool perimeter_survives = std::any_of(
+      after.lines.begin(), after.lines.end(),
+      [&](const auto& line) { return line.id == perimeter_line; });
+  return expect(extra_deleted && perimeter_survives,
+                "stale-singular: the plural selection is deleted, the "
+                "stale singular entity survives");
+}
+
 // CAM re-pick semantics: an outline click on a boundary SHARED by two
 // regions toggles every owning region by default.  `smallest_only`
 // (the CAM flow) must reduce it to the smallest owning region so an
@@ -484,6 +745,12 @@ int main() {
   RUN_TEST(test_live_selection_survives_move);
   RUN_TEST(test_profile_click_replaces_entity_selection);
   RUN_TEST(test_delete_empty_ids_resolves_current_selection);
+  RUN_TEST(test_batch_select_replaces_profile_selection);
+  RUN_TEST(test_batch_select_additive_and_unknown_ids);
+  RUN_TEST(test_rect_select_window_and_crossing);
+  RUN_TEST(test_rect_select_then_delete_keeps_perimeter);
+  RUN_TEST(test_draw_leaves_nothing_selected);
+  RUN_TEST(test_delete_ignores_stale_singular_when_plural_present);
   RUN_TEST(test_shared_boundary_click_smallest_only);
 
   std::cout << "cad_core_selection_test passed\n";

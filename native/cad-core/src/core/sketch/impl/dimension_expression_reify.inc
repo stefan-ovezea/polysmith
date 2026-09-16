@@ -53,7 +53,11 @@ void reify_dimension_expressions(
       // stays in radians while the expression stays human-readable.
       if (dim.kind == "angle" || dim.kind == "line_angle") {
         resolved = resolved * (M_PI / 180.0);
-      } else if (dim.kind == "circle_radius") {
+      } else if (dim.kind == "circle_radius" &&
+                 dim.display_as != "radius") {
+        // Expressions are authored in the displayed convention — a
+        // diameter-mode circle expression means the diameter — so
+        // halve before storing the radius, matching the update handler.
         resolved = resolved / 2.0;
       }
       // Preserve the orientation quadrant for line_angle dimensions so

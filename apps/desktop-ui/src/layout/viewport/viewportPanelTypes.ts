@@ -251,8 +251,17 @@ export interface ViewportPanelProps {
   sketchTextPathPicking: boolean;
   onPickSketchTextPath: (entityId: string) => void;
   onSelectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
-  onBatchSelectEntities: (
-    entityIds: string[],
+  // Plain sketch-point selection (select_sketch_vertex — NOT the 3D
+  // select_vertex, whose ids have a different format).
+  onSelectSketchPoint: (vertexId: string, additive: boolean) => Promise<void>;
+  // Marquee selection: sketch-local corners + the screen drag
+  // direction; the core resolves the exact entity set.
+  onSelectSketchRect: (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    windowMode: boolean,
     additive: boolean,
   ) => Promise<void>;
   onPickSketchPoint: (

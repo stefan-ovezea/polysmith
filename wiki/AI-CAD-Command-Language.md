@@ -2166,6 +2166,48 @@ Payload:
 
 Entity IDs may be line IDs, circle IDs, or arc IDs.
 
+#### `select_sketch_entities`
+
+Batch selection — replaces (or toggles per-id in additive mode) the
+sketch entity selection in ONE command. Unknown ids are skipped with a
+warning instead of aborting the batch.
+
+Payload:
+
+```ts
+{
+  entity_ids: string[];
+  additive: boolean;
+}
+```
+
+Entity IDs may be line IDs, circle IDs, or arc IDs.
+
+#### `select_sketch_rect`
+
+Marquee selection resolved CORE-side against the exact sketch geometry.
+`x1/y1/x2/y2` are sketch-local coordinates of the two drag corners;
+`window_mode` is the screen drag direction (left→right), passed by the
+UI so the semantics don't flip when the view is mirrored. Window mode
+selects entities fully inside the rectangle; crossing mode selects
+entities touching it. Construction lines/arcs/ellipses are skipped;
+construction circles are selectable. This replaced the old UI-side
+screen-space collection — a stale scene mis-collected and the following
+delete removed the perimeter instead of the marquee'd entities.
+
+Payload:
+
+```ts
+{
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  window_mode: boolean;
+  additive: boolean;
+}
+```
+
 #### `select_sketch_point`
 
 Selects or toggles a sketch point.
@@ -2513,6 +2555,13 @@ Angle dimensions (`angle`, `line_angle`) store radians in `value` but
 expressions are authored in degrees. The core converts degrees→radians
 during expression evaluation. `line_angle` preserves the sign quadrant
 from the current geometry when re-evaluated.
+
+For `circle_radius`, the `value` over IPC **is the displayed value**:
+the diameter when `display_as` is `""` (diameter mode, the default) and
+the radius when `display_as` is `"radius"`. The core converts it to the
+stored radius on the way in (halving diameter-mode numbers and
+expressions). The document payload emitted by the core carries the same
+displayed convention, so the UI round-trips values without converting.
 
 #### `delete_sketch_dimension`
 

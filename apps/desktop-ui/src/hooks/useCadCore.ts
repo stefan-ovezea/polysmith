@@ -110,6 +110,7 @@ import {
   makeSelectSketchProfileByEntityCommand,
   makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
+  makeSelectSketchRectCommand,
   makeSelectSketchVertexCommand,
   makeSetTimelineCursorCommand,
   makeRenameFeatureCommand,
@@ -1564,16 +1565,22 @@ export function useCadCore() {
       await sendCoreCommand(makeReenterSketchCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    batchSelectSketchEntities: async (entityIds: string[], additive: boolean) => {
-      if (!additive) {
-        await sendCoreCommand(makeClearSelectionCommand());
-      }
-      // Fire all select commands in parallel — no need to wait for
-      // each one's viewport state; one final refresh at the end is enough.
-      await Promise.all(
-        entityIds.map((id) =>
-          sendCoreCommand(makeSelectSketchEntityCommand(id, true)),
-        ),
+    selectSketchRect: async (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      windowMode: boolean,
+      additive: boolean,
+    ) => {
+      // The marquee is resolved CORE-side against the exact sketch
+      // geometry (sketch-local corners) — one command, one payload.
+      // The old UI-side screen-space collection could mis-collect
+      // against stale scene data, and the even older per-entity
+      // flood made highlights take seconds and widened the
+      // stale-selection delete race.
+      await sendCoreCommand(
+        makeSelectSketchRectCommand(x1, y1, x2, y2, windowMode, additive),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

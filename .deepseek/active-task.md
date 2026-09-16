@@ -2090,3 +2090,263 @@ Next-session checklist:
 - `native/cad-core/tests/viewport_seam_enumeration_test.cpp` — test 4
 - `STEP_IMPORT_VIEWPORT_PERF.md` — branch work notes (regression section
   updated)
+---
+# Active task: select-tool stale-delete race + marquee flood (2026-09-16)
+
+> **Branch:** `fix/select-stale-delete` (from dev @ 4040c64). UNCOMMITTED;
+> user verified the fixes in-app (right-click delete, sketch-point
+> selector, circle dimension doubling) — commit awaits user approval.
+
+## Round 7 — circle dimension doubling: the REAL root cause (2026-09-17)
+
+Round 6's fix (remove the core's numeric /2) did NOT resolve the
+doubling — "editing the circle dia alway double the real value".
+TEMP DIAG stacks (dim_diag in useCadCore + Logs panel) showed the
+cancel path (Escape) sending 10 → 20 → 40, one doubling per round.
+
+Real root cause (code-proven): the document payload EMITS the
+displayed value for circle_radius dims —
+feature_to_payload_sketch_dimension_entries.inc multiplies value×2
+when display_as != "radius" ("the payload carries the displayed
+diameter", parser comment) — but the UI treated the payload value as
+the RADIUS (dimensionValueDisplay.ts ×2//2 pair + cancel re-sending
+originalValue.value). Removing the handler /2 (Round 6) left NO
+conversion anywhere: payload diameter → UI → radius → grow ×2 per
+round-trip. The pre-existing UI/payload disagreement also explains
+the popup showing 4× the radius and the "mixed radius and dia" chaos.
+
+Fix — ONE convention everywhere: IPC `value` = the DISPLAYED value.
+- app/impl/sketch_dimension_update_command_handlers.inc: numeric
+  branch halves circle_radius values again, gated on
+  display_as != "radius" (Round 6's unconditional-removal reverted;
+  the OLD unconditional /2 was itself the radius-mode bug). String
+  branch: same display-mode gate.
+- core/sketch/impl/dimension_expression_reify.inc: expression
+  re-evaluation halves only in diameter mode (was unconditional).
+- UI dimensionValueDisplay.ts: dimensionDisplayValue /
+  dimensionCoreValue pass circle values through (doc value = the
+  displayed value); only angle conversions remain.
+- wiki/AI-CAD-Command-Language.md rewritten: value = displayed value
+  (diameter by default, radius when display_as == "radius").
+
+Regression tests (dimension_completion_test.cpp, +2):
+test_circle_dimension_payload_carries_displayed_value (payload emits
+×2 in dia mode, raw in radius mode, toggle round-trip) and
+test_circle_expression_reify_respects_display_mode (dia-mode
+expression → radius d/2; radius-mode → no halving — fails without the
+reify gate). All 50/50 suites pass; tsc clean.
+
+User verified in-app: "well looks like now it is working".
+
+LESSON (hard): a vite dev serve IS type-stripped output + injected
+preamble — the "June-era stale file" theory was a misread of esbuild
+type-stripping (the inline source map's sourcesContent proved the
+source was current). Before declaring stale serving, decode the
+source map. Also: the temp dim_diag blocks in useCadCore.ts and
+App.tsx are REMOVED.
+
+## Round 6 — circle dimension radius/diameter double conversion (2026-09-17)
+
+User: "the circle dimension ... has mixed radius and dia option and
+when I edit the dimension either take radius instead of dia or the
+other way around... during creation of the lower right one I
+introduced 3.2 dia and it result 2 times smaller. I had to introduce
+6.4 or something to make it 3.2."
+
+Evidence from the saved file (laser board3.polysmith): circles all
+r=1.6 (dia 3.2) while dim-circle-circle-138/-152 store value 3.2 with
+display_as '' — the label renders value*2 = 6.4.
+
+Root cause (code-proven): the `update_sketch_dimension` IPC handler
+(app/impl/sketch_dimension_update_command_handlers.inc) divided
+circle_radius NUMERIC values by 2 — but the UI's dimension editor
+already converts display (diameter) → core (radius) before sending
+(dimensionValueDisplay.ts dimensionCoreValue). Typed diameter was
+divided twice (UI /2 then core /2 → radius = typed/4): typed 3.2 →
+r 0.8 ("2 times smaller"), typed 6.4 → r 1.6 (the user's workaround).
+Cancel also re-sent the stored radius and got halved. The core value
+of a circle_radius dimension IS the radius (the solver enforces
+radius == value).
+
+Fix: the numeric branch no longer converts (comment explains); the
+STRING expression branch keeps its /2 (expressions are authored as
+diameters — the circle draft field is a diameter — and
+reify_dimension_expressions.inc divides consistently).
+Docs: wiki/AI-CAD-Command-Language.md — numeric value = radius
+passed through; string expression = diameter.
+
+Gates: core rebuild + 50/50 suites + tsc clean. In-app verification
+(binding): edit a circle dim in diameter mode — typed 3.2 → dia 3.2
+(label shows 3.2); radius mode — typed 3.2 → r 3.2; Escape/cancel
+keeps the current radius; the stale 3.2-value dims in the saved file
+retype cleanly (one edit re-syncs value = radius).
+
+CORRECTED by Round 7 (below): this analysis was wrong — the UI/payload
+convention disagreement was the real cause, and the Round-6 fix
+doubled every Escape/Enter round-trip until Round 7 closed the loop.
+
+## Round 5 — right-click select regression + sketch-point selector (2026-09-17)
+
+User: "it works but now started to delete the lines again like
+before" after Round 4. Cause: the Round-4 right-click replace-select
+— a right-click on the SURFACE between the marquee'd circles flipped
+the selection to the profile and the menu Delete killed the
+perimeter. Fix: right-click opens the menu WITHOUT changing the
+selection (opening a menu is not a selection action); the menu's
+Delete always deletes the live selection; only when NOTHING is
+selected does it first select the single clicked item (entity /
+sketch point via select_sketch_point / profile) and then delete —
+no snapshot ever rides the delete.
+
+Second bug caught by the user ("Malformed vertex id: vertex-204"):
+the fallback routed sketch vertex ids to the 3D select_vertex
+("<body>:vertex:<n>" format). Fixed with a NEW onSelectSketchPoint
+prop (select_sketch_vertex) wired App → ViewportPanel → menu actions
+(viewportPanelTypes, ViewportPanel, viewportContextMenuActions).
+
+User verified: "now it works". Fillet investigation followed
+(separate — see Future work): the fillet rejection was correct
+geometry (1 mm stubs cannot host r=2); after the user redrew the
+corner it fit (max 2.034 mm).
+
+## Future work recorded (2026-09-17, user-requested documentation)
+
+1. **"Unify lines" tool** — merge collinear adjacent line segments
+   (and co-circular arcs) into single entities. Motivation: STL/STEP
+   projections and trims fragment contours into many small lines;
+   the CAM cleanup already does this at generate time
+   (cleanup_base_segments, cam2d) but the SKETCH keeps the fragments.
+   Sketch-level merge must handle constraints/dimensions on the
+   consumed segments + weld the joint vertices (same class of work
+   as the zero-length cleanup in refresh_zero_length_line_cleanup.inc).
+2. **Fusion-style consume-short-line fillet** — when one line is
+   shorter than the fillet's trim distance, Fusion consumes it: the
+   short line is deleted, the arc takes over to its far endpoint
+   (welded onto the far vertex), the long line is trimmed. Needs:
+   consume detection, constraint/dimension sweep on the consumed
+   line, arc-endpoint weld to the far vertex id, fillet record
+   remembering the consumed line for delete/undo restore (new
+   optional payload field — forward-compatible), regression tests.
+   NOTE: naive "allow trim == line length" is NOT cheap — the
+   zero-length cleanup deletes the line AND the new fillet record
+   (refresh_zero_length_line_cleanup.inc erases fillets referencing
+   the deleted line). Until then: redraw short lines longer
+   (accepted user discipline).
+3. Zero-length / micro-line handling in sketches — generally fragile
+   for CAD; to be addressed with the two features above.
+
+## Round 4 — the user's selection rule, enforced everywhere (2026-09-16)
+
+User: "the clicked-item snapshot only applies when nothing is
+selected. I think this is stupid. Any selection action without Ctrl
+should remove all the other items selected. I think this is the flaw
+that we have combined with items that remain in state of selected.
+I keep asking you to get rid of that phenomenon." — the recorded
+Round 17 FIRST-PRIORITY semantics task, now implemented.
+
+Changes:
+- Core draw/trim/extend/update commands NO LONGER leave the new/
+  affected entity selected (sketch_basic_entity_commands.inc 6 sites +
+  sketch_circle_polygon_commands.inc circle+polygon +
+  update_sketch_slot + sketch_trim_commands.inc +
+  sketch_extend_commands.inc + sketch_update_geometry_commands.inc).
+  The AUTO DIMENSION selection stays (line/rectangle/circle) so the
+  dim editor still auto-opens.
+- Core delete resolver: PLURAL lists win over the SINGULAR echo ids
+  (the stale last-drawn entity used to join the delete set — "Delete
+  on 2 clicked arcs deleted 9"). Singular falls back only when the
+  plural list is empty. UI mirror in sketchSelectionDelete.ts
+  (dedupeSelectedIds).
+- UI right-click = a selection action: handleContextMenu replace-
+  selects a single clicked sketch item when no Ctrl/Cmd/Shift is
+  held, so the context menu's Delete ALWAYS acts on the live
+  selection — the snapshot conditional (user: "stupid") is REMOVED
+  (viewportContextMenuActions.deleteSketchSelection passes null
+  unconditionally).
+- Marquee additive: Ctrl/Cmd now also additive (was Shift only).
+- Tests: test_draw_leaves_nothing_selected (line keeps the auto dim,
+  circle keeps none/its auto dim) + test_delete_ignores_stale_singular
+  _when_plural_present (via the load path). test_load_prunes_orphans
+  re-pinned (explicit click-select instead of the draw auto-select).
+
+Gates: core build + **50/50 suites** + tsc clean.
+
+Next-session checklist:
+1. **In-app verification (binding):** draw a line -> nothing stays
+   highlighted; draw a rectangle -> no lingering selection; click an
+   entity -> replaces; Ctrl-click -> adds; right-click an unselected
+   entity -> it becomes selected, menu Delete removes the selection;
+   marquee -> replace (Ctrl = add); Delete after drawing deletes
+   nothing (nothing selected).
+2. Commit after the user confirms (no Co-Authored-By trailer).
+
+## Round 3 — the REAL bug: context-menu delete on the surface (2026-09-16)
+
+User: "nothing changed" after round 2 (verified rebuild + restart).
+The new rect command's select_diag logs during the reproduction
+(07:51) showed the marquee selecting circles correctly and the delete
+resolving ONLY circles — IT WORKS. The decisive delta was the
+context-menu fix: with a live selection, the menu's Delete now passes
+null (core resolves the selection at command time) instead of the
+right-click snapshot. The user's right-click landed on the SURFACE
+between the marquee'd circles — the snapshot carried the PROFILE, so
+the delete removed the outside contour while the circles survived.
+One-by-one worked because the right-click was ON the selected circle.
+
+Fixes this round:
+- viewportContextMenuActions.deleteSketchSelection: selection-aware —
+  live selection -> null (empty ids); nothing selected -> the clicked
+  item's snapshot. Ref type widened to accept null.
+- TEMP DIAG select_diag logs REMOVED after the confirmation.
+
+Gates: core build (compile + test exes; final copy blocked by the
+running app — completes on the user's next core:rebuild) + **50/50
+suites** + tsc clean. User in-app verification: "now it works" with
+two marquee+delete cycles in the logs (circles only, profiles=0).
+
+Next-session checklist:
+1. Commit after the user confirms (no Co-Authored-By trailer).
+2. Optional follow-up: the rect selection could skip construction
+   circles too if the user ever complains.
+
+## Round 2 — marquee selection moved INTO the core (2026-09-16)
+
+Round 1 (batch command + Delete-during-drag guard) did NOT fix the
+user's repro: the wrong delete persisted even though the marquee was
+"done long time ago" — the bug was inside the multi-selection itself,
+not a race. Core-side replay of every variant on the saved file (laser
+board2.polysmith: 10 lines / 16 arcs / 150 circles / 155 profiles)
+was CORRECT each time — the failure had to be in the UI's screen-space
+marquee collection (stale scene data / projection math).
+
+Fix: the marquee now resolves CORE-side.
+- Core NEW command `select_sketch_rect { x1, y1, x2, y2, window_mode,
+  additive? }` (DocumentManager::select_sketch_rect): sketch-local
+  corners + the screen drag direction; window mode = fully inside,
+  crossing mode = touching. Lines/arcs/ellipses skip construction;
+  construction circles selectable (mirrors the old UI rules). Replaces
+  or additive-toggles the entity selection, clears profile/vertex/
+  dimension selections. Dispatch + commands.schema.json.
+- UI `performRectangleSelect`: resolves BOTH drag corners to
+  sketch-local coordinates via resolveSketchPlanePoint and sends the
+  ONE rect command (no scene walk, no projection math). The old
+  collectRectangleSelectionIds + its helpers are DELETED
+  (selectionGeometry.ts now holds only the overlay + drag types).
+  `batchSelectSketchEntities` hook removed (the select_sketch_entities
+  core command + tests stay).
+- Tests (cad_core_selection_test): `test_rect_select_window_and_crossing`
+  (window mode picks only fully-inside circles; crossing mode adds the
+  crossing divider) + `test_rect_select_then_delete_keeps_perimeter`
+  (profile selected -> rect over circles -> empty delete removes the
+  circles, perimeter survives — the user's exact regression).
+- TEMP DIAG logs (select_diag) removed; scratch_board2_diag removed.
+- Docs: wiki/IPC-Protocol.md + wiki/AI-CAD-Command-Language.md.
+
+Gates: `pnpm core:build` + **50/50 suites** + `tsc --noEmit` clean.
+
+Next-session checklist:
+1. **In-app verification (binding, before any commit):** CLOSE the app,
+   `pnpm dev` fresh; marquee over internal circles -> highlight
+   near-instant; Delete -> circles gone, perimeter intact. Test both
+   drag directions. One-by-one delete unchanged.
+2. Commit after the user confirms (no Co-Authored-By trailer).

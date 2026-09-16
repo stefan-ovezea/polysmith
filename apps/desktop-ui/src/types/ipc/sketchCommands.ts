@@ -741,6 +741,37 @@ export interface SelectSketchEntityCommand {
   };
 }
 
+// Batch marquee selection — one command replaces (or toggles in
+// additive mode) the whole entity selection instead of one command
+// per entity (a 151-entity marquee used to fire 151 commands, each
+// answered with a full document payload — the event flood made the
+// marquee highlight take seconds and widened the stale-selection
+// delete race).
+export interface SelectSketchEntitiesCommand {
+  id: string;
+  type: "select_sketch_entities";
+  payload: {
+    entity_ids: string[];
+    additive: boolean;
+  };
+}
+
+// Marquee selection, resolved CORE-side against the exact sketch
+// geometry. x1/y1/x2/y2 are sketch-local coordinates of the two drag
+// corners; window_mode is the screen drag direction (left->right).
+export interface SelectSketchRectCommand {
+  id: string;
+  type: "select_sketch_rect";
+  payload: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    window_mode: boolean;
+    additive: boolean;
+  };
+}
+
 export interface SelectSketchVertexCommand {
   id: string;
   type: "select_sketch_vertex";
