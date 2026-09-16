@@ -1014,7 +1014,7 @@ function App() {
     finishSketch,
     reenterSketch,
     clearSelection,
-    batchSelectSketchEntities,
+    selectSketchRect,
     updateSelectionFilter,
     camSetupCreate,
     camSetupUpdate,
@@ -3855,9 +3855,28 @@ function App() {
                   runAction,
                 });
               }}
-              onBatchSelectEntities={async (entityIds, additive) => {
+              onSelectSketchPoint={async (vertexId, additive) => {
                 await runAction(async () => {
-                  await batchSelectSketchEntities(entityIds, additive);
+                  await selectSketchPoint(vertexId, additive);
+                });
+              }}
+              onSelectSketchRect={async (
+                x1,
+                y1,
+                x2,
+                y2,
+                windowMode,
+                additive,
+              ) => {
+                await runAction(async () => {
+                  await selectSketchRect(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    windowMode,
+                    additive,
+                  );
                 });
               }}
               onPickSketchPoint={async (vertexId, kind, additive) => {

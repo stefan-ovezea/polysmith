@@ -76,7 +76,6 @@ import {
 import { buildSplineDraftPreview } from "./viewport/splineDraftPreview";
 import { usePendingLineCommitRelations } from "./viewport/lineCommitRelationEffects";
 import {
-  collectRectangleSelectionIds,
   selectionRectOverlayFromDrag,
   type SelectionRectOverlay,
   type SelectionDrag,
@@ -303,7 +302,8 @@ export function ViewportPanel({
   sketchTextPathPicking,
   onPickSketchTextPath,
   onSelectSketchEntity,
-  onBatchSelectEntities,
+  onSelectSketchPoint,
+  onSelectSketchRect,
   onPickSketchPoint,
   armedSketchConstraint,
   mirrorFocusedSlot,
@@ -803,6 +803,7 @@ export function ViewportPanel({
   // Click the first pole again to commit; Escape cancels.
   const splineDraftPolesRef = useRef<[number, number][]>([]);
   const selectSketchEntityRef = useRef(onSelectSketchEntity);
+  const selectSketchPointRef = useRef(onSelectSketchPoint);
   const pickInactiveSketchLineRef = useRef(onPickInactiveSketchLine);
   const inactiveSketchEntityPickEnabledRef = useRef(
     inactiveSketchEntityPickEnabled,
@@ -2871,17 +2872,39 @@ export function ViewportPanel({
       const renderer = rendererRef.current;
       if (!camera || !renderer) return;
 
-      const sceneData = sceneDataRef.current;
-      const selected = collectRectangleSelectionIds({
-        drag,
-        sceneData,
-        camera,
+      // Resolve BOTH drag corners to sketch-local coordinates and let
+      // the CORE do the rectangle selection against the exact sketch
+      // geometry. The old UI-side screen-space collection walked the
+      // scene data with projection math — a stale scene (or a rect
+      // crossing the perimeter) mis-collected, and the following
+      // delete then removed the perimeter instead of the marquee'd
+      // entities. The core sees the real geometry, so the marquee can
+      // never disagree with what gets deleted.
+      const startPoint = resolveSketchPlanePoint(
+        { clientX: drag.startX, clientY: drag.startY } as PointerEvent,
         renderer,
-      });
+        camera,
+        activeSketchPlaneIdRef.current,
+        activeSketchPlaneFrameRef.current,
+      );
+      const endPoint = resolveSketchPlanePoint(
+        { clientX: drag.currentX, clientY: drag.currentY } as PointerEvent,
+        renderer,
+        camera,
+        activeSketchPlaneIdRef.current,
+        activeSketchPlaneFrameRef.current,
+      );
+      if (!startPoint || !endPoint) return;
 
-      if (selected.length > 0) {
-        onBatchSelectEntities(selected, additive);
-      }
+      const windowMode = drag.currentX >= drag.startX;
+      await onSelectSketchRect(
+        startPoint.local[0],
+        startPoint.local[1],
+        endPoint.local[0],
+        endPoint.local[1],
+        windowMode,
+        additive,
+      );
     }
 
     const viewCubeAnimationRefs = {
@@ -4170,6 +4193,14 @@ export function ViewportPanel({
         y: event.clientY - rect.top,
         solidFaces: sceneDataRef.current?.solidFaces ?? [],
       });
+
+      // NOTE: right-click does NOT change the selection — opening a
+      // menu is not a selection action. Replacing here broke the
+      // marquee flow: right-clicking the surface BETWEEN marquee'd
+      // circles flipped the selection to the profile, and the next
+      // Delete killed the perimeter. The menu's Delete acts on the
+      // live selection; with nothing selected it first selects the
+      // clicked item (see viewportContextMenuActions).
       setContextMenu(result.contextMenu);
       if (result.selectedConstraint !== undefined) {
         setSelectedConstraint(result.selectedConstraint);
@@ -4689,6 +4720,7 @@ export function ViewportPanel({
         controlsRef,
         selectedConstraintRef,
         sketchToolConstructionRef,
+        selectionDragRef,
         deleteSketchDimensionRef,
         clearSketchConstraintRef,
         clearSketchSelectionRef,
@@ -4790,6 +4822,8 @@ export function ViewportPanel({
     clearSketchConstraintRef,
     updateSketchDimensionDisplayRef,
     selectSketchEntityRef,
+    selectSketchPointRef,
+    selectSketchProfileRef,
     pickSketchPointRef,
     setSketchToolRef,
     openTransformArrayRef,

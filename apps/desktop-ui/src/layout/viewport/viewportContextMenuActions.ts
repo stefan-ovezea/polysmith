@@ -39,6 +39,8 @@ export function createViewportContextMenuActions({
   clearSketchConstraintRef,
   updateSketchDimensionDisplayRef,
   selectSketchEntityRef,
+  selectSketchPointRef,
+  selectSketchProfileRef,
   pickSketchPointRef,
   setSketchToolRef,
   openTransformArrayRef,
@@ -84,7 +86,11 @@ export function createViewportContextMenuActions({
     ((keepGeometry: boolean) => Promise<void> | void) | undefined
   >;
   deleteSketchSelectionRef: MutableRef<
-    (selection: NonNullable<ViewportContextMenuState["sketchDeleteSelection"]>) => Promise<void>
+    (
+      selection:
+        | NonNullable<ViewportContextMenuState["sketchDeleteSelection"]>
+        | null,
+    ) => Promise<void>
   >;
   deleteSketchDimensionRef: MutableRef<(dimensionId: string) => Promise<void>>;
   toggleSketchDimensionDrivenRef: MutableRef<(dimensionId: string) => Promise<void>>;
@@ -103,6 +109,15 @@ export function createViewportContextMenuActions({
   >;
   selectSketchEntityRef: MutableRef<
     (entityId: string, additive: boolean) => Promise<void>
+  >;
+  // Sketch-point selection (select_sketch_vertex). NOT the 3D
+  // selectVertex — its ids ("<body>:vertex:<n>") are a different
+  // format and reject sketch ids like "vertex-204".
+  selectSketchPointRef: MutableRef<
+    (vertexId: string, additive: boolean) => Promise<void>
+  >;
+  selectSketchProfileRef: MutableRef<
+    (profileId: string, additive: boolean) => Promise<void>
   >;
   pickSketchPointRef: MutableRef<
     (
@@ -209,7 +224,37 @@ export function createViewportContextMenuActions({
       return;
     }
     setContextMenu(null);
-    await deleteSketchSelectionRef.current(selection);
+    // The menu always acts on the LIVE selection (the core resolves it
+    // at command time) — a snapshot must never ride the delete: a stale
+    // snapshot is how the outside contour used to die while the
+    // marquee'd entities survived. Right-clicking does NOT change the
+    // selection, so the marquee set survives a right-click on the
+    // surface between the picked entities.
+    //
+    // Only when NOTHING is selected does the menu act on the clicked
+    // item: select it first (replacing an empty selection is a no-op),
+    // then delete the live selection. FIFO command ordering guarantees
+    // the select lands before the delete resolves.
+    const hasSelection = Boolean(
+      (document?.selected_sketch_entity_ids.length ?? 0) > 0 ||
+        (document?.selected_sketch_vertex_ids.length ?? 0) > 0 ||
+        (document?.selected_sketch_profile_ids.length ?? 0) > 0,
+    );
+    if (
+      !hasSelection &&
+      selection.entityIds.length + selection.vertexIds.length +
+          selection.profileIds.length ===
+        1
+    ) {
+      if (selection.entityIds.length === 1) {
+        await selectSketchEntityRef.current(selection.entityIds[0], false);
+      } else if (selection.vertexIds.length === 1) {
+        await selectSketchPointRef.current(selection.vertexIds[0], false);
+      } else if (selection.profileIds.length === 1) {
+        await selectSketchProfileRef.current(selection.profileIds[0], false);
+      }
+    }
+    await deleteSketchSelectionRef.current(null);
   }
 
   // Fusion-style "Move/Copy" entry: arms the Move tool with the

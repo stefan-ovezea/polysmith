@@ -84,6 +84,8 @@ import type {
   UpdateSketchDimensionDisplayCommand,
   SelectSketchProfileCommand,
   SelectSketchEntityCommand,
+  SelectSketchEntitiesCommand,
+  SelectSketchRectCommand,
   SelectSketchVertexCommand,
   SelectSketchDimensionCommand,
   FinishSketchCommand,
@@ -1097,6 +1099,8 @@ export type CoreCommand =
   | DeleteSketchSelectionCommand
   | SelectSketchVertexCommand
   | SelectSketchEntityCommand
+  | SelectSketchEntitiesCommand
+  | SelectSketchRectCommand
   | SelectSketchDimensionCommand
   | FinishSketchCommand
   | ReenterSketchCommand

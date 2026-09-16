@@ -26,27 +26,36 @@ DocumentState DocumentManager::delete_sketch_selection(
                                                 profile_ids.end());
   if (resolved_entity_ids.empty() && resolved_point_ids.empty() &&
       resolved_profile_ids.empty()) {
-    if (document_->selected_sketch_entity_id.has_value()) {
+    // The PLURAL lists are the real click/marquee selection. The
+    // SINGULAR ids are a legacy echo (historically every draw command
+    // stored its new entity there, and a stale last-drawn entity then
+    // joined the delete set — "Delete on 2 clicked arcs deleted 9").
+    // Use the plural when present; fall back to the singular only
+    // when the plural list is empty.
+    if (!document_->selected_sketch_entity_ids.empty()) {
+      resolved_entity_ids.insert(resolved_entity_ids.end(),
+                                 document_->selected_sketch_entity_ids.begin(),
+                                 document_->selected_sketch_entity_ids.end());
+    } else if (document_->selected_sketch_entity_id.has_value()) {
       resolved_entity_ids.push_back(
           document_->selected_sketch_entity_id.value());
     }
-    resolved_entity_ids.insert(resolved_entity_ids.end(),
-                               document_->selected_sketch_entity_ids.begin(),
-                               document_->selected_sketch_entity_ids.end());
-    if (document_->selected_sketch_vertex_id.has_value()) {
+    if (!document_->selected_sketch_vertex_ids.empty()) {
+      resolved_point_ids.insert(resolved_point_ids.end(),
+                                document_->selected_sketch_vertex_ids.begin(),
+                                document_->selected_sketch_vertex_ids.end());
+    } else if (document_->selected_sketch_vertex_id.has_value()) {
       resolved_point_ids.push_back(
           document_->selected_sketch_vertex_id.value());
     }
-    resolved_point_ids.insert(resolved_point_ids.end(),
-                              document_->selected_sketch_vertex_ids.begin(),
-                              document_->selected_sketch_vertex_ids.end());
-    if (document_->selected_sketch_profile_id.has_value()) {
+    if (!document_->selected_sketch_profile_ids.empty()) {
+      resolved_profile_ids.insert(resolved_profile_ids.end(),
+                                  document_->selected_sketch_profile_ids.begin(),
+                                  document_->selected_sketch_profile_ids.end());
+    } else if (document_->selected_sketch_profile_id.has_value()) {
       resolved_profile_ids.push_back(
           document_->selected_sketch_profile_id.value());
     }
-    resolved_profile_ids.insert(resolved_profile_ids.end(),
-                                document_->selected_sketch_profile_ids.begin(),
-                                document_->selected_sketch_profile_ids.end());
   }
 
   const auto feature_it = std::find_if(

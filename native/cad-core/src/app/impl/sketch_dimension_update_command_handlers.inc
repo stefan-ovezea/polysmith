@@ -19,12 +19,13 @@
     double resolved_value = 0.0;
     std::optional<std::string> expression;
 
-    // Look up the target dimension kind up front: circle_radius
-    // dimensions carry the DISPLAYED diameter over IPC (the stored
-    // value stays the radius — same convention as the expression
-    // path below), and angle kinds convert degrees to radians.
+    // Look up the target dimension up front. The IPC `value` carries
+    // the DISPLAYED value: circle_radius dimensions in diameter mode
+    // carry the diameter (the stored value stays the radius — the
+    // payload emitter multiplies by two, so the handler must divide),
+    // and angle kinds convert degrees to radians.
     bool dim_is_angle = false;
-    bool dim_is_circle_radius = false;
+    bool dim_is_diameter_display = false;
     {
       const auto doc = document_manager().get_document();
       if (doc.has_value() && doc->active_sketch_feature_id.has_value()) {
@@ -44,7 +45,8 @@
           if (dim_it != dims.end()) {
             dim_is_angle =
                 dim_it->kind == "angle" || dim_it->kind == "line_angle";
-            dim_is_circle_radius = dim_it->kind == "circle_radius";
+            dim_is_diameter_display = dim_it->kind == "circle_radius" &&
+                                      dim_it->display_as != "radius";
           }
         }
       }
@@ -55,7 +57,12 @@
         resolved_value = command.payload.at("value").get<double>();
         if (dim_is_angle) {
           resolved_value = resolved_value * (M_PI / 180.0);
-        } else if (dim_is_circle_radius) {
+        }
+        // The IPC value is the DISPLAYED value: a diameter-mode circle
+        // dimension arrives as the diameter and must be halved before
+        // it is stored as the radius. Passing it through doubled every
+        // typed diameter on each edit/cancel round-trip (10 → 20 → 40).
+        if (dim_is_diameter_display) {
           resolved_value = resolved_value / 2.0;
         }
       } else if (command.payload.at("value").is_string()) {
@@ -101,7 +108,9 @@
           // produces.
           if (dim_is_angle) {
             resolved_value = resolved_value * (M_PI / 180.0);
-          } else if (dim_is_circle_radius) {
+          } else if (dim_is_diameter_display) {
+            // Expressions are authored in the displayed convention too:
+            // a diameter-mode circle expression means the diameter.
             resolved_value = resolved_value / 2.0;
           }
         } catch (const std::exception& e) {

@@ -203,8 +203,9 @@ DocumentState DocumentManager::add_sketch_circle(
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->circles.back().id;
+  // Draws leave nothing selected (the selection rule) — the auto
+  // radius dimension stays selected so the dim editor opens.
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id =
       is_construction ? std::nullopt
                       : std::make_optional(
@@ -250,8 +251,8 @@ DocumentState DocumentManager::add_sketch_polygon(int sides,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->polygons.back().id;
+  // Draws leave nothing selected (the selection rule).
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();

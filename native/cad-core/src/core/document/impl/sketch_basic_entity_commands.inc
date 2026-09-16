@@ -33,8 +33,7 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->lines.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   // Construction lines don't get an auto length dimension, so the
   // dimension list may be unchanged. Pick the dimension only if one
   // was actually created for this line; otherwise clear the
@@ -87,8 +86,7 @@ DocumentState DocumentManager::add_sketch_rectangle(double start_x,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->lines.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id =
       is_construction ? std::nullopt
                       : std::make_optional(
@@ -231,8 +229,7 @@ DocumentState DocumentManager::add_sketch_arc(double start_x,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->arcs.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();
   return document_.value();
@@ -265,8 +262,7 @@ DocumentState DocumentManager::add_sketch_ellipse(double center_x,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->ellipses.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();
   return document_.value();
@@ -294,8 +290,7 @@ DocumentState DocumentManager::add_sketch_spline(
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->splines.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();
   return document_.value();
@@ -327,8 +322,7 @@ DocumentState DocumentManager::add_sketch_slot(double center_x,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id =
-      feature_it->sketch_parameters->slots.back().id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();
   return document_.value();
@@ -358,7 +352,7 @@ DocumentState DocumentManager::update_sketch_slot(const std::string& slot_id,
                                        center_y, length, radius, rotation);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
-  document_->selected_sketch_entity_id = slot_id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   bump_geometry_revision();
   return document_.value();

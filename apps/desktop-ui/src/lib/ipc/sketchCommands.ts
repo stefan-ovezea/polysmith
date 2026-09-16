@@ -1180,6 +1180,42 @@ export function makeSelectSketchEntityCommand(
   };
 }
 
+export function makeSelectSketchEntitiesCommand(
+  entityIds: readonly string[],
+  additive = false,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_entities",
+    payload: {
+      entity_ids: [...entityIds],
+      additive,
+    },
+  };
+}
+
+export function makeSelectSketchRectCommand(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  windowMode: boolean,
+  additive = false,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_rect",
+    payload: {
+      x1,
+      y1,
+      x2,
+      y2,
+      window_mode: windowMode,
+      additive,
+    },
+  };
+}
+
 
 export function makeSelectSketchDimensionCommand(
   dimensionId: string,

@@ -27,7 +27,7 @@ DocumentState DocumentManager::update_sketch_line(const std::string& line_id,
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
-  document_->selected_sketch_entity_id = line_id;
+  document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = "dim-line-" + line_id;
   document_->selected_sketch_profile_id = std::nullopt;
   document_->selected_sketch_profile_ids.clear();

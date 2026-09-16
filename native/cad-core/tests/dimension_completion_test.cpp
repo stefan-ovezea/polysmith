@@ -18,6 +18,7 @@
 
 #include "core/document/document.h"
 #include "core/viewport/viewport.h"
+#include "protocol/serialization.h"
 #include "sketch_test_utils.h"
 
 namespace {
@@ -543,6 +544,102 @@ bool test_label_on_center_emits_finite_geometry() {
       "degenerate: contact still lands on the rim");
 }
 
+// ── IPC value convention ─────────────────────────────────────────────
+//
+// The document payload carries the DISPLAYED value for circle_radius
+// dimensions — the diameter in diameter mode, the radius in radius mode —
+// while the stored value stays the radius. The UI treats the payload
+// value as the displayed value (draft fields, cancel-restore), so this
+// emission is the IPC contract; the update handler converts back on the
+// way in. A mismatch here doubles or halves every circle edit round-trip
+// (typing a diameter grew the circle by 2× on each Escape/Enter).
+
+double payload_dimension_value(const DocumentState& document,
+                               const std::string& dimension_id) {
+  const auto payload = polysmith::protocol::to_payload(document);
+  for (const auto& feature : payload.at("feature_history")) {
+    if (!feature.contains("sketch_parameters") ||
+        feature.at("sketch_parameters").is_null()) {
+      continue;
+    }
+    const auto& dimensions = feature.at("sketch_parameters").at("dimensions");
+    for (const auto& dimension : dimensions) {
+      if (dimension.at("dimension_id") == dimension_id) {
+        return dimension.at("value").get<double>();
+      }
+    }
+  }
+  return -1.0;
+}
+
+bool test_circle_dimension_payload_carries_displayed_value() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_circle(10.0, 10.0, 5.0);
+  const std::string dim_id = "dim-circle-circle-1";
+
+  // Stored value stays the radius; the payload carries the diameter.
+  if (!expect(near(sketch_params(document).circles[0].radius, 5.0),
+              "payload: stored value stays the radius")) {
+    return false;
+  }
+  if (!expect(near(payload_dimension_value(document, dim_id), 10.0),
+              "payload: diameter mode carries the diameter")) {
+    return false;
+  }
+
+  document = manager.update_sketch_dimension_display(dim_id, "radius");
+  if (!expect(near(payload_dimension_value(document, dim_id), 5.0),
+              "payload: radius mode carries the radius")) {
+    return false;
+  }
+
+  document = manager.update_sketch_dimension_display(dim_id, "");
+  return expect(near(payload_dimension_value(document, dim_id), 10.0),
+                "payload: toggling back restores the diameter");
+}
+
+bool test_circle_expression_reify_respects_display_mode() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_circle(10.0, 10.0, 5.0);
+  const std::string dim_id = "dim-circle-circle-1";
+  manager.add_parameter("d", "10");
+
+  const auto circle_radius = [&](const DocumentState& doc) {
+    return sketch_params(doc).circles[0].radius;
+  };
+  const auto dim_value = [&](const DocumentState& doc) {
+    const auto params = sketch_params(doc);
+    const auto it = std::find_if(
+        params.dimensions.begin(), params.dimensions.end(),
+        [&](const auto& d) { return d.id == dim_id; });
+    return it == params.dimensions.end() ? -1.0 : it->value;
+  };
+
+  // Diameter mode: the expression means the diameter, so re-evaluation
+  // with d = 20 stores radius 10.
+  document = manager.update_sketch_dimension(
+      dim_id, 5.0, std::optional<std::string>("d"));
+  document = manager.update_parameter("d", "20");
+  if (!expect(near(dim_value(document), 10.0) &&
+                  near(circle_radius(document), 10.0),
+              "reify: diameter-mode expression re-evaluates to radius d/2")) {
+    return false;
+  }
+
+  // Radius mode: the expression means the radius — no halving.
+  document = manager.update_sketch_dimension_display(dim_id, "radius");
+  document = manager.update_parameter("d", "6");
+  return expect(near(dim_value(document), 6.0) &&
+                    near(circle_radius(document), 6.0),
+                "reify: radius-mode expression re-evaluates without halving");
+}
+
 }  // namespace
 
 int main() {
@@ -557,6 +654,8 @@ int main() {
   if (!test_arc_angle_emits_primitive_with_radius_clamps()) return 1;
   if (!test_polygon_radius_label_position_honored()) return 1;
   if (!test_label_on_center_emits_finite_geometry()) return 1;
+  if (!test_circle_dimension_payload_carries_displayed_value()) return 1;
+  if (!test_circle_expression_reify_respects_display_mode()) return 1;
 
   std::cout << "dimension_completion_test passed\n";
   return 0;

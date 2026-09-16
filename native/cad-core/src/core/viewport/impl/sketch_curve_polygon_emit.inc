@@ -42,16 +42,33 @@
             is_selected_sketch_entity));
         if (view->active_sketch_feature_id.has_value() &&
             view->active_sketch_feature_id.value() == feature.id) {
-          // As above: an explicit dimension must win over an auto one
-          // rather than being masked by it.
-          const auto dimension_it = std::find_if(
+          // An explicit dimension must win over an auto one rather
+          // than being masked by it — search explicit first, then fall
+          // back to the auto dimension. The fallback matters: the
+          // circle tool's automatic radius dimension was previously
+          // never emitted, so its label vanished after reload ("the
+          // dimension is not visible like I never made it") while
+          // line auto dimensions (emitted without a filter) stayed.
+          auto dimension_matches_circle = [&](const SketchDimension& dimension,
+                                              bool require_explicit) {
+            return dimension.kind == "circle_radius" &&
+                   dimension.entity_id == circle.id &&
+                   (!require_explicit || !dimension.is_auto);
+          };
+          auto dimension_it = std::find_if(
               feature.sketch_parameters->dimensions.begin(),
               feature.sketch_parameters->dimensions.end(),
               [&](const SketchDimension& dimension) {
-                return dimension.kind == "circle_radius" &&
-                       dimension.entity_id == circle.id &&
-                       !dimension.is_auto;
+                return dimension_matches_circle(dimension, true);
               });
+          if (dimension_it == feature.sketch_parameters->dimensions.end()) {
+            dimension_it = std::find_if(
+                feature.sketch_parameters->dimensions.begin(),
+                feature.sketch_parameters->dimensions.end(),
+                [&](const SketchDimension& dimension) {
+                  return dimension_matches_circle(dimension, false);
+                });
+          }
           if (dimension_it != feature.sketch_parameters->dimensions.end()) {
             const bool is_selected_dimension =
                 view->selected_sketch_dimension_id.has_value() &&

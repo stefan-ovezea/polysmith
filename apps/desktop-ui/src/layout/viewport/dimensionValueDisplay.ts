@@ -46,10 +46,12 @@ export function dimensionDisplayValue({
     // directed angle), but users see an unsigned interior angle.
     return Math.abs(coreValue) * (180 / Math.PI);
   }
-  if (dimension.kind === "circle_radius") {
-    const displayAs = resolveDimensionDisplayAs(sketch, dimension.dimensionId);
-    return displayAs === "radius" ? coreValue : coreValue * 2;
-  }
+  // circle_radius dimensions (and every other length kind) already
+  // carry their DISPLAYED value over IPC — the core emits the diameter
+  // for diameter-mode circle dimensions and the radius for radius mode
+  // (feature_to_payload_sketch_dimension_entries.inc), and the update
+  // handler converts back on the way in. Converting again here doubled
+  // or halved every circle edit, so this passes through.
   return coreValue;
 }
 
@@ -65,10 +67,9 @@ export function dimensionCoreValue({
   if (dimension.kind === "angle" || dimension.kind === "line_angle") {
     return displayValue * (Math.PI / 180);
   }
-  if (dimension.kind === "circle_radius") {
-    const displayAs = resolveDimensionDisplayAs(sketch, dimension.dimensionId);
-    return displayAs === "radius" ? displayValue : displayValue / 2;
-  }
+  // circle_radius: send the displayed value as-is; the core's
+  // update_sketch_dimension handler halves diameter-mode values when it
+  // stores the radius.
   return displayValue;
 }
 

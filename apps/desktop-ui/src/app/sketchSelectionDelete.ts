@@ -20,15 +20,20 @@ export function currentSketchDeleteSelection(
   };
 }
 
+// The PLURAL lists are the real click/marquee selection; the SINGULAR
+// ids are a legacy echo (historically every draw command stored its
+// new entity there, and a stale last-drawn entity then joined the
+// delete set). Mirrors the core's delete resolver: plural wins, the
+// singular applies only when the plural list is empty.
 function dedupeSelectedIds(
   ids: readonly string[] | undefined,
   focusedId: string | null | undefined,
 ) {
-  const next = new Set(ids ?? []);
-  if (focusedId) {
-    next.add(focusedId);
+  const plural = ids ?? [];
+  if (plural.length > 0) {
+    return [...new Set(plural)];
   }
-  return [...next];
+  return focusedId ? [focusedId] : [];
 }
 
 export function extrudesAffectedBySketchSelection({
