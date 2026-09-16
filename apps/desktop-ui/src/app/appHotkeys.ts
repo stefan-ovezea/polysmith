@@ -26,6 +26,7 @@ export interface AppHotkeyContext {
     cancelActiveTool: AnyAsyncAction;
     runAction: RunAction;
     saveCurrentDocument: AnyAsyncAction;
+    saveDocumentAs: AnyAsyncAction;
     clearSelection: AsyncAction;
     undo: AsyncAction;
     redo: AsyncAction;
@@ -114,6 +115,13 @@ function handleSaveHotkey(
   event: KeyboardEvent,
   callbacks: AppHotkeyContext["callbacks"],
 ) {
+  if (isSaveAsHotkey(event)) {
+    event.preventDefault();
+    void callbacks.runAction(async () => {
+      await callbacks.saveDocumentAs();
+    });
+    return true;
+  }
   if (!isPlainSaveHotkey(event)) {
     return false;
   }
@@ -306,6 +314,15 @@ function isPlainSaveHotkey(event: KeyboardEvent) {
     (IS_MACOS ? event.metaKey : event.ctrlKey) &&
     !event.altKey &&
     !event.shiftKey
+  );
+}
+
+function isSaveAsHotkey(event: KeyboardEvent) {
+  return (
+    event.code === "KeyS" &&
+    (IS_MACOS ? event.metaKey : event.ctrlKey) &&
+    event.shiftKey &&
+    !event.altKey
   );
 }
 

@@ -176,7 +176,7 @@ sudo apt install -y \
   libgtk-3-dev libwebkit2gtk-4.1-dev \
   libayatana-appindicator3-dev librsvg2-dev \
   libssl-dev curl libjavascriptcoregtk-4.1-dev \
-  libsoup-3.0-dev libx11-dev
+  libsoup-3.0-dev libx11-dev libudev-dev
 
 # Node + pnpm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash

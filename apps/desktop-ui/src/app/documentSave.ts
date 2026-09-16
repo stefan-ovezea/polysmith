@@ -3,11 +3,15 @@ import { writeProjectThumbnail } from "../lib";
 import type { DocumentState } from "../types";
 import type { SavedDocumentBaseline } from "./appState";
 import { pickSaveDocumentPath, type DialogTranslate } from "./documentDialogs";
+import { directoryFromFilePath } from "./lastUsedDirectory";
 
 interface SaveCurrentDocumentContext {
   document: DocumentState | null;
   currentProjectPath: string | null;
   parentFolderId?: string | null;
+  // When true (Save As), always open the picker instead of reusing
+  // currentProjectPath.
+  forcePick?: boolean;
   translate: DialogTranslate;
   addMessage: (message: string) => void;
   saveDocument: (filePath: string) => Promise<void>;
@@ -26,6 +30,7 @@ export async function saveCurrentDocumentFromContext({
   document,
   currentProjectPath,
   parentFolderId,
+  forcePick = false,
   translate,
   addMessage,
   saveDocument,
@@ -41,6 +46,7 @@ export async function saveCurrentDocumentFromContext({
 
   const filePath = await resolveSavePath({
     currentProjectPath,
+    forcePick,
     document,
     translate,
     addMessage,
@@ -72,21 +78,31 @@ export async function saveCurrentDocumentFromContext({
 
 async function resolveSavePath({
   currentProjectPath,
+  forcePick,
   document,
   translate,
   addMessage,
 }: Pick<
   SaveCurrentDocumentContext,
-  "currentProjectPath" | "document" | "translate" | "addMessage"
+  | "currentProjectPath"
+  | "forcePick"
+  | "document"
+  | "translate"
+  | "addMessage"
 >) {
-  return (
-    currentProjectPath ??
-    (await pickSaveDocumentPath({
-      translate,
-      documentName: document?.name,
-      addMessage,
-    }))
-  );
+  if (!forcePick && currentProjectPath) {
+    return currentProjectPath;
+  }
+  return pickSaveDocumentPath({
+    translate,
+    documentName: document?.name,
+    addMessage,
+    // Save As starts next to the current file; a first save falls back
+    // to the remembered directory inside the picker.
+    directory: currentProjectPath
+      ? directoryFromFilePath(currentProjectPath)
+      : undefined,
+  });
 }
 
 async function saveDocumentAndWait(

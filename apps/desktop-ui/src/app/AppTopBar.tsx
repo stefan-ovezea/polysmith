@@ -94,6 +94,7 @@ interface AppTopBarProps {
   importIges: (filePath: string) => Promise<void>;
   exportDocumentIges: (filePath: string) => Promise<void>;
   saveCurrentDocument: () => Promise<unknown>;
+  saveDocumentAs: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
   pluginMenuItems: Array<{
@@ -249,6 +250,11 @@ export function AppTopBar(props: AppTopBarProps) {
       onSaveDocument={async () => {
         await props.runAction(async () => {
           await props.saveCurrentDocument();
+        });
+      }}
+      onSaveDocumentAs={async () => {
+        await props.runAction(async () => {
+          await props.saveDocumentAs();
         });
       }}
       onLoadDocument={async () => {

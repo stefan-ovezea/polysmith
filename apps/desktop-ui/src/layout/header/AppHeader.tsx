@@ -293,6 +293,7 @@ interface AppHeaderProps
   onExportDocument: () => Promise<void>;
   onExportDxf: () => Promise<void>;
   onSaveDocument: () => Promise<void>;
+  onSaveDocumentAs: () => Promise<void>;
   onLoadDocument: () => Promise<void>;
   onImportMesh: () => Promise<void>;
   onImportDxf: () => Promise<void>;
@@ -399,6 +400,7 @@ export function AppHeader({
   onExportDocument,
   onExportDxf,
   onSaveDocument,
+  onSaveDocumentAs,
   onLoadDocument,
   onImportMesh,
   onImportDxf,
@@ -731,6 +733,10 @@ export function AppHeader({
               { label: t("header.new"), onSelect: () => void onCreateDocument() },
               { label: t("header.open"), onSelect: () => void onLoadDocument() },
               { label: t("header.save"), onSelect: () => void onSaveDocument() },
+              {
+                label: t("header.saveAs"),
+                onSelect: () => void onSaveDocumentAs(),
+              },
               {
                 label: t("header.importMesh"),
                 onSelect: () => void onImportMesh(),
