@@ -281,12 +281,19 @@ async function handleProjectFacePick(context: ViewportFaceSelectionContext) {
   // surface arrives as the BODY id (primitive hit). Project the whole
   // body in the toolbar's section / silhouette mode. Converted meshes
   // (mesh_to_body) route here too — the core resolves them through
-  // the compiled body.
+  // the compiled body. Oversized STEP/IGES imports (above the core's
+  // pick-entry budget) also arrive as body-id hits; they project the
+  // whole assembly in the same mode.
   if (!context.faceId.includes(":face:")) {
     const feature = (context.document?.feature_history ?? []).find(
       (candidate) => candidate.feature_id === context.faceId,
     );
-    if (feature?.kind === "mesh_import" || feature?.kind === "mesh_to_body") {
+    if (
+      feature?.kind === "mesh_import" ||
+      feature?.kind === "mesh_to_body" ||
+      feature?.kind === "step_import" ||
+      feature?.kind === "iges_import"
+    ) {
       await context.runAction(async () => {
         try {
           await context.projectBodyIntoSketch(

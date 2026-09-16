@@ -161,15 +161,16 @@ void append_cached_body_topology(
   // Clicking the mesh body's surface resolves to a "primitive" hit that
   // the UI routes to the body projection / body selection.
   //
-  // Imported assemblies above kMaxImportPickEdgeCount edges get the
-  // same body-level-only picking model: a STEP-imported PCB board
+  // Imported assemblies above kMaxImportPickEdgeCount edges skip the
+  // per-edge/per-vertex pick entries: a STEP-imported PCB board
   // (78k edges, ~156k vertices, ~15k faces) produced a 47.5MB viewport
   // event whose ~250k edge/vertex/face pick objects made the UI
   // sluggish after every import, even once the seam-analysis rewrite
-  // cut the rebuild from ~30 minutes to ~3 seconds. Small imported
-  // parts stay fully pickable (face-level sketch placement, edge
-  // selection); only oversized assemblies degrade to body-level
-  // picking.
+  // cut the rebuild from ~30 minutes to ~3 seconds. Their FACES still
+  // emit decimated pick proxies (see decimate_pick_faces in
+  // enumerate_body_faces) so sketch-on-face placement, face selection,
+  // and face-based features keep working without the edge/vertex
+  // flood. Small imported parts stay fully pickable unchanged.
 
   for (const auto& body : compiled_bodies.bodies) {
     std::string label = body.id;
@@ -243,12 +244,13 @@ void append_cached_body_topology(
     }
 
     if (body_kind != "box" && body_kind != "cylinder" &&
-        body_kind != "mesh_import" && !oversized_import) {
+        body_kind != "mesh_import") {
       enumerate_body_faces(body.shape,
                            body.id,
                            body_kind,
                            document,
                            document.selected_face_id,
+                           /*decimate_pick_faces=*/oversized_import,
                            next.solid_faces);
     }
   }

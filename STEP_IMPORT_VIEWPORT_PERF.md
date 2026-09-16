@@ -50,10 +50,10 @@ Measured on the board:
 Small imports (≤ 8000 edges) are unaffected and keep full face/edge/vertex
 picking.
 
-## Known regression — must be resolved before this can land on dev
+## Known regression — RESOLVED by decimated per-face pick proxies
 
 Step 2 (the pick-entry threshold) removed the per-face pick entries for
-oversized imports, which breaks two workflows. **Both worked after step 1**
+oversized imports, which broke two workflows. **Both worked after step 1**
 (the load was fast and the viewport sluggish, but sketch-on-face and the
 silhouette projection of the board still functioned — confirmed by the user who
 tested the intermediate state):
@@ -61,17 +61,32 @@ tested the intermediate state):
 1. **Sketch on body face** — cannot start a sketch on a face of the imported
    board (face placement resolves through per-face pick entries).
 2. **Project tool on the body** — projecting the board's silhouette/section into
-   a sketch does nothing. Before step 2 the silhouette projection of the board
-   worked very well and was a valued workflow. The UI's body-hit routing
+   a sketch does nothing. The UI's body-hit routing
    (`handleProjectFacePick` in
    `apps/desktop-ui/src/app/viewportFaceSelection.ts`) only maps body-id clicks
-   to `project_body_into_sketch` for `mesh_import`/`mesh_to_body` kinds; it needs
-   `step_import`/`iges_import` added.
+   to `project_body_into_sketch` for `mesh_import`/`mesh_to_body` kinds.
+
+Fix (uncommitted, verified in core tests only — pending in-app verification):
+
+- **Core** — oversized imports now emit a DECIMATED per-face pick proxy per
+  face (`viewport.cpp` passes `decimate_pick_faces` to
+  `enumerate_body_faces`). Faces above `kMaxMeshFacePickTriangles` (48) ship a
+  centroid fan over the outer wire (planar faces — exact, boundary strided to
+  the budget) or a strided triangulation subset (curved faces, where a fan
+  would span only one cross-section). Small faces ship their full (tiny)
+  triangulation. Per-edge/per-vertex entries stay skipped — the proxy payload
+  is a few MB versus the original 47.5 MB flood. Face ids + plane frames +
+  surface classification all flow, so sketch-on-face placement, face
+  selection, and face-based features work again.
+- **UI** — `handleProjectFacePick` now maps body-id clicks to
+  `project_body_into_sketch` for `step_import`/`iges_import` too, restoring the
+  silhouette/section projection of the board.
+- **Tests** — `viewport_seam_enumeration_test` test 4 rewritten: an oversized
+  compound (900 boxes + big cylinder + 100-gon prism) asserts every face proxy
+  stays within the 48-triangle budget, planar fans exist (sketch placement),
+  and curved faces keep their surface kind + radius witness. Verified
+  fail-before (old gate: 0 face entries) / pass-after. Full suite: 50/50,
+  `tsc --noEmit` clean.
 
 Since step 1 alone (commit 873ff65) is a pure speed win with no behavior change,
 it can be kept independently of step 2 if desired.
-
-Ideas for the follow-up: emit decimated per-face pick proxies for oversized
-imports (precedent: `kMaxMeshFacePickTriangles` decimation for `mesh_to_body`),
-and/or raise the pick budget so the board keeps face picking while the payload
-stays bounded.

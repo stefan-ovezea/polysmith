@@ -24,12 +24,17 @@
 #include <iostream>
 #include <string>
 
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPControl_Writer.hxx>
 #include <TopoDS.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
 
 #include "core/document/document.h"
 #include "core/viewport/viewport.h"
@@ -216,14 +221,59 @@ bool test_many_solid_compound_tripwire(DocumentManager& manager) {
 
 // --- oversized-import pick budget ----------------------------------------
 
-// Imports above kMaxImportPickEdgeCount edges emit ONLY the body mesh
-// primitive (body-level picking), mirroring mesh_import — the per-edge/
-// per-vertex/per-face entries would otherwise flood the viewport
-// payload and the scene-graph (see viewport.cpp).
-bool test_oversized_import_body_level_picking(DocumentManager& manager) {
+// Mirrors kMaxMeshFacePickTriangles in
+// core/viewport/impl/body_face_helpers.inc (not a header — duplicated
+// here like kMaxImportPickEdgeCount below).
+constexpr int kTestPickFaceTriangleBudget = 48;
+
+// A 100-gon prism: both end faces are planar with a 100-vertex outer
+// wire, which the mesher splits into ~98 triangles — above the pick
+// budget, so they exercise the bounded centroid-fan proxy path.
+TopoDS_Shape make_ngon_prism(int sides, double radius, double height) {
+  const double kPi = std::acos(-1.0);
+  BRepBuilderAPI_MakeWire wire_builder;
+  for (int i = 0; i < sides; ++i) {
+    const double start_angle = 2.0 * kPi * static_cast<double>(i) / sides;
+    const double end_angle = start_angle + 2.0 * kPi / sides;
+    wire_builder.Add(BRepBuilderAPI_MakeEdge(
+        gp_Pnt(radius * std::cos(start_angle),
+               radius * std::sin(start_angle), 0.0),
+        gp_Pnt(radius * std::cos(end_angle), radius * std::sin(end_angle),
+               0.0)));
+  }
+  if (!wire_builder.IsDone()) {
+    std::cerr << "fixture: ngon wire failed\n";
+    return TopoDS_Shape();
+  }
+  BRepBuilderAPI_MakeFace face_builder(wire_builder.Wire());
+  if (!face_builder.IsDone()) {
+    std::cerr << "fixture: ngon face failed\n";
+    return TopoDS_Shape();
+  }
+  BRepPrimAPI_MakePrism prism(face_builder.Face(), gp_Vec(0.0, 0.0, height));
+  if (!prism.IsDone()) {
+    std::cerr << "fixture: ngon prism failed\n";
+    return TopoDS_Shape();
+  }
+  return prism.Shape();
+}
+
+// Imports above kMaxImportPickEdgeCount (8000) edges skip the per-edge
+// and per-vertex pick entries — they would flood the viewport payload
+// and the scene-graph (see viewport.cpp) — but still emit a DECIMATED
+// per-face pick proxy per face so sketch-on-face placement, face
+// selection, and face-based features keep working. Faces above the
+// pick-triangle budget are fanned (planar) or strided (curved) down to
+// kMaxMeshFacePickTriangles; small faces ship their full (tiny)
+// triangulation.
+bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
   const std::string path = temp_step_path("huge_import");
   STEPControl_Writer writer;
-  // 900 boxes = 10800 edges > kMaxImportPickEdgeCount (8000).
+  // 900 boxes + one big cylinder + one 100-gon prism: 10800 + 3 + 300
+  // edges > kMaxImportPickEdgeCount (8000). The cylinder's lateral
+  // face meshes to ~1440 triangles (deflection 0.1, angular 0.5°) so
+  // the strided (curved-face) path is exercised, and the prism end
+  // faces pin the bounded fan path.
   constexpr int kBoxCount = 900;
   for (int i = 0; i < kBoxCount; ++i) {
     if (writer.Transfer(
@@ -235,6 +285,19 @@ bool test_oversized_import_body_level_picking(DocumentManager& manager) {
       return false;
     }
   }
+  if (writer.Transfer(BRepPrimAPI_MakeCylinder(/*radius=*/50.0,
+                                               /*height=*/100.0)
+                          .Shape(),
+                      STEPControl_AsIs) != IFSelect_RetDone) {
+    std::cerr << "fixture: transfer of cylinder failed\n";
+    return false;
+  }
+  if (writer.Transfer(make_ngon_prism(/*sides=*/100, /*radius=*/200.0,
+                                      /*height=*/20.0),
+                      STEPControl_AsIs) != IFSelect_RetDone) {
+    std::cerr << "fixture: transfer of ngon prism failed\n";
+    return false;
+  }
   if (writer.Write(path.c_str()) != IFSelect_RetDone) {
     std::cerr << "fixture: writer.Write failed\n";
     return false;
@@ -244,18 +307,68 @@ bool test_oversized_import_body_level_picking(DocumentManager& manager) {
 
   if (!expect(viewport.meshes.size() == 1 &&
                   !viewport.meshes.front().indices.empty(),
-              "oversized: the body mesh must still be emitted (the only "
-              "renderable primitive)")) {
+              "oversized: the body mesh must still be emitted")) {
     return false;
   }
-  return expect(viewport.edges.empty(),
-                "oversized: per-edge pick entries must be skipped") &&
-         expect(viewport.vertices.empty(),
-                "oversized: per-vertex pick entries must be skipped") &&
-         expect(viewport.solid_faces.empty(),
-                "oversized: per-face pick entries must be skipped") &&
-         expect(viewport.bodies.size() == 1,
-                "oversized: the body summary must still be emitted");
+  if (!expect(viewport.edges.empty(),
+              "oversized: per-edge pick entries must be skipped") ||
+      !expect(viewport.vertices.empty(),
+              "oversized: per-vertex pick entries must be skipped") ||
+      !expect(viewport.bodies.size() == 1,
+              "oversized: the body summary must still be emitted")) {
+    return false;
+  }
+
+  // 900 boxes (6 faces) + cylinder (2 rims + 1 wall) + 100-gon prism
+  // (100 sides + 2 end faces) — every face gets a pick proxy.
+  constexpr int kExpectedFaces = kBoxCount * 6 + 3 + 102;
+  if (!expect(viewport.solid_faces.size() == kExpectedFaces,
+              ("oversized: expected " + std::to_string(kExpectedFaces) +
+               " face proxies, got " +
+               std::to_string(viewport.solid_faces.size()))
+                  .c_str())) {
+    return false;
+  }
+
+  bool found_planar_face = false;
+  bool found_capped_fan_face = false;
+  bool found_cylinder_face = false;
+  for (const auto& face : viewport.solid_faces) {
+    if (face.triangle_indices.size() % 3 != 0 ||
+        static_cast<int>(face.triangle_indices.size() / 3) >
+            kTestPickFaceTriangleBudget) {
+      std::cerr << "oversized: face proxy " << face.face_id << " ships "
+                << face.triangle_indices.size() / 3
+                << " triangles — above the pick budget\n";
+      return false;
+    }
+    if (face.sketchability == "planar") {
+      found_planar_face = true;
+      // The prism end faces are planar with 100-edge outer wires: a
+      // bounded fan (~34 triangles). Without the boundary cap the fan
+      // would ship 100 triangles and trip the budget check above;
+      // without decimation the mesher's ~98 triangles would do the
+      // same. A count above 2 (a box face's full pair) pins the
+      // decimated fan specifically.
+      if (face.triangle_indices.size() / 3 > 2) {
+        found_capped_fan_face = true;
+      }
+    }
+    if (face.surface_kind == "cylinder" &&
+        face.cylinder_radius.has_value()) {
+      found_cylinder_face = true;
+    }
+  }
+
+  return expect(found_planar_face,
+                "oversized: planar face proxies must be emitted (sketch "
+                "on face placement)") &&
+         expect(found_capped_fan_face,
+                "oversized: a decimated planar fan proxy must exist (the "
+                "100-gon prism end faces)") &&
+         expect(found_cylinder_face,
+                "oversized: curved faces keep their surface kind + radius "
+                "witness (the cylinder wall)");
 }
 
 }  // namespace
@@ -268,8 +381,9 @@ int main() {
   if (!test_box_emits_all_edges_and_vertices(manager)) return 1;
   std::cerr << "[viewport_seam_enumeration_test] test 3: many-solid tripwire\n";
   if (!test_many_solid_compound_tripwire(manager)) return 1;
-  std::cerr << "[viewport_seam_enumeration_test] test 4: oversized import\n";
-  if (!test_oversized_import_body_level_picking(manager)) return 1;
+  std::cerr << "[viewport_seam_enumeration_test] test 4: oversized import "
+               "face proxies\n";
+  if (!test_oversized_import_decimated_face_proxies(manager)) return 1;
   std::cout << "viewport_seam_enumeration_test passed\n";
   return 0;
 }
