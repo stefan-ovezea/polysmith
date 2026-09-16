@@ -1518,6 +1518,7 @@ function App() {
     discardThenContinuePendingAction,
     executePendingAction,
     saveCurrentDocument,
+    saveDocumentAs,
     saveThenContinuePendingAction,
   } = createDocumentLifecycleActions({
     document,
@@ -1578,6 +1579,7 @@ function App() {
       cancelActiveTool,
       runAction,
       saveCurrentDocument,
+      saveDocumentAs,
       clearSelection,
       undo,
       redo,
@@ -2682,6 +2684,7 @@ function App() {
           importIges={importIges}
           exportDocumentIges={exportDocumentIges}
           saveCurrentDocument={saveCurrentDocument}
+          saveDocumentAs={saveDocumentAs}
           undo={undo}
           redo={redo}
           pluginMenuItems={pluginMenuItems}

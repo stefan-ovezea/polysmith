@@ -70,19 +70,30 @@ export function createDocumentLifecycleActions({
     return snapshotCaptureRef.current?.() ?? null;
   }
 
+  const saveDocumentContext = {
+    document,
+    currentProjectPath,
+    translate,
+    addMessage,
+    saveDocument,
+    captureProjectThumbnail,
+    getCurrentDocument: () => useCadCoreStore.getState().document,
+    setCurrentProjectPath,
+    setSavedDocumentBaseline,
+    recordRecentProject,
+  };
+
   async function saveCurrentDocument(parentFolderId?: string | null) {
     return saveCurrentDocumentFromContext({
-      document,
-      currentProjectPath,
+      ...saveDocumentContext,
       parentFolderId,
-      translate,
-      addMessage,
-      saveDocument,
-      captureProjectThumbnail,
-      getCurrentDocument: () => useCadCoreStore.getState().document,
-      setCurrentProjectPath,
-      setSavedDocumentBaseline,
-      recordRecentProject,
+    });
+  }
+
+  async function saveDocumentAs() {
+    return saveCurrentDocumentFromContext({
+      ...saveDocumentContext,
+      forcePick: true,
     });
   }
 
@@ -181,6 +192,7 @@ export function createDocumentLifecycleActions({
     discardThenContinuePendingAction,
     executePendingAction,
     saveCurrentDocument,
+    saveDocumentAs,
     saveThenContinuePendingAction,
   };
 }

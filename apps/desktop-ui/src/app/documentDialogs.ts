@@ -1,4 +1,9 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  directoryFromFilePath,
+  readLastUsedDirectory,
+  writeLastUsedDirectory,
+} from "./lastUsedDirectory";
 
 export type DialogTranslate = (key: string) => string;
 
@@ -6,6 +11,7 @@ export interface DocumentDialogContext {
   translate: DialogTranslate;
   documentName?: string | null;
   addMessage: (message: string) => void;
+  directory?: string | null;
 }
 
 export function makeDefaultExportBaseName(name?: string | null) {
@@ -118,10 +124,17 @@ export async function pickSaveDocumentPath({
   translate,
   documentName,
   addMessage,
+  directory,
 }: DocumentDialogContext) {
+  const baseName = makeDefaultExportBaseName(documentName);
+  const dialogDirectory = directory ?? readLastUsedDirectory();
   const filePath = await save({
     title: translate("dialogs.saveDocumentTitle"),
-    defaultPath: `${makeDefaultExportBaseName(documentName)}.polysmith`,
+    // A forward slash works on Windows too — the dialog plugin builds
+    // the path through PathBuf and splits it into directory + filename.
+    defaultPath: dialogDirectory
+      ? `${dialogDirectory}/${baseName}.polysmith`
+      : `${baseName}.polysmith`,
     filters: [
       {
         name: translate("dialogs.polysmithDocumentType"),
@@ -135,6 +148,7 @@ export async function pickSaveDocumentPath({
     return null;
   }
 
+  writeLastUsedDirectory(directoryFromFilePath(filePath));
   return filePath;
 }
 
@@ -146,6 +160,7 @@ export async function pickLoadDocumentPath({
     title: translate("dialogs.openDocumentTitle"),
     multiple: false,
     directory: false,
+    defaultPath: readLastUsedDirectory() ?? undefined,
     filters: [
       {
         name: translate("dialogs.polysmithDocumentType"),
@@ -159,6 +174,7 @@ export async function pickLoadDocumentPath({
     return null;
   }
 
+  writeLastUsedDirectory(directoryFromFilePath(result));
   return result;
 }
 

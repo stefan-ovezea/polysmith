@@ -74,6 +74,7 @@
     "plugins": "Plugins",
     "redo": "Redo",
     "save": "Save...",
+    "saveAs": "Save As...",
     "settings": "Settings",
     "startCore": "Start Core",
     "toggleUnits": "Toggle units ({{units}})",
