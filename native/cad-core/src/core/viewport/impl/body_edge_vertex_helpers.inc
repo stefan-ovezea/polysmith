@@ -82,29 +82,6 @@ bool edge_curve_type_is(const TopoDS_Edge& edge, GeomAbs_CurveType type) {
   }
 }
 
-bool is_nonsemantic_seam_line_edge(const TopoDS_Shape& body_shape,
-                                   const TopoDS_Edge& edge) {
-  if (body_shape.IsNull() || edge.IsNull() ||
-      !edge_curve_type_is(edge, GeomAbs_Line)) {
-    return false;
-  }
-  for (TopExp_Explorer explorer(body_shape, TopAbs_FACE); explorer.More();
-       explorer.Next()) {
-    const TopoDS_Face face = TopoDS::Face(explorer.Current());
-    if (face.IsNull()) {
-      continue;
-    }
-    try {
-      if (BRep_Tool::IsClosed(edge, face)) {
-        return true;
-      }
-    } catch (const std::exception&) {
-      continue;
-    }
-  }
-  return false;
-}
-
 bool is_full_circle_edge(const TopoDS_Edge& edge) {
   try {
     BRepAdaptor_Curve curve(edge);
@@ -127,38 +104,126 @@ bool is_full_circle_edge(const TopoDS_Edge& edge) {
   }
 }
 
-bool edge_contains_vertex(const TopoDS_Edge& edge, const TopoDS_Vertex& vertex) {
-  TopoDS_Vertex first;
-  TopoDS_Vertex last;
-  TopExp::Vertices(edge, first, last, /*CumOri=*/false);
-  return (!first.IsNull() && first.IsSame(vertex)) ||
-         (!last.IsNull() && last.IsSame(vertex));
-}
-
 // FacetEdgeFilter (core/viewport/facet_edge_filter.h) drops
 // triangulation seams between coplanar faces — see the header for the
 // rationale (payload flood on faceted converted bodies).
 
-bool is_nonsemantic_circle_seam_vertex(const TopoDS_Shape& body_shape,
-                                       const TopoDS_Vertex& vertex) {
-  if (body_shape.IsNull() || vertex.IsNull()) {
-    return false;
+// Precomputed seam topology for one body shape, replacing the
+// historical per-shape probes:
+//  - the seam-line probe scanned EVERY face for EVERY edge (O(E×F)),
+//    and
+//  - the circle-seam probe rebuilt the body's edge map for EVERY
+//    vertex and then scanned all edges (O(V×E)).
+// A STEP-imported PCB assembly (~78k edges, ~156k vertices, ~15k
+// faces) spent ~30 minutes in those two probes before the viewport
+// event went out. The incidence-based build below walks the topology
+// once and produces the same sets.
+struct BodySeamAnalysis {
+  // Edges that are straight lines AND close a face (the lateral seam
+  // of a cylinder, the tube seam of a revolved surface).
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>
+      seam_line_edges;
+  // Vertices whose EVERY incident edge is a seam line or a full
+  // circle (a cylinder's seam endpoints and rim vertices) — excluded
+  // from the pickable vertex set.
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>
+      seam_circle_vertices;
+};
+
+BodySeamAnalysis build_seam_analysis(const TopoDS_Shape& body_shape) {
+  BodySeamAnalysis analysis;
+  if (body_shape.IsNull()) {
+    return analysis;
   }
-  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
-  TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
-  bool found_incident_edge = false;
-  for (int i = 1; i <= edge_map.Extent(); ++i) {
-    const TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
-    if (edge.IsNull() || !edge_contains_vertex(edge, vertex)) {
+
+  // Pass 1 — seam line edges. Iterate each face's own edges once and
+  // keep the straight-line edges that close the face. Equivalent to
+  // the old per-edge scan of all faces (IsClosed counts the edge's
+  // occurrences in the face's wires, orientation-insensitively), but
+  // O(face-edge incidences) instead of O(E×F).
+  for (TopExp_Explorer face_exp(body_shape, TopAbs_FACE); face_exp.More();
+       face_exp.Next()) {
+    const TopoDS_Face face = TopoDS::Face(face_exp.Current());
+    if (face.IsNull()) {
       continue;
     }
-    found_incident_edge = true;
-    if (!is_nonsemantic_seam_line_edge(body_shape, edge) &&
-        !is_full_circle_edge(edge)) {
-      return false;
+    for (TopExp_Explorer edge_exp(face, TopAbs_EDGE); edge_exp.More();
+         edge_exp.Next()) {
+      const TopoDS_Edge edge = TopoDS::Edge(edge_exp.Current());
+      if (edge.IsNull()) {
+        continue;
+      }
+      bool closed = false;
+      try {
+        closed = BRep_Tool::IsClosed(edge, face);
+      } catch (const std::exception&) {
+        continue;
+      }
+      if (!closed || !edge_curve_type_is(edge, GeomAbs_Line)) {
+        continue;
+      }
+      TopoDS_Edge normalized = edge;
+      normalized.Orientation(TopAbs_FORWARD);
+      if (!analysis.seam_line_edges.Contains(normalized)) {
+        analysis.seam_line_edges.Add(normalized);
+      }
     }
   }
-  return found_incident_edge;
+
+  // Pass 2 — circle-seam vertices. Walk each edge's two endpoints
+  // once, recording per-vertex whether every incident edge is a seam
+  // line or a full circle. A vertex with no incident edge at all is
+  // not a seam vertex (same as the old probe's found_incident_edge).
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
+  TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> vertex_map;
+  std::vector<bool> all_incident_seam_like;
+  std::vector<bool> has_incident_edge;
+
+  const auto edge_is_seam_like = [&](const TopoDS_Edge& edge) {
+    TopoDS_Edge normalized = edge;
+    normalized.Orientation(TopAbs_FORWARD);
+    return analysis.seam_line_edges.Contains(normalized) ||
+           is_full_circle_edge(edge);
+  };
+  const auto mark_vertex = [&](const TopoDS_Vertex& vertex,
+                               bool incident_seam_like) {
+    if (vertex.IsNull()) {
+      return;
+    }
+    TopoDS_Vertex normalized = vertex;
+    normalized.Orientation(TopAbs_FORWARD);
+    int index = -1;
+    if (vertex_map.Contains(normalized)) {
+      index = vertex_map.FindIndex(normalized);
+    } else {
+      index = vertex_map.Add(normalized);
+      all_incident_seam_like.push_back(incident_seam_like);
+      has_incident_edge.push_back(true);
+    }
+    if (!incident_seam_like) {
+      all_incident_seam_like[static_cast<size_t>(index - 1)] = false;
+    }
+  };
+  for (int i = 1; i <= edge_map.Extent(); ++i) {
+    const TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
+    if (edge.IsNull()) {
+      continue;
+    }
+    TopoDS_Vertex first;
+    TopoDS_Vertex last;
+    TopExp::Vertices(edge, first, last, /*CumOri=*/false);
+    const bool seam_like = edge_is_seam_like(edge);
+    mark_vertex(first, seam_like);
+    mark_vertex(last, seam_like);
+  }
+  for (int i = 1; i <= vertex_map.Extent(); ++i) {
+    if (has_incident_edge[static_cast<size_t>(i - 1)] &&
+        all_incident_seam_like[static_cast<size_t>(i - 1)]) {
+      analysis.seam_circle_vertices.Add(vertex_map(i));
+    }
+  }
+  return analysis;
 }
 
 // Append every unique edge of `body_shape` to `out`, owned by `body_id`.
@@ -177,17 +242,25 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
     return;
   }
 
+  // Seam topology computed once per body (see build_seam_analysis) —
+  // the seam-line probe used to iterate every face per edge (O(E×F)).
+  // Faceted STL bodies have no closing edges of closed CAD surfaces,
+  // so the analysis is skipped for them.
+  const BodySeamAnalysis seam_analysis =
+      facet_filter == nullptr ? build_seam_analysis(body_shape)
+                              : BodySeamAnalysis{};
+
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
   TopExp::MapShapes(body_shape, TopAbs_EDGE, edge_map);
 
   for (int i = 1; i <= edge_map.Extent(); ++i) {
     const TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
-    // The seam-line probe iterates every face per edge (O(E×F)) and
-    // only finds closing edges of closed CAD surfaces — faceted STL
-    // bodies have none, so skip it for them.
-    if (facet_filter == nullptr &&
-        is_nonsemantic_seam_line_edge(body_shape, edge)) {
-      continue;
+    if (facet_filter == nullptr) {
+      TopoDS_Edge normalized = edge;
+      normalized.Orientation(TopAbs_FORWARD);
+      if (seam_analysis.seam_line_edges.Contains(normalized)) {
+        continue;
+      }
     }
     if (facet_filter != nullptr && !facet_filter->keep(edge)) {
       continue;
@@ -291,6 +364,14 @@ void enumerate_body_vertices(
     }
   }
 
+  // Circle-seam vertices precomputed once per body (see
+  // build_seam_analysis) — the old probe rebuilt the whole edge map
+  // PER VERTEX (O(V×E), seconds on facet clouds) and only finds seam
+  // vertices of closed CAD surfaces, so faceted STL bodies skip it.
+  const BodySeamAnalysis seam_analysis =
+      facet_filter == nullptr ? build_seam_analysis(body_shape)
+                              : BodySeamAnalysis{};
+
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> vertex_map;
   TopExp::MapShapes(body_shape, TopAbs_VERTEX, vertex_map);
 
@@ -303,12 +384,12 @@ void enumerate_body_vertices(
       if (!kept_vertex_map.Contains(vertex)) {
         continue;
       }
-      // Skip the circle-seam probe for faceted bodies: it rebuilds
-      // the whole edge map PER VERTEX (O(V×E), seconds on facet
-      // clouds) and only finds seam vertices of closed CAD surfaces —
-      // faceted STL circles are chorded polygons, no seams.
-    } else if (is_nonsemantic_circle_seam_vertex(body_shape, vertex)) {
-      continue;
+    } else {
+      TopoDS_Vertex normalized = vertex;
+      normalized.Orientation(TopAbs_FORWARD);
+      if (seam_analysis.seam_circle_vertices.Contains(normalized)) {
+        continue;
+      }
     }
     gp_Pnt position;
     try {

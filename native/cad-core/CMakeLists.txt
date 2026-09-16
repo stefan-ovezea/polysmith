@@ -451,6 +451,8 @@ polysmith_add_core_test(cad_core_dxf_import_export_test tests/dxf_import_export_
 
 polysmith_add_core_test(cad_core_step_import_test tests/step_import_test.cpp)
 
+polysmith_add_core_test(cad_core_viewport_seam_enumeration_test tests/viewport_seam_enumeration_test.cpp)
+
 polysmith_add_core_test(cad_core_iges_import_export_test tests/iges_import_export_test.cpp)
 
 # Text engine unit tests — links only the engine + OCCT font stack
