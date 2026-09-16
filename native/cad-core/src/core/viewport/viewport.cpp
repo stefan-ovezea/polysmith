@@ -112,6 +112,12 @@ CompiledBodies compile_bodies_for_viewport(const DocumentState& document) {
   return compiled;
 }
 
+// Imported (STEP/IGES) bodies above this edge count emit ONLY their
+// body mesh primitive — no per-edge/per-vertex/per-face pick entries.
+// See the comment in append_cached_body_topology for the payload and
+// scene-object budget this protects.
+constexpr int kMaxImportPickEdgeCount = 8000;
+
 void append_cached_body_topology(
     const DocumentState& document,
     const CompiledBodies& compiled_bodies,
@@ -154,6 +160,17 @@ void append_cached_body_topology(
   // viewport events were implicated in UI freezes after projections.
   // Clicking the mesh body's surface resolves to a "primitive" hit that
   // the UI routes to the body projection / body selection.
+  //
+  // Imported assemblies above kMaxImportPickEdgeCount edges skip the
+  // per-edge/per-vertex pick entries: a STEP-imported PCB board
+  // (78k edges, ~156k vertices, ~15k faces) produced a 47.5MB viewport
+  // event whose ~250k edge/vertex/face pick objects made the UI
+  // sluggish after every import, even once the seam-analysis rewrite
+  // cut the rebuild from ~30 minutes to ~3 seconds. Their FACES still
+  // emit decimated pick proxies (see decimate_pick_faces in
+  // enumerate_body_faces) so sketch-on-face placement, face selection,
+  // and face-based features keep working without the edge/vertex
+  // flood. Small imported parts stay fully pickable unchanged.
 
   for (const auto& body : compiled_bodies.bodies) {
     std::string label = body.id;
@@ -183,6 +200,20 @@ void append_cached_body_topology(
 
     const TopoDS_Shape& edge_pick_shape =
         body.pick_shape.IsNull() ? body.shape : body.pick_shape;
+
+    // Oversized-import budget check: one O(E) UNIQUE edge count
+    // (MapShapes, not an explorer — explorers count occurrences, one
+    // per adjacent face, roughly doubling the count), computed only for
+    // imported kinds (see kMaxImportPickEdgeCount).
+    int import_edge_count = 0;
+    if (body_kind == "step_import" || body_kind == "iges_import") {
+      NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
+      TopExp::MapShapes(body.shape, TopAbs_EDGE, edge_map);
+      import_edge_count = edge_map.Extent();
+    }
+    const bool oversized_import =
+        import_edge_count > kMaxImportPickEdgeCount;
+
     // Imported meshes emit NO per-edge/per-vertex pick entries: their
     // raw triangle soup carries ~10k facet edges + ~4.7k facet
     // vertices (~2MB of JSON per refresh on a fan panel), and the
@@ -192,7 +223,7 @@ void append_cached_body_topology(
     // corners, but filtered to the SEMANTIC ones: FacetEdgeFilter
     // drops triangulation seams between coplanar faces (flat region
     // interiors), keeping the outline, steps, and hole rims.
-    if (body_kind != "mesh_import") {
+    if (body_kind != "mesh_import" && !oversized_import) {
       // One shared FacetEdgeFilter for the mesh_to_body body — its
       // face-normal cache is reused by both enumerations (building it
       // twice doubled the viewport rebuild cost).
@@ -219,6 +250,7 @@ void append_cached_body_topology(
                            body_kind,
                            document,
                            document.selected_face_id,
+                           /*decimate_pick_faces=*/oversized_import,
                            next.solid_faces);
     }
   }

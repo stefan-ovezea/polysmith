@@ -210,6 +210,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
                            const std::string& body_kind,
                            const DocumentState& document,
                            const std::optional<std::string>& selected_face_id,
+                           bool decimate_pick_faces,
                            std::vector<ViewportSolidFace>& out) {
   if (body_shape.IsNull()) {
     return;
@@ -288,9 +289,13 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     // enough geometry for raycast picking + hover, so mesh_to_body
     // faces emit a strided subset (positions compacted to the used
     // nodes only) capped at kMaxMeshFacePickTriangles. Regular bodies
-    // keep the full triangulation.
-    const bool decimate = body_kind == "mesh_to_body" &&
-                          triangle_count > kMaxMeshFacePickTriangles;
+    // keep the full triangulation. Oversized STEP/IGES imports
+    // (decimate_pick_faces — see viewport.cpp) apply the same budget
+    // to their large faces so face picking survives without the
+    // per-edge/per-vertex payload flood.
+    const bool decimate =
+        (body_kind == "mesh_to_body" || decimate_pick_faces) &&
+        triangle_count > kMaxMeshFacePickTriangles;
     const int stride =
         decimate
             ? (triangle_count + kMaxMeshFacePickTriangles - 1) /
@@ -304,7 +309,10 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
       // picks mostly miss. The fan covers the whole face (holes
       // included — picking inside a hole selects the face, which is
       // an acceptable trade for converted-mesh bodies). Mesh faces
-      // are planar, so a 2D fan is exact.
+      // are planar, so a 2D fan is exact. A non-planar face of an
+      // oversized import falls back to the strided subset below: a
+      // fan through a curved surface's outer wire spans only one
+      // cross-section and would miss most picks.
       std::vector<gp_Pnt> boundary;
       try {
         const TopoDS_Wire outer = BRepTools::OuterWire(face);
@@ -319,7 +327,25 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
       } catch (const std::exception&) {
         boundary.clear();
       }
-      if (boundary.size() >= 3) {
+      // Oversized-import proxies bound the fan at the pick-triangle
+      // budget: a boolean-heavy planar face can carry hundreds of
+      // outer-wire vertices, and the fan emits one triangle per
+      // boundary vertex.
+      if (decimate_pick_faces &&
+          boundary.size() > kMaxMeshFacePickTriangles) {
+        const size_t boundary_stride =
+            (boundary.size() + kMaxMeshFacePickTriangles - 1) /
+            kMaxMeshFacePickTriangles;
+        std::vector<gp_Pnt> strided;
+        strided.reserve((boundary.size() + boundary_stride - 1) /
+                        boundary_stride);
+        for (size_t k = 0; k < boundary.size(); k += boundary_stride) {
+          strided.push_back(boundary[k]);
+        }
+        boundary = std::move(strided);
+      }
+
+      if (boundary.size() >= 3 && (!decimate_pick_faces || frame_info.is_planar)) {
         gp_Pnt centroid(0.0, 0.0, 0.0);
         for (const gp_Pnt& point : boundary) {
           centroid.ChangeCoord() += point.XYZ();

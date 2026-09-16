@@ -2032,3 +2032,61 @@ reading — no abort, no loud error event. Fix alongside the React bug.
 - `apps/desktop-ui/src/layout/CamGrblPanel.tsx` — loop consumer (effect 254)
 - `C:\Users\PC\grbl_tools\laser-board.yaml` — machine config (mirror of board)
 - `res/untitled-part.nc` — the problem job (bounds 0..232.7 × 0..172.4)
+---
+# Active task: STEP import viewport perf — regression fix (2026-09-16)
+
+> **Branch:** `step-import-viewport-perf` (checked out from origin — pushed
+> from the other workstation). dev + 1 commit (873ff65, seam-analysis rewrite
+> + step-2 pick threshold). Working tree clean on arrival.
+> **Round 1 (this machine): oversized-import regression FIXED — decimated
+> per-face pick proxies + projection routing. UNCOMMITTED; pending user
+> in-app verification.**
+
+## Round 1 — decimated face proxies + projection (2026-09-16)
+
+Regression from step 2 (oversized imports > 8000 edges emitted NO face
+pick entries): sketch-on-face placement and the Project tool on the board
+both broke; both worked after step 1 (user-confirmed on the other station).
+
+Fixes:
+- Core `viewport.cpp` — oversized imports again call `enumerate_body_faces`,
+  passing `decimate_pick_faces=oversized_import`; per-edge/per-vertex
+  entries stay skipped (the 78k-line / 156k-sprite flood stays out).
+- Core `body_face_helpers.inc` — `decimate_pick_faces` joins the
+  `mesh_to_body` decimation condition (faces > 48 triangles only, small
+  faces ship full). Planar faces emit the centroid fan (boundary strided
+  to the 48 budget); NON-planar faces fall back to the strided subset
+  (a fan through a curved surface's outer wire spans one cross-section
+  and misses picks). Face ids + plane frames + surface kinds flow, so
+  sketch-on-face / face selection / face features work again.
+- UI `viewportFaceSelection.ts` — body-id clicks now project
+  `step_import`/`iges_import` bodies (section/silhouette) like
+  mesh imports.
+- Tests `viewport_seam_enumeration_test` test 4 REWRITTEN:
+  `test_oversized_import_decimated_face_proxies` — 900 boxes + cylinder
+  + 100-gon prism compound (11103 edges): 5505 face proxies, every
+  proxy ≤ 48 triangles, planar capped fan present, cylinder wall keeps
+  surface_kind + radius witness. Verified FAIL-BEFORE (old gate → 0
+  faces → suite red) / pass-after.
+
+Gates: `pnpm core:build` + **50/50 suites** + `tsc --noEmit` clean.
+
+Next-session checklist:
+1. **In-app verification (binding, before any commit):** import the real
+   PCB board STEP → (a) start a sketch on a board face, (b) Project tool
+   → silhouette/section projection works, (c) payload stays bounded
+   (Logs panel viewport event size; expect ~20 MB, not 47.5 MB), (d)
+   small STEP imports unchanged (full face/edge/vertex picking).
+2. Commit after the user confirms (no Co-Authored-By trailer).
+
+## Key files (this branch)
+
+- `native/cad-core/src/core/viewport/viewport.cpp` — oversized gate +
+  decimate flag pass-through
+- `native/cad-core/src/core/viewport/impl/body_face_helpers.inc` —
+  fan/strided decimation, boundary cap, planar gate
+- `apps/desktop-ui/src/app/viewportFaceSelection.ts` — step/iges
+  projection routing
+- `native/cad-core/tests/viewport_seam_enumeration_test.cpp` — test 4
+- `STEP_IMPORT_VIEWPORT_PERF.md` — branch work notes (regression section
+  updated)
