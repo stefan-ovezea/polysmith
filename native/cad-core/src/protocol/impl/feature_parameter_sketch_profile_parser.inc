@@ -19,18 +19,18 @@
     // the keys — empty vectors mean a non-spline edge).
     if (edge_payload.contains("spline_degree") &&
         edge_payload.at("spline_degree").is_number()) {
-      edge.spline_degree = edge_payload.at("spline_degree").get<int>();
+      edge.spline_degree = edge_payload.at("spline_degree").template get<int>();
     }
     if (edge_payload.contains("spline_pole_xs") &&
         edge_payload.at("spline_pole_xs").is_array()) {
       for (const auto& x : edge_payload.at("spline_pole_xs")) {
-        edge.spline_pole_xs.push_back(x.get<double>());
+        edge.spline_pole_xs.push_back(x.template get<double>());
       }
     }
     if (edge_payload.contains("spline_pole_ys") &&
         edge_payload.at("spline_pole_ys").is_array()) {
       for (const auto& y : edge_payload.at("spline_pole_ys")) {
-        edge.spline_pole_ys.push_back(y.get<double>());
+        edge.spline_pole_ys.push_back(y.template get<double>());
       }
     }
     return edge;
