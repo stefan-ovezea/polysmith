@@ -3719,3 +3719,40 @@ comment corrected: the triangle tip's MATERIAL wedge is ~168.6° obtuse
 (the ~11.4° figure is the walk's turn); the genuinely sharp corners are
 the ~5.7° base corners, excluded by the both-wedges rule.  All 50
 cam_generators cases green.
+
+## 2026-09-16
+
+### STEP import viewport performance (step-import-viewport-perf)
+
+A real-world KiCad PCB assembly STEP (~30 MB, 291 solids, 14,898 faces,
+78,167 unique edges) took ~30 minutes to appear in the viewport and left
+the app sluggish afterwards.  Three commits:
+
+- **Seam enumeration rewrite** (`873ff65`).  Two quadratic probes in
+  `body_edge_vertex_helpers.inc` — per-edge face scans (O(E×F) ≈ 1.2B
+  `IsClosed` calls) and per-vertex edge-map rebuilds (O(V×E) ≈ 12B
+  ops) — were replaced by `BodySeamAnalysis`, one incidence pass per
+  body with identical semantics.  Viewport rebuild on the board:
+  1,879,387 ms → 2,861 ms; total import ~20–30 min → ~15 s.
+- **Bounded pick entries for oversized imports** (same commit).
+  STEP/IGES imports above 8,000 unique edges skip per-edge/per-vertex
+  pick entries (78k edge lines + 156k vertex sprites had flooded the
+  payload and scene graph).  Event size 47.5 MB → 16.8 MB, scene
+  objects ~250,000 → 1.  Small imports unaffected.
+- **Regression fix — decimated per-face pick proxies** (`41e925b`).
+  The threshold broke sketch-on-face placement and body silhouette
+  projection on the board (both worked after step 1; user-confirmed).
+  Oversized imports now emit one pick proxy per face: a centroid fan
+  over the outer wire (planar faces, boundary strided to the 48-
+  triangle budget) or a strided triangulation subset (curved faces) —
+  face ids, plane frames, and surface classification all flow, so
+  sketch placement, face selection, and face-based features work while
+  the payload stays bounded.  The UI's Project tool now routes body-id
+  clicks on `step_import`/`iges_import` bodies to section/silhouette
+  projection.
+- **Tests** — new `viewport_seam_enumeration_test` suite: cylinder
+  seam semantics, box keeps all, 600-solid tripwire (quadratic-
+  regression tripwire), and the oversized-import proxy test (900 boxes
+  + cylinder + 100-gon prism: 5,505 face proxies, every proxy within
+  the triangle budget, verified fail-before/pass-after).  50/50 C++
+  suites + `tsc --noEmit` clean; user-verified in-app.
