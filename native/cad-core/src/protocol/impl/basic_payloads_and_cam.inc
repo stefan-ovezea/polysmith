@@ -278,6 +278,8 @@ json to_payload(const polysmith::core::ToolEntry& tool) {
       {"front_angle_deg", tool.front_angle_deg},
       {"back_angle_deg", tool.back_angle_deg},
       {"orientation", tool.orientation},
+      {"x_offset_mm", tool.x_offset_mm.has_value() ? json(tool.x_offset_mm.value()) : json(nullptr)},
+      {"z_offset_mm", tool.z_offset_mm.has_value() ? json(tool.z_offset_mm.value()) : json(nullptr)},
       {"material", tool.material},
       {"coolant_through", tool.coolant_through},
       {"max_spindle_rpm", tool.max_spindle_rpm},

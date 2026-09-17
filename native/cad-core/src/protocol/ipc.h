@@ -52,5 +52,9 @@ json make_cam_export_gcode_text_result_event(const std::string& id,
 json make_cam_post_list_event(const std::string& id, const json& posts);
 json make_cam_machine_list_event(const std::string& id, const json& machines);
 json make_cam_tool_list_event(const std::string& id, const json& tools);
+json make_cam_tool_parse_result_event(const std::string& id,
+                                      const json& payload);
+json make_cam_tool_export_text_result_event(const std::string& id,
+                                            const json& payload);
 
 }  // namespace polysmith::protocol

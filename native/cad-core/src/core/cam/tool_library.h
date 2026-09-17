@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,5 +36,12 @@ std::string save_tool_entry(const ToolEntry& tool, std::string& error);
 // UI uses this to distinguish the shipped catalog from user tools
 // and to reconcile imports by guid.
 bool is_generic_catalog_tool(const ToolEntry& tool);
+
+// One tool as its <slug>.tool.json file text (the shared on-disk
+// representation — same field names as the document payload).
+// parse_tool_file returns nullopt + an error on malformed JSON.
+std::string serialize_tool_file(const ToolEntry& tool);
+std::optional<ToolEntry> parse_tool_file(const std::string& json_text,
+                                         std::string& error);
 
 }  // namespace polysmith::core

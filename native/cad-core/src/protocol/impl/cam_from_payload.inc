@@ -304,6 +304,12 @@ polysmith::core::ToolEntry tool_entry_from_payload(const json& payload) {
   tool.front_angle_deg = cam_read_number(payload, "front_angle_deg", 0.0);
   tool.back_angle_deg = cam_read_number(payload, "back_angle_deg", 0.0);
   tool.orientation = cam_read_int(payload, "orientation", 0);
+  if (payload.contains("x_offset_mm") && !payload.at("x_offset_mm").is_null()) {
+    tool.x_offset_mm = payload.at("x_offset_mm").get<double>();
+  }
+  if (payload.contains("z_offset_mm") && !payload.at("z_offset_mm").is_null()) {
+    tool.z_offset_mm = payload.at("z_offset_mm").get<double>();
+  }
   tool.material = cam_read_string(payload, "material", "carbide");
   if (payload.contains("coating") && !payload.at("coating").is_null()) {
     tool.coating = payload.at("coating").get<std::string>();

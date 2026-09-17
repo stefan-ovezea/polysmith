@@ -145,6 +145,8 @@ CamDocumentData make_cam_data() {
   mill_tool.coating = "tialn";
   mill_tool.surface_speed_m_per_min = 250.0;
   mill_tool.feed_per_tooth_mm = 0.03;
+  mill_tool.x_offset_mm = 1.25;
+  mill_tool.z_offset_mm = 22.5;
   cam.tool_library.push_back(mill_tool);
 
   CamOperation laser_op;
@@ -295,6 +297,7 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
         ta.max_spindle_rpm != tb.max_spindle_rpm ||
         ta.surface_speed_m_per_min != tb.surface_speed_m_per_min ||
         ta.feed_per_tooth_mm != tb.feed_per_tooth_mm ||
+        ta.x_offset_mm != tb.x_offset_mm || ta.z_offset_mm != tb.z_offset_mm ||
         ta.default_feedrate_mm_per_min != tb.default_feedrate_mm_per_min ||
         ta.default_plunge_feedrate_mm_per_min !=
             tb.default_plunge_feedrate_mm_per_min ||

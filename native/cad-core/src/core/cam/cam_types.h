@@ -191,6 +191,12 @@ struct ToolEntry {
   double back_angle_deg = 0.0;
   int orientation = 0;  // LinuxCNC Q, 0..9
 
+  // Machine-side offsets (LinuxCNC tool table X/Z columns).  The mill
+  // length offset is Z; lathe tools carry X and Z.  Other axis
+  // offsets are not representable and are dropped on import (warned).
+  std::optional<double> z_offset_mm;
+  std::optional<double> x_offset_mm;
+
   // Material & coating.
   std::string material = "carbide";   // "carbide" | "hss" | "cobalt" | "diamond" | "ceramic" | "other"
   std::optional<std::string> coating; // "tin" | "ticn" | "alticn" | "tialn" | "zrn" | "dlc" | "none"

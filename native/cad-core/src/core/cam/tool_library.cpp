@@ -141,6 +141,12 @@ ToolEntry tool_from_json(const json& payload) {
   tool.front_angle_deg = read_number(payload, "front_angle_deg", 0.0);
   tool.back_angle_deg = read_number(payload, "back_angle_deg", 0.0);
   tool.orientation = read_int(payload, "orientation", 0);
+  if (payload.contains("x_offset_mm") && !payload.at("x_offset_mm").is_null()) {
+    tool.x_offset_mm = payload.at("x_offset_mm").get<double>();
+  }
+  if (payload.contains("z_offset_mm") && !payload.at("z_offset_mm").is_null()) {
+    tool.z_offset_mm = payload.at("z_offset_mm").get<double>();
+  }
   tool.material = read_string(payload, "material", "carbide");
   const std::string coating = read_string(payload, "coating", "");
   if (!coating.empty()) {
@@ -188,6 +194,12 @@ json to_json(const ToolEntry& tool) {
       {"front_angle_deg", tool.front_angle_deg},
       {"back_angle_deg", tool.back_angle_deg},
       {"orientation", tool.orientation},
+      {"x_offset_mm", tool.x_offset_mm.has_value()
+                          ? json(tool.x_offset_mm.value())
+                          : json(nullptr)},
+      {"z_offset_mm", tool.z_offset_mm.has_value()
+                          ? json(tool.z_offset_mm.value())
+                          : json(nullptr)},
       {"material", tool.material},
       {"coolant_through", tool.coolant_through},
       {"max_spindle_rpm", tool.max_spindle_rpm},
@@ -416,6 +428,25 @@ std::string save_tool_entry(const ToolEntry& tool, std::string& error) {
 
 bool is_generic_catalog_tool(const ToolEntry& tool) {
   return tool.guid.rfind("generic-t", 0) == 0;
+}
+
+std::string serialize_tool_file(const ToolEntry& tool) {
+  return to_json(tool).dump(2);
+}
+
+std::optional<ToolEntry> parse_tool_file(const std::string& json_text,
+                                         std::string& error) {
+  try {
+    const json payload = json::parse(json_text);
+    if (!payload.is_object()) {
+      error = "tool file must be a JSON object";
+      return std::nullopt;
+    }
+    return tool_from_json(payload);
+  } catch (const std::exception& exception) {
+    error = std::string("invalid tool JSON: ") + exception.what();
+    return std::nullopt;
+  }
 }
 
 }  // namespace polysmith::core
