@@ -444,20 +444,35 @@ const camDocumentDataShape = z.object({
   machine_settings: laserMachineSettingsSchema.nullable().default(null),
 });
 
+// The catch below must never be SILENT — a swallowed mismatch empties
+// the CAM view without a trace ("the panel has no tool").  The event
+// bridge installs a reporter; it toasts + logs the exact failing field
+// so the mismatch is fixed at the source instead of masked.
+type CamRescueReporter = (issues: unknown[], input: unknown) => void;
+let camRescueReporter: CamRescueReporter | null = null;
+export function setCamSchemaRescueReporter(
+  reporter: CamRescueReporter | null,
+) {
+  camRescueReporter = reporter;
+}
+
 // LAST-RESORT LENIENCY: if anything in the CAM subtree still fails to
 // parse (a core field the schema does not know yet), drop the CAM data
 // instead of the WHOLE document — a document_state that fails
 // validation is dropped by the event bridge and the app freezes.  The
-// bridge reports the raw failure to the Logs panel either way, so the
-// mismatch stays diagnosable instead of silent.  The core keeps the
-// real CAM state (save writes the core's state, not the UI echo), so
-// nothing is lost on disk.
+// core keeps the real CAM state (save writes the core's state, not the
+// UI echo), so nothing is lost on disk.
 export const camDocumentDataSchema = camDocumentDataShape
   .passthrough()
-  .catch(() => ({
-    setups: [],
-    tool_library: [],
-    operations: [],
-    post_processor: null,
-    machine_settings: null,
-  }));
+  .catch((ctx: { error?: { issues?: unknown[] }; input?: unknown }) => {
+    if (camRescueReporter) {
+      camRescueReporter(ctx.error?.issues ?? [], ctx.input);
+    }
+    return {
+      setups: [],
+      tool_library: [],
+      operations: [],
+      post_processor: null,
+      machine_settings: null,
+    };
+  });

@@ -9,6 +9,7 @@ import {
   parseCoreMessage,
   writeLogToConsole,
 } from "@/lib";
+import { setCamSchemaRescueReporter } from "@/lib/schemas/ipc/camSchema";
 import { useCadCoreStore, useToastStore } from "@/state";
 import { reportCoreError } from "./coreLogReporting";
 
@@ -19,6 +20,31 @@ export function useCadCoreEventBridge() {
   const handleCoreStopped = useCadCoreStore((state) => state.handleCoreStopped);
   const setStatus = useCadCoreStore((state) => state.setStatus);
   const pushToast = useToastStore((state) => state.pushToast);
+
+  // The CAM subtree rescue (see camSchema.ts) reports through here so a
+  // swallowed mismatch is LOUD — toast + log with the exact field path.
+  // Deduped: the same mismatch on every document_state must not toast
+  // forever.
+  useEffect(() => {
+    let lastReported = "";
+    setCamSchemaRescueReporter((issues) => {
+      const first = issues[0] as
+        | { path?: unknown[]; message?: string }
+        | undefined;
+      const path = Array.isArray(first?.path)
+        ? first.path.map(String).join(".")
+        : "?";
+      const signature = `${path}:${first?.message ?? ""}`;
+      const message = `CAM data parse failed at "${path}" — CAM view emptied. See the Logs panel.`;
+      addLogEntry(makeUiLogEntry("error", "desktop_ui", message));
+      if (signature !== lastReported) {
+        lastReported = signature;
+        pushToast("error", message);
+        addMessage(message);
+      }
+    });
+    return () => setCamSchemaRescueReporter(null);
+  }, [addLogEntry, addMessage, pushToast]);
 
   useEffect(() => {
     let disposed = false;
