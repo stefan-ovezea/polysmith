@@ -9,20 +9,8 @@
 
     // 0 intersections — isolated entity: trim acts as normal delete.
     if (intersections.empty()) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           return std::find(c.target_ids.begin(),
-                                            c.target_ids.end(),
-                                            entity_id) != c.target_ids.end();
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(
+          params, entity_id, {circle_it->center_vertex_id});
       params.circles.erase(circle_it);
       return;
     }
@@ -110,55 +98,53 @@
       });
     }
 
-    // Delete the circle.
+    // Delete the circle (capture the center id first — the helper
+    // below needs it after the erase).
+    const std::string circle_center_id = circle_it->center_vertex_id;
+
+    // D1/D4 capture BEFORE the cleanup erases the whitelisted
+    // attachments (concentric pairs, radius dims, coincident).
+    const auto transfer_plan =
+        capture_trim_constraint_transfer(params, entity_id, {circle_center_id});
+
     params.circles.erase(circle_it);
 
     #include "core/sketch/impl/trim_circle_split_crossing_lines.inc"
 
-    // Mark all constraints referencing the circle as dependency_broken.
-    // (The constraint and dimension structs don't have a dependency_broken
-    // flag yet, so for v1 we just delete circle-related constraints.)
-    params.constraints.erase(
-        std::remove_if(params.constraints.begin(), params.constraints.end(),
-                       [&](const SketchConstraint& c) {
-                         return std::find(c.target_ids.begin(), c.target_ids.end(),
-                                          entity_id) != c.target_ids.end();
-                       }),
-        params.constraints.end());
+    // The old code erased only circle-related constraints here — line
+    // relations (tangent_line_circle), anchors and fillets leaked. The
+    // shared helper removes every attachment of the circle.
+    trim_remove_entity_attachments(params, entity_id, {circle_center_id});
 
-    params.dimensions.erase(
-        std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                       [&](const SketchDimension& d) {
-                         return d.entity_id == entity_id ||
-                                d.secondary_entity_id == entity_id;
-                       }),
-        params.dimensions.end());
+    // Safety net: delete coincident constraints whose merged point
+    // died or whose listed lines no longer reference it.
+    sweep_orphan_coincident_constraints(params);
 
-    // Safety net: delete coincident constraints referencing orphaned point IDs.
+    // D4: the surviving arc keeps the circle's concentric relations
+    // and re-derives radius dimensions as driven. Its endpoints sit
+    // on the cutting curves — point-on-object anchors for line
+    // cutters.
     {
-      std::unordered_set<std::string> live_pt;
-      for (const auto& l : params.lines) {
-        live_pt.insert(l.start_vertex_id); live_pt.insert(l.end_vertex_id);
+      const std::string arc_id = "arc-" + std::to_string(arc_index);
+      const auto arc_it2 = std::find_if(
+          params.arcs.begin(), params.arcs.end(),
+          [&](const SketchArc& a) { return a.id == arc_id; });
+      if (arc_it2 != params.arcs.end()) {
+        std::vector<TrimTransferCut> cuts;
+        const double sa = std::atan2(arc_it2->start_y - cy,
+                                     arc_it2->start_x - cx);
+        const double ea = std::atan2(arc_it2->end_y - cy,
+                                     arc_it2->end_x - cx);
+        const std::string* cutter_start = cutter_for_param(intersections, sa);
+        const std::string* cutter_end = cutter_for_param(intersections, ea);
+        cuts.push_back(TrimTransferCut{
+            arc_it2->start_x, arc_it2->start_y, arc_it2->start_vertex_id,
+            cutter_start != nullptr ? *cutter_start : ""});
+        cuts.push_back(TrimTransferCut{
+            arc_it2->end_x, arc_it2->end_y, arc_it2->end_vertex_id,
+            cutter_end != nullptr ? *cutter_end : ""});
+        apply_trim_constraint_transfer(params, transfer_plan, {arc_id}, cuts);
       }
-      for (const auto& c : params.circles) {
-        live_pt.insert(circle_center_vertex_id(c));
-        live_pt.insert("vertex-" + c.id + "-quadrant-0");
-        live_pt.insert("vertex-" + c.id + "-quadrant-1");
-        live_pt.insert("vertex-" + c.id + "-quadrant-2");
-        live_pt.insert("vertex-" + c.id + "-quadrant-3");
-      }
-      for (const auto& a : params.arcs) {
-        live_pt.insert(a.start_vertex_id); live_pt.insert(a.end_vertex_id);
-      }
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           if (c.kind != "coincident") return false;
-                           for (const auto& tid : c.target_ids)
-                             if (!live_pt.count(tid)) return true;
-                           return false;
-                         }),
-          params.constraints.end());
     }
     return;
   }

@@ -53,6 +53,9 @@ import {
   makeDeleteSketchDimensionCommand,
   makeToggleSketchDimensionDrivenCommand,
   makeTrimSketchEntityCommand,
+  makeTrimSketchStrokeCommand,
+  makeCornerTrimSketchEntitiesCommand,
+  makeSplitSketchEntityCommand,
   makeUpdateSketchDimensionDisplayCommand,
   makeUpdateSketchDimensionLabelPositionCommand,
   makeAddParameterCommand,
@@ -1366,6 +1369,51 @@ export function useCadCore() {
           segmentIndex,
           expectedRevision,
           previewId,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    trimSketchStroke: async (
+      entries: ReadonlyArray<{
+        entity_id: string;
+        click_x: number;
+        click_y: number;
+      }>,
+    ) => {
+      if (entries.length === 0) return;
+      await sendCoreCommand(makeTrimSketchStrokeCommand(entries));
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    cornerTrimSketchEntities: async (
+      entityAId: string,
+      entityBId: string,
+      clickX: number,
+      clickY: number,
+    ) => {
+      await sendCoreCommand(
+        makeCornerTrimSketchEntitiesCommand(
+          entityAId,
+          entityBId,
+          clickX,
+          clickY,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    splitSketchEntity: async (
+      entityId: string,
+      clickX: number,
+      clickY: number,
+      split2X: number,
+      split2Y: number,
+    ) => {
+      await sendCoreCommand(
+        makeSplitSketchEntityCommand(
+          entityId,
+          clickX,
+          clickY,
+          split2X,
+          split2Y,
         ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());

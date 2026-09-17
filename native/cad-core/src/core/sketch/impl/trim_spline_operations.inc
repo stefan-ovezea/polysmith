@@ -7,49 +7,17 @@ std::vector<TrimIntersection> find_all_intersections(
     const SketchFeatureParameters& params) {
   std::vector<TrimIntersection> results;
 
-  const ExactCurve target_curve = trim_target_curve(target);
-  auto add_pairs = [&](const ExactCurve& other, const std::string& other_id) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, other, pairs);
-    for (const auto& [pa, pb] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, pa);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = pa, .param_on_other = pb,
-          .other_entity_id = other_id});
-    }
-  };
-
   // Construction geometry cuts here too (line-target note in
   // trim_line_circle_target_intersections.inc). No endpoint-touch
   // pass needed: spline junction splits arrive through
   // spline_profile_intersections' segment-endpoint handling.
-  for (const auto& line : params.lines) {
-    add_pairs(trim_target_curve(line), line.id);
-  }
-  for (const auto& circle : params.circles) {
-    add_pairs(trim_target_curve(circle), circle.id);
-  }
-  for (const auto& arc : params.arcs) {
-    add_pairs(trim_target_curve(arc), arc.id);
-  }
-  for (const auto& ellipse : params.ellipses) {
-    add_pairs(trim_target_curve(ellipse), ellipse.id);
-  }
-  for (const auto& spline : params.splines) {
-    if (spline.id == target.id) continue;
-    add_pairs(trim_target_curve(spline), spline.id);
-  }
+  const ExactCurve target_curve = trim_target_curve(target);
+  for_each_trim_candidate(params, target.id, [&](const auto& other) {
+    append_shared_curve_pairs(results, target_curve,
+                              trim_target_curve(other), other.id);
+  });
 
-  if (results.empty()) return results;
-
-  std::sort(results.begin(), results.end(),
-            [](const TrimIntersection& a, const TrimIntersection& b) {
-              return a.param_on_target < b.param_on_target;
-            });
-
-  deduplicate(results);
-  return results;
+  return finish_trim_intersections(std::move(results));
 }
 
 // ================================================================

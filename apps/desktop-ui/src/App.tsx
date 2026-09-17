@@ -1008,6 +1008,9 @@ function App() {
     updateSketchDimensionDisplay,
     deleteSketchSelection,
     trimSketchEntity,
+    trimSketchStroke,
+    cornerTrimSketchEntities,
+    splitSketchEntity,
     selectSketchPoint,
     selectSketchEntity,
     selectSketchDimension,
@@ -3783,6 +3786,43 @@ function App() {
               onExtendSketchEntity={async (entityId, clickX, clickY) => {
                 await runAction(async () => {
                   await extendSketchEntity(entityId, clickX, clickY);
+                });
+              }}
+              onCornerTrimSketchEntities={async (
+                entityAId,
+                entityBId,
+                clickX,
+                clickY,
+              ) => {
+                await runAction(async () => {
+                  await cornerTrimSketchEntities(
+                    entityAId,
+                    entityBId,
+                    clickX,
+                    clickY,
+                  );
+                });
+              }}
+              onSplitSketchEntity={async (
+                entityId,
+                clickX,
+                clickY,
+                split2X,
+                split2Y,
+              ) => {
+                await runAction(async () => {
+                  await splitSketchEntity(
+                    entityId,
+                    clickX,
+                    clickY,
+                    split2X,
+                    split2Y,
+                  );
+                });
+              }}
+              onTrimSketchStroke={async (entries) => {
+                await runAction(async () => {
+                  await trimSketchStroke(entries);
                 });
               }}
               onOffsetSketchEntity={async (entityId) => {

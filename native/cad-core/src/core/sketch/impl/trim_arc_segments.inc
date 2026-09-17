@@ -18,15 +18,55 @@ split_arc_at_intersections(const SketchArc &arc,
   const bool ccw = arc.ccw;
 
   // Build sorted list of angles within the arc sweep.
+  //
+  // Intersections sitting on the arc's OWN endpoints are the tricky
+  // case: their analytic angle is a trig roundtrip of the stored
+  // endpoint coordinates and lands within ~1e-4 rad of a_start/a_end.
+  // The old wrap fixups used `<=` / `>=`, so a boundary hit at exact
+  // equality with a_start (or a_end) was shifted a full 2π — that
+  // manufactured ghost FULL-CIRCLE segments alongside the real pieces.
+  // The click then landed in a ghost ("the whole circle appears back
+  // in red"), the trim "deleted" the piece that does not exist and
+  // silently did nothing. Snap boundary hits to the sweep edges
+  // first, then shift only what is genuinely outside the sweep.
   std::vector<double> angles;
+  // "This intersection IS the arc endpoint" = coincident tolerance as
+  // a fraction of the radius (the same dimensional rule the profile
+  // walk and the piece drop below use).
+  const double snap_tol = kTrimCoincidentTolerance / std::max(r, 1e-9);
+  auto angular_gap = [](double x, double y) {
+    // x and y may sit on different unwrapped axes (y can be negative
+    // down to -2π), so the raw difference can exceed 2π — normalize
+    // first, then fold to [0, π]. The naive min(d, 2π-d) goes NEGATIVE
+    // for d > 2π and snaps everything.
+    double d = std::fmod(std::abs(x - y), 2.0 * M_PI);
+    if (d > M_PI) d = 2.0 * M_PI - d;
+    return d;
+  };
+  // arc_angles returns both sweep ends WRAPPED into [0, 2π) — a wrap-
+  // through-zero arc stores a_end < a_start. Unwrap the end so every
+  // angle in the sweep lives on one ascending (ccw) / descending (cw)
+  // axis; clamping against the wrapped end collapsed every interior
+  // angle onto it (one-piece result → whole arc deleted).
+  double a_end_u = a_end;
+  if (ccw) {
+    if (a_end_u < a_start) a_end_u += 2.0 * M_PI;
+  } else {
+    if (a_end_u > a_start) a_end_u -= 2.0 * M_PI;
+  }
   for (const auto &is : intersections) {
     double a = wrap_angle(is.param_on_target);
+    if (angular_gap(a, a_start) < snap_tol) {
+      a = a_start;
+    } else if (angular_gap(a, a_end_u) < snap_tol) {
+      a = a_end_u;
+    }
     if (ccw) {
-      if (a < a_start)
-        a += 2.0 * M_PI;
+      if (a < a_start) a += 2.0 * M_PI;
+      if (a > a_end_u) a = a_end_u;  // wrap-around of a start-boundary hit
     } else {
-      if (a > a_start)
-        a -= 2.0 * M_PI;
+      if (a > a_start) a -= 2.0 * M_PI;
+      if (a < a_end_u) a = a_end_u;
     }
     angles.push_back(a);
   }
@@ -39,28 +79,36 @@ split_arc_at_intersections(const SketchArc &arc,
 
   std::vector<TrimSegment> segments;
   const double k2Pi = 2.0 * M_PI;
-  constexpr double kMinArcSpan = 1e-9;  // radians
 
   // Degenerate pieces are dropped here rather than by filtering the
   // intersection list upstream. An intersection landing on one of the
   // arc's own endpoints is a real cut — it just leaves no piece beyond
   // itself — so it must still split the arc.
+  // The drop is DIMENSIONAL (arc length), not angular: a stub below
+  // the coincident tolerance is unclickable and, when kept, captures
+  // clicks that belong to the neighbouring real piece. The old 1e-9
+  // rad angular floor kept ~1e-4-rad trig-roundtrip stubs alive.
   auto push_piece = [&](double s, double e) {
-    if (std::abs(e - s) < kMinArcSpan) return;
+    if (std::abs(e - s) * r < kTrimCoincidentTolerance) return;
     auto [sx, sy] = pt_at_angle(wrap_angle(s));
     auto [ex, ey] = pt_at_angle(wrap_angle(e));
     segments.push_back(
         {TrimSegment::ARC_SEGMENT, s, e, sx, sy, ex, ey, cx, cy, r, ccw});
   };
 
-  // First segment: from arc start to first intersection.
+  // First segment: from arc start to first intersection. The angles
+  // are already inside the sweep (snap/shift/clamp above), so the
+  // wrap fixup must be STRICT: equality here means the cut sits on the
+  // boundary and the piece is degenerate — shifting it a full 2π
+  // manufactured the ghost full-circle segment (the "wrong walk
+  // direction" bug).
   {
     double s = a_start, e = angles[0];
     if (ccw) {
-      if (e <= s)
+      if (e < s)
         e += k2Pi;
     } else {
-      if (e >= s)
+      if (e > s)
         e -= k2Pi;
     }
     push_piece(s, e);
@@ -71,14 +119,15 @@ split_arc_at_intersections(const SketchArc &arc,
     push_piece(angles[i], angles[i + 1]);
   }
 
-  // Last segment: from last intersection to arc end.
+  // Last segment: from last intersection to arc end (unwrapped — the
+  // angles are already on the same axis).
   {
-    double s = angles.back(), e = a_end;
+    double s = angles.back(), e = a_end_u;
     if (ccw) {
-      if (e <= s)
+      if (e < s)
         e += k2Pi;
     } else {
-      if (e >= s)
+      if (e > s)
         e -= k2Pi;
     }
     push_piece(s, e);

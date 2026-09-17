@@ -32,6 +32,10 @@ interface TrimPointerMoveParams {
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   sceneDataRef: MutableRef<ViewportScene | null>;
   trimPreviewLastSentRef: MutableRef<TrimPreviewLastSent | null>;
+  // Drag-paint stroke (R5): while the pointer is down in trim mode,
+  // every hovered entity is recorded with the cursor position it was
+  // crossed at. Null when no stroke is in progress.
+  trimStrokeRef?: MutableRef<Map<string, { x: number; y: number }> | null>;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   clearTrimSegmentHighlight: () => void;
@@ -47,6 +51,7 @@ export function handleTrimPointerMove({
   activeSketchPlaneFrameRef,
   sceneDataRef,
   trimPreviewLastSentRef,
+  trimStrokeRef,
   hoverActions,
   intersectSceneTargets,
   clearTrimSegmentHighlight,
@@ -76,6 +81,13 @@ export function handleTrimPointerMove({
     trimPreviewLastSentRef.current = null;
     return;
   }
+
+  // Stroke accumulation: the latest crossing position per entity wins
+  // (the core re-derives each segment from these click points).
+  trimStrokeRef?.current?.set(trimHit.id, {
+    x: rawPoint.local[0],
+    y: rawPoint.local[1],
+  });
 
   // Single-authority preview: the red highlight is rendered ONLY from
   // the core's trim_preview_result (the event handler in ViewportPanel

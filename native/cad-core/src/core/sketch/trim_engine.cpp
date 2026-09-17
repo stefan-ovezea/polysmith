@@ -161,6 +161,7 @@ ExactCurve trim_target_curve(const SketchSpline& spline) {
   return c;
 }
 
+#include "core/sketch/impl/trim_intersection_traversal.inc"
 #include "core/sketch/impl/trim_line_circle_intersections.inc"
 #include "core/sketch/impl/trim_line_circle_segments.inc"
 #include "core/sketch/impl/trim_arc_operations.inc"

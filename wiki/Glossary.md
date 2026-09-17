@@ -303,10 +303,17 @@ with a specified radius. The fillet replaces the corner with an arc segment.
 
 ### Trim
 A tool that removes portions of a sketch entity by cutting it at
-intersection points with other entities. The user clicks the portion they
-want to keep; the rest is deleted. One trim operation affects exactly one
-entity. Algorithm: intersection detection → entity splitting → segment
-selection → commit. Documented in `Trim-Tool-Implementation-Plan.md`.
+intersection points with other entities. The user clicks the portion to
+delete — the highlighted segment under the cursor dies and the rest stays.
+One trim operation affects exactly one entity (or, with drag-paint, one
+stroke of entities committed as one undo step). Algorithm: intersection
+detection → entity splitting → segment selection → commit. Surviving
+pieces inherit applicable constraints (see
+[Trim-Tool-Redesign-Requirements.md](Trim-Tool-Redesign-Requirements.md),
+decision D1). Companion tools: **Corner Trim** (two entities → virtual
+corner), **Extend** (stretch to the first intersection), **Split** (divide
+at all intersections without deleting). Documented in
+`Trim-Tool-Implementation-Plan.md` and `Trim-Tool-Redesign-Requirements.md`.
 
 ### Project (Sketch Projection)
 A tool that copies edges, faces, or vertices from existing 3D geometry into

@@ -415,3 +415,22 @@ export function makeTrimPreviewCommand(
     },
   };
 }
+
+export function makeCornerTrimPreviewCommand(
+  entityAId: string,
+  entityBId: string,
+  cursorX: number,
+  cursorY: number,
+  requestId?: string,
+): CoreCommand {
+  return {
+    id: requestId ?? crypto.randomUUID(),
+    type: "corner_trim_preview",
+    payload: {
+      entity_a_id: entityAId,
+      entity_b_id: entityBId,
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+    },
+  };
+}

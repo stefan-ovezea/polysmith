@@ -65,6 +65,7 @@
 |---|---|
 | 🏗️ **[2D Sketch System Architecture](2D-Sketch-System-Architecture)** | As-built constraints, snapping, and unified selection filter |
 | ✂️ **[Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan)** | Shipped. Reference documentation for the trim engine design. |
+| ✂️ **[Trim Tool Redesign — Requirements](Trim-Tool-Redesign-Requirements)** | **Implemented.** Full redesign spec: corner trim, extend, split, drag-paint, constraint transfer (D1–D5). All phases complete on `feature/trim`, user-verified; pending merge. |
 | 🔤 **[Text Tool — Implementation Plan](Text-Tool-Implementation-Plan)** | Planned. Text as sketch entities: font-to-BRep, extrusion, emboss/deboss. |
 | 📏 **[Draft Dimension Visualization](Draft-Dimension-Visualization)** | Shipped. Scene-rendered dimension lines and arcs for sketch draft tools. |
 | 📐 **[Dimension Tool Split Button — Implementation Plan](Dimension-Tool-Split-Button-Plan)** | **Planning.** Split button with 17 dimension type variants (Auto functional, rest placeholders for future ISO drawing use) + floating panel. |

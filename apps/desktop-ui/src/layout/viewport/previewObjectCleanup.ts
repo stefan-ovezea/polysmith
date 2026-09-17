@@ -27,6 +27,9 @@ interface ViewportPreviewActionsContext {
   previewInferenceRef: MutableRef<THREE.Line[]>;
   trimSegmentHighlightRef: MutableRef<THREE.Line | null>;
   trimArcHighlightRef: MutableRef<THREE.Line | null>;
+  // Corner-trim hover preview: the two resulting segments + the
+  // corner marker, grouped so a single clear removes them all.
+  cornerPreviewGroupRef: MutableRef<THREE.Group | null>;
   previewDimensionRef: MutableRef<PreviewDimensionObject | null>;
   dimensionRelationPreviewRef: MutableRef<DimensionRelationPreview | null>;
   dimensionRelationPreviewLabelRef: MutableRef<
@@ -46,6 +49,7 @@ export function createViewportPreviewActions({
   previewInferenceRef,
   trimSegmentHighlightRef,
   trimArcHighlightRef,
+  cornerPreviewGroupRef,
   previewDimensionRef,
   dimensionRelationPreviewRef,
   dimensionRelationPreviewLabelRef,
@@ -186,6 +190,70 @@ export function createViewportPreviewActions({
     sketchGroup.add(highlight);
   }
 
+  function clearCornerPreview() {
+    const group = cornerPreviewGroupRef.current;
+    const sketchGroup = sketchGroupRef.current;
+    if (!group || !sketchGroup) {
+      return;
+    }
+    sketchGroup.remove(group);
+    for (const child of group.children) {
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        disposeMaterial(child.material);
+      }
+    }
+    cornerPreviewGroupRef.current = null;
+  }
+
+  // Renders the corner-trim hover preview: the two resulting segments
+  // (sampled arcs where applicable) + a small cross at the corner.
+  // Sketch-local 2D coords arrive already mapped to world space by
+  // the caller (the sketch plane's z is used as-is).
+  function updateCornerPreview(
+    aPoints: Array<[number, number, number]>,
+    bPoints: Array<[number, number, number]>,
+    corner: [number, number, number],
+  ) {
+    clearCornerPreview();
+    const sketchGroup = sketchGroupRef.current;
+    if (!sketchGroup) {
+      return;
+    }
+    const group = new THREE.Group();
+    group.renderOrder = 8;
+    const material = new THREE.LineBasicMaterial({
+      color: 0xff9933,
+      transparent: true,
+      opacity: 0.9,
+      linewidth: 3,
+      depthTest: false,
+    });
+    if (aPoints.length >= 2) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(
+        aPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+      );
+      group.add(new THREE.Line(geometry, material));
+    }
+    if (bPoints.length >= 2) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(
+        bPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+      );
+      group.add(new THREE.Line(geometry, material));
+    }
+    // Corner marker: a small cross so the exact junction is visible.
+    const crossSize = 0.6;
+    const cross = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(corner[0] - crossSize, corner[1], corner[2]),
+      new THREE.Vector3(corner[0] + crossSize, corner[1], corner[2]),
+      new THREE.Vector3(corner[0], corner[1] - crossSize, corner[2]),
+      new THREE.Vector3(corner[0], corner[1] + crossSize, corner[2]),
+    ]);
+    group.add(new THREE.LineSegments(cross, material));
+    cornerPreviewGroupRef.current = group;
+    sketchGroup.add(group);
+  }
+
   function clearPreviewDimension() {
     const previewDimension = previewDimensionRef.current;
     const sketchGroup = sketchGroupRef.current;
@@ -242,6 +310,7 @@ export function createViewportPreviewActions({
   }
 
   return {
+    clearCornerPreview,
     clearDragPreviewLines,
     clearPreviewArc,
     clearPreviewCircle,
@@ -252,6 +321,7 @@ export function createViewportPreviewActions({
     clearPreviewSpline,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
+    updateCornerPreview,
     updateTrimArcHighlight,
     updateTrimSegmentHighlight,
   };

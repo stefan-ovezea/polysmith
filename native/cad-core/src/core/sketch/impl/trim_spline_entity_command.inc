@@ -8,20 +8,8 @@
 
     // 0 intersections — isolated entity: trim acts as normal delete.
     if (intersections.empty()) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           return std::find(c.target_ids.begin(),
-                                            c.target_ids.end(),
-                                            entity_id) != c.target_ids.end();
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(params, entity_id,
+                                     spline_it->pole_vertex_ids);
       params.splines.erase(spline_it);
       return;
     }
@@ -43,20 +31,8 @@
     if (segments.size() == 1) {
       // Only one real piece — trimming it is a full delete (same
       // guard as the line command).
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           for (const auto& tid : c.target_ids)
-                             if (tid == entity_id) return true;
-                           return false;
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(params, entity_id,
+                                     spline_it->pole_vertex_ids);
       params.splines.erase(spline_it);
       return;
     }
@@ -74,6 +50,7 @@
     const std::vector<double> orig_px = spline_it->pole_xs;
     const std::vector<double> orig_py = spline_it->pole_ys;
     const int orig_degree = spline_it->degree;
+    const std::vector<std::string> old_pole_ids = spline_it->pole_vertex_ids;
 
     // Re-fit a kept parameter span into poles in the project's
     // convention.  The span's ENDPOINT poles resolve through the
@@ -106,55 +83,66 @@
 
     const int last = static_cast<int>(segments.size()) - 1;
 
+    // Re-fit into TEMPORARIES and commit only when every span
+    // succeeds. The document layer pushed the undo state before this
+    // engine call; the old code mutated the spline in place and could
+    // throw from the second span's re-fit, leaving the sketch
+    // half-cut behind an undo entry that restored the wrong baseline.
+    SketchSpline left;
+    SketchSpline right;
+    bool have_right = false;
+    bool ok = true;
     if (clicked_index == 0) {
       // Deleted the head piece — keep [first boundary, 1].
-      if (!rebuild_span(*spline_it, segments[1].param_start, 1.0)) {
-        throw std::runtime_error("Spline trim: segment re-fit failed");
-      }
+      ok = rebuild_span(left, segments[1].param_start, 1.0);
     } else if (clicked_index == last) {
       // Deleted the tail piece — keep [0, last boundary].
-      if (!rebuild_span(*spline_it, 0.0,
-                        segments[clicked_index - 1].param_end)) {
-        throw std::runtime_error("Spline trim: segment re-fit failed");
-      }
+      ok = rebuild_span(left, 0.0, segments[clicked_index - 1].param_end);
     } else {
       // Middle piece deleted — split into two splines. Their cut ends
       // are two DIFFERENT points; each resolves its own vertex.
       const double left_end = segments[clicked_index - 1].param_end;
       const double right_start = segments[clicked_index + 1].param_start;
-      if (!rebuild_span(*spline_it, 0.0, left_end)) {
-        throw std::runtime_error("Spline trim: segment re-fit failed");
+      ok = rebuild_span(left, 0.0, left_end);
+      have_right = true;
+      if (ok) {
+        std::vector<std::string> spline_ids;
+        spline_ids.reserve(params.splines.size());
+        for (const auto& s : params.splines) spline_ids.push_back(s.id);
+        const int next_idx = next_trim_entity_index(spline_ids);
+        right.id = "spline-" + std::to_string(next_idx);
+        ok = rebuild_span(right, right_start, 1.0);
       }
-
-      std::vector<std::string> spline_ids;
-      spline_ids.reserve(params.splines.size());
-      for (const auto& s : params.splines) spline_ids.push_back(s.id);
-      const int next_idx = next_trim_entity_index(spline_ids);
-      SketchSpline right;
-      right.id = "spline-" + std::to_string(next_idx);
+    }
+    if (!ok) {
+      throw std::runtime_error("Spline trim: segment re-fit failed");
+    }
+    left.id = spline_it->id;
+    left.is_construction = spline_it->is_construction;
+    left.generated_by = spline_it->generated_by;
+    *spline_it = std::move(left);
+    if (have_right) {
       right.is_construction = spline_it->is_construction;
-      if (!rebuild_span(right, right_start, 1.0)) {
-        throw std::runtime_error("Spline trim: segment re-fit failed");
-      }
+      right.generated_by = spline_it->generated_by;
       params.splines.push_back(std::move(right));
     }
 
-    // Splines carry no constraints today; erase anything referencing
-    // the id as a safety net (mirrors the line phase).
-    params.constraints.erase(
-        std::remove_if(params.constraints.begin(), params.constraints.end(),
-                       [&](const SketchConstraint& c) {
-                         for (const auto& tid : c.target_ids)
-                           if (tid == entity_id) return true;
-                         return false;
-                       }),
-        params.constraints.end());
-    params.dimensions.erase(
-        std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                       [&](const SketchDimension& d) {
-                         return d.entity_id == entity_id;
-                       }),
-        params.dimensions.end());
+    // D1 capture BEFORE the cleanup erases the coincident constraints
+    // on the spline's poles.
+    const auto transfer_plan =
+        capture_trim_constraint_transfer(params, entity_id, old_pole_ids);
+
+    // Clean up every attachment through the shared pipeline (the old
+    // code erased constraints + primary-side dimensions only).
+    trim_remove_entity_attachments(params, entity_id, old_pole_ids);
+
+    // D1 transfer: coincident survival on the kept span(s) only
+    // (splines carry no H/V, relations or dimensions).
+    {
+      std::vector<std::string> survivors{entity_id};
+      if (have_right && !right.id.empty()) survivors.push_back(right.id);
+      apply_trim_constraint_transfer(params, transfer_plan, survivors, {});
+    }
 
     return;
   }

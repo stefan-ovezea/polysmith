@@ -58,6 +58,85 @@ void offset_sketch_entity(FeatureEntry& feature,
                           double distance);
 
 // ---------------------------------------------------------------
+// Corner trim (R2). Trims/extends two entities (lines or arcs) to
+// their virtual corner: the intersection of their underlying curves
+// nearest the click. Each entity keeps the portion from its far end
+// (the end farther from the click) to the corner. Throws when there
+// is no intersection (parallel lines), the corner would collapse an
+// entity, or an entity is not a line/arc.
+// ---------------------------------------------------------------
+struct CornerTrimPreviewSegment {
+  std::string kind;  // "line" | "arc"
+  double sx = 0.0, sy = 0.0, ex = 0.0, ey = 0.0;
+  // Arc rendering extras (valid when kind == "arc"):
+  double center_x = 0.0, center_y = 0.0, radius = 0.0;
+  bool ccw = true;
+};
+
+struct CornerTrimPreview {
+  bool valid = false;
+  double corner_x = 0.0;
+  double corner_y = 0.0;
+  CornerTrimPreviewSegment a;
+  CornerTrimPreviewSegment b;
+};
+
+// Hover preview for the second pick: the corner point + the
+// resulting trimmed/extended segments of both entities, without
+// mutating anything. entity_b_id is the hover candidate; cursor is
+// the mouse position.
+CornerTrimPreview corner_trim_preview(const FeatureEntry& feature,
+                                      const std::string& entity_a_id,
+                                      const std::string& entity_b_id,
+                                      double cursor_x,
+                                      double cursor_y);
+
+void corner_trim_sketch_entities(FeatureEntry& feature,
+                                 const std::string& entity_a_id,
+                                 const std::string& entity_b_id,
+                                 double click_x,
+                                 double click_y);
+
+// ---------------------------------------------------------------
+// Drag-paint trim (R5). One stroke trims every entity the pointer
+// crossed. Entries carry the crossed entity + the click point; the
+// segment is re-derived from the CURRENT geometry at execution time
+// (earlier entries in the stroke may already have mutated it).
+// Per-entry failures are logged and skipped — the stroke commits
+// whatever succeeded as ONE undo entry (document layer).
+// Refresh is NOT called here — the caller (document layer) handles
+// that; minted_vertex_ids collects the fresh split point ids across
+// every entry for the freeze pass.
+// ---------------------------------------------------------------
+struct TrimStrokeEntry {
+  std::string entity_id;
+  double click_x = 0.0;
+  double click_y = 0.0;
+};
+
+void trim_sketch_stroke(FeatureEntry& feature,
+                        const std::vector<TrimStrokeEntry>& entries,
+                        std::vector<std::string>* minted_vertex_ids);
+
+// ---------------------------------------------------------------
+// Split (R4). Divides the clicked entity at ALL its intersections
+// without deleting anything (lines/arcs/partial ellipses/splines).
+// Circles and full ellipses need TWO split points (SolidWorks rule):
+// they split into two arcs at (click_x, click_y) and
+// (split2_x, split2_y). Throws when the entity cannot be split.
+// Refresh is NOT called here — the caller (document layer) handles
+// that; minted_vertex_ids collects the fresh split point ids for the
+// freeze pass.
+// ---------------------------------------------------------------
+void split_sketch_entity(FeatureEntry& feature,
+                         const std::string& entity_id,
+                         double click_x,
+                         double click_y,
+                         double split2_x,
+                         double split2_y,
+                         std::vector<std::string>* minted_vertex_ids);
+
+// ---------------------------------------------------------------
 void start_mirror_preview(FeatureEntry& feature);
 void update_mirror_preview_axis(FeatureEntry& feature,
                                 const std::string& axis_line_id);

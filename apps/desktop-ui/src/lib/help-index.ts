@@ -377,17 +377,110 @@ const trimEntry: HelpEntry = {
       "How It Works",
       "Hover a curve to preview the segment that will be deleted (highlighted in red). " +
         "Click to delete it. The entity shortens or splits at the nearest intersection points.\n\n" +
-        "End segment → curve shortens. Middle segment → curve splits into two. No intersections → entity deleted.",
+        "End segment → curve shortens. Middle segment → curve splits into two. No intersections → entity deleted.\n\n" +
+        "Drag across several curves to trim them all in one stroke — the whole stroke is one undo step.",
     ),
     sec(
       "Constraints",
-      "Trim is destructive. All constraints, relations, dimensions, anchors, and fillets on the trimmed entity are deleted. " +
-        "Shared endpoints are severed. Surviving entities get independent point IDs. " +
-        "Re-add constraints manually after trimming if needed.",
+      "Surviving pieces inherit applicable constraints from the original: coincident " +
+        "(when the shared point survives), horizontal / vertical, parallel / perpendicular / " +
+        "equal relations to the same reference, and point-on-object anchors at cut endpoints that " +
+        "sit on a cutting line. Dimensions re-derive as driven (measured) references. " +
+        "Fillet and chamfer records are removed when an operand dies.",
     ),
     sec(
       "Multi-Click Repeat",
       "The tool stays active after each operation — trim multiple segments in sequence. Press Escape to exit.",
+    ),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Corner trim tool
+// ---------------------------------------------------------------------------
+
+const cornerEntry: HelpEntry = {
+  title: "Corner Trim Tool",
+  summary:
+    "Trims or extends two lines/arcs to meet at their virtual corner.",
+  activation:
+    "Click the **Corner Trim** button in the sketch toolbar (Modify tab).",
+  shortcuts: [
+    sc("Escape", "Corner Trim mode", "Cancel the pending first pick"),
+  ],
+  sections: [
+    sec(
+      "How It Works",
+      "Pick the first entity, then hover a second line or arc to preview the " +
+        "virtual corner (the intersection of the two underlying curves nearest the " +
+        "cursor). Click the second entity to commit: each entity keeps the portion from " +
+        "its far end to the corner — trimming or extending as needed.",
+    ),
+    sec(
+      "Constraints",
+      "Line direction constraints survive (H/V badges and relations keep their geometry). " +
+        "Arc angle dimensions flip to driven because the sweep changes. " +
+        "Parallel curves have no virtual corner — the commit is rejected.",
+    ),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Extend tool
+// ---------------------------------------------------------------------------
+
+const extendEntry: HelpEntry = {
+  title: "Extend Tool",
+  summary:
+    "Extends a line or arc from the end nearest the click to the first intersection.",
+  activation:
+    "Click the **Extend** button in the sketch toolbar (Modify tab), or press `E`.",
+  shortcuts: [
+    sc("E", "Select mode", "Activate Extend tool"),
+    sc("Escape", "Extend mode", "Exit to Select mode"),
+  ],
+  sections: [
+    sec(
+      "How It Works",
+      "Click a line or arc near the end to stretch. The entity extends from that end " +
+        "to the first intersection with another curve in the extension direction. " +
+        "No intersection in that direction → nothing happens (no free-space extension).",
+    ),
+    sec(
+      "Constraints",
+      "Line dimensions re-measure on the recompute (direction is unchanged). " +
+        "Arc angle dimensions flip to driven because the sweep changes; arc radius survives.",
+    ),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Split tool
+// ---------------------------------------------------------------------------
+
+const splitEntry: HelpEntry = {
+  title: "Split Tool",
+  summary:
+    "Divides a sketch entity at all its intersections without deleting anything.",
+  activation:
+    "Click the **Split** button in the sketch toolbar (Modify tab).",
+  shortcuts: [
+    sc("Escape", "Split mode", "Cancel a pending first click"),
+  ],
+  sections: [
+    sec(
+      "How It Works",
+      "Click a line, arc, ellipse or spline: it divides into pieces at every " +
+        "intersection with other curves. Circles and full ellipses follow the " +
+        "two-point rule: click the first split point, then a second point on the same " +
+        "entity to split it into two arcs.",
+    ),
+    sec(
+      "Constraints",
+      "Every piece keeps the applicable constraints: H/V badges, parallel / " +
+        "perpendicular relations, concentric relations on arc pieces, and driven " +
+        "dimension re-derivations. Equal-length relations do not transfer (the pieces " +
+        "would be forced into one length).",
     ),
   ],
 };
@@ -484,6 +577,9 @@ export const helpRegistry: Record<string, HelpEntry> = {
   arc: arcEntry,
   polygon: polygonEntry,
   fillet: filletEntry,
+  corner: cornerEntry,
+  extend: extendEntry,
+  split: splitEntry,
   trim: trimEntry,
   project: projectEntry,
   parameters: parametersEntry,

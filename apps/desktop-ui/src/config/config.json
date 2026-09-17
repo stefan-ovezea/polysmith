@@ -85,6 +85,10 @@
         "code": "KeyT",
         "label": "T"
       },
+      "extend": {
+        "code": "KeyE",
+        "label": "E"
+      },
       "move": {
         "code": "KeyM",
         "label": "M"

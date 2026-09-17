@@ -1,30 +1,5 @@
-// Safety net: delete coincident constraints referencing orphaned point IDs.
-{
-  std::unordered_set<std::string> live_pt;
-  for (const auto &l : params.lines) {
-    live_pt.insert(l.start_vertex_id);
-    live_pt.insert(l.end_vertex_id);
-  }
-  for (const auto &c : params.circles) {
-    live_pt.insert(circle_center_vertex_id(c));
-    live_pt.insert("vertex-" + c.id + "-quadrant-0");
-    live_pt.insert("vertex-" + c.id + "-quadrant-1");
-    live_pt.insert("vertex-" + c.id + "-quadrant-2");
-    live_pt.insert("vertex-" + c.id + "-quadrant-3");
-  }
-  for (const auto &a : params.arcs) {
-    live_pt.insert(a.start_vertex_id);
-    live_pt.insert(a.end_vertex_id);
-  }
-  params.constraints.erase(std::remove_if(params.constraints.begin(),
-                                          params.constraints.end(),
-                                          [&](const SketchConstraint &c) {
-                                            if (c.kind != "coincident")
-                                              return false;
-                                            for (const auto &tid : c.target_ids)
-                                              if (!live_pt.count(tid))
-                                                return true;
-                                            return false;
-                                          }),
-                           params.constraints.end());
-}
+// Safety net: delete coincident constraints whose merged point died
+// or whose listed lines no longer reference it (shared helper — the
+// old inline sweep compared LINE targets against the live POINT set
+// and silently erased every coincident constraint).
+sweep_orphan_coincident_constraints(params);

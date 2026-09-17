@@ -1,4 +1,179 @@
-# Active task: sketch selection fixes + projection heal — COMMITTED (5f19fed); rounds 9-11 uncommitted: sketch-plane redefine, stray-point heal, broken-sketch extrude guard, screen-size sketch points, log filter, trim-log-flood fix, constraint-glyph toggle (2026-09-14)
+# Active task: TRIM TOOL REDESIGN — ALL PHASES IMPLEMENTED (2026-09-17)
+
+> **Branch:** `feature/trim` (from `dev` @ b32f9fb). NOTHING COMMITTED.
+> **Spec:** wiki/Trim-Tool-Redesign-Requirements.md (user approved
+> D1–D5: FreeCAD-style constraint transfer, extend-to-intersection,
+> no right-click cycling, circle keeps concentric/equal, rebuild in
+> place). Research: 4 agents (industry semantics, engine deep-dive,
+> architecture constraints, user history) — reports summarized in the
+> spec.
+>
+> **Phases:** 0 engine rebuild (no behavior change) -> 1 constraint
+> transfer + projection pruning -> 2 Corner/Extend/Split -> 3 drag-paint.
+> Each phase gated: build + suites + tsc. **FINAL GATES 2026-09-17:
+> 51/51 C++ suites + tsc clean** (51st = the new stage test).
+> ALL PHASES IMPLEMENTED. NOTHING COMMITTED — user tests in-app
+> first; no git actions without approval.
+>
+> **Phase 0 progress (2026-09-17, all 50 suites green after each step):**
+> - P0.1 DONE: freeze minted split points BEFORE the refresh solve
+>   (sketch_trim_commands.inc pins them by scanning entity endpoints;
+>   the old code froze after — the trim's own solve ran unfrozen).
+> - P0.2 DONE: one cleanup pipeline (new trim_attachment_cleanup.inc,
+>   trim_remove_entity_attachments) replaces the five divergent
+>   erasures — isolated-delete and single-survivor paths no longer
+>   leak relations/anchors/fillets/chamfers; the old line-only
+>   trim_line_relation_cleanup.inc is deleted.
+> - Line middle-split iterator invalidation fixed (re-locate after
+>   push_back); spline trim re-fits into temporaries and commits only
+>   when every span succeeds (no more throw-after-undo-push).
+> - P0.3 VERIFIED-AS-EXISTING: the splitters already collapse degenerate
+  pieces at source (line drops < kTrimCoincidentTolerance, circle
+  returns nothing for tangent touches, kMinArcSpan) — command-level
+  points_match guards stay as backstops; the global zero-length
+  cleanup stays as the non-trim safety net (per spec).
+- P0.4 SCOPED DOWN: quadrant ids stay legacy for now (the vertex-N
+  migration is a derived-geometry modernization, not needed for the
+  trim redesign); the legacy hardcodes are consolidated into ONE
+  place (live_sketch_point_ids in trim_attachment_cleanup.inc) —
+  the three ad-hoc safety nets (circle/arc/ellipse phases) and the
+  line orphan net now share it.
+- P0.6 DONE: preview payload symmetry — every kind now emits
+  param_start/param_end + start/end per segment; a line with no
+  intersections paints the whole line red (hovered_index 0, one
+  [0..1] segment) instead of the old null payload (industry: the
+  click deletes the whole entity, so the preview shows it). Schema
+  already accepted all fields as optional — emission-only change.
+- P0.7 DONE: intersection-dispatch unification — new
+  trim_intersection_traversal.inc (for_each_trim_candidate,
+  append_shared_curve_pairs, finish_trim_intersections); the five
+  find_all_intersections overloads now keep only their per-kind
+  analytic fast paths + endpoint-touch passes and share one
+  traversal/sort/dedup tail.
+- GHOST-CIRCLE BUG FIXED (2026-09-17, the user's vision report —
+  "trimming one of two arcs between two crossing lines paints the
+  whole circle red and the trim silently does nothing; the walk
+  direction is wrong, it deletes the part of the arc that does not
+  exist"). Root cause, traced with the new endpoint-only regression
+  tests:
+  1. split_arc_at_intersections' wrap fixups used `<=`/`>=`: an
+     intersection sitting EXACTLY on the arc's own endpoint was
+     shifted a full 2π, manufacturing ghost FULL-CIRCLE segments
+     beside the real piece; the click landed in the ghost and the
+     trim wrote the endpoint back onto itself — a silent no-op.
+  2. arc_angles() returns both sweep ends WRAPPED — the end-unwrap
+     + snap/clamp logic must compare against the UNWRAPPED end or
+     interior angles collapse onto the wrapped end (one-piece
+     result → whole arc deleted; killed the six-petal workflow).
+  3. angular_gap's min(d, 2π-d) went NEGATIVE for d > 2π (angles on
+     opposite unwrapped axes) and snapped everything.
+  Fixes (arc splitter + partial/full-ellipse splitter + circle
+  splitter): boundary-coincident intersections SNAP to the sweep
+  edges (tol = kTrimCoincidentTolerance/r), wrap fixups are strict,
+  the sweep end is unwrapped before comparing, angular_gap is
+  fmod-normalized, and the degenerate-piece drop is DIMENSIONAL
+  (span × r < kTrimCoincidentTolerance — the old 1e-9-rad floor
+  kept ~1e-4-rad trig-roundtrip stubs). Arc/ellipse entity commands
+  also gained a segments.size()==1 full-delete guard (the old code
+  read segments[1] on a size-1 vector — UB). UI:
+  trimPreviewHighlight.sampleFullCurve paints the arc's/partial
+  ellipse's OWN sweep instead of 0..2π.
+  Tests added: test_arc_with_endpoint_only_intersections_deletes_
+  cleanly + test_partial_ellipse_with_endpoint_only_intersections_
+  deletes_cleanly (both fail-before/pass-after). Gates: 50/50
+  suites + tsc clean. AWAITING user in-app re-verification of the
+  circle/2-lines scenario (line trim already confirmed by the user).
+
+PHASE 0 COMPLETE — all suites + tsc green after every step. The
+app-layer preview change (P0.6: whole-line red for no intersections)
+and the ghost-circle fix were verified in-app by the user
+("looks like is fix now").
+
+## PHASES 1-3 COMPLETE (2026-09-17, uncommitted, awaiting in-app test)
+
+**Phase 1 — constraint transfer + projection pruning (D1/D4):**
+`capture_trim_constraint_transfer` before cleanup +
+`apply_trim_constraint_transfer` after — H/V badge, whitelisted
+relations (parallel/perpendicular/equal_length, deduped via
+relation_exists), concentric re-target, driven-dim re-derivation
+(`dim-trim-<kind>-<id>`, circle_radius→arc_radius remap),
+point_line_anchor containment check, coincident re-application.
+
+**COINCIDENT-RECORD BUG FOUND + FIXED (real Phase-1 defect, caught
+by the stage test):** coincident records carry LINE ids in
+`target_ids` and the merged POINT id in the constraint id
+(`"constraint-coincident-<point_id>"`) — the transfer's position
+lookup and every orphan sweep compared line ids against the live
+POINT set, erasing every coincident constraint after any trim. New
+helpers in trim_constraint_transfer.inc: `coincident_point_id`,
+`line_references_point`, `coincident_record_alive`,
+`sweep_orphan_coincident_constraints` (applied at transfer step 6 +
+all six sweep sites: line/arc/circle/ellipse entity commands,
+corner, split, stroke).
+
+**Phase 2 — Corner trim (R2), Extend, Split (R4):**
+- `corner_trim_commands.inc` — analytic virtual-corner math for
+  line/line, line/circle, circle/circle (virtual corners are
+  unbounded — extend's finite-segment helpers are the wrong domain);
+  nearest candidate to click; new arc sweep joins the surviving
+  pieces; A applied first so B adopts A's corner id; arc_angle dims
+  flip driven; throws on collapse/inversion.
+- Extend already existed — got hotkey (E) + help parity.
+- `split_entity_commands.inc` — line/arc/partial-ellipse split at
+  ALL intersections (boundary ids resolved first; piece 0 keeps the
+  original id); circle/full-ellipse two-click → two CCW pieces
+  sharing endpoints; spline re-fit into temporaries first (undo
+  safety); transfer drops equal_length on splits; freeze-before-
+  refresh.
+
+**Phase 3 — drag-paint trim (R5):** `trim_stroke_commands.inc` —
+ONE push_undo_state for the whole stroke; per-entry try/catch
+(log_warn + skip); shared minted-vertex freeze; one refresh, one
+bump. UI accumulates hovered segments while dragging and commits
+the stroke on pointer-up.
+
+**Stage test program (the requested isolation harness):**
+`native/cad-core/tests/trim_stages_test.cpp` →
+`cad_core_trim_stages_test` (`--stage N`, `--list`; auto-discovered
+by scripts/run-core-tests.mjs — the 51st suite). 8 stages:
+1 Phase-0 baseline trims, 2 D1 transfer (H badge, relations,
+coincident record survival, equal_length partner re-solve, driven
+dims), 3 projection pruning, 4 stroke on hand-built entities,
+5 corner line-line, 6 extend line-arc, 7 split (line + circle
+pieces share vertices), 8 stroke + ONE undo restores everything.
+Run directly:
+`PATH="third_party/occt8-install/win64/vc14/bin:$PATH" CSF_OCCTResourcePath=third_party/occt8/src build/cad_core_trim_stages_test --stage N`
+
+**UI wiring (live, tsc clean):** Corner Trim button + hover ghost
+(core preview → `polysmith-corner-trim-preview` event, orange ghost
+group with sampled segments + corner cross), Split button, drag-
+paint stroke on Trim, extend hotkey E + help entries for all four
+tools; zod schema validation; corner/split IPC command builders;
+i18n labels (en.json).
+
+**Docs:** Glossary (Trim entry: click-to-delete wording, companion
+tools, D1 link), V1-Roadmap (D1 transfer whitelist wording),
+AI-CAD-Command-Language + IPC-Protocol (corner_trim_preview /
+corner_trim_sketch_entities / split_sketch_entity /
+trim_sketch_stroke).
+
+## AWAITING USER — in-app verification checklist (2026-09-17)
+
+1. Trim: click-to-delete AND drag-paint stroke; a stroke must undo
+   as ONE step.
+2. Corner Trim: pick A then B → hover ghost shows the virtual
+   corner; click commits the corner (arc join).
+3. Extend: E hotkey; stretch to the first intersection.
+4. Split: one click splits at every intersection; circles/ellipses
+   use the two-click rule.
+5. Hover an isolated line with Trim → whole line red (P0.6).
+6. Trim near coincident/constrained geometry → coincident
+   constraints must survive (the fixed bug).
+NO git actions until the user approves.
+
+---
+
+# (previous task — historical) sketch selection fixes + projection heal — COMMITTED (5f19fed); rounds 9-11 uncommitted: sketch-plane redefine, stray-point heal, broken-sketch extrude guard, screen-size sketch points, log filter, trim-log-flood fix, constraint-glyph toggle (2026-09-14)
 
 > **Branch:** `fix/sketch` (from `dev` @ 69aa509)
 > **Committed locally as `5f19fed` after user in-app verification

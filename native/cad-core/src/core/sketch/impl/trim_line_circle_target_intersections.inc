@@ -11,51 +11,29 @@ std::vector<TrimIntersection> find_all_intersections(
   // reference curves specifically to trim against them, and the
   // original tool design called for it. Construction curves still
   // never form profiles — that remains the face walk's own rule.
-  for (const auto& line : params.lines) {
-    if (line.id == target.id) continue;
-    auto isect = intersect_line_line(target, line);
-    if (isect.has_value()) results.push_back(std::move(*isect));
-  }
-
-  for (const auto& circle : params.circles) {
-    auto isects = intersect_line_circle(target, circle);
-    for (auto& is : isects) results.push_back(std::move(is));
-  }
-
-  for (const auto& arc : params.arcs) {
-    auto isects = intersect_arc_line(arc, target);
-    for (auto& is : isects) {
-      std::swap(is.param_on_target, is.param_on_other);
-      is.other_entity_id = arc.id;
-      results.push_back(std::move(is));
-    }
-  }
-
-  // New geometry kinds route through the shared curve-intersection
-  // dispatch so the trim sees exactly what the profile walk sees.
   const ExactCurve target_curve = trim_target_curve(target);
-  for (const auto& ellipse : params.ellipses) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
-    for (const auto& [t, angle] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, t);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = t, .param_on_other = angle,
-          .other_entity_id = ellipse.id});
+  for_each_trim_candidate(params, target.id, [&](const auto& other) {
+    using T = std::decay_t<decltype(other)>;
+    if constexpr (std::is_same_v<T, SketchLine>) {
+      auto isect = intersect_line_line(target, other);
+      if (isect.has_value()) results.push_back(std::move(*isect));
+    } else if constexpr (std::is_same_v<T, SketchCircle>) {
+      auto isects = intersect_line_circle(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else if constexpr (std::is_same_v<T, SketchArc>) {
+      auto isects = intersect_arc_line(other, target);
+      for (auto& is : isects) {
+        std::swap(is.param_on_target, is.param_on_other);
+        is.other_entity_id = other.id;
+        results.push_back(std::move(is));
+      }
+    } else {
+      // Ellipse and spline route through the shared curve dispatch so
+      // the trim sees exactly what the profile walk sees.
+      append_shared_curve_pairs(results, target_curve,
+                                trim_target_curve(other), other.id);
     }
-  }
-  for (const auto& spline : params.splines) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
-    for (const auto& [t, sparam] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, t);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = t, .param_on_other = sparam,
-          .other_entity_id = spline.id});
-    }
-  }
+  });
 
   // Endpoint-touch pass: another arc's STORED endpoints that lie on
   // the target line are junction cuts the sweep filter of the arc
@@ -87,15 +65,6 @@ std::vector<TrimIntersection> find_all_intersections(
     add_if_on_target(other.end_x, other.end_y);
   }
 
-  if (results.empty()) return results;
-
-  std::sort(results.begin(), results.end(),
-            [](const TrimIntersection& a, const TrimIntersection& b) {
-              return a.param_on_target < b.param_on_target;
-            });
-
-  deduplicate(results);
-
   // Intersections at the line's own endpoints are KEPT. They used to be
   // filtered here, but the filter compared `param_on_target` — a
   // dimensionless t in [0, 1] — against kTrimCoincidentTolerance, which
@@ -105,7 +74,7 @@ std::vector<TrimIntersection> find_all_intersections(
   // intersections — isolated entity" branch and deleted the whole line.
   // Endpoint intersections are harmless: the splitters drop the
   // zero-length segments they produce.
-  return results;
+  return finish_trim_intersections(std::move(results));
 }
 
 // ================================================================
@@ -118,50 +87,28 @@ std::vector<TrimIntersection> find_all_intersections(
   std::vector<TrimIntersection> results;
 
   // Construction geometry cuts here too — see the line-target note above.
-  for (const auto& line : params.lines) {
-    auto isects = intersect_circle_line(target, line);
-    for (auto& is : isects) results.push_back(std::move(is));
-  }
-
-  for (const auto& circle : params.circles) {
-    if (circle.id == target.id) continue;
-    auto isects = intersect_circle_circle(target, circle);
-    for (auto& is : isects) results.push_back(std::move(is));
-  }
-
-  for (const auto& arc : params.arcs) {
-    auto isects = intersect_arc_circle(arc, target);
-    for (auto& is : isects) {
-      std::swap(is.param_on_target, is.param_on_other);
-      is.other_entity_id = arc.id;
-      results.push_back(std::move(is));
-    }
-  }
-
-  // New geometry kinds through the shared dispatch (line-target note).
   const ExactCurve target_curve = trim_target_curve(target);
-  for (const auto& ellipse : params.ellipses) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
-    for (const auto& [angle, eangle] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = angle, .param_on_other = eangle,
-          .other_entity_id = ellipse.id});
+  for_each_trim_candidate(params, target.id, [&](const auto& other) {
+    using T = std::decay_t<decltype(other)>;
+    if constexpr (std::is_same_v<T, SketchLine>) {
+      auto isects = intersect_circle_line(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else if constexpr (std::is_same_v<T, SketchCircle>) {
+      auto isects = intersect_circle_circle(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else if constexpr (std::is_same_v<T, SketchArc>) {
+      auto isects = intersect_arc_circle(other, target);
+      for (auto& is : isects) {
+        std::swap(is.param_on_target, is.param_on_other);
+        is.other_entity_id = other.id;
+        results.push_back(std::move(is));
+      }
+    } else {
+      // New geometry kinds through the shared dispatch (line-target note).
+      append_shared_curve_pairs(results, target_curve,
+                                trim_target_curve(other), other.id);
     }
-  }
-  for (const auto& spline : params.splines) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
-    for (const auto& [angle, sparam] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = angle, .param_on_other = sparam,
-          .other_entity_id = spline.id});
-    }
-  }
+  });
 
   // Endpoint-touch pass: another arc's STORED endpoints that lie on
   // the target circle (arc-solver sweep filter can drop them — see
@@ -185,13 +132,5 @@ std::vector<TrimIntersection> find_all_intersections(
     add_if_on_target(other.end_x, other.end_y);
   }
 
-  if (results.empty()) return results;
-
-  std::sort(results.begin(), results.end(),
-            [](const TrimIntersection& a, const TrimIntersection& b) {
-              return a.param_on_target < b.param_on_target;
-            });
-
-  deduplicate(results);
-  return results;
+  return finish_trim_intersections(std::move(results));
 }

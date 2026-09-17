@@ -115,12 +115,35 @@
       std::optional<int> segment_index = std::nullopt,
       std::vector<std::string>* minted_vertex_ids = nullptr,
       std::optional<int> expected_revision = std::nullopt);
+  // Drag-paint trim: one stroke trims every crossed entity and commits
+  // as ONE undo entry (R5). Each entry re-derives its segment from the
+  // click point against the CURRENT geometry. Failed entries are
+  // logged and skipped by the engine.
+  DocumentState trim_sketch_stroke(
+      const std::vector<polysmith::core::TrimStrokeEntry>& entries);
   // Extend a sketch entity (line or arc) from the end nearest the
   // click to the nearest intersection with another non-construction
   // entity. Single undoable action via full sketch snapshot.
   DocumentState extend_sketch_entity(const std::string& entity_id,
                                      double click_x,
                                      double click_y);
+  // Corner-trim two sketch entities (lines or arcs) to their virtual
+  // corner: the intersection of their underlying curves nearest the
+  // click. Both entities keep the portion from their far end to the
+  // corner. Single undoable action via full sketch snapshot.
+  DocumentState corner_trim_sketch_entities(const std::string& entity_a_id,
+                                            const std::string& entity_b_id,
+                                            double click_x,
+                                            double click_y);
+  // Split a sketch entity at all its intersections without deleting
+  // anything. Circles and full ellipses need TWO split points
+  // (SolidWorks rule). Single undoable action; the fresh split
+  // vertices are frozen before the solver pass.
+  DocumentState split_sketch_entity(const std::string& entity_id,
+                                    double click_x,
+                                    double click_y,
+                                    double split2_x,
+                                    double split2_y);
   // Offset a sketch entity (line / circle / arc) by a signed
   // distance, creating a new entity. Single undoable action.
   DocumentState offset_sketch_entity(const std::string& entity_id,

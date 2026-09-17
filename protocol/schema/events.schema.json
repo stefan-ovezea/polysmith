@@ -9,6 +9,7 @@
       "enum": [
         "hello",
         "pong",
+        "corner_trim_preview_result",
         "document_created",
         "document_state",
         "session_state",

@@ -15,6 +15,7 @@ import {
   useAppConfig,
 } from "@/config";
 import type {
+  CornerTrimPreviewResultEvent,
   DocumentState,
   SketchConstraintScene,
   SketchTool,
@@ -135,6 +136,7 @@ import {
 } from "./viewport/dimensionLabelDrag";
 import { handleActiveSketchPointerMove } from "./viewport/activeSketchPointerMove";
 import { renderTrimPreviewHighlight } from "./viewport/trimPreviewHighlight";
+import { renderCornerTrimPreview } from "./viewport/cornerTrimPreviewHighlight";
 import { createDimensionRelationPreviewActions } from "./viewport/dimensionRelationPreviewActions";
 import { createLineAnglePreview } from "./viewport/dimensionRelationPreviewGeometry";
 import { beginLinearPlacement, updateLinearPlacementPreview, cancelLinearPlacement as cancelLinearPlacementPreview, resolveLinearPlacementCommit } from "./viewport/linearDimensionPlacement";
@@ -298,6 +300,9 @@ export function ViewportPanel({
   onPickSketchSlot,
   onPickSketchChamfer,
   onExtendSketchEntity,
+  onCornerTrimSketchEntities,
+  onSplitSketchEntity,
+  onTrimSketchStroke,
   onOffsetSketchEntity,
   sketchTextPathPicking,
   onPickSketchTextPath,
@@ -522,6 +527,33 @@ export function ViewportPanel({
   const previewInferenceRef = useRef<THREE.Line[]>([]);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
+  // Corner-trim hover preview: the two ghost segments + corner marker
+  // group, and the latest corner_trim_preview_result payload.
+  const cornerPreviewGroupRef = useRef<THREE.Group | null>(null);
+  const cornerTrimPreviewRef = useRef<
+    | (NonNullable<CornerTrimPreviewResultEvent["payload"]> & { id?: string })
+    | null
+  >(null);
+  // Corner preview throttle (same shape as the trim preview throttle).
+  const cornerPreviewLastSentRef = useRef<{
+    x: number;
+    y: number;
+    entityId: string;
+    requestId: string | null;
+  } | null>(null);
+  // Corner tool two-pick state (first entity awaiting its partner).
+  const cornerFirstEntityIdRef = useRef<string | null>(null);
+  // Split tool two-click state (first click for circles/full ellipses).
+  const splitFirstPickRef = useRef<{
+    entityId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  // Drag-paint trim stroke: entities crossed while the pointer was
+  // held, keyed by entity id (latest crossing position wins).
+  const trimStrokeRef = useRef<Map<string, { x: number; y: number }> | null>(
+    null,
+  );
   /** Latest trim_preview_result payload from the core (null when idle),
    *  including the echoed command id and the document revision the
    *  preview was computed against. */
@@ -779,6 +811,9 @@ export function ViewportPanel({
   const pickSketchSlotRef = useRef(onPickSketchSlot);
   const pickSketchChamferRef = useRef(onPickSketchChamfer);
   const extendSketchEntityRef = useRef(onExtendSketchEntity);
+  const cornerTrimSketchEntitiesRef = useRef(onCornerTrimSketchEntities);
+  const splitSketchEntityRef = useRef(onSplitSketchEntity);
+  const trimSketchStrokeRef = useRef(onTrimSketchStroke);
   const offsetSketchEntityRef = useRef(onOffsetSketchEntity);
   const sketchTextPathPickingRef = useRef(sketchTextPathPicking);
   const pickSketchTextPathRef = useRef(onPickSketchTextPath);
@@ -1421,6 +1456,7 @@ export function ViewportPanel({
   }, [selectedConstraint]);
 
   const {
+    clearCornerPreview,
     clearDragPreviewLines,
     clearPreviewArc,
     clearPreviewCircle,
@@ -1431,6 +1467,7 @@ export function ViewportPanel({
     clearPreviewSpline,
     clearTrimArcHighlight,
     clearTrimSegmentHighlight,
+    updateCornerPreview,
     updateTrimArcHighlight,
     updateTrimSegmentHighlight,
   } = createViewportPreviewActions({
@@ -1444,6 +1481,7 @@ export function ViewportPanel({
     previewInferenceRef,
     trimSegmentHighlightRef,
     trimArcHighlightRef,
+    cornerPreviewGroupRef,
     previewDimensionRef,
     dimensionRelationPreviewRef,
     dimensionRelationPreviewLabelRef,
@@ -1468,9 +1506,17 @@ export function ViewportPanel({
       trimPreviewLastSentRef.current = null;
       clearTrimSegmentHighlight();
       clearTrimArcHighlight();
+      cornerTrimPreviewRef.current = null;
+      cornerPreviewLastSentRef.current = null;
+      clearCornerPreview();
     }
     lastTrimInvalidationRevisionRef.current = revision;
-  }, [document?.revision, clearTrimSegmentHighlight, clearTrimArcHighlight]);
+  }, [
+    document?.revision,
+    clearTrimSegmentHighlight,
+    clearTrimArcHighlight,
+    clearCornerPreview,
+  ]);
 
   function clearDimensionToolFirstPick() {
     dimensionToolFirstLineRef.current = null;
@@ -1991,6 +2037,13 @@ export function ViewportPanel({
     setHoveredSketchPoint(null);
     setHoveredSketchProfile(null);
     clearTrimHighlights(clearTrimSegmentHighlight, clearTrimArcHighlight);
+    // Corner/split/stroke session state dies with the tool switch.
+    cornerFirstEntityIdRef.current = null;
+    splitFirstPickRef.current = null;
+    trimStrokeRef.current = null;
+    cornerPreviewLastSentRef.current = null;
+    cornerTrimPreviewRef.current = null;
+    clearCornerPreview();
     void setSketchToolRef.current("select");
   }
 
@@ -3062,6 +3115,10 @@ export function ViewportPanel({
         clearTrimArcHighlight,
         updateTrimSegmentHighlight,
         updateTrimArcHighlight,
+        trimStrokeRef,
+        cornerFirstEntityIdRef,
+        cornerPreviewLastSentRef,
+        clearCornerPreview,
       });
       if (activeSketchToolRef.current === "spline" &&
           splineDraftPolesRef.current.length >= 2) {
@@ -3103,6 +3160,12 @@ export function ViewportPanel({
     function handlePointerDown(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
+      // Drag-paint trim (R5): pressing inside the trim tool starts a
+      // stroke; the pointer-move path records every crossed entity
+      // and the pointer-up commits them as one batch.
+      if (activeSketchToolRef.current === "trim") {
+        trimStrokeRef.current = new Map();
+      }
       // Transform/Array center pick consumes the click: resolve the
       // pointer through the snap machinery (circle/arc centers,
       // endpoints, grid) and report the sketch-local point.
@@ -4083,6 +4146,29 @@ export function ViewportPanel({
         onPickSketchSlot: pickSketchSlotRef.current,
         onPickSketchChamfer: pickSketchChamferRef.current,
         extendSketchEntity: extendSketchEntityRef.current,
+        cornerFirstEntityIdRef,
+        cornerTrimSketchEntities: (entityAId, entityBId, clickX, clickY) => {
+          clearCornerPreview();
+          return cornerTrimSketchEntitiesRef.current(
+            entityAId,
+            entityBId,
+            clickX,
+            clickY,
+          );
+        },
+        clearCornerPreview,
+        splitFirstPickRef,
+        splitSketchEntity: splitSketchEntityRef.current,
+        trimStrokeRef,
+        trimSketchStroke: (entries) => {
+          // Deterministic clear BEFORE the core call (same contract as
+          // the single trim click).
+          clearTrimHighlights(
+            clearTrimSegmentHighlight,
+            clearTrimArcHighlight,
+          );
+          return trimSketchStrokeRef.current(entries);
+        },
         offsetSketchEntity: offsetSketchEntityRef.current,
         sketchTextPathPicking: sketchTextPathPickingRef.current,
         pickSketchTextPath: pickSketchTextPathRef.current,
@@ -4268,6 +4354,31 @@ export function ViewportPanel({
     };
     window.addEventListener("polysmith-trim-preview", onTrimPreview);
 
+    const onCornerTrimPreview = (e: Event) => {
+      const detail = (e as CustomEvent).detail as NonNullable<
+        CornerTrimPreviewResultEvent["payload"]
+      > & { id?: string };
+      // Same coalescing contract as the trim preview: drop responses
+      // that are not the newest request by id.
+      const lastSent = cornerPreviewLastSentRef.current;
+      if (lastSent?.requestId && detail.id !== lastSent.requestId) {
+        return;
+      }
+      cornerTrimPreviewRef.current = detail;
+      renderCornerTrimPreview({
+        data: cornerTrimPreviewRef.current,
+        actions: {
+          clearCornerPreview,
+          updateCornerPreview,
+        },
+      });
+      requestRender();
+    };
+    window.addEventListener(
+      "polysmith-corner-trim-preview",
+      onCornerTrimPreview,
+    );
+
     resizeRenderer();
     requestRender();
 
@@ -4357,6 +4468,10 @@ export function ViewportPanel({
       renderer.domElement.removeEventListener("dblclick", onDoubleClick);
       renderer.domElement.removeEventListener("wheel", onWheel);
       window.removeEventListener("polysmith-trim-preview", onTrimPreview);
+      window.removeEventListener(
+        "polysmith-corner-trim-preview",
+        onCornerTrimPreview,
+      );
       clearDragPreviewLines();
       controls.dispose();
       disposeGroup(contentGroup);

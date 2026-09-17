@@ -1,27 +1,10 @@
-DocumentState DocumentManager::trim_sketch_entity(
+DocumentState DocumentManager::split_sketch_entity(
     const std::string& entity_id,
     double click_x,
     double click_y,
-    std::optional<int> segment_index,
-    std::vector<std::string>* minted_vertex_ids,
-    std::optional<int> expected_revision) {
+    double split2_x,
+    double split2_y) {
   require_document();
-
-  // The preview's hovered segment is only meaningful against the
-  // document it was computed from. A click landing before the previous
-  // trim's document_state reached the UI carries a stale
-  // segment_index against a NEW segment list — honouring it deletes a
-  // different, larger piece. Downgrade to click-based selection; the
-  // click point is always re-derivable from current geometry.
-  if (segment_index.has_value() && expected_revision.has_value() &&
-      *expected_revision != document_->revision) {
-    log_warn("trim",
-             "stale segment_index ignored (preview revision " +
-                 std::to_string(*expected_revision) + ", document revision " +
-                 std::to_string(document_->revision) +
-                 ") — falling back to click-based selection");
-    segment_index = std::nullopt;
-  }
 
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");
@@ -40,27 +23,20 @@ DocumentState DocumentManager::trim_sketch_entity(
 
   push_undo_state();
   clear_redo_stack();
-  // The caller rarely needs the minted list, but the freeze below
-  // always does — collect into a local scratch when none was passed.
-  std::vector<std::string> scratch_minted;
-  std::vector<std::string>* minted =
-      minted_vertex_ids != nullptr ? minted_vertex_ids : &scratch_minted;
-  polysmith::core::trim_sketch_entity(
-      *feature_it, entity_id, click_x, click_y, segment_index, minted);
+  // The engine collects the fresh split point ids; the freeze below
+  // always needs them.
+  std::vector<std::string> minted;
+  polysmith::core::split_sketch_entity(
+      *feature_it, entity_id, click_x, click_y, split2_x, split2_y,
+      &minted);
 
-  // Freeze the vertices this trim minted BEFORE the refresh. The
-  // refresh's planegcs pass treats any non-fixed vertex as an unknown —
-  // a fresh split point must never be an unknown, or the solver can
-  // move it and re-open the loop the trim just welded. The old code
-  // froze AFTER the refresh: the trim's own solve ran with the fresh
-  // split points unfrozen and only later commands were protected.
-  // The minted ids live on entity endpoints, so recover their
-  // coordinates from the entities and pin them now; the refresh's
-  // rebuild re-mints them from entities and its sync_fixed_point_flags
-  // pass carries the flag over.
-  if (!minted->empty()) {
+  // Freeze the vertices this split minted BEFORE the refresh — the
+  // same contract as trim: a fresh split point must never be a solver
+  // unknown, or the planegcs pass can move it and re-open the loop
+  // the split just created.
+  if (!minted.empty()) {
     const std::unordered_set<std::string> minted_set(
-        minted->begin(), minted->end());
+        minted.begin(), minted.end());
     auto pin = [&](const std::string& point_id, double x, double y) {
       if (!minted_set.count(point_id)) return;
       const auto it = std::find_if(

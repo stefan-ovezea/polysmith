@@ -12,11 +12,13 @@ export type Shape2D =
   | "arc"
   | "fillet"
   | "chamfer"
+  | "corner"
   | "extend"
   | "offset"
   | "ellipse"
   | "slot"
   | "spline"
+  | "split"
   | "trim";
 
 export type Axis = "x" | "y" | "z";

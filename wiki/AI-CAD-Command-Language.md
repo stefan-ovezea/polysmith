@@ -2053,6 +2053,15 @@ computed against: when it does not match the current document, the core
 IGNORES `segment_index` and re-derives the segment from the click point
 (a stale preview must never cut the wrong piece).
 
+Constraint policy (D1): surviving pieces inherit H/V badges, parallel /
+perpendicular / equal-length relations to the same reference, surviving
+coincident pairs (the shared point must survive and every listed line
+must still reference it) and point-on-object anchors at cut endpoints on
+line cutters; dimensions re-derive as DRIVEN with measured values;
+circle → arc trims keep concentric relations (D4); fillet / chamfer
+records die with their operands. Minted split vertices are frozen before
+the planegcs pass.
+
 Payload:
 
 ```ts
@@ -2063,6 +2072,77 @@ Payload:
   segment_index?: number;     // from trim_preview_result.hovered_index
   expected_revision?: number; // document.revision of that preview
   preview_id?: string;        // command id of that preview (diagnostics)
+}
+```
+
+#### `trim_sketch_stroke`
+
+Drag-paint trim (R5): one stroke trims every crossed entity and commits
+as ONE undo entry. Each entry re-derives its segment from its click
+point against the CURRENT geometry (earlier entries in the stroke may
+have already split or shortened later entities — a preview-cached index
+would be stale). Failed entries are logged and skipped; the stroke
+commits whatever succeeded.
+
+Payload:
+
+```ts
+{
+  entries: Array<{
+    entity_id: string;
+    click_x: number;
+    click_y: number;
+  }>;
+}
+```
+
+#### `corner_trim_sketch_entities`
+
+Corner trim (R2): both entities (lines or arcs) are trimmed/extended to
+their virtual corner — the intersection of their underlying curves
+nearest the click. Each entity keeps the portion from its far end (the
+end farther from the click) to the corner; an entity already at the
+corner is left untouched. Throws when the curves do not intersect
+(parallel lines), the corner would collapse an entity, or an entity is
+not a line/arc. The two corner endpoints share one vertex id.
+
+Preview: `corner_trim_preview { entity_a_id, entity_b_id, cursor_x,
+cursor_y }` → `corner_trim_preview_result { entity_a_id, entity_b_id,
+valid, revision, corner?, a?, b? }` where each segment carries
+`kind: line|arc`, `start`, `end`, and (arcs) `center`, `radius`, `ccw` —
+sketch-local coordinates, nothing mutated.
+
+Payload:
+
+```ts
+{
+  entity_a_id: string;
+  entity_b_id: string;
+  click_x: number;
+  click_y: number;
+}
+```
+
+#### `split_sketch_entity`
+
+Split (R4): divides the clicked line / arc / partial ellipse / spline at
+ALL intersections with other entities without deleting anything (every
+piece survives; equal-length relations do NOT transfer because N+1
+collinear pieces forced to one length overconstrain the sketch — all
+other D1 transfers apply). Circles and full ellipses follow the
+two-point rule: `(click_x, click_y)` and `(split2_x, split2_y)` divide
+the entity into two CCW pieces sharing their endpoint vertices. Throws
+when there is nothing to split at or the two points coincide.
+
+Payload:
+
+```ts
+{
+  entity_id: string;
+  click_x: number;
+  click_y: number;
+  split2_x: number; // ignored for open kinds
+  split2_y: number;
 }
 ```
 
@@ -3718,6 +3798,12 @@ this:
 - Sweep one sketch profile along one sketch line with
   `sweep_profile { profile_id, path_entity_id }`; update sweeps with
   `update_sweep_profile` and `update_sweep_path`.
+- Sketch curve editing: `trim_sketch_entity` (segment delete, hover
+  preview via `trim_preview` / `trim_preview_result`), `trim_sketch_stroke`
+  (drag-paint batch, one undo entry), `corner_trim_sketch_entities` (two
+  entities to their virtual corner, preview via `corner_trim_preview`),
+  `extend_sketch_entity`, and `split_sketch_entity` (all intersections;
+  circles/full ellipses take two points).
 - Read `viewport_state.bodies[]` for boolean targets.
 - Read `viewport_state.solid_faces[]` for face sketches and copy `plane_frame`.
 - Read `viewport_state.edges[]` for body fillet/chamfer.

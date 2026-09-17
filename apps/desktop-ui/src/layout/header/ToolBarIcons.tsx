@@ -282,6 +282,45 @@ const TrimIcon = () => (
   </svg>
 );
 
+// Sketch Corner-trim tool glyph: two segments meeting at a sharp
+// corner with a dot on the junction — reads as "join at a corner".
+export const CornerIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 17V7" />
+    <path d="M4 7h10" />
+    <circle cx="4" cy="7" r="1.6" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+// Sketch Split tool glyph: one segment cut into two pieces at a gap —
+// reads as "divide in place".
+export const SplitIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 12h6" />
+    <path d="M14 12h6" />
+    <path d="M11 10v4" />
+    <path d="M13 10v4" />
+  </svg>
+);
+
 const HorizontalConstraintIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -466,8 +505,12 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <FilletIcon />;
     case "chamfer":
       return <SketchChamferIcon />;
+    case "corner":
+      return <CornerIcon />;
     case "extend":
       return <ExtendIcon />;
+    case "split":
+      return <SplitIcon />;
     case "offset":
       return <OffsetIcon />;
     case "ellipse":

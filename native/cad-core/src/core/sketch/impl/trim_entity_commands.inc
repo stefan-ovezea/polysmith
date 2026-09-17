@@ -20,6 +20,9 @@ int next_trim_entity_index(const std::vector<std::string>& ids) {
   return highest + 1;
 }
 
+#include "core/sketch/impl/trim_attachment_cleanup.inc"
+#include "core/sketch/impl/trim_constraint_transfer.inc"
+
 void trim_sketch_entity(FeatureEntry& feature,
                         const std::string& entity_id,
                         double click_x,
