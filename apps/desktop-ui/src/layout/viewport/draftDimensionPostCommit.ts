@@ -20,6 +20,10 @@ export interface PendingCircleDimensionPlacement {
 }
 
 export interface PendingDimensionDeletion {
+  tool: DraftDimensionTool;
+  fromLineCount: number;
+  fromCircleCount: number;
+  fromPolygonCount: number;
   shouldDeleteLine: boolean;
   shouldDeleteCircle: boolean;
   shouldDeletePolygon: boolean;
@@ -126,12 +130,37 @@ export function deletePendingAutoDimensions({
     pendingDimensionDeletionRef.current = null;
     return;
   }
+  // Wait for the entity to actually land. This drain also runs on
+  // intermediate document replies (e.g. the begin_group reply of the
+  // click commit path, sent before the add) — without the gate the
+  // "last entity" is still the PREVIOUS one and its dimension gets
+  // deleted while the new entity keeps its own.
+  if (!pendingEntityLanded(pending, sketch)) {
+    return;
+  }
 
   deletePendingLineDimensions(pending, sketch, deleteSketchDimension);
   deletePendingCircleDimension(pending, sketch, deleteSketchDimension);
   deletePendingPolygonDimension(pending, sketch, deleteSketchDimension);
   deletePendingRectangleDimensions(pending, sketch, deleteSketchDimension);
   pendingDimensionDeletionRef.current = null;
+}
+
+function pendingEntityLanded(
+  pending: PendingDimensionDeletion,
+  sketch: SketchFeatureParameters,
+) {
+  if (pending.tool === "line") {
+    return sketch.lines.length > pending.fromLineCount;
+  }
+  if (pending.tool === "circle") {
+    return sketch.circles.length > pending.fromCircleCount;
+  }
+  if (pending.tool === "polygon") {
+    return (sketch.polygons ?? []).length > pending.fromPolygonCount;
+  }
+  // rectangle
+  return sketch.lines.length >= pending.fromLineCount + 4;
 }
 
 function deletePendingLineDimensions(

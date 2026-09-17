@@ -1,11 +1,13 @@
 #pragma once
 
 #include <optional>
+#include <source_location>
 #include <string>
 #include <vector>
 
 #include "core/cam/cam_export.h"
 #include "core/cam/cam_operation.h"
+#include "core/cam/toolpath.h"
 #include "core/document/document_state.h"
 #include "core/export/export.h"
 #include "core/extrude/extrude_feature.h"

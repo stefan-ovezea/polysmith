@@ -56,7 +56,9 @@ export interface ViewportPanelProps {
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.
   activeCamSetupId?: string | null;
-  onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
+  onSnapshotCaptureReady?: (
+    capture: (() => Promise<string | null>) | null,
+  ) => void;
   onSelectPrimitive: (primitiveId: string) => Promise<void>;
   onSelectReference: (referenceId: string) => Promise<void>;
   onSelectFace: (faceId: string) => Promise<void>;
@@ -330,6 +332,12 @@ export interface ViewportPanelProps {
   onDeleteSketchSelection: (selection?: SketchSelection) => Promise<void>;
   onConfirmDeleteSketchSelection: () => void;
   onDeleteSketchDimension: (dimensionId: string) => Promise<void>;
+  // Undo-group bridge (D2): the dimension draft commit spans several
+  // commands (entity add + auto-dim deletion + expression update) and
+  // collapses them into ONE undo step. begin opens before the add;
+  // end closes after the post-commit effects drain.
+  onBeginUndoGroup: (name: string) => Promise<void>;
+  onEndUndoGroup: () => Promise<void>;
   onToggleSketchDimensionDriven: (dimensionId: string) => Promise<void>;
   onSetSketchLineConstruction: (
     lineId: string,

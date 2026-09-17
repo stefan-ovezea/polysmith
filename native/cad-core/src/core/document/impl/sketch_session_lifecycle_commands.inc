@@ -16,8 +16,9 @@ DocumentState DocumentManager::finish_sketch() {
     throw std::runtime_error("Active sketch feature not found");
   }
 
-  push_undo_state();
-  clear_redo_stack();
+  // No push here: the session's edits were already collapsed by
+  // end_undo_group below (D4 — the whole sketch-edit session is ONE
+  // step). The flag clearing above is part of that step.
   feature_it->status = "healthy";
   document_->selected_feature_id = feature_it->id;
   document_->selected_reference_id = std::nullopt;
@@ -35,6 +36,8 @@ DocumentState DocumentManager::finish_sketch() {
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
+  // Collapse the whole session into one "Sketch Edit" step (D4).
+  end_undo_group();
   bump_geometry_revision();
   return document_.value();
 }
@@ -81,5 +84,9 @@ DocumentState DocumentManager::reenter_sketch(const std::string& feature_id) {
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
+  // Re-entering an existing sketch opens the same session group as a
+  // fresh sketch (D4): edits collapse into ONE step on finish.  After
+  // the bump so the session snapshot carries the current revision.
+  begin_undo_group("Sketch Edit");
   return document_.value();
 }

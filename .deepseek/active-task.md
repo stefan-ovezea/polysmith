@@ -1,8 +1,172 @@
-# Active task: TRIM TOOL REDESIGN — ALL PHASES IMPLEMENTED, COMMITTED + PUSHED (2026-09-17)
+# Active task: UNDO/REDO REWORK — full implementation to CAD standard (2026-09-17)
+
+> **Branch:** `feature/undo-redo`, created from `dev` @ `01c5149`
+> (the squash merge of the trim redesign) and pushed to origin.
+>
+> **User request (verbatim):** "undo and redo is working sporadic.
+> this tools was also done very long time ago and is behind not
+> knowing about many new tools and stuff. I want again in deep
+> analysis and a good plan to bring it to general accepted cad
+> standard. right now has a mind of its own and some times work some
+> times does not. ... i want a full implementation. Probably need to
+> be spitted between 2d and 3d implementation."
+>
+> **User decisions (approved via AskUserQuestion):** sketch undo
+> model = **Session = one step** (Onshape model — per-action undo
+> inside the open sketch; after exit the session collapses to ONE
+> step; cancel rolls back the session with no trace); rollout =
+> **All phases, one go** (implement P0→P5 now, staged test program,
+> user verifies the full result in-app at the end).
+>
+> **Research (2026-09-17, 4 agents) — COMPLETE:** (1) core audit:
+> 138 push sites / 56 files; undo swaps snapshots with NO refresh
+> (revision goes backwards, CAM cache ambiguity); extrude pushes per
+> tick ×N features; construction-plane previews clear redo with no
+> push; `remove_sketch_projections`/DXF-import conditional entries.
+> (2) UI: stale `can_undo`/`can_redo` (session_state only on
+> request), fire-and-forget undo, cancel loops up to 10 undos,
+> double-Escape, per-keystroke steps, no Ctrl+Y. (3) Standard:
+> one-intent-one-step, named grouped transactions, previews never
+> push/clear-redo, sketch session enter/exit/cancel semantics,
+> session-scoped history + limits, undo-recomputes + toolpath
+> invalidation. (4) History: machinery born 2026-04-16 root commit,
+> only 1 real reported bug (round 25), 8/51 suites cover undo.
+>
+> **Spec:** `wiki/Undo-Redo-Redesign-Requirements.md` — decisions
+> D1–D10, phases P0→P5, stage test program
+> `cad_core_undo_stages_test`.
+>
+> ## STATUS 2026-09-17: ALL SIX PHASES IMPLEMENTED — gates green, AWAITING USER IN-APP VERIFICATION
+>
+> **Gates run:** core rebuild clean + **52/52 C++ suites pass**
+> (52nd = `cad_core_undo_stages_test`, 9 stages: empty-stack
+> contract, refresh pipeline, extrude session, plane-preview redo,
+> projection grouping, scrub, session semantics, named steps + limit
+> + undo_many, CAM invalidation) + tsc clean. NOTHING committed —
+> user tests first (no untested commits).
+>
+> **What landed (P0–P5):**
+> - Core: full-refresh undo/redo, EMPTY_UNDO_STACK/EMPTY_REDO_STACK
+>   error codes, monotonic revision, preview sessions never push/clear
+>   redo, timeline scrub + rename no-ops, CAM generate undoable +
+>   toolpath invalidation on every restore.
+> - Sketch sessions: enter opens a group (begin AFTER the opening
+>   bump); per-action undo inside; finish = ONE named step; NEW
+>   `undo_abort_all_groups` command + toolbar **Cancel Sketch** button
+>   (confirm dialog) = roll back with no trace.
+> - Groups/history: `undo_begin_group`/`undo_end_group`/
+>   `undo_abort_group`/`undo_many`/`set_undo_limit` (default 30),
+>   named steps via `std::source_location`, Edit menu `Undo <step>` +
+>   Undo History dropdown with multi-step confirm, dimension drafts +
+>   projection removes grouped.
+> - UI: can_undo/can_redo + step names on every document_state, awaited
+>   correlated undo, Ctrl+Y, global Ctrl+Z in focused inputs, ONE
+>   Escape = one cancel (double-Escape fixed), extrude cancel = single
+>   undo, extrude panel closes when its feature leaves the history,
+>   revision-pinned pointer-up commits (M24), empty-stack no toast.
+> - Docs: IPC-Protocol, AI-CAD-Command-Language, Glossary,
+>   Implementation-Log, V1-Roadmap all updated.
+>
+> **In-app verification checklist (user):**
+> 1. Sketch: draw several entities → Ctrl+Z steps back ONE entity at a
+>    time inside the sketch → Finish Sketch → the whole session is ONE
+>    undo step in the Edit menu (named "Sketch Edit") → Ctrl+Z removes
+>    it all at once; Ctrl+Y restores it.
+> 2. Cancel Sketch button (toolbar, next to Finish): confirm → the
+>    sketch returns to its pre-edit state; NO trace in the history.
+> 3. Re-enter a sketch and edit: each edit inside = one step; finish
+>    collapses again.
+> 4. Extrude panel: change depth/mode (live preview) → press Escape —
+>    ONE undo step removes the whole preview; redo branch survives
+>    preview edits (undo something before the extrude, change a preview
+>    setting, redo still available).
+> 5. Ctrl+Z with the cursor inside a numeric input (e.g. dimension
+>    field) still undoes the document; Ctrl+Shift+Z / Ctrl+Y both redo.
+> 6. Empty history: Ctrl+Z at the start — no error toast (silent
+>    no-op), button disabled.
+> 7. CAM: generate a toolpath → undo → toolpath disappears; redo →
+>    toolpath returns (or shows needs-regenerate).
+> 8. Edit menu → Undo History: named entries, multi-step undo asks for
+>    confirmation.
+>
+> ## FREEZE-HUNT ROUND (2026-09-17) — dropdown freeze + dimension-persistence race FIXED, user-verified
+>
+> Reported as: line/circle tools kept auto-dimensions even without
+> editing (draft-group sequencing race), then the app froze — user
+> pinpointed: **opening the Edit/undo dropdown froze everything** (X
+> dead, Ctrl+C from console only). Log showed repeated react_warning
+> "Encountered two children with the same key... Delete Sketch
+> Dimension" at the 2s heartbeat cadence.
+>
+> Root causes:
+> 1. **Dimension persistence race (bug 1):** the combined post-commit
+>    effect consumed `draftUndoGroupOpenRef` on the begin_group's own
+>    document reply BEFORE `scheduleDimensionDeletion` ran (scheduled
+>    after the await) → auto-dim deletion never fired → dims stayed.
+>    Fix: drains run unconditionally; the flag is set after the
+>    pending work is scheduled; the group closes only when BOTH
+>    pending refs are drained.
+> 2. **Dropdown freeze:** `MenuDropdown` keyed items by `item.label`
+>    (AppHeader.tsx) and the undo history legitimately held duplicate
+>    names — the CLICK-commit path (commitDraftPointerUp) deleted
+>    auto-dims OUTSIDE the "Dimension" undo group (only the drag path
+>    opened it), leaving one raw "Delete Sketch Dimension" step per
+>    untyped click-drawn line. Duplicate React keys corrupted the
+>    menu DOM; every heartbeat store update re-reconciled the broken
+>    tree until the JS thread wedged. Fixes: unique keys
+>    `key={`${index}-${item.label}`}`; new
+>    `scheduleDimensionDeletionInGroup` wrapper in ViewportPanel —
+>    the click path now opens the "Dimension" group idempotently
+>    BEFORE the add command (every click commit schedules the
+>    deletion ahead of the add), so click-drawn entities + their dim
+>    cleanup collapse into ONE step like drags.
+> 3. Also hardened during the hunt: trim/corner preview flood
+>    (one-in-flight cap + pending-newest + 10s stuck-slot safety +
+>    `notifyTrimPreviewResponse`/`notifyCornerTrimPreviewResponse`
+>    from ViewportPanel on every response); save (async toBlob
+>    thumbnail, one-save-at-a-time guard, progress messages). STEP
+>    slowness explained (projection live-link refresh on every bump —
+>    Unlink projections is the workflow fix; caching refresh is a
+>    possible future perf round).
+>
+> TEMPORARY DIAGNOSTICS REMOVED: ui_heartbeat, keydown/sketch_keydown
+> logs, draft_commit logs, scratch_trim_crash_repro.cpp + CMake entry.
+> Gates re-run after removal: core rebuild clean + **52/52 suites** +
+> tsc clean.
+>
+> **User in-app verification (2026-09-17):** "I have stressed enough
+> and did not freeze. The log is clean" (the single "drained + end
+> group" line was the temporary diagnostic, now removed).
+>
+> ## POST-COMMIT REGRESSION (2026-09-17, uncommitted) — dimension drain mis-attribution FIXED, awaiting user verification
+>
+> User after the commit: "first line i draw has dimmensions and the I
+> draw another line. the first line loses the dimension but the new
+> line has now dimensions." Root cause: the click-path group wrapper
+> made the post-commit effect fire on the begin_group's own reply,
+> and the deletion drain targeted "the last entity" + cleared the
+> pending ref unconditionally — on the begin reply the previous line
+> was still the last one, so ITS dims were deleted and the ref was
+> consumed before the new line landed (new line keeps its dims; the
+> group also closed early).
+> Fix: `PendingDimensionDeletion` now carries `tool` + pre-add
+> fromLineCount/fromCircleCount/fromPolygonCount (captured at
+> schedule time); `deletePendingAutoDimensions` gates on
+> `pendingEntityLanded` and keeps the pending ref until the entity
+> lands — same pattern the expression drain already used. tsc clean.
+> The earlier fix (unique dropdown keys) stays the freeze fix; the
+> wrapper race was an independent regression it exposed.
+>
+> Previous task (trim redesign, merged as PR #86) — section below.
+
+---
+
+# COMPLETED: TRIM TOOL REDESIGN — MERGED as PR #86 (2026-09-17)
 
 > **Branch:** `feature/trim` (from `dev` @ b32f9fb). **Committed
-> `a54c6eb` and pushed to origin after user in-app verification
-> ("OK it is working", 2026-09-17). Next: PR → dev (needs approval).**
+> `a54c6eb`, pushed, squash-merged as PR #86 → `dev` @ `01c5149`
+> after user in-app verification ("OK it is working", 2026-09-17).
+> Branch deleted (local + remote).**
 > **Spec:** wiki/Trim-Tool-Redesign-Requirements.md (user approved
 > D1–D5: FreeCAD-style constraint transfer, extend-to-intersection,
 > no right-click cycling, circle keeps concentric/equal, rebuild in
@@ -171,10 +335,9 @@ trim_sketch_stroke).
 6. Trim near coincident/constrained geometry → coincident
    constraints must survive (the fixed bug).
 
-Committed `a54c6eb` + pushed to `origin/feature/trim`. Remaining:
-PR → dev (squash) + branch cleanup after merge — awaiting approval.
-`projects/laser board/` was deliberately left untracked (user data,
-not part of this change).
+Merged as PR #86 (squash) → `dev` @ `01c5149`; `feature/trim` deleted
+(local + remote). `projects/laser board/` was deliberately left
+untracked (user data, not part of this change).
 
 ---
 

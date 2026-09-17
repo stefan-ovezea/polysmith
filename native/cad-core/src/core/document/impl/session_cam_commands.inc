@@ -628,7 +628,8 @@ DocumentState DocumentManager::cam_post_processor_set(
 }
 
 DocumentState DocumentManager::cam_operation_set_generated(
-    const std::string& operation_id, const CamOperation& op) {
+    const std::string& operation_id, const CamOperation& op,
+    const Toolpath& toolpath) {
   require_document();
   for (auto& existing : document_->cam.operations) {
     if (existing.op_id == operation_id) {
@@ -638,14 +639,24 @@ DocumentState DocumentManager::cam_operation_set_generated(
       // value authoritative so an older payload can never silently
       // flip "selected" back to the default.
       const std::string scope = existing.geometry_scope;
+      // Generate is a user-visible persisted state change, so it is an
+      // undoable commit like any other (D9) — previously the "generated"
+      // badge and toolpath_cache were written with no undo entry and
+      // no bump, so they could never be undone and the CAM cache stamp
+      // drifted from the document revision.  The runtime path is stored
+      // HERE, stamped with the UPCOMING revision, so the dependency
+      // pass inside the bump below sees it as current instead of
+      // flipping the op straight back to "needs_regenerate".
+      push_undo_state();
+      clear_redo_stack();
       existing = op;
       existing.op_id = operation_id;  // the id is the lookup key, not the payload
       existing.geometry_scope = scope;
       existing.status = "generated";
       existing.status_message.clear();
-      // Deliberately no bump_geometry_revision: generation is derived
-      // data.  A revision bump would invalidate the cache entry this
-      // very call is recording.
+      cam_runtime::store_generated_at(document_.value(), operation_id,
+                                      toolpath, document_->revision + 1);
+      bump_geometry_revision();
       return document_.value();
     }
   }

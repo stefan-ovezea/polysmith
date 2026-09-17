@@ -193,36 +193,21 @@ export function useExtrudeFeatureActions({
   }
 
   async function undoUntilExtrudePreviewRemoved(featureIds: readonly string[]) {
+    // D5: the extrude panel session is ONE undo step — the create
+    // pushed a single entry and every live update mutates without
+    // pushing.  One undo removes the whole preview; the old
+    // 10-attempt loop read a lagging store copy and could silently
+    // consume real user actions.
     const pendingFeatureIds = new Set(featureIds);
     if (pendingFeatureIds.size === 0) {
       return;
     }
-
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      if (!extrudeFeatureIsPresent(pendingFeatureIds)) {
-        return;
-      }
-      // If the undo fails ("Nothing to undo" — e.g. the undo stack was
-      // cleared by a document load, or an earlier undo already removed
-      // the preview), there is nothing more to undo: stop immediately
-      // instead of hammering the core with retries and hanging on the
-      // document-change wait (each failed undo emits no document event,
-      // so the wait would time out and abort the whole cancel).
-      const documentPromise = awaitDocumentChange(() => true, 1500);
-      await runAction(async () => {
-        await undo();
-      });
-      if (extrudeFeatureIsPresent(pendingFeatureIds)) {
-        try {
-          await documentPromise;
-        } catch {
-          // No document change arrived — the undo did not remove the
-          // preview.  Retrying cannot help; leave the rest to the
-          // caller (the cancel handler closes the panel regardless).
-          return;
-        }
-      }
+    if (!extrudeFeatureIsPresent(pendingFeatureIds)) {
+      return;
     }
+    await runAction(async () => {
+      await undo();
+    });
   }
 
   async function recreateNewProfileExtrudePreview(

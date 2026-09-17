@@ -4,6 +4,46 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-09-17
 
+### Undo/redo redesign — CAD-standard history (feature/undo-redo, in progress)
+
+Full redesign per
+[Undo-Redo-Redesign-Requirements](Undo-Redo-Redesign-Requirements)
+(all six phases, one branch; core staged tests pass, in-app verification
+pending). The old implementation swapped snapshots with no refresh and had
+"a mind of its own": previews cleared redo without pushing, extrude previews
+pushed per tick, empty-stack undo emitted `INVALID_COMMAND`, Ctrl+Z was dead
+in focused inputs, and sketch edits produced one entry per keystroke.
+
+- **Core engine:** undo/redo run the full refresh pipeline; empty-stack
+  answers with structured `EMPTY_UNDO_STACK` / `EMPTY_REDO_STACK` codes;
+  preview-session updates (extrude, construction planes) no longer push
+  or clear the redo branch; timeline scrub is a view affordance (no
+  history entry); rename no-ops guard against phantom steps.
+- **Sketch sessions (D4):** entering a sketch opens a session group —
+  per-action undo works inside the open sketch; `finish_sketch`
+  collapses the session into ONE named step; Cancel Sketch
+  (`undo_abort_all_groups`, new command + toolbar button with confirm)
+  rolls the whole session back with no trace.
+- **Named grouped steps (D2/D8):** `undo_begin_group` / `undo_end_group`
+  / `undo_abort_group` / `undo_many` / `set_undo_limit` (default 30);
+  dimension draft commits and projection removes are grouped; step names
+  derive from the push site (`std::source_location`); the Edit menu shows
+  `Undo <step>` and an Undo History dropdown with multi-step confirm.
+- **Payload flags (D7):** every `document_state` carries `can_undo` /
+  `can_redo` plus `undo_step_names[]` / `redo_step_names[]`; undo/redo
+  are awaited and correlated; Ctrl+Y and global Ctrl+Z work inside
+  focused inputs; one Escape = one cancel.
+- **CAM correctness (D9):** generate is an undoable step stamped with
+  the upcoming revision; every restore path invalidates cached
+  toolpaths before the bump so abandoned branches can't resurrect.
+- **Gesture safety (M24):** pointer-up commits are revision-pinned —
+  endpoint drags and sketch tool clicks discard their commit when the
+  document changed mid-gesture.
+- **Stage test program:** `cad_core_undo_stages_test` (`--stage 1..9`)
+  isolates each contract: empty-stack, refresh pipeline, extrude session,
+  plane preview redo, projection grouping, scrub, session semantics,
+  named steps + limit + undo_many, CAM invalidation.
+
 ### Trim tool redesign — corner trim, extend, split, drag-paint (feature/trim)
 
 Full redesign per [Trim-Tool-Redesign-Requirements](Trim-Tool-Redesign-Requirements)

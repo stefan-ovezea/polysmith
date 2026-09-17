@@ -97,6 +97,7 @@ interface AppTopBarProps {
   saveDocumentAs: () => Promise<unknown>;
   undo: AsyncVoid;
   redo: AsyncVoid;
+  undoMany: (count: number) => Promise<void>;
   pluginMenuItems: Array<{
     id: string;
     pluginId: string;
@@ -143,6 +144,9 @@ interface AppTopBarProps {
   triggerHelixAction: AsyncVoid;
   triggerCreateSketchAction: AsyncVoid;
   finishActiveSketch: AsyncVoid;
+  // Cancel Sketch (D4): rolls the whole edit session back to its start
+  // snapshot — no trace in the undo history.
+  cancelActiveSketchSession: AsyncVoid;
   setActiveSketchTool: (tool: SketchTool) => Promise<void>;
   setArmedSketchConstraint: Dispatch<SetStateAction<ArmedSketchConstraint>>;
   setSketchTool: (tool: SketchTool) => Promise<void>;
@@ -199,6 +203,13 @@ export function AppTopBar(props: AppTopBarProps) {
       disabled={props.status !== "connected"}
       canUndo={props.canUndo}
       canRedo={props.canRedo}
+      undoStepNames={props.document?.undo_step_names ?? []}
+      redoStepNames={props.document?.redo_step_names ?? []}
+      onUndoMany={async (count: number) => {
+        await props.runAction(async () => {
+          await props.undoMany(count);
+        });
+      }}
       activeSketchPlaneId={props.activeSketchPlaneId}
       activeSketchTool={props.activeSketchTool}
       selectedReferenceId={props.selectedReferenceId}
@@ -440,6 +451,7 @@ export function AppTopBar(props: AppTopBarProps) {
       }}
       onStartSketch={props.triggerCreateSketchAction}
       onFinishSketch={props.finishActiveSketch}
+      onCancelSketchSession={props.cancelActiveSketchSession}
       onSetSketchTool={props.setActiveSketchTool}
       onArmSketchConstraint={async (constraint) => {
         let shouldSwitchToSelect = false;

@@ -733,10 +733,11 @@
       polysmith::core::cam_runtime::store_preview(
           document.value(), op_id, outcome.result.toolpath);
     } else {
-      polysmith::core::cam_runtime::store_generated(
-          document.value(), op_id, outcome.result.toolpath);
       // Record the serialized metadata on the operation (the path
-      // itself stays memory-only) and mark it generated.
+      // itself stays memory-only) and mark it generated.  The commit
+      // is an undoable step (D9) and stores the runtime path itself,
+      // stamped with the upcoming revision so the dependency pass
+      // inside the bump sees it as current.
       const auto current = document_manager().get_document();
       for (const auto& op : current->cam.operations) {
         if (op.op_id == op_id) {
@@ -753,7 +754,8 @@
           cache.num_rapids = outcome.result.toolpath.num_rapids;
           cache.num_feeds = outcome.result.toolpath.num_feeds;
           updated.toolpath_cache = cache;
-          document_manager().cam_operation_set_generated(op_id, updated);
+          document_manager().cam_operation_set_generated(
+              op_id, updated, outcome.result.toolpath);
           break;
         }
       }

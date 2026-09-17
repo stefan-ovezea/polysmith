@@ -194,9 +194,18 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       const error = getErrorFromMessage(message);
       if (error) {
-        useToastStore
-          .getState()
-          .pushToast("error", error.payload.message);
+        // D6: undo/redo on an empty stack is a designed no-op, not a
+        // failure — the core answers with EMPTY_UNDO_STACK /
+        // EMPTY_REDO_STACK so awaited callers can observe the result,
+        // but it must not pop an error toast (M8).
+        const isUndoStackEmpty =
+          error.payload.code === "EMPTY_UNDO_STACK" ||
+          error.payload.code === "EMPTY_REDO_STACK";
+        if (!isUndoStackEmpty) {
+          useToastStore
+            .getState()
+            .pushToast("error", error.payload.message);
+        }
       }
       const renderedMessage =
         message.type === "error"

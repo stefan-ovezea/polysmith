@@ -40,6 +40,11 @@ DocumentState DocumentManager::start_sketch_on_face(
   document_->selected_edge_ids.clear();
   document_->selected_vertex_ids.clear();
   bump_geometry_revision();
+  // Same session grouping as start_sketch_on_plane (D4): the edits of
+  // this face-sketch session collapse into ONE "Sketch Edit" step.
+  // After the bump, so the session snapshot carries the post-creation
+  // revision (undo must never move the clock backwards).
+  begin_undo_group("Sketch Edit");
   return document_.value();
 }
 

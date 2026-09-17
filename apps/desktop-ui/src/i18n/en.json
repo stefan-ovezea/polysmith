@@ -79,6 +79,8 @@
     "startCore": "Start Core",
     "toggleUnits": "Toggle units ({{units}})",
     "undo": "Undo",
+    "undoHistory": "Undo History",
+    "undoHistoryConfirm": "Undo {{count}} steps?",
     "workspace": {
       "construct": "Construct",
       "create": "Create",
@@ -1011,6 +1013,8 @@
     "fillet": "Fillet",
     "fix": "Fix",
     "finishSketch": "Finish Sketch",
+    "cancelSketch": "Cancel Sketch",
+    "cancelSketchConfirm": "Discard all edits made since this sketch was opened? The sketch will return to its previous state and this session will not appear in the undo history.",
     "horizontal": "Horizontal",
     "helix": "Helix",
     "hole": "Hole",

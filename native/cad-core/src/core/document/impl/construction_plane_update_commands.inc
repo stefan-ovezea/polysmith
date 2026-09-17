@@ -40,7 +40,9 @@ DocumentState DocumentManager::update_offset_plane(
   // undo steps when the user really wants Cancel to revert the
   // entire session. Mirrors the same comment + rationale in
   // `update_fillet_edges` / `update_fillet_radius`.
-  clear_redo_stack();
+  // No clear_redo_stack() either (D3): a preview must never destroy
+  // the redo branch — nudging the plane after an undo used to wipe
+  // the redo history.
   polysmith::core::update_construction_plane(*feature_it, offset, frame.value());
   bump_geometry_revision();
   return document_.value();
@@ -83,7 +85,8 @@ DocumentState DocumentManager::update_angle_plane(
         "Angle plane axis could not be resolved: " + params.source_axis_id);
   }
 
-  clear_redo_stack();
+  // Live preview: no push (see update_offset_plane) and no
+  // redo-clear (D3 — previews never destroy the redo branch).
   polysmith::core::update_angle_plane(
       *feature_it, angle_degrees, source_frame.value(), axis.value());
   bump_geometry_revision();

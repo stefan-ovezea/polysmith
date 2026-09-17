@@ -41,6 +41,13 @@ DocumentState DocumentManager::set_timeline_cursor(int included_action_count) {
   document_->selected_sketch_entity_ids.clear();
   document_->selected_sketch_profile_ids.clear();
 
-  document_->revision += 1;
+  // The scrub mutates selection/visibility state, so it goes through
+  // the full post-mutation pass instead of a raw revision increment:
+  // the dependency refresh, CAM dependency pass, cursor normalization
+  // and selection prune all observe the new cursor.  No undo push —
+  // timeline scrubbing is a view/rollback affordance, separate from
+  // the undo history (D8) — and no redo-clear: a view change never
+  // invalidates the redo branch.
+  bump_geometry_revision();
   return document_.value();
 }

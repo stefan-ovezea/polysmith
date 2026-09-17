@@ -15,6 +15,12 @@ DocumentState DocumentManager::rename_feature(const std::string& feature_id,
     throw std::runtime_error("Feature not found: " + feature_id);
   }
 
+  // No-op early exit so a "rename" that keeps the same name doesn't
+  // burn a snapshot and wipe the redo stack.
+  if (feature_it->name == name) {
+    return document_.value();
+  }
+
   push_undo_state();
   clear_redo_stack();
   feature_it->name = name;

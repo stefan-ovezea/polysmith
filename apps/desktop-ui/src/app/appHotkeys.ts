@@ -76,6 +76,12 @@ export function handleAppHotkey({
   }
 
   if (isTypingTarget(event.target)) {
+    // Undo/redo must still work while a panel input has focus (D7):
+    // the extrude panel auto-focuses its depth field, and that was
+    // exactly when Ctrl+Z used to die silently.
+    if (handleHistoryHotkey(event, hotkeys, state, callbacks)) {
+      return true;
+    }
     return false;
   }
 
@@ -163,7 +169,10 @@ function handleHistoryHotkey(
     return true;
   }
 
-  if (matchesHotkey(event, hotkeys.global.redo)) {
+  if (
+    matchesHotkey(event, hotkeys.global.redo) ||
+    matchesHotkey(event, hotkeys.global.redoAlt)
+  ) {
     event.preventDefault();
     if (state.canRedo) {
       void callbacks.runAction(callbacks.redo);

@@ -14,8 +14,12 @@ DocumentState DocumentManager::update_extrude_depth(
     throw std::runtime_error("Feature not found: " + feature_id);
   }
 
-  push_undo_state();
-  clear_redo_stack();
+  // No push here — the extrude panel session follows the create/update/
+  // confirm triangle (D5): extrude_profiles pushed ONE entry when the
+  // preview was created, every live update mutates silently, and
+  // Cancel is a single undo.  Pushing per tick used to pollute the
+  // undo stack with one step per keystroke (×N for multi-profile
+  // groups) and destroyed the redo branch on every scrub.
   polysmith::core::update_extrude_depth(*feature_it, depth);
   if (feature_it->extrude_parameters.has_value()) {
     feature_it->extrude_parameters->extent_mode = "one_side";
@@ -54,8 +58,8 @@ DocumentState DocumentManager::update_extrude_mode(
         "update_extrude_mode requires an extrude feature: " + feature_id);
   }
 
-  push_undo_state();
-  clear_redo_stack();
+  // Preview-session update: no push, no redo-clear (D5 — the panel's
+  // create already pushed one entry).
   feature_it->extrude_parameters->mode = mode;
   feature_it->extrude_parameters->operation = mode;
   normalize_extrude_operation_mode(feature_it->extrude_parameters.value());
@@ -111,8 +115,7 @@ DocumentState DocumentManager::update_extrude_target_body(
     }
   }
 
-  push_undo_state();
-  clear_redo_stack();
+  // Preview-session update: no push, no redo-clear (D5).
   feature_it->extrude_parameters->target_body_id = resolved;
   normalize_extrude_operation_mode(feature_it->extrude_parameters.value());
   normalize_extrude_parameters(*document_, feature_it->extrude_parameters.value());
@@ -150,8 +153,7 @@ DocumentState DocumentManager::update_extrude_parameters(
   normalize_extrude_operation_mode(next);
   normalize_extrude_parameters(*document_, next);
 
-  push_undo_state();
-  clear_redo_stack();
+  // Preview-session update: no push, no redo-clear (D5).
   apply_extrude_parameters_with_preview_validation(*feature_it, next);
   if (feature_it->name == "Extrude" || feature_it->name == "Body") {
     feature_it->name = next.mode == "new_body" ? "Body" : "Extrude";

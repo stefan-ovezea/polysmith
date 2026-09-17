@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { ArmedSketchConstraint, SketchFeatureParameters, SketchPlaneFrame } from "@/types";
+import { useCadCoreStore } from "@/state";
 import { resolveSketchPlanePoint } from "@/utils";
 import type { EndpointDrag } from "./endpointDrag";
 
@@ -72,6 +73,7 @@ export function beginEndpointDragPointerDown({
     startLocalY: rawPoint.local[1],
     hasMoved: false,
     inFlight: false,
+    startRevision: useCadCoreStore.getState().document?.revision ?? 0,
   };
   controls.enabled = false;
   renderer.domElement.setPointerCapture(event.pointerId);

@@ -434,12 +434,14 @@ DocumentState DocumentManager::remove_sketch_projections(
   // reference — the Remove path re-locates it after the delete.
   const auto erase_projection_derived_points = [&]() {
     auto& points = feature_it->sketch_parameters->projected_points;
+    const size_t before = points.size();
     points.erase(
         std::remove_if(points.begin(), points.end(),
                        [](const SketchProjectedPoint& point) {
                          return point.source_id.rfind("dxf:", 0) != 0;
                        }),
         points.end());
+    return before - points.size();
   };
 
   if (!keep_geometry) {
@@ -451,25 +453,53 @@ DocumentState DocumentManager::remove_sketch_projections(
     // the session state afterwards. Its bump_geometry_revision runs
     // the dependency walker, which clears the alarm once the records
     // are gone.
-    const std::optional<std::string> previous_active =
-        document_->active_sketch_feature_id;
-    document_->active_sketch_feature_id = feature_id;
-    delete_sketch_selection(generated_entity_ids, generated_point_ids, {});
-    document_->active_sketch_feature_id = previous_active;
-    feature_it = std::find_if(
-        document_->feature_history.begin(),
-        document_->feature_history.end(),
-        [&](const FeatureEntry& feature) { return feature.id == feature_id; });
-    feature_it->sketch_parameters->projected_sources.clear();
-    // The delete above only removes the points referenced by the
-    // records — if the records were already gone (projected entities
-    // deleted individually), orphaned `projected_points` entries
-    // survive and the vertex rebuild re-mints them as stray
-    // "projected" points. Sweep every projection-derived entry so
-    // Remove always clears ALL projected geometry. DXF-imported
-    // standalone points share this list (source_id "dxf:point:N")
-    // and stay.
-    erase_projection_derived_points();
+    //
+    // The whole operation is ONE grouped undo step (D2): the nested
+    // delete pushes its own entry, and the group collapses it with
+    // the bookkeeping below — including the case where the nested
+    // delete finds nothing to remove but the sources/points sweep
+    // still mutates (previously that committed with ZERO undo
+    // entries and could never be reverted).
+    const bool had_sources =
+        !feature_it->sketch_parameters->projected_sources.empty();
+    begin_undo_group("Remove Projections");
+    try {
+      const std::optional<std::string> previous_active =
+          document_->active_sketch_feature_id;
+      document_->active_sketch_feature_id = feature_id;
+      delete_sketch_selection(generated_entity_ids, generated_point_ids, {});
+      document_->active_sketch_feature_id = previous_active;
+      feature_it = std::find_if(
+          document_->feature_history.begin(),
+          document_->feature_history.end(),
+          [&](const FeatureEntry& feature) {
+            return feature.id == feature_id;
+          });
+      feature_it->sketch_parameters->projected_sources.clear();
+      // The delete above only removes the points referenced by the
+      // records — if the records were already gone (projected entities
+      // deleted individually), orphaned `projected_points` entries
+      // survive and the vertex rebuild re-mints them as stray
+      // "projected" points. Sweep every projection-derived entry so
+      // Remove always clears ALL projected geometry. DXF-imported
+      // standalone points share this list (source_id "dxf:point:N")
+      // and stay.
+      const size_t swept = erase_projection_derived_points();
+      // The sweep reports how many points it removed — mark the group
+      // changed when bookkeeping mutated without the nested delete
+      // pushing (no history entry without a state change).
+      if (had_sources || swept > 0) {
+        mark_undo_group_changed();
+      }
+    } catch (...) {
+      // Never leave a half-open group behind (the nested delete can
+      // throw); the partial state is discarded with the group.
+      if (!undo_group_stack_.empty()) {
+        undo_group_stack_.pop_back();
+      }
+      throw;
+    }
+    end_undo_group();
     return document_.value();
   }
 

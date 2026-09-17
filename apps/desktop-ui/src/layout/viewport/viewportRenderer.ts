@@ -11,7 +11,9 @@ interface SetupSnapshotCaptureParams {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.Camera;
-  onSnapshotCaptureReady?: (capture: (() => string | null) | null) => void;
+  onSnapshotCaptureReady?: (
+    capture: (() => Promise<string | null>) | null,
+  ) => void;
 }
 
 interface ResizeViewportRendererParams {
@@ -61,17 +63,22 @@ export function setupViewportSnapshotCapture({
   onSnapshotCaptureReady,
 }: SetupSnapshotCaptureParams) {
   onSnapshotCaptureReady?.(() => {
+    // One fresh frame so the WebGL backbuffer is current (it is
+    // cleared after compositing), then the PNG encode runs through
+    // toBlob + FileReader — ASYNC. The old toDataURL path encoded
+    // synchronously on the main thread and could stall the whole app
+    // on heavy scenes (the save-freeze symptom).
     renderer.render(scene, camera);
     const source = renderer.domElement;
     if (source.width === 0 || source.height === 0) {
-      return null;
+      return Promise.resolve(null);
     }
     const thumbnail = window.document.createElement("canvas");
     thumbnail.width = 240;
     thumbnail.height = 150;
     const context = thumbnail.getContext("2d");
     if (!context) {
-      return null;
+      return Promise.resolve(null);
     }
     const thumbnailBackground = window
       .getComputedStyle(host)
@@ -82,7 +89,19 @@ export function setupViewportSnapshotCapture({
       context.fillRect(0, 0, thumbnail.width, thumbnail.height);
     }
     context.drawImage(source, 0, 0, thumbnail.width, thumbnail.height);
-    return thumbnail.toDataURL("image/png");
+    return new Promise<string | null>((resolve) => {
+      thumbnail.toBlob((blob) => {
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () =>
+          resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      }, "image/png");
+    });
   });
 }
 

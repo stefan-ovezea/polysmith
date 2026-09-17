@@ -86,6 +86,8 @@ import { handleEndpointDragPointerMove } from "./viewport/endpointDragPointerMov
 import { finishEndpointDragPointerUp } from "./viewport/endpointDragPointerUp";
 import { handleSketchMovePointerMove } from "./viewport/sketchMovePointerMove";
 import { finishSketchMovePointerUp } from "./viewport/sketchMovePointerUp";
+import { notifyTrimPreviewResponse } from "./viewport/trimPointerMove";
+import { notifyCornerTrimPreviewResponse } from "./viewport/cornerTrimPointerMove";
 import type {
   PendingSketchMove,
   SketchMoveDrag,
@@ -325,6 +327,8 @@ export function ViewportPanel({
   onDeleteSketchSelection,
   onConfirmDeleteSketchSelection,
   onDeleteSketchDimension,
+  onBeginUndoGroup,
+  onEndUndoGroup,
   onToggleSketchDimensionDriven,
   onSetSketchLineConstruction,
   onAddSketchVertexDistanceDimension,
@@ -856,6 +860,12 @@ export function ViewportPanel({
   const deleteSketchSelectionRef = useRef(onDeleteSketchSelection);
   const confirmDeleteSketchSelectionRef = useRef(onConfirmDeleteSketchSelection);
   const deleteSketchDimensionRef = useRef(onDeleteSketchDimension);
+  const beginUndoGroupRef = useRef(onBeginUndoGroup);
+  const endUndoGroupRef = useRef(onEndUndoGroup);
+  // Set while a dimension draft commit's undo group is open; the
+  // post-commit effect drains the scheduled delete/update and then
+  // closes the group (one draft = ONE undo step, D2).
+  const draftUndoGroupOpenRef = useRef(false);
   const toggleSketchDimensionDrivenRef = useRef(onToggleSketchDimensionDriven);
   const setSketchLineConstructionRef = useRef(onSetSketchLineConstruction);
   const addSketchVertexDistanceDimensionRef = useRef(
@@ -894,6 +904,11 @@ export function ViewportPanel({
   const dimensionEditOriginalValueRef =
     useRef<DimensionEditOriginalValue | null>(null);
   const lastPointerEventRef = useRef<PointerEvent | null>(null);
+  // Document revision pinned at pointer-down (M24). Sketch pointer-up
+  // commits are discarded when the document changed mid-gesture — e.g.
+  // an awaited undo landed while the pointer was held, so the geometry
+  // under the cursor no longer matches what the gesture started on.
+  const pointerDownRevisionRef = useRef(0);
   const isDimensionEditorOpenRef = useRef(false);
   const suppressNextDimensionEditorOpenRef = useRef(false);
   useEffect(() => {
@@ -1105,23 +1120,37 @@ export function ViewportPanel({
       setDimensionLabelPositions,
     });
   }, [sketchFeature]);
-  // Post-commit dimension deletion for drag-only shapes that have no
-  // typed value (Fusion 360 behavior). When the user commits a shape
-  // by dragging without typing into a draft dimension field, the core
-  // still creates an auto-dimension — we delete it here.
+  // Post-commit dimension work for a draft commit (D2 — one draft =
+  // ONE undo step). Drag-only shapes have their auto-dimension
+  // deleted (Fusion 360 behavior); typed values re-apply expressions.
+  // The drains run on every sketch change and self-gate on their
+  // pending refs (the entity must have landed before the ids resolve).
+  // The group closes only once BOTH pending pieces have drained — the
+  // delete/update commands were already sent, so the core processes
+  // them before the end command (sequential stream). Note the flag is
+  // set AFTER the pending work is scheduled in
+  // commitDraftDimensionSession: this effect also fires on the
+  // begin_group's own document reply, when nothing is pending yet —
+  // closing the group there would skip the deletion entirely.
   useEffect(() => {
     deletePendingAutoDimensions({
       pendingDimensionDeletionRef,
       sketch: sketchFeature?.sketch_parameters,
       deleteSketchDimension: deleteSketchDimensionRef.current,
     });
-  }, [sketchFeature]);
-  useEffect(() => {
     applyPendingDraftDimensionExpressions({
       pendingDraftDimensionExpressionsRef,
       sketch: sketchFeature?.sketch_parameters,
       updateSketchDimension: updateSketchDimensionRef.current,
     });
+    if (
+      draftUndoGroupOpenRef.current &&
+      pendingDimensionDeletionRef.current === null &&
+      pendingDraftDimensionExpressionsRef.current === null
+    ) {
+      draftUndoGroupOpenRef.current = false;
+      void endUndoGroupRef.current();
+    }
   }, [sketchFeature]);
   // React to view-setting-changed events dispatched by the View panel
   // so edge visibility toggles take effect immediately without waiting
@@ -1680,6 +1709,26 @@ export function ViewportPanel({
     dimensionInputRef,
     clearDraftDimGroup,
   });
+  // Click-commit variant of the bare scheduler (D2). The drag path
+  // (commitDraftDimensionSession) opens its "Dimension" undo group
+  // explicitly; the click path (commitDraftPointerUp) has no such
+  // hook, so its auto-dim deletion used to land as a standalone
+  // "Delete Sketch Dimension" step after the entity add. Opening the
+  // group here — BEFORE the add command is sent (every click commit
+  // flow schedules the deletion ahead of the add) — folds both into
+  // ONE step, and keeps history free of raw delete steps whose
+  // repeated labels broke the undo dropdown's keying. Idempotent: the
+  // flag guards against ever nesting a second group.
+  const scheduleDimensionDeletionInGroup = (
+    tool: "line" | "rectangle" | "circle" | "polygon",
+    preCapturedSession?: DraftDimensionSession | null,
+  ) => {
+    if (!draftUndoGroupOpenRef.current) {
+      draftUndoGroupOpenRef.current = true;
+      void beginUndoGroupRef.current("Dimension");
+    }
+    scheduleDimensionDeletion(tool, preCapturedSession);
+  };
 
   function readDimensionPreviewFilter() {
     const filter = readStoredFilter();
@@ -2182,8 +2231,16 @@ export function ViewportPanel({
     clearPreviewArc();
     clearPreviewDimension();
     lineDraftStartRef.current = null;
+    // One draft commit = ONE undo step (D2): the group wraps the
+    // entity add below plus the scheduled auto-dim deletion and
+    // expression update that follow in the post-commit effect. The
+    // flag goes on AFTER the pending work is scheduled — the effect
+    // also runs on the begin_group's own document reply (nothing
+    // pending yet) and must not close the group there.
+    await beginUndoGroupRef.current("Dimension");
     scheduleDimensionDeletion(session.tool, session);
     scheduleDraftDimensionExpressionUpdate(session.tool);
+    draftUndoGroupOpenRef.current = true;
     clearDraftDimensionSession();
     suppressDimensionEditorAfterSketchCommit();
     rendererRef.current?.domElement.focus();
@@ -3160,6 +3217,10 @@ export function ViewportPanel({
     function handlePointerDown(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
+      // Pin the document revision for the gesture (M24) — read fresh
+      // from the store so async core events land here immediately.
+      pointerDownRevisionRef.current =
+        useCadCoreStore.getState().document?.revision ?? 0;
       // Drag-paint trim (R5): pressing inside the trim tool starts a
       // stroke; the pointer-move path records every crossed entity
       // and the pointer-up commits them as one batch.
@@ -3760,6 +3821,7 @@ export function ViewportPanel({
         renderer,
         camera,
         controls,
+        pointerDownRevisionRef,
         // Armed origin pick: every pointer-up places the stock origin
         // at the clicked point — snapped to nearby geometry (sketch
         // points, body vertices/edge midpoints/face centers, stock-box
@@ -4235,7 +4297,7 @@ export function ViewportPanel({
         },
 	        clearDraftDimensionSession,
 	        suppressDimensionEditorAfterSketchCommit,
-	        scheduleDimensionDeletion,
+	        scheduleDimensionDeletion: scheduleDimensionDeletionInGroup,
 	        scheduleDraftDimensionExpressionUpdate,
 	        setPendingCircleDimensionPlacement: (placement) => {
 	          pendingCircleDimensionPlacementRef.current = placement;
@@ -4331,6 +4393,13 @@ export function ViewportPanel({
       const detail = (e as CustomEvent).detail as NonNullable<
         TrimPreviewResultEvent["payload"]
       > & { id?: string };
+      // Every response — stale or not — releases the one-preview
+      // in-flight slot so a pending newer request can go out (the
+      // at-most-one-in-flight cap keeps the core queue from flooding
+      // on dense sketches).
+      if (detail.id) {
+        notifyTrimPreviewResponse(detail.id);
+      }
       // Drop responses that are not the newest request — hover
       // previews are coalesced per frame but the core answers them
       // asynchronously, so an older response can still arrive late.
@@ -4358,6 +4427,11 @@ export function ViewportPanel({
       const detail = (e as CustomEvent).detail as NonNullable<
         CornerTrimPreviewResultEvent["payload"]
       > & { id?: string };
+      // Every response releases the one-in-flight slot (same queue
+      // flood protection as the trim preview).
+      if (detail.id) {
+        notifyCornerTrimPreviewResponse(detail.id);
+      }
       // Same coalescing contract as the trim preview: drop responses
       // that are not the newest request by id.
       const lastSent = cornerPreviewLastSentRef.current;

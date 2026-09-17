@@ -10,6 +10,8 @@ export interface AppHotkeys {
   global: {
     undo: HotkeyBinding;
     redo: HotkeyBinding;
+    // Ctrl+Y redo alias — the CAD-standard second shortcut (D7).
+    redoAlt: HotkeyBinding;
   };
   toolbar: {
     extrude: HotkeyBinding;

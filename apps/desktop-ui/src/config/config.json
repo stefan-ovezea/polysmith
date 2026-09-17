@@ -38,6 +38,11 @@
         "label": "Z",
         "ctrlOrMeta": true,
         "shift": true
+      },
+      "redoAlt": {
+        "code": "KeyY",
+        "label": "Y",
+        "ctrlOrMeta": true
       }
     },
     "toolbar": {

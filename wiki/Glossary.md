@@ -343,8 +343,20 @@ the basis for recompute: to rebuild, the core replays features in order.
 ### Undo / Redo
 Stacks maintained by `DocumentManager`. Every mutating operation pushes a
 `DocumentState` snapshot onto the undo stack and clears the redo stack.
-Undo restores the previous snapshot; redo re-applies it. Hotkeys:
-Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y (redo).
+Undo restores the previous snapshot; redo re-applies it; both run the full
+refresh pipeline (selection re-validation, sketch rebuild, toolpath
+invalidation). Hotkeys: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+(redo), global and awaited. Empty-stack undo/redo answer with structured
+`EMPTY_UNDO_STACK` / `EMPTY_REDO_STACK` error codes rather than failing.
+Previews never create or destroy history entries.
+
+### Undo Group
+A named span of commands that collapses into ONE history step — the group's
+start snapshot carrying the group's name — when it ends (no entry appears
+when nothing changed). Aborting a group restores its start snapshot with no
+trace. Sketch edit sessions are a group: per-action undo works inside the
+open sketch, `finish_sketch` collapses the whole session into one step, and
+Cancel Sketch (`undo_abort_all_groups`) rolls the session back entirely.
 
 ### Geometry Revision
 A counter that increments on every geometry-affecting operation. The UI uses

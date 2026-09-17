@@ -17,6 +17,20 @@ struct DocumentState {
   std::string name;
   std::string units;
   int revision;
+  // Undo/redo availability, kept inside the document so every
+  // document_state event carries fresh values (D7) — the UI's buttons
+  // and hotkeys read these instead of the request-only session_state,
+  // which used to go stale after sketch commands. Maintained by
+  // bump_geometry_revision; not persisted meaningfully (recomputed on
+  // load) but serialized for the UI.
+  bool can_undo = false;
+  bool can_redo = false;
+  // Human-readable step names for the undo/redo history UI (D8),
+  // most recent first.  Maintained alongside the manager's stacks by
+  // sync_undo_step_names — the payload is the transport; the stacks
+  // are the source of truth.
+  std::vector<std::string> undo_step_names;
+  std::vector<std::string> redo_step_names;
   std::optional<std::string> selected_feature_id;
   std::optional<std::string> selected_reference_id;
   std::optional<std::string> selected_face_id;

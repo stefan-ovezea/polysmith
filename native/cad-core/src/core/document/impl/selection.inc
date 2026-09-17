@@ -94,6 +94,14 @@ DocumentState DocumentManager::start_sketch_on_plane(
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   bump_geometry_revision();
+  // The sketch-edit session is one grouped step (D4, Onshape model):
+  // the creation push above stays its own entry, and every edit made
+  // while the sketch is open collapses into ONE "Sketch Edit" step
+  // when it closes.  Per-action undo inside the session still works —
+  // undo only walks steps above the group marker.  The group opens
+  // AFTER the bump so its start snapshot carries the post-creation
+  // revision and an undo can never move the clock backwards.
+  begin_undo_group("Sketch Edit");
   return document_.value();
 }
 

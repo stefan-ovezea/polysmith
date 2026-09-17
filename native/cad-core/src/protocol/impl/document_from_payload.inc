@@ -4,6 +4,32 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
   document.name = read_string(payload, "name");
   document.units = read_string(payload, "units");
   document.revision = read_int(payload, "revision");
+  // can_undo/can_redo are session state, not file state — parsed only
+  // so an in-memory round-trip (tests, IPC echoes) keeps them; load
+  // recomputes the real values on its bump.
+  if (payload.contains("can_undo") && payload.at("can_undo").is_boolean()) {
+    document.can_undo = payload.at("can_undo").get<bool>();
+  }
+  if (payload.contains("can_redo") && payload.at("can_redo").is_boolean()) {
+    document.can_redo = payload.at("can_redo").get<bool>();
+  }
+  // Step names are transport-only UI data; old saves lack them.
+  if (payload.contains("undo_step_names") &&
+      payload.at("undo_step_names").is_array()) {
+    for (const auto& name : payload.at("undo_step_names")) {
+      if (name.is_string()) {
+        document.undo_step_names.push_back(name.get<std::string>());
+      }
+    }
+  }
+  if (payload.contains("redo_step_names") &&
+      payload.at("redo_step_names").is_array()) {
+    for (const auto& name : payload.at("redo_step_names")) {
+      if (name.is_string()) {
+        document.redo_step_names.push_back(name.get<std::string>());
+      }
+    }
+  }
   document.selected_feature_id =
       read_optional_string(payload, "selected_feature_id");
   document.selected_reference_id =

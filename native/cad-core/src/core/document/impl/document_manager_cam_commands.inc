@@ -39,4 +39,5 @@
 
   DocumentState cam_post_processor_set(const PostProcessor& post_processor);
   DocumentState cam_operation_set_generated(const std::string& operation_id,
-                                            const CamOperation& op);
+                                            const CamOperation& op,
+                                            const Toolpath& toolpath);
