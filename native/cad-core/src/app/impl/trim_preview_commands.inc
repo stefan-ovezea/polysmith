@@ -44,24 +44,34 @@
         [&](const auto& l) { return l.id == entity_id; });
     if (line_it != params.lines.end()) {
       auto isects = polysmith::core::find_all_intersections(*line_it, params);
-      if (isects.empty()) {
-        polysmith::protocol::write_message(
-            { { "id", command.id },
-              { "type", "trim_preview_result" },
-              { "payload", nullptr } });
-        return;
-      }
-      auto segs = polysmith::core::split_line_at_intersections(*line_it, isects);
-      int idx = polysmith::core::select_clicked_segment(
-          segs, *line_it, cursor_x, cursor_y);
       result["entity_kind"] = "line";
-      result["hovered_index"] = idx;
       auto& jsegs = result["segments"] = nlohmann::json::array();
-      for (const auto& s : segs) {
+      if (isects.empty()) {
+        // No intersections — the click deletes the whole line, and the
+        // preview paints the whole line red (matching the full_circle /
+        // full_arc / … states of the curved kinds). The old code sent
+        // a null payload here: nothing was highlighted even though the
+        // click would delete the entire entity.
+        result["hovered_index"] = 0;
         nlohmann::json seg;
-        seg["start"] = {s.start_x, s.start_y};
-        seg["end"]   = {s.end_x,   s.end_y};
+        seg["param_start"] = 0.0;
+        seg["param_end"] = 1.0;
+        seg["start"] = {line_it->start_x, line_it->start_y};
+        seg["end"]   = {line_it->end_x,   line_it->end_y};
         jsegs.push_back(std::move(seg));
+      } else {
+        auto segs = polysmith::core::split_line_at_intersections(*line_it, isects);
+        int idx = polysmith::core::select_clicked_segment(
+            segs, *line_it, cursor_x, cursor_y);
+        result["hovered_index"] = idx;
+        for (const auto& s : segs) {
+          nlohmann::json seg;
+          seg["param_start"] = s.param_start;
+          seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
+          jsegs.push_back(std::move(seg));
+        }
       }
       polysmith::protocol::write_message(
           { { "id", command.id },
@@ -97,6 +107,8 @@
           nlohmann::json seg;
           seg["param_start"] = s.param_start;
           seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
           jsegs.push_back(std::move(seg));
         }
       }
@@ -133,6 +145,8 @@
           nlohmann::json seg;
           seg["param_start"] = s.param_start;
           seg["param_end"]   = s.param_end;
+          seg["start"] = {s.start_x, s.start_y};
+          seg["end"]   = {s.end_x,   s.end_y};
           jsegs.push_back(std::move(seg));
         }
       }

@@ -53,6 +53,10 @@ import type {
   DeleteSketchDimensionCommand,
   ToggleSketchDimensionDrivenCommand,
   TrimSketchEntityCommand,
+  TrimSketchStrokeCommand,
+  CornerTrimSketchEntitiesCommand,
+  CornerTrimPreviewCommand,
+  SplitSketchEntityCommand,
   ExtendSketchEntityCommand,
   OffsetSketchEntityCommand,
   TransformSketchEntitiesCommand,
@@ -611,6 +615,35 @@ export interface TrimPreviewResultEvent {
   } | null;
 }
 
+export interface CornerTrimPreviewResultEvent {
+  id: string;
+  type: "corner_trim_preview_result";
+  payload: {
+    entity_a_id: string;
+    entity_b_id: string;
+    valid: boolean;
+    /** Document revision the preview was computed against. */
+    revision: number;
+    corner?: [number, number];
+    a?: {
+      kind: "line" | "arc";
+      start: [number, number];
+      end: [number, number];
+      center?: [number, number];
+      radius?: number;
+      ccw?: boolean;
+    };
+    b?: {
+      kind: "line" | "arc";
+      start: [number, number];
+      end: [number, number];
+      center?: [number, number];
+      radius?: number;
+      ccw?: boolean;
+    };
+  } | null;
+}
+
 export interface LogEntry {
   level: LogLevel;
   source: string;
@@ -629,6 +662,7 @@ export type CoreMessage =
   | DocumentSavedEvent
   | LogEvent
   | TrimPreviewResultEvent
+  | CornerTrimPreviewResultEvent
   | CamGenerationProgressEvent
   | CamGenerationResultEvent
   | CamPostListResultEvent
@@ -1090,6 +1124,10 @@ export type CoreCommand =
   | DeleteSketchDimensionCommand
   | ToggleSketchDimensionDrivenCommand
   | TrimSketchEntityCommand
+  | TrimSketchStrokeCommand
+  | CornerTrimSketchEntitiesCommand
+  | CornerTrimPreviewCommand
+  | SplitSketchEntityCommand
   | ExtendSketchEntityCommand
   | OffsetSketchEntityCommand
   | TransformSketchEntitiesCommand

@@ -423,6 +423,62 @@ export interface TrimSketchEntityCommand {
     entity_id: string;
     click_x: number;
     click_y: number;
+    segment_index?: number;
+    expected_revision?: number;
+    preview_id?: string;
+  };
+}
+
+// Drag-paint trim (R5): one stroke trims every crossed entity and
+// commits as ONE undo entry.
+export interface TrimSketchStrokeCommand {
+  id: string;
+  type: "trim_sketch_stroke";
+  payload: {
+    entries: Array<{
+      entity_id: string;
+      click_x: number;
+      click_y: number;
+    }>;
+  };
+}
+
+// Corner trim (R2): two picked entities are trimmed/extended to their
+// virtual corner.
+export interface CornerTrimSketchEntitiesCommand {
+  id: string;
+  type: "corner_trim_sketch_entities";
+  payload: {
+    entity_a_id: string;
+    entity_b_id: string;
+    click_x: number;
+    click_y: number;
+  };
+}
+
+// Corner-trim hover preview: resolved without mutating anything.
+export interface CornerTrimPreviewCommand {
+  id: string;
+  type: "corner_trim_preview";
+  payload: {
+    entity_a_id: string;
+    entity_b_id: string;
+    cursor_x: number;
+    cursor_y: number;
+  };
+}
+
+// Split (R4): divides the clicked entity at all intersections. Circles
+// and full ellipses take TWO split points.
+export interface SplitSketchEntityCommand {
+  id: string;
+  type: "split_sketch_entity";
+  payload: {
+    entity_id: string;
+    click_x: number;
+    click_y: number;
+    split2_x: number;
+    split2_y: number;
   };
 }
 

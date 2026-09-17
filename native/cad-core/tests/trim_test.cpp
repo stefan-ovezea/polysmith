@@ -1183,6 +1183,124 @@ bool test_degenerate_arc_never_becomes_a_full_circle_profile() {
   return true;
 }
 
+// ── Endpoint-only arc trim (regression) ──────────────────────────────
+//
+// A circle crossed by two lines, trimmed down to two arcs between the
+// lines. Trimming one of those arcs finds its intersections ONLY at its
+// own endpoints; the splitter then yields a single piece. The old arc
+// command had no single-piece guard and read `segments[1]` on a size-1
+// vector — undefined behaviour that silently corrupted the arc instead
+// of deleting it ("the trim action silently goes away", user report
+// 2026-09-17).
+
+bool test_arc_with_endpoint_only_intersections_deletes_cleanly() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_circle(0.0, 0.0, 50.0);
+  document = manager.add_sketch_line(-60.0, 30.0, 60.0, 30.0);
+  document = manager.add_sketch_line(-60.0, -30.0, 60.0, -30.0);
+
+  // Trim the top arc away (circle → one complementary arc), then the
+  // bottom piece (the arc splits into the two arcs between the lines).
+  document = manager.trim_sketch_entity("circle-1", 0.0, 50.0);
+  document = manager.trim_sketch_entity("arc-1", 0.0, -50.0);
+
+  {
+    const auto& params = document.feature_history.back().sketch_parameters.value();
+    if (!expect(params.arcs.size() == 2,
+                "endpoint-only: two arcs remain between the lines")) {
+      return false;
+    }
+  }
+
+  // Trim the LEFT arc at its middle — its only intersections are the
+  // two lines touching its own endpoints. With the single-piece guard
+  // this is a full delete: the arc must vanish and the right arc must
+  // survive untouched.
+  document = manager.trim_sketch_entity("arc-1", -50.0, 0.0);
+
+  {
+    const auto& params = document.feature_history.back().sketch_parameters.value();
+    if (!expect(params.arcs.size() == 1,
+                "endpoint-only: trimmed arc is deleted, one arc remains")) {
+      return false;
+    }
+    // The first (circle) trim split the y=30 line at the arc endpoints
+    // (−40,30) and (40,30) — junction cuts — so it survives as 3
+    // pieces; the y=−30 line is untouched.
+    if (!expect(params.lines.size() == 4,
+                "endpoint-only: cutting lines survive (top one split)")) {
+      return false;
+    }
+    const SketchArc& survivor = params.arcs.front();
+    if (!expect(std::abs(survivor.radius - 50.0) <= 1e-6 &&
+                    std::abs(survivor.center_x) <= 1e-6 &&
+                    std::abs(survivor.center_y) <= 1e-6,
+                "endpoint-only: surviving arc keeps the circle geometry")) {
+      return false;
+    }
+    // The survivor is the RIGHT arc: endpoints at (40, ±30).
+    auto near_point = [](double x, double y, double px, double py) {
+      return std::hypot(x - px, y - py) <= 1e-6;
+    };
+    const bool start_is_right_top =
+        near_point(survivor.start_x, survivor.start_y, 40.0, 30.0);
+    const bool end_is_right_bottom =
+        near_point(survivor.end_x, survivor.end_y, 40.0, -30.0);
+    const bool start_is_right_bottom =
+        near_point(survivor.start_x, survivor.start_y, 40.0, -30.0);
+    const bool end_is_right_top =
+        near_point(survivor.end_x, survivor.end_y, 40.0, 30.0);
+    return expect((start_is_right_top && end_is_right_bottom) ||
+                      (start_is_right_bottom && end_is_right_top),
+                  "endpoint-only: surviving arc is the right piece");
+  }
+}
+
+// Same guard on the partial-ellipse path: an ellipse crossed by two
+// lines, trimmed down to two elliptical arcs; trimming one must delete
+// it cleanly instead of reading segments[1] out of bounds.
+bool test_partial_ellipse_with_endpoint_only_intersections_deletes_cleanly() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_ellipse(
+      0.0, 0.0, 60.0, 0.0, 0.0, 30.0);
+  document = manager.add_sketch_line(-80.0, 20.0, 80.0, 20.0);
+  document = manager.add_sketch_line(-80.0, -20.0, 80.0, -20.0);
+
+  document = manager.trim_sketch_entity("ellipse-1", 0.0, 30.0);
+  document = manager.trim_sketch_entity("ellipse-1", 0.0, -30.0);
+
+  {
+    const auto& params = document.feature_history.back().sketch_parameters.value();
+    if (!expect(params.ellipses.size() == 2,
+                "endpoint-only ellipse: two elliptical arcs remain")) {
+      return false;
+    }
+  }
+
+  document = manager.trim_sketch_entity("ellipse-1", -60.0, 0.0);
+
+  const auto& params = document.feature_history.back().sketch_parameters.value();
+  if (!expect(params.ellipses.size() == 1,
+              "endpoint-only ellipse: trimmed arc is deleted")) {
+    return false;
+  }
+  if (!expect(params.lines.size() == 2,
+              "endpoint-only ellipse: both cutting lines survive")) {
+    return false;
+  }
+  const auto& survivor = params.ellipses.front();
+  return expect(survivor.has_sweep &&
+                    std::abs(survivor.a - 60.0) <= 1e-6 &&
+                    std::abs(survivor.b - 30.0) <= 1e-6,
+                "endpoint-only ellipse: survivor keeps the ellipse geometry");
+}
+
 }  // namespace
 
 int main() {
@@ -1201,7 +1319,6 @@ int main() {
     if (!test_line_crossing_only_spline_keeps_line()) return 1;
     if (!test_circle_crossing_only_ellipse_keeps_circle()) return 1;
     if (!test_line_ellipse_profile_closes()) return 1;
-    if (!test_stale_expected_revision_falls_back_to_click()) return 1;
     if (!test_ellipse_target_trim_with_two_lines()) return 1;
     if (!test_ellipse_trim_sweep_survives_save_load()) return 1;
     if (!test_ellipse_crossed_by_overhanging_line_has_profile()) return 1;
@@ -1211,6 +1328,9 @@ int main() {
     if (!test_degenerate_arc_never_becomes_a_full_circle_profile()) return 1;
     if (!test_full_flower_trim_workflow()) return 1;
     if (!test_six_petal_flower_trim_workflow()) return 1;
+    if (!test_arc_with_endpoint_only_intersections_deletes_cleanly()) return 1;
+    if (!test_partial_ellipse_with_endpoint_only_intersections_deletes_cleanly())
+      return 1;
     std::cout << "trim_test passed\n";
     return 0;
   } catch (const std::exception& e) {

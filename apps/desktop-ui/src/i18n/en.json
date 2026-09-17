@@ -975,6 +975,7 @@
     "box": "Box",
     "chamfer": "Chamfer",
     "circle": "Circle",
+    "corner": "Corner Trim",
     "circleCenterRadius": "Center + Radius",
     "circleTwoPoint": "2-Point Circle",
     "circleThreePoint": "3-Point Circle",
@@ -1033,6 +1034,7 @@
     "extend": "Extend",
     "offset": "Offset",
     "slot": "Slot",
+    "split": "Split",
     "spline": "Spline",
     "polygonCircumscribed": "Circumscribed Polygon",
     "polygonInscribed": "Inscribed Polygon",
@@ -1691,7 +1693,9 @@
     "title": "Viewport",
     "entitySelectedDof": "{{entity}} · {{consumed}}/{{total}} DOF{{status}}",
     "dofFull": " (fully constrained)",
-    "dofOver": " (OVER-CONSTRAINED)"
+    "dofOver": " (OVER-CONSTRAINED)",
+    "cornerPickSecond": "Corner trim: pick the second entity",
+    "splitPickSecond": "Split: click the second split point"
   },
   "parameters": {
     "title": "Parameters",

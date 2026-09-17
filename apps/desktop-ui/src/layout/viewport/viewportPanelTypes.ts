@@ -245,6 +245,31 @@ export interface ViewportPanelProps {
     clickX: number,
     clickY: number,
   ) => Promise<void>;
+  // Corner trim: two picked entities are trimmed/extended to their
+  // virtual corner.
+  onCornerTrimSketchEntities: (
+    entityAId: string,
+    entityBId: string,
+    clickX: number,
+    clickY: number,
+  ) => Promise<void>;
+  // Split: divides the clicked entity (two points for circles/full
+  // ellipses).
+  onSplitSketchEntity: (
+    entityId: string,
+    clickX: number,
+    clickY: number,
+    split2X: number,
+    split2Y: number,
+  ) => Promise<void>;
+  // Drag-paint trim stroke: one batch, one undo entry.
+  onTrimSketchStroke: (
+    entries: ReadonlyArray<{
+      entity_id: string;
+      click_x: number;
+      click_y: number;
+    }>,
+  ) => Promise<void>;
   onOffsetSketchEntity: (entityId: string) => Promise<void>;
   // Text-on-path picking: while armed, entity clicks bind the text
   // path instead of placing a new text.

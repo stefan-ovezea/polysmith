@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { i18n } from "@/i18n";
+
 import type {
   ArmedSketchConstraint,
   SketchFeatureParameters,
@@ -67,6 +69,38 @@ export interface ActiveSketchPointerUpContext {
   // Extend tool: extend the hit entity from the end nearest the
   // click. Core rejects generated/construction entities.
   extendSketchEntity: (entityId: string, clickX: number, clickY: number) => Promise<void>;
+  // Corner trim tool: two-pick accumulator state + the commit call.
+  cornerFirstEntityIdRef: { current: string | null };
+  cornerTrimSketchEntities: (
+    entityAId: string,
+    entityBId: string,
+    clickX: number,
+    clickY: number,
+  ) => Promise<void>;
+  clearCornerPreview: () => void;
+  // Split tool: two-click accumulator for circles/full ellipses.
+  splitFirstPickRef: {
+    current: { entityId: string; x: number; y: number } | null;
+  };
+  splitSketchEntity: (
+    entityId: string,
+    clickX: number,
+    clickY: number,
+    split2X: number,
+    split2Y: number,
+  ) => Promise<void>;
+  // Drag-paint trim stroke (R5): entries collected while the pointer
+  // moved with the button held.
+  trimStrokeRef: {
+    current: Map<string, { x: number; y: number }> | null;
+  };
+  trimSketchStroke: (
+    entries: ReadonlyArray<{
+      entity_id: string;
+      click_x: number;
+      click_y: number;
+    }>,
+  ) => Promise<void>;
   // Circle tool tangent modes: line-pick state + the mode-aware
   // creation callback (the core resolves center/radius from the line
   // ids and the placement hint).
@@ -297,12 +331,116 @@ export function handleActiveSketchPointerUpTool(
   }
 
   if (context.activeSketchTool === "trim") {
+    // Drag-paint stroke (R5): while the pointer was held, every
+    // crossed entity was recorded. Two or more entries commit as ONE
+    // batch (one undo entry); a plain click keeps the preview-index
+    // path for exactness. The stroke map is always consumed here.
+    const stroke = context.trimStrokeRef.current;
+    context.trimStrokeRef.current = null;
+    if (stroke && stroke.size > 1) {
+      const entries = Array.from(stroke.entries(), ([entityId, pos]) => ({
+        entity_id: entityId,
+        click_x: pos.x,
+        click_y: pos.y,
+      }));
+      // The viewport's stroke closure clears the hover overlay before
+      // the core call (same contract as the single trim click).
+      void context.trimSketchStroke(entries);
+      return true;
+    }
     handleSketchTrimClick({
       hit: context.hit?.kind === "sketch_entity" ? context.hit : null,
       planeId: context.planeId,
       planeFrame: context.planeFrame,
       trimSketchEntity: context.trimSketchEntity,
     });
+    return true;
+  }
+
+  // Corner trim tool: two-pick flow. First pick records a line/arc;
+  // hovering previews the virtual corner (pointer-move path). The
+  // second pick on another line/arc commits; an empty click restarts.
+  if (context.activeSketchTool === "corner") {
+    const hit = context.hit;
+    const isLineOrArc =
+      hit?.kind === "sketch_entity" &&
+      (hit.entityKind === "line" || hit.entityKind === "arc");
+    const first = context.cornerFirstEntityIdRef.current;
+    if (first === null) {
+      if (isLineOrArc) {
+        context.cornerFirstEntityIdRef.current = hit.id;
+        context.setSketchSnapLabel(i18n.t("viewport.cornerPickSecond"));
+      }
+      return true;
+    }
+    if (isLineOrArc && hit.id !== first && context.cursorLocal) {
+      context.clearCornerPreview();
+      context.cornerFirstEntityIdRef.current = null;
+      context.setSketchSnapLabel(null);
+      void context.cornerTrimSketchEntities(
+        first,
+        hit.id,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+      );
+      return true;
+    }
+    // Click on empty space or the same entity: re-arm on a new first
+    // pick, or disarm entirely.
+    context.cornerFirstEntityIdRef.current = isLineOrArc ? hit.id : null;
+    context.setSketchSnapLabel(
+      isLineOrArc ? i18n.t("viewport.cornerPickSecond") : null,
+    );
+    context.clearCornerPreview();
+    return true;
+  }
+
+  // Split tool: divides the clicked entity. Circles and full ellipses
+  // follow the two-click rule (SolidWorks): the second click on the
+  // SAME entity completes the split.
+  if (context.activeSketchTool === "split") {
+    const hit = context.hit;
+    if (hit?.kind !== "sketch_entity" || !context.cursorLocal) {
+      return true;
+    }
+    const needsSecond =
+      hit.entityKind === "circle" ||
+      (hit.entityKind === "ellipse" &&
+        (context.sketch?.ellipses.some(
+          (e) => e.ellipse_id === hit.id && !e.has_sweep,
+        ) ??
+          false));
+    const first = context.splitFirstPickRef.current;
+    if (needsSecond) {
+      if (first === null || first.entityId !== hit.id) {
+        context.splitFirstPickRef.current = {
+          entityId: hit.id,
+          x: context.cursorLocal[0],
+          y: context.cursorLocal[1],
+        };
+        context.setSketchSnapLabel(i18n.t("viewport.splitPickSecond"));
+        return true;
+      }
+      context.splitFirstPickRef.current = null;
+      context.setSketchSnapLabel(null);
+      void context.splitSketchEntity(
+        hit.id,
+        first.x,
+        first.y,
+        context.cursorLocal[0],
+        context.cursorLocal[1],
+      );
+      return true;
+    }
+    // Open entities split at all their intersections — one click.
+    context.splitFirstPickRef.current = null;
+    void context.splitSketchEntity(
+      hit.id,
+      context.cursorLocal[0],
+      context.cursorLocal[1],
+      context.cursorLocal[0],
+      context.cursorLocal[1],
+    );
     return true;
   }
 

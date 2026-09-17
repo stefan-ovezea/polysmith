@@ -149,6 +149,39 @@ function findTrimPreviewCurve(data: TrimPreviewPayload, sceneData: ViewportScene
 }
 
 function sampleFullCurve(curve: TrimPreviewCurve): Array<[number, number, number]> {
+  if ("arcId" in curve) {
+    // A full-state ARC preview must paint the arc's own sweep — the
+    // old 0..2π sampling drew the whole (ghost) circle the trim could
+    // never delete ("the whole circle appears back in red").
+    const startAngle = Math.atan2(
+      curve.start[1] - curve.center[1],
+      curve.start[0] - curve.center[0],
+    );
+    const endAngle = Math.atan2(
+      curve.end[1] - curve.center[1],
+      curve.end[0] - curve.center[0],
+    );
+    let end = endAngle;
+    if (curve.ccw) {
+      if (end <= startAngle) end += 2 * Math.PI;
+    } else if (end >= startAngle) {
+      end -= 2 * Math.PI;
+    }
+    return sampleTrimCurve(curve, startAngle, end);
+  }
+  if ("hasSweep" in curve && curve.hasSweep) {
+    // Partial ellipse: paint its own sweep, not the full closed ellipse.
+    const startAngle = curve.sweepStart ?? 0;
+    const endAngle = curve.sweepEnd ?? 2 * Math.PI;
+    const ccw = curve.ccw !== undefined ? curve.ccw : true;
+    let end = endAngle;
+    if (ccw) {
+      if (end <= startAngle) end += 2 * Math.PI;
+    } else if (end >= startAngle) {
+      end -= 2 * Math.PI;
+    }
+    return sampleTrimCurve(curve, startAngle, end);
+  }
   return sampleTrimCurve(curve, 0, 2 * Math.PI);
 }
 

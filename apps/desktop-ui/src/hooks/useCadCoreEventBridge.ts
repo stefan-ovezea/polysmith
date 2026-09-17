@@ -41,6 +41,16 @@ export function useCadCoreEventBridge() {
               }),
             );
           }
+          if (message.type === "corner_trim_preview_result") {
+            // Same coalescing contract as the trim preview: the
+            // viewport rejects responses that are not the newest
+            // request by id.
+            window.dispatchEvent(
+              new CustomEvent("polysmith-corner-trim-preview", {
+                detail: { ...message.payload, id: message.id },
+              }),
+            );
+          }
           handleCoreMessage(message);
         } catch (error) {
           // Include the raw message so a schema gap can be identified

@@ -250,6 +250,38 @@ const trimPreviewResultEventSchema = z.object({
   ]),
 });
 
+const cornerTrimPreviewResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("corner_trim_preview_result"),
+  payload: z.union([
+    z.object({
+      entity_a_id: z.string(),
+      entity_b_id: z.string(),
+      valid: z.boolean(),
+      // Document revision the preview was computed against.
+      revision: z.number(),
+      corner: z.tuple([z.number(), z.number()]).optional(),
+      a: z.object({
+        kind: z.enum(["line", "arc"]),
+        start: z.tuple([z.number(), z.number()]),
+        end: z.tuple([z.number(), z.number()]),
+        center: z.tuple([z.number(), z.number()]).optional(),
+        radius: z.number().optional(),
+        ccw: z.boolean().optional(),
+      }).optional(),
+      b: z.object({
+        kind: z.enum(["line", "arc"]),
+        start: z.tuple([z.number(), z.number()]),
+        end: z.tuple([z.number(), z.number()]),
+        center: z.tuple([z.number(), z.number()]).optional(),
+        radius: z.number().optional(),
+        ccw: z.boolean().optional(),
+      }).optional(),
+    }),
+    z.null(),
+  ]),
+});
+
 export const coreMessageSchema = z.union([
   helloEventSchema,
   pongEventSchema,
@@ -262,6 +294,7 @@ export const coreMessageSchema = z.union([
   documentSavedEventSchema,
   logEventSchema,
   trimPreviewResultEventSchema,
+  cornerTrimPreviewResultEventSchema,
   camGenerationProgressEventSchema,
   camGenerationResultEventSchema,
   camPostListResultEventSchema,

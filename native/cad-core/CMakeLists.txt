@@ -422,6 +422,12 @@ polysmith_add_core_test(cad_core_intersecting_arcs_extrude_test tests/intersecti
 # metric must replace the chord fallback for long arc segments.
 polysmith_add_core_test(cad_core_trim_test tests/trim_test.cpp)
 
+# Trim redesign — stage-isolated verification (--stage N / --list).
+# Stage map: 1 Phase-0 behaviors, 2 constraint transfer, 3 driven dims
+# + fillet cleanup, 4 projection pruning, 5 corner trim, 6 extend,
+# 7 split, 8 drag-paint stroke with one undo entry.
+polysmith_add_core_test(cad_core_trim_stages_test tests/trim_stages_test.cpp)
+
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.
 polysmith_add_core_test(cad_core_constraint_completion_test tests/constraint_completion_test.cpp)

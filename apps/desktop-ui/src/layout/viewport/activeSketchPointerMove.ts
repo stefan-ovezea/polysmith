@@ -27,6 +27,7 @@ import {
 } from "./pointerMoveHover";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 import { handleTrimPointerMove } from "./trimPointerMove";
+import { handleCornerTrimPointerMove } from "./cornerTrimPointerMove";
 import type { TrimLineHighlightSegment } from "./trimHoverPreview";
 import type { ViewportPickHit } from "./contextMenuState";
 
@@ -41,6 +42,18 @@ interface ActiveSketchPointerMoveParams
     entityId: string;
     requestId: string | null;
   } | null>;
+  // Drag-paint trim stroke: crossed entities while the pointer is
+  // held (null when no stroke is in progress).
+  trimStrokeRef?: MutableRef<Map<string, { x: number; y: number }> | null>;
+  // Corner tool: the first-pick entity + the preview throttle state.
+  cornerFirstEntityIdRef: MutableRef<string | null>;
+  cornerPreviewLastSentRef: MutableRef<{
+    x: number;
+    y: number;
+    entityId: string;
+    requestId: string | null;
+  } | null>;
+  clearCornerPreview: () => void;
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   sketchGroupRef: MutableRef<THREE.Group | null>;
@@ -67,6 +80,11 @@ export function handleActiveSketchPointerMove(params: ActiveSketchPointerMovePar
 
   if (params.activeSketchTool === "trim") {
     handleTrimPointerMove(params);
+    return;
+  }
+
+  if (params.activeSketchTool === "corner") {
+    handleCornerTrimPointerMove(params);
     return;
   }
 

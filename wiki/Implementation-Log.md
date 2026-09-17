@@ -2,6 +2,39 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-17
+
+### Trim tool redesign — corner trim, extend, split, drag-paint (feature/trim)
+
+Full redesign per [Trim-Tool-Redesign-Requirements](Trim-Tool-Redesign-Requirements)
+(all four phases, one branch, user-verified in-app):
+
+- **Engine rebuild (P0):** unified intersection traversal, freeze
+  minted split vertices BEFORE the planegcs solve, one attachment
+  cleanup pipeline. Ghost-circle trim bug fixed (boundary-coincident
+  intersections snap to sweep edges; degenerate pieces drop by
+  dimensional span). Preview paints the whole curve red when there is
+  nothing to split (the click deletes it).
+- **Constraint transfer (P1, D1/D4):** surviving pieces inherit
+  H/V badges, whitelisted relations (parallel/perpendicular/
+  equal-length), surviving coincident pairs, point-on-object anchors;
+  dimensions re-derive as DRIVEN; circle→arc keeps concentric.
+  Fixed a latent bug: every trim erased coincident records because
+  the records store line ids in `target_ids` but the point id in the
+  constraint id — sweeps now check `coincident_record_alive`.
+- **Corner trim (P2, R2):** analytic virtual-corner math (line/line,
+  line/circle, circle/circle), nearest corner to the click, arc join,
+  second-pick hover ghost via `corner_trim_preview`.
+- **Extend:** existing tool gained the `E` hotkey + help entry.
+- **Split (P2, R4):** one click divides at ALL intersections; circles/
+  full ellipses use the two-click rule (two CCW pieces sharing
+  endpoints); equal-length relations do not transfer.
+- **Drag-paint trim (P3, R5):** `trim_sketch_stroke` — one stroke,
+  ONE undo entry, per-entry fault tolerance.
+- **Stage test program:** `cad_core_trim_stages_test` (`--stage 1..8`,
+  `--list`) isolates each building stage; joins the auto-discovered
+  gate run. Gates: 51/51 C++ suites + tsc clean + in-app verification.
+
 ## 2026-09-11
 
 ### Laser post-polish + LaserGRBL integration (laser/post-polish)

@@ -1,5 +1,7 @@
   // Phase 1: lines.
-  const auto line_it = std::find_if(
+  // Non-const: the middle-segment split re-locates this iterator after
+  // push_back (which may invalidate it).
+  auto line_it = std::find_if(
       params.lines.begin(),
       params.lines.end(),
       [&](const SketchLine& line) { return line.id == entity_id; });
@@ -9,20 +11,9 @@
 
     // 0 intersections — isolated entity: trim acts as normal delete.
     if (intersections.empty()) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           return std::find(c.target_ids.begin(),
-                                            c.target_ids.end(),
-                                            entity_id) != c.target_ids.end();
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {line_it->start_vertex_id, line_it->end_vertex_id});
       params.lines.erase(line_it);
       return;
     }
@@ -44,29 +35,20 @@
     // delete. The coordinate mutation below assumes two neighbouring
     // segments exist and would index out of bounds here.
     if (segments.size() == 1) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           for (const auto& tid : c.target_ids)
-                             if (tid == entity_id) return true;
-                           return false;
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id ||
-                                  d.secondary_entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {line_it->start_vertex_id, line_it->end_vertex_id});
       params.lines.erase(line_it);
       return;
     }
 
-    // Capture old point IDs *before* vector mutations (push_back
-    // may invalidate the line iterator, making later reads garbage).
+    // Capture old point IDs *before* vector mutations — the cleanup
+    // helper below runs after push_back and must not read line_it.
     const std::string old_sp_id = line_it->start_vertex_id;
     const std::string old_ep_id = line_it->end_vertex_id;
+    // Filled by the middle-split branch with the right piece's id
+    // (empty otherwise) — used by the constraint transfer below.
+    std::string new_line_id;
 
     // Delete the clicked segment.
     const int last = static_cast<int>(segments.size()) - 1;
@@ -130,6 +112,7 @@
           .is_construction = line_it->is_construction,
       });
       auto& new_line = params.lines.back();
+      new_line_id = new_line.id;
 
       if (points_match(new_line.start_x, new_line.start_y,
                        new_line.end_x, new_line.end_y)) {
@@ -137,6 +120,14 @@
                              new_line.id + "' — dropping");
         params.lines.pop_back();
       }
+
+      // push_back may have reallocated the line vector — re-locate the
+      // iterator before ANY further read (the old code dereferenced the
+      // invalidated iterator in the collapsed-left check below).
+      line_it = std::find_if(
+          params.lines.begin(), params.lines.end(),
+          [&](const SketchLine& line) { return line.id == entity_id; });
+
       if (points_match(line_it->start_x, line_it->start_y,
                        line_it->end_x, line_it->end_y)) {
         log_warn("trim", "trim split collapsed left portion '" +
@@ -146,15 +137,63 @@
       }
     }
 
-    #include "core/sketch/impl/trim_line_relation_cleanup.inc"
+    // D1 capture BEFORE the cleanup erases the whitelisted attachments.
+    const auto transfer_plan = capture_trim_constraint_transfer(
+        params, entity_id, {old_sp_id, old_ep_id});
+
+    trim_remove_entity_attachments(params, entity_id, {old_sp_id, old_ep_id});
 
     #include "core/sketch/impl/trim_line_point_rebind.inc"
 
-    // Clear any H/V constraint the line may have had — trim may have
-    // changed the direction enough to invalidate it.
-    line_it->constraint = std::nullopt;
-
     #include "core/sketch/impl/trim_line_orphan_constraint_cleanup.inc"
+
+    // D1/D4 transfer: H/V, whitelisted relations, point-on-object
+    // anchors at the cuts, and driven dimension re-derivation on the
+    // surviving pieces (replaces the old unconditional H/V clear).
+    // NOTE: the cut point ids are read AFTER the rebind above — it
+    // re-assigns the trimmed line's own endpoint ids (adopted/minted),
+    // so the pre-rebind ids (old_sp_id/old_ep_id) are dead here.
+    {
+      std::vector<std::string> survivors{entity_id};
+      std::vector<TrimTransferCut> cuts;
+      const std::string* cutter = nullptr;
+      if (clicked_index == 0) {
+        cutter = cutter_for_param(intersections, segments[1].param_start);
+        cuts.push_back(TrimTransferCut{
+            line_it->start_x, line_it->start_y, line_it->start_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+      } else if (clicked_index == last) {
+        cutter =
+            cutter_for_param(intersections,
+                             segments[clicked_index - 1].param_end);
+        cuts.push_back(TrimTransferCut{
+            line_it->end_x, line_it->end_y, line_it->end_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+      } else {
+        cutter =
+            cutter_for_param(intersections,
+                             segments[clicked_index - 1].param_end);
+        cuts.push_back(TrimTransferCut{
+            line_it->end_x, line_it->end_y, line_it->end_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+        if (!new_line_id.empty()) {
+          const auto right_it = std::find_if(
+              params.lines.begin(), params.lines.end(),
+              [&](const SketchLine& l) { return l.id == new_line_id; });
+          if (right_it != params.lines.end()) {
+            survivors.push_back(new_line_id);
+            cutter =
+                cutter_for_param(intersections,
+                                 segments[clicked_index + 1].param_start);
+            cuts.push_back(TrimTransferCut{
+                right_it->start_x, right_it->start_y,
+                right_it->start_vertex_id,
+                cutter != nullptr ? *cutter : ""});
+          }
+        }
+      }
+      apply_trim_constraint_transfer(params, transfer_plan, survivors, cuts);
+    }
 
     return;
   }

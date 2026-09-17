@@ -96,50 +96,24 @@ find_all_intersections(const SketchArc &target,
 
   // Construction geometry cuts here too — see the line-target note in
   // trim_line_circle_target_intersections.inc.
-  for (const auto &line : params.lines) {
-    auto isects = intersect_arc_line(target, line);
-    for (auto &is : isects)
-      results.push_back(std::move(is));
-  }
-
-  for (const auto &circle : params.circles) {
-    auto isects = intersect_arc_circle(target, circle);
-    for (auto &is : isects)
-      results.push_back(std::move(is));
-  }
-
-  for (const auto &arc : params.arcs) {
-    if (arc.id == target.id)
-      continue;
-    auto isects = intersect_arc_arc(target, arc);
-    for (auto &is : isects)
-      results.push_back(std::move(is));
-  }
-
-  // New geometry kinds through the shared dispatch (line-target note).
   const ExactCurve target_curve = trim_target_curve(target);
-  for (const auto &ellipse : params.ellipses) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(ellipse), pairs);
-    for (const auto &[angle, eangle] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = angle, .param_on_other = eangle,
-          .other_entity_id = ellipse.id});
+  for_each_trim_candidate(params, target.id, [&](const auto& other) {
+    using T = std::decay_t<decltype(other)>;
+    if constexpr (std::is_same_v<T, SketchLine>) {
+      auto isects = intersect_arc_line(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else if constexpr (std::is_same_v<T, SketchCircle>) {
+      auto isects = intersect_arc_circle(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else if constexpr (std::is_same_v<T, SketchArc>) {
+      auto isects = intersect_arc_arc(target, other);
+      for (auto& is : isects) results.push_back(std::move(is));
+    } else {
+      // New geometry kinds through the shared dispatch (line-target note).
+      append_shared_curve_pairs(results, target_curve,
+                                trim_target_curve(other), other.id);
     }
-  }
-  for (const auto &spline : params.splines) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, trim_target_curve(spline), pairs);
-    for (const auto &[angle, sparam] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, angle);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = angle, .param_on_other = sparam,
-          .other_entity_id = spline.id});
-    }
-  }
+  });
 
   // Endpoint-touch pass: another arc's STORED endpoints that lie ON
   // the target are genuine junction cuts. The strict angular sweep
@@ -203,14 +177,5 @@ find_all_intersections(const SketchArc &target,
       results = std::move(copy);
   }
 
-  if (results.empty())
-    return results;
-
-  std::sort(results.begin(), results.end(),
-            [](const TrimIntersection &a, const TrimIntersection &b) {
-              return a.param_on_target < b.param_on_target;
-            });
-
-  deduplicate(results);
-  return results;
+  return finish_trim_intersections(std::move(results));
 }

@@ -7,37 +7,14 @@ std::vector<TrimIntersection> find_all_intersections(
     const SketchFeatureParameters& params) {
   std::vector<TrimIntersection> results;
 
-  const ExactCurve target_curve = trim_target_curve(target);
-  auto add_pairs = [&](const ExactCurve& other, const std::string& other_id) {
-    std::vector<std::pair<double, double>> pairs;
-    sketch_curve_intersections(target_curve, other, pairs);
-    for (const auto& [pa, pb] : pairs) {
-      const SketchProfilePoint p = exact_curve_point(target_curve, pa);
-      results.push_back(TrimIntersection{
-          .x = p.x, .y = p.y,
-          .param_on_target = pa, .param_on_other = pb,
-          .other_entity_id = other_id});
-    }
-  };
-
   // Construction geometry cuts here too (line-target note in
-  // trim_line_circle_target_intersections.inc).
-  for (const auto& line : params.lines) {
-    add_pairs(trim_target_curve(line), line.id);
-  }
-  for (const auto& circle : params.circles) {
-    add_pairs(trim_target_curve(circle), circle.id);
-  }
-  for (const auto& arc : params.arcs) {
-    add_pairs(trim_target_curve(arc), arc.id);
-  }
-  for (const auto& ellipse : params.ellipses) {
-    if (ellipse.id == target.id) continue;
-    add_pairs(trim_target_curve(ellipse), ellipse.id);
-  }
-  for (const auto& spline : params.splines) {
-    add_pairs(trim_target_curve(spline), spline.id);
-  }
+  // trim_line_circle_target_intersections.inc). Every pair goes
+  // through the shared dispatch.
+  const ExactCurve target_curve = trim_target_curve(target);
+  for_each_trim_candidate(params, target.id, [&](const auto& other) {
+    append_shared_curve_pairs(results, target_curve,
+                              trim_target_curve(other), other.id);
+  });
 
   // Endpoint-touch pass: another arc's STORED endpoints that lie on
   // the target are junction cuts the sweep filter of the arc solver
@@ -58,15 +35,7 @@ std::vector<TrimIntersection> find_all_intersections(
     add_if_on_target(other.end_x, other.end_y);
   }
 
-  if (results.empty()) return results;
-
-  std::sort(results.begin(), results.end(),
-            [](const TrimIntersection& a, const TrimIntersection& b) {
-              return a.param_on_target < b.param_on_target;
-            });
-
-  deduplicate(results);
-  return results;
+  return finish_trim_intersections(std::move(results));
 }
 
 // ================================================================
@@ -90,10 +59,16 @@ std::vector<TrimSegment> split_ellipse_at_intersections(
   };
 
   std::vector<TrimSegment> segments;
-  constexpr double kMinSpan = 1e-9;  // radians
+
+  // Degenerate-piece drop is DIMENSIONAL (arc length), mirroring the
+  // arc splitter: a stub below the coincident tolerance is unclickable
+  // and, when kept, captures clicks that belong to the neighbouring
+  // real piece. min(a, b) is the conservative local radius for the
+  // eccentric-anomaly parameter.
+  const double local_r = std::min(ellipse.a, ellipse.b);
 
   auto push_piece = [&](double s, double e) {
-    if (std::abs(e - s) < kMinSpan) return;
+    if (std::abs(e - s) * local_r < kTrimCoincidentTolerance) return;
     auto [sx, sy] = pt_at_param(s);
     auto [ex, ey] = pt_at_param(e);
     segments.push_back(TrimSegment{
@@ -108,13 +83,14 @@ std::vector<TrimSegment> split_ellipse_at_intersections(
 
   if (!ellipse.has_sweep) {
     // Full ellipse: N segments between consecutive wrapped angles,
-    // going CCW (circle-style).
+    // going CCW (circle-style). The wrap must be STRICT — equality
+    // means a degenerate piece, and the old `<=` turned it into a
+    // ghost full-ellipse segment.
     for (size_t i = 0; i < intersections.size(); ++i) {
       double a_start = intersections[i].param_on_target;
       double a_end =
           intersections[(i + 1) % intersections.size()].param_on_target;
-      if (a_end <= a_start) a_end += k2Pi;
-      if (a_end - a_start < kMinSpan) continue;
+      if (a_end < a_start) a_end += k2Pi;
       push_piece(a_start, a_end < k2Pi ? a_end : a_end - k2Pi);
     }
     return segments;
@@ -122,16 +98,46 @@ std::vector<TrimSegment> split_ellipse_at_intersections(
 
   // Partial ellipse: arc-style pieces along the stored sweep.
   const double s0 = ellipse.sweep_start_angle;
-  const double e0 = ellipse.sweep_end_angle;
   const bool ccw = ellipse.ccw;
+  // The stored sweep end is wrapped into [0, 2π) — unwrap it so every
+  // angle in the sweep lives on one ascending (ccw) / descending (cw)
+  // axis (clamping against the wrapped end collapses every interior
+  // angle onto it — see trim_arc_segments.inc).
+  double e0 = ellipse.sweep_end_angle;
+  if (ccw) {
+    if (e0 < s0) e0 += k2Pi;
+  } else {
+    if (e0 > s0) e0 -= k2Pi;
+  }
+
+  // Boundary-coincident intersections must snap to the sweep edges,
+  // not wrap a full turn away — the same ghost-segment bug the arc
+  // splitter had (see trim_arc_segments.inc).
+  const double snap_tol = kTrimCoincidentTolerance / std::max(local_r, 1e-9);
+  auto angular_gap = [](double x, double y) {
+    // x and y may sit on different unwrapped axes (y can be negative
+    // down to -2π), so the raw difference can exceed 2π — normalize
+    // first, then fold to [0, π]. The naive min(d, 2π-d) goes NEGATIVE
+    // for d > 2π and snaps everything.
+    double d = std::fmod(std::abs(x - y), 2.0 * M_PI);
+    if (d > M_PI) d = 2.0 * M_PI - d;
+    return d;
+  };
 
   std::vector<double> angles;
   for (const auto& is : intersections) {
     double a = exact_wrap_angle(is.param_on_target);
+    if (angular_gap(a, s0) < snap_tol) {
+      a = s0;
+    } else if (angular_gap(a, e0) < snap_tol) {
+      a = e0;
+    }
     if (ccw) {
       if (a < s0) a += k2Pi;
+      if (a > e0) a = e0;  // wrap-around of a start-boundary hit
     } else {
       if (a > s0) a -= k2Pi;
+      if (a < e0) a = e0;
     }
     angles.push_back(a);
   }
@@ -139,12 +145,16 @@ std::vector<TrimSegment> split_ellipse_at_intersections(
             ccw ? [](double a, double b) { return a < b; }
                 : [](double a, double b) { return a > b; });
 
+  // The wrap fixups are STRICT for the same reason as the arc
+  // splitter: equality means the cut sits on the sweep boundary and
+  // the piece is degenerate — the old `<=` / `>=` manufactured ghost
+  // full-ellipse segments.
   {
     double s = s0, e = angles[0];
     if (ccw) {
-      if (e <= s) e += k2Pi;
+      if (e < s) e += k2Pi;
     } else {
-      if (e >= s) e -= k2Pi;
+      if (e > s) e -= k2Pi;
     }
     push_piece(s, e);
   }
@@ -154,9 +164,9 @@ std::vector<TrimSegment> split_ellipse_at_intersections(
   {
     double s = angles.back(), e = e0;
     if (ccw) {
-      if (e <= s) e += k2Pi;
+      if (e < s) e += k2Pi;
     } else {
-      if (e >= s) e -= k2Pi;
+      if (e > s) e -= k2Pi;
     }
     push_piece(s, e);
   }

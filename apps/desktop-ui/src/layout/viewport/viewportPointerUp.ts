@@ -131,6 +131,13 @@ interface ViewportPointerUpParams {
   onPickSketchSlot: ActiveSketchPointerUpContext["onPickSketchSlot"];
   onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
   extendSketchEntity: ActiveSketchPointerUpContext["extendSketchEntity"];
+  cornerFirstEntityIdRef: ActiveSketchPointerUpContext["cornerFirstEntityIdRef"];
+  cornerTrimSketchEntities: ActiveSketchPointerUpContext["cornerTrimSketchEntities"];
+  clearCornerPreview: ActiveSketchPointerUpContext["clearCornerPreview"];
+  splitFirstPickRef: ActiveSketchPointerUpContext["splitFirstPickRef"];
+  splitSketchEntity: ActiveSketchPointerUpContext["splitSketchEntity"];
+  trimStrokeRef: ActiveSketchPointerUpContext["trimStrokeRef"];
+  trimSketchStroke: ActiveSketchPointerUpContext["trimSketchStroke"];
   offsetSketchEntity: ActiveSketchPointerUpContext["offsetSketchEntity"];
   circleTangentLineIdsRef: ActiveSketchPointerUpContext["circleTangentLineIdsRef"];
   addSketchCircleMode: ActiveSketchPointerUpContext["addSketchCircleMode"];
@@ -415,6 +422,13 @@ function handleActiveSketchToolPointerUp(
     onPickSketchSlot: params.onPickSketchSlot,
     onPickSketchChamfer: params.onPickSketchChamfer,
     extendSketchEntity: params.extendSketchEntity,
+    cornerFirstEntityIdRef: params.cornerFirstEntityIdRef,
+    cornerTrimSketchEntities: params.cornerTrimSketchEntities,
+    clearCornerPreview: params.clearCornerPreview,
+    splitFirstPickRef: params.splitFirstPickRef,
+    splitSketchEntity: params.splitSketchEntity,
+    trimStrokeRef: params.trimStrokeRef,
+    trimSketchStroke: params.trimSketchStroke,
     offsetSketchEntity: params.offsetSketchEntity,
     circleToolMode: params.circleToolMode,
     circleTangentLineIdsRef: params.circleTangentLineIdsRef,

@@ -8,20 +8,11 @@
 
     // 0 intersections — isolated entity: trim acts as normal delete.
     if (intersections.empty()) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           return std::find(c.target_ids.begin(),
-                                            c.target_ids.end(),
-                                            entity_id) != c.target_ids.end();
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {ellipse_it->center_vertex_id, ellipse_it->axis_a_vertex_id,
+           ellipse_it->axis_b_vertex_id, ellipse_it->start_vertex_id,
+           ellipse_it->end_vertex_id});
       params.ellipses.erase(ellipse_it);
       return;
     }
@@ -40,31 +31,35 @@
           entity_id);
     }
 
-    // A single surviving segment on a FULL ellipse means every
-    // intersection sits at the same point (tangent cluster): trimming
-    // the only real piece is a full delete. Partial ellipses with one
-    // piece keep the arc-style path below (they can shrink to it).
-    if (!ellipse_it->has_sweep && segments.size() == 1) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           for (const auto& tid : c.target_ids)
-                             if (tid == entity_id) return true;
-                           return false;
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+    // A single surviving segment means every intersection sits on the
+    // ellipse's own endpoints — trimming the only real piece is a full
+    // delete for BOTH full and partial ellipses (the old code let the
+    // partial case fall through to the arc-style branch below and
+    // read `segments[1]` on a size-1 vector — undefined behaviour
+    // that silently corrupted the ellipse instead of deleting it).
+    if (segments.size() == 1) {
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {ellipse_it->center_vertex_id, ellipse_it->axis_a_vertex_id,
+           ellipse_it->axis_b_vertex_id, ellipse_it->start_vertex_id,
+           ellipse_it->end_vertex_id});
       params.ellipses.erase(ellipse_it);
       return;
     }
 
     const std::string old_sp_id = ellipse_it->start_vertex_id;
     const std::string old_ep_id = ellipse_it->end_vertex_id;
+    const std::string old_center_id = ellipse_it->center_vertex_id;
+    const std::string old_axis_a_id = ellipse_it->axis_a_vertex_id;
+    const std::string old_axis_b_id = ellipse_it->axis_b_vertex_id;
+    // Filled by the middle-split branch with the new ellipse's id.
+    std::string new_ellipse_id;
+
+    // D1 capture BEFORE the cleanup erases the coincident constraints
+    // on the ellipse's points.
+    const auto transfer_plan = capture_trim_constraint_transfer(
+        params, entity_id,
+        {old_sp_id, old_ep_id, old_center_id, old_axis_a_id, old_axis_b_id});
 
     const std::unordered_set<std::string> excluded_entities{entity_id};
     auto shared_pt = [&](double x, double y) {
@@ -120,6 +115,7 @@
       ellipse_ids.reserve(params.ellipses.size());
       for (const auto& e : params.ellipses) ellipse_ids.push_back(e.id);
       const int next_idx = next_trim_entity_index(ellipse_ids);
+      new_ellipse_id = "ellipse-" + std::to_string(next_idx);
       const auto& right = segments[clicked_index + 1];
       const auto& last_seg = segments[last];
       params.ellipses.push_back(SketchEllipse{
@@ -142,60 +138,69 @@
       });
     }
 
-    // Clean up constraints/dimensions on the ellipse (and its old
-    // partial-arc endpoint ids) — same conservative policy as arcs.
-    params.constraints.erase(
-        std::remove_if(params.constraints.begin(), params.constraints.end(),
-                       [&](const SketchConstraint& c) {
-                         for (const auto& tid : c.target_ids)
-                           if (tid == entity_id || tid == old_sp_id ||
-                               tid == old_ep_id)
-                             return true;
-                         return false;
-                       }),
-        params.constraints.end());
-    params.dimensions.erase(
-        std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                       [&](const SketchDimension& d) {
-                         return d.entity_id == entity_id;
-                       }),
-        params.dimensions.end());
+    // Clean up every attachment of the ellipse through the shared
+    // pipeline (the old code erased constraints + primary-side
+    // dimensions only — relations, anchors, fillets and chamfers
+    // leaked).
+    trim_remove_entity_attachments(
+        params, entity_id,
+        {old_sp_id, old_ep_id, old_center_id, old_axis_a_id,
+         old_axis_b_id});
 
-    // Safety net: delete coincident constraints referencing orphaned
-    // point ids (mirrors the arc phase).
+    // Safety net: delete coincident constraints whose merged point
+    // died or whose listed lines no longer reference it.
+    sweep_orphan_coincident_constraints(params);
+
+    // D1 transfer: point-on-object anchors at the cuts and coincident
+    // survival on the kept piece(s) (ellipses carry no dimensions or
+    // line relations). The cut coordinates derive from the sweep
+    // angles the branches above just wrote (the ellipse stores no
+    // endpoint coords).
     {
-      std::unordered_set<std::string> live_pt;
-      for (const auto& l : params.lines) {
-        live_pt.insert(l.start_vertex_id);
-        live_pt.insert(l.end_vertex_id);
+      std::vector<std::string> survivors{entity_id};
+      std::vector<TrimTransferCut> cuts;
+      const auto add_cut = [&](const std::string& pid, double t, double param) {
+        const std::string* cutter = cutter_for_param(intersections, param);
+        const auto [px, py] = transfer_ellipse_point(*ellipse_it, t);
+        cuts.push_back(TrimTransferCut{
+            px, py, pid, cutter != nullptr ? *cutter : ""});
+      };
+      if (!ellipse_it->has_sweep) {
+        // Full ellipse → complementary arc: BOTH endpoints move — the
+        // new start at the segment after the clicked one, the new end
+        // at the clicked segment's start.
+        const int N = static_cast<int>(segments.size());
+        add_cut(ellipse_it->start_vertex_id, ellipse_it->sweep_start_angle,
+                segments[(clicked_index + 1) % N].param_start);
+        add_cut(ellipse_it->end_vertex_id, ellipse_it->sweep_end_angle,
+                segments[clicked_index].param_start);
+      } else if (clicked_index == 0) {
+        add_cut(ellipse_it->start_vertex_id, ellipse_it->sweep_start_angle,
+                segments[1].param_start);
+      } else if (clicked_index == last) {
+        add_cut(ellipse_it->end_vertex_id, ellipse_it->sweep_end_angle,
+                segments[clicked_index - 1].param_end);
+      } else {
+        add_cut(ellipse_it->end_vertex_id, ellipse_it->sweep_end_angle,
+                segments[clicked_index - 1].param_end);
+        if (!new_ellipse_id.empty()) {
+          const auto right_ellipse = std::find_if(
+              params.ellipses.begin(), params.ellipses.end(),
+              [&](const SketchEllipse& e) { return e.id == new_ellipse_id; });
+          if (right_ellipse != params.ellipses.end()) {
+            survivors.push_back(new_ellipse_id);
+            const auto [px, py] = transfer_ellipse_point(
+                *right_ellipse, right_ellipse->sweep_start_angle);
+            const std::string* cutter =
+                cutter_for_param(intersections,
+                                 segments[clicked_index + 1].param_start);
+            cuts.push_back(TrimTransferCut{
+                px, py, right_ellipse->start_vertex_id,
+                cutter != nullptr ? *cutter : ""});
+          }
+        }
       }
-      for (const auto& c : params.circles) {
-        live_pt.insert(circle_center_vertex_id(c));
-        live_pt.insert("vertex-" + c.id + "-quadrant-0");
-        live_pt.insert("vertex-" + c.id + "-quadrant-1");
-        live_pt.insert("vertex-" + c.id + "-quadrant-2");
-        live_pt.insert("vertex-" + c.id + "-quadrant-3");
-      }
-      for (const auto& a : params.arcs) {
-        live_pt.insert(a.start_vertex_id);
-        live_pt.insert(a.end_vertex_id);
-      }
-      for (const auto& e : params.ellipses) {
-        live_pt.insert(e.center_vertex_id);
-        live_pt.insert(e.axis_a_vertex_id);
-        live_pt.insert(e.axis_b_vertex_id);
-        live_pt.insert(e.start_vertex_id);
-        live_pt.insert(e.end_vertex_id);
-      }
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           if (c.kind != "coincident") return false;
-                           for (const auto& tid : c.target_ids)
-                             if (!live_pt.count(tid)) return true;
-                           return false;
-                         }),
-          params.constraints.end());
+      apply_trim_constraint_transfer(params, transfer_plan, survivors, cuts);
     }
 
     return;

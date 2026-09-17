@@ -67,7 +67,11 @@ The original v1 milestones 0–3 are complete. The codebase now has:
   drag-only creation produces no dimension
 - Per-dimension radius/diameter toggle and driven (reference) dimension support
 - Trim tool: line-line, line-circle, line-arc, circle-circle, circle-arc, arc-arc
-  intersections; entity splitting; constraint re-evaluation; core-driven hover preview
+  intersections; entity splitting; core-driven hover preview. Constraints follow the
+  D1 transfer whitelist (surviving pieces inherit H/V, parallel/perpendicular/equal
+  relations, surviving coincident pairs and point-on-object anchors; dimensions
+  re-derive as driven) — see
+  [Trim-Tool-Redesign-Requirements.md](Trim-Tool-Redesign-Requirements.md).
 - Parametric parameters & dimension formulas: document-scoped name → expression →
   resolved value, recursive-descent evaluator with cycle detection
 - Endpoint drag with planegcs WASM solver (60 fps local feedback, core commit on

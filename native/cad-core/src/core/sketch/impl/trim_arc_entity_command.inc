@@ -8,19 +8,10 @@
     const auto intersections = find_all_intersections(*arc_it, params);
 
     if (intersections.empty()) {
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           return std::find(c.target_ids.begin(), c.target_ids.end(),
-                                            entity_id) != c.target_ids.end();
-                         }),
-          params.constraints.end());
-      params.dimensions.erase(
-          std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                         [&](const SketchDimension& d) {
-                           return d.entity_id == entity_id;
-                         }),
-          params.dimensions.end());
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {arc_it->start_vertex_id, arc_it->end_vertex_id,
+           arc_it->center_vertex_id});
       params.arcs.erase(arc_it);
       return;
     }
@@ -28,8 +19,34 @@
     const auto segments = split_arc_at_intersections(*arc_it, intersections);
     if (segments.empty()) return;
 
+    // A single surviving segment means every intersection sits on the
+    // arc's own endpoints (e.g. two lines crossing the arc exactly at
+    // its ends): trimming the only real piece is a full delete — the
+    // line and spline paths carry the same guard. The old code fell
+    // into `segments[1]` on a size-1 vector here — undefined
+    // behaviour that silently corrupted the arc instead of deleting
+    // it ("the trim action silently goes away").
+    if (segments.size() == 1) {
+      trim_remove_entity_attachments(
+          params, entity_id,
+          {arc_it->start_vertex_id, arc_it->end_vertex_id,
+           arc_it->center_vertex_id});
+      params.arcs.erase(arc_it);
+      return;
+    }
+
+    // Capture the old point ids before the middle-segment push_back
+    // can invalidate the arc iterator.
     const std::string old_sp_id = arc_it->start_vertex_id;
     const std::string old_ep_id = arc_it->end_vertex_id;
+    const std::string old_center_id = arc_it->center_vertex_id;
+    // Filled by the middle-split branch with the new arc's id.
+    std::string new_arc_id;
+
+    // D1 capture BEFORE the cleanup erases the whitelisted
+    // attachments (arc dims, coincident).
+    const auto transfer_plan = capture_trim_constraint_transfer(
+        params, entity_id, {old_sp_id, old_ep_id, old_center_id});
 
     const int clicked_index = resolve_clicked_index(
         segments, select_clicked_segment(segments, *arc_it, click_x, click_y));
@@ -66,6 +83,7 @@
       arc_ids.reserve(params.arcs.size());
       for (const auto& arc : params.arcs) arc_ids.push_back(arc.id);
       const int next_idx = next_trim_entity_index(arc_ids);
+      new_arc_id = "arc-" + std::to_string(next_idx);
       const auto& right = segments[clicked_index + 1];
       const auto& last_seg = segments[last];
       params.arcs.push_back(SketchArc{
@@ -87,72 +105,59 @@
       });
     }
 
-    // Clean up constraints/dimensions/relations/fillets on the arc.
-    params.constraints.erase(
-        std::remove_if(params.constraints.begin(), params.constraints.end(),
-                       [&](const SketchConstraint& c) {
-                         for (const auto& tid : c.target_ids)
-                           if (tid == entity_id || tid == old_sp_id || tid == old_ep_id)
-                             return true;
-                         return false;
-                       }),
-        params.constraints.end());
-    params.dimensions.erase(
-        std::remove_if(params.dimensions.begin(), params.dimensions.end(),
-                       [&](const SketchDimension& d) {
-                         return d.entity_id == entity_id;
-                       }),
-        params.dimensions.end());
-    params.line_relations.erase(
-        std::remove_if(params.line_relations.begin(), params.line_relations.end(),
-                       [&](const SketchLineRelation& r) {
-                         return r.first_line_id == entity_id ||
-                                r.second_line_id == entity_id;
-                       }),
-        params.line_relations.end());
-    params.fillets.erase(
-        std::remove_if(params.fillets.begin(), params.fillets.end(),
-                       [&](const SketchFillet& f) {
-                         return f.line_a_id == entity_id ||
-                                f.line_b_id == entity_id ||
-                                f.arc_a_id == entity_id ||
-                                f.arc_b_id == entity_id ||
-                                f.arc_id == entity_id ||
-                                f.corner_vertex_id == old_sp_id ||
-                                f.corner_vertex_id == old_ep_id ||
-                                f.trim_a_vertex_id == old_sp_id ||
-                                f.trim_a_vertex_id == old_ep_id ||
-                                f.trim_b_vertex_id == old_sp_id ||
-                                f.trim_b_vertex_id == old_ep_id;
-                       }),
-        params.fillets.end());
+    // Clean up every attachment of the arc — constraints, dimensions
+    // (including secondary-side references), relations, anchors,
+    // fillets and chamfers — through the one shared pipeline.
+    trim_remove_entity_attachments(
+        params, entity_id, {old_sp_id, old_ep_id, old_center_id});
 
-    // Safety net: delete coincident constraints referencing orphaned point IDs.
+    // Safety net: delete coincident constraints whose merged point
+    // died or whose listed lines no longer reference it.
+    sweep_orphan_coincident_constraints(params);
+
+    // D1 transfer: driven dimension re-derivation, point-on-object
+    // anchors at the cuts, and coincident survival on the kept
+    // piece(s).
     {
-      std::unordered_set<std::string> live_pt;
-      for (const auto& l : params.lines) {
-        live_pt.insert(l.start_vertex_id); live_pt.insert(l.end_vertex_id);
+      std::vector<std::string> survivors{entity_id};
+      std::vector<TrimTransferCut> cuts;
+      const std::string* cutter = nullptr;
+      if (clicked_index == 0) {
+        cutter = cutter_for_param(intersections, segments[1].param_start);
+        cuts.push_back(TrimTransferCut{
+            arc_it->start_x, arc_it->start_y, arc_it->start_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+      } else if (clicked_index == last) {
+        cutter =
+            cutter_for_param(intersections,
+                             segments[clicked_index - 1].param_end);
+        cuts.push_back(TrimTransferCut{
+            arc_it->end_x, arc_it->end_y, arc_it->end_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+      } else {
+        cutter =
+            cutter_for_param(intersections,
+                             segments[clicked_index - 1].param_end);
+        cuts.push_back(TrimTransferCut{
+            arc_it->end_x, arc_it->end_y, arc_it->end_vertex_id,
+            cutter != nullptr ? *cutter : ""});
+        if (!new_arc_id.empty()) {
+          const auto right_arc = std::find_if(
+              params.arcs.begin(), params.arcs.end(),
+              [&](const SketchArc& a) { return a.id == new_arc_id; });
+          if (right_arc != params.arcs.end()) {
+            survivors.push_back(new_arc_id);
+            cutter =
+                cutter_for_param(intersections,
+                                 segments[clicked_index + 1].param_start);
+            cuts.push_back(TrimTransferCut{
+                right_arc->start_x, right_arc->start_y,
+                right_arc->start_vertex_id,
+                cutter != nullptr ? *cutter : ""});
+          }
+        }
       }
-      for (const auto& c : params.circles) {
-        live_pt.insert(circle_center_vertex_id(c));
-        // Quadrants still use legacy format (Phase 4.1 will update)
-        live_pt.insert("vertex-" + c.id + "-quadrant-0");
-        live_pt.insert("vertex-" + c.id + "-quadrant-1");
-        live_pt.insert("vertex-" + c.id + "-quadrant-2");
-        live_pt.insert("vertex-" + c.id + "-quadrant-3");
-      }
-      for (const auto& a : params.arcs) {
-        live_pt.insert(a.start_vertex_id); live_pt.insert(a.end_vertex_id);
-      }
-      params.constraints.erase(
-          std::remove_if(params.constraints.begin(), params.constraints.end(),
-                         [&](const SketchConstraint& c) {
-                           if (c.kind != "coincident") return false;
-                           for (const auto& tid : c.target_ids)
-                             if (!live_pt.count(tid)) return true;
-                           return false;
-                         }),
-          params.constraints.end());
+      apply_trim_constraint_transfer(params, transfer_plan, survivors, cuts);
     }
 
     return;

@@ -1148,6 +1148,78 @@ export function makeTrimSketchEntityCommand(
   };
 }
 
+export function makeTrimSketchStrokeCommand(
+  entries: ReadonlyArray<{ entity_id: string; click_x: number; click_y: number }>,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "trim_sketch_stroke",
+    payload: {
+      entries: entries.map((entry) => ({
+        entity_id: entry.entity_id,
+        click_x: entry.click_x,
+        click_y: entry.click_y,
+      })),
+    },
+  };
+}
+
+export function makeCornerTrimPreviewCommand(
+  entityAId: string,
+  entityBId: string,
+  cursorX: number,
+  cursorY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "corner_trim_preview",
+    payload: {
+      entity_a_id: entityAId,
+      entity_b_id: entityBId,
+      cursor_x: cursorX,
+      cursor_y: cursorY,
+    },
+  };
+}
+
+export function makeCornerTrimSketchEntitiesCommand(
+  entityAId: string,
+  entityBId: string,
+  clickX: number,
+  clickY: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "corner_trim_sketch_entities",
+    payload: {
+      entity_a_id: entityAId,
+      entity_b_id: entityBId,
+      click_x: clickX,
+      click_y: clickY,
+    },
+  };
+}
+
+export function makeSplitSketchEntityCommand(
+  entityId: string,
+  clickX: number,
+  clickY: number,
+  split2X: number,
+  split2Y: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "split_sketch_entity",
+    payload: {
+      entity_id: entityId,
+      click_x: clickX,
+      click_y: clickY,
+      split2_x: split2X,
+      split2_y: split2Y,
+    },
+  };
+}
+
 
 export function makeDeleteSketchSelectionCommand(
   entityIds: readonly string[],

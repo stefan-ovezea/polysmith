@@ -322,6 +322,12 @@ function handleSketchToolHotkey(
     return;
   }
 
+  if (matchesHotkey(event, sketchToolbarHotkeys.extend)) {
+    event.preventDefault();
+    void setSketchToolRef.current("extend");
+    return;
+  }
+
   if (matchesHotkey(event, sketchToolbarHotkeys.move)) {
     event.preventDefault();
     void setSketchToolRef.current("move");

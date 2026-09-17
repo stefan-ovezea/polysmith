@@ -66,16 +66,19 @@ std::vector<TrimSegment> split_circle_at_intersections(
 
   std::vector<TrimSegment> segments;
   const double k2Pi = 2.0 * M_PI;
-  constexpr double kMinArcSpan = 1e-9;  // radians
 
   for (size_t i = 0; i < intersections.size(); ++i) {
     double a_start = intersections[i].param_on_target;
     double a_end   = intersections[(i + 1) % intersections.size()].param_on_target;
 
-    // Going CCW from a_start to a_end.
-    if (a_end <= a_start) a_end += k2Pi;
+    // Going CCW from a_start to a_end. The wrap must be STRICT:
+    // equality means a degenerate piece, and the old `<=` turned it
+    // into a ghost full-circle segment.
+    if (a_end < a_start) a_end += k2Pi;
 
-    if (a_end - a_start < kMinArcSpan) continue;
+    // Degenerate drop is DIMENSIONAL (arc length), not angular — the
+    // old 1e-9 rad floor kept ~1e-4-rad trig-roundtrip stubs alive.
+    if ((a_end - a_start) * r < kTrimCoincidentTolerance) continue;
 
     auto [sx, sy] = pt_at_angle(a_start);
     auto [ex, ey] = pt_at_angle(a_end >= k2Pi ? wrap_angle(a_end) : a_end);
