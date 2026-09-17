@@ -138,6 +138,25 @@
 > and did not freeze. The log is clean" (the single "drained + end
 > group" line was the temporary diagnostic, now removed).
 >
+> ## POST-COMMIT REGRESSION (2026-09-17, uncommitted) — dimension drain mis-attribution FIXED, awaiting user verification
+>
+> User after the commit: "first line i draw has dimmensions and the I
+> draw another line. the first line loses the dimension but the new
+> line has now dimensions." Root cause: the click-path group wrapper
+> made the post-commit effect fire on the begin_group's own reply,
+> and the deletion drain targeted "the last entity" + cleared the
+> pending ref unconditionally — on the begin reply the previous line
+> was still the last one, so ITS dims were deleted and the ref was
+> consumed before the new line landed (new line keeps its dims; the
+> group also closed early).
+> Fix: `PendingDimensionDeletion` now carries `tool` + pre-add
+> fromLineCount/fromCircleCount/fromPolygonCount (captured at
+> schedule time); `deletePendingAutoDimensions` gates on
+> `pendingEntityLanded` and keeps the pending ref until the entity
+> lands — same pattern the expression drain already used. tsc clean.
+> The earlier fix (unique dropdown keys) stays the freeze fix; the
+> wrapper race was an independent regression it exposed.
+>
 > Previous task (trim redesign, merged as PR #86) — section below.
 
 ---

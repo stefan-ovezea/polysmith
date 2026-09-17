@@ -102,6 +102,15 @@ export function createDraftDimensionSessionActions({
   ) {
     const session = preCapturedSession ?? draftDimensionSessionRef.current;
     pendingDimensionDeletionRef.current = {
+      tool,
+      // Pre-add counts gate the drain: the post-commit effect also
+      // runs on intermediate replies (e.g. the begin_group reply of
+      // the click commit path), when the previous entity is still
+      // "the last one" — deleting then would strip the WRONG
+      // entity's dimension.
+      fromLineCount: sketchLineCountRef.current,
+      fromCircleCount: sketchParameters?.circles.length ?? 0,
+      fromPolygonCount: sketchParameters?.polygons?.length ?? 0,
       shouldDeleteLine: tool === "line" && !session?.touchedFields.length,
       shouldDeleteCircle:
         tool === "circle" && !session?.touchedFields.diameter,
