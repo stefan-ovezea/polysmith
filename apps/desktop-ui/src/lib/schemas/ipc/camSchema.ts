@@ -183,8 +183,11 @@ const toolEntrySchema = z
     front_angle_deg: z.number().default(0),
     back_angle_deg: z.number().default(0),
     orientation: z.number().default(0),
-    x_offset_mm: z.number().optional(),
-    z_offset_mm: z.number().optional(),
+    // The core emits null when unset (std::optional → JSON null), so
+    // these are nullable — a strict number schema would reject every
+    // document_state and take down the whole event stream.
+    x_offset_mm: z.number().nullable().optional(),
+    z_offset_mm: z.number().nullable().optional(),
     material: z.string().default("carbide"),
     coating: z.string().optional(),
     coolant_through: z.boolean().default(false),

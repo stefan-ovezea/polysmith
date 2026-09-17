@@ -163,9 +163,10 @@ export interface ToolEntry {
   front_angle_deg: number;
   back_angle_deg: number;
   orientation: number;
-  // LinuxCNC table offsets (absent = none recorded).
-  x_offset_mm?: number;
-  z_offset_mm?: number;
+  // LinuxCNC table offsets.  The core serializes an unset optional as
+  // JSON null, so the payload echo carries null — not just absence.
+  x_offset_mm?: number | null;
+  z_offset_mm?: number | null;
   material: "carbide" | "hss" | "cobalt" | "diamond" | "ceramic" | "other";
   coating?: "tin" | "ticn" | "alticn" | "tialn" | "zrn" | "dlc" | "none";
   coolant_through: boolean;
