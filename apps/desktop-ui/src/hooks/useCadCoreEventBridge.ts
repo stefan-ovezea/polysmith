@@ -29,13 +29,18 @@ export function useCadCoreEventBridge() {
     let lastReported = "";
     setCamSchemaRescueReporter((issues) => {
       const first = issues[0] as
-        | { path?: unknown[]; message?: string }
+        | { path?: unknown[]; message?: string; expected?: unknown; received?: unknown }
         | undefined;
       const path = Array.isArray(first?.path)
         ? first.path.map(String).join(".")
         : "?";
+      const detail = first
+        ? ` ${first.message ?? ""}${"received" in first ? ` (received: ${JSON.stringify(first.received)})` : ""}`
+        : "";
       const signature = `${path}:${first?.message ?? ""}`;
-      const message = `CAM data parse failed at "${path}" — CAM view emptied. See the Logs panel.`;
+      // The toast itself carries the failing field + value so the
+      // answer is on screen even when the app is otherwise frozen.
+      const message = `CAM parse failed at ${path}.${detail} CAM view emptied — paste this toast.`;
       addLogEntry(makeUiLogEntry("error", "desktop_ui", message));
       if (signature !== lastReported) {
         lastReported = signature;
