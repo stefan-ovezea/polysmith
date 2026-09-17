@@ -24,6 +24,7 @@ import {
   CamSlotPanel,
   CamGrblPanel,
   CamTestPatternPanel,
+  CamToolLibraryDialog,
   createDefaultCamSetup,
   type AdaptiveFormState,
   type ContourFormState,
@@ -62,6 +63,9 @@ interface CamFloatingPanelsProps {
   viewport: ViewportState | null;
   disabled: boolean;
   isSetupPanelOpen: boolean;
+  // Tool library manager (opened from the CAM sidebar tree).
+  isToolLibraryOpen: boolean;
+  onCloseToolLibrary: () => void;
   selectedOperationId: string | null;
   activeSetupId: string | null;
   camProfilePickArmed: boolean;
@@ -154,6 +158,8 @@ export function CamFloatingPanels({
   viewport,
   disabled,
   isSetupPanelOpen,
+  isToolLibraryOpen,
+  onCloseToolLibrary,
   selectedOperationId,
   activeSetupId,
   camProfilePickArmed,
@@ -365,6 +371,14 @@ export function CamFloatingPanels({
       {setupPanel}
       {operationPanel}
       {grblPanel}
+      {isToolLibraryOpen ? (
+        <CamToolLibraryDialog
+          document={document}
+          runAction={runAction}
+          addMessage={addMessage}
+          onClose={onCloseToolLibrary}
+        />
+      ) : null}
     </>
   );
 }

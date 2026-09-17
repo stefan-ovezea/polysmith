@@ -1029,6 +1029,32 @@
         "shoulderAboveOverall": "The shoulder length is above the overall length.",
         "tipDiameterLarge": "The tip diameter is not smaller than the tool diameter."
       }
+    },
+    "toolLibrary": {
+      "title": "Tool Library",
+      "close": "Close",
+      "documentLibrary": "Document Library",
+      "sharedLibrary": "Shared Library",
+      "filterByType": "Filter by type",
+      "allTypes": "All types",
+      "note": "The shared library lives on disk and is available to every document.",
+      "search": "Search tools…",
+      "empty": "No tools match.",
+      "newTool": "New Tool",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "confirmDelete": "Delete?",
+      "saveToShared": "Save to Shared",
+      "copyToDocument": "Copy to Document",
+      "selectTool": "Select a tool to see its details.",
+      "referencedBy": "Used by {{count}} operations.",
+      "diameter": "Ø",
+      "fluteLengthShort": "FL",
+      "overallLengthShort": "OAL",
+      "surfaceSpeedShort": "Vc",
+      "feedPerToothShort": "fz",
+      "savedToShared": "Tool saved to the shared library."
     }
   },
   "toolbar": {

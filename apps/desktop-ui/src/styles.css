@@ -195,6 +195,26 @@ button:not(:disabled),
 }
 
 @layer components {
+  /* Sidebar tree rows (CAM setups/operations, tool library list).
+     Used by CamOperationPanel and CamToolLibraryDialog. */
+  .cad-muted {
+    color: var(--color-on-surface-muted);
+  }
+
+  .cad-panel-item {
+    color: var(--color-on-surface);
+    transition: background-color 150ms ease;
+  }
+
+  .cad-panel-item:hover {
+    background: var(--cad-panel-soft-bg);
+  }
+
+  .cad-panel-item-active {
+    background: var(--cad-panel-soft-bg);
+    color: var(--color-on-surface);
+  }
+
   .cad-shell {
     @apply overflow-hidden bg-surface-lowest text-on-surface;
     background:
