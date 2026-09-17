@@ -488,6 +488,126 @@ std::vector<ToolEntry> DocumentManager::cam_tool_list() const {
   return document_->cam.tool_library;
 }
 
+DocumentState DocumentManager::cam_tool_import_tools(
+    std::vector<ToolEntry> incoming, const std::string& mode) {
+  require_document();
+  if (mode != "renumber" && mode != "overwrite" && mode != "skip") {
+    throw std::runtime_error("Unknown tool import mode: " + mode);
+  }
+  push_undo_state();
+  clear_redo_stack();
+  auto& library = document_->cam.tool_library;
+  int added = 0;
+  int skipped = 0;
+  int replaced = 0;
+  std::vector<std::string> replaced_ids;
+  for (auto& tool : incoming) {
+    // Reconcile by stable identity first (guid), then by tool number.
+    auto byGuid = library.end();
+    if (!tool.guid.empty()) {
+      for (auto it = library.begin(); it != library.end(); ++it) {
+        if (!it->guid.empty() && it->guid == tool.guid) {
+          byGuid = it;
+          break;
+        }
+      }
+    }
+    auto byNumber = library.end();
+    if (tool.tool_number > 0) {
+      for (auto it = library.begin(); it != library.end(); ++it) {
+        if (it->tool_number == tool.tool_number) {
+          byNumber = it;
+          break;
+        }
+      }
+    }
+
+    if (byGuid != library.end()) {
+      if (mode == "skip") {
+        ++skipped;
+        continue;
+      }
+      // Overwrite in place — the tool_id is the document key and the
+      // number stays, unless the incoming number is 0 or would clash
+      // with another library tool (then auto-assign).
+      const std::string id = byGuid->tool_id;
+      *byGuid = tool;
+      byGuid->tool_id = id;
+      bool clash = false;
+      if (byGuid->tool_number > 0) {
+        for (auto it = library.begin(); it != library.end(); ++it) {
+          if (it != byGuid && it->tool_number == byGuid->tool_number) {
+            clash = true;
+            break;
+          }
+        }
+      }
+      if (clash || byGuid->tool_number == 0) {
+        byGuid->tool_number = next_free_tool_number(library);
+      }
+      if (byGuid->guid.empty()) {
+        byGuid->guid = polysmith::core::mint_tool_guid();
+      }
+      replaced_ids.push_back(id);
+      ++replaced;
+      continue;
+    }
+    if (byNumber != library.end()) {
+      if (mode == "skip") {
+        ++skipped;
+        continue;
+      }
+      if (mode == "overwrite") {
+        // Replace the tool currently holding this number.
+        const std::string id = byNumber->tool_id;
+        const int number = byNumber->tool_number;
+        *byNumber = tool;
+        byNumber->tool_id = id;
+        byNumber->tool_number = number;
+        if (byNumber->guid.empty()) {
+          byNumber->guid = polysmith::core::mint_tool_guid();
+        }
+        replaced_ids.push_back(id);
+        ++replaced;
+        continue;
+      }
+      // renumber: fall through to the add path with an auto number.
+      tool.tool_number = 0;
+    }
+
+    // Add as a new tool (fresh identity, auto number when 0).
+    ToolEntry stored = tool;
+    if (stored.tool_id.empty()) {
+      stored.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
+    }
+    if (stored.guid.empty()) {
+      stored.guid = polysmith::core::mint_tool_guid();
+    }
+    if (stored.tool_number == 0) {
+      stored.tool_number = next_free_tool_number(library);
+    }
+    validate_tool_entry(stored, library, /*ignore_tool_id=*/"");
+    library.push_back(stored);
+    ++added;
+  }
+  // Replaced tools may have changed geometry — every operation using
+  // one must regenerate (same invalidation as cam_tool_update; the
+  // refresh pass keeps the message empty for needs_regenerate).
+  for (auto& op : document_->cam.operations) {
+    if (std::find(replaced_ids.begin(), replaced_ids.end(), op.tool_id) !=
+        replaced_ids.end()) {
+      op.status = "needs_regenerate";
+      op.status_message.clear();
+      op.toolpath_cache.reset();
+    }
+  }
+  bump_geometry_revision();
+  log_info("cam", "tool import (" + mode + "): added " + std::to_string(added) +
+                      ", skipped " + std::to_string(skipped) +
+                      ", replaced " + std::to_string(replaced));
+  return document_.value();
+}
+
 DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
   require_document();
   if (op.type.empty()) {

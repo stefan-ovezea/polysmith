@@ -108,6 +108,9 @@ export interface CamToolListCommand {
 
 export type CamToolTextFormat = "linuxcnc_tbl" | "polysmith_json";
 
+/** Conflict resolution for cam_tool_import_file (core default: renumber). */
+export type CamToolImportMode = "renumber" | "overwrite" | "skip";
+
 export interface CamToolLibraryListCommand {
   id: string;
   type: "cam_tool_library_list";
@@ -130,6 +133,24 @@ export interface CamToolExportTextCommand {
   id: string;
   type: "cam_tool_export_text";
   payload: { format: CamToolTextFormat; tool_numbers?: number[] };
+}
+
+export interface CamToolParseFileCommand {
+  id: string;
+  type: "cam_tool_parse_file";
+  payload: { source_path: string };
+}
+
+export interface CamToolImportFileCommand {
+  id: string;
+  type: "cam_tool_import_file";
+  payload: { source_path: string; mode: CamToolImportMode };
+}
+
+export interface CamToolExportFileCommand {
+  id: string;
+  type: "cam_tool_export_file";
+  payload: { file_path: string };
 }
 
 export interface CamOperationCreateCommand {

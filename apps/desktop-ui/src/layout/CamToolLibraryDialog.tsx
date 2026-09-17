@@ -11,15 +11,39 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { ScrollArea } from "@/lib";
 import { useCadCore } from "@/hooks/useCadCore";
 import type { ToolEntry, ToolType } from "@/types";
+import type { CamToolImportMode } from "@/types/ipc/camCommands";
 import type { DocumentState } from "@/types/ipc";
 import { computedFeedMmPerMin, computedSpindleRpm } from "@/lib/toolOptions";
 import { CamToolEditorPanel } from "./CamToolEditorPanel";
 import { ToolSchematicView } from "./ToolSchematicView";
 import { useCamEscapeCancel } from "./camPanelShared";
+
+/** How a parsed tool would land in the document library. */
+type ImportDisposition = "new" | "replace" | "renumber" | "skip";
+
+function importDisposition(
+  tool: ToolEntry,
+  library: ToolEntry[],
+  mode: CamToolImportMode,
+): ImportDisposition {
+  const byGuid = tool.guid !== "" && library.some((entry) => entry.guid === tool.guid);
+  const byNumber =
+    tool.tool_number > 0 &&
+    library.some((entry) => entry.tool_number === tool.tool_number);
+  if (byGuid) {
+    return mode === "skip" ? "skip" : "replace";
+  }
+  if (byNumber) {
+    if (mode === "skip") return "skip";
+    return mode === "overwrite" ? "replace" : "renumber";
+  }
+  return "new";
+}
 
 const TOOL_TYPES: ToolType[] = [
   "endmill_flat",
@@ -98,6 +122,9 @@ export function CamToolLibraryDialog({
     camToolDelete,
     camToolLibraryList,
     camToolLibrarySave,
+    camToolParseFile,
+    camToolImportFile,
+    camToolExportFile,
   } = useCadCore();
 
   const [source, setSource] = useState<LibrarySource>("document");
@@ -110,11 +137,20 @@ export function CamToolLibraryDialog({
     tool: ToolEntry;
     mode: "create" | "edit";
   } | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    path: string;
+    tools: ToolEntry[];
+    warnings: string[];
+  } | null>(null);
+  const [importMode, setImportMode] = useState<CamToolImportMode>("renumber");
 
-  // Escape closes the dialog — unless the editor is showing, where
-  // Escape only returns to the library list (the editor installs its
-  // own handler while mounted).
+  // Escape: import preview → back to the list; editor → back to the
+  // list (the editor also installs its own handler); library → close.
   useCamEscapeCancel(() => {
+    if (importPreview) {
+      setImportPreview(null);
+      return;
+    }
     if (!editor) {
       onClose();
     }
@@ -226,6 +262,179 @@ export function CamToolLibraryDialog({
     });
     addMessage(t("cam.toolLibrary.savedToShared", "Tool saved to the shared library."));
   };
+
+  const startImport = async () => {
+    const sourcePath = await open({
+      title: t("cam.toolImport.chooseFile", "Choose a tool table"),
+      multiple: false,
+      filters: [
+        { name: "LinuxCNC tool table", extensions: ["tbl"] },
+        { name: "PolySmith tools", extensions: ["json"] },
+      ],
+    });
+    if (!sourcePath || typeof sourcePath !== "string") {
+      return;
+    }
+    try {
+      const parsed = await camToolParseFile(sourcePath);
+      setImportPreview({
+        path: sourcePath,
+        tools: parsed.tools,
+        warnings: parsed.warnings,
+      });
+      setImportMode("renumber");
+    } catch (error) {
+      addMessage(`${t("cam.toolImport.parseFailed", "Could not read the tool file.")} ${String(error)}`);
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview) return;
+    const path = importPreview.path;
+    await runAction(async () => {
+      await camToolImportFile(path, importMode);
+    });
+    addMessage(t("cam.toolImport.importDone", "Tools imported — see the log for the summary."));
+    setImportPreview(null);
+    setSource("document");
+  };
+
+  const startExport = async () => {
+    const filePath = await save({
+      title: t("cam.toolImport.exportTitle", "Export tools"),
+      defaultPath: "tools.tbl",
+      filters: [
+        { name: "LinuxCNC tool table", extensions: ["tbl"] },
+        { name: "PolySmith tools", extensions: ["json"] },
+      ],
+    });
+    if (!filePath) {
+      return;
+    }
+    try {
+      const count = await camToolExportFile(filePath);
+      addMessage(
+        t("cam.toolImport.exportDone", { count, path: filePath }),
+      );
+    } catch (error) {
+      addMessage(`${t("cam.toolImport.exportFailed", "Could not export the tools.")} ${String(error)}`);
+    }
+  };
+
+  // Import preview: parsed tools, what each one will do, conflict mode.
+  if (importPreview) {
+    const library = document?.cam.tool_library ?? [];
+    const rows = importPreview.tools.map((tool) => ({
+      tool,
+      disposition: importDisposition(tool, library, importMode),
+    }));
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm">
+        <div className="cad-floating-panel flex max-h-full w-[560px] max-w-full flex-col overflow-hidden px-5 py-5">
+          <div className="flex items-center justify-between">
+            <p className="cad-kicker">
+              {t("cam.toolImport.title", "Import Tools")}
+            </p>
+            <button
+              type="button"
+              className="cad-action-ghost h-7 px-2 text-[10px] uppercase tracking-wider hover:opacity-80"
+              onClick={() => setImportPreview(null)}
+            >
+              {t("cam.toolImport.cancel", "Cancel")}
+            </button>
+          </div>
+          <p className="mt-1 truncate text-xs text-on-surface-muted">
+            {importPreview.path}
+          </p>
+
+          <ScrollArea className="mt-3 min-h-0 flex-1" viewportClassName="space-y-0.5 pr-2">
+            {rows.map(({ tool, disposition }) => (
+              <div
+                key={`${tool.guid}-${tool.tool_number}-${tool.name}`}
+                className="flex items-center justify-between rounded px-2 py-1 text-xs"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-on-surface-muted">
+                    {tool.tool_number > 0 ? `T${tool.tool_number} ` : ""}
+                  </span>
+                  {tool.name || t("cam.toolEditor.untitled", "Untitled tool")}
+                  <span className="ml-2 text-[10px] text-on-surface-dim">
+                    {t(`cam.toolEditor.types.${tool.type}`, tool.type)}
+                  </span>
+                </span>
+                <span
+                  className={
+                    disposition === "replace"
+                      ? "ml-2 shrink-0 text-[10px] text-warning"
+                      : disposition === "skip"
+                        ? "ml-2 shrink-0 text-[10px] text-on-surface-dim"
+                        : "ml-2 shrink-0 text-[10px] text-success"
+                  }
+                >
+                  {t(`cam.toolImport.disposition.${disposition}`)}
+                </span>
+              </div>
+            ))}
+            {importPreview.warnings.length > 0 ? (
+              <ul className="space-y-0.5 pt-2">
+                {importPreview.warnings.map((warning) => (
+                  <li key={warning} className="text-[10px] leading-relaxed text-warning">
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </ScrollArea>
+
+          {/* Conflict resolution: renumber (default) / overwrite / skip. */}
+          <p className="mt-3 text-[10px] uppercase tracking-[0.18em] text-on-surface-muted">
+            {t("cam.toolImport.modeLabel", "On tool-number conflicts")}
+          </p>
+          <div className="mt-1 flex gap-1">
+            {(["renumber", "overwrite", "skip"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={
+                  importMode === mode
+                    ? "cad-tool-button-active rounded-lg px-3 py-1.5 text-[11px]"
+                    : "cad-tool-button rounded-lg px-3 py-1.5 text-[11px]"
+                }
+                onClick={() => setImportMode(mode)}
+              >
+                {t(`cam.toolImport.mode.${mode}`)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] leading-relaxed text-on-surface-dim">
+            {t(
+              "cam.toolImport.modeHelp",
+              "Renumber assigns the next free number to incoming tools that clash. Overwrite replaces the library tool. Skip drops the incoming tool.",
+            )}
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 pt-2">
+            <button
+              type="button"
+              className="cad-action-ghost"
+              onClick={() => setImportPreview(null)}
+            >
+              {t("cam.toolImport.cancel", "Cancel")}
+            </button>
+            <button
+              type="button"
+              className="cad-action-primary"
+              onClick={() => {
+                void confirmImport();
+              }}
+            >
+              {t("cam.toolImport.import", "Import")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Editing replaces the dialog content; Escape in the editor returns
   // to the library view, Escape in the library closes the dialog.
@@ -388,6 +597,28 @@ export function CamToolLibraryDialog({
             >
               {t("cam.toolLibrary.newTool", "New Tool")}
             </button>
+            {source === "document" ? (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="cad-action-ghost"
+                  onClick={() => {
+                    void startImport();
+                  }}
+                >
+                  {t("cam.toolImport.importButton", "Import")}
+                </button>
+                <button
+                  type="button"
+                  className="cad-action-ghost"
+                  onClick={() => {
+                    void startExport();
+                  }}
+                >
+                  {t("cam.toolImport.exportButton", "Export")}
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {/* ── Detail ───────────────────────────────────────────── */}

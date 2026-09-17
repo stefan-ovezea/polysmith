@@ -56,5 +56,7 @@ json make_cam_tool_parse_result_event(const std::string& id,
                                       const json& payload);
 json make_cam_tool_export_text_result_event(const std::string& id,
                                             const json& payload);
+json make_cam_tool_export_file_result_event(const std::string& id,
+                                            const json& payload);
 
 }  // namespace polysmith::protocol

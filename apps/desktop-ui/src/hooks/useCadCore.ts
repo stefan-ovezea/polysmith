@@ -30,6 +30,9 @@ import {
   makeCamToolLibrarySaveCommand,
   makeCamToolParseTextCommand,
   makeCamToolExportTextCommand,
+  makeCamToolParseFileCommand,
+  makeCamToolImportFileCommand,
+  makeCamToolExportFileCommand,
   makeCamExportGcodeCommand,
   makeCamExportGcodeTextCommand,
   makeAddBoxFeatureCommand,
@@ -1936,6 +1939,52 @@ export function useCadCore() {
         response as { payload?: { text?: string; format?: string } }
       ).payload;
       return payload?.text ?? "";
+    },
+    camToolParseFile: async (sourcePath: string) => {
+      // Awaited: cam_tool_parse_result carries { format, tools, warnings }
+      // — the core reads the file (it owns file I/O).
+      const response = await sendCoreCommandAwaited(
+        makeCamToolParseFileCommand(sourcePath) as CoreCommand & { id: string },
+      );
+      const payload = (
+        response as {
+          payload?: {
+            format?: string;
+            tools?: ToolEntry[];
+            warnings?: string[];
+          };
+        }
+      ).payload;
+      return {
+        format: payload?.format ?? "",
+        tools: payload?.tools ?? [],
+        warnings: payload?.warnings ?? [],
+      };
+    },
+    camToolImportFile: async (
+      sourcePath: string,
+      mode: "renumber" | "overwrite" | "skip",
+    ) => {
+      // Awaited: replies with the document state (like every mutator);
+      // the added/skipped/replaced summary lands in the structured log.
+      await sendCoreCommandAwaited(
+        makeCamToolImportFileCommand(sourcePath, mode) as CoreCommand & {
+          id: string;
+        },
+      );
+    },
+    camToolExportFile: async (filePath: string) => {
+      // Awaited: cam_tool_export_file_result carries
+      // { file_path, exported_count } — the core wrote the file.
+      const response = await sendCoreCommandAwaited(
+        makeCamToolExportFileCommand(filePath) as CoreCommand & { id: string },
+      );
+      const payload = (
+        response as {
+          payload?: { file_path?: string; exported_count?: number };
+        }
+      ).payload;
+      return payload?.exported_count ?? 0;
     },
     camOperationGenerate: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationGenerateCommand(opId));

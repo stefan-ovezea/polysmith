@@ -268,4 +268,13 @@ json make_cam_tool_export_text_result_event(const std::string& id,
   };
 }
 
+json make_cam_tool_export_file_result_event(const std::string& id,
+                                            const json& payload) {
+  return {
+      {"id", id},
+      {"type", "cam_tool_export_file_result"},
+      {"payload", payload},
+  };
+}
+
 }  // namespace polysmith::protocol

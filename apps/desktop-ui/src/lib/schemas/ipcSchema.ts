@@ -280,6 +280,16 @@ const camToolExportTextResultEventSchema = z.object({
   }),
 });
 
+// Reply to cam_tool_export_file (the core wrote the file itself).
+const camToolExportFileResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_tool_export_file_result"),
+  payload: z.object({
+    file_path: z.string(),
+    exported_count: z.number(),
+  }),
+});
+
 const cornerTrimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("corner_trim_preview_result"),
@@ -332,6 +342,7 @@ export const coreMessageSchema = z.union([
   camToolListResultEventSchema,
   camToolParseResultEventSchema,
   camToolExportTextResultEventSchema,
+  camToolExportFileResultEventSchema,
   camFaceAttestationResultEventSchema,
   camEdgeAttestationResultEventSchema,
   camAttestationResultEventSchema,

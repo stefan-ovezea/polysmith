@@ -331,6 +331,16 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   manage the tool library (`ToolEntry`; `cam_tool_update` payload carries the
   lookup key `tool_id`). Deleting a tool degrades referencing operations to
   `status: "error"` with a message instead of dangling.
+- Tool library exchange: `cam_tool_library_list` / `cam_tool_library_save`
+  read/write the shared on-disk library (`POLYSMITH_TOOLS_DIR`;
+  `cam_tool_list_result` replies). `cam_tool_parse_text` / `cam_tool_parse_file`
+  parse LinuxCNC `.tbl` or PolySmith JSON without touching the document
+  (`cam_tool_parse_result` `{format, tools, warnings}`).
+  `cam_tool_import_file` `{source_path, mode}` applies a file to the
+  document library in one batch (mode `renumber` | `overwrite` | `skip`,
+  reconciled by guid then number) and replies `document_state`.
+  `cam_tool_export_text` / `cam_tool_export_file` serialize the document
+  library (`cam_tool_export_text_result` / `cam_tool_export_file_result`).
 - `cam_operation_create` takes a serialized `CamOperation` (string `type`;
   `op_id` assigned by the core). For `laser_cut`, an empty
   `geometry_references` makes the core capture TNP-safe profile witnesses

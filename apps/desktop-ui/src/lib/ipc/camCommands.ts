@@ -2,6 +2,7 @@ import type {
   CamOperation,
   CamOperationPayload,
   CamSetup,
+  CamToolImportMode,
   CoreCommand,
   LaserMachineSettings,
   MachineDefinition,
@@ -190,6 +191,33 @@ export function makeCamToolExportTextCommand(
     id: crypto.randomUUID(),
     type: "cam_tool_export_text",
     payload: { format, tool_numbers: toolNumbers },
+  };
+}
+
+export function makeCamToolParseFileCommand(sourcePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_parse_file",
+    payload: { source_path: sourcePath },
+  };
+}
+
+export function makeCamToolImportFileCommand(
+  sourcePath: string,
+  mode: CamToolImportMode,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_import_file",
+    payload: { source_path: sourcePath, mode },
+  };
+}
+
+export function makeCamToolExportFileCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_export_file",
+    payload: { file_path: filePath },
   };
 }
 

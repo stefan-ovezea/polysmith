@@ -182,6 +182,9 @@ import type {
   CamToolLibrarySaveCommand,
   CamToolParseTextCommand,
   CamToolExportTextCommand,
+  CamToolParseFileCommand,
+  CamToolImportFileCommand,
+  CamToolExportFileCommand,
   CamOperationCreateCommand,
   CamOperationUpdateCommand,
   CamOperationDeleteCommand,
@@ -994,6 +997,9 @@ export type CoreCommand =
   | CamToolLibrarySaveCommand
   | CamToolParseTextCommand
   | CamToolExportTextCommand
+  | CamToolParseFileCommand
+  | CamToolImportFileCommand
+  | CamToolExportFileCommand
   | CamOperationCreateCommand
   | CamOperationUpdateCommand
   | CamOperationDeleteCommand

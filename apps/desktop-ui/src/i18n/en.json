@@ -1055,6 +1055,32 @@
       "surfaceSpeedShort": "Vc",
       "feedPerToothShort": "fz",
       "savedToShared": "Tool saved to the shared library."
+    },
+    "toolImport": {
+      "title": "Import Tools",
+      "chooseFile": "Choose a tool table",
+      "cancel": "Cancel",
+      "import": "Import",
+      "importButton": "Import",
+      "exportButton": "Export",
+      "exportTitle": "Export tools",
+      "modeLabel": "On tool-number conflicts",
+      "mode": {
+        "renumber": "Renumber",
+        "overwrite": "Overwrite",
+        "skip": "Skip"
+      },
+      "modeHelp": "Renumber assigns the next free number to incoming tools that clash. Overwrite replaces the library tool. Skip drops the incoming tool.",
+      "disposition": {
+        "new": "new",
+        "replace": "will replace",
+        "renumber": "will renumber",
+        "skip": "skipped"
+      },
+      "importDone": "Tools imported — see the log for the summary.",
+      "exportDone": "Exported {{count}} tools to {{path}}.",
+      "parseFailed": "Could not read the tool file.",
+      "exportFailed": "Could not export the tools."
     }
   },
   "toolbar": {

@@ -288,6 +288,106 @@ bool test_tool_library_crud() {
                 "tool delete: removes the tool");
 }
 
+bool test_tool_import_batch() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup());
+
+  // Fixture: one endmill (T1, guid g) used by one operation.
+  DocumentState doc = manager.cam_tool_add(make_tool());
+  const std::string toolId = doc.cam.tool_library[0].tool_id;
+  const std::string guid = doc.cam.tool_library[0].guid;
+  doc = manager.cam_operation_add(make_op("contour_2d", toolId));
+
+  // ── overwrite mode ──
+  // Same guid → replaced in place (id and number stay); new number → added.
+  ToolEntry same = make_tool();
+  same.guid = guid;
+  same.tool_number = 1;
+  same.name = "renamed endmill";
+  ToolEntry newcomer = make_tool();
+  newcomer.tool_number = 2;
+  newcomer.name = "second endmill";
+  doc = manager.cam_tool_import_tools({same, newcomer}, "overwrite");
+  if (!expect(doc.cam.tool_library.size() == 2,
+              "import overwrite: guid match replaced, new tool added")) {
+    return false;
+  }
+  if (!expect(doc.cam.tool_library[0].tool_id == toolId &&
+                  doc.cam.tool_library[0].tool_number == 1 &&
+                  doc.cam.tool_library[0].name == "renamed endmill",
+              "import overwrite: id and number stay on guid match")) {
+    return false;
+  }
+  if (!expect(doc.cam.tool_library[1].name == "second endmill" &&
+                  doc.cam.tool_library[1].tool_number == 2,
+              "import overwrite: new tool added with its number")) {
+    return false;
+  }
+  if (!expect(doc.cam.operations[0].status == "needs_regenerate",
+              "import overwrite: op on replaced tool invalidates")) {
+    return false;
+  }
+  const std::string newcomerId = doc.cam.tool_library[1].tool_id;
+
+  // Number clash without guid match → replaces the number holder.
+  ToolEntry byNumber = make_tool();
+  byNumber.tool_number = 2;
+  byNumber.name = "number replacement";
+  doc = manager.cam_tool_import_tools({byNumber}, "overwrite");
+  if (!expect(doc.cam.tool_library.size() == 2 &&
+                  doc.cam.tool_library[1].tool_id == newcomerId &&
+                  doc.cam.tool_library[1].name == "number replacement" &&
+                  doc.cam.tool_library[1].tool_number == 2,
+              "import overwrite: number clash replaces the holder")) {
+    return false;
+  }
+
+  // ── skip mode ──
+  ToolEntry skipSame = make_tool();
+  skipSame.guid = guid;
+  skipSame.tool_number = 1;
+  skipSame.name = "should not land";
+  ToolEntry fresh = make_tool();
+  fresh.tool_number = 3;
+  fresh.name = "fresh";
+  doc = manager.cam_tool_import_tools({skipSame, fresh}, "skip");
+  if (!expect(doc.cam.tool_library.size() == 3 &&
+                  doc.cam.tool_library[0].name == "renamed endmill" &&
+                  doc.cam.tool_library[2].name == "fresh" &&
+                  doc.cam.tool_library[2].tool_number == 3,
+              "import skip: matches dropped, fresh tool added")) {
+    return false;
+  }
+
+  // ── renumber mode ──
+  ToolEntry clashNum = make_tool();
+  clashNum.tool_number = 3;
+  clashNum.name = "renumbered";
+  doc = manager.cam_tool_import_tools({clashNum}, "renumber");
+  if (!expect(doc.cam.tool_library.size() == 4 &&
+                  doc.cam.tool_library[3].name == "renumbered" &&
+                  doc.cam.tool_library[3].tool_number == 4,
+              "import renumber: number clash auto-assigns the next free")) {
+    return false;
+  }
+
+  // One undo restores the library from before the last import.
+  const DocumentState undone = manager.undo();
+  if (!expect(undone.cam.tool_library.size() == 3,
+              "import: single undo restores the pre-import library")) {
+    return false;
+  }
+
+  bool badMode = false;
+  try {
+    manager.cam_tool_import_tools({make_tool()}, "explode");
+  } catch (const std::runtime_error& error) {
+    badMode = std::string(error.what()).find("mode") != std::string::npos;
+  }
+  return expect(badMode, "import: unknown mode throws");
+}
+
 bool test_tool_update_invalidates_operations() {
   DocumentManager manager;
   manager.create_document();
@@ -1466,6 +1566,14 @@ int main() {
 
   std::cout << "  Test 3: tool library CRUD... ";
   if (test_tool_library_crud()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 3b: tool import batch (renumber/overwrite/skip)... ";
+  if (test_tool_import_batch()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";
