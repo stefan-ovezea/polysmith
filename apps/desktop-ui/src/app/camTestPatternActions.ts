@@ -1,4 +1,5 @@
 import type { CamOperation, CamOperationPayload, DocumentState } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "@/layout/CamTestPatternPanel";
 
 interface CamTestPatternContext {
@@ -31,8 +32,9 @@ export async function triggerCamTestPattern({
     return;
   }
 
-  const laserTool = document.cam.tool_library.find(
-    (tool) => tool.type === "laser",
+  const laserTool = defaultToolForOperation(
+    "laser_test_pattern",
+    document.cam.tool_library,
   );
   const previousCount = document.cam.operations.length;
 

@@ -5,6 +5,7 @@ import type {
   EdgeAttestation,
   GeometryReference,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { useToastStore } from "@/state/toastStore";
 
 interface CamSlotContext {
@@ -91,9 +92,7 @@ export async function triggerCamSlot({
 
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default endmill on the spot.
-  const endmill = document.cam.tool_library.find(
-    (tool) => tool.type === "endmill_flat",
-  );
+  const endmill = defaultToolForOperation("slot", document.cam.tool_library);
   const previousCount = document.cam.operations.length;
 
   const operation: CamOperationPayload = {

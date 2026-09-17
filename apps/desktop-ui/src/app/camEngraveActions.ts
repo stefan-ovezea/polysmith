@@ -3,6 +3,7 @@ import type {
   CamOperationPayload,
   DocumentState,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { useToastStore } from "@/state/toastStore";
 import { DEFAULT_ENGRAVE_PARAMS } from "@/layout/CamEngravePanel";
 
@@ -61,9 +62,7 @@ export async function triggerCamEngrave({
 
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default endmill on the spot.
-  const endmill = document.cam.tool_library.find(
-    (tool) => tool.type === "endmill_flat",
-  );
+  const endmill = defaultToolForOperation("engrave", document.cam.tool_library);
   const previousCount = document.cam.operations.length;
 
   // NO geometry_references — the core captures selected sketch

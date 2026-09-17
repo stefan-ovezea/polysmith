@@ -11,6 +11,7 @@ import type {
   PostProcessorType,
 } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
+import { toolsForOperation } from "./camToolSelection";
 import {
   CamAdaptivePanel,
   CamContourPanel,
@@ -684,9 +685,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools = document?.cam.tool_library.filter(
-      (entry) => entry.type === "endmill_flat",
-    ) ?? [];
+    const tools = toolsForOperation(
+      "face_milling",
+      document?.cam.tool_library ?? [],
+    );
     return (
       <CamFaceMillingPanel
         {...shared}
@@ -736,10 +738,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "pocket_2d",
+      document?.cam.tool_library ?? [],
+    );
     const avoidance = operation.geometry_references.avoidance_regions;
     return (
       <CamPocketPanel
@@ -813,10 +815,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "adaptive_clearing",
+      document?.cam.tool_library ?? [],
+    );
     const avoidance = operation.geometry_references.avoidance_regions;
     return (
       <CamAdaptivePanel
@@ -887,10 +889,10 @@ function buildOperationPanel({
         DEFAULT_CONTOUR_FORM.plunge_feedrate_mm_per_min,
       spindle_rpm: parameters.spindle_rpm ?? DEFAULT_CONTOUR_FORM.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "contour_2d",
+      document?.cam.tool_library ?? [],
+    );
     // Same scope logic as laser: every profile-attesting machining
     // region must come from one sketch for the dropdown to have a scope.
     const scopeSketchId = laserOperationScopeSketchId(operation);
@@ -1010,9 +1012,10 @@ function buildOperationPanel({
       spindle_rpm:
         parameters.spindle_rpm ?? DEFAULT_DRILLING_PARAMS.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter((entry) => entry.type === "drill") ??
-      [];
+    const tools = toolsForOperation(
+      "drilling",
+      document?.cam.tool_library ?? [],
+    );
     const regions = operation.geometry_references.machining_regions;
     // User-facing row labels only — a captured wall/rim names itself by
     // kind, free picks show their coordinates, and legacy sketch-circle
@@ -1112,10 +1115,7 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation("slot", document?.cam.tool_library ?? []);
     const regions = operation.geometry_references.machining_regions;
     return (
       <CamSlotPanel
@@ -1195,10 +1195,7 @@ function buildOperationPanel({
       spindle_rpm:
         parameters.spindle_rpm ?? DEFAULT_ENGRAVE_FORM.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation("engrave", document?.cam.tool_library ?? []);
     // Sketch-profile geometry only — the same scope logic as the
     // contour profile branch.
     const scopeSketchId = laserOperationScopeSketchId(operation);
