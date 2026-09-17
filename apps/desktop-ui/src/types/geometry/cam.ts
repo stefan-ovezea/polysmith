@@ -129,21 +129,49 @@ export interface CamSetup {
 export type ToolType =
   | "endmill_flat" | "endmill_ball" | "endmill_bull"
   | "drill" | "facemill" | "chamfer" | "threadmill"
-  | "turning_insert" | "laser" | "plasma";
+  | "turning_insert" | "laser" | "plasma" | "v_bit" | "spot_drill";
 
 export interface ToolEntry {
   tool_id: string;
   name: string;
   type: ToolType;
+  // 0 = unassigned; the core auto-assigns the next free number on add.
+  tool_number: number;
+  // 0 = same as tool_number (LinuxCNC P differs only under a random
+  // tool changer).
+  pocket_number: number;
+  description: string;
+  vendor: string;
+  product_id: string;
+  // Stable identity across import/export (re-imports reconcile).
+  guid: string;
   diameter_mm: number;
   corner_radius_mm: number;
   flute_length_mm: number;
   overall_length_mm: number;
   shank_diameter_mm: number;
-  material: "carbide" | "hss" | "diamond" | "ceramic" | "other";
-  coating?: "tin" | "ticn" | "alticn" | "dlc" | "none";
+  // 0 = unset: falls back to flute_length / overall_length.
+  shoulder_length_mm: number;
+  length_below_holder_mm: number;
+  flutes: number;
+  helix_angle_deg: number;
+  point_angle_deg: number;
+  tip_diameter_mm: number;
+  tip_length_mm: number;
+  taper_angle_deg: number;
+  // Lathe (turning_insert) display/table data.
+  front_angle_deg: number;
+  back_angle_deg: number;
+  orientation: number;
+  // LinuxCNC table offsets (absent = none recorded).
+  x_offset_mm?: number;
+  z_offset_mm?: number;
+  material: "carbide" | "hss" | "cobalt" | "diamond" | "ceramic" | "other";
+  coating?: "tin" | "ticn" | "alticn" | "tialn" | "zrn" | "dlc" | "none";
   coolant_through: boolean;
   max_spindle_rpm: number;
+  surface_speed_m_per_min: number;
+  feed_per_tooth_mm: number;
   default_feedrate_mm_per_min: number;
   default_plunge_feedrate_mm_per_min: number;
   default_stepdown_mm: number;

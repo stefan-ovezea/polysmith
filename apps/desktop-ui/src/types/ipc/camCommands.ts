@@ -106,6 +106,32 @@ export interface CamToolListCommand {
   payload: Record<string, never>;
 }
 
+export type CamToolTextFormat = "linuxcnc_tbl" | "polysmith_json";
+
+export interface CamToolLibraryListCommand {
+  id: string;
+  type: "cam_tool_library_list";
+  payload: Record<string, never>;
+}
+
+export interface CamToolLibrarySaveCommand {
+  id: string;
+  type: "cam_tool_library_save";
+  payload: ToolEntry;
+}
+
+export interface CamToolParseTextCommand {
+  id: string;
+  type: "cam_tool_parse_text";
+  payload: { format: CamToolTextFormat; text: string };
+}
+
+export interface CamToolExportTextCommand {
+  id: string;
+  type: "cam_tool_export_text";
+  payload: { format: CamToolTextFormat; tool_numbers?: number[] };
+}
+
 export interface CamOperationCreateCommand {
   id: string;
   type: "cam_operation_create";
