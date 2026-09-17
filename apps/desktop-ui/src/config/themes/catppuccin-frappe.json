@@ -1,6 +1,6 @@
 {
   "id": "catppuccin-frappe",
-  "name": "Catppuccin Frappé",
+  "name": "Catppuccin Frapp\u00e9",
   "colors": {
     "--color-surface-lowest": "#232634",
     "--color-surface-base": "#303446",
@@ -27,6 +27,7 @@
     "--color-on-surface-dim": "#838ba7",
     "--color-success": "#a6d189",
     "--color-danger": "#e78284",
+    "--color-warning": "#e5c890",
     "--color-axis-x": "#e78284",
     "--color-axis-y": "#a6d189",
     "--color-axis-z": "#8caaee",

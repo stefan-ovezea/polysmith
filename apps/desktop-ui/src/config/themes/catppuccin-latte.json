@@ -27,6 +27,7 @@
     "--color-on-surface-dim": "#8c8fa1",
     "--color-success": "#40a02b",
     "--color-danger": "#d20f39",
+    "--color-warning": "#df8e1d",
     "--color-axis-x": "#d20f39",
     "--color-axis-y": "#40a02b",
     "--color-axis-z": "#1e66f5",
