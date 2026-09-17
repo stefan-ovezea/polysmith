@@ -436,12 +436,28 @@ const postProcessorSchema = z
 
 // ── Document Container ────────────────────────────────────────────
 
-export const camDocumentDataSchema = z
-  .object({
-    setups: z.array(camSetupSchema).default([]),
-    tool_library: z.array(toolEntrySchema).default([]),
-    operations: z.array(camOperationSchema).default([]),
-    post_processor: postProcessorSchema.nullable().default(null),
-    machine_settings: laserMachineSettingsSchema.nullable().default(null),
-  })
-  .passthrough();
+const camDocumentDataShape = z.object({
+  setups: z.array(camSetupSchema).default([]),
+  tool_library: z.array(toolEntrySchema).default([]),
+  operations: z.array(camOperationSchema).default([]),
+  post_processor: postProcessorSchema.nullable().default(null),
+  machine_settings: laserMachineSettingsSchema.nullable().default(null),
+});
+
+// LAST-RESORT LENIENCY: if anything in the CAM subtree still fails to
+// parse (a core field the schema does not know yet), drop the CAM data
+// instead of the WHOLE document — a document_state that fails
+// validation is dropped by the event bridge and the app freezes.  The
+// bridge reports the raw failure to the Logs panel either way, so the
+// mismatch stays diagnosable instead of silent.  The core keeps the
+// real CAM state (save writes the core's state, not the UI echo), so
+// nothing is lost on disk.
+export const camDocumentDataSchema = camDocumentDataShape
+  .passthrough()
+  .catch(() => ({
+    setups: [],
+    tool_library: [],
+    operations: [],
+    post_processor: null,
+    machine_settings: null,
+  }));

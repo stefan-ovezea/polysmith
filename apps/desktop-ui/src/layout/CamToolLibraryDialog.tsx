@@ -157,11 +157,16 @@ export function CamToolLibraryDialog({
   });
 
   // Load the shared on-disk library once (and refresh after saves).
+  // The mount/load messages land in the Logs panel — if the dialog
+  // ever misbehaves, the log shows whether it mounted and whether the
+  // shared-library round trip completed.
   const refreshShared = async () => {
     const tools = await camToolLibraryList();
     setShared(tools);
+    addMessage(`tool library: shared library loaded (${tools.length} tools)`);
   };
   useEffect(() => {
+    addMessage("tool library opened");
     void refreshShared();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
