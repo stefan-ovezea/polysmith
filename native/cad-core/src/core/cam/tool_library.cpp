@@ -1,4 +1,5 @@
 #include "core/cam/tool_library.h"
+#include "core/cam/tool_identity.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -422,7 +423,13 @@ std::string save_tool_entry(const ToolEntry& tool, std::string& error) {
   }
   // Overwrites an existing file with the same slug — save = user
   // intent, same semantics as machine save.
-  stream << to_json(tool).dump(2);
+  ToolEntry stored = tool;
+  if (stored.guid.empty()) {
+    // A newly created shared tool gets its stable identity on first
+    // save, so re-imports reconcile by guid.
+    stored.guid = mint_tool_guid();
+  }
+  stream << to_json(stored).dump(2);
   return slug;
 }
 
