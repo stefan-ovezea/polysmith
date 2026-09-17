@@ -44,12 +44,55 @@
 > C4 core tool-number auto-assign + uniqueness + update invalidation
 > C5 core post T/M6 + spindle emission (linuxcnc yes, grbl no) + tests
 > C6 TS types/zod/ipc + hooks for new fields/commands
-> C7 TS lib: toolSchematic.ts, genericToolCatalog.ts, camToolSelection
->   (replaces 12 scattered type-filter predicates)
+> C7 TS lib: toolSchematic.ts, toolOptions.ts, camToolSelection
+>   (replaces 16 scattered type-filter predicates; engrave accepts
+>   V-bits, drilling accepts spot drills)
 > C8 CamToolEditorPanel (floating, schematic SVG + fields + validation)
-> C9 CamToolLibraryDialog (3-pane, search/sort, duplicate/copy/delete)
-> C10 import/export UI (.tbl/JSON) + conflict dialog + Tauri file I/O
+>   + --color-warning token (6 themes) + cad-panel-item CSS classes
+> C9 CamToolLibraryDialog (3-pane, search/sort, duplicate/copy/delete,
+>   editor entry, sidebar Tool Library row)
+> C10 import/export (.tbl/JSON): core cam_tool_parse_file /
+>   cam_tool_import_file (renumber|overwrite|skip, one undo step) /
+>   cam_tool_export_file + UI conflict dialog + wiki docs
+> C11 fix: save_tool_entry mints guid when absent
 > Final: full gates + tracker + user verification checklist
+
+## STATUS 2026-09-17: FULL IMPLEMENTATION COMPLETE — all local commits on `cam/tools`, gates green, AWAITING USER IN-APP VERIFICATION
+
+**Commits:** df2606b (C1) → edff543 (C2) → ad606be (C3) →
+7448396 (C5) → c38216e (C6) → 8af0688 (C7) → 685b14e (C8) →
+f415a65 (C9) → 9f04f49 (C10) → 443e4b6 (C11).
+NOT pushed (user pushes when asked).
+
+**Gates run:** `pnpm core:build` clean + **54/54 C++ suites pass**
+(`pnpm test:core`; new: tool_library 5, tool_table_io 8, import-batch
+3b in cam_commands, linuxcnc-post tool-change emission) +
+`tsc --noEmit` clean + `cargo check` clean.
+
+**User verification checklist (in-app, `pnpm dev`):**
+1. CAM workspace → sidebar **Tool Library** row → dialog opens; both
+   Document and Shared Library tabs list tools; shared = 42 seeded
+   generic tools (T1–T42).
+2. Double-click a tool → floating editor with the schematic; change
+   the diameter and watch the drawing rescale; validation errors block
+   Save (e.g. clear the name).
+3. New Tool → name it, Save → appears in the document library with an
+   auto-assigned number.
+4. In a mill setup: create an operation with two different tools and
+   export G-code — the second operation must emit `T<n> M6` + `G43
+   H<n>` (linuxcnc/mach3/mach4/fanuc posts only). NOTE: if the user's
+   on-disk `posts/linuxcnc.json` predates this change it shadows the
+   seeded post — delete or re-import it to see the tool-change lines.
+5. Import: LinuxCNC `tool.tbl` from a real machine → preview lists
+   dispositions; switch the conflict mode and watch the labels change;
+   Import → Logs panel shows "added X, skipped Y, replaced Z".
+6. Export → `tools.tbl` → re-import it in another document → tools
+   reconcile by guid (renamed tools come back as replacements).
+
+**Deferred (noted, not blocking):** Fusion-style parameter presets,
+tool holders/assemblies, CSV format, per-shared-tool delete command
+(dialog hides Delete in the shared tab; save overwrites the file
+instead), lathe post/generator work (data + table fields only).
 
 ---
 
