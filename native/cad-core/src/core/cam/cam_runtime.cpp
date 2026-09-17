@@ -75,6 +75,14 @@ void store_generated(const DocumentState& document, const std::string& op_id,
   per_doc.generated[op_id] = Entry{document.revision, std::move(toolpath)};
 }
 
+void store_generated_at(const DocumentState& document,
+                        const std::string& op_id, Toolpath toolpath,
+                        int target_revision) {
+  PerDocument& per_doc = registry()[document.id];
+  per_doc.last_revision = target_revision;
+  per_doc.generated[op_id] = Entry{target_revision, std::move(toolpath)};
+}
+
 void store_preview(const DocumentState& document, const std::string& op_id,
                    Toolpath toolpath) {
   PerDocument& per_doc = registry()[document.id];
@@ -100,6 +108,17 @@ void drop_stale(const DocumentState& document, int target_revision) {
   prune(per_doc.generated);
   prune(per_doc.previews);
   per_doc.last_revision = target_revision;
+}
+
+void invalidate(const std::string& document_id) {
+  const auto found = registry().find(document_id);
+  if (found == registry().end()) {
+    return;
+  }
+  PerDocument& per_doc = found->second;
+  per_doc.generated.clear();
+  per_doc.previews.clear();
+  per_doc.last_revision = -1;
 }
 
 }  // namespace polysmith::core::cam_runtime

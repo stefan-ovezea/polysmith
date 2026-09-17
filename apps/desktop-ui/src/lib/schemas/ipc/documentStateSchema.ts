@@ -8,6 +8,13 @@ export const documentStateSchema = z.object({
   name: z.string(),
   units: z.string(),
   revision: z.number(),
+  // Undo/redo availability + history step names travel with every
+  // document state (D7/D8) so the toolbar buttons and hotkeys are
+  // never stale. Defaulted for back-compat with older cores.
+  can_undo: z.boolean().default(false),
+  can_redo: z.boolean().default(false),
+  undo_step_names: z.array(z.string()).default([]),
+  redo_step_names: z.array(z.string()).default([]),
   selected_feature_id: z.string().nullable(),
   selected_reference_id: z.string().nullable(),
   selected_face_id: z.string().nullable(),

@@ -10,4 +10,6 @@
 
 #include "core/document/impl/undo_redo_commands.inc"
 
+#include "core/document/impl/undo_group_commands.inc"
+
 #include "core/document/impl/timeline_cursor_commands.inc"

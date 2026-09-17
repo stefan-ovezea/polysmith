@@ -169,6 +169,54 @@ export interface RedoCommand {
   payload: Record<string, never>;
 }
 
+// History-dropdown multi-undo (D8); negative count = redo direction.
+export interface UndoManyCommand {
+  id: string;
+  type: "undo_many";
+  payload: {
+    count: number;
+  };
+}
+
+// Named grouped steps (D2): begin opens a group that collapses into
+// ONE undo entry; end closes it; abort restores the group's start
+// snapshot with no trace (cancel semantics).
+export interface UndoBeginGroupCommand {
+  id: string;
+  type: "undo_begin_group";
+  payload: {
+    name: string;
+  };
+}
+
+export interface UndoEndGroupCommand {
+  id: string;
+  type: "undo_end_group";
+  payload: Record<string, never>;
+}
+
+export interface UndoAbortGroupCommand {
+  id: string;
+  type: "undo_abort_group";
+  payload: Record<string, never>;
+}
+
+// "Cancel Sketch" (D4): aborts the WHOLE group stack — nested draft
+// groups included — restoring the outermost (session) start snapshot.
+export interface UndoAbortAllGroupsCommand {
+  id: string;
+  type: "undo_abort_all_groups";
+  payload: Record<string, never>;
+}
+
+export interface SetUndoLimitCommand {
+  id: string;
+  type: "set_undo_limit";
+  payload: {
+    limit: number;
+  };
+}
+
 export interface SetTimelineCursorCommand {
   id: string;
   type: "set_timeline_cursor";

@@ -23,6 +23,9 @@ The original v1 milestones 0–3 are complete. The codebase now has:
 - a C++ CAD core built with CMake on top of OpenCascade 7.8
 - a JSON IPC bridge with documented commands and a versioned schema
 - a real document model with feature history, undo/redo, and core-owned selection state
+  (CAD-standard history: full-refresh restore, named grouped steps, sketch
+  sessions as one step with Cancel Sketch, history dropdown + depth limit,
+  awaited global Ctrl+Z/Ctrl+Y, toolpath invalidation on restore)
 - 2D sketch system: lines, rectangles, circles, arcs, points, polygons, dimensions,
   geometric constraints (H/V, coincident, parallel, perpendicular, equal-length, tangent,
   concentric, point-on-object, symmetric, collinear, midpoint, tangent pairs),

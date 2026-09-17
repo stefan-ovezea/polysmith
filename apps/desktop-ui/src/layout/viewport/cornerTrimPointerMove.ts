@@ -92,20 +92,88 @@ export function handleCornerTrimPointerMove({
     return;
   }
 
+  // Same one-in-flight cap as the trim preview (dense sketches would
+  // otherwise flood the core queue and freeze every later command).
+  pendingCornerFirstId = firstEntityId;
+  pendingCornerEntityId = hit.id;
+  pendingCornerX = rawPoint.local[0];
+  pendingCornerY = rawPoint.local[1];
+  pendingCornerLastSentRef = cornerPreviewLastSentRef;
+  if (!cornerPreviewSlotFree()) {
+    cornerPreviewPending = true;
+    return;
+  }
+  cornerPreviewPending = false;
+  sendCornerTrimPreviewNow();
+}
+
+let cornerPreviewInFlightId: string | null = null;
+let cornerPreviewInFlightSince = 0;
+let cornerPreviewPending = false;
+
+// Same safety valve as the trim preview: a reply lost (core restart,
+// dropped response) must not wedge the slot forever.
+const CORNER_PREVIEW_STUCK_AFTER_MS = 10_000;
+
+function cornerPreviewSlotFree(): boolean {
+  if (cornerPreviewInFlightId === null) {
+    return true;
+  }
+  if (
+    performance.now() - cornerPreviewInFlightSince >
+    CORNER_PREVIEW_STUCK_AFTER_MS
+  ) {
+    cornerPreviewInFlightId = null;
+    return true;
+  }
+  return false;
+}
+let pendingCornerFirstId: string | null = null;
+let pendingCornerEntityId: string | null = null;
+let pendingCornerX = 0;
+let pendingCornerY = 0;
+let pendingCornerLastSentRef: MutableRef<CornerPreviewLastSent | null> | null =
+  null;
+
+function sendCornerTrimPreviewNow() {
+  const ref = pendingCornerLastSentRef;
+  const firstEntityId = pendingCornerFirstId;
+  const entityId = pendingCornerEntityId;
+  if (ref === null || firstEntityId === null || entityId === null) {
+    return;
+  }
   const requestId = crypto.randomUUID();
-  cornerPreviewLastSentRef.current = {
-    x: rawPoint.local[0],
-    y: rawPoint.local[1],
-    entityId: hit.id,
+  cornerPreviewInFlightId = requestId;
+  cornerPreviewInFlightSince = performance.now();
+  ref.current = {
+    x: pendingCornerX,
+    y: pendingCornerY,
+    entityId,
     requestId,
   };
   void sendCoreCommand(
     makeCornerTrimPreviewCommand(
       firstEntityId,
-      hit.id,
-      rawPoint.local[0],
-      rawPoint.local[1],
+      entityId,
+      pendingCornerX,
+      pendingCornerY,
       requestId,
     ),
   );
+}
+
+// Called by the viewport when a corner_trim_preview_result arrives.
+// Releases the in-flight slot and sends the newest pending request.
+export function notifyCornerTrimPreviewResponse(requestId: string) {
+  if (
+    cornerPreviewInFlightId === null ||
+    cornerPreviewInFlightId !== requestId
+  ) {
+    return;
+  }
+  cornerPreviewInFlightId = null;
+  if (cornerPreviewPending) {
+    cornerPreviewPending = false;
+    sendCornerTrimPreviewNow();
+  }
 }

@@ -10,6 +10,10 @@ json to_payload(const polysmith::core::DocumentState& document,
       {"name", document.name},
       {"units", document.units},
       {"revision", document.revision},
+      {"can_undo", document.can_undo},
+      {"can_redo", document.can_redo},
+      {"undo_step_names", document.undo_step_names},
+      {"redo_step_names", document.redo_step_names},
       {"selected_feature_id",
        document.selected_feature_id.has_value()
            ? json(document.selected_feature_id.value())

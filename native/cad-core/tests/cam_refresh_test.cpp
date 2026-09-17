@@ -159,13 +159,17 @@ bool test_generated_status_and_invalidation() {
   }
 
   // Fake a generated path (the laser generator lands in the next
-  // task; the refresh machinery must not depend on it).
+  // task; the refresh machinery must not depend on it).  The generate
+  // commit (D9) is an undoable step that stores the runtime path
+  // itself, stamped with the upcoming revision — so the dependency
+  // pass inside its own bump sees the path as current and keeps the
+  // "generated" status.
   Toolpath path;
   path.op_id = opId;
   path.moves.push_back({ToolpathMoveKind::Rapid, 0.0, 0.0, 5.0});
   path.moves.push_back({ToolpathMoveKind::FeedLinear, 20.0, 0.0, 0.0});
-  polysmith::core::cam_runtime::store_generated(document, opId, path);
-  document = manager.cam_operation_set_generated(opId, *find_op(document, opId));
+  document = manager.cam_operation_set_generated(
+      opId, *find_op(document, opId), path);
   if (!expect(find_op(document, opId)->status == "generated",
               "refresh: generated after storing a path")) {
     return false;
@@ -190,10 +194,10 @@ bool test_generated_status_and_invalidation() {
     return false;
   }
 
-  // Regenerate (store at the new revision) and confirm the status
-  // sticks without further bumps.
-  polysmith::core::cam_runtime::store_generated(document, opId, path);
-  document = manager.cam_operation_set_generated(opId, *find_op(document, opId));
+  // Regenerate at the new revision and confirm the status sticks
+  // without further bumps.
+  document = manager.cam_operation_set_generated(
+      opId, *find_op(document, opId), path);
   return expect(find_op(document, opId)->status == "generated",
                 "refresh: generated sticks until the next real mutation");
 }

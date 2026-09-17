@@ -109,6 +109,12 @@ import {
   makeGetViewportStateCommand,
   makePingCommand,
   makeRedoCommand,
+  makeUndoManyCommand,
+  makeUndoBeginGroupCommand,
+  makeUndoEndGroupCommand,
+  makeUndoAbortAllGroupsCommand,
+  makeUndoAbortGroupCommand,
+  makeSetUndoLimitCommand,
   makeSelectSketchProfileCommand,
   makeSelectSketchProfileByEntityCommand,
   makeSelectSketchDimensionCommand,
@@ -412,10 +418,59 @@ export function useCadCore() {
       await sendAndRefreshSessionViewport(makeDeleteFeatureCommand(featureId));
     },
     undo: async () => {
-      await sendAndRefreshSessionViewport(makeUndoCommand());
+      // Awaited + correlated (D7): the undo's own document_state
+      // reply settles this promise, so callers never read a stale
+      // store copy. The viewport refresh follows fire-and-forget.
+      await sendCoreCommandAwaited(
+        makeUndoCommand() as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
     },
     redo: async () => {
-      await sendAndRefreshSessionViewport(makeRedoCommand());
+      await sendCoreCommandAwaited(
+        makeRedoCommand() as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
+    },
+    undoMany: async (count: number) => {
+      // History-dropdown multi-undo; negative count = redo direction.
+      await sendCoreCommandAwaited(
+        makeUndoManyCommand(count) as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
+    },
+    beginUndoGroup: async (name: string) => {
+      await sendCoreCommandAwaited(
+        makeUndoBeginGroupCommand(name) as CoreCommand & { id: string },
+      );
+    },
+    endUndoGroup: async () => {
+      await sendCoreCommandAwaited(
+        makeUndoEndGroupCommand() as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
+    },
+    abortUndoGroup: async () => {
+      // Cancel semantics (D4): the group's start snapshot is restored
+      // and the session leaves no trace.
+      await sendCoreCommandAwaited(
+        makeUndoAbortGroupCommand() as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
+    },
+    abortAllUndoGroups: async () => {
+      // "Cancel Sketch" (D4): rolls back the entire sketch edit
+      // session — nested draft groups included — to the snapshot taken
+      // when the session was entered.  No trace in the history.
+      await sendCoreCommandAwaited(
+        makeUndoAbortAllGroupsCommand() as CoreCommand & { id: string },
+      );
+      sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setUndoLimit: async (limit: number) => {
+      await sendCoreCommandAwaited(
+        makeSetUndoLimitCommand(limit) as CoreCommand & { id: string },
+      );
     },
     setTimelineCursor: async (includedActionCount: number) => {
       await sendAndRefreshViewport(

@@ -59,9 +59,26 @@ void store_generated(const DocumentState& document,
 void store_preview(const DocumentState& document,
                    const std::string& op_id, Toolpath toolpath);
 
+// Revision-explicit store: the generate commit (D9) bumps the
+// revision as part of the same command, and the path must be stamped
+// with the UPCOMING revision so the dependency pass that runs inside
+// the bump sees it as current instead of flipping the op straight
+// back to "needs_regenerate".
+void store_generated_at(const DocumentState& document,
+                        const std::string& op_id, Toolpath toolpath,
+                        int target_revision);
+
 // Drops cached paths whose revision no longer matches (called by the
 // CAM dependency refresh pass after a geometry bump).
 void drop_stale(const DocumentState& document, int target_revision);
+
+// Erases every cached path for the document.  Undo/redo call this
+// BEFORE the restore's refresh pass: a revision stamp alone cannot
+// distinguish a path stored on the abandoned branch from a current
+// one (the restored revision can collide with the abandoned branch's
+// bumped value), so a branch switch invalidates everything and the
+// ops honestly fall back to pending/needs_regenerate.
+void invalidate(const std::string& document_id);
 
 }  // namespace cam_runtime
 

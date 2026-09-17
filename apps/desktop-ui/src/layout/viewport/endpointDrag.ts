@@ -18,6 +18,11 @@ export interface EndpointDrag {
   hasMoved: boolean;
   /** True while an IPC update is in flight; intermediate frames are dropped. */
   inFlight: boolean;
+  /** Document revision at pointer-down (M24). The pointer-up commit is
+   *  discarded when the document changed mid-gesture (e.g. an awaited
+   *  undo landed while dragging) — the point under the cursor no longer
+   *  means what it meant at drag start. */
+  startRevision: number;
 }
 
 export interface EndpointDragDelta {

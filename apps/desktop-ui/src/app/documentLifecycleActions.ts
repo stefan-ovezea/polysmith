@@ -39,7 +39,7 @@ interface DocumentLifecycleActionsContext {
     SetStateAction<PendingUnsavedAction | null>
   >;
   originVisibilityManuallyChangedRef: MutableRefObject<boolean>;
-  snapshotCaptureRef: MutableRefObject<(() => string | null) | null>;
+  snapshotCaptureRef: MutableRefObject<(() => Promise<string | null>) | null>;
   allowAppCloseRef: MutableRefObject<boolean>;
   runAction: (action: () => Promise<void>) => Promise<void>;
   addMessage: (message: string) => void;
@@ -67,7 +67,7 @@ export function createDocumentLifecycleActions({
   addMessage,
 }: DocumentLifecycleActionsContext) {
   function captureProjectThumbnail() {
-    return snapshotCaptureRef.current?.() ?? null;
+    return snapshotCaptureRef.current?.() ?? Promise.resolve(null);
   }
 
   const saveDocumentContext = {

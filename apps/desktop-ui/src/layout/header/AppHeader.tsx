@@ -122,9 +122,12 @@ function MenuDropdown({
         <div
           className={`cad-context-menu absolute ${alignmentClass} top-[calc(100%+6px)] z-30 min-w-[180px] rounded-xl p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
         >
-          {items.map((item) => (
+          {items.map((item, index) => (
             <button
-              key={item.label}
+              // Labels can repeat legitimately (several undo steps with
+              // the same name) — index keeps the key unique so React
+              // never reconciles two entries as one.
+              key={`${index}-${item.label}`}
               type="button"
               className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
               disabled={item.disabled}
@@ -265,6 +268,11 @@ interface AppHeaderProps
   disabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  // History step names, most recent first (D8) — the Edit menu labels
+  // the next step and lists the rest for the multi-undo dropdown.
+  undoStepNames: string[];
+  redoStepNames: string[];
+  onUndoMany: (count: number) => Promise<void>;
   activeSketchPlaneId: string | null;
   activeSketchTool: SketchTool | null;
   selectedReferenceId: string | null;
@@ -329,6 +337,8 @@ interface AppHeaderProps
   onShell: () => Promise<void>;
   onStartSketch: () => Promise<void>;
   onFinishSketch: () => Promise<void>;
+  // Cancel Sketch (D4): rolls back the whole edit session, no trace.
+  onCancelSketchSession: () => Promise<void> | void;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
   onArmSketchConstraint: (constraint: ConstraintType) => Promise<void>;
   onStartMirrorTool: () => Promise<void>;
@@ -376,6 +386,9 @@ export function AppHeader({
   disabled,
   canUndo,
   canRedo,
+  undoStepNames,
+  redoStepNames,
+  onUndoMany,
   activeSketchPlaneId,
   activeSketchTool,
   selectedReferenceId,
@@ -457,6 +470,7 @@ export function AppHeader({
   onHelix,
   onStartSketch,
   onFinishSketch,
+  onCancelSketchSession,
   onSetSketchTool,
   onArmSketchConstraint,
   onStartMirrorTool,
@@ -776,15 +790,49 @@ export function AppHeader({
             disabled={disabled}
             items={[
               {
-                label: t("header.undo"),
+                // D8: name the step the user is about to undo.
+                label:
+                  canUndo && undoStepNames[0]
+                    ? `${t("header.undo")} ${undoStepNames[0]}`
+                    : t("header.undo"),
                 disabled: !canUndo,
                 onSelect: () => void onUndo(),
               },
               {
-                label: t("header.redo"),
+                label:
+                  canRedo && redoStepNames[0]
+                    ? `${t("header.redo")} ${redoStepNames[0]}`
+                    : t("header.redo"),
                 disabled: !canRedo,
                 onSelect: () => void onRedo(),
               },
+              // History dropdown (D8): picking an entry undoes it and
+              // everything above it; multiple steps ask first. Entries
+              // are listed most-recent-first, matching the stack.
+              ...(canUndo && undoStepNames.length > 1
+                ? [
+                    {
+                      label: t("header.undoHistory"),
+                      disabled: true,
+                      // Section header — selection is disabled above.
+                      onSelect: () => {},
+                    },
+                    ...undoStepNames.slice(1).map((name, index) => ({
+                      label: name,
+                      onSelect: () => {
+                        const count = index + 2;
+                        const confirmed =
+                          count <= 1 ||
+                          window.confirm(
+                            t("header.undoHistoryConfirm", { count }),
+                          );
+                        if (confirmed) {
+                          void onUndoMany(count);
+                        }
+                      },
+                    })),
+                  ]
+                : []),
             ]}
           />
           <MenuDropdown
@@ -962,6 +1010,7 @@ export function AppHeader({
                 onSetBodyProjectionMode={onSetBodyProjectionMode}
                 onStartSketch={onStartSketch}
                 onFinishSketch={onFinishSketch}
+                onCancelSketchSession={onCancelSketchSession}
                 onCancelSketchConstraint={onCancelSketchConstraint}
                 onSetSketchTool={onSetSketchTool}
                 onArmSketchConstraint={onArmSketchConstraint}

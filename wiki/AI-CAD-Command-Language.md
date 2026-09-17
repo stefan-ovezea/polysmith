@@ -1020,7 +1020,10 @@ Payload:
 
 #### `undo`
 
-Reverts the previous document operation when available.
+Reverts the previous document operation when available. Runs the full refresh
+pipeline (selection re-validation, sketch rebuild, toolpath invalidation). On
+an empty stack the core replies with a structured `error` carrying code
+`EMPTY_UNDO_STACK` — an expected no-op condition, not a failure.
 
 Payload:
 
@@ -1030,13 +1033,72 @@ Payload:
 
 #### `redo`
 
-Reapplies an undone operation when available.
+Reapplies an undone operation when available. Empty-stack behavior mirrors
+`undo` with code `EMPTY_REDO_STACK`.
 
 Payload:
 
 ```json
 {}
 ```
+
+#### `undo_many`
+
+Undoes (negative count = redoes) several steps in ONE refresh pass. The count
+is clamped to the available steps; inside an open undo group it is clamped to
+the session-local steps.
+
+Payload:
+
+```ts
+{
+  count: number;
+}
+```
+
+#### `undo_begin_group` / `undo_end_group` / `undo_abort_group`
+
+Named grouped steps: `undo_begin_group { name }` opens a group; every push
+inside it collapses into ONE entry (the group's start snapshot carrying the
+group's name) when `undo_end_group` closes it — no entry appears when nothing
+changed. `undo_abort_group` restores the group's start snapshot and drops the
+session-local steps with no trace (cancel semantics). Groups nest; ending a
+changed group folds its change into the enclosing frame.
+
+#### `undo_abort_all_groups`
+
+The "Cancel Sketch" contract: aborts the WHOLE group stack — nested draft
+groups included — restoring the outermost (sketch session) start snapshot.
+The entire edit session rolls back with no trace in the undo history.
+
+Payload:
+
+```json
+{}
+```
+
+#### `set_undo_limit`
+
+Caps the undo history depth (default 30); the oldest entries are dropped on
+push.
+
+Payload:
+
+```ts
+{
+  limit: number;
+}
+```
+
+#### Sketch session semantics
+
+Entering a sketch (`start_sketch_on_plane` / `start_sketch_on_face` /
+`reenter_sketch`) opens a session group. While the sketch is open, per-action
+undo/redo walks only session-local steps; `finish_sketch` closes the group so
+the whole session appears as ONE history step; cancel (Cancel Sketch) sends
+`undo_abort_all_groups` so the session leaves no trace. Every `document_state`
+payload carries `can_undo` / `can_redo` plus `undo_step_names[]` /
+`redo_step_names[]` (most recent first) for named history menus.
 
 #### `set_timeline_cursor`
 

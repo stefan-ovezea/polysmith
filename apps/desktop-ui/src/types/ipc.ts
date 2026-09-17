@@ -110,6 +110,12 @@ import type {
   DeleteFeatureCommand,
   UndoCommand,
   RedoCommand,
+  UndoManyCommand,
+  UndoBeginGroupCommand,
+  UndoEndGroupCommand,
+  UndoAbortGroupCommand,
+  UndoAbortAllGroupsCommand,
+  SetUndoLimitCommand,
   SetTimelineCursorCommand,
   SelectFeatureCommand,
   SelectReferenceCommand,
@@ -235,6 +241,16 @@ export interface DocumentState {
   name: string;
   units: string;
   revision: number;
+  // Undo/redo availability travels with every document state (D7) —
+  // the toolbar buttons and hotkeys read these instead of the
+  // request-only session_state, which used to go stale after sketch
+  // commands.
+  can_undo: boolean;
+  can_redo: boolean;
+  // History step names, most recent first (D8) — tooltips and the
+  // history dropdown.
+  undo_step_names: string[];
+  redo_step_names: string[];
   selected_feature_id: string | null;
   selected_reference_id: string | null;
   selected_face_id: string | null;
@@ -1018,6 +1034,12 @@ export type CoreCommand =
   | DeleteFeatureCommand
   | UndoCommand
   | RedoCommand
+  | UndoManyCommand
+  | UndoBeginGroupCommand
+  | UndoEndGroupCommand
+  | UndoAbortGroupCommand
+  | UndoAbortAllGroupsCommand
+  | SetUndoLimitCommand
   | SetTimelineCursorCommand
   | SelectFeatureCommand
   | SelectReferenceCommand

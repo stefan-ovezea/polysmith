@@ -7,9 +7,7 @@ import {
 } from "./state";
 import { useToastStore } from "./state/toastStore";
 import { useCadCore } from "./hooks";
-import {
-  useAppConfig,
-} from "./lib";
+import { useAppConfig } from "./lib";
 import {
   AiAssistantPanel,
   CamGenerationResultPopup,
@@ -574,7 +572,9 @@ function App() {
     useState<PendingUnsavedAction | null>(null);
   const originVisibilityManuallyChangedRef = useRef(false);
   const previousDocumentIdRef = useRef<string | null>(null);
-  const snapshotCaptureRef = useRef<(() => string | null) | null>(null);
+  const snapshotCaptureRef = useRef<(() => Promise<string | null>) | null>(
+    null,
+  );
   const allowAppCloseRef = useRef(false);
   const isDocumentDirtyRef = useRef(false);
   // Hierarchy sidebar layout. Collapsed: shown as a thin vertical bar
@@ -587,7 +587,6 @@ function App() {
   const messages = useCadCoreStore((state) => state.messages);
   const logs = useCadCoreStore((state) => state.logs);
   const document = useCadCoreStore((state) => state.document);
-  const session = useCadCoreStore((state) => state.session);
   const viewport = useCadCoreStore((state) => state.viewport);
   const addMessage = useCadCoreStore((state) => state.addMessage);
   const clearLogs = useCadCoreStore((state) => state.clearLogs);
@@ -879,6 +878,11 @@ function App() {
     deleteFeature,
     undo,
     redo,
+    undoMany,
+    beginUndoGroup,
+    endUndoGroup,
+    abortUndoGroup,
+    setUndoLimit,
     setTimelineCursor,
     selectFeature,
     selectReference,
@@ -1015,6 +1019,7 @@ function App() {
     selectSketchEntity,
     selectSketchDimension,
     finishSketch,
+    abortAllUndoGroups,
     reenterSketch,
     clearSelection,
     selectSketchRect,
@@ -1574,8 +1579,12 @@ function App() {
       activeSketchPlaneId,
       activeSketchTool,
       canCreateSketch: Boolean(selectedReference || selectedSketchableFace),
-      canUndo: Boolean(session?.can_undo),
-      canRedo: Boolean(session?.can_redo),
+      // D7: read the flags from the DOCUMENT — they travel with every
+      // document_state event and are never stale (the old session-
+      // based flags went dead after sketch commands and silently
+      // swallowed Ctrl+Z).
+      canUndo: Boolean(document?.can_undo),
+      canRedo: Boolean(document?.can_redo),
       document,
     },
     callbacks: {
@@ -2647,8 +2656,8 @@ function App() {
           showSlicerView={showSlicerView}
           showGrblView={showGrblView}
           status={status}
-          canUndo={session?.can_undo ?? false}
-          canRedo={session?.can_redo ?? false}
+          canUndo={document?.can_undo ?? false}
+          canRedo={document?.can_redo ?? false}
           activeSketchPlaneId={activeSketchPlaneId}
           activeSketchTool={activeSketchTool}
           selectedReferenceId={selectedReference?.reference_id ?? null}
@@ -2690,6 +2699,7 @@ function App() {
           saveDocumentAs={saveDocumentAs}
           undo={undo}
           redo={redo}
+          undoMany={undoMany}
           pluginMenuItems={pluginMenuItems}
           onPluginCommand={handlePluginCommand}
           logCount={logs.length}
@@ -2727,6 +2737,15 @@ function App() {
           triggerHelixAction={triggerHelixAction}
           triggerCreateSketchAction={triggerCreateSketchAction}
           finishActiveSketch={finishActiveSketch}
+          cancelActiveSketchSession={async () => {
+            // D4: Cancel Sketch rolls the whole session back — the core
+            // restores the snapshot taken when the sketch was entered
+            // and the history keeps no trace of the session.
+            clearArmedSketchConstraint();
+            await runAction(async () => {
+              await abortAllUndoGroups();
+            });
+          }}
           setActiveSketchTool={setActiveSketchTool}
           setArmedSketchConstraint={setArmedSketchConstraint}
           setSketchTool={setSketchTool}
@@ -4109,6 +4128,8 @@ function App() {
                   await deleteSketchDimension(dimensionId);
                 });
               }}
+              onBeginUndoGroup={beginUndoGroup}
+              onEndUndoGroup={endUndoGroup}
               onToggleSketchDimensionDriven={async (dimensionId) => {
                 await runAction(async () => {
                   await toggleSketchDimensionDriven(dimensionId);

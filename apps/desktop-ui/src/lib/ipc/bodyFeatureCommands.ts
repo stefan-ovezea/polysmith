@@ -139,6 +139,62 @@ export function makeRedoCommand(): CoreCommand {
   };
 }
 
+// History-dropdown multi-undo (D8). Negative count = redo direction.
+export function makeUndoManyCommand(count: number): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "undo_many",
+    payload: { count },
+  };
+}
+
+// Named grouped steps (D2): a user intent that spans several commands
+// (dimension draft sessions) opens a group that collapses into ONE
+// undo entry.
+export function makeUndoBeginGroupCommand(name: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "undo_begin_group",
+    payload: { name },
+  };
+}
+
+export function makeUndoEndGroupCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "undo_end_group",
+    payload: {},
+  };
+}
+
+// Cancel semantics: restores the group's start snapshot and leaves no
+// trace.
+export function makeUndoAbortGroupCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "undo_abort_group",
+    payload: {},
+  };
+}
+
+// "Cancel Sketch" (D4): aborts the WHOLE group stack — nested draft
+// groups included — restoring the outermost (session) start snapshot.
+export function makeUndoAbortAllGroupsCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "undo_abort_all_groups",
+    payload: {},
+  };
+}
+
+export function makeSetUndoLimitCommand(limit: number): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_undo_limit",
+    payload: { limit },
+  };
+}
+
 export function makeSetTimelineCursorCommand(
   includedActionCount: number,
 ): CoreCommand {

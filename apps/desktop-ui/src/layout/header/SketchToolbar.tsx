@@ -40,6 +40,11 @@ interface SketchToolbarProps {
 
   onStartSketch: () => Promise<void>;
   onFinishSketch: () => Promise<void>;
+  // Cancel Sketch (D4): rolls the whole edit session back to the state
+  // when it was opened/entered — no trace in the undo history.  The
+  // toolbar asks for confirmation first; Escape keeps its draft-cancel
+  // meaning and does not trigger this.
+  onCancelSketchSession: () => Promise<void> | void;
   onCancelSketchConstraint: () => void;
   onSetSketchTool: (tool: SketchTool) => Promise<void>;
   onArmSketchConstraint: (constraint: ConstraintType) => Promise<void>;
@@ -119,6 +124,7 @@ export function SketchToolbar({
   polygonToolMode,
   onStartSketch,
   onFinishSketch,
+  onCancelSketchSession,
   onCancelSketchConstraint,
   onSetSketchTool,
   onArmSketchConstraint,
@@ -190,6 +196,23 @@ export function SketchToolbar({
       >
         {activeSketchPlaneId ? t("toolbar.finishSketch") : t("toolbar.createSketch")}
       </button>
+      {activeSketchPlaneId ? (
+        <button
+          className="cad-tool-button"
+          data-tooltip={t("toolbar.cancelSketch")}
+          disabled={disabled}
+          onClick={() => {
+            // D4: cancel rolls the whole session back with no trace.
+            // Explicit confirm — the action discards every edit since
+            // the sketch was opened.
+            if (window.confirm(t("toolbar.cancelSketchConfirm"))) {
+              void onCancelSketchSession();
+            }
+          }}
+        >
+          {t("toolbar.cancelSketch")}
+        </button>
+      ) : null}
       {sketchTools
          .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension")
         .map((tool) => (

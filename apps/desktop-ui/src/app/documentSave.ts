@@ -15,7 +15,7 @@ interface SaveCurrentDocumentContext {
   translate: DialogTranslate;
   addMessage: (message: string) => void;
   saveDocument: (filePath: string) => Promise<void>;
-  captureProjectThumbnail: () => string | null;
+  captureProjectThumbnail: () => Promise<string | null>;
   getCurrentDocument: () => DocumentState | null;
   setCurrentProjectPath: (filePath: string) => void;
   setSavedDocumentBaseline: (baseline: SavedDocumentBaseline) => void;
@@ -25,6 +25,12 @@ interface SaveCurrentDocumentContext {
     parentFolderId?: string | null,
   ) => Promise<void>;
 }
+
+// One save at a time. A double click on Save (or Save + Ctrl+S) used to
+// open a SECOND native dialog while the first was still up — on
+// Windows the stacked dialog can open invisibly behind the window and
+// swallow every click (the frozen-screen, dead-click symptom).
+let saveInFlight = false;
 
 export async function saveCurrentDocumentFromContext({
   document,
@@ -43,37 +49,47 @@ export async function saveCurrentDocumentFromContext({
   if (!document) {
     return false;
   }
-
-  const filePath = await resolveSavePath({
-    currentProjectPath,
-    forcePick,
-    document,
-    translate,
-    addMessage,
-  });
-  if (!filePath) {
+  if (saveInFlight) {
+    addMessage("save already in progress — skipped");
     return false;
   }
+  saveInFlight = true;
+  try {
+    const filePath = await resolveSavePath({
+      currentProjectPath,
+      forcePick,
+      document,
+      translate,
+      addMessage,
+    });
+    if (!filePath) {
+      return false;
+    }
 
-  await saveDocumentAndWait(filePath, saveDocument);
-  const thumbnailDataUrl = captureProjectThumbnail();
-  await writeProjectThumbnail(filePath, thumbnailDataUrl);
+    addMessage(`save: writing ${filePath}`);
+    await saveDocumentAndWait(filePath, saveDocument);
+    addMessage("save: core done, capturing thumbnail");
+    const thumbnailDataUrl = await captureProjectThumbnail();
+    await writeProjectThumbnail(filePath, thumbnailDataUrl);
 
-  const savedDocument = getCurrentDocument() ?? document;
-  setCurrentProjectPath(filePath);
-  setSavedDocumentBaseline({
-    documentId: savedDocument.document_id,
-    revision: savedDocument.revision,
-  });
-  await recordRecentProjectSafely({
-    filePath,
-    thumbnailDataUrl,
-    parentFolderId,
-    addMessage,
-    recordRecentProject,
-  });
-  addMessage(`saved: ${filePath}`);
-  return true;
+    const savedDocument = getCurrentDocument() ?? document;
+    setCurrentProjectPath(filePath);
+    setSavedDocumentBaseline({
+      documentId: savedDocument.document_id,
+      revision: savedDocument.revision,
+    });
+    await recordRecentProjectSafely({
+      filePath,
+      thumbnailDataUrl,
+      parentFolderId,
+      addMessage,
+      recordRecentProject,
+    });
+    addMessage(`saved: ${filePath}`);
+    return true;
+  } finally {
+    saveInFlight = false;
+  }
 }
 
 async function resolveSavePath({

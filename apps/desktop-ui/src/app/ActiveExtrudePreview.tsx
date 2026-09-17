@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 
 import { ExtrudePreviewPanel } from "../layout/ExtrudePreviewPanel";
 import { useCadCoreStore } from "../state";
@@ -52,6 +52,26 @@ export function ActiveExtrudePreview({
   restoreTimelineCursorAfterEdit,
   cancelActiveTool,
 }: ActiveExtrudePreviewProps) {
+  const activeFeatureId =
+    extrudeAction?.phase === "active" ? extrudeAction.featureId : null;
+
+  // D5 teardown (M13): the extrude panel session is ONE undo step, so
+  // undo removes the feature while `extrudeAction` is still "active".
+  // Drive the panel's lifecycle from the document — when the feature
+  // disappears from the history, close the action instead of letting
+  // a stale panel keep issuing updates against a deleted feature.
+  useEffect(() => {
+    if (!activeFeatureId || !document) {
+      return;
+    }
+    const featureStillExists = document.feature_history.some(
+      (feature) => feature.feature_id === activeFeatureId,
+    );
+    if (!featureStillExists) {
+      setExtrudeAction(null);
+    }
+  }, [activeFeatureId, document, setExtrudeAction]);
+
   if (extrudeAction?.phase !== "active" || !extrudeAction.featureId) {
     return null;
   }

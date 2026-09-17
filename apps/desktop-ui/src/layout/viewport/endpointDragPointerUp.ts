@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { SketchPlaneFrame } from "@/types";
+import { useCadCoreStore } from "@/state";
 import { resolveSketchPlanePoint } from "@/utils";
 import { endpointDragDelta, type EndpointDrag } from "./endpointDrag";
 
@@ -59,6 +60,23 @@ export function finishEndpointDragPointerUp({
   }
 
   const { hasMoved } = endpointDragDelta(event, drag);
+  // M24: the pointer-down pinned the document revision.  A core command
+  // (e.g. an awaited undo) landing mid-drag changed the sketch under the
+  // pointer — discard the commit and rebuild the committed scene instead
+  // of moving a vertex that may no longer exist or mean the same thing.
+  const currentRevision = useCadCoreStore.getState().document?.revision ?? 0;
+  if (hasMoved && currentRevision !== drag.startRevision) {
+    restorePreviewScene();
+    setConstraintPreview(null);
+    dragCursorRef.current = null;
+    controls.enabled = true;
+    (renderer.domElement as HTMLCanvasElement).style.cursor = "";
+    setSketchSnapLabel(null);
+    setHoveredSketchEntity(null);
+    setHoveredSketchPoint(null);
+    setPointerDown(null);
+    return "consumed" as const;
+  }
   if (hasMoved) {
     commitEndpointDrag({
       event,

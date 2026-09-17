@@ -4,9 +4,63 @@ void DocumentManager::require_document() const {
   }
 }
 
-void DocumentManager::push_undo_state() {
+// Derives the default step name from the pushing method.  The
+// source_location function_name comes from the CALL SITE (the
+// defaulted argument is evaluated there): on MSVC it carries the
+// calling convention and full signature, on GCC/Clang the return type
+// and argument list.  Cut at the FIRST '(' before looking for the
+// scope separator — the parameter list itself contains "::" on MSVC
+// (template arguments like std::allocator), so a raw rfind lands in
+// the middle of the signature:
+//   "...DocumentManager::add_sketch_line(...)" -> "Add Sketch Line"
+// Groups and commands that wrap several internal pushes supply an
+// explicit name instead.
+std::string undo_step_name_from_location(
+    const std::source_location& location) {
+  std::string raw(location.function_name());
+  const size_t params = raw.find('(');
+  if (params != std::string::npos) {
+    raw = raw.substr(0, params);
+  }
+  const size_t scope = raw.rfind("::");
+  if (scope != std::string::npos) {
+    raw = raw.substr(scope + 2);
+  }
+  std::string name;
+  name.reserve(raw.size());
+  bool capitalize = true;
+  for (char c : raw) {
+    if (c == '_') {
+      name.push_back(' ');
+      capitalize = true;
+    } else if (capitalize) {
+      name.push_back(static_cast<char>(std::toupper(
+          static_cast<unsigned char>(c))));
+      capitalize = false;
+    } else {
+      name.push_back(c);
+    }
+  }
+  return name;
+}
+
+void DocumentManager::push_undo_state(
+    const std::source_location& location) {
   require_document();
+  // A push means a mutating command ran — the precise "state changed"
+  // signal an open group uses to decide whether it leaves an entry
+  // (mirrors FreeCAD's potential-transaction).
+  if (!undo_group_stack_.empty()) {
+    undo_group_stack_.back().changed = true;
+  }
   undo_stack_.push_back(document_.value());
+  undo_names_.push_back(undo_step_name_from_location(location));
+  // Purge the oldest entry when the configured depth is exceeded.
+  while (undo_stack_.size() > static_cast<size_t>(max_undo_steps_)) {
+    undo_stack_.erase(undo_stack_.begin());
+    undo_names_.erase(undo_names_.begin());
+  }
+  sync_undo_step_names();
 }
 
 void DocumentManager::sync_sketch_id_counters() {
@@ -77,6 +131,20 @@ void DocumentManager::bump_geometry_revision() {
   // implementation.
   const int next = document_->revision + 1;
   document_->revision = next;
+  // The undo/redo flags travel with the document payload (D7) so the
+  // UI's buttons/hotkeys are never stale — every mutator passes
+  // through this choke point.
+  document_->can_undo = !undo_stack_.empty();
+  document_->can_redo = !redo_stack_.empty();
+  sync_undo_step_names();
+}
+
+void DocumentManager::sync_undo_step_names() {
+  if (!document_.has_value()) {
+    return;
+  }
+  document_->undo_step_names.assign(undo_names_.rbegin(), undo_names_.rend());
+  document_->redo_step_names.assign(redo_names_.rbegin(), redo_names_.rend());
 }
 
 void DocumentManager::prune_document_selection() {
@@ -189,6 +257,8 @@ void DocumentManager::prune_document_selection() {
 
 void DocumentManager::clear_redo_stack() {
   redo_stack_.clear();
+  redo_names_.clear();
+  sync_undo_step_names();
 }
 
 FeatureEntry DocumentManager::make_root_feature() {

@@ -128,6 +128,15 @@
   }
 
   if (command.type == "undo") {
+    // Empty-stack undo is a protocol-level no-op with its own error
+    // code (D6) — not a throw surfacing as INVALID_COMMAND, which is
+    // what the UI used to special-case by message string.
+    if (!document_manager().get_session_state().can_undo) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "EMPTY_UNDO_STACK", "Nothing to undo"));
+      return;
+    }
     const auto document = document_manager().undo();
 
     polysmith::protocol::write_message(
@@ -137,11 +146,86 @@
   }
 
   if (command.type == "redo") {
+    if (!document_manager().get_session_state().can_redo) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "EMPTY_REDO_STACK", "Nothing to redo"));
+      return;
+    }
     const auto document = document_manager().redo();
 
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "undo_many") {
+    // History-dropdown multi-undo (D8): the UI confirms when count > 1.
+    const auto document = document_manager().undo_many(
+        read_int(command.payload, "count"));
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "undo_begin_group") {
+    document_manager().begin_undo_group(
+        read_string(command.payload, "name"));
+    const auto document = document_manager().get_document();
+    if (document.has_value()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document.value())));
+    }
+    return;
+  }
+
+  if (command.type == "undo_end_group") {
+    document_manager().end_undo_group();
+    const auto document = document_manager().get_document();
+    if (document.has_value()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document.value())));
+    }
+    return;
+  }
+
+  if (command.type == "undo_abort_group") {
+    document_manager().abort_undo_group();
+    const auto document = document_manager().get_document();
+    if (document.has_value()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document.value())));
+    }
+    return;
+  }
+
+  if (command.type == "undo_abort_all_groups") {
+    // "Cancel Sketch" (D4): roll back the entire edit session — nested
+    // draft groups included — to the session's start snapshot.
+    document_manager().abort_all_undo_groups();
+    const auto document = document_manager().get_document();
+    if (document.has_value()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document.value())));
+    }
+    return;
+  }
+
+  if (command.type == "set_undo_limit") {
+    document_manager().set_undo_limit(read_int(command.payload, "limit"));
+    const auto document = document_manager().get_document();
+    if (document.has_value()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_document_state_event(
+              command.id, polysmith::protocol::to_payload(document.value())));
+    }
     return;
   }
 

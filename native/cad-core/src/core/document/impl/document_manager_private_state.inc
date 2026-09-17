@@ -1,6 +1,10 @@
   FeatureEntry make_root_feature();
   void require_document() const;
-  void push_undo_state();
+  // Defaulted std::source_location is evaluated at the CALL SITE, so
+  // the step name comes from the mutating method, not from
+  // push_undo_state itself.
+  void push_undo_state(
+      const std::source_location& location = std::source_location::current());
   void clear_redo_stack();
   // Re-resolve face-based plane frames, propagate broken-dependency
   // state, and bump the document revision. Use this from any mutator
@@ -24,6 +28,9 @@
   // Called from bump_geometry_revision — the choke point every
   // mutator passes through.
   void sync_sketch_id_counters();
+  // Copies the named stacks (most recent first) into the document's
+  // undo_step_names / redo_step_names fields for the payload.
+  void sync_undo_step_names();
 
   int next_document_id_ = 1;
   int next_feature_id_ = 1;
@@ -69,3 +76,26 @@
   std::optional<DocumentState> document_;
   std::vector<DocumentState> undo_stack_;
   std::vector<DocumentState> redo_stack_;
+  // Human-readable step names parallel to the stacks ("Add Sketch
+  // Line", "Sketch Edit") for the undo/redo tooltips and the history
+  // dropdown.  Derived from the pushing method name by default, set
+  // explicitly by undo groups.
+  std::vector<std::string> undo_names_;
+  std::vector<std::string> redo_names_;
+  // Configurable history depth (D8).  Oldest entries are purged first.
+  int max_undo_steps_ = 30;
+  // Open undo groups (D2), outermost first.  While a group is open,
+  // pushes land on the main stack above the group's marker and
+  // collapse into ONE entry at end_undo_group; undo/redo only walk
+  // steps above the marker (per-action undo inside the session).
+  struct UndoGroupFrame {
+    std::string name;
+    DocumentState start_snapshot;
+    size_t undo_start_index = 0;
+    size_t redo_start_index = 0;
+    // Set by mark_undo_group_changed() for mutations that don't push
+    // (bookkeeping sweeps).  end_undo_group also compares stack sizes
+    // and revisions, so an entry only appears when state changed.
+    bool changed = false;
+  };
+  std::vector<UndoGroupFrame> undo_group_stack_;

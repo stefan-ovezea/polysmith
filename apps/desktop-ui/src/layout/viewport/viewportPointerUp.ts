@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import { useCadCoreStore } from "@/state";
 import type {
   ArmedSketchConstraint,
   SketchFeatureParameters,
@@ -62,6 +63,9 @@ interface ViewportPointerUpParams {
   renderer: THREE.WebGLRenderer;
   camera: THREE.OrthographicCamera;
   controls: OrbitControls;
+  // Document revision pinned at pointer-down (M24): sketch pointer-up
+  // commits are discarded when the document changed mid-gesture.
+  pointerDownRevisionRef: MutableRef<number>;
   // Armed origin pick: every pointer-up delivers the clicked world
   // point on the bed plane instead of running scene selection.
   originPickPointEnabled: boolean;
@@ -348,6 +352,16 @@ function finishDraftStarted(
 }
 
 function finishActiveSketchPointerUp(params: ViewportPointerUpParams) {
+  // M24: pin the pointer-down revision.  When a core command (e.g. an
+  // awaited undo) landed while the pointer was down, the sketch under
+  // the cursor changed — discard the click instead of committing
+  // against stale geometry.  Selection-only clicks don't bump the
+  // revision, so normal picking is unaffected.
+  const currentRevision = useCadCoreStore.getState().document?.revision ?? 0;
+  if (currentRevision !== params.pointerDownRevisionRef.current) {
+    return;
+  }
+
   const hit = params.intersectSceneTargets(params.event);
   const additiveSelection =
     params.event.shiftKey || params.event.ctrlKey || params.event.metaKey;
