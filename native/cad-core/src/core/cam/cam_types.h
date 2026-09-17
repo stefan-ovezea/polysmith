@@ -147,7 +147,7 @@ struct CamSetup {
 
 /// "endmill_flat" | "endmill_ball" | "endmill_bull" | "drill" |
 /// "facemill" | "chamfer" | "threadmill" | "turning_insert" |
-/// "laser" | "plasma"
+/// "laser" | "plasma" | "v_bit" | "spot_drill"
 using ToolType = std::string;
 
 struct ToolEntry {
@@ -155,22 +155,57 @@ struct ToolEntry {
   std::string name;
   ToolType type = "endmill_flat";
 
+  // Identity & machine-side addressing.
+  // tool_number 0 = unassigned (auto-assigned on add); >= 1 = unique
+  // within the library. pocket_number 0 = "same as tool_number"
+  // (LinuxCNC P is a separate concept only under a random changer).
+  int tool_number = 0;
+  int pocket_number = 0;
+  std::string description;
+  std::string vendor;
+  std::string product_id;
+  // Stable identity across import/export so re-imports reconcile
+  // instead of duplicating (Fusion/FreeCAD precedent). Minted by
+  // cam_tool_add when empty.
+  std::string guid;
+
   // Geometry (mm).
   double diameter_mm = 6.0;
   double corner_radius_mm = 0.0;
   double flute_length_mm = 20.0;
   double overall_length_mm = 60.0;
   double shank_diameter_mm = 6.0;
+  // 0 = unset: shoulder falls back to flute_length and length below
+  // holder falls back to overall_length (Fusion's recommended setup).
+  double shoulder_length_mm = 0.0;
+  double length_below_holder_mm = 0.0;
+  int flutes = 2;                     // cutting edges
+  double helix_angle_deg = 30.0;
+  double point_angle_deg = 118.0;     // drill/spot/chamfer/v-bit cone angle
+  double tip_diameter_mm = 0.0;       // flat on the tip (chamfer/v-bit)
+  double tip_length_mm = 0.0;         // center/spot drills
+  double taper_angle_deg = 0.0;       // half-angle, Fusion convention
+
+  // Lathe (turning_insert) — display/table data only today.
+  double front_angle_deg = 0.0;
+  double back_angle_deg = 0.0;
+  int orientation = 0;  // LinuxCNC Q, 0..9
 
   // Material & coating.
-  std::string material = "carbide";   // "carbide" | "hss" | "diamond" | "ceramic" | "other"
-  std::optional<std::string> coating; // "tin" | "ticn" | "alticn" | "dlc" | "none"
+  std::string material = "carbide";   // "carbide" | "hss" | "cobalt" | "diamond" | "ceramic" | "other"
+  std::optional<std::string> coating; // "tin" | "ticn" | "alticn" | "tialn" | "zrn" | "dlc" | "none"
   bool coolant_through = false;
 
   // Machine limits.
   double max_spindle_rpm = 15000.0;
 
   // Default cutting parameters (overridable per-operation).
+  // surface_speed_m_per_min + feed_per_tooth_mm are the PRIMARY
+  // cutting-data inputs (what vendor catalogs publish); the flat
+  // feedrate defaults are the computed results the generators consume
+  // and remain editable per tool.
+  double surface_speed_m_per_min = 100.0;
+  double feed_per_tooth_mm = 0.05;
   double default_feedrate_mm_per_min = 1000.0;
   double default_plunge_feedrate_mm_per_min = 500.0;
   double default_stepdown_mm = 1.0;       // axial depth of cut

@@ -1,4 +1,59 @@
-# Active task: UNDO/REDO REWORK — full implementation to CAD standard (2026-09-17)
+# Active task: CAM TOOL TABLE — full implementation (2026-09-17)
+
+> **Branch:** `cam/tools`, created from `dev` @ `d10cd3f` and pushed.
+>
+> **User request (verbatim):** "I want again a full implementation of
+> the tool table for cam. make a study of the industry also. I want to
+> have a default tool list from where to be able to select generic
+> tools drils , mils etc. Also I want a propper edditor for the tools.
+> A graphic floating window with a tool drawing and input windows for
+> various parameter. Also I want to be able to import and export tools
+> between linuxcnc and my program and verything you may think to add."
+>
+> **Working mode (user-approved):** autonomous full implementation
+> with local checkpoint commits ("make local commits as you consider
+> and if we need to debug we can get back commit by commit"); user
+> available ~30 min at the start for plan questions.
+>
+> Research agents launched (2026-09-17, 3 parallel) — COMPLETE:
+> 1. LinuxCNC tool table + FreeCAD/Fusion/ISO13399 formats
+> 2. PolySmith CAM internals integration map (core + UI)
+> 3. Tool-editor UX industry study (Fusion/FreeCAD/LinuxCNC)
+>
+> **User decisions (2026-09-17, AskUserQuestion):**
+> - Library storage: DOCUMENT library + ON-DISK SHARED library
+>   (POLYSMITH_TOOLS_DIR, clone machine_library pattern)
+> - Machine scope: MILL + LASER + LATHE data (I/J/Q + angles as data)
+> - Posts: EMIT T/M6 + spindle now (GRBL/FluidNC must NOT — gate by post)
+> - Formats: PolySmith JSON + LinuxCNC .tbl (no CSV this round)
+>
+> **Key findings:** ToolEntry/tool_library/cam_tool_* CRUD exist
+> end-to-end already; generators consume tool diameter + default
+> feeds. Missing: tool numbers, on-disk library, editor UI, .tbl I/O,
+> T/M6 post emission, tool-edit invalidation (precedent:
+> cam_tool_delete), new types (v_bit/spot_drill), fields (flutes,
+> helix/point/tip/taper angles, shoulder/length-below-holder,
+> surface-speed/fz, description/vendor/product_id, pocket, guid,
+> lathe front/back/orientation).
+>
+> **Checkpoint commits (each gated: build + suites + tsc):**
+> C1 core ToolEntry schema + whitelist + payload/parse + save/load test
+> C2 core tool_library.{h,cpp} on-disk lib + POLYSMITH_TOOLS_DIR +
+>   cam_tool_library_list/save + generic catalog seeds + test suite
+> C3 core .tbl + JSON parse/export text commands + round-trip tests
+> C4 core tool-number auto-assign + uniqueness + update invalidation
+> C5 core post T/M6 + spindle emission (linuxcnc yes, grbl no) + tests
+> C6 TS types/zod/ipc + hooks for new fields/commands
+> C7 TS lib: toolSchematic.ts, genericToolCatalog.ts, camToolSelection
+>   (replaces 12 scattered type-filter predicates)
+> C8 CamToolEditorPanel (floating, schematic SVG + fields + validation)
+> C9 CamToolLibraryDialog (3-pane, search/sort, duplicate/copy/delete)
+> C10 import/export UI (.tbl/JSON) + conflict dialog + Tauri file I/O
+> Final: full gates + tracker + user verification checklist
+
+---
+
+# COMPLETED: UNDO/REDO REWORK — merged as PR #87 (2026-09-17)
 
 > **Branch:** `feature/undo-redo`, created from `dev` @ `01c5149`
 > (the squash merge of the trim redesign) and pushed to origin.
@@ -35,6 +90,8 @@
 > **Spec:** `wiki/Undo-Redo-Redesign-Requirements.md` — decisions
 > D1–D10, phases P0→P5, stage test program
 > `cad_core_undo_stages_test`.
+>
+> ## MERGED as PR #87 → dev @ d10cd3f (2026-09-17). New branch `cam/tools` created from dev (pushed).
 >
 > ## STATUS 2026-09-17: ALL SIX PHASES IMPLEMENTED — gates green, AWAITING USER IN-APP VERIFICATION
 >

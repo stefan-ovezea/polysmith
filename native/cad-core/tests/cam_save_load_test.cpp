@@ -122,6 +122,29 @@ CamDocumentData make_cam_data() {
   mill_tool.name = "6mm endmill";
   mill_tool.type = "endmill_flat";
   mill_tool.diameter_mm = 6.0;
+  // Every extended field set to a NON-default value so the round-trip
+  // proves the whole ToolEntry surface persists.
+  mill_tool.tool_number = 7;
+  mill_tool.pocket_number = 9;
+  mill_tool.description = "Alu roughing 3F";
+  mill_tool.vendor = "Acme Tools";
+  mill_tool.product_id = "ACM-0606";
+  mill_tool.guid = "abc123def456";
+  mill_tool.shoulder_length_mm = 18.0;
+  mill_tool.length_below_holder_mm = 50.0;
+  mill_tool.flutes = 3;
+  mill_tool.helix_angle_deg = 38.0;
+  mill_tool.point_angle_deg = 90.0;
+  mill_tool.tip_diameter_mm = 0.2;
+  mill_tool.tip_length_mm = 1.5;
+  mill_tool.taper_angle_deg = 15.0;
+  mill_tool.front_angle_deg = 95.0;
+  mill_tool.back_angle_deg = 155.0;
+  mill_tool.orientation = 1;
+  mill_tool.material = "hss";
+  mill_tool.coating = "tialn";
+  mill_tool.surface_speed_m_per_min = 250.0;
+  mill_tool.feed_per_tooth_mm = 0.03;
   cam.tool_library.push_back(mill_tool);
 
   CamOperation laser_op;
@@ -246,9 +269,37 @@ bool cam_data_equal(const CamDocumentData& a, const CamDocumentData& b) {
     }
   }
   for (size_t i = 0; i < a.tool_library.size(); ++i) {
-    if (a.tool_library[i].tool_id != b.tool_library[i].tool_id ||
-        a.tool_library[i].type != b.tool_library[i].type ||
-        a.tool_library[i].name != b.tool_library[i].name) {
+    const auto& ta = a.tool_library[i];
+    const auto& tb = b.tool_library[i];
+    if (ta.tool_id != tb.tool_id || ta.type != tb.type ||
+        ta.name != tb.name || ta.tool_number != tb.tool_number ||
+        ta.pocket_number != tb.pocket_number ||
+        ta.description != tb.description || ta.vendor != tb.vendor ||
+        ta.product_id != tb.product_id || ta.guid != tb.guid ||
+        ta.diameter_mm != tb.diameter_mm ||
+        ta.corner_radius_mm != tb.corner_radius_mm ||
+        ta.flute_length_mm != tb.flute_length_mm ||
+        ta.overall_length_mm != tb.overall_length_mm ||
+        ta.shank_diameter_mm != tb.shank_diameter_mm ||
+        ta.shoulder_length_mm != tb.shoulder_length_mm ||
+        ta.length_below_holder_mm != tb.length_below_holder_mm ||
+        ta.flutes != tb.flutes || ta.helix_angle_deg != tb.helix_angle_deg ||
+        ta.point_angle_deg != tb.point_angle_deg ||
+        ta.tip_diameter_mm != tb.tip_diameter_mm ||
+        ta.tip_length_mm != tb.tip_length_mm ||
+        ta.taper_angle_deg != tb.taper_angle_deg ||
+        ta.front_angle_deg != tb.front_angle_deg ||
+        ta.back_angle_deg != tb.back_angle_deg ||
+        ta.orientation != tb.orientation || ta.material != tb.material ||
+        ta.coating != tb.coating || ta.coolant_through != tb.coolant_through ||
+        ta.max_spindle_rpm != tb.max_spindle_rpm ||
+        ta.surface_speed_m_per_min != tb.surface_speed_m_per_min ||
+        ta.feed_per_tooth_mm != tb.feed_per_tooth_mm ||
+        ta.default_feedrate_mm_per_min != tb.default_feedrate_mm_per_min ||
+        ta.default_plunge_feedrate_mm_per_min !=
+            tb.default_plunge_feedrate_mm_per_min ||
+        ta.default_stepdown_mm != tb.default_stepdown_mm ||
+        ta.default_stepover_percent != tb.default_stepover_percent) {
       return false;
     }
   }

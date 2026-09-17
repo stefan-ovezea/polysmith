@@ -156,11 +156,30 @@ bool test_tool_library_crud() {
     return false;
   }
 
+  // Machine-side identity: numbers auto-assign sequentially, guids are
+  // minted (stable identity for import/export reconciliation).
+  if (!expect(withMill.cam.tool_library[0].tool_number == 1 &&
+                  withMill.cam.tool_library[1].tool_number == 2,
+              "tool add: tool numbers auto-assign")) {
+    return false;
+  }
+  if (!expect(!withMill.cam.tool_library[0].guid.empty() &&
+                  !withMill.cam.tool_library[1].guid.empty() &&
+                  withMill.cam.tool_library[0].guid !=
+                      withMill.cam.tool_library[1].guid,
+              "tool add: unique guids minted")) {
+    return false;
+  }
+
   ToolEntry renamed = withMill.cam.tool_library[1];
   renamed.name = "6mm flat endmill";
   const DocumentState updated = manager.cam_tool_update("tool-2", renamed);
   if (!expect(updated.cam.tool_library[1].name == "6mm flat endmill",
               "tool update: replaces by id")) {
+    return false;
+  }
+  if (!expect(updated.cam.tool_library[1].tool_number == 2,
+              "tool update: explicit number preserved")) {
     return false;
   }
 
@@ -195,6 +214,64 @@ bool test_tool_library_crud() {
     return false;
   }
 
+  // New types must pass the whitelist; geometry errors must throw with
+  // a human message and leave the document untouched.
+  const DocumentState withNewTypes = manager.cam_tool_add(make_tool("v_bit"));
+  if (!expect(withNewTypes.cam.tool_library.size() == 3 &&
+                  withNewTypes.cam.tool_library[2].type == "v_bit",
+              "tool add: v_bit accepted")) {
+    return false;
+  }
+  const DocumentState withSpot = manager.cam_tool_add(make_tool("spot_drill"));
+  if (!expect(withSpot.cam.tool_library.size() == 4,
+              "tool add: spot_drill accepted")) {
+    return false;
+  }
+
+  bool badDiameter = false;
+  ToolEntry zeroDia = make_tool();
+  zeroDia.diameter_mm = 0.0;
+  try {
+    manager.cam_tool_add(zeroDia);
+  } catch (const std::runtime_error& error) {
+    badDiameter = std::string(error.what()).find("diameter") !=
+                  std::string::npos;
+  }
+  if (!expect(badDiameter, "tool add: zero diameter throws")) {
+    return false;
+  }
+
+  bool badFlutes = false;
+  ToolEntry noFlutes = make_tool();
+  noFlutes.flutes = 0;
+  try {
+    manager.cam_tool_add(noFlutes);
+  } catch (const std::runtime_error& error) {
+    badFlutes = std::string(error.what()).find("flute") != std::string::npos;
+  }
+  if (!expect(badFlutes, "tool add: zero flutes throws")) {
+    return false;
+  }
+
+  bool numberClash = false;
+  ToolEntry clashNumber = make_tool();
+  clashNumber.tool_number = 1;  // already assigned to tool-1
+  try {
+    manager.cam_tool_add(clashNumber);
+  } catch (const std::runtime_error& error) {
+    numberClash = std::string(error.what()).find("already used") !=
+                  std::string::npos;
+  }
+  if (!expect(numberClash, "tool add: duplicate tool number throws")) {
+    return false;
+  }
+
+  // The failed adds above must not have mutated the library.
+  if (!expect(manager.cam_tool_list().size() == 4,
+              "tool add: failed validation leaves library untouched")) {
+    return false;
+  }
+
   bool missing = false;
   try {
     manager.cam_tool_delete("tool-99");
@@ -207,8 +284,49 @@ bool test_tool_library_crud() {
   }
 
   const DocumentState afterDelete = manager.cam_tool_delete("tool-1");
-  return expect(afterDelete.cam.tool_library.size() == 1,
+  return expect(afterDelete.cam.tool_library.size() == 3,
                 "tool delete: removes the tool");
+}
+
+bool test_tool_update_invalidates_operations() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.cam_setup_create(make_setup());
+  DocumentState doc = manager.cam_tool_add(make_tool());
+  const std::string toolId = doc.cam.tool_library[0].tool_id;
+
+  CamOperation op = make_op("face_milling", toolId);
+  op.status = "generated";
+  const DocumentState withOp = manager.cam_operation_add(op);
+  if (!expect(withOp.cam.operations.size() == 1,
+              "invalidate: operation created")) {
+    return false;
+  }
+
+  // Any tool edit must push dependent operations back to
+  // needs_regenerate (mirrors cam_tool_delete degradation).
+  ToolEntry edited = withOp.cam.tool_library[0];
+  edited.diameter_mm = 8.0;
+  const DocumentState afterEdit = manager.cam_tool_update(toolId, edited);
+  if (!expect(afterEdit.cam.operations[0].status == "needs_regenerate" &&
+                  afterEdit.cam.operations[0].status_message.empty(),
+              "invalidate: dependent operation marked after tool edit")) {
+    return false;
+  }
+
+  // Unrelated operations stay untouched.
+  const DocumentState withSecond = manager.cam_tool_add(make_tool("drill"));
+  CamOperation drill = make_op("drilling", withSecond.cam.tool_library[1].tool_id);
+  drill.status = "generated";
+  const DocumentState withDrill = manager.cam_operation_add(drill);
+  ToolEntry editedAgain = withDrill.cam.tool_library[0];
+  editedAgain.diameter_mm = 9.0;
+  const DocumentState afterSecond = manager.cam_tool_update(toolId, editedAgain);
+  // The drilling op keeps its add-time "pending" status — only ops
+  // referencing the edited tool are touched.
+  return expect(afterSecond.cam.operations[0].status == "needs_regenerate" &&
+                    afterSecond.cam.operations[1].status == "pending",
+                "invalidate: unrelated operation untouched");
 }
 
 bool test_operation_add_validates_tool() {
@@ -328,6 +446,11 @@ bool test_operation_add_creates_default_tool() {
                   created.cam.tool_library.size() == 1 &&
                   created.cam.tool_library[0].type == "laser",
               "default tool: laser tool auto-created")) {
+    return false;
+  }
+  if (!expect(created.cam.tool_library[0].tool_number == 1 &&
+                  !created.cam.tool_library[0].guid.empty(),
+              "default tool: machine identity assigned")) {
     return false;
   }
 
@@ -1519,6 +1642,14 @@ int main() {
 
   std::cout << "  Test 25: geometry_scope payload round-trip... ";
   if (test_geometry_scope_payload_round_trip()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 26: tool edit invalidates operations... ";
+  if (test_tool_update_invalidates_operations()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

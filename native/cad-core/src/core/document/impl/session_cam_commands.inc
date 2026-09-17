@@ -210,8 +210,74 @@ bool is_supported_tool_type(const std::string& type) {
   static const std::set<std::string> kSupported = {
       "endmill_flat", "endmill_ball", "endmill_bull", "drill",
       "facemill", "chamfer", "threadmill", "turning_insert",
-      "laser", "plasma"};
+      "laser", "plasma", "v_bit", "spot_drill"};
   return kSupported.count(type) > 0;
+}
+
+// The smallest unused tool number >= 1 (FreeCAD's get_next_bit_no
+// convention: max used + 1, but holes from deletions are reused).
+int next_free_tool_number(const std::vector<ToolEntry>& tools) {
+  int candidate = 1;
+  while (true) {
+    bool used = false;
+    for (const auto& tool : tools) {
+      if (tool.tool_number == candidate) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) return candidate;
+    ++candidate;
+  }
+}
+
+// Shared validation for cam_tool_add/cam_tool_update. Throws a
+// human-readable std::runtime_error; the document is untouched.
+void validate_tool_entry(const ToolEntry& tool,
+                         const std::vector<ToolEntry>& tools,
+                         const std::string& ignore_tool_id) {
+  if (tool.name.empty()) {
+    throw std::runtime_error("The tool needs a name");
+  }
+  if (!is_supported_tool_type(tool.type)) {
+    throw std::runtime_error("Unknown tool type: " + tool.type);
+  }
+  if (tool.diameter_mm <= 0.0) {
+    throw std::runtime_error("The tool diameter must be positive");
+  }
+  if (tool.shank_diameter_mm <= 0.0) {
+    throw std::runtime_error("The tool shank diameter must be positive");
+  }
+  if (tool.flute_length_mm <= 0.0) {
+    throw std::runtime_error("The tool flute length must be positive");
+  }
+  if (tool.overall_length_mm < tool.flute_length_mm) {
+    throw std::runtime_error("The overall length must be at least the flute length");
+  }
+  if (tool.corner_radius_mm < 0.0 ||
+      tool.corner_radius_mm > tool.diameter_mm / 2.0) {
+    throw std::runtime_error(
+        "The corner radius must be between 0 and half the diameter");
+  }
+  if (tool.flutes < 1 || tool.flutes > 12) {
+    throw std::runtime_error("The tool flute count must be between 1 and 12");
+  }
+  if (tool.orientation < 0 || tool.orientation > 9) {
+    throw std::runtime_error("The tool orientation must be between 0 and 9");
+  }
+  if (tool.tool_number < 0) {
+    throw std::runtime_error("The tool number must be positive");
+  }
+  if (tool.tool_number > 0) {
+    for (const auto& existing : tools) {
+      if (existing.tool_id != ignore_tool_id &&
+          existing.tool_number == tool.tool_number) {
+        throw std::runtime_error("Tool number " +
+                                 std::to_string(tool.tool_number) +
+                                 " is already used by " + existing.name);
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -325,12 +391,8 @@ DocumentState DocumentManager::cam_setup_delete(const std::string& setup_id) {
 
 DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
   require_document();
-  if (tool.name.empty()) {
-    throw std::runtime_error("The tool needs a name");
-  }
-  if (!is_supported_tool_type(tool.type)) {
-    throw std::runtime_error("Unknown tool type: " + tool.type);
-  }
+  validate_tool_entry(tool, document_->cam.tool_library,
+                      /*ignore_tool_id=*/"");
   if (!tool.tool_id.empty()) {
     for (const auto& existing : document_->cam.tool_library) {
       if (existing.tool_id == tool.tool_id) {
@@ -345,6 +407,12 @@ DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
   if (stored.tool_id.empty()) {
     stored.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
   }
+  if (stored.tool_number == 0) {
+    stored.tool_number = next_free_tool_number(document_->cam.tool_library);
+  }
+  if (stored.guid.empty()) {
+    stored.guid = polysmith::core::mint_tool_guid();
+  }
   document_->cam.tool_library.push_back(stored);
   bump_geometry_revision();
   return document_.value();
@@ -353,18 +421,31 @@ DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
 DocumentState DocumentManager::cam_tool_update(const std::string& toolId,
                                                const ToolEntry& tool) {
   require_document();
-  if (tool.name.empty()) {
-    throw std::runtime_error("The tool needs a name");
-  }
-  if (!is_supported_tool_type(tool.type)) {
-    throw std::runtime_error("Unknown tool type: " + tool.type);
-  }
+  validate_tool_entry(tool, document_->cam.tool_library, toolId);
   for (auto& existing : document_->cam.tool_library) {
     if (existing.tool_id == toolId) {
       push_undo_state();
       clear_redo_stack();
       existing = tool;
       existing.tool_id = toolId;  // the id is the lookup key, not the payload
+      if (existing.tool_number == 0) {
+        existing.tool_number =
+            next_free_tool_number(document_->cam.tool_library);
+      }
+      if (existing.guid.empty()) {
+        existing.guid = polysmith::core::mint_tool_guid();
+      }
+      // Geometry/limits changed — every operation using this tool must
+      // regenerate. The refresh pass keeps the message empty for
+      // needs_regenerate, so no message here (unlike cam_tool_delete's
+      // error degradation, which the refresh does not recompute).
+      for (auto& op : document_->cam.operations) {
+        if (op.tool_id == toolId) {
+          op.status = "needs_regenerate";
+          op.status_message.clear();
+          op.toolpath_cache.reset();
+        }
+      }
       bump_geometry_revision();
       return document_.value();
     }
@@ -489,6 +570,11 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
         defaultTool.diameter_mm = 6.0;
       }
       stored.tool_id = defaultTool.tool_id;
+      // The on-the-spot default tool bypasses cam_tool_add — assign
+      // its machine-side identity here so it is usable from day one.
+      defaultTool.tool_number =
+          next_free_tool_number(document_->cam.tool_library);
+      defaultTool.guid = polysmith::core::mint_tool_guid();
     }
   } else {
     bool toolExists = false;
