@@ -13,6 +13,13 @@ import { setCamSchemaRescueReporter } from "@/lib/schemas/ipc/camSchema";
 import { useCadCoreStore, useToastStore } from "@/state";
 import { reportCoreError } from "./coreLogReporting";
 
+// The bridge is a PROCESS-WIDE singleton — exactly one Tauri listener
+// per channel no matter how many components call useCadCore().  A
+// second listener (e.g. the tool library dialog mounting the hook)
+// used to parse and dispatch every core event twice, doubling the UI
+// work per event.
+let bridgeInstalled = false;
+
 export function useCadCoreEventBridge() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
   const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
@@ -48,11 +55,20 @@ export function useCadCoreEventBridge() {
         addMessage(message);
       }
     });
-    return () => setCamSchemaRescueReporter(null);
+    // Process-lifetime reporter — a later unmount (dialog close) must
+    // not disarm it while the app bridge is still alive.
   }, [addLogEntry, addMessage, pushToast]);
 
   useEffect(() => {
-    let disposed = false;
+    // Singleton: only the FIRST mount installs the Tauri listeners —
+    // they live for the process.  Every later mount (any component
+    // calling useCadCore()) reuses them instead of adding another
+    // per-event parse+dispatch.
+    if (bridgeInstalled) {
+      return;
+    }
+    bridgeInstalled = true;
+
     const unlistenFns: Array<() => void> = [];
 
     async function setupListeners() {
@@ -145,22 +161,14 @@ export function useCadCoreEventBridge() {
         unlistenError,
         unlistenExited,
       ]) {
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenFns.push(unlisten);
-        }
+        unlistenFns.push(unlisten);
       }
     }
 
     void setupListeners();
 
-    return () => {
-      disposed = true;
-      for (const unlisten of unlistenFns) {
-        unlisten();
-      }
-    };
+    // The listeners are process-lifetime — no cleanup.  Later mounts
+    // short-circuit on bridgeInstalled before reaching here.
   }, [
     addLogEntry,
     addMessage,

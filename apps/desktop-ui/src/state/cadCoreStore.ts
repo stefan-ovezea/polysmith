@@ -218,7 +218,9 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       return {
         ...nextState,
-        messages: [...state.messages, renderedMessage],
+        // Capped like logs — an unbounded array grows with every core
+        // event and makes every store update slower over a session.
+        messages: [...state.messages, renderedMessage].slice(-500),
       } as CadCoreStoreState;
     }),
 }));
