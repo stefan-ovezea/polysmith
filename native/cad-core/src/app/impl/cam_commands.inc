@@ -651,6 +651,32 @@
     return;
   }
 
+  if (command.type == "cam_tool_library_list" ||
+      command.type == "cam_tool_library_save") {
+    if (command.type == "cam_tool_library_save") {
+      const auto tool =
+          polysmith::protocol::tool_entry_from_payload(command.payload);
+      std::string error;
+      const std::string saved = polysmith::core::save_tool_entry(tool, error);
+      if (!error.empty()) {
+        polysmith::core::log_warn("cam", "tool save failed: " + error);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_SAVE_FAILED", error));
+        return;
+      }
+      polysmith::core::log_info("cam", "tool saved: " + saved);
+    }
+    const auto tools = polysmith::core::load_tool_library();
+    polysmith::protocol::json payload = polysmith::protocol::json::array();
+    for (const auto& tool : tools) {
+      payload.push_back(polysmith::protocol::to_payload(tool));
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_tool_list_event(command.id, payload));
+    return;
+  }
+
   if (command.type == "cam_export_gcode") {
     const auto export_result = document_manager().export_cam_gcode(
         read_string(command.payload, "file_path"));

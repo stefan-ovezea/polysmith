@@ -31,6 +31,7 @@
 #include "core/cam/cam_runtime.h"
 #include "core/cam/machine_library.h"
 #include "core/cam/post_processor.h"
+#include "core/cam/tool_library.h"
 #include "core/document/document.h"
 #include "core/sketch/formula_eval.h"
 #include "core/diagnostics/logger.h"

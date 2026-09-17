@@ -54,6 +54,8 @@
         "cam_stock_set",
         "cam_tool_add",
         "cam_tool_delete",
+        "cam_tool_library_list",
+        "cam_tool_library_save",
         "cam_tool_list",
         "cam_tool_update",
         "cam_wcs_set_face",

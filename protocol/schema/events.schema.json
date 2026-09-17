@@ -21,6 +21,7 @@
         "cam_export_gcode_text_result",
         "cam_machine_list_result",
         "cam_post_list_result",
+        "cam_tool_list_result",
         "cam_face_attestation_result",
         "log",
         "trim_preview_result",
