@@ -1,6 +1,8 @@
-# Active task: TRIM TOOL REDESIGN — ALL PHASES IMPLEMENTED (2026-09-17)
+# Active task: TRIM TOOL REDESIGN — ALL PHASES IMPLEMENTED, COMMITTED + PUSHED (2026-09-17)
 
-> **Branch:** `feature/trim` (from `dev` @ b32f9fb). NOTHING COMMITTED.
+> **Branch:** `feature/trim` (from `dev` @ b32f9fb). **Committed
+> `a54c6eb` and pushed to origin after user in-app verification
+> ("OK it is working", 2026-09-17). Next: PR → dev (needs approval).**
 > **Spec:** wiki/Trim-Tool-Redesign-Requirements.md (user approved
 > D1–D5: FreeCAD-style constraint transfer, extend-to-intersection,
 > no right-click cycling, circle keeps concentric/equal, rebuild in
@@ -11,9 +13,8 @@
 > **Phases:** 0 engine rebuild (no behavior change) -> 1 constraint
 > transfer + projection pruning -> 2 Corner/Extend/Split -> 3 drag-paint.
 > Each phase gated: build + suites + tsc. **FINAL GATES 2026-09-17:
-> 51/51 C++ suites + tsc clean** (51st = the new stage test).
-> ALL PHASES IMPLEMENTED. NOTHING COMMITTED — user tests in-app
-> first; no git actions without approval.
+> 51/51 C++ suites + tsc clean** (51st = the new stage test) + user
+> in-app verification.
 >
 > **Phase 0 progress (2026-09-17, all 50 suites green after each step):**
 > - P0.1 DONE: freeze minted split points BEFORE the refresh solve
@@ -157,7 +158,7 @@ AI-CAD-Command-Language + IPC-Protocol (corner_trim_preview /
 corner_trim_sketch_entities / split_sketch_entity /
 trim_sketch_stroke).
 
-## AWAITING USER — in-app verification checklist (2026-09-17)
+## USER-VERIFIED IN-APP (2026-09-17) — "OK it is working"
 
 1. Trim: click-to-delete AND drag-paint stroke; a stroke must undo
    as ONE step.
@@ -169,7 +170,11 @@ trim_sketch_stroke).
 5. Hover an isolated line with Trim → whole line red (P0.6).
 6. Trim near coincident/constrained geometry → coincident
    constraints must survive (the fixed bug).
-NO git actions until the user approves.
+
+Committed `a54c6eb` + pushed to `origin/feature/trim`. Remaining:
+PR → dev (squash) + branch cleanup after merge — awaiting approval.
+`projects/laser board/` was deliberately left untracked (user data,
+not part of this change).
 
 ---
 
