@@ -34,6 +34,10 @@ struct PostContext {
   std::array<double, 3> wcs_origin = {0.0, 0.0, 0.0};
   // Present for laser operations — drives M3 vs M4 and S scaling.
   std::optional<LaserCutParameters> laser;
+  // The tool number ACTIVE BEFORE this operation (program-level
+  // modal state maintained by the exporter).  A mill op whose tool
+  // number differs emits the tool-change lines first.
+  int current_tool_number = 0;
   // The loaded post definition (defaulted; filled by post_process).
   PostDefinition definition;
 };
