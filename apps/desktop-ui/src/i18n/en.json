@@ -1056,6 +1056,11 @@
       "feedPerToothShort": "fz",
       "savedToShared": "Tool saved to the shared library."
     },
+    "toolPicker": {
+      "none": "No tools for this operation in the document library.",
+      "openLibrary": "Tool Library…",
+      "select": "Select a tool for this operation."
+    },
     "toolImport": {
       "title": "Import Tools",
       "chooseFile": "Choose a tool table",

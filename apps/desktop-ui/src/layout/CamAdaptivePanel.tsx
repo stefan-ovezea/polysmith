@@ -6,6 +6,7 @@ import type { CamOperationParameters, ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -52,6 +53,7 @@ interface CamAdaptivePanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamAdaptivePanel({
@@ -75,6 +77,7 @@ export function CamAdaptivePanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamAdaptivePanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<AdaptiveFormState>(() => ({
@@ -137,13 +140,13 @@ export function CamAdaptivePanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.adaptive.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.adaptive.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

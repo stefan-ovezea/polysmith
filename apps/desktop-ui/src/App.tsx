@@ -4637,6 +4637,7 @@ function App() {
                 isSetupPanelOpen={isCamSetupPanelOpen}
                 isToolLibraryOpen={isToolLibraryOpen}
                 onCloseToolLibrary={() => setIsToolLibraryOpen(false)}
+                onOpenToolLibrary={() => setIsToolLibraryOpen(true)}
                 isGrblPanelOpen={isGrblPanelOpen}
                 setGrblPanelOpen={setIsGrblPanelOpen}
                 onOpenGrblControls={() => {

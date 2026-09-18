@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Dropdown } from "@/lib";
 import { readNumberInputValue } from "./numberInput";
 
 export function CamNumberField({
@@ -76,6 +77,62 @@ export function CamCheckboxField({
       />
       {label}
     </label>
+  );
+}
+
+// Tool dropdown + library bridge.  The operation panels read only the
+// DOCUMENT tool library, so a fresh document shows just the core's
+// on-the-spot default.  The picker always offers the tool library
+// dialog (copy tools in from the shared library — the dropdown then
+// updates on its own) and says so when the document has nothing
+// usable for this operation.
+export function CamToolPicker({
+  value,
+  label,
+  options,
+  disabled,
+  onChange,
+  onOpenLibrary,
+}: {
+  value: string;
+  label: string;
+  options: Array<{ value: string; label: ReactNode }>;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onOpenLibrary: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <Dropdown
+        className="w-full"
+        value={value}
+        label={label}
+        options={options}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      {options.length === 0 ? (
+        <p className="text-[10px] leading-relaxed text-on-surface-dim">
+          {t(
+            "cam.toolPicker.none",
+            "No tools for this operation in the document library.",
+          )}
+        </p>
+      ) : value === "" ? (
+        <p className="text-[10px] leading-relaxed text-on-surface-dim">
+          {t("cam.toolPicker.select", "Select a tool for this operation.")}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="cad-action-ghost w-full"
+        disabled={disabled}
+        onClick={onOpenLibrary}
+      >
+        {t("cam.toolPicker.openLibrary", "Tool Library…")}
+      </button>
+    </>
   );
 }
 

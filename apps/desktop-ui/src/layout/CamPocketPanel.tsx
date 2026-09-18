@@ -6,6 +6,7 @@ import type { CamOperationParameters, ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -53,6 +54,7 @@ interface CamPocketPanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamPocketPanel({
@@ -76,6 +78,7 @@ export function CamPocketPanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamPocketPanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<PocketFormState>(() => ({
@@ -136,13 +139,13 @@ export function CamPocketPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.pocket.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.pocket.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

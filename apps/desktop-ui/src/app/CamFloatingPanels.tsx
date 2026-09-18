@@ -66,6 +66,8 @@ interface CamFloatingPanelsProps {
   // Tool library manager (opened from the CAM sidebar tree).
   isToolLibraryOpen: boolean;
   onCloseToolLibrary: () => void;
+  // Opens the tool library from the operation panels' tool picker.
+  onOpenToolLibrary: () => void;
   selectedOperationId: string | null;
   activeSetupId: string | null;
   camProfilePickArmed: boolean;
@@ -160,6 +162,7 @@ export function CamFloatingPanels({
   isSetupPanelOpen,
   isToolLibraryOpen,
   onCloseToolLibrary,
+  onOpenToolLibrary,
   selectedOperationId,
   activeSetupId,
   camProfilePickArmed,
@@ -333,6 +336,7 @@ export function CamFloatingPanels({
         setSelectedOperationId,
         runAction,
         addMessage,
+        onOpenToolLibrary,
         onExportGcode,
         onExportAndOpen,
         onSendToGrbl,
@@ -396,6 +400,7 @@ function buildOperationPanel({
   setSelectedOperationId,
   runAction,
   addMessage,
+  onOpenToolLibrary,
   onExportGcode,
   onExportAndOpen,
   onSendToGrbl,
@@ -434,6 +439,7 @@ function buildOperationPanel({
   | "setSelectedOperationId"
   | "runAction"
   | "addMessage"
+  | "onOpenToolLibrary"
   | "onExportGcode"
   | "onExportAndOpen"
   | "onSendToGrbl"
@@ -731,6 +737,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -807,6 +814,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -884,6 +892,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1003,6 +1012,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1109,6 +1119,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1191,6 +1202,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1298,6 +1310,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }

@@ -6,6 +6,7 @@ import type { ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -48,6 +49,7 @@ interface CamSlotPanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamSlotPanel({
@@ -68,6 +70,7 @@ export function CamSlotPanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamSlotPanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<SlotFormState>(() => ({
@@ -122,13 +125,13 @@ export function CamSlotPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.slot.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.slot.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 
