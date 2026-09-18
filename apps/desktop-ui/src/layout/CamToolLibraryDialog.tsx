@@ -62,6 +62,14 @@ const TOOL_TYPES: ToolType[] = [
 
 type LibrarySource = "document" | "shared";
 
+/** Stable identity for a tool in either library.  Shared-library
+ *  tools load with an empty tool_id (the seeded catalog files carry
+ *  no id), so selection, list keys, and lookups must fall back to
+ *  guid — comparing only tool_id makes every shared tool look alike. */
+function toolKey(tool: ToolEntry): string {
+  return tool.tool_id || tool.guid || `${tool.tool_number}-${tool.name}`;
+}
+
 /** Blank template mirroring the core ToolEntry defaults in cam_types.h. */
 function blankTool(): ToolEntry {
   return {
@@ -197,7 +205,7 @@ export function CamToolLibraryDialog({
   }, [document, query, shared, source, typeFilter]);
 
   const selected =
-    tools.find((tool) => tool.tool_id === selectedId) ?? tools[0] ?? null;
+    tools.find((tool) => toolKey(tool) === selectedId) ?? tools[0] ?? null;
 
   const referencingOps = useMemo(() => {
     if (!selected) return [];
@@ -334,7 +342,7 @@ export function CamToolLibraryDialog({
       disposition: importDisposition(tool, library, importMode),
     }));
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm">
+      <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm">
         <div className="cad-floating-panel flex max-h-full w-[560px] max-w-full flex-col overflow-hidden px-5 py-5">
           <div className="flex items-center justify-between">
             <p className="cad-kicker">
@@ -445,7 +453,7 @@ export function CamToolLibraryDialog({
   // to the library view, Escape in the library closes the dialog.
   if (editor) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm">
+      <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm">
         <CamToolEditorPanel
           tool={editor.tool}
           mode={editor.mode}
@@ -469,7 +477,7 @@ export function CamToolLibraryDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm"
+      className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-6 py-8 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -565,15 +573,15 @@ export function CamToolLibraryDialog({
               ) : (
                 tools.map((tool) => (
                   <button
-                    key={tool.tool_id}
+                    key={toolKey(tool)}
                     type="button"
                     className={
-                      selected?.tool_id === tool.tool_id
+                      selected === tool
                         ? "cad-panel-item-active flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs"
                         : "cad-panel-item flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs"
                     }
                     onClick={() => {
-                      setSelectedId(tool.tool_id);
+                      setSelectedId(toolKey(tool));
                       setConfirmDelete(false);
                     }}
                     onDoubleClick={() =>
