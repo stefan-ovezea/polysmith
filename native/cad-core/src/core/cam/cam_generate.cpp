@@ -57,7 +57,9 @@ CamGenerateOutcome generate_operation_toolpath(
   if (tool == nullptr) {
     outcome.result.ok = false;
     outcome.result.error_message =
-        "The tool used by this operation no longer exists.";
+        op->tool_id.empty()
+            ? "This operation has no tool yet — pick one in the operation panel."
+            : "The tool used by this operation no longer exists.";
     return outcome;
   }
   // A laser operation needs a laser tool — an endmill would emit

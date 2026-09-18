@@ -651,10 +651,13 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     stored.setup_id = document_->cam.setups[0].setup_id;
   }
 
-  // Tool resolution.  An explicit tool must exist; an EMPTY tool gets
-  // a sensible default — a matching tool from the library when one
-  // exists, otherwise a default tool created on the spot (the very
-  // first operation must not require a manual tool-library step).
+  // Tool resolution.  An explicit tool must exist.  An EMPTY tool id
+  // picks a matching library tool when one exists; otherwise only a
+  // LASER operation auto-creates its virtual default tool (the laser
+  // panels never offer tool selection).  Mill/drill operations stay
+  // UNASSIGNED — a silent "3mm drill (default)" appearing in the
+  // document is confusing now that the tool library and the panel
+  // picker exist; the picker is the path to a tool.
   bool createDefaultTool = false;
   ToolEntry defaultTool;
   if (stored.tool_id.empty()) {
@@ -672,23 +675,13 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     }
     if (match != nullptr) {
       stored.tool_id = match->tool_id;
-    } else {
+    } else if (wantsLaser) {
       createDefaultTool = true;
       defaultTool.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
-      if (wantsLaser) {
-        // Identity fields only — the struct defaults carry the
-        // sensible cutting parameters.
-        defaultTool.name = "CO2 laser (default)";
-        defaultTool.type = "laser";
-      } else if (wantsDrill) {
-        defaultTool.name = "3mm drill (default)";
-        defaultTool.type = "drill";
-        defaultTool.diameter_mm = 3.0;
-      } else {
-        defaultTool.name = "6mm flat endmill (default)";
-        defaultTool.type = "endmill_flat";
-        defaultTool.diameter_mm = 6.0;
-      }
+      // Identity fields only — the struct defaults carry the
+      // sensible cutting parameters.
+      defaultTool.name = "CO2 laser (default)";
+      defaultTool.type = "laser";
       stored.tool_id = defaultTool.tool_id;
       // The on-the-spot default tool bypasses cam_tool_add — assign
       // its machine-side identity here so it is usable from day one.
@@ -726,15 +719,20 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
 DocumentState DocumentManager::cam_operation_update(const std::string& operation_id,
                                                     const CamOperation& op) {
   require_document();
-  bool toolExists = false;
-  for (const auto& tool : document_->cam.tool_library) {
-    if (tool.tool_id == op.tool_id) {
-      toolExists = true;
-      break;
+  // An EMPTY tool id means "not assigned yet" (the panel's picker is
+  // the path to one) — the panel edits parameters before a tool
+  // exists.  Only a non-empty id must resolve.
+  if (!op.tool_id.empty()) {
+    bool toolExists = false;
+    for (const auto& tool : document_->cam.tool_library) {
+      if (tool.tool_id == op.tool_id) {
+        toolExists = true;
+        break;
+      }
     }
-  }
-  if (!toolExists) {
-    throw std::runtime_error("Unknown tool: " + op.tool_id);
+    if (!toolExists) {
+      throw std::runtime_error("Unknown tool: " + op.tool_id);
+    }
   }
   for (auto& existing : document_->cam.operations) {
     if (existing.op_id == operation_id) {

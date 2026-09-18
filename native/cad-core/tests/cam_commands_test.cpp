@@ -1150,31 +1150,43 @@ bool test_cam_capture_point() {
   return expect(threw, "capture point: no active document throws");
 }
 
-bool test_drilling_creates_default_tool() {
+bool test_drilling_leaves_tool_unassigned() {
   DocumentManager manager;
   manager.create_document();
   manager.cam_setup_create(make_setup());  // 3_axis_mill
 
+  // A drilling operation with no library drill stays UNASSIGNED — the
+  // old behavior minted a "3mm drill (default)" into the document,
+  // which is confusing now that the tool library and the panel picker
+  // are the path to a tool.
   CamOperation op;
   op.name = "Drill 1";
   op.type = "drilling";
   const DocumentState created = manager.cam_operation_add(op);
   if (!expect(created.cam.operations.size() == 1 &&
-                  !created.cam.operations[0].tool_id.empty() &&
-                  created.cam.tool_library.size() == 1 &&
-                  created.cam.tool_library[0].type == "drill" &&
-                  created.cam.tool_library[0].name == "3mm drill (default)" &&
-                  created.cam.tool_library[0].diameter_mm == 3.0,
-              "default drill tool: auto-created for drilling")) {
-    return false;
-  }
-  if (!expect(created.cam.operations[0].tool_id ==
-                  created.cam.tool_library[0].tool_id,
-              "default drill tool: op references the new tool")) {
+                  created.cam.operations[0].tool_id.empty() &&
+                  created.cam.tool_library.empty(),
+              "unassigned drill: empty tool id, no tool minted")) {
     return false;
   }
 
-  // A second drilling op reuses the library drill.
+  // Parameter updates on the unassigned operation must not throw
+  // "Unknown tool" — the panel edits parameters before a tool exists.
+  CamOperation updated = created.cam.operations[0];
+  updated.parameters.hole_depth_mm = 12.0;
+  bool threw = false;
+  try {
+    manager.cam_operation_update(updated.op_id, updated);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  if (!expect(!threw, "unassigned drill: parameter update succeeds")) {
+    return false;
+  }
+
+  // A library drill added later is still picked up automatically by
+  // the next operation.
+  manager.cam_tool_add(make_tool("drill"));
   CamOperation second;
   second.name = "Drill 2";
   second.type = "drilling";
@@ -1182,7 +1194,7 @@ bool test_drilling_creates_default_tool() {
   return expect(afterSecond.cam.tool_library.size() == 1 &&
                     afterSecond.cam.operations[1].tool_id ==
                         afterSecond.cam.tool_library[0].tool_id,
-                "default drill tool: existing drill reused");
+                "unassigned drill: library drill picked automatically");
 }
 
 bool test_drilling_requires_mill_machine() {
@@ -1693,7 +1705,7 @@ int main() {
   }
 
   std::cout << "  Test 18: drilling default drill tool... ";
-  if (test_drilling_creates_default_tool()) {
+  if (test_drilling_leaves_tool_unassigned()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";
