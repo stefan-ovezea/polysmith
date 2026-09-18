@@ -610,6 +610,49 @@ export const viewportStateSchema = z.object({
       }),
     )
     .default([]),
+  drawing_sheets: z
+    .array(
+      z.object({
+        sheet_id: z.string(),
+        drawing_id: z.string(),
+        name: z.string(),
+        width_mm: z.number(),
+        height_mm: z.number(),
+        curves: z
+          .array(
+            z.object({
+              kind: z.string(),
+              line_class: z.string(),
+              curve_class: z.string(),
+              p0: z.tuple([z.number(), z.number()]),
+              p1: z.tuple([z.number(), z.number()]),
+              center: z.tuple([z.number(), z.number()]).optional(),
+              radius: z.number().optional(),
+              major_dir: z.tuple([z.number(), z.number()]).optional(),
+              major_radius: z.number().optional(),
+              minor_radius: z.number().optional(),
+              start_angle: z.number().default(0),
+              end_angle: z.number().default(0),
+            }),
+          )
+          .default([]),
+        views: z
+          .array(
+            z.object({
+              view_id: z.string(),
+              label: z.string(),
+              scale: z.number(),
+              origin: z.tuple([z.number(), z.number()]),
+              min: z.tuple([z.number(), z.number()]),
+              max: z.tuple([z.number(), z.number()]),
+              stale: z.boolean(),
+              warning: z.string(),
+            }),
+          )
+          .default([]),
+      }),
+    )
+    .default([]),
   bodies: z
     .array(
       z.object({

@@ -1,18 +1,64 @@
 import { useTranslation } from "react-i18next";
 
-export interface DrawingToolbarProps {
+export interface DrawingToolbarActions {
+  /** Number of drawings in the document (Delete enabled when > 0). */
+  drawingCount: number;
+  /** Number of views on the active drawing (Insert enabled when > 0). */
+  viewCount: number;
+  onNewDrawing: () => void;
+  onInsertView: () => void;
+  onDeleteDrawing: () => void;
+}
+
+export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
   disabled: boolean;
 }
 
-/** Placeholder toolbar for the ISO Drawing workspace.
- *  Dimension tools and drawing-sheet controls will be added here. */
-export function DrawingToolbar({ disabled }: DrawingToolbarProps) {
+/** Toolbar for the ISO Drawing workspace: drawing lifecycle + view
+ *  insertion.  Dimension tools and sheet controls land with P6/P7. */
+export function DrawingToolbar({
+  disabled,
+  drawingCount = 0,
+  viewCount = 0,
+  onNewDrawing,
+  onInsertView,
+  onDeleteDrawing,
+}: DrawingToolbarProps) {
   const { t } = useTranslation();
 
   return (
     <div className="flex items-center gap-3">
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount > 0}
+        title={t("drawing.toolbar.newDrawingTitle")}
+        onClick={onNewDrawing}
+      >
+        + {t("drawing.toolbar.newDrawing")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.insertViewTitle")}
+        onClick={onInsertView}
+      >
+        {t("drawing.toolbar.insertView")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.deleteDrawingTitle")}
+        onClick={onDeleteDrawing}
+      >
+        {t("drawing.toolbar.deleteDrawing")}
+      </button>
       <span className="text-xs text-[var(--cad-muted)]">
-        {t("drawing.placeholder")}
+        {drawingCount > 0
+          ? t("drawing.toolbar.viewCount", { count: viewCount })
+          : t("drawing.toolbar.noDrawing")}
       </span>
     </div>
   );

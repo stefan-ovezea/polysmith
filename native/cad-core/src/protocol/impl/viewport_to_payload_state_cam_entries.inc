@@ -5,6 +5,13 @@
          }
          return toolpaths_json;
        }()},
+      {"drawing_sheets", [&viewport]() {
+         json sheets_json = json::array();
+         for (const auto& sheet : viewport.drawing_sheets) {
+           sheets_json.push_back(to_payload(sheet));
+         }
+         return sheets_json;
+       }()},
       {"cut_previews", [&viewport]() {
          json previews = json::array();
          for (const auto& preview : viewport.cut_previews) {

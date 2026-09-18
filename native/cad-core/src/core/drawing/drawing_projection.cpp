@@ -47,6 +47,11 @@ std::array<double, 3> dir3d(const gp_Dir& d) {
   return {d.X(), d.Y(), d.Z()};
 }
 
+// View-plane direction (the Z component is ~0 for projected curves).
+std::array<double, 2> dir2d(const gp_Dir& d) {
+  return {d.X(), d.Y()};
+}
+
 const char* curve_kind_name(const GeomAbs_CurveType type) {
   switch (type) {
     case GeomAbs_Line: return "line";
@@ -402,6 +407,25 @@ ProjectionResult project(const ProjectionInput& input) {
       }
       rec.p_start = point2d(q0);
       rec.p_end = point2d(q1);
+      // Renderable curve geometry: circles/ellipses carry their
+      // center/radii so the flattened sheet stream can draw exact
+      // arcs.  For circle/ellipse parameterizations the parameters
+      // ARE angles.
+      if (out.GetType() == GeomAbs_Circle) {
+        const gp_Circ circle = out.Circle();
+        rec.circle_center = point2d(circle.Location());
+        rec.circle_radius = circle.Radius();
+        rec.start_angle = rec.first_param;
+        rec.end_angle = rec.last_param;
+      } else if (out.GetType() == GeomAbs_Ellipse) {
+        const gp_Elips ellipse = out.Ellipse();
+        rec.ellipse_center = point2d(ellipse.Location());
+        rec.ellipse_major_dir = dir2d(ellipse.XAxis().Direction());
+        rec.ellipse_major_radius = ellipse.MajorRadius();
+        rec.ellipse_minor_radius = ellipse.MinorRadius();
+        rec.start_angle = rec.first_param;
+        rec.end_angle = rec.last_param;
+      }
       result.edges.push_back(std::move(rec));
     }
   }
@@ -451,6 +475,21 @@ ProjectionResult project(const ProjectionInput& input) {
     const gp_Pnt q1 = out.Value(rec.last_param);
     rec.p_start = point2d(q0);
     rec.p_end = point2d(q1);
+    if (out.GetType() == GeomAbs_Circle) {
+      const gp_Circ circle = out.Circle();
+      rec.circle_center = point2d(circle.Location());
+      rec.circle_radius = circle.Radius();
+      rec.start_angle = rec.first_param;
+      rec.end_angle = rec.last_param;
+    } else if (out.GetType() == GeomAbs_Ellipse) {
+      const gp_Elips ellipse = out.Ellipse();
+      rec.ellipse_center = point2d(ellipse.Location());
+      rec.ellipse_major_dir = dir2d(ellipse.XAxis().Direction());
+      rec.ellipse_major_radius = ellipse.MajorRadius();
+      rec.ellipse_minor_radius = ellipse.MinorRadius();
+      rec.start_angle = rec.first_param;
+      rec.end_angle = rec.last_param;
+    }
     result.edges.push_back(std::move(rec));
   }
 

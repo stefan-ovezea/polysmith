@@ -102,6 +102,7 @@ import {
   createHoleParameterHandlers,
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
+import { InsertViewPanel } from "./app/DrawingFloatingPanels";
 import { ConstructionPendingPanels } from "./app/ConstructionPendingPanels";
 import { PrimitiveFeatureEditPanel } from "./app/PrimitiveFeatureEditPanel";
 import {
@@ -607,6 +608,8 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  const [isDrawingInsertPanelOpen, setIsDrawingInsertPanelOpen] =
+    useState(false);
   // Tool library manager (opened from the CAM sidebar tree).
   const [isToolLibraryOpen, setIsToolLibraryOpen] = useState(false);
   // Shell-side GRBL streaming panel (serial transport, gcode_sender.rs).
@@ -727,6 +730,132 @@ function App() {
       setIsCamSetupPanelOpen(true);
     });
   };
+
+  // ── Drawing workspace actions ────────────────────────────────────
+
+  const activeDrawing = useMemo(() => {
+    const id = document?.drawing.active_drawing_id;
+    if (!id) {
+      return undefined;
+    }
+    return document?.drawing.drawings.find((d) => d.drawing_id === id);
+  }, [document]);
+
+  // Bodies the drawing views may reference: the selected body when it
+  // is a compiled body, otherwise every body (an assembly view).
+  const drawingBodyIds = useMemo(() => {
+    const bodyIds = viewport?.bodies.map((body) => body.id) ?? [];
+    const selected = document?.selected_feature_id;
+    if (selected && bodyIds.includes(selected)) {
+      return [selected];
+    }
+    return bodyIds;
+  }, [viewport, document?.selected_feature_id]);
+
+  // Suggested sheet position for the next view: a simple grid (P5
+  // replaces this with first-angle placement).
+  const nextDrawingSheetPosition = useMemo<[number, number]>(() => {
+    const count = activeDrawing?.views.length ?? 0;
+    return [30 + (count % 3) * 80, 40 + Math.floor(count / 3) * 90];
+  }, [activeDrawing]);
+
+  const drawingNewAction = async () => {
+    await runAction(async () => {
+      if (document?.drawing.drawings.length) {
+        addMessage(t("drawing.toolbar.exists"));
+        return;
+      }
+      await drawingCreate({
+        drawing_id: "",
+        name: t("drawing.defaultName"),
+        sheets: [
+          {
+            sheet_id: "",
+            name: t("drawing.defaultSheet"),
+            paper_size: "A4",
+            orientation: "portrait",
+            projection_angle: "first_angle",
+            view_ids: [],
+            title_block: {
+              legal_owner: "",
+              identification: "",
+              date: "",
+              title: "",
+              approver: "",
+              creator: "",
+              document_type: "",
+              revision_rows: [],
+            },
+          },
+        ],
+        views: [],
+        annotations: [],
+      });
+      const updated = await awaitDocumentChange(
+        (next) => next.drawing.drawings.length === 1,
+      );
+      const drawing = updated.drawing.drawings[0];
+      if (!drawing || drawing.sheets.length === 0) {
+        return;
+      }
+      // A new drawing starts with the front view of the part — the
+      // "drawing from solid" milestone, one click from nothing.
+      if (drawingBodyIds.length > 0) {
+        await drawingViewCreate(drawing.drawing_id, drawing.sheets[0].sheet_id, {
+          view_id: "",
+          kind: "projection",
+          standard_view: "front",
+          source_body_ids: drawingBodyIds,
+          scale: 1,
+          sheet_position: [30, 40],
+          show_hidden: false,
+          warning: "",
+        });
+      }
+    });
+  };
+
+  const drawingInsertViewAction = async (view: {
+    view_id: string;
+    kind: "projection" | "section" | "axonometric";
+    standard_view: string;
+    source_body_ids: string[];
+    scale: number;
+    sheet_position: [number, number];
+    show_hidden: boolean;
+    warning: string;
+  }) => {
+    setIsDrawingInsertPanelOpen(false);
+    await runAction(async () => {
+      const drawing = document?.drawing.drawings.find(
+        (d) => d.drawing_id === document?.drawing.active_drawing_id,
+      );
+      if (!drawing || drawing.sheets.length === 0) {
+        return;
+      }
+      await drawingViewCreate(drawing.drawing_id, drawing.sheets[0].sheet_id, {
+        view_id: "",
+        kind: view.kind,
+        standard_view: view.standard_view,
+        source_body_ids: view.source_body_ids,
+        scale: view.scale,
+        sheet_position: view.sheet_position,
+        show_hidden: view.show_hidden,
+        warning: view.warning,
+      });
+    });
+  };
+
+  const drawingDeleteAction = async () => {
+    await runAction(async () => {
+      const id = document?.drawing.active_drawing_id;
+      if (!id) {
+        return;
+      }
+      await drawingDelete(id);
+    });
+  };
+
   const camDeleteSetupAction = async (setupId: string) => {
     // The selected operation panel closes when its operation dies with
     // the setup (legacy ops with an empty setup_id die with the FIRST
@@ -1048,6 +1177,10 @@ function App() {
     camMachineSave,
     camExportGcode,
     camExportGcodeText,
+    drawingCreate,
+    drawingDelete,
+    drawingViewCreate,
+    drawingViewDelete,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -2658,6 +2791,19 @@ function App() {
           showSlicerView={showSlicerView}
           showGrblView={showGrblView}
           status={status}
+          drawingToolbar={{
+            drawingCount: document?.drawing.drawings.length ?? 0,
+            viewCount: activeDrawing?.views.length ?? 0,
+            onNewDrawing: () => {
+              void drawingNewAction();
+            },
+            onInsertView: () => {
+              setIsDrawingInsertPanelOpen(true);
+            },
+            onDeleteDrawing: () => {
+              void drawingDeleteAction();
+            },
+          }}
           canUndo={document?.can_undo ?? false}
           canRedo={document?.can_redo ?? false}
           activeSketchPlaneId={activeSketchPlaneId}
@@ -2936,6 +3082,9 @@ function App() {
               // The generated cut path is a CAM-workspace visual —
               // leaving CAM must not leave it drawn over the model.
               showCamToolpath={workspaceView === "cam"}
+              // Drawing workspace: sheets only — leaving the drawing
+              // workspace must not leave sheet geometry over the model.
+              showDrawingSheet={workspaceView === "drawing"}
               wcsOrientation={wcsOrientation}
               activeCamSetupId={activeCamSetupId}
               originPickPointEnabled={originPickArmed}
@@ -4863,6 +5012,19 @@ function App() {
                 camOperationPreview={camOperationPreview}
                 camOperationGenerate={camOperationGenerate}
               />
+              {isDrawingInsertPanelOpen ? (
+                <InsertViewPanel
+                  disabled={status !== "connected"}
+                  nextSheetPosition={nextDrawingSheetPosition}
+                  bodyIds={drawingBodyIds}
+                  onCommit={(view) => {
+                    void drawingInsertViewAction(view);
+                  }}
+                  onCancel={() => {
+                    setIsDrawingInsertPanelOpen(false);
+                  }}
+                />
+              ) : null}
               {pendingSketchDeleteConfirmation ? (
                 <SketchDeleteConfirmationPanel
                   confirmation={pendingSketchDeleteConfirmation}

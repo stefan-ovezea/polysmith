@@ -28,6 +28,7 @@
 #include "core/drawing/drawing_runtime.h"
 #include "core/geometry/body_compiler.h"
 #include "core/primitive/primitive_types.h"
+#include "core/viewport/viewport.h"
 
 namespace {
 
@@ -581,6 +582,85 @@ bool test_view_mutators() {
                 "view_delete removes the view and the sheet reference");
 }
 
+// ── Test 7b: viewport sheet emission ──────────────────────────────
+
+bool test_viewport_sheet_emission() {
+  DocumentManager manager;
+  const std::string body_id =
+      make_box_document(manager, {.width = 20.0, .height = 20.0,
+                                  .depth = 10.0});
+
+  Drawing drawing;
+  drawing.name = "Test Drawing";
+  DrawingSheet sheet;
+  sheet.name = "Sheet 1";
+  sheet.paper_size = "A4";
+  drawing.sheets.push_back(sheet);
+  DocumentState document = manager.drawing_create(drawing);
+  const std::string drawing_id = document.drawing.drawings[0].drawing_id;
+  const std::string sheet_id = document.drawing.drawings[0].sheets[0].sheet_id;
+
+  DrawingView view;
+  view.kind = "projection";
+  view.standard_view = "front";
+  view.source_body_ids = {body_id};
+  view.scale = 0.5;
+  view.sheet_position = {30.0, 40.0};
+  document = manager.drawing_view_create(drawing_id, sheet_id, view);
+
+  const auto state = polysmith::core::build_viewport_state(document);
+  if (!expect(state.drawing_sheets.size() == 1,
+              "viewport emits one sheet for the active drawing")) {
+    return false;
+  }
+  const auto& emitted = state.drawing_sheets[0];
+  if (!expect(near(emitted.width_mm, 210.0) &&
+                  near(emitted.height_mm, 297.0) &&
+                  emitted.sheet_id == sheet_id,
+              "viewport emits the A4 sheet dimensions")) {
+    return false;
+  }
+  // Front view at scale 0.5 from (30, 40): the visible face bounds
+  // are [30, 40] x [40, 45] in sheet-mm (20x10 at half scale).
+  int visible = 0;
+  for (const auto& curve : emitted.curves) {
+    if (curve.line_class != "visible") {
+      continue;
+    }
+    ++visible;
+  }
+  if (!expect(visible == 4,
+              "viewport emits the 4 visible face curves")) {
+    return false;
+  }
+  if (!expect(emitted.views.size() == 1 &&
+                  emitted.views[0].label == "front" &&
+                  near(emitted.views[0].scale, 0.5) &&
+                  near(emitted.views[0].min[0], 30.0, 1e-4) &&
+                  near(emitted.views[0].max[0], 40.0, 1e-4) &&
+                  near(emitted.views[0].min[1], 40.0, 1e-4) &&
+                  near(emitted.views[0].max[1], 45.0, 1e-4) &&
+                  !emitted.views[0].stale,
+              "viewport emits the view bounds in sheet-mm")) {
+    return false;
+  }
+  // Hidden edges off: no hidden curves.
+  for (const auto& curve : emitted.curves) {
+    if (!expect(curve.line_class == "visible",
+                "show_hidden=false emits no hidden curves")) {
+      return false;
+    }
+  }
+  // A curve's sheet-space coordinates: view (0,0) maps to (30, 40).
+  const auto& first = emitted.curves[0];
+  const bool at_origin = (near(first.p0[0], 30.0, 1e-4) &&
+                          near(first.p0[1], 40.0, 1e-4)) ||
+                         (near(first.p1[0], 30.0, 1e-4) &&
+                          near(first.p1[1], 40.0, 1e-4));
+  return expect(at_origin,
+                "curves are transformed to sheet-mm by scale + position");
+}
+
 // ── Test 7: determinism + golden files ────────────────────────────
 
 bool test_determinism_and_golden() {
@@ -685,6 +765,14 @@ int main() {
 
   std::cout << "  Test 7: determinism + golden files... ";
   if (test_determinism_and_golden()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 8: viewport sheet emission... ";
+  if (test_viewport_sheet_emission()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

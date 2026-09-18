@@ -221,7 +221,10 @@ import type {
   MachineDefinition,
   PointAttestation,
 } from "./geometry/cam";
-import type { DrawingDocumentData } from "./geometry/drawing";
+import type {
+  DrawingDocumentData,
+  ViewportDrawingSheet,
+} from "./geometry/drawing";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -371,6 +374,7 @@ export interface ViewportState {
   edges: ViewportEdgePrimitive[];
   vertices: ViewportVertexPrimitive[];
   toolpaths: ViewportToolpathPrimitive[];
+  drawing_sheets: ViewportDrawingSheet[];
   scene_width: number;
   scene_height: number;
   scene_depth: number;

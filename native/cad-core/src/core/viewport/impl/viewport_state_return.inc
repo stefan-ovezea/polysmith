@@ -28,6 +28,7 @@
       .edges = edges,
       .vertices = vertices,
       .toolpaths = toolpaths,
+      .drawing_sheets = drawing_sheets,
       .scene_width = scene_width_with_references,
       .scene_height = scene_height_with_references,
       .scene_depth = scene_depth_with_references,

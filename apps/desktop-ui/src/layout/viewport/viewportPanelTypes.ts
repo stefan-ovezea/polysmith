@@ -52,6 +52,10 @@ export interface ViewportPanelProps {
   // Only the CAM workspace draws the generated toolpath — leaving CAM
   // must not leave the cut path over the CAD model.
   showCamToolpath?: boolean;
+  // Drawing workspace: renders ONLY the drawing sheets (no model,
+  // stock, toolpath or sketch objects) and fits the camera to the
+  // sheet — the workspace-leak discipline.
+  showDrawingSheet?: boolean;
   wcsOrientation?: string;
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.

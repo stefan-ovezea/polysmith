@@ -139,6 +139,12 @@
     "--cad-sketch-projected": "#a678d6",
     "--cad-dimension-editor-bg": "rgba(17, 17, 27, 0.86)",
     "--cad-dimension-editor-border": "rgba(180, 190, 254, 0.55)",
-    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)"
+    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)",
+    "--cad-drawing-sheet": "#faf9f6",
+    "--cad-drawing-sheet-border": "#585b70",
+    "--cad-drawing-visible-line": "#1c1b1b",
+    "--cad-drawing-hidden-line": "#7f849c",
+    "--cad-drawing-view-label": "#89b4fa",
+    "--cad-drawing-stale": "#fab387"
   }
 }

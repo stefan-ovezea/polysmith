@@ -3,6 +3,10 @@ import {
   sendCoreCommandAwaited,
   startCadCore,
   makeCreateDocumentCommand,
+  makeDrawingCreateCommand,
+  makeDrawingDeleteCommand,
+  makeDrawingViewCreateCommand,
+  makeDrawingViewDeleteCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -226,6 +230,8 @@ import type {
   CamOperationPayload,
   CamSetup,
   CoreCommand,
+  Drawing,
+  DrawingView,
   ExtrudeAdvancedParameters,
   EdgeAttestation,
   FaceAttestation,
@@ -1700,6 +1706,26 @@ export function useCadCore() {
     },
     camSetupCreate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupCreateCommand(camSetup));
+    },
+    drawingCreate: async (drawing: Drawing) => {
+      await sendAndRefreshSessionViewport(makeDrawingCreateCommand(drawing));
+    },
+    drawingDelete: async (drawingId: string) => {
+      await sendAndRefreshSessionViewport(makeDrawingDeleteCommand(drawingId));
+    },
+    drawingViewCreate: async (
+      drawingId: string,
+      sheetId: string,
+      view: DrawingView,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewCreateCommand(drawingId, sheetId, view),
+      );
+    },
+    drawingViewDelete: async (drawingId: string, viewId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewDeleteCommand(drawingId, viewId),
+      );
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));

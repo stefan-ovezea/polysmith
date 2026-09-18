@@ -28,6 +28,7 @@
         .edges = {},
         .vertices = {},
         .toolpaths = {},
+        .drawing_sheets = {},
         .scene_width = 0.0,
         .scene_height = 0.0,
         .scene_depth = 0.0,

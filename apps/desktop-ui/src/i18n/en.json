@@ -212,8 +212,34 @@
   },
   "drawing": {
     "placeholder": "ISO Drawing workspace ready — dimension and sheet tools coming soon.",
+    "defaultName": "Drawing 1",
+    "defaultSheet": "Sheet 1",
     "category": {
       "sheet": "Sheet"
+    },
+    "toolbar": {
+      "newDrawing": "New Drawing",
+      "newDrawingTitle": "Create a drawing with a front view of the part",
+      "insertView": "Insert View",
+      "insertViewTitle": "Add a projected view to the active drawing",
+      "deleteDrawing": "Delete",
+      "deleteDrawingTitle": "Delete the active drawing",
+      "viewCount": "{{count}} view(s)",
+      "noDrawing": "No drawing yet",
+      "exists": "A drawing already exists in this document."
+    },
+    "insertPanel": {
+      "title": "Insert View",
+      "noBody": "Select a body in the CAD workspace first — the view projects the selected body.",
+      "bodySelected": "{{count}} body selected",
+      "scale": "Scale",
+      "showHidden": "Hidden edges",
+      "front": "Front",
+      "right": "Right",
+      "left": "Left",
+      "top": "Top",
+      "bottom": "Bottom",
+      "back": "Back"
     }
   },
   "grbl": {

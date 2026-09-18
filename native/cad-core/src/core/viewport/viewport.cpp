@@ -1,6 +1,7 @@
 #include "core/viewport/viewport.h"
 #include "core/diagnostics/logger.h"
 #include "core/cam/cam_resolution.h"
+#include "core/drawing/drawing_runtime.h"
 
 #include <algorithm>
 #include <array>
@@ -285,6 +286,7 @@ ViewportState build_viewport_state(const std::optional<DocumentState>& document)
 #include "core/viewport/impl/dof_status_emit.inc"
 #include "core/viewport/impl/face_appearance_finalize.inc"
 #include "core/viewport/impl/cam_toolpath_emit.inc"
+#include "core/viewport/impl/drawing_sheet_emit.inc"
 #include "core/viewport/impl/viewport_state_return.inc"
 }
 

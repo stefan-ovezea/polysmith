@@ -205,6 +205,7 @@ import {
 import { updateDynamicGrids } from "./viewport/dynamicGridUpdate";
 import { bindSketchHotkeys } from "./viewport/sketchHotkeys";
 import { syncViewportScene } from "./viewport/sceneSync";
+import { fitCameraToDrawingSheet } from "./viewport/drawingSceneObjects";
 import {
   renderViewCubeFrame,
   rotateCameraAroundCurrentView,
@@ -252,6 +253,7 @@ export function ViewportPanel({
   viewport,
   showStock = true,
   showCamToolpath = true,
+  showDrawingSheet = false,
   wcsOrientation = "z_up",
   activeCamSetupId = null,
   onSnapshotCaptureReady,
@@ -517,6 +519,7 @@ export function ViewportPanel({
   const contentGroupRef = useRef<THREE.Group | null>(null);
   const referenceGroupRef = useRef<THREE.Group | null>(null);
   const sketchGroupRef = useRef<THREE.Group | null>(null);
+  const drawingGroupRef = useRef<THREE.Group | null>(null);
   const previewLineRef = useRef<THREE.Line | null>(null);
   const previewCircleRef = useRef<THREE.LineLoop | null>(null);
   const previewDimensionRef = useRef<{
@@ -2852,6 +2855,7 @@ export function ViewportPanel({
     const contentGroup = new THREE.Group();
     const referenceGroup = new THREE.Group();
     const sketchGroup = new THREE.Group();
+    const drawingGroup = new THREE.Group();
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let pointerDown: { x: number; y: number } | null = null;
@@ -2865,11 +2869,13 @@ export function ViewportPanel({
     contentGroupRef.current = contentGroup;
     referenceGroupRef.current = referenceGroup;
     sketchGroupRef.current = sketchGroup;
+    drawingGroupRef.current = drawingGroup;
 
     renderer.setPixelRatio(window.devicePixelRatio);
     scene.add(contentGroup);
     scene.add(referenceGroup);
     scene.add(sketchGroup);
+    scene.add(drawingGroup);
     // Neutral studio lighting so MeshStandardMaterial bodies render as
     // true contextual modeling gray. The previous cyan-tinted ambient + key
     // + rim lights were leaking cyan into the body fill, which made
@@ -4930,6 +4936,7 @@ export function ViewportPanel({
         contentGroup: contentGroupRef.current,
         referenceGroup: referenceGroupRef.current,
         sketchGroup: sketchGroupRef.current,
+        drawingGroup: drawingGroupRef.current,
       },
       refs: {
         pendingEndpointCommit: pendingEndpointCommitRef,
@@ -4984,6 +4991,7 @@ export function ViewportPanel({
       showReferencePlanes,
       showStock,
       showCamToolpath,
+      showDrawingSheet,
       wcsOrientation,
       activeCamSetupId,
       // All pick modes share the snap markers + hover suppression —
@@ -5012,7 +5020,28 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+
+  // Entering the drawing workspace fits the camera to the sheet — the
+  // sheet is the workspace's whole content, so the default CAD framing
+  // (which ignores sheet geometry) would leave the user staring at an
+  // empty corner.
+  useEffect(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const firstSheet = viewport?.drawing_sheets?.[0];
+    if (!showDrawingSheet || !camera || !controls || !firstSheet) {
+      return;
+    }
+    fitCameraToDrawingSheet({
+      camera,
+      controls,
+      host: hostRef.current,
+      widthMm: firstSheet.width_mm,
+      heightMm: firstSheet.height_mm,
+    });
+    requestViewportRenderRef.current?.();
+  }, [showDrawingSheet, viewport?.drawing_sheets?.[0]?.sheet_id, viewport?.drawing_sheets?.[0]?.width_mm, viewport?.drawing_sheets?.[0]?.height_mm]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;

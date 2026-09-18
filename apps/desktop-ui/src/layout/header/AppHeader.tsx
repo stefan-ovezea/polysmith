@@ -268,6 +268,8 @@ interface AppHeaderProps
   disabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Drawing workspace toolbar actions (DrawingToolbarActions). */
+  drawingToolbar?: import("./DrawingToolbar").DrawingToolbarActions;
   // History step names, most recent first (D8) — the Edit menu labels
   // the next step and lists the rest for the multi-undo dropdown.
   undoStepNames: string[];
@@ -386,6 +388,7 @@ export function AppHeader({
   disabled,
   canUndo,
   canRedo,
+  drawingToolbar,
   undoStepNames,
   redoStepNames,
   onUndoMany,
@@ -1060,7 +1063,7 @@ export function AppHeader({
           className="flex items-center justify-between gap-3 px-4 py-1"
           style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
         >
-          <DrawingToolbar disabled={disabled} />
+          <DrawingToolbar disabled={disabled} {...drawingToolbar} />
         </div>
       ) : null}
     </header>

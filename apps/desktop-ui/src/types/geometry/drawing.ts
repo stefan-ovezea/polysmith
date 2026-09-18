@@ -172,3 +172,46 @@ export interface DrawingDocumentData {
   /** ISO 129-1: decimal comma. */
   decimal_separator: string;
 }
+
+// ── Viewport emission (viewport_drawing_primitives.h) ─────────────
+
+export interface ViewportDrawingCurve {
+  /** "line" | "circle" | "ellipse" */
+  kind: string;
+  /** "visible" | "hidden" */
+  line_class: string;
+  /** "sharp" | "smooth" | "seam" | "outline" */
+  curve_class: string;
+  /** Endpoints in sheet-mm. */
+  p0: [number, number];
+  p1: [number, number];
+  center?: [number, number];
+  radius?: number;
+  major_dir?: [number, number];
+  major_radius?: number;
+  minor_radius?: number;
+  /** Angular parameters (radians) for circle/ellipse arcs. */
+  start_angle: number;
+  end_angle: number;
+}
+
+export interface ViewportDrawingView {
+  view_id: string;
+  label: string;
+  scale: number;
+  origin: [number, number];
+  min: [number, number];
+  max: [number, number];
+  stale: boolean;
+  warning: string;
+}
+
+export interface ViewportDrawingSheet {
+  sheet_id: string;
+  drawing_id: string;
+  name: string;
+  width_mm: number;
+  height_mm: number;
+  curves: ViewportDrawingCurve[];
+  views: ViewportDrawingView[];
+}

@@ -45,6 +45,7 @@ interface ViewportSceneGroups {
   contentGroup: THREE.Group | null;
   referenceGroup: THREE.Group | null;
   sketchGroup: THREE.Group | null;
+  drawingGroup: THREE.Group | null;
 }
 
 interface ReadyViewportSceneGroups {
@@ -54,7 +55,10 @@ interface ReadyViewportSceneGroups {
   contentGroup: THREE.Group;
   referenceGroup: THREE.Group;
   sketchGroup: THREE.Group;
+  drawingGroup: THREE.Group;
 }
+
+import { addDrawingSheetObjects } from "./drawingSceneObjects";
 
 interface ViewportSceneSyncRefs {
   pendingEndpointCommit: MutableRef<boolean>;
@@ -127,6 +131,10 @@ interface SyncViewportSceneParams {
   /** Only the CAM workspace renders the generated toolpath — leaving
    *  CAM must not leave the cut path drawn over the CAD model. */
   showCamToolpath: boolean;
+  /** Drawing workspace: the scene renders ONLY the drawing sheets
+   *  (model/stock/toolpath/sketch objects stay out — the workspace-
+   *  leak discipline) and the camera fits the sheet. */
+  showDrawingSheet: boolean;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
   /** True while the CAM origin pick is armed — draws the snap-target
@@ -203,6 +211,7 @@ function readyViewportSceneGroups({
   contentGroup,
   referenceGroup,
   sketchGroup,
+  drawingGroup,
 }: ViewportSceneGroups): ReadyViewportSceneGroups | null {
   if (
     !scene ||
@@ -210,11 +219,20 @@ function readyViewportSceneGroups({
     !controls ||
     !contentGroup ||
     !referenceGroup ||
-    !sketchGroup
+    !sketchGroup ||
+    !drawingGroup
   ) {
     return null;
   }
-  return { scene, camera, controls, contentGroup, referenceGroup, sketchGroup };
+  return {
+    scene,
+    camera,
+    controls,
+    contentGroup,
+    referenceGroup,
+    sketchGroup,
+    drawingGroup,
+  };
 }
 
 function syncEndpointDragScene({
@@ -278,6 +296,18 @@ function rebuildViewportScene(
 
   resetViewportSceneGroups(params, groups);
 
+  if (params.showDrawingSheet) {
+    // Drawing workspace: sheets only — no model, stock, toolpath or
+    // sketch objects (workspace-leak discipline: leaving the drawing
+    // workspace must not leave sheet geometry over the model).
+    addDrawingSheetObjects({
+      viewport: params.viewport,
+      drawingGroup: groups.drawingGroup,
+    });
+    params.refs.lastSceneBuildKey.current = sceneBuildKey;
+    return;
+  }
+
   if (!params.sceneData) {
     params.refs.lastGeometryKey.current = "";
     params.refs.lastSceneBuildKey.current = "";
@@ -297,12 +327,14 @@ function viewportSceneBuildKey({
   activeSketchPlaneId,
   showReferencePlanes,
   showStock,
+  showDrawingSheet,
   wcsOrientation,
   activeCamSetupId,
   originPickArmed,
   drillPickArmed,
   moveGizmo,
   document,
+  viewport,
 }: SyncViewportSceneParams) {
   if (!sceneData) {
     return "";
@@ -331,12 +363,30 @@ function viewportSceneBuildKey({
         activeCamSetupId ?? "",
       ].join("|")
     : "nosetup";
+  // The drawing sheets come from the viewport payload, not the scene
+  // primitives — their content must be part of the rebuild key or
+  // model edits would never redraw the sheet.
+  const drawingSignature = viewport?.drawing_sheets
+    ?.map((sheet) =>
+      [
+        sheet.sheet_id,
+        sheet.width_mm,
+        sheet.height_mm,
+        sheet.curves.length,
+        sheet.views.map((v) =>
+          [v.view_id, v.stale, v.min.join(","), v.max.join(",")].join("|"),
+        ).join("~"),
+      ].join(":"),
+    )
+    .join(";") ?? "nosheets";
   return [
     sceneData.geometryKey,
     displayUnits,
     activeSketchPlaneId ?? "",
     showReferencePlanes ? "refs:on" : "refs:off",
     showStock ? "stock:on" : "stock:off",
+    showDrawingSheet ? "drawing:on" : "drawing:off",
+    "drawing:" + drawingSignature,
     "cam:" + camSignature,
     // The origin-pick markers are added/removed on arm/disarm, so
     // the arm state must be part of the rebuild key.  The drill flag
@@ -375,11 +425,12 @@ function sketchDimensionBuildKey(dimension: SketchDimensionScene) {
 
 function resetViewportSceneGroups(
   { refs, clearViewportSceneObjectRefs }: SyncViewportSceneParams,
-  { contentGroup, referenceGroup, sketchGroup }: ReadyViewportSceneGroups,
+  { contentGroup, referenceGroup, sketchGroup, drawingGroup }: ReadyViewportSceneGroups,
 ) {
   disposeGroup(contentGroup);
   disposeGroup(referenceGroup);
   disposeGroup(sketchGroup);
+  disposeGroup(drawingGroup);
   clearViewportSceneObjectRefs();
   clearHoverRefs(refs);
 }

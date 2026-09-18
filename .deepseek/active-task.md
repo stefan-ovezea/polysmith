@@ -224,16 +224,59 @@ regeneration — new infra).
 **Gates:** `pnpm core:build` clean + **57/57 suites pass** +
 `tsc --noEmit` clean.
 
-**NOT committed yet** (commit needs user approval per CLAUDE.md).
+**Committed as C2** (`4ac44f5`): 24 files, P2 complete.
 
-## NEXT: P3 — drawing workspace UI (C3)
-App.tsx drawing branch (slicer/grbl precedent), core viewport
-emission (viewport_drawing_primitives.h + drawing_sheet_emit.inc
-consuming the runtime projections), TS scene objects
-(drawingSceneObjects.ts + sceneSync registration + preview cleanup),
-camera fit-to-sheet, contextual Insert View panel, DrawingToolbar,
-en.json + theme tokens.  Milestone: live first-angle projected view
-on an A4 sheet in-app.
+## P3 — drawing workspace UI (C3) — DONE, gates green, needs in-app verification
+
+**Core emission:**
+- `ProjectedEdgeRecord` += renderable curve geometry (circle
+  center/radius, ellipse center/major-dir/radii, angular params) —
+  exact arcs for the flattened stream, populated in the engine.
+- `viewport_drawing_primitives.h` (ViewportDrawingCurve/View/Sheet in
+  sheet-mm) + `drawing_sheet_emit.inc` — active drawing's sheets,
+  curves transformed by scale + sheet_position, view bounds +
+  stale/warning, A0–A4 dims; ViewportState.drawing_sheets +
+  serialization + TS mirrors + zod.
+- **New test 8** (viewport sheet emission): A4 dims, 4 visible
+  curves, bounds [30,40]x[40,45] at scale 0.5, no hidden curves.
+
+**UI:**
+- `drawingSceneObjects.ts` — sheet paper + border, ISO line groups as
+  RIBBON MESHES (0.5 mm thick / 0.25 thin — Windows ignores
+  linewidth), circle/ellipse arcs tessellated exactly, view frames +
+  canvas-sprite labels (stale views tinted), fitCameraToDrawingSheet.
+- sceneSync: drawingGroup + showDrawingSheet branch — drawing
+  workspace renders sheets ONLY (workspace-leak discipline), build
+  key carries the sheet signature.
+- ViewportPanel: drawingGroup + fit-to-sheet effect on workspace
+  entry.
+- DrawingToolbar (real): New Drawing (auto front view of the
+  selected/first body), Insert View, Delete + view count.
+- InsertViewPanel (contextual): 6 direction buttons, ISO 5455 scale
+  list, hidden-edge toggle, Enter/Escape.
+- App.tsx: drawingCreate/ViewCreate/Delete actions via useCadCore
+  wrappers, activeDrawing/bodyIds/nextSheetPosition memos, panel
+  state; AppTopBar/AppHeader pass-through.
+- en.json drawing.toolbar/insertPanel keys; 6 drawing tokens in every
+  theme JSON (paper stays white; border/label/stale per theme).
+
+**Gates:** `pnpm core:build` clean + **57/57 suites pass** +
+`tsc --noEmit` clean.
+
+**NEEDS IN-APP VERIFICATION (the C3 milestone):** `pnpm dev` → add a
+box → Drawing workspace → New Drawing → live front view on an A4
+sheet; Insert View (top/right, scale 0.5, hidden edges) → sheet
+updates; edit the model → views update; Delete → sheet clears;
+undo/redo.  Commit C3 after the user confirms.
+
+## NEXT: P4 — sections + hatching (C4)
+`BRepAlgoAPI_Cut` + `BRepPrimAPI_MakeHalfSpace` cut-away;
+`BRepAlgoAPI_Section` hatch boundaries; own scanline hatcher in sheet
+space (ISO 128-3: thin 45°, 0.7–3 mm spacing, adjacent-part
+mirroring, thin sections solid black); hidden edges filtered on
+hatched faces; cutting-plane line (type H) on the parent view; A–A
+labels; command drawing_section_update; test
+cad_core_drawing_section_test (golden).
 
 ---
 

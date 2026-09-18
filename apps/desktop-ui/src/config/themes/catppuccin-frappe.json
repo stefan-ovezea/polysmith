@@ -1,6 +1,6 @@
 {
   "id": "catppuccin-frappe",
-  "name": "Catppuccin Frapp\u00e9",
+  "name": "Catppuccin Frappé",
   "colors": {
     "--color-surface-lowest": "#232634",
     "--color-surface-base": "#303446",
@@ -139,6 +139,12 @@
     "--cad-sketch-projected": "#a678d6",
     "--cad-dimension-editor-bg": "rgba(35, 38, 52, 0.86)",
     "--cad-dimension-editor-border": "rgba(186, 187, 241, 0.55)",
-    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)"
+    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)",
+    "--cad-drawing-sheet": "#faf9f6",
+    "--cad-drawing-sheet-border": "#51576d",
+    "--cad-drawing-visible-line": "#1c1b1b",
+    "--cad-drawing-hidden-line": "#737994",
+    "--cad-drawing-view-label": "#8caaee",
+    "--cad-drawing-stale": "#ef9f76"
   }
 }

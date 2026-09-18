@@ -246,9 +246,23 @@ struct ProjectedEdgeRecord {
   std::array<double, 2> p_start = {0.0, 0.0};
   std::array<double, 2> p_end = {0.0, 0.0};
   /// 2D parameters of the projected curve (HLRBRep::MakeEdge output
-  /// parameterization).
+  /// parameterization — for circle/ellipse pieces these ARE the
+  /// angular parameters, start_angle/end_angle below).
   double first_param = 0.0;
   double last_param = 0.0;
+  // Renderable curve geometry in view space (populated for
+  // circle/ellipse pieces; the flattened sheet stream needs exact
+  // arcs, not chord faceting).
+  std::optional<std::array<double, 2>> circle_center;
+  std::optional<double> circle_radius;
+  std::optional<std::array<double, 2>> ellipse_center;
+  /// Unit major-axis direction of the ellipse in view space.
+  std::optional<std::array<double, 2>> ellipse_major_dir;
+  std::optional<double> ellipse_major_radius;
+  std::optional<double> ellipse_minor_radius;
+  /// Angular parameters (radians) for circle/ellipse pieces.
+  double start_angle = 0.0;
+  double end_angle = 0.0;
   /// Edge provenance: source edge witness, or silhouette face.
   std::variant<SourceEdgeWitness, FaceAttestation> source;
   /// Visible parameter intervals (partial visibility splits).
