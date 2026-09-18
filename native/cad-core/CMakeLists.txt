@@ -151,6 +151,7 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
   src/core/cam/contour_2d.cpp
+  src/core/drawing/drawing_runtime.cpp
   src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
   src/core/cam/laser/laser_fill.cpp
@@ -491,3 +492,4 @@ polysmith_add_core_test(cad_core_text_test tests/text_test.cpp)
 # DataStructure() → EdgeMap/EDataArray mapping that anchors projected
 # drawing edges to source topology.
 polysmith_add_core_test(cad_core_hlr_provenance_test tests/hlr_provenance_test.cpp)
+polysmith_add_core_test(cad_core_drawing_save_load_test tests/cad_core_drawing_save_load_test.cpp)

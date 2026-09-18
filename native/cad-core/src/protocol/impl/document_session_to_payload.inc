@@ -143,6 +143,7 @@ json to_payload(const polysmith::core::DocumentState& document,
           };
         }()},
        {"cam", to_payload(document.cam)},
+       {"drawing", to_payload(document.drawing)},
    };
 }
 

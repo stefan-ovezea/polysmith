@@ -8,6 +8,7 @@
 #include "core/document/appearance.h"
 #include "core/document/feature.h"
 #include "core/document/parameter.h"
+#include "core/drawing/drawing_types.h"
 #include "core/sketch/sketch_types.h"
 
 namespace polysmith::core {
@@ -72,6 +73,10 @@ struct DocumentState {
   // CAM workspace data — setups, tool library, operations, post-processor,
   // and simulation state.  All CAM state lives here; see cam_types.h.
   CamDocumentData cam;
+  // ISO drawing workspace data — drawings, sheets, views, annotations.
+  // See drawing_types.h.  Generated projections are NOT here: they are
+  // memory-only (drawing_runtime), the toolpath-cache contract.
+  DrawingDocumentData drawing;
 };
 
 struct SessionState {

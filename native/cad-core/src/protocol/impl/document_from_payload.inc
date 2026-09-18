@@ -239,6 +239,14 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
     document.cam = cam_document_data_from_payload(payload.at("cam"));
   }
 
+  // Drawing data — loaded from the "drawing" key.  Documents without a
+  // "drawing" key (or drawings saved before a field existed) fall back
+  // to struct defaults.
+  if (payload.contains("drawing") && payload.at("drawing").is_object()) {
+    document.drawing =
+        drawing_document_data_from_payload(payload.at("drawing"));
+  }
+
   return document;
 }
 

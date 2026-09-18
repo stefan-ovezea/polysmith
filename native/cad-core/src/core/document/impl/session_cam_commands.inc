@@ -150,6 +150,34 @@ DocumentState DocumentManager::load_document_from_path(
     }
   }
 
+  // Restore drawing id counters so subsequent drawing additions don't
+  // collide with ids already present in the loaded document.
+  for (const auto& drawing : loaded.drawing.drawings) {
+    next_drawing_id_ =
+        std::max(next_drawing_id_, trailing_integer(drawing.drawing_id) + 1);
+    for (const auto& sheet : drawing.sheets) {
+      next_drawing_sheet_id_ = std::max(
+          next_drawing_sheet_id_, trailing_integer(sheet.sheet_id) + 1);
+    }
+    for (const auto& view : drawing.views) {
+      next_drawing_view_id_ = std::max(
+          next_drawing_view_id_, trailing_integer(view.view_id) + 1);
+    }
+    for (const auto& annotation : drawing.annotations) {
+      next_drawing_annotation_id_ = std::max(
+          next_drawing_annotation_id_,
+          trailing_integer(annotation.annotation_id) + 1);
+      // Dimension edge references ("drawing-edge-N") live in the
+      // annotation's source_edge_id — restore the counter so a
+      // reloaded document never mints colliding edge ref ids.
+      if (annotation.source_edge_id.rfind("drawing-edge-", 0) == 0) {
+        next_drawing_edge_ref_id_ = std::max(
+            next_drawing_edge_ref_id_,
+            trailing_integer(annotation.source_edge_id) + 1);
+      }
+    }
+  }
+
   // Rebuild sketch derived state (solver + profile regions) for every
   // sketch feature.  Saved profiles are restored verbatim by the
   // payload parser and may predate geometry edits or detection fixes —

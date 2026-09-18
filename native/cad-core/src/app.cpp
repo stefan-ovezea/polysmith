@@ -105,6 +105,7 @@ void CadCoreApp::handle_command_line(const CommandMessage& command) {
 #include "app/impl/sketch_array_command_handlers.inc"
 #include "app/impl/trim_preview_commands.inc"
 #include "app/impl/cam_commands.inc"
+#include "app/impl/drawing_commands.inc"
 }
 
 void CadCoreApp::run() {

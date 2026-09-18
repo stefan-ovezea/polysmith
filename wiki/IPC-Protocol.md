@@ -720,6 +720,35 @@ The UI reads the filter from localStorage for instant snap gating
 (synchronous, no IPC latency), but also sends the full payload via IPC
 so the core stays consistent.
 
+### Drawing Workspace (ISO drawing)
+
+All drawing state lives in `document_state.drawing` (a
+`DrawingDocumentData`: drawings → sheets → views → annotations),
+serialized inside `.polysmith` files under the `drawing` key.  The data
+model mirrors the ISO 7200 title block, ISO 5456 per-sheet projection
+angle, ISO 5455 scales, and ISO 129-1 decimal separator.
+
+- `drawing_create { drawing_id?, name, sheets[], views[], annotations[] }`
+  — creates a drawing (always with at least one sheet) and makes it the
+  active drawing.  Empty `drawing_id` / `sheet_id` / `view_id` /
+  `annotation_id` fields are minted by the core (`drawing-N`,
+  `drawing-sheet-N`, `drawing-view-N`, `drawing-annotation-N`).
+- `drawing_delete { drawing_id }` — removes the drawing and its
+  sheets/views/annotations; active/selection ids pointing inside it are
+  cleared.
+- `drawing_set_active { drawing_id }` — switches the active drawing.
+- `drawing_sheet_create { drawing_id, sheet }` — appends a sheet.
+  Referenced `view_ids` must already exist in the drawing (rejected
+  before the undo push).
+- `drawing_sheet_delete { drawing_id, sheet_id }` — removes the sheet,
+  its views, and the annotations attached to those views.
+
+Every mutator replies with a `document_state` event; validation errors
+reply with an `error` event.  Generated projections (HLR output) are
+**memory-only** — they live in the core's `drawing_runtime` cache,
+keyed by document + view and validated against the document revision,
+and never enter the serialized document (the CAM toolpath contract).
+
 ## Philosophy
 
 The IPC protocol is the contract of the system.

@@ -1,3 +1,183 @@
+# Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
+
+> **Branch:** `feature/iso-drawing` (== `dev` at 0edb147, clean except
+> this tracker + untracked user data: `projects/laser board/`,
+> `projects/part-stefan-new.polysmith`, `tmp-camschema.cjs`).
+>
+> **User request (verbatim):** "I want to develop the ISO drawing
+> workbench for my cad program. This is very important issue for me as
+> I want to have a propper implementation according to the industry
+> standard... Drawing from solid is for me very important and many
+> other programs lack or do not have a strong implementation of this
+> feature. I do not want to end up like freecad where was to late for
+> a propper implementation. So far I am the only decision maker for
+> the project so let's take advantage to make a full implementation.
+> There are no drawings or projects to keep us to be back compliant
+> with other drawings or whatwhever. I want you to use as many agents
+> as you need and study the industry standard and the general
+> implementation in my program in general."
+>
+> **User decisions (AskUserQuestion, 2026-09-19):**
+> - Projection: first-angle default, per-sheet override (ISO 5456
+>   symbol always shown)
+> - V1 scope: EVERYTHING — views, hidden lines, sections + hatching,
+>   ISO 129-1 dimensions, ISO 5457 sheets, ISO 7200 title block,
+>   DXF + PDF + SVG export (AP242/PMI deferred, model must not preclude)
+> - Storage: drawings embedded in the .polysmith document
+>   (document_state.drawing, parallel to .cam)
+>
+> **Research (2026-09-19, 4 agents) — COMPLETE:**
+> 1. ISO standards: concrete normative values for ISO 128/129-1/3098/
+>    5455/5456-2/5457/7200/13715 + 30-item conformance checklist +
+>    annotation data model must anchor to persistent topology IDs.
+> 2. Codebase map: placeholder = 4 UI touch points, no core state, no
+>    App.tsx drawing branch; CAM workbench = the vertical slice to
+>    copy (camCommands.ts → useCadCore → cam_commands.inc →
+>    session_cam_commands.inc → cam_types.h → serialization →
+>    viewport emit → sceneSync); TKHLR ALREADY LINKED; libdxfrw
+>    ALREADY vendored (writer has TEXT/DIMENSION/HATCH/BLOCK paths).
+> 3. OCCT audit (OCCT 8.0.1): HLRBRep_Algo headless exact; TKDXF does
+>    not exist in 8.0 (commercial) — libdxfrw covers DXF; text via
+>    existing text_engine (Font_BRepFont vector glyphs); dimensions
+>    built on gp/Geom2d (no OCCT generator); zero OCCT build changes.
+> 4. Prior art: TechDraw's failure was discarding provenance at the
+>    HLR boundary (→ DrawProjectSplit heuristics + broken dims);
+>    Onshape detached/dangling states; SolidWorks detached drawings;
+>    PDF via libharu (vendored) behind ISheetPdfBackend; DXF AC1027
+>    two modes; shared flattened sheet primitive stream.
+>
+> **Plan:** approved via plan mode (file:
+> `C:\Users\ThinkPad\.claude\plans\vivid-sleeping-rainbow.md`).
+> Phases P0–P10, checkpoint commits C0–C10, gates per phase:
+> `pnpm core:build` + `pnpm test:core` + `tsc --noEmit`.
+
+## P0 — HLR provenance spike (C0) — DONE, gates green
+
+**Result: the design bet is PROVEN, with one architecture improvement
+discovered by the spike.** `tests/hlr_provenance_test.cpp`
+(`cad_core_hlr_provenance_test`, registered in CMakeLists) — 7 tests:
+
+1. Box front projection: 4 visible sharp (front face) + 8 hidden
+   (back + depth) records, each with its exact source edge.
+2. Cylinder off-axis: 9 edge records (rim arcs → ellipses with source
+   edges) + 2 silhouette curves (no source edge → the record schema's
+   FaceAttestation bucket).
+3. Partial occlusion: one visible record for the slab edge, status
+   interval maps exactly to x∈[40,100] (both via Status intervals and
+   emitted geometry).
+4. Parameter mapping round-trip + view projection consistency.
+5. Coincident bodies: 8 visible records → 4 unique signatures, merged
+   groups carry distinct source edges.
+6. Hidden lines: occluded box hidden, front box visible.
+7. Determinism: canonical sorted record stream byte-identical.
+
+**Key spike findings (binding for P2):**
+- **Architecture: iterate the EDataArray DIRECTLY** — each entry is
+  (source edge via EdgeMap, HLRAlgo_EdgeStatus visible intervals,
+  HLRBRep_Curve projected geometry). Build records with
+  `HLRBRep::MakeEdge(gc, s, e)` per visible part; hidden complement =
+  status bounds minus visible parts. Provenance is BORN with the
+  record — NO output↔entry matching heuristics (matching HLRToShape
+  compounds back was attempted and abandoned: output edges are
+  re-parametrized in 2D space via Parameter2d, and analytic vs
+  pointwise projections disagree ~0.002–0.016 mm).
+- Silhouettes come from `OutLineVCompound` (face-wire path, not edge
+  entries) — no source edge, FaceAttestation/bodily provenance.
+- Curve classes per entry flags: sharp | smooth (Rg1Line) | seam
+  (RgNLine) | outline — ISO filtering in P2/P5.
+- Depth edges (parallel to view) land hidden — filter in P2.
+- Multi-body coincident edges duplicate — signature de-dupe with
+  concatenated sources (test 5 pins it).
+- `BRepLib::SameParameter(compound, Precision::PConfusion(), false)`
+  on extracted compounds (canonical HLR post-processing).
+
+**Gates:** full `pnpm core:build` clean + **55/55 suites pass**
+(`pnpm test:core`; 55th = cad_core_hlr_provenance_test,
+auto-discovered). No TS changes.
+
+**Committed as C0** (`0999243`): test file + CMakeLists only.
+
+## P1 — data model + document plumbing (C1) — DONE, gates green
+
+**C++ (all new unless noted):**
+- `core/drawing/drawing_types.h` — full data model:
+  `DrawingDocumentData{drawings, active_drawing_id, selected_view_id,
+  selected_annotation_id, decimal_separator(",")}`,
+  `Drawing{drawing_id, name, sheets, views, annotations}` (flat lists,
+  sheets own view ordering — CAM setup/op precedent),
+  `DrawingSheet{paper_size, orientation, projection_angle,
+  view_ids, TitleBlock}` (8 ISO 7200 fields + revision_rows),
+  `DrawingView{kind projection|section|axonometric, standard_view,
+  custom_frame, source_body_ids, scale, sheet_position, show_hidden,
+  section, broken_ref, warning}`,
+  `SectionDefinition`, `SourceEdgeWitness` (TNP witness + param_range),
+  `Annotation` (ISO 129-1 kinds + extensions[] door for ISO 1101/5459/
+  1302/AP242), `ProjectionResult/ProjectedEdgeRecord/HatchRegion`
+  (runtime-only, variant source: witness | FaceAttestation).
+- `core/drawing/drawing_runtime.h/.cpp` — cam_runtime clone
+  (cached/at, store/at, drop_stale, invalidate, per-document registry).
+- `document_state.h` += `drawing` member; `document_manager.h` +=
+  `document_manager_drawing_commands.inc`; `document.cpp` +=
+  `session_drawing_commands.inc` + drawing_runtime include;
+  `app.cpp` += `app/impl/drawing_commands.inc`.
+- Id counters `next_drawing_{id,sheet_id,view_id,annotation_id,
+  edge_ref_id}_` in `document_manager_private_state.inc`, restored on
+  load via `trailing_integer` (session_cam_commands.inc).
+- Runtime invalidation wired at every branch-switch site: undo/redo/
+  undo_many (undo_redo_commands.inc), undo-group cancel/abort
+  (undo_group_commands.inc), create_document (document_create_commands.inc).
+- Mutators `session_drawing_commands.inc`: drawing_create (mints ids,
+  sets active), drawing_delete, drawing_set_active,
+  drawing_sheet_create (view-id validation BEFORE the undo push),
+  drawing_sheet_delete (cascades views + annotations, clears dead
+  selection ids). Canonical shape everywhere.
+- Serialization: `protocol/impl/drawing_payloads.inc` +
+  `drawing_from_payload.inc` (per-type lenient defaults), document-level
+  `"drawing"` key in document_session_to_payload.inc +
+  document_from_payload.inc, declarations in serialization.h.
+- Commands in `app/impl/drawing_commands.inc`: drawing_create/delete/
+  set_active/sheet_create/sheet_delete (+ names in commands.schema.json).
+
+**TS:**
+- `types/geometry/drawing.ts` (type mirrors), `types/ipc/drawingCommands.ts`
+  (payload contracts, added to the CoreCommand union),
+  `lib/schemas/ipc/drawingSchema.ts` (lenient zod, catch→empty —
+  camSchema convention), `lib/ipc/drawingCommands.ts` (factories),
+  documentStateSchema += drawing, types/ipc.ts += drawing member,
+  types/index.ts + ipcProtocol.ts re-exports.
+
+**Docs:** wiki/IPC-Protocol.md + wiki/AI-CAD-Command-Language.md —
+drawing command sections (schema+wiki in the same change, per plan).
+
+**Test:** `cad_core_drawing_save_load_test` — 5 tests: document
+round-trip deep-equality (incl. ⌀ prefix, section, revision rows,
+extensions) + payload-never-carries-projections, file round-trip +
+counter restore (drawing-2 / drawing-sheet-3 minted post-load),
+mutator shape (mint/cascade/validate-before-undo-push),
+undo/redo invalidate the runtime cache, missing-key defaults.
+
+**Gates:** `pnpm core:build` clean + **56/56 suites pass** +
+`tsc --noEmit` clean.
+
+**Deviation from plan (noted):** the `refresh_drawing_dependencies`
+call in bump_geometry_revision is deferred to P2 — the refresh pass
+itself (drawing_refresh.cpp) lands with the projection engine; an
+empty hook now would be dead code.
+
+**NOT committed yet** (commit needs user approval per CLAUDE.md).
+
+## NEXT: P2 — projection engine (C2)
+Promote the P0 impl into `core/drawing/drawing_projection.h/.cpp`;
+`core/drawing/drawing_refresh.cpp` with
+`refresh_drawing_dependencies(document, target_revision)` called from
+bump_geometry_revision (manager_state_helpers.inc) after
+refresh_cam_dependencies; standard_view → frame resolution; dirty
+model (visible-sheet recompute, hidden-sheet signature-only); commands
+drawing_view_create/update/delete/move; test
+cad_core_drawing_projection_test (golden files in tests/golden/).
+
+---
+
 # Active task: CAM TOOL TABLE — full implementation (2026-09-17)
 
 > **Branch:** `cam/tools`, created from `dev` @ `d10cd3f` and pushed.
@@ -3042,3 +3222,16 @@ AWAITING user in-app verification: type a radius larger than half
 the chord → instant reshape; type a smaller one → the arc clamps to
 a semicircle + a warn appears in the Logs panel; Enter commits the
 visible geometry.
+
+## MERGED as PR #89 → dev @ 0edb147 (2026-09-19, user-approved)
+
+User verified in-app ("it works now") after the round-5 clamp +
+warn. All temporary diagnostics removed before commit (radius change
+trace, arc commit trace, main.tsx localStorage crashlog block; the
+pre-existing DiagnosticErrorBoundary class stays — it was committed
+at HEAD). Committed ea26472 on sketch/dimmensions (16 files, no
+Co-Authored-By trailer), pushed, squash-merged as PR #89 → dev
+(0edb147). Remote + local-remote refs deleted. The LOCAL branch
+sketch/dimmensions still exists on disk (user is on it) — delete it
+after switching. Untracked user data left alone: projects/laser
+board/, projects/part-stefan-new.polysmith, tmp-camschema.cjs.

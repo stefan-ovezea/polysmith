@@ -85,6 +85,7 @@ DocumentState DocumentManager::abort_undo_group() {
 
   document_->revision = std::max(document_->revision, pre_restore_revision);
   cam_runtime::invalidate(document_->id);
+  drawing_runtime::invalidate(document_->id);
   bump_geometry_revision();
   return document_.value();
 }
@@ -111,6 +112,7 @@ DocumentState DocumentManager::abort_all_undo_groups() {
 
   document_->revision = std::max(document_->revision, pre_restore_revision);
   cam_runtime::invalidate(document_->id);
+  drawing_runtime::invalidate(document_->id);
   bump_geometry_revision();
   return document_.value();
 }

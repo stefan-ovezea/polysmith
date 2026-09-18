@@ -102,4 +102,32 @@ polysmith::core::PostProcessor post_processor_from_payload(const json& payload);
 polysmith::core::MachineDefinition machine_definition_from_payload(
     const json& payload);
 
+// ── Drawing types (drawing_types.h) ───────────────────────────────
+//
+// ProjectionResult/ProjectedEdgeRecord are RUNTIME-ONLY and
+// deliberately have NO to_payload overload — generated projections
+// must never enter a saved document (the toolpath contract).
+
+json to_payload(const polysmith::core::DrawingViewFrame& frame);
+json to_payload(const polysmith::core::SourceEdgeWitness& witness);
+json to_payload(const polysmith::core::SectionDefinition& section);
+json to_payload(const polysmith::core::TitleBlock& title_block);
+json to_payload(const polysmith::core::DrawingSheet& sheet);
+json to_payload(const polysmith::core::AnnotationExtension& extension);
+json to_payload(const polysmith::core::Annotation& annotation);
+json to_payload(const polysmith::core::DrawingView& view);
+json to_payload(const polysmith::core::Drawing& drawing);
+json to_payload(const polysmith::core::DrawingDocumentData& drawing);
+
+// Inverse of to_payload(DrawingDocumentData).  Missing fields fall
+// back to struct defaults so documents saved before a field existed
+// still load.
+polysmith::core::DrawingDocumentData drawing_document_data_from_payload(
+    const json& payload);
+
+// ── Drawing per-type inverses (used by the app command handlers) ──
+
+polysmith::core::Drawing drawing_from_payload(const json& payload);
+polysmith::core::DrawingSheet drawing_sheet_from_payload(const json& payload);
+
 }  // namespace polysmith::protocol

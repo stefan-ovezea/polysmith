@@ -72,6 +72,17 @@
   // restored on load by scanning machining_regions like the other
   // CAM counters.
   int next_cam_point_ref_id_ = 1;
+  // Drawing id counters ("drawing-N" / "drawing-sheet-N" /
+  // "drawing-view-N" / "drawing-annotation-N"), restored on load by
+  // scanning trailing integers like the feature counters.
+  int next_drawing_id_ = 1;
+  int next_drawing_sheet_id_ = 1;
+  int next_drawing_view_id_ = 1;
+  int next_drawing_annotation_id_ = 1;
+  // Independent counter for dimension edge references
+  // ("drawing-edge-N") minted at pick time — the cam_capture_point
+  // precedent.
+  int next_drawing_edge_ref_id_ = 1;
   int document_count_ = 0;
   std::optional<DocumentState> document_;
   std::vector<DocumentState> undo_stack_;

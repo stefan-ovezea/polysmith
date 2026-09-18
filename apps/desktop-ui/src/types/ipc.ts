@@ -200,6 +200,13 @@ import type {
   CamExportGcodeTextCommand,
 } from "./ipc/camCommands";
 import type {
+  DrawingCreateCommand,
+  DrawingDeleteCommand,
+  DrawingSetActiveCommand,
+  DrawingSheetCreateCommand,
+  DrawingSheetDeleteCommand,
+} from "./ipc/drawingCommands";
+import type {
   FeatureEntry,
   SketchTool,
 } from "./geometry/sketch";
@@ -210,6 +217,7 @@ import type {
   MachineDefinition,
   PointAttestation,
 } from "./geometry/cam";
+import type { DrawingDocumentData } from "./geometry/drawing";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -238,10 +246,16 @@ export * from "./ipc/bodyFeatureCommands";
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
 export * from "./ipc/camCommands";
+export * from "./ipc/drawingCommands";
 
 // CAM data — mirrors polysmith::core::CamDocumentData (cam_types.h).
 // Detailed CAM types live in types/geometry/cam.ts.
 export { type CamDocumentData } from "./geometry/cam";
+
+// Drawing data — mirrors polysmith::core::DrawingDocumentData
+// (drawing_types.h).  Detailed drawing types live in
+// types/geometry/drawing.ts.
+export { type DrawingDocumentData } from "./geometry/drawing";
 
 export interface DocumentState {
   document_id: string;
@@ -279,6 +293,7 @@ export interface DocumentState {
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
   cam: CamDocumentData;
+  drawing: DrawingDocumentData;
 }
 
 export interface DocumentAppearance {
@@ -1014,6 +1029,11 @@ export type CoreCommand =
   | CamExportGcodeCommand
   | CamExportGcodeTextCommand
   | DetachBodyProjectionsCommand
+  | DrawingCreateCommand
+  | DrawingDeleteCommand
+  | DrawingSetActiveCommand
+  | DrawingSheetCreateCommand
+  | DrawingSheetDeleteCommand
   | RemoveSketchProjectionsCommand
   | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand

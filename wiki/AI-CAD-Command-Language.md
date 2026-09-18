@@ -3481,6 +3481,33 @@ Payload:
 }
 ```
 
+### Drawing commands
+
+Drawing state lives in `document_state.drawing` (drawings → sheets →
+views → annotations), parallel to `cam`. Views carry `source_body_ids`
++ `standard_view` (`"front" | "top" | "right" | "bottom" | "left" |
+"back"`, first-angle default) or a `custom_frame`; sections carry a
+`SectionDefinition` referencing the MODEL (never another view).
+Annotations attach to edges through a `SourceEdgeWitness` (never sheet
+coordinates). Generated projections are memory-only (a `drawing_runtime`
+cache, the toolpath contract) — they never appear in document payloads.
+
+- `drawing_create` — payload = serialized `Drawing` (name, sheets[],
+  views[], annotations[]). A drawing always has ≥ 1 sheet. The core
+  mints `drawing_id`/`sheet_id`/`view_id`/`annotation_id` when empty and
+  sets the drawing active.
+- `drawing_delete` — payload `{drawing_id}`. Removes the drawing and its
+  content; active/selection ids pointing inside it are cleared.
+- `drawing_set_active` — payload `{drawing_id}`.
+- `drawing_sheet_create` — payload `{drawing_id, sheet}`. The sheet's
+  `view_ids` must reference existing views (rejected before the undo
+  push).
+- `drawing_sheet_delete` — payload `{drawing_id, sheet_id}`. Deletes the
+  sheet, its views, and annotations attached to those views.
+
+All drawing commands return `document_state`; unknown ids reply with an
+`error` event.
+
 ## State Shapes an Agent Should Remember
 
 ### Feature Entries

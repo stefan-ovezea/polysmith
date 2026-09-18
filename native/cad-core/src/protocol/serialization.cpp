@@ -15,6 +15,8 @@ namespace {
 
 #include "protocol/impl/basic_payloads_and_cam.inc"
 #include "protocol/impl/cam_from_payload.inc"
+#include "protocol/impl/drawing_payloads.inc"
+#include "protocol/impl/drawing_from_payload.inc"
 #include "protocol/impl/feature_to_payload.inc"
 #include "protocol/impl/document_session_to_payload.inc"
 #include "protocol/impl/viewport_to_payload.inc"
