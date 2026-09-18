@@ -10,7 +10,12 @@ import type {
   DraftDimensionField,
   DraftDimensionSession,
 } from "./draftDimensions";
-import { isDraftDimensionTool } from "./draftDimensions";
+import {
+  draftSessionValues,
+  isDraftDimensionTool,
+  typedChordSecondPoint,
+  typedRadiusSecondPoint,
+} from "./draftDimensions";
 import {
   draftStartRelations,
   type LineCommitSnapPoint,
@@ -98,6 +103,12 @@ export interface ArcDraftCommitOptions {
   setSecondPoint: (point: Point2d) => void;
   clearSecondPoint: () => void;
   clearDraftStart: () => void;
+  session: DraftDimensionSession | null;
+  setDraftDimensionSession: (session: DraftDimensionSession) => void;
+  clearDraftDimensionSession: () => void;
+  scheduleDimensionDeletion: () => void;
+  suppressDimensionEditorAfterSketchCommit: () => void;
+  focusDraftField: (field: DraftDimensionField) => void;
   addSketchArc: (
     startX: number,
     startY: number,
@@ -226,6 +237,10 @@ export interface EllipseDraftCommitOptions {
   setAxisPoint: (point: Point2d) => void;
   clearAxisPoint: () => void;
   clearDraftStart: () => void;
+  session: DraftDimensionSession | null;
+  setDraftDimensionSession: (session: DraftDimensionSession) => void;
+  clearDraftDimensionSession: () => void;
+  suppressDimensionEditorAfterSketchCommit: () => void;
   addSketchEllipse: (
     centerX: number,
     centerY: number,
@@ -286,11 +301,11 @@ export interface DraftPointerUpCommitOptions {
   clearDraftDimensionSession: () => void;
   suppressDimensionEditorAfterSketchCommit: () => void;
   scheduleDimensionDeletion: (
-    tool: "line" | "rectangle" | "circle" | "polygon",
+    tool: "line" | "rectangle" | "circle" | "polygon" | "arc",
     preCapturedSession?: DraftDimensionSession | null,
   ) => void;
   scheduleDraftDimensionExpressionUpdate: (
-    tool: "line" | "rectangle" | "circle" | "polygon",
+    tool: "line" | "rectangle" | "circle" | "polygon" | "arc",
   ) => void;
   setPendingCircleDimensionPlacement: (placement: {
     fromCircleCount: number;
@@ -362,6 +377,48 @@ function commitRectangleDraft(options: RectangleDraftCommitOptions): void {
   );
 }
 
+/** The arc draft's stage-1 → stage-2 transition, shared by the click
+ *  commit and the Enter key: the just-placed second end plus the
+ *  session it updates. A length typed into the stage-1 badge fixed the
+ *  distance between the ends — the placed end is re-projected onto the
+ *  typed chord, direction preserved. For center_start_end the field
+ *  means the aim distance at stage 1 but the chord at stage 2, so the
+ *  typed value shapes the placed end and the lock itself must not
+ *  carry over. Values are recomputed from the (possibly re-projected)
+ *  end so the badge shows the chord that actually landed. */
+export function advanceArcDraftSession(
+  session: DraftDimensionSession,
+  placedEnd: Point2d,
+): DraftDimensionSession {
+  const next: DraftDimensionSession = {
+    ...session,
+    secondPoint: [placedEnd[0], placedEnd[1]],
+  };
+  if (session.lockedFields.length) {
+    const typed = Number(session.values.length);
+    const dx = placedEnd[0] - session.start[0];
+    const dy = placedEnd[1] - session.start[1];
+    const len = Math.hypot(dx, dy);
+    if (Number.isFinite(typed) && typed > 0 && len > 1e-9) {
+      next.secondPoint = [
+        session.start[0] + (dx / len) * typed,
+        session.start[1] + (dy / len) * typed,
+      ];
+    }
+    if (session.toolMode === "center_start_end") {
+      next.lockedFields = { ...session.lockedFields, length: false };
+    }
+  }
+  next.values = draftSessionValues(
+    session.tool,
+    session.start,
+    session.current,
+    next.secondPoint,
+    session.toolMode,
+  );
+  return next;
+}
+
 function commitArcDraft({
   mode,
   start,
@@ -371,22 +428,48 @@ function commitArcDraft({
   setSecondPoint,
   clearSecondPoint,
   clearDraftStart,
+  session,
+  setDraftDimensionSession,
+  clearDraftDimensionSession,
+  scheduleDimensionDeletion,
+  suppressDimensionEditorAfterSketchCommit,
+  focusDraftField,
   addSketchArc,
 }: ArcDraftCommitOptions): void {
   if (!secondPoint) {
     setSecondPoint(current);
+    if (session) {
+      // Sync the session with the placed second end so the badge
+      // immediately reflects the real distance between the arc ends.
+      setDraftDimensionSession(advanceArcDraftSession(session, current));
+      // Make sure the input holds focus so typing/Tab work right after
+      // placing the chord (the focus-once guard makes this a no-op if
+      // the stage-1 badge already has it).
+      focusDraftField("length");
+    }
     return;
   }
 
   clearSecondPoint();
   clearDraftStart();
+  // Schedule first, then add — the click-path scheduler opens the
+  // "Dimension" undo group before the add command is sent, and the
+  // post-commit effect closes it once the pending refs drain (same
+  // order as commitCircleDraft).
+  scheduleDimensionDeletion();
+  clearDraftDimensionSession();
+  suppressDimensionEditorAfterSketchCommit();
 
   if (mode === "three_point") {
+    // A typed chord length moves the second end onto the typed
+    // distance; the anchor (current) is already reshaped live.
+    const finalArcEnd = (session ? typedChordSecondPoint(session) : null)
+      ?? secondPoint;
     void addSketchArc(
       start[0],
       start[1],
-      secondPoint[0],
-      secondPoint[1],
+      finalArcEnd[0],
+      finalArcEnd[1],
       current[0],
       current[1],
       mode,
@@ -395,9 +478,16 @@ function commitArcDraft({
     return;
   }
 
+  // center_start_end: the end `current` already sits on the typed
+  // chord (the session reshaped it); a typed radius rescaled the
+  // session's arc-start point, which is authoritative over the ref.
+  const arcStart =
+    session?.toolMode === "center_start_end" && session.secondPoint
+      ? session.secondPoint
+      : secondPoint;
   void addSketchArc(
-    secondPoint[0],
-    secondPoint[1],
+    arcStart[0],
+    arcStart[1],
     current[0],
     current[1],
     start[0],
@@ -505,17 +595,46 @@ function commitEllipseDraft({
   setAxisPoint,
   clearAxisPoint,
   clearDraftStart,
+  session,
+  setDraftDimensionSession,
+  clearDraftDimensionSession,
+  suppressDimensionEditorAfterSketchCommit,
   addSketchEllipse,
 }: EllipseDraftCommitOptions): void {
   if (!axisPoint) {
     // First stage done — lock the major-axis point; the next click
     // lands the minor-axis point and commits.
     setAxisPoint([current[0], current[1]]);
+    if (session) {
+      // Sync the session with the axis point so the radiusX/radiusY
+      // badges immediately show the real ellipse half-axes.
+      setDraftDimensionSession({
+        ...session,
+        secondPoint: [current[0], current[1]],
+        values: draftSessionValues(
+          session.tool,
+          session.start,
+          session.current,
+          [current[0], current[1]],
+          session.toolMode,
+        ),
+      });
+    }
     return;
   }
 
-  const ax = axisPoint[0] - start[0];
-  const ay = axisPoint[1] - start[1];
+  // A typed radiusX retargets the major-axis end (the axis direction
+  // is fixed); `current` already carries any typed radiusY because the
+  // commit receives the session current (applyDraftDimensionFieldValue
+  // reshaped it), and the core derives b from the perpendicular
+  // distance of that point from the major axis.
+  let finalAxis: Point2d = axisPoint;
+  if (session && session.touchedFields.radiusX) {
+    finalAxis = typedRadiusSecondPoint(session, "radiusX") ?? axisPoint;
+  }
+
+  const ax = finalAxis[0] - start[0];
+  const ay = finalAxis[1] - start[1];
   const a = Math.hypot(ax, ay);
   const dx = current[0] - start[0];
   const dy = current[1] - start[1];
@@ -528,11 +647,13 @@ function commitEllipseDraft({
 
   clearAxisPoint();
   clearDraftStart();
+  clearDraftDimensionSession();
+  suppressDimensionEditorAfterSketchCommit();
   void addSketchEllipse(
     start[0],
     start[1],
-    axisPoint[0],
-    axisPoint[1],
+    finalAxis[0],
+    finalAxis[1],
     current[0],
     current[1],
     isConstruction,
@@ -698,7 +819,7 @@ export function commitDraftPointerUp({
     commitArcDraft({
       mode: modes.arc,
       start,
-      current: sketchPoint.local,
+      current: committedEnd,
       secondPoint: refs.arcSecondPoint.current,
       isConstruction,
       setSecondPoint: (point) => {
@@ -710,6 +831,14 @@ export function commitDraftPointerUp({
       clearDraftStart: () => {
         refs.draftStart.current = null;
       },
+      session: draftDimensionSession,
+      setDraftDimensionSession,
+      clearDraftDimensionSession,
+      scheduleDimensionDeletion: () => {
+        scheduleDimensionDeletion("arc");
+      },
+      suppressDimensionEditorAfterSketchCommit,
+      focusDraftField,
       addSketchArc,
     });
     return;
@@ -802,7 +931,7 @@ export function commitDraftPointerUp({
   if (activeSketchTool === "ellipse") {
     commitEllipseDraft({
       start,
-      current: sketchPoint.local,
+      current: committedEnd,
       axisPoint: refs.ellipseSecondPoint.current,
       isConstruction,
       setAxisPoint: (point) => {
@@ -814,6 +943,10 @@ export function commitDraftPointerUp({
       clearDraftStart: () => {
         refs.draftStart.current = null;
       },
+      session: draftDimensionSession,
+      setDraftDimensionSession,
+      clearDraftDimensionSession,
+      suppressDimensionEditorAfterSketchCommit,
       addSketchEllipse,
     });
     return;

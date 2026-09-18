@@ -139,7 +139,6 @@ function renderArcPointerPreview({
   arcSecondPoint,
   isConstruction,
   previewArcRef,
-  previewDimensionRef,
 }: DraftPointerPreviewParams) {
   const preview = buildArcDraftPreview({
     mode: arcToolMode,
@@ -155,66 +154,12 @@ function renderArcPointerPreview({
     sketchGroup.add(preview);
   }
 
-  // Three-point arc, second click pending: read the chord between the
-  // two end vertices as the user places the second one.
-  if (arcToolMode === "three_point" && !arcSecondPoint) {
-    renderChordDraftDimension({
-      activeSketchPlaneId,
-      activeSketchPlaneFrame,
-      sketchGroup,
-      previewDimensionRef,
-      start: draftStart,
-      end: draftPreviewLocal,
-    });
-  }
-}
-
-function renderChordDraftDimension({
-  activeSketchPlaneId,
-  activeSketchPlaneFrame,
-  sketchGroup,
-  previewDimensionRef,
-  start,
-  end,
-}: Pick<
-  DraftPointerPreviewParams,
-  "activeSketchPlaneId" | "activeSketchPlaneFrame" | "sketchGroup" | "previewDimensionRef"
-> & {
-  start: [number, number];
-  end: [number, number];
-}) {
-  const length = distanceBetweenPoints(start, end);
-  if (length <= 0.001) {
-    return;
-  }
-
-  // point_distance renders the generic linear dimension — extension
-  // lines, arrows, and a label offset perpendicular to the chord.
-  const nx = -(end[1] - start[1]) / length;
-  const ny = (end[0] - start[0]) / length;
-  const offset = 8;
-  const toWorld = (local: [number, number]) =>
-    toWorldPoint(activeSketchPlaneId, local, activeSketchPlaneFrame);
-  const midX = (start[0] + end[0]) / 2;
-  const midY = (start[1] + end[1]) / 2;
-  const draftDimension = buildSketchDimensionObject({
-    dimensionId: "preview-arc-chord",
-    planeId: activeSketchPlaneId,
-    kind: "point_distance",
-    entityId: "preview-arc",
-    label: `${formatDraftDimension(length)} mm`,
-    rawValue: length,
-    unitSuffix: "mm",
-    isSelected: false,
-    anchorStart: toWorld(start),
-    anchorEnd: toWorld(end),
-    dimensionStart: toWorld(start),
-    dimensionEnd: toWorld(end),
-    labelPosition: toWorld([midX + nx * offset, midY + ny * offset]),
-  });
-  previewDimensionRef.current = draftDimension;
-  sketchGroup.add(draftDimension.line);
-  sketchGroup.add(draftDimension.label);
+  // No scene dimension during the arc draft: the editable HTML badge
+  // (DraftDimensionFieldEditors) is the arc's single dimension window
+  // — it shows the aim distance at stage 1 and the chord between the
+  // ends at stage 2. A second, non-editable scene label rendered here
+  // previously sat next to the badge and showed the same distance as
+  // uneditable info.
 }
 
 function renderCirclePointerPreview({

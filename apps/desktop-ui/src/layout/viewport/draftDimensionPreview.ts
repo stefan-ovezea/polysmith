@@ -54,6 +54,10 @@ export function buildDraftDimensionPreview({
     return { kind: "none" };
   }
 
+  // Arc (and every other non-line tool) shows its dimension as a plain
+  // HTML badge anchored at the first click — stage 1 the aim distance,
+  // stage 2 the chord between the arc ends (see
+  // draftDimensionScreenPosition) — no radial scene geometry.
   if (session.tool !== "line") {
     return { kind: "positions", screenPositions: {} };
   }
@@ -386,6 +390,12 @@ function addAngleArc({
 
   const labelAngle = referenceAngle + displayAngle / 2;
   const angleDegrees = (Math.abs(displayAngle) * 180) / Math.PI;
+  // Anti-trap: for near-horizontal lines (|displayAngle| < 20°), a
+  // label that rides in front of the rubber band can trap the mouse
+  // pointer — the cursor lands on the HTML input instead of the
+  // canvas, tracking stops, and both line and label freeze. Always
+  // offset perpendicular (above/below) to the line in this case, like
+  // other CAD tools do.
   if (angleDegrees < 20 && lineLength > 0.001) {
     const lineUnitX = dx / lineLength;
     const lineUnitY = dy / lineLength;

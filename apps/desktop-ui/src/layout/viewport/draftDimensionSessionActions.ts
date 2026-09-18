@@ -51,12 +51,15 @@ export function createDraftDimensionSession(
   tool: DraftDimensionTool,
   start: [number, number],
   current: [number, number],
+  options?: { toolMode?: string },
 ): DraftDimensionSession {
   const fields = draftSessionFields(tool);
   return {
     tool,
     start,
     current,
+    secondPoint: null,
+    toolMode: options?.toolMode,
     values: draftSessionValues(tool, start, current),
     activeField: fields[0],
     lockedFields: {},
@@ -111,6 +114,7 @@ export function createDraftDimensionSessionActions({
       fromLineCount: sketchLineCountRef.current,
       fromCircleCount: sketchParameters?.circles.length ?? 0,
       fromPolygonCount: sketchParameters?.polygons?.length ?? 0,
+      fromArcCount: sketchParameters?.arcs?.length ?? 0,
       shouldDeleteLine: tool === "line" && !session?.touchedFields.length,
       shouldDeleteCircle:
         tool === "circle" && !session?.touchedFields.diameter,
@@ -121,6 +125,13 @@ export function createDraftDimensionSessionActions({
         !session?.touchedFields.width &&
         !session?.touchedFields.length,
       shouldDeleteLineAngle: tool === "line" && !session?.touchedFields.angle,
+      // Same convention as circles: the auto radius dim is deleted
+      // unless the user typed a value during the draft, in which case
+      // it stays showing the arc's real radius.
+      shouldDeleteArc:
+        tool === "arc" &&
+        !session?.touchedFields.length &&
+        !session?.touchedFields.radius,
     };
   }
 
@@ -137,6 +148,7 @@ export function createDraftDimensionSessionActions({
       fromLineCount: sketchLineCountRef.current,
       fromCircleCount: sketchParameters?.circles.length ?? 0,
       fromPolygonCount: sketchParameters?.polygons?.length ?? 0,
+      fromArcCount: sketchParameters?.arcs?.length ?? 0,
       expressions: Object.fromEntries(entries) as Partial<
         Record<DraftDimensionField, string>
       >,

@@ -24,11 +24,13 @@ export interface PendingDimensionDeletion {
   fromLineCount: number;
   fromCircleCount: number;
   fromPolygonCount: number;
+  fromArcCount: number;
   shouldDeleteLine: boolean;
   shouldDeleteCircle: boolean;
   shouldDeletePolygon: boolean;
   shouldDeleteRectangle: boolean;
   shouldDeleteLineAngle: boolean;
+  shouldDeleteArc: boolean;
 }
 
 export interface PendingDraftDimensionExpressions {
@@ -36,6 +38,7 @@ export interface PendingDraftDimensionExpressions {
   fromLineCount: number;
   fromCircleCount: number;
   fromPolygonCount: number;
+  fromArcCount: number;
   expressions: Partial<Record<DraftDimensionField, string>>;
 }
 
@@ -143,6 +146,7 @@ export function deletePendingAutoDimensions({
   deletePendingCircleDimension(pending, sketch, deleteSketchDimension);
   deletePendingPolygonDimension(pending, sketch, deleteSketchDimension);
   deletePendingRectangleDimensions(pending, sketch, deleteSketchDimension);
+  deletePendingArcDimension(pending, sketch, deleteSketchDimension);
   pendingDimensionDeletionRef.current = null;
 }
 
@@ -158,6 +162,9 @@ function pendingEntityLanded(
   }
   if (pending.tool === "polygon") {
     return (sketch.polygons ?? []).length > pending.fromPolygonCount;
+  }
+  if (pending.tool === "arc") {
+    return (sketch.arcs ?? []).length > pending.fromArcCount;
   }
   // rectangle
   return sketch.lines.length >= pending.fromLineCount + 4;
@@ -229,6 +236,23 @@ function deletePendingRectangleDimensions(
   }
 }
 
+function deletePendingArcDimension(
+  pending: PendingDimensionDeletion,
+  sketch: SketchFeatureParameters,
+  deleteSketchDimension: SketchDimensionDeleter,
+) {
+  const arcs = sketch.arcs ?? [];
+  const arc = arcs[arcs.length - 1];
+  if (pending.shouldDeleteArc && arc && !arc.is_construction) {
+    deleteDimensionForEntity(
+      sketch,
+      arc.arc_id,
+      "arc_radius",
+      deleteSketchDimension,
+    );
+  }
+}
+
 function deleteDimensionForEntity(
   sketch: SketchFeatureParameters,
   entityId: string,
@@ -293,7 +317,31 @@ function applyPendingExpressionForTool({
   if (pending.tool === "circle") {
     return applyCircleExpression(pending, sketch, updateSketchDimension);
   }
+  if (pending.tool === "arc") {
+    return applyArcExpression(pending, sketch, updateSketchDimension);
+  }
   return applyPolygonExpression(pending, sketch, updateSketchDimension);
+}
+
+function applyArcExpression(
+  pending: PendingDraftDimensionExpressions,
+  sketch: SketchFeatureParameters,
+  updateSketchDimension: SketchDimensionUpdater,
+) {
+  const arcs = sketch.arcs ?? [];
+  const arc = arcs[pending.fromArcCount] ?? arcs[arcs.length - 1];
+  if (!arc) {
+    return false;
+  }
+  // The arc's automatic dimension is a radius dim — a parameter
+  // expression typed into the radius field drives it directly (the
+  // core's update_sketch_dimension arc_radius path).
+  updateDimensionExpression(
+    `dim-arc-${arc.arc_id}`,
+    pending.expressions.radius,
+    updateSketchDimension,
+  );
+  return true;
 }
 
 function applyLineExpressions(

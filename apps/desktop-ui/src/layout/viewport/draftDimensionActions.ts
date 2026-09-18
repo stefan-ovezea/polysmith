@@ -7,6 +7,8 @@ import type {
 
 import type { ParameterEntry } from "@/types";
 import type { DisplayUnits } from "@/utils/units";
+import { makeUiLogEntry } from "@/lib/logger";
+import { useCadCoreStore } from "@/state/cadCoreStore";
 import {
   applyDraftDimensionFieldValue,
   parameterTokenAtCursor,
@@ -89,6 +91,39 @@ export function createDraftDimensionActions({
       draftParameterExpressionRef.current[field] = parameterExpression;
     }
     const next = applyDraftDimensionFieldValue(session, field, mmValue);
+    // The draft must never silently ignore a typed value — when the
+    // three_point arc radius is below half the chord (geometrically
+    // impossible with fixed ends) the apex was clamped to the
+    // semicircle; tell the user why the badge value and the geometry
+    // differ.
+    if (
+      session.tool === "arc" &&
+      field === "radius" &&
+      session.toolMode !== "center_start_end" &&
+      session.secondPoint
+    ) {
+      const numericValue = Number(mmValue);
+      const chord = Math.hypot(
+        session.secondPoint[0] - session.start[0],
+        session.secondPoint[1] - session.start[1],
+      );
+      if (
+        Number.isFinite(numericValue) &&
+        numericValue > 0 &&
+        numericValue < chord / 2
+      ) {
+        useCadCoreStore
+          .getState()
+          .addLogEntry(
+            makeUiLogEntry(
+              "warn",
+              "draft_dim",
+              `Arc radius ${mmValue} is smaller than half the chord ` +
+                `(${(chord / 2).toFixed(2)}) — clamped to a semicircle.`,
+            ),
+          );
+      }
+    }
     draftDimensionSessionRef.current = next;
     draftDimScreenPositionsRef.current = {};
     setDraftDimensionSession(next);
@@ -108,6 +143,13 @@ export function createDraftDimensionActions({
     draftDimensionSessionRef.current = next;
     setDraftDimensionSession(next);
     setDraftSuggestionState({ field, index: 0 });
+    // Select the displayed value so typing REPLACES it — the badge is
+    // a numeric entry, not a text field, and appending to "23.45" is
+    // never what the user wants. Fires on every focus landing
+    // (pointer-down auto-focus, Tab cycling, stage transitions).
+    window.requestAnimationFrame(() => {
+      draftDimensionInputRefs.current[field]?.select();
+    });
   }
 
   function handleDraftDimensionBlur(field: DraftDimensionField) {
@@ -166,9 +208,29 @@ export function createDraftDimensionActions({
   }
 
   function focusDraftField(field: DraftDimensionField) {
+    // Focus-once: pointer moves call this every frame while the field
+    // is unlocked. Re-focusing + re-selecting an already-focused input
+    // is pure churn — DOM focus flapping and the OS cursor flickering
+    // between the hidden canvas cursor and the I-beam, which reads as
+    // unexplained jerkiness while dragging. The blur handler nulls
+    // draftFieldFocusedRef, so chained lines re-focus on their next
+    // segment after commitLineDraft blurs the inputs.
+    if (draftFieldFocusedRef.current === field) {
+      return;
+    }
+    // Double-rAF: the badge may not be mounted yet (stage-transition
+    // focus — the three_point arc badge only exists from the second
+    // click on). The second frame runs after React committed the
+    // render, so the input is guaranteed to exist.
     window.requestAnimationFrame(() => {
-      draftDimensionInputRefs.current[field]?.focus();
-      draftDimensionInputRefs.current[field]?.select();
+      window.requestAnimationFrame(() => {
+        const input = draftDimensionInputRefs.current[field];
+        if (!input) {
+          return;
+        }
+        input.focus();
+        input.select();
+      });
     });
   }
 
@@ -179,6 +241,23 @@ export function createDraftDimensionActions({
     const session = draftDimensionSessionRef.current;
     if (!session) {
       return;
+    }
+    // First keystroke on the live readout replaces it. The badge shows
+    // the live distance while the draft follows the pointer, and every
+    // pointer move re-renders the value — which clears any selection
+    // the focus handler made, so a bare keystroke would APPEND to the
+    // readout ("5" over "23.45" → "23.455"). Select the readout first
+    // and the browser's default insertion replaces it. Once the user
+    // has typed (raw input exists) keystrokes append normally.
+    if (
+      event.key.length === 1 &&
+      event.key !== " " &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      draftRawInputRef.current[field] === undefined
+    ) {
+      draftDimensionInputRefs.current[field]?.select();
     }
     const suggestions = getDraftParameterSuggestions(
       field,
