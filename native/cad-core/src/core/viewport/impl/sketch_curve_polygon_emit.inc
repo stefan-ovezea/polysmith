@@ -9,10 +9,46 @@
             view->active_sketch_feature_id.value() != feature.id) {
           continue;
         }
-        // Radial dimensions on this arc. Each kind owns an emitter in
+        // An explicit radius dimension must win over an auto one rather
+        // than being masked by it — search explicit first, then fall
+        // back to the auto dimension. The fallback matters: the arc
+        // tool's automatic radius dimension was previously never
+        // emitted (auto dims were skipped unconditionally), so a
+        // committed arc showed no radius dimension at all while its
+        // draft had one. Each kind owns an emitter in
         // sketch_radial_dimension_primitives.inc, which resolves the
-        // stored sketch-local label override so a dragged label survives
-        // the next viewport refetch.
+        // stored sketch-local label override so a dragged label
+        // survives the next viewport refetch.
+        auto dimension_matches_arc = [&](const SketchDimension& dimension,
+                                         bool require_explicit) {
+          return dimension.kind == "arc_radius" &&
+                 dimension.entity_id == arc.id &&
+                 (!require_explicit || !dimension.is_auto);
+        };
+        auto dimension_it = std::find_if(
+            feature.sketch_parameters->dimensions.begin(),
+            feature.sketch_parameters->dimensions.end(),
+            [&](const SketchDimension& dimension) {
+              return dimension_matches_arc(dimension, true);
+            });
+        if (dimension_it == feature.sketch_parameters->dimensions.end()) {
+          dimension_it = std::find_if(
+              feature.sketch_parameters->dimensions.begin(),
+              feature.sketch_parameters->dimensions.end(),
+              [&](const SketchDimension& dimension) {
+                return dimension_matches_arc(dimension, false);
+              });
+        }
+        if (dimension_it != feature.sketch_parameters->dimensions.end()) {
+          const bool is_selected_dim =
+              view->selected_sketch_dimension_id.has_value() &&
+              view->selected_sketch_dimension_id.value() == dimension_it->id;
+          sketch_dimensions.push_back(make_arc_radius_dimension_primitive(
+              arc, *dimension_it, *feature.sketch_parameters,
+              is_selected_dim));
+        }
+        // Arc length and angle have no automatic dimension — only
+        // explicit ones are emitted.
         for (const auto& dim : feature.sketch_parameters->dimensions) {
           if (dim.entity_id != arc.id || dim.is_auto) {
             continue;
@@ -20,10 +56,7 @@
           const bool is_selected_dim =
               view->selected_sketch_dimension_id.has_value() &&
               view->selected_sketch_dimension_id.value() == dim.id;
-          if (dim.kind == "arc_radius") {
-            sketch_dimensions.push_back(make_arc_radius_dimension_primitive(
-                arc, dim, *feature.sketch_parameters, is_selected_dim));
-          } else if (dim.kind == "arc_length") {
+          if (dim.kind == "arc_length") {
             sketch_dimensions.push_back(make_arc_length_dimension_primitive(
                 arc, dim, *feature.sketch_parameters, is_selected_dim));
           } else if (dim.kind == "arc_angle") {

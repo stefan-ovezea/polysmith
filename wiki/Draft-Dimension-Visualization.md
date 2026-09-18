@@ -2,6 +2,24 @@
 
 > **Status as of 2026-05-25:** Fully implemented and verified. See
 > [Implementation Log](Implementation-Log) for the session summary.
+>
+> **Update 2026-09-18 (sketch/dimmensions):** focus/select happens once
+> per session instead of per pointer move (no more focus flapping);
+> ellipses get radiusX / radiusY preview boxes (UI-only — no core
+> ellipse dimension). The rectangle length box anchors at the far edge
+> midpoint, never at the cursor. **Arc** has TWO editable HTML badges:
+> the length badge (stage 1: aim distance between the ends; stage 2:
+> the chord) anchored at the first click, and the **radius badge from
+> stage 2 on** (circumradius for three_point, center distance for
+> center_start_end) anchored at the arc center. Typed values reshape
+> the live draft (typed radius moves the apex onto the typed
+> circumcircle, or rescales the center_start_end arc) and commit; the
+> first keystroke over the live readout replaces it. Enter at stage 1
+> places the second end at the typed distance, at stage 2 commits the
+> arc. The old non-editable scene chord dimension (sprite label) was
+> removed; a real radial scene dimension for arc stage 2 is deferred.
+> Circle/rectangle/polygon previews still use HTML-only positioning
+> (future work).
 
 ## Problem
 
@@ -27,7 +45,14 @@ dimension label's screen projection.
   start along the reference angle. Dotted cursor extension from cursor
   outward.
 - **Non-line tools** (rectangle, circle, polygon): fall back to the existing
-  HTML-only positioning (unchanged).
+  HTML-only positioning. **Arc** shows two HTML badges: the length badge
+  anchored at the first click (aim distance at stage 1, chord between the
+  ends at stage 2) and a radius badge from stage 2 on anchored at the arc
+  center (circumradius for three_point, center distance for
+  center_start_end); a radial scene dimension (leader from the center, one
+  radial arrowhead at the arc — the committed arc radius dimension's visual
+  language) is deferred. **Ellipse** shows two HTML boxes at the major/minor
+  axis ends whose typed values reshape the live draft and commit.
 
 ## Implementation
 

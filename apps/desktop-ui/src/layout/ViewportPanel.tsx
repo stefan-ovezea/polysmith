@@ -118,6 +118,8 @@ import {
 import {
   isDraftDimensionTool,
   isDrawableSketchTool,
+  typedChordSecondPoint,
+  typedRadiusSecondPoint,
   updateDraftSessionCurrent,
   type DimensionLabelDragState,
   type DimensionRelationPreview,
@@ -126,7 +128,10 @@ import {
   type DraftDimensionTool,
   type ParameterSuggestion,
 } from "./viewport/draftDimensions";
-import { buildDraftDimensionPreview } from "./viewport/draftDimensionPreview";
+import {
+  buildDraftDimensionPreview,
+  type DraftDimensionScreenPositions,
+} from "./viewport/draftDimensionPreview";
 import {
   createDraftDimensionSession,
   createDraftDimensionSessionActions,
@@ -156,6 +161,7 @@ import {
   type DraftSuggestionState,
 } from "./viewport/draftDimensionInput";
 import { createDraftDimensionActions } from "./viewport/draftDimensionActions";
+import { advanceArcDraftSession } from "./viewport/draftCommit";
 import { draftDimensionFieldScreenPosition } from "./viewport/draftDimensionScreenPosition";
 import {
   type DimensionEditOriginalValue,
@@ -615,6 +621,12 @@ export function ViewportPanel({
   const draftDimensionInputRefs = useRef<
     Partial<Record<DraftDimensionField, HTMLInputElement | null>>
   >({});
+  /** Cache for renderDraftDimensions: the key of the inputs that
+   *  produced the current draft-dimension group plus its projected
+   *  badge positions, so unchanged frames skip the dispose/rebuild
+   *  (constant per-frame allocations read as micro-stutter). */
+  const lastDraftDimKeyRef = useRef("");
+  const lastDraftDimPositionsRef = useRef<DraftDimensionScreenPositions>({});
   /** Set while the user is actively typing into a draft field. Prevents
    *  the display-unit reconversion from overwriting partial input like
    *  "2." (which would round-trip through mm and lose the decimal). */
@@ -1379,6 +1391,10 @@ export function ViewportPanel({
       return;
     }
     renderDraftPreview(draftDimensionSession);
+    // The preview objects are already in the scene — the canvas must
+    // redraw NOW, not on the next pointer move (typing a value felt
+    // like it "applies on the next mouse movement").
+    requestViewportRenderRef.current?.();
   }, [draftDimensionSession, sketchToolConstruction]);
 
   function toggleGridVisibility(kind: "viewport" | "sketch") {
@@ -1720,7 +1736,7 @@ export function ViewportPanel({
   // repeated labels broke the undo dropdown's keying. Idempotent: the
   // flag guards against ever nesting a second group.
   const scheduleDimensionDeletionInGroup = (
-    tool: "line" | "rectangle" | "circle" | "polygon",
+    tool: "line" | "rectangle" | "circle" | "polygon" | "arc",
     preCapturedSession?: DraftDimensionSession | null,
   ) => {
     if (!draftUndoGroupOpenRef.current) {
@@ -2096,6 +2112,35 @@ export function ViewportPanel({
     void setSketchToolRef.current("select");
   }
 
+  // The three_point arc's chord is defined by the SECOND click, not by
+  // `current` — a typed chord length must move that point itself for
+  // the preview to follow. For center_start_end a typed radius
+  // rescales the session's arc-start point, which is authoritative
+  // over the ref (the ref holds the point as placed). All preview
+  // paths (effect + pointer move + dimension render loop) read this
+  // selector.
+  function adjustedArcSecondPoint() {
+    const session = draftDimensionSessionRef.current;
+    if (session && session.tool === "arc") {
+      if (session.toolMode === "center_start_end" && session.secondPoint) {
+        return session.secondPoint;
+      }
+      return typedChordSecondPoint(session) ?? arcSecondPointRef.current;
+    }
+    return arcSecondPointRef.current;
+  }
+
+  function adjustedEllipseAxisPoint() {
+    const session = draftDimensionSessionRef.current;
+    if (session && session.tool === "ellipse" && session.touchedFields.radiusX) {
+      return (
+        typedRadiusSecondPoint(session, "radiusX") ??
+        ellipseSecondPointRef.current
+      );
+    }
+    return ellipseSecondPointRef.current;
+  }
+
   function renderDraftPreview(session: DraftDimensionSession) {
     const sketchGroup = sketchGroupRef.current;
     if (!sketchGroup || !activeSketchPlaneId) {
@@ -2117,10 +2162,10 @@ export function ViewportPanel({
       arcToolMode: arcToolModeRef.current,
       circleToolMode: circleToolModeRef.current,
       rectangleToolMode: rectangleToolModeRef.current,
-      arcSecondPoint: arcSecondPointRef.current,
+      arcSecondPoint: adjustedArcSecondPoint(),
       circleSecondPoint: circleSecondPointRef.current,
       rectSecondPoint: rectSecondPointRef.current,
-      ellipseSecondPoint: ellipseSecondPointRef.current,
+      ellipseSecondPoint: adjustedEllipseAxisPoint(),
       isConstruction: sketchToolConstructionRef.current,
       previewLineRef,
       previewCircleRef,
@@ -2219,13 +2264,100 @@ export function ViewportPanel({
     if (!session) {
       return;
     }
-    // Arc is committed via 3 clicks, not via the dimension session.
-    // Enter key keeps the tool armed but does not add geometry.
-    if (session.tool === "arc") {
-      return;
-    }
     const [startX, startY] = session.start;
     const [endX, endY] = session.current;
+    if (session.tool === "arc" || session.tool === "ellipse") {
+      // 3-click drafts: Enter commits once the second defining point
+      // exists (the badge's change handler already applied the typed
+      // value to the live draft). At the arc's stage 1 Enter places
+      // the second end — the same transition as the click commit, so
+      // a typed length fixes the chord — instead of silently doing
+      // nothing.
+      if (!session.secondPoint) {
+        if (session.tool === "arc") {
+          const next = advanceArcDraftSession(session, session.current);
+          arcSecondPointRef.current = next.secondPoint;
+          setDraftDimensionSession(next);
+          focusDraftField("length");
+        }
+        return;
+      }
+      clearPreviewLine();
+      clearPreviewCircle();
+      clearPreviewArc();
+      clearPreviewDimension();
+      lineDraftStartRef.current = null;
+      if (session.tool === "arc") {
+        await beginUndoGroupRef.current("Dimension");
+        scheduleDimensionDeletion(session.tool, session);
+        draftUndoGroupOpenRef.current = true;
+        clearDraftDimensionSession();
+        suppressDimensionEditorAfterSketchCommit();
+        rendererRef.current?.domElement.focus();
+        if (arcToolModeRef.current === "three_point") {
+          // A typed chord length moves the second end onto the typed
+          // distance; the anchor (current) is already reshaped live.
+          const arcEnd =
+            typedChordSecondPoint(session) ?? session.secondPoint;
+          void addSketchArcRef.current(
+            startX,
+            startY,
+            arcEnd[0],
+            arcEnd[1],
+            endX,
+            endY,
+            arcToolModeRef.current,
+            sketchToolConstructionRef.current,
+          );
+        } else {
+          // center_start_end: (arc start, arc end, center anchor) —
+          // the end `current` already sits on the typed chord.
+          void addSketchArcRef.current(
+            session.secondPoint[0],
+            session.secondPoint[1],
+            endX,
+            endY,
+            startX,
+            startY,
+            arcToolModeRef.current,
+            sketchToolConstructionRef.current,
+          );
+        }
+        arcSecondPointRef.current = null;
+        return;
+      }
+      // Ellipse — no dimension to drain; one add is one undo step.
+      const axisEnd =
+        session.touchedFields.radiusX
+          ? (typedRadiusSecondPoint(session, "radiusX") ??
+            session.secondPoint)
+          : session.secondPoint;
+      const axisDx = axisEnd[0] - startX;
+      const axisDy = axisEnd[1] - startY;
+      const axisLength = Math.hypot(axisDx, axisDy);
+      const minorLength =
+        Math.abs((axisDx * (endY - startY) - axisDy * (endX - startX)) /
+          axisLength);
+      if (axisLength <= 0.001 || minorLength <= 0.001) {
+        // Degenerate (cursor on the major-axis line) — stay armed
+        // instead of failing, same as the click commit.
+        return;
+      }
+      clearDraftDimensionSession();
+      suppressDimensionEditorAfterSketchCommit();
+      rendererRef.current?.domElement.focus();
+      void addSketchEllipseRef.current(
+        startX,
+        startY,
+        axisEnd[0],
+        axisEnd[1],
+        endX,
+        endY,
+        sketchToolConstructionRef.current,
+      );
+      ellipseSecondPointRef.current = null;
+      return;
+    }
     clearPreviewLine();
     clearPreviewCircle();
     clearPreviewArc();
@@ -2812,6 +2944,38 @@ export function ViewportPanel({
         return;
       }
 
+      // Skip the dispose/rebuild when nothing that shapes the group
+      // changed since the last frame. The key covers every input the
+      // preview builder reads; camera/zoom/canvas-size are included so
+      // the projected badge positions stay correct on pan/zoom. The
+      // group must still be in the scene (a cleared group resets
+      // draftDimGroupRef to null), which also makes the skip safe
+      // across session boundaries.
+      const dimArcSecondPoint = adjustedArcSecondPoint();
+      const cacheKey = [
+        session.tool,
+        session.start.join(","),
+        session.current.join(","),
+        session.secondPoint ? session.secondPoint.join(",") : "none",
+        session.toolMode ?? "",
+        dimArcSecondPoint ? dimArcSecondPoint.join(",") : "none",
+        arcToolModeRef.current,
+        previousLineAngleRef.current ?? "",
+        camera.position.toArray().join(","),
+        camera.zoom,
+        renderer.domElement.height,
+        activeSketchPlaneIdRef.current ?? "",
+        JSON.stringify(activeSketchPlaneFrameRef.current?.normal ?? null),
+      ].join("|");
+      if (cacheKey === lastDraftDimKeyRef.current && draftDimGroupRef.current) {
+        // Group is already in the scene — just refresh the projected
+        // badge positions.
+        draftDimScreenPositionsRef.current =
+          lastDraftDimPositionsRef.current;
+        return;
+      }
+      lastDraftDimKeyRef.current = cacheKey;
+
       // Clear previous frame's geometry
       clearDraftDimGroup();
 
@@ -2825,10 +2989,12 @@ export function ViewportPanel({
       });
 
       if (preview.kind === "none") {
+        lastDraftDimPositionsRef.current = {};
         return;
       }
 
       draftDimScreenPositionsRef.current = preview.screenPositions;
+      lastDraftDimPositionsRef.current = preview.screenPositions;
       if (preview.kind === "positions") {
         return;
       }
@@ -3148,10 +3314,10 @@ export function ViewportPanel({
         arcToolMode: arcToolModeRef.current,
         circleToolMode: circleToolModeRef.current,
         rectangleToolMode: rectangleToolModeRef.current,
-        arcSecondPoint: arcSecondPointRef.current,
+        arcSecondPoint: adjustedArcSecondPoint(),
         circleSecondPoint: circleSecondPointRef.current,
         rectSecondPoint: rectSecondPointRef.current,
-        ellipseSecondPoint: ellipseSecondPointRef.current,
+        ellipseSecondPoint: adjustedEllipseAxisPoint(),
         isConstruction: sketchToolConstructionRef.current,
         previewLineRef,
         previewCircleRef,
@@ -3303,7 +3469,13 @@ export function ViewportPanel({
         draftStartedOnPointerDownRef,
         draftDimensionSessionRef,
         resolveSnappedSketchPoint,
-        createDraftDimensionSession,
+        // Inject the arc tool mode so the draft session knows which
+        // geometry its radius field describes (circumradius for
+        // three_point, center distance for center_start_end).
+        createDraftDimensionSession: (tool, start, current) =>
+          createDraftDimensionSession(tool, start, current, {
+            toolMode: tool === "arc" ? arcToolModeRef.current : undefined,
+          }),
         setDraftDimensionSession,
         focusDraftField,
       });
@@ -4306,7 +4478,14 @@ export function ViewportPanel({
 	        createLineDraftDimensionSession: (start, current) =>
 	          createDraftDimensionSession("line", start, current),
 	        clearDraftDimGroup,
-	        setDraftDimensionSession,
+	        // Ref-syncing wrapper: commit stages update the session (e.g.
+	        // the arc-start/axis point landing), and the render loop
+	        // reads the ref — the raw state setter would leave it stale
+	        // until the next pointer move.
+	        setDraftDimensionSession: (session) => {
+	          draftDimensionSessionRef.current = session;
+	          setDraftDimensionSession(session);
+	        },
 	        focusDraftField,
 	        addSketchArc: addSketchArcRef.current,
 	        addSketchRectangle: addSketchRectangleRef.current,
@@ -4481,7 +4660,6 @@ export function ViewportPanel({
         rectSecondPointRef.current = null;
         circleSecondPointRef.current = null;
         circleTangentLineIdsRef.current = [];
-    circleTangentLineIdsRef.current = [];
         ellipseSecondPointRef.current = null;
         splineDraftPolesRef.current = [];
         clearPreviewLine();

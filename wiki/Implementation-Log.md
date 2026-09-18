@@ -3829,3 +3829,133 @@ the app sluggish afterwards.  Three commits:
   + cylinder + 100-gon prism: 5,505 face proxies, every proxy within
   the triangle budget, verified fail-before/pass-after).  50/50 C++
   suites + `tsc --noEmit` clean; user-verified in-app.
+
+## 2026-09-18
+
+### Sketch auto-dimension regression fix (sketch/dimmensions)
+
+The draft dimension badges regressed after the 2026-06 refactor: the
+preview window could sit on top of the point where the user was placing
+the end of a line and swallow the click (the 2026-05-28
+`pointer-events-none` fix had been applied only to the post-commit
+editor, never to the draft boxes); pointer moves re-focused +
+re-selected the badge input every frame (focus flapping + OS cursor
+flicker read as unexplained drag jerk); arcs showed a mislabelled
+"length" badge and no dimension at all (the emitter skipped arc auto
+dims unconditionally while the draft had one); ellipses had no preview
+dimension whatsoever.
+
+- **Click-through + fade** — NOTE: the `pointer-events-none` badge +
+  pointer-proximity fade were tried and REVERTED during the session:
+  click-through badges let a finishing click fall through to the canvas
+  and commit the draft mid-edit (a three-point arc's third click).
+  The badge form stays `pointer-events-auto`; placement safety comes
+  from position (badges anchor away from the cursor). Focus-once guard
+  in `focusDraftField` (no per-move focus/select churn) stayed.
+- **Anchor restoration** — the rectangle length box moved off the
+  cursor to the far edge midpoint (a693745 convention); the deleted
+  rationale comments (f9da570 anti-trap, origin anchoring) restored.
+- **Arc** — the draft badge is the arc's single dimension window: the
+  `length` field shows the aim distance at stage 1 and the chord
+  between the ends at stage 2 (`secondPoint`/`toolMode` carried on the
+  session); typed values reshape the live draft and commit;
+  post-commit follows the circle convention (auto dim deleted unless
+  typed; typed/parameter value becomes a driving dim — the core's
+  `update_sketch_dimension` arc_radius path, no new core command).
+  The planned radial scene dimension (leader + arrowhead + label at
+  the sweep mid-angle via a shared `computeArcPreviewGeometry`) was
+  NOT landed — deferred.
+- **Core emitter fix** — `sketch_curve_polygon_emit.inc` arc block now
+  mirrors the circle block: explicit `arc_radius` wins, auto dim is
+  the fallback, so a committed arc shows its radius dimension.
+- **Ellipse (preview only)** — the ellipse draft got `radiusX` /
+  `radiusY` boxes at the axis ends; typed values drive the live
+  preview and the commit. No persistent ellipse dimension (the core
+  has none) — UI-only by design decision.
+- **Per-frame rebuild cache** — `renderDraftDimensions` skips the
+  group dispose/rebuild when a key of all geometry inputs is
+  unchanged (no more constant allocations while the pointer is idle).
+- **Tests** — `cad_core_dimension_completion_test` gains
+  `test_arc_auto_radius_dimension_emitted` (fail-before/pass-after on
+  the emitter fix) and `test_arc_radius_update_drives_endpoints`.
+  All C++ suites + `tsc --noEmit` clean.
+
+### Arc draft double-window fix (sketch/dimmensions, same day)
+
+User report during three_point arc creation (press first point, drag
+toward the second end): TWO dimension windows appeared — one
+non-editable showing the real distance "as info", one floating input
+whose typed value was ignored. Investigation found the old/new mix:
+
+1. **Old window** — `renderChordDraftDimension`
+   (`draftPointerPreview.ts`) rendered a scene dimension (extension
+   lines + arrows + sprite label) between the first point and the
+   cursor for three_point stage 1. Scene geometry, not HTML — the
+   uneditable "info" window. It predated the draft-dimension session
+   system and was never removed when the HTML badge was extended to
+   arcs.
+2. **New window** — the `DraftDimensionFieldEditors` badge (the
+   `length` field), anchored at the first click.
+3. **Ignored value** — Enter at arc stage 1 was a silent no-op
+   (`commitDraftDimensionSession` returned early without a
+   `secondPoint`): type a value + Enter did nothing visible.
+
+Fixes (UI-only, user-approved direction: one editable badge for both
+stages):
+
+- `renderChordDraftDimension` deleted (function + call) — the HTML
+  badge is the arc's single dimension window.
+- Stage-1 → stage-2 transition extracted as `advanceArcDraftSession`
+  (`draftCommit.ts`), shared by the click commit and the new Enter
+  path: the placed end re-projects onto the typed chord (direction
+  preserved), the center_start_end lock clears (its stage-2 field
+  means the chord), values recompute so the badge shows the chord
+  that landed. **Enter at stage 1 now places the second end** instead
+  of doing nothing.
+- Stale mixed-state cleaned: the `draft_trace` arc diagnostic
+  removed, the duplicated `circleTangentLineIdsRef` line fixed, the
+  "radial dimension label" comments in
+  `draftDimensionScreenPosition.ts` corrected, the unused `radius`
+  screen-position key removed from `DraftDimensionScreenPositions`.
+  The `main.tsx` localStorage crashlog stays until the ellipse crash
+  is verified fixed.
+- A radial scene dimension for arc stage 2 remains deferred.
+
+Gates: `tsc --noEmit` clean; full `pnpm core:build` + `pnpm test:core`
+re-run to close the previous session's open gate. AWAITING user
+in-app verification (one badge during the arc draft, typed value +
+Enter places the second end, no uneditable duplicate window).
+
+### Arc radius badge restored (sketch/dimmensions, same day)
+
+User: "the first dimension works but the second one (radius) does
+not even show up." The double-window fix had left the arc with only
+the chord/aim-distance field — the stage-2 radius readout the user
+expected was missing entirely. Restored as the arc's second badge:
+
+- `draftSessionFields("arc")` → `["length", "radius"]`. The radius
+  value is live: circumradius of (start, secondPoint, current) via
+  the shared `computeArcPreviewGeometry` for three_point, center
+  distance start↔secondPoint for center_start_end; hidden (no screen
+  position) at stage 1 and when the three points are collinear.
+- Typed radius reshapes the draft: three_point moves the apex along
+  the chord's perpendicular bisector until the circumradius matches
+  (d = R + sqrt(R² − c²/4), apex side preserved; R < c/2 rejected);
+  center_start_end rescales the session's arc-start point radially
+  and re-clamps the end onto the new circle. The session's
+  `secondPoint` now carries the reshape, so `adjustedArcSecondPoint`
+  and `commitArcDraft` use it (the click-placed ref stays raw).
+- Radius badge anchors at the arc center (circumcenter for
+  three_point, first click for center_start_end, offset downward so
+  it never overlaps the length badge).
+- First keystroke over a live readout selects it first — typing "5"
+  over "23.45" replaces instead of appending (shared with every
+  other tool's badge).
+- Post-commit: `applyArcExpression` applies a parameter expression
+  typed into the radius field to the auto `dim-arc-<id>` dim (the
+  arc previously fell through to the POLYGON branch);
+  `shouldDeleteArc` keeps the auto dim when either field was typed.
+
+Gates: `tsc --noEmit` clean (UI-only change; core untouched —
+54/54 suites from the previous round stand). AWAITING user in-app
+verification.

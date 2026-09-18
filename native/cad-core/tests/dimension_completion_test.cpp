@@ -230,6 +230,92 @@ bool test_arc_length_drives_quarter_circle() {
                 "arc length: L=pi*r drives a semicircle");
 }
 
+// The arc tool creates an automatic arc_radius dimension at entity
+// creation. The emitter previously skipped auto dims unconditionally,
+// so a committed arc showed no radius dimension at all while its draft
+// had one. The explicit radius dimension reuses that auto dim (flipping
+// is_auto) rather than creating a second one, so the explicit-vs-auto
+// ordering is exercised sequentially on the same dim — the same
+// find_if shape as the circle fallback.
+bool test_arc_auto_radius_dimension_emitted() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_arc(
+      10.0, 0.0, 0.0, 10.0, 0.0, 0.0, "center_start_end");
+  const auto params = sketch_params(document);
+  const auto auto_it = std::find_if(
+      params.dimensions.begin(), params.dimensions.end(), [&](const auto& d) {
+        return d.kind == "arc_radius" && d.entity_id == "arc-1";
+      });
+  if (!expect(auto_it != params.dimensions.end(),
+              "arc auto radius: automatic dim-arc-arc-1 exists")) {
+    return false;
+  }
+  if (!expect(auto_it->is_auto,
+              "arc auto radius: automatic dim is marked is_auto")) {
+    return false;
+  }
+
+  // The automatic dim is emitted (explicit-first/auto-fallback), so the
+  // committed arc shows its radius dimension.
+  auto primitive = find_primitive(document, "arc_radius", "arc-1");
+  if (!expect(primitive.has_value(),
+              "arc auto radius: automatic dim is emitted to the viewport")) {
+    return false;
+  }
+  if (!expect(near(primitive->arc_radius, 10.0),
+              "arc auto radius: emitted radius matches the arc")) {
+    return false;
+  }
+
+  // Adding an explicit radius dimension reuses the auto dim; the
+  // emitted primitive still exists and reflects the new value.
+  document = manager.add_sketch_arc_radius_dimension("arc-1");
+  document = manager.update_sketch_dimension("dim-arc-arc-1", 6.0);
+  primitive = find_primitive(document, "arc_radius", "arc-1");
+  if (!expect(primitive.has_value(),
+              "arc auto radius: explicit dim still emitted")) {
+    return false;
+  }
+  return expect(near(primitive->arc_radius, 6.0),
+                "arc auto radius: explicit dim value wins");
+}
+
+// The exact core path the UI's typed-radius / parameter-expression
+// apply for arcs exercises: updating the automatic dim's value drives
+// the arc radius and recomputes both endpoints onto the new circle
+// while preserving the sweep.
+bool test_arc_radius_update_drives_endpoints() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_arc(
+      10.0, 0.0, 0.0, 10.0, 0.0, 0.0, "center_start_end");
+  document = manager.update_sketch_dimension("dim-arc-arc-1", 6.0);
+
+  const auto& arc = sketch_params(document).arcs[0];
+  if (!expect(near(arc.radius, 6.0), "arc radius update: radius drives")) {
+    return false;
+  }
+  const double start_distance = std::hypot(
+      arc.start_x - arc.center_x, arc.start_y - arc.center_y);
+  const double end_distance =
+      std::hypot(arc.end_x - arc.center_x, arc.end_y - arc.center_y);
+  if (!expect(near(start_distance, 6.0) && near(end_distance, 6.0),
+              "arc radius update: endpoints land on the new circle")) {
+    return false;
+  }
+  double raw =
+      std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x) -
+      std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+  if (raw < 0.0) raw += 2.0 * 3.14159265358979323846;
+  return expect(near(raw, 1.5707963267948966),
+                "arc radius update: 90 degree sweep preserved");
+}
+
 // ── Radial dimension leader emission ─────────────────────────────────
 //
 // These cover the viewport emitters, which used to ignore the stored
@@ -647,6 +733,8 @@ int main() {
   if (!test_diameter_drives_both_sides()) return 1;
   if (!test_arc_angle_drives_sweeps_both_orientations()) return 1;
   if (!test_arc_length_drives_quarter_circle()) return 1;
+  if (!test_arc_auto_radius_dimension_emitted()) return 1;
+  if (!test_arc_radius_update_drives_endpoints()) return 1;
   if (!test_circle_radius_label_position_honored()) return 1;
   if (!test_diameter_emits_through_center_tips()) return 1;
   if (!test_arc_radius_contact_clamped_into_sweep()) return 1;

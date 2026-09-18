@@ -93,6 +93,14 @@ export function DraftDimensionFieldEditors({
           suggestionState?.field === field ? suggestionState.index : 0;
 
         return (
+          // The badge is interactive on purpose: a click on it must
+          // focus/edit the field — with click-through that click fell
+          // through to the canvas and COMMITTED the draft (a three-
+          // point arc's third click), unmounting the badge mid-edit.
+          // Placement safety comes from POSITION, not click-through:
+          // badges anchor on the dimension geometry away from the
+          // cursor, and active drags hold pointer capture so the
+          // finishing click still reaches the canvas.
           <form
             key={field}
             className="pointer-events-auto absolute z-30 flex w-[120px] items-center rounded-md border px-2 py-1 backdrop-blur-md"
