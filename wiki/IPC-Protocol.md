@@ -742,12 +742,34 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   before the undo push).
 - `drawing_sheet_delete { drawing_id, sheet_id }` — removes the sheet,
   its views, and the annotations attached to those views.
+- `drawing_view_create { drawing_id, sheet_id, view }` — creates a view
+  on the sheet (mints the view id, appends it to the sheet's ordering).
+  `view.kind` is `"projection"` (with `standard_view` — front/right/
+  left/top/bottom/back — or a `custom_frame`) or `"axonometric"`
+  (requires `custom_frame`).  Section views land in P4 and are
+  rejected for now.  The bump inside the command re-projects the view
+  through the drawing refresh pass.
+- `drawing_view_update { drawing_id, view }` — replaces the view's
+  definition (same id, same sheet); annotations keep their
+  attachments and re-resolve on the next refresh.
+- `drawing_view_delete { drawing_id, view_id }` — removes the view,
+  its annotations, and its id from every sheet's ordering list.
+- `drawing_view_move { drawing_id, view_id, sheet_position: [x, y] }`
+  — moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
+  never re-projects.
 
 Every mutator replies with a `document_state` event; validation errors
-reply with an `error` event.  Generated projections (HLR output) are
-**memory-only** — they live in the core's `drawing_runtime` cache,
-keyed by document + view and validated against the document revision,
-and never enter the serialized document (the CAM toolpath contract).
+reply with an `error` event.  Views are re-projected inside the single
+existing refresh pass (`bump_geometry_revision`): the refresh resolves
+the view frame (standard view or custom frame), compiles the source
+bodies, and stores the HLR projection in the runtime cache stamped
+with the upcoming revision.  A missing source body degrades the view
+with `broken_ref` + `warning` and holds its last-known projection
+marked stale — never a crash, never a silent substitute.  Generated
+projections (HLR output) are **memory-only** — they live in the
+core's `drawing_runtime` cache, keyed by document + view and
+validated against the document revision, and never enter the
+serialized document (the CAM toolpath contract).
 
 ## Philosophy
 

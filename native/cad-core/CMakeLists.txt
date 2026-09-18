@@ -151,6 +151,8 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
   src/core/cam/contour_2d.cpp
+  src/core/drawing/drawing_projection.cpp
+  src/core/drawing/drawing_refresh.cpp
   src/core/drawing/drawing_runtime.cpp
   src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
@@ -493,3 +495,4 @@ polysmith_add_core_test(cad_core_text_test tests/text_test.cpp)
 # drawing edges to source topology.
 polysmith_add_core_test(cad_core_hlr_provenance_test tests/hlr_provenance_test.cpp)
 polysmith_add_core_test(cad_core_drawing_save_load_test tests/cad_core_drawing_save_load_test.cpp)
+polysmith_add_core_test(cad_core_drawing_projection_test tests/cad_core_drawing_projection_test.cpp)

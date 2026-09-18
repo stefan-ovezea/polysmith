@@ -32,6 +32,51 @@ polysmith::core::DrawingSheet* find_sheet(Drawing& drawing,
   return nullptr;
 }
 
+// Returns the view with the given id inside the given drawing, or
+// nullptr.
+polysmith::core::DrawingView* find_view(Drawing& drawing,
+                                        const std::string& view_id) {
+  for (auto& view : drawing.views) {
+    if (view.view_id == view_id) {
+      return &view;
+    }
+  }
+  return nullptr;
+}
+
+// Shared view-definition validation — throws BEFORE any undo push
+// (the canonical mutator shape).  Kind/frame rules:
+//   - "projection": standard_view or custom_frame required.
+//   - "axonometric": custom_frame required.
+//   - "section": rejected until P4 (sections cut the model — never
+//     silently project the uncut body).
+void validate_view_definition(const DrawingView& view) {
+  if (view.kind == "section") {
+    throw std::runtime_error(
+        "Section views are not supported yet (P4)");
+  }
+  if (view.kind != "projection" && view.kind != "axonometric") {
+    throw std::runtime_error("Unknown view kind: " + view.kind);
+  }
+  if (!view.standard_view.empty() &&
+      !polysmith::core::standard_view_frame(view.standard_view)
+           .has_value()) {
+    throw std::runtime_error("Unknown standard view: " +
+                             view.standard_view);
+  }
+  if (view.kind == "axonometric" && !view.custom_frame.has_value()) {
+    throw std::runtime_error(
+        "Axonometric views need a custom frame");
+  }
+  if (view.standard_view.empty() && !view.custom_frame.has_value()) {
+    throw std::runtime_error(
+        "The view needs a standard view or a custom frame");
+  }
+  if (view.source_body_ids.empty()) {
+    throw std::runtime_error("The view needs at least one source body");
+  }
+}
+
 }  // namespace
 
 DocumentState DocumentManager::drawing_create(const Drawing& drawing) {
@@ -234,6 +279,117 @@ DocumentState DocumentManager::drawing_sheet_delete(
       document_->drawing.selected_annotation_id.reset();
     }
   }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_view_create(
+    const std::string& drawing_id, const std::string& sheet_id,
+    const DrawingView& view) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  if (find_sheet(*drawing, sheet_id) == nullptr) {
+    throw std::runtime_error("Unknown sheet: " + sheet_id);
+  }
+  if (!view.view_id.empty() && find_view(*drawing, view.view_id) != nullptr) {
+    throw std::runtime_error("A view with this id already exists");
+  }
+  validate_view_definition(view);
+
+  push_undo_state();
+  clear_redo_stack();
+  DrawingView stored = view;
+  if (stored.view_id.empty()) {
+    stored.view_id = "drawing-view-" + std::to_string(next_drawing_view_id_++);
+  }
+  drawing->views.push_back(stored);
+  // The sheet owns the view ordering (first-angle layout reads it).
+  find_sheet(*drawing, sheet_id)->view_ids.push_back(stored.view_id);
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_view_update(
+    const std::string& drawing_id, const DrawingView& view) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingView* existing = find_view(*drawing, view.view_id);
+  if (existing == nullptr) {
+    throw std::runtime_error("Unknown view: " + view.view_id);
+  }
+  validate_view_definition(view);
+
+  push_undo_state();
+  clear_redo_stack();
+  // Replace the definition; the view keeps its id and its sheet.
+  *existing = view;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_view_delete(
+    const std::string& drawing_id, const std::string& view_id) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  if (find_view(*drawing, view_id) == nullptr) {
+    throw std::runtime_error("Unknown view: " + view_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  drawing->views.erase(
+      std::remove_if(drawing->views.begin(), drawing->views.end(),
+                     [&](const DrawingView& v) {
+                       return v.view_id == view_id;
+                     }),
+      drawing->views.end());
+  // Annotations attached to the view die with it.
+  drawing->annotations.erase(
+      std::remove_if(drawing->annotations.begin(), drawing->annotations.end(),
+                     [&](const Annotation& a) {
+                       return a.view_id == view_id;
+                     }),
+      drawing->annotations.end());
+  // Remove the id from every sheet's ordering list.
+  for (auto& sheet : drawing->sheets) {
+    sheet.view_ids.erase(
+        std::remove(sheet.view_ids.begin(), sheet.view_ids.end(), view_id),
+        sheet.view_ids.end());
+  }
+  if (document_->drawing.selected_view_id == view_id) {
+    document_->drawing.selected_view_id.reset();
+  }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_view_move(
+    const std::string& drawing_id, const std::string& view_id,
+    const std::array<double, 2>& sheet_position) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingView* view = find_view(*drawing, view_id);
+  if (view == nullptr) {
+    throw std::runtime_error("Unknown view: " + view_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  view->sheet_position = sheet_position;
+  // Cosmetic move only — the projection itself does not change, but
+  // the document state does, so the bump keeps the payload honest.
   bump_geometry_revision();
   return document_.value();
 }

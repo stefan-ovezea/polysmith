@@ -76,12 +76,26 @@ void drop_stale(const DocumentState& document, int target_revision) {
   PerDocument& per_doc = found->second;
   for (auto it = per_doc.projections.begin(); it != per_doc.projections.end();) {
     if (it->second.revision != target_revision) {
+      per_doc.last_known[it->first] = std::move(it->second);
       it = per_doc.projections.erase(it);
     } else {
       ++it;
     }
   }
   per_doc.last_revision = target_revision;
+}
+
+const ProjectionResult* last_known_projection(const DocumentState& document,
+                                              const std::string& view_id) {
+  const auto found = registry().find(document.id);
+  if (found == registry().end()) {
+    return nullptr;
+  }
+  const auto entry = found->second.last_known.find(view_id);
+  if (entry == found->second.last_known.end()) {
+    return nullptr;
+  }
+  return &entry->second.projection;
 }
 
 void invalidate(const std::string& document_id) {
@@ -91,6 +105,10 @@ void invalidate(const std::string& document_id) {
   }
   PerDocument& per_doc = found->second;
   per_doc.projections.clear();
+  // A branch switch (undo/redo) invalidates last-known state too —
+  // the abandoned branch's results are not the restored branch's
+  // truth.
+  per_doc.last_known.clear();
   per_doc.last_revision = -1;
 }
 

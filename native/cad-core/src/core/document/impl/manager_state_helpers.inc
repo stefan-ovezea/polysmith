@@ -119,6 +119,10 @@ void DocumentManager::bump_geometry_revision() {
   // history dependency pass.  Early-outs when there are no operations.
   // The revision increments after this pass, so hand it the target.
   refresh_cam_dependencies(*document_, document_->revision + 1);
+  // Drawing views re-resolve their frames and re-project their source
+  // bodies after every geometry bump (the same single-pass model).
+  // Early-outs when the document has no drawings.
+  refresh_drawing_dependencies(*document_, document_->revision + 1);
   normalize_timeline_cursor(*document_);
   // Prune selections that reference ids which no longer exist after
   // the mutation that triggered this bump (trim-as-delete, deleted

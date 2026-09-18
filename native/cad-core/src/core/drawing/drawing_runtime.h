@@ -34,6 +34,11 @@ struct Entry {
 struct PerDocument {
   int last_revision = -1;
   std::unordered_map<std::string, Entry> projections;  // view_id -> result
+  // Results pruned by drop_stale land here so a broken view can hold
+  // its last-known projection (marked stale) instead of going blank
+  // when its source body disappears — the SolidWorks-detached
+  // precedent, never a silent substitute.
+  std::unordered_map<std::string, Entry> last_known;   // view_id -> result
 };
 
 PerDocument& document_state(const std::string& document_id);
@@ -43,6 +48,11 @@ void clear(const std::string& document_id);
 // current revision.
 const ProjectionResult* cached_projection(const DocumentState& document,
                                           const std::string& view_id);
+
+// The most recently dropped result for a view (any revision) — the
+// refresh pass's source for last-known state on broken views.
+const ProjectionResult* last_known_projection(const DocumentState& document,
+                                              const std::string& view_id);
 
 // Revision-explicit variant: the refresh pass runs inside
 // bump_geometry_revision BEFORE the revision counter increments, so it

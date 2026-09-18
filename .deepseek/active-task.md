@@ -164,17 +164,76 @@ call in bump_geometry_revision is deferred to P2 — the refresh pass
 itself (drawing_refresh.cpp) lands with the projection engine; an
 empty hook now would be dead code.
 
+**Committed as C1** (`0025cf9`): 35 files, P1 complete.
+
+## P2 — projection engine (C2) — DONE, gates green
+
+**Engine (`core/drawing/drawing_projection.h/.cpp`, promoted from P0):**
+- `project(ProjectionInput{SourceBody{body_id, shape}[], frame,
+  show_hidden, source_revision}) → ProjectionResult` — direct
+  EDataArray iteration (binding P0 finding), records per visible part
+  via HLRBRep::MakeEdge, hidden complement from status gaps,
+  silhouettes from OutLineVCompound with body-level FaceAttestation,
+  deterministic sort (class rank, curve class, geometry key, source
+  identity), exact-duplicate collapse.
+- **HLR splits source edges** (rim circles → silhouette-bounded arcs
+  with NEW TShapes) — IsSame matching fails on them.  Fixed with
+  `match_body_edge`: IsSame first, then curve-geometry equality
+  (line/circle/ellipse within 1e-7); BSpline copies stay honestly
+  "unresolved" (empty body_id witness).
+- **Depth edges filtered**: degenerate projections (NaN / zero
+  length) are un-drawable — dropped (the P0 "depth edges land hidden"
+  finding, production-fied).
+- `build_source_edge_witness(body_id, shape, edge_index)` — the
+  capture_edge_reference precedent; circle witness for circles AND
+  arcs; param_range = source curve range (status intervals live in
+  source-param space — P0 finding).
+- `standard_view_frame()`: pinned convention — front = +X face; side
+  views keep view-Y = +Z; top/bottom keep view-Y = -X (first-angle:
+  part's back up on the sheet); right view shows front pointing LEFT.
+
+**Refresh (`core/drawing/drawing_refresh.cpp`):**
+- `refresh_drawing_dependencies(document, target_revision)` called
+  from bump_geometry_revision right after refresh_cam_dependencies
+  (manager_state_helpers.inc).  drop_stale → per-view: skip if cached
+  at target revision; resolve frame (standard/custom); compile bodies
+  once (shape-only); missing body → `broken_ref` + `warning` +
+  **last-known result marked stale** (drawing_runtime gained a
+  `last_known` retention map — drop_stale moves pruned entries there,
+  invalidate clears it); sections hold last-known with a P4 warning.
+- Views valid: projection (standard_view or custom_frame) +
+  axonometric (custom_frame); `section` rejected until P4 (never
+  silently project the uncut body).
+
+**Commands:** drawing_view_create/update/delete/move (mutators in
+session_drawing_commands.inc, handlers in drawing_commands.inc,
+schema enum, TS payload contracts + factories, wiki both files).
+
+**Test `cad_core_drawing_projection_test` — 7 tests:** standard-view
+frame convention, box front exact record set (4 visible + 4 hidden,
+depth edges filtered) with full witness assertions, cylinder
+silhouette FaceAttestation + circle→ellipse witness, hidden toggle,
+refresh-on-edit (resize → view X extent follows) + broken body →
+stale last-known + undo/redo, view mutator shape, determinism +
+**golden files** (tests/golden/, POLYSMITH_UPDATE_GOLDEN=1
+regeneration — new infra).
+- P1 save/load test 4 updated for the new semantics: undo now
+  re-projects through the refresh; the invalidate contract is pinned
+  via abandoned-revision absence + empty last_known.
+
+**Gates:** `pnpm core:build` clean + **57/57 suites pass** +
+`tsc --noEmit` clean.
+
 **NOT committed yet** (commit needs user approval per CLAUDE.md).
 
-## NEXT: P2 — projection engine (C2)
-Promote the P0 impl into `core/drawing/drawing_projection.h/.cpp`;
-`core/drawing/drawing_refresh.cpp` with
-`refresh_drawing_dependencies(document, target_revision)` called from
-bump_geometry_revision (manager_state_helpers.inc) after
-refresh_cam_dependencies; standard_view → frame resolution; dirty
-model (visible-sheet recompute, hidden-sheet signature-only); commands
-drawing_view_create/update/delete/move; test
-cad_core_drawing_projection_test (golden files in tests/golden/).
+## NEXT: P3 — drawing workspace UI (C3)
+App.tsx drawing branch (slicer/grbl precedent), core viewport
+emission (viewport_drawing_primitives.h + drawing_sheet_emit.inc
+consuming the runtime projections), TS scene objects
+(drawingSceneObjects.ts + sceneSync registration + preview cleanup),
+camera fit-to-sheet, contextual Insert View panel, DrawingToolbar,
+en.json + theme tokens.  Milestone: live first-angle projected view
+on an A4 sheet in-app.
 
 ---
 

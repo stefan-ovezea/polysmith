@@ -19,3 +19,26 @@
   // views die with them).
   DocumentState drawing_sheet_delete(const std::string& drawing_id,
                                      const std::string& sheet_id);
+
+  // Creates a view on the sheet.  Validates the view kind (sections
+  // land in P4), the standard view name (resolved through
+  // standard_view_frame), the frame presence, and the source body ids
+  // — all before the undo push.  Mints the view id when empty.  The
+  // bump re-projects the view through the drawing refresh pass.
+  DocumentState drawing_view_create(const std::string& drawing_id,
+                                    const std::string& sheet_id,
+                                    const DrawingView& view);
+  // Replaces the view's definition (same id).  The view keeps its
+  // sheet; annotations keep their attachments and re-resolve on the
+  // next refresh.
+  DocumentState drawing_view_update(const std::string& drawing_id,
+                                    const DrawingView& view);
+  // Removes the view, its annotations, and its id from every sheet's
+  // view_ids list.
+  DocumentState drawing_view_delete(const std::string& drawing_id,
+                                    const std::string& view_id);
+  // Moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
+  // never re-projects.
+  DocumentState drawing_view_move(const std::string& drawing_id,
+                                  const std::string& view_id,
+                                  const std::array<double, 2>& sheet_position);

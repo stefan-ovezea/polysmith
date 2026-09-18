@@ -461,9 +461,10 @@ bool test_undo_redo_invalidate_runtime_cache() {
   drawing.annotations[0].annotation_id.clear();
   DocumentState document = manager.drawing_create(drawing);
   const std::string doc_id = document.id;
+  const int pre_undo_revision = document.revision;
 
-  // Seed the runtime cache as the projection engine will (P2): one
-  // entry per view, stamped with the current revision.
+  // Seed the runtime cache as the projection engine does: one entry
+  // per view, stamped with the current revision.
   ProjectionResult result;
   result.source_revision = document.revision;
   polysmith::core::drawing_runtime::store_projection(
@@ -474,18 +475,38 @@ bool test_undo_redo_invalidate_runtime_cache() {
     return false;
   }
 
-  // A mutation pushes an undo snapshot, then undo() must invalidate
-  // the cache (branch switch — a revision stamp alone cannot
-  // distinguish abandoned-branch results).
+  // A mutation pushes an undo snapshot, then undo() invalidates the
+  // cache BEFORE the restore's refresh pass re-runs (branch switch —
+  // a revision stamp alone cannot distinguish abandoned-branch
+  // results).  The refresh itself then legitimately re-stores fresh
+  // entries stamped with the restored revision (the synthetic
+  // document's view degrades stale — its body does not exist), so
+  // the assertions pin WHAT invalidate guarantees: no entry stamped
+  // with the abandoned branch's revision, and no last-known residue
+  // (drop_stale moves pruned entries into last_known; only
+  // invalidate() clears it).
   manager.drawing_set_active("drawing-1");
   DocumentState undone = manager.undo();
-  if (!expect(polysmith::core::drawing_runtime::document_state(doc_id)
-                      .projections.empty(),
-              "undo clears the projection runtime cache")) {
+  auto& per_doc =
+      polysmith::core::drawing_runtime::document_state(doc_id);
+  if (!expect(polysmith::core::drawing_runtime::cached_projection_at(
+                  undone, "drawing-view-1", pre_undo_revision) == nullptr,
+              "undo leaves no entry stamped with the abandoned "
+              "revision")) {
+    return false;
+  }
+  if (!expect(per_doc.last_known.empty(),
+              "undo clears last-known state")) {
+    return false;
+  }
+  const auto entry = per_doc.projections.find("drawing-view-1");
+  if (!expect(entry == per_doc.projections.end() ||
+                  entry->second.revision == undone.revision,
+              "post-undo entries carry the restored revision only")) {
     return false;
   }
 
-  // Re-seed and redo: the cache must clear again.
+  // Re-seed and redo: the same contract in the other direction.
   polysmith::core::drawing_runtime::store_projection(
       undone, "drawing-view-1", result);
   if (!expect(polysmith::core::drawing_runtime::cached_projection(
@@ -493,9 +514,14 @@ bool test_undo_redo_invalidate_runtime_cache() {
               "runtime cache re-seeds after undo")) {
     return false;
   }
-  manager.redo();
-  return expect(polysmith::core::drawing_runtime::document_state(doc_id)
-                        .projections.empty(),
+  const int pre_redo_revision = undone.revision;
+  DocumentState redone = manager.redo();
+  auto& per_doc_redo =
+      polysmith::core::drawing_runtime::document_state(doc_id);
+  return expect(polysmith::core::drawing_runtime::cached_projection_at(
+                    redone, "drawing-view-1", pre_redo_revision) ==
+                        nullptr &&
+                    per_doc_redo.last_known.empty(),
                 "redo clears the projection runtime cache");
 }
 

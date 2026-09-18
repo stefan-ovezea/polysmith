@@ -1,0 +1,11 @@
+hidden|sharp|ellipse|9.973440,0.728357|-9.973440,-0.728357|feature-2#2
+visible|outline|line|-12.121784,28.689063|-9.973440,-0.728357|outline
+visible|outline|line|7.825095,30.145777|9.973440,0.728357|outline
+visible|seam|line|-5.728919,27.456259|-3.580574,-1.961161|feature-2#1
+visible|sharp|ellipse|-12.121784,28.689063|-5.728919,27.456259|feature-2#0
+visible|sharp|ellipse|-3.580574,-1.961161|9.973440,0.728357|feature-2#2
+visible|sharp|ellipse|-5.728919,27.456259|7.825095,30.145777|feature-2#0
+visible|sharp|ellipse|-9.973440,-0.728357|-3.580574,-1.961161|feature-2#2
+visible|sharp|ellipse|7.825095,30.145777|-12.121784,28.689063|feature-2#0
+visible|sharp|line|-12.121784,28.689063|-9.973440,-0.728357|unresolved
+visible|sharp|line|7.825095,30.145777|9.973440,0.728357|unresolved

@@ -3504,6 +3504,22 @@ cache, the toolpath contract) — they never appear in document payloads.
   push).
 - `drawing_sheet_delete` — payload `{drawing_id, sheet_id}`. Deletes the
   sheet, its views, and annotations attached to those views.
+- `drawing_view_create` — payload `{drawing_id, sheet_id, view}`.
+  View kinds: `"projection"` (needs `standard_view` `"front" | "right"
+  | "left" | "top" | "bottom" | "back"` or a `custom_frame`) or
+  `"axonometric"` (needs `custom_frame`). Sections are rejected until
+  P4. The bump re-projects the view (HLR, cached in `drawing_runtime`
+  — memory-only).
+- `drawing_view_update` — payload `{drawing_id, view}`. Same
+  validation; annotations keep their attachments.
+- `drawing_view_delete` — payload `{drawing_id, view_id}`. Removes the
+  view, its annotations, and its id from every sheet's `view_ids`.
+- `drawing_view_move` — payload `{drawing_id, view_id, sheet_position:
+  [x, y]}`. Cosmetic only — never re-projects.
+
+A view whose source body disappears degrades with `broken_ref` +
+`warning` and holds its last-known projection (marked `stale`) — never
+a crash, never a silent substitute.
 
 All drawing commands return `document_state`; unknown ids reply with an
 `error` event.
