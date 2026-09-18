@@ -486,3 +486,8 @@ target_link_libraries(cad_core_text_engine_test PRIVATE
 # Sketch text integration tests — drive the full DocumentManager like
 # sketch_move_test: expansion, profiles, guards, extrude, save/load.
 polysmith_add_core_test(cad_core_text_test tests/text_test.cpp)
+
+# HLR provenance spike (ISO Drawing workbench P0) — verifies the
+# DataStructure() → EdgeMap/EDataArray mapping that anchors projected
+# drawing edges to source topology.
+polysmith_add_core_test(cad_core_hlr_provenance_test tests/hlr_provenance_test.cpp)
