@@ -6,6 +6,7 @@ import type {
   GeometryReference,
   ViewportState,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { DEFAULT_LASER_PARAMS } from "@/layout/CamLaserCutPanel";
 
 interface CamLaserCutContext {
@@ -135,8 +136,9 @@ export async function triggerCamLaserCut({
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default one on the spot — the very first cut
   // must not require a manual tool-library step.
-  const laserTool = document.cam.tool_library.find(
-    (tool) => tool.type === "laser",
+  const laserTool = defaultToolForOperation(
+    "laser_cut",
+    document.cam.tool_library,
   );
   const previousCount = document.cam.operations.length;
 

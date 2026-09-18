@@ -607,6 +607,8 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
+  // Tool library manager (opened from the CAM sidebar tree).
+  const [isToolLibraryOpen, setIsToolLibraryOpen] = useState(false);
   // Shell-side GRBL streaming panel (serial transport, gcode_sender.rs).
   const [isGrblPanelOpen, setIsGrblPanelOpen] = useState(false);
   // The ACTIVE CAM setup: new operations join it, the setup panel
@@ -2866,6 +2868,9 @@ function App() {
                 onNewCamSetup={() => {
                   void camNewSetupAction();
                 }}
+                onOpenToolLibrary={() => {
+                  setIsToolLibraryOpen(true);
+                }}
                 confirmAndDeleteFeature={confirmAndDeleteFeature}
                 createRecentProjectFolder={createRecentProjectFolder}
                 deleteRecentProject={deleteRecentProject}
@@ -4630,6 +4635,9 @@ function App() {
                 viewport={viewport}
                 disabled={status !== "connected"}
                 isSetupPanelOpen={isCamSetupPanelOpen}
+                isToolLibraryOpen={isToolLibraryOpen}
+                onCloseToolLibrary={() => setIsToolLibraryOpen(false)}
+                onOpenToolLibrary={() => setIsToolLibraryOpen(true)}
                 isGrblPanelOpen={isGrblPanelOpen}
                 setGrblPanelOpen={setIsGrblPanelOpen}
                 onOpenGrblControls={() => {

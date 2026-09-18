@@ -161,15 +161,39 @@ const toolEntrySchema = z
     tool_id: z.string().default(""),
     name: z.string().default(""),
     type: z.string().default("endmill_flat"),
+    tool_number: z.number().default(0),
+    pocket_number: z.number().default(0),
+    description: z.string().default(""),
+    vendor: z.string().default(""),
+    product_id: z.string().default(""),
+    guid: z.string().default(""),
     diameter_mm: z.number().default(6),
     corner_radius_mm: z.number().default(0),
     flute_length_mm: z.number().default(20),
     overall_length_mm: z.number().default(60),
     shank_diameter_mm: z.number().default(6),
+    shoulder_length_mm: z.number().default(0),
+    length_below_holder_mm: z.number().default(0),
+    flutes: z.number().default(2),
+    helix_angle_deg: z.number().default(30),
+    point_angle_deg: z.number().default(118),
+    tip_diameter_mm: z.number().default(0),
+    tip_length_mm: z.number().default(0),
+    taper_angle_deg: z.number().default(0),
+    front_angle_deg: z.number().default(0),
+    back_angle_deg: z.number().default(0),
+    orientation: z.number().default(0),
+    // The core emits null when unset (std::optional → JSON null), so
+    // these are nullable — a strict number schema would reject every
+    // document_state and take down the whole event stream.
+    x_offset_mm: z.number().nullable().optional(),
+    z_offset_mm: z.number().nullable().optional(),
     material: z.string().default("carbide"),
     coating: z.string().optional(),
     coolant_through: z.boolean().default(false),
     max_spindle_rpm: z.number().default(15000),
+    surface_speed_m_per_min: z.number().default(100),
+    feed_per_tooth_mm: z.number().default(0.05),
     default_feedrate_mm_per_min: z.number().default(1000),
     default_plunge_feedrate_mm_per_min: z.number().default(500),
     default_stepdown_mm: z.number().default(1),
@@ -412,12 +436,43 @@ const postProcessorSchema = z
 
 // ── Document Container ────────────────────────────────────────────
 
-export const camDocumentDataSchema = z
-  .object({
-    setups: z.array(camSetupSchema).default([]),
-    tool_library: z.array(toolEntrySchema).default([]),
-    operations: z.array(camOperationSchema).default([]),
-    post_processor: postProcessorSchema.nullable().default(null),
-    machine_settings: laserMachineSettingsSchema.nullable().default(null),
-  })
-  .passthrough();
+const camDocumentDataShape = z.object({
+  setups: z.array(camSetupSchema).default([]),
+  tool_library: z.array(toolEntrySchema).default([]),
+  operations: z.array(camOperationSchema).default([]),
+  post_processor: postProcessorSchema.nullable().default(null),
+  machine_settings: laserMachineSettingsSchema.nullable().default(null),
+});
+
+// The catch below must never be SILENT — a swallowed mismatch empties
+// the CAM view without a trace ("the panel has no tool").  The event
+// bridge installs a reporter; it toasts + logs the exact failing field
+// so the mismatch is fixed at the source instead of masked.
+type CamRescueReporter = (issues: unknown[], input: unknown) => void;
+let camRescueReporter: CamRescueReporter | null = null;
+export function setCamSchemaRescueReporter(
+  reporter: CamRescueReporter | null,
+) {
+  camRescueReporter = reporter;
+}
+
+// LAST-RESORT LENIENCY: if anything in the CAM subtree still fails to
+// parse (a core field the schema does not know yet), drop the CAM data
+// instead of the WHOLE document — a document_state that fails
+// validation is dropped by the event bridge and the app freezes.  The
+// core keeps the real CAM state (save writes the core's state, not the
+// UI echo), so nothing is lost on disk.
+export const camDocumentDataSchema = camDocumentDataShape
+  .passthrough()
+  .catch((ctx: { error?: { issues?: unknown[] }; input?: unknown }) => {
+    if (camRescueReporter) {
+      camRescueReporter(ctx.error?.issues ?? [], ctx.input);
+    }
+    return {
+      setups: [],
+      tool_library: [],
+      operations: [],
+      post_processor: null,
+      machine_settings: null,
+    };
+  });

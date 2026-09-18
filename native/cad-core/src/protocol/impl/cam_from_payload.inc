@@ -281,17 +281,44 @@ polysmith::core::ToolEntry tool_entry_from_payload(const json& payload) {
   tool.tool_id = cam_read_string(payload, "tool_id", "");
   tool.name = cam_read_string(payload, "name", "");
   tool.type = cam_read_string(payload, "type", "endmill_flat");
+  tool.tool_number = cam_read_int(payload, "tool_number", 0);
+  tool.pocket_number = cam_read_int(payload, "pocket_number", 0);
+  tool.description = cam_read_string(payload, "description", "");
+  tool.vendor = cam_read_string(payload, "vendor", "");
+  tool.product_id = cam_read_string(payload, "product_id", "");
+  tool.guid = cam_read_string(payload, "guid", "");
   tool.diameter_mm = cam_read_number(payload, "diameter_mm", 6.0);
   tool.corner_radius_mm = cam_read_number(payload, "corner_radius_mm", 0.0);
   tool.flute_length_mm = cam_read_number(payload, "flute_length_mm", 20.0);
   tool.overall_length_mm = cam_read_number(payload, "overall_length_mm", 60.0);
   tool.shank_diameter_mm = cam_read_number(payload, "shank_diameter_mm", 6.0);
+  tool.shoulder_length_mm = cam_read_number(payload, "shoulder_length_mm", 0.0);
+  tool.length_below_holder_mm =
+      cam_read_number(payload, "length_below_holder_mm", 0.0);
+  tool.flutes = cam_read_int(payload, "flutes", 2);
+  tool.helix_angle_deg = cam_read_number(payload, "helix_angle_deg", 30.0);
+  tool.point_angle_deg = cam_read_number(payload, "point_angle_deg", 118.0);
+  tool.tip_diameter_mm = cam_read_number(payload, "tip_diameter_mm", 0.0);
+  tool.tip_length_mm = cam_read_number(payload, "tip_length_mm", 0.0);
+  tool.taper_angle_deg = cam_read_number(payload, "taper_angle_deg", 0.0);
+  tool.front_angle_deg = cam_read_number(payload, "front_angle_deg", 0.0);
+  tool.back_angle_deg = cam_read_number(payload, "back_angle_deg", 0.0);
+  tool.orientation = cam_read_int(payload, "orientation", 0);
+  if (payload.contains("x_offset_mm") && !payload.at("x_offset_mm").is_null()) {
+    tool.x_offset_mm = payload.at("x_offset_mm").get<double>();
+  }
+  if (payload.contains("z_offset_mm") && !payload.at("z_offset_mm").is_null()) {
+    tool.z_offset_mm = payload.at("z_offset_mm").get<double>();
+  }
   tool.material = cam_read_string(payload, "material", "carbide");
   if (payload.contains("coating") && !payload.at("coating").is_null()) {
     tool.coating = payload.at("coating").get<std::string>();
   }
   tool.coolant_through = cam_read_bool(payload, "coolant_through", false);
   tool.max_spindle_rpm = cam_read_number(payload, "max_spindle_rpm", 15000.0);
+  tool.surface_speed_m_per_min =
+      cam_read_number(payload, "surface_speed_m_per_min", 100.0);
+  tool.feed_per_tooth_mm = cam_read_number(payload, "feed_per_tooth_mm", 0.05);
   tool.default_feedrate_mm_per_min =
       cam_read_number(payload, "default_feedrate_mm_per_min", 1000.0);
   tool.default_plunge_feedrate_mm_per_min =

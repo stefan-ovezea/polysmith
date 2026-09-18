@@ -385,6 +385,101 @@ bool test_stale_post_drilling_longhand() {
 
 }  // namespace
 
+bool test_tool_change_emission() {
+  Toolpath path;
+  path.moves.push_back(rapid(0.0, 0.0, 5.0));
+  path.moves.push_back(feed(1.0, 0.0, 0.0, 500.0));
+
+  ToolEntry tool = make_mill_tool();
+  tool.tool_number = 5;
+  tool.pocket_number = 5;
+
+  // Fresh program: the linuxcnc post declares tool changes — T5 M6 +
+  // G43 H5 land after the header and before the first motion.
+  PostContext fresh{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = tool,
+      .op_name = "Mill 1",
+  };
+  const std::string gcode = joined(post_process("linuxcnc", fresh));
+  const size_t change = gcode.find("T5 M6");
+  const size_t offset = gcode.find("G43 H5");
+  const size_t firstMove = gcode.find("G0 X0.000 Y0.000");
+  if (!expect(change != std::string::npos && offset != std::string::npos,
+              "tool change: T5 M6 + G43 H5 emitted")) {
+    return false;
+  }
+  if (!expect(change < offset && offset < firstMove,
+              "tool change: emitted before the first motion")) {
+    return false;
+  }
+
+  // Same tool on the next operation: no second change.
+  PostContext same{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = tool,
+      .op_name = "Mill 2",
+      .current_tool_number = 5,
+  };
+  const std::string second = joined(post_process("linuxcnc", same));
+  if (!expect(second.find("T5 M6") == std::string::npos,
+              "tool change: same tool emits nothing")) {
+    return false;
+  }
+
+  // A different tool: the change is emitted again.
+  ToolEntry other = make_mill_tool();
+  other.tool_number = 7;
+  PostContext changed{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = other,
+      .op_name = "Mill 3",
+      .current_tool_number = 5,
+  };
+  const std::string third = joined(post_process("linuxcnc", changed));
+  if (!expect(third.find("T7 M6") != std::string::npos &&
+                  third.find("G43 H7") != std::string::npos,
+              "tool change: different tool emits again")) {
+    return false;
+  }
+
+  // A tool without a number (legacy document): no emission, ever.
+  PostContext none{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = make_mill_tool(),
+      .op_name = "Mill 4",
+  };
+  const std::string unnumbered = joined(post_process("linuxcnc", none));
+  return expect(unnumbered.find("M6") == std::string::npos,
+                "tool change: unnumbered tool emits nothing");
+}
+
+bool test_grbl_never_emits_tool_change() {
+  Toolpath path;
+  path.moves.push_back(rapid(0.0, 0.0, 5.0));
+  path.moves.push_back(feed(1.0, 0.0, 0.0, 500.0));
+
+  ToolEntry tool = make_mill_tool();
+  tool.tool_number = 3;
+  PostContext context{
+      .toolpath = path,
+      .setup = make_setup(),
+      .tool = tool,
+      .op_name = "Grbl Mill",
+  };
+  const std::string gcode = joined(post_process("grbl", context));
+  // GRBL has no tool table: T is tracked but unused, G43 H and G10 L1
+  // are not implemented — the grbl post declares no tool_change key.
+  return expect(gcode.find("T3 M6") == std::string::npos &&
+                    gcode.find("M6") == std::string::npos &&
+                    gcode.find("G43") == std::string::npos,
+                "grbl: no tool-change words on a GRBL target");
+}
+
 int main() {
   bool ok = true;
   ok = test_modal_rotary_words() && ok;
@@ -395,6 +490,8 @@ int main() {
   ok = test_canned_g83_peck() && ok;
   ok = test_builtin_canned_matrix() && ok;
   ok = test_stale_post_drilling_longhand() && ok;
+  ok = test_tool_change_emission() && ok;
+  ok = test_grbl_never_emits_tool_change() && ok;
   if (ok) {
     std::cout << "linuxcnc_post_test: all tests passed\n";
     return 0;

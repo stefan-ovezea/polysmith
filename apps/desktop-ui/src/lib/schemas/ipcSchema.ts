@@ -250,6 +250,46 @@ const trimPreviewResultEventSchema = z.object({
   ]),
 });
 
+// Shared tool library events.  toolEntrySchema lives in
+// ipc/camSchema.ts; a lenient inline shape keeps this file
+// self-contained (the event carries full payload-shaped tools).
+const camToolListResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_tool_list_result"),
+  payload: z.object({
+    tools: z.array(z.record(z.string(), z.unknown())),
+  }),
+});
+
+const camToolParseResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_tool_parse_result"),
+  payload: z.object({
+    format: z.string(),
+    tools: z.array(z.record(z.string(), z.unknown())),
+    warnings: z.array(z.string()),
+  }),
+});
+
+const camToolExportTextResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_tool_export_text_result"),
+  payload: z.object({
+    format: z.string(),
+    text: z.string(),
+  }),
+});
+
+// Reply to cam_tool_export_file (the core wrote the file itself).
+const camToolExportFileResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("cam_tool_export_file_result"),
+  payload: z.object({
+    file_path: z.string(),
+    exported_count: z.number(),
+  }),
+});
+
 const cornerTrimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("corner_trim_preview_result"),
@@ -299,6 +339,10 @@ export const coreMessageSchema = z.union([
   camGenerationResultEventSchema,
   camPostListResultEventSchema,
   camMachineListResultEventSchema,
+  camToolListResultEventSchema,
+  camToolParseResultEventSchema,
+  camToolExportTextResultEventSchema,
+  camToolExportFileResultEventSchema,
   camFaceAttestationResultEventSchema,
   camEdgeAttestationResultEventSchema,
   camAttestationResultEventSchema,

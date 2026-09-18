@@ -6,6 +6,7 @@ import type { CamOperationParameters, ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -47,6 +48,7 @@ interface CamFaceMillingPanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamFaceMillingPanel({
@@ -64,6 +66,7 @@ export function CamFaceMillingPanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamFaceMillingPanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<FaceMillingFormState>(() => ({
@@ -117,13 +120,13 @@ export function CamFaceMillingPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.faceMilling.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.faceMilling.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

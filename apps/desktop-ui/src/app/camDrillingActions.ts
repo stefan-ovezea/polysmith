@@ -3,6 +3,7 @@ import type {
   CamOperationPayload,
   DocumentState,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { useToastStore } from "@/state/toastStore";
 
 interface CamDrillingContext {
@@ -48,9 +49,7 @@ export async function triggerCamDrilling({
 
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default drill on the spot.
-  const drill = document.cam.tool_library.find(
-    (tool) => tool.type === "drill",
-  );
+  const drill = defaultToolForOperation("drilling", document.cam.tool_library);
   const previousCount = document.cam.operations.length;
 
   // Empty machining_regions — drilling always starts empty; the armed

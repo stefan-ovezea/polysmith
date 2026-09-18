@@ -210,8 +210,74 @@ bool is_supported_tool_type(const std::string& type) {
   static const std::set<std::string> kSupported = {
       "endmill_flat", "endmill_ball", "endmill_bull", "drill",
       "facemill", "chamfer", "threadmill", "turning_insert",
-      "laser", "plasma"};
+      "laser", "plasma", "v_bit", "spot_drill"};
   return kSupported.count(type) > 0;
+}
+
+// The smallest unused tool number >= 1 (FreeCAD's get_next_bit_no
+// convention: max used + 1, but holes from deletions are reused).
+int next_free_tool_number(const std::vector<ToolEntry>& tools) {
+  int candidate = 1;
+  while (true) {
+    bool used = false;
+    for (const auto& tool : tools) {
+      if (tool.tool_number == candidate) {
+        used = true;
+        break;
+      }
+    }
+    if (!used) return candidate;
+    ++candidate;
+  }
+}
+
+// Shared validation for cam_tool_add/cam_tool_update. Throws a
+// human-readable std::runtime_error; the document is untouched.
+void validate_tool_entry(const ToolEntry& tool,
+                         const std::vector<ToolEntry>& tools,
+                         const std::string& ignore_tool_id) {
+  if (tool.name.empty()) {
+    throw std::runtime_error("The tool needs a name");
+  }
+  if (!is_supported_tool_type(tool.type)) {
+    throw std::runtime_error("Unknown tool type: " + tool.type);
+  }
+  if (tool.diameter_mm <= 0.0) {
+    throw std::runtime_error("The tool diameter must be positive");
+  }
+  if (tool.shank_diameter_mm <= 0.0) {
+    throw std::runtime_error("The tool shank diameter must be positive");
+  }
+  if (tool.flute_length_mm <= 0.0) {
+    throw std::runtime_error("The tool flute length must be positive");
+  }
+  if (tool.overall_length_mm < tool.flute_length_mm) {
+    throw std::runtime_error("The overall length must be at least the flute length");
+  }
+  if (tool.corner_radius_mm < 0.0 ||
+      tool.corner_radius_mm > tool.diameter_mm / 2.0) {
+    throw std::runtime_error(
+        "The corner radius must be between 0 and half the diameter");
+  }
+  if (tool.flutes < 1 || tool.flutes > 12) {
+    throw std::runtime_error("The tool flute count must be between 1 and 12");
+  }
+  if (tool.orientation < 0 || tool.orientation > 9) {
+    throw std::runtime_error("The tool orientation must be between 0 and 9");
+  }
+  if (tool.tool_number < 0) {
+    throw std::runtime_error("The tool number must be positive");
+  }
+  if (tool.tool_number > 0) {
+    for (const auto& existing : tools) {
+      if (existing.tool_id != ignore_tool_id &&
+          existing.tool_number == tool.tool_number) {
+        throw std::runtime_error("Tool number " +
+                                 std::to_string(tool.tool_number) +
+                                 " is already used by " + existing.name);
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -325,12 +391,8 @@ DocumentState DocumentManager::cam_setup_delete(const std::string& setup_id) {
 
 DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
   require_document();
-  if (tool.name.empty()) {
-    throw std::runtime_error("The tool needs a name");
-  }
-  if (!is_supported_tool_type(tool.type)) {
-    throw std::runtime_error("Unknown tool type: " + tool.type);
-  }
+  validate_tool_entry(tool, document_->cam.tool_library,
+                      /*ignore_tool_id=*/"");
   if (!tool.tool_id.empty()) {
     for (const auto& existing : document_->cam.tool_library) {
       if (existing.tool_id == tool.tool_id) {
@@ -345,6 +407,12 @@ DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
   if (stored.tool_id.empty()) {
     stored.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
   }
+  if (stored.tool_number == 0) {
+    stored.tool_number = next_free_tool_number(document_->cam.tool_library);
+  }
+  if (stored.guid.empty()) {
+    stored.guid = polysmith::core::mint_tool_guid();
+  }
   document_->cam.tool_library.push_back(stored);
   bump_geometry_revision();
   return document_.value();
@@ -353,18 +421,31 @@ DocumentState DocumentManager::cam_tool_add(const ToolEntry& tool) {
 DocumentState DocumentManager::cam_tool_update(const std::string& toolId,
                                                const ToolEntry& tool) {
   require_document();
-  if (tool.name.empty()) {
-    throw std::runtime_error("The tool needs a name");
-  }
-  if (!is_supported_tool_type(tool.type)) {
-    throw std::runtime_error("Unknown tool type: " + tool.type);
-  }
+  validate_tool_entry(tool, document_->cam.tool_library, toolId);
   for (auto& existing : document_->cam.tool_library) {
     if (existing.tool_id == toolId) {
       push_undo_state();
       clear_redo_stack();
       existing = tool;
       existing.tool_id = toolId;  // the id is the lookup key, not the payload
+      if (existing.tool_number == 0) {
+        existing.tool_number =
+            next_free_tool_number(document_->cam.tool_library);
+      }
+      if (existing.guid.empty()) {
+        existing.guid = polysmith::core::mint_tool_guid();
+      }
+      // Geometry/limits changed — every operation using this tool must
+      // regenerate. The refresh pass keeps the message empty for
+      // needs_regenerate, so no message here (unlike cam_tool_delete's
+      // error degradation, which the refresh does not recompute).
+      for (auto& op : document_->cam.operations) {
+        if (op.tool_id == toolId) {
+          op.status = "needs_regenerate";
+          op.status_message.clear();
+          op.toolpath_cache.reset();
+        }
+      }
       bump_geometry_revision();
       return document_.value();
     }
@@ -405,6 +486,126 @@ DocumentState DocumentManager::cam_tool_delete(const std::string& toolId) {
 std::vector<ToolEntry> DocumentManager::cam_tool_list() const {
   if (!document_.has_value()) return {};
   return document_->cam.tool_library;
+}
+
+DocumentState DocumentManager::cam_tool_import_tools(
+    std::vector<ToolEntry> incoming, const std::string& mode) {
+  require_document();
+  if (mode != "renumber" && mode != "overwrite" && mode != "skip") {
+    throw std::runtime_error("Unknown tool import mode: " + mode);
+  }
+  push_undo_state();
+  clear_redo_stack();
+  auto& library = document_->cam.tool_library;
+  int added = 0;
+  int skipped = 0;
+  int replaced = 0;
+  std::vector<std::string> replaced_ids;
+  for (auto& tool : incoming) {
+    // Reconcile by stable identity first (guid), then by tool number.
+    auto byGuid = library.end();
+    if (!tool.guid.empty()) {
+      for (auto it = library.begin(); it != library.end(); ++it) {
+        if (!it->guid.empty() && it->guid == tool.guid) {
+          byGuid = it;
+          break;
+        }
+      }
+    }
+    auto byNumber = library.end();
+    if (tool.tool_number > 0) {
+      for (auto it = library.begin(); it != library.end(); ++it) {
+        if (it->tool_number == tool.tool_number) {
+          byNumber = it;
+          break;
+        }
+      }
+    }
+
+    if (byGuid != library.end()) {
+      if (mode == "skip") {
+        ++skipped;
+        continue;
+      }
+      // Overwrite in place — the tool_id is the document key and the
+      // number stays, unless the incoming number is 0 or would clash
+      // with another library tool (then auto-assign).
+      const std::string id = byGuid->tool_id;
+      *byGuid = tool;
+      byGuid->tool_id = id;
+      bool clash = false;
+      if (byGuid->tool_number > 0) {
+        for (auto it = library.begin(); it != library.end(); ++it) {
+          if (it != byGuid && it->tool_number == byGuid->tool_number) {
+            clash = true;
+            break;
+          }
+        }
+      }
+      if (clash || byGuid->tool_number == 0) {
+        byGuid->tool_number = next_free_tool_number(library);
+      }
+      if (byGuid->guid.empty()) {
+        byGuid->guid = polysmith::core::mint_tool_guid();
+      }
+      replaced_ids.push_back(id);
+      ++replaced;
+      continue;
+    }
+    if (byNumber != library.end()) {
+      if (mode == "skip") {
+        ++skipped;
+        continue;
+      }
+      if (mode == "overwrite") {
+        // Replace the tool currently holding this number.
+        const std::string id = byNumber->tool_id;
+        const int number = byNumber->tool_number;
+        *byNumber = tool;
+        byNumber->tool_id = id;
+        byNumber->tool_number = number;
+        if (byNumber->guid.empty()) {
+          byNumber->guid = polysmith::core::mint_tool_guid();
+        }
+        replaced_ids.push_back(id);
+        ++replaced;
+        continue;
+      }
+      // renumber: fall through to the add path with an auto number.
+      tool.tool_number = 0;
+    }
+
+    // Add as a new tool (fresh identity, auto number when 0).
+    ToolEntry stored = tool;
+    if (stored.tool_id.empty()) {
+      stored.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
+    }
+    if (stored.guid.empty()) {
+      stored.guid = polysmith::core::mint_tool_guid();
+    }
+    if (stored.tool_number == 0) {
+      stored.tool_number = next_free_tool_number(library);
+    }
+    validate_tool_entry(stored, library, /*ignore_tool_id=*/"");
+    library.push_back(stored);
+    ++added;
+  }
+  // Replaced tools may have changed geometry — every operation using
+  // one must regenerate (same invalidation as cam_tool_update; the
+  // refresh pass keeps the message empty for needs_regenerate).
+  for (auto& op : document_->cam.operations) {
+    if (std::find(replaced_ids.begin(), replaced_ids.end(), op.tool_id) !=
+        replaced_ids.end()) {
+      op.status = "needs_regenerate";
+      op.status_message.clear();
+      op.toolpath_cache.reset();
+    }
+  }
+  bump_geometry_revision();
+  log_info("cam", "tool import (" + mode + "): added " + std::to_string(added) +
+                      ", skipped " + std::to_string(skipped) +
+                      ", replaced " + std::to_string(replaced));
+  return document_.value();
 }
 
 DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
@@ -450,10 +651,13 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     stored.setup_id = document_->cam.setups[0].setup_id;
   }
 
-  // Tool resolution.  An explicit tool must exist; an EMPTY tool gets
-  // a sensible default — a matching tool from the library when one
-  // exists, otherwise a default tool created on the spot (the very
-  // first operation must not require a manual tool-library step).
+  // Tool resolution.  An explicit tool must exist.  An EMPTY tool id
+  // picks a matching library tool when one exists; otherwise only a
+  // LASER operation auto-creates its virtual default tool (the laser
+  // panels never offer tool selection).  Mill/drill operations stay
+  // UNASSIGNED — a silent "3mm drill (default)" appearing in the
+  // document is confusing now that the tool library and the panel
+  // picker exist; the picker is the path to a tool.
   bool createDefaultTool = false;
   ToolEntry defaultTool;
   if (stored.tool_id.empty()) {
@@ -471,24 +675,19 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
     }
     if (match != nullptr) {
       stored.tool_id = match->tool_id;
-    } else {
+    } else if (wantsLaser) {
       createDefaultTool = true;
       defaultTool.tool_id = "tool-" + std::to_string(next_cam_tool_id_++);
-      if (wantsLaser) {
-        // Identity fields only — the struct defaults carry the
-        // sensible cutting parameters.
-        defaultTool.name = "CO2 laser (default)";
-        defaultTool.type = "laser";
-      } else if (wantsDrill) {
-        defaultTool.name = "3mm drill (default)";
-        defaultTool.type = "drill";
-        defaultTool.diameter_mm = 3.0;
-      } else {
-        defaultTool.name = "6mm flat endmill (default)";
-        defaultTool.type = "endmill_flat";
-        defaultTool.diameter_mm = 6.0;
-      }
+      // Identity fields only — the struct defaults carry the
+      // sensible cutting parameters.
+      defaultTool.name = "CO2 laser (default)";
+      defaultTool.type = "laser";
       stored.tool_id = defaultTool.tool_id;
+      // The on-the-spot default tool bypasses cam_tool_add — assign
+      // its machine-side identity here so it is usable from day one.
+      defaultTool.tool_number =
+          next_free_tool_number(document_->cam.tool_library);
+      defaultTool.guid = polysmith::core::mint_tool_guid();
     }
   } else {
     bool toolExists = false;
@@ -520,15 +719,20 @@ DocumentState DocumentManager::cam_operation_add(const CamOperation& op) {
 DocumentState DocumentManager::cam_operation_update(const std::string& operation_id,
                                                     const CamOperation& op) {
   require_document();
-  bool toolExists = false;
-  for (const auto& tool : document_->cam.tool_library) {
-    if (tool.tool_id == op.tool_id) {
-      toolExists = true;
-      break;
+  // An EMPTY tool id means "not assigned yet" (the panel's picker is
+  // the path to one) — the panel edits parameters before a tool
+  // exists.  Only a non-empty id must resolve.
+  if (!op.tool_id.empty()) {
+    bool toolExists = false;
+    for (const auto& tool : document_->cam.tool_library) {
+      if (tool.tool_id == op.tool_id) {
+        toolExists = true;
+        break;
+      }
     }
-  }
-  if (!toolExists) {
-    throw std::runtime_error("Unknown tool: " + op.tool_id);
+    if (!toolExists) {
+      throw std::runtime_error("Unknown tool: " + op.tool_id);
+    }
   }
   for (auto& existing : document_->cam.operations) {
     if (existing.op_id == operation_id) {

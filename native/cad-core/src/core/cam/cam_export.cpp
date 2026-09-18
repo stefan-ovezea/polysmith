@@ -122,6 +122,12 @@ PostedGcode post_document(const DocumentState& document) {
     --footerIndex;
   }
 
+  // Program-level modal state: which tool number the controller has
+  // loaded right now.  The post engine emits a tool change whenever a
+  // mill operation's tool differs.  Laser operations never touch it
+  // (their "tool" is virtual and GRBL-family posts emit nothing).
+  int current_tool_number = 0;
+
   std::vector<std::string> all_lines;
   for (size_t i = 0; i < pending.size(); ++i) {
     const auto& entry = pending[i];
@@ -143,6 +149,7 @@ PostedGcode post_document(const DocumentState& document) {
         .spindle_rpm = entry.spindle_rpm,
         .wcs_origin = entry.wcs_origin,
         .laser = entry.laser,
+        .current_tool_number = current_tool_number,
     };
     const auto lines = post_process(type, context,
                                     /*include_footer=*/i + 1 == footerIndex);
@@ -156,6 +163,9 @@ PostedGcode post_document(const DocumentState& document) {
     }
     all_lines.insert(all_lines.end(), lines.begin(), lines.end());
     ++posted.exported_feature_count;
+    if (!entry.laser.has_value() && entry.tool.tool_number > 0) {
+      current_tool_number = entry.tool.tool_number;
+    }
   }
 
   std::ostringstream buffer;

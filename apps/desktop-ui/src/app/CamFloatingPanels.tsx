@@ -11,6 +11,7 @@ import type {
   PostProcessorType,
 } from "@/types";
 import type { DocumentState, ViewportState } from "../types";
+import { toolsForOperation } from "./camToolSelection";
 import {
   CamAdaptivePanel,
   CamContourPanel,
@@ -23,6 +24,7 @@ import {
   CamSlotPanel,
   CamGrblPanel,
   CamTestPatternPanel,
+  CamToolLibraryDialog,
   createDefaultCamSetup,
   type AdaptiveFormState,
   type ContourFormState,
@@ -61,6 +63,11 @@ interface CamFloatingPanelsProps {
   viewport: ViewportState | null;
   disabled: boolean;
   isSetupPanelOpen: boolean;
+  // Tool library manager (opened from the CAM sidebar tree).
+  isToolLibraryOpen: boolean;
+  onCloseToolLibrary: () => void;
+  // Opens the tool library from the operation panels' tool picker.
+  onOpenToolLibrary: () => void;
   selectedOperationId: string | null;
   activeSetupId: string | null;
   camProfilePickArmed: boolean;
@@ -153,6 +160,9 @@ export function CamFloatingPanels({
   viewport,
   disabled,
   isSetupPanelOpen,
+  isToolLibraryOpen,
+  onCloseToolLibrary,
+  onOpenToolLibrary,
   selectedOperationId,
   activeSetupId,
   camProfilePickArmed,
@@ -326,6 +336,7 @@ export function CamFloatingPanels({
         setSelectedOperationId,
         runAction,
         addMessage,
+        onOpenToolLibrary,
         onExportGcode,
         onExportAndOpen,
         onSendToGrbl,
@@ -364,6 +375,14 @@ export function CamFloatingPanels({
       {setupPanel}
       {operationPanel}
       {grblPanel}
+      {isToolLibraryOpen ? (
+        <CamToolLibraryDialog
+          document={document}
+          runAction={runAction}
+          addMessage={addMessage}
+          onClose={onCloseToolLibrary}
+        />
+      ) : null}
     </>
   );
 }
@@ -381,6 +400,7 @@ function buildOperationPanel({
   setSelectedOperationId,
   runAction,
   addMessage,
+  onOpenToolLibrary,
   onExportGcode,
   onExportAndOpen,
   onSendToGrbl,
@@ -419,6 +439,7 @@ function buildOperationPanel({
   | "setSelectedOperationId"
   | "runAction"
   | "addMessage"
+  | "onOpenToolLibrary"
   | "onExportGcode"
   | "onExportAndOpen"
   | "onSendToGrbl"
@@ -684,9 +705,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools = document?.cam.tool_library.filter(
-      (entry) => entry.type === "endmill_flat",
-    ) ?? [];
+    const tools = toolsForOperation(
+      "face_milling",
+      document?.cam.tool_library ?? [],
+    );
     return (
       <CamFaceMillingPanel
         {...shared}
@@ -715,6 +737,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -736,10 +759,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "pocket_2d",
+      document?.cam.tool_library ?? [],
+    );
     const avoidance = operation.geometry_references.avoidance_regions;
     return (
       <CamPocketPanel
@@ -791,6 +814,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -813,10 +837,10 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "adaptive_clearing",
+      document?.cam.tool_library ?? [],
+    );
     const avoidance = operation.geometry_references.avoidance_regions;
     return (
       <CamAdaptivePanel
@@ -868,6 +892,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -887,10 +912,10 @@ function buildOperationPanel({
         DEFAULT_CONTOUR_FORM.plunge_feedrate_mm_per_min,
       spindle_rpm: parameters.spindle_rpm ?? DEFAULT_CONTOUR_FORM.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation(
+      "contour_2d",
+      document?.cam.tool_library ?? [],
+    );
     // Same scope logic as laser: every profile-attesting machining
     // region must come from one sketch for the dropdown to have a scope.
     const scopeSketchId = laserOperationScopeSketchId(operation);
@@ -987,6 +1012,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1010,9 +1036,10 @@ function buildOperationPanel({
       spindle_rpm:
         parameters.spindle_rpm ?? DEFAULT_DRILLING_PARAMS.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter((entry) => entry.type === "drill") ??
-      [];
+    const tools = toolsForOperation(
+      "drilling",
+      document?.cam.tool_library ?? [],
+    );
     const regions = operation.geometry_references.machining_regions;
     // User-facing row labels only — a captured wall/rim names itself by
     // kind, free picks show their coordinates, and legacy sketch-circle
@@ -1092,6 +1119,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1112,10 +1140,7 @@ function buildOperationPanel({
       // number for a cleared stepdown.
       stepdown_mm: parameters.stepdown_mm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation("slot", document?.cam.tool_library ?? []);
     const regions = operation.geometry_references.machining_regions;
     return (
       <CamSlotPanel
@@ -1177,6 +1202,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }
@@ -1195,10 +1221,7 @@ function buildOperationPanel({
       spindle_rpm:
         parameters.spindle_rpm ?? DEFAULT_ENGRAVE_FORM.spindle_rpm,
     };
-    const tools =
-      document?.cam.tool_library.filter(
-        (entry) => entry.type === "endmill_flat",
-      ) ?? [];
+    const tools = toolsForOperation("engrave", document?.cam.tool_library ?? []);
     // Sketch-profile geometry only — the same scope logic as the
     // contour profile branch.
     const scopeSketchId = laserOperationScopeSketchId(operation);
@@ -1287,6 +1310,7 @@ function buildOperationPanel({
           });
         }}
         onClose={() => setSelectedOperationId(null)}
+        onOpenLibrary={onOpenToolLibrary}
       />
     );
   }

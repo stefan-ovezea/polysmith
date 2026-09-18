@@ -651,6 +651,290 @@
     return;
   }
 
+  // Content → tools + warnings, shared by the parse_text / parse_file /
+  // import_file handlers.
+  auto parse_tool_content =
+      [](const std::string& format, const std::string& text,
+         std::vector<polysmith::core::ToolEntry>& tools,
+         std::vector<std::string>& warnings, std::string& error) {
+        if (format == "linuxcnc_tbl") {
+          polysmith::core::parse_linuxcnc_tool_table(text, tools, warnings,
+                                                     error);
+        } else if (format == "polysmith_json") {
+          tools = polysmith::core::parse_polysmith_tools_json(text, warnings,
+                                                              error);
+        } else {
+          error = "unknown tool format: " + format;
+        }
+      };
+  auto tool_format_for_path = [](const std::string& path) {
+    if (path.size() >= 4 && path.substr(path.size() - 4) == ".tbl") {
+      return std::string("linuxcnc_tbl");
+    }
+    if (path.size() >= 5 && path.substr(path.size() - 5) == ".json") {
+      return std::string("polysmith_json");
+    }
+    return std::string();
+  };
+  auto send_tool_parse_result =
+      [&command](const std::string& format,
+                 const std::vector<polysmith::core::ToolEntry>& tools,
+                 const std::vector<std::string>& warnings) {
+        polysmith::protocol::json payload_tools =
+            polysmith::protocol::json::array();
+        for (const auto& tool : tools) {
+          payload_tools.push_back(polysmith::protocol::to_payload(tool));
+        }
+        polysmith::protocol::json payload_warnings =
+            polysmith::protocol::json::array();
+        for (const auto& warning : warnings) {
+          payload_warnings.push_back(warning);
+        }
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_cam_tool_parse_result_event(
+                command.id,
+                polysmith::protocol::json{
+                    {"format", format},
+                    {"tools", payload_tools},
+                    {"warnings", payload_warnings},
+                }));
+      };
+
+  if (command.type == "cam_tool_parse_text" ||
+      command.type == "cam_tool_parse_file") {
+    const std::string format = read_string(command.payload, "format");
+    const std::string text = read_string(command.payload, "text");
+    if (command.type == "cam_tool_parse_file") {
+      // The core owns file I/O (like cam_post_import) — the UI sends
+      // the path, the core reads it.
+      const std::string path = read_string(command.payload, "source_path");
+      if (path.empty()) {
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_PARSE_FAILED", "No source path given"));
+        return;
+      }
+      const std::string detected = tool_format_for_path(path);
+      if (detected.empty()) {
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_PARSE_FAILED",
+                "Unsupported tool file extension (expected .tbl or .json): " +
+                    path));
+        return;
+      }
+      std::ifstream stream(path);
+      if (!stream) {
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_PARSE_FAILED",
+                "Could not read the tool file: " + path));
+        return;
+      }
+      const std::string content((std::istreambuf_iterator<char>(stream)),
+                                std::istreambuf_iterator<char>());
+      std::vector<polysmith::core::ToolEntry> tools;
+      std::vector<std::string> warnings;
+      std::string error;
+      parse_tool_content(detected, content, tools, warnings, error);
+      if (!error.empty()) {
+        polysmith::core::log_warn("cam", "tool parse failed: " + error);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_PARSE_FAILED", error));
+        return;
+      }
+      send_tool_parse_result(detected, tools, warnings);
+      return;
+    }
+    std::vector<polysmith::core::ToolEntry> tools;
+    std::vector<std::string> warnings;
+    std::string error;
+    parse_tool_content(format, text, tools, warnings, error);
+    if (!error.empty()) {
+      polysmith::core::log_warn("cam", "tool parse failed: " + error);
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_PARSE_FAILED", error));
+      return;
+    }
+    send_tool_parse_result(format, tools, warnings);
+    return;
+  }
+
+  if (command.type == "cam_tool_export_text") {
+    const std::string format = read_string(command.payload, "format");
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    // Optional filter: only these tool numbers are serialized.
+    const polysmith::protocol::json requested =
+        command.payload.contains("tool_numbers")
+            ? command.payload.at("tool_numbers")
+            : polysmith::protocol::json(nullptr);
+    std::vector<polysmith::core::ToolEntry> tools;
+    for (const auto& tool : document->cam.tool_library) {
+      if (requested.is_array() && !requested.empty()) {
+        bool wanted = false;
+        for (const auto& number : requested) {
+          if (number.is_number_integer() &&
+              number.get<int>() == tool.tool_number) {
+            wanted = true;
+            break;
+          }
+        }
+        if (!wanted) {
+          continue;
+        }
+      }
+      tools.push_back(tool);
+    }
+    std::string text;
+    if (format == "linuxcnc_tbl") {
+      text = polysmith::core::serialize_linuxcnc_tool_table(tools);
+    } else if (format == "polysmith_json") {
+      text = polysmith::core::serialize_polysmith_tools_json(tools);
+    } else {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_EXPORT_FAILED",
+              "unknown tool format: " + format));
+      return;
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_tool_export_text_result_event(
+            command.id,
+            polysmith::protocol::json{
+                {"format", format},
+                {"text", text},
+            }));
+    return;
+  }
+
+  if (command.type == "cam_tool_import_file") {
+    // Parses the file (like cam_tool_parse_file) and applies the tools
+    // to the document library in one batch ("renumber" | "overwrite" |
+    // "skip"; empty = renumber).  Replies with the document state like
+    // every other mutator; the summary goes to the structured log.
+    const std::string path = read_string(command.payload, "source_path");
+    const std::string mode = command.payload.contains("mode")
+                                 ? read_string(command.payload, "mode")
+                                 : std::string("renumber");
+    const std::string format = tool_format_for_path(path);
+    if (format.empty()) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_PARSE_FAILED",
+              "Unsupported tool file extension (expected .tbl or .json): " +
+                  path));
+      return;
+    }
+    std::ifstream stream(path);
+    if (!stream) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_PARSE_FAILED",
+              "Could not read the tool file: " + path));
+      return;
+    }
+    const std::string content((std::istreambuf_iterator<char>(stream)),
+                              std::istreambuf_iterator<char>());
+    std::vector<polysmith::core::ToolEntry> tools;
+    std::vector<std::string> warnings;
+    std::string error;
+    parse_tool_content(format, content, tools, warnings, error);
+    if (!error.empty()) {
+      polysmith::core::log_warn("cam", "tool import parse failed: " + error);
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_PARSE_FAILED", error));
+      return;
+    }
+    for (const auto& warning : warnings) {
+      polysmith::core::log_warn("cam", "tool import: " + warning);
+    }
+    const auto document = document_manager().cam_tool_import_tools(tools, mode);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
+  if (command.type == "cam_tool_export_file") {
+    // Serializes the document tool library and writes it (the core owns
+    // file I/O, like cam_export_gcode).  Format comes from the file
+    // extension.
+    const std::string path = read_string(command.payload, "file_path");
+    const std::string format = tool_format_for_path(path);
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    std::string text;
+    if (format == "linuxcnc_tbl") {
+      text = polysmith::core::serialize_linuxcnc_tool_table(
+          document->cam.tool_library);
+    } else if (format == "polysmith_json") {
+      text = polysmith::core::serialize_polysmith_tools_json(
+          document->cam.tool_library);
+    } else {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_EXPORT_FAILED",
+              "Unsupported tool file extension (expected .tbl or .json): " +
+                  path));
+      return;
+    }
+    std::ofstream stream(path);
+    if (!stream) {
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_error_event(
+              command.id, "CAM_TOOL_EXPORT_FAILED",
+              "Could not write the tool file: " + path));
+      return;
+    }
+    stream << text;
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_tool_export_file_result_event(
+            command.id, polysmith::protocol::json{
+                            {"file_path", path},
+                            {"exported_count",
+                             static_cast<int>(document->cam.tool_library.size())},
+                        }));
+    return;
+  }
+
+  if (command.type == "cam_tool_library_list" ||
+      command.type == "cam_tool_library_save") {
+    if (command.type == "cam_tool_library_save") {
+      const auto tool =
+          polysmith::protocol::tool_entry_from_payload(command.payload);
+      std::string error;
+      const std::string saved = polysmith::core::save_tool_entry(tool, error);
+      if (!error.empty()) {
+        polysmith::core::log_warn("cam", "tool save failed: " + error);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "CAM_TOOL_SAVE_FAILED", error));
+        return;
+      }
+      polysmith::core::log_info("cam", "tool saved: " + saved);
+    }
+    const auto tools = polysmith::core::load_tool_library();
+    polysmith::protocol::json payload = polysmith::protocol::json::array();
+    for (const auto& tool : tools) {
+      payload.push_back(polysmith::protocol::to_payload(tool));
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_cam_tool_list_event(command.id, payload));
+    return;
+  }
+
   if (command.type == "cam_export_gcode") {
     const auto export_result = document_manager().export_cam_gcode(
         read_string(command.payload, "file_path"));

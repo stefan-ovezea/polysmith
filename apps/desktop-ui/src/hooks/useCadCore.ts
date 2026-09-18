@@ -26,6 +26,13 @@ import {
   makeCamPostImportCommand,
   makeCamMachineListCommand,
   makeCamMachineSaveCommand,
+  makeCamToolLibraryListCommand,
+  makeCamToolLibrarySaveCommand,
+  makeCamToolParseTextCommand,
+  makeCamToolExportTextCommand,
+  makeCamToolParseFileCommand,
+  makeCamToolImportFileCommand,
+  makeCamToolExportFileCommand,
   makeCamExportGcodeCommand,
   makeCamExportGcodeTextCommand,
   makeAddBoxFeatureCommand,
@@ -1875,6 +1882,109 @@ export function useCadCore() {
         }
       ).payload?.machines;
       return machines ?? null;
+    },
+    camToolLibraryList: async () => {
+      // Awaited: the reply is a cam_tool_list_result event carrying the
+      // shared on-disk library (generic catalog + user tool files).
+      const response = await sendCoreCommandAwaited(
+        makeCamToolLibraryListCommand() as CoreCommand & { id: string },
+      );
+      const tools = (
+        response as { payload?: { tools?: ToolEntry[] } }
+      ).payload?.tools;
+      return tools ?? [];
+    },
+    camToolLibrarySave: async (tool: ToolEntry) => {
+      // Awaited: success replies with the refreshed library; failure
+      // rejects with CAM_TOOL_SAVE_FAILED (surfaced as an action error).
+      const response = await sendCoreCommandAwaited(
+        makeCamToolLibrarySaveCommand(tool) as CoreCommand & { id: string },
+      );
+      const tools = (
+        response as { payload?: { tools?: ToolEntry[] } }
+      ).payload?.tools;
+      return tools ?? null;
+    },
+    camToolParseText: async (
+      format: "linuxcnc_tbl" | "polysmith_json",
+      text: string,
+    ) => {
+      // Awaited: cam_tool_parse_result carries { tools, warnings }.
+      const response = await sendCoreCommandAwaited(
+        makeCamToolParseTextCommand(format, text) as CoreCommand & {
+          id: string;
+        },
+      );
+      const payload = (
+        response as {
+          payload?: { tools?: ToolEntry[]; warnings?: string[] };
+        }
+      ).payload;
+      return {
+        tools: payload?.tools ?? [],
+        warnings: payload?.warnings ?? [],
+      };
+    },
+    camToolExportText: async (
+      format: "linuxcnc_tbl" | "polysmith_json",
+      toolNumbers?: number[],
+    ) => {
+      // Awaited: cam_tool_export_text_result carries { text, format }.
+      const response = await sendCoreCommandAwaited(
+        makeCamToolExportTextCommand(format, toolNumbers) as CoreCommand & {
+          id: string;
+        },
+      );
+      const payload = (
+        response as { payload?: { text?: string; format?: string } }
+      ).payload;
+      return payload?.text ?? "";
+    },
+    camToolParseFile: async (sourcePath: string) => {
+      // Awaited: cam_tool_parse_result carries { format, tools, warnings }
+      // — the core reads the file (it owns file I/O).
+      const response = await sendCoreCommandAwaited(
+        makeCamToolParseFileCommand(sourcePath) as CoreCommand & { id: string },
+      );
+      const payload = (
+        response as {
+          payload?: {
+            format?: string;
+            tools?: ToolEntry[];
+            warnings?: string[];
+          };
+        }
+      ).payload;
+      return {
+        format: payload?.format ?? "",
+        tools: payload?.tools ?? [],
+        warnings: payload?.warnings ?? [],
+      };
+    },
+    camToolImportFile: async (
+      sourcePath: string,
+      mode: "renumber" | "overwrite" | "skip",
+    ) => {
+      // Awaited: replies with the document state (like every mutator);
+      // the added/skipped/replaced summary lands in the structured log.
+      await sendCoreCommandAwaited(
+        makeCamToolImportFileCommand(sourcePath, mode) as CoreCommand & {
+          id: string;
+        },
+      );
+    },
+    camToolExportFile: async (filePath: string) => {
+      // Awaited: cam_tool_export_file_result carries
+      // { file_path, exported_count } — the core wrote the file.
+      const response = await sendCoreCommandAwaited(
+        makeCamToolExportFileCommand(filePath) as CoreCommand & { id: string },
+      );
+      const payload = (
+        response as {
+          payload?: { file_path?: string; exported_count?: number };
+        }
+      ).payload;
+      return payload?.exported_count ?? 0;
     },
     camOperationGenerate: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationGenerateCommand(opId));

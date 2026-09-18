@@ -125,6 +125,19 @@ pub fn start_cad_core_process(
         }
     }
 
+    // User shared tool library: one <tN>-<slug>.tool.json file per
+    // tool, seeded by the core with the built-in generic catalog on
+    // first use.  The core re-reads it on every list/save so external
+    // edits apply without a restart.
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let tools_dir = app_data.join("tools");
+        if let Err(error) = std::fs::create_dir_all(&tools_dir) {
+            eprintln!("failed to create tools directory: {error}");
+        } else {
+            cmd.env("POLYSMITH_TOOLS_DIR", tools_dir);
+        }
+    }
+
     // Prepend OCCT and 3rdparty DLL directories to PATH so the child
     // process finds TKernel.dll, freetype.dll, zlib.dll etc.
     #[cfg(target_os = "windows")]

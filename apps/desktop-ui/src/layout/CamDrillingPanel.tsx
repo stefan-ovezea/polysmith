@@ -11,6 +11,7 @@ import {
   CamCheckboxField,
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -70,6 +71,7 @@ interface CamDrillingPanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamDrillingPanel({
@@ -92,6 +94,7 @@ export function CamDrillingPanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamDrillingPanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<DrillingFormState>(() => ({
@@ -154,13 +157,13 @@ export function CamDrillingPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.drilling.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.drilling.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

@@ -692,6 +692,62 @@ the lookup key `tool_id`. `cam_tool_delete` payload = `{tool_id}` — operations
 referencing the deleted tool degrade to `status: "error"` with a message.
 `cam_tool_list` returns `document_state`.
 
+Tool semantics agents should know: `tool_number` 0 = unassigned (the core
+auto-assigns the next free number on add); `pocket_number` 0 = same as the
+tool number; `guid` is the stable machine-side identity minted by the core
+and used for import/export reconciliation. Geometry (`diameter_mm`,
+`shank_diameter_mm`, `flute_length_mm` > 0, `overall_length_mm` ≥ flute,
+`corner_radius_mm` ≤ D/2, flutes 1–12) is validated on every mutation. The
+cutting-data inputs are `surface_speed_m_per_min` + `feed_per_tooth_mm`
+(RPM/feed are derived); lathe fields (`front_angle_deg`, `back_angle_deg`,
+`orientation` 0–9) only matter for `turning_insert`.
+
+#### `cam_tool_library_list` / `cam_tool_library_save`
+
+The shared on-disk library (`POLYSMITH_TOOLS_DIR`, one
+`<Tnumber>-<slug>.tool.json` per tool, generic catalog seeded on first
+use). `cam_tool_library_list` replies with a `cam_tool_list_result` event
+carrying the full library. `cam_tool_library_save` payload = serialized
+`ToolEntry` — writes/overwrites the tool file and replies with the
+refreshed library; failure replies `CAM_TOOL_SAVE_FAILED`.
+
+#### `cam_tool_parse_text` / `cam_tool_parse_file`
+
+Parse LinuxCNC tool tables or PolySmith JSON without touching the
+document. `cam_tool_parse_text` payload = `{format, text}` with format
+`"linuxcnc_tbl"` or `"polysmith_json"`; `cam_tool_parse_file` payload =
+`{source_path}` (the core reads the file; format comes from the `.tbl` /
+`.json` extension). Both reply with a `cam_tool_parse_result` event
+`{format, tools, warnings}`; failure replies `CAM_TOOL_PARSE_FAILED`.
+The LinuxCNC parser is lenient (warnings, never silent drops): T0 is
+skipped with a warning, `I`/`J`/`Q` fields make the tool a turning
+insert, `X`/`Z` become the lathe offsets, the table comment splits into
+name + description on " — ".
+
+#### `cam_tool_import_file`
+
+Payload `{source_path, mode}` with mode `"renumber"` (default) |
+`"overwrite"` | `"skip"`. Parses the file and applies the tools to the
+document library in ONE batch (one undo step): incoming tools reconcile
+by `guid` first, then by tool number. Renumber auto-assigns the next
+free number on clashes; overwrite replaces the library tool in place
+(keeping its `tool_id` and number) and invalidates operations using it;
+skip drops the clash. Replies with `document_state` like every other
+mutator; the added/skipped/replaced summary goes to the structured log.
+Failure replies `CAM_TOOL_PARSE_FAILED`.
+
+#### `cam_tool_export_text` / `cam_tool_export_file`
+
+Serialize the document tool library as a LinuxCNC tool table or
+PolySmith JSON. `cam_tool_export_text` payload = `{format,
+tool_numbers?}` (optional number filter) and replies with
+`cam_tool_export_text_result` `{format, text}`. `cam_tool_export_file`
+payload = `{file_path}` — the core writes the file itself (format from
+the extension) and replies with `cam_tool_export_file_result`
+`{file_path, exported_count}`; failure replies `CAM_TOOL_EXPORT_FAILED`.
+LinuxCNC output writes T0 never, D = absolute diameter, and
+`I`/`J`/`Q` only for turning inserts.
+
 #### `cam_operation_create`
 
 Payload = serialized `CamOperation` without `op_id` (the core assigns

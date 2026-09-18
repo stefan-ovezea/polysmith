@@ -5,6 +5,7 @@ import type {
   FaceAttestation,
   GeometryReference,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { useToastStore } from "@/state/toastStore";
 
 interface CamAdaptiveContext {
@@ -75,8 +76,9 @@ export async function triggerCamAdaptive({
 
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default endmill on the spot.
-  const endmill = document.cam.tool_library.find(
-    (tool) => tool.type === "endmill_flat",
+  const endmill = defaultToolForOperation(
+    "adaptive_clearing",
+    document.cam.tool_library,
   );
   const previousCount = document.cam.operations.length;
 

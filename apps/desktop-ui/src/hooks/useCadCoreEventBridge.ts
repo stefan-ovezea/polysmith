@@ -9,8 +9,16 @@ import {
   parseCoreMessage,
   writeLogToConsole,
 } from "@/lib";
+import { setCamSchemaRescueReporter } from "@/lib/schemas/ipc/camSchema";
 import { useCadCoreStore, useToastStore } from "@/state";
 import { reportCoreError } from "./coreLogReporting";
+
+// The bridge is a PROCESS-WIDE singleton — exactly one Tauri listener
+// per channel no matter how many components call useCadCore().  A
+// second listener (e.g. the tool library dialog mounting the hook)
+// used to parse and dispatch every core event twice, doubling the UI
+// work per event.
+let bridgeInstalled = false;
 
 export function useCadCoreEventBridge() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
@@ -20,8 +28,47 @@ export function useCadCoreEventBridge() {
   const setStatus = useCadCoreStore((state) => state.setStatus);
   const pushToast = useToastStore((state) => state.pushToast);
 
+  // The CAM subtree rescue (see camSchema.ts) reports through here so a
+  // swallowed mismatch is LOUD — toast + log with the exact field path.
+  // Deduped: the same mismatch on every document_state must not toast
+  // forever.
   useEffect(() => {
-    let disposed = false;
+    let lastReported = "";
+    setCamSchemaRescueReporter((issues) => {
+      const first = issues[0] as
+        | { path?: unknown[]; message?: string; expected?: unknown; received?: unknown }
+        | undefined;
+      const path = Array.isArray(first?.path)
+        ? first.path.map(String).join(".")
+        : "?";
+      const detail = first
+        ? ` ${first.message ?? ""}${"received" in first ? ` (received: ${JSON.stringify(first.received)})` : ""}`
+        : "";
+      const signature = `${path}:${first?.message ?? ""}`;
+      // The toast itself carries the failing field + value so the
+      // answer is on screen even when the app is otherwise frozen.
+      const message = `CAM parse failed at ${path}.${detail} CAM view emptied — paste this toast.`;
+      addLogEntry(makeUiLogEntry("error", "desktop_ui", message));
+      if (signature !== lastReported) {
+        lastReported = signature;
+        pushToast("error", message);
+        addMessage(message);
+      }
+    });
+    // Process-lifetime reporter — a later unmount (dialog close) must
+    // not disarm it while the app bridge is still alive.
+  }, [addLogEntry, addMessage, pushToast]);
+
+  useEffect(() => {
+    // Singleton: only the FIRST mount installs the Tauri listeners —
+    // they live for the process.  Every later mount (any component
+    // calling useCadCore()) reuses them instead of adding another
+    // per-event parse+dispatch.
+    if (bridgeInstalled) {
+      return;
+    }
+    bridgeInstalled = true;
+
     const unlistenFns: Array<() => void> = [];
 
     async function setupListeners() {
@@ -114,22 +161,14 @@ export function useCadCoreEventBridge() {
         unlistenError,
         unlistenExited,
       ]) {
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenFns.push(unlisten);
-        }
+        unlistenFns.push(unlisten);
       }
     }
 
     void setupListeners();
 
-    return () => {
-      disposed = true;
-      for (const unlisten of unlistenFns) {
-        unlisten();
-      }
-    };
+    // The listeners are process-lifetime — no cleanup.  Later mounts
+    // short-circuit on bridgeInstalled before reaching here.
   }, [
     addLogEntry,
     addMessage,

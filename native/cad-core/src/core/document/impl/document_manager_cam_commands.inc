@@ -20,6 +20,11 @@
   DocumentState cam_tool_update(const std::string& toolId, const ToolEntry& tool);
   DocumentState cam_tool_delete(const std::string& toolId);
   std::vector<ToolEntry> cam_tool_list() const;
+  // Batch import of parsed tools ("renumber" | "overwrite" | "skip").
+  // Reconciles by guid first (stable identity), then tool number.
+  // One undo state for the whole batch.
+  DocumentState cam_tool_import_tools(std::vector<ToolEntry> tools,
+                                      const std::string& mode);
 
   DocumentState cam_operation_add(const CamOperation& op);
   // Mints the next free drilling point reference id ("pt-N") for a

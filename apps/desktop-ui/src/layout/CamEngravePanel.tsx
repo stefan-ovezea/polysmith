@@ -7,6 +7,7 @@ import type { EngraveParameters, ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -64,6 +65,7 @@ interface CamEngravePanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamEngravePanel({
@@ -92,6 +94,7 @@ export function CamEngravePanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamEngravePanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<EngraveFormState>(() => ({
@@ -152,13 +155,13 @@ export function CamEngravePanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.engrave.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.engrave.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

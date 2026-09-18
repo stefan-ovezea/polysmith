@@ -166,6 +166,8 @@ set(CAD_CORE_SOURCES
   src/core/cam/post_processor.cpp
   src/core/cam/slot.cpp
   src/core/cam/engrave.cpp
+  src/core/cam/tool_library.cpp
+  src/core/cam/tool_table_io.cpp
   src/core/cam/toolpath_geometry.cpp
   src/core/construction/construction_plane_feature.cpp
   src/core/diagnostics/logger.cpp
@@ -316,6 +318,8 @@ polysmith_add_core_test(cad_core_cam_save_load_test tests/cam_save_load_test.cpp
 polysmith_add_core_test(cad_core_cam_commands_test tests/cam_commands_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_machine_library_test tests/cam_machine_library_test.cpp)
+polysmith_add_core_test(cad_core_tool_library_test tests/tool_library_test.cpp)
+polysmith_add_core_test(cad_core_tool_table_io_test tests/tool_table_io_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_export_test tests/cam_export_test.cpp)
 

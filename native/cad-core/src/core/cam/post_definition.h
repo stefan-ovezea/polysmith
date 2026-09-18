@@ -40,6 +40,17 @@ struct PostDefinition {
   std::string spindle_on = "M3 S{rpm}";
   std::string spindle_off = "M5";
   std::vector<std::string> footer_lines = {"M5", "G0 Z{safety_z}", "M2"};
+  // Tool-change lines for MILL operations (never for laser — a laser
+  // "tool" is virtual).  Empty = the dialect has no tool table
+  // (GRBL/FluidNC: T is tracked but unused — never emit T/M6 there).
+  // The engine emits tool_change once per tool-number change across
+  // the whole program, before the first motion of the operation that
+  // uses the new tool.  Placeholders: {tool} {pocket}.  Opt-in:
+  // stale user post files without the key keep byte-identical output.
+  std::string tool_change = "";
+  // Emitted right after tool_change when set (G43-style length
+  // offset, e.g. "G43 H{tool}").
+  std::optional<std::string> tool_length_offset;
   // Emitted when the laser stays on but the move power changes (tabs,
   // pass power ramps).
   std::string power_change = "S{power}";

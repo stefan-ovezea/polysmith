@@ -6,6 +6,7 @@ import type {
   GeometryReference,
   ViewportState,
 } from "@/types";
+import { defaultToolForOperation } from "./camToolSelection";
 import { useToastStore } from "@/state/toastStore";
 import { DEFAULT_CONTOUR_PARAMS } from "@/layout/CamContourPanel";
 
@@ -97,8 +98,9 @@ export async function triggerCamContour({
 
   // The core resolves an empty tool_id: it reuses a matching library
   // tool or creates a default endmill on the spot.
-  const endmill = document.cam.tool_library.find(
-    (tool) => tool.type === "endmill_flat",
+  const endmill = defaultToolForOperation(
+    "contour_2d",
+    document.cam.tool_library,
   );
   const previousCount = document.cam.operations.length;
 

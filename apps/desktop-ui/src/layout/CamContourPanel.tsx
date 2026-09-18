@@ -7,6 +7,7 @@ import type { ContourParameters, ToolEntry } from "@/types";
 import {
   CamNumberField,
   CamStatusLine,
+  CamToolPicker,
   type CamToolpathStats,
   useCamEscapeCancel,
   useDebouncedCamUpdate,
@@ -74,6 +75,7 @@ interface CamContourPanelProps {
   onExport: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onOpenLibrary: () => void;
 }
 
 export function CamContourPanel({
@@ -106,6 +108,7 @@ export function CamContourPanel({
   onExport,
   onDelete,
   onClose,
+  onOpenLibrary,
 }: CamContourPanelProps) {
   const { t } = useTranslation();
   const [params, setParams] = useState<ContourFormState>(() => ({
@@ -168,13 +171,13 @@ export function CamContourPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.contour.tool", "Tool")}
             </legend>
-            <Dropdown
-              className="w-full"
+            <CamToolPicker
               value={toolId}
               label={t("cam.contour.tool", "Tool")}
               options={toolOptions}
               disabled={disabled}
               onChange={(value) => setToolId(value)}
+              onOpenLibrary={onOpenLibrary}
             />
           </fieldset>
 

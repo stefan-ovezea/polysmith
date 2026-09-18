@@ -87,6 +87,8 @@ const char* kLinuxcncDefinition = R"JSON({
   "laser_off": "M5",
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
+  "tool_change": "T{tool} M6",
+  "tool_length_offset": "G43 H{tool}",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M2"],
   "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
@@ -113,6 +115,8 @@ const char* kMach3Definition = R"JSON({
   "laser_off": "M5",
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
+  "tool_change": "T{tool} M6",
+  "tool_length_offset": "G43 H{tool}",
   "footer_lines": ["M5", "M30"],
   "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
@@ -138,6 +142,8 @@ const char* kMach4Definition = R"JSON({
   "laser_off": "M5",
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
+  "tool_change": "T{tool} M6",
+  "tool_length_offset": "G43 H{tool}",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M30"],
   "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
@@ -185,6 +191,8 @@ const char* kFanucDefinition = R"JSON({
   "laser_off": "M5",
   "spindle_on": "M3 S{rpm}",
   "spindle_off": "M5",
+  "tool_change": "T{tool} M6",
+  "tool_length_offset": "G43 H{tool}",
   "footer_lines": ["M5", "G0 Z{safety_z}", "M30"],
   "laser_footer_lines": ["M5", "M2"],
   "power_max": 1000,
@@ -338,6 +346,27 @@ std::vector<std::string> render_post(const PostContext& context,
   // Header.
   for (const auto& templ : def.header_lines) {
     emit(render_template(templ, common_vars(context)));
+  }
+
+  // Tool change for mill operations: once per tool-number change
+  // across the program (the exporter keeps the modal state in
+  // current_tool_number).  Laser ops never emit one — their "tool"
+  // is virtual, and GRBL-family posts leave tool_change empty so no
+  // T/M6 ever reaches a controller that has no tool table.
+  if (!context.laser.has_value() && !def.tool_change.empty() &&
+      context.tool.tool_number > 0 &&
+      context.tool.tool_number != context.current_tool_number) {
+    const std::map<std::string, std::string> tool_vars = {
+        {"tool", std::to_string(context.tool.tool_number)},
+        {"pocket",
+         std::to_string(context.tool.pocket_number > 0
+                            ? context.tool.pocket_number
+                            : context.tool.tool_number)},
+    };
+    emit(render_template(def.tool_change, tool_vars));
+    if (def.tool_length_offset.has_value()) {
+      emit(render_template(def.tool_length_offset.value(), tool_vars));
+    }
   }
 
   bool laserOn = false;
@@ -706,6 +735,12 @@ bool parse_post_definition(const std::string& json_text,
     definition.laser_off = read_optional_template(payload, "laser_off", definition.laser_off);
     definition.spindle_on = read_optional_template(payload, "spindle_on", definition.spindle_on);
     definition.spindle_off = read_optional_template(payload, "spindle_off", definition.spindle_off);
+    definition.tool_change = read_optional_template(payload, "tool_change", "");
+    if (payload.contains("tool_length_offset") &&
+        payload.at("tool_length_offset").is_string()) {
+      definition.tool_length_offset =
+          payload.at("tool_length_offset").get<std::string>();
+    }
     definition.footer_lines = read_optional_lines(payload, "footer_lines", definition.footer_lines);
     definition.power_change = read_optional_template(payload, "power_change", definition.power_change);
     const auto laserFooters =

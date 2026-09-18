@@ -1,4 +1,102 @@
-# Active task: UNDO/REDO REWORK — full implementation to CAD standard (2026-09-17)
+# Active task: CAM TOOL TABLE — full implementation (2026-09-17)
+
+> **Branch:** `cam/tools`, created from `dev` @ `d10cd3f` and pushed.
+>
+> **User request (verbatim):** "I want again a full implementation of
+> the tool table for cam. make a study of the industry also. I want to
+> have a default tool list from where to be able to select generic
+> tools drils , mils etc. Also I want a propper edditor for the tools.
+> A graphic floating window with a tool drawing and input windows for
+> various parameter. Also I want to be able to import and export tools
+> between linuxcnc and my program and verything you may think to add."
+>
+> **Working mode (user-approved):** autonomous full implementation
+> with local checkpoint commits ("make local commits as you consider
+> and if we need to debug we can get back commit by commit"); user
+> available ~30 min at the start for plan questions.
+>
+> Research agents launched (2026-09-17, 3 parallel) — COMPLETE:
+> 1. LinuxCNC tool table + FreeCAD/Fusion/ISO13399 formats
+> 2. PolySmith CAM internals integration map (core + UI)
+> 3. Tool-editor UX industry study (Fusion/FreeCAD/LinuxCNC)
+>
+> **User decisions (2026-09-17, AskUserQuestion):**
+> - Library storage: DOCUMENT library + ON-DISK SHARED library
+>   (POLYSMITH_TOOLS_DIR, clone machine_library pattern)
+> - Machine scope: MILL + LASER + LATHE data (I/J/Q + angles as data)
+> - Posts: EMIT T/M6 + spindle now (GRBL/FluidNC must NOT — gate by post)
+> - Formats: PolySmith JSON + LinuxCNC .tbl (no CSV this round)
+>
+> **Key findings:** ToolEntry/tool_library/cam_tool_* CRUD exist
+> end-to-end already; generators consume tool diameter + default
+> feeds. Missing: tool numbers, on-disk library, editor UI, .tbl I/O,
+> T/M6 post emission, tool-edit invalidation (precedent:
+> cam_tool_delete), new types (v_bit/spot_drill), fields (flutes,
+> helix/point/tip/taper angles, shoulder/length-below-holder,
+> surface-speed/fz, description/vendor/product_id, pocket, guid,
+> lathe front/back/orientation).
+>
+> **Checkpoint commits (each gated: build + suites + tsc):**
+> C1 core ToolEntry schema + whitelist + payload/parse + save/load test
+> C2 core tool_library.{h,cpp} on-disk lib + POLYSMITH_TOOLS_DIR +
+>   cam_tool_library_list/save + generic catalog seeds + test suite
+> C3 core .tbl + JSON parse/export text commands + round-trip tests
+> C4 core tool-number auto-assign + uniqueness + update invalidation
+> C5 core post T/M6 + spindle emission (linuxcnc yes, grbl no) + tests
+> C6 TS types/zod/ipc + hooks for new fields/commands
+> C7 TS lib: toolSchematic.ts, toolOptions.ts, camToolSelection
+>   (replaces 16 scattered type-filter predicates; engrave accepts
+>   V-bits, drilling accepts spot drills)
+> C8 CamToolEditorPanel (floating, schematic SVG + fields + validation)
+>   + --color-warning token (6 themes) + cad-panel-item CSS classes
+> C9 CamToolLibraryDialog (3-pane, search/sort, duplicate/copy/delete,
+>   editor entry, sidebar Tool Library row)
+> C10 import/export (.tbl/JSON): core cam_tool_parse_file /
+>   cam_tool_import_file (renumber|overwrite|skip, one undo step) /
+>   cam_tool_export_file + UI conflict dialog + wiki docs
+> C11 fix: save_tool_entry mints guid when absent
+> Final: full gates + tracker + user verification checklist
+
+## STATUS 2026-09-17: FULL IMPLEMENTATION COMPLETE — all local commits on `cam/tools`, gates green, AWAITING USER IN-APP VERIFICATION
+
+**Commits:** df2606b (C1) → edff543 (C2) → ad606be (C3) →
+7448396 (C5) → c38216e (C6) → 8af0688 (C7) → 685b14e (C8) →
+f415a65 (C9) → 9f04f49 (C10) → 443e4b6 (C11).
+NOT pushed (user pushes when asked).
+
+**Gates run:** `pnpm core:build` clean + **54/54 C++ suites pass**
+(`pnpm test:core`; new: tool_library 5, tool_table_io 8, import-batch
+3b in cam_commands, linuxcnc-post tool-change emission) +
+`tsc --noEmit` clean + `cargo check` clean.
+
+**User verification checklist (in-app, `pnpm dev`):**
+1. CAM workspace → sidebar **Tool Library** row → dialog opens; both
+   Document and Shared Library tabs list tools; shared = 42 seeded
+   generic tools (T1–T42).
+2. Double-click a tool → floating editor with the schematic; change
+   the diameter and watch the drawing rescale; validation errors block
+   Save (e.g. clear the name).
+3. New Tool → name it, Save → appears in the document library with an
+   auto-assigned number.
+4. In a mill setup: create an operation with two different tools and
+   export G-code — the second operation must emit `T<n> M6` + `G43
+   H<n>` (linuxcnc/mach3/mach4/fanuc posts only). NOTE: if the user's
+   on-disk `posts/linuxcnc.json` predates this change it shadows the
+   seeded post — delete or re-import it to see the tool-change lines.
+5. Import: LinuxCNC `tool.tbl` from a real machine → preview lists
+   dispositions; switch the conflict mode and watch the labels change;
+   Import → Logs panel shows "added X, skipped Y, replaced Z".
+6. Export → `tools.tbl` → re-import it in another document → tools
+   reconcile by guid (renamed tools come back as replacements).
+
+**Deferred (noted, not blocking):** Fusion-style parameter presets,
+tool holders/assemblies, CSV format, per-shared-tool delete command
+(dialog hides Delete in the shared tab; save overwrites the file
+instead), lathe post/generator work (data + table fields only).
+
+---
+
+# COMPLETED: UNDO/REDO REWORK — merged as PR #87 (2026-09-17)
 
 > **Branch:** `feature/undo-redo`, created from `dev` @ `01c5149`
 > (the squash merge of the trim redesign) and pushed to origin.
@@ -35,6 +133,8 @@
 > **Spec:** `wiki/Undo-Redo-Redesign-Requirements.md` — decisions
 > D1–D10, phases P0→P5, stage test program
 > `cad_core_undo_stages_test`.
+>
+> ## MERGED as PR #87 → dev @ d10cd3f (2026-09-17). New branch `cam/tools` created from dev (pushed).
 >
 > ## STATUS 2026-09-17: ALL SIX PHASES IMPLEMENTED — gates green, AWAITING USER IN-APP VERIFICATION
 >
@@ -2693,3 +2793,107 @@ Next-session checklist:
    near-instant; Delete -> circles gone, perimeter intact. Test both
    drag directions. One-by-one delete unchanged.
 2. Commit after the user confirms (no Co-Authored-By trailer).
+
+---
+
+# TOOL LIBRARY WINDOW "STUCK" — FIXED (2026-09-18, uncommitted)
+
+> **Branch:** `cam/tools`. **User report:** launching the tools menu
+> opens a floating window that "gets stuck" — only killing the program
+> got out.
+
+**Diagnosis journey (all temporary diagnostics removed after):**
+1. Core side verified healthy by direct repro: real `cad_core.exe` +
+   the user's document + `cam_tool_library_list` → 0.5s, correct
+   42-tool reply. No hang.
+2. localStorage freeze-buffer + 1s heartbeat + input probe + rAF
+   frame counter (survives a killed app; read back from the WebView2
+   leveldb at `%LOCALAPPDATA%\org.sovezea.polysmith\EBWebView\...`):
+   ticks never stopped, frames pumped at ~300/5s → **not a JS wedge,
+   not a GPU stall**. Every click on the dialog area hit
+   `CANVAS cad-viewport-canvas` — pure click-through.
+3. Overlay geometry probe: `rect 0,0 1440x830 pos=fixed z=50
+   **pe=none** hit@center=CANVAS`.
+
+**Root cause:** `CamFloatingPanels` (App.tsx:4633) renders inside the
+340px `pointer-events-none` floating-panel column (App.tsx:4203,
+closes 4879). Every other panel in that column carries
+`pointer-events-auto` on its root — the new tool-library dialog was
+the one that missed the convention. It painted on top but inherited
+`pointer-events: none`, so the mouse passed straight through to the
+viewport canvas; only the keyboard (Escape) could reach it. The
+"kill the program" step was never needed — Escape always worked.
+
+**Fixes (CamToolLibraryDialog.tsx only, 13+/4-):**
+1. `pointer-events-auto` on all three dialog overlays (library view,
+   editor view, import preview) — the real fix.
+2. Tool-list React key fallback `tool_id || guid ||
+   "<number>-<name>"` — the 42 seeded shared tools load with
+   `tool_id: ""` (catalog files carry no id); duplicate keys are the
+   pattern that wedged the JS thread in the Edit-menu dropdown freeze
+   (2026-09-17). Shared-tab rendering is now safe.
+
+**Verified by the user in-app (2026-09-18):** "It works now and the
+escape stays in cam" — clicks reach the dialog; Escape closes it
+without leaving the CAM workspace (the earlier CAM→CAD report did not
+reproduce).
+
+**Gates:** `tsc --noEmit` clean. UI-only — no core rebuild needed.
+**Diagnostics removed:** freeze buffer/heartbeat/input probe/frame
+pump/boot restore (main.tsx back to committed state), dialog
+lifecycle + overlay-probe logging (tool_library_diag).
+
+## ROUND: operation panels bridge to the tool library (2026-09-18, uncommitted)
+
+User: "the milling operation panels do not look like they have access
+to the tools list... i chose drilling operation and the drop down I
+have only 3mm default tool". Not a bug — the panels read only the
+DOCUMENT library (the shared 42 live on disk), and the core auto-
+creates its on-the-spot default (3mm drill) when the document has no
+matching tool. The gap was DISCOVERY.
+
+Fix (UI-only): new `CamToolPicker` in camPanelShared.tsx — the tool
+dropdown + an always-visible "Tool Library…" ghost button that opens
+the existing dialog + a hint when the document has no tools for the
+operation. Wired `onOpenToolLibrary` through App →
+CamFloatingPanels → buildOperationPanel into all 7 mill panels
+(drilling/contour/pocket/face/adaptive/slot/engrave; laser panels
+untouched). i18n keys cam.toolPicker.none/openLibrary. tsc clean.
+User flow: picker → Tool Library… → Shared tab → Copy to Document →
+the dropdown updates on its own (document prop).
+
+AWAITING user in-app verification.
+
+## ROUND: no more auto-created default tools + themed native selects (2026-09-18, uncommitted)
+
+User: (1) the tool-library type-filter select renders WHITE (doesn't
+follow the theme); (2) "the default tool is created added automatic
+to the document... now that we have a full implementation is
+confusing" — the core's on-the-spot "3mm drill (default)" /
+"6mm flat endmill (default)" minting no longer makes sense with the
+library + picker in place.
+
+Fixes:
+- Core session_cam_commands.inc: an operation with an empty tool_id
+  now stays UNASSIGNED for mill/drill (the panel picker is the path
+  to a tool); only LASER ops still auto-create their virtual default
+  (laser panels never offer tool selection). Matching library tools
+  are still picked automatically.
+- Core cam_operation_update: an EMPTY tool_id is allowed ("not
+  assigned yet") — previously every param edit threw "Unknown tool"
+  before a tool was picked.
+- Core cam_generate.cpp: empty tool_id → "This operation has no tool
+  yet — pick one in the operation panel." (was the misleading "no
+  longer exists").
+- Test: test_drilling_creates_default_tool REPLACED by
+  test_drilling_leaves_tool_unassigned (empty id, no minted tool,
+  param update on the unassigned op succeeds, later library drill is
+  picked automatically). Laser default-tool test unchanged.
+- UI CamToolPicker: second hint "Select a tool for this operation."
+  when tools exist but none is picked (cam.toolPicker.select).
+- styles.css: color-scheme dark/light per theme — native select
+  popups/checkboxes follow the app theme.
+
+Gates: core rebuild clean + **54/54 suites** + tsc clean.
+AWAITING user in-app verification (restart the app first — the
+running core predates the rebuild).

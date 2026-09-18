@@ -31,6 +31,7 @@ export interface CamOperationPanelProps {
   selectedOperationId: string | null;
   onSelectOperation: (id: string) => void;
   onDeleteOperation: (id: string) => void;
+  onOpenToolLibrary?: () => void;
 }
 
 // CAM sidebar tree: setups stacked vertically, each with its own
@@ -47,6 +48,7 @@ export function CamOperationPanel({
   selectedOperationId,
   onSelectOperation,
   onDeleteOperation,
+  onOpenToolLibrary,
 }: CamOperationPanelProps) {
   const { t } = useTranslation();
   // Collapsed setup ids — new setups start expanded.
@@ -265,6 +267,18 @@ export function CamOperationPanel({
             })}
           </ul>
         )}
+      </div>
+
+      {/* Tool library entry — the shared/document tool manager. */}
+      <div className="border-t border-[var(--cad-panel-border)] px-3 py-2">
+        <button
+          type="button"
+          className="cad-panel-item flex w-full items-center justify-between rounded px-2 py-1.5 text-xs"
+          onClick={onOpenToolLibrary}
+        >
+          <span>{t("cam.toolLibrary.title", "Tool Library")}</span>
+          <span className="text-[10px] cad-muted shrink-0">⌕</span>
+        </button>
       </div>
     </div>
   );

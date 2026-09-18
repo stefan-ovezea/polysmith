@@ -48,6 +48,7 @@ interface AppSidebarProps {
   onSelectCamSetup: (setupId: string) => void;
   onDeleteCamSetup: (setupId: string) => void;
   onNewCamSetup: () => void;
+  onOpenToolLibrary: () => void;
   confirmAndDeleteFeature: (featureId: string) => void;
   createRecentProjectFolder: (
     name: string,
@@ -105,6 +106,7 @@ export function AppSidebar({
   onSelectCamSetup,
   onDeleteCamSetup,
   onNewCamSetup,
+  onOpenToolLibrary,
   activeProjectPath,
   bodyContextActions,
   sketchContextActions,
@@ -262,6 +264,7 @@ export function AppSidebar({
                 onEditSetup={camOpenSetup}
                 onDeleteSetup={onDeleteCamSetup}
                 onNewSetup={onNewCamSetup}
+                onOpenToolLibrary={onOpenToolLibrary}
                 selectedOperationId={selectedCamOperationId}
                 onSelectOperation={setSelectedCamOperationId}
                 onDeleteOperation={(operationId) => {

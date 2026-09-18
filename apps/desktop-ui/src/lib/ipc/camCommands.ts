@@ -2,6 +2,7 @@ import type {
   CamOperation,
   CamOperationPayload,
   CamSetup,
+  CamToolImportMode,
   CoreCommand,
   LaserMachineSettings,
   MachineDefinition,
@@ -152,6 +153,71 @@ export function makeCamToolListCommand(): CoreCommand {
     id: crypto.randomUUID(),
     type: "cam_tool_list",
     payload: {},
+  };
+}
+
+export function makeCamToolLibraryListCommand(): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_library_list",
+    payload: {},
+  };
+}
+
+export function makeCamToolLibrarySaveCommand(tool: ToolEntry): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_library_save",
+    payload: tool,
+  };
+}
+
+export function makeCamToolParseTextCommand(
+  format: "linuxcnc_tbl" | "polysmith_json",
+  text: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_parse_text",
+    payload: { format, text },
+  };
+}
+
+export function makeCamToolExportTextCommand(
+  format: "linuxcnc_tbl" | "polysmith_json",
+  toolNumbers?: number[],
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_export_text",
+    payload: { format, tool_numbers: toolNumbers },
+  };
+}
+
+export function makeCamToolParseFileCommand(sourcePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_parse_file",
+    payload: { source_path: sourcePath },
+  };
+}
+
+export function makeCamToolImportFileCommand(
+  sourcePath: string,
+  mode: CamToolImportMode,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_import_file",
+    payload: { source_path: sourcePath, mode },
+  };
+}
+
+export function makeCamToolExportFileCommand(filePath: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "cam_tool_export_file",
+    payload: { file_path: filePath },
   };
 }
 
