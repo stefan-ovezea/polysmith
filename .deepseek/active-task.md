@@ -1,5 +1,53 @@
 # Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
 
+## NEXT SESSION (2026-09-19, end-of-session handover): Fusion-style drawing UI
+
+> Committed as 567fcb5 (43 files): live view preview + mouse-first UX
+> pass — core `drawing_view_preview`, ghost following the cursor,
+> click-to-place, view-frame drag, New Drawing setup dialog, landscape
+> default, camera straighten, Confirm-close, body selector, X/Y
+> override, regression tests (Test 9 in the projection suite),
+> schemas + docs. 63/63 suites, tsc clean, user verified in-app.
+>
+> **User's new mandate (verbatim):** "I think the scaffolding is good.
+> However the UI is very rudimentary... I want 2026 feel of the UI.
+> I want Fusion feeling with tools that I can call from the toolbar
+> instead of the stupid floating windows... keep the first one 'new
+> drawing' like a setup window and then should be same like a sketch
+> where I can add projections, dimensions etc... drag the body in the
+> 3 iso projection and in the 4th iso view... in the menu pick up
+> sections, annotations, symbols (welding, roughness, tolerance).
+> Make a study and let's do it."
+>
+> **The study is written:** `wiki/Drawing-Workspace-UI-Study.md` —
+> Fusion 360 drawing workspace distilled (ribbon tabs, base view +
+> orientation cube, projected-view drag incl. diagonal = isometric,
+> section/detail drag placement, dimension drag-and-place, symbols,
+> move/edit), PolySmith gap analysis (custom_frame/axonometric
+> CORE-READY, annotation extensions designed for symbols), and a
+> phased plan R1–R5.
+>
+> **Start R1** (ribbon + tool state machine + Base/Projected view
+> tools): `drawingTool` state like `activeSketchTool`; DrawingToolbar
+> stub → tabbed ribbon (VIEWS | GEOMETRY | DIMENSION | SYMBOLS |
+> ANNOTATE | MODIFY); toolbar strip replaces Insert View / Dimension /
+> Sheet floating panels (New Drawing dialog stays); Base View
+> orientation control incl. "Current 3D view" → capture CAD viewport
+> camera into `DrawingViewFrame.custom_frame`; auto-projected mode
+> after placement with ortho + diagonal-iso ghosts. Reuse the existing
+> ghost/cursor/click plumbing. Gates per plan; user verifies in-app.
+>
+> **Branch:** `feature/iso-drawing`, HEAD 567fcb5. Untracked user data
+> (NEVER stage): `projects/laser board/`,
+> `projects/part-stefan-new.polysmith`, `projects/untitled-part.polysmith`,
+> `tmp-camschema.cjs`.
+>
+> **Commit policy recap (binding):** no Co-Authored-By trailer; ask
+> before every commit/branch/rebase; never commit untested code; the
+> user verifies in-app first.
+
+## 2026-09-19: P0–P9 history (committed)
+
 > **Branch:** `feature/iso-drawing` (== `dev` at 0edb147, clean except
 > this tracker + untracked user data: `projects/laser board/`,
 > `projects/part-stefan-new.polysmith`, `tmp-camschema.cjs`).
