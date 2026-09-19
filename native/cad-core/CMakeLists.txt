@@ -112,6 +112,99 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(planegcs PRIVATE -Wno-register)
 endif()
 
+# --- Vendored zlib + libharu (PDF export, P9) --------------------------
+# libharu's only hard dependency is zlib; both are vendored so the
+# core stays self-contained (the libdxfrw precedent).  The hpdf
+# target is defined HERE (the planegcs pattern) instead of via
+# add_subdirectory: libharu's own CMakeLists defaults
+# BUILD_SHARED_LIBS ON, which would leak a shared-library default
+# into this project's cache.  hpdf_config.h is generated from its
+# .cmake template; PNG support stays off (no image export).
+enable_language(C)
+set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# zlib lives outside the cad-core source tree — out-of-tree
+# add_subdirectory requires an explicit binary dir.
+add_subdirectory("${CMAKE_SOURCE_DIR}/../../third_party/zlib"
+                 "${CMAKE_BINARY_DIR}/zlib" EXCLUDE_FROM_ALL)
+set(HARU_DIR "${CMAKE_SOURCE_DIR}/../../third_party/libharu")
+set(LIBHPDF_HAVE_ZLIB 1)
+set(LIBHPDF_STDC_HEADERS 1)
+configure_file(
+  "${HARU_DIR}/include/hpdf_config.h.cmake"
+  "${CMAKE_BINARY_DIR}/include/libharu/hpdf_config.h")
+add_library(hpdf STATIC
+  ${HARU_DIR}/src/hpdf_annotation.c
+  ${HARU_DIR}/src/hpdf_array.c
+  ${HARU_DIR}/src/hpdf_binary.c
+  ${HARU_DIR}/src/hpdf_boolean.c
+  ${HARU_DIR}/src/hpdf_catalog.c
+  ${HARU_DIR}/src/hpdf_destination.c
+  ${HARU_DIR}/src/hpdf_dict.c
+  ${HARU_DIR}/src/hpdf_direct.c
+  ${HARU_DIR}/src/hpdf_doc.c
+  ${HARU_DIR}/src/hpdf_doc_png.c
+  ${HARU_DIR}/src/hpdf_encoder.c
+  ${HARU_DIR}/src/hpdf_encoder_cns.c
+  ${HARU_DIR}/src/hpdf_encoder_cnt.c
+  ${HARU_DIR}/src/hpdf_encoder_jp.c
+  ${HARU_DIR}/src/hpdf_encoder_kr.c
+  ${HARU_DIR}/src/hpdf_encoder_utf.c
+  ${HARU_DIR}/src/hpdf_encrypt.c
+  ${HARU_DIR}/src/hpdf_encryptdict.c
+  ${HARU_DIR}/src/hpdf_error.c
+  ${HARU_DIR}/src/hpdf_ext_gstate.c
+  ${HARU_DIR}/src/hpdf_font.c
+  ${HARU_DIR}/src/hpdf_font_cid.c
+  ${HARU_DIR}/src/hpdf_font_tt.c
+  ${HARU_DIR}/src/hpdf_font_type1.c
+  ${HARU_DIR}/src/hpdf_fontdef.c
+  ${HARU_DIR}/src/hpdf_fontdef_base14.c
+  ${HARU_DIR}/src/hpdf_fontdef_cid.c
+  ${HARU_DIR}/src/hpdf_fontdef_cns.c
+  ${HARU_DIR}/src/hpdf_fontdef_cnt.c
+  ${HARU_DIR}/src/hpdf_fontdef_jp.c
+  ${HARU_DIR}/src/hpdf_fontdef_kr.c
+  ${HARU_DIR}/src/hpdf_fontdef_tt.c
+  ${HARU_DIR}/src/hpdf_fontdef_type1.c
+  ${HARU_DIR}/src/hpdf_gstate.c
+  ${HARU_DIR}/src/hpdf_image.c
+  ${HARU_DIR}/src/hpdf_image_ccitt.c
+  ${HARU_DIR}/src/hpdf_image_png.c
+  ${HARU_DIR}/src/hpdf_info.c
+  ${HARU_DIR}/src/hpdf_list.c
+  ${HARU_DIR}/src/hpdf_mmgr.c
+  ${HARU_DIR}/src/hpdf_name.c
+  ${HARU_DIR}/src/hpdf_namedict.c
+  ${HARU_DIR}/src/hpdf_null.c
+  ${HARU_DIR}/src/hpdf_number.c
+  ${HARU_DIR}/src/hpdf_objects.c
+  ${HARU_DIR}/src/hpdf_outline.c
+  ${HARU_DIR}/src/hpdf_page_label.c
+  ${HARU_DIR}/src/hpdf_page_operator.c
+  ${HARU_DIR}/src/hpdf_pages.c
+  ${HARU_DIR}/src/hpdf_real.c
+  ${HARU_DIR}/src/hpdf_shading.c
+  ${HARU_DIR}/src/hpdf_streams.c
+  ${HARU_DIR}/src/hpdf_string.c
+  ${HARU_DIR}/src/hpdf_u3d.c
+  ${HARU_DIR}/src/hpdf_utils.c
+  ${HARU_DIR}/src/hpdf_xref.c
+  ${HARU_DIR}/src/hpdf_pdfa.c
+  ${HARU_DIR}/src/hpdf_3dmeasure.c
+  ${HARU_DIR}/src/hpdf_exdata.c
+)
+target_include_directories(hpdf PUBLIC
+  "${HARU_DIR}/include"
+  "${CMAKE_BINARY_DIR}/include/libharu"
+)
+if(MSVC)
+  target_compile_definitions(hpdf PRIVATE
+    _CRT_SECURE_NO_WARNINGS
+    _CRT_SECURE_NO_DEPRECATE
+  )
+endif()
+target_link_libraries(hpdf PUBLIC zlibstatic)
+
 # --- libdxfrw static library (DXF read/write, DXF-only subset) ---
 set(LIBDXFRW_DIR "${CMAKE_SOURCE_DIR}/../../third_party/libdxfrw")
 add_library(dxfrw STATIC
@@ -161,6 +254,7 @@ set(CAD_CORE_SOURCES
   src/core/drawing/drawing_title_block.cpp
   src/core/drawing/export/drawing_export.cpp
   src/core/drawing/export/drawing_dxf_export.cpp
+  src/core/drawing/export/drawing_pdf_export.cpp
   src/core/drawing/export/drawing_svg_export.cpp
   src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
@@ -231,7 +325,7 @@ target_include_directories(cad_core_lib PUBLIC
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
 
-target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfrw)
+target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfrw hpdf)
 
 add_executable(cad_core
   src/app.cpp
@@ -509,3 +603,4 @@ polysmith_add_core_test(cad_core_drawing_sheet_test tests/cad_core_drawing_sheet
 polysmith_add_core_test(cad_core_drawing_dimension_test tests/cad_core_drawing_dimension_test.cpp)
 polysmith_add_core_test(cad_core_drawing_title_block_test tests/cad_core_drawing_title_block_test.cpp)
 polysmith_add_core_test(cad_core_drawing_export_test tests/cad_core_drawing_export_test.cpp)
+polysmith_add_core_test(cad_core_drawing_pdf_export_test tests/cad_core_drawing_pdf_export_test.cpp)

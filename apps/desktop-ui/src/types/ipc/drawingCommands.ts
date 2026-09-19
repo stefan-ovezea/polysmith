@@ -102,9 +102,13 @@ export interface DrawingTitleBlockUpdateCommand {
   };
 }
 
-// ── Export (P8) ────────────────────────────────────────────────────
+// ── Export (P8/P9) ─────────────────────────────────────────────────
 
-export type DrawingExportFormat = "svg" | "dxf";
+export type DrawingExportFormat = "svg" | "dxf" | "pdf";
+
+/// DXF entity fidelity: "geometry" (default, exploded entities) or
+/// "annotated" (real DIMENSION + HATCH entities).
+export type DrawingDxfMode = "geometry" | "annotated";
 
 export interface DrawingExportCommand {
   id: string;
@@ -114,6 +118,7 @@ export interface DrawingExportCommand {
     sheet_id: string;
     format: DrawingExportFormat;
     file_path: string;
+    dxf_mode?: DrawingDxfMode;
   };
 }
 

@@ -54,15 +54,22 @@ const char* layer_for(const SheetPrimitive& p) {
 
 class DrawingDxfInterface : public DRW_Interface {
  public:
-  DrawingDxfInterface(dxfRW* writer, const SheetPrimitiveStream& stream)
-      : writer_(writer), stream_(stream) {
+  DrawingDxfInterface(dxfRW* writer, const SheetPrimitiveStream& stream,
+                      bool annotated)
+      : writer_(writer), stream_(stream), annotated_(annotated) {
     // Split the stream: the title block (lines + projection symbol +
     // field texts) travels as a BLOCK + INSERT; everything else stays
     // direct entities.  Glyph primitives are skipped — the text
     // records below become real DRW_Text entities (a drawing must not
-    // carry its text twice).
+    // carry its text twice).  In annotated mode the exploded
+    // dimension graphics, dimension texts and hatch scanlines are
+    // REPLACED by real DIMENSION + HATCH entities (the semantic
+    // stream records).
     for (const auto& p : stream.primitives) {
       if (p.purpose == "text_glyph") {
+        continue;
+      }
+      if (annotated && (p.purpose == "dimension" || p.purpose == "hatch")) {
         continue;
       }
       if (p.purpose == "title_block" || p.purpose == "projection_symbol") {
@@ -72,6 +79,9 @@ class DrawingDxfInterface : public DRW_Interface {
       }
     }
     for (const auto& t : stream.texts) {
+      if (annotated && t.purpose == "dimension") {
+        continue;  // the text rides inside the DIMENSION entity
+      }
       if (t.purpose == "title_block") {
         block_texts_.push_back(&t);
       } else {
@@ -82,6 +92,10 @@ class DrawingDxfInterface : public DRW_Interface {
                                        direct_primitives_.size() +
                                        block_texts_.size() +
                                        direct_texts_.size());
+    if (annotated) {
+      exported_count_ += static_cast<int>(stream.dimensions.size() +
+                                          stream.hatch_regions.size());
+    }
   }
 
   void writeHeader(DRW_Header& data) override {
@@ -124,6 +138,14 @@ class DrawingDxfInterface : public DRW_Interface {
     }
     for (const SheetText* t : direct_texts_) {
       write_text(*t);
+    }
+    if (annotated_) {
+      for (const auto& d : stream_.dimensions) {
+        write_dimension(d);
+      }
+      for (const auto& r : stream_.hatch_regions) {
+        write_hatch(r);
+      }
     }
     if (has_block()) {
       DRW_Insert insert;
@@ -184,8 +206,35 @@ class DrawingDxfInterface : public DRW_Interface {
 
   void writeTextstyles() override {}
   void writeVports() override {}
-  void writeDimstyles() override {}
   void writeAppId() override {}
+
+  // P9 annotated mode: the ISO 129-1 dimension style the DIMENSION
+  // entities reference — closed filled arrows (empty dimblk + dimtsz
+  // 0), text above the unbroken dimension line, 3.5 mm text, 2×d
+  // extension offsets, decimal separator mirrored from the document.
+  void writeDimstyles() override {
+    if (!annotated_) {
+      return;
+    }
+    DRW_Dimstyle style;
+    style.name = "POLYSMITH_ISO";
+    style.dimasz = 3.0;                       // closed filled arrowhead
+    style.dimtxt = 3.5;                       // ISO 3098 numerals
+    style.dimexo = 2.0;                       // 8×d gap off the feature
+    style.dimexe = 2.0;                       // extension overshoot
+    style.dimgap = 1.0;                       // text above the dim line
+    style.dimtad = 1;                         // text ABOVE the line
+    style.dimtih = 0;
+    style.dimtoh = 1;
+    style.dimdec = 2;
+    style.dimzin = 8;                         // no trailing zeros (ISO)
+    style.dimdsep = stream_.decimal_separator == "," ? ',' : '.';
+    style.dimlunit = 2;                       // decimal units
+    style.dimaunit = 0;                       // decimal degrees
+    style.dimclrd = style.dimclre = style.dimclrt = 256;  // ByLayer
+    style.dimtxsty = "Standard";
+    writer_->writeDimstyle(&style);
+  }
 
   int exported_count() const { return exported_count_; }
 
@@ -284,6 +333,99 @@ class DrawingDxfInterface : public DRW_Interface {
     // fixed by the flatten).
   }
 
+  void write_dimension(const SheetDimension& d) {
+    // Common fields: text middle point, the formatted measurement
+    // text, and the style reference.
+    const auto stamp = [&](DRW_Dimension* entity) {
+      entity->layer = "ANNOTATION";
+      entity->lWeight = DRW_LW_Conv::width07;
+      entity->setTextPoint(DRW_Coord{d.text_point[0], d.text_point[1], 0.0});
+      entity->setText(d.text);
+      entity->setStyle(d.style);
+    };
+    if (d.kind == "linear") {
+      // The dimension line runs PARALLEL to the measured feature —
+      // DIMALIGNED (a DIMLINEAR measures an axis-aligned projection).
+      DRW_DimAligned entity;
+      stamp(&entity);
+      entity.setDimPoint(DRW_Coord{d.def_point[0], d.def_point[1], 0.0});
+      entity.setDef1Point(DRW_Coord{d.def1[0], d.def1[1], 0.0});
+      entity.setDef2Point(DRW_Coord{d.def2[0], d.def2[1], 0.0});
+      writer_->writeDimension(&entity);
+    } else if (d.kind == "radius" && d.arc_point.has_value() &&
+               d.leader_length.has_value()) {
+      DRW_DimRadial entity;
+      stamp(&entity);
+      entity.setCenterPoint(DRW_Coord{d.def_point[0], d.def_point[1], 0.0});
+      entity.setDiameterPoint(
+          DRW_Coord{d.arc_point.value()[0], d.arc_point.value()[1], 0.0});
+      entity.setLeaderLength(d.leader_length.value());
+      writer_->writeDimension(&entity);
+    } else if (d.kind == "diameter" && d.arc_point.has_value() &&
+               d.leader_length.has_value()) {
+      DRW_DimDiametric entity;
+      stamp(&entity);
+      entity.setDiameter1Point(
+          DRW_Coord{d.arc_point.value()[0], d.arc_point.value()[1], 0.0});
+      entity.setDiameter2Point(
+          DRW_Coord{d.def_point[0], d.def_point[1], 0.0});
+      entity.setLeaderLength(d.leader_length.value());
+      writer_->writeDimension(&entity);
+    } else if (d.kind == "angular" && d.arc_point.has_value() &&
+               d.dim_point.has_value()) {
+      DRW_DimAngular entity;
+      stamp(&entity);
+      entity.setFirstLine1(DRW_Coord{d.def1[0], d.def1[1], 0.0});
+      entity.setFirstLine2(DRW_Coord{d.def2[0], d.def2[1], 0.0});
+      entity.setSecondLine1(
+          DRW_Coord{d.arc_point.value()[0], d.arc_point.value()[1], 0.0});
+      entity.setSecondLine2(
+          DRW_Coord{d.def_point[0], d.def_point[1], 0.0});
+      entity.setDimPoint(
+          DRW_Coord{d.dim_point.value()[0], d.dim_point.value()[1], 0.0});
+      writer_->writeDimension(&entity);
+    }
+    // Unknown kind — skipped defensively (the stream vocabulary is
+    // fixed by the graphics builder).
+  }
+
+  void write_hatch(const SheetHatchRegion& region) {
+    DRW_Hatch hatch;
+    hatch.layer = "HATCH";
+    hatch.lWeight = DRW_LW_Conv::width07;
+    hatch.name = "ANSI31";  // predefined 45° line pattern (ISO 128-3)
+    hatch.solid = 0;
+    hatch.hpattern = 1;     // predefined pattern
+    hatch.associative = 0;
+    hatch.angle = region.angle_deg;  // degrees (writer writes 52 as-is)
+    // ANSI31's base line spacing is 3.175 mm; the scale re-derives
+    // the section's spacing.
+    hatch.scale = region.spacing_mm / 3.175;
+    // Boundary loops decomposed to LINE edges — libdxfrw's polyline
+    // hatch loops are unimplemented (the plan's documented limit).
+    const auto add_loop = [&hatch](const std::vector<std::array<double, 2>>& loop) {
+      auto* hatch_loop = new DRW_HatchLoop(0);
+      for (size_t i = 0; i < loop.size(); ++i) {
+        const auto& a = loop[i];
+        const auto& b = loop[(i + 1) % loop.size()];
+        auto* edge = new DRW_Line();
+        edge->basePoint.x = a[0];
+        edge->basePoint.y = a[1];
+        edge->basePoint.z = 0.0;
+        edge->secPoint.x = b[0];
+        edge->secPoint.y = b[1];
+        edge->secPoint.z = 0.0;
+        hatch_loop->objlist.push_back(edge);
+      }
+      hatch.appendLoop(hatch_loop);
+    };
+    add_loop(region.outer_loop);
+    for (const auto& hole : region.holes) {
+      add_loop(hole);
+    }
+    writer_->writeHatch(&hatch);
+  }
+
   void write_text(const SheetText& t) {
     DRW_Text entity;
     entity.layer = "TEXT";
@@ -349,6 +491,7 @@ class DrawingDxfInterface : public DRW_Interface {
 
   dxfRW* writer_;
   const SheetPrimitiveStream& stream_;
+  bool annotated_ = false;
   std::vector<const SheetPrimitive*> block_primitives_;
   std::vector<const SheetPrimitive*> direct_primitives_;
   std::vector<const SheetText*> block_texts_;
@@ -359,9 +502,10 @@ class DrawingDxfInterface : public DRW_Interface {
 }  // namespace
 
 ExportResult export_sheet_as_dxf(const SheetPrimitiveStream& stream,
-                                 const std::string& file_path) {
+                                 const std::string& file_path,
+                                 const std::string& dxf_mode) {
   dxfRW dxf(file_path.c_str());
-  DrawingDxfInterface iface(&dxf, stream);
+  DrawingDxfInterface iface(&dxf, stream, dxf_mode == "annotated");
   if (!dxf.write(&iface, DRW::AC1027, /*bin=*/false)) {
     throw std::runtime_error("Cannot write DXF file: " + file_path);
   }

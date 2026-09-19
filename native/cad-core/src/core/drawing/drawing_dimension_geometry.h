@@ -26,6 +26,9 @@ namespace polysmith::core {
 struct DimensionGraphics {
   std::vector<SheetPrimitive> primitives;  // sheet-mm, purpose "dimension"
   std::optional<SheetText> text;
+  /// Semantic record for the annotated-DXF backend (P9) — the same
+  /// sheet-mm points the primitives were built from.
+  std::optional<SheetDimension> semantic;
 };
 
 /// Builds the dimension presentation for one resolved dimension.

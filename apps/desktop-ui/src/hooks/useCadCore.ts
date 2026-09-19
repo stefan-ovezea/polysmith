@@ -1773,12 +1773,13 @@ export function useCadCore() {
     drawingExport: async (
       drawingId: string,
       sheetId: string,
-      format: "svg" | "dxf",
+      format: "svg" | "dxf" | "pdf",
       filePath: string,
+      dxfMode?: "geometry" | "annotated",
     ) => {
       // Non-mutating: the reply is the document_exported event.
       await sendCoreCommand(
-        makeDrawingExportCommand({ drawingId, sheetId, format, filePath }),
+        makeDrawingExportCommand({ drawingId, sheetId, format, filePath, dxfMode }),
       );
     },
     drawingDimensionCreate: async (params: {

@@ -152,8 +152,9 @@ export function makeDrawingTitleBlockUpdateCommand(
 export function makeDrawingExportCommand(params: {
   drawingId: string;
   sheetId: string;
-  format: "svg" | "dxf";
+  format: "svg" | "dxf" | "pdf";
   filePath: string;
+  dxfMode?: "geometry" | "annotated";
 }): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -163,6 +164,7 @@ export function makeDrawingExportCommand(params: {
       sheet_id: params.sheetId,
       format: params.format,
       file_path: params.filePath,
+      ...(params.dxfMode ? { dxf_mode: params.dxfMode } : {}),
     },
   };
 }

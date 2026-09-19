@@ -98,6 +98,21 @@ Pt apply_text_offset(const Annotation& annotation, const Pt& position) {
   return position;
 }
 
+/// Semantic dimension record for the annotated-DXF backend (P9):
+/// the same sheet-mm points the primitives were built from.
+SheetDimension linear_semantic(const std::string& text, const Pt& def_point,
+                               const Pt& text_point, const Pt& def1,
+                               const Pt& def2) {
+  SheetDimension s;
+  s.kind = "linear";
+  s.def_point = def_point;
+  s.text_point = text_point;
+  s.def1 = def1;
+  s.def2 = def2;
+  s.text = text;
+  return s;
+}
+
 // ── Case builders ─────────────────────────────────────────────────
 
 void emit_linear_single(DimensionGraphics* out, const ResolvedDimension& r,
@@ -121,6 +136,8 @@ void emit_linear_single(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt mid = (pa + pb) * 0.5 + n * (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  out->semantic =
+      linear_semantic(r.text, pa, apply_text_offset(annotation, mid), a, b);
 }
 
 void emit_linear_two_lines(DimensionGraphics* out, const ResolvedDimension& r,
@@ -151,6 +168,10 @@ void emit_linear_two_lines(DimensionGraphics* out, const ResolvedDimension& r,
                      (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  // The connector IS perpendicular to both parallel lines, so an
+  // aligned dimension between its ends measures exactly the value.
+  out->semantic =
+      linear_semantic(r.text, p0, apply_text_offset(annotation, mid), p0, p1);
 }
 
 void emit_linear_line_circle(DimensionGraphics* out, const ResolvedDimension& r,
@@ -173,6 +194,10 @@ void emit_linear_line_circle(DimensionGraphics* out, const ResolvedDimension& r,
                      (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  // p0 is the perpendicular foot of the center onto the line, so the
+  // aligned dimension measures exactly the value.
+  out->semantic =
+      linear_semantic(r.text, p0, apply_text_offset(annotation, mid), p0, c);
 }
 
 void emit_linear_two_circles(DimensionGraphics* out, const ResolvedDimension& r,
@@ -188,6 +213,8 @@ void emit_linear_two_circles(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt mid = (c0 + c1) * 0.5 + n * (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  out->semantic =
+      linear_semantic(r.text, c0, apply_text_offset(annotation, mid), c0, c1);
 }
 
 void emit_radius(DimensionGraphics* out, const ResolvedDimension& r,
@@ -202,6 +229,14 @@ void emit_radius(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt mid = (c + p) * 0.5 + n * (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  SheetDimension s;
+  s.kind = "radius";
+  s.def_point = c;  // center
+  s.text_point = apply_text_offset(annotation, mid);
+  s.arc_point = p;  // point on the arc
+  s.leader_length = dist2(c, p);
+  s.text = r.text;
+  out->semantic = std::move(s);
 }
 
 void emit_diameter(DimensionGraphics* out, const ResolvedDimension& r,
@@ -218,6 +253,14 @@ void emit_diameter(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt mid = c + n * (kTextGapMm + kTextHeightMm / 2.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, mid), stale);
+  SheetDimension s;
+  s.kind = "diameter";
+  s.def_point = q;  // opposite arc point
+  s.text_point = apply_text_offset(annotation, mid);
+  s.arc_point = p;  // first arc point
+  s.leader_length = dist2(c, p);
+  s.text = r.text;
+  out->semantic = std::move(s);
 }
 
 void emit_angular(DimensionGraphics* out, const ResolvedDimension& r,
@@ -280,6 +323,17 @@ void emit_angular(DimensionGraphics* out, const ResolvedDimension& r,
                             (kAngularRadiusMm + 6.0);
   out->text = dimension_text(r.text,
                              apply_text_offset(annotation, text_pos), stale);
+  SheetDimension s;
+  s.kind = "angular";
+  s.def1 = apex;               // line 1-1
+  s.def2 = r1;                 // line 1-2
+  s.arc_point = apex;          // line 2-1 (shared apex)
+  s.def_point = r2;            // line 2-2
+  s.dim_point = apex + Pt{std::cos(mid_ang), std::sin(mid_ang)} *
+                           kAngularRadiusMm;  // the arc location point
+  s.text_point = apply_text_offset(annotation, text_pos);
+  s.text = r.text;
+  out->semantic = std::move(s);
 }
 
 }  // namespace

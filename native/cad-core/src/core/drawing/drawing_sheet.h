@@ -88,6 +88,47 @@ struct SheetText {
   bool stale = false;
 };
 
+/// Semantic dimension record (sheet-mm) — the P9 annotated-DXF
+/// backend emits a real DIMENSION entity from this instead of the
+/// exploded graphics.  Populated by the graphics builder alongside
+/// the primitives (same computation, one source of truth); the
+/// geometry-mode backends ignore it.
+struct SheetDimension {
+  /// "linear" | "radius" | "diameter" | "angular"
+  std::string kind = "linear";
+  /// Dimension-line location (code 10) — for radius/diameter: the
+  /// center; for angular: second line 2-2 point.
+  std::array<double, 2> def_point = {0.0, 0.0};
+  /// Text middle point (code 11).
+  std::array<double, 2> text_point = {0.0, 0.0};
+  /// Definition points 1/2 (codes 13/14).
+  std::array<double, 2> def1 = {0.0, 0.0};
+  std::array<double, 2> def2 = {0.0, 0.0};
+  /// Arc point for radius/diameter (code 15); angular second line 1.
+  std::optional<std::array<double, 2>> arc_point;
+  /// Angular arc location (code 16).
+  std::optional<std::array<double, 2>> dim_point;
+  /// Radial/diametric leader length (code 40).
+  std::optional<double> leader_length;
+  /// The formatted measurement text (code 1).
+  std::string text;
+  /// Dimension style name (code 3).
+  std::string style = "POLYSMITH_ISO";
+};
+
+/// One hatch region boundary in sheet-mm — the annotated-DXF backend
+/// emits a HATCH entity (ANSI31 predefined pattern, boundary loops
+/// decomposed to LINE edges) from this instead of the scanline
+/// primitives.
+struct SheetHatchRegion {
+  std::vector<std::array<double, 2>> outer_loop;
+  std::vector<std::vector<std::array<double, 2>>> holes;
+  /// The scanline angle used for the line hatch too.
+  double angle_deg = 45.0;
+  /// Scanline spacing (the DXF pattern scale derives from it).
+  double spacing_mm = 3.0;
+};
+
 /// View metadata on the flattened sheet (content bounds in sheet-mm)
 /// — the UI draws the view frames and labels from this.
 struct SheetViewBounds {
@@ -112,6 +153,15 @@ struct SheetPrimitiveStream {
   std::vector<SheetPrimitive> primitives;
   std::vector<SheetViewBounds> views;
   std::vector<SheetText> texts;
+  /// Semantic records (P9): the annotated-DXF backend consumes these
+  /// instead of the exploded graphics (dimension primitives/texts,
+  /// hatch scanlines).  Always populated; geometry-mode backends
+  /// ignore them.
+  std::vector<SheetDimension> dimensions;
+  std::vector<SheetHatchRegion> hatch_regions;
+  /// The document's dimension decimal separator — the annotated-DXF
+  /// DIMSTYLE dimdsep mirrors it.
+  std::string decimal_separator = ",";
 };
 
 /// ISO 5457 trimmed sheet sizes (portrait): A0..A4.

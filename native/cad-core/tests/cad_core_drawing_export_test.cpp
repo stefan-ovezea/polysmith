@@ -218,6 +218,10 @@ struct DxfCounts {
   int solids = 0;
   int texts = 0;
   int inserts = 0;
+  int dimensions = 0;
+  int hatches = 0;
+  int hatch_loop_edges = 0;
+  std::vector<std::string> dimstyle_names;
   std::vector<std::pair<std::string, std::string>> insert_names;
   std::vector<std::pair<std::string, double>> frame_corners;  // layer, x
   std::vector<std::pair<std::string, std::array<double, 2>>>
@@ -247,7 +251,9 @@ class CountingDxfInterface : public DRW_Interface {
   void addHeader(const DRW_Header*) override {}
   void addLType(const DRW_LType&) override {}
   void addLayer(const DRW_Layer&) override {}
-  void addDimStyle(const DRW_Dimstyle&) override {}
+  void addDimStyle(const DRW_Dimstyle& style) override {
+    counts_->dimstyle_names.push_back(style.name);
+  }
   void addVport(const DRW_Vport&) override {}
   void addTextStyle(const DRW_Textstyle&) override {}
   void addAppId(const DRW_AppId&) override {}
@@ -308,15 +314,21 @@ class CountingDxfInterface : public DRW_Interface {
       ++counts_->texts;
     }
   }
-  void addDimAlign(const DRW_DimAligned*) override {}
-  void addDimLinear(const DRW_DimLinear*) override {}
-  void addDimRadial(const DRW_DimRadial*) override {}
-  void addDimDiametric(const DRW_DimDiametric*) override {}
-  void addDimAngular(const DRW_DimAngular*) override {}
-  void addDimAngular3P(const DRW_DimAngular3p*) override {}
-  void addDimOrdinate(const DRW_DimOrdinate*) override {}
+  void addDimAlign(const DRW_DimAligned*) override { ++counts_->dimensions; }
+  void addDimLinear(const DRW_DimLinear*) override { ++counts_->dimensions; }
+  void addDimRadial(const DRW_DimRadial*) override { ++counts_->dimensions; }
+  void addDimDiametric(const DRW_DimDiametric*) override { ++counts_->dimensions; }
+  void addDimAngular(const DRW_DimAngular*) override { ++counts_->dimensions; }
+  void addDimAngular3P(const DRW_DimAngular3p*) override { ++counts_->dimensions; }
+  void addDimOrdinate(const DRW_DimOrdinate*) override { ++counts_->dimensions; }
   void addLeader(const DRW_Leader*) override {}
-  void addHatch(const DRW_Hatch*) override {}
+  void addHatch(const DRW_Hatch* hatch) override {
+    ++counts_->hatches;
+    for (size_t i = 0; i < hatch->looplist.size(); ++i) {
+      counts_->hatch_loop_edges +=
+          static_cast<int>(hatch->looplist.at(i)->objlist.size());
+    }
+  }
   void addViewport(const DRW_Viewport&) override {}
   void addImage(const DRW_Image*) override {}
   void linkImage(const DRW_ImageDef*) override {}
@@ -453,12 +465,26 @@ bool test_errors() {
   try {
     polysmith::core::export_drawing_sheet(fixture.document,
                                           fixture.drawing_id,
-                                          fixture.sheet_id, "pdf", path);
+                                          fixture.sheet_id, "step", path);
   } catch (const std::runtime_error& error) {
     unknown_format = std::string(error.what()).find("Unknown drawing export")
                      != std::string::npos;
   }
   if (!expect(unknown_format, "unknown format throws")) {
+    return false;
+  }
+
+  bool unknown_dxf_mode = false;
+  try {
+    polysmith::core::export_drawing_sheet(fixture.document,
+                                          fixture.drawing_id,
+                                          fixture.sheet_id, "dxf", path,
+                                          "exploded");
+  } catch (const std::runtime_error& error) {
+    unknown_dxf_mode = std::string(error.what()).find("Unknown drawing DXF mode")
+                       != std::string::npos;
+  }
+  if (!expect(unknown_dxf_mode, "unknown dxf_mode throws")) {
     return false;
   }
 
@@ -496,6 +522,83 @@ bool test_errors() {
                 "export never bumps the revision");
 }
 
+// ── P9 annotated DXF ──────────────────────────────────────────────
+
+bool test_dxf_annotated_parse_back() {
+  ExportFixture fixture = make_fixture();
+  const std::string path = temp_path("drawing_export_annotated.dxf");
+  const auto result = polysmith::core::export_drawing_sheet(
+      fixture.document, fixture.drawing_id, fixture.sheet_id, "dxf", path,
+      "annotated");
+  if (!expect(result.format == "dxf" && std::filesystem::exists(path),
+              "annotated dxf export result + file")) {
+    return false;
+  }
+
+  const DxfCounts counts = read_dxf_counts(path);
+
+  // The dimension becomes ONE DIMENSION entity: no exploded graphics
+  // (3 dim lines gone from ANNOTATION, 2 arrowhead solids gone) and
+  // no standalone dimension text.
+  if (!expect(counts.dimensions == 1,
+              "annotated mode: 1 DIMENSION entity")) {
+    std::cerr << "  DEBUG dimensions=" << counts.dimensions
+              << " solids=" << counts.solids << " texts=" << counts.texts
+              << "\n";
+    return false;
+  }
+  if (!expect(counts.solids == 0, "no arrowhead solids in annotated mode")) {
+    return false;
+  }
+  if (!expect(counts.texts == 0, "dimension text rides in the DIMENSION")) {
+    return false;
+  }
+  bool iso_style = false;
+  for (const auto& name : counts.dimstyle_names) {
+    if (name == "POLYSMITH_ISO") {
+      iso_style = true;
+    }
+  }
+  if (!expect(iso_style, "POLYSMITH_ISO dimstyle present")) {
+    return false;
+  }
+  // The geometry itself is untouched (frame + furniture + view).
+  return expect(counts.lines >= 4 + 4 + 20,
+                "geometry still present in annotated mode");
+}
+
+bool test_dxf_annotated_hatch() {
+  // A hand-built stream with one hatch region (a 4-corner outer loop)
+  // — the full fixture has no section view, so the HATCH path needs a
+  // synthetic region.
+  SheetPrimitiveStream stream;
+  stream.sheet_id = "sheet-1";
+  stream.drawing_id = "drawing-1";
+  stream.width_mm = 210.0;
+  stream.height_mm = 297.0;
+  polysmith::core::SheetHatchRegion region;
+  region.outer_loop = {{10.0, 10.0}, {30.0, 10.0}, {30.0, 20.0}, {10.0, 20.0}};
+  region.angle_deg = 45.0;
+  region.spacing_mm = 3.0;
+  stream.hatch_regions.push_back(region);
+
+  const std::string path = temp_path("drawing_export_hatch.dxf");
+  const auto result = polysmith::core::export_sheet_as_dxf(
+      stream, path, "annotated");
+  if (!expect(result.format == "dxf" && std::filesystem::exists(path),
+              "hatch dxf export result + file")) {
+    return false;
+  }
+
+  const DxfCounts counts = read_dxf_counts(path);
+  if (!expect(counts.hatches == 1, "1 HATCH entity")) {
+    return false;
+  }
+  // The 4 boundary segments decomposed to LINE edges (libdxfrw's
+  // polyline hatch loops are unimplemented — the documented limit).
+  return expect(counts.hatch_loop_edges == 4, "4 boundary edges");
+}
+
 }  // namespace
 
 int main() {
@@ -528,6 +631,22 @@ int main() {
 
   std::cout << "  Test 4: error paths + non-mutation... ";
   if (test_errors()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 5: DXF annotated mode (DIMENSION + DIMSTYLE)... ";
+  if (test_dxf_annotated_parse_back()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 6: DXF annotated mode (HATCH boundary)... ";
+  if (test_dxf_annotated_hatch()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

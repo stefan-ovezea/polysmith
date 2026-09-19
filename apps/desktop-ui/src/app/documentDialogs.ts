@@ -168,6 +168,30 @@ export async function pickDrawingDxfPath({
   return filePath;
 }
 
+export async function pickDrawingPdfPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportDrawingPdfTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.pdf`,
+    filters: [
+      {
+        name: translate("dialogs.pdfFileType"),
+        extensions: ["pdf"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}
+
 export async function pickSaveDocumentPath({
   translate,
   documentName,

@@ -382,6 +382,7 @@ SheetLineStyle style_for(const ProjectedEdgeRecord& rec) {
 
 void flatten_view(std::vector<SheetPrimitive>& view_primitives,
                   std::vector<SheetPrimitive>& hatch_primitives,
+                  std::vector<SheetHatchRegion>& hatch_regions,
                   const DrawingView& view,
                   const ProjectionResult& projection) {
   const double s = view.scale;
@@ -437,6 +438,25 @@ void flatten_view(std::vector<SheetPrimitive>& view_primitives,
         p.p1 = {segment[1][0] * s + ox, segment[1][1] * s + oy};
         hatch_primitives.push_back(std::move(p));
       }
+      // The semantic region (P9: annotated DXF HATCH entities) —
+      // boundary loops transformed to sheet-mm.
+      SheetHatchRegion sheet_region;
+      sheet_region.angle_deg = section.hatch_angle_deg;
+      sheet_region.spacing_mm = section.hatch_spacing_mm;
+      sheet_region.outer_loop.reserve(region.outer_loop.size());
+      for (const auto& pt : region.outer_loop) {
+        sheet_region.outer_loop.push_back(
+            {pt[0] * s + ox, pt[1] * s + oy});
+      }
+      for (const auto& hole : region.holes) {
+        std::vector<std::array<double, 2>> sheet_hole;
+        sheet_hole.reserve(hole.size());
+        for (const auto& pt : hole) {
+          sheet_hole.push_back({pt[0] * s + ox, pt[1] * s + oy});
+        }
+        sheet_region.holes.push_back(std::move(sheet_hole));
+      }
+      hatch_regions.push_back(std::move(sheet_region));
     }
   }
 }
@@ -480,6 +500,7 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   SheetPrimitiveStream stream;
   stream.sheet_id = sheet_id;
   stream.drawing_id = drawing_id;
+  stream.decimal_separator = document.drawing.decimal_separator;
   const auto size = paper_size_mm(sheet->paper_size);
   stream.width_mm = sheet->orientation == "landscape" ? size[1] : size[0];
   stream.height_mm = sheet->orientation == "landscape" ? size[0] : size[1];
@@ -506,6 +527,7 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   // coincidence-priority pass needs the full geometry.
   std::vector<SheetPrimitive> view_primitives;
   std::vector<SheetPrimitive> hatch_primitives;
+  std::vector<SheetHatchRegion> hatch_regions;
   std::vector<SheetPrimitive> dimension_primitives;
   int view_index = 0;
   for (const auto& view_id : sheet->view_ids) {
@@ -536,7 +558,8 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
       // Content bounds from the view geometry (hatch lies inside the
       // section outline — excluded, like the P3 emission).
       const size_t before = view_primitives.size();
-      flatten_view(view_primitives, hatch_primitives, *view, *projection);
+      flatten_view(view_primitives, hatch_primitives, hatch_regions, *view,
+                   *projection);
       bool have_bounds = false;
       for (size_t i = before; i < view_primitives.size(); ++i) {
         const auto& p = view_primitives[i];
@@ -576,6 +599,9 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
                                     graphics.primitives.end());
         if (graphics.text.has_value()) {
           stream.texts.push_back(graphics.text.value());
+        }
+        if (graphics.semantic.has_value()) {
+          stream.dimensions.push_back(graphics.semantic.value());
         }
       }
     }
@@ -670,6 +696,7 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   for (auto& p : hatch_primitives) {
     stream.primitives.push_back(std::move(p));
   }
+  stream.hatch_regions = std::move(hatch_regions);
   // Dimensions last — annotations draw on top of the sheet content.
   for (auto& p : dimension_primitives) {
     stream.primitives.push_back(std::move(p));

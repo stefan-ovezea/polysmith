@@ -3532,15 +3532,25 @@ cache, the toolpath contract) — they never appear in document payloads.
   re-flattens only. The scale auto-fills from the sheet's FIRST view
   at flatten time.
 - `drawing_export` — payload `{drawing_id, sheet_id, format,
-  file_path}`. `format` `"svg" | "dxf"`. NON-mutating: flattens the
-  sheet from the current runtime projections (never re-projects,
-  never pushes undo, never bumps the revision) and replies with
-  `document_exported`. The SVG backend emits an mm viewBox (y flipped
-  to SVG's screen convention, math-CCW arcs = sweep 0, ellipses
-  tessellated, glyph primitives render the text); the DXF backend
-  emits ASCII R2013 with named ISO layers, real DRW_Text for the text
-  records (glyphs skipped), and the title block as a BLOCK + INSERT.
-  Errors (unknown drawing/sheet/format, I/O) throw structured errors.
+  file_path, dxf_mode?}`. `format` `"svg" | "dxf" | "pdf"`;
+  `dxf_mode` `"geometry"` (default) | `"annotated"`. NON-mutating:
+  flattens the sheet from the current runtime projections (never
+  re-projects, never pushes undo, never bumps the revision) and
+  replies with `document_exported`. The SVG backend emits an mm
+  viewBox (y flipped to SVG's screen convention, math-CCW arcs =
+  sweep 0, ellipses tessellated, glyph primitives render the text);
+  the DXF backend emits ASCII R2013 with named ISO layers, real
+  DRW_Text for the text records (glyphs skipped), and the title block
+  as a BLOCK + INSERT.  The PDF backend (libharu, vendored with zlib)
+  writes the sheet 1:1 in mm with real selectable text from the
+  bundled subset-embedded OSIFONT (⌀/±/° round-trip as UTF-16BE hex
+  in the content stream; glyph-primitive fallback when the font
+  cannot load).  `dxf_mode: "annotated"` replaces the exploded
+  dimension graphics and hatch scanlines with real DIMENSION entities
+  (DIMSTYLE `POLYSMITH_ISO`: closed filled arrows, text above the
+  line) and HATCH entities (ANSI31 at the section's angle/spacing,
+  boundary loops as LINE edges).  Errors (unknown
+  drawing/sheet/format/mode, I/O) throw structured errors.
 - `drawing_sheet_update` — payload `{drawing_id, sheet_id, paper_size,
   orientation, projection_angle, name}`. `paper_size` A0–A4,
   `orientation` portrait/landscape (landscape swaps the trimmed ISO

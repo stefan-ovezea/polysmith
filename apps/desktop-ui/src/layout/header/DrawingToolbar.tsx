@@ -12,9 +12,12 @@ export interface DrawingToolbarActions {
   onSheetSettings: () => void;
   /** Arms the dimension tool (P6: pick an edge → live value → Enter). */
   onDimension: () => void;
-  /** Exports the active sheet as SVG/DXF (P8). */
+  /** Exports the active sheet as SVG/DXF/PDF (P8/P9). */
   onExportSvg: () => void;
   onExportDxf: () => void;
+  /** DXF with real DIMENSION + HATCH entities (P9 annotated mode). */
+  onExportDxfAnnotated: () => void;
+  onExportPdf: () => void;
 }
 
 export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
@@ -35,6 +38,8 @@ export function DrawingToolbar({
   onDimension,
   onExportSvg,
   onExportDxf,
+  onExportDxfAnnotated,
+  onExportPdf,
 }: DrawingToolbarProps) {
   const { t } = useTranslation();
 
@@ -102,6 +107,24 @@ export function DrawingToolbar({
         onClick={onExportDxf}
       >
         {t("drawing.toolbar.exportDxf")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.exportDxfAnnotatedTitle")}
+        onClick={onExportDxfAnnotated}
+      >
+        {t("drawing.toolbar.exportDxfAnnotated")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.exportPdfTitle")}
+        onClick={onExportPdf}
+      >
+        {t("drawing.toolbar.exportPdf")}
       </button>
       <span className="text-xs text-[var(--cad-muted)]">
         {drawingCount > 0

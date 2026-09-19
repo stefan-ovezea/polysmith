@@ -188,8 +188,13 @@
     const auto sheet_id = read_string(command.payload, "sheet_id");
     const auto format = read_string(command.payload, "format");
     const auto file_path = read_string(command.payload, "file_path");
+    // P9: dxf_mode selects the DXF entity fidelity; the default keeps
+    // the P8 behavior ("geometry").
+    const auto dxf_mode = command.payload.contains("dxf_mode")
+                              ? read_string(command.payload, "dxf_mode")
+                              : std::string("geometry");
     const auto export_result = document_manager().export_drawing_sheet(
-        drawing_id, sheet_id, format, file_path);
+        drawing_id, sheet_id, format, file_path, dxf_mode);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_exported_event(
             command.id, polysmith::protocol::json{

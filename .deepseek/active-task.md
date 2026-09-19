@@ -617,7 +617,80 @@ after the user confirms.
   double-dash — layers stay CONTINUOUS and the linetypes are defined
   but unassigned (documented in IPC-Protocol.md).
 
-NEXT: **P9 — PDF (libharu) + annotated DXF** (C9) per the plan.
+## P9 — PDF + annotated DXF (C9) — IN PROGRESS, gates pending
+
+- **Vendored deps**: libharu 2.4.4 + zlib 1.3.1 under `third_party/`
+  (codeload tarballs — github.com DNS fails on this machine,
+  codeload works).  The `hpdf` target is self-defined in CMakeLists
+  (the planegcs pattern): libharu's own CMakeLists defaults
+  `BUILD_SHARED_LIBS ON`, which would leak a shared-library default
+  into the cache.  zlib via `add_subdirectory` (EXCLUDE_FROM_ALL,
+  explicit binary dir — out-of-tree source).  `enable_language(C)`
+  added; `hpdf_config.h` generated from its .cmake template; PNG
+  support off (no image export).  zlib's CMake renamed its shipped
+  `zconf.h` → `zconf.h.included` (standard 1.3.1 in-tree behavior —
+  committed in that state so fresh checkouts stay clean).
+- **Build tooling fix**: a standalone CMake ≥ 4.4 on PATH (WinLibs
+  MinGW) generates a BROKEN C-language compiler-ID test with the VS
+  generator (writes the CXX id source into the C test →
+  `enable_language(C)` fails with "A C compiler has been selected
+  for C++").  `scripts/find-cmake.mjs` now prefers the VS-bundled
+  CMake on Windows (documented in the header comment) — the pairing
+  the generator is tested against.
+- **PDF backend** (`drawing_pdf_export.cpp`, libharu): 1:1 sheet-mm
+  (libharu's default unit is mm); error handler → std::runtime_error;
+  HPDF_COMP_ALL; lines/circles/arcs as path operators (full circles
+  via `HPDF_Page_Circle` — `HPDF_Page_Arc` rejects ≥360° sweeps;
+  BOTH only append the path, so every primitive strokes explicitly;
+  Arc goes CCW from ang1 when ang2>ang1, CW otherwise — sheet
+  convention maps directly); ellipse arcs tessellated (48 segments,
+  the SVG fidelity); filled polys as filled paths.  Text: the
+  bundled OSIFONT loads subset-embedded (HPDF_TRUE) +
+  `HPDF_UseUTFEncodings` → REAL selectable text (anchor is the text
+  CENTER, libharu places the BASELINE → y − 0.35×height; width from
+  `HPDF_Font_TextWidth` in 1/1000 em units ÷1000×height;
+  h_align via measured width).  **Two backend bugs fixed during
+  implementation**: (1) libharu raises a failed font load through
+  the error handler — the flag is cleared or the glyph fallback
+  would be dead code; (2) real-text mode requires EVERY record
+  horizontal (libharu can't rotate a run) — otherwise the glyph
+  primitives carry the whole sheet (nothing may vanish).
+- **Annotated DXF** (`dxf_mode: "annotated"`): the flattened stream
+  gained semantic records — `SheetDimension` (kind, def/text/def1/
+  def2/arc/dim points, leader length, formatted text, style) and
+  `SheetHatchRegion` (outer loop + holes in sheet-mm, angle,
+  spacing) + the document's `decimal_separator` — populated by the
+  SAME computations as the exploded graphics (the dimension graphics
+  builder emits the semantic record alongside the primitives; the
+  section flatten transforms the region loops).  The annotated
+  backend skips the exploded dimension graphics/texts and hatch
+  scanlines and writes: DIMENSION entities (linear → DIMALIGNED —
+  the dim line runs PARALLEL to the feature, a DIMLINEAR measures an
+  axis-aligned projection; radial/diametric with leader lengths;
+  2-line angular) under DIMSTYLE `POLYSMITH_ISO` (dimasz 3, dimtxt
+  3.5, dimexo/dimexe 2, dimtad 1 text-above, dimzin 8 no trailing
+  zeros, dimdsep from the document, ByLayer colors) + HATCH entities
+  (ANSI31 predefined at the section's angle; scale = spacing/3.175;
+  boundary loops decomposed to DRW_Line edges — libdxfrw's polyline
+  hatch loops are unimplemented, the plan's documented limit).
+- **IPC/UI**: `drawing_export` payload += optional `dxf_mode`;
+  format += "pdf"; TS types/factory/hook (DrawingExportFormat,
+  DrawingDxfMode); `pickDrawingPdfPath`; DrawingToolbar "DXF
+  Annotated…" + "PDF…" buttons; en.json labels; wiki IPC-Protocol +
+  AI-CAD-Command-Language updated.
+- **Tests**: P8 export suite extended (Tests 5-6: annotated DXF
+  parse-back through the libdxfrw READER — 1 DIMENSION + DIMSTYLE
+  POLYSMITH_ISO + 0 solids/0 stray texts; HATCH with 4 boundary
+  edges; the old unknown-format test now uses "step" — "pdf" is
+  valid).  New `cad_core_drawing_pdf_export_test` (3 tests): PDF
+  envelope + MediaBox 210×297 + /FontFile2 + the ⌀12,5 UTF-16BE hex
+  round-trip from the INFLATED content stream (zlib; binary-mode
+  reads — 0x1A is a text-mode EOF on Windows; the hex-escape
+  greediness trap), end-to-end + non-mutation, error path.  Both
+  suites green locally.
+
+NEXT: P9 gates (full `pnpm test:core` + tsc) → C9 commit request →
+P10 hardening.
 
 ---
 

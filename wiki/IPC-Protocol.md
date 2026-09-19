@@ -771,10 +771,11 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   date, approved]`).  Purely cosmetic — the bump re-flattens only.
   The scale auto-fills from the sheet's FIRST view at flatten time;
   nothing is re-projected.
-- `drawing_export { drawing_id, sheet_id, format, file_path }` —
-  NON-mutating sheet export (see the P8 paragraph below); replies
-  with `document_exported` `{file_path, format,
-  exported_feature_count}`.
+- `drawing_export { drawing_id, sheet_id, format, file_path,
+  dxf_mode? }` — NON-mutating sheet export (see the P8/P9 paragraphs
+  below); replies with `document_exported` `{file_path, format,
+  exported_feature_count}`.  `dxf_mode` is `"geometry"` (default) or
+  `"annotated"`.
 - `drawing_sheet_update { drawing_id, sheet_id, paper_size, orientation,
   projection_angle, name }` — edits the sheet: `paper_size` A0–A4,
   `orientation` portrait/landscape, `projection_angle` `"first_angle"`
@@ -873,7 +874,7 @@ Export (P8): `drawing_export { drawing_id, sheet_id, format, file_path }`
 is NON-mutating — it flattens the sheet from the current runtime
 projections (never re-projects, never pushes undo, never bumps the
 revision) and replies with the `document_exported` event.  `format`
-is `"svg"` | `"dxf"` (PDF lands in P9).  The SVG backend writes an mm
+is `"svg"` | `"dxf"` | `"pdf"`.  The SVG backend writes an mm
 `viewBox` at the sheet size with the y-axis flipped to SVG's screen
 convention; circle arcs become `A` path segments (sweep 0 — math-CCW
 appears counter-clockwise on screen after the flip), ellipse arcs are
@@ -883,13 +884,41 @@ The DXF backend writes ASCII R2013 (AC1027): named layers (VISIBLE
 0.5, HIDDEN/CUTTING/HATCH/ANNOTATION/FURNITURE 0.25, FRAME 0.7, TEXT)
 with per-entity lineweights, the pre-dashed segments on CONTINUOUS
 layers (the ISO patterns are baked in by the core — the HIDDEN/CHAIN
-linetypes are still DEFINED for reuse and the P9 annotated mode),
-text records as real DRW_Text entities (glyph primitives skipped —
-the drawing must not carry its text twice), filled polygons fanned
-into SOLID quads, and the title block as the registered
-`POLYSMITH_TITLE_BLOCK` block + INSERT (writeBlockRecord precedes
-writeBlock — the libdxfrw UB trap).  Unknown ids/formats and I/O
-failures throw structured errors.
+linetypes are still DEFINED for user reuse), text records as real
+DRW_Text entities (glyph primitives skipped — the drawing must not
+carry its text twice), filled polygons fanned into SOLID quads, and
+the title block as the registered `POLYSMITH_TITLE_BLOCK` block +
+INSERT (writeBlockRecord precedes writeBlock — the libdxfrw UB trap).
+Unknown ids/formats and I/O failures throw structured errors.
+
+Export (P9): the PDF backend (libharu 2.4.4, vendored with zlib
+1.3.1 in `third_party/`) writes the sheet at 1:1 sheet size in mm:
+lines/circles/arcs as PDF path operators (full circles via
+`HPDF_Page_Circle` — `HPDF_Page_Arc` rejects ≥360° sweeps; both only
+APPEND the path, so every primitive strokes explicitly), ellipse arcs
+tessellated like the SVG backend, filled polygons as filled paths.
+Drawing text is REAL selectable text from the bundled OSIFONT font
+(subset-embedded, `/FontFile2`, `HPDF_UseUTFEncodings` for UTF-8 —
+⌀/±/° round-trip as UTF-16BE in the content stream, compressed with
+`HPDF_COMP_ALL`); when the font cannot be loaded the stream's vector
+glyph primitives are drawn instead (libharu's raised load error is
+consumed by that fallback).  All drawing texts are horizontal today,
+so real-text mode requires every record horizontal — otherwise the
+glyphs carry the whole sheet.
+
+DXF `dxf_mode: "annotated"` replaces the exploded dimension graphics,
+dimension texts and hatch scanlines with real **DIMENSION** entities
+(DIMALIGNED/radial/diametric/2-line angular, formatted text, style
+reference) under a **DIMSTYLE** named `POLYSMITH_ISO` (closed filled
+arrows — empty dimblk + dimtsz 0, text above the line, 3.5 mm text,
+8×d extension offsets, dimdsep mirrored from the document's decimal
+separator) and **HATCH** entities (ANSI31 predefined pattern at the
+section's angle; the spacing becomes the pattern scale; boundary
+loops decomposed to LINE edges — libdxfrw's polyline hatch loops are
+unimplemented).  The semantic records ride the flattened stream
+(`SheetDimension`, `SheetHatchRegion`, populated by the dimension
+graphics builder and the section flatten — one computation, one
+source of truth); geometry-mode backends ignore them.
 
 Every mutator replies with a `document_state` event; validation errors
 reply with an `error` event.  Views are re-projected inside the single

@@ -71,7 +71,8 @@
   ExportResult export_drawing_sheet(const std::string& drawing_id,
                                     const std::string& sheet_id,
                                     const std::string& format,
-                                    const std::string& file_path) const;
+                                    const std::string& file_path,
+                                    const std::string& dxf_mode = "geometry") const;
 
   // ── Dimensions (P6) ───────────────────────────────────────────
   // The core mints the witness from the pick: picks are sheet-mm

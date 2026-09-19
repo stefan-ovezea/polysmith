@@ -136,6 +136,7 @@ import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserAction
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import {
   pickDrawingDxfPath,
+  pickDrawingPdfPath,
   pickDrawingSvgPath,
   pickGcodeExportPath,
 } from "./app/documentDialogs";
@@ -997,16 +998,25 @@ function App() {
   };
 
   // Sheet export (P8): a save dialog picks the path, then the core
-  // writes the flattened sheet ("svg" | "dxf") and replies with the
-  // document_exported event.  Non-mutating.
-  const drawingExportAction = async (format: "svg" | "dxf") => {
+  // writes the flattened sheet ("svg" | "dxf" | "pdf") and replies
+  // with the document_exported event.  Non-mutating.  dxfMode picks
+  // the DXF entity fidelity (P9 annotated mode).
+  const drawingExportAction = async (
+    format: "svg" | "dxf" | "pdf",
+    dxfMode?: "geometry" | "annotated",
+  ) => {
     const drawing = document?.drawing.drawings.find(
       (d) => d.drawing_id === document?.drawing.active_drawing_id,
     );
     if (!drawing || drawing.sheets.length === 0) {
       return;
     }
-    const picker = format === "svg" ? pickDrawingSvgPath : pickDrawingDxfPath;
+    const picker =
+      format === "svg"
+        ? pickDrawingSvgPath
+        : format === "pdf"
+          ? pickDrawingPdfPath
+          : pickDrawingDxfPath;
     const filePath = await picker({
       translate: t,
       documentName: document?.name,
@@ -1021,6 +1031,7 @@ function App() {
         drawing.sheets[0].sheet_id,
         format,
         filePath,
+        dxfMode,
       );
       addMessage(`export requested: ${filePath}`);
     });
@@ -3123,6 +3134,12 @@ function App() {
             },
             onExportDxf: () => {
               void drawingExportAction("dxf");
+            },
+            onExportDxfAnnotated: () => {
+              void drawingExportAction("dxf", "annotated");
+            },
+            onExportPdf: () => {
+              void drawingExportAction("pdf");
             },
           }}
           canUndo={document?.can_undo ?? false}

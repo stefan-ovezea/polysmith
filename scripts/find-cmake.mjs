@@ -5,10 +5,16 @@
  * hardcoding machine-specific paths.
  *
  * Resolution order:
- *   1. `cmake` on PATH
- *   2. Windows only: the CMake bundled with Visual Studio (the "C++ CMake
+ *   1. Windows only: the CMake bundled with Visual Studio (the "C++ CMake
  *      tools for Windows" component), located via vswhere.exe, which ships
- *      with every VS install at a well-known path.
+ *      with every VS install at a well-known path.  Preferred over PATH:
+ *      a standalone CMake >= 4.4 on PATH (e.g. WinLibs MinGW) generates a
+ *      broken C-language compiler-ID test with the Visual Studio
+ *      generator (it writes the CXX id source into the C test, so
+ *      enable_language(C) fails with "A C compiler has been selected
+ *      for C++").  The VS-bundled CMake is the version tested against
+ *      its own generator.
+ *   2. `cmake` on PATH
  *
  * Imported by the build scripts (configure-core / build-core /
  * configure-occt) so the build works from any shell on any workstation,
@@ -35,10 +41,7 @@ function versionOf(cmake) {
 }
 
 function resolveCmake() {
-  if (versionOk(versionOf("cmake"))) {
-    return "cmake";
-  }
-
+  // Windows: prefer the VS-bundled CMake (see the header comment).
   if (process.platform === "win32") {
     const vswhere = "C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe";
     if (existsSync(vswhere)) {
@@ -53,6 +56,10 @@ function resolveCmake() {
         }
       }
     }
+  }
+
+  if (versionOk(versionOf("cmake"))) {
+    return "cmake";
   }
 
   console.error(
